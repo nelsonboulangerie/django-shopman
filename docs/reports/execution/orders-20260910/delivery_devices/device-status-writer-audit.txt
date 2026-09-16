@@ -1,0 +1,7 @@
+shopman/shop/handlers/courier_dispatch.py:150: block.update(provider='machine', id_mch=courier_ref, status='D', requested_at=timezone.now().isoformat(), last_event_at=timezone.now().isoformat(), last_source='dispatch')
+shopman/shop/services/marketing_outbox.py:513: Directive.objects.filter(pk=directive.pk, status=Directive.Status.QUEUED).update(status=Directive.Status.FAILED, error_code='payload_invalid', last_error='Marketing outbox identity mismatch', updated_at=now)
+shopman/shop/services/courier.py:410: block.update(status=status, last_event_at=now_iso, last_source=source)
+shopman/shop/services/marketing_security.py:704: Directive.objects.filter(topic__in=(ANNOUNCEMENT_NOTIFY, ANNOUNCEMENT_PUBLISH), status=Directive.Status.QUEUED).update(status=Directive.Status.FAILED, error_code='marketing_frozen', last_error='Marketing emergency freeze suppressed this reversible effect.', updated_at=now)
+shopman/backstage/services/catalog.py:1067: Collection.objects.bulk_update(changed, ['sort_order'])
+shopman/backstage/services/catalog.py:1088: CollectionItem.objects.bulk_update(changed, ['sort_order'])
+shopman/backstage/services/print_jobs.py:698: PrintJob.objects.filter(target_terminal=credential.terminal, status=PrintJob.Status.QUEUED, expires_at__lte=now).update(status=PrintJob.Status.EXPIRED, updated_at=now)

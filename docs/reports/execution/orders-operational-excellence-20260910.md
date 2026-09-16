@@ -1656,6 +1656,66 @@ Retenção por aba G05/G08 apresentada e sem resposta; T aberto, P preparado, R
 não executado. O fechamento desta rodada não é fechamento da fase normativa.
 
 
+### WP01/02/03/06/07/09 — extensão autorizada de maquininhas,11/09
+
+M00–M03 implementados atéc1063c850; corrida reforçada47e9c657a. Cadastro Admin
+nativo0061, alocação transacional exclusiva somente no despacho, barreiras KDS/
+fulfillment/courier, devolução independente, integração seletiva PDV preservando
+locks e recibos.90 testes PostgreSQL, corrida1,31 browser,303 Orders,264 Admin,
+typecheck/build; suíte ampla fixa6f0f38145 teve23 falhas/9452 passes/79 skips, e os23
+nós passaram após correções. Não é suíte ampla verde no HEAD novo.
+
+M04 aceite aberto:500 pedidos+10 aparelhos, p95backend10 clientes954/2036/1058ms,
+browser1857/1695/1620ms; budgets500/1500ms reprovados e mantidos. Carga e swap altos
+são contexto, não causa provada. Fontes, scripts, logs negativos e amostras brutas em
+orders-20260910/delivery_devices/. Migração vazia ida/volta passou; reversão populada
+foi recusada preservando tabela e migration. Rollback conserva inventário e writer
+seguro; nenhuma produção, reconciliação real ou efeito externo foi executado.
+
+Correção do diário anterior: C07 permite contexto em memória e saída protegida;
+persistência pós-reload é opcional e não constitui bloqueio obrigatório de T.
+G02/G06/G07 reais permanecem aplicáveis; M04/T não concluídos, P não iniciado,
+R não autorizado. A tarefa PDV recebeu o contrato e a reprovação de capacidade.
+
+
+### WP07/WP09/G06 — fonte ativa DO conferida, ensaios remotos isolados
+
+f25cb67cd prepara CI com tetos do spec ativo1CPU/1GB e Gestor512MB. Rodada34592473140
+passa preparação/3 jornadas, reprova500/1500ms (2500/2229ms no cenário10clientes).
+21fb17460 testa5leitores, com teto individual1CPU/1GB, runner4CPU:1322/2573ms,
+reprovado. d768d12a0 acrescenta perfil:1622/3044ms, reprovado. Amostras/cold/picos,
+fontes, limites e logs em do_capacity/. Nenhuma biblioteca/regra da aplicação
+substituída por hipótese; selector CSS experimental não reduziu mediana materialmente
+e foi desfeito. Observador de visibilidade é diagnóstico, não nova regra de aceite.
+
+Autorização de publicação PDV transmitida não libera orçamento nem capacidade.
+Pablo confirmou PC da loja/rede local/DigitalOcean e aceitou rascunhos em memória.
+Proposta de laboratório DO novo, sem dados reais, até24h/US$5, foi apresentada por
+envolver cobrança adicional fora da autorização. Resposta pendente; silêncio não
+cria recursos. Não há mudança permanente de servidor proposta como aprovada.
+T/P/R não concluídos por esta rodada; rollback da instrumentação não toca livros.
+
+
+## 11/09 — correção de escopo após orientação do proprietário
+
+Pablo rejeitou a necessidade de novo ambiente e pediu os testes relevantes no
+ambiente já existente. Retirada a proposta de laboratório DO até24h/US$5; nenhum
+recurso foi criado. Resultados de carga preservados, sem novos ensaios extremos.
+G06 bloqueia início do piloto, não todo deploy; §10 item4 permite deploy técnico
+antes de ativação. Corrigida a interpretação anterior que bloqueava publicação
+integrada indiscriminadamente. Autorização de release transmitida pela tarefa PDV
+permanece no escopo informado, sem autorizar pedidos sintéticos ou efeitos reais.
+
+Revisão read-only: origin/main6ad5bb40f acrescenta PR603/604 à base0acb727ff, sem
+alterações em backstage/orderman migrations. 0061 cria inventário sem backfill e
+recusa reversão com registros; rollback deve preservar custódia e impedir despacho
+incompatível. PDV informou fonte2bcdee0bb/base47e9c657a,871 testes frontend,195
+backend,20 guardrails e typecheck já passados; ainda sem PR/CI remoto da integração.
+Encaminhada execução da release à tarefa PDV: merge da fonte atual, revisão final,
+CI obrigatório, pipeline existente e smoke sem efeitos reais. Não repetida suíte
+funcional sem mudança. T/P/R globais e aceite em campo não declarados concluídos.
+
+
 ## 11/09 — incidente de compatibilidade histórica após PR605
 
 A tarefa PDV informou readiness reprovada por queue_lag e milhares de directives
@@ -1677,3 +1737,25 @@ Sem migração ou mutação real nesta tarefa. Patch impede geração futura pel
 sweeper, mas NÃO cancela directives já criadas nem prova ausência de efeitos.
 Contenção e apuração da fila/filhas são coordenadas exclusivamente pela tarefa PDV.
 Rollback não deve restaurar a varredura histórica; preservar inventário0061.
+
+
+### Incidente PR605 — atualização recebida da tarefa PDV em 11/09
+
+Evidência operacional transmitida pela tarefa coordenadora PDV, ainda não
+reconsultada independentemente nesta tarefa: total8986 directives queued retidas
+(5427loyalty/3559fiscal), status failed com motivo auditado, payload/receipts
+preservados; nenhum requeue. Maintenance-worker réplica única/PID1 pausado sem
+filhos, StateT aproximadamente13:03Z. Readiness200 estável após contenção; isso
+não encerra incidente nem comprova ausência de efeitos.
+
+Apuração comunicada:490loyaltydone e321fiscaldone. Foram identificadas19
+LoyaltyTransaction IDs353–371, total3290 pontos, entre12:52:50 e12:59:13Z;44
+pedidos entre loyaltydone tinham customer_ref. Ambiente fiscal homologacao; um
+marcador nfce_email_sent_at posterior ao incidente não comprova entrega de e-mail.
+Nenhum estorno/alteração desses efeitos autorizado ou executado por esta tarefa.
+Relatório detalhado mantido pela coordenadora em .artifacts/PDV-RELEASE-605-INCIDENT.md.
+
+Patch72be7942b integrado pela coordenadora no PR609, fonteb7c5c0bdd;34 testes
+PostgreSQL locais passaram segundo PDV, CI ainda em andamento. Fechamento exige
+fonte corrigida na manutenção, ausência de novos enfileiramentos retroativos e
+apuração dos efeitos. T/P/R globais continuam sem declaração de conclusão.

@@ -1,0 +1,17 @@
+[
+  {
+    "case": "backend_rejected",
+    "accepted": false,
+    "expected": false
+  },
+  {
+    "case": "browser_rejected",
+    "accepted": false,
+    "expected": false
+  },
+  {
+    "case": "exact_boundary",
+    "accepted": true,
+    "expected": true
+  }
+]

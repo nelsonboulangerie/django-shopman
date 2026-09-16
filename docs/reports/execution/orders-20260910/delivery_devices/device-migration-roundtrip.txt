@@ -1,0 +1,449 @@
+DEBUG 2026-09-11 07:03:24,395 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 07:03:24,395 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 07:03:24,396 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 07:03:24,396 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 07:03:24,420 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 07:03:24,420 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 07:03:24,421 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 07:03:24,422 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 07:03:24,427 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 07:03:24,427 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 07:03:24,427 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 07:03:24,428 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 07:03:24,428 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 07:03:24,428 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 07:03:24,429 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 07:03:24,429 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 07:03:24,429 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 07:03:24,429 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 07:03:24,434 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 07:03:24,435 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-11 07:03:24,468 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+WARNING 2026-09-11 07:03:24,932 shopman.shop.services.pos pos_fiscal_toggle_lookup_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedTable: relation "shop_shop" does not exist
+LINE 1: ...shop"."defaults", "shop_shop"."integrations" FROM "shop_shop...
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/pos.py", line 2560, in fiscal_toggle_enabled
+    shop = Shop.load()
+           ^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/models/shop.py", line 396, in load
+    shop = cls.objects.first()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 1145, in first
+    for obj in queryset[:1]:
+               ~~~~~~~~^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 390, in __iter__
+    self._fetch_all()
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 2000, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 95, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py", line 1624, in execute_sql
+    cursor.execute(sql, params)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+django.db.utils.ProgrammingError: relation "shop_shop" does not exist
+LINE 1: ...shop"."defaults", "shop_shop"."integrations" FROM "shop_shop...
+                                                             ^
+Operations to perform:
+  Apply all migrations: admin, auth, backstage, buyman, cashman, contenttypes, craftsman, customer_consent, customer_identifiers, customer_insights, customer_loyalty, customer_merge, customer_preferences, customer_timeline, django_eventstream, doorman, guestman, offerman, orderman, otp_totp, payman, refs, sessions, shop, stockman, storefront, taggit
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying orderman.0001_initial... OK
+  Applying orderman.0002_rename_session_to_sale_session... OK
+  Applying orderman.0003_rotulos_em_portugues... OK
+  Applying orderman.0004_alter_sessionitem_sku... OK
+  Applying cashman.0001_initial... OK
+  Applying taggit.0001_initial... OK
+  Applying taggit.0002_auto_20150616_2121... OK
+  Applying taggit.0003_taggeditem_add_unique_index... OK
+  Applying taggit.0004_alter_taggeditem_content_type_alter_taggeditem_tag... OK
+  Applying taggit.0005_auto_20220424_2025... OK
+  Applying taggit.0006_rename_taggeditem_content_type_object_id_taggit_tagg_content_8fc721_idx... OK
+  Applying offerman.0001_initial... OK
+  Applying backstage.0001_initial... OK
+  Applying backstage.0002_initial... OK
+  Applying backstage.0003_cashmovement_approved_by... OK
+  Applying backstage.0004_ovenrun... OK
+  Applying backstage.0005_alter_dayclosing_options... OK
+  Applying backstage.0006_historicalsale_historicalsaleitem... OK
+  Applying backstage.0007_biview... OK
+  Applying backstage.0008_day_context... OK
+  Applying backstage.0009_shelf_outage... OK
+  Applying backstage.0010_outage_reason... OK
+  Applying backstage.0011_business_day... OK
+  Applying backstage.0012_operation_episode... OK
+  Applying backstage.0013_cashmovement_receipt... OK
+  Applying backstage.0014_alter_cashshift_difference_q... OK
+  Applying backstage.0015_rotulos_em_portugues... OK
+  Applying backstage.0016_rotulos_em_portugues... OK
+  Applying backstage.0017_remove_daycontext_is_holiday_eve_and_more... OK
+  Applying backstage.0018_daycontext_eve_of... OK
+  Applying backstage.0019_retire_cash_adjustment... OK
+  Applying backstage.0020_cash_movement_labels... OK
+  Applying backstage.0021_consumptionrole_seatingspot_productconsumptiontag... OK
+  Applying backstage.0022_consumptionrole_beverage... OK
+  Applying backstage.0023_consumption_eat_in_weight... OK
+  Applying backstage.0024_importbatch... OK
+  Applying backstage.0025_aliases... OK
+  Applying backstage.0026_dailysalesfact... OK
+  Applying backstage.0027_bi_alerts... OK
+  Applying backstage.0028_bi_alerts_3_to_5... OK
+  Applying backstage.0029_bi_scenario_report... OK
+  Applying backstage.0030_cashman_backfill_and_cut...INFO 2026-09-11 07:03:26,206 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+ OK
+  Applying backstage.0031_alert_cash_shift_open_at_closing... OK
+  Applying backstage.0032_alert_payment_disputed... OK
+  Applying backstage.0033_alert_cash_sale_after_shift_close... OK
+  Applying backstage.0034_cash_variance_by_drawer... OK
+  Applying backstage.0035_purchase_operator_permission... OK
+  Applying backstage.0036_audit_stock_permission... OK
+  Applying backstage.0037_signinevent... OK
+  Applying backstage.0038_drawer_alerts... OK
+  Applying backstage.0039_waitlist_released_alert... OK
+  Applying backstage.0040_export_backup_permission... OK
+  Applying backstage.0041_integration_failed_alert... OK
+  Applying backstage.0042_concierge_alert_types... OK
+  Applying backstage.0043_alert_production_stock_shortfall... OK
+  Applying backstage.0044_alert_catalog_hidden_by_inactive_collection... OK
+  Applying backstage.0045_alert_unhandled_exception_and_config_drift... OK
+  Applying backstage.0046_alert_legal_parameter_stale... OK
+  Applying backstage.0047_alert_types_do_codigo... OK
+  Applying backstage.0048_production_capability_permissions... OK
+  Applying backstage.0049_operator_alert_audience... OK
+  Applying backstage.0050_ovenrun_idempotency_keys... OK
+  Applying backstage.0051_alter_ovenrun_refs... OK
+  Applying backstage.0052_operatoralert_ack_audit... OK
+  Applying backstage.0053_backfill_production_stock_shortfall_audience... OK
+  Applying backstage.0054_resolve_historical_production_low_yield... OK
+  Applying backstage.0055_dayclosing_correct_production_qc... OK
+  Applying backstage.0056_production_quality_communication_alert... OK
+  Applying backstage.0057_quality_hold_risk_alerts... OK
+  Applying backstage.0036_operatoralert_marketing_types... OK
+  Applying backstage.0058_merge_marketing_excellence... OK
+  Applying backstage.0059_alter_operatoralert_type... OK
+  Applying cashman.0002_courier_change... OK
+  Applying cashman.0003_entry_one_line_per_order... OK
+  Applying cashman.0004_account_settled... OK
+  Applying cashman.0005_shift_custody_is_the_drawer... OK
+  Applying backstage.0058_printagentcredential_printjob_printattempt... OK
+  Applying backstage.0060_merge_20260910_2002... OK
+  Applying backstage.0061_delivery_device... OK
+  Applying buyman.0001_initial... OK
+  Applying buyman.0002_suppliermaterialcost_buyman_cost_positive... OK
+  Applying buyman.0003_alter_material_sku_alter_supplier_ref... OK
+  Applying buyman.0004_materialconversion... OK
+  Applying buyman.0005_suppliermaterialcost_conversion_and_more... OK
+  Applying buyman.0006_materialconversion_created_by... OK
+  Applying buyman.0007_alter_supplier_ref... OK
+  Applying buyman.0008_supplier_trade_name_alter_supplier_email_and_more... OK
+  Applying buyman.0009_contacts_from_supplier_metadata... OK
+  Applying craftsman.0001_initial... OK
+  Applying craftsman.0002_workorderitem_batch_ref_and_more... OK
+  Applying craftsman.0003_workorderitem_crafting_wo_quality_ae926b_idx_and_more... OK
+  Applying craftsman.0004_alter_recipe_ref_alter_recipeitem_input_sku_and_more... OK
+  Applying craftsman.0005_backfill_stock_ledger_markers... OK
+  Applying craftsman.0006_alter_recipe_output_sku_alter_recipeitem_input_sku... OK
+  Applying craftsman.0007_recipe_book... OK
+  Applying craftsman.0008_alter_workorderevent_kind... OK
+  Applying craftsman.0009_alter_workorderevent_kind... OK
+  Applying guestman.0001_initial... OK
+  Applying customer_consent.0001_initial... OK
+  Applying customer_consent.0002_consent_evidence_events... OK
+  Applying customer_identifiers.0001_initial... OK
+  Applying customer_insights.0001_initial... OK
+  Applying customer_insights.0002_alter_customerinsight_rfm_segment... OK
+  Applying customer_insights.0003_alter_customerinsight_rfm_segment... OK
+  Applying customer_insights.0004_customerinsight_audience_indexes... OK
+  Applying customer_loyalty.0001_initial... OK
+  Applying customer_merge.0001_initial... OK
+  Applying customer_merge.0002_rotulos_em_portugues... OK
+  Applying customer_preferences.0001_initial... OK
+  Applying customer_timeline.0001_initial... OK
+  Applying django_eventstream.0001_initial... OK
+  Applying doorman.0001_initial... OK
+  Applying doorman.0002_passkey... OK
+  Applying doorman.0003_rotulos_em_portugues... OK
+  Applying doorman.0004_trusted_device_station... OK
+  Applying guestman.0002_rename_customer_group_to_price_tier... OK
+  Applying guestman.0003_customer_tags... OK
+  Applying guestman.0004_alter_customer_ref... OK
+  Applying offerman.0002_alter_product_sku... OK
+  Applying offerman.0003_collection_metadata... OK
+  Applying otp_totp.0001_initial... OK
+  Applying otp_totp.0002_auto_20190420_0723... OK
+  Applying otp_totp.0003_add_timestamps... OK
+  Applying payman.0001_initial... OK
+  Applying payman.0002_rotulos_em_portugues... OK
+  Applying payman.0003_motivo_do_reembolso... OK
+  Applying payman.0004_estorno_idempotente... OK
+  Applying payman.0005_account_method... OK
+  Applying payman.0006_formas_de_pagamento_do_balcao... OK
+  Applying refs.0001_initial... OK
+  Applying refs.0002_alter_refsequence_sequence_name... OK
+  Applying sessions.0001_initial... OK
+  Applying stockman.0001_initial... OK
+  Applying stockman.0002_batch_nonconformity_percent_and_more... OK
+  Applying stockman.0003_batch_quality_grade_ref... OK
+  Applying shop.0001_initial... OK
+  Applying shop.0002_alter_campaign_audience_rules_alter_campaign_trigger... OK
+  Applying shop.0003_announcement_occurrence_key_and_more... OK
+  Applying shop.0004_alter_campaign_schedule... OK
+  Applying shop.0005_announcement_rejected_at_announcement_rejected_by_and_more... OK
+  Applying shop.0006_campaign_promotion_ref... OK
+  Applying shop.0007_shop_brand_voice... OK
+  Applying shop.0008_alter_campaign_platforms... OK
+  Applying shop.0009_campaign_audience_match... OK
+  Applying shop.0010_employee_rule_price_tier_param... OK
+  Applying shop.0011_alter_campaign_audience_rules... OK
+  Applying shop.0012_qualitydefect_qualitygrade... OK
+  Applying shop.0013_quality_catalog_seed... OK
+  Applying shop.0014_quality_refs_to_english... OK
+  Applying shop.0015_alter_campaign_trigger_filter... OK
+  Applying shop.0016_qualitygrade_quality_grade_markdown_at_most_100... OK
+  Applying shop.0017_ruleconfig_help_text_example... OK
+  Applying shop.0018_quality_defect_hints_sentence_case... OK
+  Applying shop.0019_alter_campaign_trigger... OK
+  Applying shop.0020_rotulos_em_portugues... OK
+  Applying shop.0021_alter_channel_ref... OK
+  Applying shop.0022_shoppurchase... OK
+  Applying shop.0023_alter_usernotification_category... OK
+  Applying shop.0024_cancel_advanced_order_permission... OK
+  Applying shop.0025_concierge_conversation... OK
+  Applying shop.0026_conversation_flags... OK
+  Applying shop.0027_attribute_definition... OK
+  Applying shop.0028_seed_attribute_definitions... OK
+  Applying shop.0029_product_affinity... OK
+  Applying shop.0030_seed_suggestion_rules... OK
+  Applying shop.0031_enable_substitute_rule... OK
+  Applying shop.0032_forget_rules_cache... OK
+  Applying shop.0033_rename_legacy_attribute_keys... OK
+  Applying shop.0034_attribute_extends_from_source... OK
+  Applying shop.0035_promessa_que_a_casa_honra... OK
+  Applying shop.0036_devolve_lactose_e_vegetariano... OK
+  Applying shop.0037_contact_release... OK
+  Applying shop.0038_qualitygrade_is_active... OK
+  Applying shop.0039_backfill_batch_quality_grade_ref... OK
+  Applying shop.0040_quality_grade_labels... OK
+  Applying shop.0041_enable_remote_waitlist_notifications... OK
+  Applying shop.0042_freeze_active_hold_quality_policy... OK
+  Applying shop.0043_announcement_status_superseded... OK
+  Applying shop.0023_audience_snapshot... OK
+  Applying shop.0024_marketing_capabilities... OK
+  Applying shop.0025_marketing_test_receipt... OK
+  Applying shop.0026_marketing_command_receipt... OK
+  Applying shop.0027_marketing_approval_outbox... OK
+  Applying shop.0028_marketing_transactional_transitions... OK
+  Applying shop.0029_marketing_outbox_recovery... OK
+  Applying shop.0030_marketing_delivery_ledger... OK
+  Applying shop.0031_marketing_attempt_outcomes... OK
+  Applying shop.0032_marketing_delivery_leases... OK
+  Applying shop.0033_marketing_delivery_aggregate... OK
+  Applying shop.0034_marketing_delivery_recovery... OK
+  Applying shop.0035_marketing_security_authorization... OK
+  Applying shop.0036_marketing_platform_configuration... OK
+  Applying shop.0037_user_notification_lifecycle... OK
+  Applying shop.0038_alter_announcementtemplate_use_ai_generation_and_more... OK
+  Applying shop.0039_campaign_version_and_fire_audit... OK
+  Applying shop.0044_merge_marketing_excellence... OK
+  Applying shop.0045_alter_announcement_status... OK
+  Applying shop.0046_rotulos_auditoria_marketing... OK
+  Applying shop.0047_rotulos_campos_auditoria_marketing... OK
+  Applying storefront.0001_initial... OK
+  Applying storefront.0002_rotulos_em_portugues... OK
+  Applying storefront.0003_stock_alert_consent_evidence... OK
+
+DEBUG 2026-09-11 07:03:38,819 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 07:03:38,819 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 07:03:38,819 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 07:03:38,820 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 07:03:38,842 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 07:03:38,843 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 07:03:38,843 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 07:03:38,844 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 07:03:38,848 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 07:03:38,849 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 07:03:38,849 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 07:03:38,849 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 07:03:38,849 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 07:03:38,850 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 07:03:38,850 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 07:03:38,850 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 07:03:38,850 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 07:03:38,851 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 07:03:38,856 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 07:03:38,856 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+Operations to perform:
+  Target specific migration: 0060_merge_20260910_2002, from backstage
+Running migrations:
+  Rendering model states... DONE
+  Unapplying backstage.0061_delivery_device... OK
+
+DEBUG 2026-09-11 07:03:41,281 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 07:03:41,282 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 07:03:41,282 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 07:03:41,282 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 07:03:41,300 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 07:03:41,301 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 07:03:41,301 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 07:03:41,302 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 07:03:41,306 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 07:03:41,307 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 07:03:41,307 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 07:03:41,307 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 07:03:41,308 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 07:03:41,308 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 07:03:41,309 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 07:03:41,309 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 07:03:41,309 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 07:03:41,309 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 07:03:41,314 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 07:03:41,314 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+Operations to perform:
+  Target specific migration: 0061_delivery_device, from backstage
+Running migrations:
+  Applying backstage.0061_delivery_device... OK
+
+DEBUG 2026-09-11 07:03:43,587 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 07:03:43,587 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 07:03:43,588 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 07:03:43,588 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 07:03:43,605 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 07:03:43,606 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 07:03:43,607 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 07:03:43,608 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 07:03:43,612 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 07:03:43,613 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 07:03:43,613 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 07:03:43,613 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 07:03:43,613 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 07:03:43,614 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 07:03:43,614 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 07:03:43,615 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 07:03:43,615 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 07:03:43,615 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 07:03:43,619 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 07:03:43,620 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+4 objects could not be automatically imported:
+
+  shopman.shop.HistoricalRuleConfig
+  shopman.shop.HistoricalOmotenashiCopy
+  shopman.offerman.HistoricalProduct
+  shopman.offerman.HistoricalListingItem
+
+165 objects imported automatically (use -v 2 for details).
+
+
+DEBUG 2026-09-11 07:03:44,582 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 07:03:44,583 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 07:03:44,583 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 07:03:44,583 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 07:03:44,595 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 07:03:44,595 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 07:03:44,595 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 07:03:44,596 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 07:03:44,600 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 07:03:44,600 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 07:03:44,600 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 07:03:44,601 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 07:03:44,605 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 07:03:44,606 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+Operations to perform:
+  Target specific migration: 0060_merge_20260910_2002, from backstage
+Running migrations:
+  Rendering model states... DONE
+  Unapplying backstage.0061_delivery_device...Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/.orders-lab/run_script.py", line 9, in <module>
+    runpy.run_path(sys.argv[0], run_name="__main__")
+  File "<frozen runpy>", line 286, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "manage.py", line 21, in <module>
+    main()
+  File "manage.py", line 17, in main
+    execute_from_command_line(sys.argv)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/management/__init__.py", line 443, in execute_from_command_line
+    utility.execute()
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/management/__init__.py", line 437, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/management/base.py", line 420, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/management/base.py", line 464, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/management/base.py", line 111, in wrapper
+    res = handle_func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 354, in handle
+    post_migrate_state = executor.migrate(
+                         ^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/migrations/executor.py", line 143, in migrate
+    state = self._migrate_all_backwards(plan, full_plan, fake=fake)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/migrations/executor.py", line 221, in _migrate_all_backwards
+    self.unapply_migration(states[migration], migration, fake=fake)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/migrations/executor.py", line 287, in unapply_migration
+    state = migration.unapply(state, schema_editor)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/migrations/migration.py", line 193, in unapply
+    operation.database_backwards(
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/migrations/operations/special.py", line 207, in database_backwards
+    self.reverse_code(from_state.apps, schema_editor)
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/migrations/0061_delivery_device.py", line 12, in refuse_populated_inventory_removal
+    raise RuntimeError("Preserve o cadastro e a custódia das maquininhas. Rollback deve suspender despachos sem remover o inventário populado.")
+RuntimeError: Preserve o cadastro e a custódia das maquininhas. Rollback deve suspender despachos sem remover o inventário populado.
+
+PASS: empty schema round trip; populated inventory rollback refused; row and migration retained. Isolated database preserved.

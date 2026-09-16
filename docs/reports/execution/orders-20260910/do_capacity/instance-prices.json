@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Shared 1VCPU 0.5GB",
+    "slug": "apps-s-1vcpu-0.5gb",
+    "cpu_type": "SHARED",
+    "cpus": "1",
+    "memory_bytes": "536870912",
+    "usd_per_month": "5.00",
+    "usd_per_second": "0.000002066799",
+    "tier_slug": "basic",
+    "feature_preview": true,
+    "single_instance_only": true,
+    "bandwidth_allowance_gib": "50"
+  },
+  {
+    "name": "Shared 1VCPU 1GB",
+    "slug": "apps-s-1vcpu-1gb",
+    "cpu_type": "SHARED",
+    "cpus": "1",
+    "memory_bytes": "1073741824",
+    "usd_per_month": "12.00",
+    "usd_per_second": "0.000004960317",
+    "tier_slug": "professional",
+    "feature_preview": true,
+    "bandwidth_allowance_gib": "150"
+  }
+]
