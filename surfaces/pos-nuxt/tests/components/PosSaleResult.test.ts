@@ -99,6 +99,24 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(wrapper.find(`a[href="http://gestor.test/PDV-042"]`).exists()).toBe(true);
   });
 
+  it("encomenda lê de volta como e quando; balcão não", async () => {
+    const order = await mountSuspended(PosSaleResult, {
+      props: props({ result: result({ salesMode: "order", fulfillmentLabel: "Entrega · Centro", scheduleLabel: "sáb, 20/09, 10:00 às 10:30" }) }),
+    });
+    const readback = order.find("[data-order-readback]");
+    expect(readback.exists()).toBe(true);
+    expect(readback.text()).toContain("Confirme com o cliente");
+    expect(readback.text()).toContain("Entrega · Centro");
+    expect(readback.text()).toContain("sáb, 20/09, 10:00 às 10:30");
+    order.unmount();
+
+    const counter = await mountSuspended(PosSaleResult, {
+      props: props({ result: result({ salesMode: "counter", fulfillmentLabel: "Retirada", scheduleLabel: "Hoje" }) }),
+    });
+    expect(counter.find("[data-order-readback]").exists()).toBe(false);
+    counter.unmount();
+  });
+
   it("o CTA emite newSale", async () => {
     const wrapper = await mountSuspended(PosSaleResult, { props: props() });
     const cta = wrapper.findAll("button").find((b) => b.text().includes("Nova venda"));

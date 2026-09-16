@@ -35,7 +35,7 @@ import {
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import type { ScheduleWindow } from "~/presentation/schedule";
+import { scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -2620,6 +2620,14 @@ export function usePosSale(deps: PosSaleDeps) {
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
         };
+        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
+        // operador confere de relance e repete ao cliente.
+        function orderFulfillmentLabel(): string {
+          const base = receipt.fulfillmentLabel;
+          if (cart.fulfillmentType !== "delivery") return base;
+          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+          return bairro ? `${base} · ${bairro}` : base;
+        }
         const proof = paymentProofView(response.payment);
         result.value = {
           salesMode: cart.salesMode,
@@ -2638,6 +2646,13 @@ export function usePosSale(deps: PosSaleDeps) {
           // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
           // apaga os canais, e a nota autoriza depois — segundos ou minutos.
           wantsPrintedInvoice: cart.receiptChannels.includes("print"),
+          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
+          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
+          // data, a janela e o bairro, e a tela de resultado precisa deles.
+          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
+          scheduleLabel: cart.salesMode === "order"
+            ? scheduleLabel(cart.deliveryDate, windowLabel(deliverySlots.value, cart.deliveryTimeSlot), scheduleToday.value)
+            : "",
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) {

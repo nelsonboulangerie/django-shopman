@@ -12,6 +12,7 @@ import {
   autoAdvanceSeconds,
   changeDisplay as toChangeDisplay,
   enterAdvances,
+  orderReadback,
   paymentFailed,
   pixAwaiting,
   type PixPollStatus,
@@ -39,6 +40,7 @@ const emit = defineEmits<{
   paymentNotice: ["send" | "resend"];
 }>();
 
+const readback = computed(() => orderReadback(props.result));
 const title = computed(() => props.result.salesMode === "order"
   ? paymentFailed(props.result.payment) ? "Encomenda registrada, cobrança não criada" : "Encomenda registrada"
   : saleResultTitle(props.result.receipt.customerName, props.result.payment));
@@ -115,6 +117,26 @@ function onNewSale() {
         Pedido <span class="font-mono">{{ result.orderRef }}</span>
         <template v-if="result.receipt.tabDisplay"> · Comanda {{ result.receipt.tabDisplay }}</template>
         · {{ result.receipt.totalDisplay }}
+      </p>
+    </div>
+
+    <!-- LEITURA DE VOLTA da encomenda: como e quando, ditos em voz alta antes
+         de desligar o telefone. É a última chance de pegar um "era sábado, não
+         sexta" — depois disso o combinado só existe no Gestor. -->
+    <div
+      v-if="readback"
+      class="grid w-full max-w-md gap-2 rounded-md border bg-card p-4 text-left"
+      data-order-readback
+      role="status"
+    >
+      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Confirme com o cliente</p>
+      <p v-if="readback.fulfillment" class="flex items-center gap-2 text-base font-semibold">
+        <Icon :name="readback.fulfillment.startsWith('Entrega') ? 'lucide:bike' : 'lucide:store'" class="size-5 shrink-0 text-muted-foreground" />
+        {{ readback.fulfillment }}
+      </p>
+      <p v-if="readback.schedule" class="flex items-center gap-2 text-base font-semibold">
+        <Icon name="lucide:calendar-clock" class="size-5 shrink-0 text-muted-foreground" />
+        {{ readback.schedule }}
       </p>
     </div>
 
