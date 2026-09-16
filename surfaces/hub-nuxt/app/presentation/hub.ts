@@ -7,6 +7,23 @@ export function tileIcon(icon: string): string {
   return icon.startsWith("lucide:") ? icon : `lucide:${icon}`;
 }
 
+/**
+ * O ícone REAL do app: o PNG da família PWA que cada superfície publica em
+ * `/pwa/pwa-192x192.png` (ver operator-kit/PWA_ICONS.md). A Central não copia o
+ * arquivo — aponta para a origem do próprio tile, então ícone e app nunca divergem.
+ * A Loja (`external`) também publica a família. Devolve `null` para URL que não se
+ * resolve; a tela cai no Lucide (`tileIcon`).
+ */
+export const PWA_ICON_PATH = "/pwa/pwa-192x192.png?v=2";
+
+export function tileIconUrl(tile: Pick<HubTileProjection, "url" | "kind">): string | null {
+  try {
+    return new URL(PWA_ICON_PATH, tile.url).toString();
+  } catch {
+    return null;
+  }
+}
+
 /** Launch (superfície de operador) fica na mesma aba; external (loja do cliente) abre em nova. */
 export function tileTarget(tile: Pick<HubTileProjection, "kind">): "_self" | "_blank" {
   return tile.kind === "external" ? "_blank" : "_self";

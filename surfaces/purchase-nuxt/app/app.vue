@@ -29,7 +29,8 @@ useOperatorWindowTitle("Compras");
     <OfflineBanner />
     <div v-if="canIdentify" class="sticky top-0 hidden h-screen shrink-0 print:hidden md:flex">
       <OperatorRail
-        app-icon="shopping-basket"
+        app-icon="package"
+        app-icon-src="/pwa/pwa-64x64.png?v=2"
         app-label="Compras"
         :central-url="hubUrl"
         :operator-name="operator?.name"
