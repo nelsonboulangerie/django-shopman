@@ -8,7 +8,7 @@ cedo é a que cobre a MAIOR prontidão entre os itens e, só para hoje, o relóg
 Configuration lives in Shop.defaults["pickup_slots"] (admin-editable):
 
     [
-        {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+        {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
         {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
         {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
     ]
@@ -63,7 +63,7 @@ def _today_closes_at() -> time | None:
 # ── Defaults ─────────────────────────────────────────────────────────
 
 DEFAULT_SLOTS = [
-    {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
     {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
     {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
 ]
@@ -401,7 +401,7 @@ def _find_slot_by_ref(slots: list[dict], ref: str) -> dict | None:
 
 
 def slot_label(slot_ref: str | None) -> str:
-    """Customer-facing label of a configured slot ("A partir das 09h").
+    """Customer-facing label of a configured slot ("A partir das 9h").
 
     Resolves against ``Shop.defaults["pickup_slots"]`` (or the defaults);
     an unknown ref falls back to the ref itself so the surface never goes

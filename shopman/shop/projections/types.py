@@ -189,7 +189,7 @@ class PickupSlotProjection:
     """A single configured pickup time slot."""
 
     ref: str
-    label: str    # e.g. "A partir das 09h"
+    label: str    # e.g. "A partir das 9h"
     starts_at: str  # "09:00"
     enabled: bool = True
     reason: str = ""

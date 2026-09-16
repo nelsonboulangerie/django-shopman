@@ -1,11 +1,11 @@
 <script setup lang="ts">
-// FILIPETAS — o pedido remoto virando papel para o painel de parede.
+// FICHAS DE PEDIDO — o pedido remoto virando papel para o painel de parede.
 //
-// Por que esta tela mora no PDV e não no Gestor: a filipeta é PAPEL, e o papel
+// Por que esta tela mora no PDV e não no Gestor: a ficha é PAPEL, e o papel
 // só existe onde estão a bobina e o agente do balcão. O `useCounterAgent` lê a
 // sua configuração de `POSProjection.cash_drawer` (`agent_url` + `token`), que
 // é identidade de ESTAÇÃO — o Gestor não tem nenhuma, e dar uma a ele é
-// trabalho de identidade de estação, não de filipeta. Quem imprime a semana
+// trabalho de identidade de estação, não de ficha. Quem imprime a semana
 // está no balcão, em frente à impressora. A permissão, porém, é a do pedido
 // (`shop.manage_orders`, que o grupo Caixa já tem), porque o documento é do
 // pedido e não do caixa.
@@ -21,7 +21,7 @@ import {
   type TicketPreset,
 } from "~/presentation/orderTickets";
 
-useHead({ title: "Filipetas" });
+useHead({ title: "Fichas de pedido" });
 
 const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal();
 const { operator: activeOperator, lock } = useOperatorLock("cashman.operate_pos");
@@ -67,7 +67,7 @@ async function goToCashSession() {
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
       <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
         <RailToggle />
-        <h1 class="min-w-0 truncate text-lg font-semibold">Filipetas</h1>
+        <h1 class="min-w-0 truncate text-lg font-semibold">Fichas de pedido</h1>
         <span class="ml-auto truncate text-sm text-muted-foreground">
           {{ rangeLabel(tickets.range.value, tickets.today) }}
         </span>
@@ -147,7 +147,7 @@ async function goToCashSession() {
             <Icon name="lucide:printer-off" class="mt-0.5 size-4 shrink-0" />
             <p>
               {{ tickets.printerUnavailableReason.value }}
-              As filipetas saem no balcão que tem impressora.
+              As fichas saem no balcão que tem impressora.
             </p>
           </section>
 
@@ -206,7 +206,7 @@ async function goToCashSession() {
                 <UiButton
                   variant="ghost"
                   size="icon-sm"
-                  :aria-label="`Imprimir a filipeta de ${row.ref}`"
+                  :aria-label="`Imprimir a ficha do pedido ${row.ref}`"
                   :disabled="tickets.printingRef.value === row.ref"
                   :loading="tickets.printingRef.value === row.ref"
                   @click="tickets.printOne(row.ref)"

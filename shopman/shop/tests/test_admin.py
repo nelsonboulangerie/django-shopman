@@ -262,7 +262,7 @@ class TestShopAdminDefaults:
         data["defaults_pickup_history_days"] = "45"
         data["defaults_pickup_fallback_slot"] = "slot-09"
         data["defaults_pickup_slot_1_ref"] = "slot-09"
-        data["defaults_pickup_slot_1_label"] = "A partir das 09h"
+        data["defaults_pickup_slot_1_label"] = "A partir das 9h"
         data["defaults_pickup_slot_1_starts_at"] = "09:00"
         data["defaults_pickup_slot_2_ref"] = "slot-12"
         data["defaults_pickup_slot_2_label"] = "A partir das 12h"
@@ -288,7 +288,7 @@ class TestShopAdminDefaults:
         assert saved.defaults["notifications"] == {"backend": "manychat", "other": "kept"}
         assert saved.defaults["max_preorder_days"] == 21
         assert saved.defaults["pickup_slots"][:2] == [
-            {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+            {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
             {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
         ]
         assert saved.defaults["pickup_slots"][-1] == {

@@ -245,7 +245,7 @@ def test_a_ENCOMENDA_sai_nos_slots_canonicos_da_casa(loja):
 
     assert review.delivery_date == amanha.isoformat()
     assert [s["ref"] for s in review.delivery_slots] == ["slot-09"]
-    assert review.delivery_slots[0]["label"] == "A partir das 09h"
+    assert review.delivery_slots[0]["label"] == "A partir das 9h"
 
 
 def test_data_em_branco_e_hoje_pelo_relogio_da_loja(loja):

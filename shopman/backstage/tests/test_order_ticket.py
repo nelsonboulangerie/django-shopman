@@ -162,7 +162,7 @@ def test_a_ENCOMENDA_imprime_o_rotulo_do_slot_e_NUNCA_o_ref(shop):
 
     papel = _texto(order_ticket(order))
 
-    assert "A PARTIR DAS 09H" in papel
+    assert "A PARTIR DAS 9H" in papel
     assert "slot-09" not in papel.lower()
 
 

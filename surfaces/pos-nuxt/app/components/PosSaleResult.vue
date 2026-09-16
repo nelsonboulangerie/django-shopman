@@ -30,12 +30,16 @@ const props = defineProps<{
   printingDanfe: boolean;
   /** Reenvio do link de pagamento em voo (só o pedido de link usa). */
   resendingLink?: boolean;
+  /** A ficha do pedido (encomenda) está saindo na bobina. */
+  printingTicket?: boolean;
 }>();
 
 const emit = defineEmits<{
   newSale: [];
   printReceipt: [];
   printDanfe: [];
+  /** ENCOMENDA: a ficha do pedido para o painel de parede. */
+  printTicket: [];
   cancelSale: [];
   paymentNotice: ["send" | "resend"];
 }>();
@@ -66,7 +70,7 @@ function cancelCountdown() {
   countdown.value = 0;
 }
 onMounted(() => {
-  // A encomenda precisa ficar disponível para conferir e imprimir a filipeta.
+  // A encomenda precisa ficar disponível para conferir e imprimir a ficha do pedido.
   if (props.result.salesMode === "order") return;
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   const seconds = autoAdvanceSeconds({
@@ -211,6 +215,17 @@ function onNewSale() {
         >
           <Icon name="lucide:printer" class="size-4" />
           Imprimir DANFE
+        </UiButton>
+        <!-- A FICHA DO PEDIDO mora AQUI, com as outras saídas de papel. Era um
+             cartaz separado acima da tela, como se fosse outra coisa. -->
+        <UiButton
+          v-if="result.salesMode === 'order'"
+          variant="outline" size="sm" class="gap-1.5"
+          :disabled="printingTicket"
+          @click="emit('printTicket')"
+        >
+          <Icon name="lucide:printer" class="size-4" />
+          {{ printingTicket ? "Imprimindo…" : "Imprimir ficha do pedido" }}
         </UiButton>
         <UiButton v-if="result.salesMode === 'order'" variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
           <Icon name="lucide:external-link" class="size-4" />

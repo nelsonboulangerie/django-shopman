@@ -224,7 +224,7 @@ class TestDuasGrades:
 
         assert [w["ref"] for w in ctx["windows"]] == ["slot-09", "slot-12", "slot-15"]
         assert [w["label"] for w in ctx["windows"]] == [
-            "A partir das 09h", "A partir das 12h", "A partir das 15h",
+            "A partir das 9h", "A partir das 12h", "A partir das 15h",
         ]
         assert ctx["grid"] == "canonical"
         assert ctx["is_today"] is False

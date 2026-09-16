@@ -13,17 +13,17 @@ describe("pagamento da encomenda pelo contrato existente", () => {
     expect(orderPaymentGuidance({ salesMode: "counter", fulfillmentType: "pickup", collection: "terminal", methods: [] })).toBe("");
     expect(collectionsForFulfillment(collections, "pickup", "counter").map((entry) => entry.ref)).toEqual(["terminal"]);
     expect(collectionsForFulfillment(collections, "pickup", "order").map((entry) => entry.ref)).toEqual(["terminal", "on_delivery"]);
-    expect(paymentCollectionLabel(collections[1]!, "order", "pickup")).toBe("Pagamento na retirada");
-    expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "on_delivery", methods: ["cash"] })).toContain("cobrar na retirada");
+    expect(paymentCollectionLabel(collections[1]!, "order", "pickup")).toBe("Na retirada");
+    expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "on_delivery", methods: ["cash"] })).toContain("quando o cliente buscar");
   });
   it("distingue antecipado de cobrança futura na entrega", () => {
-    expect(collections.map((entry) => paymentCollectionLabel(entry, "order"))).toEqual(["Pagamento antecipado", "Cobrar na entrega"]);
-    expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "delivery", collection: "on_delivery", methods: ["credit"] })).toContain("pendente até o recebimento ser registrado no Gestor");
+    expect(collections.map((entry) => paymentCollectionLabel(entry, "order"))).toEqual(["No balcão", "Na entrega"]);
+    expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "delivery", collection: "on_delivery", methods: ["credit"] })).toContain("o entregador recebe e o Gestor registra");
   });
   it("explica retirada pendente via gateway sem dizer que dinheiro já foi recebido", () => {
-    expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: ["cash"] })).toContain("registram recebimento agora");
+    expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: ["cash"] })).toBe("Cobra agora, no balcão.");
     for (const method of ["pix", "link"]) {
-      expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: [method] })).toContain("pendente até a confirmação do provedor de pagamento");
+      expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: [method] })).toContain("até o provedor confirmar");
     }
   });
 });
