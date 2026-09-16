@@ -82,9 +82,10 @@ export function scheduleLabel(
   today: string,
 ): string {
   const agendado = Boolean(deliveryDate) && deliveryDate !== today;
-  if (!agendado) return windowLabel ? `Hoje, ${windowLabel}` : (deliveryDate ? "Hoje · horário a combinar" : "Sem agendamento");
+  const janela = inSentence(windowLabel);
+  if (!agendado) return janela ? `Hoje, ${janela}` : (deliveryDate ? "Hoje · horário a combinar" : "Sem agendamento");
   const dia = dateLabel(deliveryDate, today);
-  return windowLabel ? `${dia}, ${windowLabel}` : dia;
+  return janela ? `${dia}, ${janela}` : dia;
 }
 
 /** O pedido é para outro dia? Muda o ícone e o realce do botão. */
@@ -95,7 +96,28 @@ export function isScheduled(deliveryDate: string, today: string): boolean {
 /** O rótulo de uma janela pelo ref, ou o próprio ref quando ela sumiu da grade. */
 export function windowLabel(windows: ScheduleWindow[], ref: string): string {
   if (!ref) return "";
-  return windows.find((w) => w.ref === ref)?.label || ref;
+  return windows.find((w) => w.ref === ref)?.label || humanizeWindowRef(ref);
+}
+
+/**
+ * O ref da janela NUNCA vira texto de tela. Quando a lista de janelas ainda não
+ * chegou (comanda reaberta, resultado da venda, agenda não buscada), o rótulo
+ * saía como "slot-09" — o dono viu "Hoje, slot-09" no balcão. Os refs da casa
+ * são `slot-HH` (retirada, "a partir das 9h") ou `HH:MM-HH:MM` (janela de
+ * entrega); qualquer outro formato vira "horário combinado", nunca o código.
+ */
+export function humanizeWindowRef(ref: string): string {
+  const value = (ref || "").trim();
+  const fromHour = /^slot-(\d{1,2})$/.exec(value);
+  if (fromHour) return `a partir das ${Number(fromHour[1])}h`;
+  const range = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(value);
+  if (range) return `${Number(range[1])}:${range[2]} às ${Number(range[3])}:${range[4]}`;
+  return value ? "horário combinado" : "";
+}
+
+/** "A partir das 9h" cabe num botão; dentro de "Hoje, …" começa minúsculo. */
+function inSentence(label: string): string {
+  return label.replace(/^A partir/, "a partir");
 }
 
 /**

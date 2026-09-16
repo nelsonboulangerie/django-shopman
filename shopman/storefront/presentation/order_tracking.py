@@ -491,7 +491,7 @@ def _eta_display(eta_at: str | None) -> str | None:
 
 
 def _when_display(commitment_date_iso: str | None, slot_ref: str | None) -> str | None:
-    """"sábado, 19/07 · A partir das 09h" — a data e o slot como o cliente
+    """"sábado, 19/07 · A partir das 9h" — a data e o slot como o cliente
     escolheu no checkout (mesma composição do ``whenSummary`` da loja)."""
     date_part = _commitment_date_display(commitment_date_iso)
     if not date_part:
