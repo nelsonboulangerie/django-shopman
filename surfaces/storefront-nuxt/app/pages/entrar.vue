@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeCanContinue, welcomeNameValue, welcomeProfilePatch, type AuthErrorView, type WelcomeGateInput } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
 
@@ -53,6 +53,12 @@ const showDebugOtp = ref(true)
 const verified = ref(false)
 const welcomeNeeded = ref(false)
 const welcomeName = ref('')
+// As duas perguntas do gate (o servidor diz o que falta). A caixa de novidades
+// nasce DESLIGADA: consentimento de marketing é gesto afirmativo, nunca padrão.
+const welcomeAsksName = ref(true)
+const welcomeAsksMarketing = ref(false)
+const welcomeMarketing = ref(false)
+const welcomeBirthday = ref('')
 const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 
@@ -120,6 +126,8 @@ const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Vamos entrar?')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
+  // Só a pergunta de novidades: o título não pode prometer um campo de nome que não vem.
+  if (!welcomeAsksName.value) return 'Antes de entrar'
   return copyTitle(authCopy.value?.name_heading, 'Como quer ser chamado?')
 })
 const stepDescription = computed(() => {
@@ -131,6 +139,7 @@ const stepDescription = computed(() => {
     return ''
   }
   if (step.value === 'code') return copyMessage(authCopy.value?.code_help, 'Você pode colar o código. Ao completar, a confirmação é automática.')
+  if (!welcomeAsksName.value) return 'Uma pergunta rápida. Você muda quando quiser.'
   return copyMessage(authCopy.value?.name_subtitle, 'Pode ser só o primeiro nome ou um apelido.')
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
@@ -164,7 +173,20 @@ const debugOtpValidUntil = computed(() => otpValidUntilDisplay(debugOtpExpiresAt
 const debugOtpDigits = computed(() => debugOtpCode.value.split(''))
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
 const requestedPhoneDisplay = computed(() => phoneDisplay(requestedPhone.value))
-const canContinueWelcome = computed(() => !!welcomeNameValue(welcomeName.value) && !pending.value)
+const welcomeGate = computed<WelcomeGateInput>(() => ({
+  asksName: welcomeAsksName.value,
+  asksMarketing: welcomeAsksMarketing.value,
+  name: welcomeName.value,
+  marketingOptIn: welcomeMarketing.value,
+  birthday: welcomeBirthday.value
+}))
+const canContinueWelcome = computed(() => welcomeCanContinue(welcomeGate.value) && !pending.value)
+// `max` do campo de data: hoje, no fuso do aparelho. Aniversário no futuro não existe.
+const welcomeBirthdayMax = computed(() => {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+})
 // Saudação personalizada de retorno: "Bem-vindo de volta, {primeiro nome}!" quando
 // já sabemos o nome (recorrente); sem nome, cai em "Bem-vindo de volta!". O dado vem
 // da própria resposta de auth (customer_name → session.customerName).
@@ -294,7 +316,12 @@ async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
 
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
   welcomeNeeded.value = true
+  // Payload sem os `asks_*` (versão anterior do servidor): era o nome que faltava.
+  welcomeAsksName.value = sessionResponse.welcome_asks_name ?? true
+  welcomeAsksMarketing.value = !!sessionResponse.welcome_asks_marketing
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
+  welcomeMarketing.value = false
+  welcomeBirthday.value = ''
 }
 
 // Welcome gate a partir da SESSÃO (não de uma resposta de verificação): quem
@@ -303,7 +330,11 @@ function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
 function enterWelcomeGateFromSession () {
   verified.value = true
   welcomeNeeded.value = true
+  welcomeAsksName.value = session.welcomeAsksName.value || !session.welcomeAsksMarketing.value
+  welcomeAsksMarketing.value = session.welcomeAsksMarketing.value
   welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
+  welcomeMarketing.value = false
+  welcomeBirthday.value = ''
 }
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
@@ -412,28 +443,64 @@ async function verifyCode () {
   }
 }
 
+// A resposta da pergunta de novidades. `whatsapp: true` concede o opt-in SÓ
+// nesse canal; `false` grava só o carimbo "perguntado" — nunca um opt-out, porque
+// "deixar para depois" não é "não quero" (um opt-out gravado cala até o recado
+// do próprio pedido naquele canal). Ver `answer_marketing_prompt` no servidor.
+async function answerMarketingPrompt (whatsapp: boolean) {
+  return $fetch<{ ok: boolean, whatsapp_opted_in: boolean }>(apiPath('/api/v1/account/marketing-prompt/'), {
+    method: 'POST',
+    headers: await csrfHeaders(),
+    credentials: 'include',
+    body: { whatsapp }
+  })
+}
+
 async function submitWelcome () {
-  const name = welcomeNameValue(welcomeName.value)
-  if (!name || pending.value) return
+  if (pending.value || !welcomeCanContinue(welcomeGate.value)) return
+  const name = welcomeAsksName.value ? welcomeNameValue(welcomeName.value) : ''
+  const patch = welcomeProfilePatch(welcomeGate.value)
   pending.value = true
   error.value = null
   try {
-    await $fetch(apiPath('/api/v1/account/profile/'), {
-      method: 'PATCH',
-      headers: await csrfHeaders(),
-      credentials: 'include',
-      body: { first_name: name }
-    })
-    session.setIdentity({ name, requiresWelcome: false })
+    if (patch) {
+      // O PATCH do perfil exige `first_name`. Quando o nome não foi pedido (só o
+      // aniversário vai), o nome que vale é o que já está no perfil — nunca o
+      // nome completo da sessão, que viraria "Ana Silva Silva".
+      if (!patch.first_name) {
+        const profile = await $fetch<{ first_name?: string }>(apiPath('/api/v1/account/profile/'), { credentials: 'include' })
+        patch.first_name = (profile?.first_name || '').trim() || (session.customerName.value || '').trim().split(/\s+/)[0] || ''
+      }
+      await $fetch(apiPath('/api/v1/account/profile/'), {
+        method: 'PATCH',
+        headers: await csrfHeaders(),
+        credentials: 'include',
+        body: patch
+      })
+    }
+    if (welcomeAsksMarketing.value) {
+      const answer = await answerMarketingPrompt(welcomeMarketing.value)
+      // A caixa estava ligada e o servidor não concedeu (menor de 18 pela data):
+      // dizer, em vez de deixar a pessoa achar que vai receber.
+      if (welcomeMarketing.value && answer && answer.whatsapp_opted_in === false && import.meta.client) {
+        useSonner.info('Novidades só vão para maiores de 18. Sua resposta ficou guardada.')
+      }
+    }
+    session.setIdentity({ name: name || undefined, requiresWelcome: false })
     await navigateTo(nextUrl.value)
   } catch (e) {
-    error.value = fetchErrorView(e, 'Não foi possível salvar seu nome.')
+    error.value = fetchErrorView(e, welcomeAsksName.value ? 'Não foi possível salvar seu nome.' : 'Não foi possível salvar sua resposta.')
   } finally {
     pending.value = false
   }
 }
 
 async function skipWelcome () {
+  // "Deixar para depois" responde à pergunta de novidades com o carimbo, e só
+  // com ele: sem opt-out. Se o carimbo falhar, o gate pergunta de novo na próxima
+  // entrada — melhor do que prender a pessoa aqui.
+  if (welcomeAsksMarketing.value) await answerMarketingPrompt(false).catch(() => null)
+  session.setIdentity({ requiresWelcome: false })
   await navigateTo(nextUrl.value)
 }
 
@@ -673,7 +740,7 @@ useSeoMeta({
         </form>
 
         <form v-else ref="welcomeForm" class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
-          <UiField class="rounded-lg border bg-card p-4">
+          <UiField v-if="welcomeAsksName" class="rounded-lg border bg-card p-4">
             <UiFieldLabel for="welcome-name">Nome</UiFieldLabel>
             <UiInput
               id="welcome-name"
@@ -683,6 +750,36 @@ useSeoMeta({
               placeholder="Primeiro nome ou apelido"
             />
           </UiField>
+
+          <!-- Novidades: UMA chave, separada de qualquer "aceito os termos", que nasce
+               desligada (LGPD art. 8 §4). Ligada, pede a data de nascimento: novidades
+               só vão para maiores de 18, e a data é o que prova. Desligada, não pede
+               nada e não grava recusa nenhuma — só que a pergunta foi feita. -->
+          <div v-if="welcomeAsksMarketing" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-marketing>
+            <p class="shop-body font-semibold">Novidades da Nelson</p>
+            <UiFieldLabel for="welcome-marketing" class="w-full">
+              <div class="flex w-full items-center gap-4">
+                <div class="min-w-0 flex-1">
+                  <p class="shop-body font-normal">Quero receber novidades e avisos da Nelson pelo WhatsApp</p>
+                  <p class="mt-0.5 shop-meta">Você muda isso quando quiser em Conta › Preferências.</p>
+                </div>
+                <UiSwitch id="welcome-marketing" v-model="welcomeMarketing" />
+              </div>
+            </UiFieldLabel>
+            <UiField v-if="welcomeMarketing" data-login-birthday>
+              <UiFieldLabel for="welcome-birthday">Data de nascimento</UiFieldLabel>
+              <UiInput
+                id="welcome-birthday"
+                v-model="welcomeBirthday"
+                name="welcome-birthday"
+                type="date"
+                autocomplete="bday"
+                :max="welcomeBirthdayMax"
+                class="w-full max-w-full appearance-none"
+              />
+              <UiFieldDescription>Novidades só vão para maiores de 18. A data fica no seu perfil.</UiFieldDescription>
+            </UiField>
+          </div>
 
           <div class="grid gap-3">
             <UiButton type="submit" size="lg" :loading="pending" :disabled="!canContinueWelcome" icon="lucide:check" class="w-full justify-center">

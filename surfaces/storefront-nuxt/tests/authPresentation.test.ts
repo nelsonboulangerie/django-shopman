@@ -7,7 +7,10 @@ import {
   codeSentPrefix,
   otpValidUntilDisplay,
   resendCooldown,
-  welcomeNameValue
+  welcomeBirthdayValue,
+  welcomeCanContinue,
+  welcomeNameValue,
+  welcomeProfilePatch
 } from '../app/presentation/auth'
 
 describe('authStep', () => {
@@ -121,5 +124,65 @@ describe('accessLinkLanding', () => {
 
   it('does not re-wrap a destination that is already the login screen', () => {
     expect(accessLinkLanding('/entrar?welcome=1&next=%2Ffinalizar', true)).toBe('/entrar?welcome=1&next=%2Ffinalizar')
+  })
+})
+
+// ── A pergunta de novidades no gate ────────────────────────────────────────
+//
+// Medido no alpha em 16/09: 58 clientes ativos, 1 aniversário, 5 consentimentos
+// de WhatsApp. O gate passa a perguntar UMA vez; a caixa nasce desligada e, ligada,
+// exige a data de nascimento.
+
+const TODAY = new Date(2026, 8, 16)
+
+describe('welcomeBirthdayValue', () => {
+  it('accepts a real ISO date in the past', () => {
+    expect(welcomeBirthdayValue('1990-05-15', TODAY)).toBe('1990-05-15')
+    expect(welcomeBirthdayValue(' 2026-09-16 ', TODAY)).toBe('2026-09-16')
+  })
+
+  it('rejects the future, impossible dates, the 1800s and other formats', () => {
+    expect(welcomeBirthdayValue('2026-09-17', TODAY)).toBe('')
+    expect(welcomeBirthdayValue('1990-02-30', TODAY)).toBe('')
+    expect(welcomeBirthdayValue('1899-12-31', TODAY)).toBe('')
+    expect(welcomeBirthdayValue('15/05/1990', TODAY)).toBe('')
+    expect(welcomeBirthdayValue('', TODAY)).toBe('')
+  })
+})
+
+describe('welcomeCanContinue', () => {
+  const base = { asksName: false, asksMarketing: true, name: '', marketingOptIn: false, birthday: '' }
+
+  it('lets the marketing-only gate continue with the box off and no birthday', () => {
+    expect(welcomeCanContinue(base, TODAY)).toBe(true)
+  })
+
+  it('requires a birthday only once the box is on', () => {
+    expect(welcomeCanContinue({ ...base, marketingOptIn: true }, TODAY)).toBe(false)
+    expect(welcomeCanContinue({ ...base, marketingOptIn: true, birthday: '1990-05-15' }, TODAY)).toBe(true)
+    expect(welcomeCanContinue({ ...base, marketingOptIn: true, birthday: '2027-01-01' }, TODAY)).toBe(false)
+  })
+
+  it('still requires the name when the name was asked', () => {
+    expect(welcomeCanContinue({ ...base, asksName: true }, TODAY)).toBe(false)
+    expect(welcomeCanContinue({ ...base, asksName: true, name: '  Ana ' }, TODAY)).toBe(true)
+  })
+})
+
+describe('welcomeProfilePatch', () => {
+  it('sends nothing to the profile when only the question was answered', () => {
+    expect(welcomeProfilePatch({ asksName: false, asksMarketing: true, name: '', marketingOptIn: false, birthday: '' }, TODAY)).toBeNull()
+  })
+
+  it('sends the birthday alone when the name was not asked', () => {
+    expect(welcomeProfilePatch({ asksName: false, asksMarketing: true, name: '', marketingOptIn: true, birthday: '1990-05-15' }, TODAY)).toEqual({ birthday: '1990-05-15' })
+  })
+
+  it('sends the name and the birthday together when both were asked', () => {
+    expect(welcomeProfilePatch({ asksName: true, asksMarketing: true, name: ' Ana  Silva ', marketingOptIn: true, birthday: '1990-05-15' }, TODAY)).toEqual({ first_name: 'Ana Silva', birthday: '1990-05-15' })
+  })
+
+  it('never sends a birthday the box did not ask for', () => {
+    expect(welcomeProfilePatch({ asksName: true, asksMarketing: true, name: 'Ana', marketingOptIn: false, birthday: '1990-05-15' }, TODAY)).toEqual({ first_name: 'Ana' })
   })
 })

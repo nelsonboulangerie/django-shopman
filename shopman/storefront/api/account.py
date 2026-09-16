@@ -970,6 +970,58 @@ class NotificationPreferenceToggleView(APIView):
         })
 
 
+# A frase que a pessoa lê ao lado da chave no gate de boas-vindas
+# (`surfaces/storefront-nuxt/app/pages/entrar.vue`, bloco `data-login-marketing`).
+# É gravada como evidência do consentimento, então tem de ser a MESMA da tela —
+# o teste de contrato lê o .vue e confere. Mudou a copy? Sobe a versão.
+MARKETING_PROMPT_DISCLOSURE = (
+    "Quero receber novidades e avisos da Nelson pelo WhatsApp. "
+    "Você muda isso quando quiser em Conta › Preferências."
+)
+MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v1"
+
+
+class MarketingPromptView(APIView):
+    """POST /api/v1/account/marketing-prompt/ — a resposta da pergunta de novidades.
+
+    Corpo: ``{"whatsapp": bool}`` (ausente = ``false``). Idempotente: a primeira
+    resposta carimba ``Customer.metadata["marketing_prompt_answered_at"]`` e o
+    gate de boas-vindas para de perguntar; repetir não regrava o carimbo.
+
+    ⚠️ ``whatsapp=false`` (não marcou, ou "Deixar para depois") grava SÓ o
+    carimbo. Nunca ``opted_out``: isso é proibição, e cala até o recado do
+    próprio pedido naquele canal (`services/notification.py`). Ver
+    `account_service.answer_marketing_prompt`.
+    """
+
+    permission_classes = [AllowAny]
+    # SessionAuthentication = CSRF obrigatório no POST, como nas outras mutações da conta.
+    authentication_classes = [SessionAuthentication]
+
+    def post(self, request):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        payload = request.data if hasattr(request, "data") else {}
+        whatsapp = payload.get("whatsapp", False)
+        if type(whatsapp) is not bool:
+            return Response({"detail": "Informe se quer receber novidades.", "field": "whatsapp"}, status=400)
+        try:
+            result = account_service.answer_marketing_prompt(
+                customer.ref,
+                whatsapp=whatsapp,
+                # IP para o registro de consentimento (LGPD), pelo helper canônico.
+                ip_address=auth_service.client_ip(request),
+                disclosure_text=MARKETING_PROMPT_DISCLOSURE,
+                disclosure_version=MARKETING_PROMPT_DISCLOSURE_VERSION,
+            )
+        except account_service.MarketingPromptRefused as exc:
+            return Response({"detail": exc.detail, "field": exc.field}, status=400)
+        except account_service.AccountUnavailable:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        return Response({"ok": True, **result})
+
+
 def _devices_copy() -> dict:
     """Copy da tela de Segurança/dispositivos, resolvida do registro omotenashi
     (configurável no Admin). Fonte única — o Vue consome, sem hardcode."""

@@ -172,6 +172,13 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   Bridge ManyChat (`access/create/`, doorman Core) emite o link via `DOORMAN.ACCESS_LINK_ENTRY_URL`.
 - **Welcome gate:** **client-side no Nuxt** (flag `requires_welcome` no payload de sessão + passo
   "welcome" no `/login`). *(O `WelcomeGateMiddleware` do Django foi REMOVIDO no headless.)*
+  Abre por duas perguntas independentes, expostas em `welcome_asks_name` (nome vazio/importado sujo)
+  e `welcome_asks_marketing` (pergunta de novidades por WhatsApp nunca respondida: sem linha de
+  consentimento whatsapp e sem `Customer.metadata.marketing_prompt_answered_at`). A tela mostra só o
+  que falta; a caixa de novidades nasce desligada e, ligada, pede a data de nascimento (18+). "Sim" =
+  `PATCH account/profile/` (nome/aniversário) + `POST account/marketing-prompt/` `{whatsapp: true}`
+  (opt-in só no whatsapp); "Deixar para depois"/caixa desligada = só o carimbo, **nunca** opt-out.
+  Depois disso a chave continua em Conta › Preferências.
 - **Omotenashi:** copy única por 6 momentos (QUANDO) × 4 audiências (QUEM: anon/new/returning/vip),
   cascata `OmotenashiCopy` (admin) → `OMOTENASHI_DEFAULTS`. Alimenta home/menu/checkout/etc.
 - **SEO:** `server/routes/robots.txt.ts` (bloqueia /account /checkout /cart /login /pedido/ /tracking/

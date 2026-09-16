@@ -584,6 +584,125 @@ def _complete_notification_preferences(customer_ref: str) -> set[str]:
     return enabled_notification_channels(customer_ref)
 
 
+# ── A pergunta de marketing, feita UMA vez, na entrada ──────────────────
+#
+# Medido no banco vivo em 16/09: 58 clientes ativos, 1 com aniversário, 5 com
+# consentimento de WhatsApp. O resolvedor de audiência (`services/audience.py`)
+# exclui quem não tem `Customer.birthday` provando 18+ e quem não tem
+# `CommunicationConsent` whatsapp `opted_in` — campanha direta alcançava
+# ninguém. O consentimento passa a ser PERGUNTADO no welcome gate, uma vez por
+# cliente, e continua acessível em Conta › Preferências.
+#
+# "Já respondeu" tem duas provas, qualquer uma basta: existe linha de
+# consentimento no canal whatsapp (qualquer status — quem passou por
+# Preferências já disse o que quer) OU o carimbo abaixo em `Customer.metadata`.
+#
+# ⚠️ "Deixar para depois" e "não marquei a caixa" gravam SÓ o carimbo, nunca
+# `opted_out`. Um opt-out gravado é PROIBIÇÃO: `services/notification.py`
+# (`_revoked_notification_channels`) cala até o aviso do PRÓPRIO pedido naquele
+# canal, e a tela de Preferências avisa isso. "Depois" não é "nunca".
+MARKETING_PROMPT_CHANNEL = "whatsapp"
+MARKETING_PROMPT_ANSWERED_AT = "marketing_prompt_answered_at"
+MARKETING_PROMPT_SOURCE = "storefront_welcome"
+
+
+class MarketingPromptRefused(ValueError):
+    """A resposta veio incompleta ou não pode virar consentimento."""
+
+    def __init__(self, detail: str, *, field: str = ""):
+        super().__init__(detail)
+        self.detail = detail
+        self.field = field
+
+
+def marketing_prompt_pending(customer) -> bool:
+    """Se a loja ainda deve PERGUNTAR sobre novidades a este cliente.
+
+    Falha fechado: se a fonte de consentimento não responde, não pergunta — o
+    gate de boas-vindas não pode derrubar a sessão inteira por causa disso.
+    """
+    customer_ref = (getattr(customer, "ref", "") or "").strip()
+    if not customer_ref:
+        return False
+    metadata = getattr(customer, "metadata", None) or {}
+    if isinstance(metadata, dict) and metadata.get(MARKETING_PROMPT_ANSWERED_AT):
+        return False
+    try:
+        from shopman.guestman import ConsentService
+
+        consents = ConsentService.get_consents(customer_ref)
+    except Exception:
+        logger.warning("marketing_prompt.consent_source_unavailable customer=%s", customer_ref, exc_info=True)
+        return False
+    return not any(consent.channel == MARKETING_PROMPT_CHANNEL for consent in consents)
+
+
+def answer_marketing_prompt(
+    customer_ref: str,
+    *,
+    whatsapp: bool,
+    ip_address: str = "",
+    disclosure_text: str,
+    disclosure_version: str,
+) -> dict:
+    """Registrar a resposta da pergunta de novidades. Idempotente.
+
+    ``disclosure_text``/``disclosure_version`` são a frase EXATA que a pessoa
+    leu ao lado da chave e a versão dela: viram a evidência imutável do
+    consentimento (`CommunicationConsentEvent`). A superfície é quem sabe o que
+    mostrou — por isso ela manda, e o serviço não inventa um texto padrão.
+
+    ``whatsapp=True`` concede o consentimento de marketing SÓ nesse canal, via
+    ``ConsentService`` — e não por ``set_notification_consent``, porque aquele
+    caminho completa os outros canais com ``opted_out`` explícito
+    (`_complete_notification_preferences`). Na tela de Preferências isso é
+    coerente: as chaves estão à vista, desligadas. No gate o cliente só viu a
+    caixa do WhatsApp; gravar "não quero e-mail/SMS" por ele seria inventar
+    recusa, e calaria o recado do próprio pedido nesses canais.
+
+    Exige aniversário gravado quando concede: novidades só vão para maiores de
+    18, e a data é o que prova. Menor conhecido não recebe consentimento (LGPD
+    art. 14) — a resposta fica carimbada e o canal segue sem linha.
+    """
+    from django.utils import timezone
+    from shopman.guestman import ConsentService
+
+    from shopman.shop.services.marketing_age import is_known_minor
+
+    with transaction.atomic():
+        customer = lock_active_customer(customer_ref=customer_ref)
+        granted = False
+        if whatsapp:
+            birthday = getattr(customer, "birthday", None)
+            if birthday is None:
+                raise MarketingPromptRefused(
+                    "Informe sua data de nascimento para receber novidades.", field="birthday"
+                )
+            if not is_known_minor(birthday):
+                if not ConsentService.has_consent(customer_ref, MARKETING_PROMPT_CHANNEL):
+                    ConsentService.grant_consent(
+                        customer_ref,
+                        MARKETING_PROMPT_CHANNEL,
+                        source=MARKETING_PROMPT_SOURCE,
+                        legal_basis="consent",
+                        ip_address=ip_address or None,
+                        disclosure_text=disclosure_text,
+                        disclosure_version=disclosure_version,
+                    )
+                granted = True
+
+        metadata = dict(customer.metadata or {})
+        if not metadata.get(MARKETING_PROMPT_ANSWERED_AT):
+            metadata[MARKETING_PROMPT_ANSWERED_AT] = timezone.now().isoformat()
+            customer.metadata = metadata
+            customer.save(update_fields=["metadata", "updated_at"])
+
+    return {
+        "answered_at": metadata[MARKETING_PROMPT_ANSWERED_AT],
+        "whatsapp_opted_in": granted,
+    }
+
+
 # ── O rastro que a exclusão tem de alcançar ───────────────────────────
 #
 # O telefone É a identidade desta loja: é o único login. E ele não vive só no

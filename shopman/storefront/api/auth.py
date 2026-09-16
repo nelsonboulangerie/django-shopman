@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.services import access as access_service
+from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
 from shopman.shop.services import storefront_links
 from shopman.storefront.constants import HAS_AUTH
@@ -43,6 +44,8 @@ SessionSerializer = inline_serializer(
         "customer_phone": serializers.CharField(allow_blank=True),
         "customer_email": serializers.CharField(allow_blank=True),
         "requires_welcome": serializers.BooleanField(),
+        "welcome_asks_name": serializers.BooleanField(),
+        "welcome_asks_marketing": serializers.BooleanField(),
         "welcome_suggested_name": serializers.CharField(allow_blank=True),
     },
 )
@@ -57,17 +60,26 @@ def _session_payload(customer) -> dict:
             "customer_phone": "",
             "customer_email": "",
             "requires_welcome": False,
+            "welcome_asks_name": False,
+            "welcome_asks_marketing": False,
             "welcome_suggested_name": "",
         }
 
     customer_name = getattr(customer, "name", "") or ""
+    # O gate de boas-vindas abre por DUAS perguntas independentes: o nome
+    # (vazio ou importado sujo) e a de novidades (nunca respondida — ver
+    # `account_service.marketing_prompt_pending`). A tela mostra só o que falta.
+    asks_name = needs_confirmation(customer_name)
+    asks_marketing = account_service.marketing_prompt_pending(customer)
     return {
         "is_authenticated": True,
         "customer_ref": getattr(customer, "ref", "") or "",
         "customer_name": customer_name,
         "customer_phone": getattr(customer, "phone", "") or "",
         "customer_email": getattr(customer, "email", "") or "",
-        "requires_welcome": needs_confirmation(customer_name),
+        "requires_welcome": asks_name or asks_marketing,
+        "welcome_asks_name": asks_name,
+        "welcome_asks_marketing": asks_marketing,
         "welcome_suggested_name": clean_display_name(customer_name),
     }
 
@@ -144,7 +156,7 @@ def _record_identity_strength(request, metadata, *, customer) -> None:
     try:
         if customer is not None:
             trusted = auth_service.device_is_trusted(request, customer_uuid=customer.uuid)
-    except Exception:
+    except Exception:  # silêncio-deliberado: falha fechado para a identidade FRACA, que só reduz o que aparece
         # Na dúvida, a identidade é a FRACA: reduzir o que aparece é degradação segura;
         # assumir confiança que não se verificou não é.
         logger.debug("access_link: device trust check degraded", exc_info=True)
@@ -281,7 +293,7 @@ class AccessLinkExchangeView(APIView):
         try:
             if result.customer:
                 customer = auth_service.customer_by_uuid(result.customer.uuid)
-        except Exception:
+        except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
             logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
 
         payload = {

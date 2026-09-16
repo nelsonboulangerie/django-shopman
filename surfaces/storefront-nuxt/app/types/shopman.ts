@@ -532,6 +532,9 @@ export interface AuthSessionResponse {
   customer_phone: string
   customer_email: string
   requires_welcome?: boolean
+  // O gate de boas-vindas abre por duas perguntas independentes; a tela mostra só o que falta.
+  welcome_asks_name?: boolean
+  welcome_asks_marketing?: boolean
   welcome_suggested_name?: string
 }
 
