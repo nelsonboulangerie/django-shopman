@@ -236,11 +236,16 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
             )
     if immediate or count >= 50:
         level = "totp" if count >= 500 else "password"
+        # A frase descreve o efeito real da ação. Disparar só PREPARA um anúncio
+        # para revisão — nada é publicado nem enviado — e o dialog diz isso; pedir
+        # "PUBLICAR" ali contradizia a tela na mesma caixa. Publicar e entregar
+        # continuam pedindo "PUBLICAR".
+        verb = "PREPARAR" if context.action == ACTION_FIRE else "PUBLICAR"
         return AuthorizationRequirement(
             "typed",
             level,
             count >= 500,
-            f"PUBLICAR {count}",
+            f"{verb} {count}",
         )
     return AuthorizationRequirement("summary", "none", False, "")
 

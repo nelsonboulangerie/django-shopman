@@ -1576,7 +1576,7 @@ class TestManualFire:
         assert confirmation["audience_count"] == 1
         # Duas plataformas públicas = duas consequências, ainda que a audiência
         # de contatos tenha uma única pessoa elegível.
-        assert confirmation["typed_phrase"] == "PUBLICAR 2"
+        assert confirmation["typed_phrase"] == "PREPARAR 2"
         assert Announcement.objects.filter(rule=rule).count() == 0
         assert MarketingCommandReceipt.objects.count() == 0
 

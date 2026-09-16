@@ -96,8 +96,43 @@ RULE_KEYS = frozenset({
 # Existing server-side rows retain them during a patch, but the CRUD API cannot
 # create or replace that private selector.
 PUBLIC_RULE_KEYS = RULE_KEYS - {"customer_refs"}
+#: Regras que o resolvedor lê com ``int()``. Valor que não converte ("sete") derrubava
+#: contagem, disparo, aprovação e o anúncio do evento com ``ValueError`` cru — e a
+#: regra já estava SALVA, então todo caminho estourava até alguém editar a campanha.
+#: A porta de entrada (CRUD) recusa antes de salvar; o resolvedor recusa de novo,
+#: gritando no dialeto do contrato, porque linha antiga ou escrita por fora existe.
+INTEGER_RULE_KEYS = ("bought_within_days", "vip_first_minutes", "preferred_hour_window_hours")
 AUDIENCE_POLICY_VERSION = "marketing-audience-v1"
 AUDIENCE_PREVIEW_TTL = timedelta(minutes=15)
+
+
+def invalid_integer_rules(rules: dict | None) -> list[str]:
+    """Chaves de ``INTEGER_RULE_KEYS`` cujo valor ``int()`` não converte.
+
+    Mesma régua que o resolvedor sempre aplicou (``int(valor or 0)``): ausente,
+    ``None``, vazio e zero valem 0; inteiro, float e string numérica convertem.
+    Só o que estourava vira recusa — regra válida continua com a mesma semântica.
+    """
+    rules = rules if isinstance(rules, dict) else {}
+    invalid: list[str] = []
+    for key in INTEGER_RULE_KEYS:
+        try:
+            int(rules.get(key) or 0)
+        except (TypeError, ValueError):
+            invalid.append(key)
+    return invalid
+
+
+def _require_integer_rules(rules: dict) -> None:
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+
+    invalid = invalid_integer_rules(rules)
+    if invalid:
+        raise MarketingContractError(
+            code="invalid_audience_rules",
+            detail="O público tem um valor que não é número inteiro.",
+            field_errors={"audience_rules": tuple(invalid)},
+        )
 
 
 class AudienceSourceUnavailable(RuntimeError):
@@ -291,9 +326,15 @@ def resolve(
     Returns:
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
         consentimento. Audiência vazia é resposta normal, não erro.
+
+    Raises:
+        MarketingContractError: ``invalid_audience_rules`` quando uma regra inteira
+        (``INTEGER_RULE_KEYS``) guarda valor que não converte. Regra salva quebrada
+        é defeito de configuração, não audiência vazia — e nunca ``ValueError`` cru.
     """
     started_at = time.perf_counter()
     rules = rules or {}
+    _require_integer_rules(rules)
     calculated_at = now or timezone.now()
     by_phone: dict[str, Recipient] = {}
     counts: dict[str, int] = {}
@@ -1095,41 +1136,6 @@ def _batches(values: list[str], size: int):
 
     for offset in range(0, len(values), size):
         yield values[offset : offset + size]
-
-
-def _profile(customer_ref: str, *, customer=None) -> tuple[bool, int | None]:
-    """``(is_vip, preferred_hour)`` de um cliente, numa passada só.
-
-    As duas respostas saem do mesmo ``CustomerInsight``, então lê-las juntas
-    evita repetir a consulta para cada destinatário.
-    """
-    if not customer_ref:
-        return False, None
-    try:
-        if customer is None:
-            from shopman.guestman.models import Customer
-
-            customer = Customer.objects.filter(ref=customer_ref).first()
-        if customer is None:
-            return False, None
-
-        insight = getattr(customer, "insight", None)
-        preferred_hour = getattr(insight, "preferred_hour", None) if insight else None
-
-        if insight is not None and insight.rfm_segment in VIP_RFM_SEGMENTS:
-            return True, preferred_hour
-
-        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
-
-        tier = (
-            LoyaltyAccount.objects.filter(customer=customer)
-            .values_list("tier", flat=True)
-            .first()
-        )
-        return tier in VIP_LOYALTY_TIERS, preferred_hour
-    except Exception:
-        logger.debug("audience.profile_failed ref=%s", customer_ref, exc_info=True)
-        return False, None
 
 
 def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:

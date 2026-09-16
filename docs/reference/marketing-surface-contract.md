@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-11
+- **Última verificação:** 2026-09-16
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -129,12 +129,16 @@ Outbox, público selado, artefato imutável, destinos e tentativas formam o graf
 `accepted_unconfirmed`, `confirmed`, falha final, falha repetível e `unknown` são estados
 distintos. `unknown` nunca recebe repetição cega.
 
+Dialeto de erro: comandos respondem `{code, detail, field_errors}`, o CRUD de
+campanhas/modelos `{detail, field, fields}` e o 401 leva `code`; `detail` está sempre
+presente. Ver [Superset do Marketing em `errors.md`](errors.md#superset-do-marketing-deliberado).
+
 ## Capacidades
 
 | Capacidade | Autoriza |
 |---|---|
 | `shop.view_marketing` | leitura agregada |
-| `shop.edit_marketing_campaigns` | criar/editar campanhas |
+| `shop.edit_marketing_campaigns` | criar/editar campanhas; editar anúncio antes de aprovar (`PATCH announcements/:id/`) |
 | `shop.edit_marketing_templates` | criar/editar modelos |
 | `shop.preview_marketing_audience` | contar e pré-visualizar público |
 | `shop.approve_marketing_announcements` | aprovar, rejeitar e usar assistência de texto |

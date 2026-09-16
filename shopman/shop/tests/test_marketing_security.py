@@ -412,6 +412,29 @@ def test_publication_only_gate_counts_platforms_not_unused_audience_members():
     assert requirement.dual_control is False
 
 
+def test_the_typed_phrase_describes_the_action_not_a_generic_publish():
+    """Disparar só prepara um anúncio para revisão; a frase não pode dizer PUBLICAR."""
+    fire = authorization_context(
+        action="fire",
+        resource_ref="campaign:7",
+        base_version=1,
+        audience_count=12,
+        platforms=("instagram", "whatsapp"),
+        consequence="creates_review_announcement",
+    )
+    approve = authorization_context(
+        action="approve",
+        resource_ref="announcement:7",
+        base_version=1,
+        audience_count=12,
+        platforms=("instagram", "whatsapp"),
+        consequence="publishes_now_to_eligible_audience",
+    )
+
+    assert requirement_for(fire).typed_phrase == "PREPARAR 13"
+    assert requirement_for(approve).typed_phrase == "PUBLICAR 13"
+
+
 def test_second_actor_password_change_invalidates_open_dual_control():
     publisher = _actor("publisher-dual-revoked", "publish_marketing_announcements")
     approver = _actor("approver-dual-revoked", "approve_marketing_announcements")
