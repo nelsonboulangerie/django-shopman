@@ -401,9 +401,17 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     ];
     expect(payload.audience_rules).toEqual(audienceRules);
     expect("trigger_filter" in payload).toBe(false);
-    expect(wrapper.text()).toContain("bought_skus");
-    expect(wrapper.text()).toContain("future_selector");
-    expect(wrapper.text()).toContain("future_filter");
+    // O aviso conta que o que o formulário não edita continua valendo — em
+    // português. Chave nova do servidor entra na conta, nunca no texto.
+    expect(wrapper.text()).toContain(
+      "Filtros de público já salvos (produtos comprados, coleções compradas e mais 1 critério)",
+    );
+    expect(wrapper.text()).toContain(
+      "Os filtros do evento já salvos (coleções e mais 1 critério)",
+    );
+    expect(wrapper.text()).not.toMatch(
+      /\b(bought_skus|future_selector|future_filter)\b/,
+    );
   });
 
   it("altera critérios avançados sem apagar os seletores protegidos", async () => {
@@ -517,5 +525,136 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect((other.find("#rule-name").element as HTMLInputElement).value).toBe(
       "Campanha seis",
     );
+  });
+});
+
+describe("CampaignForm — a voz do gestor", () => {
+  // ⚠️ A entidade é `Campaign` e a lista chama de "campanha"; o formulário fechava
+  // com "Regra ativa", um terceiro nome para a mesma coisa.
+  it("chama a campanha de campanha, nunca de regra", () => {
+    const text = form(makeRule()).text();
+
+    expect(text).toContain("Campanha ligada");
+    expect(text).not.toMatch(/\bRegra\b/);
+  });
+
+  // ⚠️ O aviso de filtro preservado imprimia a CHAVE do JSON: "collections, skus",
+  // "bought_skus". Chave é contrato com o servidor, não vocabulário do gestor.
+  it("nomeia os filtros do evento preservados em português, sem chave JSON", () => {
+    const text = form(
+      makeRule({
+        trigger: "production_finished",
+        trigger_filter: {
+          collections: ["paes"],
+          skus: ["BAGUETE"],
+          chave_nova_do_servidor: 1,
+        },
+      }),
+    ).text();
+
+    expect(text).toContain(
+      "Os filtros do evento já salvos (coleções, produtos e mais 1 critério) continuam valendo.",
+    );
+    expect(text).not.toMatch(/\b(collections|skus|chave_nova_do_servidor)\b/);
+  });
+
+  it("nomeia os filtros de público preservados em português, sem chave JSON", () => {
+    const text = form(
+      makeRule({
+        trigger: "production_finished",
+        audience_rules: { bought_skus: ["BAGUETE"], bought_collections: ["paes"] },
+      }),
+    ).text();
+
+    expect(text).toContain(
+      "Filtros de público já salvos (produtos comprados, coleções compradas) continuam valendo",
+    );
+    expect(text).not.toMatch(/\bbought_(skus|collections)\b/);
+  });
+
+  // ⚠️ As quatro plataformas apareciam iguais e a recusa só chegava depois de
+  // aprovar. A prontidão é pré-condição de PUBLICAR, não de configurar.
+  it("mostra antes do clique onde a campanha não vai sair, sem travar o salvar", async () => {
+    const wrapper = mount(CampaignForm, {
+      props: {
+        rule: makeRule({ platforms: ["instagram"] }),
+        triggers: TRIGGERS,
+        platformOptions: PLATFORMS,
+        templates: TEMPLATES as never,
+        offers: OFFERS,
+        platformLabels: { whatsapp: "WhatsApp", instagram: "Instagram" },
+        platformReadiness: [
+          {
+            platform: "instagram",
+            state: "blocked",
+            ready: false,
+            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            limitation: "",
+            source_status: "live",
+          },
+          {
+            platform: "whatsapp",
+            state: "unknown",
+            ready: false,
+            reason: "Não foi possível verificar o transporte do WhatsApp agora.",
+            limitation: "",
+            source_status: "live",
+          },
+        ],
+      },
+      global: {
+        components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+        stubs: { Icon: true, NuxtLink: true },
+      },
+    });
+    const text = wrapper.text();
+
+    // A pílula conta o estado das duas, escolhida ou não.
+    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
+      "Instagram · não publica",
+    );
+    expect(wrapper.find('[data-readiness="unknown"]').text()).toContain(
+      "WhatsApp · não verificada",
+    );
+    // A escolhida ganha a frase completa; a não escolhida não faz barulho.
+    expect(text).toContain(
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+    );
+    expect(text).toContain("A campanha pode ser salva assim mesmo.");
+    expect(text).not.toContain("Não foi possível verificar o transporte");
+
+    await wrapper.find("form").trigger("submit");
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+
+  it("descreve o público em conflito como frase, não como JSON", async () => {
+    const rule = makeRule({
+      trigger: "production_finished",
+      audience_rules: {},
+      updated_at: "v1",
+    });
+    const first = form(rule, "operator:7");
+    await first
+      .findAll("button")
+      .find((button) => button.text() === "Sem glúten")!
+      .trigger("click");
+    first.unmount();
+
+    const conflicted = form(
+      makeRule({
+        trigger: "production_finished",
+        audience_rules: { favorites: true, alerts: true },
+        updated_at: "v2",
+      }),
+      "operator:7",
+    );
+    await flushPromises();
+    const text = conflicted.text();
+
+    expect(text).toContain("Este conteúdo também mudou em outra sessão");
+    expect(text).toContain("Versão atual: Favoritos, alertas");
+    expect(text).toContain("Seu rascunho: Sem glúten");
+    expect(text).not.toContain("{");
+    expect(text).not.toMatch(/\b(favorites|alerts|tags)\b/);
   });
 });

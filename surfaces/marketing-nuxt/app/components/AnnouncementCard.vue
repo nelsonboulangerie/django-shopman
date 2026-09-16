@@ -27,8 +27,15 @@ import {
   expiryTone,
   parseHashtags,
   platformIcon,
+  platformsSummary,
   vipSummary,
 } from "~/presentation/campaign";
+import {
+  platformReadinessNote,
+  readinessByPlatform,
+  readinessPillClass,
+} from "~/presentation/platformReadiness";
+import type { PlatformReadiness } from "~/presentation/platformReadiness";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -43,6 +50,11 @@ const props = defineProps<{
   shopTimezone?: string;
   /** Explicit server proof that this lane ends at the hermetic local simulator. */
   quietHoursSuspendedForLocalSimulation?: boolean;
+  /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto. */
+  platformReadiness?: PlatformReadiness[];
+  /** Produtos publicáveis (`options.products`): o nome que o gestor fala, no lugar
+   *  do SKU. Sem rótulo, o SKU continua sendo o que há. */
+  productOptions?: { value: string; label: string }[];
 }>();
 
 const emit = defineEmits<{
@@ -228,6 +240,37 @@ const DRAFT_LABELS = {
   publish_fold: "Ocorrência do horário",
 };
 
+/** Nome do produto quando o catálogo o deu; o SKU só como último recurso. */
+const productLabel = computed(() => {
+  const sku = props.announcement.sku;
+  if (!sku) return "";
+  return (
+    props.productOptions?.find((option) => option.value === sku)?.label || sku
+  );
+});
+
+// Prontidão por plataforma, antes do clique: pílula pintada e frase sob a escolha.
+const readinessMap = computed(() =>
+  readinessByPlatform(props.platformReadiness),
+);
+function readinessNote(option: { value: string; label: string }) {
+  return platformReadinessNote(readinessMap.value[option.value], option.label);
+}
+const selectedReadinessNotes = computed(() =>
+  props.platformOptions
+    .filter((option) => platforms.value.includes(option.value))
+    .map((option) => ({ platform: option.value, ...readinessNote(option) }))
+    .filter((note) => note.tone !== "ready"),
+);
+
+/** O aviso de conflito mostra nomes de plataforma, não a lista de refs em JSON. */
+function describeDraftValue(field: string, value: unknown): string | undefined {
+  if (field === "platforms" && Array.isArray(value)) {
+    return platformsSummary(value.map(String), platformLabels.value);
+  }
+  return undefined;
+}
+
 const timezoneName = computed(() => props.shopTimezone || "UTC");
 const expiresAtMs = computed(() => Date.parse(props.announcement.expires_at));
 const exactExpiryMinutes = computed(() => {
@@ -292,6 +335,8 @@ const nowFallsInQuietHours = computed(
 const canPublishNow = computed(
   () => canPublish.value && !nowFallsInQuietHours.value,
 );
+/** Agendar só é "recomendado" com motivo: o agora cai no silêncio do WhatsApp. */
+const scheduleRecommended = computed(() => nowFallsInQuietHours.value);
 const scheduleResolution = computed(() =>
   resolveScheduleInput({
     localValue: publishAt.value,
@@ -390,11 +435,14 @@ function askToReject() {
       >
         {{ announcement.trigger_label }}
       </span>
+      <!-- ⚠️ Era o SKU em monoespaçado ("BAGUETE"). O gestor fala "Baguete
+           tradicional"; o código só aparece quando o catálogo não deu nome. -->
       <span
         v-if="announcement.sku"
-        class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+        class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+        :class="productLabel === announcement.sku ? 'font-mono' : ''"
       >
-        {{ announcement.sku }}
+        {{ productLabel }}
       </span>
       <span
         v-if="expiry"
@@ -410,6 +458,7 @@ function askToReject() {
       :saved-at="draft.savedAt.value"
       :conflicts="draft.conflicts.value"
       :labels="DRAFT_LABELS"
+      :describe="describeDraftValue"
       class="m-3 mb-0"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
@@ -422,7 +471,7 @@ function askToReject() {
         <img
           v-if="announcement.image_url"
           :src="announcement.image_url"
-          :alt="`Foto de ${announcement.sku || 'produto'}`"
+          :alt="`Foto de ${productLabel || 'produto'}`"
           class="size-32 rounded-lg border border-border object-cover"
         />
         <div
@@ -610,15 +659,19 @@ function askToReject() {
             Entregar por
           </legend>
           <div class="flex flex-wrap gap-1.5">
+            <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
+                 quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
             <label
               v-for="option in platformOptions"
               :key="option.value"
               class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-              :class="
+              :class="[
                 platforms.includes(option.value)
                   ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-muted'
-              "
+                  : 'border-border text-muted-foreground hover:bg-muted',
+                readinessPillClass(readinessNote(option).tone),
+              ]"
+              :data-readiness="readinessNote(option).tone"
             >
               <!-- Checkbox nativo sr-only preserva a semântica enquanto a pílula amplia o alvo visual. -->
               <input
@@ -630,6 +683,7 @@ function askToReject() {
               />
               <Icon :name="platformIcon(option.value)" class="size-3.5" />
               {{ option.label }}
+              <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
             </label>
           </div>
           <p
@@ -639,6 +693,28 @@ function askToReject() {
           >
             Escolha ao menos uma plataforma.
           </p>
+          <!-- Aprovar continua possível (a pré-condição é de publicar): o gestor só
+               fica sabendo AGORA, e não no comprovante, onde o anúncio não vai sair. -->
+          <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
+            <li
+              v-for="note in selectedReadinessNotes"
+              :key="note.platform"
+              class="text-xs"
+              :class="
+                note.tone === 'blocked' ? 'text-destructive' : 'text-warning'
+              "
+              role="status"
+            >
+              {{ note.text }}
+              <NuxtLink
+                v-if="note.tone !== 'limited'"
+                to="/platforms"
+                class="font-semibold underline"
+              >
+                Ver em Plataformas
+              </NuxtLink>
+            </li>
+          </ul>
         </fieldset>
 
         <!-- A decisão e a representação enviada não podem morar em telas diferentes.
@@ -682,26 +758,37 @@ function askToReject() {
         <p class="text-sm font-semibold">Como aprovar este anúncio</p>
         <p class="text-xs text-muted-foreground">
           Aprovar confirma esta versão e define quando ela fica pronta para
-          entrega. Agende o próximo horário seguro; entregar agora é uma decisão
-          separada.
+          entrega: agora, ou num horário que você escolhe. São duas decisões
+          separadas.
         </p>
       </div>
 
+      <!-- ⚠️ "Agendar (recomendado)" era fixo, a qualquer hora, e "recomendado" sem
+           porquê é ruído. Só é recomendado quando o agora cai no silêncio do WhatsApp
+           (20–08h), e aí a frase de baixo diz o motivo; fora dele, entregar agora é
+           o gesto primário. -->
       <UiButton
         type="button"
         data-testid="schedule-recommended"
         :aria-expanded="scheduling"
+        :variant="scheduleRecommended ? 'default' : 'outline'"
         @click="toggleScheduling"
       >
         <Icon name="lucide:clock" class="size-4" />
-        {{ scheduling ? "Fechar agendamento" : "Agendar (recomendado)" }}
+        {{
+          scheduling
+            ? "Fechar agendamento"
+            : scheduleRecommended
+              ? "Agendar (recomendado)"
+              : "Agendar"
+        }}
       </UiButton>
 
       <UiButton
         type="button"
         data-testid="publish-now"
         :disabled="!canPublishNow"
-        variant="outline"
+        :variant="scheduleRecommended ? 'outline' : 'default'"
         @click="publishNow"
       >
         <Icon
@@ -735,8 +822,9 @@ function askToReject() {
         class="w-full text-xs font-medium text-warning"
         role="status"
       >
-        WhatsApp em silêncio das 20:00 às 08:00 ({{ timezoneName }}). Agende o
-        próximo horário permitido.
+        Agendar é o recomendado agora: o WhatsApp está em silêncio das 20:00 às
+        08:00 ({{ timezoneName }}). O próximo horário permitido já vem
+        preenchido.
       </p>
       <p
         v-else-if="expired"

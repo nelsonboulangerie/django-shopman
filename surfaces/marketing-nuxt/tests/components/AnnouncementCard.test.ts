@@ -82,6 +82,7 @@ function mountCard(
   shopTimezone = "America/Sao_Paulo",
   aiAssistAvailable = false,
   quietHoursSuspendedForLocalSimulation = false,
+  extra: Record<string, unknown> = {},
 ) {
   return mount(AnnouncementCard, {
     props: {
@@ -91,10 +92,11 @@ function mountCard(
       shopTimezone,
       aiAssistAvailable,
       quietHoursSuspendedForLocalSimulation,
+      ...extra,
     },
     global: {
       components: { DraftRecoveryNotice },
-      stubs: { Icon: true },
+      stubs: { Icon: true, NuxtLink: true },
     },
   });
 }
@@ -107,6 +109,81 @@ describe("AnnouncementCard", () => {
     expect(text).toContain("Fornada de pães");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
     expect(text).toContain("Expira em 20 min");
+  });
+
+  // ⚠️ O cabeçalho mostrava o SKU em monoespaçado e a foto dizia "Foto de CRO-001".
+  // O gestor fala o nome do produto; o código só quando o catálogo não deu nome.
+  it("mostra o nome do produto no lugar do SKU quando o catálogo o dá", () => {
+    const wrapper = mountCard(
+      makeAnnouncement({ image_url: "/media/croissant.jpg" }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { productOptions: [{ value: "CRO-001", label: "Croissant de manteiga" }] },
+    );
+
+    expect(wrapper.text()).toContain("Croissant de manteiga");
+    expect(wrapper.text()).not.toContain("CRO-001");
+    expect(wrapper.get("img").attributes("alt")).toBe(
+      "Foto de Croissant de manteiga",
+    );
+  });
+
+  it("cai no SKU só quando não há rótulo", () => {
+    const wrapper = mountCard(makeAnnouncement({ image_url: "/media/c.jpg" }));
+
+    expect(wrapper.text()).toContain("CRO-001");
+    expect(wrapper.get("img").attributes("alt")).toBe("Foto de CRO-001");
+  });
+
+  // ⚠️ As plataformas apareciam iguais e a recusa só vinha no comprovante. Aprovar
+  // continua possível: a pré-condição é de publicar, e o gestor fica sabendo AGORA.
+  it("conta antes de aprovar onde o anúncio não vai sair", async () => {
+    const wrapper = mountCard(
+      makeAnnouncement({ platforms: ["instagram"] }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      {
+        platformReadiness: [
+          {
+            platform: "instagram",
+            state: "blocked",
+            ready: false,
+            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            limitation: "",
+            source_status: "live",
+          },
+          {
+            platform: "whatsapp",
+            state: "degraded",
+            ready: true,
+            reason: "",
+            limitation: "Sem fila segura, o envio é um por vez.",
+            source_status: "live",
+          },
+        ],
+      },
+    );
+    const text = wrapper.text();
+
+    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
+      "Instagram · não publica",
+    );
+    expect(wrapper.find('[data-readiness="limited"]').text()).toContain(
+      "WhatsApp · limitada",
+    );
+    expect(text).toContain(
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+    );
+    expect(text).not.toContain("um por vez");
+
+    const publishNow = wrapper.get("[data-testid=publish-now]");
+    expect((publishNow.element as HTMLButtonElement).disabled).toBe(false);
+    await publishNow.trigger("click");
+    expect(wrapper.emitted("approve")).toHaveLength(1);
   });
 
   it("does not present a contact audience as recipient of a public post", () => {
@@ -180,18 +257,49 @@ describe("AnnouncementCard", () => {
     expect(wrapper.text()).toContain("Escolha ao menos uma plataforma");
   });
 
-  it("presents scheduling as the safe default and now as a separate choice", () => {
+  // ⚠️ "Agendar (recomendado)" era fixo, a qualquer hora, sem porquê. Às 09:00,
+  // com Instagram, não há nada que recomende esperar: entregar agora é o primário.
+  it("fora do silêncio, entregar agora é o primário e agendar é só agendar", () => {
     const wrapper = mountCard(makeAnnouncement());
     const schedule = wrapper.get("[data-testid=schedule-recommended]");
     const publishNow = wrapper.get("[data-testid=publish-now]");
 
     expect(wrapper.text()).toContain("Como aprovar este anúncio");
     expect(wrapper.text()).toContain("Aprovar confirma esta versão");
+    expect(schedule.text()).toBe("Agendar");
+    expect(schedule.classes()).toContain("border");
+    expect(schedule.classes()).not.toContain("bg-primary");
+    expect(publishNow.text()).toContain("Publicar agora");
+    expect(publishNow.classes()).toContain("bg-primary");
+    expect(wrapper.text()).toContain("duas decisões separadas");
+    expect(wrapper.text()).not.toContain("recomendado");
+  });
+
+  it("no silêncio do WhatsApp, agendar vira o recomendado — e diz o porquê", () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["whatsapp"] }));
+    const schedule = wrapper.get("[data-testid=schedule-recommended]");
+    const publishNow = wrapper.get("[data-testid=publish-now]");
+
     expect(schedule.text()).toContain("Agendar (recomendado)");
     expect(schedule.classes()).toContain("bg-primary");
-    expect(publishNow.text()).toContain("Publicar agora");
     expect(publishNow.classes()).toContain("border");
-    expect(wrapper.text()).toContain("uma decisão separada");
+    expect(wrapper.text()).toContain(
+      "Agendar é o recomendado agora: o WhatsApp está em silêncio das 20:00 às 08:00",
+    );
+  });
+
+  it("publicação pública no silêncio não recomenda esperar: o silêncio é do WhatsApp", () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
+
+    expect(wrapper.get("[data-testid=schedule-recommended]").text()).toBe(
+      "Agendar",
+    );
+    expect(
+      (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
   });
 
   it("only asks for a date after the gestor chooses to schedule", async () => {
@@ -229,7 +337,7 @@ describe("AnnouncementCard", () => {
       .find((button) => button.text().includes("Enviar agora"))!;
 
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(true);
-    expect(wrapper.text()).toContain("WhatsApp em silêncio das 20:00 às 08:00");
+    expect(wrapper.text()).toContain("WhatsApp está em silêncio das 20:00 às 08:00");
 
     await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
 

@@ -46,7 +46,9 @@ const {
   resumeDecision,
   cancelDecision,
 } = useCampaignBoard();
-const { platforms } = useCampaigns();
+const { platforms, products } = useCampaigns();
+// Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
+const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
@@ -382,6 +384,8 @@ useHead({ title: "Painel" });
           :key="announcement.pk"
           :announcement="announcement"
           :platform-options="platforms"
+          :platform-readiness="platformReadiness"
+          :product-options="products"
           :busy="busyPk === announcement.pk"
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"
@@ -479,9 +483,12 @@ useHead({ title: "Painel" });
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
+          <!-- ⚠️ Dizia "A fornada segue normalmente" — e fornada é UM dos gatilhos
+               (a regra deste arquivo, lá em cima). A recusa é só do anúncio. -->
           <UiDialogDescription>
-            Ele não vai para nenhuma plataforma e não volta para a fila. A
-            fornada segue normalmente.
+            Ele não vai para nenhuma plataforma e não volta para a fila. Nada
+            mais muda: a campanha e o que aconteceu na padaria seguem como
+            estão.
           </UiDialogDescription>
         </UiDialogHeader>
         <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
