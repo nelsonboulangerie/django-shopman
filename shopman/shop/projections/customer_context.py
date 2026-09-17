@@ -219,7 +219,10 @@ def enabled_notification_channels(
             if ConsentService.has_consent(customer_ref, channel):
                 enabled.add(channel)
         except Exception:
-            logger.debug(
+            # Canal ilegível aparece DESLIGADO (falha fechado para envio), mas a tela
+            # de Preferências mente sobre ele: tem de gritar, como a pergunta de
+            # novidades logo abaixo já grita quando a mesma fonte cai.
+            logger.warning(
                 "customer_context_consent_channel_failed customer=%s channel=%s",
                 customer_ref,
                 channel,
