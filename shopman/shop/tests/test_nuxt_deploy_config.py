@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import pathlib
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SURFACES = (
     "storefront-nuxt",
@@ -241,25 +243,49 @@ def test_operator_groups_have_capacity_alerts():
             assert {"CPU_UTILIZATION", "MEM_UTILIZATION", "RESTART_COUNT"} <= rules, f"{path.name}: {group} sem alerta"
 
 
-def test_alpha_probes_separate_liveness_from_dependency_readiness():
+@pytest.mark.parametrize("spec_name", ["app.alpha-subdomains.yaml", "app.subdomains.yaml"])
+def test_platform_probes_are_cheap_liveness_never_dependency_readiness(spec_name):
+    """O health check da plataforma pergunta só se o processo atende.
+
+    Ele roda a cada poucos segundos em cada componente. Apontado para `/`, cada Nuxt
+    renderizava a shell SSR (a loja pedia a home ao Django); apontado para
+    `/health/ready/`, o `web` consultava banco, cache e fila. A prontidão das
+    dependências é pergunta do smoke, não motivo para tirar o componente do ar.
+    """
     import yaml
 
-    spec = yaml.safe_load((ROOT / ".do" / "app.alpha-subdomains.yaml").read_text())
+    spec = yaml.safe_load((ROOT / ".do" / spec_name).read_text())
     services = {service["name"]: service for service in spec["services"]}
 
-    assert services["web"]["liveness_health_check"]["http_path"] == "/health/live/"
-    assert services["web"]["health_check"]["http_path"] == "/health/ready/"
-    # Marketing mora no operator-office: a readiness do grupo agrega o
-    # /health/ready do Marketing (com Django), a liveness agrega /health/live.
-    office = services["operator-office"]
-    assert office["liveness_health_check"]["http_path"] == "/health/live"
-    assert office["health_check"]["http_path"] == "/health/ready"
-    marketing_app = next(app for app in _operator_groups()["operator-office"] if app["id"] == "marketing")
-    assert marketing_app.get("readyPath") == "/health/ready"
-    floor = services["operator-floor"]
-    assert floor["health_check"]["http_path"] == "/health/live"
-    assert floor["liveness_health_check"]["http_path"] == "/health/live"
+    web = services["web"]
+    assert web["health_check"]["http_path"] == "/health/live/"
+    assert web["liveness_health_check"]["http_path"] == "/health/live/"
+    # Desde a ADR-030 os apps de operador são servidos pelo service do GRUPO; o
+    # probe dele é o /health/live agregado do roteador (todos os filhos de pé).
+    probed = {"storefront-nuxt", *_operator_groups()}
+    for name in probed:
+        service = services[name]
+        assert service["health_check"]["http_path"] == "/health/live", name
+        liveness = service.get("liveness_health_check")
+        if liveness is not None:
+            assert liveness["http_path"] == "/health/live", name
+    for name, service in services.items():
+        for probe in ("health_check", "liveness_health_check"):
+            path = (service.get(probe) or {}).get("http_path", "")
+            assert "ready" not in path, f"{name}.{probe} usa readiness: {path}"
 
-    marketing = ROOT / "surfaces" / "marketing-nuxt" / "server" / "routes" / "health"
-    assert (marketing / "live.get.ts").is_file()
-    assert (marketing / "ready.get.ts").is_file()
+
+def test_every_nuxt_surface_serves_a_liveness_route_without_django():
+    kit = ROOT / "surfaces" / "operator-kit" / "server" / "routes" / "health"
+    assert (kit / "live.get.ts").is_file()
+    assert (kit / "ready.get.ts").is_file()
+    storefront = ROOT / "surfaces" / "storefront-nuxt" / "server" / "routes" / "health"
+    assert (storefront / "live.get.ts").is_file()
+    for surface in SURFACES:
+        if surface == "storefront-nuxt":
+            continue
+        config = (ROOT / "surfaces" / surface / "nuxt.config.ts").read_text()
+        assert '"../operator-kit"' in config, f"{surface} não recebe /health/live da layer"
+        assert not (ROOT / "surfaces" / surface / "server" / "routes" / "health").exists(), (
+            f"{surface} sombreia a rota de health da layer com uma cópia local"
+        )

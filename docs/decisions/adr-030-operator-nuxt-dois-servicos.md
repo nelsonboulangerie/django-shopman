@@ -43,8 +43,10 @@ De US$ 40 para 15: **US$ 25/mês**. Picos somados: chão ≈ 480 MB de 1 GB, ges
 5. **Saúde:** para a sonda da plataforma (Host que não é de app), `/health/live` responde
    200 só se TODOS os filhos estiverem de pé e o `/health/live` de cada um devolver 200
    em JSON (200 em HTML não conta: app com catch-all renderiza a página para qualquer
-   caminho). `/health/ready` faz o mesmo usando o `readyPath` do app — o do Marketing
-   inclui o Django. No hostname de um app, o caminho é do app.
+   caminho). Os dois services usam esse `/health/live` agregado no `health_check` e no
+   `liveness_health_check`: probe de plataforma nunca aponta para readiness (P1, #780).
+   `/health/ready` agregado existe para diagnóstico, com o `readyPath` de cada app (o do
+   Marketing inclui o Django), e não é sonda. No hostname de um app, o caminho é do app.
 6. **Encerramento (SIGTERM):** 3 s servindo tudo (a saída do balanceador é simultânea ao
    sinal), depois fecha a porta, termina os SSE com fim de stream limpo (o EventSource
    reconecta no contêiner novo), espera pedidos comuns até 15 s, SIGTERM nos filhos,
@@ -70,12 +72,13 @@ em silêncio.
   e do PDV reconectam. Antes só o app tocado reiniciava.
 - **CPU:** uma vCPU compartilhada entre os event loops do grupo. Alerta de CPU e memória
   > 80 % por 5 min em cada service novo.
-- **Marketing sem Django:** a readiness do `operator-office` segue o contrato do Marketing
-  (inclui o Django). Com o `api.` fora por mais de 60 s, B.I. e Compras saem do tráfego
-  junto — que sem o Django não servem.
-- **Dependência de ordem:** as rotas `/health/live` dos apps chegam pela layer
-  `operator-kit` (P1, outra frente). Sem elas a saúde agregada reprova (medido: KDS 404,
-  Central 200 em HTML) e o deploy dos grupos não fica verde. Aplicar o spec só depois.
+- **Marketing sem Django:** o probe do `operator-office` é liveness, como o dos outros
+  services depois do P1. Django fora não tira Marketing, B.I. nem Compras do tráfego; o
+  `/health/ready` do Marketing continua sendo pergunta do smoke, no host `mkt.`.
+- **Dependência de ordem (cumprida):** as rotas `/health/live` dos apps chegam pela layer
+  `operator-kit` (P1, #780, no `main` desde 17/09). Sem elas a saúde agregada reprovava
+  (medido antes do #780: KDS 404, Central 200 em HTML) e o deploy dos grupos não ficaria
+  verde.
 - **Rollback:** reaplicar o spec anterior (8 services). As imagens por app seguem sendo
   publicadas (`OPERATOR_PER_APP_IMAGES` em `deploy-images.yml`) até 14 dias de prova.
 

@@ -607,8 +607,12 @@ services:
       - key: SHOPMAN_BFF_PROXY_SECRET
         scope: RUN_TIME
         type: SECRET
+    # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+    # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+    # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+    # que não chama o Django (WP-PERFORMANCE P1).
     health_check:
-      http_path: /health/ready/
+      http_path: /health/live/
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -661,7 +665,7 @@ services:
         scope: RUN_TIME
         type: SECRET
     health_check:
-      http_path: /menu
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -854,10 +858,10 @@ services:
         value: "https://prod.STORE_DOMAIN/"
         scope: RUN_TIME
         type: GENERAL
-    # Readiness do Marketing inclui o Django (contrato da superfície); o agregado
-    # usa /health/ready do Marketing e /health/live de B.I. e Compras.
+    # Probe da plataforma = liveness agregada (P1: nunca readiness). O
+    # /health/ready do Marketing (com o Django) fica para o smoke, no host mkt.
     health_check:
-      http_path: /health/ready
+      http_path: /health/live
       initial_delay_seconds: 45
       period_seconds: 10
       timeout_seconds: 5

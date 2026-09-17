@@ -35,6 +35,7 @@ Pedido com `Host` que não é de app (a sonda da plataforma):
 - `GET /health/live` → 200 só se todos os filhos estão de pé e o `/health/live` de cada um
   responde 200 **em JSON**;
 - `GET /health/ready` → o mesmo, com o `readyPath` do app (Marketing: `/health/ready`).
+  Serve diagnóstico; os probes da plataforma usam só `/health/live` (P1).
 
 O corpo diz qual app falhou. No hostname de um app, os mesmos caminhos são do app.
 

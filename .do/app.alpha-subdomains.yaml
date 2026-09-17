@@ -679,9 +679,13 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
+  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+  # que não chama o Django (WP-PERFORMANCE P1).
   health_check:
     failure_threshold: 5
-    http_path: /health/ready/
+    http_path: /health/live/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -754,7 +758,7 @@ services:
     type: SECRET
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 60
     period_seconds: 15
     success_threshold: 1
@@ -964,13 +968,12 @@ services:
     scope: RUN_TIME
     value: 'https://prod.boulangerie.com.br/'
     type: GENERAL
-  # Readiness do Marketing continua incluindo o Django (contrato da superfície):
-  # o agregado usa `/health/ready` do Marketing e `/health/live` de B.I. e
-  # Compras. Efeito aceito na ADR-030: com o `api.` fora por mais de 60 s, o
-  # grupo sai do tráfego — B.I. e Compras também, que sem o Django não servem.
+  # Probe da plataforma = liveness agregada (P1/#780: nenhum probe de plataforma
+  # em rota de readiness). 200 só com os três filhos de pé. O `/health/ready` do
+  # Marketing (com o Django) fica para o smoke, no host `mkt.`.
   health_check:
     failure_threshold: 6
-    http_path: /health/ready
+    http_path: /health/live
     initial_delay_seconds: 45
     period_seconds: 10
     success_threshold: 1
