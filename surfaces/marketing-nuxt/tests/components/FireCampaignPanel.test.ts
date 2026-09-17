@@ -405,7 +405,7 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
 describe("FireCampaignPanel — o zero diz qual zero é", () => {
   // ⚠️ O caso da Baguete Gergelim: o gestor favoritou o produto pelo celular, a campanha
   // "quem favoritou" contou 0 e a tela disse "ninguém se encaixa". A regra tinha achado
-  // 1 pessoa; o envio a barrou por falta de data de nascimento e de consentimento.
+  // 1 pessoa; o envio a barrou por falta de confirmação de maioridade e de consentimento.
   it("mostra quem a regra achou e por que não recebe, mesmo com uma regra só", async () => {
     counted = fakeCount({
       total: 0,
@@ -422,8 +422,8 @@ describe("FireCampaignPanel — o zero diz qual zero é", () => {
     expect(text).toContain("As regras acharam 1 pessoa, mas ela não pode receber");
     expect(text).toContain("Favoritaram o produto");
     expect(text).toContain("Ficam de fora");
-    expect(text).toContain("1 pessoa sem data de nascimento no cadastro");
-    expect(text).toContain("Conta › Perfil");
+    expect(text).toContain("1 pessoa sem confirmação de maioridade");
+    expect(text).toContain("ele confirma ao entrar na loja de novo");
     expect(text).not.toContain("Ninguém se encaixa neste público hoje");
     expect(
       wrapper.find('button[type="submit"]').attributes("disabled"),
@@ -446,7 +446,7 @@ describe("FireCampaignPanel — o zero diz qual zero é", () => {
       .findAll("[data-audience-exclusions] li")
       .map((li) => li.text());
     expect(items).toEqual([
-      "1 pessoa sem data de nascimento no cadastro (a prova de 18+ que o envio exige)",
+      "1 pessoa sem confirmação de maioridade (feita ao entrar na loja)",
       "1 pessoa sem consentimento para receber no WhatsApp",
     ]);
     expect(wrapper.text()).toContain("As regras acharam 2 pessoas, mas nenhuma pode receber");

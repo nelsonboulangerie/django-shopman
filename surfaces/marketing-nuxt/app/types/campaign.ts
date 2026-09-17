@@ -289,7 +289,7 @@ export interface AudienceCount {
   /** Quem as regras acharam mas o envio NÃO alcança, por motivo (chaves do resolvedor:
    *  `age_not_declared`, `missing_consent`, `global_optout`, `known_minor`,
    *  `rule_mismatch`, `invalid_contact`, `consent_unavailable`). É o que faz um zero
-   *  dizer QUAL zero é: "1 favoritou, mas está sem data de nascimento" em vez de
+   *  dizer QUAL zero é: "1 favoritou, mas está sem confirmação de maioridade" em vez de
    *  "ninguém se encaixa". */
   excluded_by_reason: Record<string, number>;
   /** `false` = alguma fonte da audiência não respondeu; o número está incompleto e o
