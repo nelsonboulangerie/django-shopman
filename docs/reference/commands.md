@@ -128,8 +128,9 @@ python manage.py apply_search_presence --apply    # grava
 
 Só preenche campo de busca **vazio**, só cria pergunta que **não existe** (casa
 pela `ref`) e só acrescenta perfil que **falta**; tira o link de exemplo
-(`example`). O que depende de decisão do dono (cancelamento, CPF na nota do
-pedido online, iFood, fidelidade) nasce como rascunho. **Não** mexe em horário,
+(`example`). Toda pergunta nasce como **rascunho**: a copy pública espera o aval
+do dono, que é bloqueio de go-live (`config/public_copy_review.py`, check
+`production.public_copy_review` do `make production-readiness`). **Não** mexe em horário,
 endereço, coordenadas, preço nem catálogo. Idempotente.
 
 ---

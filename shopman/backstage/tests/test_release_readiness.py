@@ -287,3 +287,30 @@ def test_main_production_profile_forces_strict_external(monkeypatch, capsys):
     assert exit_code == 1
     assert captured["strict_external"] is True
     assert data["profile"] == "production"
+
+
+def test_public_copy_review_is_warning_in_alpha_and_blocker_in_production():
+    """FAQ, copy de busca, horário e sitemap não cruzam o go-live sem aval (17/09/2026)."""
+    pending = ({"id": "faq_initial", "title": "FAQ", "approved_by": "", "approved_at": ""},)
+
+    assert readiness._public_copy_review_check(profile="alpha", review=pending).status == "warning"
+    production = readiness._public_copy_review_check(profile="production", review=pending)
+    assert production.status == "failed"
+    assert production.details["pending"] == [{"id": "faq_initial", "title": "FAQ"}]
+
+
+def test_public_copy_review_needs_both_signer_and_date():
+    half_signed = ({"id": "sitemap_submitted", "title": "Sitemap", "approved_by": "Pablo", "approved_at": ""},)
+    signed = ({"id": "sitemap_submitted", "title": "Sitemap", "approved_by": "Pablo", "approved_at": "2026-09-20"},)
+
+    assert readiness._public_copy_review_check(profile="production", review=half_signed).status == "failed"
+    assert readiness._public_copy_review_check(profile="production", review=signed).status == "passed"
+
+
+def test_the_real_public_copy_review_still_blocks_go_live():
+    """Enquanto ninguém assinar, o go-live reprova. Quem assinar, apaga este teste no mesmo PR."""
+    from config.public_copy_review import PUBLIC_COPY_REVIEW
+
+    ids = {item["id"] for item in PUBLIC_COPY_REVIEW}
+    assert {"faq_initial", "copy_contradictions", "sitemap_consolidated", "sitemap_submitted"} <= ids
+    assert readiness._public_copy_review_check(profile="production").status == "failed"

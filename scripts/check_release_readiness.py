@@ -169,6 +169,7 @@ def build_report(
             _storefront_contact_check(),
             _omotenashi_seed_check(),
             _preparation_shelf_life_review_check(profile=profile),
+            _public_copy_review_check(profile=profile),
             _rules_load_check(),
             _gateway_smoke_check(),
             _gateway_sandbox_check(profile=profile),
@@ -522,6 +523,32 @@ def _preparation_shelf_life_review_check(*, profile: ReadinessProfile) -> Readin
         status="passed",
         message=f"{reviewed} validade(s) de preparo revisadas e assinadas.",
         details={"reviewed": reviewed},
+    )
+
+
+def _public_copy_review_check(*, profile: ReadinessProfile, review=None) -> ReadinessCheck:
+    """FAQ, copy de busca, horário e sitemap: aval do dono antes do go-live (17/09/2026)."""
+    from config.public_copy_review import PUBLIC_COPY_REVIEW, pending_items
+
+    items = PUBLIC_COPY_REVIEW if review is None else review
+    pending = pending_items(items)
+    if pending:
+        return ReadinessCheck(
+            id="production.public_copy_review",
+            title="Public copy review",
+            status="failed" if profile == "production" else "warning",
+            message=(
+                f"{len(pending)} item(ns) de copy pública, FAQ ou sitemap ainda sem o aval do dono "
+                "(config/public_copy_review.py)."
+            ),
+            details={"pending": [{"id": item["id"], "title": item["title"]} for item in pending]},
+        )
+    return ReadinessCheck(
+        id="production.public_copy_review",
+        title="Public copy review",
+        status="passed",
+        message=f"{len(items)} item(ns) de copy pública aprovados e assinados.",
+        details={"approved": [item["id"] for item in items]},
     )
 
 
