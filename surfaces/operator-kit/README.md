@@ -121,7 +121,7 @@ KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie")
   `apple-mobile-web-app-title` leva o nome inteiro, que é o que o Safari propõe ao
   instalar.
 - **Trocar o nome no Admin** chega ao BFF em até 5 min e ao app instalado quando o
-  navegador rebusca o manifesto (`max-age=600`); o Chrome atualiza o nome do app
+  navegador rebusca o manifesto (`max-age=3600`, o contrato do gate estrutural de PWA); o Chrome atualiza o nome do app
   instalado na verificação periódica dele.
 
 A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa, sem
