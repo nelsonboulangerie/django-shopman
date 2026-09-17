@@ -5,8 +5,8 @@ Este check nasceu do jeito caro: um disparo real para um número frio devolveu
 e nada no sistema tinha avisado que aquilo ia acontecer. A configuração faltando só
 aparecia no dia em que importava.
 
-Sem flow, o cockpit explica a configuração faltante. Com flow, G-H03 ainda bloqueia o
-piloto até a isolação dos campos persistentes ser provada em sandbox.
+Sem flow, o cockpit explica a configuração faltante. Com flow, o modo do WhatsApp de
+Marketing (`blocked`/`canary`/`open`) decide — e cada estado fechado ou parcial vira AVISO.
 """
 
 from __future__ import annotations
@@ -68,7 +68,41 @@ def test_a_configured_flow_without_isolation_evidence_warns_but_does_not_block_d
     assert warning.id == "SHOPMAN_W020"
     # O envio já falha fechado em runtime; o deploy do sistema não pode cair por isso.
     assert type(warning).__name__ == "Warning"
-    assert "G-H03" in warning.hint
+    assert "manychat_custom_fields_unverified" in warning.msg
+    assert "ensaio" in warning.hint
+
+
+def test_a_configured_flow_in_canary_warns_how_many_receive(db, settings, monkeypatch):
+    from shopman.shop.models import NotificationTemplate
+    from shopman.shop.services import manychat_marketing_safety
+
+    settings.SHOPMAN_MARKETING_WHATSAPP_MODE = "canary"
+    settings.SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS = ("CLI-1", "CLI-2")
+    monkeypatch.setattr(manychat_marketing_safety, "serialization_available", lambda: True)
+    _campaign("Fornada", platforms=["whatsapp"])
+    NotificationTemplate.objects.create(
+        event=EVENT, subject="", body="oi", whatsapp_flow_ns="content20260101120000_1"
+    )
+
+    (warning,) = check_whatsapp_flow_coverage(None)
+    assert warning.id == "SHOPMAN_W020"
+    assert type(warning).__name__ == "Warning"
+    assert "só 2 contato(s)" in warning.msg
+    assert "CLI-1" not in warning.msg
+
+
+def test_a_configured_flow_open_with_shared_cache_is_silent(db, settings, monkeypatch):
+    from shopman.shop.models import NotificationTemplate
+    from shopman.shop.services import manychat_marketing_safety
+
+    settings.SHOPMAN_MARKETING_WHATSAPP_MODE = "open"
+    monkeypatch.setattr(manychat_marketing_safety, "serialization_available", lambda: True)
+    _campaign("Fornada", platforms=["whatsapp"])
+    NotificationTemplate.objects.create(
+        event=EVENT, subject="", body="oi", whatsapp_flow_ns="content20260101120000_1"
+    )
+
+    assert check_whatsapp_flow_coverage(None) == []
 
 
 def test_an_inactive_flow_does_not_count_as_approved(db):

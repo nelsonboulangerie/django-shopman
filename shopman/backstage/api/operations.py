@@ -122,6 +122,7 @@ from shopman.backstage.projections.production import (
 from shopman.backstage.services import (
     closing as closing_service,
 )
+from shopman.backstage.services import operator_session, sign_in_audit
 from shopman.backstage.services import (
     orders as orders_service,
 )
@@ -131,7 +132,6 @@ from shopman.backstage.services import (
 from shopman.backstage.services import (
     production as production_service,
 )
-from shopman.backstage.services import sign_in_audit
 from shopman.backstage.services.exceptions import (
     OrderConflict,
     OrderError,
@@ -803,6 +803,7 @@ class OperatorLoginView(APIView):
         # linha da trilha quem grava é o receiver do `user_logged_in`.
         sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
         login(request, user)
+        operator_session.start(request)
         # `operator`, e não `device_user`: entrar com senha é identificar-se como
         # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
         return Response({"ok": True, "operator": operator_card(user)})
@@ -902,6 +903,7 @@ class OperatorUnlockView(APIView):
         # ``ValueError``. Sem isto, o destrave respondia 500 no balcão.
         sign_in_audit.mark_method(request, metodo)
         login(request, operator, backend=MODEL_BACKEND)
+        operator_session.start(request)
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
 

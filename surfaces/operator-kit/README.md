@@ -37,23 +37,30 @@ O layer contribui, via auto-import do Nuxt:
 | `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
 | `server/utils/operatorSecurity.ts` | `operatorResponseHeaders`, `applyPrivateNoStore` | política testável de headers e preservação de `Vary` no BFF |
 | `server/utils/eventStream.ts` | `proxyEventStream` | streaming SSE same-origin do eventstream do Django |
+| `server/routes/health/live.get.ts` | — | `/health/live`: processo/BFF vivo, sem chamar o Django — é o health check da plataforma |
+| `server/routes/health/ready.get.ts` | — | `/health/ready`: BFF + `/health/ready/` do Django (smoke e diagnóstico, nunca health check da plataforma) |
+| `server/utils/healthProbe.ts` | `ProbeRateLimiter`, `checkDjangoReadiness`, `respondHealthLive`, `respondHealthReady` | corpo pobre (`ok`/`fail`), `no-store` e limitador em memória dos probes |
 | `server/utils/apiVersion.ts` | `warnOnApiVersionMismatch` | warning estruturado de major divergente do contrato |
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
 | `app/components/OfflineBanner.vue` | `<OfflineBanner>` | aviso calmo de conexão (colocar no layout raiz) |
 | `app/plugins/errorReporter.client.ts` | — | captura erro não-tratado → telemetria (inerte em dev) |
+| `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do APARELHO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
+| `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do aparelho, não só a dele |
 | `app/types/operator.ts` | `OperatorCard`, `OperatorSession`, … | espelho TS da API operator/session\|eligible\|unlock\|lock |
 | `app/presentation/operatorLock.ts` | `isLocked`, `buildUnlockPayload`, … | transforms puros do lock (sem I/O) |
 | `app/composables/useOperatorLock.ts` | `useOperatorLock` | read/write do lock de operador (PIN/crachá) via proxy |
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
-| `app/presentation/windowTitle.ts` | `windowTitle` | regra pura do título da janela: `"<App> · <Página>"` (app na frente, senão o Chrome prefixa o nome do PWA) |
-| `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle` | instala o `titleTemplate` no `app.vue` (e `error.vue`) lendo o `manifest.name` da capability PWA; as páginas passam só o próprio título |
+| `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
+| `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
 | `app/composables/useNextFocus.ts` | `useNextFocus`, `measureBottomObstruction` | a página declara o foco (chave reativa); o bloco `data-focus-target` vai à linha de foco e recebe o foco de teclado — ver "Próximo foco" |
 | `app/presentation/moreBelow.ts` | `hintOffset`, `hintMotionClass`, `shouldHint` | regra pura da dica "tem mais abaixo" |
 | `app/composables/useMoreBelow.ts` | `useMoreBelow` | observa o fim do conteúdo (sentinela + IntersectionObserver) descontando o que flutua na base |
 | `app/components/MoreBelow.vue` | `<MoreBelow>` | a dica em si: degradê + pílula com chevron, some ao chegar ao fim — ver "Tem mais abaixo" |
+| `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
+| `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por aparelho (Screen Orientation API): item "Travar giro" no `OperatorRail` só em aparelho de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -68,6 +75,17 @@ unlock/lock troca ou encerra a sessão compartilhada dos apps de operador sem
 invalidar uma sessão aberta no Admin; cookies de estação e demais cookies não
 conflitantes continuam sendo repassados.
 
+**Validade da sessão de operador (decisão de 17/09/2026): renova com o uso, expira
+após 7 dias sem uso.** A sessão aberta pelas portas de operador (senha no app, PIN,
+crachá) nasce marcada e com prazo de 7 dias; o uso empurra o prazo de volta para 7
+dias, gravando no máximo uma vez por dia (quando restam menos de 6), e o Django
+reemite o cookie com o novo `Max-Age`, que o BFF repassa como qualquer `Set-Cookie`.
+O SSE não renova (o proxy de eventos não repassa cookies); a renovação vem das
+requisições REST e dos polls. O Admin fica fora: segue os 14 dias fixos do Django,
+com 2FA. Regra e motivo em `shopman/backstage/services/operator_session.py`;
+constantes `SHOPMAN_OPERATOR_SESSION_IDLE_SECONDS` e
+`SHOPMAN_OPERATOR_SESSION_RENEW_INTERVAL_SECONDS` em `config/settings.py`.
+
 Apps que ativam `runtimeConfig.operatorSecurityHeaders` recebem documentos e APIs
 privados (`private, no-store`, `Vary: Cookie`). Assets compilados mantêm o cache do
 Nitro. HSTS só é emitido quando a requisição chega como HTTPS; o edge continua
@@ -75,6 +93,46 @@ responsável por preservar `X-Forwarded-Proto: https` e a verificação final de
 no host publicado. Marketing usa ainda uma política CSP local mais estrita, com nonce e
 branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao kit
 porque ainda não tem dois consumidores comprovados.
+
+## Nome do app instalado (`"Nelson · PDV"`)
+
+Todo app de operador instalado se chama `"<casa> · <App>"`: "Nelson · PDV", "Nelson ·
+KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie").
+
+- **A casa não mora no código.** A fonte única é `Shop.short_name` ("nome curto (PWA)",
+  editável no Admin), servido por `GET /api/v1/backstage/operator/tenant/` (público,
+  sem sessão: o navegador busca o manifesto sem cookie). O app declara só o rótulo em
+  `definePwaCapability({ manifest: { label: "PDV", ... } })`.
+- **Lido em runtime, não no build.** `server/utils/operatorTenant.ts` pergunta ao
+  Django com cache de 5 min no processo Nitro; a mesma imagem serve todo deployment.
+  Falha é macia: vale o último nome que o Django deu (nova tentativa em 30 s) e, sem
+  nenhum desde o boot, o app mostra só o rótulo ("PDV"). Não há prefixo de reserva
+  escrito no código ou no build — seria uma segunda fonte.
+- **Manifesto e janela dizem o mesmo nome.** `/manifest.webmanifest` e
+  `/_operator/app-name` usam o mesmo resolvedor. O plugin `runtime/plugins/operatorAppName.ts`
+  resolve o nome no SSR (chamada local à rota Nitro), guarda no `useState` (viaja no
+  payload) e instala o `titleTemplate` — também na página de erro padrão do Nuxt, que
+  renderiza no lugar do `app.vue`.
+- **O título começa com o `name` do manifesto.** Se não começar, o Chrome prefixa
+  `"<name> - "` na barra da janela do PWA instalado. Por isso a home é `"Nelson · PDV"`,
+  a página é `"Nelson · PDV · Filipetas"` e o título que pisca no Gestor também passa
+  por `windowTitle`.
+- **Nunca hífen na barra.** O separador é o ponto médio; `windowTitle` troca separador
+  de hífen/barra que venha de título de página (a página 404 do Nuxt escreve
+  "404 - Page not found | Nuxt"). `document.title` escrito à mão só passa montado por
+  `windowTitle(...)` ou restaurando um valor guardado.
+- **`short_name` é só o rótulo.** Ele aparece onde falta espaço (ícone no launcher
+  Android), e lá a casa se repetiria em todo app e cortaria o que distingue um do outro
+  ("Nelson · Pro…"). Desktop (macOS, Windows, ChromeOS) mostra o `name`. O
+  `apple-mobile-web-app-title` leva o nome inteiro, que é o que o Safari propõe ao
+  instalar.
+- **Trocar o nome no Admin** chega ao BFF em até 5 min e ao app instalado quando o
+  navegador rebusca o manifesto (`max-age=3600`, o contrato do gate estrutural de PWA); o Chrome atualiza o nome do app
+  instalado na verificação periódica dele.
+
+A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa, sem
+`name`/`shortName` fixos, título começando pelo `name`, nenhum título com hífen de
+separador, nenhum `document.title` cru).
 
 ## Próximo foco (`useNextFocus`)
 
@@ -151,7 +209,8 @@ as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerS
 — isso é manter a opção realçada visível dentro da lista, e fica como está.
 
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
-o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo.
+o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
+do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 

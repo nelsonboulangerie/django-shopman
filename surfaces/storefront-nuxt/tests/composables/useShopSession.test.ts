@@ -9,9 +9,13 @@ async function loadSession () {
   return s
 }
 
-function home (authenticated: boolean) {
+function home (authenticated: boolean, marketingPromptPending = false) {
   return {
-    omotenashi: { audience: authenticated ? 'known' : 'anon', customer_name: authenticated ? 'Ana' : null },
+    omotenashi: {
+      audience: authenticated ? 'known' : 'anon',
+      customer_name: authenticated ? 'Ana' : null,
+      marketing_prompt_pending: marketingPromptPending
+    },
     shop: { name: 'Nelson' },
     shop_status: { is_open: true },
     notices: [{ id: 1 }],
@@ -94,16 +98,67 @@ describe('useShopSession', () => {
     expect(s.isAuthenticated.value).toBe(false)
   })
 
-  it('carries the two welcome questions and opens the gate for marketing alone', async () => {
+  it('the marketing question rides along but never opens the welcome gate', async () => {
     const s = await loadSession()
-    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', requires_welcome: true, welcome_asks_name: false, welcome_asks_marketing: true })
-    expect(s.requiresWelcome.value).toBe(true)
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', requires_welcome: false, welcome_asks_name: false, welcome_asks_marketing: true })
+    // O gate do login é só o nome; a pergunta de novidades é do sheet.
+    expect(s.requiresWelcome.value).toBe(false)
     expect(s.welcomeAsksName.value).toBe(false)
     expect(s.welcomeAsksMarketing.value).toBe(true)
-    // Gate respondido: as duas perguntas se apagam junto com o convite.
+    // Responder o gate do nome não mexe na pergunta de novidades…
     s.setIdentity({ requiresWelcome: false })
-    expect(s.requiresWelcome.value).toBe(false)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
+    // …e responder (ou fechar) o sheet apaga só ela.
+    s.markMarketingPromptAnswered()
     expect(s.welcomeAsksMarketing.value).toBe(false)
+    expect(s.isAuthenticated.value).toBe(true)
+  })
+
+  // Carga fria: quem volta com aparelho reconhecido não passa pelo login. A
+  // pergunta de novidades tem de chegar pela home, que vem em toda visita.
+  it('the home alone brings the marketing question on a cold load', async () => {
+    const s = await loadSession()
+    s.setFromHome(home(true, true))
+    expect(s.isAuthenticated.value).toBe(true)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
+    // Nada disso abre o gate do login.
+    expect(s.requiresWelcome.value).toBe(false)
+
+    s.setFromHome(home(true, false))
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+  })
+
+  it('a late home (or session) never brings back a question answered in this browser session', async () => {
+    const s = await loadSession()
+    s.setFromHome(home(true, true))
+    s.markMarketingPromptAnswered()
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+
+    // Resposta lida antes do carimbo chegando depois: não reabre.
+    s.setFromHome(home(true, true))
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', welcome_asks_name: false, welcome_asks_marketing: true })
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+  })
+
+  it('an anonymous home never asks, and a preserved auth route keeps what it knew', async () => {
+    const s = await loadSession()
+    s.setFromHome(home(false, true))
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', welcome_asks_name: false, welcome_asks_marketing: true })
+    s.setFromHome(home(false), { preserveAuthenticated: true })
+    expect(s.welcomeAsksMarketing.value).toBe(true)
+  })
+
+  it('answering the name gate clears the name question only', async () => {
+    const s = await loadSession()
+    s.setFromAuthSession({ is_authenticated: true, customer_name: '', requires_welcome: true, welcome_asks_name: true, welcome_asks_marketing: true })
+    expect(s.requiresWelcome.value).toBe(true)
+    s.setIdentity({ name: 'Ana', requiresWelcome: false })
+    expect(s.requiresWelcome.value).toBe(false)
+    expect(s.welcomeAsksName.value).toBe(false)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
   })
 
   it('reads a payload without the asks_* flags as the old name-only gate', async () => {

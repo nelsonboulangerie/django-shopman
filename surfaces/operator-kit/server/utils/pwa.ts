@@ -3,6 +3,7 @@ import type {
   OperatorPwaIcon,
   OperatorPwaShortcut,
 } from "../../pwa.config";
+import { operatorAppName, type OperatorAppName } from "../../app/presentation/windowTitle";
 
 export function operatorPwaIcons(icons: OperatorPwaIcon[]) {
   return icons.map((icon) => ({
@@ -24,11 +25,21 @@ export function operatorPwaShortcuts(shortcuts: OperatorPwaShortcut[] = []) {
   }));
 }
 
-export function buildOperatorManifest(options: OperatorPwaCapabilityOptions) {
+/**
+ * Manifesto do app de operador. `name` é `"<casa> · <App>"` — exatamente o começo do
+ * título da janela (`windowTitle`), senão o Chrome prefixa `"<name> - "` na barra.
+ * `short_name` é só o rótulo ("PDV"): aparece onde falta espaço (ícone no launcher
+ * Android), e lá a casa se repetiria igual em todos os apps e cortaria o que distingue
+ * um do outro ("Nelson · Pro…"). Desktop (macOS/Windows/ChromeOS) mostra o `name`.
+ */
+export function buildOperatorManifest(
+  options: OperatorPwaCapabilityOptions,
+  appName: OperatorAppName = operatorAppName("", options.manifest.label),
+) {
   return {
     id: "/",
-    name: options.manifest.name,
-    short_name: options.manifest.shortName.slice(0, 12).trimEnd(),
+    name: appName.name,
+    short_name: appName.label,
     description: options.manifest.description,
     lang: "pt-BR",
     dir: "ltr",

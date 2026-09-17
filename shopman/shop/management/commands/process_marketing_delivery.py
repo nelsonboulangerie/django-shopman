@@ -40,15 +40,19 @@ class Command(BaseCommand):
             help="Ignora apenas a flag do worker em ambiente local/de teste.",
         )
         parser.add_argument("--quiet-idle", action="store_true", help="SUPPRESS")
+        # A passada que roda dentro do `maintenance_worker` a cada ciclo: com a flag
+        # desligada, repetir o aviso de 5 em 5 minutos seria ruído, não informação.
+        parser.add_argument("--quiet-disabled", action="store_true", help="SUPPRESS")
 
     def handle(self, *args, **options):
         enabled = bool(settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED)
         if not (enabled or options["force"]):
-            self.stdout.write(
-                self.style.WARNING(
-                    "Delivery worker de Marketing desativado; nenhum target foi chamado."
+            if not options["quiet_disabled"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "Delivery worker de Marketing desativado; nenhum target foi chamado."
+                    )
                 )
-            )
             return None
         if options["force"] and settings.SHOPMAN_ENVIRONMENT not in {
             "development",
@@ -107,7 +111,7 @@ class Command(BaseCommand):
             reconcile_calling,
         )
         from shopman.shop.services.marketing_delivery_runtime import (
-            SUPPORTED_PLATFORMS,
+            delivery_lanes,
             delivery_provider,
         )
         from shopman.shop.services.marketing_delivery_worker import (
@@ -143,8 +147,16 @@ class Command(BaseCommand):
         # operator rehearsal does not require an unexplained second invocation.
         clock = timezone.now()
 
+        # Plataforma desligada pela flag é escolha de quem opera o ambiente: não se
+        # pede o adapter dela, senão o aviso de "método não configurado" do
+        # `get_adapter` sairia a cada ciclo. Os destinos dela seguem `queued`, sem
+        # reserva. Plataforma com a flag ligada e sem adapter registrado continua
+        # sendo pedida — ali o aviso aponta configuração quebrada.
         providers = {}
-        for platform in SUPPORTED_PLATFORMS:
+        for lane in delivery_lanes():
+            if lane.state == "switched_off":
+                continue
+            platform = lane.platform
             try:
                 provider = delivery_provider(platform)
             except Exception:

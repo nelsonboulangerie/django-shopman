@@ -13,10 +13,13 @@ import {
 } from "~/composables/useMarketingRecovery";
 import { formatCount } from "~/presentation/campaign";
 import {
+  approvalCanaryNote,
   commandReceiptPresentation,
   deliveryCountItems,
   deliveryStatePresentation,
   platformResultLabel,
+  platformSwitchedOff,
+  platformSwitchedOffNote,
   receiptStateLabel,
   recoveryActionExplanation,
   recoveryActionLabel,
@@ -66,6 +69,27 @@ const showsPlatformResults = computed(
     !["rejected", "expired"].includes(props.announcement.state),
 );
 const recoveryActions = computed(() => props.actions.filter(isRecoveryAction));
+type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
+
+function isSwitchedOff(platform: PlatformDelivery): boolean {
+  return platformSwitchedOff(props.announcement, platform.platform_ref);
+}
+
+function waitsForSwitch(platform: PlatformDelivery): boolean {
+  return platform.counts.queued > 0 && isSwitchedOff(platform);
+}
+
+function platformCountItems(platform: PlatformDelivery) {
+  return deliveryCountItems(platform.counts, {
+    platformSwitchedOff: isSwitchedOff(platform),
+  });
+}
+
+const waitingSwitchedOffLabels = computed(() =>
+  props.announcement.delivery.platforms
+    .filter(waitsForSwitch)
+    .map((platform) => platformResultLabel(platform.platform_ref)),
+);
 const decisionNextStep = computed(() => {
   if (
     props.announcement.delivery.state === "not_started" &&
@@ -75,6 +99,9 @@ const decisionNextStep = computed(() => {
   }
   const available = recoveryActions.value.find((action) => action.enabled);
   if (available) return recoveryActionLabel(available);
+  if (waitingSwitchedOffLabels.value.length) {
+    return `Pedir à operação para ligar ${waitingSwitchedOffLabels.value.join(", ")}; até lá, esses destinos não saem.`;
+  }
   if (result.value.tone === "ok") return "Nenhuma ação necessária.";
   return "Acompanhar o resultado antes de tomar outra decisão.";
 });
@@ -111,6 +138,7 @@ const approvalEvidence = computed(() => {
         );
   return {
     audience: `${formatCount(audienceCount)} ${audienceCount === 1 ? "pessoa" : "pessoas"}`,
+    canary: approvalCanaryNote(receipt),
     platforms: platforms.join(", "),
     execution:
       mode === "scheduled" || props.announcement.scheduled_for
@@ -415,6 +443,12 @@ function closeDialog(open: boolean) {
             <div class="border-b border-sky-500/20 p-3">
               <dt class="text-xs font-medium text-muted-foreground">Público</dt>
               <dd class="mt-1 font-semibold">{{ approvalEvidence.audience }}</dd>
+              <dd
+                v-if="approvalEvidence.canary"
+                class="mt-1 text-xs text-muted-foreground"
+              >
+                {{ approvalEvidence.canary }}
+              </dd>
             </div>
             <div class="border-b border-sky-500/20 p-3 sm:border-r">
               <dt class="text-xs font-medium text-muted-foreground">Plataformas</dt>
@@ -504,7 +538,7 @@ function closeDialog(open: boolean) {
           </div>
           <ul class="mt-2 flex flex-wrap gap-1.5">
             <li
-              v-for="item in deliveryCountItems(platform.counts)"
+              v-for="item in platformCountItems(platform)"
               :key="item.key"
               class="rounded-full px-2.5 py-1 text-xs"
               :class="COUNT_TONE_CLASS[item.tone]"
@@ -512,6 +546,9 @@ function closeDialog(open: boolean) {
               <strong>{{ formatCount(item.count) }}</strong> {{ item.label }}
             </li>
           </ul>
+          <p v-if="waitsForSwitch(platform)" class="mt-2 text-xs text-warning">
+            {{ platformSwitchedOffNote(platform.platform_ref) }}
+          </p>
         </li>
       </ul>
     </section>

@@ -12,6 +12,11 @@ import uuid
 
 from django.db import transaction
 
+from shopman.shop.projections.customer_context import (
+    MARKETING_PROMPT_ANSWERED_AT,
+    MARKETING_PROMPT_CHANNEL,
+)
+
 logger = logging.getLogger(__name__)
 
 # Domain registry of consent channels this shop tracks. Display copy (labels,
@@ -658,8 +663,9 @@ def record_adult_declaration(
 # consentimento de WhatsApp. O resolvedor de audiência (`services/audience.py`)
 # exclui quem não prova maioridade e quem não tem `CommunicationConsent`
 # whatsapp `opted_in` — campanha direta alcançava ninguém. O consentimento
-# passa a ser PERGUNTADO no welcome gate, uma vez por cliente, e continua
-# acessível em Conta › Preferências. A maioridade NÃO é perguntada aqui: ela
+# passa a ser PERGUNTADO num bottom sheet da loja (na página em que a pessoa
+# cai depois de entrar — nunca como passo de login), uma vez por cliente, e
+# continua acessível em Conta › Preferências. A maioridade NÃO é perguntada aqui: ela
 # é declarada ao entrar (`record_adult_declaration`, acima) — a chave de
 # novidades é só consentimento.
 #
@@ -667,35 +673,14 @@ def record_adult_declaration(
 # consentimento no canal whatsapp (qualquer status — quem passou por
 # Preferências já disse o que quer) OU o carimbo abaixo em `Customer.metadata`.
 #
-# ⚠️ "Deixar para depois" e "não marquei a caixa" gravam SÓ o carimbo, nunca
+# ⚠️ Fechar o sheet sem ligar a chave grava SÓ o carimbo, nunca
 # `opted_out`. Um opt-out gravado é PROIBIÇÃO: `services/notification.py`
 # (`_revoked_notification_channels`) cala até o aviso do PRÓPRIO pedido naquele
 # canal, e a tela de Preferências avisa isso. "Depois" não é "nunca".
-MARKETING_PROMPT_CHANNEL = "whatsapp"
-MARKETING_PROMPT_ANSWERED_AT = "marketing_prompt_answered_at"
+# Canal e carimbo moram no lado de LEITURA (`projections.customer_context`), que a
+# home e a sessão consultam; este serviço só grava a resposta.
+
 MARKETING_PROMPT_SOURCE = "storefront_welcome"
-
-
-def marketing_prompt_pending(customer) -> bool:
-    """Se a loja ainda deve PERGUNTAR sobre novidades a este cliente.
-
-    Falha fechado: se a fonte de consentimento não responde, não pergunta — o
-    gate de boas-vindas não pode derrubar a sessão inteira por causa disso.
-    """
-    customer_ref = (getattr(customer, "ref", "") or "").strip()
-    if not customer_ref:
-        return False
-    metadata = getattr(customer, "metadata", None) or {}
-    if isinstance(metadata, dict) and metadata.get(MARKETING_PROMPT_ANSWERED_AT):
-        return False
-    try:
-        from shopman.guestman import ConsentService
-
-        consents = ConsentService.get_consents(customer_ref)
-    except Exception:
-        logger.warning("marketing_prompt.consent_source_unavailable customer=%s", customer_ref, exc_info=True)
-        return False
-    return not any(consent.channel == MARKETING_PROMPT_CHANNEL for consent in consents)
 
 
 def answer_marketing_prompt(

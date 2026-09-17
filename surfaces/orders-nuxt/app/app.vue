@@ -29,7 +29,7 @@ async function restoreAuthenticatedWorkspace() {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("Gestor de Pedidos");
+useOperatorWindowTitle("Gestor");
 </script>
 
 <template>
@@ -42,7 +42,7 @@ useOperatorWindowTitle("Gestor de Pedidos");
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
         app-icon="square-kanban"
-        app-icon-src="/pwa/pwa-64x64.png?v=2"
+        app-icon-src="/pwa/pwa-64x64.png?v=3"
         app-label="Gestor"
         :central-url="hubUrl"
         :operator-name="operator?.name"

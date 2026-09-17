@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HomeResponse } from '~/types/shopman'
-import { absoluteImage } from '~/presentation/seo'
+import { absoluteImage, siteVerificationMeta } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
@@ -22,6 +22,9 @@ function focusMainContent () {
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
 watchConnectivity(() => { void refreshCart().catch(() => null) })
 
+// Disparada ANTES da home do shell, para as duas buscas correrem juntas.
+const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
+
 const { data: shellHome, refresh: refreshShellHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include',
   headers: requestHeaders,
@@ -29,6 +32,8 @@ const { data: shellHome, refresh: refreshShellHome } = await useFetch<HomeRespon
   immediate: true,
   server: true
 })
+
+await siteSeoReady
 
 watch(() => shellHome.value, value => {
   const authRoute = authShellRoute.value
@@ -78,7 +83,12 @@ const brandName = computed(() => session.shop.value?.brand_name || NELSON_FALLBA
 const shortName = computed(() => session.shop.value?.short_name || NELSON_FALLBACK_SHOP.short_name)
 useHead(() => ({
   titleTemplate: title => (title && title !== brandName.value ? `${title} · ${brandName.value}` : brandName.value),
-  meta: [{ name: 'apple-mobile-web-app-title', content: shortName.value }]
+  meta: [
+    { name: 'apple-mobile-web-app-title', content: shortName.value },
+    // Verificação de domínio (Search Console, Bing, Meta, Pinterest): só sai a
+    // meta que a casa preencheu no Admin — vazia não entra no <head>.
+    ...siteVerificationMeta(siteSeo.value?.verifications)
+  ]
 }))
 // PREVIEW DO LINK — todo link que a casa manda vira CARTÃO, não URL crua.
 //
@@ -94,11 +104,14 @@ useHead(() => ({
 const brandDescription = computed(
   () => session.shop.value?.description || NELSON_FALLBACK_SHOP.description
 )
-// A mesma imagem que a home usa: o primeiro destaque, que é foto de produto de
-// verdade. Logo em cartão de link vira quadradinho sem graça; pão, não.
+// A imagem de compartilhamento escolhida no Admin vence. Sem ela, a mesma que a
+// home usa: o primeiro destaque, que é foto de produto de verdade. Logo em
+// cartão de link vira quadradinho sem graça; pão, não.
 const brandOgImage = computed(() => absoluteImage(
   requestUrl.origin,
-  shellHome.value?.home?.featured_items?.[0]?.image_url || session.shop.value?.logo_url
+  siteSeo.value?.share_image_url
+  || shellHome.value?.home?.featured_items?.[0]?.image_url
+  || session.shop.value?.logo_url
 ))
 
 useSeoMeta({
@@ -144,6 +157,10 @@ useSeoMeta({
       <OfflineBanner />
       <PwaInstallInvite :copy="shellHome?.home?.pwa_copy" />
       <PwaUpdateToast :copy="shellHome?.home?.pwa_copy" />
+      <!-- O convite de novidades: sobe na página em que a pessoa cai depois de
+           entrar, uma vez, dirigido pela sessão (welcomeAsksMarketing). Nunca em
+           /entrar, /a, no checkout ou no pedido. -->
+      <MarketingPromptSheet />
     </ClientOnly>
     <!-- Fita de ambiente: FLUTUA no canto (fixed), então mora aqui com os
          overlays e não no fluxo. Some sozinha em produção — o servidor devolve

@@ -141,6 +141,7 @@ class Command(BaseCommand):
             "reconciliation": {"by_state": _counts(reconciliations, "state")},
             "open_alerts": open_alerts,
         }
+        report["lanes"] = _lanes(targets, platform=platform)
         report["shadow"] = _shadow_snapshot(
             outboxes=outboxes,
             receipt=receipt,
@@ -156,7 +157,7 @@ class Command(BaseCommand):
             f"result={report['result']} mode=read_only provider_calls=0 pii=false "
             f"receipt={report['scope']['receipt_ref']} platform={platform}"
         )
-        for name in ("outbox", "targets", "attempts", "reconciliation"):
+        for name in ("outbox", "targets", "attempts", "reconciliation", "lanes"):
             self.stdout.write(
                 f"result={report['result']} {name}="
                 f"{json.dumps(report[name], ensure_ascii=False, sort_keys=True)}"
@@ -191,6 +192,7 @@ def _result(report: dict) -> str:
         report["shadow"]["status"] == "BLOCKED"
         or report["outbox"]["stale_pending"]
         or report["targets"]["by_state"].get("unknown")
+        or any(lane["state"] == "unconfigured" for lane in report["lanes"].values())
         or any(alerts.values())
     ):
         return "WARN"
@@ -210,9 +212,51 @@ def _next_actions(report: dict) -> list[str]:
         actions.append("open:marketing-unknown-provider-effect.md")
     if report["shadow"]["status"] == "BLOCKED":
         actions.append("hold_and_open:marketing-rollout-rollback.md")
+    for platform, lane in report["lanes"].items():
+        if lane["state"] == "unconfigured":
+            # Flag ligada (ou sem flag) e nenhuma integração registrada: defeito.
+            actions.append(
+                f"check_config:delivery_integration_unregistered platform={platform} "
+                f"switch={lane['switch'] or '-'}"
+            )
+        elif lane["state"] == "switched_off" and lane["queued_targets"]:
+            # Desligada de propósito: não é alerta, mas a fila parada precisa aparecer.
+            actions.append(
+                f"observe:platform_switched_off_holds_queued platform={platform} "
+                f"switch={lane['switch']} queued={lane['queued_targets']}"
+            )
     if not actions:
         actions.append("observe:no_mutation_indicated")
     return actions
+
+
+def _lanes(targets: QuerySet, *, platform: str) -> dict[str, dict]:
+    """Estado de cada plataforma neste ambiente, sem chamar adapter nem provedor.
+
+    ``switched_off`` é a flag da plataforma desligada — escolha de quem opera, com os
+    destinos esperando na fila. ``unconfigured`` é a flag ligada sem integração
+    registrada — configuração quebrada.
+    """
+
+    from shopman.shop.models import DeliveryTarget
+    from shopman.shop.services.marketing_delivery_runtime import delivery_lanes
+
+    queued = {
+        str(row["platform"]): int(row["total"])
+        for row in targets.filter(state=DeliveryTarget.State.QUEUED)
+        .values("platform")
+        .annotate(total=Count("pk"))
+        .order_by("platform")
+    }
+    return {
+        lane.platform: {
+            "state": lane.state,
+            "switch": lane.switch,
+            "queued_targets": queued.get(lane.platform, 0),
+        }
+        for lane in delivery_lanes()
+        if platform in ("all", lane.platform)
+    }
 
 
 def _shadow_snapshot(*, outboxes: QuerySet, receipt, platform: str) -> dict:

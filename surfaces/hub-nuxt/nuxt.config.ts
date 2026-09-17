@@ -35,21 +35,20 @@ export default defineNuxtConfig({
         categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
       },
       manifest: {
-        name: "Central de Apps",
-        shortName: "Central",
+        label: "Central",
         description: "Central dos aplicativos de operação.",
         themeColor: "#7C3A40",
         backgroundColor: "#FCF6F1",
         orientation: "any",
         icons: [
-          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
         shortcuts: [
-          { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders", icon: "/pwa/pwa-192x192.png?v=2" },
-          { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos", icon: "/pwa/pwa-192x192.png?v=2" },
-          { name: "Produção", shortName: "Produção", url: "/shortcuts/production", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders", icon: "/pwa/pwa-192x192.png?v=3" },
+          { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos", icon: "/pwa/pwa-192x192.png?v=3" },
+          { name: "Produção", shortName: "Produção", url: "/shortcuts/production", icon: "/pwa/pwa-192x192.png?v=3" },
         ],
       },
     }),
@@ -99,7 +98,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Central de Apps",
+      title: "Central",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#fafafa" },

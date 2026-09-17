@@ -154,6 +154,12 @@ SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = _env_bool(
 SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED", False
 )
+# Mensagem direta de campanha por WhatsApp (ManyChat, ADR-009) no ledger durável.
+# A flag só REGISTRA o adapter: quem recebe continua decidido por
+# SHOPMAN_MARKETING_WHATSAPP_MODE (blocked/canary/open) na última porta.
+SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", False
+)
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -332,6 +338,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Sessão de operador renova com o uso, no máximo 1 gravação/dia (7 dias parada
+    # ⇒ expira). Depois de Session/Auth: a resposta dela passa pelo Session, que grava
+    # e reemite o cookie. Admin intocado. Ver shopman/backstage/services/operator_session.py.
+    "shopman.backstage.middleware.OperatorSessionRenewalMiddleware",
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
@@ -500,6 +510,14 @@ else:
 # mesmo caminho spoof-safe já usado pelos gates de IP do doorman).
 RATELIMIT_IP_META_KEY = "shopman.shop.services.auth.client_ip"
 
+# Segredo que os BFFs Nuxt (storefront-nuxt e os apps de operador via operator-kit,
+# `NUXT_DJANGO_PROXY_SECRET`) apresentam no cabeçalho `X-Shopman-Proxy-Secret`. O BFF chama o `api.` pela rede
+# pública, então a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For e o
+# rightmost TRUSTED_PROXY_DEPTH deixa de ser o cliente. Com o segredo, `client_ip`
+# lê um salto a mais; sem ele (vazio = desligado), o cabeçalho não muda nada.
+# Os dois lados precisam do MESMO valor — ver .do/app.alpha-subdomains.yaml.
+SHOPMAN_BFF_PROXY_SECRET = os.environ.get("SHOPMAN_BFF_PROXY_SECRET", "").strip()
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATIC_URL = "/static/"
@@ -555,6 +573,22 @@ try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
 except ValueError:
     MANYCHAT_API_TIMEOUT = 15
+
+# Marketing por WhatsApp (flows de campanha e de "Me avise"). O flow lê CAMPOS
+# PERSISTENTES do contato, então a isolação é por construção: uma mensagem com flow
+# por contato por vez, reservada no cache compartilhado durante a janela abaixo.
+# Modo `blocked` (padrão) fecha tudo; `canary` abre só para os refs listados;
+# `open` abre para todo contato elegível. `canary` e `open` exigem cache
+# compartilhado (Redis) — com cache local o estado continua bloqueado.
+SHOPMAN_MARKETING_WHATSAPP_MODE = (
+    os.environ.get("SHOPMAN_MARKETING_WHATSAPP_MODE", "blocked").strip().lower() or "blocked"
+)
+SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS = tuple(
+    ref.strip()
+    for ref in os.environ.get("SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS", "").split(",")
+    if ref.strip()
+)
+SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS = _env_int("SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS", 120)
 SHOPMAN_MANYCHAT = {
     "api_token": MANYCHAT_API_TOKEN,
     "base_url": os.environ.get("MANYCHAT_API_BASE", "https://api.manychat.com/fb"),
@@ -729,6 +763,10 @@ if SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED:
 if SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED:
     SHOPMAN_MARKETING_DELIVERY_ADAPTERS["tiktok"] = (
         "shopman.shop.adapters.marketing_delivery_tiktok"
+    )
+if SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["whatsapp"] = (
+        "shopman.shop.adapters.marketing_delivery_whatsapp"
     )
 
 # ── Machine (courier — despacho de entregadores) ───────────────────
@@ -1022,7 +1060,7 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
+        "shopman.shop.api_throttles.ClientIpAnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
@@ -1042,9 +1080,11 @@ REST_FRAMEWORK = {
     # `doorman.get_client_ip(trusted_proxy_depth=...)`. As duas TÊM de casar,
     # senão o mesmo cliente é dois baldes diferentes; por isso leem a mesma env.
     #
-    # A contagem é: [cliente, BFF Nitro] → o edge da plataforma acrescenta o IP
-    # de saída do Nitro, e o BFF repassa o XFF que recebeu. Valor forjado entra
-    # à ESQUERDA e não desloca a contagem pela direita.
+    # O throttle anônimo padrão NÃO usa este número: `ClientIpAnonRateThrottle`
+    # conta por `auth.client_ip`, que sabe ler o salto a mais do BFF da loja
+    # (SHOPMAN_BFF_PROXY_SECRET). Fica para os throttles DRF que ainda usam o
+    # `get_ident` de fábrica. Valor forjado entra à ESQUERDA e não desloca a
+    # contagem pela direita.
     "NUM_PROXIES": _env_int("DOORMAN_TRUSTED_PROXY_DEPTH", 1),
 }
 
@@ -1668,6 +1708,15 @@ SHOPMAN_PURCHASE_BASE_URL = (os.environ.get("SHOPMAN_PURCHASE_BASE_URL") or "").
 #     "api.boulangerie.com.br" (o proxy Nuxt reescreve o Host para esse alias).
 SHOPMAN_OPERATOR_COOKIE_DOMAIN = (os.environ.get("SHOPMAN_OPERATOR_COOKIE_DOMAIN") or "").strip()
 SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").strip()
+
+# Sessão dos apps de operador (decisão de 17/09/2026): renova com o uso e expira
+# após 7 dias SEM uso. Só vale para a sessão aberta nas portas de operador (senha do
+# app, PIN, crachá), marcada no login; a do Admin segue o default do Django
+# (`SESSION_COOKIE_AGE`, 14 dias fixos a partir do login). O uso regrava o prazo no
+# máximo uma vez por intervalo, para o poll não virar UPDATE por requisição.
+# Constantes de código, sem env: mudar a regra é decisão de produto, não de deploy.
+SHOPMAN_OPERATOR_SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
+SHOPMAN_OPERATOR_SESSION_RENEW_INTERVAL_SECONDS = 24 * 60 * 60
 
 #: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
 #: diz o que é, e obrigar a repetir a palavra no caminho é redundância.

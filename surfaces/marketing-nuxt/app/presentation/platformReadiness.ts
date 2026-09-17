@@ -11,8 +11,15 @@ import type { Platform } from "~/composables/usePlatforms";
 
 export type PlatformReadiness = Pick<
   Platform,
-  "platform" | "state" | "ready" | "reason" | "limitation" | "source_status"
->;
+  | "platform"
+  | "state"
+  | "ready"
+  | "reason"
+  | "limitation"
+  | "source_status"
+  | "canary_recipients"
+> &
+  Partial<Pick<Platform, "reason_code">>;
 
 export type ReadinessTone = "ready" | "limited" | "blocked" | "unknown";
 
@@ -50,11 +57,26 @@ export function platformReadinessNote(
 ): PlatformReadinessNote {
   const tone = readinessTone(item);
   if (tone === "ready" || !item) return { tone: "ready", badge: "", text: "" };
+  if (tone === "limited" && typeof item.canary_recipients === "number") {
+    return {
+      tone: "limited",
+      badge: "ensaio",
+      text: `${label}: ${canaryText(item.canary_recipients)}`,
+    };
+  }
   if (item.source_status === "simulated") {
     return {
       tone: "limited",
       badge: "simulação",
       text: `${label}: ${item.reason || "simulação local ativa"}`,
+    };
+  }
+  if (tone === "blocked" && item.reason_code === "platform_switched_off") {
+    // Desligada de propósito: "até resolver" diria que há algo quebrado.
+    return {
+      tone,
+      badge: "desligada",
+      text: `${label}: ${item.reason} O que for aprovado para ela fica na fila, sem envio, até ela ser ligada.`,
     };
   }
   if (tone === "blocked") {
@@ -76,6 +98,17 @@ export function platformReadinessNote(
     badge: "limitada",
     text: `${label}: ${item.limitation || item.reason || "publica com limite."}`,
   };
+}
+
+/**
+ * Ensaio do WhatsApp: a mensagem sai, mas só para os contatos escolhidos. Diz QUANTOS,
+ * nunca quais — o ref de cliente não vem para a tela.
+ */
+export function canaryText(recipients: number): string {
+  const n = Math.max(0, Math.trunc(recipients));
+  return n === 1
+    ? "Ensaio: só 1 contato recebe."
+    : `Ensaio: só ${n} contatos recebem.`;
 }
 
 /** Classes da pílula por tom — a cor conta o estado antes de qualquer clique. */

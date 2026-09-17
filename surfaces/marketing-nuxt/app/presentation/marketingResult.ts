@@ -4,6 +4,7 @@ import type {
   DeliveryCountsProjectionV2,
   MarketingActionProjectionV2,
   MarketingCommandReceipt,
+  PlatformDeliveryProjectionV2,
 } from "~/types/campaign";
 import { formatCount } from "~/presentation/campaign";
 
@@ -135,13 +136,59 @@ export function deliveryStatePresentation(
   return values[state];
 }
 
-export function deliveryCountItems(counts: DeliveryCountsProjectionV2) {
+/**
+ * A plataforma está desligada pela flag do ambiente (`platform_switched_off` na
+ * prontidão). O adapter existe; quem opera escolheu não ligar. Os destinos dela
+ * não somem nem falham: ficam na fila, sem envio, até alguém ligar.
+ */
+export function platformSwitchedOff(
+  announcement: Pick<AnnouncementProjectionV2, "readiness">,
+  platformRef: string,
+): boolean {
+  return (announcement.readiness?.platforms ?? []).some(
+    (item) =>
+      item.platform_ref === platformRef &&
+      item.reason_code === "platform_switched_off",
+  );
+}
+
+export function deliveryCountItems(
+  counts: DeliveryCountsProjectionV2,
+  options: { platformSwitchedOff?: boolean } = {},
+) {
   return COUNT_LABELS.flatMap(([key, singular, tone]) => {
     const count = Number(counts[key] || 0);
     if (count <= 0) return [];
+    if (key === "queued" && options.platformSwitchedOff) {
+      // "na fila" sozinho sugere que a vez vai chegar; com a plataforma
+      // desligada, não chega enquanto ninguém ligar.
+      return [
+        {
+          key,
+          count,
+          label: "aguardando a plataforma ligar",
+          tone: "attention" as ResultTone,
+        },
+      ];
+    }
     const label = count === 1 ? singular : pluralizeCountLabel(singular);
     return [{ key, count, label, tone }];
   });
+}
+
+/** Rótulo do estado de uma plataforma no resultado, ciente da plataforma desligada. */
+export function platformDeliveryLabel(
+  platform: Pick<PlatformDeliveryProjectionV2, "state" | "counts">,
+  switchedOff: boolean,
+): string {
+  if (switchedOff && Number(platform.counts.queued || 0) > 0) {
+    return "Aguardando a plataforma ligar";
+  }
+  return deliveryStatePresentation(platform.state).label;
+}
+
+export function platformSwitchedOffNote(platformRef: string): string {
+  return `${platformResultLabel(platformRef)} está desligado neste ambiente: os destinos na fila só podem sair depois que a operação ligar a plataforma.`;
 }
 
 function pluralizeCountLabel(label: string): string {
@@ -213,6 +260,24 @@ export function recoveryDisabledReason(reason: string): string {
     reasons[reason] ??
     "O estado ou sua autorização mudou. Atualize o resultado."
   );
+}
+
+/**
+ * Aprovação feita no ensaio do WhatsApp. Fora do ensaio, campanha geral por WhatsApp
+ * exige o mínimo de pessoas elegíveis configurado no Admin (impede mirar uma pessoa);
+ * no ensaio quem recebe já é só a lista de canário da operação, e o comprovante
+ * registra `canary=true` com o `minimum_count` que não valeu. O número vem do
+ * comprovante — a tela não carrega um mínimo próprio para não mentir quando a loja o
+ * muda. Comprovante antigo, sem o número, recebe a frase sem número.
+ */
+export function approvalCanaryNote(receipt: MarketingCommandReceipt): string {
+  if (receipt.kind !== "approve" || receipt.outcome.canary !== true) return "";
+  const minimum = receipt.outcome.minimum_count;
+  const skipped =
+    typeof minimum === "number" && Number.isInteger(minimum) && minimum > 0
+      ? `o mínimo de ${minimum} não vale`
+      : "o mínimo de público não vale";
+  return `Ensaio: ${skipped}; só a lista de canário recebe.`;
 }
 
 export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {

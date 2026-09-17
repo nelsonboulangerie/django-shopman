@@ -22,6 +22,8 @@ export type Platform = {
   reason: string;
   action: string;
   limitation: string;
+  /** Ensaio do WhatsApp: quantos contatos recebem (nunca quais). Ausente fora do ensaio. */
+  canary_recipients?: number | null;
   in_use: boolean;
 };
 

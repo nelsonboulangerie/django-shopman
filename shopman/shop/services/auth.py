@@ -70,13 +70,67 @@ def trusted_device_prefill(request) -> tuple[str, str]:
         return "", ""
 
 
+# Os BFFs Nuxt (loja e apps de operador) se identificam por este cabeçalho
+# (segredo compartilhado com o Nitro: `SHOPMAN_BFF_PROXY_SECRET` aqui,
+# `NUXT_DJANGO_PROXY_SECRET` lá). Sem ele, ninguém consegue pedir ao Django que
+# leia um salto a mais do X-Forwarded-For.
+BFF_PROXY_SECRET_HEADER = "X-Shopman-Proxy-Secret"
+
+
+def _is_trusted_bff(request) -> bool:
+    import hmac
+
+    from django.conf import settings
+
+    expected = str(getattr(settings, "SHOPMAN_BFF_PROXY_SECRET", "") or "")
+    presented = str(request.META.get("HTTP_X_SHOPMAN_PROXY_SECRET", "") or "")
+    if not expected or not presented:
+        return False
+    return hmac.compare_digest(presented.encode(), expected.encode())
+
+
+def _client_ip_behind_bff(request, depth: int) -> str | None:
+    """IP do cliente final quando quem conectou foi um BFF Nuxt (loja ou operador).
+
+    O navegador fala com o Nitro, e o Nitro abre conexão NOVA para o `api.` pela
+    rede pública. A borda da plataforma trata o Nitro como um cliente qualquer e
+    acrescenta, à direita, os mesmos ``depth`` saltos de sempre — o N-ésimo da
+    direita é o IP de SAÍDA do Nitro (medido no alpha em 17/09: 147.182.186.185
+    gravado como IP de consentimento). À esquerda deles está, intacto, o XFF que
+    o Nitro recebeu da borda DELE, que é a mesma plataforma e portanto tem a
+    mesma forma: contar ``depth`` da direita nesse trecho dá o cliente.
+
+    Valor forjado pelo cliente entra na ponta esquerda e não desloca nenhuma das
+    duas contagens. Sem trecho interno (dev local, BFF sem XFF) ou com lixo no
+    lugar do IP, devolve ``None`` e vale a resolução direta.
+    """
+    import ipaddress
+
+    xff = request.META.get("HTTP_X_FORWARDED_FOR") or ""
+    parts = [p.strip() for p in xff.split(",") if p.strip()]
+    if len(parts) <= depth:
+        return None
+    inner = parts[: len(parts) - depth]
+    candidate = inner[max(0, len(inner) - depth)]
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    return candidate
+
+
 def client_ip(request) -> str:
-    """IP real do cliente para os gates de rate-limit por IP do doorman.
+    """IP real do cliente para rate-limit por IP e para evidência (LGPD).
 
     Atrás do load balancer, ``REMOTE_ADDR`` é o IP do proxy — todos os
     clientes compartilhariam um único bucket (falso bloqueio coletivo).
     Resolve via ``X-Forwarded-For`` com o mesmo ``TRUSTED_PROXY_DEPTH`` que os
     endpoints do doorman já usam.
+
+    Quando a requisição traz o segredo dos BFFs Nuxt, lê um salto a mais: o
+    N-ésimo da direita seria o IP de saída do Nitro, igual para todo visitante.
+    Sem o segredo, o cabeçalho é ignorado — um cliente direto não consegue pedir
+    a leitura mais funda para escolher o IP que quer ver gravado.
     """
     import os
 
@@ -85,6 +139,9 @@ def client_ip(request) -> str:
 
     depth = get_doorman_settings().TRUSTED_PROXY_DEPTH
     resolved = get_client_ip(request, depth)
+    via_bff = _is_trusted_bff(request)
+    if via_bff:
+        resolved = _client_ip_behind_bff(request, depth) or resolved
     # Diagnóstico controlado (inerte por padrão): quando SHOPMAN_LOG_CLIENT_IP
     # está ligado, registra a cadeia X-Forwarded-For crua e o IP resolvido, para
     # descobrir a forma real do XFF atrás do proxy (ex.: DO App Platform) e ajustar
@@ -92,10 +149,11 @@ def client_ip(request) -> str:
     # linha de log por request e o XFF pode conter IP de cliente (dado pessoal).
     if os.environ.get("SHOPMAN_LOG_CLIENT_IP", "").lower() in ("true", "1", "yes"):
         logger.info(
-            "client_ip.diagnostic xff=%r remote_addr=%r depth=%s resolved=%r",
+            "client_ip.diagnostic xff=%r remote_addr=%r depth=%s via_bff=%s resolved=%r",
             request.META.get("HTTP_X_FORWARDED_FOR"),
             request.META.get("REMOTE_ADDR"),
             depth,
+            via_bff,
             resolved,
         )
     return resolved

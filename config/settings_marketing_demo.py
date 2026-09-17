@@ -21,13 +21,16 @@ SHOPMAN_MARKETING_DELIVERY_ADAPTERS = dict.fromkeys(
     ("instagram", "facebook", "google_business", "whatsapp"),
     "shopman.shop.adapters.marketing_delivery_console",
 )
+# O adapter real do WhatsApp (ManyChat) nunca entra neste perfil: a lane termina no
+# simulador acima, mesmo que a env de plataforma esteja ligada na máquina.
+SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = False
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = True
 SHOPMAN_MARKETING_SIMULATION_FLOWS = (
     ("local_marketing_e2e", "Fluxo local — sem envio externo"),
 )
 # Exact host already used by the canonical seed product images.  Validation is
 # still fail-closed (no wildcard); the simulator itself never fetches the URL.
-SHOPMAN_MARKETING_MEDIA_HOSTS = ("menu.nelsonboulangerie.com.br",)
+SHOPMAN_MARKETING_MEDIA_HOSTS = ("img.nelsonboulangerie.com.br",)
 
 # These repetitions are deliberate fail-safe documentation.  The adapter checks
 # them again immediately before its (local-only) boundary.

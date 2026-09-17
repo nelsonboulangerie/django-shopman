@@ -26,7 +26,7 @@ Fontes oficiais usadas para este contrato:
 ## Blueprint
 
 O arquivo `.do/app.alpha-subdomains.yaml` registra o perfil tecnico de pre-go-live
-derivado do spec vivo (ingress host-based: `menu.nelsonboulangerie.com.br` → loja
+derivado do spec vivo (ingress host-based: `www.nelsonboulangerie.com.br` → loja
 Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 
@@ -43,8 +43,9 @@ Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
   login web enquanto envio real por WhatsApp/SMS ainda não está operacional;
 - instância Nelson ativa via `SHOPMAN_INSTANCE_APPS`, `SHOPMAN_CUSTOMER_STRATEGY_MODULES`
   e `SHOPMAN_INSTANCE_MODIFIERS`;
-- Django com readiness `/ready/` e liveness `/health/`; Marketing Nuxt com
-  `/health/ready` e `/health/live` nos dois blueprints.
+- health check da plataforma sempre barato: Django em `/health/live/` (sem banco) e
+  os nove Nuxt em `/health/live` (sem chamar o Django). `/ready/` e `/health/ready`
+  ficam para smoke e diagnóstico.
 
 O deploy é por **imagens**: o workflow `.github/workflows/deploy-images.yml`
 builda no GitHub Actions e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`, tag por componente); o App Platform assina cada tag com `deploy_on_push` — **publicar a tag nova É o deploy** (merge em `main` = deploy no alpha; build seletivo por componente; `concurrency` sem cancel serializa merges seguidos).
@@ -379,7 +380,8 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 - API: `https://api.seudominio.com/api/v1/storefront/home/` responde; `/health` e `/ready` ok.
 - Admin/operador: `https://admin.seudominio.com/admin/` loga e abre consoles (pedidos/KDS/produção).
 - PDV: `https://pos.seudominio.com/` opera (login operador, venda, fechamento).
-- Marketing: `/health/live` e `/health/ready` respondem; login e leitura não geram
+- Nuxt: `/health/live` responde em todos; nos apps de operador `/health/ready` também.
+- Marketing: login e leitura não geram
   outbox; `make marketing-diagnose` não mostra divergência. Envio real só entra no
   roteiro após G-H08/G-H09 e canário autorizado.
 - Notificações: WhatsApp/ManyChat entrega com links apontando para o apex.
@@ -403,7 +405,7 @@ Staging técnico está pronto quando:
 2. `/health/` e `/ready/` respondem 200.
 3. `make release-readiness` não reporta falhas locais.
 4. `make release-readiness-strict` aponta somente bloqueios externos reais.
-5. `marketing-nuxt` responde em `/health/live` e `/health/ready`, enquanto os dois
+5. `marketing-nuxt` responde em `/health/live` e `/health/ready` (rotas da layer), enquanto os dois
    consumers de Marketing continuam desligados se o canário ainda não foi autorizado.
 
 Piloto público só fica pronto quando:

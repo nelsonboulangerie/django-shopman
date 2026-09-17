@@ -48,8 +48,8 @@ from .kds import (
     KDSIndexView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
-    KDSTicketItemView,
     KDSTicketRecallView,
+    KDSTicketStartView,
 )
 from .marketing import (
     AnnouncementApproveView,
@@ -189,6 +189,7 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .operator_capacity import OperatorCapacityView
 from .print_jobs import (
     PrintAgentAckView,
     PrintAgentClaimView,
@@ -230,6 +231,7 @@ from .recipe_book import (
 )
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, MarketingVitalView
+from .tenant import OperatorTenantView
 
 urlpatterns = [
     # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
@@ -247,7 +249,7 @@ urlpatterns = [
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
-    path("kds/tickets/<int:ticket_pk>/items/", KDSTicketItemView.as_view(), name="api-backstage-kds-ticket-item"),
+    path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
     path("kds/tickets/<int:ticket_pk>/acknowledge/", KDSTicketAcknowledgeView.as_view(), name="api-backstage-kds-ticket-acknowledge"),
@@ -257,6 +259,8 @@ urlpatterns = [
     # Operador (PIN/crachá) — genérico, compartilhado por todas as surfaces (inclui POS)
     path("operator/login/", OperatorLoginView.as_view(), name="api-backstage-operator-login"),
     path("operator/session/", OperatorSessionView.as_view(), name="api-backstage-operator-session"),
+    # Nome da casa ("Nelson") para o nome dos PWAs de operador — público, sem sessão
+    path("operator/tenant/", OperatorTenantView.as_view(), name="api-backstage-operator-tenant"),
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
@@ -266,6 +270,8 @@ urlpatterns = [
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
     # Provisionamento da ESTAÇÃO: uma vez por dispositivo, por quem gere operadores.
     path("operator/station/", StationProvisionView.as_view(), name="api-backstage-operator-station"),
+    # Capacidade do contêiner dos apps de operação (BFF operator-kit → /health/capacity)
+    path("operator/capacity/", OperatorCapacityView.as_view(), name="api-backstage-operator-capacity"),
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
     path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),

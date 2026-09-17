@@ -162,3 +162,46 @@ def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
         build_product_detail(sku="CROISSANT-CONTRATO", channel_ref="web")
     )
     _assert_matches_contract(payload, "storefront_product_detail")
+
+
+def test_storefront_site_matches_shared_contract(canonical_catalog):
+    """A projeção pública do site: busca, cartão de link, negócio e FAQ."""
+    from django.core.cache import cache
+
+    from shopman.shop.models import FAQEntry, Shop
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+    from shopman.storefront.presentation import build_site
+
+    shop = Shop.load()
+    Shop.objects.filter(pk=shop.pk).update(
+        brand_name="Padaria Contrato",
+        tagline="Padaria Artesanal",
+        description="Pães de fermentação natural.",
+        route="Rua do Contrato",
+        street_number="100",
+        neighborhood="Centro",
+        city="Londrina",
+        state_code="PR",
+        postal_code="86000-000",
+        latitude=Decimal("-23.3348384"),
+        longitude=Decimal("-51.1673157"),
+        phone="554300000000",
+        email="contato@padaria.test",
+        social_links=["https://wa.me/554300000000", "https://www.instagram.com/padariacontrato"],
+        opening_hours={
+            "monday": {"open": "09:00", "close": "18:00"},
+            "saturday": {"open": "08:00", "close": "13:00"},
+        },
+        seo_menu_description="Cardápio do contrato.",
+        price_range="$$",
+        founding_year=1997,
+        facebook_domain_verification="contrato-facebook",
+    )
+    FAQEntry.objects.create(question="Pergunta do contrato?", answer="Resposta do contrato.", is_published=True)
+    cache.clear()
+    shop = Shop.objects.get(pk=shop.pk)
+
+    payload = projection_data(build_site(shop=shop, channel_ref=STOREFRONT_CHANNEL_REF))
+
+    _assert_matches_contract(payload, "storefront_site")

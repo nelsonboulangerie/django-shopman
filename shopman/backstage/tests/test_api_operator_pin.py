@@ -6,9 +6,10 @@ digita o PIN VIRA a sessão, e o PDV passa a mostrar essa pessoa — não um
 anterior e a origem do buraco de permissão (D1 Parte B).
 """
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from shopman.doorman.models import PinCredential
 
 from shopman.backstage.tests.support import trust_station
@@ -77,3 +78,49 @@ class POSOperatorApiTests(TestCase):
         pos2 = self.client.get("/api/v1/backstage/pos/")
         self.assertEqual(pos2.status_code, 403)
         self.assertEqual(pos2.json()["error"]["code"], "station_locked")
+
+
+@override_settings(
+    ALLOWED_HOSTS=["*"],
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+    SHOPMAN_OPERATOR_API_HOST="api.boulangerie.com.br",
+)
+class LockIsZoneWideLogoutTests(TestCase):
+    """Travar o PDV derruba o Gestor aberto no mesmo navegador — por construção.
+
+    A sessão de operador é UMA para toda a zona `.boulangerie.com.br`, e travar é
+    `logout()`. É por isso que o auto-lock do PDV (60 s, só enxerga a atividade do
+    próprio PDV) não pode disparar com o PDV fora da vista: ele desligava o Gestor
+    em uso ao lado. Este teste fixa a premissa do lado do servidor; o lado do PDV
+    está em ``surfaces/pos-nuxt/tests/posAutoLock.test.ts``.
+    """
+
+    API_HOST = "api.boulangerie.com.br"
+
+    def setUp(self):
+        Shop.objects.create(name="Test Shop", brand_name="Test")
+        Channel.objects.create(ref="pdv", name="PDV", is_active=True)
+        trust_station(self.client, "pdv-main")
+        op = User.objects.create_user("ana", password="x", is_staff=True, first_name="Ana")
+        PinCredential.set_for(op, "1234")
+        _grant(op, "operate_pos")
+        # A fila do Gestor pede `shop.manage_orders` (a mesma perm do app orders-nuxt).
+        op.user_permissions.add(Permission.objects.get(content_type__app_label="shop", codename="manage_orders"))
+        self.op = User.objects.get(pk=op.pk)
+
+    def test_pdv_lock_expires_the_session_cookie_for_the_whole_operator_zone(self):
+        unlock = self.client.post(
+            UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM}, HTTP_HOST=self.API_HOST,
+        )
+        self.assertEqual(unlock.status_code, 200)
+        self.assertEqual(unlock.cookies[settings.SESSION_COOKIE_NAME]["domain"], ".boulangerie.com.br")
+        self.assertEqual(self.client.get("/api/v1/backstage/orders/", HTTP_HOST=self.API_HOST).status_code, 200)
+
+        lock = self.client.post(LOCK, HTTP_HOST=self.API_HOST)
+
+        self.assertEqual(lock.status_code, 200)
+        deleted = lock.cookies[settings.SESSION_COOKIE_NAME]
+        self.assertEqual(deleted.value, "")
+        self.assertEqual(deleted["max-age"], 0)
+        self.assertEqual(deleted["domain"], ".boulangerie.com.br")
+        self.assertEqual(self.client.get("/api/v1/backstage/orders/", HTTP_HOST=self.API_HOST).status_code, 403)

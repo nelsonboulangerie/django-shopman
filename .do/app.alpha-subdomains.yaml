@@ -4,11 +4,28 @@ alerts:
 - rule: DEPLOYMENT_FAILED
 - rule: DOMAIN_FAILED
 # ⛔ `alpha.` e `staging.` estão MORTOS desde o corte de 01/09/2026, sem alias e
-#    para sempre. A loja é `menu.nelsonboulangerie.com.br`. Nunca re-adicionar:
-#    já aconteceu uma vez, por um update feito a partir de snapshot velho.
+#    para sempre. Nunca re-adicionar: já aconteceu uma vez, por um update feito a
+#    partir de snapshot velho.
+# 🌐 O SITE é `www.nelsonboulangerie.com.br` desde 17/09/2026 (decisão do dono):
+#    o domínio sem www e `boulangerie.com.br` redirecionam para ele. O `menu.`
+#    voltou para o cardápio antigo (app `nb-catalog-app`), porque é para lá que
+#    os links divulgados apontam; depois do go-live ele também vem para o site.
 domains:
-- domain: menu.nelsonboulangerie.com.br
+- domain: www.nelsonboulangerie.com.br
   type: PRIMARY
+  zone: nelsonboulangerie.com.br
+- domain: nelsonboulangerie.com.br
+  type: ALIAS
+  zone: nelsonboulangerie.com.br
+- domain: boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+# 📷 As fotos de produto têm hostname PRÓPRIO, que não é papel de site nenhum.
+#    Duas vezes (01/09 e 17/09) a foto morava no host de um site (`menu.`, depois
+#    `www.`) e quebrou quando o site mudou de lugar. `img.` só serve arquivo: a
+#    regra de ingress reescreve tudo para `/img/` do storefront.
+- domain: img.nelsonboulangerie.com.br
+  type: ALIAS
   zone: nelsonboulangerie.com.br
 - domain: gestor.boulangerie.com.br
   type: ALIAS
@@ -50,9 +67,47 @@ ingress:
   rules:
   - component:
       name: storefront-nuxt
+      rewrite: /img/
     match:
       authority:
-        exact: menu.nelsonboulangerie.com.br
+        exact: img.nelsonboulangerie.com.br
+      path:
+        prefix: /
+  - match:
+      authority:
+        exact: nelsonboulangerie.com.br
+      path:
+        prefix: /
+    redirect:
+      authority: www.nelsonboulangerie.com.br
+      redirect_code: 301
+      scheme: https
+  - match:
+      authority:
+        exact: boulangerie.com.br
+      path:
+        prefix: /
+    redirect:
+      authority: www.nelsonboulangerie.com.br
+      redirect_code: 301
+      scheme: https
+  # A landing antiga mandava /catalogo para o cardápio antigo; o link impresso
+  # continua levando para lá enquanto o `menu.` for dele.
+  - match:
+      authority:
+        exact: www.nelsonboulangerie.com.br
+      path:
+        prefix: /catalogo
+    redirect:
+      authority: menu.nelsonboulangerie.com.br
+      redirect_code: 302
+      scheme: https
+      uri: /
+  - component:
+      name: storefront-nuxt
+    match:
+      authority:
+        exact: www.nelsonboulangerie.com.br
       path:
         prefix: /
   - component:
@@ -70,56 +125,56 @@ ingress:
       path:
         prefix: /
   - component:
-      name: orders-nuxt
+      name: operator-floor
     match:
       authority:
         exact: gestor.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: kds-nuxt
+      name: operator-floor
     match:
       authority:
         exact: kds.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: pos-nuxt
+      name: operator-floor
     match:
       authority:
         exact: pdv.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: production-nuxt
+      name: operator-floor
     match:
       authority:
         exact: prod.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: purchase-nuxt
+      name: operator-office
     match:
       authority:
         exact: compras.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: hub-nuxt
+      name: operator-floor
     match:
       authority:
         exact: central.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: marketing-nuxt
+      name: operator-office
     match:
       authority:
         exact: mkt.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: bi-nuxt
+      name: operator-office
     match:
       authority:
         exact: bi.boulangerie.com.br
@@ -156,7 +211,7 @@ envs:
   type: GENERAL
 - key: CSRF_TRUSTED_ORIGINS
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br,https://compras.boulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br,https://compras.boulangerie.com.br'
   type: GENERAL
 - key: DJANGO_TRUST_X_FORWARDED_PROTO
   scope: RUN_TIME
@@ -168,15 +223,15 @@ envs:
   type: GENERAL
 - key: SHOPMAN_STOREFRONT_BASE_URL
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: SHOPMAN_DOMAIN
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: AUTH_DEFAULT_DOMAIN
   scope: RUN_TIME
-  value: 'menu.nelsonboulangerie.com.br'
+  value: 'www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: SHOPMAN_OPERATOR_API_HOST
   scope: RUN_TIME
@@ -228,7 +283,7 @@ envs:
   type: GENERAL
 - key: WHATSAPP_STOREFRONT_URL
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: DOORMAN_MESSAGE_SENDER_CLASS
   scope: RUN_TIME
@@ -368,7 +423,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_MARKETING_MEDIA_HOSTS
   scope: RUN_TIME
-  value: mkt.boulangerie.com.br
+  value: mkt.boulangerie.com.br,img.nelsonboulangerie.com.br
   type: GENERAL
 - key: SHOPMAN_MARKETING_TARGET_HMAC_KEY
   scope: RUN_TIME
@@ -406,8 +461,13 @@ envs:
 # ⚠️ O `2` foi medido QUANDO o BFF ainda não repassava o X-Forwarded-For. Desde
 # 01/09 ele repassa (server/utils/djangoProxy.ts), e a cadeia ficou um salto mais
 # longa — o IP real do cliente está mais à esquerda do que quando este número foi
-# aferido. RE-MEDIR com SHOPMAN_LOG_CLIENT_IP=true e a linha `client_ip.diagnostic`.
-# O `NUM_PROXIES` do DRF lê esta mesma env, então corrigir aqui corrige os dois.
+# aferido. Em 17/09 o banco mostrou o efeito: com depth=2, pedido vindo da loja
+# gravou o IP de SAÍDA do Nitro (147.182.186.185). O `2` segue sendo a conta de
+# quem conecta DIRETO no `api.`; o salto a mais do BFF é lido por
+# SHOPMAN_BFF_PROXY_SECRET (componente `web`), não mudando este número.
+# Confirmar com SHOPMAN_LOG_CLIENT_IP=true e a linha `client_ip.diagnostic`.
+# O `NUM_PROXIES` do DRF lê esta mesma env; o throttle anônimo conta por
+# `auth.client_ip` (shopman/shop/api_throttles.py).
 - key: DOORMAN_TRUSTED_PROXY_DEPTH
   scope: RUN_TIME
   value: '2'
@@ -493,7 +553,7 @@ envs:
   type: SECRET
 - key: SHOPMAN_PREPROD_URL
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 
 # ── O spec versionado ESTAVA menor que o app vivo ─────────────────────
@@ -618,7 +678,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_PRODUCT_IMAGE_BASE
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br/img/products'
+  value: 'https://img.nelsonboulangerie.com.br/products'
   type: GENERAL
 services:
 - alerts:
@@ -634,9 +694,13 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
+  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+  # que não chama o Django (WP-PERFORMANCE P1).
   health_check:
     failure_threshold: 5
-    http_path: /health/ready/
+    http_path: /health/live/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -660,6 +724,15 @@ services:
     scope: RUN_TIME
     type: SECRET
   - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
+  # Segredo compartilhado com os BFFs Nuxt (`storefront-nuxt` e os oito apps de
+  # operador: NUXT_DJANGO_PROXY_SECRET, MESMO valor). O BFF chama o `api.` pela rede
+  # pública e a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For: com
+  # depth=2 o Django gravava 147.182.186.185 como IP de consentimento e de
+  # maioridade (medido 17/09); nos apps de operador, o mesmo IP ia para a trilha de
+  # acesso (SignInEvent). Com o segredo, lê um salto a mais. Vazio = desligado.
+  - key: SHOPMAN_BFF_PROXY_SECRET
     scope: RUN_TIME
     type: SECRET
   # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
@@ -693,9 +766,14 @@ services:
     scope: RUN_TIME
     value: '/'
     type: GENERAL
+  # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
+  # pedido veio deste BFF, para o IP gravado ser o do cliente e não o do Nitro.
+  - key: NUXT_DJANGO_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 60
     period_seconds: 15
     success_threshold: 1
@@ -710,16 +788,73 @@ services:
     tag: storefront
     deploy_on_push:
       enabled: true
+# ── Apps de operador: DOIS services, não oito (ADR-030, decisão de 17/09) ──
+# Cada service é um contêiner com os `.output/` do grupo e um roteador por Host
+# (surfaces/operator-router). O ingress manda os hostnames de sempre para o
+# service do grupo; o roteador entrega ao Nitro do app. Hostnames, rotas, PWAs
+# e cookies não mudam para quem usa.
+#
+# ENVS POR APP — os apps leem os MESMOS nomes de sempre (`NUXT_*`):
+#   - chave SEM prefixo → chega a TODOS os apps do grupo (e as do nível do app,
+#     lá em cima, também — como já chegavam a cada service);
+#   - `<APP>__<CHAVE>` → chega SÓ àquele app, como `<CHAVE>`. APP é o id em
+#     maiúsculas: POS, KDS, ORDERS, PRODUCTION, HUB (chão) · MARKETING, BI,
+#     PURCHASE (gestão). Prefixo de app de outro grupo ou desconhecido
+#     (`PDV__NUXT_...`) derruba o boot, alto.
+#   - `OPERATOR_HOSTS` diz qual hostname é de qual app; app sem host derruba o boot.
+#
+# SAÚDE: o roteador responde `/health/live` (e `/health/ready`) para a sonda da
+# plataforma agregando os filhos — 200 só se TODOS estiverem de pé e o
+# `/health/live` de cada um responder 200. No hostname de um app, o mesmo
+# caminho é do app. Ver a ADR-030 para a troca de isolamento por custo.
 - alerts:
+  - operator: GREATER_THAN
+    rule: CPU_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: MEM_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
   - operator: GREATER_THAN
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
   envs:
+  - key: OPERATOR_HOSTS
+    scope: RUN_TIME
+    value: 'pos=pdv.boulangerie.com.br,kds=kds.boulangerie.com.br,orders=gestor.boulangerie.com.br,production=prod.boulangerie.com.br,hub=central.boulangerie.com.br'
+    type: GENERAL
+  # ── do grupo (mesmo valor nos cinco apps) ──
+  # Nome do SERVIÇO para o medidor de capacidade (#783): sem prefixo, de
+  # propósito — os cinco processos medem o mesmo contêiner e têm de se reportar
+  # como um só; com o nome de cada app sairia um alerta por app.
+  - key: NUXT_OPERATOR_SERVICE_NAME
+    scope: RUN_TIME
+    value: 'operator-floor'
+    type: GENERAL
+  # Tamanho do contêiner para o medidor de capacidade quando o cgroup não é
+  # legível (sandbox): sem prefixo, os cinco processos medem o mesmo contêiner.
+  # TEM de acompanhar o instance_size_slug (apps-s-1vcpu-1gb-fixed = 1 GiB, 1 vCPU).
+  - key: SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES
+    scope: RUN_TIME
+    value: '1073741824'
+    type: GENERAL
+  - key: SHOPMAN_CONTAINER_CPU_CORES
+    scope: RUN_TIME
+    value: '1'
+    type: GENERAL
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
     value: 'https://api.boulangerie.com.br'
     type: GENERAL
+  # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: estes BFFs chamam o `api.`
+  # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+  # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+  # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+  - key: NUXT_DJANGO_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
   - key: NUXT_APP_BASE_URL
     scope: RUN_TIME
     value: '/'
@@ -728,264 +863,125 @@ services:
     scope: RUN_AND_BUILD_TIME
     value: 'https://api.boulangerie.com.br'
     type: GENERAL
-  - key: NUXT_PUBLIC_ADMIN_BASE_URL
-    scope: RUN_AND_BUILD_TIME
+  # ── PDV ──
+  - key: POS__NUXT_PUBLIC_ADMIN_BASE_URL
+    scope: RUN_TIME
     value: 'https://admin.boulangerie.com.br'
     type: GENERAL
-  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-    scope: RUN_AND_BUILD_TIME
+  - key: POS__NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
-  - key: NUXT_PUBLIC_ORDERS_URL
-    scope: RUN_AND_BUILD_TIME
+  - key: POS__NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_TIME
     value: 'https://gestor.boulangerie.com.br/'
     type: GENERAL
-  - key: NUXT_PUBLIC_PRODUCTION_URL
-    scope: RUN_AND_BUILD_TIME
+  - key: POS__NUXT_PUBLIC_PRODUCTION_URL
+    scope: RUN_TIME
     value: 'https://prod.boulangerie.com.br/'
     type: GENERAL
-  health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
-    period_seconds: 10
-    success_threshold: 1
-    timeout_seconds: 5
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: pos-nuxt
-  image:
-    registry_type: DOCR
-    repository: shopman
-    tag: pos
-    deploy_on_push:
-      enabled: true
-- alerts:
-  - operator: GREATER_THAN
-    rule: RESTART_COUNT
-    value: 2
-    window: TEN_MINUTES
-  envs:
-  - key: NUXT_DJANGO_BASE_URL
+  # ── KDS ──
+  - key: KDS__NUXT_PUBLIC_OPERATOR_HUB_URL
     scope: RUN_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_APP_BASE_URL
-    scope: RUN_TIME
-    value: '/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_DJANGO_BASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-    scope: RUN_AND_BUILD_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
-  health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
-    period_seconds: 10
-    success_threshold: 1
-    timeout_seconds: 5
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: kds-nuxt
-  image:
-    registry_type: DOCR
-    repository: shopman
-    tag: kds
-    deploy_on_push:
-      enabled: true
-- alerts:
-  - operator: GREATER_THAN
-    rule: RESTART_COUNT
-    value: 2
-    window: TEN_MINUTES
-  envs:
-  - key: NUXT_DJANGO_BASE_URL
+  # ── Pedidos (gestor.) ──
+  - key: ORDERS__NUXT_PUBLIC_ADMIN_BASE_URL
     scope: RUN_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_APP_BASE_URL
-    scope: RUN_TIME
-    value: '/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_DJANGO_BASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_ADMIN_BASE_URL
-    scope: RUN_AND_BUILD_TIME
     value: 'https://admin.boulangerie.com.br'
     type: GENERAL
-  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-    scope: RUN_AND_BUILD_TIME
+  - key: ORDERS__NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
-  health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
-    period_seconds: 10
-    success_threshold: 1
-    timeout_seconds: 5
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: orders-nuxt
-  image:
-    registry_type: DOCR
-    repository: shopman
-    tag: orders
-    deploy_on_push:
-      enabled: true
-- alerts:
-  - operator: GREATER_THAN
-    rule: RESTART_COUNT
-    value: 2
-    window: TEN_MINUTES
-  envs:
-  - key: NUXT_DJANGO_BASE_URL
+  # ── Produção (prod.) ──
+  - key: PRODUCTION__NUXT_PUBLIC_OPERATOR_HUB_URL
     scope: RUN_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_APP_BASE_URL
-    scope: RUN_TIME
-    value: '/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_DJANGO_BASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-    scope: RUN_AND_BUILD_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
-  health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
-    period_seconds: 10
-    success_threshold: 1
-    timeout_seconds: 5
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: production-nuxt
-  image:
-    registry_type: DOCR
-    repository: shopman
-    tag: production
-    deploy_on_push:
-      enabled: true
-- alerts:
-  - operator: GREATER_THAN
-    rule: RESTART_COUNT
-    value: 2
-    window: TEN_MINUTES
-  envs:
-  - key: NUXT_DJANGO_BASE_URL
+  # ── Central (central.) ──
+  - key: HUB__NUXT_PUBLIC_ORDERS_URL
     scope: RUN_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_APP_BASE_URL
-    scope: RUN_TIME
-    value: '/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_DJANGO_BASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://central.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_ORDERS_URL
-    scope: RUN_AND_BUILD_TIME
     value: 'https://gestor.boulangerie.com.br/'
     type: GENERAL
-  - key: NUXT_PUBLIC_PRODUCTION_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://prod.boulangerie.com.br/'
-    type: GENERAL
-  health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
-    period_seconds: 10
-    success_threshold: 1
-    timeout_seconds: 5
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: purchase-nuxt
-  image:
-    registry_type: DOCR
-    repository: shopman
-    tag: purchase
-    deploy_on_push:
-      enabled: true
-- alerts:
-  - operator: GREATER_THAN
-    rule: RESTART_COUNT
-    value: 2
-    window: TEN_MINUTES
-  envs:
-  - key: NUXT_DJANGO_BASE_URL
+  - key: HUB__NUXT_PUBLIC_POS_URL
     scope: RUN_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_APP_BASE_URL
-    scope: RUN_TIME
-    value: '/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_DJANGO_BASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_ORDERS_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://gestor.boulangerie.com.br/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_POS_URL
-    scope: RUN_AND_BUILD_TIME
     value: 'https://pdv.boulangerie.com.br/'
     type: GENERAL
-  - key: NUXT_PUBLIC_PRODUCTION_URL
-    scope: RUN_AND_BUILD_TIME
+  - key: HUB__NUXT_PUBLIC_PRODUCTION_URL
+    scope: RUN_TIME
     value: 'https://prod.boulangerie.com.br/'
     type: GENERAL
+  # Deploy gate + tráfego: 200 só com os cinco filhos de pé. 6 × 10 s tolera
+  # um filho reiniciado pelo launcher (backoff ≤ 30 s + boot) sem tirar o grupo
+  # do ar; um filho que não volta tira — e aí o grupo inteiro sai (ADR-030).
   health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
+    failure_threshold: 6
+    http_path: /health/live
+    initial_delay_seconds: 45
     period_seconds: 10
     success_threshold: 1
     timeout_seconds: 5
   http_port: 3000
   instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: hub-nuxt
+  instance_size_slug: apps-s-1vcpu-1gb-fixed
+  # Filho morto por mais de ~90 s: a plataforma reinicia o contêiner (e o
+  # RESTART_COUNT avisa). Reinício do contêiner derruba os SSE dos cinco apps.
+  liveness_health_check:
+    failure_threshold: 3
+    http_path: /health/live
+    initial_delay_seconds: 60
+    period_seconds: 30
+    success_threshold: 1
+    timeout_seconds: 5
+  name: operator-floor
   image:
     registry_type: DOCR
     repository: shopman
-    tag: hub
+    tag: operator-floor
     deploy_on_push:
       enabled: true
 - alerts:
+  - operator: GREATER_THAN
+    rule: CPU_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: MEM_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
   - operator: GREATER_THAN
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
   envs:
+  - key: OPERATOR_HOSTS
+    scope: RUN_TIME
+    value: 'marketing=mkt.boulangerie.com.br,bi=bi.boulangerie.com.br,purchase=compras.boulangerie.com.br'
+    type: GENERAL
+  # ── do grupo (mesmo valor nos três apps) ──
+  # Nome do SERVIÇO para o medidor de capacidade (#783); sem prefixo (ver operator-floor).
+  - key: NUXT_OPERATOR_SERVICE_NAME
+    scope: RUN_TIME
+    value: 'operator-office'
+    type: GENERAL
+  # Tamanho do contêiner (ver operator-floor): apps-s-1vcpu-0.5gb = 512 MiB, 1 vCPU.
+  - key: SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES
+    scope: RUN_TIME
+    value: '536870912'
+    type: GENERAL
+  - key: SHOPMAN_CONTAINER_CPU_CORES
+    scope: RUN_TIME
+    value: '1'
+    type: GENERAL
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
     value: 'https://api.boulangerie.com.br'
     type: GENERAL
+  # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web` (ver operator-floor).
+  - key: NUXT_DJANGO_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
   - key: NUXT_APP_BASE_URL
     scope: RUN_TIME
     value: '/'
@@ -998,10 +994,22 @@ services:
     scope: RUN_AND_BUILD_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
+  # ── Compras (compras.) ──
+  - key: PURCHASE__NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_TIME
+    value: 'https://gestor.boulangerie.com.br/'
+    type: GENERAL
+  - key: PURCHASE__NUXT_PUBLIC_PRODUCTION_URL
+    scope: RUN_TIME
+    value: 'https://prod.boulangerie.com.br/'
+    type: GENERAL
+  # Probe da plataforma = liveness agregada (P1/#780: nenhum probe de plataforma
+  # em rota de readiness). 200 só com os três filhos de pé. O `/health/ready` do
+  # Marketing (com o Django) fica para o smoke, no host `mkt.`.
   health_check:
-    failure_threshold: 5
-    http_path: /health/ready
-    initial_delay_seconds: 30
+    failure_threshold: 6
+    http_path: /health/live
+    initial_delay_seconds: 45
     period_seconds: 10
     success_threshold: 1
     timeout_seconds: 5
@@ -1011,54 +1019,15 @@ services:
   liveness_health_check:
     failure_threshold: 3
     http_path: /health/live
-    initial_delay_seconds: 30
+    initial_delay_seconds: 60
     period_seconds: 30
     success_threshold: 1
     timeout_seconds: 5
-  name: marketing-nuxt
+  name: operator-office
   image:
     registry_type: DOCR
     repository: shopman
-    tag: marketing
-    deploy_on_push:
-      enabled: true
-- alerts:
-  - operator: GREATER_THAN
-    rule: RESTART_COUNT
-    value: 2
-    window: TEN_MINUTES
-  envs:
-  - key: NUXT_DJANGO_BASE_URL
-    scope: RUN_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_APP_BASE_URL
-    scope: RUN_TIME
-    value: '/'
-    type: GENERAL
-  - key: NUXT_PUBLIC_DJANGO_BASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://api.boulangerie.com.br'
-    type: GENERAL
-  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-    scope: RUN_AND_BUILD_TIME
-    value: 'https://central.boulangerie.com.br'
-    type: GENERAL
-  health_check:
-    failure_threshold: 5
-    http_path: /
-    initial_delay_seconds: 30
-    period_seconds: 10
-    success_threshold: 1
-    timeout_seconds: 5
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: apps-s-1vcpu-0.5gb
-  name: bi-nuxt
-  image:
-    registry_type: DOCR
-    repository: shopman
-    tag: bi
+    tag: operator-office
     deploy_on_push:
       enabled: true
 workers:

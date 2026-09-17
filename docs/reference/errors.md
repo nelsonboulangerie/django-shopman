@@ -85,7 +85,7 @@ quando ela tem nome:
 
 | `error.code` | O que aconteceu | O que resolve |
 |---|---|---|
-| `not_authenticated` | A sessão do operador caiu (ou nunca existiu) | Login |
+| `not_authenticated` | A sessão do operador caiu (ex.: 7 dias sem uso) ou nunca existiu | Login |
 | `station_locked` | O operador ativo saiu; a estação está travada | O PIN, ali mesmo |
 | *(ausente)* | Falta de permissão comum | Nada que a tela possa oferecer |
 

@@ -52,6 +52,7 @@
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
+| [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 
 ---
 
@@ -109,6 +110,28 @@ python manage.py release_expired_holds
 ```
 
 **Recomendação:** Executar via cron a cada 5–15 minutos.
+
+---
+
+
+### apply_search_presence
+
+Leva a presença de busca da Nelson a um banco que já existe: textos de busca e
+dados do negócio (Admin → Busca e compartilhamento), perfis reais da marca em
+`Shop.social_links` e a FAQ inicial (`FAQEntry`). É a MESMA fonte que o `seed`
+grava num banco novo.
+
+```bash
+python manage.py apply_search_presence            # só mostra o que faria
+python manage.py apply_search_presence --apply    # grava
+```
+
+Só preenche campo de busca **vazio**, só cria pergunta que **não existe** (casa
+pela `ref`) e só acrescenta perfil que **falta**; tira o link de exemplo
+(`example`). Toda pergunta nasce como **rascunho**: a copy pública espera o aval
+do dono, que é bloqueio de go-live (`config/public_copy_review.py`, check
+`production.public_copy_review` do `make production-readiness`). **Não** mexe em horário,
+endereço, coordenadas, preço nem catálogo. Idempotente.
 
 ---
 
@@ -1239,6 +1262,11 @@ alertas. O bloco `shadow` confere vínculos do grafo, hashes, directives e
 agregados e inventaria o legado ainda existente. Não serializa conteúdo,
 destinatário ou PII, não chama provider e não altera estado.
 
+O bloco `lanes` dá o estado de cada plataforma neste ambiente, sem chamar adapter:
+`registered`, `switched_off` (flag desligada, escolha de operação; conta os destinos
+parados na fila) ou `unconfigured` (flag ligada sem integração registrada; deixa o
+resultado em `WARN`).
+
 `shadow.status=GO` significa apenas que nenhuma divergência foi encontrada no
 recorte consultado. Ele não autoriza rollout, não substitui o período observado
 de 7–14 dias (ou volume acordado) e não libera o descarte do legado. Para esse
@@ -1283,6 +1311,12 @@ Além das flags de limite/lease/worker/watch/interval/force acima, aceita
 `--with-outbox` e `--with-reconciliation`. O ensaio seguro é
 `make marketing-simulator`, exclusivamente com `config.settings_marketing_demo` e
 adapter `SIMULATION_ONLY`.
+
+**No deployment não há componente próprio:** o `maintenance_worker` roda uma passada por
+ciclo (300 s), logo depois de `process_marketing_outbox`, com
+`--worker-id maintenance_worker:marketing-delivery --limit 20 --lease-seconds 300
+--with-reconciliation` e a opção interna `quiet_disabled` (flag desligada = silêncio).
+Latência e motivo no contrato.
 
 Contrato e estado de rollout:
 [`marketing-surface-contract.md`](marketing-surface-contract.md).

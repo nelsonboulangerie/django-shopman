@@ -46,7 +46,7 @@ projeções do Django via BFF).
 | `/account/perfil` | Nome/sobrenome/email/aniversário (telefone read-only) | `GET/PATCH /api/v1/account/profile/` |
 | `/account/preferencias` | Preferências alimentares + canais de notificação (toggles) | `POST /api/v1/account/preferences/{food,notifications}/` |
 | `/account/seguranca` | Dispositivos confiáveis (revogar 1/todos), exportar dados, excluir conta | `GET/DELETE /api/v1/account/devices/…`, `GET /api/v1/account/export/`, `POST /api/v1/account/delete/` |
-| `/login` | Auth sem senha: telefone → OTP (WhatsApp/SMS) → (welcome se novo); device-trust 30d | `POST /api/auth/{device-check,request-code,verify-code,trust-device}/` |
+| `/login` | Auth sem senha: telefone → OTP (WhatsApp/SMS) → (nome, se novo); device-trust 30d | `POST /api/auth/{device-check,request-code,verify-code,trust-device}/` |
 | `/a` | Bridge de magic link: lê `?t=`, troca por sessão, navega ao destino derivado | `POST /api/auth/access/` |
 
 **Composables-chave:** `useCartState` (qty/cupom otimista), `useShopSession` (identidade/estado),
@@ -68,6 +68,10 @@ GETs de storefront fazem `ensure_csrf_cookie` (estabelecem sessão+token).
 `storefront/products/<sku>/`, `storefront/cart/`, `storefront/checkout/` — cada um devolve a projeção
 + o carrinho. Catálogo público: `catalog/products/` (filtros collection/search/available, paginado),
 `catalog/products/<sku>/`, `catalog/collections/`, `availability/<sku>/` (cache 10s).
+**Site público:** `storefront/site/` devolve o que busca e cartão de link precisam (títulos e
+descrições por página, códigos de verificação, dados do negócio para o JSON-LD `LocalBusiness`) e
+a FAQ pública. Editável em Admin → Busca e compartilhamento; campo vazio cai no texto derivado da
+marca (`presentation/site.py`).
 
 **Carrinho:** `PUT /api/v1/cart/skus/<sku>/` (set qty absoluta; qty ∈ [0,99] validado no serializer
 antes da lógica; 409 com `available_qty`+substitutos+ações em falta de estoque; 120/m), `cart/coupon/`
@@ -172,13 +176,28 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   Bridge ManyChat (`access/create/`, doorman Core) emite o link via `DOORMAN.ACCESS_LINK_ENTRY_URL`.
 - **Welcome gate:** **client-side no Nuxt** (flag `requires_welcome` no payload de sessão + passo
   "welcome" no `/login`). *(O `WelcomeGateMiddleware` do Django foi REMOVIDO no headless.)*
-  Abre por duas perguntas independentes, expostas em `welcome_asks_name` (nome vazio/importado sujo)
-  e `welcome_asks_marketing` (pergunta de novidades por WhatsApp nunca respondida: sem linha de
-  consentimento whatsapp e sem `Customer.metadata.marketing_prompt_answered_at`). A tela mostra só o
-  que falta; a chave de novidades nasce desligada e é SÓ consentimento — sem data de nascimento, sem
-  frase de idade. "Sim" = `PATCH account/profile/` (nome, quando pedido) + `POST account/marketing-prompt/`
-  `{whatsapp: true}` (opt-in só no whatsapp); "Deixar para depois"/chave desligada = só o carimbo,
-  **nunca** opt-out. Depois disso a chave continua em Conta › Preferências.
+  É **só o nome**: `requires_welcome == welcome_asks_name` (nome vazio/importado sujo). Título "Como
+  podemos te chamar?", o campo e "Continuar" (`PATCH account/profile/`); "Deixar para depois" segue
+  sem gravar. O access link (`/a`) só desvia por `/entrar?welcome=1` quando o nome falta.
+- **Convite de novidades (sheet):** a pergunta "avisos pelo WhatsApp?" **não é passo do login** —
+  é o `MarketingPromptSheet` (bottom sheet, montado uma vez no shell), dirigido por
+  `useShopSession.welcomeAsksMarketing` (nunca respondida: sem linha de consentimento whatsapp e sem
+  `Customer.metadata.marketing_prompt_answered_at`). A fonte principal é a **home**
+  (`omotenashi.marketing_prompt_pending`, toda visita — cobre quem entra pelo aparelho reconhecido sem
+  passar pelo login; anônimo = false; falha fechado); o `welcome_asks_marketing` do payload de sessão
+  também alimenta. Nenhuma resposta tardia reabre o que foi respondido nesta sessão de navegador.
+  Sobe ~600 ms depois de a página montar, só autenticado, **nunca** em `/entrar`, `/a`,
+  `/finalizar/**` e `/pedido/**`; uma vez por sessão de navegador (`sessionStorage`), mesmo se a
+  resposta falhar. **Um convite por página** (`useShopInvite`): se o convite de instalar o app
+  (`PwaInstallInvite`) está aberto ou abriu nesta página, o de novidades espera a próxima navegação, e
+  vice-versa. Copy fixa (três linhas + chave + fechar):
+  "Saber das fornadas antes de todo mundo?" / chave "Avisos pelo WhatsApp" (nasce desligada, SÓ
+  consentimento — sem data de nascimento, sem frase de idade) / "Mude quando quiser em Preferências.".
+  LIGAR = `POST account/marketing-prompt/ {whatsapp: true}` na hora, fecha e toast "Combinado. Você vai
+  saber primeiro."; FECHAR sem ligar (X, arrastar, tocar fora, Esc) = `{whatsapp: false}` — só o
+  carimbo, **nunca** opt-out — e a pergunta não volta. O rótulo da chave + a linha miúda são a
+  evidência gravada (`MARKETING_PROMPT_DISCLOSURE`, v3). Depois disso a chave continua em Conta ›
+  Preferências.
 - **Declaração de maioridade no login:** a nota ao lado do botão de entrar — "Ao continuar, você confirma
   que é maior de idade e aceita os Termos de uso." (frase fixa em `presentation/auth.ts`, link para
   `/terms`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
@@ -190,8 +209,10 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   maioridade por aceite específico, sem data.
 - **Omotenashi:** copy única por 6 momentos (QUANDO) × 4 audiências (QUEM: anon/new/returning/vip),
   cascata `OmotenashiCopy` (admin) → `OMOTENASHI_DEFAULTS`. Alimenta home/menu/checkout/etc.
-- **SEO:** `server/routes/robots.txt.ts` (bloqueia /account /checkout /cart /login /pedido/ /tracking/
-  /api) + `sitemap.xml.ts` (home/menu/produtos, domain-aware). JSON-LD Product+Breadcrumb na PDP.
+- **SEO:** `server/routes/robots.txt.ts` (bloqueia só /api/) + `sitemap.xml.ts` (home/menu/produtos,
+  domain-aware). Rotas privadas (/conta /finalizar /sacola /entrar /pedido) respondem
+  `X-Robots-Tag: noindex` — o robots.txt não as esconde, senão o Google nunca lê o noindex
+  (`server/utils/indexingPolicy.ts`). JSON-LD Product+Breadcrumb na PDP.
 - **Notificações:** assíncronas via Directive → entrega síncrona em cadeia (manychat→sms→email);
   templates "ativos" exigem canal; links nas mensagens são magic links da loja. `origin_channel`
   (via `?channel=` ou metadata do AccessLink) roteia a notificação de volta ao canal de entrada.
@@ -214,6 +235,14 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 - **WP-2 — Disponibilidade: pausado ≠ esgotado.** Flags `is_paused`/`is_notifiable` nas projeções + UX.
 - **WP-3 — "Me avise quando voltar".** `StockAlertSubscription` + `StockNotifyButton`; no web, o cadastro usa a identidade autenticada e o telefone canônico da conta. A tela preserva página e produto durante a entrada e pede confirmação explícita ao voltar.
 - **WP-4 — Favoritos.** `CustomerFavorite` + coração (PDP) + coleção "Seus favoritos".
+  **Favoritar um esgotado anota o aviso** (Pablo, 17/09): se o produto é notificável (mesma régua
+  `pause_and_notifiability` do sino no card e na PDP), o cliente tem opt-in de WhatsApp verificado
+  e maioridade provada (`is_proved_adult`), o favorito cria a `StockAlertSubscription` do SKU, com a
+  base própria `favorite-sold-out-whatsapp-opt-in-pt-BR-v1`. Sem essa base, é só favorito e o card
+  segue oferecendo "Me avise". Aviso que já existiu (ativo, pausado ou cancelado) não é criado de
+  novo nem retomado; desfavoritar não cancela aviso. `POST/DELETE /api/v1/account/favorites/<sku>/`
+  devolvem `is_notify_subscribed` e `stock_alert_noted`; falha de leitura (disponibilidade,
+  consentimento, inscrição) salva o favorito, não cria aviso e é relatada em `logger.warning`.
 - **WP-5 — Preferência alimentar.** Aviso dietético (badge) + filtro "só compatível"; conservador.
 - **WP-6 — "Talvez você também goste".** cross_sell via `related_skus` (já existia).
 - **WP-7 — Alérgenos/dieta via Recipe/BOM.** Derivados da receita (`aggregate_dietary_from_recipe`),

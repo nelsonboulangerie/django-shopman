@@ -306,12 +306,19 @@ def capture(
         # Já capturado no Stripe e não no Payman é divergência a RECONCILIAR, não
         # a recobrar: mandar ``capture`` de novo devolve erro do provedor, e o
         # erro fazia a reconciliação desistir de um pedido efetivamente pago.
-        stripe_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        # `expand=latest_charge`: é na cobrança que a Stripe diz se o cartão foi
+        # crédito ou débito (`payment_method_details.card.funding`) — o cliente
+        # escolhe lá, no Checkout, e a NFC-e precisa do código certo (03/04).
+        stripe_intent = stripe.PaymentIntent.retrieve(
+            payment_intent_id, expand=["latest_charge"],
+        )
         if str(getattr(stripe_intent, "status", "") or "") != "succeeded":
             stripe_intent = stripe.PaymentIntent.capture(
                 payment_intent_id,
+                expand=["latest_charge"],
                 **capture_params,
             )
+        card_funding = _card_funding(stripe_intent)
 
         # ⚠️ O Payman só captura o que está `authorized`, e o degrau de
         # autorização é do webhook. Com `capture_method="automatic"` (o link) o
@@ -334,12 +341,13 @@ def capture(
                 gateway_status="captured",
                 captured_q=captured_q,
                 gateway_id=stripe_intent.id,
-                capture_gateway_id=str(getattr(stripe_intent, "latest_charge", "") or ""),
+                capture_gateway_id=_charge_id(stripe_intent),
             )
             return PaymentResult(
                 success=True,
-                transaction_id=stripe_intent.latest_charge,
+                transaction_id=_charge_id(stripe_intent),
                 amount_q=PaymentService.captured_total(intent_ref),
+                card_funding=card_funding,
             )
 
         txn = PaymentService.capture(
@@ -350,8 +358,9 @@ def capture(
 
         return PaymentResult(
             success=True,
-            transaction_id=stripe_intent.latest_charge,
+            transaction_id=_charge_id(stripe_intent),
             amount_q=txn.amount_q,
+            card_funding=card_funding,
         )
     except Exception as e:
         logger.exception("Stripe capture error for %s", intent_ref)
@@ -361,6 +370,34 @@ def capture(
             message=str(e),
         )
 
+
+
+_CARD_FUNDINGS = frozenset({"credit", "debit", "prepaid", "unknown"})
+
+
+def _charge_id(stripe_intent) -> str:
+    """O id da cobrança, com `latest_charge` expandido (objeto) ou não (string)."""
+    charge = getattr(stripe_intent, "latest_charge", None)
+    if charge is None:
+        return ""
+    if isinstance(charge, str):
+        return charge
+    return str(getattr(charge, "id", "") or "")
+
+
+def _card_funding(stripe_intent) -> str | None:
+    """"credit" | "debit" | "prepaid" | "unknown" da cobrança expandida; `None` se
+    a Stripe não disse (charge não expandida, meio que não é cartão, mock)."""
+    charge = getattr(stripe_intent, "latest_charge", None)
+    if charge is None or isinstance(charge, str):
+        return None
+    details = getattr(charge, "payment_method_details", None)
+    card = getattr(details, "card", None) if details is not None else None
+    if card is None and isinstance(details, dict):
+        card = details.get("card")
+    funding = getattr(card, "funding", None) if card is not None and not isinstance(card, dict) else (card or {}).get("funding") if isinstance(card, dict) else None
+    value = str(funding).strip().lower() if isinstance(funding, str) else ""
+    return value if value in _CARD_FUNDINGS else None
 
 def refund(
     intent_ref: str,

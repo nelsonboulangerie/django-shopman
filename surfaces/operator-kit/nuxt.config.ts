@@ -20,6 +20,17 @@ export default defineNuxtConfig({
   future: { compatibilityVersion: 4 },
 
   runtimeConfig: {
+    // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o IP
+    // do operador um salto mais fundo no X-Forwarded-For (server/utils/djangoProxy.ts).
+    // Só no servidor — NUNCA em `public`. Declarado aqui para todo app que estende
+    // a layer poder recebê-lo por NUXT_DJANGO_PROXY_SECRET; cada componente liga
+    // pela env, com o MESMO valor do SHOPMAN_BFF_PROXY_SECRET do Django. Vazio = desligado.
+    djangoProxySecret: "",
+    // Nome do SERVIÇO no aviso de capacidade (server/utils/capacityReport.ts). Com
+    // vários apps no mesmo contêiner, o deploy declara NUXT_OPERATOR_SERVICE_NAME
+    // (`operator-floor`, `operator-office`) e todos reportam como um serviço só.
+    // Vazio = a identidade do app (`operatorPwa.app`), certo com um app por contêiner.
+    operatorServiceName: "",
     public: {
       // URL da Central de Apps (launcher) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.

@@ -148,6 +148,11 @@ class OperatorAlert(models.Model):
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
+        # Os apps de operação leem a memória e a CPU do próprio contêiner e
+        # reportam ao Django; acima do limite crítico do Admin por mais que a
+        # duração mínima, o serviço está no limite e as telas vão engasgar no
+        # movimento. O sistema resolve sozinho quando o uso volta a ficar folgado.
+        ("operator_capacity_critical", "Apps de operação no limite da capacidade"),
         ("low_rating", "Avaliação baixa recebida"),
         ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),

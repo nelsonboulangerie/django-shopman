@@ -695,6 +695,286 @@ class TestShopIntegrationsForm:
         assert saved.integrations["payment"]["pix"] == "shopman.shop.adapters.payment_mock"
 
 
+class TestMarketingWhatsappMinimumAudiencePolicy:
+    """Decisão do dono (17/09): o mínimo de elegíveis da campanha de WhatsApp é do Admin.
+
+    Mora em ``Shop.defaults["marketing"]["whatsapp_minimum_audience"]``, editado na
+    página "Integrações". Padrão 1; aceito a partir de 1; a aprovação lê daqui.
+    """
+
+    FIELD = "defaults_marketing_whatsapp_minimum_audience"
+
+    @staticmethod
+    def _integrations_data(**overrides):
+        data = {
+            "integrations_payment_pix": "",
+            "integrations_payment_card": "",
+            "integrations_notification_default": "",
+            "integrations_fiscal": "",
+            "defaults_marketing_whatsapp_minimum_audience": "",
+        }
+        data.update(overrides)
+        return data
+
+    @staticmethod
+    def _form(shop, data=None):
+        from shopman.shop.admin.shop import _INTEGRATIONS_FIELDSETS, _section_form
+
+        Form = _section_form(_INTEGRATIONS_FIELDSETS)
+        return Form(data=data, instance=shop) if data is not None else Form(instance=shop)
+
+    def test_field_lives_on_the_integrations_page_with_the_reason(self, shop):
+        field = self._form(shop).fields[self.FIELD]
+
+        assert field.required is False
+        assert field.min_value == 1
+        assert "mire uma pessoa só" in field.help_text
+        assert "canário" in field.help_text
+        assert "Começa em 1 de propósito" in field.help_text
+
+    def test_saves_the_configured_minimum_and_the_approval_reads_it(self, shop):
+        from shopman.shop.marketing_policy import resolve_marketing_policy
+
+        shop.defaults = {"pos": {"discount_approval_threshold_q": 500}}
+        shop.save(update_fields=["defaults"])
+        form = self._form(shop, self._integrations_data(**{self.FIELD: "3"}))
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        saved.refresh_from_db()
+
+        assert saved.defaults["marketing"] == {"whatsapp_minimum_audience": 3}
+        assert saved.defaults["pos"] == {"discount_approval_threshold_q": 500}
+        assert resolve_marketing_policy().whatsapp_minimum_audience == 3
+        assert self._form(saved).fields[self.FIELD].initial == 3
+
+    def test_blank_removes_the_key_and_the_default_is_one(self, shop):
+        from shopman.shop.marketing_policy import resolve_marketing_policy
+
+        shop.defaults = {"marketing": {"whatsapp_minimum_audience": 5}}
+        shop.save(update_fields=["defaults"])
+        form = self._form(shop, self._integrations_data())
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        saved.refresh_from_db()
+
+        assert "marketing" not in saved.defaults
+        assert resolve_marketing_policy().whatsapp_minimum_audience == 1
+
+    @pytest.mark.parametrize(
+        ("raw", "message"),
+        [
+            ("0", "O mínimo aceito é 1 pessoa"),
+            ("-4", "O mínimo aceito é 1 pessoa"),
+            ("dez", "Informe um número inteiro de pessoas"),
+            ("2.5", "Informe um número inteiro de pessoas"),
+        ],
+    )
+    def test_invalid_values_are_refused_in_portuguese(self, shop, raw, message):
+        form = self._form(shop, self._integrations_data(**{self.FIELD: raw}))
+
+        assert not form.is_valid()
+        assert any(message in error for error in form.errors[self.FIELD])
+
+    def test_admin_change_is_recorded_with_who_and_when(self, db, admin_user, shop):
+        from django.contrib.admin.models import LogEntry
+
+        client = Client()
+        client.force_login(admin_user)
+        url = reverse("admin:shop_shopintegrations_change", args=[shop.pk])
+
+        page = client.get(url)
+        assert page.status_code == 200
+        assert f'name="{self.FIELD}"'.encode() in page.content
+        assert b'placeholder="1"' in page.content
+
+        response = client.post(url, self._integrations_data(**{self.FIELD: "4"}))
+
+        assert response.status_code == 302, getattr(response, "context_data", None)
+        shop.refresh_from_db()
+        assert shop.defaults["marketing"]["whatsapp_minimum_audience"] == 4
+        entry = LogEntry.objects.get(object_id=str(shop.pk), content_type__model="shopintegrations")
+        assert entry.user_id == admin_user.pk
+        assert entry.action_time is not None
+        assert "Mínimo de pessoas elegíveis numa campanha de WhatsApp" in entry.get_change_message()
+
+        refused = client.post(url, self._integrations_data(**{self.FIELD: "0"}))
+        assert refused.status_code == 200
+        assert "O mínimo aceito é 1 pessoa".encode() in refused.content
+        shop.refresh_from_db()
+        assert shop.defaults["marketing"]["whatsapp_minimum_audience"] == 4
+
+
+class TestMarketingPolicyResolution:
+    def test_absent_block_or_key_is_one(self):
+        from shopman.shop.marketing_policy import MarketingPolicy
+
+        assert MarketingPolicy.from_defaults(None).whatsapp_minimum_audience == 1
+        assert MarketingPolicy.from_defaults({}).whatsapp_minimum_audience == 1
+        assert MarketingPolicy.from_defaults({"marketing": {}}).whatsapp_minimum_audience == 1
+
+    def test_configured_integer_wins(self):
+        from shopman.shop.marketing_policy import MarketingPolicy
+
+        policy = MarketingPolicy.from_defaults({"marketing": {"whatsapp_minimum_audience": 7}})
+
+        assert policy.whatsapp_minimum_audience == 7
+
+    @pytest.mark.parametrize("raw", [0, -3, "5", 2.5, True])
+    def test_value_outside_the_admin_contract_falls_back_loudly(self, raw, caplog):
+        import logging
+
+        from shopman.shop.marketing_policy import MarketingPolicy
+
+        policy_logger = logging.getLogger("shopman.shop.marketing_policy")
+        policy_logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.WARNING, logger="shopman.shop.marketing_policy"):
+                policy = MarketingPolicy.from_defaults({"marketing": {"whatsapp_minimum_audience": raw}})
+        finally:
+            policy_logger.removeHandler(caplog.handler)
+
+        assert policy.whatsapp_minimum_audience == 1
+        assert any("whatsapp_minimum_audience_invalid" in r.getMessage() for r in caplog.records)
+
+
+class TestOperatorCapacityLimits:
+    """Pedido do dono (17/09): avisar quando os apps passarem de X% da capacidade.
+
+    Os limites moram em ``Shop.defaults["operator_capacity"]``, editados na página
+    "Integrações" (seção própria). Padrão 75/90/5; crítico acima da atenção.
+    """
+
+    ATTENTION = "defaults_operator_capacity_attention_percent"
+    CRITICAL = "defaults_operator_capacity_critical_percent"
+    SUSTAIN = "defaults_operator_capacity_sustain_minutes"
+
+    @classmethod
+    def _data(cls, **overrides):
+        data = TestMarketingWhatsappMinimumAudiencePolicy._integrations_data()
+        data.update({cls.ATTENTION: "", cls.CRITICAL: "", cls.SUSTAIN: ""})
+        data.update(overrides)
+        return data
+
+    @staticmethod
+    def _form(shop, data=None):
+        return TestMarketingWhatsappMinimumAudiencePolicy._form(shop, data)
+
+    def test_fields_live_in_their_own_section_of_the_integrations_page(self, shop):
+        from shopman.shop.admin.shop import _INTEGRATIONS_FIELDSETS
+
+        titles = [title for title, _ in _INTEGRATIONS_FIELDSETS]
+        assert "Capacidade dos apps de operação" in titles
+        fields = self._form(shop).fields
+        assert fields[self.ATTENTION].required is False
+        assert (fields[self.ATTENTION].min_value, fields[self.ATTENTION].max_value) == (1, 100)
+        assert (fields[self.SUSTAIN].min_value, fields[self.SUSTAIN].max_value) == (1, 60)
+        assert "não vira alarme" in fields[self.SUSTAIN].help_text
+
+    def test_saves_the_limits_and_the_monitor_reads_them(self, shop):
+        from django.core.cache import cache
+
+        from shopman.shop.operator_capacity_policy import resolve_operator_capacity_policy
+
+        shop.defaults = {"pos": {"discount_approval_threshold_q": 500}}
+        shop.save(update_fields=["defaults"])
+        form = self._form(shop, self._data(**{self.ATTENTION: "70", self.CRITICAL: "85", self.SUSTAIN: "3"}))
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        saved.refresh_from_db()
+        cache.clear()
+
+        assert saved.defaults["operator_capacity"] == {
+            "attention_percent": 70,
+            "critical_percent": 85,
+            "sustain_minutes": 3,
+        }
+        assert saved.defaults["pos"] == {"discount_approval_threshold_q": 500}
+        assert resolve_operator_capacity_policy().as_payload() == {
+            "attention_percent": 70,
+            "critical_percent": 85,
+            "sustain_minutes": 3,
+        }
+        assert self._form(saved).fields[self.CRITICAL].initial == 85
+
+    def test_blank_removes_the_block_and_the_defaults_apply(self, shop):
+        from django.core.cache import cache
+
+        from shopman.shop.operator_capacity_policy import resolve_operator_capacity_policy
+
+        shop.defaults = {"operator_capacity": {"critical_percent": 95}}
+        shop.save(update_fields=["defaults"])
+        form = self._form(shop, self._data())
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        saved.refresh_from_db()
+        cache.clear()
+
+        assert "operator_capacity" not in saved.defaults
+        assert resolve_operator_capacity_policy().as_payload() == {
+            "attention_percent": 75,
+            "critical_percent": 90,
+            "sustain_minutes": 5,
+        }
+
+    @pytest.mark.parametrize(
+        ("overrides", "field", "message"),
+        [
+            ({"defaults_operator_capacity_critical_percent": "70"}, "CRITICAL", "precisa ser maior que a atenção (75%)"),
+            (
+                {"defaults_operator_capacity_attention_percent": "90", "defaults_operator_capacity_critical_percent": "90"},
+                "CRITICAL",
+                "precisa ser maior que a atenção (90%)",
+            ),
+            ({"defaults_operator_capacity_attention_percent": "0"}, "ATTENTION", "O menor percentual aceito é 1%"),
+            ({"defaults_operator_capacity_critical_percent": "120"}, "CRITICAL", "O maior percentual aceito é 100%"),
+            ({"defaults_operator_capacity_sustain_minutes": "90"}, "SUSTAIN", "O máximo é 60 minutos"),
+            ({"defaults_operator_capacity_sustain_minutes": "dois"}, "SUSTAIN", "Informe um número inteiro de minutos"),
+        ],
+    )
+    def test_invalid_values_are_refused_in_portuguese(self, shop, overrides, field, message):
+        form = self._form(shop, self._data(**overrides))
+
+        assert not form.is_valid()
+        assert any(message in error for error in form.errors[getattr(self, field)])
+
+    def test_admin_change_is_recorded_with_who_and_when(self, db, admin_user, shop):
+        from django.contrib.admin.models import LogEntry
+
+        client = Client()
+        client.force_login(admin_user)
+        url = reverse("admin:shop_shopintegrations_change", args=[shop.pk])
+
+        page = client.get(url)
+        assert page.status_code == 200
+        assert f'name="{self.CRITICAL}"'.encode() in page.content
+        assert b'placeholder="90"' in page.content
+        assert "Capacidade dos apps de operação".encode() in page.content
+
+        response = client.post(url, self._data(**{self.CRITICAL: "88"}))
+
+        assert response.status_code == 302, getattr(response, "context_data", None)
+        shop.refresh_from_db()
+        assert shop.defaults["operator_capacity"] == {"critical_percent": 88}
+        entry = LogEntry.objects.get(object_id=str(shop.pk), content_type__model="shopintegrations")
+        assert entry.user_id == admin_user.pk
+        assert "Crítico a partir de (% da capacidade)" in entry.get_change_message()
+
+
+class TestOperatorCapacityAlertTypeIsRegistered:
+    def test_the_admin_column_shows_a_sentence_not_the_slug(self, db):
+        alert = OperatorAlert.objects.create(
+            type="operator_capacity_critical",
+            severity="critical",
+            message="Apps do chão de loja: acima de 90% da capacidade há 5 min.",
+        )
+        assert alert.get_type_display() == "Apps de operação no limite da capacidade"
+        assert alert.audience == "operations"
+
+
 class TestPosDiscountThresholdPolicy:
     """WP-5 — limiar de aprovação de desconto do PDV vira política da loja."""
 
@@ -950,6 +1230,7 @@ class TestProxyPagesIsolation:
             ShopPos,
             ShopProduction,
             ShopPurchase,
+            ShopSearch,
         )
 
         for model in (
@@ -962,6 +1243,7 @@ class TestProxyPagesIsolation:
             ShopPos,
             ShopProduction,
             ShopIntegrations,
+            ShopSearch,
         ):
             assert model in admin.site._registry
 

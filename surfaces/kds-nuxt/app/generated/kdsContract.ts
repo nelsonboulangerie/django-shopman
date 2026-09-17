@@ -8,7 +8,6 @@ export interface KDSItemProjection {
   name: string;
   qty: number | string;
   notes: string;
-  checked: boolean;
   stock_warning: string;
 }
 
@@ -25,7 +24,6 @@ export interface KDSTicketProjection {
   timer_class: string;
   items: KDSItemProjection[];
   status: string;
-  all_checked: boolean;
   previous_tab_ref: string;
   is_scheduled: boolean;
   is_expedition: boolean;

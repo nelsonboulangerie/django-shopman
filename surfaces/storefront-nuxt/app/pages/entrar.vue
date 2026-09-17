@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeCanContinue, welcomeNameValue, welcomeProfilePatch, type AuthErrorView, type WelcomeGateInput } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
 
@@ -51,13 +51,11 @@ const debugOtpCode = ref('')
 const debugOtpExpiresAt = ref('')
 const showDebugOtp = ref(true)
 const verified = ref(false)
+// O gate de boas-vindas é SÓ o nome (`welcome_asks_name`). O convite de
+// novidades não é passo do login: sobe como sheet na página de destino
+// (MarketingPromptSheet), sem bloquear nada.
 const welcomeNeeded = ref(false)
 const welcomeName = ref('')
-// As duas perguntas do gate (o servidor diz o que falta). A caixa de novidades
-// nasce DESLIGADA: consentimento de marketing é gesto afirmativo, nunca padrão.
-const welcomeAsksName = ref(true)
-const welcomeAsksMarketing = ref(false)
-const welcomeMarketing = ref(false)
 const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 
@@ -67,9 +65,6 @@ const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
 const trustSaved = ref(false)
 const nowMs = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
-const phoneForm = ref<HTMLFormElement | null>(null)
-const codeForm = ref<HTMLFormElement | null>(null)
-const welcomeForm = ref<HTMLFormElement | null>(null)
 
 const { data: loginHome } = useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include',
@@ -99,6 +94,12 @@ const step = computed(() => authStep({
   verified: verified.value,
   requiresWelcome: welcomeNeeded.value
 }))
+// Próximo foco: o passo É o foco da página. O bloco do passo (título + campos)
+// se marca com `data-focus-target`; a cada troca de passo, o mecanismo leva o
+// bloco à linha de foco e entrega o foco ao primeiro campo (`data-focus-control`)
+// sem rolar — no celular o teclado abre com o título no lugar, não empurrado
+// para fora da tela.
+const { reveal } = useNextFocus(step)
 const code = computed(() => codeDigits.value.join('').slice(0, 6))
 const canVerifyCode = computed(() => code.value.length === 6 && !pending.value)
 const authCopy = computed(() => loginHome.value?.home.auth_copy || null)
@@ -125,9 +126,7 @@ const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Vamos entrar?')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
-  // Só a pergunta de novidades: o título não pode prometer um campo de nome que não vem.
-  if (!welcomeAsksName.value) return 'Antes de entrar'
-  return copyTitle(authCopy.value?.name_heading, 'Como quer ser chamado?')
+  return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
 })
 const stepDescription = computed(() => {
   if (step.value === 'phone') {
@@ -138,7 +137,6 @@ const stepDescription = computed(() => {
     return ''
   }
   if (step.value === 'code') return copyMessage(authCopy.value?.code_help, 'Você pode colar o código. Ao completar, a confirmação é automática.')
-  if (!welcomeAsksName.value) return 'Uma pergunta rápida. Você muda quando quiser.'
   return copyMessage(authCopy.value?.name_subtitle, 'Pode ser só o primeiro nome ou um apelido.')
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
@@ -172,13 +170,7 @@ const debugOtpValidUntil = computed(() => otpValidUntilDisplay(debugOtpExpiresAt
 const debugOtpDigits = computed(() => debugOtpCode.value.split(''))
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
 const requestedPhoneDisplay = computed(() => phoneDisplay(requestedPhone.value))
-const welcomeGate = computed<WelcomeGateInput>(() => ({
-  asksName: welcomeAsksName.value,
-  asksMarketing: welcomeAsksMarketing.value,
-  name: welcomeName.value,
-  marketingOptIn: welcomeMarketing.value
-}))
-const canContinueWelcome = computed(() => welcomeCanContinue(welcomeGate.value) && !pending.value)
+const canContinueWelcome = computed(() => !!welcomeNameValue(welcomeName.value) && !pending.value)
 // Saudação personalizada de retorno: "Bem-vindo de volta, {primeiro nome}!" quando
 // já sabemos o nome (recorrente); sem nome, cai em "Bem-vindo de volta!". O dado vem
 // da própria resposta de auth (customer_name → session.customerName).
@@ -201,6 +193,11 @@ onMounted(async () => {
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client) void waStart(nextUrl.value)
+  // Passo do nome aberto já no setup (access link): não houve troca de passo, e
+  // na montagem o mecanismo só se move se o bloco estiver fora da vista. Mas
+  // quem chega aqui ENTROU num passo cuja próxima ação é digitar o nome — o
+  // campo recebe o foco como em qualquer outra troca.
+  if (step.value === 'welcome') reveal('welcome')
   // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
   // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
   // antes de mostrar o passo de telefone a quem já entrou.
@@ -225,14 +222,6 @@ onBeforeUnmount(() => {
 // Confirmação automática ao completar os 6 dígitos (o copy do servidor promete).
 watch(code, value => {
   if (value.length === 6 && step.value === 'code' && !pending.value) verifyCode()
-})
-
-// A cada troca de passo, o foco segue para o primeiro campo do passo novo
-// (leitor de tela anuncia o contexto certo; teclado já abre no lugar certo).
-watch(step, async next => {
-  await nextTick()
-  const container = next === 'code' ? codeForm.value : next === 'welcome' ? welcomeForm.value : phoneForm.value
-  container?.querySelector('input')?.focus()
 })
 
 function copyTitle (entry: CopyEntryProjection | null | undefined, fallback: string) {
@@ -308,11 +297,7 @@ async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
 
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
   welcomeNeeded.value = true
-  // Payload sem os `asks_*` (versão anterior do servidor): era o nome que faltava.
-  welcomeAsksName.value = sessionResponse.welcome_asks_name ?? true
-  welcomeAsksMarketing.value = !!sessionResponse.welcome_asks_marketing
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
-  welcomeMarketing.value = false
 }
 
 // Welcome gate a partir da SESSÃO (não de uma resposta de verificação): quem
@@ -321,10 +306,7 @@ function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
 function enterWelcomeGateFromSession () {
   verified.value = true
   welcomeNeeded.value = true
-  welcomeAsksName.value = session.welcomeAsksName.value || !session.welcomeAsksMarketing.value
-  welcomeAsksMarketing.value = session.welcomeAsksMarketing.value
   welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
-  welcomeMarketing.value = false
 }
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
@@ -433,56 +415,29 @@ async function verifyCode () {
   }
 }
 
-// A resposta da pergunta de novidades. `whatsapp: true` concede o opt-in SÓ
-// nesse canal; `false` grava só o carimbo "perguntado" — nunca um opt-out, porque
-// "deixar para depois" não é "não quero" (um opt-out gravado cala até o recado
-// do próprio pedido naquele canal). Ver `answer_marketing_prompt` no servidor.
-async function answerMarketingPrompt (whatsapp: boolean) {
-  return $fetch<{ ok: boolean, whatsapp_opted_in: boolean }>(apiPath('/api/v1/account/marketing-prompt/'), {
-    method: 'POST',
-    headers: await csrfHeaders(),
-    credentials: 'include',
-    body: { whatsapp }
-  })
-}
-
 async function submitWelcome () {
-  if (pending.value || !welcomeCanContinue(welcomeGate.value)) return
-  const name = welcomeAsksName.value ? welcomeNameValue(welcomeName.value) : ''
-  const patch = welcomeProfilePatch(welcomeGate.value)
+  const name = welcomeNameValue(welcomeName.value)
+  if (pending.value || !name) return
   pending.value = true
   error.value = null
   try {
-    if (patch) {
-      await $fetch(apiPath('/api/v1/account/profile/'), {
-        method: 'PATCH',
-        headers: await csrfHeaders(),
-        credentials: 'include',
-        body: patch
-      })
-    }
-    if (welcomeAsksMarketing.value) {
-      const answer = await answerMarketingPrompt(welcomeMarketing.value)
-      // A chave estava ligada e o servidor não concedeu (a data do perfil prova
-      // menor): dizer, em vez de deixar a pessoa achar que vai receber.
-      if (welcomeMarketing.value && answer && answer.whatsapp_opted_in === false && import.meta.client) {
-        useSonner.info('Novidades só vão para maiores de idade. Sua resposta ficou guardada.')
-      }
-    }
-    session.setIdentity({ name: name || undefined, requiresWelcome: false })
+    await $fetch(apiPath('/api/v1/account/profile/'), {
+      method: 'PATCH',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: { first_name: name }
+    })
+    session.setIdentity({ name, requiresWelcome: false })
     await navigateTo(nextUrl.value)
   } catch (e) {
-    error.value = fetchErrorView(e, welcomeAsksName.value ? 'Não foi possível salvar seu nome.' : 'Não foi possível salvar sua resposta.')
+    error.value = fetchErrorView(e, 'Não foi possível salvar seu nome.')
   } finally {
     pending.value = false
   }
 }
 
+// "Deixar para depois": o nome fica para outra hora; o gate não prende ninguém.
 async function skipWelcome () {
-  // "Deixar para depois" responde à pergunta de novidades com o carimbo, e só
-  // com ele: sem opt-out. Se o carimbo falhar, o gate pergunta de novo na próxima
-  // entrada — melhor do que prender a pessoa aqui.
-  if (welcomeAsksMarketing.value) await answerMarketingPrompt(false).catch(() => null)
   session.setIdentity({ requiresWelcome: false })
   await navigateTo(nextUrl.value)
 }
@@ -520,6 +475,12 @@ useSeoMeta({
         </div>
 
         <template v-else>
+        <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
+             campos. A página de entrada é UM bloco por passo, e ele começa no
+             topo: `scroll-mt-40` (10rem) cobre o chrome expandido (6.25rem) mais
+             o respiro da seção, então a linha de foco deste bloco é o topo da
+             página — o passo novo começa ali, com o cabeçalho aberto. -->
+        <section :data-focus-target="step" class="shop-stack-block scroll-mt-40 outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>
@@ -566,7 +527,7 @@ useSeoMeta({
             Não consigo usar WhatsApp
           </UiButton>
 
-          <form v-else ref="phoneForm" class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
+          <form v-else class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
             <UiField>
               <div class="flex items-center justify-between gap-3">
                 <UiFieldLabel for="login-phone">Telefone</UiFieldLabel>
@@ -594,6 +555,7 @@ useSeoMeta({
                   :autocomplete="phoneAutocomplete"
                   :placeholder="phonePlaceholder"
                   :maxlength="phoneRegion === 'INTL' ? 24 : 16"
+                  data-focus-control
                   @input="syncPhoneFromInput"
                 />
               </UiInputGroup>
@@ -618,7 +580,7 @@ useSeoMeta({
           </form>
         </div>
 
-        <form v-else-if="step === 'code'" ref="codeForm" class="shop-stack-block" @submit.prevent="verifyCode">
+        <form v-else-if="step === 'code'" class="shop-stack-block" @submit.prevent="verifyCode">
           <p class="shop-body">
             {{ codeSentLine }}
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
@@ -722,8 +684,10 @@ useSeoMeta({
           </UiButton>
         </form>
 
-        <form v-else ref="welcomeForm" class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
-          <UiField v-if="welcomeAsksName" class="rounded-lg border bg-card p-4">
+        <!-- Boas-vindas = SÓ o nome. O convite de novidades não mora aqui: sobe
+             como sheet na página de destino (MarketingPromptSheet). -->
+        <form v-else class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
+          <UiField class="rounded-lg border bg-card p-4">
             <UiFieldLabel for="welcome-name">Nome</UiFieldLabel>
             <UiInput
               id="welcome-name"
@@ -731,27 +695,9 @@ useSeoMeta({
               name="welcome-name"
               autocomplete="given-name"
               placeholder="Primeiro nome ou apelido"
+              data-focus-control
             />
           </UiField>
-
-          <!-- Novidades: UMA chave, separada de qualquer "aceito os termos", que nasce
-               desligada (LGPD art. 8 §4). É SÓ consentimento: não pede data de
-               nascimento nem repete a maioridade — isso a pessoa já confirmou ao entrar.
-               Desligada, não grava recusa nenhuma; só que a pergunta foi feita.
-               A frase ao lado da chave é a evidência gravada (MARKETING_PROMPT_DISCLOSURE):
-               mudou aqui, muda lá, e sobe a versão. -->
-          <div v-if="welcomeAsksMarketing" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-marketing>
-            <p class="shop-body font-semibold">Novidades da Nelson</p>
-            <UiFieldLabel for="welcome-marketing" class="w-full">
-              <div class="flex w-full items-center gap-4">
-                <div class="min-w-0 flex-1">
-                  <p class="shop-body font-normal">Quero receber novidades da Nelson pelo WhatsApp</p>
-                  <p class="mt-0.5 shop-meta">Mude quando quiser em Conta › Preferências.</p>
-                </div>
-                <UiSwitch id="welcome-marketing" v-model="welcomeMarketing" />
-              </div>
-            </UiFieldLabel>
-          </div>
 
           <div class="grid gap-3">
             <UiButton type="submit" size="lg" :loading="pending" :disabled="!canContinueWelcome" icon="lucide:check" class="w-full justify-center">
@@ -762,6 +708,7 @@ useSeoMeta({
             </UiButton>
           </div>
         </form>
+        </section>
 
         <p v-if="step !== 'welcome'" class="shop-meta">
           {{ copyMessage(authCopy?.terms_note, 'Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.') }}

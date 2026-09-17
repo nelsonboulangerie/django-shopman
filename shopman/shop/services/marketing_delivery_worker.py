@@ -485,6 +485,16 @@ def _pre_send_outcome(
     )
     if not has_consent:
         return DeliveryState.SUPPRESSED.value, "missing_consent"
+    if target.platform == "whatsapp":
+        from shopman.shop.services import manychat_marketing_safety
+
+        if manychat_marketing_safety.canary_excludes(customer_ref):
+            # Ensaio do WhatsApp: fora da lista não vira tentativa. O adapter
+            # recusaria de qualquer jeito; suprimir aqui dá o motivo certo ao ledger.
+            return (
+                DeliveryState.SUPPRESSED.value,
+                manychat_marketing_safety.CANARY_RECIPIENT_EXCLUDED_CODE,
+            )
 
     # Consent and identity are checked before the delivery window. A revoked or
     # inactive target is terminal now; deferring it until morning would retain

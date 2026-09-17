@@ -95,11 +95,13 @@ pictograma: todo o símbolo precisa continuar dentro da zona segura central. A
 saída é versionada; o comando deve ser executado e o diff conferido antes do
 commit.
 
-Os ícones `any` usam fundo bordeaux opaco e o símbolo centralizado. No Mac, o
-manifesto omite `maskable` para evitar que o Chrome acrescente uma segunda placa; a
-resposta varia por `User-Agent` e usa `private, no-store`, pois a borda pode
-ignorar `Vary` ao formar a chave de cache. O link versionado do manifesto evita
-reutilizar a resposta pública anterior; `id`, `scope` e `start_url` não mudam.
+Os ícones `any` usam fundo bordeaux em retângulo arredondado e o símbolo
+centralizado, com a mesma forma da família de operador. O manifesto é o mesmo para
+todo navegador e sempre publica o `maskable`: o Chrome no macOS monta o ícone do Dock
+a partir dele, recortado na grade do macOS; sem ele, usava o `any` de ponta a ponta e
+o app ficava ~24% maior que os vizinhos (ver `operator-kit/PWA_ICONS.md`). A resposta
+usa `private, no-store`, porque nome e cores vêm da loja. O link versionado do
+manifesto evita reutilizar a resposta anterior; `id`, `scope` e `start_url` não mudam.
 O ícone Apple usa a mesma composição; o adaptativo Android reduz o símbolo para
 preservar a zona segura contra recortes do launcher. Ícones já instalados
 precisam receber a atualização do navegador; validar também uma instalação nova.

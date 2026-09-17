@@ -139,11 +139,11 @@ describe("OperatorLogin", () => {
   it("com iconSrc mostra o PNG do app; a imagem que falha cai no Lucide", async () => {
     const wrapper = await mountLogin({
       icon: "lucide:layout-grid",
-      iconSrc: "/pwa/pwa-64x64.png?v=2",
+      iconSrc: "/pwa/pwa-64x64.png?v=3",
     });
     const roundel = wrapper.get("form > div:first-child");
     const img = roundel.get("img");
-    expect(img.attributes("src")).toBe("/pwa/pwa-64x64.png?v=2");
+    expect(img.attributes("src")).toBe("/pwa/pwa-64x64.png?v=3");
     expect(img.attributes("alt")).toBe("");
     expect(roundel.findComponent({ name: "Icon" }).exists()).toBe(false);
 

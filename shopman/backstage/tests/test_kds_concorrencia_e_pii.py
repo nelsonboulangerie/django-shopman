@@ -4,8 +4,9 @@ Os dois achados aqui têm o mesmo formato: o código promete uma coisa no docstr
 faz outra, e o teste que existia passava por rodar num mundo simples demais.
 
 - **O item desmarcava sozinho.** "Marcar item" recebia um estado DESEJADO e o serviço
-  lia o estado atual FORA do lock para decidir se mudava. O `select_for_update`
-  protegia só a inversão. O teste chamado "idempotent" passava porque roda em série.
+  lia o estado atual FORA do lock para decidir se mudava. A marcação por item saiu
+  (o preparo agora é estado do ticket, ``start_ticket``), mas a regra ficou: o
+  writer escreve o estado alvo dentro do lock, sem comparar antes.
 - **O painel público mostrava o telefone.** `_public_comanda_code` promete no docstring
   que protege, e tratava ``isdigit()`` como sinônimo de "não identificante". O
   assert-negativo de PII que existia testa NOME, não dígito.
@@ -29,119 +30,63 @@ def ticket(db):
         session_key="sk-conc-1",
         kds_instance=estacao,
         items=[
-            {"sku": "PAO", "name": "Pão", "qty": 1, "checked": False},
-            {"sku": "CAFE", "name": "Café", "qty": 1, "checked": False},
+            {"sku": "PAO", "name": "Pão", "qty": 1},
+            {"sku": "CAFE", "name": "Café", "qty": 1},
         ],
     )
 
 
-# ── O item que desmarcava sozinho ────────────────────────────────────────────
-#
-# ⚠️ Os dois primeiros testes desta seção são os que DISCRIMINAM o conserto. Um
-# teste "marcar duas vezes deixa marcado", em série, PASSA com o toggle — porque a
-# comparação pré-lock pula a segunda chamada. Foi assim que o teste chamado
-# "idempotent" viveu ao lado do bug. Provar de verdade exige atacar as duas metades
-# separadamente: o núcleo escreve o desejado, e o serviço não decide antes.
+# ── Dois tablets no mesmo card ───────────────────────────────────────────────
 
 
 @pytest.mark.django_db
-def test_o_NUCLEO_escreve_o_estado_desejado_sem_olhar_o_anterior(ticket):
-    """O discriminador do lado do core: `set`, não `toggle`.
-
-    Com `toggle`, esta mesma chamada — item JÁ marcado, comando "marcar" — inverte
-    para desmarcado. É esse comportamento que, sob dois tablets, fazia o pão que o
-    cozinheiro acabou de marcar desmarcar sozinho.
-    """
+def test_o_NUCLEO_escreve_em_preparo_sem_inverter(ticket):
+    """Iniciar é `set`, não `toggle`: o segundo toque não devolve a pendente."""
     from shopman.shop.services import kds as kds_core
 
-    kds_core.set_ticket_item_checked(ticket, index=0, checked=True, actor="joyce")
-    ticket.refresh_from_db()
-    assert ticket.items[0]["checked"] is True
-
-    # De novo, com o MESMO estado desejado, direto no core — sem o serviço no meio.
-    kds_core.set_ticket_item_checked(ticket, index=0, checked=True, actor="bia")
-
-    ticket.refresh_from_db()
-    assert ticket.items[0]["checked"] is True, "o núcleo inverteu em vez de escrever"
-
-
-@pytest.mark.django_db
-def test_o_SERVICO_nao_decide_antes_de_travar(ticket, monkeypatch):
-    """O discriminador do lado do serviço: a leitura pré-lock SUMIU.
-
-    Enquanto existisse um "se o atual já é o desejado, não faz nada", a corrida
-    voltaria — esse dado envelhece entre ler e travar, e é exatamente ali que a
-    outra requisição escreve. A prova é que o núcleo é chamado MESMO quando o estado
-    atual já é o desejado.
-    """
-    from shopman.shop.services import kds as kds_core
-
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="joyce")
-
-    chamadas = []
-    real = kds_core.set_ticket_item_checked
-
-    def espiao(*args, **kwargs):
-        chamadas.append(kwargs.get("checked"))
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(kds_service.kds_core, "set_ticket_item_checked", espiao)
-
-    # Estado atual JÁ é `True`; o comando pede `True` de novo.
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="bia")
-
-    assert chamadas == [True], (
-        "o serviço voltou a comparar antes de travar — a corrida volta com ela"
-    )
-
-
-@pytest.mark.django_db
-def test_marcar_duas_vezes_deixa_marcado(ticket):
-    """Guarda de comportamento (passa no main também — não é o discriminador)."""
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="joyce")
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="bia")
-
-    ticket.refresh_from_db()
-    assert ticket.items[0]["checked"] is True
-
-
-@pytest.mark.django_db
-def test_desmarcar_duas_vezes_deixa_desmarcado(ticket):
-    """O simétrico. Também guarda de comportamento, não prova da corrida."""
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="joyce")
-
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=False, actor="joyce")
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=False, actor="bia")
-
-    ticket.refresh_from_db()
-    assert ticket.items[0]["checked"] is False
-
-
-@pytest.mark.django_db
-def test_marcar_um_item_nao_toca_o_vizinho(ticket):
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="joyce")
-
-    ticket.refresh_from_db()
-    assert ticket.items[0]["checked"] is True
-    assert ticket.items[1]["checked"] is False
-
-
-@pytest.mark.django_db
-def test_marcar_um_item_poe_o_ticket_em_preparo(ticket):
-    """O efeito que o `set` não pode ter perdido junto com o toggle."""
-    assert ticket.status == "pending"
-
-    kds_service.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="joyce")
+    assert kds_core.start_ticket(ticket, actor="joyce") is True
+    assert kds_core.start_ticket(ticket, actor="bia") is True
 
     ticket.refresh_from_db()
     assert ticket.status == "in_progress"
 
 
 @pytest.mark.django_db
+def test_o_SERVICO_nao_decide_antes_de_travar(ticket, monkeypatch):
+    """O núcleo é chamado MESMO quando o ticket já está em preparo."""
+    from shopman.shop.services import kds as kds_core
+
+    kds_service.start_ticket(ticket_pk=ticket.pk, actor="joyce")
+
+    chamadas = []
+    real = kds_core.start_ticket
+
+    def espiao(*args, **kwargs):
+        chamadas.append(kwargs.get("actor"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(kds_service.kds_core, "start_ticket", espiao)
+
+    kds_service.start_ticket(ticket_pk=ticket.pk, actor="bia")
+
+    assert chamadas == ["bia"], "o serviço voltou a comparar antes de travar"
+
+
+@pytest.mark.django_db
+def test_iniciar_nao_toca_os_itens(ticket):
+    antes = [dict(item) for item in ticket.items]
+
+    kds_service.start_ticket(ticket_pk=ticket.pk, actor="joyce")
+
+    ticket.refresh_from_db()
+    assert ticket.items == antes
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     ("status", "command"),
     [
-        ("pending", "check"),
+        ("pending", "start"),
         ("pending", "complete"),
         ("done", "recall"),
         ("cancelled", "ack"),
@@ -176,8 +121,8 @@ def test_todo_writer_do_kds_trava_a_fonte_antes_do_ticket(
     monkeypatch.setattr(kds_core, "_lock_source_for_session", source_lock)
     monkeypatch.setattr(kds_core, "_lock_ticket_after_source", ticket_lock)
 
-    if command == "check":
-        kds_core.set_ticket_item_checked(ticket, index=0, checked=True, actor="kds:test")
+    if command == "start":
+        kds_core.start_ticket(ticket, actor="kds:test")
     elif command == "complete":
         kds_core.complete_ticket(ticket, actor="kds:test")
     elif command == "recall":

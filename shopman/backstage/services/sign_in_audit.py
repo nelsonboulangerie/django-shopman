@@ -70,15 +70,29 @@ def mark_method(request, method: str) -> None:
         setattr(request, REQUEST_METHOD_ATTR, method)
 
 
-def client_ip(request) -> str | None:
-    """O IP de quem chamou, atrás do proxy do deployment.
+def _ip_address(request) -> str | None:
+    """O IP de quem chamou, resolvido pelo helper canônico da casa.
 
-    ``X-Forwarded-For`` é uma lista da borda até aqui; o cliente é o primeiro.
+    ``auth.client_ip`` conta o X-Forwarded-For pela DIREITA
+    (``DOORMAN_TRUSTED_PROXY_DEPTH``), onde quem escreve é a borda da plataforma,
+    e lê o salto a mais quando o pedido vem de um BFF que apresenta o segredo.
+    A ponta ESQUERDA é escrita por quem chama: lida ali, uma linha desta trilha
+    carregaria o IP que o próprio intruso escolheu.
+
+    Valor que não é IP vira ``None``: o ``GenericIPAddressField`` recusaria no
+    banco, ``record()`` engoliria o erro e o acesso ficaria SEM linha.
     """
+    import ipaddress
+
+    from shopman.shop.services.auth import client_ip
+
     if request is None:
         return None
-    encaminhado = (request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
-    return encaminhado or request.META.get("REMOTE_ADDR") or None
+    resolvido = (client_ip(request) or "").strip()
+    try:
+        return str(ipaddress.ip_address(resolvido))
+    except ValueError:
+        return None
 
 
 def _station_ref(request) -> str:
@@ -133,7 +147,7 @@ def record(*, user=None, username: str = "", method: str = "", outcome: str = ""
             method=metodo,
             outcome=resultado,
             station_ref=_station_ref(request)[:80],
-            ip_address=client_ip(request),
+            ip_address=_ip_address(request),
             data=dados,
         )
         # Gravar e avisar no mesmo lugar: o aviso é sobre TODO acesso, e deixá-lo

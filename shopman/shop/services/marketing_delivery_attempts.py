@@ -205,6 +205,24 @@ def execute_target(
             idempotency_token=idempotency_token,
         )
     except ProviderCallFailure as exc:
+        if _is_flow_deferral(exc):
+            # O assinante tem outra mensagem com flow assentando: nada foi escrito
+            # no provedor. Não é FAILED_RETRYABLE (esse só volta por comando do
+            # operador): a tentativa volta à fila e sai depois da janela.
+            attempt, target = _defer_uncrossed_call(
+                attempt.ref,
+                now=clock,
+                delay_seconds=_flow_deferral_seconds(exc),
+                code=exc.code,
+            )
+            return _observed_execution(
+                AttemptExecution(
+                    attempt,
+                    target,
+                    provider_called=False,
+                    replayed=replayed,
+                )
+            )
         outcome = exc.as_outcome()
     except Exception:
         logger.warning("marketing.delivery_provider_outcome_unclassified")
@@ -312,18 +330,46 @@ def _settle_invalid_facts(
 def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:
     """Return a boundary-not-crossed attempt to a safely reclaimable state."""
 
+    _defer_uncrossed_call(attempt_ref, now=now, delay_seconds=30, code="marketing_frozen")
+
+
+def _is_flow_deferral(exc: ProviderCallFailure) -> bool:
+    from shopman.shop.services.manychat_marketing_safety import is_flow_deferral
+
+    return exc.kind == ProviderOutcomeKind.NOT_ATTEMPTED and is_flow_deferral(exc.code)
+
+
+def _flow_deferral_seconds(exc: ProviderCallFailure) -> int:
+    from shopman.shop.services.manychat_marketing_safety import flow_settle_seconds
+
+    return min(max(flow_settle_seconds(), int(exc.retry_after_seconds or 0)), 86_400)
+
+
+def _defer_uncrossed_call(
+    attempt_ref,
+    *,
+    now: datetime,
+    delay_seconds: int,
+    code: str,
+) -> tuple[DeliveryAttempt, DeliveryTarget]:
+    """Return an attempt whose provider effect never happened to the queue.
+
+    The attempt goes back to ``PREPARED`` so the next claim reuses the same
+    deterministic token instead of opening a second ordinal for one effect.
+    """
+
     with transaction.atomic():
         attempt = DeliveryAttempt.objects.select_for_update().get(ref=attempt_ref)
         target = DeliveryTarget.objects.select_for_update().get(pk=attempt.target_id)
         if attempt.state != DeliveryAttempt.State.CALLING:
-            return
+            return attempt, target
         attempt.state = DeliveryAttempt.State.PREPARED
         attempt.save(update_fields=["state", "updated_at"])
         target.state = DeliveryTarget.State.QUEUED
         target.lease_owner = ""
         target.lease_until = None
-        target.next_attempt_at = now + timedelta(seconds=30)
-        target.last_error_code = "marketing_frozen"
+        target.next_attempt_at = now + timedelta(seconds=delay_seconds)
+        target.last_error_code = _safe_code(code)
         target.version += 1
         target.updated_at = now
         target.save(
@@ -337,6 +383,7 @@ def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:
                 "updated_at",
             ]
         )
+        return attempt, target
 
 
 def _settle_pre_provider_guard(

@@ -36,6 +36,10 @@ from shopman.shop.loyalty_config import (
     TIER_LABELS,
     LoyaltyConfig,
 )
+from shopman.shop.marketing_policy import (
+    DEFAULT_WHATSAPP_MINIMUM_AUDIENCE,
+    WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
+)
 from shopman.shop.models import (
     NotificationTemplate,
     Shop,
@@ -48,6 +52,16 @@ from shopman.shop.models import (
     ShopPos,
     ShopProduction,
     ShopPurchase,
+    ShopSearch,
+)
+from shopman.shop.operator_capacity_policy import (
+    DEFAULT_ATTENTION_PERCENT,
+    DEFAULT_CRITICAL_PERCENT,
+    DEFAULT_SUSTAIN_MINUTES,
+    PERCENT_CEILING,
+    PERCENT_FLOOR,
+    SUSTAIN_MINUTES_CEILING,
+    SUSTAIN_MINUTES_FLOOR,
 )
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
@@ -510,7 +524,78 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=purchase_help[key] + " Em branco = padrão do sistema.",
         )
+    fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
+        label="Mínimo de pessoas elegíveis numa campanha de WhatsApp",
+        required=False,
+        min_value=WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_WHATSAPP_MINIMUM_AUDIENCE)}),
+        error_messages={
+            "invalid": "Informe um número inteiro de pessoas (1 ou mais).",
+            "min_value": "O mínimo aceito é 1 pessoa: uma campanha precisa ter para quem ir.",
+        },
+        help_text=(
+            "A campanha geral por WhatsApp só é aprovada com pelo menos este número de "
+            "pessoas elegíveis. Aumentar impede que uma campanha “geral” mire uma pessoa "
+            "só. Começa em 1 de propósito, para o início da operação. Não vale no ensaio "
+            f"(canário). Em branco = {DEFAULT_WHATSAPP_MINIMUM_AUDIENCE}."
+        ),
+    )
+    percent_errors = {
+        "invalid": "Informe um percentual inteiro, de 1 a 100.",
+        # ``%%``: a mensagem de min/max passa por ``%`` com os parâmetros do Django.
+        "min_value": "O menor percentual aceito é 1%%.",
+        "max_value": "O maior percentual aceito é 100%%.",
+    }
+    fields["defaults_operator_capacity_attention_percent"] = forms.IntegerField(
+        label="Atenção a partir de (% da capacidade)",
+        required=False,
+        min_value=PERCENT_FLOOR,
+        max_value=PERCENT_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_ATTENTION_PERCENT)}),
+        error_messages=percent_errors,
+        help_text=(
+            "Acima deste uso de memória ou CPU, o indicador de capacidade no rail dos apps "
+            f"fica âmbar. Não gera aviso. Em branco = {DEFAULT_ATTENTION_PERCENT}%."
+        ),
+    )
+    fields["defaults_operator_capacity_critical_percent"] = forms.IntegerField(
+        label="Crítico a partir de (% da capacidade)",
+        required=False,
+        min_value=PERCENT_FLOOR,
+        max_value=PERCENT_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_CRITICAL_PERCENT)}),
+        error_messages=percent_errors,
+        help_text=(
+            "Acima deste uso o indicador fica vermelho e, se continuar pelo tempo abaixo, "
+            f"o gestor recebe um alerta crítico. Em branco = {DEFAULT_CRITICAL_PERCENT}%."
+        ),
+    )
+    fields["defaults_operator_capacity_sustain_minutes"] = forms.IntegerField(
+        label="Avisar depois de quantos minutos acima do crítico",
+        required=False,
+        min_value=SUSTAIN_MINUTES_FLOOR,
+        max_value=SUSTAIN_MINUTES_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_SUSTAIN_MINUTES)}),
+        error_messages={
+            "invalid": "Informe um número inteiro de minutos, de 1 a 60.",
+            "min_value": "O mínimo é 1 minuto.",
+            "max_value": "O máximo é 60 minutos: mais que isso, o aviso chega depois do movimento.",
+        },
+        help_text=(
+            "Um pico curto (abrir o caixa, um relatório pesado) não vira alarme: o uso "
+            "precisa ficar acima do crítico por este tempo. O alerta se resolve sozinho "
+            "quando o uso volta a ficar abaixo da atenção pelo mesmo tempo. "
+            f"Em branco = {DEFAULT_SUSTAIN_MINUTES} min."
+        ),
+    )
     return fields
+
+
+OPERATOR_CAPACITY_FIELDS = (
+    ("defaults_operator_capacity_attention_percent", "attention_percent", DEFAULT_ATTENTION_PERCENT),
+    ("defaults_operator_capacity_critical_percent", "critical_percent", DEFAULT_CRITICAL_PERCENT),
+    ("defaults_operator_capacity_sustain_minutes", "sustain_minutes", DEFAULT_SUSTAIN_MINUTES),
+)
 
 
 # ── Integrações (seleção de adapters tipada com dropdowns) ──────────────────
@@ -915,6 +1000,22 @@ class ShopForm(forms.ModelForm):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
 
+        if self._has("defaults_marketing_whatsapp_minimum_audience"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            # Mostra o que está GRAVADO; ausente fica em branco com o padrão no
+            # placeholder — salvar a página por outro motivo não congela o padrão.
+            self.fields["defaults_marketing_whatsapp_minimum_audience"].initial = marketing.get(
+                "whatsapp_minimum_audience"
+            )
+
+        if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
+            capacity = (
+                defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
+            )
+            # Mostra o GRAVADO; ausente fica em branco com o padrão no placeholder.
+            for field, key, _default in OPERATOR_CAPACITY_FIELDS:
+                self.fields[field].initial = capacity.get(key)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             cooldown = stock_alerts.get("cooldown_minutes")
@@ -1045,6 +1146,18 @@ class ShopForm(forms.ModelForm):
                 self.add_error(
                     "defaults_purchase_lead_time_max_days",
                     "O teto do prazo de entrega precisa ser maior ou igual ao prazo mínimo.",
+                )
+
+        if self._has("defaults_operator_capacity_critical_percent"):
+            # Em branco vale o padrão — a comparação é entre os valores que VÃO valer.
+            attention = cleaned_data.get("defaults_operator_capacity_attention_percent")
+            critical = cleaned_data.get("defaults_operator_capacity_critical_percent")
+            effective_attention = DEFAULT_ATTENTION_PERCENT if attention is None else attention
+            effective_critical = DEFAULT_CRITICAL_PERCENT if critical is None else critical
+            if effective_attention >= effective_critical and "defaults_operator_capacity_critical_percent" not in self.errors:
+                self.add_error(
+                    "defaults_operator_capacity_critical_percent",
+                    f"O crítico ({effective_critical}%) precisa ser maior que a atenção ({effective_attention}%).",
                 )
 
         if self._has("defaults_production_low_yield_threshold"):
@@ -1349,6 +1462,35 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("pos", None)
 
+        if self._has("defaults_marketing_whatsapp_minimum_audience"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            marketing = dict(marketing)
+            minimum = self.cleaned_data.get("defaults_marketing_whatsapp_minimum_audience")
+            if minimum is None:
+                marketing.pop("whatsapp_minimum_audience", None)
+            else:
+                marketing["whatsapp_minimum_audience"] = int(minimum)
+            if marketing:
+                defaults["marketing"] = marketing
+            else:
+                defaults.pop("marketing", None)
+
+        if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
+            capacity = (
+                defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
+            )
+            capacity = dict(capacity)
+            for field, key, _default in OPERATOR_CAPACITY_FIELDS:
+                value = self.cleaned_data.get(field)
+                if value is None:
+                    capacity.pop(key, None)
+                else:
+                    capacity[key] = int(value)
+            if capacity:
+                defaults["operator_capacity"] = capacity
+            else:
+                defaults.pop("operator_capacity", None)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             stock_alerts = dict(stock_alerts)
@@ -1445,6 +1587,51 @@ _IDENTITY_FIELDSETS = (
         "Contato",
         {
             "fields": ("phone", "email", "default_ddd"),
+        },
+    ),
+)
+
+_SEARCH_FIELDSETS = (
+    (
+        "Como a loja aparece no Google",
+        {
+            "fields": (
+                "seo_home_title",
+                "seo_home_description",
+                "seo_menu_description",
+                "seo_faq_description",
+            ),
+            "description": (
+                "Campo vazio não é buraco: a loja usa o texto que deriva da marca, do slogan "
+                "e da cidade. O Google pode levar dias para refletir uma mudança. Produtos e "
+                "coleções usam a descrição do próprio catálogo."
+            ),
+        },
+    ),
+    (
+        "Cartão de compartilhamento",
+        {"fields": ("seo_share_image_url",)},
+    ),
+    (
+        "Dados do negócio para o Google",
+        {
+            "fields": ("business_type", "price_range", "founding_year"),
+            "description": (
+                "Somam-se ao endereço, telefone, horários e redes sociais já cadastrados. "
+                "Para o mapa apontar para a sua ficha, preencha o Google Place ID em Loja e contato."
+            ),
+        },
+    ),
+    (
+        "Verificação de propriedade",
+        {
+            "fields": (
+                "google_site_verification",
+                "bing_site_verification",
+                "facebook_domain_verification",
+                "pinterest_domain_verification",
+            ),
+            "description": "Códigos que as plataformas pedem para provar que o site é seu.",
         },
     ),
 )
@@ -1761,6 +1948,32 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Campanhas de WhatsApp",
+        {
+            "fields": ("defaults_marketing_whatsapp_minimum_audience",),
+            "description": (
+                "Política da loja para campanhas gerais de Marketing enviadas por WhatsApp. "
+                "Quem mudou e quando fica no histórico desta página."
+            ),
+        },
+    ),
+    (
+        "Capacidade dos apps de operação",
+        {
+            "fields": (
+                ("defaults_operator_capacity_attention_percent", "defaults_operator_capacity_critical_percent"),
+                "defaults_operator_capacity_sustain_minutes",
+            ),
+            "description": (
+                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Central, Marketing, "
+                "B.I., Compras) mede a memória e a CPU do serviço em que roda e mostra no "
+                "indicador de capacidade do rail. Estes limites decidem quando o indicador "
+                "muda de cor e quando o gestor é avisado. Quem mudou e quando fica no "
+                "histórico desta página."
+            ),
+        },
+    ),
+    (
         "Canais do sistema (deployment)",
         {
             "fields": ("channel_refs_display",),
@@ -1996,6 +2209,12 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             'style="min-height:min(70vh,640px)"></iframe>'
             "</div>"
         )
+
+
+@admin.register(ShopSearch)
+class ShopSearchAdmin(_ShopSingletonAdmin):
+    form = _section_form(_SEARCH_FIELDSETS)
+    fieldsets = _SEARCH_FIELDSETS
 
 
 @admin.register(ShopOperation)

@@ -66,6 +66,11 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.management.commands.apply_search_presence import (
+    BRAND_PROFILES,
+    SEARCH_FIELDS,
+    apply_search_presence,
+)
 from shopman.backstage.models import (
     DayClosing,
     DayContext,
@@ -1255,8 +1260,11 @@ class Command(BaseCommand):
                 "postal_code": "86050-270",
                 "country": "Brasil",
                 "country_code": "BR",
-                "latitude": -23.3045,
-                "longitude": -51.1628,
+                # As coordenadas da ficha no Google Maps (o link "como chegar" da
+                # landing antiga). As de antes caíam 3,4 km ao norte, numa distribuidora
+                # do Centro: mapa, coleta do motoboy e frete por distância partiam de lá.
+                "latitude": -23.3348384,
+                "longitude": -51.1673157,
                 "phone": "554333231997",
                 "email": "nelson@boulangerie.com.br",
                 "default_ddd": "43",
@@ -1268,11 +1276,14 @@ class Command(BaseCommand):
                 # o perfil oficial da Nelson. Link errado é pior que link
                 # nenhum: com a lista vazia o rodapé não desenha a seção
                 # (`v-if="socialLinks.length"`) e o `sameAs` some.
-                # O dono acrescenta os perfis reais no Admin (Loja → Redes
-                # sociais), que é um ArrayWidget feito para isso.
+                # Os perfis reais (os que a landing antiga declarava) e os textos
+                # de busca vêm da MESMA fonte que leva a presença de busca a um
+                # banco já semeado, sem reseed: `apply_search_presence`.
                 "social_links": [
                     "https://wa.me/554333231997",
+                    *BRAND_PROFILES,
                 ],
+                **SEARCH_FIELDS,
                 "cancellation_presets": [
                     "Item indisponível no momento",
                     "Sem um dos ingredientes hoje",
@@ -1346,6 +1357,8 @@ class Command(BaseCommand):
             },
         )
         self.stdout.write("  ✅ Shop criado" if created else "  ✅ Shop atualizado")
+        apply_search_presence(Shop.objects.get(pk=1), overwrite=True)
+        self.stdout.write("  ✅ Perguntas frequentes iniciais")
 
     # ────────────────────────────────────────────────────────────────
     # Delivery Zones
@@ -1734,12 +1747,13 @@ class Command(BaseCommand):
         # servidos pela própria loja — deploy atômico com o app, nenhum serviço
         # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
         #
-        # Ponteiro de domínio NÃO mora no código (lição cobrada em 01/09: o host
-        # estava fixo em menu.*, o corte de domínios moveu menu.* para a loja, e
-        # toda foto de produto virou 404). O host é env com default na loja viva.
+        # Ponteiro de domínio NÃO mora no código, e a foto não mora no host de um
+        # site: quebrou em 01/09 (menu.* virou a loja) e em 17/09 (a loja virou
+        # www. e menu.* voltou ao cardápio antigo). O host `img.` só serve foto e
+        # não muda de papel; o ingress o reescreve para `/img/` do storefront.
         image_base = os.environ.get(
             "SHOPMAN_PRODUCT_IMAGE_BASE",
-            "https://menu.nelsonboulangerie.com.br/img/products",
+            "https://img.nelsonboulangerie.com.br/products",
         ).rstrip("/")
         IMG = image_base
         UNSPLASH = "https://images.unsplash.com"

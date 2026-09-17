@@ -39,7 +39,11 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || 'http://127.0.0.1:8000'
+    djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || 'http://127.0.0.1:8000',
+    // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o
+    // IP do cliente um salto mais fundo no X-Forwarded-For. Só no servidor (nunca
+    // em `public`); em runtime vem de NUXT_DJANGO_PROXY_SECRET. Vazio = desligado.
+    djangoProxySecret: ''
   },
 
   // Foto de catálogo é imutável por convenção: trocar a foto = trocar o NOME do
@@ -75,10 +79,10 @@ export default defineNuxtConfig({
         { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }
       ],
       link: [
-        { rel: 'manifest', href: '/manifest.webmanifest?v=4' },
-        { rel: 'icon', href: '/pwa/favicon.svg?v=4', type: 'image/svg+xml' },
-        { rel: 'icon', href: '/pwa/favicon.ico?v=4', sizes: 'any' },
-        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png?v=4' },
+        { rel: 'manifest', href: '/manifest.webmanifest?v=6' },
+        { rel: 'icon', href: '/pwa/favicon.svg?v=6', type: 'image/svg+xml' },
+        { rel: 'icon', href: '/pwa/favicon.ico?v=6', sizes: 'any' },
+        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png?v=6' },
         ...appleStartupLinks
       ]
     }

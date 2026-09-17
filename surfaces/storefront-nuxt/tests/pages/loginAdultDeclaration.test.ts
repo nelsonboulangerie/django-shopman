@@ -93,11 +93,11 @@ describe('login — a declaração de maioridade em toda porta de entrada', () =
     const session = useShopSession()
     session.setFromAuthSession({
       is_authenticated: true,
-      customer_name: 'Ana Silva',
+      customer_name: '',
       requires_welcome: true,
-      welcome_asks_name: false,
-      welcome_asks_marketing: true,
-      welcome_suggested_name: 'Ana Silva'
+      welcome_asks_name: true,
+      welcome_asks_marketing: false,
+      welcome_suggested_name: ''
     })
     const page = await mountSuspended(LoginPage, { route: '/entrar?welcome=1&next=%2Fconta' })
     mounted.push(page)

@@ -365,6 +365,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `paid_amount_q` | `int` | audit | `confirm_pix` | `confirm_pix` (suficiência do recebido) | Total recebido em Pix para o pedido = soma de `pix_receipts`. **Não é prova de pagamento**: quem diz se a venda está paga é o Payman |
 | `captured_at` | `string` | audit + idempotency | `confirm_pix` / `payment.capture()` / POS | `confirm_pix` (guard de re-dispatch do `on_paid`) | ISO datetime da captura SUFICIENTE (só gravado quando o valor capturado cobre `total_q`; pagamento parcial não grava) |
 | `transaction_id` | `string` | audit | `payment.capture()` | — | Transaction ID do adapter pós-capture |
+| `card_funding` | `string` | fiscal | `payment.capture()` (adapter Stripe, `latest_charge.payment_method_details.card.funding`) | emissão de NFC-e (`fiscal_focusnfe._payment_code`) | `credit` \| `debit` \| `prepaid` \| `unknown` — como o cliente pagou o cartão no Checkout da Stripe (loja e link). Decide o tPag 03/04; ausente → 99 outros |
 | `gateway_checked_at` | `string` | throttle | `payment.reconcile_with_gateway_if_due()` | o próprio (janela mínima entre perguntas) | ISO datetime da última pergunta ao gateway pelo estado deste pagamento. Existe para o acompanhamento poder reconciliar em toda leitura sem transformar cada refresh do cliente numa chamada ao provedor (`GATEWAY_RECHECK_SECONDS`). **Não é status**: quem diz se a venda está paga é o Payman |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
@@ -857,6 +858,29 @@ campanha, então a relâmpago de amanhã também sai.
 em dobro chega ao cliente e não tem desfazer. Anúncio de evento fica com a chave vazia de
 propósito — duas fornadas do mesmo pão são dois anúncios legítimos.
 
+#### `announcement.notify` (onda legada, sem `outbox_ref`)
+
+Uma onda de WhatsApp de um anúncio. Payload com `outbox_ref` segue o ledger durável;
+sem ele, `AnnouncementNotifyHandler` resolve a audiência na hora e envia por pessoa.
+
+Dedupe: `announcement:{id}:wa:{wave}`; reenvio de ocupados:
+`announcement:{id}:wa:{wave}:busy:{directive_pk}`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `announcement_id` | `int` | campaign_service._queue_notify | AnnouncementNotifyHandler |
+| `wave` | `string` | campaign_service._queue_notify | AnnouncementNotifyHandler |
+| `wave_keys` | `list[string]` | campaign_service._queue_notify | audience.select_wave |
+| `sku` | `string` | campaign_service._queue_notify | (evidência) |
+| `waves_expected` | `int` | campaign_service._queue_notify | _record_wave |
+| `only_customer_refs` | `list[string]` | handlers.campaign._requeue_busy_recipients | AnnouncementNotifyHandler |
+
+`only_customer_refs` existe só na directive de reenvio: são os `customer_ref` que o
+ManyChat devolveu como `subscriber_busy` (outra mensagem com flow assentando). A
+directive nasce com `available_at` depois da janela
+`SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
+telefone, e quem já recebeu não recebe de novo.
+
 ---
 
 ## Channel.config
@@ -1109,6 +1133,32 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 |-------|------|----------|-----------|
 | `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (a exceção de preço alterado segue exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 
+### Marketing — `Shop.defaults["marketing"]`
+
+Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketing_policy.py`
+(`MarketingPolicy`).
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `marketing.whatsapp_minimum_audience` | `int` (≥ 1) | `resolve_marketing_policy` → `approve_command` (`shop/services/marketing_approval.py`) | Mínimo de pessoas elegíveis para aprovar campanha **geral** por WhatsApp (impede mirar uma pessoa). **Ausente = 1** (decisão do dono, 2026-09-17). Não vale no modo `canary`. Editado na página "Integrações" do ShopAdmin; em branco remove a chave. Valor gravado fora do contrato (0, negativo, texto, booleano) cai no padrão com `logger.warning`. |
+
+### Capacidade dos apps de operação — `Shop.defaults["operator_capacity"]`
+
+Limites do indicador de capacidade dos apps Nuxt de operador e do alerta
+`operator_capacity_critical`. Source-of-truth tipado em
+`shopman/shop/operator_capacity_policy.py` (`OperatorCapacityPolicy`); a regra mora em
+`shopman/shop/services/operator_capacity.py`.
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `operator_capacity.attention_percent` | `int` (1–100) | `resolve_operator_capacity_policy` → `OperatorCapacityView` → rail dos apps | Uso (maior entre memória% e CPU% do contêiner) a partir do qual o indicador fica âmbar. Não gera aviso. **Ausente = 75.** |
+| `operator_capacity.critical_percent` | `int` (1–100, > atenção) | idem + `evaluate_sample` | A partir deste uso o indicador fica vermelho; acima por `sustain_minutes` nasce `OperatorAlert` crítico (dedupe por serviço). **Ausente = 90.** |
+| `operator_capacity.sustain_minutes` | `int` (1–60) | `evaluate_sample` | Minutos acima do crítico antes do alerta; e abaixo da atenção antes de o sistema resolvê-lo. **Ausente = 5.** |
+
+Editado na página "Integrações" do ShopAdmin (seção "Capacidade dos apps de operação"); em
+branco remove a chave. Par invertido (atenção ≥ crítico) ou valor fora da faixa gravado por
+edição crua do JSON cai no padrão com `logger.warning`.
+
 ### Alertas de estoque — `Shop.defaults["stock_alerts"]`
 
 | Chave | Tipo | Lido por | Descrição |
@@ -1194,8 +1244,8 @@ proprios, nao aqui.
 | `qa_notes` | `list[string]` | seed | QA/auditoria | Observacoes de teste para simular baixa atencao, recuperacao e suporte |
 | `house_account` | `bool` | **Admin** (checkbox "Conta na casa" no form do cliente, `guestman/contrib/admin_unfold`) | `shop/services/house_account.is_eligible` (porteiro da venda "em conta" no PDV), projection do PDV (`customer lookup.house_account`) | O cliente pode comprar em conta e acertar por período (WP-10 do CASHMAN-PLAN). Desligado por padrão; não se divulga. Ausente = `false` |
 | `fiscal_prefs` | `dict` | `shop/services/pos._remember_fiscal_prefs` (quando cliente identificado OPTA na venda) | POS lookup projection (`fiscal_prefs`) → pré-marca o checkout | `{cpf_na_nota: bool, email_receipt: bool}` — o cliente optou uma vez, a próxima venda vem pré-marcada (editável). Só grava opt-IN; desmarcar numa venda não apaga ("hoje não" ≠ "nunca mais"). Esquecer é gesto de cadastro (Admin) |
-| `marketing_prompt_answered_at` | `string` (ISO 8601 com fuso) | `shop/services/account.answer_marketing_prompt` (via `POST /api/v1/account/marketing-prompt/`, o gate de boas-vindas da loja) | `account.marketing_prompt_pending` → `welcome_asks_marketing` no payload de sessão (`/api/v1/auth/session/`) | A pergunta "quer novidades pelo WhatsApp?" foi feita e respondida UMA vez na entrada. Carimbo só; a resposta "sim" vira `CommunicationConsent` whatsapp `opted_in` (só nesse canal). "Deixar para depois"/caixa desmarcada grava SÓ o carimbo — **nunca** `opted_out`, porque opt-out gravado cala até o recado do próprio pedido naquele canal (`services/notification.py`). Uma linha de consentimento whatsapp (qualquer status) também conta como "respondido". Idempotente: o primeiro carimbo fica |
-| `adult_declaration` | `dict` | `shop/services/account.record_adult_declaration` (toda autenticação bem-sucedida do storefront — `verify-code`, `device-check`, `auth/access`, `passkey/login` — via `storefront/api/auth._declare_adult`) | `shop/services/marketing_age.declares_adult`/`is_proved_adult` → resolvedor de audiência, materialização do snapshot, claim do worker e boundary do provider do Marketing (`age_not_declared`/`recipient_age_not_verified` quando falta) | `{at: ISO 8601 com fuso, terms_version: "login-terms-pt-BR-v1", source: "storefront_login", ip_address?: string}` — a pessoa leu "Ao continuar, você confirma que é maior de idade e aceita os Termos de uso." e entrou. É a prova de maioridade para marketing direto (a loja NÃO pede data de nascimento); `Customer.birthday` que prova menor vence a declaração. Idempotente: a PRIMEIRA fica; já carimbado, o login não toca o banco. Só vale sob versão listada em `marketing_age.ADULT_DECLARING_TERMS_VERSIONS` — mudou a frase da entrada, sobe a versão nos dois lados |
+| `marketing_prompt_answered_at` | `string` (ISO 8601 com fuso) | `shop/services/account.answer_marketing_prompt` (via `POST /api/v1/account/marketing-prompt/`, o sheet de novidades da loja) | `projections/customer_context.marketing_prompt_pending` → `welcome_asks_marketing` no payload de sessão (`/api/v1/auth/session/`) e `omotenashi.marketing_prompt_pending` na home | A pergunta "avisos pelo WhatsApp?" foi feita e respondida UMA vez, num bottom sheet na página em que a pessoa cai depois de entrar (não é passo do login). Carimbo só; a resposta "sim" (ligar a chave) vira `CommunicationConsent` whatsapp `opted_in` (só nesse canal). Fechar o sheet sem ligar grava SÓ o carimbo — **nunca** `opted_out`, porque opt-out gravado cala até o recado do próprio pedido naquele canal (`services/notification.py`). Uma linha de consentimento whatsapp (qualquer status) também conta como "respondido". Idempotente: o primeiro carimbo fica |
+| `adult_declaration` | `dict` | `shop/services/account.record_adult_declaration` (toda autenticação bem-sucedida do storefront — `verify-code`, `device-check`, `auth/access`, `passkey/login` — via `storefront/api/auth._declare_adult`) | `shop/services/marketing_age.declares_adult`/`is_proved_adult` → resolvedor de audiência, materialização do snapshot, claim do worker e boundary do provider do Marketing (`age_not_declared`/`recipient_age_not_verified` quando falta) | `{at: ISO 8601 com fuso, terms_version: "login-terms-pt-BR-v1", source: "storefront_login", ip_address?: string}` — `ip_address` vem de `auth.client_ip`; carimbo feito pela loja antes de o `SHOPMAN_BFF_PROXY_SECRET` estar no ambiente guarda o IP de SAÍDA do BFF (no alpha, `147.182.186.185`), não o do cliente, e não é reescrito — a pessoa leu "Ao continuar, você confirma que é maior de idade e aceita os Termos de uso." e entrou. É a prova de maioridade para marketing direto (a loja NÃO pede data de nascimento); `Customer.birthday` que prova menor vence a declaração. Idempotente: a PRIMEIRA fica; já carimbado, o login não toca o banco. Só vale sob versão listada em `marketing_age.ADULT_DECLARING_TERMS_VERSIONS` — mudou a frase da entrada, sobe a versão nos dois lados |
 
 ---
 
@@ -1464,7 +1514,7 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 |-------|------|-------------|----------|-----------|
 | `default_fulfillment_type` | `str` | Admin | projection POS | `pickup` (default) ou `delivery`. Qualquer outro valor cai em `pickup`. |
 | `favorite_collection_refs` | `list[str]` | Admin | projection POS | Até 9 coleções fixadas na tela de venda. Aceita o alias legado `favorite_collections`. |
-| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade até o cadeado do operador. Default 60. |
+| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO APARELHO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
 | `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este dispositivo. Ver abaixo. |
@@ -1789,6 +1839,14 @@ achado a linha**, e por isso não vira coluna.
 **regra editável** (`RuleConfig` `sign_in_highlight`), e virar coluna congelaria
 no banco a resposta de ontem para uma pergunta que o gerente pode mudar hoje. O
 que se filtra — método, estação, resultado — é fato, não julgamento.
+
+A coluna `ip_address` vem de `shop/services/auth.client_ip` (rightmost
+`DOORMAN_TRUSTED_PROXY_DEPTH`, um salto a mais quando o BFF apresenta o
+`SHOPMAN_BFF_PROXY_SECRET`); valor que não é IP grava `NULL`. **Linhas antigas não
+são reescritas:** até 17/09/2026 a trilha lia a ponta ESQUERDA do X-Forwarded-For,
+escrita por quem chama (forjável), e depois disso, enquanto o segredo não estiver
+nos componentes de operador, acesso feito pelos apps Nuxt grava o IP de saída do
+Nitro.
 
 Chaves ausentes quando vazias — a ausência diz "não havia", e uma chave com `""`
 fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).

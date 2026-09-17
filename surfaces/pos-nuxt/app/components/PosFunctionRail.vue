@@ -29,7 +29,7 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 <template>
   <OperatorRail
     app-icon="shopping-basket"
-    app-icon-src="/pwa/pwa-64x64.png?v=2"
+    app-icon-src="/pwa/pwa-64x64.png?v=3"
     app-label="PDV"
     :central-url="hubUrl"
     :operator-name="operatorName || undefined"
@@ -61,15 +61,18 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
     </template>
 
     <template #status>
-      <!-- O card recebe a Projection inteira porque ele mesmo sonda o agente do
-           balcão (useAgentHealth) e promove o resultado às linhas. -->
-      <PosTerminalHealth v-if="pos" compact :pos="pos" />
+      <!-- Ordem pedida pelo Pablo (17/09): Atualizar primeiro, para a saúde do
+           terminal ficar colada na capacidade do servidor, que o OperatorRail põe
+           logo depois deste slot — as duas leituras de "como está" lado a lado. -->
       <RailItem
         icon="refresh-cw"
         label="Atualizar"
         :busy="pending"
         @activate="emit('refresh')"
       />
+      <!-- O card recebe a Projection inteira porque ele mesmo sonda o agente do
+           balcão (useAgentHealth) e promove o resultado às linhas. -->
+      <PosTerminalHealth v-if="pos" compact :pos="pos" />
     </template>
   </OperatorRail>
 </template>

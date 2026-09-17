@@ -12,9 +12,33 @@ import {
   deliveryCountItems,
   deliveryStatePresentation,
   marketingLoadError,
+  platformDeliveryLabel,
   platformResultLabel,
+  platformSwitchedOff,
 } from "~/presentation/marketingResult";
 import { scheduleSummary } from "~/utils/marketingSchedule";
+import type { AnnouncementProjectionV2 } from "~/types/campaign";
+
+type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
+
+function platformStateLabel(
+  announcement: AnnouncementProjectionV2,
+  platform: PlatformDelivery,
+): string {
+  return platformDeliveryLabel(
+    platform,
+    platformSwitchedOff(announcement, platform.platform_ref),
+  );
+}
+
+function platformCountItems(
+  announcement: AnnouncementProjectionV2,
+  platform: PlatformDelivery,
+) {
+  return deliveryCountItems(platform.counts, {
+    platformSwitchedOff: platformSwitchedOff(announcement, platform.platform_ref),
+  });
+}
 
 const {
   announcements,
@@ -343,11 +367,11 @@ useHead({ title: "Histórico" });
                       {{ platformResultLabel(platform.platform_ref) }}
                     </span>
                     <span class="text-xs text-muted-foreground">
-                      {{ deliveryStatePresentation(platform.state).label }}
+                      {{ platformStateLabel(announcement, platform) }}
                     </span>
                   </div>
                   <p
-                    v-for="count in deliveryCountItems(platform.counts)"
+                    v-for="count in platformCountItems(announcement, platform)"
                     :key="count.key"
                     class="mt-1 text-xs text-muted-foreground"
                   >

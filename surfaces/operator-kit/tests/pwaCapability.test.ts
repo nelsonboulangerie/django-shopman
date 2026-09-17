@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { definePwaCapability } from "../pwa.config";
 import { buildOperatorManifest } from "../server/utils/pwa";
+import { operatorAppName } from "../app/presentation/windowTitle";
 
 const options = {
   app: "pos",
@@ -8,8 +9,7 @@ const options = {
   wakeLock: true,
   kiosk: false,
   manifest: {
-    name: "Shopman PDV",
-    shortName: "PDV",
+    label: "PDV",
     description: "Caixa da loja",
     themeColor: "#292524",
     backgroundColor: "#FAFAF9",
@@ -34,10 +34,10 @@ describe("operator PWA capability", () => {
   });
 
   it("produz manifesto same-origin completo e sem push", () => {
-    const manifest = buildOperatorManifest(options);
+    const manifest = buildOperatorManifest(options, operatorAppName("Nelson", "PDV"));
     expect(manifest).toMatchObject({
       id: "/",
-      name: "Shopman PDV",
+      name: "Nelson · PDV",
       short_name: "PDV",
       start_url: "/?source=pwa",
       scope: "/",
@@ -55,5 +55,11 @@ describe("operator PWA capability", () => {
       expect.objectContaining({ name: "Caixa", url: "/session" }),
     ]);
     expect(manifest).not.toHaveProperty("gcm_sender_id");
+  });
+
+  it("sem a casa (Django fora e nenhum nome anterior) o manifesto é só o rótulo", () => {
+    const manifest = buildOperatorManifest(options);
+    expect(manifest.name).toBe("PDV");
+    expect(manifest.short_name).toBe("PDV");
   });
 });

@@ -276,7 +276,8 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   bloco ou no `data-focus-control`. Não escrever `scrollIntoView` ad hoc por tela. Vive em
   `operator-kit/app/composables/useNextFocus.ts` (espelho no storefront); contrato na
   seção "Próximo foco" do `surfaces/operator-kit/README.md`. Consumidores: checkout do
-  storefront (fluxo por seção) e `PosPaymentWorkspace` do PDV (só `reveal`, foco explícito).
+  storefront (fluxo por seção), login do storefront (`entrar.vue`, um bloco por passo) e
+  `PosPaymentWorkspace` do PDV (só `reveal`, foco explícito).
 - **Tem mais abaixo (site-wide)**: irmã do próximo foco. Toda tela com conteúdo que
   passa da dobra usa `<MoreBelow />` no fim do CONTEÚDO (antes de card/barra flutuante,
   que são chrome) em vez de inventar aviso de rolagem. Sentinela + IntersectionObserver,

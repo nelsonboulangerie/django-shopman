@@ -28,7 +28,8 @@ pytestmark = pytest.mark.django_db
 def test_diagnostic_is_one_safe_read_only_json(django_assert_max_num_queries):
     stdout = StringIO()
     with (
-        django_assert_max_num_queries(15),
+        # +2 do bloco `lanes`: Shop.integrations (camada do registro) e destinos na fila por plataforma.
+        django_assert_max_num_queries(17),
         patch(
             "shopman.shop.adapters.notification_manychat.send",
             side_effect=AssertionError("diagnostic must not call provider"),
@@ -126,7 +127,8 @@ def test_shadow_filters_platform_with_a_constant_query_budget(django_assert_max_
     _approve("shadow-facebook", "privado facebook", platforms=["facebook"])
     stdout = StringIO()
 
-    with django_assert_max_num_queries(15):
+    # +2 do bloco `lanes`: Shop.integrations (camada do registro) e destinos na fila por plataforma.
+    with django_assert_max_num_queries(17):
         call_command(
             "diagnose_marketing",
             "--platform",
@@ -150,7 +152,8 @@ def test_shadow_intersects_receipt_and_platform_with_a_constant_query_budget(
     approved = _approve("shadow-receipt", "privado facebook", platforms=["facebook"])
     stdout = StringIO()
 
-    with django_assert_max_num_queries(16):
+    # +2 do bloco `lanes`: Shop.integrations (camada do registro) e destinos na fila por plataforma.
+    with django_assert_max_num_queries(18):
         call_command(
             "diagnose_marketing",
             "--receipt",
@@ -311,3 +314,46 @@ def _reject_mutating_sql(execute, sql, params, many, context):
     if re.match(r"^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b", sql, re.I):
         raise AssertionError(f"diagnostic attempted mutating SQL: {sql.split()[0]}")
     return execute(sql, params, many, context)
+
+
+def test_diagnostic_tells_a_switched_off_platform_from_a_broken_configuration(settings):
+    """Desligada pela flag não é defeito; flag ligada sem integração registrada é."""
+    from shopman.shop.models import DeliveryTarget
+    from shopman.shop.services.marketing_delivery_attempts import queue_target
+    from shopman.shop.services.marketing_delivery_worker import fanout_in_chunks
+    from shopman.shop.tests.test_marketing_delivery_ledger import _graph
+
+    settings.SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = True
+    settings.SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = True
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {
+        "whatsapp": "shopman.shop.adapters.marketing_delivery_whatsapp",
+    }
+    outbox, _members = _graph(platform="instagram", suffix="diagnose-lanes", target_keys=())
+    fanout_in_chunks(outbox.ref)
+    for target in DeliveryTarget.objects.filter(outbox=outbox):
+        queue_target(target.ref)
+
+    stdout = StringIO()
+    call_command("diagnose_marketing", "--json", stdout=stdout)
+    report = json.loads(stdout.getvalue())
+
+    assert report["provider_calls"] == 0
+    assert report["lanes"]["whatsapp"]["state"] == "registered"
+    assert report["lanes"]["instagram"] == {
+        "state": "switched_off",
+        "switch": "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED",
+        "queued_targets": 1,
+    }
+    assert report["lanes"]["google_business"]["state"] == "unconfigured"
+    assert report["result"] == "WARN"
+    assert (
+        "observe:platform_switched_off_holds_queued platform=instagram "
+        "switch=SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED queued=1"
+    ) in report["next"]
+    assert (
+        "check_config:delivery_integration_unregistered platform=google_business "
+        "switch=SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED"
+    ) in report["next"]
+    assert not [action for action in report["next"] if "platform=facebook" in action]

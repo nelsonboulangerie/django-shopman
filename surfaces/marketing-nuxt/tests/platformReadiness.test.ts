@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canaryText,
   platformReadinessNote,
   readinessByPlatform,
   readinessPillClass,
@@ -48,6 +49,25 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(readinessPillClass("blocked")).toContain("destructive");
   });
 
+  it("desligada pela flag: diz desligada, sem prometer conserto de algo quebrado", () => {
+    const note = platformReadinessNote(
+      platform({
+        state: "blocked",
+        ready: false,
+        reason_code: "platform_switched_off",
+        reason: "A publicação nesta plataforma está desligada neste ambiente.",
+      }),
+      "Instagram",
+    );
+
+    expect(note.tone).toBe("blocked");
+    expect(note.badge).toBe("desligada");
+    expect(note.text).toBe(
+      "Instagram: A publicação nesta plataforma está desligada neste ambiente. O que for aprovado para ela fica na fila, sem envio, até ela ser ligada.",
+    );
+    expect(note.text).not.toMatch(/resolver|integração|credencial|adapt/i);
+  });
+
   it("não verificada: diz que a verificação precisa passar", () => {
     const note = platformReadinessNote(
       platform({
@@ -77,6 +97,44 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(note.badge).toBe("limitada");
     expect(note.text).toBe("Instagram: Sem imagem pública, o Story não sai.");
     expect(note.text).not.toContain("Não vai publicar");
+  });
+
+  it("ensaio do WhatsApp diz QUANTOS recebem, nunca quem", () => {
+    const note = platformReadinessNote(
+      platform({
+        platform: "whatsapp",
+        state: "degraded",
+        ready: true,
+        limitation: "Ensaio: só 2 contatos recebem. O restante do público não recebe por WhatsApp.",
+        canary_recipients: 2,
+      }),
+      "WhatsApp",
+    );
+
+    expect(note.tone).toBe("limited");
+    expect(note.badge).toBe("ensaio");
+    expect(note.text).toBe("WhatsApp: Ensaio: só 2 contatos recebem.");
+    expect(note.text).not.toContain("Não vai publicar");
+  });
+
+  it("ensaio com um contato fala no singular", () => {
+    expect(canaryText(1)).toBe("Ensaio: só 1 contato recebe.");
+    expect(canaryText(3)).toBe("Ensaio: só 3 contatos recebem.");
+  });
+
+  it("bloqueio vence a contagem do ensaio", () => {
+    const note = platformReadinessNote(
+      platform({
+        platform: "whatsapp",
+        state: "blocked",
+        ready: false,
+        reason: "O ensaio do WhatsApp está ligado sem nenhum contato escolhido.",
+        canary_recipients: 0,
+      }),
+      "WhatsApp",
+    );
+
+    expect(note.badge).toBe("não publica");
   });
 
   it("simulação local é dita como simulação, não como defeito", () => {

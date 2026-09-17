@@ -43,20 +43,19 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "orders", categories: ["order"] },
       manifest: {
-        name: "Gestor de Pedidos",
-        shortName: "Gestor",
+        label: "Gestor",
         description: "Fila e acompanhamento de pedidos.",
         themeColor: "#FFFFFF",
         backgroundColor: "#FAFAF9",
         orientation: "any",
         icons: [
-          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
         shortcuts: [
-          { name: "Fila", shortName: "Fila", url: "/?view=board", icon: "/pwa/pwa-192x192.png?v=2" },
-          { name: "Hoje", shortName: "Hoje", url: "/?sort=commitment", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Fila", shortName: "Fila", url: "/?view=board", icon: "/pwa/pwa-192x192.png?v=3" },
+          { name: "Hoje", shortName: "Hoje", url: "/?sort=commitment", icon: "/pwa/pwa-192x192.png?v=3" },
         ],
       },
     }),
@@ -126,7 +125,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Gestor de Pedidos",
+      title: "Gestor",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#ffffff" },

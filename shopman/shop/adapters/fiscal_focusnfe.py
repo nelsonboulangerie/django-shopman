@@ -29,7 +29,6 @@ PAYMENT_METHOD_CODES = {
     "cash": "01",
     "money": "01",
     "dinheiro": "01",
-    "card": "03",
     "credit_card": "03",
     "credit": "03",
     "debit_card": "04",
@@ -43,12 +42,14 @@ PAYMENT_METHOD_CODES = {
     "boleto": "15",
     "pix": "17",
     "external": "99",
-    # Link de pagamento: é cartão, mas crédito ou débito só a Stripe sabe
-    # depois da captura (`funding`), e nós não guardamos — afirmar "03" para
-    # um débito seria mentir para a SEFAZ. Fica em "outros" até guardarmos o
-    # funding e mapearmos 03/04 de verdade.
-    "link": "99",
 }
+
+# Cartão pela Stripe (loja e link de pagamento): crédito ou débito é o CLIENTE
+# quem escolhe, lá no Checkout, e a Stripe conta depois da captura
+# (`payment.card_funding`). Com o dado, 03/04 de verdade; sem ele, "99 outros"
+# — afirmar crédito num débito seria mentir para a SEFAZ.
+_CARD_BY_GATEWAY = frozenset({"card", "link"})
+_FUNDING_CODES = {"credit": "03", "debit": "04"}
 
 
 class FocusNFePayloadError(ValueError):
@@ -494,7 +495,10 @@ def _payment_forms(payment: dict) -> list[dict]:
             if tender_amount_q <= 0:
                 continue
             forms.append({
-                "forma_pagamento": _payment_code(tender.get("method") or payment.get("method")),
+                "forma_pagamento": _payment_code(
+                    tender.get("method") or payment.get("method"),
+                    tender.get("card_funding") or payment.get("card_funding"),
+                ),
                 "valor_pagamento": _money_q(tender_amount_q),
             })
         if forms:
@@ -503,7 +507,7 @@ def _payment_forms(payment: dict) -> list[dict]:
     if amount_q <= 0:
         raise FocusNFePayloadError("Pagamento fiscal exige payment.amount_q > 0.")
     return [{
-        "forma_pagamento": _payment_code(payment.get("method")),
+        "forma_pagamento": _payment_code(payment.get("method"), payment.get("card_funding")),
         "valor_pagamento": _money_q(amount_q),
     }]
 
@@ -516,8 +520,11 @@ def _payment_total_q(payment: dict) -> int:
     return max(0, int(payment.get("amount_q") or 0))
 
 
-def _payment_code(method: object) -> str:
+def _payment_code(method: object, card_funding: object = None) -> str:
     value = str(method or "cash").strip().lower()
+    if value in _CARD_BY_GATEWAY:
+        funding = str(card_funding or "").strip().lower()
+        return _FUNDING_CODES.get(funding, "99")
     return PAYMENT_METHOD_CODES.get(value, "99")
 
 

@@ -63,7 +63,6 @@ def test_dispatch_prefers_collection_specific_station_before_picking_catchall():
             "name": "Cappuccino",
             "qty": 1,
             "notes": "",
-            "checked": False,
             "line_id": "1",
         },
     ]

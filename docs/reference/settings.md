@@ -200,6 +200,13 @@ de compra todo dia, em silêncio.
 | `ALLOWED_REDIRECT_HOSTS` | set | `set()` | Hosts permitidos no parâmetro `next` |
 | `TRUSTED_PROXY_DEPTH` | int | `1` | Profundidade de X-Forwarded-For para IP |
 
+`SHOPMAN_BFF_PROXY_SECRET` (setting Django, env de mesmo nome, default `""` = desligado):
+segredo que os BFFs Nuxt apresentam em `X-Shopman-Proxy-Secret` — o da loja
+(`storefront-nuxt`) e o dos apps de operador (layer `operator-kit`, `runtimeConfig.djangoProxySecret`)
+— no Nuxt, `NUXT_DJANGO_PROXY_SECRET`, mesmo valor em cada componente. Com ele, `shopman.shop.services.auth.client_ip`
+lê um salto a mais do X-Forwarded-For — o BFF chama o `api.` pela rede pública e o
+N-ésimo da direita seria o IP de saída do Nitro. Sem ele, o cabeçalho é ignorado.
+
 ### Templates
 
 | Setting | Tipo | Default |
@@ -394,8 +401,12 @@ Esse segredo pertence ao Doorman, nao ao ManyChat API token.
 |---------|------|---------|-----------|
 | `SHOPMAN_MARKETING_BASE_URL` | URL | vazio | Host público do cockpit. Vazio remove o atalho da Central/Admin em vez de criar link morto. |
 | `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` | bool | `false` | Autoriza somente o handoff da outbox transacional. Não autoriza tentativa de provider. |
-| `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | bool | `false` | Autoriza o worker de destinos. Ainda exige adapter configurado e pronto. |
+| `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | bool | `false` | Autoriza a passada de entrega de destinos, que roda dentro do `maintenance_worker` (sem componente próprio). Ainda exige adapter configurado e pronto. |
 | `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | dict por plataforma | `{}` | Registro Python dos adapters de entrega. Ausência deixa a plataforma indisponível; não existe fallback entre plataformas. |
+| `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` | bool | `false` | Registra `marketing_delivery_whatsapp` em `SHOPMAN_MARKETING_DELIVERY_ADAPTERS`: campanha de WhatsApp aprovada passa do ledger durável ao ManyChat. Não decide quem recebe — isso é `SHOPMAN_MARKETING_WHATSAPP_MODE`, conferido de novo na última porta. `settings_marketing_demo` mantém o simulador local. |
+| `SHOPMAN_MARKETING_WHATSAPP_MODE` | `blocked` \| `canary` \| `open` | `blocked` | Abertura do Marketing por WhatsApp (campanha e "Me avise"). `canary` e `open` exigem cache compartilhado (Redis); com cache local o estado fica bloqueado. Valor desconhecido conta como `blocked`. Ver ADR-009 (emenda 17/09). |
+| `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` | CSV de `customer_ref` | vazio | Contatos que recebem no modo `canary`. Vazio mantém o bloqueio. Assinatura anônima nunca entra. A tela mostra só a contagem. |
+| `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` | int | `120` | Janela de assentamento de uma mensagem com flow: o assinante fica reservado no cache e outra mensagem com flow para ele volta depois (`subscriber_busy`). Zero, negativo ou inválido volta ao padrão. |
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY` | segredo | vazio | Chave exclusiva para fingerprint de destino. Vazio bloqueia a materialização segura. Nunca reutilizar `DJANGO_SECRET_KEY`. |
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION` | int | `1` | Versão monotônica para rotação da chave sem reescrever histórico. |
 | `SHOPMAN_MARKETING_TEST_TARGETS` / `SHOPMAN_MARKETING_TEST_TARGETS_JSON` | mapa / JSON | `{}` | Catálogo server-side de alvos sandbox ou com posse verificada. A API devolve ref/label, nunca recipient. |

@@ -2,6 +2,7 @@ import { addPlugin, addServerHandler, createResolver, defineNuxtModule, installM
 import type { NuxtConfig } from "@nuxt/schema";
 import VitePwaModule from "@vite-pwa/nuxt";
 import type { ModuleOptions as VitePwaModuleOptions } from "@vite-pwa/nuxt";
+import { OPERATOR_APP_NAME_ROUTE } from "./app/presentation/windowTitle";
 
 export interface OperatorPwaIcon {
   src: string;
@@ -18,8 +19,12 @@ export interface OperatorPwaShortcut {
 }
 
 export interface OperatorPwaManifestOptions {
-  name: string;
-  shortName: string;
+  /**
+   * Rótulo do app ("PDV"), e só ele. O nome instalado é `"<casa> · <rótulo>"`, com a
+   * casa (`Shop.short_name`) lida do Django em runtime — ver
+   * `server/utils/operatorTenant.ts`. Sem hífen e sem prefixo de marca aqui.
+   */
+  label: string;
   description: string;
   themeColor: string;
   backgroundColor: string;
@@ -41,6 +46,21 @@ export interface OperatorPwaCapabilityOptions {
   };
 }
 
+/** Suba junto com a forma/desenho do favicon: a aba guarda o ícone pela URL. */
+export const FAVICON_VERSION = "?v=1";
+
+/**
+ * Links de `<head>` que a capability PWA assume em todo app de operador. Os ícones
+ * saem de `pwa:assets` (PWA_ICONS.md). O favicon `.ico` (16/32/48) declara tamanho em
+ * vez de `sizes="any"`: com `any` o Chrome prefere o `.ico` ao SVG.
+ */
+export const OPERATOR_HEAD_LINKS = [
+  { rel: "manifest", href: "/manifest.webmanifest" },
+  { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png?v=3" },
+  { rel: "icon", type: "image/svg+xml", href: `/favicon.svg${FAVICON_VERSION}` },
+  { rel: "icon", sizes: "48x48", href: `/favicon.ico${FAVICON_VERSION}` },
+] as const;
+
 function namesImport(entry: unknown, name: string): boolean {
   if (typeof entry === "string") return entry === name;
   if (Array.isArray(entry)) return entry[0] === name || entry[1] === name;
@@ -58,8 +78,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     app: "",
     display: "standalone",
     manifest: {
-      name: "",
-      shortName: "",
+      label: "",
       description: "",
       themeColor: "#F5F5F4",
       backgroundColor: "#FAFAF9",
@@ -73,8 +92,11 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
   },
   async setup(options, nuxt) {
     if (!options.app.trim()) throw new TypeError("operator PWA exige app");
-    if (!options.manifest.name.trim() || !options.manifest.shortName.trim()) {
-      throw new TypeError("operator PWA exige name e shortName");
+    if (!options.manifest.label.trim()) {
+      throw new TypeError("operator PWA exige label");
+    }
+    if (/\s[-–—|·]\s|^Shopman\b/i.test(options.manifest.label)) {
+      throw new TypeError("operator PWA: label é só o app; a casa vem do Shop.short_name");
     }
     if (!options.manifest.icons.some((icon) => icon.sizes === "192x192")) {
       throw new TypeError("operator PWA exige ícone 192x192");
@@ -125,23 +147,27 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
       "apple-mobile-web-app-status-bar-style",
       "apple-mobile-web-app-title",
     ]);
-    const managedLinks = new Set(["manifest", "apple-touch-icon"]);
+    const managedLinks = new Set<string>(OPERATOR_HEAD_LINKS.map((link) => link.rel));
     head.meta = [
       ...(head.meta || []).filter((entry) => !managedMeta.has(String(entry.name || ""))),
       { name: "theme-color", content: options.manifest.themeColor },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
-      { name: "apple-mobile-web-app-title", content: options.manifest.shortName },
+      // Valor inicial; o plugin `operatorAppName` troca pelo nome com a casa em runtime.
+      { name: "apple-mobile-web-app-title", content: options.manifest.label },
     ];
     head.link = [
       ...(head.link || []).filter((entry) => !managedLinks.has(String(entry.rel || ""))),
-      { rel: "manifest", href: "/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png?v=2" },
+      ...OPERATOR_HEAD_LINKS.map((link) => ({ ...link })),
     ];
 
     addServerHandler({
       route: "/manifest.webmanifest",
       handler: resolver.resolve("./runtime/server/manifest"),
+    });
+    addServerHandler({
+      route: OPERATOR_APP_NAME_ROUTE,
+      handler: resolver.resolve("./runtime/server/appName"),
     });
     if (options.push) {
       addServerHandler({
@@ -149,6 +175,9 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
         handler: resolver.resolve("./runtime/server/push-worker"),
       });
     }
+    addPlugin({
+      src: resolver.resolve("./runtime/plugins/operatorAppName"),
+    });
     addPlugin({
       src: resolver.resolve("./runtime/plugins/pwaRegistration.client"),
       mode: "client",

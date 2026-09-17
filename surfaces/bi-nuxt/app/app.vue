@@ -20,7 +20,7 @@ useOperatorWindowTitle("B.I.");
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
         app-icon="chart-no-axes-combined"
-        app-icon-src="/pwa/pwa-64x64.png?v=2"
+        app-icon-src="/pwa/pwa-64x64.png?v=3"
         app-label="B.I."
         :central-url="hubUrl"
         :operator-name="operator?.name"
