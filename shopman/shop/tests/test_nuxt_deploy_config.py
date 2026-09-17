@@ -144,7 +144,8 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
     routes = {
         (rule.get("match") or {}).get("authority", {}).get("exact"): rule["component"]["name"]
         for rule in spec["ingress"]["rules"]
-        if (rule.get("match") or {}).get("authority")
+        # Regra de redirect (apex → www) não tem component.
+        if (rule.get("match") or {}).get("authority") and rule.get("component")
     }
 
     def assert_image(name: str, tag: str) -> None:
