@@ -35,9 +35,19 @@ PAYMENT_METHOD_CODES = {
     "debit_card": "04",
     "debit": "04",
     "store_credit": "05",
+    # Conta na casa (fiado do balcão): a nota sai antes de o dinheiro entrar,
+    # e a forma que a SEFAZ conhece para isso é "crédito loja". Confirmação
+    # do contador pendente (17/09/2026); até lá caía em "99 outros".
+    "account": "05",
+    "house_account": "05",
     "boleto": "15",
     "pix": "17",
     "external": "99",
+    # Link de pagamento: é cartão, mas crédito ou débito só a Stripe sabe
+    # depois da captura (`funding`), e nós não guardamos — afirmar "03" para
+    # um débito seria mentir para a SEFAZ. Fica em "outros" até guardarmos o
+    # funding e mapearmos 03/04 de verdade.
+    "link": "99",
 }
 
 

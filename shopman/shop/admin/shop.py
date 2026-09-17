@@ -455,8 +455,9 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         required=False,
         widget=UnfoldBooleanSwitchWidget,
         help_text=(
-            "Mostra a opção 'Nota fiscal' no PDV (o operador decide emitir por venda). "
-            "Desligado = o recurso não aparece, mesmo com o Focus configurado. "
+            "Mostra o bloco 'Nota e comprovante' (CPF na nota, impressa, por e-mail) no PDV. "
+            "NÃO decide se a NFC-e sai: quem decide é a regra fiscal do ambiente "
+            "(SHOPMAN_FISCAL_EMISSION_RESOLVER) — cartão e Pix emitem mesmo com isto desligado. "
             "Também depende do adapter fiscal estar pronto."
         ),
     )
