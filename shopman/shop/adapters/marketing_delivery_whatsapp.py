@@ -44,8 +44,9 @@ EVENT = "announcement_published"
 #: O mesmo convite dos outros dois caminhos que mandam este evento (onda legada e
 #: teste sandbox): o flow aprovado lê ``{{cta}}`` do perfil do contato.
 CTA = "Garanta o seu:"
-#: Variáveis seladas que viram campo do contato. Lista fechada: o artefato guarda
-#: mais coisas (horário, hashtags, grau) que nenhuma mensagem direta usa.
+#: Variáveis seladas no conteúdo aprovado que o flow pode ler — o vocabulário de
+#: ``campaign.available_variables`` menos o nome do cliente, que vem do destino. O que
+#: não estiver no artefato sai VAZIO (``MARKETING_FLOW_FIELDS``), nunca herdado.
 SEALED_VARIABLES = (
     "product_name",
     "product_sku",
@@ -54,6 +55,9 @@ SEALED_VARIABLES = (
     "availability_phrase",
     "product_image_url",
     "store_name",
+    "hashtags",
+    "quality",
+    "time",
 )
 ACCEPTED_CODE = "whatsapp_flow_accepted"
 OUTCOME_UNKNOWN_CODE = "whatsapp_outcome_unknown"

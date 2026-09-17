@@ -293,7 +293,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         # template aprovado que diga "O {{product_name}} que você pediu chegou" sai com o
         # nome do produto em branco — e é exatamente o que acontecia, em silêncio, nos
         # dois caminhos que usam flow (alerta de estoque e anúncio de campanha).
-        _push_custom_fields(subscriber_id, ctx, mc_config)
+        _push_custom_fields(subscriber_id, ctx, mc_config, template=template)
         payload = {
             "subscriber_id": subscriber_id,
             "flow_ns": flow_ns,
@@ -455,7 +455,23 @@ def _shareable_context(ctx: dict) -> dict:
     return shareable
 
 
-def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
+def _declared_marketing_fields(template: str, ctx: dict) -> dict[str, str] | None:
+    """O conjunto completo de um evento de Marketing, com vazio para o que faltar.
+
+    ``None`` para os demais eventos (pedido etc.), que seguem gravando só o que têm. Um
+    link com token pessoal que não tem gêmeo público sai VAZIO aqui, e não omitido:
+    omitir deixaria no perfil o link da mensagem anterior.
+    """
+    from shopman.shop.services.manychat_marketing_safety import MARKETING_FLOW_FIELDS
+
+    declared = MARKETING_FLOW_FIELDS.get(template)
+    if declared is None:
+        return None
+    shareable = _shareable_context(ctx)
+    return {name: shareable.get(name, "") for name in declared}
+
+
+def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict, *, template: str = "") -> int:
     """Gravar os valores do contexto como campos personalizados do assinante.
 
     É o que faz a variável do template aprovado resolver. Falha de um campo **não**
@@ -467,7 +483,9 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
     do vocabulário de integração.
     """
     pushed = 0
-    for name, text in _shareable_context(ctx).items():
+    declared = _declared_marketing_fields(template, ctx)
+    fields = declared if declared is not None else _shareable_context(ctx)
+    for name, text in fields.items():
         result = _api_call(
             "/subscriber/setCustomFieldByName",
             {"subscriber_id": subscriber_id, "field_name": name, "field_value": text},

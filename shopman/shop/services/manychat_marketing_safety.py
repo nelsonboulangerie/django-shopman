@@ -66,6 +66,61 @@ MARKETING_FLOW_EVENTS = frozenset({
     "stock_arrived",
 })
 
+#: O conjunto COMPLETO de campos personalizados que cada evento de Marketing grava.
+#:
+#: ⚠️ Campo personalizado é estado PERSISTENTE do contato. Gravar só o que o contexto
+#: traz deixava no perfil o valor da mensagem ANTERIOR: a campanha da Baguete com
+#: ``{{price}}`` seguida de um aviso sem preço fazia o flow do aviso mostrar o preço da
+#: Baguete — a mesma mistura que a reserva por assinante existe para impedir, só que em
+#: sequência em vez de em corrida. Para estes eventos o adapter grava TODOS os campos
+#: declarados, com string vazia para o que o contexto não tiver, dentro da reserva.
+#:
+#: As listas saem do que os emissores montam e do que os textos semeados e a prévia
+#: usam: ``campaign.available_variables`` + envelope do anúncio (``body``/``cta``/
+#: ``action_url``) para ``announcement_published``; o contexto de
+#: ``storefront.services.stock_alerts._deliver`` para os dois avisos. Chave fora da
+#: lista não vai para o ManyChat nestes eventos. ``customer_name_greeting`` e
+#: ``product_label`` são derivadas por ``derive_context`` para todo envio.
+_ALERT_FLOW_FIELDS = (
+    "action_url",
+    "availability_phrase",
+    "available_qty",
+    "cta",
+    "customer_name",
+    "customer_name_greeting",
+    "deadline_note",
+    "management_note",
+    "product_image_url",
+    "product_label",
+    "product_name",
+    "product_sku",
+    "product_url",
+    "reserve_note",
+)
+MARKETING_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
+    "announcement_published": (
+        "action_url",
+        "availability_phrase",
+        "available_qty",
+        "body",
+        "cta",
+        "customer_name",
+        "customer_name_greeting",
+        "hashtags",
+        "link",
+        "price",
+        "product_image_url",
+        "product_label",
+        "product_name",
+        "product_sku",
+        "quality",
+        "store_name",
+        "time",
+    ),
+    "production_ready": _ALERT_FLOW_FIELDS,
+    "stock_arrived": _ALERT_FLOW_FIELDS,
+}
+
 #: Backends de cache que TODOS os processos (web, workers) enxergam igual. Lista de
 #: permissão, não de proibição: backend desconhecido não prova compartilhamento.
 _SHARED_CACHE_BACKENDS = frozenset({
