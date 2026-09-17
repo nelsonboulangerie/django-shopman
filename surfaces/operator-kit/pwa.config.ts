@@ -41,6 +41,21 @@ export interface OperatorPwaCapabilityOptions {
   };
 }
 
+/** Suba junto com a forma/desenho do favicon: a aba guarda o ícone pela URL. */
+export const FAVICON_VERSION = "?v=1";
+
+/**
+ * Links de `<head>` que a capability PWA assume em todo app de operador. Os ícones
+ * saem de `pwa:assets` (PWA_ICONS.md). O favicon `.ico` (16/32/48) declara tamanho em
+ * vez de `sizes="any"`: com `any` o Chrome prefere o `.ico` ao SVG.
+ */
+export const OPERATOR_HEAD_LINKS = [
+  { rel: "manifest", href: "/manifest.webmanifest" },
+  { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png?v=3" },
+  { rel: "icon", type: "image/svg+xml", href: `/favicon.svg${FAVICON_VERSION}` },
+  { rel: "icon", sizes: "48x48", href: `/favicon.ico${FAVICON_VERSION}` },
+] as const;
+
 function namesImport(entry: unknown, name: string): boolean {
   if (typeof entry === "string") return entry === name;
   if (Array.isArray(entry)) return entry[0] === name || entry[1] === name;
@@ -125,7 +140,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
       "apple-mobile-web-app-status-bar-style",
       "apple-mobile-web-app-title",
     ]);
-    const managedLinks = new Set(["manifest", "apple-touch-icon"]);
+    const managedLinks = new Set<string>(OPERATOR_HEAD_LINKS.map((link) => link.rel));
     head.meta = [
       ...(head.meta || []).filter((entry) => !managedMeta.has(String(entry.name || ""))),
       { name: "theme-color", content: options.manifest.themeColor },
@@ -135,8 +150,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     ];
     head.link = [
       ...(head.link || []).filter((entry) => !managedLinks.has(String(entry.rel || ""))),
-      { rel: "manifest", href: "/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png?v=3" },
+      ...OPERATOR_HEAD_LINKS.map((link) => ({ ...link })),
     ];
 
     addServerHandler({
