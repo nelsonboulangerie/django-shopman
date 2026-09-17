@@ -177,6 +177,23 @@ editores de receita), `"/"` no PDV (**só a raiz** — `/session` tem contagem d
 `/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Central,
 Gestor, Compras, B.I., Marketing) mantém só o aviso.
 
+⚠️ **`skipWaiting` vale para a ORIGEM inteira.** Quem aplica não recarrega só a si: o
+`vite-plugin-pwa` registra, em **toda** janela que viu o worker em espera, um listener de
+`controlling` que chama `location.reload()`. Duas consequências: (a) janelas irmãs do
+mesmo host entram na versão nova juntas, de graça; (b) uma janela que nunca é tocada —
+a tela do cliente do PDV — não pode estar em `idleReloadPaths`, porque ela seria
+considerada ociosa sempre e quem recarregaria no meio da venda seria a janela do
+operador. Apps diferentes são hosts diferentes (`pdv.` × `cozinha.`), então nada disso
+atravessa de um app para outro.
+
+ℹ️ **Abrir uma janela nova já traz a versão nova**, mesmo com o worker velho ativo:
+a navegação é `NetworkOnly`, o HTML fresco aponta para arquivos com hash novo, e o
+precache do worker velho não tem esses nomes — deixa passar para a rede (conferido no
+build do PDV: o manifesto de precache não tem nenhuma entrada de navegação, só
+`offline.html`). Quem fica preso numa versão é a janela que **não recarrega**, não a que
+abre. É por isso que abrir a tela do cliente no PDV leva junto um `checkForUpdate()`:
+a janela nova não precisa de ajuda, a do operador precisa.
+
 **3. Provar.** A troca termina em `location.reload()`, e nada que fique na memória
 sobrevive para contar o que houve. Então a marca vai ao `localStorage` **antes** do
 reload e é relatada no boot seguinte, quando as duas versões são conhecidas:
