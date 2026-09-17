@@ -14,6 +14,7 @@ interface AccessResponse {
   customer_name?: string
   customer_phone?: string
   requires_welcome?: boolean
+  welcome_asks_name?: boolean
   welcome_suggested_name?: string
   // Handoff do site expirou: entrou logado, mas a sacola não veio (link vencido).
   handoff_expired?: boolean
@@ -79,12 +80,14 @@ async function exchangeToken () {
     // Sacola não veio (handoff expirou): aviso gentil que sobrevive à navegação (Sonner
     // vive no layout). O login segue normal; só comunicamos a sacola ausente.
     if (response.handoff_expired && response.notice) useSonner(response.notice)
-    // Boas-vindas pendentes (nome veio do WhatsApp, ainda não confirmado): o
-    // destino passa pelo passo do nome em /entrar, com o campo já semeado pela
+    // Boas-vindas pendentes = SÓ o nome (veio do WhatsApp, ainda não confirmado):
+    // o destino passa pelo passo do nome em /entrar, com o campo já semeado pela
     // sessão (welcome_suggested_name) e o destino original preservado em `next`.
+    // O convite de novidades não desvia ninguém: sobe como sheet no destino.
+    const asksName = response.welcome_asks_name ?? response.requires_welcome
     const redirect = accessLinkLanding(
       response.redirect || '/',
-      !!(response.is_authenticated && response.requires_welcome)
+      !!(response.is_authenticated && asksName)
     )
     if (await trySystemBrowserHandoff(redirect)) return
     await navigateTo(redirect)
