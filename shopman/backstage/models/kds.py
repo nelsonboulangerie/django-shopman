@@ -72,7 +72,7 @@ class KDSTicket(models.Model):
     )
     items = models.JSONField(
         "items", default=list,
-        help_text='[{"sku", "name", "qty", "notes", "checked": false}]',
+        help_text='[{"sku", "name", "qty", "notes", "line_id"}]',
     )
     status = models.CharField(
         "status", max_length=20, choices=STATUS_CHOICES, default="pending",

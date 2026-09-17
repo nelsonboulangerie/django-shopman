@@ -48,8 +48,8 @@ from .kds import (
     KDSIndexView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
-    KDSTicketItemView,
     KDSTicketRecallView,
+    KDSTicketStartView,
 )
 from .marketing import (
     AnnouncementApproveView,
@@ -247,7 +247,7 @@ urlpatterns = [
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
-    path("kds/tickets/<int:ticket_pk>/items/", KDSTicketItemView.as_view(), name="api-backstage-kds-ticket-item"),
+    path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
     path("kds/tickets/<int:ticket_pk>/acknowledge/", KDSTicketAcknowledgeView.as_view(), name="api-backstage-kds-ticket-acknowledge"),
