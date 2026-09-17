@@ -23,7 +23,7 @@ describe('storefront PWA manifest', () => {
       expect.objectContaining({ sizes: '192x192', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'maskable' }),
-      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=4', purpose: 'monochrome' })
+      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=5', purpose: 'monochrome' })
     ]))
     expect(manifest.screenshots).toEqual(expect.arrayContaining([
       expect.objectContaining({ sizes: '1080x1920', form_factor: 'narrow' }),

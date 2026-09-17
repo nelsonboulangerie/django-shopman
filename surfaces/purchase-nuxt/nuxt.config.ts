@@ -35,12 +35,12 @@ export default defineNuxtConfig({
         backgroundColor: "#FAFAF9",
         orientation: "any",
         icons: [
-          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
         shortcuts: [
-          { name: "Recebimento", shortName: "Receber", url: "/?view=receive", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Recebimento", shortName: "Receber", url: "/?view=receive", icon: "/pwa/pwa-192x192.png?v=3" },
         ],
       },
     }),

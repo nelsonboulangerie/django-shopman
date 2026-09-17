@@ -25,6 +25,9 @@ const idleReloadSafe = computed(() => idleReloadPathAllowed(config.idleReloadPat
 // exatamente o comportamento web atual. Só capabilities declaradas no manifesto
 // do app são ativadas aqui.
 useWakeLock({ enabled: enabled && config.wakeLock === true });
+// Trava de giro escolhida no rail: o navegador a solta ao recarregar, então o app
+// instalado a reaplica no boot (e ao voltar do segundo plano / da tela cheia).
+useOrientationLock({ restore: enabled });
 
 const pwaUpdate = usePwaUpdate();
 const applyingIdleUpdate = ref(false);

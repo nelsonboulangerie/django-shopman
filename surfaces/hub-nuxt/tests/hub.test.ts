@@ -29,15 +29,15 @@ describe("presentation/hub", () => {
 
   it("tileIconUrl aponta para o PNG da família PWA na origem do próprio tile", () => {
     expect(tileIconUrl(tile({ url: "http://127.0.0.1:3002/" }))).toBe(
-      "http://127.0.0.1:3002/pwa/pwa-192x192.png?v=2",
+      "http://127.0.0.1:3002/pwa/pwa-192x192.png?v=3",
     );
     // Em produção o tile é o subdomínio; caminho/query do tile não vazam no ícone.
     expect(tileIconUrl(tile({ url: "https://pdv.boulangerie.com.br/session?x=1" }))).toBe(
-      "https://pdv.boulangerie.com.br/pwa/pwa-192x192.png?v=2",
+      "https://pdv.boulangerie.com.br/pwa/pwa-192x192.png?v=3",
     );
     // A Loja (external) publica a mesma família — mesma regra.
     expect(tileIconUrl(tile({ kind: "external", url: "https://boulangerie.com.br/" }))).toBe(
-      "https://boulangerie.com.br/pwa/pwa-192x192.png?v=2",
+      "https://boulangerie.com.br/pwa/pwa-192x192.png?v=3",
     );
   });
 

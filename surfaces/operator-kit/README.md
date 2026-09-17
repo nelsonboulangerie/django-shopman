@@ -51,6 +51,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle` | instala o `titleTemplate` no `app.vue` (e `error.vue`) lendo o `manifest.name` da capability PWA; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
 | `app/composables/useNextFocus.ts` | `useNextFocus` | a página declara o foco (chave reativa); o bloco `data-focus-target` vai à linha de foco e recebe o foco de teclado — ver "Próximo foco" |
+| `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
+| `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por aparelho (Screen Orientation API): item "Travar giro" no `OperatorRail` só em aparelho de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado

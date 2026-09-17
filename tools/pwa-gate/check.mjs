@@ -56,8 +56,8 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=4',
-    manifestHref: '/manifest.webmanifest?v=4',
+    manifestUrl: '/manifest.webmanifest?v=5',
+    manifestHref: '/manifest.webmanifest?v=5',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
@@ -67,8 +67,9 @@ const profiles = {
   pos: operatorProfile('pos', { icon: 'lucide:shopping-basket', background: '#A95032' }),
   hub: operatorProfile('hub', { icon: 'lucide:layout-grid', background: '#34373B' }),
   orders: operatorProfile('orders', { icon: 'lucide:square-kanban', background: '#8B2F4D' }),
-  kds: operatorProfile('kds', { display: 'fullscreen', orientation: 'landscape', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
-  production: operatorProfile('production', { display: 'fullscreen', orientation: 'landscape', icon: 'tabler:baguette', background: '#B9781B' }),
+  // Kiosks giram livres (tablets); quem trava é o operador, no rail (useOrientationLock).
+  kds: operatorProfile('kds', { display: 'fullscreen', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
+  production: operatorProfile('production', { display: 'fullscreen', icon: 'tabler:baguette', background: '#B9781B' }),
   marketing: operatorProfile('marketing', { icon: 'lucide:megaphone', background: '#7D4B88' }),
   purchase: operatorProfile('purchase', { icon: 'lucide:package', background: '#386F9A' }),
   bi: operatorProfile('bi', { icon: 'lucide:chart-no-axes-combined', background: '#414F91' }),
@@ -172,7 +173,8 @@ try {
   for (const field of requiredManifestFields) {
     check(field in manifest, `manifesto contém ${field}`)
   }
-  const assetVersion = profile.storefront ? '4' : '2'
+  // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
+  const assetVersion = profile.storefront ? '5' : '3'
   check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
   check(manifest.display === (profile.display || 'standalone'), `manifesto usa display ${profile.display || 'standalone'}`)
@@ -196,7 +198,7 @@ try {
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
-  check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${profile.storefront ? '4' : '2'}`), 'HTML referencia apple-touch-icon versionado')
+  check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${assetVersion}`), 'HTML referencia apple-touch-icon versionado')
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
 } catch (error) {
