@@ -87,15 +87,33 @@ def _assert_equal(label: str, documented: set[str], actual: set[str]) -> list[st
     return messages
 
 
+def _marketing_service_name(payload: dict) -> str | None:
+    """O service que o ingress do host `mkt.` alcança.
+
+    Desde a ADR-030 o Marketing mora no service de grupo `operator-office`, e o
+    nome do service deixou de ser o nome do app. Quem responde pelo `mkt.` é
+    quem o ingress diz — perguntar pelo nome fixo faria o gate conferir um
+    service que não existe mais, ou um que não serve o Marketing.
+    """
+    for rule in (payload.get("ingress") or {}).get("rules") or []:
+        authority = ((rule.get("match") or {}).get("authority") or {}).get("exact") or ""
+        if authority.startswith("mkt."):
+            return (rule.get("component") or {}).get("name")
+    return None
+
+
 def _deploy_errors(path: Path) -> list[str]:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     services = payload.get("services", []) if isinstance(payload, dict) else []
+    name = _marketing_service_name(payload) if isinstance(payload, dict) else None
+    if name is None:
+        return [f"{path.relative_to(ROOT)}: nenhuma regra de ingress para o host mkt."]
     marketing = next(
-        (service for service in services if service.get("name") == "marketing-nuxt"),
+        (service for service in services if service.get("name") == name),
         None,
     )
     if marketing is None:
-        return [f"{path.relative_to(ROOT)}: serviço marketing-nuxt ausente"]
+        return [f"{path.relative_to(ROOT)}: serviço {name} (host mkt.) ausente"]
     expected = {
         # O health check da plataforma NÃO consulta o Django: `/health/ready` é
         # do smoke e do diagnóstico (WP-PERFORMANCE P1).

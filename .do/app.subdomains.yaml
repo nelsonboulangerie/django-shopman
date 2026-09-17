@@ -8,14 +8,17 @@
 #   STORE_DOMAIN            → storefront-nuxt (loja Nuxt)        [apex, PRIMARY]
 #   api.STORE_DOMAIN        → web (Django headless: /api, webhooks, health)
 #   admin.STORE_DOMAIN      → web (Django admin/operador)
-#   pdv.STORE_DOMAIN        → pos-nuxt        (PDV)
-#   kds.STORE_DOMAIN        → kds-nuxt        (cozinha)
-#   gestor.STORE_DOMAIN     → orders-nuxt     (gestor de pedidos)
-#   prod.STORE_DOMAIN       → production-nuxt (produção/fornadas)
-#   compras.STORE_DOMAIN    → purchase-nuxt   (compras)
-#   central.STORE_DOMAIN    → hub-nuxt        (Central de Apps)
-#   mkt.STORE_DOMAIN        → marketing-nuxt  (marketing)
-#   bi.STORE_DOMAIN         → bi-nuxt         (B.I.)
+#   pdv.STORE_DOMAIN        → operator-floor  → pos-nuxt        (PDV)
+#   kds.STORE_DOMAIN        → operator-floor  → kds-nuxt        (cozinha)
+#   gestor.STORE_DOMAIN     → operator-floor  → orders-nuxt     (gestor de pedidos)
+#   prod.STORE_DOMAIN       → operator-floor  → production-nuxt (produção/fornadas)
+#   central.STORE_DOMAIN    → operator-floor  → hub-nuxt        (Central de Apps)
+#   mkt.STORE_DOMAIN        → operator-office → marketing-nuxt  (marketing)
+#   bi.STORE_DOMAIN         → operator-office → bi-nuxt         (B.I.)
+#   compras.STORE_DOMAIN    → operator-office → purchase-nuxt   (compras)
+#
+#   Os apps de operador moram em DOIS services (ADR-030): o ingress manda o
+#   hostname para o service do grupo, e o roteador do contêiner entrega ao app.
 #
 # ⚠️ Este bloco já descreveu só as quatro primeiras linhas, enquanto a loja viva
 #    rodava dez superfícies. Um blueprint que descreve menos do que existe não é
@@ -112,7 +115,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: pos-nuxt
+        name: operator-floor
     # kds-nuxt — host kds.
     - match:
         authority:
@@ -120,7 +123,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: kds-nuxt
+        name: operator-floor
     # orders-nuxt — host gestor.
     - match:
         authority:
@@ -128,7 +131,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: orders-nuxt
+        name: operator-floor
     # production-nuxt — host prod.
     - match:
         authority:
@@ -136,7 +139,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: production-nuxt
+        name: operator-floor
     # purchase-nuxt — host compras.
     - match:
         authority:
@@ -144,7 +147,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: purchase-nuxt
+        name: operator-office
     # hub-nuxt — host central.
     - match:
         authority:
@@ -152,7 +155,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: hub-nuxt
+        name: operator-floor
     # marketing-nuxt — host mkt.
     - match:
         authority:
@@ -160,7 +163,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: marketing-nuxt
+        name: operator-office
     # bi-nuxt — host bi.
     - match:
         authority:
@@ -168,7 +171,7 @@ ingress:
         path:
           prefix: /
       component:
-        name: bi-nuxt
+        name: operator-office
     # Atalho do cofre — host backup. (302 servido pelo Django).
     - match:
         authority:
@@ -673,61 +676,44 @@ services:
         operator: GREATER_THAN
         value: 2
         window: TEN_MINUTES
-  - name: pos-nuxt
+  # ── Apps de operador: DOIS services, não oito (ADR-030) ──
+  # Contêiner por grupo com os `.output/` dos apps e um roteador por Host
+  # (surfaces/operator-router). Regra das envs: chave sem prefixo chega a todos
+  # os apps do grupo; `<APP>__<CHAVE>` chega só àquele app, como `<CHAVE>`
+  # (APP = POS, KDS, ORDERS, PRODUCTION, HUB · MARKETING, BI, PURCHASE).
+  # `OPERATOR_HOSTS` diz qual hostname é de qual app. Detalhes no README do
+  # operator-router e no spec do alpha, que é a referência viva.
+  # `OPERATOR_GROUP` é BUILD arg (o Dockerfile escolhe o grupo por ele) e env.
+  - name: operator-floor
     git:
       repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
-    source_dir: /surfaces/pos-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
+    dockerfile_path: surfaces/Dockerfile.operator-group
+    source_dir: /
     http_port: 3000
     instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_size_slug: apps-s-1vcpu-1gb-fixed
     envs:
+      - key: OPERATOR_GROUP
+        value: operator-floor
+        scope: RUN_AND_BUILD_TIME
+        type: GENERAL
+      - key: OPERATOR_HOSTS
+        value: "pos=pdv.STORE_DOMAIN,kds=kds.STORE_DOMAIN,orders=gestor.STORE_DOMAIN,production=prod.STORE_DOMAIN,hub=central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      # do grupo (mesmo valor nos cinco apps)
+      # Nome do SERVIÇO para o medidor de capacidade: sem prefixo, os cinco
+      # processos medem o mesmo contêiner e se reportam como um só.
+      - key: NUXT_OPERATOR_SERVICE_NAME
+        value: operator-floor
+        scope: RUN_TIME
+        type: GENERAL
       - key: NUXT_DJANGO_BASE_URL
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
-      - key: NUXT_DJANGO_PROXY_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      # O PDV vive na RAIZ do subdomínio pos.
-      - key: NUXT_APP_BASE_URL
-        value: /
-        scope: RUN_TIME
-        type: GENERAL
-    health_check:
-      http_path: /health/live
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 5
-    alerts:
-      - rule: RESTART_COUNT
-        operator: GREATER_THAN
-        value: 2
-        window: TEN_MINUTES
-  - name: kds-nuxt
-    git:
-      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
-      branch: main
-    source_dir: /surfaces/kds-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    envs:
-      - key: NUXT_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: estes BFFs chamam o `api.`
       # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
       # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
       # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
@@ -742,286 +728,112 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
-      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-        value: "https://central.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-    health_check:
-      http_path: /health/live
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 5
-    alerts:
-      - rule: RESTART_COUNT
-        operator: GREATER_THAN
-        value: 2
-        window: TEN_MINUTES
-  - name: orders-nuxt
-    git:
-      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
-      branch: main
-    source_dir: /surfaces/orders-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    envs:
-      - key: NUXT_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
-      - key: NUXT_DJANGO_PROXY_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: NUXT_APP_BASE_URL
-        value: /
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-        value: "https://central.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_ADMIN_BASE_URL
+      # PDV
+      - key: POS__NUXT_PUBLIC_ADMIN_BASE_URL
         value: "https://admin.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
-    health_check:
-      http_path: /health/live
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 5
-    alerts:
-      - rule: RESTART_COUNT
-        operator: GREATER_THAN
-        value: 2
-        window: TEN_MINUTES
-  - name: production-nuxt
-    git:
-      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
-      branch: main
-    source_dir: /surfaces/production-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    envs:
-      - key: NUXT_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
-      - key: NUXT_DJANGO_PROXY_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: NUXT_APP_BASE_URL
-        value: /
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+      - key: POS__NUXT_PUBLIC_OPERATOR_HUB_URL
         value: "https://central.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
-    health_check:
-      http_path: /health/live
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 5
-    alerts:
-      - rule: RESTART_COUNT
-        operator: GREATER_THAN
-        value: 2
-        window: TEN_MINUTES
-  - name: purchase-nuxt
-    git:
-      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
-      branch: main
-    source_dir: /surfaces/purchase-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    envs:
-      - key: NUXT_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
-      - key: NUXT_DJANGO_PROXY_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: NUXT_APP_BASE_URL
-        value: /
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
-        value: "https://central.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_ORDERS_URL
+      - key: POS__NUXT_PUBLIC_ORDERS_URL
         value: "https://gestor.STORE_DOMAIN/"
         scope: RUN_TIME
         type: GENERAL
-      - key: NUXT_PUBLIC_PRODUCTION_URL
+      - key: POS__NUXT_PUBLIC_PRODUCTION_URL
         value: "https://prod.STORE_DOMAIN/"
         scope: RUN_TIME
         type: GENERAL
-    health_check:
-      http_path: /health/live
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 5
-    alerts:
-      - rule: RESTART_COUNT
-        operator: GREATER_THAN
-        value: 2
-        window: TEN_MINUTES
-  - name: hub-nuxt
-    git:
-      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
-      branch: main
-    source_dir: /surfaces/hub-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    envs:
-      - key: NUXT_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
-      - key: NUXT_DJANGO_PROXY_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: NUXT_APP_BASE_URL
-        value: /
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-    health_check:
-      http_path: /health/live
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 5
-    alerts:
-      - rule: RESTART_COUNT
-        operator: GREATER_THAN
-        value: 2
-        window: TEN_MINUTES
-  - name: marketing-nuxt
-    git:
-      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
-      branch: main
-    source_dir: /surfaces/marketing-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    envs:
-      - key: NUXT_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
-      - key: NUXT_DJANGO_PROXY_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: NUXT_APP_BASE_URL
-        value: /
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_DJANGO_BASE_URL
-        value: "https://api.STORE_DOMAIN"
-        scope: RUN_TIME
-        type: GENERAL
-      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+      # KDS
+      - key: KDS__NUXT_PUBLIC_OPERATOR_HUB_URL
         value: "https://central.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # Pedidos
+      - key: ORDERS__NUXT_PUBLIC_ADMIN_BASE_URL
+        value: "https://admin.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: ORDERS__NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      # Produção
+      - key: PRODUCTION__NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      # Central
+      - key: HUB__NUXT_PUBLIC_ORDERS_URL
+        value: "https://gestor.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: HUB__NUXT_PUBLIC_POS_URL
+        value: "https://pdv.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: HUB__NUXT_PUBLIC_PRODUCTION_URL
+        value: "https://prod.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+    # 200 só com os cinco filhos de pé (agregado pelo roteador — ADR-030).
     health_check:
       http_path: /health/live
-      initial_delay_seconds: 30
+      initial_delay_seconds: 45
       period_seconds: 10
       timeout_seconds: 5
       success_threshold: 1
-      failure_threshold: 5
+      failure_threshold: 6
     liveness_health_check:
       http_path: /health/live
-      initial_delay_seconds: 30
+      initial_delay_seconds: 60
       period_seconds: 30
       timeout_seconds: 5
       success_threshold: 1
       failure_threshold: 3
     alerts:
+      - rule: CPU_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
+      - rule: MEM_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
       - rule: RESTART_COUNT
         operator: GREATER_THAN
         value: 2
         window: TEN_MINUTES
-  - name: bi-nuxt
+  - name: operator-office
     git:
       repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
-    source_dir: /surfaces/bi-nuxt
-    build_command: npm ci && npm run build
-    run_command: node .output/server/index.mjs
+    dockerfile_path: surfaces/Dockerfile.operator-group
+    source_dir: /
     http_port: 3000
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
     envs:
+      - key: OPERATOR_GROUP
+        value: operator-office
+        scope: RUN_AND_BUILD_TIME
+        type: GENERAL
+      - key: OPERATOR_HOSTS
+        value: "marketing=mkt.STORE_DOMAIN,bi=bi.STORE_DOMAIN,purchase=compras.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      # do grupo (mesmo valor nos três apps)
+      # Nome do SERVIÇO para o medidor de capacidade (ver operator-floor).
+      - key: NUXT_OPERATOR_SERVICE_NAME
+        value: operator-office
+        scope: RUN_TIME
+        type: GENERAL
       - key: NUXT_DJANGO_BASE_URL
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
-      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
-      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
-      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
-      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web` (ver operator-floor).
       - key: NUXT_DJANGO_PROXY_SECRET
         scope: RUN_TIME
         type: SECRET
@@ -1037,14 +849,40 @@ services:
         value: "https://central.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # Compras
+      - key: PURCHASE__NUXT_PUBLIC_ORDERS_URL
+        value: "https://gestor.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: PURCHASE__NUXT_PUBLIC_PRODUCTION_URL
+        value: "https://prod.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+    # Probe da plataforma = liveness agregada (P1: nunca readiness). O
+    # /health/ready do Marketing (com o Django) fica para o smoke, no host mkt.
     health_check:
       http_path: /health/live
-      initial_delay_seconds: 30
+      initial_delay_seconds: 45
       period_seconds: 10
       timeout_seconds: 5
       success_threshold: 1
-      failure_threshold: 5
+      failure_threshold: 6
+    liveness_health_check:
+      http_path: /health/live
+      initial_delay_seconds: 60
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
     alerts:
+      - rule: CPU_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
+      - rule: MEM_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
       - rule: RESTART_COUNT
         operator: GREATER_THAN
         value: 2

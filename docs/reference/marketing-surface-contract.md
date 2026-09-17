@@ -297,7 +297,14 @@ O host é `mkt.<domínio>`, com `NUXT_DJANGO_BASE_URL`/`NUXT_PUBLIC_DJANGO_BASE_
 apontando para `api.<domínio>` e `NUXT_PUBLIC_OPERATOR_HUB_URL` para `central.<domínio>`.
 Os dois blueprints versionados usam `/health/live` no `health_check` e no
 `liveness_health_check`: o probe da plataforma não consulta o Django. `/health/ready`
-fica para smoke e diagnóstico. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
+fica para smoke e diagnóstico. Desde a
+[ADR-030](../decisions/adr-030-operator-nuxt-dois-servicos.md) o Marketing roda no
+service de grupo `operator-office` (com B.I. e Compras): o ingress de `mkt.` aponta
+para ele e o roteador do contêiner entrega ao Nitro do Marketing. A sonda da
+plataforma recebe o `/health/live` agregado do grupo (200 só com os três Nitro de
+pé); no host `mkt.`, `/health/live` e `/health/ready` continuam sendo os do próprio
+Marketing. O envelope CSP/nonce continua gerado pelo Nitro do Marketing; o roteador
+não reescreve cabeçalho. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
 segredos e obter autorização explícita.
 
 Em 2026-09-11, o cockpit e o pipeline-base de `#601` estão em produção e o teste
