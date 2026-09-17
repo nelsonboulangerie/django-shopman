@@ -96,6 +96,9 @@ describe('MarketingPromptSheet — o convite de novidades', () => {
     sonner.error.mockReset()
     sonner.info.mockReset()
     sessionStorage.removeItem(SHOWN_KEY)
+    // Um convite por página (useShopInvite): a vez marcada num teste não pode
+    // segurar a página do seguinte.
+    useState('shop-invite-open').value = { open: null, shownOnPath: null }
     mocks.path = '/menu'
   })
 

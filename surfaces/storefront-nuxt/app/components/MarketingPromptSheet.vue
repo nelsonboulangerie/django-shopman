@@ -15,6 +15,10 @@
 // A pergunta não volta: nem na navegação (estado da sessão), nem na recarga
 // (sessionStorage), mesmo que o carimbo tenha falhado — não se insiste.
 //
+// A pergunta chega pela home (`omotenashi.marketing_prompt_pending`, toda visita,
+// inclusive de quem entra pelo aparelho reconhecido) e pelo login. E divide a
+// vez com o convite de instalar o app: UM convite por página (useShopInvite).
+//
 // O rótulo da chave + a linha miúda são a evidência gravada pelo servidor
 // (MARKETING_PROMPT_DISCLOSURE em shopman/storefront/api/account.py): mudou
 // aqui, muda lá, e sobe a versão.
@@ -33,6 +37,7 @@ const route = useRoute()
 const session = useShopSession()
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
+const invite = useShopInvite()
 
 const open = ref(false)
 const whatsapp = ref(false)
@@ -44,7 +49,15 @@ let openTimer: ReturnType<typeof setTimeout> | null = null
 const excluded = computed(() => isMarketingPromptRouteExcluded(route.path))
 const eligible = computed(() => session.isAuthenticated.value
   && session.welcomeAsksMarketing.value
-  && !excluded.value)
+  && !excluded.value
+  && invite.canOpen('marketing-prompt', route.path))
+
+// Marca a vez ao abrir e a devolve ao fechar (qualquer caminho de fechamento).
+watch(open, value => {
+  if (value) invite.claim('marketing-prompt', route.path)
+  else invite.release('marketing-prompt', route.path)
+}, { flush: 'sync' })
+watch(() => route.path, path => invite.leavePage(path))
 
 function alreadyShownThisBrowserSession (): boolean {
   if (!import.meta.client) return true
