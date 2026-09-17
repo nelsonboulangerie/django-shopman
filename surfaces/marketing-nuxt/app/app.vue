@@ -15,6 +15,8 @@ const {
 } = useOperatorLock(OPERATOR_PERM);
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
+const centralLink = computed(() => appLinkAttrsFor(hubUrl));
 
 useOperatorWindowTitle("Marketing");
 
@@ -117,8 +119,12 @@ watch(sessionState, async (next, previous) => {
             acesso
             <span class="font-mono">shop.view_marketing</span>.
           </p>
+          <!-- Mesma regra do ícone da Central no rail: instalado, a Central abre na
+               janela DELA (ver operator-kit/app/presentation/appLaunch.ts). -->
           <a
             :href="hubUrl"
+            :target="centralLink.target"
+            :rel="centralLink.rel"
             class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
           >
             Voltar à Central

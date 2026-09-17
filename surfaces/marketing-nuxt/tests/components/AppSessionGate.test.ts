@@ -1,7 +1,8 @@
 import { mount } from "@vue/test-utils";
-import { nextTick, ref, watch, type Slot } from "vue";
+import { computed, nextTick, ref, watch, type Slot } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MarketingApp from "../../app/app.vue";
+import { useOperatorAppLink } from "../../../operator-kit/app/composables/useOperatorAppLink";
 
 const lock = vi.fn();
 const refreshSession = vi.fn();
@@ -20,6 +21,11 @@ beforeEach(() => {
     // com o vue-test-utils puro, então ele entra como os demais globais.
     useOperatorWindowTitle: vi.fn(() => ({ appName: "Marketing" })),
     useRuntimeConfig: () => ({ public: { operatorHubUrl: "/apps/" } }),
+    // Implementação REAL do kit: é ela que decide se o "Voltar à Central" sai da
+    // janela (app instalado) ou fica nela (aba). Mocká-la esconderia justamente o
+    // que importa aqui.
+    useOperatorAppLink,
+    computed,
     useOperatorLock: () => ({
       canIdentify: ref(canIdentify),
       sessionState: ref(state),

@@ -1,4 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, readonly, shallowRef } from "vue";
+
+import { isInstalledDisplay } from "../utils/displayMode";
 import {
   ORIENTATION_LOCK_COPY,
   ORIENTATION_LOCK_STORAGE_KEY,
@@ -16,10 +18,6 @@ interface ScreenOrientationCapability {
   readonly type?: string;
   lock?: (orientation: OrientationFamily) => Promise<void>;
   unlock?: () => void;
-}
-
-interface NavigatorWithStandalone extends Navigator {
-  standalone?: boolean;
 }
 
 export interface OrientationLockResult {
@@ -63,11 +61,9 @@ export function useOrientationLock(options: { restore?: boolean } = {}) {
   }
 
   function isInstalled(): boolean {
-    const displayMode = ["standalone", "fullscreen", "minimal-ui"]
-      .some((mode) => window.matchMedia?.(`(display-mode: ${mode})`).matches);
-    return displayMode
-      || Boolean((navigator as NavigatorWithStandalone).standalone)
-      || Boolean(document.fullscreenElement);
+    // O extra daqui: kiosk que entrou em tela cheia pela Fullscreen API não muda o
+    // `display-mode`, mas trava giro como app instalado.
+    return isInstalledDisplay() || Boolean(document.fullscreenElement);
   }
 
   /** Só aparelho de toque gira: um PC sem tela sensível não ganha o controle. */
