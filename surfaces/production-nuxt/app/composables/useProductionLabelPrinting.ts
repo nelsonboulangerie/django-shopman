@@ -16,7 +16,7 @@ import type {
   ProductionPrintJobResponse,
   ProductionPrintingSourceProjection,
 } from "~/types/productionPrinting";
-import { newProductionMutationKey } from "~/utils/api";
+import { newProductionMutationKey } from "~/utils/mutationKey";
 import {
   useProductionMutationGuard,
   type ProductionMutationBlock,

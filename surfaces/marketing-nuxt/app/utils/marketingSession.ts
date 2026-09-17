@@ -6,9 +6,14 @@ import {
   type PendingMarketingDecision,
 } from "~/presentation/marketingDecisionSession";
 
-// Política única do app: 401 significa sessão ausente/expirada e reabre o gate;
-// 403 só reabre o cadeado quando o backend disser `station_locked`. Capability
-// negada continua forbidden — entrar de novo não criaria autorização.
+// Política do Marketing, deliberadamente FORA do kit. O `operatorSessionOnError`
+// comum (operator-kit/app/utils/operatorSession.ts) reabre o gate em qualquer
+// 401/403; aqui 401 significa sessão ausente/expirada e reabre o gate, e 403 só
+// reabre o cadeado quando o backend disser `station_locked` — capability negada
+// continua forbidden, porque entrar de novo não criaria autorização. Além disso
+// guarda o intent da decisão pendente antes da reautenticação, o que depende de
+// `~/presentation/marketingDecisionSession` e não generaliza para as outras
+// superfícies. Nome próprio para não sombrear o auto-import do kit.
 export function flagMarketingSessionError(error: unknown): boolean {
   if (useOperatorSession().flagIfUnauthenticated(error)) {
     const pending = useState<PendingMarketingDecision | null>(
@@ -33,7 +38,7 @@ export function flagMarketingSessionError(error: unknown): boolean {
   return false;
 }
 
-export function operatorSessionOnError(ctx: {
+export function marketingSessionOnError(ctx: {
   response: { status: number; _data?: unknown };
 }): void {
   flagMarketingSessionError({

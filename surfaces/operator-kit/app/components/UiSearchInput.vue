@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Shared search box for the Gestor toolbars — icon affordance + clear button +
-// expand-on-focus. Both boards use it (Pedidos: pedidos; Catálogo: produto/SKU), so
-// width and behaviour are identical. Exposes focus() for the "/" keyboard shortcut.
+// Search box das barras de trabalho do operador — icon affordance + clear button +
+// expand-on-focus. Todos os boards usam (Pedidos: pedidos; Catálogo: produto/SKU;
+// Marketing: campanhas), so width and behaviour are identical. Exposes focus() for
+// the "/" keyboard shortcut. `h-control`/`size-control` = 44 px do operator-theme.css.
 withDefaults(
   defineProps<{
     modelValue: string;

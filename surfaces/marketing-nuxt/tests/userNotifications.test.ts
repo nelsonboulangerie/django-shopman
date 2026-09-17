@@ -93,7 +93,7 @@ beforeAll(() => {
     flagMarketingSessionError: () => false,
     onBeforeUnmount: () => {},
     onMounted: () => {},
-    operatorSessionOnError: () => {},
+    marketingSessionOnError: () => {},
     ref,
     useRuntimeConfig: () => ({ app: { baseURL: "/" } }),
     useState: (key: string, init: () => unknown) => {

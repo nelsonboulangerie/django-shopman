@@ -12,7 +12,7 @@ import type { Action, POSOperatorProjection, POSProjection, POSResponse, POSShif
  * the await — this composable stays a pure read window.
  */
 export async function usePosTerminal() {
-  const apiPath = usePosApiPath();
+  const apiPath = useApiPath();
   const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
   // A leitura é o primeiro lugar onde a estação travada aparece — antes de o
   // operador tentar qualquer comando. Sem isto o 403 ficava só no `error`, a
