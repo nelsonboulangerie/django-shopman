@@ -56,8 +56,8 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=5',
-    manifestHref: '/manifest.webmanifest?v=5',
+    manifestUrl: '/manifest.webmanifest?v=6',
+    manifestHref: '/manifest.webmanifest?v=6',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
@@ -172,7 +172,9 @@ try {
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
   check(manifestResponse.headers.get('cache-control') === profile.manifestCache, `manifesto usa cache esperado (${profile.manifestCache})`)
-  if (profile.storefront) check(manifestResponse.headers.get('vary') === 'User-Agent', 'manifesto declara variação por dispositivo')
+  // O manifesto do storefront é o MESMO para todo aparelho (#784): esconder o
+  // `maskable` do macOS deixava o ícone do Dock ~24% maior que os vizinhos.
+  if (profile.storefront) check(!/user-agent/i.test(manifestResponse.headers.get('vary') || ''), 'manifesto não varia por dispositivo')
   const manifest = await manifestResponse.json()
   const requiredManifestFields = ['id', 'name', 'short_name', 'description', 'lang', 'dir', 'start_url', 'scope', 'display', 'display_override', 'orientation', 'theme_color', 'background_color', 'icons', 'shortcuts']
   if (profile.storefront) requiredManifestFields.push('categories', 'screenshots')
@@ -180,9 +182,16 @@ try {
     check(field in manifest, `manifesto contém ${field}`)
   }
   // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
-  const assetVersion = profile.storefront ? '5' : '3'
+  const assetVersion = profile.storefront ? '6' : '3'
   check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
+  if (profile.storefront) {
+    const macResponse = await fetch(`${baseUrl}${profile.manifestUrl}`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36' }
+    })
+    const macManifest = await macResponse.json()
+    check(macManifest.icons.some(icon => icon.purpose === 'maskable'), 'macOS também recebe o ícone maskable (tamanho do Dock)')
+  }
   check(manifest.display === (profile.display || 'standalone'), `manifesto usa display ${profile.display || 'standalone'}`)
   check(manifest.orientation === (profile.orientation || 'any'), `manifesto usa orientação ${profile.orientation || 'any'}`)
   if (profile.storefront) {
