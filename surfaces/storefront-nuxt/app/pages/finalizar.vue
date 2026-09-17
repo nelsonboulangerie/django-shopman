@@ -459,10 +459,17 @@ const stepIcons = checkoutStepIcons
 // Foco da página: a seção em que o cliente trabalha AGORA. Cada seção se marca
 // com `data-focus-target`; quando o foco muda (etapa concluída, "Editar",
 // erro), o mecanismo leva a página até ela — sempre na mesma linha, sob a
-// navbar. O contato passa na frente só quando pede atenção deliberada (edição
-// ou erro); com o nome ainda em aberto e o cliente avançando as etapas, o
-// foco é a etapa ativa.
-const focusKey = computed<string>(() => (contactEditing.value || contactState.value === 'error' ? 'contact' : activeStep.value))
+// navbar.
+//
+// `nameEditing` entra aqui, e não é detalhe: com o campo de nome aberto, a
+// próxima ação é salvá-lo. Sem ele na conta, o card oferecia "Continuar" para
+// quem ainda não tinha nome preenchido, e o cadastro só reclamava lá na
+// revisão. As duas portas que abrem o campo são deliberadas — a hidratação de
+// quem chega sem nome, e o "Editar" —, então o foco ir para lá não atropela
+// ninguém no meio do caminho.
+const focusKey = computed<string>(() => (
+  contactEditing.value || nameEditing.value || contactState.value === 'error' ? 'contact' : activeStep.value
+))
 const { reveal } = useNextFocus(focusKey)
 
 // A AÇÃO SEGUE O FOCO. A etapa em que o cliente trabalha decide qual é o único
