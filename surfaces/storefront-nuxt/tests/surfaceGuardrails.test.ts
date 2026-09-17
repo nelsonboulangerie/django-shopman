@@ -406,14 +406,18 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
     expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
-    // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto
-    // (`sticky bottom-20 z-30` + card ink). O guardrail dizia o contrário, e o
-    // contrário custava caro: a barra `fixed bottom-0 z-40` que vivia aqui
-    // empatava em empilhamento com a navegação inferior (topo 606 contra 602,
-    // medido em 375x667) e ficava ESCONDIDA atrás dela — total e "Resumo"
-    // invisíveis no celular. O card flutua acima da navegação por ALTURA, não
-    // por prioridade, e por isso funciona nas outras duas telas.
-    expect(checkout).toContain('sticky bottom-20 z-30')
+    // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto,
+    // e o mesmo mecanismo (`.shop-action-dock` + card ink). Duas correções
+    // moram nesta linha. A primeira: a barra `fixed bottom-0 z-40` que vivia
+    // aqui empatava em empilhamento com a navegação inferior (topo 606 contra
+    // 602, medido em 375x667) e ficava ESCONDIDA atrás dela — total e "Resumo"
+    // invisíveis no celular. A segunda: o `sticky bottom-20` que a substituiu
+    // não prendia de verdade, porque sticky só gruda na base enquanto o
+    // CONTAINER cobre aquela linha. O dock flutua acima da navegação por
+    // ALTURA, não por prioridade, e não larga a base no meio da rolagem.
+    expect(checkout).toContain('shop-action-dock')
+    expect(checkout).toContain('shop-dock-reserve')
+    expect(checkout).not.toContain('class="sticky bottom-20')
     expect(checkout).toContain('data-checkout-action-card')
     // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA
     // (dois botões para a mesma intenção divergem no primeiro carregamento).
@@ -507,7 +511,7 @@ describe('surface UX guardrails', () => {
     // dock 15 em toda a rolagem, e igual no PWA iOS instalado.
     expect(cartPage).toContain('shop-action-dock')
     expect(cartPage).toContain('shop-dock-reserve')
-    expect(cartPage).not.toContain('sticky bottom-20')
+    expect(cartPage).not.toContain('class="sticky bottom-20')
     expect(cartPage).toContain('rateLimitRecovery')
     // Indisponibilidade + substitutos saíram do banner inline da sacola e viraram
     // o SubstituteSheet global (bottom-sheet canônico, 1 toque, dispensável).
@@ -544,7 +548,7 @@ describe('surface UX guardrails', () => {
     // CTA flutuante mobile = card ink (burgundy escuro) + ação invertida (Faubourg/Brass escuro).
     expect(productRoute).toContain('shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden')
     expect(productRoute).toContain('shop-dock-reserve')
-    expect(productRoute).not.toContain('sticky bottom-20')
+    expect(productRoute).not.toContain('class="sticky bottom-20')
     expect(productRoute).toContain(':qty="currentQty"')
     expect(productRoute).toContain('tone="inverted"')
     expect(cartState).not.toContain('drawerOpen')
