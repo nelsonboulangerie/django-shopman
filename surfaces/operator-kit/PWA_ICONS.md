@@ -36,6 +36,26 @@ Como o PNG `any` tem cantos transparentes, quem o exibe dentro de um quadrado
 (rail, tile da Central) só pinta o fundo quando mostra o Lucide de fallback — senão
 o fundo vira uma moldura clara nos quatro cantos.
 
+## Favicon da aba
+
+O mesmo `pwa:assets` grava, na raiz do `public/` (um nível acima de `--out`), a
+identidade do app para a aba do navegador — antes os apps serviam o logo verde do
+template do Nuxt, e o Compras nem tinha favicon:
+
+| Arquivo | Conteúdo | Arte |
+| --- | --- | --- |
+| `favicon.ico` | três quadros PNG: 16, 32 e 48 px | retângulo arredondado (22,5%), canto transparente; símbolo em 78%/70%/66% do lado com traço 1,5×/1,25×/1,125× |
+| `favicon.svg` | vetor, `rx` proporcional | a arte de 16 px (a aba é sempre 16 px CSS) |
+
+A proporção do ícone PWA (símbolo em 56%, traço 2 de 24) em 16 px vira linha de
+0,75 px, um borrão; a tabela acima saiu de renderizar as oito famílias lado a lado.
+Em 16 px o Gestor (`square-kanban`) e o B.I. (as barras do gráfico) viram mancha no
+miolo, mas o contorno e a cor seguem reconhecíveis.
+
+Os links saem da capability PWA (`OPERATOR_HEAD_LINKS` em `pwa.config.ts`), iguais nos
+oito apps: `favicon.svg?v=1` e `favicon.ico?v=1` com `sizes="48x48"` (com `sizes="any"`
+o Chrome prefere o `.ico` ao SVG). Trocou o desenho do favicon? Suba `FAVICON_VERSION`.
+
 Trocou a forma ou o desenho? Suba o `?v=` em todos os lugares da tabela abaixo. O
 SO só relê o ícone de um app **já instalado** quando o navegador revisita o
 manifesto (Chrome/Edge: em até um dia de uso, às vezes pedindo confirmação de

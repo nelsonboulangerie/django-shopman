@@ -130,6 +130,12 @@ for (const [name, width, height] of requiredAssets) {
   const actual = await pngSize(join(surface, 'public/pwa', name))
   check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
 }
+if (!profile.storefront) {
+  // Favicon da aba: a identidade do app gerada por `pwa:assets` (operator-kit/PWA_ICONS.md).
+  for (const name of ['favicon.ico', 'favicon.svg']) {
+    check(await stat(join(surface, 'public', name)).then(() => true, () => false), `${name} existe em public/`)
+  }
+}
 if (profile.storefront) {
   await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
   const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
@@ -199,6 +205,11 @@ try {
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
   check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${assetVersion}`), 'HTML referencia apple-touch-icon versionado')
+  if (!profile.storefront) {
+    check(document.includes('href="/favicon.svg?v=1"') && document.includes('href="/favicon.ico?v=1"'), 'HTML referencia favicon SVG e ICO versionados')
+    const favicon = await fetch(`${baseUrl}/favicon.svg?v=1`)
+    check(favicon.ok && (await favicon.text()).includes('<rect '), 'favicon.svg responde 200 com o retângulo arredondado')
+  }
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
 } catch (error) {
