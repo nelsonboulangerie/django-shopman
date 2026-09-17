@@ -167,6 +167,7 @@ def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
 def test_storefront_site_matches_shared_contract(canonical_catalog):
     """A projeção pública do site: busca, cartão de link, negócio e FAQ."""
     from django.core.cache import cache
+
     from shopman.shop.models import FAQEntry, Shop
     from shopman.storefront.api.projections import projection_data
     from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
