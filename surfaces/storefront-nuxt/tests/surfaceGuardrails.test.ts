@@ -403,7 +403,18 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
     expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
-    expect(checkout).not.toContain('sticky bottom-20')
+    // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto
+    // (`sticky bottom-20 z-30` + card ink). O guardrail dizia o contrário, e o
+    // contrário custava caro: a barra `fixed bottom-0 z-40` que vivia aqui
+    // empatava em empilhamento com a navegação inferior (topo 606 contra 602,
+    // medido em 375x667) e ficava ESCONDIDA atrás dela — total e "Resumo"
+    // invisíveis no celular. O card flutua acima da navegação por ALTURA, não
+    // por prioridade, e por isso funciona nas outras duas telas.
+    expect(checkout).toContain('sticky bottom-20 z-30')
+    expect(checkout).toContain('data-checkout-action-card')
+    // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA
+    // (dois botões para a mesma intenção divergem no primeiro carregamento).
+    expect(checkout).not.toContain('@click="continueFromWhen"\n')
     expect(checkout).toContain('Total do pedido')
     expect(checkout).toContain('checkoutActionLabel')
     expect(checkout).toContain('Revisar pedido')
