@@ -67,7 +67,7 @@ export function useCampaignBoard() {
   } = useFetch<BoardResponse>("/api/v1/backstage/marketing/", {
     key: "marketing-board",
     server: true,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   });
   const {
     data: canonicalData,
@@ -77,7 +77,7 @@ export function useCampaignBoard() {
   } = useFetch<MarketingEnvelopeV2>("/api/v1/backstage/marketing/v2/", {
     key: "marketing-board-v2",
     server: true,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   });
 
   const board = computed(() => data.value?.board);

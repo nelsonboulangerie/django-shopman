@@ -89,7 +89,7 @@ const emit = defineEmits<{
 // ── Preferências persistentes do cliente (painel do balcão) ──────────────────
 // Draft local sincronizado do lookup; salvar é POST parcial no perfil. Os
 // toggles salvam no clique; textos salvam no blur (menos requests, zero botão).
-const apiPathProfile = usePosApiPath();
+const apiPathProfile = useApiPath();
 const profileSaving = ref(false);
 const profileDraft = reactive({
   cpf_na_nota: false,

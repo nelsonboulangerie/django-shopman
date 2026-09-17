@@ -69,7 +69,7 @@ export function useCampaignHistory() {
   } = useFetch<MarketingEnvelopeV2>(requestHref, {
     key: "marketing-history-v2",
     server: true,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   });
 
   const firstPage = computed(() =>

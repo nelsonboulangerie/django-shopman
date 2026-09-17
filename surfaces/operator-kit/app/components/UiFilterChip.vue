@@ -1,8 +1,12 @@
 <script setup lang="ts">
-// Shared filter pill for the Gestor boards — the channel axis (Pedidos) and the
-// collection axis (Catálogo) use the exact same chip. Active = solid `bg-primary`
-// (the one unified choice; Catálogo's old `bg-foreground` is gone). Optional count
-// suffix and an `icon` slot for the channel/collection glyph.
+// Filter pill das barras de trabalho do operador (Pedidos, Catálogo, Marketing).
+// Active = solid `bg-primary` (the one unified choice; Catálogo's old `bg-foreground`
+// is gone). Optional count suffix and an `icon` slot for the channel/collection glyph.
+//
+// ⚠️ `min-h-control` (44 px, `--spacing-control` do operator-theme.css) é alvo de
+// toque, não estética. A cópia que o Marketing carregava tinha caído para `h-9`
+// (36 px); nenhuma tela de lá a montava, então a regressão estava ARMADA, não no
+// ar — que é justamente como a cópia cobra: em silêncio, no dia em que alguém usa.
 defineProps<{
   active?: boolean;
   count?: number | null;

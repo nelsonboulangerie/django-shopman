@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   flagMarketingSessionError,
-  operatorSessionOnError,
-} from "~/utils/operatorSession";
+  marketingSessionOnError,
+} from "~/utils/marketingSession";
 import {
   MARKETING_DECISION_REAUTH_STATE,
   PENDING_MARKETING_DECISION_STATE,
@@ -77,7 +77,7 @@ describe("Marketing session error policy", () => {
   it("reopens only the station lock for station_locked", () => {
     flagIfStationLocked.mockReturnValue(true);
 
-    operatorSessionOnError({
+    marketingSessionOnError({
       response: {
         status: 403,
         _data: { error: { code: "station_locked" } },
