@@ -273,6 +273,16 @@ for (const { route, label, endpoint } of [
     context,
     page,
   }) => {
+    // A data escolhida NÃO pode ser o hoje da página: o valor igual ao atual
+    // não dispara `change`, não sai request, e o teste morre em timeout — foi
+    // exatamente o que aconteceu em 17/09/2026, dia em que o literal
+    // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias à
+    // frente cobre o fuso do runner (UTC) contra o da loja (-03:00).
+    const target = (() => {
+      const day = new Date();
+      day.setUTCDate(day.getUTCDate() + 2);
+      return day.toISOString().slice(0, 10);
+    })();
     await page.addInitScript(() => {
       Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
         configurable: true,
@@ -292,15 +302,15 @@ for (const { route, label, endpoint } of [
     expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
     const changedRequest = page.waitForRequest(
       (request) =>
-        request.url().includes(endpoint) && request.url().includes("date=2026-09-17"),
+        request.url().includes(endpoint) && request.url().includes(`date=${target}`),
     );
-    await input.evaluate((node: HTMLInputElement) => {
-      node.value = "2026-09-17";
+    await input.evaluate((node: HTMLInputElement, value: string) => {
+      node.value = value;
       node.dispatchEvent(new Event("input", { bubbles: true }));
       node.dispatchEvent(new Event("change", { bubbles: true }));
       node.dataset.e2eChangeObserved = "true";
-    });
-    await expect(input).toHaveValue("2026-09-17");
+    }, target);
+    await expect(input).toHaveValue(target);
     await expect(input).toHaveAttribute("data-e2e-change-observed", "true");
     await changedRequest;
   });
