@@ -3,6 +3,7 @@
 //
 // Ordem deliberada: primeiro o que PEDE decisão (pendentes), depois o que já
 // saiu. Números do dia por último: contexto, não protagonista.
+import { outgoingImageUrl } from "~/presentation/marketingDelivery";
 import {
   audienceSummary,
   announcementOutcome,
@@ -47,6 +48,14 @@ const {
   cancelDecision,
 } = useCampaignBoard();
 const { platforms, products } = useCampaigns();
+/** A imagem do anúncio que está na caixa de confirmação — a caixa mostra o que sai,
+ *  e metade do que sai é a foto. */
+const decidingImageUrl = computed(() => {
+  const post = pendingPosts.value.find(
+    (item) => item.pk === pendingDecision.value?.announcementId,
+  );
+  return post ? outgoingImageUrl(post) : "";
+});
 // Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
 const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
@@ -530,6 +539,7 @@ useHead({ title: "Painel" });
       :busy="confirmingDecision"
       :error="decisionError"
       :shop-timezone="shopTimezone"
+      :image-url="decidingImageUrl"
       @confirm="confirmServerDecision"
       @cancel="cancelDecision"
     />

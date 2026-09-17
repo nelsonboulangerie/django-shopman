@@ -194,7 +194,7 @@ test.describe("painel", () => {
           page.getByRole("button", { name: "Visualizar consequência" }),
         ).toBeVisible();
         await expect(
-          page.getByText("São duas decisões separadas", {
+          page.getByText("Agora, ou na hora que você marcar", {
             exact: false,
           }),
         ).toBeVisible();
@@ -273,6 +273,10 @@ test.describe("cartão de anúncio", () => {
     await page.getByRole("button", { name: "Visualizar consequência" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
     await expect(page.getByRole("dialog")).toContainText("Disparar agora");
+    // A caixa mostra o texto que vai sair, não só para quem e onde.
+    await expect(page.getByRole("dialog")).toContainText(
+      "Pães de fermentação natural",
+    );
     await expect(page.getByRole("dialog")).not.toContainText(
       "Confirmar consequência",
     );
@@ -525,7 +529,7 @@ test.describe("disparo manual seguro", () => {
     // agora" é a última coisa que o gestor faz antes de estar na revisão.
     await expect(page).toHaveURL(/\/announcements\/\d+\?dispatch=new#review/);
     await expect(page.getByText("Este anúncio acabou de ser criado pelo seu disparo")).toBeVisible();
-    await expect(page.getByText(/Nenhuma publicação ou mensagem foi enviada/)).toBeVisible();
+    await expect(page.getByText(/Nada saiu ainda/)).toBeVisible();
     // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
     await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });

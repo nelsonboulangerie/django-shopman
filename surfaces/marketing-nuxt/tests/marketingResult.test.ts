@@ -101,7 +101,7 @@ describe("Marketing result presentation", () => {
       kind: "reconcile_unknown_delivery",
     } as MarketingActionProjectionV2;
 
-    expect(recoveryActionExplanation(action)).toContain("não reenvia");
+    expect(recoveryActionExplanation(action)).toMatch(/não reenvia/i);
   });
 
   it("keeps receipt outcome explicit in the same context", () => {
