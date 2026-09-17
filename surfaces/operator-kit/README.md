@@ -108,8 +108,15 @@ Contrato:
 - Na montagem só rola se o foco estiver fora da área visível (estado restaurado lá
   embaixo). Respeita `prefers-reduced-motion`. Nunca roda no servidor.
 
+Tela cujo foco de teclado é todo explícito (o PDV, com o shell capturando dígitos e
+letras fora de input) chama `useNextFocus()` sem fonte e usa só o `reveal` — é o caso
+de "levar o foco ao campo que resolve" (`PosPaymentWorkspace`: CPF/e-mail da nota,
+forma alternativa ao Pix). O que NÃO é próximo foco: o realce de uma listbox seguindo
+as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerSearch`)
+— isso é manter a opção realçada visível dentro da lista, e fica como está.
+
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
-o checkout (`pages/finalizar.vue`) é o primeiro consumidor.
+o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 

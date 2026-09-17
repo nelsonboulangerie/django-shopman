@@ -181,6 +181,36 @@ describe('useNextFocus — a página segue o foco', () => {
     page.unmount()
   })
 
+  it('controle nativamente focável como alvo não ganha tabindex=-1 (ficaria fora do Tab)', async () => {
+    const page = await mountFocusPage('contact')
+
+    page.reveal(() => document.getElementById('today'), { align: 'center' })
+    await settle()
+
+    const today = document.getElementById('today')!
+    expect(document.activeElement).toBe(today)
+    expect(today.hasAttribute('tabindex')).toBe(false)
+    page.unmount()
+  })
+
+  it('sem fonte, só o reveal imperativo existe — nada roda na montagem', async () => {
+    let api!: ReturnType<typeof useNextFocus>
+    const Page = defineComponent({
+      setup () {
+        api = useNextFocus()
+        return () => h('main', [h('section', { 'data-focus-target': 'only' })])
+      }
+    })
+    const wrapper = await mountSuspended(Page, { attachTo: document.body })
+    await settle()
+    expect(scrolledSpy).not.toHaveBeenCalled()
+
+    api.reveal('only')
+    await settle()
+    expect(lastScroll()?.element).toBe(document.querySelector('[data-focus-target="only"]'))
+    wrapper.unmount()
+  })
+
   it('respeita prefers-reduced-motion: mesmo destino, sem animação', async () => {
     withReducedMotion(true)
     const page = await mountFocusPage('contact')

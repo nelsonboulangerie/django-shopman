@@ -275,7 +275,8 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   da área visível, sob o chrome fixo, via `scroll-margin-top`) com foco de teclado no
   bloco ou no `data-focus-control`. Não escrever `scrollIntoView` ad hoc por tela. Vive em
   `operator-kit/app/composables/useNextFocus.ts` (espelho no storefront); contrato na
-  seção "Próximo foco" do `surfaces/operator-kit/README.md`. Primeiro consumidor: checkout.
+  seção "Próximo foco" do `surfaces/operator-kit/README.md`. Consumidores: checkout do
+  storefront (fluxo por seção) e `PosPaymentWorkspace` do PDV (só `reveal`, foco explícito).
 - **Envelope de segurança das surfaces de operador**: CSP/cache/security do HTML, BFF,
   erros e SSE é capability compartilhada e **opt-in** do `operator-kit`, nunca arquivos
   copiados nem ativação implícita em todos os consumers. O Marketing é o piloto; não o

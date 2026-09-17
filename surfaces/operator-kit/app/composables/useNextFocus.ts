@@ -10,6 +10,10 @@ import {
 
 export type RevealTarget = string | Element | (() => Element | null | undefined) | null | undefined;
 
+// Quem já é focável por natureza não ganha `tabindex=-1`: em input/button isso
+// tiraria o controle da ordem do Tab.
+const NATIVELY_FOCUSABLE = "input, select, textarea, button, a[href], [contenteditable], [tabindex]";
+
 // Próximo foco — a página diz QUAL é o foco; o mecanismo leva a página até ele.
 //
 //   const { reveal } = useNextFocus(() => currentSection.value)
@@ -23,7 +27,9 @@ export type RevealTarget = string | Element | (() => Element | null | undefined)
 //
 // `reveal(alvo, opções)` é a forma imperativa para focos fora do fluxo (um erro
 // que apareceu, um item que chegou). Aceita chave, elemento ou função que
-// resolve o elemento depois do DOM assentar.
+// resolve o elemento depois do DOM assentar. Tela cujo foco é todo explícito
+// (o PDV, com o modelo de teclado próprio) chama `useNextFocus()` sem fonte e
+// usa só o `reveal`.
 //
 // Regras que fazem o mecanismo ser confiável em qualquer tela:
 // - nunca roda no servidor;
@@ -37,7 +43,7 @@ export type RevealTarget = string | Element | (() => Element | null | undefined)
 // - respeita `prefers-reduced-motion`.
 //
 // Espelhado em `storefront-nuxt/app/composables/useNextFocus.ts`.
-export function useNextFocus(source: MaybeRefOrGetter<string | null | undefined>, options: RevealOptions = {}) {
+export function useNextFocus(source?: MaybeRefOrGetter<string | null | undefined>, options: RevealOptions = {}) {
   let ticket = 0;
 
   function resolveTarget(target: RevealTarget): HTMLElement | null {
@@ -49,7 +55,7 @@ export function useNextFocus(source: MaybeRefOrGetter<string | null | undefined>
 
   function focusControl(block: HTMLElement) {
     const control = block.querySelector<HTMLElement>(`[${FOCUS_CONTROL_ATTRIBUTE}]`) || block;
-    if (control === block && !block.hasAttribute("tabindex")) block.setAttribute("tabindex", "-1");
+    if (control === block && !block.matches(NATIVELY_FOCUSABLE)) block.setAttribute("tabindex", "-1");
     control.focus({ preventScroll: true });
   }
 
@@ -94,18 +100,20 @@ export function useNextFocus(source: MaybeRefOrGetter<string | null | undefined>
     schedule(target, overrides, false);
   }
 
-  watch(
-    () => toValue(source),
-    (key, previous) => {
-      if (!key || key === previous) return;
-      schedule(key, {}, false);
-    },
-    { flush: "post" },
-  );
+  if (source !== undefined) {
+    watch(
+      () => toValue(source),
+      (key, previous) => {
+        if (!key || key === previous) return;
+        schedule(key, {}, false);
+      },
+      { flush: "post" },
+    );
 
-  onMounted(() => {
-    schedule(toValue(source), {}, true);
-  });
+    onMounted(() => {
+      schedule(toValue(source), {}, true);
+    });
+  }
 
   onBeforeUnmount(() => {
     ticket++;
