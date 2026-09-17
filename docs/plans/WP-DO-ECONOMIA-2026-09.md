@@ -110,6 +110,32 @@ os dois economizaria **US$ 0**. Criar um quarto custaria US$ 3.
 Bate com o *"já passou de 100"*. A diferença entre as duas colunas depende do plano do
 registry, que só o painel mostra (ver pré-requisito da E4).
 
+### Fatura real (lida no painel com o Pablo, 17/09/2026)
+
+O painel *Billing* (atualizado 17/09 02:41 BRT, 384 h = 16 dias de setembro) confirma a
+estimativa e fecha as lacunas da seção 5. **O plano do registry é Basic.**
+
+| Item da fatura | 1–17/09 (US$) | Projeção 30 dias (US$) |
+|---|---:|---:|
+| Apps — `shopman-staging` (é o nome de faturamento do `shopman-nelson`, plano professional) | 45,18 | ≈ 84,70 |
+| Apps — `nb-catalog-app`, `nb-static-landing-page` (starter) | 0,00 | 0,00 |
+| Apps — `shopman-ip-probe-20260915-a` (ensaio de 15/09) | 0,01 | — |
+| Container Registry Basic + excedente 1,46 GiB | 2,89 | ≈ 5,40 |
+| Droplet snapshots de 2019 (nyc1 4,38 GB; sfo2 5,03 GB) | 0,32 | ≈ 0,60 |
+| Postgres `shopman-staging-postgres` | 8,66 | ≈ 16,20 |
+| Valkey `shopman-staging-cache` | 8,57 | ≈ 16,10 |
+| Postgres `shopman-restore-test` (ensaio de restore) | 0,03 | — |
+| **Total** | **65,69** | **≈ 123** |
+
+Consequências para as propostas:
+- **E4 (registry):** não há descida de plano possível — já é o Basic. A economia real da
+  retenção é só o excedente (centavos) e impedir que ele cresça; a E4 continua útil como
+  higiene, não como corte.
+- **Achado novo:** dois snapshots de droplet de 2019, sem relação com o Shopman, cobram
+  ≈ US$ 0,60/mês. Apagar é irreversível e pede a palavra do Pablo.
+- Os recursos de ensaio (`shopman-ip-probe-…`, `shopman-restore-test`) aparecem com
+  centavos: conferir no painel se ainda existem e remover ao fim do ensaio.
+
 **O que este total não inclui:** transferência de saída acima da franquia (não medível
 pelos tokens), impostos, e recursos da conta fora de apps, bancos e registry (droplets,
 volumes, Spaces, snapshots, load balancers), que devolveram 403.
@@ -300,8 +326,8 @@ pilhas lado a lado.
 
 | Item | Por quê | Como obter |
 |---|---|---|
-| Fatura, saldo e histórico | 403 em `balance`/`invoice`/`billing-history` nos dois contextos | Pablo exporta a fatura de agosto no painel, ou token com `billing:read` |
-| Plano do registry | a API não expõe o tier para esses tokens | painel *Container Registry → Settings* |
+| Fatura, saldo e histórico | 403 pelos tokens — **resolvido 17/09 pelo painel** (ver "Fatura real" na seção 2) | histórico de meses anteriores: painel *Billing → History* |
+| Plano do registry | a API não expõe o tier — **resolvido 17/09: Basic** | — |
 | Droplets, volumes, Spaces, snapshots, LB, IPs, domínios, projetos | 403 | painel *Resources*, ou token com `read` nesses escopos |
 | CPU e memória por componente | sem escopo `monitoring:read`, e `doctl apps` não expõe métricas | painel *Insights* do app, ou token com `monitoring:read` |
 | Transferência de saída | não exposta | fatura |
