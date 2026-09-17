@@ -5,9 +5,11 @@ interface ShopSessionState {
   customerName: string | null
   customerPhone: string | null
   isAuthenticated: boolean
+  // O gate de boas-vindas do login é SÓ o nome (vazio/importado sujo).
   requiresWelcome: boolean
-  // As duas perguntas do gate: nome (vazio/importado sujo) e novidades (nunca respondida).
   welcomeAsksName: boolean
+  // A pergunta de novidades (nunca respondida) não abre o gate: sobe como sheet
+  // na página de destino (MarketingPromptSheet) e se apaga ao ser respondida.
   welcomeAsksMarketing: boolean
   welcomeSuggestedName: string | null
   lastOrderRef: string | null
@@ -114,15 +116,14 @@ export function useShopSession () {
     }
     // Payload antigo (só `requires_welcome`, sem os `asks_*`): era o nome que faltava.
     const asksName = session.welcome_asks_name ?? !!session.requires_welcome
-    const asksMarketing = !!session.welcome_asks_marketing
     state.value = {
       ...state.value,
       customerName: cleanOptionalText(session.customer_name),
       customerPhone: cleanOptionalText(session.customer_phone) || state.value.customerPhone,
       isAuthenticated: true,
-      requiresWelcome: !!session.requires_welcome || asksName || asksMarketing,
+      requiresWelcome: !!session.requires_welcome || asksName,
       welcomeAsksName: asksName,
-      welcomeAsksMarketing: asksMarketing,
+      welcomeAsksMarketing: !!session.welcome_asks_marketing,
       welcomeSuggestedName: cleanOptionalText(session.welcome_suggested_name)
     }
   }
@@ -134,12 +135,17 @@ export function useShopSession () {
       customerName: next.name ?? state.value.customerName,
       customerPhone: next.phone ?? state.value.customerPhone,
       isAuthenticated: next.isAuthenticated ?? state.value.isAuthenticated,
-      // Gate respondido (nome confirmado e/ou pergunta de novidades respondida):
-      // o convite não deve reaparecer nesta sessão.
+      // Gate respondido (nome confirmado ou deixado para depois): o passo não
+      // deve reaparecer nesta sessão. A pergunta de novidades é independente.
       requiresWelcome,
-      welcomeAsksName: requiresWelcome ? state.value.welcomeAsksName : false,
-      welcomeAsksMarketing: requiresWelcome ? state.value.welcomeAsksMarketing : false
+      welcomeAsksName: requiresWelcome ? state.value.welcomeAsksName : false
     }
+  }
+
+  // O sheet de novidades foi respondido ou fechado: não volta nesta sessão,
+  // mesmo que o carimbo no servidor tenha falhado (não se insiste).
+  function markMarketingPromptAnswered () {
+    state.value = { ...state.value, welcomeAsksMarketing: false }
   }
 
   function reset () {
@@ -188,6 +194,7 @@ export function useShopSession () {
     setFromHome,
     setFromAuthSession,
     setIdentity,
+    markMarketingPromptAnswered,
     reset
   }
 }

@@ -94,16 +94,30 @@ describe('useShopSession', () => {
     expect(s.isAuthenticated.value).toBe(false)
   })
 
-  it('carries the two welcome questions and opens the gate for marketing alone', async () => {
+  it('the marketing question rides along but never opens the welcome gate', async () => {
     const s = await loadSession()
-    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', requires_welcome: true, welcome_asks_name: false, welcome_asks_marketing: true })
-    expect(s.requiresWelcome.value).toBe(true)
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', requires_welcome: false, welcome_asks_name: false, welcome_asks_marketing: true })
+    // O gate do login é só o nome; a pergunta de novidades é do sheet.
+    expect(s.requiresWelcome.value).toBe(false)
     expect(s.welcomeAsksName.value).toBe(false)
     expect(s.welcomeAsksMarketing.value).toBe(true)
-    // Gate respondido: as duas perguntas se apagam junto com o convite.
+    // Responder o gate do nome não mexe na pergunta de novidades…
     s.setIdentity({ requiresWelcome: false })
-    expect(s.requiresWelcome.value).toBe(false)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
+    // …e responder (ou fechar) o sheet apaga só ela.
+    s.markMarketingPromptAnswered()
     expect(s.welcomeAsksMarketing.value).toBe(false)
+    expect(s.isAuthenticated.value).toBe(true)
+  })
+
+  it('answering the name gate clears the name question only', async () => {
+    const s = await loadSession()
+    s.setFromAuthSession({ is_authenticated: true, customer_name: '', requires_welcome: true, welcome_asks_name: true, welcome_asks_marketing: true })
+    expect(s.requiresWelcome.value).toBe(true)
+    s.setIdentity({ name: 'Ana', requiresWelcome: false })
+    expect(s.requiresWelcome.value).toBe(false)
+    expect(s.welcomeAsksName.value).toBe(false)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
   })
 
   it('reads a payload without the asks_* flags as the old name-only gate', async () => {

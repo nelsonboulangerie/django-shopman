@@ -9,10 +9,9 @@ import {
   authStep,
   codeSentPrefix,
   otpValidUntilDisplay,
+  isMarketingPromptRouteExcluded,
   resendCooldown,
-  welcomeCanContinue,
-  welcomeNameValue,
-  welcomeProfilePatch
+  welcomeNameValue
 } from '../app/presentation/auth'
 
 describe('authStep', () => {
@@ -146,39 +145,23 @@ describe('LOGIN_ADULT_DECLARATION', () => {
   })
 })
 
-// ── A pergunta de novidades no gate ────────────────────────────────────────
+// ── O convite de novidades não é passo do login ────────────────────────────
 //
-// Medido no alpha em 16/09: 58 clientes ativos, 1 aniversário, 5 consentimentos
-// de WhatsApp. O gate passa a perguntar UMA vez; a caixa nasce desligada e é SÓ
-// consentimento — sem data de nascimento (a maioridade foi declarada ao entrar).
+// Ele sobe como sheet na página de destino e nunca interrompe o que a pessoa
+// veio fazer: fora das portas de entrada, do checkout e do pedido.
 
-describe('welcomeCanContinue', () => {
-  const base = { asksName: false, asksMarketing: true, name: '', marketingOptIn: false }
+describe('isMarketingPromptRouteExcluded', () => {
+  it.each(['/entrar', '/entrar/', '/a', '/a/', '/finalizar', '/finalizar/endereco', '/pedido/NB-123', '/pedido/NB-123/pagamento'])(
+    'keeps the sheet away from %s',
+    path => {
+      expect(isMarketingPromptRouteExcluded(path)).toBe(true)
+    }
+  )
 
-  it('lets the marketing-only gate continue with the box off', () => {
-    expect(welcomeCanContinue(base)).toBe(true)
-  })
-
-  it('lets it continue with the box on too — nothing else is asked', () => {
-    expect(welcomeCanContinue({ ...base, marketingOptIn: true })).toBe(true)
-  })
-
-  it('still requires the name when the name was asked', () => {
-    expect(welcomeCanContinue({ ...base, asksName: true })).toBe(false)
-    expect(welcomeCanContinue({ ...base, asksName: true, name: '  Ana ' })).toBe(true)
-  })
-})
-
-describe('welcomeProfilePatch', () => {
-  it('sends nothing to the profile when only the question was answered', () => {
-    expect(welcomeProfilePatch({ asksName: false, asksMarketing: true, name: '', marketingOptIn: true })).toBeNull()
-  })
-
-  it('sends the cleaned name when it was asked', () => {
-    expect(welcomeProfilePatch({ asksName: true, asksMarketing: true, name: ' Ana  Silva ', marketingOptIn: true })).toEqual({ first_name: 'Ana Silva' })
-  })
-
-  it('sends nothing when the name was asked but left empty', () => {
-    expect(welcomeProfilePatch({ asksName: true, asksMarketing: false, name: '   ', marketingOptIn: false })).toBeNull()
-  })
+  it.each(['/', '/menu', '/sacola', '/conta', '/conta/preferencias', '/produto/croissant', '/pedidos'])(
+    'lets it open on %s',
+    path => {
+      expect(isMarketingPromptRouteExcluded(path)).toBe(false)
+    }
+  )
 })
