@@ -1242,6 +1242,9 @@ useSeoMeta({
       <section class="shop-stack-block">
         <div>
           <h1 class="shop-title">Finalize seu pedido</h1>
+          <p class="mt-2 max-w-2xl shop-muted">
+            Uma etapa por vez. Você confere tudo antes de enviar.
+          </p>
         </div>
 
         <!-- Skeleton só no carregamento INICIAL. Em refresh de fundo (ex.: rascunho

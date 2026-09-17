@@ -112,6 +112,9 @@ describe('useNextFocus — a página segue o foco', () => {
     })
     const page = await mountFocusPage('when')
     expect(lastScroll()?.element).toBe(document.querySelector('[data-focus-target="when"]'))
+    // A chegada usa a MESMA linha de foco das trocas: rolar já avisa que havia
+    // algo acima, e o bloco de trabalho fica sempre no mesmo lugar.
+    expect(lastScroll()?.options).toEqual({ block: 'start', behavior: 'smooth' })
     page.unmount()
   })
 

@@ -86,16 +86,25 @@ export function useNextFocus(source?: MaybeRefOrGetter<string | null | undefined
   function revealNow(block: HTMLElement, overrides: RevealOptions, initial: boolean) {
     const plan = revealPlan({ ...options, ...overrides }, reducedMotion());
     if (initial) {
+      const obstacle = obstructedBottom();
       const rect = block.getBoundingClientRect();
       if (
         !needsInitialReveal({
           top: rect.top,
           bottom: rect.bottom,
           viewportHeight: window.innerHeight,
-          obstructedBottom: obstructedBottom(),
+          obstructedBottom: obstacle,
         })
       )
         return;
+      // A CHEGADA TAMBÉM VAI PARA A LINHA DE FOCO, não para o mínimo necessário.
+      // Rolar é, em si, o aviso de que havia algo acima: quem quiser conferir
+      // sobe com um gesto. Parar no meio do caminho custaria a promessa que
+      // sustenta o mecanismo — o bloco de trabalho sempre no mesmo lugar.
+      //
+      // A margem embaixo continua valendo: sem ela um bloco curto encosta no
+      // card flutuante.
+      block.style.scrollMarginBottom = `${obstacle}px`;
     }
     if (plan.focus) focusControl(block);
     scrollTo(block, plan);
