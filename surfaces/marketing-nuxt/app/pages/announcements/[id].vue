@@ -28,6 +28,13 @@ import {
   marketingLoadError,
   DELIVERY_TRACKING_POLICY,
 } from "~/presentation/marketingResult";
+// Um dono só para "WhatsApp fala com pessoa, o resto é mural": o card da revisão e a
+// caixa de confirmação já liam daqui, e escrever a regra pela terceira vez seria pedir
+// que as três envelhecessem separadas.
+import {
+  includesDirectMessage,
+  includesPublicPublication,
+} from "~/presentation/marketingDelivery";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
 const route = useRoute();
@@ -150,10 +157,8 @@ const decisionNotice = computed(() => {
   return decisionOutcomeNotice({
     action: outcome.action,
     publishMode: outcome.publishMode,
-    includesDirectMessage: outcome.platforms.includes("whatsapp"),
-    includesPublicPublication: outcome.platforms.some(
-      (platform) => platform !== "whatsapp",
-    ),
+    includesDirectMessage: includesDirectMessage(outcome.platforms),
+    includesPublicPublication: includesPublicPublication(outcome.platforms),
     scheduledSummary: outcome.scheduledFor
       ? scheduleSummary(outcome.scheduledFor, shopTimezone.value)
       : "",
