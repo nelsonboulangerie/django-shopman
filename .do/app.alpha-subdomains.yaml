@@ -20,6 +20,13 @@ domains:
 - domain: boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
+# 📷 As fotos de produto têm hostname PRÓPRIO, que não é papel de site nenhum.
+#    Duas vezes (01/09 e 17/09) a foto morava no host de um site (`menu.`, depois
+#    `www.`) e quebrou quando o site mudou de lugar. `img.` só serve arquivo: a
+#    regra de ingress reescreve tudo para `/img/` do storefront.
+- domain: img.nelsonboulangerie.com.br
+  type: ALIAS
+  zone: nelsonboulangerie.com.br
 - domain: gestor.boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
@@ -58,6 +65,14 @@ domains:
   zone: boulangerie.com.br
 ingress:
   rules:
+  - component:
+      name: storefront-nuxt
+      rewrite: /img/
+    match:
+      authority:
+        exact: img.nelsonboulangerie.com.br
+      path:
+        prefix: /
   - match:
       authority:
         exact: nelsonboulangerie.com.br
@@ -408,7 +423,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_MARKETING_MEDIA_HOSTS
   scope: RUN_TIME
-  value: mkt.boulangerie.com.br
+  value: mkt.boulangerie.com.br,img.nelsonboulangerie.com.br
   type: GENERAL
 - key: SHOPMAN_MARKETING_TARGET_HMAC_KEY
   scope: RUN_TIME
@@ -663,7 +678,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_PRODUCT_IMAGE_BASE
   scope: RUN_TIME
-  value: 'https://www.nelsonboulangerie.com.br/img/products'
+  value: 'https://img.nelsonboulangerie.com.br/products'
   type: GENERAL
 services:
 - alerts:

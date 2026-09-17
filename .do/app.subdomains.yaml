@@ -16,6 +16,7 @@
 #   mkt.STORE_DOMAIN        → operator-office → marketing-nuxt  (marketing)
 #   bi.STORE_DOMAIN         → operator-office → bi-nuxt         (B.I.)
 #   compras.STORE_DOMAIN    → operator-office → purchase-nuxt   (compras)
+#   img.STORE_DOMAIN        → storefront-nuxt, reescrito para /img/ (só fotos de produto)
 #
 #   Os apps de operador moram em DOIS services (ADR-030): o ingress manda o
 #   hostname para o service do grupo, e o roteador do contêiner entrega ao app.
@@ -84,6 +85,11 @@ domains:
   - domain: bi.STORE_DOMAIN
     type: ALIAS
     zone: STORE_DOMAIN
+  # Fotos de produto num hostname que não é papel de site: mudar o site de lugar
+  # nunca mais quebra foto (quebrou em 01/09 e em 17/09 no alpha).
+  - domain: img.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
   # Atalho do cofre: 302 para a planilha viva (SHOPMAN_BACKUP_SHEET_HOST +
   # middleware do `web`). O template declarava a env e não roteava o host.
   - domain: backup.STORE_DOMAIN
@@ -92,6 +98,15 @@ domains:
 
 ingress:
   rules:
+    # Fotos de produto — host img., tudo reescrito para /img/ do storefront.
+    - match:
+        authority:
+          exact: img.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: storefront-nuxt
+        rewrite: /img/
     # Django headless (API + webhooks + health) — host api.
     - match:
         authority:
@@ -563,11 +578,11 @@ envs:
     scope: RUN_TIME
     value: 'https://docs.google.com/spreadsheets/d/1rttEI2BwXHdqpVvicXAJZpqqlrfqHj7mMJMp9Drg2ks/edit?authuser=pablondrina%40gmail.com'
     type: GENERAL
-  # As fotos moram na própria loja (`public/img/products/`), então a base é o
-  # domínio desta loja — não o `menu.` do alpha, que veio junto por cópia.
+  # As fotos moram na própria loja (`public/img/products/`), mas saem pelo host
+  # dedicado `img.`, que não muda quando o site muda de lugar.
   - key: SHOPMAN_PRODUCT_IMAGE_BASE
     scope: RUN_TIME
-    value: 'https://STORE_DOMAIN/img/products'
+    value: 'https://img.STORE_DOMAIN/products'
     type: GENERAL
 services:
   - name: web
