@@ -4158,6 +4158,18 @@ def _conflict_row(customer, sources: list[str]) -> dict:
         # conflito nasce lá embaixo, no INSERT, e o operador nem conseguia
         # descobrir de quem era o número. A tela tem copy e saída próprias.
         "owner_inactive": not customer.is_active,
+        # ⚠️ Dono SEM ROSTO — o cadastro que só tem o dado, sem nome de gente.
+        # Ele nasce sozinho toda vez que alguém pede a nota no balcão (o
+        # `_receipt_registration` cria sem nome nenhum) ou recebe o rótulo de
+        # espera "Cliente 0011". Quem decide isso é `_should_refresh_name`, a
+        # MESMA régua que o resolve usa para saber se pode escrever um nome por
+        # cima — duas definições de "sem nome" divergiriam no primeiro
+        # "Cliente Doc 4477", que tem nome no campo e nenhum rosto atrás.
+        #
+        # A tela precisa saber porque a pergunta muda de natureza: "qual dos
+        # dois você está atendendo?" não existe quando um dos dois não é
+        # ninguém. Ali só há um cliente e um dado solto para entregar a ele.
+        "owner_unnamed": _should_refresh_name(customer),
     }
 
 
