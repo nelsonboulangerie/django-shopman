@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
 import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
-import { absoluteImage, breadcrumbJsonLd, jsonLdText, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
+import {
+  absoluteImage,
+  breadcrumbJsonLd,
+  jsonLdText,
+  metaDescription,
+  priceFromQ,
+  productCollectionCrumb,
+  productJsonLd
+} from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
 import { compactUnitWeightLabel } from '~/utils/display'
 
@@ -72,6 +80,9 @@ const nutrition = computed(() => nutritionTable(product.value?.nutrition || null
 const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
 const canonicalUrl = computed(() => `${requestUrl.origin}${route.path}`)
+// A coleção do produto entra na trilha só quando tem página própria
+// (/colecao/<ref>); nunca como `/menu#ref`, que é fragmento e não é página.
+const collectionCrumb = computed(() => productCollectionCrumb(product.value?.breadcrumb_category))
 const ogImage = computed(() => absoluteImage(requestUrl.origin, product.value?.image_url))
 const pageDescription = computed(() => metaDescription(product.value) || 'Produto')
 
@@ -113,10 +124,10 @@ useHead({
           innerHTML: jsonLdText(breadcrumbJsonLd([
             { name: 'Início', url: `${requestUrl.origin}/` },
             { name: 'Cardápio', url: `${requestUrl.origin}/menu` },
-            ...(product.value.breadcrumb_category
+            ...(collectionCrumb.value
               ? [{
-                  name: product.value.breadcrumb_category.name,
-                  url: `${requestUrl.origin}${product.value.breadcrumb_category.url}`
+                  name: collectionCrumb.value.name,
+                  url: `${requestUrl.origin}${collectionCrumb.value.path}`
                 }]
               : []),
             { name: product.value.name, url: canonicalUrl.value }
@@ -134,15 +145,15 @@ useHead({
          antes do card contido, no mesmo ritmo da tela de conta. -->
     <div v-if="product" class="shop-breadcrumb-bar lg:mb-6">
       <div class="shop-container py-2">
-        <!-- A coleção do produto vem pronta em `breadcrumb_category`; a trilha
-             fixa Início/Cardápio/nome descartava esse nível e tirava do cliente
-             o caminho de volta para a categoria. -->
+        <!-- A coleção do produto vem em `breadcrumb_category`; a trilha fixa
+             Início/Cardápio/nome descartava esse nível e tirava do cliente o
+             caminho de volta para a categoria. O link é a página da coleção. -->
         <UiBreadcrumbs
           :items="[
             { label: 'Início', link: '/' },
             { label: 'Cardápio', link: '/menu' },
-            ...(product.breadcrumb_category
-              ? [{ label: product.breadcrumb_category.name, link: product.breadcrumb_category.url }]
+            ...(collectionCrumb
+              ? [{ label: collectionCrumb.name, link: collectionCrumb.path }]
               : []),
             { label: product.name }
           ]"

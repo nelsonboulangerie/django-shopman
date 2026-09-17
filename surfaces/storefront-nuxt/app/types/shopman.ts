@@ -455,6 +455,79 @@ export interface FAQItemProjection {
   answer: string
 }
 
+// ── Identidade pública do site (GET /api/v1/storefront/site/) ────────────────
+// O que o Google, o WhatsApp e os verificadores de domínio leem: título e
+// descrição por página, imagem de compartilhamento, códigos de verificação e o
+// estabelecimento (LocalBusiness). Qualquer string pode vir vazia, `geo` e
+// `founding_year` podem vir nulos e listas podem vir vazias.
+export interface SitePageSeoProjection {
+  title: string
+  description: string
+}
+
+export interface SitePagesProjection {
+  home: SitePageSeoProjection
+  menu: SitePageSeoProjection
+  faq: SitePageSeoProjection
+}
+
+export interface SiteVerificationsProjection {
+  google: string
+  bing: string
+  facebook: string
+  pinterest: string
+}
+
+export interface SiteAddressProjection {
+  street: string
+  neighborhood: string
+  locality: string
+  region: string
+  postal_code: string
+  country_code: string
+}
+
+export interface SiteGeoProjection {
+  latitude: number
+  longitude: number
+}
+
+export interface SiteOpeningHoursProjection {
+  days: string[]
+  opens: string
+  closes: string
+}
+
+export interface SiteBusinessProjection {
+  type: string
+  name: string
+  legal_name: string
+  description: string
+  url: string
+  telephone: string
+  email: string
+  logo_url: string
+  price_range: string
+  founding_year: number | null
+  address: SiteAddressProjection
+  geo: SiteGeoProjection | null
+  opening_hours: SiteOpeningHoursProjection[]
+  maps_url: string
+  same_as: string[]
+}
+
+export interface SiteProjection {
+  pages: SitePagesProjection
+  share_image_url: string
+  verifications: SiteVerificationsProjection
+  business: SiteBusinessProjection
+  faq: FAQItemProjection[]
+}
+
+export interface SiteResponse {
+  site: SiteProjection
+}
+
 export interface AuthCopyProjection {
   phone_heading: CopyEntryProjection
   phone_subtitle: CopyEntryProjection

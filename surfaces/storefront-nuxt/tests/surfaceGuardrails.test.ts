@@ -1568,9 +1568,15 @@ describe('surface claims stay inside what the projection actually says', () => {
     // `breadcrumb_category` já vinha calculado e ninguém lia: a trilha fixa
     // Início/Cardápio/nome tirava do cliente o caminho de volta para a coleção,
     // e o rich-result saía sem o nível que o servidor tinha resolvido.
+    // O nível passa por `productCollectionCrumb`: aponta para /colecao/<ref>, e
+    // nunca para o `/menu#ref` que o servidor manda em `url` (fragmento não é
+    // página — o Google descarta e a trilha não leva a lugar nenhum).
     const pdp = read('app/pages/produto/[sku].vue')
 
-    expect((pdp.match(/product(\.value)?\.breadcrumb_category/g) || []).length).toBeGreaterThanOrEqual(2)
+    expect(pdp).toContain('productCollectionCrumb(product.value?.breadcrumb_category)')
+    expect(pdp).toContain('link: collectionCrumb.path')
+    expect(pdp).toContain('collectionCrumb.value.path')
+    expect(pdp).not.toMatch(/breadcrumb_category(\?)?\.url/)
   })
 
   it('takes the payment-method name from the server, not a client map', () => {
