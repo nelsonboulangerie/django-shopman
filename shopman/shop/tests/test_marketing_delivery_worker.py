@@ -8,6 +8,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.core.cache import cache
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
@@ -642,8 +643,12 @@ def test_age_source_failure_before_provider_is_retryable_without_effect(monkeypa
     assert result.target.state == DeliveryTarget.State.ACCEPTED
 
 
-def test_delivery_command_reports_terminal_age_guard_as_not_attempted():
+def test_delivery_command_reports_terminal_age_guard_as_not_attempted(settings):
     from shopman.shop.management.commands.process_marketing_delivery import Command
+
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {
+        "whatsapp": "shopman.shop.adapters.marketing_delivery_whatsapp"
+    }
 
     outbox, _members, _report = _fanout_whatsapp(
         suffix="command-terminal-age-guard",
@@ -962,3 +967,156 @@ def test_delivery_lease_migration_reverses_and_reapplies_cleanly():
 
     executor = MigrationExecutor(connection)
     executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+# ── Plataforma desligada pela flag: calada no ciclo, visível na fila ─────────
+#
+# Medido no alpha em 17/09/2026: com só o WhatsApp ligado, cada ciclo de 300 s do
+# `maintenance_worker` logava WARNING "método 'instagram' não configurado" (e
+# facebook, google_business). Plataforma desligada é escolha de quem opera; o
+# aviso do `get_adapter` é para adapter que deveria existir e não existe.
+
+ADAPTERS_LOGGER = "shopman.shop.adapters"
+SWITCHED_OFF = ("instagram", "facebook", "google_business")
+
+
+class _AdapterWarnings:
+    """Records do logger de adapters, independente de ``propagate`` no ``shopman``."""
+
+    def __init__(self, caplog):
+        self.caplog = caplog
+        self.logger = __import__("logging").getLogger(ADAPTERS_LOGGER)
+
+    def __enter__(self):
+        self.caplog.clear()
+        self.previous_level = self.logger.level
+        self.logger.setLevel("WARNING")
+        self.logger.addHandler(self.caplog.handler)
+        return self
+
+    def __exit__(self, *exc):
+        self.logger.removeHandler(self.caplog.handler)
+        self.logger.setLevel(self.previous_level)
+
+    def mentioning(self, platform: str) -> list[str]:
+        return [
+            record.getMessage()
+            for record in self.caplog.records
+            if record.name == ADAPTERS_LOGGER
+            and record.levelname == "WARNING"
+            and repr(platform) in record.getMessage()
+        ]
+
+
+def _only_whatsapp_enabled(settings):
+    settings.SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = True
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
+    settings.SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = True
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {
+        "whatsapp": "shopman.shop.adapters.marketing_delivery_whatsapp",
+    }
+
+
+def _run_delivery_cycle(worker_id: str) -> bool:
+    from shopman.shop.management.commands.process_marketing_delivery import Command
+
+    return Command(stdout=StringIO())._cycle(
+        worker_id=worker_id,
+        limit=20,
+        lease_seconds=300,
+        with_outbox=False,
+        with_reconciliation=True,
+        force=True,
+    )
+
+
+def test_cycle_with_only_whatsapp_enabled_does_not_warn_about_switched_off_platforms(
+    settings, caplog
+):
+    _only_whatsapp_enabled(settings)
+    outbox, _members = _graph(
+        platform="instagram",
+        suffix="switched-off-stays-queued",
+        target_keys=(),
+    )
+    fanout_in_chunks(outbox.ref)
+    _queue_all(outbox)
+    before = DeliveryTarget.objects.get(outbox=outbox)
+
+    with _AdapterWarnings(caplog) as warnings:
+        _run_delivery_cycle("worker-switched-off")
+        _run_delivery_cycle("worker-switched-off")
+
+    for platform in SWITCHED_OFF:
+        assert warnings.mentioning(platform) == [], platform
+    # A plataforma desligada não some: o destino segue na fila, sem reserva nem
+    # erro gravado, esperando a plataforma ligar.
+    target = DeliveryTarget.objects.get(pk=before.pk)
+    assert target.state == DeliveryTarget.State.QUEUED
+    assert target.lease_owner == ""
+    assert target.last_error_code == before.last_error_code
+    assert target.attempt_count == before.attempt_count
+
+
+def test_cycle_still_warns_when_a_platform_is_on_but_has_no_adapter(settings, caplog):
+    _only_whatsapp_enabled(settings)
+    settings.SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = True  # sem registro
+
+    with _AdapterWarnings(caplog) as warnings:
+        _run_delivery_cycle("worker-broken-config")
+
+    assert warnings.mentioning("instagram"), "configuração quebrada tem que avisar"
+    assert warnings.mentioning("facebook") == []
+
+
+def test_asking_get_adapter_for_an_unconfigured_platform_still_warns(settings, caplog):
+    from shopman.shop.adapters import get_adapter
+
+    _only_whatsapp_enabled(settings)
+
+    with _AdapterWarnings(caplog) as warnings:
+        assert get_adapter("marketing_delivery", method="instagram") is None
+
+    assert warnings.mentioning("instagram")
+
+
+def test_delivery_lanes_tell_switched_off_from_broken_configuration(settings):
+    from shopman.shop.services.marketing_delivery_runtime import delivery_lanes
+
+    _only_whatsapp_enabled(settings)
+    settings.SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = True  # ligada, sem registro
+
+    lanes = {lane.platform: lane for lane in delivery_lanes()}
+
+    assert lanes["whatsapp"].state == "registered"
+    assert lanes["instagram"].state == "switched_off"
+    assert lanes["instagram"].switch == "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED"
+    assert lanes["facebook"].state == "switched_off"
+    assert lanes["google_business"].state == "unconfigured"
+
+
+def test_configured_methods_follow_the_get_adapter_layer_order(settings):
+    from shopman.shop.adapters import configured_methods
+    from shopman.shop.models import Shop
+
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {
+        "whatsapp": "shopman.shop.adapters.marketing_delivery_whatsapp",
+        "instagram": None,  # desligada explicitamente
+    }
+    assert configured_methods("marketing_delivery") == ("whatsapp",)
+
+    Shop.objects.create(
+        name="Loja do teste",
+        integrations={
+            "marketing_delivery": {
+                "facebook": "shopman.shop.adapters.marketing_delivery_facebook",
+            },
+        },
+    )
+    cache.clear()
+
+    # Shop.integrations responde antes das settings, como em `get_adapter`.
+    assert configured_methods("marketing_delivery") == ("facebook",)

@@ -193,8 +193,8 @@ adapter recusa na última porta; a prontidão aparece como `degraded` com
 
 Campanha de WhatsApp aprovada chega ao ManyChat pelo ledger durável só quando
 `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` registra o adapter
-`marketing_delivery_whatsapp` — sem ele a prontidão diz
-`whatsapp_durable_provider_missing` e nada sai. O adapter confere o modo na última
+`marketing_delivery_whatsapp` — com a flag desligada a prontidão diz
+`platform_switched_off` e os destinos ficam na fila, sem envio. O adapter confere o modo na última
 porta, relê consentimento, exige o flow selado na aprovação e monta as variáveis do
 flow só do artefato aprovado (corpo, link, foto e fatos selados; do destino, só
 telefone e primeiro nome). Aceite do ManyChat é `accepted_unconfirmed`; resposta
@@ -236,6 +236,29 @@ somente uma fronteira testável e inerte: token estático serve no máximo a can
 controlado; operação contínua exige armazenamento OAuth com renovação, consulta de
 `creator_info`, aprovação de `video.publish` e auditoria Direct Post. A simples
 presença da flag ou da credencial não autoriza adicionar TikTok a uma campanha.
+
+### Plataforma desligada × integração não registrada
+
+Os adapters de Instagram, Facebook, Google e WhatsApp existem no código; a flag de
+cada plataforma (tabela acima) decide se ele é registrado em
+`SHOPMAN_MARKETING_DELIVERY_ADAPTERS` neste ambiente. `Shop.integrations`, quando
+define `marketing_delivery`, responde antes das settings, como em `get_adapter`.
+O estado de cada plataforma sai de `marketing_delivery_runtime.delivery_lanes()`,
+sem chamar adapter nem provedor:
+
+| Estado | Quando | Prontidão | Worker | Log |
+|---|---|---|---|---|
+| `registered` | há integração registrada | segue para simulação/credencial/probe | pede o adapter | — |
+| `switched_off` | nada registrado e a flag da plataforma desligada | `blocked`, `platform_switched_off`, "desligada neste ambiente"; a ação cita a flag | não pede o adapter; destinos seguem `queued`, sem reserva | nenhum |
+| `unconfigured` | nada registrado com a flag ligada | `blocked`, `publication_adapter_missing` / `whatsapp_durable_provider_missing`, "erro de configuração" | pede o adapter | WARNING do `get_adapter` a cada ciclo |
+
+Desligada é escolha de quem opera; o aviso do `get_adapter` fica para a integração
+que deveria existir e não existe. A aprovação não recusa plataforma desligada: o que
+for aprovado para ela é materializado e fica `queued`. No cockpit, o resultado da
+plataforma diz "aguardando a plataforma ligar", e não só "na fila"; o
+`diagnose_marketing` mostra o bloco `lanes` (estado, flag e destinos na fila) e
+aponta `observe:platform_switched_off_holds_queued`. Ao ligar, cada destino ainda
+passa pelas conferências de prazo e consentimento antes do envio.
 
 ## Entrega sem componente próprio
 

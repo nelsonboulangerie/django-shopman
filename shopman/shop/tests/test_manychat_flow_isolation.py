@@ -456,6 +456,7 @@ def test_readiness_in_canary_is_limited_and_counts_the_contacts(canary_mode, set
     settings.SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = True
     settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
     settings.SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS = (LISTED, "CLI-B")
+    settings.SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = True
     monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
     durable = type("A", (), {"is_available": staticmethod(lambda: True)})()
     monkeypatch.setattr(

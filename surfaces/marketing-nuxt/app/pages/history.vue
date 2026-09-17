@@ -12,7 +12,9 @@ import {
   deliveryCountItems,
   deliveryStatePresentation,
   marketingLoadError,
+  platformDeliveryLabel,
   platformResultLabel,
+  platformSwitchedOff,
 } from "~/presentation/marketingResult";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
@@ -343,11 +345,24 @@ useHead({ title: "Histórico" });
                       {{ platformResultLabel(platform.platform_ref) }}
                     </span>
                     <span class="text-xs text-muted-foreground">
-                      {{ deliveryStatePresentation(platform.state).label }}
+                      {{
+                        platformDeliveryLabel(
+                          platform,
+                          platformSwitchedOff(
+                            announcement,
+                            platform.platform_ref,
+                          ),
+                        )
+                      }}
                     </span>
                   </div>
                   <p
-                    v-for="count in deliveryCountItems(platform.counts)"
+                    v-for="count in deliveryCountItems(platform.counts, {
+                      platformSwitchedOff: platformSwitchedOff(
+                        announcement,
+                        platform.platform_ref,
+                      ),
+                    })"
                     :key="count.key"
                     class="mt-1 text-xs text-muted-foreground"
                   >

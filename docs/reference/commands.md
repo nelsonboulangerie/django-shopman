@@ -1261,6 +1261,11 @@ alertas. O bloco `shadow` confere vínculos do grafo, hashes, directives e
 agregados e inventaria o legado ainda existente. Não serializa conteúdo,
 destinatário ou PII, não chama provider e não altera estado.
 
+O bloco `lanes` dá o estado de cada plataforma neste ambiente, sem chamar adapter:
+`registered`, `switched_off` (flag desligada, escolha de operação; conta os destinos
+parados na fila) ou `unconfigured` (flag ligada sem integração registrada; deixa o
+resultado em `WARN`).
+
 `shadow.status=GO` significa apenas que nenhuma divergência foi encontrada no
 recorte consultado. Ele não autoriza rollout, não substitui o período observado
 de 7–14 dias (ou volume acordado) e não libera o descarte do legado. Para esse

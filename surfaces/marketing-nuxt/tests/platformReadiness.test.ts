@@ -49,6 +49,25 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(readinessPillClass("blocked")).toContain("destructive");
   });
 
+  it("desligada pela flag: diz desligada, sem prometer conserto de algo quebrado", () => {
+    const note = platformReadinessNote(
+      platform({
+        state: "blocked",
+        ready: false,
+        reason_code: "platform_switched_off",
+        reason: "A publicação nesta plataforma está desligada neste ambiente.",
+      }),
+      "Instagram",
+    );
+
+    expect(note.tone).toBe("blocked");
+    expect(note.badge).toBe("desligada");
+    expect(note.text).toBe(
+      "Instagram: A publicação nesta plataforma está desligada neste ambiente. O que for aprovado para ela fica na fila, sem envio, até ela ser ligada.",
+    );
+    expect(note.text).not.toMatch(/resolver|integração|credencial|adapt/i);
+  });
+
   it("não verificada: diz que a verificação precisa passar", () => {
     const note = platformReadinessNote(
       platform({
