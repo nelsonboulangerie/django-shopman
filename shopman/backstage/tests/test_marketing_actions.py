@@ -131,8 +131,10 @@ def test_delivery_recovery_actions_carry_current_authority_and_consequence():
     assert retry.enabled is True
     assert retry.eligible_count == 1
     assert retry.idempotency == "required"
-    assert retry.confirmation.mode == "typed"
-    assert retry.confirmation.step_up == "password"
+    # Uma entrega para reenviar: a Action anuncia leitura e um toque. A cerimônia
+    # cresce com o público, e o tamanho dela por faixa vive em test_marketing_security.
+    assert retry.confirmation.mode == "summary"
+    assert retry.confirmation.step_up == "none"
     assert retry.creates_external_effect is True
     assert reconcile.enabled is True
     assert reconcile.eligible_count == 1
@@ -180,8 +182,11 @@ def test_pending_decision_uses_readiness_zero_audience_and_fresh_permissions():
     publish = _action(ready, "publish_announcement_now")
     schedule = _action(ready, "schedule_announcement")
     assert publish.enabled is True
-    assert publish.confirmation.mode == "typed"
-    assert publish.confirmation.step_up == "password"
+    # Publicar agora e agendar pedem a MESMA coisa quando a consequência é a mesma.
+    # Enquanto o agora escalava sozinho, agendar era literalmente mais barato do que
+    # entregar — e o agendamento adia o efeito, não o diminui.
+    assert publish.confirmation.mode == "summary"
+    assert publish.confirmation.step_up == "none"
     assert schedule.enabled is True
     assert schedule.confirmation.mode == "summary"
     assert schedule.confirmation.step_up == "none"

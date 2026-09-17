@@ -2,6 +2,11 @@
 import type { PendingMarketingDecision } from "~/composables/useMarketingDecisionCommand";
 import type { PendingCampaignFireCommand } from "~/composables/useCampaignFireCommand";
 import { formatCount } from "~/presentation/campaign";
+import {
+  deliveryActionLabel,
+  includesDirectMessage,
+  includesPublicPublication,
+} from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
@@ -55,7 +60,7 @@ const title = computed(() => {
   if (props.command.action === "reject") return "Recusar este anúncio?";
   if (props.command.body.publish_mode === "scheduled")
     return "Confirmar este agendamento?";
-  if (includesDirectMessages.value && publicPlatforms.value.length)
+  if (includesDirectMessages.value && hasPublicPublication.value)
     return "Confirmar esta entrega agora?";
   return includesDirectMessages.value
     ? "Confirmar envio agora?"
@@ -63,14 +68,28 @@ const title = computed(() => {
 });
 
 const isFire = computed(() => props.command?.action === "fire");
+const challengePlatforms = computed(() => challenge.value?.platforms ?? []);
 const publicPlatforms = computed(() =>
-  (challenge.value?.platforms ?? []).filter(
-    (platform) => platform !== "whatsapp",
-  ),
+  challengePlatforms.value.filter((platform) => platform !== "whatsapp"),
 );
 const includesDirectMessages = computed(() =>
-  (challenge.value?.platforms ?? []).includes("whatsapp"),
+  includesDirectMessage(challengePlatforms.value),
 );
+const hasPublicPublication = computed(() =>
+  includesPublicPublication(challengePlatforms.value),
+);
+
+/** O botão diz o efeito, não a categoria dele. "Confirmar consequência" obrigava o
+ *  gestor a traduzir jargão no exato momento em que precisava decidir. */
+const confirmLabel = computed(() => {
+  if (props.busy) return "Registrando…";
+  if (isFire.value) return "Criar para revisão";
+  if (props.command?.action === "reject") return "Recusar";
+  return deliveryActionLabel({
+    platforms: challengePlatforms.value,
+    scheduled: Boolean(challenge.value?.scheduled_for),
+  });
+});
 
 function submit() {
   if (!ready.value) return;
@@ -93,15 +112,24 @@ function submit() {
     <UiDialogContent class="sm:max-w-lg">
       <UiDialogHeader>
         <UiDialogTitle>{{ title }}</UiDialogTitle>
+        <!-- A descrição diz o que acontece DEPOIS deste botão. Dizer "nada sai até a
+             confirmação final" quando este botão É a confirmação final ensinava o
+             gestor a não acreditar na própria tela. -->
         <UiDialogDescription>
           <template v-if="isFire">
-            O servidor congelou esta versão e calculou o público abaixo. A
-            confirmação cria somente um anúncio para revisão; nenhuma publicação
-            ou mensagem será enviada agora.
+            Isto cria um anúncio para revisão. Nada é publicado nem enviado
+            agora.
+          </template>
+          <template v-else-if="command?.action === 'reject'">
+            O anúncio não vai para nenhuma plataforma e não volta para a fila.
+          </template>
+          <template v-else-if="challenge?.scheduled_for">
+            Confira o que foi congelado. Depois de confirmar, a entrega acontece
+            sozinha no instante abaixo.
           </template>
           <template v-else>
-            O servidor congelou esta versão e calculou a consequência abaixo.
-            Nada será publicado ou enviado até a confirmação final.
+            Confira o que foi congelado. Depois de confirmar, isto sai — e não
+            tem desfazer.
           </template>
         </UiDialogDescription>
       </UiDialogHeader>
@@ -270,13 +298,7 @@ function submit() {
           {{ isFire ? "Voltar sem criar" : "Voltar sem confirmar" }}
         </UiButton>
         <UiButton type="button" :disabled="!ready" @click="submit">
-          {{
-            busy
-              ? "Registrando…"
-              : isFire
-                ? "Criar para revisão"
-                : "Confirmar consequência"
-          }}
+          {{ confirmLabel }}
         </UiButton>
       </UiDialogFooter>
     </UiDialogContent>
