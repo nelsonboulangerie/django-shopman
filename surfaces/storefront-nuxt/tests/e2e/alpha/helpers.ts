@@ -42,7 +42,7 @@ export function collectConsoleErrors (page: Page): string[] {
 async function tryLoginOnce (page: Page, phone: string): Promise<boolean> {
   await page.goto('/entrar', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2200)
-  const semWA = page.getByText(/Não consigo usar WhatsApp/i).first()
+  const semWA = page.getByText(/Receber código por SMS/i).first()
   if (await semWA.count()) await semWA.click()
   await page.waitForTimeout(1400)
   const phoneInput = page.locator('input[inputmode="tel"], input[type="tel"]').filter({ visible: true }).first()
