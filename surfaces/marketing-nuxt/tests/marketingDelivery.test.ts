@@ -5,32 +5,23 @@ import {
   includesPublicPublication,
 } from "~/presentation/marketingDelivery";
 
-describe("rótulo do efeito da entrega", () => {
-  it("dá o mesmo nome ao mesmo efeito, venha do card ou da confirmação", () => {
-    expect(deliveryActionLabel({ platforms: ["whatsapp"] })).toBe("Enviar agora");
-    expect(deliveryActionLabel({ platforms: ["instagram"] })).toBe(
-      "Publicar agora",
-    );
-    expect(deliveryActionLabel({ platforms: ["instagram", "whatsapp"] })).toBe(
-      "Entregar agora",
-    );
+describe("rótulo do último gesto", () => {
+  it("só o botão que dispara diz disparar, e ele diz sempre a mesma coisa", () => {
+    // O destino não muda o verbo: a caixa já escreve, na linha acima do botão, o que
+    // vai para cada plataforma. Três verbos diferentes ali custavam a palavra que a
+    // casa usa no resto do caminho sem acrescentar um fato novo.
+    expect(deliveryActionLabel({})).toBe("Disparar agora");
   });
 
-  it("agendar vence o verbo, porque o efeito deixa de ser agora", () => {
-    expect(
-      deliveryActionLabel({ platforms: ["whatsapp"], scheduled: true }),
-    ).toBe("Agendar");
+  it("agendar vence o verbo, porque 'agora' mentiria sobre o quando", () => {
+    expect(deliveryActionLabel({ scheduled: true })).toBe("Agendar");
   });
 
-  it("sem plataforma nenhuma, não promete mensagem que ninguém vai receber", () => {
-    expect(includesDirectMessage([])).toBe(false);
-    expect(includesPublicPublication([])).toBe(false);
-    expect(deliveryActionLabel({ platforms: [] })).toBe("Publicar agora");
-  });
-
-  it("separa mural de mensagem direta", () => {
+  it("separa mural de mensagem direta — que é o que a tela explica em prosa", () => {
     expect(includesDirectMessage(["instagram", "whatsapp"])).toBe(true);
     expect(includesPublicPublication(["whatsapp"])).toBe(false);
     expect(includesPublicPublication(["google_business"])).toBe(true);
+    expect(includesDirectMessage([])).toBe(false);
+    expect(includesPublicPublication([])).toBe(false);
   });
 });

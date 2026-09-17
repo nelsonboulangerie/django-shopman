@@ -119,7 +119,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("Enviar agora");
+    expect(wrapper.text()).toContain("Disparar agora");
     expect(wrapper.text()).not.toContain("Confirmar consequência");
     expect(wrapper.text()).toContain("Depois de confirmar, isto sai");
     // Nada de senha nem de frase: um destino não paga o preço de quinhentos.

@@ -30,10 +30,7 @@ import {
   platformsSummary,
   vipSummary,
 } from "~/presentation/campaign";
-import {
-  deliveryActionLabel,
-  includesDirectMessage,
-} from "~/presentation/marketingDelivery";
+import { includesDirectMessage } from "~/presentation/marketingDelivery";
 import {
   platformReadinessNote,
   readinessByPlatform,
@@ -322,12 +319,11 @@ const canPublish = computed(
     platforms.value.length > 0,
 );
 const hasDirectMessage = computed(() => includesDirectMessage(platforms.value));
-// O mesmo rótulo do botão da caixa de confirmação: o gestor toca "Enviar agora" e a
-// caixa responde "Enviar agora". Duas frases para um efeito só era o que fazia a
-// segunda parecer uma etapa nova.
-const deliverNowLabel = computed(() =>
-  deliveryActionLabel({ platforms: platforms.value }),
-);
+// ⚠️ Este botão NÃO entrega: ele abre a caixa que mostra a consequência, e é lá que a
+// entrega acontece. Enquanto ele dizia "Entregar agora", o caminho tinha dois botões
+// prometendo a mesma coisa e só um cumprindo — e quem toca no primeiro e vê aparecer
+// mais uma tela aprende que a tela mente. O nome do botão é o destino dele.
+const REVIEW_CONSEQUENCE_LABEL = "Visualizar consequência";
 const nowFallsInQuietHours = computed(
   () =>
     hasDirectMessage.value &&
@@ -797,7 +793,7 @@ function askToReject() {
           :name="busy ? 'line-md:loading-loop' : 'lucide:send'"
           class="size-4"
         />
-        {{ deliverNowLabel }}
+        {{ REVIEW_CONSEQUENCE_LABEL }}
       </UiButton>
 
       <UiButton
@@ -854,9 +850,18 @@ function askToReject() {
           <span class="text-xs font-semibold text-muted-foreground">{{
             timezoneName
           }}</span>
-          <UiButton type="button" :disabled="!canSchedule" @click="schedule">
+          <!-- Mesmo texto do botão de cima, porque os dois abrem a mesma caixa; o
+               nome acessível distingue, já que "Visualizar consequência" duas vezes
+               num card deixa quem usa leitor de tela sem saber qual é qual. -->
+          <UiButton
+            type="button"
+            data-testid="schedule-submit"
+            :disabled="!canSchedule"
+            :aria-label="`${REVIEW_CONSEQUENCE_LABEL} do agendamento`"
+            @click="schedule"
+          >
             <Icon name="lucide:calendar-check" class="size-4" />
-            Confirmar agendamento
+            {{ REVIEW_CONSEQUENCE_LABEL }}
           </UiButton>
         </div>
         <p

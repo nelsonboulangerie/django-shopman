@@ -292,7 +292,7 @@ describe("FireCampaignPanel — postagem pública", () => {
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();
     const submit = wrapper.find('button[type="submit"]');
-    expect(submit.text()).toContain("Preparar para revisão");
+    expect(submit.text()).toContain("Revisar anúncio");
     expect(submit.attributes("disabled")).toBeUndefined();
 
     await wrapper.find("form").trigger("submit");
