@@ -116,7 +116,8 @@ as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerS
 — isso é manter a opção realçada visível dentro da lista, e fica como está.
 
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
-o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo.
+o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
+do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 
