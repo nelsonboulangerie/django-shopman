@@ -106,6 +106,14 @@ impossível por construção:
    variáveis do artefato aprovado — nunca do catálogo vivo. `200` vira
    `accepted_unconfirmed` sem recibo; resposta ambígua vira `unknown`; `subscriber_busy`
    devolve a tentativa à fila. A flag registra; o modo decide quem recebe.
+6. **Sem campo herdado.** Para os eventos de Marketing, a mensagem grava o conjunto
+   completo e declarado de campos do evento (`MARKETING_FLOW_FIELDS`), com string vazia
+   para o que o contexto não tiver, dentro da mesma reserva. Gravar só o que havia deixava
+   no perfil o preço ou o link da mensagem anterior — a mesma mistura, em sequência.
+7. **O mínimo de 10 não vale no ensaio.** O mínimo existe para que campanha "geral" não
+   vire mensagem mirada em uma pessoa; em `canary` quem recebe já é só a lista que a
+   operação controla, então ele não se aplica (a aprovação registra `canary=true`). Em
+   `blocked` e `open` continua igual.
 
 **O que G-H03 ainda cobria e continua como limitação conhecida:** não há receipt nem
 callback correlacionável de entrega; `Retry-After` e rate limit reais do ManyChat não

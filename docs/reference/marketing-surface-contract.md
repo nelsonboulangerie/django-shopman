@@ -203,6 +203,14 @@ com código; contato ocupado volta pela fila. O worker de destinos
 (`process_marketing_delivery`) não é componente de nenhum spec versionado: ligar a
 consequência exige rodá-lo explicitamente.
 
+Cada mensagem com flow de Marketing grava o conjunto completo de campos declarado para o
+evento (`MARKETING_FLOW_FIELDS`), com vazio para o que não tiver — nunca herda preço,
+nome ou link da mensagem anterior. Campanha geral por WhatsApp exige ao menos 10 pessoas
+elegíveis para não virar mensagem mirada em uma pessoa; no modo `canary` o mínimo não se
+aplica, porque só a lista de canário controlada pela operação recebe — a aprovação
+registra `canary=true` e o cockpit diz "Ensaio: o mínimo de 10 não vale; só a lista de
+canário recebe". Em `blocked` e `open` o mínimo continua igual.
+
 Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
 `META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,
 `META_PAGE_ID`. Google exige token OAuth com escopo
