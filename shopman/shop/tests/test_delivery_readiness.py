@@ -274,7 +274,7 @@ def test_active_flow_without_concurrency_evidence_is_blocked(
 
     assert state.state == "blocked"
     assert state.reason_code == "manychat_custom_fields_unverified"
-    assert "sandbox" in state.action
+    assert "ensaio" in state.action
 
 
 def test_direct_message_with_missing_active_flow_is_blocked(with_transport, monkeypatch):

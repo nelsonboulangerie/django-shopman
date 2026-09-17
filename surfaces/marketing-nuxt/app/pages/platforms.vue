@@ -8,6 +8,7 @@
 //
 // Plataforma ≠ canal: canal é por onde se VENDE, plataforma é por onde o anúncio SAI.
 import { platformIcon } from "~/presentation/campaign";
+import { canaryText } from "~/presentation/platformReadiness";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
@@ -87,6 +88,8 @@ async function onSendTest() {
 function summaryFor(platform: Platform): string {
   if (platform.state === "unknown") return platform.reason;
   if (platform.state === "blocked") return platform.reason;
+  if (typeof platform.canary_recipients === "number")
+    return canaryText(platform.canary_recipients);
   if (platform.limitation) return platform.limitation;
   return kindLabel(platform.kind);
 }
@@ -99,7 +102,9 @@ function kindLabel(kind: string): string {
 }
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
-function tone(platform: Pick<Platform, "state" | "source_status">) {
+function tone(
+  platform: Pick<Platform, "state" | "source_status" | "canary_recipients">,
+) {
   if (platform.source_status === "simulated")
     return {
       chip: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
@@ -117,6 +122,12 @@ function tone(platform: Pick<Platform, "state" | "source_status">) {
       chip: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
       icon: "lucide:circle-help",
       label: "Não verificada",
+    };
+  if (platform.state === "degraded" && typeof platform.canary_recipients === "number")
+    return {
+      chip: "bg-warning/10 text-warning",
+      icon: "lucide:flask-conical",
+      label: "Em ensaio",
     };
   if (platform.state === "degraded")
     return {
