@@ -419,7 +419,7 @@ describe("decisão do documento", () => {
     expect(document.querySelector('input')).toBeNull();
     expect(document.activeElement?.tagName).toBe("H2");
     const actions = Array.from(document.querySelectorAll('button'));
-    expect(actions.indexOf(buttonByText("Usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
+    expect(actions.indexOf(buttonByText("Não, usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
     expect(screenText()).toContain("529.982.247-25");
     expect(screenText()).toContain("Bruno Souza");
     expect(buttonByText("unificar")).toBeUndefined();
@@ -429,7 +429,7 @@ describe("decisão do documento", () => {
     expect(screenText()).toContain("Vincular Bruno Souza ao pedido?");
     buttonByText("Voltar")!.click();
     await wrapper.vm.$nextTick();
-    buttonByText("Usar dados só neste pedido")!.click();
+    buttonByText("Não, usar dados só neste pedido")!.click();
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
   });
   it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
@@ -452,7 +452,7 @@ describe("atalhos da decisão do documento", () => {
     key("ArrowRight");
     expect(document.activeElement).toBe(buttonByText("Sim, vincular ao pedido"));
     key("ArrowLeft");
-    expect(document.activeElement).toBe(buttonByText("Usar dados só neste pedido"));
+    expect(document.activeElement).toBe(buttonByText("Não, usar dados só neste pedido"));
     key("1");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
@@ -475,7 +475,7 @@ describe("atalhos da decisão do documento", () => {
     document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
     await wrapper.setProps({ lookupBusy: false });
-    buttonByText("Usar dados só neste pedido")!.focus();
+    buttonByText("Não, usar dados só neste pedido")!.focus();
     key("2");
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
@@ -541,5 +541,100 @@ describe("cadastro pelo documento", () => {
     expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
     buttonByText('Confirmar cliente')!.click();
     expect(wrapper.emitted('decisionConfirm')).toEqual([['__save_confirmed__']]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// O dado solto e o dono — o beco, pela tela
+// ──────────────────────────────────────────────────────────────────────────
+
+const ORPHAN: CustomerDecision = {
+  kind: "orphan_value",
+  field: "tax_id",
+  typed: "11144477735",
+  current: { ref: "CUST-F", name: "Fulano Silva", value: "" },
+  other: { ref: "CUST-GHOST", name: "", value: "11144477735", unnamed: true },
+};
+
+describe("o CPF guardado sem nome reencontra o dono", () => {
+  it("dois botões, sim e não — e nenhum deles é 'atender ninguém'", async () => {
+    await mount({ customerDecision: ORPHAN });
+
+    expect(buttonByText("Sim, é de Fulano")).toBeTruthy();
+    expect(buttonByText("Não, não é o CPF de Fulano")).toBeTruthy();
+    expect(buttonByText("Atender")).toBeUndefined();
+    // A palavra de mecanismo não aparece: o operador está dizendo de quem é um
+    // CPF, não administrando cadastro.
+    expect(screenText()).not.toContain("unificar cadastros");
+  });
+
+  it("o SIM vem antes do NÃO na ordem de leitura", async () => {
+    await mount({ customerDecision: ORPHAN });
+
+    const botoes = Array.from(document.querySelectorAll("button"));
+    expect(botoes.indexOf(buttonByText("Sim, é de Fulano")!))
+      .toBeLessThan(botoes.indexOf(buttonByText("Não, não é o CPF de Fulano")!));
+  });
+
+  it("o sim é um toque: unifica sem segunda palavra", async () => {
+    const wrapper = await mount({ customerDecision: ORPHAN });
+
+    buttonByText("Sim, é de Fulano")!.click();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("decisionMerge")).toHaveLength(1);
+  });
+
+  it("o não devolve a tela ao operador, sem deixar a pergunta pendurada", async () => {
+    const wrapper = await mount({ customerDecision: ORPHAN });
+
+    buttonByText("Não, não é o CPF de Fulano")!.click();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
+  });
+
+  it("no conflito com PESSOA, unificar continua sendo a terceira saída, por último", async () => {
+    await mount({ customerDecision: CONFLICT });
+
+    const botoes = Array.from(document.querySelectorAll("button"));
+    expect(botoes.indexOf(buttonByText("É a mesma pessoa")!))
+      .toBeGreaterThan(botoes.indexOf(buttonByText("Atender Bruno")!));
+  });
+});
+
+describe("a LISTA não deixa atender um dado solto", () => {
+  const COM_FANTASMA: CustomerDecision = {
+    ...CANDIDATE_LIST,
+    candidates: [
+      candidate(),
+      candidate({
+        ref: "CUST-GHOST", name: "", phone: "", tax_id: "11144477735",
+        matched_by: ["document"], is_current: false, owner_unnamed: true,
+      }),
+      candidate({ ref: "CUST-C", name: "Célia Dias", phone: "+5543999990033", matched_by: ["phone"], is_current: false }),
+    ],
+  };
+
+  it("a linha sem rosto oferece entregar o dado, não atender", async () => {
+    const wrapper = await mount({ customerDecision: COM_FANTASMA });
+
+    expect(buttonByText("É de Ana")).toBeTruthy();
+    expect(screenText()).toContain("Sem nome");
+    expect(screenText()).toContain("só o dado, sem cadastro");
+
+    buttonByText("É de Ana")!.click();
+    await wrapper.vm.$nextTick();
+
+    const merged = wrapper.emitted("decisionMerge");
+    expect(merged).toHaveLength(1);
+    expect((merged![0] as ServerConflictCandidate[])[0]!.ref).toBe("CUST-GHOST");
+  });
+
+  it("as linhas de gente seguem com 'Atender este'", async () => {
+    await mount({ customerDecision: COM_FANTASMA });
+
+    expect(buttonByText("Atender este")).toBeTruthy();
+    expect(screenText()).toContain("Célia Dias");
   });
 });

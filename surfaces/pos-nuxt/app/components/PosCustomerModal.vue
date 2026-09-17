@@ -23,7 +23,7 @@ import type {
 } from "~/types/pos";
 import { cpfTail } from "~/presentation/customerSearch";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { candidateSubtitle, candidateValue, customerDecisionCopy } from "~/presentation/customerDecision";
+import { candidateSubtitle, candidateValue, customerDecisionCopy, firstName as firstNameOf } from "~/presentation/customerDecision";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -76,7 +76,7 @@ const emit = defineEmits<{
   /** O operador ficou com o que estava — o valor digitado é descartado. */
   decisionCancel: [];
   /** É a MESMA pessoa: unificar os dois cadastros. */
-  decisionMerge: [];
+  decisionMerge: [candidate?: ServerConflictCandidate];
   /** Da LISTA de candidatos: atender ESTE. */
   decisionPick: [ServerConflictCandidate];
   applyCustomerFavorite: [];
@@ -250,6 +250,20 @@ const receiptActions = computed(() => {
     label: receiptNewFieldsLabel.value ? `Vincular ${field.owner.name} e salvar ${receiptNewFieldsLabel.value}`
       : receiptOwners.value.length === 1 ? 'Sim, vincular ao pedido' : `Vincular ${field.owner.name}` });
   choices.push({ ref: '', label: 'Usar dados só neste pedido' });
+  // Pergunta de sim ou não ("Este pedido é de Fulano?") se responde com as duas
+  // palavras que a respondem. Com um lado abrindo em "Sim," e o outro em
+  // "Usar…", o operador lê duas ofertas soltas e precisa reconstruir sozinho
+  // qual delas é o não — no balcão, com o cliente na frente. O "Não" não
+  // acrescenta informação: ele devolve o contraste.
+  //
+  // A condição é o próprio par na tela, não uma cópia da regra que o monta:
+  // enquanto a primeira opção disser "Sim,", a última diz "Não,". Nenhuma
+  // mudança lá em cima pode separar os dois sem que isto acompanhe.
+  const first = choices[0];
+  const last = choices[choices.length - 1];
+  if (choices.length === 2 && first !== last && first?.label.startsWith('Sim,')) {
+    last!.label = 'Não, usar dados só neste pedido';
+  }
   return choices;
 });
 const receiptTitle = computed(() => {
@@ -545,10 +559,14 @@ const newCustomerNote = computed(() => {
                 class="flex items-center gap-3 rounded-md border bg-background p-2"
               >
                 <div class="min-w-0 flex-1">
+                  <!-- Linha sem rosto: o nome do servidor é vazio ou o rótulo
+                       de espera ("Cliente 0011"). Mostrá-lo aqui apresentaria um
+                       dado guardado como se fosse gente. -->
                   <p class="truncate text-sm font-medium">
-                    {{ row.name }}
+                    {{ row.owner_unnamed ? 'Sem nome' : row.name }}
                     <span v-if="row.is_current" class="text-xs font-normal text-muted-foreground">· na comanda</span>
                     <span v-else-if="row.owner_inactive" class="text-xs font-normal text-muted-foreground">· desativado</span>
+                    <span v-else-if="row.owner_unnamed" class="text-xs font-normal text-muted-foreground">· só o dado, sem cadastro</span>
                   </p>
                   <p class="truncate text-xs text-muted-foreground">{{ candidateSubtitle(row) }}</p>
                 </div>
@@ -571,12 +589,32 @@ const newCustomerNote = computed(() => {
                   />
                   {{ decisionCopy.release.label }}
                 </UiButton>
+                <!-- Linha SEM ROSTO: um dado guardado sozinho, não uma pessoa.
+                     "Atender este" aqui trocaria o cliente do pedido por uma
+                     ficha vazia e perderia quem está na comanda — o erro crasso
+                     que a lista deixava a um toque de distância. O que se faz
+                     com um dado solto é entregá-lo a quem é dele. -->
+                <UiButton
+                  v-else-if="row.owner_unnamed && !row.is_current && customerDecision.current"
+                  type="button"
+                  size="sm"
+                  :disabled="customerMergeBusy"
+                  class="h-9 shrink-0 gap-2"
+                  @click="$emit('decisionMerge', row)"
+                >
+                  <Icon
+                    :name="customerMergeBusy ? 'lucide:loader-circle' : 'lucide:user-round-check'"
+                    class="size-4 shrink-0"
+                    :class="customerMergeBusy ? 'animate-spin' : ''"
+                  />
+                  É de {{ firstNameOf(customerDecision.current.name) }}
+                </UiButton>
                 <UiButton
                   v-else
                   type="button"
                   size="sm"
                   :variant="row.is_current ? 'outline' : 'default'"
-                  :disabled="row.owner_inactive"
+                  :disabled="row.owner_inactive || row.owner_unnamed"
                   class="h-9 shrink-0 gap-2"
                   @click="$emit('decisionPick', row)"
                 >
@@ -603,6 +641,34 @@ const newCustomerNote = computed(() => {
                 :class="customerReleaseBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.release.label }}</span>
+            </UiButton>
+
+            <!-- O par que fica, e a unificação. A ORDEM é a hierarquia.
+                 Quando o par já tem um caminho para a frente ("Atender
+                 Fulano"), unificar é a terceira saída: discreta, por último.
+                 Quando não tem — o dono do valor é um dado solto, sem rosto, e
+                 entregá-lo ao cliente da comanda é a única coisa que resolve —
+                 ela sobe para o primeiro lugar e vira o botão principal. Um
+                 painel cuja única saída é um botão fantasma embaixo é como o
+                 operador ficou preso: dois botões grandes, nenhum resolvendo. -->
+            <!-- ⚠️ Dois blocos, e não um com `order-last`: `order` do CSS move
+                 a PINTURA e não o DOM, e o DOM é a ordem do Tab e a ordem que o
+                 leitor de tela anuncia. Um único botão reposicionado por classe
+                 ficaria certo aos olhos e primeiro no teclado, justo no painel
+                 em que o primeiro do teclado é o gesto grande. -->
+            <UiButton
+              v-if="decisionCopy.merge && !decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
+              type="button"
+              :disabled="customerMergeBusy"
+              class="h-11 w-full justify-center gap-2"
+              @click="$emit('decisionMerge')"
+            >
+              <Icon
+                :name="customerMergeBusy ? 'lucide:loader-circle' : decisionCopy.merge.icon"
+                class="size-4 shrink-0"
+                :class="customerMergeBusy ? 'animate-spin' : ''"
+              />
+              <span class="min-w-0 truncate">{{ decisionCopy.merge.label }}</span>
             </UiButton>
 
             <div
@@ -638,10 +704,11 @@ const newCustomerNote = computed(() => {
               </UiButton>
             </div>
 
-            <!-- A TERCEIRA saída, e ela é de linha inteira porque não é o
-                 caminho comum: os dois cadastros são a MESMA pessoa. -->
+            <!-- A TERCEIRA saída: os dois cadastros são a MESMA pessoa. Aqui o
+                 par já tem um caminho para a frente ("Atender Bruno"), então
+                 unificar vem por último e discreta — não é o caminho comum. -->
             <UiButton
-              v-if="decisionCopy.merge && confirmingRelease === null && !confirmingAttend"
+              v-if="decisionCopy.merge && decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
               variant="ghost"
               :disabled="customerMergeBusy"

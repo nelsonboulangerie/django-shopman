@@ -226,7 +226,7 @@ const emit = defineEmits<{
   resolveCustomer: [done: (saved: boolean) => void];
   decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
-  decisionMerge: [];
+  decisionMerge: [candidate?: ServerConflictCandidate];
   /** LIBERAR o contato preso num cadastro desativado. */
   decisionRelease: [value: string];
   decisionPick: [ServerConflictCandidate];
@@ -1950,7 +1950,7 @@ defineExpose({
     @resolve-customer="$emit('resolveCustomer', $event)"
     @decision-confirm="$emit('decisionConfirm', $event)"
     @decision-cancel="$emit('decisionCancel')"
-    @decision-merge="$emit('decisionMerge')"
+    @decision-merge="$emit('decisionMerge', $event)"
     @decision-release="$emit('decisionRelease', $event)"
     @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
