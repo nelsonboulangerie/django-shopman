@@ -1561,13 +1561,35 @@ class FavoriteDetailView(APIView):
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
 
+        from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
         from shopman.storefront.services import favorites
 
         if value:
-            favorites.add(customer.ref, sku)
-        else:
-            favorites.remove(customer.ref, sku)
-        return Response({"ok": True, "is_favorite": value})
+            # Favoritar um esgotado de verdade, com opt-in de WhatsApp e maioridade
+            # provada, anota o aviso do "Me avise" (Pablo, 17/09). O sino volta na
+            # resposta para o card virar "Anotado" sem esperar a próxima projeção.
+            outcome = favorites.add_noting_stock_alert(
+                customer,
+                sku,
+                # A mesma vitrine da lista de favoritos: o sino que se anota é o
+                # que o card de `conta/favoritos` mostra.
+                channel_ref=STOREFRONT_CHANNEL_REF,
+                session_key=str(request.session.get("cart_session_key") or ""),
+            )
+            return Response({
+                "ok": True,
+                "is_favorite": outcome.is_favorite,
+                "is_notify_subscribed": outcome.is_notify_subscribed,
+                "stock_alert_noted": outcome.stock_alert_noted,
+            })
+        # Desfavoritar não cancela o aviso: o sino continua como estava.
+        favorites.remove(customer.ref, sku)
+        return Response({
+            "ok": True,
+            "is_favorite": False,
+            "is_notify_subscribed": favorites.notify_subscribed(customer, sku),
+            "stock_alert_noted": False,
+        })
 
 # ── Passkey: a lista que a pessoa vê e revoga ────────────────────────
 

@@ -214,6 +214,14 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 - **WP-2 — Disponibilidade: pausado ≠ esgotado.** Flags `is_paused`/`is_notifiable` nas projeções + UX.
 - **WP-3 — "Me avise quando voltar".** `StockAlertSubscription` + `StockNotifyButton`; no web, o cadastro usa a identidade autenticada e o telefone canônico da conta. A tela preserva página e produto durante a entrada e pede confirmação explícita ao voltar.
 - **WP-4 — Favoritos.** `CustomerFavorite` + coração (PDP) + coleção "Seus favoritos".
+  **Favoritar um esgotado anota o aviso** (Pablo, 17/09): se o produto é notificável (mesma régua
+  `pause_and_notifiability` do sino no card e na PDP), o cliente tem opt-in de WhatsApp verificado
+  e maioridade provada (`is_proved_adult`), o favorito cria a `StockAlertSubscription` do SKU, com a
+  base própria `favorite-sold-out-whatsapp-opt-in-pt-BR-v1`. Sem essa base, é só favorito e o card
+  segue oferecendo "Me avise". Aviso que já existiu (ativo, pausado ou cancelado) não é criado de
+  novo nem retomado; desfavoritar não cancela aviso. `POST/DELETE /api/v1/account/favorites/<sku>/`
+  devolvem `is_notify_subscribed` e `stock_alert_noted`; falha de leitura (disponibilidade,
+  consentimento, inscrição) salva o favorito, não cria aviso e é relatada em `logger.warning`.
 - **WP-5 — Preferência alimentar.** Aviso dietético (badge) + filtro "só compatível"; conservador.
 - **WP-6 — "Talvez você também goste".** cross_sell via `related_skus` (já existia).
 - **WP-7 — Alérgenos/dieta via Recipe/BOM.** Derivados da receita (`aggregate_dietary_from_recipe`),

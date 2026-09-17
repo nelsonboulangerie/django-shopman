@@ -1144,6 +1144,15 @@ export interface AccountDeviceResponse {
   privacy_requests_available?: boolean
 }
 
+// POST/DELETE /api/v1/account/favorites/<sku>/. `is_notify_subscribed` é o sino
+// DEPOIS do gesto; `stock_alert_noted` diz se este favorito criou o aviso.
+export interface FavoriteToggleResponse {
+  ok: boolean
+  is_favorite: boolean
+  is_notify_subscribed: boolean
+  stock_alert_noted: boolean
+}
+
 export interface FavoritesResponse {
   items: CatalogItemProjection[]
   // Copy de empty-state (backend); opcional + fallback na própria tela.
