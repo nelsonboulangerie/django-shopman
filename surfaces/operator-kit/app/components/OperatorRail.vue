@@ -2,8 +2,9 @@
 // Rail de operador CANÔNICO — a espinha vertical em `bg-rail` (token próprio do chrome,
 // de marca: disciplina de ERP) que TODAS as superfícies de operador adotam. É o portador
 // nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Produção/Central. Segura o que é
-// COMUM (voltar à Central, operador/travar, tema, e o que o app puser em #status); o
-// específico de cada app entra pelos slots (#nav = funções; #status = saúde/conexão).
+// COMUM (voltar à Central, capacidade do serviço, operador/travar, tema, e o que o app
+// puser em #status); o específico de cada app entra pelos slots (#nav = funções;
+// #status = saúde/conexão).
 //
 // Três estados que o operador escolhe conforme precisa (persistidos por dispositivo via
 // `useRailState`): colapsado (só um puxador) · compacto (só ícone) · estendido (ícone +
@@ -126,6 +127,13 @@ const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.
     <!-- Cluster comum, ancorado embaixo. -->
     <div class="mt-auto flex w-full flex-col gap-0.5">
       <slot name="status" />
+
+      <!-- Capacidade do serviço (memória/CPU do contêiner), comum a todo app: só com
+           operador identificado, porque quem autoriza a leitura é a sessão. A chave
+           remonta a leitura quando o operador troca. -->
+      <ClientOnly>
+        <OperatorCapacityStatus v-if="operatorName" :key="operatorName" />
+      </ClientOnly>
 
       <RailItem
         v-if="operatorName"
