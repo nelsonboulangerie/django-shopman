@@ -205,8 +205,10 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   maioridade por aceite específico, sem data.
 - **Omotenashi:** copy única por 6 momentos (QUANDO) × 4 audiências (QUEM: anon/new/returning/vip),
   cascata `OmotenashiCopy` (admin) → `OMOTENASHI_DEFAULTS`. Alimenta home/menu/checkout/etc.
-- **SEO:** `server/routes/robots.txt.ts` (bloqueia /account /checkout /cart /login /pedido/ /tracking/
-  /api) + `sitemap.xml.ts` (home/menu/produtos, domain-aware). JSON-LD Product+Breadcrumb na PDP.
+- **SEO:** `server/routes/robots.txt.ts` (bloqueia só /api/) + `sitemap.xml.ts` (home/menu/produtos,
+  domain-aware). Rotas privadas (/conta /finalizar /sacola /entrar /pedido) respondem
+  `X-Robots-Tag: noindex` — o robots.txt não as esconde, senão o Google nunca lê o noindex
+  (`server/utils/indexingPolicy.ts`). JSON-LD Product+Breadcrumb na PDP.
 - **Notificações:** assíncronas via Directive → entrega síncrona em cadeia (manychat→sms→email);
   templates "ativos" exigem canal; links nas mensagens são magic links da loja. `origin_channel`
   (via `?channel=` ou metadata do AccessLink) roteia a notificação de volta ao canal de entrada.
