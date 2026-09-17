@@ -79,7 +79,7 @@ const publicOnly = computed(
     campaignPlatforms.value.length > 0 &&
     campaignPlatforms.value.every((platform) => PUBLIC_PLATFORMS.has(platform)),
 );
-const publicPublicationCount = computed(() => campaignPlatforms.value.length);
+const publicPostCount = computed(() => campaignPlatforms.value.length);
 
 const {
   count,
@@ -281,16 +281,9 @@ watch(
       })
     "
   >
-    <div
-      class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
-    >
-      <p class="font-semibold">Texto protegido pelo fluxo de revisão</p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        Este disparo usa o modelo salvo da campanha e cria um anúncio para
-        revisão antes de qualquer publicação. Para mudar a mensagem, edite o
-        modelo da campanha.
-      </p>
-    </div>
+    <p class="text-xs text-muted-foreground">
+      O texto vem do modelo da campanha. Para mudá-lo, edite a campanha.
+    </p>
 
     <div v-if="needsProduct">
       <label
@@ -333,16 +326,15 @@ watch(
         />
         <div>
           <p class="text-sm font-semibold">
-            {{ formatCount(publicPublicationCount) }}
+            {{ formatCount(publicPostCount) }}
             {{
-              publicPublicationCount === 1
+              publicPostCount === 1
                 ? "postagem pública"
                 : "postagens públicas"
             }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            Este anúncio será preparado uma vez por plataforma para revisão. Não
-            há seleção de contatos e nenhuma mensagem direta será enviada.
+            Uma em cada plataforma. Não escolhe contatos.
           </p>
         </div>
       </div>
@@ -683,8 +675,7 @@ watch(
       v-if="!publicOnly"
       class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se
-      estiver no público escolhido.
+      Sem consentimento de WhatsApp, fica de fora.
     </p>
 
     <p v-if="error" class="text-sm text-destructive" role="alert">

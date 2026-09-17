@@ -78,7 +78,7 @@ describe("o disparo cai direto na revisão", () => {
     ).toBe(false);
   });
 
-  it("conta pessoas na mensagem direta e destinos na publicação pública", () => {
+  it("conta pessoas na mensagem e plataformas na postagem", () => {
     expect(
       announcementDispatchNotice({
         platforms: ["whatsapp"],
@@ -86,7 +86,7 @@ describe("o disparo cai direto na revisão", () => {
         replayed: false,
       }),
     ).toMatchObject({
-      detail: "1 pessoa elegível. Nenhuma publicação ou mensagem foi enviada.",
+      detail: "1 pessoa elegível. Nada saiu ainda.",
       replayNote: "",
     });
     expect(
@@ -110,37 +110,37 @@ describe("o disparo cai direto na revisão", () => {
 });
 
 describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
-  it("separa envio direto, publicação pública, entrega mista e agendamento", () => {
+  it("separa mensagem, postagem, disparo misto e agendamento", () => {
     expect(
       decisionOutcomeNotice({
         action: "approve",
         publishMode: "now",
         includesDirectMessage: true,
-        includesPublicPublication: false,
+        includesPublicPost: false,
       }).title,
-    ).toBe("Envio autorizado agora");
+    ).toBe("Enviado");
     expect(
       decisionOutcomeNotice({
         action: "approve",
         publishMode: "now",
         includesDirectMessage: false,
-        includesPublicPublication: true,
+        includesPublicPost: true,
       }).title,
-    ).toBe("Publicação autorizada agora");
+    ).toBe("Publicado");
     expect(
       decisionOutcomeNotice({
         action: "approve",
         publishMode: "now",
         includesDirectMessage: true,
-        includesPublicPublication: true,
+        includesPublicPost: true,
       }).title,
-    ).toBe("Entrega autorizada agora");
+    ).toBe("Disparado");
     expect(
       decisionOutcomeNotice({
         action: "approve",
         publishMode: "scheduled",
         includesDirectMessage: true,
-        includesPublicPublication: false,
+        includesPublicPost: false,
         scheduledSummary: "quinta-feira, 18 de setembro de 2026 às 07:30",
       }).title,
     ).toBe("Agendado para quinta-feira, 18 de setembro de 2026 às 07:30");
@@ -151,10 +151,11 @@ describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
       action: "approve",
       publishMode: "now",
       includesDirectMessage: true,
-      includesPublicPublication: false,
+      includesPublicPost: false,
     });
 
-    expect(immediate.detail).toContain("entraram na fila de entrega");
+    // A promessa é "entrou na fila", nunca "chegou" — a directive ainda nem rodou.
+    expect(immediate.detail).toContain("na fila");
     expect(immediate.detail).toContain("confirmação");
     expect(immediate.detail).not.toMatch(/entregue|enviada com sucesso/i);
   });
@@ -164,7 +165,7 @@ describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
       decisionOutcomeNotice({
         action: "reject",
         includesDirectMessage: true,
-        includesPublicPublication: true,
+        includesPublicPost: true,
       }),
     ).toMatchObject({ title: "Anúncio recusado", tone: "quiet" });
   });

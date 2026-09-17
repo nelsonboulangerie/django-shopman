@@ -211,9 +211,11 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
   it("não oferece corpo livre capaz de contornar a revisão", () => {
     const wrapper = panel();
 
+    // A trava é a AUSÊNCIA de campo de texto, não a frase que explica isso: sem
+    // campo, não há caminho para contornar a revisão, diga a tela o que disser.
     expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.text()).toContain("Texto protegido pelo fluxo de revisão");
-    expect(wrapper.text()).toContain("cria um anúncio para revisão");
+    expect(wrapper.find("input[type=text]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("O texto vem do modelo da campanha");
   });
 
   it("pede o produto antes da senha quando o modelo depende do catálogo", async () => {
@@ -287,7 +289,7 @@ describe("FireCampaignPanel — postagem pública", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("1 postagem pública");
-    expect(wrapper.text()).toContain("Não há seleção de contatos");
+    expect(wrapper.text()).toContain("Não escolhe contatos");
     expect(wrapper.text()).not.toContain("Para quem");
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();

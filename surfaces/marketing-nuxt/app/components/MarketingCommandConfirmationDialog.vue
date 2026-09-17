@@ -5,7 +5,7 @@ import { formatCount } from "~/presentation/campaign";
 import {
   deliveryActionLabel,
   includesDirectMessage,
-  includesPublicPublication,
+  includesPublicPost,
 } from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
 import { scheduleSummary } from "~/utils/marketingSchedule";
@@ -15,6 +15,9 @@ const props = defineProps<{
   busy?: boolean;
   error?: string;
   shopTimezone: string;
+  /** A imagem do anúncio que está sendo decidido, quando existe. O texto vem do
+   *  próprio comando; a imagem não, porque o servidor congela o artefato por hash. */
+  imageUrl?: string;
 }>();
 
 const emit = defineEmits<{
@@ -56,15 +59,12 @@ const ready = computed(() => {
 
 const title = computed(() => {
   if (!props.command) return "Confirmar decisão";
-  if (props.command.action === "fire") return "Confirmar este disparo?";
+  if (props.command.action === "fire") return "Criar para revisão?";
   if (props.command.action === "reject") return "Recusar este anúncio?";
-  if (props.command.body.publish_mode === "scheduled")
-    return "Confirmar este agendamento?";
-  if (includesDirectMessages.value && hasPublicPublication.value)
-    return "Confirmar esta entrega agora?";
-  return includesDirectMessages.value
-    ? "Confirmar envio agora?"
-    : "Confirmar publicação agora?";
+  if (props.command.body.publish_mode === "scheduled") return "Agendar?";
+  if (includesDirectMessages.value && hasPublicPost.value)
+    return "Disparar agora?";
+  return includesDirectMessages.value ? "Enviar agora?" : "Publicar agora?";
 });
 
 const isFire = computed(() => props.command?.action === "fire");
@@ -75,21 +75,69 @@ const publicPlatforms = computed(() =>
 const includesDirectMessages = computed(() =>
   includesDirectMessage(challengePlatforms.value),
 );
-const hasPublicPublication = computed(() =>
-  includesPublicPublication(challengePlatforms.value),
+const hasPublicPost = computed(() =>
+  includesPublicPost(challengePlatforms.value),
 );
 
-/** Este é o último botão do caminho e o único que faz alguma coisa sair — por isso é
- *  o único que pode dizer "disparar". Os anteriores levam a algum lugar, e agora dizem
- *  o lugar: "Revisar anúncio", "Visualizar consequência". */
+/** Este é o último botão do caminho e o único que faz alguma coisa sair. Os anteriores
+ *  levam a algum lugar e dizem o lugar ("Revisar anúncio", "Visualizar consequência");
+ *  este diz o ato, e o ato tem verbo próprio por destino — enviar, publicar, ou o
+ *  genérico disparar quando o anúncio faz os dois. */
 const confirmLabel = computed(() => {
   if (props.busy) return "Registrando…";
   if (isFire.value) return "Criar para revisão";
   if (props.command?.action === "reject") return "Recusar";
   return deliveryActionLabel({
+    platforms: challengePlatforms.value,
     scheduled: Boolean(challenge.value?.scheduled_for),
   });
 });
+
+/** O que vai sair. Estava faltando: a caixa contava PARA QUEM e ONDE, e não mostrava
+ *  O QUÊ — pedia a confirmação irreversível de um texto que o gestor não estava vendo.
+ *  Sai do corpo congelado do próprio comando, que é exatamente o que o servidor vai
+ *  publicar; ler do anúncio na tela mostraria uma edição posterior que não foi selada. */
+const outgoing = computed(() => {
+  const body = props.command?.body as Record<string, unknown> | undefined;
+  const text = typeof body?.body === "string" ? body.body.trim() : "";
+  // Com a cerquilha, como o gestor escreveu e como vai sair: o array guarda a palavra
+  // crua, e mostrar "padaria" onde sai "#padaria" não é a prévia do que sai.
+  const tags = Array.isArray(body?.hashtags)
+    ? (body.hashtags as unknown[])
+        .filter(
+          (tag): tag is string => typeof tag === "string" && tag.length > 0,
+        )
+        .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
+    : [];
+  return text || tags.length || props.imageUrl ? { text, tags } : null;
+});
+
+/** Uma linha por destino, e cada linha diz a grandeza daquele destino: mensagem conta
+ *  PESSOAS, postagem conta a si mesma.
+ *
+ *  ⚠️ As plataformas de mural não se juntam numa linha só. "Instagram, Facebook · 1
+ *  postagem em cada" obriga o leitor a distribuir o "1" entre as duas, e com uma
+ *  plataforma sozinha o "em cada" fica sem complemento e não quer dizer nada. Uma
+ *  linha por plataforma diz o mesmo sem pedir interpretação. */
+const reachLines = computed(() => {
+  const lines: string[] = [];
+  if (includesDirectMessages.value) {
+    const count = challenge.value?.audience_count ?? 0;
+    lines.push(
+      `WhatsApp · ${formatCount(count)} ${count === 1 ? "pessoa" : "pessoas"}`,
+    );
+  }
+  for (const platform of publicPlatforms.value) {
+    lines.push(`${platformResultLabel(platform)} · 1 postagem`);
+  }
+  return lines;
+});
+
+/** Postagem sem foto é um fato que só aparece depois de publicada, quando já não tem
+ *  conserto. Se o disparo tem mural e não tem imagem, a caixa diz isso ANTES. */
+const missingImageForPost = computed(
+  () => hasPublicPost.value && !props.imageUrl,
+);
 
 function submit() {
   if (!ready.value) return;
@@ -112,98 +160,67 @@ function submit() {
     <UiDialogContent class="sm:max-w-lg">
       <UiDialogHeader>
         <UiDialogTitle>{{ title }}</UiDialogTitle>
-        <!-- A descrição diz o que acontece DEPOIS deste botão. Dizer "nada sai até a
-             confirmação final" quando este botão É a confirmação final ensinava o
-             gestor a não acreditar na própria tela. -->
+        <!-- Uma linha. A descrição diz o que acontece DEPOIS do botão, e nada mais:
+             quem está aqui já decidiu, só quer conferir antes de não poder voltar. -->
         <UiDialogDescription>
-          <template v-if="isFire">
-            Isto cria um anúncio para revisão. Nada é publicado nem enviado
-            agora.
-          </template>
+          <template v-if="isFire">Nada sai agora; vai para revisão.</template>
           <template v-else-if="command?.action === 'reject'">
-            O anúncio não vai para nenhuma plataforma e não volta para a fila.
+            Não vai para lugar nenhum e não volta para a fila.
           </template>
           <template v-else-if="challenge?.scheduled_for">
-            Confira o que foi congelado. Depois de confirmar, a entrega acontece
-            sozinha no instante abaixo.
+            Depois de confirmar, sai sozinho na hora marcada.
           </template>
-          <template v-else>
-            Confira o que foi congelado. Depois de confirmar, isto sai — e não
-            tem desfazer.
-          </template>
+          <template v-else>Depois de confirmar, não tem desfazer.</template>
         </UiDialogDescription>
       </UiDialogHeader>
 
-      <div v-if="challenge" class="space-y-4">
-        <dl
-          class="grid gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm sm:grid-cols-2"
+      <div v-if="challenge" class="space-y-3">
+        <!-- ⚠️ O QUÊ vem antes do PARA QUEM: a caixa pedia uma confirmação sem volta
+             de um texto que o gestor não estava vendo em lugar nenhum da tela. -->
+        <div
+          v-if="outgoing"
+          class="flex gap-3 rounded-lg border border-border bg-muted/40 p-3"
         >
-          <div>
-            <dt class="text-xs text-muted-foreground">Versão</dt>
-            <dd class="font-semibold">{{ challenge.base_version }}</dd>
-          </div>
-          <div v-if="includesDirectMessages">
-            <dt class="text-xs text-muted-foreground">
-              Pessoas para mensagem direta
-            </dt>
-            <dd class="font-semibold">
-              {{ formatCount(challenge.audience_count) }}
-              {{ challenge.audience_count === 1 ? "pessoa" : "pessoas" }}
-            </dd>
-          </div>
-          <div v-else>
-            <dt class="text-xs text-muted-foreground">Público da publicação</dt>
-            <dd class="font-semibold">Público geral da plataforma</dd>
-          </div>
-          <div class="sm:col-span-2">
-            <dt class="text-xs text-muted-foreground">Plataformas</dt>
-            <dd class="font-semibold">
-              {{
-                challenge.platforms.map(platformResultLabel).join(", ") ||
-                "Nenhuma"
-              }}
-            </dd>
-          </div>
+          <img
+            v-if="imageUrl"
+            :src="imageUrl"
+            alt="Imagem do anúncio"
+            class="size-16 shrink-0 rounded object-cover"
+          />
           <div
-            v-if="
-              isFire &&
-              command &&
-              'productLabel' in command &&
-              command.productLabel
-            "
-            class="sm:col-span-2"
+            v-else-if="missingImageForPost"
+            class="flex size-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded border border-dashed border-warning/60 text-warning"
           >
-            <dt class="text-xs text-muted-foreground">Produto</dt>
-            <dd class="font-semibold">{{ command.productLabel }}</dd>
+            <Icon name="lucide:image-off" class="size-5" />
+            <span class="text-[10px] font-medium leading-none">Sem foto</span>
           </div>
-          <div v-if="challenge.scheduled_for" class="sm:col-span-2">
-            <dt class="text-xs text-muted-foreground">Instante absoluto</dt>
-            <dd class="font-semibold">
-              {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
-              ({{ shopTimezone }})
-            </dd>
+          <div class="min-w-0 text-sm">
+            <p v-if="outgoing.text" class="max-h-28 overflow-y-auto whitespace-pre-line">
+              {{ outgoing.text }}
+            </p>
+            <p v-if="outgoing.tags.length" class="mt-1 text-xs text-muted-foreground">
+              {{ outgoing.tags.join(" ") }}
+            </p>
           </div>
-        </dl>
+        </div>
 
-        <ul
-          class="space-y-1 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
-          aria-label="Forma de entrega por plataforma"
-        >
-          <li v-if="publicPlatforms.length">
-            <strong
-              >{{
-                publicPlatforms.map(platformResultLabel).join(", ")
-              }}:</strong
-            >
-            uma postagem pública por plataforma; não envia mensagem direta por
-            pessoa.
-          </li>
-          <li v-if="includesDirectMessages">
-            <strong>WhatsApp:</strong>
-            mensagem direta para as pessoas elegíveis, com consentimento
-            revalidado no envio.
+        <ul class="space-y-0.5 text-sm font-medium" aria-label="Para quem vai">
+          <li v-for="line in reachLines" :key="line">{{ line }}</li>
+          <li v-if="!reachLines.length" class="text-muted-foreground">
+            Nenhuma plataforma
           </li>
         </ul>
+
+        <p v-if="challenge.scheduled_for" class="text-sm font-medium">
+          {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
+        </p>
+
+        <p
+          v-if="isFire && command && 'productLabel' in command && command.productLabel"
+          class="text-sm"
+        >
+          {{ command.productLabel }}
+        </p>
 
         <div
           v-if="challenge.dual_control"

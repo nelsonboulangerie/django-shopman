@@ -753,11 +753,8 @@ function askToReject() {
       class="flex flex-wrap items-center gap-2 border-t border-border bg-muted/30 px-4 py-3"
     >
       <div class="w-full">
-        <p class="text-sm font-semibold">Como aprovar este anúncio</p>
         <p class="text-xs text-muted-foreground">
-          Aprovar confirma esta versão e define quando ela fica pronta para
-          entrega: agora, ou num horário que você escolhe. São duas decisões
-          separadas.
+          Aprovar sela esta versão. Agora, ou na hora que você marcar.
         </p>
       </div>
 

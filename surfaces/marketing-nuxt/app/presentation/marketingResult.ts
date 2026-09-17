@@ -234,7 +234,7 @@ export function recoveryActionExplanation(
     return "Só as falhas marcadas como recuperáveis entram de novo. Aceitos, confirmados e incertos não são reenviados.";
   }
   if (action.kind === "reconcile_unknown_delivery") {
-    return "Consulta o provedor para esclarecer o resultado. Esta ação não reenvia mensagem nem publicação.";
+    return "Pergunta ao provedor o que aconteceu. Não reenvia nada.";
   }
   if (action.kind === "cancel_announcement") {
     return "Cancela somente faixas que ainda não começaram. Uma entrega iniciada nunca é apresentada como desfeita.";
@@ -418,7 +418,7 @@ function errorStatus(error: unknown): number {
   );
 }
 
-/** WhatsApp é mensagem direta; o resto do catálogo é publicação pública. */
+/** WhatsApp é mensagem direta; o resto do catálogo é postagem pública. */
 const DIRECT_MESSAGE_PLATFORM = "whatsapp";
 
 /**
@@ -451,7 +451,7 @@ export function announcementDispatchNotice(input: {
       }. Nada foi publicado ainda.`
     : `${formatCount(audienceCount)} ${
         audienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis"
-      }. Nenhuma publicação ou mensagem foi enviada.`;
+      }. Nada saiu ainda.`;
   return {
     title: "Este anúncio acabou de ser criado pelo seu disparo",
     detail,
@@ -472,7 +472,7 @@ export function decisionOutcomeNotice(input: {
   action: "approve" | "reject";
   publishMode?: "now" | "scheduled";
   includesDirectMessage: boolean;
-  includesPublicPublication: boolean;
+  includesPublicPost: boolean;
   scheduledSummary?: string;
 }): { title: string; detail: string; tone: ResultTone; icon: string } {
   if (input.action === "reject") {
@@ -488,34 +488,30 @@ export function decisionOutcomeNotice(input: {
     const when = (input.scheduledSummary || "").trim();
     return {
       title: when ? `Agendado para ${when}` : "Agendado",
-      detail:
-        "Nada sai antes desse horário. O resultado por plataforma aparece abaixo quando a entrega começar.",
+      detail: "Nada sai antes disso. O resultado aparece abaixo.",
       tone: "quiet",
       icon: "lucide:calendar-clock",
     };
   }
-  if (input.includesDirectMessage && input.includesPublicPublication) {
+  if (input.includesDirectMessage && input.includesPublicPost) {
     return {
-      title: "Entrega autorizada agora",
-      detail:
-        "As mensagens e a publicação entraram na fila de entrega. Cada confirmação chega depois e aparece em “Resultado da entrega”, abaixo.",
+      title: "Disparado",
+      detail: "Mensagens e postagem na fila. Cada confirmação aparece abaixo.",
       tone: "ok",
       icon: "lucide:send",
     };
   }
   if (input.includesDirectMessage) {
     return {
-      title: "Envio autorizado agora",
-      detail:
-        "As mensagens entraram na fila de entrega. A confirmação de cada uma chega depois e aparece em “Resultado da entrega”, abaixo.",
+      title: "Enviado",
+      detail: "Mensagens na fila. Cada confirmação aparece abaixo.",
       tone: "ok",
       icon: "lucide:send",
     };
   }
   return {
-    title: "Publicação autorizada agora",
-    detail:
-      "A publicação entrou na fila. A confirmação da plataforma chega depois e aparece em “Resultado da entrega”, abaixo.",
+    title: "Publicado",
+    detail: "Postagem na fila. A confirmação aparece abaixo.",
     tone: "ok",
     icon: "lucide:megaphone",
   };

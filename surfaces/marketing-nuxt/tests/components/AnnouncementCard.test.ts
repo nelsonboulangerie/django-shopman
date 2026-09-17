@@ -270,14 +270,13 @@ describe("AnnouncementCard", () => {
     const schedule = wrapper.get("[data-testid=schedule-recommended]");
     const publishNow = wrapper.get("[data-testid=publish-now]");
 
-    expect(wrapper.text()).toContain("Como aprovar este anúncio");
-    expect(wrapper.text()).toContain("Aprovar confirma esta versão");
+    expect(wrapper.text()).toContain("Aprovar sela esta versão");
     expect(schedule.text()).toBe("Agendar");
     expect(schedule.classes()).toContain("border");
     expect(schedule.classes()).not.toContain("bg-primary");
     expect(publishNow.text()).toContain("Visualizar consequência");
     expect(publishNow.classes()).toContain("bg-primary");
-    expect(wrapper.text()).toContain("duas decisões separadas");
+    expect(wrapper.text()).toContain("Agora, ou na hora que você marcar");
     expect(wrapper.text()).not.toContain("recomendado");
   });
 

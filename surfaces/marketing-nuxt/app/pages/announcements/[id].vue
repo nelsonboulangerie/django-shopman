@@ -33,7 +33,8 @@ import {
 // que as três envelhecessem separadas.
 import {
   includesDirectMessage,
-  includesPublicPublication,
+  includesPublicPost,
+  outgoingImageUrl,
 } from "~/presentation/marketingDelivery";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
@@ -158,7 +159,7 @@ const decisionNotice = computed(() => {
     action: outcome.action,
     publishMode: outcome.publishMode,
     includesDirectMessage: includesDirectMessage(outcome.platforms),
-    includesPublicPublication: includesPublicPublication(outcome.platforms),
+    includesPublicPost: includesPublicPost(outcome.platforms),
     scheduledSummary: outcome.scheduledFor
       ? scheduleSummary(outcome.scheduledFor, shopTimezone.value)
       : "",
@@ -676,6 +677,7 @@ useHead({ title: "Anúncio" });
       :busy="confirmingDecision"
       :error="decisionError"
       :shop-timezone="shopTimezone"
+      :image-url="announcement ? outgoingImageUrl(announcement) : ''"
       @confirm="confirmServerDecision"
       @cancel="cancelServerDecision"
     />
