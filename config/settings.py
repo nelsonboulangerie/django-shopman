@@ -154,6 +154,12 @@ SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = _env_bool(
 SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED", False
 )
+# Mensagem direta de campanha por WhatsApp (ManyChat, ADR-009) no ledger durável.
+# A flag só REGISTRA o adapter: quem recebe continua decidido por
+# SHOPMAN_MARKETING_WHATSAPP_MODE (blocked/canary/open) na última porta.
+SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", False
+)
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -745,6 +751,10 @@ if SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED:
 if SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED:
     SHOPMAN_MARKETING_DELIVERY_ADAPTERS["tiktok"] = (
         "shopman.shop.adapters.marketing_delivery_tiktok"
+    )
+if SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["whatsapp"] = (
+        "shopman.shop.adapters.marketing_delivery_whatsapp"
     )
 
 # ── Machine (courier — despacho de entregadores) ───────────────────

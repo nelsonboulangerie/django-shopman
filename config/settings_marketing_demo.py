@@ -21,6 +21,9 @@ SHOPMAN_MARKETING_DELIVERY_ADAPTERS = dict.fromkeys(
     ("instagram", "facebook", "google_business", "whatsapp"),
     "shopman.shop.adapters.marketing_delivery_console",
 )
+# O adapter real do WhatsApp (ManyChat) nunca entra neste perfil: a lane termina no
+# simulador acima, mesmo que a env de plataforma esteja ligada na máquina.
+SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = False
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = True
 SHOPMAN_MARKETING_SIMULATION_FLOWS = (
     ("local_marketing_e2e", "Fluxo local — sem envio externo"),
