@@ -62,6 +62,34 @@ describe('useFavoritesState', () => {
     expect(fav.isFavorite('SONHO')).toBe(false) // revertido ao estado anterior
   })
 
+  it('the bell follows the server after the heart — and unfavoriting keeps the alert', async () => {
+    await authed(true)
+    const bells = useState<Record<string, boolean>>('stock-notify-subscribed-overrides', () => ({}))
+    bells.value = {}
+    const fav = await loadFavorites()
+
+    fetchMock.mockResolvedValueOnce({ ok: true, is_favorite: true, is_notify_subscribed: true, stock_alert_noted: true })
+    await fav.toggle('BAGUETE', false)
+    expect(bells.value.BAGUETE).toBe(true)
+
+    // Desfavoritar não cancela o aviso: o servidor diz que o sino segue ativo.
+    fetchMock.mockResolvedValueOnce({ ok: true, is_favorite: false, is_notify_subscribed: true, stock_alert_noted: false })
+    await fav.toggle('BAGUETE', true)
+    expect(bells.value.BAGUETE).toBe(true)
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('DELETE')
+  })
+
+  it('a response without the bell leaves the projection in charge', async () => {
+    await authed(true)
+    const bells = useState<Record<string, boolean>>('stock-notify-subscribed-overrides', () => ({}))
+    bells.value = {}
+    fetchMock.mockResolvedValue({})
+    const fav = await loadFavorites()
+
+    await fav.toggle('CIABATTA', false)
+    expect('CIABATTA' in bells.value).toBe(false)
+  })
+
   it('removing a favorite uses DELETE', async () => {
     await authed(true)
     fetchMock.mockResolvedValue({})
