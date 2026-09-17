@@ -15,7 +15,7 @@ export function useCampaigns() {
     {
       key: "marketing-list",
       server: true,
-      onResponseError: operatorSessionOnError,
+      onResponseError: marketingSessionOnError,
     },
   );
   const { data: optionsData } = useFetch<OptionsResponse>(
@@ -23,7 +23,7 @@ export function useCampaigns() {
     {
       key: "marketing-options",
       server: true,
-      onResponseError: operatorSessionOnError,
+      onResponseError: marketingSessionOnError,
     },
   );
 

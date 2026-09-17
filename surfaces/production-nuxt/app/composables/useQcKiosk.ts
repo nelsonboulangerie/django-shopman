@@ -16,7 +16,7 @@ import {
   reviewProductionQuality,
 } from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
-import { newProductionMutationKey } from "~/utils/api";
+import { newProductionMutationKey } from "~/utils/mutationKey";
 import {
   useProductionMutationGuard,
   type ProductionMutationBlock,

@@ -12,7 +12,7 @@ import {
   type QCKioskProjection,
 } from "~/generated/productionContract";
 import type { MaybeRefOrGetter } from "vue";
-import { newProductionMutationKey } from "~/utils/api";
+import { newProductionMutationKey } from "~/utils/mutationKey";
 import {
   useProductionMutationGuard,
   type ProductionMutationMetadata,

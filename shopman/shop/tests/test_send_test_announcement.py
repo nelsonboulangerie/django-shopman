@@ -39,7 +39,7 @@ def adapter(settings, monkeypatch):
     fake = _Adapter()
     settings.SHOPMAN_MARKETING_TEST_TARGETS = {
         TARGET_REF: {
-            "label": "Aparelho verificado",
+            "label": "Número verificado",
             "recipient": RECIPIENT,
             "backend": "manychat",
             "sandbox": True,

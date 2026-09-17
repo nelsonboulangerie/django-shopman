@@ -35,7 +35,7 @@ class RuleParamSchema:
 RULE_PARAM_SCHEMAS: dict[str, RuleParamSchema] = {
     "happy_hour": RuleParamSchema(
         ref="happy_hour",
-        title="Happy hour — janela de desconto",
+        title="Happy hour · janela de desconto",
         params=(
             RuleParam("discount_percent", PERCENT, "Desconto (%)",
                       "Percentual aplicado a cada item dentro da janela."),

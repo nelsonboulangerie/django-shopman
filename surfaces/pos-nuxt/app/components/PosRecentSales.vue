@@ -43,7 +43,7 @@ const props = defineProps<{
 // (tela de resultado, chip de PIX pendente) e recarregar a Projection.
 const emit = defineEmits<{ "update:open": [boolean]; cancelled: [string] }>();
 
-const apiPath = usePosApiPath();
+const apiPath = useApiPath();
 const agent = useCounterAgent(computed(() => props.pos));
 // A bobina só existe onde existe agente; sem ele os botões de impressão
 // esconderiam uma promessa que esta lista não tem como cumprir.

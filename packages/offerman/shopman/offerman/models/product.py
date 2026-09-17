@@ -201,7 +201,7 @@ class Product(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.sku} - {self.name}"
+        return f"{self.sku} · {self.name}"
 
     # Scalar fields whose change should re-project the product to external channels.
     # ``image_url`` matters for social/commerce catalogs (Google/Meta reject items

@@ -125,7 +125,11 @@ motivo, versão, esquema, idempotência e confirmação. O cliente não deduz au
 nem transição a partir do status.
 
 Comandos sensíveis usam CAS, idempotência, confirmação contextual e comprovante.
-Conforme consequência e limiar, exigem nova autenticação, TOTP ou duplo controle.
+A cerimônia mede a consequência, contada em destinos externos: `fire` não pede nenhuma
+(modo `none` — cria rascunho em revisão e não entrega); abaixo de 50 destinos é resumo +
+um toque; de 50 a 499, frase digitada + senha; de 500 em diante, frase + TOTP + duplo
+controle. Agendar não é mais barato que entregar agora. Ver
+[ADR-031](../decisions/adr-031-marketing-ceremony-proportional-to-consequence.md).
 Outbox, público selado, artefato imutável, destinos e tentativas formam o grafo durável.
 `accepted_unconfirmed`, `confirmed`, falha final, falha repetível e `unknown` são estados
 distintos. `unknown` nunca recebe repetição cega.

@@ -17,7 +17,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 const contextHeader = ref<HTMLElement | null>(null);
 const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined, { box: "border-box" });
 
-const apiPath = usePosApiPath();
+const apiPath = useApiPath();
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
 // The Django admin (login) lives on its own operator host (api.<zona>), a different

@@ -265,11 +265,17 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
+  // O único retrato de caixa de confirmação que sobrou, porque é a única caixa que
+  // sobrou: o disparo deixou de pedir cerimônia (ADR-031). Ela diz o efeito pelo nome.
   test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
     await page.getByRole("button", { name: "Entregar agora" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
+    await expect(page.getByRole("dialog")).toContainText("Entregar agora");
+    await expect(page.getByRole("dialog")).not.toContainText(
+      "Confirmar consequência",
+    );
     await expectStableScreenshot(page, "announcement-card__confirm-now", V390, "light", { fullPage: false });
   });
 
@@ -489,15 +495,6 @@ test.describe("disparo manual seguro", () => {
     await expectStableScreenshot(page, "fire-campaign__count-loading", V390, "light", { fullPage: false });
   });
 
-  test("confirmação mostra a consequência calculada pelo servidor", async ({ page }) => {
-    await openScenario(page, "fire-normal", "/campaigns", V390);
-    await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
-    await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByRole("heading", { name: "Confirmar este disparo?" })).toBeVisible();
-    await expect(page.getByText(/cria somente um anúncio para revisão/i)).toBeVisible();
-    await expectStableScreenshot(page, "fire-campaign__confirmation", V390, "light", { fullPage: false });
-  });
 
   test("throttle explica a espera sem perder o painel", async ({ page }) => {
     await openScenario(page, "fire-throttled", "/campaigns", V768);
@@ -514,9 +511,6 @@ test.describe("disparo manual seguro", () => {
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Disparar agora" }).click();
-    await page.getByLabel("Sua senha").fill("senha-visual");
-    await page.getByLabel("Digite exatamente").fill("PUBLICAR 48");
-    await page.getByRole("button", { name: "Criar para revisão" }).click();
     await expect(page.getByLabel("Disparar agora").getByRole("alert")).toContainText("mudou em outra sessão");
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
   });
@@ -526,9 +520,9 @@ test.describe("disparo manual seguro", () => {
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Disparar agora" }).click();
-    await page.getByLabel("Sua senha").fill("senha-visual");
-    await page.getByLabel("Digite exatamente").fill("PUBLICAR 48");
-    await page.getByRole("button", { name: "Criar para revisão" }).click();
+    // Sem senha e sem frase digitada: o servidor declara o disparo dispensado de
+    // cerimônia (ADR-031) e o navegador consome o token sozinho. O toque em "Disparar
+    // agora" é a última coisa que o gestor faz antes de estar na revisão.
     await expect(page).toHaveURL(/\/announcements\/\d+\?dispatch=new#review/);
     await expect(page.getByText("Este anúncio acabou de ser criado pelo seu disparo")).toBeVisible();
     await expect(page.getByText(/Nenhuma publicação ou mensagem foi enviada/)).toBeVisible();

@@ -296,10 +296,6 @@ envs:
     value: "https://STORE_DOMAIN"
     scope: RUN_TIME
     type: GENERAL
-  - key: DOORMAN_MESSAGE_SENDER_CLASS
-    value: shopman.doorman.senders.LogSender
-    scope: RUN_TIME
-    type: GENERAL
   - key: DATABASE_URL
     value: "${postgres.shopman-headless-pool.DATABASE_URL}"
     scope: RUN_TIME

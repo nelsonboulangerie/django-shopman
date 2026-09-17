@@ -107,6 +107,48 @@ describe("comando seguro de disparo", () => {
     expect(command.pendingCommand.value).toBeNull();
   });
 
+  it("consome sozinho o challenge que o servidor declarou dispensado", async () => {
+    // `mode: "none"` é o servidor dizendo que este comando não tem consequência
+    // externa. Abrir uma caixa para repetir o que a tela anterior já mostrou pedia
+    // ao gestor uma decisão que ele acabou de tomar — e era metade do motivo pelo
+    // qual disparar um teste parecia protocolo.
+    const dispensed = { ...challenge, mode: "none" as const, step_up: "none" as const, typed_phrase: "" };
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce({
+        data: { code: "confirmation_required", confirmation: dispensed },
+      })
+      .mockResolvedValueOnce(response);
+    Object.assign(globalThis, { $fetch: fetcher });
+    const command = useCampaignFireCommand();
+
+    const accepted = await command.begin({ rule, action, audience: {} });
+
+    expect(accepted?.receipt.ref).toBe("fire-receipt");
+    expect(command.pendingCommand.value).toBeNull();
+    // Duas chamadas: o pedido que colheu o desafio e o que consumiu o token. Nenhuma
+    // ida ao step-up, porque o servidor não pediu nenhuma.
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]![1]).toMatchObject({
+      headers: { "Idempotency-Key": "11111111-1111-4111-8111-111111111111" },
+      body: { base_version: 7, confirmation_token: "fire-token" },
+    });
+  });
+
+  it("continua parando na caixa quando o servidor pede frase ou senha", async () => {
+    // A política é do servidor. Se ele voltar a cobrar cerimônia no disparo, o
+    // navegador obedece — o atalho vale para `none`, não para "disparo".
+    const fetcher = vi.fn().mockRejectedValue({
+      data: { code: "confirmation_required", confirmation: challenge },
+    });
+    Object.assign(globalThis, { $fetch: fetcher });
+    const command = useCampaignFireCommand();
+
+    expect(await command.begin({ rule, action, audience: {} })).toBeNull();
+    expect(command.pendingCommand.value?.challenge.mode).toBe("typed");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("sela o produto escolhido na intenção e o mostra durante a confirmação", async () => {
     const fetcher = vi.fn().mockRejectedValue({
       data: { code: "confirmation_required", confirmation: challenge },

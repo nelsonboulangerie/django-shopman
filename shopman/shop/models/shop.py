@@ -645,4 +645,4 @@ class NotificationTemplate(models.Model):
         verbose_name_plural = "modelos de mensagem"
 
     def __str__(self):
-        return f"{self.event} — {self.subject}"
+        return f"{self.event} · {self.subject}"

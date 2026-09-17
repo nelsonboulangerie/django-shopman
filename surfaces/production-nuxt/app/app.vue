@@ -8,7 +8,7 @@
 // O menuboard paralelo foi aposentado: a TV canônica pertence ao Django, por ref e
 // credencial. D4 definirá refs/cutover; este app não adivinha um destino.
 const OPERATOR_PERM = "backstage.operate_production";
-const { canIdentify, locked, mustChange, operator, lock } =
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 const { allowed: reportsAllowed } = useReportsAccess();
 const { canView: recipesAllowed } = useRecipeBookAccess();
@@ -97,7 +97,10 @@ async function goToRecipes() {
         <NuxtPage />
       </div>
     </div>
-    <OperatorLogin v-if="!canIdentify" />
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="a produção" @retry="refresh()" />
+    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />

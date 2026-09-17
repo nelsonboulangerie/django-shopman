@@ -6,7 +6,7 @@ import type { HubResponse, HubTileProjection, OperatorHubProjection } from "~/ty
  * pronta (reload cai na tela certa); erro (401) sobe o gate de login na shell.
  */
 export async function useOperatorHub() {
-  const apiPath = useHubApiPath();
+  const apiPath = useApiPath();
   const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
   const { data, pending, error, refresh } = await useFetch<HubResponse>(

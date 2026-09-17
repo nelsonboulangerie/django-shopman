@@ -1574,9 +1574,12 @@ class TestManualFire:
         assert confirmation["resource_ref"] == f"campaign:{rule.pk}"
         assert confirmation["base_version"] == rule.version
         assert confirmation["audience_count"] == 1
-        # Duas plataformas públicas = duas consequências, ainda que a audiência
-        # de contatos tenha uma única pessoa elegível.
-        assert confirmation["typed_phrase"] == "PREPARAR 2"
+        # Disparar não publica e não envia: o desafio existe para congelar versão,
+        # permissão e público — não para cobrar do gestor uma senha por um rascunho.
+        # O portão da consequência é a aprovação, e ele continua inteiro.
+        assert confirmation["mode"] == "none"
+        assert confirmation["step_up"] == "none"
+        assert confirmation["typed_phrase"] == ""
         assert Announcement.objects.filter(rule=rule).count() == 0
         assert MarketingCommandReceipt.objects.count() == 0
 

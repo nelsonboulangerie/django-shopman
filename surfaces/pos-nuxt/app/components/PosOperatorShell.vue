@@ -26,7 +26,10 @@ const { expired: sessionExpired } = useOperatorSession();
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
 const OPERATOR_PERM = "cashman.operate_pos";
-const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
+// `refreshOperatorSession` e não `refresh`: `refresh` aqui já é o da Projection
+// do terminal (`usePosTerminal`, linha 17). São duas leituras diferentes.
+const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock } =
+  useOperatorLock(OPERATOR_PERM);
 
 // Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
 // turno aberto/fechado feitos em OUTRA estação chegam por push; no evento,
@@ -62,7 +65,15 @@ usePosAutoLock({
 // antessala respondeu 403), ou quando a sessão expirou no meio do turno. Estação
 // reconhecida e sem ninguém identificado → `<OperatorLock>` (PIN/crachá), nunca
 // a tela de senha: senão a loja pediria credencial de gestor toda manhã.
-const needsLogin = computed(() => !canIdentify.value || sessionExpired.value);
+//
+// ⚠️ `sessionUnavailable` entra aqui, e não é detalhe: `canIdentify` é só
+// `session !== null`, então QUALQUER falha da consulta (502/503 no redeploy,
+// rede caindo) zerava a resposta e subia a tela de senha no balcão — com a
+// sessão viva. Provado em runtime com o servidor devolvendo 503: a tela pedia
+// usuário e senha. Erro de rede não é sessão morta.
+const needsLogin = computed(
+  () => (!canIdentify.value && !sessionUnavailable.value) || sessionExpired.value,
+);
 
 // Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
 // passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
@@ -83,6 +94,12 @@ function reloadIntoStation() {
     <OperatorLock
       v-if="canIdentify && (locked || mustChange)"
       :perm="OPERATOR_PERM"
+    />
+
+    <OperatorSessionUnavailable
+      v-if="sessionUnavailable"
+      scope="o caixa"
+      @retry="refreshOperatorSession()"
     />
 
     <!-- 48px nos campos é deliberado no caixa: digitação rápida em tela de toque. -->

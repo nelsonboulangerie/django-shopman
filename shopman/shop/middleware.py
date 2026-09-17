@@ -155,5 +155,17 @@ class OperatorSessionDomainMiddleware:
         api_host = (getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip().lower()
         if api_host and host == api_host:
             return True
+        # ⚠️ O ADMIN NÃO É DA ZONA DE OPERADOR, apesar do sufixo. Ele mora em
+        # `admin.boulangerie.com.br`, que TERMINA em `.boulangerie.com.br` e por
+        # isso casava na regra de sufixo abaixo — a sessão do Admin saía com
+        # `Domain=.boulangerie.com.br` e era enviada aos 9 subdomínios de
+        # operador sem precisar. Isso é colateral de cronologia, não desenho: o
+        # middleware nasceu em 25/06 (WP-AUTH-1), quando a zona de operador era
+        # `.boulangerie.com.br` e o Admin não morava lá; o host `admin.` foi
+        # criado em 15/08 e herdou o sufixo em silêncio. Sessão de Admin é
+        # host-only, como a do cliente.
+        admin_host = (getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip().lower()
+        if admin_host and host == admin_host:
+            return False
         bare = cookie_domain.lstrip(".").lower()
         return host == bare or host.endswith("." + bare)

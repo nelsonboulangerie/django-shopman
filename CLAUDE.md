@@ -262,6 +262,16 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
   - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
+- **"dispositivo", nunca "aparelho".** O objeto que o operador segura — tablet, celular,
+  terminal, o que recebe aviso e guarda confiança — se chama **dispositivo** em toda
+  superfície de operador e em todo texto de tela do Admin. ⚠️ Duas ressalvas que são
+  regra, não exceção: a **maquininha de cartão tem nome próprio** (o entregador leva uma
+  *maquininha*, não um dispositivo) e o **Storefront fica de fora** por concessão
+  explícita do dono — é superfície de cliente final, com voz própria. A regra vale para
+  STRING (o que chega a alguém), não para comentário e docstring. Trava:
+  `shopman/backstage/tests/test_vocabulario_de_tela.py`, varredura por AST sobre 1.083
+  arquivos. Esta regra não estava escrita em lugar nenhum até 17/09/2026, e foi por isso
+  que 104 arquivos derivaram e o convite de instalação dos oito apps nasceu errado.
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
   - **HTMX**: toda comunicação com servidor (GET, POST, polling, swaps). Incluindo `hx-on::before-request`/`after-request` para estados visuais de loading atrelados a requests.
