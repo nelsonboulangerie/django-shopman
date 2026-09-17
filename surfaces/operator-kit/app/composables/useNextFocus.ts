@@ -1,12 +1,32 @@
 import type { MaybeRefOrGetter } from "vue";
 import {
   FOCUS_CONTROL_ATTRIBUTE,
+  FOCUS_OBSTRUCTION_ATTRIBUTE,
   focusTargetSelector,
   needsInitialReveal,
   revealPlan,
   type RevealOptions,
   type RevealPlan,
 } from "../presentation/nextFocus";
+
+// O QUE FLUTUA NA BASE DA TELA (card de ação, barra) come área utilizável.
+// Vive no escopo do módulo porque dois mecanismos leem o mesmo fato: o próximo
+// foco, para saber se o bloco está mesmo à vista, e a dica de "tem mais
+// abaixo", para flutuar logo acima dele.
+//
+// Só conta o que está ancorado embaixo: um obstáculo que rolou para fora do
+// caminho não obstrui nada.
+export function measureBottomObstruction(): number {
+  if (!import.meta.client) return 0;
+  let maior = 0;
+  for (const el of document.querySelectorAll<HTMLElement>(`[${FOCUS_OBSTRUCTION_ATTRIBUTE}]`)) {
+    const rect = el.getBoundingClientRect();
+    if (rect.height <= 0) continue;
+    if (rect.bottom < window.innerHeight / 2) continue;
+    maior = Math.max(maior, window.innerHeight - rect.top);
+  }
+  return maior;
+}
 
 export type RevealTarget = string | Element | (() => Element | null | undefined) | null | undefined;
 
@@ -71,8 +91,25 @@ export function useNextFocus(source?: MaybeRefOrGetter<string | null | undefined
   function revealNow(block: HTMLElement, overrides: RevealOptions, initial: boolean) {
     const plan = revealPlan({ ...options, ...overrides }, reducedMotion());
     if (initial) {
+      const obstacle = measureBottomObstruction();
       const rect = block.getBoundingClientRect();
-      if (!needsInitialReveal({ top: rect.top, bottom: rect.bottom, viewportHeight: window.innerHeight })) return;
+      if (
+        !needsInitialReveal({
+          top: rect.top,
+          bottom: rect.bottom,
+          viewportHeight: window.innerHeight,
+          obstructedBottom: obstacle,
+        })
+      )
+        return;
+      // A CHEGADA TAMBÉM VAI PARA A LINHA DE FOCO, não para o mínimo necessário.
+      // Rolar é, em si, o aviso de que havia algo acima: quem quiser conferir
+      // sobe com um gesto. Parar no meio do caminho custaria a promessa que
+      // sustenta o mecanismo — o bloco de trabalho sempre no mesmo lugar.
+      //
+      // A margem embaixo continua valendo: sem ela um bloco curto encosta no
+      // card flutuante.
+      block.style.scrollMarginBottom = `${obstacle}px`;
     }
     if (plan.focus) focusControl(block);
     scrollTo(block, plan);
