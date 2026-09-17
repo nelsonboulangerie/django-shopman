@@ -8,9 +8,13 @@
 // Decorativa: `aria-hidden` e sem captura de clique. Quem usa leitor de tela
 // já sabe que a lista continua — a dica existe para o olho que não rolou.
 //
-// 40px é deliberado: a versão antiga, inline no bottom-sheet, tinha 28 e passava
-// despercebida; 44 já encosta nos 48 de alvo de toque e passa a se ler como
-// botão, que ela não é. Comparado nas três medidas em 375x667.
+// O QUE A IMPEDE DE SE LER COMO BOTÃO É A TRANSLUCIDEZ, NÃO O TAMANHO. Fundo
+// sólido com sombra vira chip clicável em qualquer medida; com o fundo a 60% e
+// sem sombra, o que sobra é o CHEVRON, e o círculo só o separa do conteúdo.
+// Por isso ela pôde crescer: 28 (a versão antiga, inline no bottom-sheet)
+// passava despercebida, e 44 com fundo sólido virava botão — 44 translúcida,
+// não. O anel fica bem fraco para garantir a borda sobre fundo escuro (KDS),
+// sem devolver a aparência de controle. Comparado em 375x667.
 import { hintMotionClass } from '~/presentation/moreBelow'
 
 const { sentinel, visible, offset } = useMoreBelow()
@@ -46,10 +50,10 @@ const motionClass = computed(() => hintMotionClass(reducedMotion.value))
           <div class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent" />
           <div class="relative flex justify-center">
             <span
-              class="flex size-10 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-border backdrop-blur-sm"
+              class="flex size-11 items-center justify-center rounded-full bg-background/60 text-foreground ring-1 ring-border/40 backdrop-blur-sm"
               :class="motionClass"
             >
-              <Icon name="lucide:chevron-down" class="size-5" />
+              <Icon name="lucide:chevron-down" class="size-6" />
             </span>
           </div>
         </div>

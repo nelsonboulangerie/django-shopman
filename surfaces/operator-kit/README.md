@@ -133,8 +133,10 @@ Contrato:
   some com conteúdo ainda escondido atrás do card.
 - A dica flutua logo acima do obstáculo, com degradê por baixo: sem ele a pílula boia
   sobre um texto qualquer e vira artefato.
-- Decorativa: `aria-hidden`, sem captura de clique. 40px é deliberado (28 passava
-  despercebida; 44 se lê como botão).
+- Decorativa: `aria-hidden`, sem captura de clique. **O que a impede de se ler como
+  botão é a translucidez, não o tamanho**: fundo sólido com sombra vira chip clicável
+  em qualquer medida. Com o fundo a 60% e sem sombra, o que sobra é o chevron, e o
+  círculo só o separa do conteúdo — por isso ela pôde crescer de 28 para 44.
 - `prefers-reduced-motion`: a dica fica **parada**, não some.
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
