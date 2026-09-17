@@ -252,6 +252,16 @@ test.describe("cartão de anúncio", () => {
       field.scrollLeft = 0;
       field.blur();
     });
+    // A edição dispara dois debounces de 400 ms: o autosave do rascunho e a
+    // prévia fiel. Capturar antes deles fotografava "Atualizando todas as
+    // plataformas…" sem o aviso de rascunho, e a corrida era decidida pela
+    // velocidade da máquina. O baseline é o estado assentado: rascunho salvo e
+    // prévia devolvida para o texto novo.
+    await expect(
+      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+    ).toBeVisible();
+    await expect(page.getByTestId("preview-status")).toHaveCount(0);
+    await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
