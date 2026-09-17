@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { applyKioskUpdate, idleReloadPathAllowed } from "../presentation/pwaRuntime";
-
 interface OperatorPwaRuntimeConfig {
   app?: string;
   kiosk?: boolean;
@@ -15,10 +13,10 @@ withDefaults(defineProps<{
   showPrompts: true,
 });
 
-const config = (useRuntimeConfig().public.operatorPwa || {}) as OperatorPwaRuntimeConfig;
+const publicConfig = useRuntimeConfig().public as { operatorPwa?: OperatorPwaRuntimeConfig; appVersion?: string };
+const config = (publicConfig.operatorPwa || {}) as OperatorPwaRuntimeConfig;
 const enabled = Boolean(config.app);
 const route = useRoute();
-const idleReloadSafe = computed(() => idleReloadPathAllowed(config.idleReloadPaths || [], route.path));
 
 // As APIs de aparelho continuam progressivas: uma surface sem suporte preserva
 // exatamente o comportamento web atual. Só capabilities declaradas no manifesto
@@ -27,44 +25,29 @@ useWakeLock({ enabled: enabled && config.wakeLock === true });
 // Trava de giro escolhida no rail: o navegador a solta ao recarregar, então o app
 // instalado a reaplica no boot (e ao voltar do segundo plano / da tela cheia).
 useOrientationLock({ restore: enabled });
+// Tela cheia progressiva do kiosk. A ociosidade que decide a troca de versão é a
+// do `usePwaAutoUpdate` — uma só, com a mesma régua em todas as superfícies.
+useKioskMode({ enabled: enabled && config.kiosk === true, idleMs: 60_000 });
 
-const pwaUpdate = usePwaUpdate();
-const applyingIdleUpdate = ref(false);
-
-async function applyIdleUpdate() {
-  await applyKioskUpdate({
-    allowedPaths: config.idleReloadPaths || [],
-    path: route.path,
-    idle: kiosk.isIdle.value,
-    needsRefresh: pwaUpdate.needRefresh.value,
-    applying: applyingIdleUpdate.value,
-  }, async () => {
-    applyingIdleUpdate.value = true;
-    const accepted = await pwaUpdate.update();
-    if (!accepted) applyingIdleUpdate.value = false;
-    return accepted;
-  });
-}
-
-const kiosk = useKioskMode({
-  enabled: enabled && config.kiosk === true,
-  idleMs: 60_000,
-  onIdle: () => applyIdleUpdate(),
+// Sonda periódica + aplicação automática em momento seguro. `idleReloadPaths` vazio
+// (Central, Gestor, Compras, B.I., Marketing) mantém só o aviso ao operador.
+const { reasons } = useOperatorReloadHold();
+const autoUpdate = usePwaAutoUpdate({
+  enabled,
+  app: config.app || "operator",
+  appVersion: String(publicConfig.appVersion || ""),
+  allowedPaths: () => config.idleReloadPaths || [],
+  path: () => route.path,
+  holds: () => reasons.value,
 });
-
-// Se o worker terminar de baixar quando o kiosk já está ocioso, não existe novo
-// evento de atividade para disparar o callback. Esta observação fecha essa janela.
-watch(
-  [kiosk.isIdle, pwaUpdate.needRefresh, idleReloadSafe],
-  () => void applyIdleUpdate(),
-  { flush: "post" },
-);
 </script>
 
 <template>
   <ClientOnly v-if="enabled && showPrompts">
     <OperatorPwaInstallInvite :app="config.app!" />
-    <OperatorPwaUpdatePrompt v-if="!applyingIdleUpdate" />
+    <!-- Aplicando sozinho, o aviso sairia da tela no mesmo instante em que ela
+         recarrega: pisca sem ninguém para ler. -->
+    <OperatorPwaUpdatePrompt v-if="!autoUpdate.applying.value" />
     <OperatorPushInvite v-if="config.push && config.app !== 'hub'" />
   </ClientOnly>
 </template>

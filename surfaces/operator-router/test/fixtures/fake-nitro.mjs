@@ -42,6 +42,26 @@ const server = createServer((req, res) => {
     res.end(body);
     return;
   }
+  // A dupla que decide se uma versão nova ENTRA no app instalado. Os valores são os
+  // que o Nitro de verdade emite: `routeRules["/sw.js"]` da capability PWA do
+  // operator-kit e o handler `/manifest.webmanifest`. O corpo carrega o nome do app
+  // porque cada host tem o SEU — o roteador não pode servir o worker do vizinho.
+  if (url.pathname === "/sw.js") {
+    res.writeHead(200, {
+      "content-type": "application/javascript; charset=utf-8",
+      "cache-control": "no-cache, no-store, must-revalidate",
+    });
+    res.end(`self.SHOPMAN_APP = ${JSON.stringify(name)};`);
+    return;
+  }
+  if (url.pathname === "/manifest.webmanifest") {
+    res.writeHead(200, {
+      "content-type": "application/manifest+json; charset=utf-8",
+      "cache-control": "public, max-age=3600",
+    });
+    res.end(JSON.stringify({ id: "/", name, start_url: "/?source=pwa" }));
+    return;
+  }
   if (url.pathname === "/post") {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));

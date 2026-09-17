@@ -84,6 +84,27 @@ describe("roteador com dois Nitro de verdade (processos filhos)", () => {
     assert.equal(noXff.xff, null, "o roteador não inventa X-Forwarded-For");
   });
 
+  test("sw.js e manifest saem POR HOST, com o cache-control que o app mandou", async () => {
+    // Objetivo do teste: o roteador não pode ser o ponto onde a atualização congela.
+    // O `sw.js` é a porta pela qual toda versão nova entra — servido de cache, a
+    // sonda periódica (`registration.update()`) perguntaria ao disco do navegador e
+    // responderia "nada novo" para sempre, que é exatamente o sintoma medido no PDV
+    // instalado em 17/09.
+    for (const [host, app] of [["alpha.test", "alpha"], ["beta.test", "beta"]]) {
+      const sw = await http({ port, host, path: "/sw.js" });
+      assert.equal(sw.status, 200);
+      assert.equal(sw.headers["cache-control"], "no-cache, no-store, must-revalidate");
+      assert.match(sw.body, new RegExp(`SHOPMAN_APP = "${app}"`), "o worker é o do host, não o do vizinho");
+
+      const manifest = await http({ port, host, path: "/manifest.webmanifest" });
+      assert.equal(manifest.status, 200);
+      assert.equal(manifest.headers["content-type"], "application/manifest+json; charset=utf-8");
+      // O manifesto pode ser cacheado — ele não decide versão de código.
+      assert.equal(manifest.headers["cache-control"], "public, max-age=3600");
+      assert.equal(JSON.parse(manifest.body).name, app);
+    }
+  });
+
   test("corpo de POST atravessa", async () => {
     const res = await http({ port, host: "beta.test", path: "/post", method: "POST", body: "venda=42", headers: { "content-type": "text/plain", "content-length": "8" } });
     assert.equal(res.status, 201);

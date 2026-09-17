@@ -45,6 +45,14 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: true,
       kiosk: false,
+      // SÓ a tela de venda, e mesmo nela só com o balcão vazio: as razões de espera
+      // (`useOperatorReloadHold` em `pages/index.vue`) barram carrinho, comanda,
+      // pagamento e resultado na tela. `/session` fica de fora porque a contagem de
+      // fechamento é digitada e não está salva; `/display` fica de fora porque a tela
+      // do cliente nunca é tocada — seria sempre "ociosa" e recarregaria no meio da
+      // venda de outra estação; `/tickets` fica de fora porque a seleção de fichas
+      // para impressão é rascunho.
+      idleReloadPaths: ["/"],
       push: { surfaceRef: "pos", categories: ["order", "system"] },
       shortcuts: [
         { name: "Venda", shortName: "Venda", url: "/" },

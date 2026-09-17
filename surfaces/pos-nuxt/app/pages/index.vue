@@ -240,6 +240,26 @@ onBeforeUnmount(() => {
   paymentHold.value = false;
 });
 
+// RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que
+// travar a tela: o auto-lock só adia por pagamento em curso, mas um reload apaga
+// qualquer rascunho. O PDV declara aqui, pelo nome, tudo que ele tem na mão — e o
+// `usePwaAutoUpdate` do kit não aplica nada enquanto uma dessas razões estiver de
+// pé. Balcão vazio (carrinho limpo, sem comanda, sem resultado na tela) é o único
+// momento em que a troca é invisível para quem opera.
+const { hold: holdReload } = useOperatorReloadHold();
+watchEffect(() => {
+  holdReload("sale_open", cart.items.length > 0 || unsaved.value);
+  holdReload("tab_open", Boolean(cart.tabRef));
+  holdReload("payment_open", checkoutMode.value || pixStatus.value === "polling");
+  holdReload("sale_result", Boolean(result.value));
+  holdReload("writing", busy.value || saving.value || firing.value || cancellingSale.value);
+});
+onBeforeUnmount(() => {
+  for (const reason of ["sale_open", "tab_open", "payment_open", "sale_result", "writing"]) {
+    holdReload(reason, false);
+  }
+});
+
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
 // Projection's Actions (label + enabled), never invented in the screen.
 const fireAction = computed(() => resolveAffordance(actions.value, "fire_tab"));
