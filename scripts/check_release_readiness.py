@@ -170,6 +170,7 @@ def build_report(
             _omotenashi_seed_check(),
             _preparation_shelf_life_review_check(profile=profile),
             _public_copy_review_check(profile=profile),
+            _product_image_host_check(profile=profile),
             _rules_load_check(),
             _gateway_smoke_check(),
             _gateway_sandbox_check(profile=profile),
@@ -523,6 +524,58 @@ def _preparation_shelf_life_review_check(*, profile: ReadinessProfile) -> Readin
         status="passed",
         message=f"{reviewed} validade(s) de preparo revisadas e assinadas.",
         details={"reviewed": reviewed},
+    )
+
+
+def _product_image_host_check(*, profile: ReadinessProfile, image_base: str | None = None) -> ReadinessCheck:
+    """Toda foto de produto mora no host dedicado de imagens, nunca no host de um site.
+
+    A foto quebrou duas vezes porque morava no host de um site que mudou de lugar
+    (`menu.` em 01/09, `www.` em 17/09/2026). O host dedicado vem de
+    SHOPMAN_PRODUCT_IMAGE_BASE; foto fora dele (host de site, placeholder externo)
+    avisa no alpha e reprova no go-live.
+    """
+    from urllib.parse import urlparse
+
+    from shopman.offerman.models import Product
+
+    base = (image_base if image_base is not None else os.environ.get("SHOPMAN_PRODUCT_IMAGE_BASE", "")).strip()
+    media_host = (urlparse(base).hostname or "").lower()
+    if not media_host:
+        return ReadinessCheck(
+            id="catalog.product_image_host",
+            title="Product image host",
+            status="failed" if profile == "production" else "warning",
+            message="SHOPMAN_PRODUCT_IMAGE_BASE não está configurada: não há host dedicado de fotos.",
+        )
+
+    outside: dict[str, list[str]] = {}
+    for sku, image_url, metadata in Product.objects.values_list("sku", "image_url", "metadata"):
+        gallery = (metadata or {}).get("gallery") if isinstance(metadata, dict) else None
+        for url in [image_url, *(gallery if isinstance(gallery, list) else [])]:
+            host = (urlparse(str(url or "")).hostname or "").lower()
+            if host and host != media_host:
+                outside.setdefault(host, [])
+                if sku not in outside[host]:
+                    outside[host].append(sku)
+
+    if outside:
+        return ReadinessCheck(
+            id="catalog.product_image_host",
+            title="Product image host",
+            status="failed" if profile == "production" else "warning",
+            message=(
+                f"Fotos de produto fora do host dedicado {media_host}: "
+                + ", ".join(f"{host} ({len(skus)})" for host, skus in sorted(outside.items()))
+            ),
+            details={"media_host": media_host, "outside": {host: sorted(skus)[:20] for host, skus in outside.items()}},
+        )
+    return ReadinessCheck(
+        id="catalog.product_image_host",
+        title="Product image host",
+        status="passed",
+        message=f"Todas as fotos de produto moram em {media_host}.",
+        details={"media_host": media_host},
     )
 
 

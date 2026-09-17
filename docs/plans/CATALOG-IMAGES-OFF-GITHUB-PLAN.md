@@ -13,6 +13,13 @@
 > `loja/` de acervo — é um conjunto só, plano. Com isso a loja deixou de
 > depender do `nb-catalog-app` (cardapio.*) em runtime, que pode ser
 > aposentado. O plano abaixo fica como registro do diagnóstico.
+>
+> **Atualização (2026-09-17):** o arquivo segue no storefront, mas a URL pública
+> deixou de ser o host do site. A foto quebrou duas vezes porque morava no host de
+> um site que mudou de lugar (`menu.` em 01/09, `www.` em 17/09). Agora sai por
+> `img.nelsonboulangerie.com.br/products/<arquivo>`, host dedicado que o ingress
+> reescreve para `/img/` do storefront; o domínio do site pode mudar sem tocar em
+> nenhuma `image_url`.
 
 São **dois problemas independentes** que costumam ser confundidos num só. Vale
 separar, porque o primeiro é quase de graça e o segundo é trabalho de conteúdo.

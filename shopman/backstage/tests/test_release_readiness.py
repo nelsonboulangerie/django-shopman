@@ -314,3 +314,46 @@ def test_the_real_public_copy_review_still_blocks_go_live():
     ids = {item["id"] for item in PUBLIC_COPY_REVIEW}
     assert {"faq_initial", "copy_contradictions", "sitemap_consolidated", "sitemap_submitted"} <= ids
     assert readiness._public_copy_review_check(profile="production").status == "failed"
+
+
+@pytest.mark.django_db
+def test_product_image_on_a_site_host_warns_in_alpha_and_blocks_production():
+    from shopman.offerman.models import Product
+
+    Product.objects.create(
+        sku="FOTO-SITE",
+        name="Foto no site",
+        base_price_q=100,
+        image_url="https://www.padaria.test/img/products/x.webp",
+    )
+    Product.objects.create(
+        sku="FOTO-OK",
+        name="Foto no host de imagens",
+        base_price_q=100,
+        image_url="https://img.padaria.test/products/y.webp",
+        metadata={"gallery": ["https://www.padaria.test/img/products/y2.webp"]},
+    )
+    base = "https://img.padaria.test/products"
+
+    alpha = readiness._product_image_host_check(profile="alpha", image_base=base)
+    production = readiness._product_image_host_check(profile="production", image_base=base)
+
+    assert alpha.status == "warning"
+    assert production.status == "failed"
+    assert production.details["outside"] == {"www.padaria.test": ["FOTO-OK", "FOTO-SITE"]}
+
+
+@pytest.mark.django_db
+def test_product_images_all_on_the_media_host_pass():
+    from shopman.offerman.models import Product
+
+    Product.objects.create(sku="OK", name="Ok", base_price_q=100, image_url="https://img.padaria.test/products/ok.webp")
+    Product.objects.create(sku="SEM-FOTO", name="Sem foto", base_price_q=100)
+
+    check = readiness._product_image_host_check(profile="production", image_base="https://img.padaria.test/products")
+
+    assert check.status == "passed"
+
+
+def test_missing_product_image_base_is_itself_a_go_live_blocker():
+    assert readiness._product_image_host_check(profile="production", image_base="").status == "failed"

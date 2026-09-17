@@ -1747,12 +1747,13 @@ class Command(BaseCommand):
         # servidos pela própria loja — deploy atômico com o app, nenhum serviço
         # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
         #
-        # Ponteiro de domínio NÃO mora no código (lição cobrada em 01/09: o host
-        # estava fixo em menu.*, o corte de domínios moveu menu.* para a loja, e
-        # toda foto de produto virou 404). O host é env com default na loja viva.
+        # Ponteiro de domínio NÃO mora no código, e a foto não mora no host de um
+        # site: quebrou em 01/09 (menu.* virou a loja) e em 17/09 (a loja virou
+        # www. e menu.* voltou ao cardápio antigo). O host `img.` só serve foto e
+        # não muda de papel; o ingress o reescreve para `/img/` do storefront.
         image_base = os.environ.get(
             "SHOPMAN_PRODUCT_IMAGE_BASE",
-            "https://www.nelsonboulangerie.com.br/img/products",
+            "https://img.nelsonboulangerie.com.br/products",
         ).rstrip("/")
         IMG = image_base
         UNSPLASH = "https://images.unsplash.com"

@@ -9,6 +9,14 @@
 > antiga (`nb-site`) ficou sem domínio. Depois do go-live, o `menu.` também vem
 > para o site. O estado de 11/09 abaixo fica como histórico.
 
+> **Fotos de produto, 17/09/2026:** moram em `img.nelsonboulangerie.com.br`, host
+> dedicado que não é papel de site nenhum. O ingress reescreve tudo para `/img/` do
+> `storefront-nuxt` (o arquivo continua em `public/img/products/`), e
+> `SHOPMAN_PRODUCT_IMAGE_BASE=https://img.nelsonboulangerie.com.br/products`. Mudar o
+> site de domínio não toca mais em `image_url`. Travas: `test_do_spec_hosts`
+> (host dedicado, não PRIMARY, rewrite `/img/`) e `catalog.product_image_host` no
+> `make production-readiness` (foto fora do host dedicado reprova o go-live).
+
 > **Estado confirmado em 11/09/2026:** `menu.nelsonboulangerie.com.br` e o
 > dominio definitivo da loja. `alpha.*` e `staging.*` foram aposentados e nao
 > devem ser recriados. O app vivo se chama `shopman-nelson` e continua com
