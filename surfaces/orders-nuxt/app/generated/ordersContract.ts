@@ -227,7 +227,7 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Um aparelho que o entregador pode levar no despacho (ref do canal + rótulo). */
+/** Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo). */
 export interface EquipmentOptionProjection {
   ref: string;
   label: string;
@@ -235,7 +235,7 @@ export interface EquipmentOptionProjection {
   reason: string;
 }
 
-/** Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou. */
+/** Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou. */
 export interface EquipmentOutProjection {
   ref: string;
   label: string;
