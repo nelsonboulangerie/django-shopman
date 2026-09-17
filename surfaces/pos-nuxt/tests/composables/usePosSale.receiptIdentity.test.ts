@@ -43,7 +43,7 @@ function setup(checkAt: "review" | "close" = "review", batch = false, emailOwner
     return { review: { total_q: 500, subtotal_q: 500, total_display: "R$ 5,00" } };
   });
   const h = makeSale({ actionCall, projection: makeProjection({ checkout: {
-    intent_version: 1, capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
+    intent_version: 1, capabilities: { supports_fiscal_document: true, tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
   } as ReturnType<typeof makeProjection>["checkout"] }) });
   instances.push(h);
   h.sale.addProduct(h.handles.posValue.value!.products[0]!);
