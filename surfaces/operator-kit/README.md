@@ -193,10 +193,10 @@ Contrato:
   sobre um texto qualquer e vira artefato.
 - Decorativa: `aria-hidden`, sem captura de clique. **O que a impede de se ler como
   botão é a translucidez, não o tamanho**: fundo sólido com sombra vira chip clicável
-  em qualquer medida. Com o fundo a 60% e sem sombra, o que sobra é o chevron, e o
+  em qualquer medida. Com o fundo a 33% e sem sombra, o que sobra é o chevron, e o
   círculo só o separa do conteúdo — por isso ela pôde crescer de 28 para 48, encostando
-  no alvo de toque sem se ler como controle. A translucidez quase não se nota sobre o
-  degradê (fundo da mesma cor); ela trabalha nas bordas e onde há contraste atrás.
+  no alvo de toque sem se ler como controle. Sobre o degradê ela rende pouco (fundo da mesma
+  cor); trabalha nas bordas e onde há contraste atrás, que é o caso do operador.
 - `prefers-reduced-motion`: a dica fica **parada**, não some.
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
