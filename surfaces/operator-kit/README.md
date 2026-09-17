@@ -67,6 +67,17 @@ unlock/lock troca ou encerra a sessão compartilhada dos apps de operador sem
 invalidar uma sessão aberta no Admin; cookies de estação e demais cookies não
 conflitantes continuam sendo repassados.
 
+**Validade da sessão de operador (decisão de 17/09/2026): renova com o uso, expira
+após 7 dias sem uso.** A sessão aberta pelas portas de operador (senha no app, PIN,
+crachá) nasce marcada e com prazo de 7 dias; o uso empurra o prazo de volta para 7
+dias, gravando no máximo uma vez por dia (quando restam menos de 6), e o Django
+reemite o cookie com o novo `Max-Age`, que o BFF repassa como qualquer `Set-Cookie`.
+O SSE não renova (o proxy de eventos não repassa cookies); a renovação vem das
+requisições REST e dos polls. O Admin fica fora: segue os 14 dias fixos do Django,
+com 2FA. Regra e motivo em `shopman/backstage/services/operator_session.py`;
+constantes `SHOPMAN_OPERATOR_SESSION_IDLE_SECONDS` e
+`SHOPMAN_OPERATOR_SESSION_RENEW_INTERVAL_SECONDS` em `config/settings.py`.
+
 Apps que ativam `runtimeConfig.operatorSecurityHeaders` recebem documentos e APIs
 privados (`private, no-store`, `Vary: Cookie`). Assets compilados mantêm o cache do
 Nitro. HSTS só é emitido quando a requisição chega como HTTPS; o edge continua

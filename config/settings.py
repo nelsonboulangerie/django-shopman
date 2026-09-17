@@ -338,6 +338,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Sessão de operador renova com o uso, no máximo 1 gravação/dia (7 dias parada
+    # ⇒ expira). Depois de Session/Auth: a resposta dela passa pelo Session, que grava
+    # e reemite o cookie. Admin intocado. Ver shopman/backstage/services/operator_session.py.
+    "shopman.backstage.middleware.OperatorSessionRenewalMiddleware",
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
@@ -1704,6 +1708,15 @@ SHOPMAN_PURCHASE_BASE_URL = (os.environ.get("SHOPMAN_PURCHASE_BASE_URL") or "").
 #     "api.boulangerie.com.br" (o proxy Nuxt reescreve o Host para esse alias).
 SHOPMAN_OPERATOR_COOKIE_DOMAIN = (os.environ.get("SHOPMAN_OPERATOR_COOKIE_DOMAIN") or "").strip()
 SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").strip()
+
+# Sessão dos apps de operador (decisão de 17/09/2026): renova com o uso e expira
+# após 7 dias SEM uso. Só vale para a sessão aberta nas portas de operador (senha do
+# app, PIN, crachá), marcada no login; a do Admin segue o default do Django
+# (`SESSION_COOKIE_AGE`, 14 dias fixos a partir do login). O uso regrava o prazo no
+# máximo uma vez por intervalo, para o poll não virar UPDATE por requisição.
+# Constantes de código, sem env: mudar a regra é decisão de produto, não de deploy.
+SHOPMAN_OPERATOR_SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
+SHOPMAN_OPERATOR_SESSION_RENEW_INTERVAL_SECONDS = 24 * 60 * 60
 
 #: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
 #: diz o que é, e obrigar a repetir a palavra no caminho é redundância.
