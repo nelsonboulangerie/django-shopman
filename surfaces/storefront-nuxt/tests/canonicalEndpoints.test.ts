@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const sourceFiles = [
   'app/composables/useCartState.ts',
   'app/composables/useReorder.ts',
+  'app/composables/useSiteSeo.ts',
   'app/pages/index.vue',
   'app/pages/menu.vue',
   'app/pages/produto/[sku].vue',

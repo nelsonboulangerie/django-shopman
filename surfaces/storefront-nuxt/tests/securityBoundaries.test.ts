@@ -12,6 +12,10 @@ describe('storefront security boundaries', () => {
 
   it('does not proxy backstage APIs through the public storefront BFF', () => {
     expect(isStorefrontApiPathAllowed('storefront/menu/')).toBe(true)
+    // Identidade pública do site (títulos, verificações, LocalBusiness, FAQ):
+    // GET anônimo, no mesmo prefixo da home.
+    expect(isStorefrontApiPathAllowed('storefront/site/')).toBe(true)
+    expect(isStorefrontApiPathAllowed('storefront/site')).toBe(true)
     expect(isStorefrontApiPathAllowed('auth/session/')).toBe(true)
     expect(isStorefrontApiPathAllowed('stock-alert/manage/')).toBe(true)
     expect(isStorefrontApiPathAllowed('backstage/orders/')).toBe(false)

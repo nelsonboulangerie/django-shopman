@@ -1,10 +1,12 @@
 import type { MenuResponse } from '~/types/shopman'
 import { resolveDjangoBaseUrl } from '../utils/djangoBaseUrl'
+import { sitemapUrls, sitemapXml } from '../utils/sitemap'
 
 // sitemap.xml domain-aware, alimentado pelo catálogo real (Django). Inclui a
-// home, o cardápio, cada coleção estática (/colecao/<ref>) e cada PDP
-// (/produto/<sku>). As variantes de filtro (?filtro=/?secao=) NÃO entram — elas
-// canonicalizam para /menu (anti-duplicate).
+// home, o cardápio, cada coleção estática (/colecao/<ref>), cada PDP
+// (/produto/<sku>) e as páginas de conteúdo (/faq, /privacy, /terms). As
+// variantes de filtro (?filtro=/?secao=) NÃO entram — elas canonicalizam para
+// /menu (anti-duplicate).
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl)
@@ -24,18 +26,6 @@ export default defineEventHandler(async (event) => {
     // Catálogo indisponível: ainda servimos as rotas estáticas.
   }
 
-  const urls = [
-    { loc: `${origin}/`, priority: '1.0' },
-    { loc: `${origin}/menu`, priority: '0.9' },
-    ...collectionRefs.map(ref => ({ loc: `${origin}/colecao/${encodeURIComponent(ref)}`, priority: '0.7' })),
-    ...skus.map(sku => ({ loc: `${origin}/produto/${encodeURIComponent(sku)}`, priority: '0.8' }))
-  ]
-
-  const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
-    + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
-    + urls.map(url => `  <url><loc>${url.loc}</loc><priority>${url.priority}</priority></url>`).join('\n')
-    + `\n</urlset>\n`
-
   setHeader(event, 'content-type', 'application/xml; charset=utf-8')
-  return body
+  return sitemapXml(sitemapUrls({ origin, collectionRefs, skus }))
 })
