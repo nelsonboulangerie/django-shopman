@@ -58,7 +58,7 @@ pytestmark = pytest.mark.django_db
 SUBSCRIBER = 5151
 FLOW = "content_campanha_whatsapp"
 SKU = "BE"
-AUDIENCE = 10  # O mínimo de fora do ensaio; o ensaio aprova com menos (ver seção 6).
+AUDIENCE = 10  # Público de trabalho; o mínimo configurável no Admin é a seção 6.
 WORKER = "whatsapp-delivery-test"
 
 
@@ -623,7 +623,16 @@ def test_minor_birthday_is_suppressed_at_the_claim(manychat, campaign):
     assert target.last_error_code == "recipient_age_not_verified"
 
 
-# ── 6. Mínimo de 10: vale fora do ensaio, não no ensaio ─────────────
+# ── 6. Mínimo configurável no Admin: vale fora do ensaio, não no ensaio ──
+
+
+def _configure_minimum(value: int) -> None:
+    """Grava a política como o Admin grava: ``Shop.defaults["marketing"]``."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.first() or Shop.objects.create(name="Nelson", brand_name="Nelson")
+    shop.defaults = {**(shop.defaults or {}), "marketing": {"whatsapp_minimum_audience": value}}
+    shop.save()
 
 
 def test_canary_approves_an_audience_of_one_and_delivers_only_to_the_listed_ref(
@@ -634,13 +643,19 @@ def test_canary_approves_an_audience_of_one_and_delivers_only_to_the_listed_ref(
     from shopman.shop.models import MarketingAuditEvent
 
     calls, _responses = manychat
+    _configure_minimum(3)
     campaign = _approved_campaign(settings, monkeypatch, audience=1, mode="canary")
     receipt = campaign["approved"].receipt
 
     assert receipt.outcome["audience_count"] == 1
     assert receipt.outcome["canary"] is True
+    # O comprovante diz QUAL mínimo não valeu — o configurado, não um número escrito à mão.
+    assert receipt.outcome["minimum_count"] == 3
     assert _safe_receipt_outcome(receipt.outcome)["canary"] is True
-    assert MarketingAuditEvent.objects.get(command=receipt).facts["canary"] is True
+    assert _safe_receipt_outcome(receipt.outcome)["minimum_count"] == 3
+    facts = MarketingAuditEvent.objects.get(command=receipt).facts
+    assert facts["canary"] is True
+    assert facts["minimum_count"] == 3
 
     _stage(campaign)
     (target,) = _claim(campaign).targets
@@ -652,16 +667,46 @@ def test_canary_approves_an_audience_of_one_and_delivers_only_to_the_listed_ref(
 
 
 @pytest.mark.parametrize("mode", ["open", "blocked"])
-def test_outside_the_canary_an_audience_of_one_is_refused_below_the_minimum(
+def test_outside_the_canary_the_configured_minimum_refuses_with_its_number(
     settings, monkeypatch, manychat, mode
 ):
+    from shopman.shop.models import MarketingCommandReceipt
     from shopman.shop.services.marketing_commands import MarketingCommandRejected
 
+    _configure_minimum(3)
     with pytest.raises(MarketingCommandRejected) as caught:
-        _approved_campaign(settings, monkeypatch, audience=1, mode=mode)
+        _approved_campaign(settings, monkeypatch, audience=2, mode=mode)
 
     assert caught.value.code == "audience_below_minimum"
+    assert "ao menos 3 pessoas elegíveis" in caught.value.detail
+    receipt = MarketingCommandReceipt.objects.get(ref=caught.value.receipt_ref)
+    assert receipt.outcome == {
+        "code": "audience_below_minimum",
+        "eligible_count": 2,
+        "minimum_count": 3,
+    }
     assert not MarketingOutbox.objects.exists()
+
+
+def test_open_approval_at_the_configured_minimum_goes_through(settings, monkeypatch, manychat):
+    _configure_minimum(3)
+
+    campaign = _approved_campaign(settings, monkeypatch, audience=3, mode="open")
+
+    assert campaign["approved"].receipt.outcome["audience_count"] == 3
+    assert MarketingOutbox.objects.filter(command=campaign["approved"].receipt).count() == 1
+
+
+def test_without_configuration_the_minimum_is_one(settings, monkeypatch, manychat):
+    """Padrão do dono: começa em 1 para não segurar campanha boa no início da operação."""
+    from shopman.shop.models import Shop
+
+    assert not Shop.objects.exists()
+
+    campaign = _approved_campaign(settings, monkeypatch, audience=1, mode="open")
+
+    assert campaign["approved"].receipt.outcome["audience_count"] == 1
+    assert "canary" not in campaign["approved"].receipt.outcome
 
 
 def test_an_open_approval_at_the_minimum_does_not_claim_to_be_a_canary(

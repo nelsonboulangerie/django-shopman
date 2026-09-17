@@ -281,7 +281,9 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("Tentar novamente 1 falha");
     expect(wrapper.text()).toContain("Fuso e horário permitido");
     expect(wrapper.text()).toContain("Horário de São Paulo");
-    expect(wrapper.text()).toContain("WhatsApp respeita o silêncio 20:00–08:00");
+    expect(wrapper.text()).toContain(
+      "WhatsApp respeita o silêncio 20:00–08:00",
+    );
     expect(wrapper.text()).toContain("Validade");
     expect(wrapper.text()).toContain("Este anúncio não expira antes do envio");
     expect(wrapper.text()).toContain("concluído");
@@ -321,11 +323,13 @@ describe("AnnouncementResultPanel", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("Ensaio local: silêncio 20:00–08:00 suspenso");
+    expect(wrapper.text()).toContain(
+      "Ensaio local: silêncio 20:00–08:00 suspenso",
+    );
     expect(wrapper.text()).toContain("sem efeito externo");
   });
 
-  it("diz que a aprovação foi ensaio e que o mínimo de 10 não valeu", () => {
+  it("diz que a aprovação foi ensaio e que o mínimo configurado não valeu", () => {
     const mountWith = (outcome: Record<string, unknown>) =>
       mount(AnnouncementResultPanel, {
         props: {
@@ -358,10 +362,10 @@ describe("AnnouncementResultPanel", () => {
         },
       });
 
-    expect(mountWith({ canary: true }).text()).toContain(
-      "Ensaio: o mínimo de 10 não vale; só a lista de canário recebe.",
+    expect(mountWith({ canary: true, minimum_count: 3 }).text()).toContain(
+      "Ensaio: o mínimo de 3 não vale; só a lista de canário recebe.",
     );
-    expect(mountWith({}).text()).not.toContain("Ensaio: o mínimo de 10");
+    expect(mountWith({ minimum_count: 3 }).text()).not.toContain("Ensaio:");
   });
 
   it("explains a rejected decision without suggesting a delivery or cancellation", () => {
@@ -483,7 +487,9 @@ describe("AnnouncementResultPanel", () => {
     const wrapper = panel({ actions: [reconcileAction()] });
     const actionButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Consultar 1 resultado incerto"))!;
+      .find((button) =>
+        button.text().includes("Consultar 1 resultado incerto"),
+      )!;
 
     await actionButton.trigger("click");
     await flushPromises();
