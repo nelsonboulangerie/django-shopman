@@ -69,6 +69,7 @@ from .settings_proxies import (
     ShopPos,
     ShopProduction,
     ShopPurchase,
+    ShopSearch,
 )
 from .shop import NotificationTemplate, Shop
 from .user_notification import (
@@ -112,6 +113,7 @@ __all__ = [
     "RuleConfig",
     "OmotenashiCopy",
     "ShopAppearance",
+    "ShopSearch",
     "ShopOperation",
     "ShopMenu",
     "ShopOrdering",
