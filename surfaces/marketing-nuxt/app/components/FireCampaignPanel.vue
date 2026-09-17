@@ -1,5 +1,8 @@
 <script setup lang="ts">
-// Disparar agora — a campanha manual, com o público escolhido na hora.
+// Escolher público — a campanha manual, com o público escolhido na hora.
+//
+// ⚠️ O botão daqui NÃO dispara: ele cria o anúncio e leva à revisão. Enquanto dizia
+// "Disparar agora", prometia o fim do caminho logo no começo dele.
 //
 // Uma pergunta: "para quem". O texto sempre vem do modelo salvo e o anúncio nasce para
 // revisão. Aceitar texto livre aqui criaria um caminho capaz de contornar a revisão.
@@ -696,14 +699,10 @@ watch(
         <Icon name="lucide:send" class="size-4" />
         {{
           busy
-            ? publicOnly
-              ? "Preparando…"
-              : "Disparando…"
-            : publicOnly
-              ? "Preparar para revisão"
-              : countFailed
-                ? "Aguardando contagem"
-                : "Disparar agora"
+            ? "Preparando…"
+            : countFailed && !publicOnly
+              ? "Aguardando contagem"
+              : "Revisar anúncio"
         }}
       </UiButton>
     </div>

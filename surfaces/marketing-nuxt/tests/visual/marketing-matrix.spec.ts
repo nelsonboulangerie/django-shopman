@@ -191,7 +191,7 @@ test.describe("painel", () => {
           page.getByRole("group", { name: "Entregar por" }),
         ).toBeVisible();
         await expect(
-          page.getByRole("button", { name: "Entregar agora" }),
+          page.getByRole("button", { name: "Visualizar consequência" }),
         ).toBeVisible();
         await expect(
           page.getByText("São duas decisões separadas", {
@@ -270,9 +270,9 @@ test.describe("cartão de anúncio", () => {
   test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Entregar agora" }).click();
+    await page.getByRole("button", { name: "Visualizar consequência" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
-    await expect(page.getByRole("dialog")).toContainText("Entregar agora");
+    await expect(page.getByRole("dialog")).toContainText("Disparar agora");
     await expect(page.getByRole("dialog")).not.toContainText(
       "Confirmar consequência",
     );
@@ -500,7 +500,7 @@ test.describe("disparo manual seguro", () => {
     await openScenario(page, "fire-throttled", "/campaigns", V768);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
+    await page.getByRole("button", { name: "Revisar anúncio" }).click();
     await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
     await expect(page.getByRole("alert")).toContainText("Nada foi criado");
     await expectStableScreenshot(page, "fire-campaign__throttled", V768, "light", { fullPage: false });
@@ -510,8 +510,8 @@ test.describe("disparo manual seguro", () => {
     await openScenario(page, "fire-conflict", "/campaigns", V1024);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByLabel("Disparar agora").getByRole("alert")).toContainText("mudou em outra sessão");
+    await page.getByRole("button", { name: "Revisar anúncio" }).click();
+    await expect(page.getByLabel("Escolher público").getByRole("alert")).toContainText("mudou em outra sessão");
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
   });
 
@@ -519,7 +519,7 @@ test.describe("disparo manual seguro", () => {
     await openScenario(page, "fire-accepted", "/campaigns", V1440);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
+    await page.getByRole("button", { name: "Revisar anúncio" }).click();
     // Sem senha e sem frase digitada: o servidor declara o disparo dispensado de
     // cerimônia (ADR-031) e o navegador consome o token sozinho. O toque em "Disparar
     // agora" é a última coisa que o gestor faz antes de estar na revisão.
@@ -649,7 +649,7 @@ test.describe("modos transversais", () => {
         p { margin-bottom: 2em !important; }
       `,
     });
-    await expect(page.getByRole("button", { name: "Entregar agora" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Visualizar consequência" })).toBeVisible();
     await expectStableScreenshot(page, "panel__text-spacing", V1024);
   });
 });

@@ -79,14 +79,14 @@ const hasPublicPublication = computed(() =>
   includesPublicPublication(challengePlatforms.value),
 );
 
-/** O botão diz o efeito, não a categoria dele. "Confirmar consequência" obrigava o
- *  gestor a traduzir jargão no exato momento em que precisava decidir. */
+/** Este é o último botão do caminho e o único que faz alguma coisa sair — por isso é
+ *  o único que pode dizer "disparar". Os anteriores levam a algum lugar, e agora dizem
+ *  o lugar: "Revisar anúncio", "Visualizar consequência". */
 const confirmLabel = computed(() => {
   if (props.busy) return "Registrando…";
   if (isFire.value) return "Criar para revisão";
   if (props.command?.action === "reject") return "Recusar";
   return deliveryActionLabel({
-    platforms: challengePlatforms.value,
     scheduled: Boolean(challenge.value?.scheduled_for),
   });
 });

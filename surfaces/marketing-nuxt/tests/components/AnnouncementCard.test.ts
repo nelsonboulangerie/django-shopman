@@ -198,14 +198,20 @@ describe("AnnouncementCard", () => {
     expect(text).not.toContain("12 favoritos, 3 alertas = 15 clientes");
   });
 
-  it("uses an operation-neutral action for mixed delivery", () => {
-    const wrapper = mountCard(
-      makeAnnouncement({ platforms: ["instagram", "whatsapp"] }),
-    );
-
-    expect(wrapper.get("[data-testid=publish-now]").text()).toContain(
-      "Entregar agora",
-    );
+  it("names the decision button after where it goes, not after what it promises", () => {
+    // Este botão abre a caixa da consequência; quem entrega é o botão de lá. Enquanto
+    // ele dizia "Entregar agora", o caminho tinha dois botões prometendo a mesma coisa
+    // e só um cumprindo — e o gestor aprendia que a tela mente.
+    for (const platforms of [
+      ["instagram", "whatsapp"],
+      ["whatsapp"],
+      ["instagram"],
+    ]) {
+      const wrapper = mountCard(makeAnnouncement({ platforms }));
+      const action = wrapper.get("[data-testid=publish-now]");
+      expect(action.text()).toContain("Visualizar consequência");
+      expect(action.text()).not.toContain("agora");
+    }
   });
 
   it("pre-selects exactly the platforms the rule chose", () => {
@@ -269,7 +275,7 @@ describe("AnnouncementCard", () => {
     expect(schedule.text()).toBe("Agendar");
     expect(schedule.classes()).toContain("border");
     expect(schedule.classes()).not.toContain("bg-primary");
-    expect(publishNow.text()).toContain("Publicar agora");
+    expect(publishNow.text()).toContain("Visualizar consequência");
     expect(publishNow.classes()).toContain("bg-primary");
     expect(wrapper.text()).toContain("duas decisões separadas");
     expect(wrapper.text()).not.toContain("recomendado");
@@ -334,7 +340,7 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(makeAnnouncement({ platforms: ["whatsapp"] }));
     const publishNow = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Enviar agora"))!;
+      .find((button) => button.text().includes("Visualizar consequência"))!;
 
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("WhatsApp está em silêncio das 20:00 às 08:00");
@@ -358,7 +364,7 @@ describe("AnnouncementCard", () => {
     );
     const publishNow = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Enviar agora"))!;
+      .find((button) => button.text().includes("Visualizar consequência"))!;
 
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(false);
     expect(wrapper.text()).toContain("Ensaio local");
@@ -379,9 +385,7 @@ describe("AnnouncementCard", () => {
       .setValue("2026-07-19T07:00");
 
     expect(wrapper.text()).toContain("expiraria antes desse horário");
-    const confirm = wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Confirmar agendamento")!;
+    const confirm = wrapper.get("[data-testid=schedule-submit]");
     expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -394,9 +398,7 @@ describe("AnnouncementCard", () => {
       .setValue("2026-11-01T01:30");
 
     expect(wrapper.text()).toContain("acontece duas vezes");
-    const confirm = wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Confirmar agendamento")!;
+    const confirm = wrapper.get("[data-testid=schedule-submit]");
     expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
 
     await wrapper.findAll("input[type=radio]").at(-1)!.setValue();
@@ -519,7 +521,7 @@ describe("AnnouncementCard", () => {
 
     await wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Publicar agora"))!
+      .find((button) => button.text().includes("Visualizar consequência"))!
       .trigger("click");
     const [, edits] = wrapper.emitted("approve")![0] as [
       number,

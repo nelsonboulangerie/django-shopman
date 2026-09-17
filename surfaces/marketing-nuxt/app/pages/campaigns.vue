@@ -749,7 +749,7 @@ useHead({ title: "Campanhas" });
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>Disparar agora</UiSheetTitle>
+          <UiSheetTitle>Escolher público</UiSheetTitle>
           <UiSheetDescription>
             {{ firing?.name }} — escolha o público. O texto vem do modelo e o
             anúncio nasce para revisão.

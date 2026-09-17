@@ -17,15 +17,15 @@ export function includesPublicPublication(platforms: readonly string[]): boolean
   return platforms.some((platform) => !DIRECT_MESSAGE_PLATFORMS.has(platform));
 }
 
-/** O verbo do efeito: entregar cobre os dois, enviar é mensagem, publicar é mural. */
-export function deliveryActionLabel(options: {
-  platforms: readonly string[];
-  scheduled?: boolean;
-}): string {
-  if (options.scheduled) return "Agendar";
-  const direct = includesDirectMessage(options.platforms);
-  const publication = includesPublicPublication(options.platforms);
-  if (direct && publication) return "Entregar agora";
-  if (direct) return "Enviar agora";
-  return "Publicar agora";
+/** O nome do último gesto — o único do caminho que faz alguma coisa sair.
+ *
+ * Antes este rótulo mudava com o destino: "Enviar agora" para WhatsApp, "Publicar
+ * agora" para mural, "Entregar agora" para os dois. A distinção é verdadeira, mas ela
+ * já está escrita na linha acima do botão, que diz o que vai para cada plataforma — e
+ * repeti-la no botão custava a palavra que a casa usa no resto do caminho. Disparar é
+ * essa palavra.
+ *
+ * O agendamento é a exceção que não se abre mão: ali "agora" mentiria sobre o quando. */
+export function deliveryActionLabel(options: { scheduled?: boolean }): string {
+  return options.scheduled ? "Agendar" : "Disparar agora";
 }
