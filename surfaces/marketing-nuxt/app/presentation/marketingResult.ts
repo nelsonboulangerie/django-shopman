@@ -215,6 +215,20 @@ export function recoveryDisabledReason(reason: string): string {
   );
 }
 
+/**
+ * Aprovação feita no ensaio do WhatsApp. Fora do ensaio, campanha geral por WhatsApp
+ * exige ao menos 10 pessoas elegíveis (impede mirar uma pessoa); no ensaio quem recebe
+ * já é só a lista de canário da operação, e o comprovante registra `canary=true`.
+ */
+export const WHATSAPP_CANARY_APPROVAL_NOTE =
+  "Ensaio: o mínimo de 10 não vale; só a lista de canário recebe.";
+
+export function approvalCanaryNote(receipt: MarketingCommandReceipt): string {
+  return receipt.kind === "approve" && receipt.outcome.canary === true
+    ? WHATSAPP_CANARY_APPROVAL_NOTE
+    : "";
+}
+
 export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
   title: string;
   detail: string;

@@ -58,7 +58,7 @@ pytestmark = pytest.mark.django_db
 SUBSCRIBER = 5151
 FLOW = "content_campanha_whatsapp"
 SKU = "BE"
-AUDIENCE = 10  # MIN_GENERAL_COHORT: campanha geral de WhatsApp exige ao menos 10.
+AUDIENCE = 10  # O mínimo de fora do ensaio; o ensaio aprova com menos (ver seção 6).
 WORKER = "whatsapp-delivery-test"
 
 
@@ -109,6 +109,10 @@ def manychat(monkeypatch):
 def campaign(settings, monkeypatch):
     """A campanha do dono: favoritos da Baguete Gergelim, aprovada pelo cockpit."""
 
+    return _approved_campaign(settings, monkeypatch, audience=AUDIENCE)
+
+
+def _approved_campaign(settings, monkeypatch, *, audience: int, mode: str = "canary"):
     clock = _business_time()
     product = Product.objects.create(
         sku=SKU,
@@ -119,7 +123,7 @@ def campaign(settings, monkeypatch):
         image_url="/media/baguete-gergelim.jpg",
     )
     customers = []
-    for number in range(AUDIENCE):
+    for number in range(audience):
         customer = Customer.objects.create(
             ref=f"WA-DELIVERY-{number}",
             first_name=f"Pessoa{number}",
@@ -171,7 +175,7 @@ def campaign(settings, monkeypatch):
         ),
     )
     # O ensaio aprovado: um contato só recebe.
-    settings.SHOPMAN_MARKETING_WHATSAPP_MODE = "canary"
+    settings.SHOPMAN_MARKETING_WHATSAPP_MODE = mode
     settings.SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS = (customers[0].ref,)
 
     approved = approve_command(
@@ -577,3 +581,57 @@ def test_minor_birthday_is_suppressed_at_the_claim(manychat, campaign):
     )
     assert target.state == DeliveryTarget.State.SUPPRESSED
     assert target.last_error_code == "recipient_age_not_verified"
+
+
+# ── 6. Mínimo de 10: vale fora do ensaio, não no ensaio ─────────────
+
+
+def test_canary_approves_an_audience_of_one_and_delivers_only_to_the_listed_ref(
+    settings, monkeypatch, manychat
+):
+    """O alpha tem 5 contatos com WhatsApp autorizado: o mínimo tornava o ensaio impossível."""
+    from shopman.backstage.projections.marketing_v2 import _safe_receipt_outcome
+    from shopman.shop.models import MarketingAuditEvent
+
+    calls, _responses = manychat
+    campaign = _approved_campaign(settings, monkeypatch, audience=1, mode="canary")
+    receipt = campaign["approved"].receipt
+
+    assert receipt.outcome["audience_count"] == 1
+    assert receipt.outcome["canary"] is True
+    assert _safe_receipt_outcome(receipt.outcome)["canary"] is True
+    assert MarketingAuditEvent.objects.get(command=receipt).facts["canary"] is True
+
+    _stage(campaign)
+    (target,) = _claim(campaign).targets
+    execution = _execute(campaign, target)
+
+    assert target.member.customer_id == campaign["customers"][0].pk
+    assert execution.target.state == DeliveryTarget.State.ACCEPTED
+    assert _flow_sends(calls) == 1
+
+
+@pytest.mark.parametrize("mode", ["open", "blocked"])
+def test_outside_the_canary_an_audience_of_one_is_refused_below_the_minimum(
+    settings, monkeypatch, manychat, mode
+):
+    from shopman.shop.services.marketing_commands import MarketingCommandRejected
+
+    with pytest.raises(MarketingCommandRejected) as caught:
+        _approved_campaign(settings, monkeypatch, audience=1, mode=mode)
+
+    assert caught.value.code == "audience_below_minimum"
+    assert not MarketingOutbox.objects.exists()
+
+
+def test_an_open_approval_at_the_minimum_does_not_claim_to_be_a_canary(
+    settings, monkeypatch, manychat
+):
+    from shopman.shop.models import MarketingAuditEvent
+
+    campaign = _approved_campaign(settings, monkeypatch, audience=AUDIENCE, mode="open")
+    receipt = campaign["approved"].receipt
+
+    assert receipt.outcome["audience_count"] == AUDIENCE
+    assert "canary" not in receipt.outcome
+    assert "canary" not in MarketingAuditEvent.objects.get(command=receipt).facts

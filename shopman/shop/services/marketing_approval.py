@@ -218,7 +218,17 @@ def approve_command(
                 detail="Não foi possível conferir toda a audiência.",
                 outcome={"degraded_source_count": len(resolution.degraded_sources)},
             )
-        if "whatsapp" in safe_platforms and resolution.total < MIN_GENERAL_COHORT:
+        # O mínimo impede que uma campanha "geral" vire mensagem mirada em uma ou duas
+        # pessoas escolhidas a dedo. No ensaio (`SHOPMAN_MARKETING_WHATSAPP_MODE=canary`)
+        # ele não se aplica: quem recebe já é a lista de canário que a operação controla
+        # por env, e o claim e o adapter suprimem todo o resto — o público não mira
+        # ninguém que a operação não tenha escolhido. `blocked` e `open` seguem iguais.
+        whatsapp_canary = "whatsapp" in safe_platforms and _whatsapp_canary_mode()
+        if (
+            "whatsapp" in safe_platforms
+            and not whatsapp_canary
+            and resolution.total < MIN_GENERAL_COHORT
+        ):
             raise RejectCommand(
                 code="audience_below_minimum",
                 detail=(
@@ -425,6 +435,7 @@ def approve_command(
                 "publish_mode": normalized_mode,
                 "publish_timezone": effective_timezone,
             }
+            | ({"canary": True} if whatsapp_canary else {})
             | (
                 {
                     "facts_as_of": facts.as_of.isoformat(),
@@ -462,7 +473,7 @@ def approve_command(
             "effective_at": available_at.isoformat(),
             "snapshot_ref": str(snapshot.ref),
             "status": announcement.status,
-        }
+        } | ({"canary": True} if whatsapp_canary else {})
 
     execution = execute_announcement_command(
         kind=MarketingCommandReceipt.Kind.APPROVE,
@@ -475,6 +486,17 @@ def approve_command(
         request_id=request_id,
     )
     return _result(execution)
+
+
+def _whatsapp_canary_mode() -> bool:
+    """O WhatsApp de Marketing está em ensaio? Lido do modo, não da prontidão.
+
+    Modo ``canary`` mal configurado (sem lista, sem Redis) cai no mínimo liberado aqui e
+    é recusado logo adiante por ``require_safe_delivery`` com o motivo certo.
+    """
+    from shopman.shop.services import manychat_marketing_safety
+
+    return manychat_marketing_safety.whatsapp_mode() == manychat_marketing_safety.MODE_CANARY
 
 
 def canonical_artifact_bytes(payload: Mapping[str, Any]) -> bytes:

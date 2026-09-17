@@ -122,6 +122,7 @@ _AUDIENCE_COUNT_FIELDS = (
 _TARGET_STATES = tuple(value for value, _label in DeliveryTarget.State.choices)
 _SAFE_RECEIPT_OUTCOME_FIELDS = frozenset({
     "audience_count",
+    "canary",
     "cancelled_count",
     "effective_at",
     "eligible_count",
@@ -579,7 +580,7 @@ def _safe_receipt_outcome(value: object) -> dict[str, Any]:
         if key in count_fields:
             if isinstance(item, int) and not isinstance(item, bool) and item >= 0:
                 safe[key] = item
-        elif key == "retryable":
+        elif key in {"retryable", "canary"}:
             if isinstance(item, bool):
                 safe[key] = item
         elif key == "platforms":

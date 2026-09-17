@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvalCanaryNote,
   commandReceiptPresentation,
   deliveryCountItems,
   deliveryStatePresentation,
@@ -74,6 +75,27 @@ describe("Marketing result presentation", () => {
       detail:
         "7 falhas voltaram para a fila; nenhum destino aceito, confirmado ou incerto foi repetido.",
     });
+  });
+
+  it("says a canary approval skipped the minimum only when the receipt records it", () => {
+    const canary = {
+      kind: "approve",
+      outcome: { audience_count: 1, canary: true },
+    } as MarketingCommandReceipt;
+    const regular = {
+      kind: "approve",
+      outcome: { audience_count: 12 },
+    } as MarketingCommandReceipt;
+    const forged = {
+      kind: "approve",
+      outcome: { canary: "true" },
+    } as MarketingCommandReceipt;
+
+    expect(approvalCanaryNote(canary)).toBe(
+      "Ensaio: o mínimo de 10 não vale; só a lista de canário recebe.",
+    );
+    expect(approvalCanaryNote(regular)).toBe("");
+    expect(approvalCanaryNote(forged)).toBe("");
   });
 
   it("does not disguise forbidden or service failure as not-found/empty", () => {
