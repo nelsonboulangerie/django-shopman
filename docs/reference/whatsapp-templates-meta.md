@@ -16,6 +16,10 @@ o caminho direto não compra nada e custa uma migração.
 Três templates têm botão de URL e os três apontavam para lugar nenhum. O que se descobriu
 ao medir contra o código, e o que ficou decidido:
 
+> **17/09/2026:** o site passou para `https://www.nelsonboulangerie.com.br`. Os templates já
+> aprovados com botão em `menu.` continuam funcionando: no cardápio antigo, `/pedido/...`
+> redireciona para o `www.` com o mesmo caminho. Template novo nasce com `www.`.
+
 **1. A base da loja é `https://menu.nelsonboulangerie.com.br`.** É o valor de
 `SHOPMAN_STOREFRONT_BASE_URL` no spec **vivo** do `shopman-nelson`. O doc escrevia o apex.
 

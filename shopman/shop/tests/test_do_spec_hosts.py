@@ -33,7 +33,7 @@ DEPLOY_SPECS = (
 )
 
 #: Hosts cortados em 01/09/2026 por decisão do dono, sem alias e para sempre.
-#: A loja é `menu.nelsonboulangerie.com.br`.
+#: O site é `www.nelsonboulangerie.com.br` (17/09/2026).
 DEAD_HOSTS = (
     "alpha.nelsonboulangerie.com.br",
     "staging.nelsonboulangerie.com.br",
@@ -96,7 +96,7 @@ def test_deploy_spec_never_resurrects_a_dead_host(path: pathlib.Path):
     offenders = sorted(host for host in DEAD_HOSTS if host in configured)
     assert not offenders, (
         f"{path.name} reintroduz host cortado em 01/09: {', '.join(offenders)}. "
-        "A loja é menu.nelsonboulangerie.com.br."
+        "O site é www.nelsonboulangerie.com.br."
     )
 
 
