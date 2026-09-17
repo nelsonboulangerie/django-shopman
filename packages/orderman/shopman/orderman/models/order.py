@@ -121,6 +121,13 @@ class Order(models.Model):
         verbose_name = _("pedido")
         verbose_name_plural = _("pedidos")
         ordering = ("-created_at", "id")
+        indexes = [
+            # Janela por data: B.I., destaques, cestas, PDV recente e a própria
+            # ``ordering`` (LIMIT sobre ``-created_at``). Coluna única de propósito:
+            # quem filtra só por data não usaria um composto com canal ou status na
+            # frente. Lookup ``__date`` não usa este índice (converte o fuso na coluna).
+            models.Index(fields=["created_at"], name="ord_order_created_at_idx"),
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(total_q__gte=0),
