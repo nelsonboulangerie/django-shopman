@@ -43,8 +43,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "orders", categories: ["order"] },
       manifest: {
-        name: "Gestor de Pedidos",
-        shortName: "Gestor",
+        label: "Gestor",
         description: "Fila e acompanhamento de pedidos.",
         themeColor: "#FFFFFF",
         backgroundColor: "#FAFAF9",
@@ -126,7 +125,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Gestor de Pedidos",
+      title: "Gestor",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#ffffff" },

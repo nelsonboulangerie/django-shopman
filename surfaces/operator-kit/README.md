@@ -52,8 +52,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
-| `app/presentation/windowTitle.ts` | `windowTitle` | regra pura do título da janela: `"<App> · <Página>"` (app na frente, senão o Chrome prefixa o nome do PWA) |
-| `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle` | instala o `titleTemplate` no `app.vue` (e `error.vue`) lendo o `manifest.name` da capability PWA; as páginas passam só o próprio título |
+| `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
+| `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
 | `app/composables/useNextFocus.ts` | `useNextFocus` | a página declara o foco (chave reativa); o bloco `data-focus-target` vai à linha de foco e recebe o foco de teclado — ver "Próximo foco" |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
@@ -90,6 +90,46 @@ responsável por preservar `X-Forwarded-Proto: https` e a verificação final de
 no host publicado. Marketing usa ainda uma política CSP local mais estrita, com nonce e
 branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao kit
 porque ainda não tem dois consumidores comprovados.
+
+## Nome do app instalado (`"Nelson · PDV"`)
+
+Todo app de operador instalado se chama `"<casa> · <App>"`: "Nelson · PDV", "Nelson ·
+KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie").
+
+- **A casa não mora no código.** A fonte única é `Shop.short_name` ("nome curto (PWA)",
+  editável no Admin), servido por `GET /api/v1/backstage/operator/tenant/` (público,
+  sem sessão: o navegador busca o manifesto sem cookie). O app declara só o rótulo em
+  `definePwaCapability({ manifest: { label: "PDV", ... } })`.
+- **Lido em runtime, não no build.** `server/utils/operatorTenant.ts` pergunta ao
+  Django com cache de 5 min no processo Nitro; a mesma imagem serve todo deployment.
+  Falha é macia: vale o último nome que o Django deu (nova tentativa em 30 s) e, sem
+  nenhum desde o boot, o app mostra só o rótulo ("PDV"). Não há prefixo de reserva
+  escrito no código ou no build — seria uma segunda fonte.
+- **Manifesto e janela dizem o mesmo nome.** `/manifest.webmanifest` e
+  `/_operator/app-name` usam o mesmo resolvedor. O plugin `runtime/plugins/operatorAppName.ts`
+  resolve o nome no SSR (chamada local à rota Nitro), guarda no `useState` (viaja no
+  payload) e instala o `titleTemplate` — também na página de erro padrão do Nuxt, que
+  renderiza no lugar do `app.vue`.
+- **O título começa com o `name` do manifesto.** Se não começar, o Chrome prefixa
+  `"<name> - "` na barra da janela do PWA instalado. Por isso a home é `"Nelson · PDV"`,
+  a página é `"Nelson · PDV · Filipetas"` e o título que pisca no Gestor também passa
+  por `windowTitle`.
+- **Nunca hífen na barra.** O separador é o ponto médio; `windowTitle` troca separador
+  de hífen/barra que venha de título de página (a página 404 do Nuxt escreve
+  "404 - Page not found | Nuxt"). `document.title` escrito à mão só passa montado por
+  `windowTitle(...)` ou restaurando um valor guardado.
+- **`short_name` é só o rótulo.** Ele aparece onde falta espaço (ícone no launcher
+  Android), e lá a casa se repetiria em todo app e cortaria o que distingue um do outro
+  ("Nelson · Pro…"). Desktop (macOS, Windows, ChromeOS) mostra o `name`. O
+  `apple-mobile-web-app-title` leva o nome inteiro, que é o que o Safari propõe ao
+  instalar.
+- **Trocar o nome no Admin** chega ao BFF em até 5 min e ao app instalado quando o
+  navegador rebusca o manifesto (`max-age=3600`, o contrato do gate estrutural de PWA); o Chrome atualiza o nome do app
+  instalado na verificação periódica dele.
+
+A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa, sem
+`name`/`shortName` fixos, título começando pelo `name`, nenhum título com hífen de
+separador, nenhum `document.title` cru).
 
 ## Próximo foco (`useNextFocus`)
 

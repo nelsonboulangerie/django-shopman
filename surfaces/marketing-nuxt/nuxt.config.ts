@@ -71,8 +71,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "marketing", categories: ["campaign"] },
       manifest: {
-        name: "Marketing",
-        shortName: "Marketing",
+        label: "Marketing",
         description: "Campanhas e anúncios da operação.",
         themeColor: "#FFFFFF",
         backgroundColor: "#FAFAF9",

@@ -30,8 +30,7 @@ export default defineNuxtConfig({
       kiosk: true,
       idleReloadPaths: ["*"],
       manifest: {
-        name: "KDS",
-        shortName: "KDS",
+        label: "KDS",
         description: "Painel de preparo e expedição da cozinha.",
         themeColor: "#0A0A0A",
         backgroundColor: "#0A0A0A",

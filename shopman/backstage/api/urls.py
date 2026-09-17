@@ -231,6 +231,7 @@ from .recipe_book import (
 )
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, MarketingVitalView
+from .tenant import OperatorTenantView
 
 urlpatterns = [
     # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
@@ -258,6 +259,8 @@ urlpatterns = [
     # Operador (PIN/crachá) — genérico, compartilhado por todas as surfaces (inclui POS)
     path("operator/login/", OperatorLoginView.as_view(), name="api-backstage-operator-login"),
     path("operator/session/", OperatorSessionView.as_view(), name="api-backstage-operator-session"),
+    # Nome da casa ("Nelson") para o nome dos PWAs de operador — público, sem sessão
+    path("operator/tenant/", OperatorTenantView.as_view(), name="api-backstage-operator-tenant"),
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),

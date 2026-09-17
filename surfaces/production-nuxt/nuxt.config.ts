@@ -38,8 +38,7 @@ export default defineNuxtConfig({
       idleReloadPaths: ["/board"],
       push: { surfaceRef: "production", categories: ["production", "system"] },
       manifest: {
-        name: "Produção",
-        shortName: "Produção",
+        label: "Produção",
         description: "Planejamento, preparo e fornadas.",
         themeColor: "#FFFFFF",
         backgroundColor: "#FAFAF9",
