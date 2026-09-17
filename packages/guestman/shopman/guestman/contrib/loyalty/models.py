@@ -92,7 +92,7 @@ class LoyaltyAccount(models.Model):
         verbose_name_plural = _("contas de fidelidade")
 
     def __str__(self):
-        return f"{self.customer.ref}: {self.points_balance}pts | {self.tier}"
+        return f"{self.customer.ref} · {self.points_balance}pts · {self.tier}"
 
     @property
     def stamps_remaining(self) -> int:
@@ -165,4 +165,4 @@ class LoyaltyTransaction(models.Model):
 
     def __str__(self):
         sign = "+" if self.points > 0 else ""
-        return f"{sign}{self.points}pts — {self.description}"
+        return f"{sign}{self.points}pts · {self.description}"

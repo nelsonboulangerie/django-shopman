@@ -10,7 +10,7 @@ import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIcon
 // O ícone do PWA da Central — a mesma família que cada tile mostra (PWA_ICONS.md).
 const HUB_ICON_SRC = "/pwa/pwa-64x64.png?v=3";
 
-const apiPath = useHubApiPath();
+const apiPath = useApiPath();
 useOperatorWindowTitle("Central");
 
 const { tiles, operatorName, error, refresh } = await useOperatorHub();

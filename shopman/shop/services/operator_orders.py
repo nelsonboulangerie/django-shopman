@@ -430,7 +430,7 @@ class CourierChange:
 
 
 def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:
-    """Os aparelhos que o canal permite levar no despacho (``fulfillment.equipment``)."""
+    """As maquininhas que o canal permite levar no despacho (``fulfillment.equipment``)."""
     from shopman.shop.config import ChannelConfig
 
     try:
@@ -454,7 +454,7 @@ def _clean_equipment(order: Order, equipment) -> list[str]:
     allowed = equipment_options(order.channel_ref or "")
     unknown = [ref for ref in wanted if ref not in allowed and not (ref.startswith(PREFIX) and "card_machine" in allowed)]
     if unknown:
-        raise ValueError(f"Aparelho não previsto para este canal: {', '.join(unknown)}.")
+        raise ValueError(f"Maquininha não prevista para este canal: {', '.join(unknown)}.")
     return list(dict.fromkeys(wanted))
 
 
@@ -486,16 +486,16 @@ def equipment_custody(order: Order) -> EquipmentCustody:
 
 @transaction.atomic
 def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str | None = None) -> EquipmentCustody:
-    """O entregador devolveu o aparelho: fecha a custódia no pedido que o levou."""
+    """O entregador devolveu a maquininha: fecha a custódia no pedido que o levou."""
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
     if expected_revision is not None and operational_revision(order, field="equipment") != expected_revision:
-        raise OrderStateConflict("A custódia mudou. Confira o aparelho antes de registrar a devolução.")
+        raise OrderStateConflict("A custódia mudou. Confira a maquininha antes de registrar a devolução.")
     custody = equipment_custody(order)
     if not custody.equipment:
-        raise ValueError("Este pedido não levou aparelho.")
+        raise ValueError("Este pedido não levou maquininha.")
     if custody.back_at:
-        raise ValueError("O aparelho deste pedido já voltou.")
+        raise ValueError("A maquininha deste pedido já voltou.")
     from shopman.shop.adapters.delivery_devices import release
 
     release(order)
@@ -512,7 +512,7 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
 
 
 def equipment_out(*, channel_ref: str | None = None) -> list[tuple[str, Order]]:
-    """Onde está cada aparelho agora: ``(ref, pedido)`` dos pedidos que o levaram e ainda não devolveram."""
+    """Onde está cada maquininha agora: ``(ref, pedido)`` dos pedidos que o levaram e ainda não devolveram."""
     qs = Order.objects.filter(data__dispatch__has_key="equipment").exclude(data__dispatch__has_key="equipment_back_at")
     if channel_ref:
         qs = qs.filter(channel_ref=channel_ref)
@@ -1171,9 +1171,9 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     custody = equipment_custody(order)
     if custody.equipment:
         actions.append(Action(
-            ref="equipment-back", kind="mutation", label="Registrar devolução do aparelho",
+            ref="equipment-back", kind="mutation", label="Registrar devolução da maquininha",
             enabled=authorized and custody.pending,
-            reason=(permission_reason if not authorized else "O aparelho deste pedido já voltou." if not custody.pending else ""),
+            reason=(permission_reason if not authorized else "A maquininha deste pedido já voltou." if not custody.pending else ""),
             method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field="equipment")},
         ))

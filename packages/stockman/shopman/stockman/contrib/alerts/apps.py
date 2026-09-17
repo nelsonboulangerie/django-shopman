@@ -11,7 +11,7 @@ class StockmanAlertsConfig(AppConfig):
 
     name = "shopman.stockman.contrib.alerts"
     label = "stockman_alerts"
-    verbose_name = _("Alertas de Estoque")
+    verbose_name = _("Alertas de estoque")
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):

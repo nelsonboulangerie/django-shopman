@@ -21,7 +21,7 @@ export function useMarketingNotificationInbox() {
       {
         key: "marketing-notifications-v2",
         server: true,
-        onResponseError: operatorSessionOnError,
+        onResponseError: marketingSessionOnError,
       },
     );
 

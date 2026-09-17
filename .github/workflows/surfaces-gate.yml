@@ -79,6 +79,16 @@ jobs:
       - name: Vitest
         run: npm test
 
+      # `eslint .` roda a partir do diretório de cada app e NUNCA alcança
+      # `../operator-kit`. Resultado: o layer — BFF (`server/utils/djangoProxy.ts`),
+      # composables, 24 componentes, 176 arquivos — era o único código de surfaces
+      # que jamais via ESLint, enquanto ditava a base de lint dos nove apps. O kit
+      # ganhou `eslint.config.mjs` e `lint` próprios; este passo tira o lint de
+      # opt-in (só Marketing e Produção o rodavam, nos seus jobs de browser).
+      # `--if-present` pelo mesmo motivo do typecheck: mantém a matriz uniforme.
+      - name: Lint
+        run: npm run lint --if-present
+
       # `--if-present`: o operator-kit (layer, sem app Nuxt próprio) não tem
       # typecheck; todos os 6 apps têm — storefront e pos ganharam o script
       # junto com este gate.

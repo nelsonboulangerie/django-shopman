@@ -9,7 +9,7 @@ logger = logging.getLogger("shopman.doorman")
 class DoormanConfig(AppConfig):
     name = "shopman.doorman"
     label = "doorman"
-    verbose_name = _("Gestão do Acesso")
+    verbose_name = _("Gestão do acesso")
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):

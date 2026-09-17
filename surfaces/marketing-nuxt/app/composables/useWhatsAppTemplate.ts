@@ -84,7 +84,7 @@ export function useWhatsAppTemplate() {
       key: "marketing-wa-template",
       server: false,
       immediate: false,
-      onResponseError: operatorSessionOnError,
+      onResponseError: marketingSessionOnError,
     },
   );
 
