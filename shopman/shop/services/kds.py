@@ -242,7 +242,6 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
             "name": item["name"],
             "qty": item["qty"],
             "notes": item["notes"],
-            "checked": False,
             "line_id": item["line_id"],
         }
 
@@ -320,7 +319,6 @@ def preview_order_for_instance(order, instance) -> list[dict]:
                 "name": item["name"],
                 "qty": item["qty"],
                 "notes": item["notes"],
-                "checked": False,
                 "line_id": item["line_id"],
             }
         )
@@ -620,46 +618,33 @@ def ensure_ticket_due(ticket) -> None:
     _ensure_source_due(_ticket_source(ticket))
 
 
-def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) -> bool:
-    """Escreve o estado DESEJADO de um item, e inicia o preparo quando o trabalho começa.
+def start_ticket(ticket, *, actor: str) -> bool:
+    """Põe o ticket em preparo — o primeiro toque da cozinha no card.
 
-    ⚠️ É `set`, e não `toggle`, e a diferença aparece com dois tablets na mesma
-    bancada — que é a configuração normal de uma cozinha.
+    O preparo é estado do TICKET, não do item. A marcação por item mandava o
+    índice da linha, e o índice não é identidade: cancelar um item de um pedido
+    em preparo apara o JSON do ticket vivo (``unfire_session_lines``) e desloca
+    os índices, de modo que um toque em voo riscava o item vizinho. Estado alvo,
+    sem índice, não tem esse buraco.
 
-    Com toggle, quem decide "isto muda ou não" precisa ler o estado antes, e essa
-    leitura acontecia FORA do lock: o `select_for_update` protegia só a inversão.
-    Dois cozinheiros tocam o mesmo item quase juntos, ambos querendo MARCAR. A
-    requisição A lê "desmarcado" → inverte → marcado. A B, que também tinha lido
-    "desmarcado", inverte → DESMARCADO. As duas telas mostram marcado por otimismo
-    e, meio segundo depois, a reconciliação reverte as duas juntas: o cozinheiro vê
-    o pão que ele acabou de marcar desmarcar sozinho, sem explicação na tela.
-
-    Escrevendo o estado desejado dentro do lock, a operação vira idempotente **por
-    construção** — que é o que a API já dizia ser. O teste chamado "idempotent" só
-    passava porque roda em série.
+    Idempotente por construção: escreve o estado desejado dentro do lock, então
+    dois tablets tocando o mesmo card convergem para "em preparo". Retorna False
+    só quando o ticket não está aberto (concluído ou cancelado).
     """
     from django.db import transaction
 
     with transaction.atomic():
         source, ticket = _lock_source_then_ticket(ticket)
-        return _set_ticket_item_checked_locked(
-            ticket, source=source, index=index, checked=checked, actor=actor
-        )
+        return _start_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _set_ticket_item_checked_locked(ticket, *, source, index: int, checked: bool, actor: str) -> bool:
+def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
-    if not 0 <= index < len(ticket.items):
-        return False
-
-    ticket.items[index]["checked"] = checked
-
-    if ticket.status == "pending" and any(it.get("checked") for it in ticket.items):
+    if ticket.status == "pending":
         ticket.status = "in_progress"
-
-    ticket.save(update_fields=["items", "status"])
+        ticket.save(update_fields=["status"])
 
     order = source if isinstance(source, Order) else None
     if order is not None:
@@ -711,11 +696,9 @@ def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
         blocked = _advance_to_preparing_block_reason(order, actor=actor)
         if blocked:
             raise TicketCompletionBlocked(blocked)
-    for item in ticket.items:
-        item["checked"] = True
     ticket.status = "done"
     ticket.completed_at = timezone.now()
-    ticket.save(update_fields=["items", "status", "completed_at"])
+    ticket.save(update_fields=["status", "completed_at"])
 
     logger.info("kds_done ticket=%d session=%s", ticket.pk, ticket.session_key)
     if order is not None:

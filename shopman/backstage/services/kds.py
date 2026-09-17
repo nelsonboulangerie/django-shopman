@@ -22,27 +22,15 @@ def _ensure_ticket_due(ticket) -> None:
         raise KDSError(str(exc)) from exc
 
 
-def set_ticket_item_checked(*, ticket_pk: int, index: int, checked: bool, actor: str):
-    """Marca ou desmarca o item — SEM ler o estado atual antes para decidir.
-
-    A leitura pré-lock era o bug: ela decidia "isto muda ou não" com dado sujo, e o
-    `select_for_update` do core protegia só a inversão. Ver
-    `shopman/shop/services/kds.py:set_ticket_item_checked` — o item desmarcava
-    sozinho com dois tablets na bancada.
-
-    Escrever sempre é mais barato que ler-comparar-escrever, e é correto sob
-    concorrência: a última escrita ganha, e as duas telas convergem para ela.
-    """
+def start_ticket(*, ticket_pk: int, actor: str):
+    """Põe o ticket em preparo. Replay (dois tablets no mesmo card) é sucesso."""
     ticket = _get_ticket(ticket_pk)
     _ensure_ticket_due(ticket)
-    if not 0 <= index < len(ticket.items):
-        raise KDSError("Item não encontrado.")
-
     try:
-        changed = kds_core.set_ticket_item_checked(ticket, index=index, checked=checked, actor=actor)
+        started = kds_core.start_ticket(ticket, actor=actor)
     except kds_core.FutureWorkBlocked as exc:
         raise KDSError(str(exc)) from exc
-    if not changed:
+    if not started:
         raise KDSError("Ticket não está aberto.")
     ticket.refresh_from_db()
     return ticket

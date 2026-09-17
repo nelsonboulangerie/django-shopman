@@ -1,17 +1,22 @@
 <script setup lang="ts">
-// A prep-station ticket card — desenho ultra-enxuto e glanceable, com rigor de
-// layout: UM único inset horizontal alinha tudo numa coluna (código, itens, check,
-// finalizar); timer e `i` têm a MESMA altura de controle; o ritmo vertical é um só.
-// Face mínima: CODE (final da ref) + minutagem; ITENS como massa focal (qty alinhada,
-// toque confere e risca); o `i` abre o detalhe (canal, cliente, data, horário). Cor
-// só onde tem significado, num ÚNICO elemento — a barra time-to-SLA na borda inferior.
-// Com `next`, o card é pintado ton sur ton no tom de urgência (único pintado da grade
-// → é "o próximo"; a ordem é indicada no título da seção, não dentro do card).
+// Card de preparo. Duas zonas, cada uma com um só papel:
+//
+// - CABEÇALHO = o pedido e o GESTO. Código, minutagem, quem/como, notas do pedido e
+//   a faixa de estado. O cabeçalho inteiro é o alvo do toque (sem botão de ação):
+//   pendente → toque inicia o preparo; em preparo → toque finaliza (com "Desfazer").
+// - CORPO = só os itens. Nada é truncado nem escondido: nome e observação quebram
+//   linha, e o card cresce o quanto precisar (a grade alinha a altura por linha).
+//
+// O preparo é estado do TICKET, guardado no servidor — todos os tablets veem quem já
+// pegou o pedido. Cor só onde tem significado: a barra de SLA (urgência) e o
+// vermelho do item cancelado que trava o finalizar.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
+  KDS_ARM_DELAY_MS,
   slaPercent,
   splitRef,
+  ticketTapAction,
   ticketTone,
   toneBar,
   toneNextSurface,
@@ -25,59 +30,90 @@ const props = withDefaults(
     ticket: KDSTicketProjection;
     density?: KDSDensity;
     next?: boolean;
+    /** Há item cancelado deste pedido sem "Ciente" — finalizar espera. */
+    blocked?: boolean;
+    /** Ticket adicional de um pedido que já passou por esta estação. */
+    addition?: boolean;
   }>(),
-  { density: "cozy", next: false },
+  { density: "cozy", next: false, blocked: false, addition: false },
 );
-defineEmits<{ open: []; check: [index: number, checked: boolean]; done: [] }>();
+const emit = defineEmits<{ start: []; finish: []; blocked: []; open: [] }>();
 
 const tone = computed(() => ticketTone(props.ticket.timer_class));
-const ref_ = computed(() => splitRef(props.ticket.order_ref));
+const code = computed(() => splitRef(props.ticket.order_ref).code);
 const fill = computed(() =>
   slaPercent(props.ticket.elapsed_seconds, props.ticket.target_seconds),
 );
+const isDelivery = computed(() => props.ticket.fulfillment_icon === "local_shipping");
+// Sem cliente nomeado, o nome cai para a própria comanda — que já aparece riscada.
+const customerLabel = computed(() =>
+  props.ticket.customer_name === props.ticket.previous_tab_ref ? "" : props.ticket.customer_name,
+);
+
+// Armar o finalizar: o toque que INICIOU não pode, quicando, finalizar também.
+// Card que já chega em preparo (outro tablet, recarga) nasce armado.
+const armed = ref(props.ticket.status !== "pending");
+let armTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => props.ticket.status,
+  (status, previous) => {
+    if (status === "in_progress" && previous === "pending") {
+      armed.value = false;
+      if (armTimer) clearTimeout(armTimer);
+      armTimer = setTimeout(() => (armed.value = true), KDS_ARM_DELAY_MS);
+    } else if (status !== "in_progress") {
+      armed.value = status !== "pending";
+    }
+  },
+);
+onBeforeUnmount(() => {
+  if (armTimer) clearTimeout(armTimer);
+});
+
+const tap = computed(() =>
+  ticketTapAction(props.ticket, { armed: armed.value, blocked: props.blocked }),
+);
+const interactive = computed(() => !props.ticket.is_scheduled);
+
+function onTap() {
+  if (tap.value === "start") emit("start");
+  else if (tap.value === "finish") emit("finish");
+  else if (tap.value === "blocked") emit("blocked");
+}
+
+// Faixa de estado: diz o que o card É e o que o próximo toque FAZ.
+const strip = computed(() => {
+  const t = props.ticket;
+  if (t.is_scheduled)
+    return { icon: "lucide:calendar-clock", text: "Prévia · libera na data", tone: "muted" };
+  if (t.status === "pending")
+    return { icon: "lucide:pointer", text: "Toque para iniciar", tone: "muted" };
+  if (props.blocked)
+    return { icon: "lucide:ban", text: "Item cancelado · dê Ciente", tone: "alert" };
+  if (!armed.value)
+    return { icon: "lucide:chef-hat", text: "Em preparo", tone: "active" };
+  return { icon: "lucide:check-check", text: "Em preparo · toque para finalizar", tone: "active" };
+});
+const stripClass = computed(
+  () =>
+    ({
+      muted: "bg-muted/60 text-muted-foreground",
+      active: "bg-foreground text-background",
+      alert: "bg-destructive/15 text-destructive dark:text-red-300",
+    })[strip.value.tone],
+);
+const actionLabel = computed(() => {
+  if (tap.value === "start") return `Iniciar preparo do pedido ${code.value}`;
+  if (tap.value === "finish") return `Finalizar pedido ${code.value}`;
+  if (tap.value === "blocked") return `Pedido ${code.value}: item cancelado, confirme antes de finalizar`;
+  return `Pedido ${code.value} em preparo`;
+});
+
 const timerChip = computed(() => toneTimer(tone.value));
 const barFill = computed(() => toneBar(tone.value));
 const nextSurface = computed(() => toneNextSurface(tone.value));
 
-// Altura convencionada: TODOS os cards têm a mesma altura (grade limpa). Os itens
-// preenchem a área disponível; se sobrar item, o excedente é clipado com um "ver
-// todos" — o operador expande só quando precisa. `clipped` é MEDIDO (ResizeObserver),
-// então reflete o overflow real (não um chute por contagem).
-const itemsRef = ref<HTMLElement | null>(null);
-const clipped = ref(false);
-// Quantos itens NÃO cabem (medido) — para dizer explicitamente "+N itens" em vez de
-// só esmaecer. Conta os <li> cujo fim ultrapassa a área visível da lista.
-const hiddenCount = ref(0);
-function measure() {
-  const el = itemsRef.value;
-  if (!el) {
-    clipped.value = false;
-    hiddenCount.value = 0;
-    return;
-  }
-  clipped.value = el.scrollHeight > el.clientHeight + 1;
-  const limit = el.clientHeight + 1;
-  hiddenCount.value = Array.from(el.querySelectorAll("li")).filter(
-    (li) =>
-      (li as HTMLElement).offsetTop + (li as HTMLElement).offsetHeight > limit,
-  ).length;
-}
-useResizeObserver(itemsRef, measure);
-watch(
-  [() => props.ticket.items, () => props.density],
-  () => nextTick(measure),
-  { deep: true },
-);
-
-// Quando clipado, esmaece o fim da lista (máscara — independe do fundo: funciona no
-// card neutro e no "próximo" pintado) como dica de que há mais; a ação de ver tudo
-// fica no botão "Ver completo".
-const FADE = "linear-gradient(to bottom, #000 calc(100% - 26px), transparent)";
-const maskStyle = computed(() =>
-  clipped.value ? { maskImage: FADE, WebkitMaskImage: FADE } : {},
-);
-
-// Escala de densidade num único mapa — padroniza tamanhos, ritmo e altura.
+// Escala de densidade num único mapa — padroniza tamanhos, ritmo e altura mínima.
 const d = computed(
   () =>
     ({
@@ -86,36 +122,36 @@ const d = computed(
         timer: "text-base",
         ctrlH: "h-8",
         item: "text-sm",
+        note: "text-xs",
         inset: "px-3",
-        padT: "pt-3",
-        padB: "pb-3",
-        gapY: "py-2.5",
-        fin: "h-10",
-        card: "h-[236px]",
+        padT: "pt-2.5",
+        strip: "h-8 text-xs",
+        gapY: "py-1.5",
+        card: "min-h-[180px]",
       },
       cozy: {
         code: "text-3xl",
         timer: "text-lg",
         ctrlH: "h-9",
         item: "text-base",
+        note: "text-sm",
         inset: "px-4",
-        padT: "pt-4",
-        padB: "pb-4",
-        gapY: "py-3",
-        fin: "h-11",
-        card: "h-[284px]",
+        padT: "pt-3",
+        strip: "h-9 text-sm",
+        gapY: "py-2",
+        card: "min-h-[220px]",
       },
       roomy: {
         code: "text-4xl",
         timer: "text-xl",
         ctrlH: "h-11",
         item: "text-lg",
+        note: "text-base",
         inset: "px-5",
-        padT: "pt-5",
-        padB: "pb-5",
-        gapY: "py-4",
-        fin: "h-12",
-        card: "h-[340px]",
+        padT: "pt-4",
+        strip: "h-11 text-base",
+        gapY: "py-2.5",
+        card: "min-h-[270px]",
       },
     })[props.density],
 );
@@ -123,194 +159,152 @@ const d = computed(
 
 <template>
   <article
-    class="relative flex flex-col overflow-hidden rounded-md border transition"
-    :class="[
-      d.card,
-      next ? `shadow-lg ring-1 ${nextSurface}` : 'bg-card shadow-sm',
-    ]"
+    class="relative flex w-full flex-col overflow-hidden rounded-md border transition"
+    :class="[d.card, next ? `shadow-lg ring-1 ${nextSurface}` : 'bg-card shadow-sm']"
+    :data-status="ticket.status"
   >
-    <!-- topo: CODE (herói) + minutagem na MESMA linha + `i`. A largura mínima do card
-         garante que ambos caibam com folga — o código nunca quebra nem trunca. -->
-    <div
-      class="flex items-start justify-between gap-2.5"
-      :class="[d.inset, d.padT]"
-    >
-      <div class="min-w-0">
-        <p
-          class="whitespace-nowrap font-extrabold tracking-tight tabular-nums leading-none"
-          :class="d.code"
-        >
-          {{ ref_.code }}
-        </p>
-        <p
-          v-if="ticket.previous_tab_ref"
-          class="mt-1 truncate text-xs font-semibold text-muted-foreground"
-          :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
-        >
-          <span class="line-through">Comanda {{ ticket.previous_tab_ref }}</span>
-          <span class="ml-1 no-underline">· liberada</span>
-        </p>
-      </div>
-      <div
-        class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 font-bold tabular-nums"
-        :class="[ticket.is_scheduled ? 'bg-muted text-muted-foreground' : timerChip, d.ctrlH, d.timer]"
-      >
-        <Icon
-          :name="ticket.is_scheduled ? 'lucide:calendar-clock' : 'lucide:timer'"
-          class="size-4 shrink-0 opacity-70"
-        />
-        {{ ticket.is_scheduled ? "Agendado" : elapsedLabel(ticket.elapsed_seconds) }}
-      </div>
-    </div>
+    <!-- CABEÇALHO: o pedido + o gesto. O botão cobre o cabeçalho inteiro por baixo do
+         conteúdo (que não intercepta o toque); só o `i` fica por cima. -->
+    <header class="relative">
+      <button
+        v-if="interactive"
+        type="button"
+        class="absolute inset-0 z-0 transition hover:bg-accent/30 active:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        :aria-label="actionLabel"
+        data-kds-tap
+        @click="onTap"
+      />
 
-    <!-- notas do pedido (glanceable): a diretiva de preparo do operador (cozinha) e a
-         nota do cliente (checkout). A da cozinha tem mais peso — o cozinheiro precisa vê-la;
-         ambas em no máx. 2 linhas (o detalhe abre completo). -->
-    <div
-      v-if="ticket.kitchen_note || ticket.customer_note"
-      class="mt-1 flex flex-col gap-1"
-      :class="d.inset"
-    >
-      <p
-        v-if="ticket.kitchen_note"
-        class="flex items-start gap-1.5 rounded-md border border-foreground/20 bg-muted/60 px-2 py-1 text-sm font-medium leading-snug"
-      >
-        <Icon name="lucide:chef-hat" class="mt-0.5 size-3.5 shrink-0 opacity-70" />
-        <span class="line-clamp-2 min-w-0">{{ ticket.kitchen_note }}</span>
-      </p>
-      <p
-        v-if="ticket.customer_note"
-        class="flex items-start gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground leading-snug"
-      >
-        <Icon name="lucide:user" class="mt-0.5 size-3 shrink-0" />
-        <span class="line-clamp-2 min-w-0">{{ ticket.customer_note }}</span>
-      </p>
-    </div>
-
-    <!-- items — massa focal, alinhados ao código (qty em coluna); toque confere e risca.
-         A área preenche o espaço; o excedente é clipado e esmaecido (máscara) como dica. -->
-    <div class="relative min-h-0 flex-1">
-      <ul
-        ref="itemsRef"
-        class="flex h-full flex-col overflow-hidden"
-        :class="[d.inset, d.gapY]"
-        :style="maskStyle"
-      >
-        <li v-for="(item, idx) in ticket.items" :key="idx">
+      <div class="pointer-events-none relative z-10 flex flex-col gap-1.5" :class="[d.inset, d.padT]">
+        <!-- linha 1: CÓDIGO (herói) · minutagem · detalhes -->
+        <div class="flex items-center gap-2">
+          <p
+            class="min-w-0 flex-1 whitespace-nowrap font-extrabold leading-none tracking-tight tabular-nums"
+            :class="d.code"
+          >
+            {{ code }}
+          </p>
+          <div
+            class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 font-bold tabular-nums"
+            :class="[ticket.is_scheduled ? 'bg-muted text-muted-foreground' : timerChip, d.ctrlH, d.timer]"
+          >
+            <Icon
+              :name="ticket.is_scheduled ? 'lucide:calendar-clock' : 'lucide:timer'"
+              class="size-4 shrink-0 opacity-70"
+            />
+            {{ ticket.is_scheduled ? "Agendado" : elapsedLabel(ticket.elapsed_seconds) }}
+          </div>
           <button
             type="button"
-            class="-mx-2 flex w-full items-start justify-between gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-accent/50 active:scale-[0.99]"
-            :disabled="ticket.is_scheduled"
-            :class="ticket.is_scheduled ? 'cursor-default hover:bg-transparent active:scale-100' : ''"
-            @click="$emit('check', idx, !item.checked)"
+            class="pointer-events-auto relative z-20 grid aspect-square shrink-0 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            :class="d.ctrlH"
+            :aria-label="`Detalhes do pedido ${code}`"
+            data-kds-open
+            @click.stop="emit('open')"
           >
-            <span class="min-w-0 flex-1">
-              <!-- 1ª linha: qty + nome; quando feito, uma risca contínua atravessa
-                   tudo de ponta a ponta (o texto só esmaece) — para antes do check. -->
-              <span class="relative flex items-center gap-2.5">
-                <span
-                  class="min-w-[2.5ch] shrink-0 text-right font-bold tabular-nums transition-colors duration-200"
-                  :class="[d.item, item.checked ? 'text-muted-foreground' : '']"
-                  >{{ item.qty }}×</span
-                >
-                <span
-                  class="min-w-0 flex-1 truncate font-semibold transition-colors duration-200"
-                  :class="[d.item, item.checked ? 'text-muted-foreground' : '']"
-                  >{{ item.name }}</span
-                >
-                <span
-                  v-if="item.checked"
-                  aria-hidden="true"
-                  class="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-muted-foreground/50"
-                />
-              </span>
-              <span
-                v-if="item.notes"
-                class="mt-1 flex"
-                :class="item.checked ? 'opacity-50' : ''"
-              >
-                <span
-                  class="inline-flex min-w-0 max-w-full items-center rounded border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
-                >
-                  <span class="truncate">{{ item.notes }}</span>
-                </span>
-              </span>
-              <span
-                v-if="item.stock_warning"
-                class="mt-1 flex"
-                :class="item.checked ? 'opacity-50' : ''"
-              >
-                <span
-                  class="inline-flex min-w-0 max-w-full items-center gap-1 rounded border bg-muted px-1.5 py-0.5 text-xs font-semibold text-foreground"
-                >
-                  <Icon name="lucide:triangle-alert" class="size-3 shrink-0" />
-                  <span class="truncate">{{ item.stock_warning }}</span>
-                </span>
-              </span>
-            </span>
-            <Icon
-              name="lucide:check"
-              class="mt-0.5 size-5 shrink-0 transition-colors duration-200"
-              :class="
-                item.checked ? 'text-foreground' : 'text-muted-foreground/30'
-              "
-            />
+            <Icon name="lucide:info" class="size-4" />
           </button>
-        </li>
-      </ul>
-      <!-- Sinal explícito de overflow: além do esmaecimento, diz QUANTOS itens faltam. -->
+        </div>
+
+        <!-- linha 2: contexto curto (nome pode encurtar; o resto não) -->
+        <div
+          v-if="customerLabel || isDelivery || addition || ticket.previous_tab_ref"
+          class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-muted-foreground"
+        >
+          <span
+            v-if="addition"
+            class="inline-flex items-center gap-1 rounded border border-foreground/30 px-1.5 text-xs font-bold uppercase tracking-wide text-foreground"
+          >
+            <Icon name="lucide:plus" class="size-3" />Adicional
+          </span>
+          <span
+            v-if="isDelivery"
+            class="inline-flex items-center gap-1 rounded border px-1.5 text-xs font-bold uppercase tracking-wide text-foreground"
+          >
+            <Icon name="lucide:bike" class="size-3" />Entrega
+          </span>
+          <span
+            v-if="ticket.previous_tab_ref"
+            class="line-through"
+            :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
+            >Comanda {{ ticket.previous_tab_ref }}</span
+          >
+          <span v-if="customerLabel" class="min-w-0 max-w-full truncate">{{ customerLabel }}</span>
+        </div>
+
+        <!-- notas do pedido: completas (podem ser alergia) -->
+        <p
+          v-if="ticket.kitchen_note"
+          class="flex items-start gap-1.5 rounded-md border border-foreground/20 bg-muted/60 px-2 py-1 font-medium leading-snug"
+          :class="d.note"
+        >
+          <Icon name="lucide:chef-hat" class="mt-0.5 size-3.5 shrink-0 opacity-70" />
+          <span class="min-w-0 whitespace-pre-wrap break-words">{{ ticket.kitchen_note }}</span>
+        </p>
+        <p
+          v-if="ticket.customer_note"
+          class="flex items-start gap-1.5 rounded-md border px-2 py-1 leading-snug text-muted-foreground"
+          :class="d.note"
+        >
+          <Icon name="lucide:user" class="mt-0.5 size-3.5 shrink-0" />
+          <span class="min-w-0 whitespace-pre-wrap break-words">{{ ticket.customer_note }}</span>
+        </p>
+      </div>
+
+      <!-- faixa de estado: o que o card é e o que o próximo toque faz -->
       <div
-        v-if="clipped && hiddenCount"
-        class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-1"
-        :class="d.inset"
+        class="pointer-events-none relative z-10 mt-2.5 flex items-center justify-center gap-1.5 px-2 font-semibold"
+        :class="[d.strip, stripClass]"
+        data-kds-strip
+      >
+        <Icon :name="strip.icon" class="size-4 shrink-0" />
+        <span class="truncate">{{ strip.text }}</span>
+      </div>
+
+      <!-- time-to-SLA: a borda de baixo do cabeçalho -->
+      <div v-if="!ticket.is_scheduled" class="relative z-10 h-1.5 w-full bg-white/5" aria-hidden="true">
+        <div
+          class="h-full rounded-r-full transition-[width] duration-500"
+          :class="barFill"
+          :style="{ width: `${fill}%` }"
+        />
+      </div>
+    </header>
+
+    <!-- CORPO: só os itens, inteiros. -->
+    <ul class="flex flex-1 flex-col divide-y divide-border/50" :class="[d.inset, d.gapY]">
+      <li
+        v-for="(item, idx) in ticket.items"
+        :key="idx"
+        class="flex items-start gap-2.5 py-1.5"
       >
         <span
-          class="rounded-full bg-foreground px-2.5 py-0.5 text-xs font-bold text-background shadow-sm"
+          class="min-w-[2.5ch] shrink-0 text-right font-bold leading-snug tabular-nums"
+          :class="d.item"
+          >{{ item.qty }}×</span
         >
-          +{{ hiddenCount }} {{ hiddenCount === 1 ? "item" : "itens" }}
-        </span>
-      </div>
-    </div>
-
-    <!-- ações: "Ver completo" (olho — abre o detalhe) + "Finalizar" em destaque
-         (neutro INVERTIDO — a ação principal). -->
-    <div v-if="ticket.is_scheduled" class="flex" :class="[d.inset, d.padB]">
-      <div
-        class="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md border bg-muted/50 px-3 text-sm font-semibold text-muted-foreground"
-        :class="d.fin"
-      >
-        <Icon name="lucide:eye" class="size-4 shrink-0" />
-        <span class="truncate">Prévia · libera na data</span>
-      </div>
-    </div>
-    <div v-else class="flex gap-2" :class="[d.inset, d.padB]">
-      <button
-        type="button"
-        class="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-border/60 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.99]"
-        :class="d.fin"
-        @click="$emit('open')"
-      >
-        <Icon name="lucide:eye" class="size-4 shrink-0" />
-        <span class="truncate">Detalhes...</span>
-      </button>
-      <button
-        type="button"
-        class="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md bg-foreground text-sm font-semibold text-background transition hover:bg-foreground/90 active:scale-[0.99]"
-        :class="d.fin"
-        @click="$emit('done')"
-      >
-        <Icon name="lucide:check-check" class="size-4 shrink-0" />
-        <span class="truncate">Finalizar</span>
-      </button>
-    </div>
-
-    <!-- time-to-SLA fill bar (bottom edge) — o único elemento de cor de urgência -->
-    <div v-if="!ticket.is_scheduled" class="h-1.5 w-full bg-white/5" aria-hidden="true">
-      <div
-        class="h-full rounded-r-full transition-[width] duration-500"
-        :class="barFill"
-        :style="{ width: `${fill}%` }"
-      />
-    </div>
+        <div class="min-w-0 flex-1">
+          <p class="break-words font-semibold leading-snug" :class="d.item">
+            {{ item.name }}
+          </p>
+          <p
+            v-if="item.notes"
+            class="mt-0.5 flex items-start gap-1 font-semibold leading-snug text-foreground/85"
+            :class="d.note"
+          >
+            <Icon name="lucide:corner-down-right" class="mt-0.5 size-3.5 shrink-0 opacity-60" />
+            <span class="min-w-0 whitespace-pre-wrap break-words">{{ item.notes }}</span>
+          </p>
+          <p
+            v-if="item.stock_warning"
+            class="mt-0.5 flex items-start gap-1 font-semibold leading-snug"
+            :class="d.note"
+          >
+            <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
+            <span class="min-w-0 break-words">{{ item.stock_warning }}</span>
+          </p>
+        </div>
+      </li>
+    </ul>
   </article>
 </template>
