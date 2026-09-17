@@ -66,7 +66,8 @@ mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automati
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`
 transporta apenas invalidação pessoal, `/health/live` prova o processo/BFF e
-`/health/ready` inclui a prontidão do Django. O alias legado
+`/health/ready` inclui a prontidão do Django. As duas rotas vêm da layer
+`operator-kit` (`server/routes/health/`), iguais nos oito apps de operador. O alias legado
 `/campaign/announcements/:id` redireciona para `/announcements/:id`.
 
 ## Rotas Django
@@ -294,8 +295,9 @@ Capacidade: [`docs/engineering/marketing-capacity-gate.md`](../engineering/marke
 
 O host é `mkt.<domínio>`, com `NUXT_DJANGO_BASE_URL`/`NUXT_PUBLIC_DJANGO_BASE_URL`
 apontando para `api.<domínio>` e `NUXT_PUBLIC_OPERATOR_HUB_URL` para `central.<domínio>`.
-Os dois blueprints versionados usam readiness `/health/ready` e liveness
-`/health/live`. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
+Os dois blueprints versionados usam `/health/live` no `health_check` e no
+`liveness_health_check`: o probe da plataforma não consulta o Django. `/health/ready`
+fica para smoke e diagnóstico. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
 segredos e obter autorização explícita.
 
 Em 2026-09-11, o cockpit e o pipeline-base de `#601` estão em produção e o teste

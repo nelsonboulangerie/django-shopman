@@ -679,9 +679,13 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
+  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+  # que não chama o Django (WP-PERFORMANCE P1).
   health_check:
     failure_threshold: 5
-    http_path: /health/ready/
+    http_path: /health/live/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -754,7 +758,7 @@ services:
     type: SECRET
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 60
     period_seconds: 15
     success_threshold: 1
@@ -812,7 +816,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -858,7 +862,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -908,7 +912,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -954,7 +958,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1008,7 +1012,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1062,7 +1066,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1108,7 +1112,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /health/ready
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1161,7 +1165,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1

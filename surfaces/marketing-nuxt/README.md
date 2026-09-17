@@ -50,8 +50,9 @@ Instagram e até 12 mensagens no WhatsApp — não 12 mensagens no Instagram.
 
 O histórico é um aprofundamento acessível por contexto, não uma aba primária. Links
 antigos em `/campaign/announcements/:id` recebem redirecionamento para o detalhe atual.
-Os probes são `/health/live` (processo/BFF) e `/health/ready` (BFF + prontidão do
-Django). O BFF same-origin atende `/api/v1/**`; o SSE pessoal atende
+Os probes são `/health/live` (processo/BFF; é o health check da plataforma) e
+`/health/ready` (BFF + prontidão do Django; smoke e diagnóstico), ambos servidos pela
+layer `operator-kit`. O BFF same-origin atende `/api/v1/**`; o SSE pessoal atende
 `/sse/notifications` e apenas invalida a leitura para que o cliente refaça o fetch.
 
 ## Segurança que aparece para o operador
@@ -121,8 +122,8 @@ app/
 ├── presentation/   copy/formatação pt-BR sem política de domínio
 └── types/          tipos locais de apresentação
 server/
-├── api/v1/[...path].ts       BFF Django
-└── routes/health/*           liveness e readiness
+└── api/v1/[...path].ts       BFF Django
+(`/health/live` e `/health/ready` vêm da layer operator-kit)
 ```
 
 O nome estável é `marketing-nuxt`; `mkt.` é configuração de deploy e não deve ser

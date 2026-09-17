@@ -283,7 +283,7 @@ marketing-drills: ## Oito drills sintéticos locais; zero provider/escrita exter
 		shopman/shop/tests/test_marketing_transitions.py::test_cancel_now_wins_all_pending_lanes_and_is_idempotent \
 		shopman/shop/tests/test_marketing_outbox.py::test_force_cannot_bypass_safe_flag_in_production \
 		shopman/shop/tests/test_marketing_runbooks.py
-	cd surfaces/marketing-nuxt && npm run test:unit -- --run tests/healthProbe.test.ts
+	cd surfaces/operator-kit && npm test -- tests/healthProbe.test.ts
 
 marketing-simulator: ## Worker E2E local: outbox + ledger + recibo simulado; zero rede
 	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_marketing_demo PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(PYTHON) manage.py process_marketing_delivery --watch --with-outbox --with-reconciliation
