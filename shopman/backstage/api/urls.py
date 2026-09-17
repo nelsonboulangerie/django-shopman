@@ -230,7 +230,7 @@ from .recipe_book import (
     RecipeVersionView,
 )
 from .sign_ins import SignInListView
-from .telemetry import ClientErrorView, MarketingVitalView
+from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
 from .tenant import OperatorTenantView
 
 urlpatterns = [
@@ -238,6 +238,12 @@ urlpatterns = [
     path("backup/export/", BackupExportView.as_view(), name="api-backstage-backup-export"),
     # Telemetria — erro de cliente das superfícies de operador (operator-kit)
     path("client-error/", ClientErrorView.as_view(), name="api-backstage-client-error"),
+    # Telemetria — troca de versão do app instalado (PWA), relatada no boot seguinte
+    path(
+        "client-pwa-update/",
+        ClientPwaUpdateView.as_view(),
+        name="api-backstage-client-pwa-update",
+    ),
     path(
         "marketing/telemetry/vital/",
         MarketingVitalView.as_view(),
