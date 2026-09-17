@@ -273,6 +273,24 @@ ligar a entrega.**
 - **Como reverter:** os 8 blocos de service ficam no histórico do spec, e as imagens
   por app continuam sendo construídas até a consolidação provar 14 dias. Voltar é
   reaplicar o spec anterior.
+- **Medição real (painel Insights, 17/09 ~10h BRT, com o Pablo; `apps-s-1vcpu-0.5gb` = 512 MB):**
+
+  | App | Memória | CPU (fração da vCPU) |
+  |---|---|---|
+  | PDV (7 dias) | 15–22% ≈ 77–113 MB | 2–6% |
+  | KDS | 10–21% ≈ 51–108 MB | 2–4% |
+  | Pedidos | 14–18% ≈ 72–94 MB | 3–6% |
+  | Produção | 14–19% ≈ 72–97 MB | 4–8% |
+  | Central | 10–13% ≈ 51–67 MB | 2–4% |
+  | Marketing | 13–16% ≈ 67–82 MB | — |
+  | B.I. | 10–14% ≈ 51–72 MB | — |
+  | Compras | 8–10% ≈ 41–51 MB | — |
+
+  Somas nos picos: chão (PDV, KDS, Pedidos, Produção, Central) ≈ 480 MB → cabe em 1 GB com
+  folga ~2×; gestão (Marketing, B.I., Compras) ≈ 205 MB → cabe em 0,5 GB com folga ~2,5×.
+  CPU ociosa de 2–8% por app numa manhã de pouco uso sugere custo fixo (health check em `/`,
+  ver P1) — somada no chão fica em 15–25% de uma vCPU. Amostra de 1 hora (PDV: 7 dias);
+  repetir no pico do balcão antes de juntar o chão.
 - **Pré-requisitos:**
   1. Medir o **RSS de cada `.output/server/index.mjs` ocioso e com SSE aberto**, local e
      em `doctl apps console`. Sem esse número não se escolhe entre 0,5, 1 e 2 GB.
