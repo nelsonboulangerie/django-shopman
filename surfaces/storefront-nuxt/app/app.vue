@@ -144,6 +144,10 @@ useSeoMeta({
       <OfflineBanner />
       <PwaInstallInvite :copy="shellHome?.home?.pwa_copy" />
       <PwaUpdateToast :copy="shellHome?.home?.pwa_copy" />
+      <!-- O convite de novidades: sobe na página em que a pessoa cai depois de
+           entrar, uma vez, dirigido pela sessão (welcomeAsksMarketing). Nunca em
+           /entrar, /a, no checkout ou no pedido. -->
+      <MarketingPromptSheet />
     </ClientOnly>
     <!-- Fita de ambiente: FLUTUA no canto (fixed), então mora aqui com os
          overlays e não no fluxo. Some sozinha em produção — o servidor devolve

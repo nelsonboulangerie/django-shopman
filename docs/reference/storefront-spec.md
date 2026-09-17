@@ -46,7 +46,7 @@ projeções do Django via BFF).
 | `/account/perfil` | Nome/sobrenome/email/aniversário (telefone read-only) | `GET/PATCH /api/v1/account/profile/` |
 | `/account/preferencias` | Preferências alimentares + canais de notificação (toggles) | `POST /api/v1/account/preferences/{food,notifications}/` |
 | `/account/seguranca` | Dispositivos confiáveis (revogar 1/todos), exportar dados, excluir conta | `GET/DELETE /api/v1/account/devices/…`, `GET /api/v1/account/export/`, `POST /api/v1/account/delete/` |
-| `/login` | Auth sem senha: telefone → OTP (WhatsApp/SMS) → (welcome se novo); device-trust 30d | `POST /api/auth/{device-check,request-code,verify-code,trust-device}/` |
+| `/login` | Auth sem senha: telefone → OTP (WhatsApp/SMS) → (nome, se novo); device-trust 30d | `POST /api/auth/{device-check,request-code,verify-code,trust-device}/` |
 | `/a` | Bridge de magic link: lê `?t=`, troca por sessão, navega ao destino derivado | `POST /api/auth/access/` |
 
 **Composables-chave:** `useCartState` (qty/cupom otimista), `useShopSession` (identidade/estado),
@@ -172,13 +172,28 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   Bridge ManyChat (`access/create/`, doorman Core) emite o link via `DOORMAN.ACCESS_LINK_ENTRY_URL`.
 - **Welcome gate:** **client-side no Nuxt** (flag `requires_welcome` no payload de sessão + passo
   "welcome" no `/login`). *(O `WelcomeGateMiddleware` do Django foi REMOVIDO no headless.)*
-  Abre por duas perguntas independentes, expostas em `welcome_asks_name` (nome vazio/importado sujo)
-  e `welcome_asks_marketing` (pergunta de novidades por WhatsApp nunca respondida: sem linha de
-  consentimento whatsapp e sem `Customer.metadata.marketing_prompt_answered_at`). A tela mostra só o
-  que falta; a chave de novidades nasce desligada e é SÓ consentimento — sem data de nascimento, sem
-  frase de idade. "Sim" = `PATCH account/profile/` (nome, quando pedido) + `POST account/marketing-prompt/`
-  `{whatsapp: true}` (opt-in só no whatsapp); "Deixar para depois"/chave desligada = só o carimbo,
-  **nunca** opt-out. Depois disso a chave continua em Conta › Preferências.
+  É **só o nome**: `requires_welcome == welcome_asks_name` (nome vazio/importado sujo). Título "Como
+  podemos te chamar?", o campo e "Continuar" (`PATCH account/profile/`); "Deixar para depois" segue
+  sem gravar. O access link (`/a`) só desvia por `/entrar?welcome=1` quando o nome falta.
+- **Convite de novidades (sheet):** a pergunta "avisos pelo WhatsApp?" **não é passo do login** —
+  é o `MarketingPromptSheet` (bottom sheet, montado uma vez no shell), dirigido por
+  `useShopSession.welcomeAsksMarketing` (nunca respondida: sem linha de consentimento whatsapp e sem
+  `Customer.metadata.marketing_prompt_answered_at`). A fonte principal é a **home**
+  (`omotenashi.marketing_prompt_pending`, toda visita — cobre quem entra pelo aparelho reconhecido sem
+  passar pelo login; anônimo = false; falha fechado); o `welcome_asks_marketing` do payload de sessão
+  também alimenta. Nenhuma resposta tardia reabre o que foi respondido nesta sessão de navegador.
+  Sobe ~600 ms depois de a página montar, só autenticado, **nunca** em `/entrar`, `/a`,
+  `/finalizar/**` e `/pedido/**`; uma vez por sessão de navegador (`sessionStorage`), mesmo se a
+  resposta falhar. **Um convite por página** (`useShopInvite`): se o convite de instalar o app
+  (`PwaInstallInvite`) está aberto ou abriu nesta página, o de novidades espera a próxima navegação, e
+  vice-versa. Copy fixa (três linhas + chave + fechar):
+  "Saber das fornadas antes de todo mundo?" / chave "Avisos pelo WhatsApp" (nasce desligada, SÓ
+  consentimento — sem data de nascimento, sem frase de idade) / "Mude quando quiser em Preferências.".
+  LIGAR = `POST account/marketing-prompt/ {whatsapp: true}` na hora, fecha e toast "Combinado. Você vai
+  saber primeiro."; FECHAR sem ligar (X, arrastar, tocar fora, Esc) = `{whatsapp: false}` — só o
+  carimbo, **nunca** opt-out — e a pergunta não volta. O rótulo da chave + a linha miúda são a
+  evidência gravada (`MARKETING_PROMPT_DISCLOSURE`, v3). Depois disso a chave continua em Conta ›
+  Preferências.
 - **Declaração de maioridade no login:** a nota ao lado do botão de entrar — "Ao continuar, você confirma
   que é maior de idade e aceita os Termos de uso." (frase fixa em `presentation/auth.ts`, link para
   `/terms`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,

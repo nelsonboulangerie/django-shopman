@@ -970,18 +970,20 @@ class NotificationPreferenceToggleView(APIView):
         })
 
 
-# A frase que a pessoa lê ao lado da chave no gate de boas-vindas
-# (`surfaces/storefront-nuxt/app/pages/entrar.vue`, bloco `data-login-marketing`).
-# É gravada como evidência do consentimento, então tem de ser a MESMA da tela —
-# o teste de contrato lê o .vue e confere. Mudou a copy? Sobe a versão.
+# A frase que a pessoa lê ao lado da chave no sheet de novidades
+# (`surfaces/storefront-nuxt/app/components/MarketingPromptSheet.vue`): o rótulo
+# da chave + a linha miúda. É gravada como evidência do consentimento, então tem
+# de ser a MESMA da tela — o teste de contrato lê o .vue e confere. Mudou a
+# copy? Sobe a versão. (v2 era o bloco "Novidades da Nelson" do passo de login,
+# que virou sheet na página de destino em 17/09.)
 #
 # A chave é SÓ consentimento. A maioridade não entra na frase: foi declarada ao
 # entrar (`account_service.record_adult_declaration`), em toda porta de entrada.
 MARKETING_PROMPT_DISCLOSURE = (
-    "Quero receber novidades da Nelson pelo WhatsApp. "
-    "Mude quando quiser em Conta › Preferências."
+    "Avisos pelo WhatsApp. "
+    "Mude quando quiser em Preferências."
 )
-MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v2"
+MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v3"
 
 
 class MarketingPromptView(APIView):
@@ -989,9 +991,9 @@ class MarketingPromptView(APIView):
 
     Corpo: ``{"whatsapp": bool}`` (ausente = ``false``). Idempotente: a primeira
     resposta carimba ``Customer.metadata["marketing_prompt_answered_at"]`` e o
-    gate de boas-vindas para de perguntar; repetir não regrava o carimbo.
+    sheet de novidades da loja para de perguntar; repetir não regrava o carimbo.
 
-    ⚠️ ``whatsapp=false`` (não marcou, ou "Deixar para depois") grava SÓ o
+    ⚠️ ``whatsapp=false`` (fechou o sheet sem ligar a chave) grava SÓ o
     carimbo. Nunca ``opted_out``: isso é proibição, e cala até o recado do
     próprio pedido naquele canal (`services/notification.py`). Ver
     `account_service.answer_marketing_prompt`.

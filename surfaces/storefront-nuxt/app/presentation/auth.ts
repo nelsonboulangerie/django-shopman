@@ -1,6 +1,6 @@
 // Transforms puros do fluxo de entrada por OTP: máquina de passos
-// (telefone → código → boas-vindas), normalização de erros da API de auth
-// (rate limit é recuperação calma, não falha) e cooldown de reenvio.
+// (telefone → código → boas-vindas, que é SÓ o nome), normalização de erros da
+// API de auth (rate limit é recuperação calma, não falha) e cooldown de reenvio.
 
 export type AuthStep = 'phone' | 'code' | 'welcome'
 
@@ -84,39 +84,26 @@ export const LOGIN_ADULT_DECLARATION_LEAD = 'Ao continuar, você confirma que é
 export const LOGIN_TERMS_LINK_LABEL = 'Termos de uso'
 export const LOGIN_ADULT_DECLARATION = `${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_TERMS_LINK_LABEL}.`
 
-// ── A pergunta de novidades no gate de boas-vindas ─────────────────────────
+// ── O convite de novidades NÃO é passo do login ────────────────────────────
 //
-// O gate abre por duas perguntas independentes (`welcome_asks_name`,
-// `welcome_asks_marketing`); a tela mostra só o que falta. A caixa de novidades
-// nasce DESLIGADA — consentimento de marketing é manifestação afirmativa (LGPD
-// art. 8 §4), nunca vem embutido nem pré-marcado. A chave é SÓ consentimento:
-// não pede data de nascimento nem repete a declaração de maioridade, que já foi
-// feita ao entrar.
-
-export interface WelcomeGateInput {
-  asksName: boolean
-  asksMarketing: boolean
-  name: string
-  marketingOptIn: boolean
-}
-
-export function welcomeCanContinue (input: WelcomeGateInput): boolean {
-  if (input.asksName && !welcomeNameValue(input.name)) return false
-  return true
-}
-
-// O que vai no PATCH do perfil: o nome, quando foi pedido. `null` = não há o
-// que gravar no perfil (só a resposta da pergunta de novidades).
-export function welcomeProfilePatch (input: WelcomeGateInput): { first_name: string } | null {
-  if (!input.asksName) return null
-  const name = welcomeNameValue(input.name)
-  return name ? { first_name: name } : null
+// A pergunta "avisos pelo WhatsApp?" sobe como bottom sheet (MarketingPromptSheet)
+// na página em que a pessoa cai depois de entrar — não é pré-condição nem
+// bloqueia nada. Ela nunca interrompe o que a pessoa veio fazer: fica fora das
+// portas de entrada (/entrar, /a), do checkout e do pedido (pagamento e
+// acompanhamento). A chave nasce DESLIGADA — consentimento de marketing é
+// manifestação afirmativa (LGPD art. 8 §4), nunca pré-marcado.
+export function isMarketingPromptRouteExcluded (path: string): boolean {
+  return path === '/entrar' || path.startsWith('/entrar/')
+    || path === '/a' || path.startsWith('/a/')
+    || path === '/finalizar' || path.startsWith('/finalizar/')
+    || path === '/pedido' || path.startsWith('/pedido/')
 }
 
 // Aterrissagem do access link (a.vue): quem entra por link e ainda precisa
-// confirmar o nome passa pelo passo de boas-vindas ANTES do destino — o mesmo
+// confirmar o NOME passa pelo passo de boas-vindas ANTES do destino — o mesmo
 // passo do fluxo OTP, com o destino preservado em `next` para depois do
-// confirmar. Sem boas-vindas pendentes, o destino do servidor vale direto.
+// confirmar. Sem nome pendente, o destino do servidor vale direto (o convite de
+// novidades não passa por aqui: é sheet na página de destino).
 export function accessLinkLanding (redirect: string, requiresWelcome: boolean): string {
   const destination = redirect || '/'
   if (!requiresWelcome) return destination

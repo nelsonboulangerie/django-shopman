@@ -355,6 +355,10 @@ export interface OmotenashiProjection {
   customer_name: string | null
   is_birthday: boolean
   audience: 'anon' | 'new' | 'returning' | 'vip'
+  // A pergunta de novidades ainda não foi respondida (anônimo: sempre false).
+  // Chega em toda visita — é daqui que o sheet de novidades sabe se sobe para
+  // quem entra pelo aparelho reconhecido, sem passar pelo login.
+  marketing_prompt_pending: boolean
 }
 
 export interface ShopStatusProjection {
