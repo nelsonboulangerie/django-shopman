@@ -200,6 +200,12 @@ de compra todo dia, em silêncio.
 | `ALLOWED_REDIRECT_HOSTS` | set | `set()` | Hosts permitidos no parâmetro `next` |
 | `TRUSTED_PROXY_DEPTH` | int | `1` | Profundidade de X-Forwarded-For para IP |
 
+`SHOPMAN_BFF_PROXY_SECRET` (setting Django, env de mesmo nome, default `""` = desligado):
+segredo que o BFF da loja apresenta em `X-Shopman-Proxy-Secret` (no Nuxt,
+`NUXT_DJANGO_PROXY_SECRET`, mesmo valor). Com ele, `shopman.shop.services.auth.client_ip`
+lê um salto a mais do X-Forwarded-For — o BFF chama o `api.` pela rede pública e o
+N-ésimo da direita seria o IP de saída do Nitro. Sem ele, o cabeçalho é ignorado.
+
 ### Templates
 
 | Setting | Tipo | Default |

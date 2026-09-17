@@ -162,4 +162,32 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     const mutationHeaders = ($fetch.raw as any).mock.calls[1][1].headers
     expect(mutationHeaders['x-csrftoken']).toBe('seeded')
   })
+
+  it('apresenta o segredo do BFF ao Django junto do XFF recebido, quando configurado', async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ djangoBaseUrl: DJANGO, djangoProxySecret: 's3cr3t' }))
+    const { event } = makeEvent({
+      method: 'GET',
+      path: '/api/v1/account/',
+      headers: { 'x-forwarded-for': '203.0.113.9, 10.244.0.1' }
+    })
+
+    await proxyDjangoPath(event, '/api/v1/account')
+
+    const { options } = calls[0]!
+    expect(options.headers['x-forwarded-for']).toBe('203.0.113.9, 10.244.0.1')
+    expect(options.headers['x-shopman-proxy-secret']).toBe('s3cr3t')
+  })
+
+  it('não repassa segredo que o navegador escreveu, nem inventa um sem config', async () => {
+    const { event } = makeEvent({
+      method: 'GET',
+      path: '/api/v1/account/',
+      headers: { 'x-shopman-proxy-secret': 'chutado-pelo-cliente', 'x-forwarded-for': '6.6.6.6' }
+    })
+
+    await proxyDjangoPath(event, '/api/v1/account')
+
+    const { options } = calls[0]!
+    expect(options.headers['x-shopman-proxy-secret']).toBeUndefined()
+  })
 })

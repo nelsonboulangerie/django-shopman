@@ -406,8 +406,13 @@ envs:
 # ⚠️ O `2` foi medido QUANDO o BFF ainda não repassava o X-Forwarded-For. Desde
 # 01/09 ele repassa (server/utils/djangoProxy.ts), e a cadeia ficou um salto mais
 # longa — o IP real do cliente está mais à esquerda do que quando este número foi
-# aferido. RE-MEDIR com SHOPMAN_LOG_CLIENT_IP=true e a linha `client_ip.diagnostic`.
-# O `NUM_PROXIES` do DRF lê esta mesma env, então corrigir aqui corrige os dois.
+# aferido. Em 17/09 o banco mostrou o efeito: com depth=2, pedido vindo da loja
+# gravou o IP de SAÍDA do Nitro (147.182.186.185). O `2` segue sendo a conta de
+# quem conecta DIRETO no `api.`; o salto a mais do BFF é lido por
+# SHOPMAN_BFF_PROXY_SECRET (componente `web`), não mudando este número.
+# Confirmar com SHOPMAN_LOG_CLIENT_IP=true e a linha `client_ip.diagnostic`.
+# O `NUM_PROXIES` do DRF lê esta mesma env; o throttle anônimo conta por
+# `auth.client_ip` (shopman/shop/api_throttles.py).
 - key: DOORMAN_TRUSTED_PROXY_DEPTH
   scope: RUN_TIME
   value: '2'
@@ -662,6 +667,14 @@ services:
   - key: VAPID_CLAIMS_EMAIL
     scope: RUN_TIME
     type: SECRET
+  # Segredo compartilhado com o BFF da loja (no `storefront-nuxt`:
+  # NUXT_DJANGO_PROXY_SECRET, MESMO valor). O BFF chama o `api.` pela rede
+  # pública e a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For: com
+  # depth=2 o Django gravava 147.182.186.185 como IP de consentimento e de
+  # maioridade (medido 17/09). Com o segredo, lê um salto a mais. Vazio = desligado.
+  - key: SHOPMAN_BFF_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
   # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
   # O access log do daphne grava o request-target CRU, com query string
   # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
@@ -693,6 +706,11 @@ services:
     scope: RUN_TIME
     value: '/'
     type: GENERAL
+  # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
+  # pedido veio deste BFF, para o IP gravado ser o do cliente e não o do Nitro.
+  - key: NUXT_DJANGO_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
   health_check:
     failure_threshold: 5
     http_path: /

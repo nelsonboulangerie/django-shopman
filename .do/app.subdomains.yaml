@@ -597,6 +597,13 @@ services:
       - key: VAPID_CLAIMS_EMAIL
         scope: RUN_TIME
         type: SECRET
+      # Segredo compartilhado com o BFF da loja (lá: NUXT_DJANGO_PROXY_SECRET,
+      # MESMO valor). Com ele o Django lê um salto a mais do X-Forwarded-For nos
+      # pedidos que vêm do Nitro — senão grava o IP de saída do Nitro como IP de
+      # consentimento/maioridade (LGPD). Vazio = desligado. Ver config/settings.py.
+      - key: SHOPMAN_BFF_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
     health_check:
       http_path: /health/ready/
       initial_delay_seconds: 30
@@ -645,6 +652,11 @@ services:
         value: /
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
+      # pedido veio deste BFF, para o IP gravado ser o do cliente.
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
     health_check:
       http_path: /menu
       initial_delay_seconds: 30

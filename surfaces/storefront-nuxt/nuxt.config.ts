@@ -39,7 +39,11 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || 'http://127.0.0.1:8000'
+    djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || 'http://127.0.0.1:8000',
+    // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o
+    // IP do cliente um salto mais fundo no X-Forwarded-For. Só no servidor (nunca
+    // em `public`); em runtime vem de NUXT_DJANGO_PROXY_SECRET. Vazio = desligado.
+    djangoProxySecret: ''
   },
 
   // Foto de catálogo é imutável por convenção: trocar a foto = trocar o NOME do
