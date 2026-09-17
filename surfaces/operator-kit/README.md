@@ -286,6 +286,43 @@ O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
 
+## Base de CSS (`operator-base.css`)
+
+O núcleo de CSS dos oito apps de operador vive em
+`app/assets/css/operator-base.css`, que puxa o `operator-theme.css` (tokens) ao
+lado. Cobre: o `@source` do kit, a variante `dark`, fontes, animações e keyframes,
+os aliases de `@theme inline`, o bloco-doc da escala de design, o `@layer base`
+(reset, scrollbar, `color-scheme`, cursor de botão) e o utilitário `no-scrollbar`.
+
+O `tailwind.css` de cada app fica com três coisas, e só elas:
+
+```css
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../../../operator-kit/app/assets/css/operator-base.css";
+@plugin "@tailwindcss/forms" { strategy: "class"; }
+/* e o tail do app */
+```
+
+**Por que `@import "tailwindcss"` e o `@plugin` não sobem para a base:** eles
+resolvem por especificador nu, a partir do diretório do arquivo que os declara. O
+kit é uma layer do Nuxt, não um app — não tem `node_modules` com o Tailwind, e não
+há `node_modules` acima de `surfaces/`. Na base eles não resolveriam.
+
+**Tail legítimo** é o que pertence a um app só: impressão térmica de 80 mm e
+`.pos-tile-fallback` no POS; `.date-input-hit-area` e `forced-colors` no Produção;
+`@font-face` self-hosted, alvos de toque de 44 px e `prefers-reduced-motion` no
+Marketing (piloto do ADR-026). Os outros cinco apps não têm tail.
+
+⚠️ **A armadilha do `@source`:** o caminho é relativo ao arquivo que o declara. Na
+base, `../..` é a raiz `operator-kit/app`. Errar não quebra o build — o CSS compila
+e as classes usadas só nos componentes do kit (`OperatorRail`, `RailItem`,
+`RailToggle`, `OfflineBanner`, `UiNativeSelect`) somem do bundle em silêncio.
+Medido: um `@source` errado derrubou 14 KB do CSS do `production-nuxt` com exit 0 e
+zero avisos. `tests/guardrails.test.ts` resolve o caminho declarado e exige que ele
+ainda alcance esses componentes; o mesmo arquivo recusa que qualquer app volte a
+copiar o núcleo.
+
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 
 - **Lock do POS** — o POS mantém deliberadamente a própria variante
@@ -293,8 +330,6 @@ do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por pass
   transporte via `usePosAction` e lock local-first. A família canônica
   (`useOperatorLock`/`OperatorLock`/`OperatorPinChange`) vive aqui e serve
   kds/orders/production.
-- **DS tokens canônicos** (`tailwind.css`) — hoje idênticos por app; extrair o bloco
-  canônico para cá (com split das partes app-específicas: print no POS, dark no KDS).
 - **Interceptor global de 401/403** (reabre o gate de operador) — plugin compartilhado.
 - **Tooling base** (ESLint flat + Prettier + vitest 2-projects + Playwright) — configs
   compartilhadas adotadas por cada app no seu WP.
