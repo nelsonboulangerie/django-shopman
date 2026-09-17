@@ -1,0 +1,20 @@
+{
+  "operator-floor": {
+    "description": "Chão da loja: PDV, cozinha, pedidos, produção e Central.",
+    "apps": [
+      { "id": "pos", "surface": "pos-nuxt" },
+      { "id": "kds", "surface": "kds-nuxt" },
+      { "id": "orders", "surface": "orders-nuxt" },
+      { "id": "production", "surface": "production-nuxt" },
+      { "id": "hub", "surface": "hub-nuxt" }
+    ]
+  },
+  "operator-office": {
+    "description": "Gestão: marketing, B.I. e compras.",
+    "apps": [
+      { "id": "marketing", "surface": "marketing-nuxt", "readyPath": "/health/ready" },
+      { "id": "bi", "surface": "bi-nuxt" },
+      { "id": "purchase", "surface": "purchase-nuxt" }
+    ]
+  }
+}
