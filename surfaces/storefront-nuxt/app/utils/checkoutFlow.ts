@@ -431,13 +431,6 @@ export function fulfillmentSummary (fulfillment: string, scheduleSummary: string
   return compactText([fulfillment, scheduleSummary], ' · ')
 }
 
-export function confirmItemSummary (checkout: CheckoutProjection | null | undefined): string {
-  const items = checkout?.cart.items || []
-  const visible = items.slice(0, 3).map(item => `${item.qty}x ${item.name}`)
-  const remaining = items.length - visible.length
-  if (remaining > 0) visible.push(`+${remaining}`)
-  return visible.join(' · ') || 'Sem itens'
-}
 
 export function confirmSheetDescription (checkout: CheckoutProjection | null | undefined): string {
   return `${formatCount(checkout?.cart.items_count || 0, 'item', 'itens')} · ${checkout?.cart.grand_total_display || 'R$ 0,00'}`

@@ -19,7 +19,6 @@ import {
   checkoutStepLabels,
   checkoutStepState,
   checkoutSteps,
-  confirmItemSummary as buildConfirmItemSummary,
   confirmSheetDescription as buildConfirmSheetDescription,
   contactComplete as buildContactComplete,
   contactSummary as buildContactSummary,
@@ -363,7 +362,6 @@ const fulfillmentSummary = computed(() => buildFulfillmentSummary(fulfillmentLab
 const hasReviewWaitlist = computed(() =>
   (cart.value?.items || []).some(line => reviewWaitlist(line, state.delivery_date))
 )
-const confirmItemSummary = computed(() => buildConfirmItemSummary(checkout.value))
 const phoneDisplay = computed(() => displayBrazilianPhone(state.phone || checkout.value?.customer_phone || '', defaultDdd.value))
 const contactComplete = computed(() => buildContactComplete(state, phoneDisplay.value))
 // O campo Nome aparece por ESTADO explícito, nunca por conteúdo.
@@ -1244,9 +1242,6 @@ useSeoMeta({
       <section class="shop-stack-block">
         <div>
           <h1 class="shop-title">Finalize seu pedido</h1>
-          <p class="mt-2 max-w-2xl shop-muted">
-            Uma etapa por vez. Você confere tudo antes de enviar.
-          </p>
         </div>
 
         <!-- Skeleton só no carregamento INICIAL. Em refresh de fundo (ex.: rascunho
@@ -1818,23 +1813,23 @@ useSeoMeta({
           <div
             class="sticky bottom-20 z-30 shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:bottom-4 lg:static"
             data-checkout-action-card
+            data-focus-obstruction
           >
             <!-- A linha do total abre o resumo. Era um botão "Resumo" próprio na
                  barra invisível; aqui ela é o toque, e o ícone de nota diz isso. -->
             <UiButton
               variant="ghost"
-              class="h-auto w-full flex-col items-stretch gap-1 p-0 text-left hover:bg-transparent"
+              class="h-auto w-full p-0 text-left hover:bg-transparent"
               aria-label="Ver o resumo do pedido"
               data-checkout-open-receipt
               @click="openReceiptSheet"
             >
               <span class="flex w-full items-baseline justify-between gap-2">
-                <span class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</span>
+                <span class="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-foreground/70">
+                  <Icon name="lucide:receipt-text" class="size-4 shrink-0" />
+                  Total do pedido
+                </span>
                 <span class="shop-price-strong shrink-0">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
-              </span>
-              <span class="flex w-full min-w-0 items-center gap-2 text-xs font-normal text-ink-foreground/70">
-                <Icon name="lucide:receipt-text" class="size-4 shrink-0" />
-                <span class="truncate">{{ confirmItemSummary }}</span>
               </span>
             </UiButton>
             <UiButton

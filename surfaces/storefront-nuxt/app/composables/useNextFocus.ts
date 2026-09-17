@@ -1,6 +1,7 @@
 import type { MaybeRefOrGetter } from 'vue'
 import {
   FOCUS_CONTROL_ATTRIBUTE,
+  FOCUS_OBSTRUCTION_ATTRIBUTE,
   focusTargetSelector,
   needsInitialReveal,
   revealPlan,
@@ -64,6 +65,20 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
     block.scrollIntoView({ block: plan.align, behavior: plan.behavior })
   }
 
+  // O que flutua na base da tela (card de ação, barra) come área utilizável.
+  // Só conta o que está ancorado embaixo: um obstáculo que rolou para fora do
+  // caminho não obstrui nada.
+  function obstructedBottom (): number {
+    let maior = 0
+    for (const el of document.querySelectorAll<HTMLElement>(`[${FOCUS_OBSTRUCTION_ATTRIBUTE}]`)) {
+      const rect = el.getBoundingClientRect()
+      if (rect.height <= 0) continue
+      if (rect.bottom < window.innerHeight / 2) continue
+      maior = Math.max(maior, window.innerHeight - rect.top)
+    }
+    return maior
+  }
+
   function reducedMotion (): boolean {
     return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }
@@ -72,7 +87,12 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
     const plan = revealPlan({ ...options, ...overrides }, reducedMotion())
     if (initial) {
       const rect = block.getBoundingClientRect()
-      if (!needsInitialReveal({ top: rect.top, bottom: rect.bottom, viewportHeight: window.innerHeight })) return
+      if (!needsInitialReveal({
+        top: rect.top,
+        bottom: rect.bottom,
+        viewportHeight: window.innerHeight,
+        obstructedBottom: obstructedBottom()
+      })) return
     }
     if (plan.focus) focusControl(block)
     scrollTo(block, plan)

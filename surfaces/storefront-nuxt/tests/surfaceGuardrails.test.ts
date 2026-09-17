@@ -398,7 +398,10 @@ describe('surface UX guardrails', () => {
     expect(checkout).not.toContain('class="flex gap-3 rounded-lg border p-4"')
     expect(checkout).not.toContain('<label v-for="method in paymentMethods"')
     expect(checkout).toContain('Confirmar pedido')
-    expect(checkout).toContain('confirmItemSummary')
+    // A lista de itens NÃO mora no card de ação: trunca no celular e o resumo
+    // completo está a um toque, no bottom-sheet. O card carrega o total, que é
+    // o único fato que não está em outro lugar da tela e que se move.
+    expect(checkout).not.toContain('confirmItemSummary')
     expect(checkout).toContain('paymentMethodLabel')
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
