@@ -456,8 +456,8 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         widget=UnfoldBooleanSwitchWidget,
         help_text=(
             "Mostra o bloco 'Nota e comprovante' (CPF na nota, impressa, por e-mail) no PDV. "
-            "NÃO decide se a NFC-e sai: quem decide é a regra fiscal do ambiente "
-            "(SHOPMAN_FISCAL_EMISSION_RESOLVER) — cartão e Pix emitem mesmo com isto desligado. "
+            "NÃO decide se a NFC-e sai: quem decide é a regra fiscal configurada no ambiente "
+            "(SHOPMAN_FISCAL_EMISSION_RESOLVER), que pode emitir mesmo com isto desligado. "
             "Também depende do adapter fiscal estar pronto."
         ),
     )
