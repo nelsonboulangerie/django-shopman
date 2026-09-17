@@ -311,7 +311,7 @@ async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos" | "da
 // fallback silencioso fazia o operador achar que a bobina imprimiu.
 async function printReceipt() {
   if (!import.meta.client || !result.value) return;
-  if (agent.canKick.value) {
+  if (agent.canPrint.value) {
     printingReceipt.value = true;
     try {
       const receipt = await fetchPrintable(result.value.orderRef, "receipt-escpos");

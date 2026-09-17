@@ -121,7 +121,8 @@ function meta(status: string): StatusMeta {
         </li>
       </ul>
       <!-- Remediação: o card não termina no diagnóstico. Só existe onde existe
-           agente; num balcão de gaveta com chave não há o que sondar. -->
+           AGENTE — impressora ou gaveta por software. Num balcão sem nenhuma
+           das duas não há o que sondar. -->
       <div v-if="agentConfigured" class="grid gap-2 border-t p-3">
         <p v-if="agentDown" class="text-xs text-muted-foreground">
           Reinicie o agente na estação do balcão. Depois de qualquer mudança na

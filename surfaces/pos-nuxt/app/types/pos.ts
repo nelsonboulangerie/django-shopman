@@ -406,6 +406,22 @@ export interface POSCashDrawerProjection {
   idle_open_alert_minutes?: number;
 }
 
+/**
+ * Como ESTE balcão IMPRIME. Capacidade separada da gaveta.
+ *
+ * O agente do dispositivo é o mesmo processo que chuta a gaveta, mas as duas
+ * capacidades são ligadas de forma independente no Admin: há balcão com
+ * impressora e gaveta de chave. `can_print: false` = não há caminho de bobina
+ * nesta estação, e `reason` é a frase DE IMPRESSORA que a tela mostra.
+ */
+export interface POSDeviceAgentProjection {
+  can_print: boolean;
+  /** Por que não dá, quando `can_print` é false. Frase de impressora, nunca de gaveta. */
+  reason?: string;
+  agent_url?: string;
+  token?: string;
+}
+
 export interface POSOperatorProjection {
   id: number;
   username: string;
@@ -439,6 +455,7 @@ export interface POSProjection {
   terminal_health_status: "ready" | "warning" | "error" | string;
   terminal_components: POSTerminalComponentProjection[];
   cash_drawer?: POSCashDrawerProjection;
+  device_agent?: POSDeviceAgentProjection;
   favorite_collection_refs: string[];
   delivery_minimum_q: number;
   delivery_minimum_display: string;

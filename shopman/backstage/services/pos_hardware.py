@@ -84,6 +84,44 @@ class DeviceAgentConfig:
             return "sem endereço do agente"
         return ""
 
+    def surface_payload(self) -> dict:
+        """O que a superfície precisa para mandar papel à bobina.
+
+        Espelha o que ``api/print_jobs.destination_projection`` já entrega ao
+        Produção: a impressão é capacidade do AGENTE do dispositivo, não da
+        gaveta. O PDV lia só ``cash_drawer`` e, num balcão com impressora e
+        gaveta de chave, recusava TODA impressão — o dono configurava a
+        impressora no Admin e o PDV dizia que não havia impressora.
+
+        ⚠️ O token vai para o navegador pelo mesmo motivo do payload da gaveta:
+        quem alcança a loopback do balcão é a página, não o servidor na DO.
+        """
+        if not self.available:
+            return {"can_print": False, "reason": self._unavailable_reason()}
+        return {
+            "can_print": True,
+            "agent_url": self.agent_url,
+            "token": self.token,
+            "reason": "",
+        }
+
+    def _unavailable_reason(self) -> str:
+        """Por que este balcão não imprime, em uma frase DE IMPRESSORA.
+
+        Frase própria, nunca a da gaveta: o operador que tem impressora e abre
+        a gaveta com a chave lia "Gaveta não configurada" e ia procurar defeito
+        no lugar errado.
+        """
+        if not self.declared:
+            return "Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor."
+        if not self.enabled:
+            return "O agente deste terminal está desligado na configuração."
+        if not self.token:
+            return "A impressora deste terminal está sem token — salve o terminal no gestor para gerar um."
+        if not self.agent_url:
+            return "A impressora deste terminal está sem endereço do agente."
+        return "Impressora indisponível neste terminal."
+
 
 @dataclass(frozen=True)
 class CashDrawerConfig:

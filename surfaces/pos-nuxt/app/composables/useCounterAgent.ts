@@ -1,7 +1,7 @@
 import type { ComputedRef } from "vue";
 import { toast } from "vue-sonner";
 
-import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
+import type { POSCashDrawerProjection, POSDeviceAgentProjection, POSProjection } from "~/types/pos";
 import {
   callLocalDeviceAgent,
   localDeviceAgentErrorMessage,
@@ -68,9 +68,23 @@ export type DrawerState =
  */
 export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   const config = computed<POSCashDrawerProjection | null>(() => pos.value?.cash_drawer ?? null);
+  /**
+   * A IMPRESSORA é capacidade própria, e ler isto de `cash_drawer` custou caro.
+   *
+   * O Admin liga impressora e gaveta de forma independente — há balcão com
+   * bobina e gaveta de chave. Enquanto a impressão pendurava no `can_kick`, o
+   * dono configurava a impressora no gestor e o PDV respondia que não havia
+   * impressora, com frase de GAVETA. O servidor já separava os dois lados
+   * (`DeviceAgentConfig`); quem não tinha separado era esta tela.
+   */
+  const printer = computed<POSDeviceAgentProjection | null>(() => pos.value?.device_agent ?? null);
 
   /** Este balcão tem caminho de software? `false` = gaveta de chave. */
   const canKick = computed(() => Boolean(config.value?.can_kick));
+  /** Este balcão manda papel para a bobina? Independe da gaveta. */
+  const canPrint = computed(() => Boolean(printer.value?.can_print));
+  /** Alguma capacidade local — é o que a sonda de saúde do agente pergunta. */
+  const hasAgent = computed(() => canPrint.value || canKick.value);
   /**
    * Por que não dá, quando não dá — para a tela DIZER em vez de esconder.
    *
@@ -81,6 +95,14 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   const unavailableReason = computed(
     () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
   );
+  /**
+   * A frase da IMPRESSORA. Nunca a da gaveta: quem tem bobina e abre a gaveta
+   * com a chave lia "Gaveta não configurada" e ia procurar defeito no lugar
+   * errado — o defeito nem existia.
+   */
+  const printUnavailableReason = computed(
+    () => printer.value?.reason || "Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+  );
   /** O dono quer que a gaveta abra sozinha ao fechar venda em dinheiro? */
   const opensOnCashSale = computed(() => canKick.value && Boolean(config.value?.open_on_cash_sale));
 
@@ -89,6 +111,17 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   async function callAgent(path: string, body?: Record<string, unknown>, timeoutMs = AGENT_TIMEOUT_MS) {
     const drawer = config.value;
     return await callLocalDeviceAgent(drawer, path, body, timeoutMs);
+  }
+
+  /**
+   * O transporte da SONDA. É um agente só por dispositivo, mas o endereço pode
+   * chegar por qualquer das duas capacidades: um terminal só-impressora não
+   * manda bloco de gaveta nenhum, e sondar por `cash_drawer` ali não alcançava
+   * ninguém.
+   */
+  async function callAgentForHealth(path: string, timeoutMs = AGENT_TIMEOUT_MS) {
+    const transport = canPrint.value ? printer.value : config.value;
+    return await callLocalDeviceAgent(transport, path, undefined, timeoutMs);
   }
 
   /**
@@ -119,10 +152,14 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * de spool não tem. Por isso o teste termina no olho do operador.
    */
   async function probe(): Promise<{ ok: boolean; message: string; drawerLock?: { calibrated: boolean } }> {
-    if (!canKick.value) return { ok: false, message: "Este balcão abre a gaveta com a chave." };
+    // A sonda é do AGENTE, não da gaveta: um balcão só-impressora tem agente
+    // para sondar, e gatear em `canKick` deixava o card de saúde mudo lá.
+    if (!hasAgent.value) {
+      return { ok: false, message: `${printUnavailableReason.value} ${unavailableReason.value}` };
+    }
     probing.value = true;
     try {
-      const payload = await callAgent("/health");
+      const payload = await callAgentForHealth("/health");
       // A versão vai junto porque o balcão só se atualiza pelo download do
       // Admin — sem rede, sem pendrive. Comparar o que a estação roda com o que
       // o Admin entrega é a única forma de saber se a máquina está atrasada.
@@ -152,9 +189,11 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    */
   async function print(payloadB64: string, title: string): Promise<PrintOutcome> {
     if (!import.meta.client) return { status: "skipped", detail: "Impressão fora do navegador." };
-    if (!canKick.value) return { status: "skipped", detail: unavailableReason.value };
+    // A GAVETA não manda na bobina. Era aqui que o balcão com impressora e
+    // gaveta de chave perdia recibo, DANFE, ficha e comprovante de caixa.
+    if (!canPrint.value) return { status: "skipped", detail: printUnavailableReason.value };
     try {
-      await printWithLocalDeviceAgent(config.value || {}, payloadB64, title);
+      await printWithLocalDeviceAgent(printer.value || {}, payloadB64, title);
       return { status: "printed", detail: "" };
     } catch (error) {
       return { status: "failed", detail: messageOf(error) };
@@ -196,7 +235,19 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
     }
   }
 
-  return { canKick, unavailableReason, opensOnCashSale, probing, kick, print, probe, readState };
+  return {
+    canKick,
+    unavailableReason,
+    canPrint,
+    printUnavailableReason,
+    hasAgent,
+    opensOnCashSale,
+    probing,
+    kick,
+    print,
+    probe,
+    readState,
+  };
 }
 
 function messageOf(error: unknown): string {
