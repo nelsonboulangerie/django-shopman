@@ -9,6 +9,25 @@ import {
   type RevealPlan
 } from '~/presentation/nextFocus'
 
+// O QUE FLUTUA NA BASE DA TELA (card de ação, barra) come área utilizável.
+// Vive aqui, no escopo do módulo, porque dois mecanismos leem o mesmo fato: o
+// próximo foco, para saber se o bloco está mesmo à vista, e a dica de "tem
+// mais abaixo", para flutuar logo acima dele.
+//
+// Só conta o que está ancorado embaixo: um obstáculo que rolou para fora do
+// caminho não obstrui nada.
+export function measureBottomObstruction (): number {
+  if (!import.meta.client) return 0
+  let maior = 0
+  for (const el of document.querySelectorAll<HTMLElement>(`[${FOCUS_OBSTRUCTION_ATTRIBUTE}]`)) {
+    const rect = el.getBoundingClientRect()
+    if (rect.height <= 0) continue
+    if (rect.bottom < window.innerHeight / 2) continue
+    maior = Math.max(maior, window.innerHeight - rect.top)
+  }
+  return maior
+}
+
 export type RevealTarget = string | Element | (() => Element | null | undefined) | null | undefined
 
 // Quem já é focável por natureza não ganha `tabindex=-1`: em input/button isso
@@ -65,20 +84,6 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
     block.scrollIntoView({ block: plan.align, behavior: plan.behavior })
   }
 
-  // O que flutua na base da tela (card de ação, barra) come área utilizável.
-  // Só conta o que está ancorado embaixo: um obstáculo que rolou para fora do
-  // caminho não obstrui nada.
-  function obstructedBottom (): number {
-    let maior = 0
-    for (const el of document.querySelectorAll<HTMLElement>(`[${FOCUS_OBSTRUCTION_ATTRIBUTE}]`)) {
-      const rect = el.getBoundingClientRect()
-      if (rect.height <= 0) continue
-      if (rect.bottom < window.innerHeight / 2) continue
-      maior = Math.max(maior, window.innerHeight - rect.top)
-    }
-    return maior
-  }
-
   function reducedMotion (): boolean {
     return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }
@@ -86,7 +91,7 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
   function revealNow (block: HTMLElement, overrides: RevealOptions, initial: boolean) {
     const plan = revealPlan({ ...options, ...overrides }, reducedMotion())
     if (initial) {
-      const obstacle = obstructedBottom()
+      const obstacle = measureBottomObstruction()
       const rect = block.getBoundingClientRect()
       if (!needsInitialReveal({
         top: rect.top,

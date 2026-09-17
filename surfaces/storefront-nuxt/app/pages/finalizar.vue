@@ -1803,6 +1803,14 @@ useSeoMeta({
             </CheckoutProgressSection>
           </div>
 
+          <!-- Tem mais abaixo: o sentinela fecha o CONTEÚDO, antes do card (que
+               é chrome, não conteúdo — depois dele o fim nunca chegaria, porque
+               o card fica sempre entre o sentinela e a área observada).
+               As duas affordances convivem de propósito: o card diz qual é a
+               próxima ação, a dica diz que ainda há opções que a pessoa não viu
+               (cupom, presente e observação ficam abaixo da dobra no pagamento). -->
+          <MoreBelow />
+
           <!-- CARD SUSPENSO DA AÇÃO — o mesmo objeto da sacola, e pelo mesmo
                motivo: `sticky bottom-20 z-30` faz ele flutuar ACIMA da navegação
                inferior por ALTURA, não por prioridade de empilhamento.
