@@ -67,6 +67,9 @@ O layer contribui, via auto-import do Nuxt:
 | `app/presentation/moreBelow.ts` | `hintOffset`, `hintMotionClass`, `shouldHint` | regra pura da dica "tem mais abaixo" |
 | `app/composables/useMoreBelow.ts` | `useMoreBelow` | observa o fim do conteúdo (sentinela + IntersectionObserver) descontando o que flutua na base |
 | `app/components/MoreBelow.vue` | `<MoreBelow>` | a dica em si: degradê + pílula com chevron, some ao chegar ao fim — ver "Tem mais abaixo" |
+| `app/presentation/appLaunch.ts` | `crossAppLinkAttrs`, `sameOrigin`, `EXTERNAL_LINK_ATTRS` | regra pura de como um app manda o operador para OUTRO app — ver "Navegação entre apps instalados" |
+| `app/composables/useOperatorAppLink.ts` | `useOperatorAppLink` | `attrsFor(href)` reativo ao modo de exibição (instalar com a tela aberta já muda o link) |
+| `app/utils/displayMode.ts` | `isInstalledDisplay` | fonte única do "estou rodando como app instalado?" (standalone/fullscreen/minimal-ui + iOS) |
 | `app/presentation/pwaRuntime.ts` | `idleReloadPathAllowed`, `shouldCheckForUpdate`, `idleUpdateBlocker`, `applyIdleUpdate` | regra pura da troca de versão: quando sondar, quando aplicar sozinho e QUAL razão impede |
 | `app/composables/usePwaUpdate.ts` | `usePwaUpdate` | worker em espera + `update()` (skipWaiting + reload) + `checkForUpdate()` (sonda) |
 | `app/composables/usePwaAutoUpdate.ts` | `usePwaAutoUpdate` | sonda periódica/no foco e aplicação automática em momento seguro — ver "Atualização do app instalado" |
@@ -146,6 +149,49 @@ KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie")
 A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa, sem
 `name`/`shortName` fixos, título começando pelo `name`, nenhum título com hífen de
 separador, nenhum `document.title` cru).
+
+## Navegação entre apps instalados
+
+Com os oito apps instaláveis, sair de um para outro produzia dois sintomas ao mesmo
+tempo (relatado em 17/09/2026): **uma tarja grande no topo**, como se o navegador
+tivesse entrado em outro site, e **o título e a cor da barra da janela continuavam
+sendo os do primeiro app aberto**, qualquer que fosse ele.
+
+Não é estilo, é o contrato do PWA instalado. Cada app é um **host** próprio (`pdv.`,
+`central.`, `cozinha.`…) e o `scope` do manifesto é por origem. Navegar no MESMO frame
+para outra origem é sair do escopo: o Chrome preserva a janela — que pertence ao app
+que a abriu, com o `name` e o `theme_color` DELE — e desenha por cima a barra de "você
+saiu do app". Um sintoma só, visto de dois ângulos.
+
+A saída não é esconder a barra; é **não fazer essa navegação**. O app de destino tem
+janela própria, e é nela que ele deve abrir:
+
+| contexto | como o link abre |
+|---|---|
+| aba de navegador | `_self` — mesma aba, como antes (`_blank` ali empilharia aba a cada troca) |
+| app instalado, outra origem | `_blank` + `rel="noopener"` |
+| mesma origem | `_self`, sempre |
+| loja do cliente (`external`) | `_blank` + `rel="noopener"`, sempre |
+
+⚠️ **O `noopener` aqui não é só higiene de segurança — é a condição de o link abrir no
+app certo.** A captura de navegação do Chrome (ligada por padrão desde o Chrome 139) só
+age sobre navegações "capturáveis": as que criam um frame novo e **não** abrem num
+contexto auxiliar. Um `_blank` comum guarda `opener` e é auxiliar; com `noopener` o
+contexto nasce sem opener, é capturável, e o Chrome o entrega à janela do app de
+destino. Sem `noopener`, abriria uma janela solta do navegador.
+
+E o manifesto de todo app de operador declara `launch_handler: { client_mode:
+"focus-existing" }`: chegar num app que **já está aberto** traz a janela dele para a
+frente e descarta o URL. `navigate-existing` recarregaria o PDV com venda na mão só
+porque alguém tocou no atalho da Central — a mesma regra do `useOperatorReloadHold`.
+
+Os dois lados do caminho usam a mesma peça: o ícone da Central no `OperatorRail` de cada
+app, e os tiles da Central (`hub-nuxt`, `tileLinkAttrs`).
+
+**O que foi recusado:** `scope_extensions` (declarar as origens irmãs como extensão do
+escopo) tira a tarja, mas pelo motivo errado — passaria a rodar a Central *dentro* da
+janela do PDV, e o título e a cor continuariam sendo os do PDV. É exatamente o sintoma
+que se quer eliminar.
 
 ## Atualização do app instalado (`usePwaAutoUpdate`)
 
