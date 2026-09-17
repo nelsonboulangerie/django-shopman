@@ -78,7 +78,9 @@ class FakeStripe:
 
         class _PaymentIntent:
             @staticmethod
-            def retrieve(pid):
+            def retrieve(pid, **kwargs):
+                # `expand=["latest_charge"]` é o que o adapter pede para ler o
+                # funding (crédito/débito); o dublê aceita e ignora.
                 return _pi("succeeded" if outer.captured else "requires_capture")
 
             @staticmethod

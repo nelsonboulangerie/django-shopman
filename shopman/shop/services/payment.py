@@ -622,6 +622,8 @@ def _capture_once(order) -> None:
     result = adapter.capture(intent_ref)
     if result.success:
         payment_data["transaction_id"] = result.transaction_id
+        if isinstance(getattr(result, "card_funding", None), str):
+            payment_data["card_funding"] = result.card_funding
         data["payment"] = payment_data
         order.data = data
         order.save(update_fields=["data", "updated_at"])
@@ -1457,6 +1459,7 @@ def settle_from_gateway(order) -> str:
     except PaymentError:
         already_captured_q = 0
 
+    card_funding = None
     if already_captured_q > 0:
         transaction_id = ""
         captured_amount_q = already_captured_q
@@ -1479,6 +1482,7 @@ def settle_from_gateway(order) -> str:
 
         transaction_id = result.transaction_id
         captured_amount_q = result.amount_q
+        card_funding = result.card_funding if isinstance(getattr(result, "card_funding", None), str) else None
 
     # Read classification from the durable Payman intent after reconciliation.
     # A gateway status/result is not allowed to declare its own financial mode.
@@ -1501,6 +1505,8 @@ def settle_from_gateway(order) -> str:
             return "paid"  # outro resolver já promoveu — não duplicar
         locked_payment["transaction_id"] = transaction_id
         locked_payment["captured_at"] = timezone.now().isoformat()
+        if card_funding:
+            locked_payment["card_funding"] = card_funding
         locked_payment.update(provenance)
         locked_data = dict(locked.data or {})
         locked_data["payment"] = locked_payment

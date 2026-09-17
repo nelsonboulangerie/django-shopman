@@ -519,6 +519,13 @@ def test_payment_code_conta_na_casa_e_credito_loja_e_link_fica_em_outros():
 
     assert _payment_code("account") == "05"
     assert _payment_code("house_account") == "05"
+    # Cartão pela Stripe (loja `card` e `link`): o funding da cobrança decide.
     assert _payment_code("link") == "99"
+    assert _payment_code("card") == "99"
+    assert _payment_code("link", "credit") == "03"
+    assert _payment_code("card", "debit") == "04"
+    assert _payment_code("card", "prepaid") == "99"
+    # O balcão já diz crédito/débito por conta própria; funding não interfere.
+    assert _payment_code("credit", "debit") == "03"
     assert _payment_code("pix") == "17"
     assert _payment_code("cash") == "01"
