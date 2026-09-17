@@ -224,7 +224,7 @@ def _load_db_flow_ns(event: str) -> str | None:
     return None
 
 
-def send(recipient: str, template: str, context: dict | None = None, **config) -> bool:
+def send(recipient: str, template: str, context: dict | None = None, **config) -> bool | dict:
     """
     Send a notification via ManyChat (WhatsApp).
 
@@ -234,7 +234,11 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         context: Template variables (order_ref, customer_name, total, etc.).
 
     Returns:
-        True if sent successfully, False otherwise.
+        True if sent successfully, False otherwise. A flow send that could not
+        reserve the subscriber returns ``{"success": False, "error":
+        "subscriber_busy", "retry_after_seconds": N}``: nothing was written, and
+        the caller must try again only after ``N`` seconds (see
+        ``_reserve_flow_subscriber``).
     """
     mc_config = _get_config()
     if not mc_config.get("api_token"):
@@ -246,10 +250,12 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     sandbox_probe = manychat_marketing_safety.consume_sandbox_probe(ctx)
     if template in manychat_marketing_safety.MARKETING_FLOW_EVENTS and not sandbox_probe:
-        # The unsafe sequence is fields write(s) → sendFlow.  Blocking before
-        # subscriber resolution guarantees zero provider calls and zero PII egress.
-        logger.warning("manychat.marketing_blocked code=%s", manychat_marketing_safety.BLOCK_CODE)
-        return False
+        # Última porta antes do provedor. O modo (blocked/canary/open) decide antes
+        # de resolver o assinante: recusa aqui é zero chamada e zero PII saindo.
+        refusal = manychat_marketing_safety.recipient_refusal(ctx.get("customer_ref"))
+        if refusal:
+            logger.warning("manychat.marketing_blocked code=%s", refusal)
+            return False
 
     from ._external import inert
 
@@ -274,6 +280,14 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     flow_ns = _load_db_flow_ns(template) or mc_config.get("flow_map", {}).get(template)
 
     if flow_ns:
+        # ⚠️ UMA mensagem com flow por assinante por vez. Os campos personalizados são
+        # estado PERSISTENTE do contato e o flow os lê depois, assíncrono: sem a
+        # reserva, a campanha da Baguete e o aviso do Croissant para a mesma pessoa
+        # intercalavam as escritas e ela recebia nome, preço e link trocados. A
+        # reserva vem ANTES de qualquer campo — quem não reserva não escreve nada.
+        busy = _reserve_flow_subscriber(subscriber_id, template)
+        if busy is not None:
+            return busy
         # ⚠️ O flow do ManyChat NÃO lê o `flow_token`: o texto vive lá dentro, e as
         # variáveis dele saem dos CAMPOS PERSONALIZADOS do assinante. Sem este passo, um
         # template aprovado que diga "O {{product_name}} que você pediu chegou" sai com o
@@ -316,6 +330,45 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     if not result["success"]:
         logger.warning("ManyChat send failed; provider detail redacted")
     return result["success"]
+
+
+def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
+    """Reservar o assinante pela janela de assentamento, ou devolver o adiamento.
+
+    ``cache.add`` é atômico no cache compartilhado: só um processo grava a chave. A
+    reserva NÃO é liberada no fim do envio — ela existe justamente para cobrir o tempo
+    em que o flow ainda vai ler os campos, e expira sozinha.
+
+    ``None`` = reservado, pode escrever. Um ``dict`` = nada foi escrito; o chamador
+    reagenda depois de ``retry_after_seconds``. Nunca é falha final nem ``unknown``.
+    """
+    import uuid
+
+    from django.core.cache import cache
+
+    from shopman.shop.services import manychat_marketing_safety as safety
+
+    settle = safety.flow_settle_seconds()
+    key = f"{safety.FLOW_RESERVATION_KEY_PREFIX}{subscriber_id}"
+    try:
+        reserved = cache.add(key, f"{template}:{uuid.uuid4().hex}", timeout=settle)
+    except Exception:
+        # Cache fora do ar: sem a reserva não há como saber se o assinante está livre,
+        # então nada é escrito e o envio volta depois da janela (falha fechado).
+        logger.warning("manychat.flow_reservation_unavailable template=%s", template, exc_info=True)
+        return {
+            "success": False,
+            "error": safety.FLOW_RESERVATION_UNAVAILABLE_CODE,
+            "retry_after_seconds": settle,
+        }
+    if reserved:
+        return None
+    logger.info("manychat.flow_subscriber_busy template=%s retry_after=%s", template, settle)
+    return {
+        "success": False,
+        "error": safety.SUBSCRIBER_BUSY_CODE,
+        "retry_after_seconds": settle,
+    }
 
 
 #: Chaves que NÃO viram campo personalizado: identificadores internos e coisas que a
