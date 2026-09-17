@@ -658,8 +658,9 @@ def record_adult_declaration(
 # consentimento de WhatsApp. O resolvedor de audiência (`services/audience.py`)
 # exclui quem não prova maioridade e quem não tem `CommunicationConsent`
 # whatsapp `opted_in` — campanha direta alcançava ninguém. O consentimento
-# passa a ser PERGUNTADO no welcome gate, uma vez por cliente, e continua
-# acessível em Conta › Preferências. A maioridade NÃO é perguntada aqui: ela
+# passa a ser PERGUNTADO num bottom sheet da loja (na página em que a pessoa
+# cai depois de entrar — nunca como passo de login), uma vez por cliente, e
+# continua acessível em Conta › Preferências. A maioridade NÃO é perguntada aqui: ela
 # é declarada ao entrar (`record_adult_declaration`, acima) — a chave de
 # novidades é só consentimento.
 #
@@ -667,7 +668,7 @@ def record_adult_declaration(
 # consentimento no canal whatsapp (qualquer status — quem passou por
 # Preferências já disse o que quer) OU o carimbo abaixo em `Customer.metadata`.
 #
-# ⚠️ "Deixar para depois" e "não marquei a caixa" gravam SÓ o carimbo, nunca
+# ⚠️ Fechar o sheet sem ligar a chave grava SÓ o carimbo, nunca
 # `opted_out`. Um opt-out gravado é PROIBIÇÃO: `services/notification.py`
 # (`_revoked_notification_channels`) cala até o aviso do PRÓPRIO pedido naquele
 # canal, e a tela de Preferências avisa isso. "Depois" não é "nunca".
@@ -680,7 +681,7 @@ def marketing_prompt_pending(customer) -> bool:
     """Se a loja ainda deve PERGUNTAR sobre novidades a este cliente.
 
     Falha fechado: se a fonte de consentimento não responde, não pergunta — o
-    gate de boas-vindas não pode derrubar a sessão inteira por causa disso.
+    payload de sessão não pode derrubar a sessão inteira por causa disso.
     """
     customer_ref = (getattr(customer, "ref", "") or "").strip()
     if not customer_ref:
