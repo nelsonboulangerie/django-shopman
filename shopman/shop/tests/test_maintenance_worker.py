@@ -27,7 +27,12 @@ from shopman.orderman.models import Order, Session
 from shopman.payman.models import PaymentIntent
 from shopman.stockman.models import Hold, HoldStatus, Quant
 
-from shopman.shop.management.commands.maintenance_worker import MAINTENANCE_COMMANDS
+from shopman.shop.management.commands.maintenance_worker import (
+    MAINTENANCE_COMMANDS,
+    MARKETING_DELIVERY_BATCH,
+    MARKETING_DELIVERY_LEASE_SECONDS,
+    MARKETING_DELIVERY_WORKER_ID,
+)
 
 # ``transaction=True`` não é preferência de estilo: sem ele estes testes só
 # passam em SQLite, e passam pelo motivo errado.
@@ -312,6 +317,112 @@ def test_every_task_failing_still_completes_the_cycle(caplog):
         assert any(nome in message for message in logged), f"faltou log de {nome}"
 
 
+# ── (b2) Entrega de Marketing: dentro do ciclo, sem componente próprio ───────
+#
+# A etapa final da entrega (destino `queued` → adapter → provedor) não tem worker
+# próprio na DigitalOcean: roda aqui, uma passada por ciclo. Estes testes travam as
+# três promessas dessa decisão — logo depois da outbox, calada com a flag desligada, e
+# incapaz de derrubar o ciclo quando explode.
+
+DELIVERY = "process_marketing_delivery"
+DELIVERY_CYCLE = "shopman.shop.management.commands.process_marketing_delivery.Command._cycle"
+
+
+def _entry_name(entry) -> str:
+    return entry[0] if isinstance(entry, tuple) else entry
+
+
+def _delivery_entry():
+    (entry,) = [e for e in MAINTENANCE_COMMANDS if _entry_name(e) == DELIVERY]
+    return entry
+
+
+def test_marketing_delivery_runs_right_after_the_outbox_in_one_bounded_pass():
+    names = [_entry_name(entry) for entry in MAINTENANCE_COMMANDS]
+
+    # Depois da outbox, no mesmo ciclo: a outbox publica a Directive, o dispatch por
+    # signal enfileira os destinos no commit e a entrega já os encontra.
+    assert names.index(DELIVERY) == names.index("process_marketing_outbox") + 1
+    _name, options = _delivery_entry()
+    assert options == {
+        "quiet_disabled": True,
+        "quiet_idle": True,
+        "worker_id": MARKETING_DELIVERY_WORKER_ID,
+        "limit": MARKETING_DELIVERY_BATCH,
+        "lease_seconds": MARKETING_DELIVERY_LEASE_SECONDS,
+        "with_reconciliation": True,
+    }
+    # Passada única: `--watch` prenderia o ciclo inteiro dentro da entrega, e
+    # `--with-outbox` publicaria a outbox duas vezes por ciclo.
+    assert "watch" not in options
+    assert "with_outbox" not in options
+
+
+def test_marketing_delivery_pass_reaches_the_cycle_with_the_worker_options(settings):
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
+
+    with (
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.MAINTENANCE_COMMANDS",
+            (_delivery_entry(),),
+        ),
+        patch(DELIVERY_CYCLE, return_value=False) as cycle,
+    ):
+        _run_once()
+
+    cycle.assert_called_once_with(
+        worker_id="maintenance_worker:marketing-delivery",
+        limit=20,
+        lease_seconds=300,
+        with_outbox=False,
+        with_reconciliation=True,
+        force=False,
+    )
+
+
+def test_marketing_delivery_disabled_is_silent_and_never_reaches_the_ledger(
+    settings, capsys, caplog
+):
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+
+    with (
+        patch(DELIVERY_CYCLE) as cycle,
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        _run_once()
+
+    cycle.assert_not_called()
+    printed = capsys.readouterr()
+    assert "Delivery worker de Marketing desativado" not in printed.out + printed.err
+    assert "Marketing delivery" not in printed.out + printed.err
+    assert not [r for r in caplog.records if DELIVERY in r.getMessage()]
+
+
+def test_marketing_delivery_failure_logs_and_the_cycle_goes_on(settings, caplog):
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
+
+    with (
+        patch(DELIVERY_CYCLE, side_effect=RuntimeError("provedor explodiu")) as cycle,
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.call_command",
+            wraps=call_command,
+        ) as cc,
+        _capture_worker_logs(caplog),
+    ):
+        _run_once()
+
+    cycle.assert_called_once()
+    # Todas as tarefas rodaram, inclusive as que vêm DEPOIS da entrega.
+    ran = [c.args[0] for c in cc.call_args_list]
+    assert ran == [_entry_name(entry) for entry in MAINTENANCE_COMMANDS]
+    failures = [
+        r for r in caplog.records
+        if r.name == WORKER_LOGGER and f"{DELIVERY} falhou (ciclo continua)" in r.getMessage()
+    ]
+    assert failures, "esperava o log da falha da entrega de Marketing"
+    assert failures[0].exc_info is not None
+
+
 # ── (c) Loop: --once, intervalo e floor ──────────────────────────────────────
 
 
@@ -343,6 +454,15 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("evaluate_bi_alerts"),
         call("expire_stale_announcements"),
         call("process_marketing_outbox", quiet_disabled=True),
+        call(
+            "process_marketing_delivery",
+            quiet_disabled=True,
+            quiet_idle=True,
+            worker_id="maintenance_worker:marketing-delivery",
+            limit=20,
+            lease_seconds=300,
+            with_reconciliation=True,
+        ),
         call("dispatch_due_announcements"),
         call("arm_scheduled_campaigns"),
         call("reconcile_payments"),

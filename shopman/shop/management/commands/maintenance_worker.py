@@ -9,6 +9,7 @@ manutenção num loop (default: a cada 5 minutos):
   cleanup_stale_planning    — quants planejados órfãos
   expire_stale_announcements    — announcement pendente sem aprovação a tempo caduca
   process_marketing_outbox   — recupera leases e publica intents já commitadas
+  process_marketing_delivery — entrega os destinos aprovados ao provedor (lote por ciclo)
   dispatch_due_announcements — announcement aprovado com hora marcada sai quando chega a hora
   arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
   reconcile_payments        — PIX pago com webhook perdido é resgatado
@@ -44,6 +45,22 @@ from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
 
+#: Identidade técnica ESTÁVEL da entrega de Marketing dentro deste worker: o
+#: `lease_owner` de um destino reservado diz QUAL componente o segura, e não um uuid
+#: que morre com o processo. Não é ela que impede envio em dobro — o token da tentativa
+#: sai do destino e do ordinal, e a passagem `queued → sending` é feita sob lock de
+#: linha; duas instâncias sobrepostas num deploy não chamam o provedor duas vezes.
+MARKETING_DELIVERY_WORKER_ID = "maintenance_worker:marketing-delivery"
+#: Destinos por passada. Uma mensagem de WhatsApp com flow custa ~20 chamadas ao
+#: ManyChat (campos declarados + envio); 20 destinos cabem folgados num ciclo de 300 s
+#: junto das demais tarefas. O que passar disso fica `queued` e sai no ciclo seguinte.
+MARKETING_DELIVERY_BATCH = 20
+#: O lease cobre a passada inteira (um intervalo): a passada é serial, e um lease de
+#: 60 s (o padrão do comando avulso) venceria no meio de um lote lento e deixaria outro
+#: processo — deploy sobreposto, ensaio à mão — reservar o mesmo destino. Se o worker
+#: cair no meio, o que ficou reservado volta a ser elegível em até 5 minutos.
+MARKETING_DELIVERY_LEASE_SECONDS = 300
+
 MAINTENANCE_COMMANDS = (
     "release_expired_holds",
     "cleanup_stale_sessions",
@@ -74,6 +91,28 @@ MAINTENANCE_COMMANDS = (
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
     # off por default e o comando continua servindo de reconciler/canary explícito.
     "process_marketing_outbox",
+    # A etapa final da entrega de Marketing (destino `queued` → adapter → provedor)
+    # roda AQUI, e não num componente próprio: um worker a mais na DigitalOcean custa
+    # mais do que a campanha que ele entrega. Logo DEPOIS da outbox, de propósito: a
+    # outbox publica a Directive, o dispatch por signal materializa e enfileira os
+    # destinos no commit, e esta passada já os encontra no MESMO ciclo — sem isso,
+    # toda campanha esperaria um ciclo inteiro a mais.
+    #
+    # Uma passada por ciclo, com lote e lease que cabem no intervalo (ver as
+    # constantes `MARKETING_DELIVERY_*` acima). A flag
+    # `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` continua sendo o portão:
+    # desligada, o comando volta calado.
+    (
+        "process_marketing_delivery",
+        {
+            "quiet_disabled": True,
+            "quiet_idle": True,
+            "worker_id": MARKETING_DELIVERY_WORKER_ID,
+            "limit": MARKETING_DELIVERY_BATCH,
+            "lease_seconds": MARKETING_DELIVERY_LEASE_SECONDS,
+            "with_reconciliation": True,
+        },
+    ),
     # Aprovado com hora marcada sai sozinho quando o relógio chega.
     "dispatch_due_announcements",
     "arm_scheduled_campaigns",

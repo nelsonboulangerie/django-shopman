@@ -40,15 +40,19 @@ class Command(BaseCommand):
             help="Ignora apenas a flag do worker em ambiente local/de teste.",
         )
         parser.add_argument("--quiet-idle", action="store_true", help="SUPPRESS")
+        # A passada que roda dentro do `maintenance_worker` a cada ciclo: com a flag
+        # desligada, repetir o aviso de 5 em 5 minutos seria ruído, não informação.
+        parser.add_argument("--quiet-disabled", action="store_true", help="SUPPRESS")
 
     def handle(self, *args, **options):
         enabled = bool(settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED)
         if not (enabled or options["force"]):
-            self.stdout.write(
-                self.style.WARNING(
-                    "Delivery worker de Marketing desativado; nenhum target foi chamado."
+            if not options["quiet_disabled"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "Delivery worker de Marketing desativado; nenhum target foi chamado."
+                    )
                 )
-            )
             return None
         if options["force"] and settings.SHOPMAN_ENVIRONMENT not in {
             "development",

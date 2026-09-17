@@ -279,6 +279,46 @@ def test_campaign_reaches_manychat_through_approval_outbox_ledger_and_adapter(ma
     assert _claim(campaign).targets == ()
 
 
+def test_the_maintenance_worker_pass_delivers_the_approved_campaign_once(
+    manychat, campaign, monkeypatch
+):
+    """A entrega não tem componente próprio: a passada do `maintenance_worker` entrega.
+
+    Roda a entrada EXATA da lista do worker (as mesmas opções que o alpha usa), não um
+    `--watch` de laboratório. Rodar de novo no ciclo seguinte não chama o provedor.
+    """
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    from shopman.shop.management.commands.maintenance_worker import MAINTENANCE_COMMANDS
+
+    calls, _responses = manychat
+    outbox = _stage(campaign)
+    (entry,) = [
+        e for e in MAINTENANCE_COMMANDS
+        if isinstance(e, tuple) and e[0] == "process_marketing_delivery"
+    ]
+    command, options = entry
+    monkeypatch.setattr(
+        "shopman.shop.management.commands.process_marketing_delivery.timezone.now",
+        lambda: campaign["clock"],
+    )
+
+    call_command(command, stdout=StringIO(), **options)
+
+    assert _flow_sends(calls) == 1
+    (accepted,) = DeliveryTarget.objects.filter(
+        outbox=outbox, state=DeliveryTarget.State.ACCEPTED
+    )
+    assert accepted.member.customer_id == campaign["customers"][0].pk
+    assert DeliveryAttempt.objects.filter(target=accepted).count() == 1
+
+    call_command(command, stdout=StringIO(), **options)
+
+    assert _flow_sends(calls) == 1
+
+
 def test_registered_adapter_turns_the_missing_provider_into_the_canary_readiness(manychat, campaign):
     from shopman.shop.services.delivery_readiness import readiness_for
 
