@@ -69,13 +69,25 @@ const showsPlatformResults = computed(
     !["rejected", "expired"].includes(props.announcement.state),
 );
 const recoveryActions = computed(() => props.actions.filter(isRecoveryAction));
+type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
+
+function isSwitchedOff(platform: PlatformDelivery): boolean {
+  return platformSwitchedOff(props.announcement, platform.platform_ref);
+}
+
+function waitsForSwitch(platform: PlatformDelivery): boolean {
+  return platform.counts.queued > 0 && isSwitchedOff(platform);
+}
+
+function platformCountItems(platform: PlatformDelivery) {
+  return deliveryCountItems(platform.counts, {
+    platformSwitchedOff: isSwitchedOff(platform),
+  });
+}
+
 const waitingSwitchedOffLabels = computed(() =>
   props.announcement.delivery.platforms
-    .filter(
-      (platform) =>
-        platform.counts.queued > 0 &&
-        platformSwitchedOff(props.announcement, platform.platform_ref),
-    )
+    .filter(waitsForSwitch)
     .map((platform) => platformResultLabel(platform.platform_ref)),
 );
 const decisionNextStep = computed(() => {
@@ -526,12 +538,7 @@ function closeDialog(open: boolean) {
           </div>
           <ul class="mt-2 flex flex-wrap gap-1.5">
             <li
-              v-for="item in deliveryCountItems(platform.counts, {
-                platformSwitchedOff: platformSwitchedOff(
-                  announcement,
-                  platform.platform_ref,
-                ),
-              })"
+              v-for="item in platformCountItems(platform)"
               :key="item.key"
               class="rounded-full px-2.5 py-1 text-xs"
               :class="COUNT_TONE_CLASS[item.tone]"
@@ -539,13 +546,7 @@ function closeDialog(open: boolean) {
               <strong>{{ formatCount(item.count) }}</strong> {{ item.label }}
             </li>
           </ul>
-          <p
-            v-if="
-              platform.counts.queued > 0 &&
-              platformSwitchedOff(announcement, platform.platform_ref)
-            "
-            class="mt-2 text-xs text-warning"
-          >
+          <p v-if="waitsForSwitch(platform)" class="mt-2 text-xs text-warning">
             {{ platformSwitchedOffNote(platform.platform_ref) }}
           </p>
         </li>
