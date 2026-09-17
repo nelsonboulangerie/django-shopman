@@ -59,6 +59,11 @@ O layer contribui, via auto-import do Nuxt:
 | `app/presentation/moreBelow.ts` | `hintOffset`, `hintMotionClass`, `shouldHint` | regra pura da dica "tem mais abaixo" |
 | `app/composables/useMoreBelow.ts` | `useMoreBelow` | observa o fim do conteúdo (sentinela + IntersectionObserver) descontando o que flutua na base |
 | `app/components/MoreBelow.vue` | `<MoreBelow>` | a dica em si: degradê + pílula com chevron, some ao chegar ao fim — ver "Tem mais abaixo" |
+| `app/presentation/pwaRuntime.ts` | `idleReloadPathAllowed`, `shouldCheckForUpdate`, `idleUpdateBlocker`, `applyIdleUpdate` | regra pura da troca de versão: quando sondar, quando aplicar sozinho e QUAL razão impede |
+| `app/composables/usePwaUpdate.ts` | `usePwaUpdate` | worker em espera + `update()` (skipWaiting + reload) + `checkForUpdate()` (sonda) |
+| `app/composables/usePwaAutoUpdate.ts` | `usePwaAutoUpdate` | sonda periódica/no foco e aplicação automática em momento seguro — ver "Atualização do app instalado" |
+| `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
+| `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
 | `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por aparelho (Screen Orientation API): item "Travar giro" no `OperatorRail` só em aparelho de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
 
@@ -133,6 +138,56 @@ KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie")
 A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa, sem
 `name`/`shortName` fixos, título começando pelo `name`, nenhum título com hífen de
 separador, nenhum `document.title` cru).
+
+## Atualização do app instalado (`usePwaAutoUpdate`)
+
+Medido em 17/09/2026: depois dos deploys das PRs #783 e #789 o contêiner do grupo
+`operator-floor` reiniciou com a imagem nova, e o PDV instalado como PWA no desktop
+seguiu rodando o bundle antigo — nenhuma chamada de capacidade veio dele depois do
+restart, o cliente velho continuava ativo. A causa não foi o deploy: com
+`registerType: "prompt"`, `skipWaiting: false` e `clientsClaim: false`, o worker novo
+fica em **waiting** até TODAS as janelas do host fecharem, e o aviso só aparece se o
+navegador chegar a buscar o `sw.js`. Kiosk e PDV instalado não fecham nunca.
+
+O contrato tem três peças, e nenhuma delas interrompe operação:
+
+**1. Sondar.** `usePwaAutoUpdate` chama `registration.update()` a cada 30 min e ao
+voltar do segundo plano, ganhar foco ou reconectar (com piso de 60 s entre sondas,
+porque esses gatilhos chegam em rajada ao acordar). Sem a sonda, o navegador só procura
+`sw.js` novo em navegação de documento.
+
+**2. Aplicar.** Havendo versão em espera, o aviso ao operador (`OperatorPwaUpdatePrompt`)
+continua exatamente como antes. Em paralelo, a versão entra **sozinha** quando as três
+condições valem juntas: a rota está em `idleReloadPaths`, a superfície está ociosa
+(60 s sem toque) e **nenhuma razão de `useOperatorReloadHold` está de pé**. Faltando
+qualquer uma, `blocker` diz qual.
+
+```ts
+// Na tela que tem rascunho na mão (PDV, pages/index.vue):
+const { hold } = useOperatorReloadHold();
+watchEffect(() => {
+  hold("tab_open", Boolean(cart.tabRef));
+  hold("payment_open", checkoutMode.value || pixStatus.value === "polling");
+});
+```
+
+Quem declara a rota segura é o app, em `definePwaCapability({ idleReloadPaths })`:
+`"*"` no KDS (nenhuma tela dele tem rascunho), `"/board"` na Produção (preserva os
+editores de receita), `"/"` no PDV (**só a raiz** — `/session` tem contagem digitada e
+`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Central,
+Gestor, Compras, B.I., Marketing) mantém só o aviso.
+
+**3. Provar.** A troca termina em `location.reload()`, e nada que fique na memória
+sobrevive para contar o que houve. Então a marca vai ao `localStorage` **antes** do
+reload e é relatada no boot seguinte, quando as duas versões são conhecidas:
+`POST /api/v1/backstage/client-pwa-update/` → `pwa.update_applied` nos logs do Django,
+com `app`, `trigger` (`prompt` | `idle`), `from_version` e `to_version`.
+
+**Cabeçalhos.** `/sw.js` e `/operator-push-sw.js` saem com
+`cache-control: no-cache, no-store, must-revalidate` (route rule da capability e handler
+do push); `/manifest.webmanifest` com `public, max-age=3600` — ele não decide versão de
+código. O roteador por Host (`surfaces/operator-router`) repassa tudo intacto, e cada
+host serve o SEU worker; a trava está em `operator-router/test/router.test.mjs`.
 
 ## Próximo foco (`useNextFocus`)
 

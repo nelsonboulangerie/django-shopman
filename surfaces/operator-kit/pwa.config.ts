@@ -39,6 +39,16 @@ export interface OperatorPwaCapabilityOptions {
   manifest: OperatorPwaManifestOptions;
   wakeLock?: boolean;
   kiosk?: boolean;
+  /**
+   * Rotas em que o app pode RECARREGAR SOZINHO para entrar na versão nova, quando
+   * ninguém toca nele e a tela não publicou nenhuma razão de espera
+   * (`useOperatorReloadHold`). Lista vazia = só o aviso ao operador.
+   *
+   * `"*"` libera tudo (KDS: nenhuma tela dele tem rascunho); `"/board"` libera o
+   * painel e o que está sob ele, e preserva os editores de receita; `"/"` libera
+   * SÓ a raiz. Kiosk exige a lista: um painel de parede que ninguém fecha nunca
+   * trocaria de versão sem ela.
+   */
   idleReloadPaths?: string[];
   push?: {
     surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi";
@@ -107,9 +117,6 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     if (options.kiosk && !options.idleReloadPaths?.length) {
       throw new TypeError("operator PWA kiosk exige rotas explícitas para recarga ociosa");
     }
-    if (!options.kiosk && options.idleReloadPaths?.length) {
-      throw new TypeError("operator PWA sem kiosk não aceita recarga ociosa");
-    }
     if (options.push && (!options.push.categories.length || new Set(options.push.categories).size !== options.push.categories.length)) {
       throw new TypeError("operator PWA push exige categorias explícitas e sem repetição");
     }
@@ -131,6 +138,10 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     publicConfig.vapidPublicKey = process.env.NUXT_PUBLIC_VAPID_PUBLIC_KEY || "";
     publicConfig.appVersion = process.env.NUXT_PUBLIC_APP_VERSION || process.env.SOURCE_VERSION || "local";
 
+    // O `sw.js` é o ÚNICO arquivo que não pode ser servido de cache: ele é a porta
+    // pela qual toda versão nova entra. `no-cache` obriga revalidação a cada sonda
+    // de `registration.update()` — sem isso, a sonda periódica perguntaria ao disco
+    // do navegador e responderia "nada novo" para sempre.
     const routeRules = nuxt.options.routeRules ||= {};
     routeRules["/sw.js"] = {
       ...routeRules["/sw.js"],

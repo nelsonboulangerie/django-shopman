@@ -3,6 +3,13 @@ import { computed, type Ref } from "vue";
 export interface PwaUpdateRegistration {
   needRefresh: Readonly<Ref<boolean>>;
   updateServiceWorker: (reloadPage?: boolean) => Promise<void>;
+  /**
+   * Pergunta ao servidor se existe `sw.js` novo. Sem esta chamada o navegador só
+   * olha em navegação de documento — e um app instalado que fica dias aberto nunca
+   * faz uma. Devolve `false` quando não há registro (SSR, browser sem SW, sonda
+   * recusada) em vez de estourar.
+   */
+  checkForUpdate: () => Promise<boolean>;
 }
 
 let registration: PwaUpdateRegistration | null = null;
@@ -25,5 +32,14 @@ export function usePwaUpdate() {
     }
   }
 
-  return { needRefresh, update };
+  async function checkForUpdate(): Promise<boolean> {
+    if (!registration) return false;
+    try {
+      return await registration.checkForUpdate();
+    } catch {
+      return false;
+    }
+  }
+
+  return { needRefresh, update, checkForUpdate };
 }

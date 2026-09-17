@@ -1,10 +1,20 @@
 <script setup lang="ts">
+import { markPwaUpdateApplied } from "../utils/pwaUpdateReport";
+
 const pwa = usePwaUpdate();
 const updating = ref(false);
+const config = useRuntimeConfig().public as { operatorPwa?: { app?: string }; appVersion?: string };
 
 async function update() {
   if (updating.value) return;
   updating.value = true;
+  // Mesma marca da aplicação automática, com o gatilho que a distingue no log: a
+  // prova no ar precisa separar "o operador aceitou" de "entrou sozinha no ocioso".
+  markPwaUpdateApplied({
+    app: String(config.operatorPwa?.app || "operator"),
+    trigger: "prompt",
+    from_version: String(config.appVersion || ""),
+  });
   const accepted = await pwa.update();
   if (!accepted) updating.value = false;
 }
