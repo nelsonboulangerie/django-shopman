@@ -1,9 +1,11 @@
-"""Backstage middleware — onboarding redirect for operator surfaces."""
+"""Backstage middleware — onboarding redirect e renovação da sessão de operador."""
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.shortcuts import redirect
 
+from shopman.backstage.services import operator_session
 from shopman.shop.models import Shop
 
 
@@ -51,3 +53,38 @@ class OnboardingMiddleware:
             return redirect(f"{self.SETUP_PATH}add/")
 
         return self.get_response(request)
+
+
+class OperatorSessionRenewalMiddleware:
+    """Renova a sessão dos apps de operador com o uso (7 dias parada ⇒ expira).
+
+    A regra mora em :mod:`shopman.backstage.services.operator_session`; aqui fica
+    só QUANDO ela se aplica:
+
+    - na fase de resposta, para o ``SessionMiddleware`` (mais externo) gravar a
+      sessão e reemitir o cookie — e o ``OperatorSessionDomainMiddleware``
+      (mais externo ainda) escopá-lo à zona de operador;
+    - nunca sob ``/admin/``: o Admin guarda o comportamento padrão do Django, e o
+      BFF de operador bate em ``/admin/login/`` só para buscar CSRF;
+    - nunca numa resposta em streaming (SSE): o proxy de eventos do BFF não
+      repassa ``Set-Cookie``, e renovar ali adiantaria o banco sem o navegador
+      saber — o cookie morreria antes da sessão;
+    - só com cookie de sessão presente, para não tocar ``request.session`` (e
+      ganhar ``Vary: Cookie``) em quem nem sessão tem.
+    """
+
+    SKIP_PREFIXES = ("/admin/",)
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if response.streaming:
+            return response
+        if request.path.startswith(self.SKIP_PREFIXES):
+            return response
+        if not request.COOKIES.get(settings.SESSION_COOKIE_NAME):
+            return response
+        operator_session.renew_if_due(request)
+        return response
