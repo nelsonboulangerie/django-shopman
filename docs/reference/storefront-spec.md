@@ -175,10 +175,19 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   Abre por duas perguntas independentes, expostas em `welcome_asks_name` (nome vazio/importado sujo)
   e `welcome_asks_marketing` (pergunta de novidades por WhatsApp nunca respondida: sem linha de
   consentimento whatsapp e sem `Customer.metadata.marketing_prompt_answered_at`). A tela mostra só o
-  que falta; a caixa de novidades nasce desligada e, ligada, pede a data de nascimento (18+). "Sim" =
-  `PATCH account/profile/` (nome/aniversário) + `POST account/marketing-prompt/` `{whatsapp: true}`
-  (opt-in só no whatsapp); "Deixar para depois"/caixa desligada = só o carimbo, **nunca** opt-out.
-  Depois disso a chave continua em Conta › Preferências.
+  que falta; a chave de novidades nasce desligada e é SÓ consentimento — sem data de nascimento, sem
+  frase de idade. "Sim" = `PATCH account/profile/` (nome, quando pedido) + `POST account/marketing-prompt/`
+  `{whatsapp: true}` (opt-in só no whatsapp); "Deixar para depois"/chave desligada = só o carimbo,
+  **nunca** opt-out. Depois disso a chave continua em Conta › Preferências.
+- **Declaração de maioridade no login:** a nota ao lado do botão de entrar — "Ao continuar, você confirma
+  que é maior de idade e aceita os Termos de uso." (frase fixa em `presentation/auth.ts`, link para
+  `/terms`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
+  aparelho reconhecido, access link `/a`). Toda autenticação bem-sucedida (`verify-code`, `device-check`,
+  `auth/access`, `passkey/login`) carimba `Customer.metadata.adult_declaration`
+  (`account.record_adult_declaration`, versão `login-terms-pt-BR-v1`, idempotente: a primeira fica). É a
+  prova de maioridade que o marketing direto lê (`marketing_age.is_proved_adult`); aniversário que prova
+  menor vence. Quem já tem conta ganha a declaração no próximo login. Precedente: o "Avise-me" já prova
+  maioridade por aceite específico, sem data.
 - **Omotenashi:** copy única por 6 momentos (QUANDO) × 4 audiências (QUEM: anon/new/returning/vip),
   cascata `OmotenashiCopy` (admin) → `OMOTENASHI_DEFAULTS`. Alimenta home/menu/checkout/etc.
 - **SEO:** `server/routes/robots.txt.ts` (bloqueia /account /checkout /cart /login /pedido/ /tracking/
