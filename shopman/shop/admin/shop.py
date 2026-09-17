@@ -54,6 +54,15 @@ from shopman.shop.models import (
     ShopPurchase,
     ShopSearch,
 )
+from shopman.shop.operator_capacity_policy import (
+    DEFAULT_ATTENTION_PERCENT,
+    DEFAULT_CRITICAL_PERCENT,
+    DEFAULT_SUSTAIN_MINUTES,
+    PERCENT_CEILING,
+    PERCENT_FLOOR,
+    SUSTAIN_MINUTES_CEILING,
+    SUSTAIN_MINUTES_FLOOR,
+)
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
 
@@ -531,7 +540,62 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             f"(canário). Em branco = {DEFAULT_WHATSAPP_MINIMUM_AUDIENCE}."
         ),
     )
+    percent_errors = {
+        "invalid": "Informe um percentual inteiro, de 1 a 100.",
+        # ``%%``: a mensagem de min/max passa por ``%`` com os parâmetros do Django.
+        "min_value": "O menor percentual aceito é 1%%.",
+        "max_value": "O maior percentual aceito é 100%%.",
+    }
+    fields["defaults_operator_capacity_attention_percent"] = forms.IntegerField(
+        label="Atenção a partir de (% da capacidade)",
+        required=False,
+        min_value=PERCENT_FLOOR,
+        max_value=PERCENT_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_ATTENTION_PERCENT)}),
+        error_messages=percent_errors,
+        help_text=(
+            "Acima deste uso de memória ou CPU, o indicador de capacidade no rail dos apps "
+            f"fica âmbar. Não gera aviso. Em branco = {DEFAULT_ATTENTION_PERCENT}%."
+        ),
+    )
+    fields["defaults_operator_capacity_critical_percent"] = forms.IntegerField(
+        label="Crítico a partir de (% da capacidade)",
+        required=False,
+        min_value=PERCENT_FLOOR,
+        max_value=PERCENT_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_CRITICAL_PERCENT)}),
+        error_messages=percent_errors,
+        help_text=(
+            "Acima deste uso o indicador fica vermelho e, se continuar pelo tempo abaixo, "
+            f"o gestor recebe um alerta crítico. Em branco = {DEFAULT_CRITICAL_PERCENT}%."
+        ),
+    )
+    fields["defaults_operator_capacity_sustain_minutes"] = forms.IntegerField(
+        label="Avisar depois de quantos minutos acima do crítico",
+        required=False,
+        min_value=SUSTAIN_MINUTES_FLOOR,
+        max_value=SUSTAIN_MINUTES_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_SUSTAIN_MINUTES)}),
+        error_messages={
+            "invalid": "Informe um número inteiro de minutos, de 1 a 60.",
+            "min_value": "O mínimo é 1 minuto.",
+            "max_value": "O máximo é 60 minutos: mais que isso, o aviso chega depois do movimento.",
+        },
+        help_text=(
+            "Um pico curto (abrir o caixa, um relatório pesado) não vira alarme: o uso "
+            "precisa ficar acima do crítico por este tempo. O alerta se resolve sozinho "
+            "quando o uso volta a ficar abaixo da atenção pelo mesmo tempo. "
+            f"Em branco = {DEFAULT_SUSTAIN_MINUTES} min."
+        ),
+    )
     return fields
+
+
+OPERATOR_CAPACITY_FIELDS = (
+    ("defaults_operator_capacity_attention_percent", "attention_percent", DEFAULT_ATTENTION_PERCENT),
+    ("defaults_operator_capacity_critical_percent", "critical_percent", DEFAULT_CRITICAL_PERCENT),
+    ("defaults_operator_capacity_sustain_minutes", "sustain_minutes", DEFAULT_SUSTAIN_MINUTES),
+)
 
 
 # ── Integrações (seleção de adapters tipada com dropdowns) ──────────────────
@@ -944,6 +1008,14 @@ class ShopForm(forms.ModelForm):
                 "whatsapp_minimum_audience"
             )
 
+        if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
+            capacity = (
+                defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
+            )
+            # Mostra o GRAVADO; ausente fica em branco com o padrão no placeholder.
+            for field, key, _default in OPERATOR_CAPACITY_FIELDS:
+                self.fields[field].initial = capacity.get(key)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             cooldown = stock_alerts.get("cooldown_minutes")
@@ -1074,6 +1146,18 @@ class ShopForm(forms.ModelForm):
                 self.add_error(
                     "defaults_purchase_lead_time_max_days",
                     "O teto do prazo de entrega precisa ser maior ou igual ao prazo mínimo.",
+                )
+
+        if self._has("defaults_operator_capacity_critical_percent"):
+            # Em branco vale o padrão — a comparação é entre os valores que VÃO valer.
+            attention = cleaned_data.get("defaults_operator_capacity_attention_percent")
+            critical = cleaned_data.get("defaults_operator_capacity_critical_percent")
+            effective_attention = DEFAULT_ATTENTION_PERCENT if attention is None else attention
+            effective_critical = DEFAULT_CRITICAL_PERCENT if critical is None else critical
+            if effective_attention >= effective_critical and "defaults_operator_capacity_critical_percent" not in self.errors:
+                self.add_error(
+                    "defaults_operator_capacity_critical_percent",
+                    f"O crítico ({effective_critical}%) precisa ser maior que a atenção ({effective_attention}%).",
                 )
 
         if self._has("defaults_production_low_yield_threshold"):
@@ -1390,6 +1474,22 @@ class ShopForm(forms.ModelForm):
                 defaults["marketing"] = marketing
             else:
                 defaults.pop("marketing", None)
+
+        if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
+            capacity = (
+                defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
+            )
+            capacity = dict(capacity)
+            for field, key, _default in OPERATOR_CAPACITY_FIELDS:
+                value = self.cleaned_data.get(field)
+                if value is None:
+                    capacity.pop(key, None)
+                else:
+                    capacity[key] = int(value)
+            if capacity:
+                defaults["operator_capacity"] = capacity
+            else:
+                defaults.pop("operator_capacity", None)
 
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
@@ -1854,6 +1954,22 @@ _INTEGRATIONS_FIELDSETS = (
             "description": (
                 "Política da loja para campanhas gerais de Marketing enviadas por WhatsApp. "
                 "Quem mudou e quando fica no histórico desta página."
+            ),
+        },
+    ),
+    (
+        "Capacidade dos apps de operação",
+        {
+            "fields": (
+                ("defaults_operator_capacity_attention_percent", "defaults_operator_capacity_critical_percent"),
+                "defaults_operator_capacity_sustain_minutes",
+            ),
+            "description": (
+                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Central, Marketing, "
+                "B.I., Compras) mede a memória e a CPU do serviço em que roda e mostra no "
+                "indicador de capacidade do rail. Estes limites decidem quando o indicador "
+                "muda de cor e quando o gestor é avisado. Quem mudou e quando fica no "
+                "histórico desta página."
             ),
         },
     ),
