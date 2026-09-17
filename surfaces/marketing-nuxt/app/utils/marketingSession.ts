@@ -1,3 +1,7 @@
+// Import explícito, e não o auto-import da layer: assim a política REAL roda no
+// harness de unidade do Marketing, que monta o módulo sem o runtime Nuxt. O teste
+// continua provando o comportamento inteiro, não só o pedaço de cá.
+import { flagOperatorSessionRefusal } from "../../../operator-kit/app/utils/operatorSession";
 import {
   decisionResumeIntent,
   MARKETING_DECISION_REAUTH_STATE,
@@ -6,36 +10,33 @@ import {
   type PendingMarketingDecision,
 } from "~/presentation/marketingDecisionSession";
 
-// Política do Marketing, deliberadamente FORA do kit. O `operatorSessionOnError`
-// comum (operator-kit/app/utils/operatorSession.ts) reabre o gate em qualquer
-// 401/403; aqui 401 significa sessão ausente/expirada e reabre o gate, e 403 só
-// reabre o cadeado quando o backend disser `station_locked` — capability negada
-// continua forbidden, porque entrar de novo não criaria autorização. Além disso
-// guarda o intent da decisão pendente antes da reautenticação, o que depende de
-// `~/presentation/marketingDecisionSession` e não generaliza para as outras
-// superfícies. Nome próprio para não sombrear o auto-import do kit.
+// A POLÍTICA é a comum — `flagOperatorSessionRefusal`, do kit. O que é só do
+// Marketing é o que ele faz na sessão expirada: aprovar ou rejeitar um anúncio é ato
+// público e irreversível, com chave de idempotência e um desafio de confirmação. Se a
+// sessão morre no meio, a intenção é guardada e o DESAFIO é descartado: confirmação
+// respondida antes da sessão morrer não atravessa a reautenticação.
+//
+// Isso depende de `PendingMarketingDecision`, tipo do domínio dele, e não generaliza.
+// Nome próprio para não sombrear o auto-import do kit.
 export function flagMarketingSessionError(error: unknown): boolean {
-  if (useOperatorSession().flagIfUnauthenticated(error)) {
-    const pending = useState<PendingMarketingDecision | null>(
-      PENDING_MARKETING_DECISION_STATE,
-      () => null,
-    );
-    if (pending.value) {
-      const resumable = useState<MarketingDecisionResumeIntent | null>(
-        MARKETING_DECISION_REAUTH_STATE,
-        () => null,
-      );
-      resumable.value = decisionResumeIntent(pending.value);
-      pending.value = null;
-    }
-    void refreshNuxtData("operator-session");
-    return true;
-  }
-  if (useStationLock().flagIfStationLocked(error)) {
-    void refreshNuxtData("operator-session");
-    return true;
-  }
-  return false;
+  const refusal = flagOperatorSessionRefusal(error);
+  if (refusal === "expired") parkPendingDecision();
+  if (refusal) void refreshNuxtData("operator-session");
+  return refusal !== null;
+}
+
+function parkPendingDecision(): void {
+  const pending = useState<PendingMarketingDecision | null>(
+    PENDING_MARKETING_DECISION_STATE,
+    () => null,
+  );
+  if (!pending.value) return;
+  const resumable = useState<MarketingDecisionResumeIntent | null>(
+    MARKETING_DECISION_REAUTH_STATE,
+    () => null,
+  );
+  resumable.value = decisionResumeIntent(pending.value);
+  pending.value = null;
 }
 
 export function marketingSessionOnError(ctx: {
