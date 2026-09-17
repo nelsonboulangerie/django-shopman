@@ -1,0 +1,125 @@
+name: Operator Groups Gate
+
+# Prova, antes do merge, o que só o deploy provaria (ADR-030): o roteador dos
+# grupos passa nos testes, as DUAS imagens de grupo constroem com a receita que
+# o deploy-images.yml usa, e cada contêiner sobe TODOS os filhos e entrega cada
+# hostname ao app certo.
+#
+# ⚠️ Filtro de caminho de propósito, e só porque este workflow NÃO é check
+# obrigatório: um check obrigatório com filtro trava o merge para sempre (ver
+# surfaces-gate.yml). Mudança num app isolado já tem a imagem por app provada
+# no Surfaces Gate; aqui entra o que é do GRUPO.
+
+"on":
+  pull_request:
+    paths:
+      - "surfaces/operator-router/**"
+      - "surfaces/Dockerfile.operator-group"
+      - "surfaces/operator-kit/**"
+      - ".github/workflows/operator-groups-gate.yml"
+      - ".github/workflows/deploy-images.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  router-tests:
+    name: operator-router — testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: surfaces/operator-router
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # Zero dependências: não há `npm ci`. Se um dia houver, este passo quebra
+      # antes (package-lock ausente) — que é o lembrete certo.
+      - name: node --test
+        run: npm test
+
+  group-image:
+    name: imagem ${{ matrix.group }}
+    needs: router-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: operator-floor
+            hosts: "pos=pdv.gate.test,kds=kds.gate.test,orders=gestor.gate.test,production=prod.gate.test,hub=central.gate.test"
+          - group: operator-office
+            hosts: "marketing=mkt.gate.test,bi=bi.gate.test,purchase=compras.gate.test"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: surfaces/Dockerfile.operator-group
+          build-args: |
+            OPERATOR_GROUP=${{ matrix.group }}
+          load: true
+          push: false
+          tags: shopman-gate:${{ matrix.group }}
+          cache-from: type=gha,scope=gate-${{ matrix.group }}
+          cache-to: type=gha,scope=gate-${{ matrix.group }},mode=min
+          provenance: false
+          sbom: false
+
+      # Upstream hermético (porta 1, recusada): os apps sobem sem Django, e o
+      # que se prova é o CONTÊINER — filhos de pé e hostname no app certo.
+      - name: Todos os filhos sobem e cada hostname chega ao seu app
+        env:
+          GROUP: ${{ matrix.group }}
+          HOSTS: ${{ matrix.hosts }}
+        run: |
+          docker run -d --name gate -p 3000:3000 \
+            -e OPERATOR_HOSTS="$HOSTS" \
+            -e SHOPMAN_ENVIRONMENT=test \
+            -e NUXT_SHOPMAN_ENVIRONMENT=test \
+            -e SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM=1 \
+            -e NUXT_DJANGO_BASE_URL=http://127.0.0.1:1 \
+            -e NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:1 \
+            "shopman-gate:$GROUP"
+          expected=$(echo "$HOSTS" | tr ',' '\n' | wc -l)
+          for i in $(seq 1 60); do
+            up=$(docker logs gate 2>/dev/null | grep -c '"event":"child_up"' || true)
+            [ "$up" -ge "$expected" ] && break
+            sleep 2
+          done
+          docker logs gate 2>&1 | grep '"component":"operator-router"' || true
+          test "$up" -ge "$expected"
+          for pair in $(echo "$HOSTS" | tr ',' ' '); do
+            host="${pair#*=}"
+            code=$(curl -s -o body.txt -w '%{http_code}' -H "Host: $host" http://127.0.0.1:3000/__gate__)
+            echo "$host => $code $(head -c 80 body.txt)"
+            # 503/502 aqui é o ROTEADOR dizendo que o app não respondeu.
+            if [ "$code" = "503" ] || [ "$code" = "502" ]; then exit 1; fi
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: nao-existe.gate.test" http://127.0.0.1:3000/)
+          test "$code" = "404"
+
+      - name: SIGTERM encerra limpo
+        run: |
+          docker stop --time 30 gate
+          docker logs gate 2>&1 | grep '"event":"shutdown_done"'
+          test "$(docker inspect gate --format '{{.State.ExitCode}}')" = "0"

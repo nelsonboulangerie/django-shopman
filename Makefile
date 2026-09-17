@@ -549,6 +549,8 @@ surfaces: ## Superfícies Nuxt: typecheck + vitest de todos os apps
 	done
 	@echo "── operator-kit"
 	@cd surfaces/operator-kit && npx vitest run --reporter=dot
+	@echo "── operator-router (grupos de operador, ADR-030)"
+	@cd surfaces/operator-router && npm test --silent
 	@echo "✓ Superfícies"
 
 surfaces-types: ## Só os tipos (rápido) — pega import morto e contrato divergente
