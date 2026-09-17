@@ -37,6 +37,9 @@ O layer contribui, via auto-import do Nuxt:
 | `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
 | `server/utils/operatorSecurity.ts` | `operatorResponseHeaders`, `applyPrivateNoStore` | política testável de headers e preservação de `Vary` no BFF |
 | `server/utils/eventStream.ts` | `proxyEventStream` | streaming SSE same-origin do eventstream do Django |
+| `server/routes/health/live.get.ts` | — | `/health/live`: processo/BFF vivo, sem chamar o Django — é o health check da plataforma |
+| `server/routes/health/ready.get.ts` | — | `/health/ready`: BFF + `/health/ready/` do Django (smoke e diagnóstico, nunca health check da plataforma) |
+| `server/utils/healthProbe.ts` | `ProbeRateLimiter`, `checkDjangoReadiness`, `respondHealthLive`, `respondHealthReady` | corpo pobre (`ok`/`fail`), `no-store` e limitador em memória dos probes |
 | `server/utils/apiVersion.ts` | `warnOnApiVersionMismatch` | warning estruturado de major divergente do contrato |
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
 | `app/components/OfflineBanner.vue` | `<OfflineBanner>` | aviso calmo de conexão (colocar no layout raiz) |
