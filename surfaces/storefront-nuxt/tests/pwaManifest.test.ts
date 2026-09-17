@@ -23,7 +23,7 @@ describe('storefront PWA manifest', () => {
       expect.objectContaining({ sizes: '192x192', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'maskable' }),
-      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=5', purpose: 'monochrome' })
+      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=6', purpose: 'monochrome' })
     ]))
     expect(manifest.screenshots).toEqual(expect.arrayContaining([
       expect.objectContaining({ sizes: '1080x1920', form_factor: 'narrow' }),
@@ -31,13 +31,15 @@ describe('storefront PWA manifest', () => {
     ]))
   })
 
-  it('avoids the extra maskable plate on Mac without removing Android adaptive icons', () => {
-    const mac = buildStorefrontManifest({}, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/153.0.0.0 Safari/537.36')
-    expect(mac.icons.some(icon => icon.purpose === 'maskable')).toBe(false)
-    expect(mac.icons.some(icon => icon.purpose === 'any' && icon.sizes === '512x512')).toBe(true)
-    for (const ua of ['Mozilla/5.0 (Linux; Android 15)', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Mobile/15E148']) {
-      expect(buildStorefrontManifest({}, ua).icons.some(icon => icon.purpose === 'maskable')).toBe(true)
-    }
+  it('publishes the maskable icon, which Chrome on macOS insets on the platform grid', () => {
+    // Sem `maskable`, o Chrome no Mac usa o `any` de ponta a ponta (512/512) e o app
+    // fica ~24% maior que os vizinhos no Dock; com ele, recorta na grade do macOS
+    // (412/512). A família de operador publica os dois; a loja também.
+    const { icons } = buildStorefrontManifest()
+    expect(icons).toEqual(expect.arrayContaining([
+      { src: '/pwa/pwa-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/maskable-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ]))
   })
 
   it('truncates brand_name to twelve characters when short_name is absent', () => {
