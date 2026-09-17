@@ -199,9 +199,9 @@ porta, relê consentimento, exige o flow selado na aprovação e monta as variá
 flow só do artefato aprovado (corpo, link, foto e fatos selados; do destino, só
 telefone e primeiro nome). Aceite do ManyChat é `accepted_unconfirmed`; resposta
 ambígua depois de possível escrita é `unknown`; recusa antes de chamar é falha final
-com código; contato ocupado volta pela fila. O worker de destinos
-(`process_marketing_delivery`) não é componente de nenhum spec versionado: ligar a
-consequência exige rodá-lo explicitamente.
+com código; contato ocupado volta pela fila. A etapa que leva o destino ao provedor
+roda no `maintenance-worker`, sem componente próprio — ver
+[Entrega sem componente próprio](#entrega-sem-componente-próprio).
 
 Cada mensagem com flow de Marketing grava o conjunto completo de campos declarado para o
 evento (`MARKETING_FLOW_FIELDS`), com vazio para o que não tiver — nunca herda preço,
@@ -226,6 +226,40 @@ somente uma fronteira testável e inerte: token estático serve no máximo a can
 controlado; operação contínua exige armazenamento OAuth com renovação, consulta de
 `creator_info`, aprovação de `video.publish` e auditoria Direct Post. A simples
 presença da flag ou da credencial não autoriza adicionar TikTok a uma campanha.
+
+## Entrega sem componente próprio
+
+A etapa final da entrega — destino `queued` → adapter → provedor
+(`process_marketing_delivery`) — **não tem componente próprio** no App Platform. Ela roda
+dentro do `maintenance-worker` que já existe (`python manage.py maintenance_worker`, ciclo
+de 300 s), uma passada por ciclo, logo **depois** de `process_marketing_outbox`. A ordem é
+proposital: a outbox publica a Directive, o dispatch por signal materializa e enfileira os
+destinos no commit, e a passada de entrega os encontra no mesmo ciclo. Decisão do dono
+(2026-09-17): um worker a mais custaria mais do que a entrega que ele faz.
+
+| Opção da passada | Valor | Por quê |
+|---|---|---|
+| `worker_id` | `maintenance_worker:marketing-delivery` | estável: o `lease_owner` diz qual componente segura o destino |
+| `limit` | `20` destinos (e 20 consultas) por passada | uma mensagem de WhatsApp com flow custa ~20 chamadas ao ManyChat; o lote cabe no ciclo |
+| `lease_seconds` | `300` | cobre a passada inteira; se o processo cair, o destino volta a ser elegível em até 5 min |
+| `--with-reconciliation` | ligado | só executa consultas somente-leitura já pedidas pelo operador; `unknown` nunca é reenviado |
+| `--watch` / `--with-outbox` | desligados | passada única; a outbox já roda como tarefa própria do ciclo |
+
+`SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` continua sendo o portão: desligada, a passada
+volta calada (sem aviso a cada ciclo) e nenhum destino é reservado. Exceção na entrega é
+logada e **não** derruba o ciclo das demais tarefas. Ligar a consequência é ligar as flags;
+não há worker para criar, escalar ou pagar. O comando avulso continua servindo ao
+simulador local (`make marketing-simulator`) e a ensaio explícito.
+
+**Latência esperada (aprovação → chamada ao provedor).** Uma campanha aprovada entra na
+próxima passada, não sai no mesmo segundo. No pior caso, a aprovação chega logo depois da
+outbox do ciclo corrente e espera o ciclo seguinte: **até ~300 s + a duração das tarefas
+que vêm antes da outbox no ciclo + a própria passada**, na prática **até ~7 minutos** para
+o último dos primeiros 20 destinos. Cada 20 destinos a mais somam um ciclo (≈300 s): 100 pessoas
+elegíveis levam até ~30 minutos para esgotar a fila. Se a Directive não for processada no
+commit e ficar para o `directive-worker`, soma-se mais um ciclo. Horário comercial,
+contato ocupado (`subscriber_busy`) e freeze adiam por conta própria. **"Enviar agora"
+significa "na próxima passada" e pode levar alguns minutos** — não é defeito.
 
 ## Operação, diagnóstico e gates
 

@@ -1284,6 +1284,12 @@ Além das flags de limite/lease/worker/watch/interval/force acima, aceita
 `make marketing-simulator`, exclusivamente com `config.settings_marketing_demo` e
 adapter `SIMULATION_ONLY`.
 
+**No deployment não há componente próprio:** o `maintenance_worker` roda uma passada por
+ciclo (300 s), logo depois de `process_marketing_outbox`, com
+`--worker-id maintenance_worker:marketing-delivery --limit 20 --lease-seconds 300
+--with-reconciliation` e a opção interna `quiet_disabled` (flag desligada = silêncio).
+Latência e motivo no contrato.
+
 Contrato e estado de rollout:
 [`marketing-surface-contract.md`](marketing-surface-contract.md).
 
