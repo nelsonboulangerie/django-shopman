@@ -259,10 +259,10 @@ const receiptActions = computed(() => {
   // A condição é o próprio par na tela, não uma cópia da regra que o monta:
   // enquanto a primeira opção disser "Sim,", a última diz "Não,". Nenhuma
   // mudança lá em cima pode separar os dois sem que isto acompanhe.
-  const primeira = choices[0];
-  const ultima = choices[choices.length - 1];
-  if (choices.length === 2 && primeira !== ultima && primeira?.label.startsWith('Sim,')) {
-    ultima!.label = 'Não, usar dados só neste pedido';
+  const first = choices[0];
+  const last = choices[choices.length - 1];
+  if (choices.length === 2 && first !== last && first?.label.startsWith('Sim,')) {
+    last!.label = 'Não, usar dados só neste pedido';
   }
   return choices;
 });
