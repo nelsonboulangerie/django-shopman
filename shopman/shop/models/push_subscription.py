@@ -1,4 +1,4 @@
-"""Assinaturas Web Push dos aparelhos autenticados do backstage."""
+"""Assinaturas Web Push dos dispositivos autenticados do backstage."""
 
 from __future__ import annotations
 
@@ -48,14 +48,14 @@ class PushSubscription(models.Model):
         verbose_name="usuário",
     )
     endpoint = models.TextField("endereço de entrega", unique=True)
-    p256dh = models.TextField("chave pública do aparelho")
-    auth = models.TextField("segredo de autenticação do aparelho")
+    p256dh = models.TextField("chave pública do dispositivo")
+    auth = models.TextField("segredo de autenticação do dispositivo")
     surface_ref = models.CharField(
         "surface",
         max_length=32,
         choices=PushSurface.choices,
     )
-    device_label = models.CharField("aparelho", max_length=120)
+    device_label = models.CharField("dispositivo", max_length=120)
     categories = models.JSONField("categorias", default=list)
     created_at = models.DateTimeField("criada em", auto_now_add=True)
     last_success_at = models.DateTimeField("último sucesso em", null=True, blank=True)
@@ -79,7 +79,7 @@ class PushSubscription(models.Model):
         if any(not category or category not in PUSH_CATEGORIES for category in normalized):
             raise ValidationError({"categories": "A lista contém uma categoria inválida."})
         if len(normalized) != len(set(normalized)):
-            raise ValidationError({"categories": "Não repita categorias no mesmo aparelho."})
+            raise ValidationError({"categories": "Não repita categorias no mesmo dispositivo."})
         allowed = PUSH_SURFACE_CATEGORIES.get(self.surface_ref, frozenset())
         if any(category not in allowed for category in normalized):
             raise ValidationError({"categories": "A surface não aceita uma das categorias escolhidas."})

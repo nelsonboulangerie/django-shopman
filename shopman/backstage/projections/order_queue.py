@@ -91,7 +91,7 @@ class AwaitingWorkOrderProjection:
 
 @dataclass(frozen=True)
 class EquipmentOptionProjection:
-    """Um aparelho que o entregador pode levar no despacho (ref do canal + rótulo)."""
+    """Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo)."""
 
     ref: str
     label: str
@@ -101,7 +101,7 @@ class EquipmentOptionProjection:
 
 @dataclass(frozen=True)
 class EquipmentOutProjection:
-    """Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou."""
+    """Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou."""
 
     ref: str
     label: str

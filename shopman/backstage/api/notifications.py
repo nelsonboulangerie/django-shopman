@@ -577,7 +577,7 @@ class NotificationPushSubscriptionView(APIView):
         categories = _valid_push_categories(payload.get("categories"), surface_ref=surface_ref)
         if categories is None:
             return _push_error("categories", "Uma categoria não pertence a esta surface.")
-        device_label = _bounded_text(payload.get("device_label"), maximum=120) or "Este aparelho"
+        device_label = _bounded_text(payload.get("device_label"), maximum=120) or "Este dispositivo"
 
         with transaction.atomic():
             record, created = PushSubscription.objects.update_or_create(
@@ -601,7 +601,7 @@ class NotificationPushSubscriptionView(APIView):
     def patch(self, request):
         record = _owned_push_subscription(request)
         if record is None:
-            return Response({"detail": "Aparelho não encontrado."}, status=404)
+            return Response({"detail": "Dispositivo não encontrado."}, status=404)
         categories = _valid_push_categories(
             (request.data or {}).get("categories"),
             surface_ref=record.surface_ref,
@@ -615,7 +615,7 @@ class NotificationPushSubscriptionView(APIView):
     def delete(self, request):
         record = _owned_push_subscription(request)
         if record is None:
-            return Response({"detail": "Aparelho não encontrado."}, status=404)
+            return Response({"detail": "Dispositivo não encontrado."}, status=404)
         if record.disabled_at is None:
             record.disabled_at = timezone.now()
             record.save(update_fields=["disabled_at"])
