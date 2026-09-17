@@ -15,6 +15,9 @@ const COOKIE_DOMAIN = /^\.?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const COOKIE_ATTRIBUTE_VALUE = /^[\x20-\x3A\x3C-\x7E]*$/;
 
 export function isSafeDjangoSetCookieHeader(header: string): boolean {
+  // Casar caractere de controle É o ponto: um Set-Cookie com CR/LF/NUL injeta cabeçalho
+  // na resposta que o BFF devolve ao operador. A regra supõe engano; aqui é a defesa.
+  // eslint-disable-next-line no-control-regex
   if (!header || header.length > 4096 || /[\x00-\x1F\x7F]/.test(header)) return false;
 
   const [pair = "", ...rawAttributes] = header.split(";");

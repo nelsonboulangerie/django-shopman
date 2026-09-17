@@ -279,15 +279,39 @@ do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por pass
 - **DS tokens canônicos** (`tailwind.css`) — hoje idênticos por app; extrair o bloco
   canônico para cá (com split das partes app-específicas: print no POS, dark no KDS).
 - **Interceptor global de 401/403** (reabre o gate de operador) — plugin compartilhado.
-- **Tooling base** (ESLint flat + Prettier + vitest 2-projects + Playwright) — configs
-  compartilhadas adotadas por cada app no seu WP.
+- **Tooling base** (Prettier + vitest 2-projects + Playwright) — configs
+  compartilhadas adotadas por cada app no seu WP. O ESLint flat já saiu do roadmap:
+  ver "Lint do kit" abaixo.
 
 ## Testes do kit
 
 ```bash
 npm test   # vitest: utils puros + guardrails de design system (paridade de tokens)
+npm run lint   # eslint: app/, server/, runtime/, scripts/, tests/ e os configs da raiz
 ```
 
 Os guardrails (`tests/guardrails.test.ts`) verificam a fonte única de tokens e os
 consumidores já incorporados a cada regra. A cobertura cresce por app; a ausência de
 um app numa regra específica não deve ser documentada como cobertura existente.
+
+## Lint do kit
+
+O kit se linta a si mesmo por `eslint.config.mjs` (raiz do layer). Ele NÃO nasce de
+`./.nuxt/eslint.config.mjs` como os nove apps irmãos, e a diferença é estrutural:
+esse arquivo é gerado pelo módulo `@nuxt/eslint`, e o `nuxt.config.ts` do layer não
+registra módulo nenhum de propósito — módulo declarado aqui vaza por `extends` para
+todas as superfícies hospedeiras. `nuxt prepare` roda no layer (gera tipos), mas
+não produz config de ESLint. Então o preset é montado à mão: `@eslint/js` +
+`typescript-eslint` + `eslint-plugin-vue`, a MESMA `eslint.config.base.mjs` que os
+apps aplicam, e `eslint-config-prettier` por último.
+
+Duas consequências que valem a leitura:
+
+- **`no-undef` fica desligado** no kit. Sem `@nuxt/eslint` para declarar os
+  auto-imports (`ref`, `computed`, `defineEventHandler`, `useRuntimeConfig`, …), a
+  regra acusaria cada um deles. É o mesmo que o preset do Nuxt faz nos apps.
+- **`Ui*.vue` do kit NÃO herda o afrouxamento de `any`.** O bloco
+  `app/components/Ui/**` da base existe para as primitivas VENDADAS do ui-thing/reka-ui;
+  no kit os `Ui*.vue` são planos (`app/components/UiNativeSelect.vue`) e escritos aqui.
+  O glob da base não os alcança, e isso é deliberado: `@typescript-eslint/no-explicit-any`
+  continua **erro** neles.
