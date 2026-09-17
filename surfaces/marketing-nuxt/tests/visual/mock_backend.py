@@ -771,6 +771,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not body.get("confirmation_token"):
                 count = 1_999 if scenario == "fire-large" else 48
+                # Disparar não publica e não envia: o servidor emite o token para
+                # congelar versão, permissão e público, e declara `none` — nenhuma
+                # cerimônia humana. O navegador consome o token na sequência, sem
+                # abrir caixa. Ver ADR-031.
                 self._send(428, {
                     "code": "confirmation_required",
                     "detail": "Confirme o público antes de criar o anúncio.",
@@ -778,10 +782,10 @@ class Handler(BaseHTTPRequestHandler):
                         "token": "visual-fire-confirmation-token",
                         "ref": "visual-fire-confirmation-ref",
                         "expires_at": "2026-09-10T10:35:00-03:00",
-                        "mode": "typed",
-                        "step_up": "password",
+                        "mode": "none",
+                        "step_up": "none",
                         "dual_control": False,
-                        "typed_phrase": f"PUBLICAR {count}",
+                        "typed_phrase": "",
                         "consequence": "creates_review_announcement",
                         "resource_ref": "campaign:1",
                         "base_version": 1,
