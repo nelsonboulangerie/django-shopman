@@ -26,7 +26,7 @@ const CROSS_APP_HREF = /:href="(hubUrl|centralUrl|tile\.url)"/;
 
 function vueFiles(dir: string): string[] {
   const out: string[] = [];
-  let entries: string[] = [];
+  let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
