@@ -75,6 +75,8 @@ def readiness_for(
                     action="Revisar as plataformas da campanha",
                 )
             )
+        elif switched_off := _switched_off_readiness(platform, kind=kind, now=clock):
+            out.append(switched_off)
         elif pipeline_block := _pipeline_block(platform, kind=kind, now=clock):
             out.append(pipeline_block)
         elif simulated := _local_simulation_readiness(platform, kind=kind, now=clock):
@@ -88,6 +90,48 @@ def readiness_for(
 
     record_readiness(result, now=clock)
     return result
+
+
+def _switched_off_readiness(
+    platform: str,
+    *,
+    kind: str,
+    now: datetime,
+) -> PlatformReadiness | None:
+    """Plataforma desligada pela flag do ambiente: escolha de operação, não defeito.
+
+    Vem antes de qualquer consulta ao adapter. Assim a prontidão não pede ao
+    ``get_adapter`` um método que a configuração deixou de fora de propósito (o
+    aviso dele fica para adapter que deveria existir e não existe) e não descreve
+    uma plataforma desligada como integração ausente ou credencial faltando.
+    """
+
+    from shopman.shop.services.marketing_delivery_runtime import delivery_lane
+
+    lane = delivery_lane(platform)
+    if lane.state != "switched_off":
+        return None
+    if kind == PUBLICATION:
+        reason = "A publicação nesta plataforma está desligada neste ambiente."
+    else:
+        reason = "O envio de campanhas por esta plataforma está desligado neste ambiente."
+    # Só o que a fila garante: o worker não reserva destino de plataforma desligada.
+    limitation = (
+        "Destinos aprovados para esta plataforma ficam na fila, sem envio, enquanto "
+        "ela estiver desligada."
+    )
+    return PlatformReadiness(
+        platform=platform,
+        kind=kind,
+        state="blocked",
+        reason_code="platform_switched_off",
+        checked_at=now,
+        facts_as_of=now,
+        source_status="fresh",
+        reason=reason,
+        action=f"Para enviar por aqui, pedir à operação para ligar {lane.switch}",
+        limitation=limitation,
+    )
 
 
 def _pipeline_block(
@@ -192,8 +236,11 @@ def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness
             checked_at=now,
             facts_as_of=now,
             source_status="fresh",
-            reason="Não há integração de publicação configurada para esta plataforma.",
-            action="Configurar as credenciais da plataforma",
+            reason=(
+                "Esta plataforma não está desligada, mas a integração de entrega dela "
+                "não está registrada neste ambiente — erro de configuração."
+            ),
+            action="Pedir à operação para conferir o registro da integração neste ambiente",
         )
 
     probe = getattr(adapter, "is_available", None)
@@ -313,7 +360,9 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
     # provider contracts.  A healthy ManyChat credential alone cannot make the
     # v2 outbox deliver: the worker needs a registered ``marketing_delivery``
     # adapter for this exact lane.  Reporting ready without it leaves approved
-    # messages queued forever.
+    # messages queued forever.  A lane switched off by its flag never gets here
+    # (``_switched_off_readiness``); reaching this with no provider is a broken
+    # configuration.
     from shopman.shop.services.marketing_delivery_runtime import delivery_provider
 
     durable_provider = delivery_provider(platform, require_available=False)
@@ -327,10 +376,11 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             facts_as_of=now,
             source_status="fresh",
             reason=(
-                "A integração de campanhas do WhatsApp ainda não está conectada "
-                "à fila segura de envio."
+                "O envio de campanhas por WhatsApp não está desligado, mas a integração "
+                "dele com a fila segura de envio não está registrada neste ambiente — "
+                "erro de configuração."
             ),
-            action="Concluir e verificar a integração durável do WhatsApp",
+            action="Pedir à operação para conferir o registro da integração neste ambiente",
         )
     durable_probe = getattr(durable_provider, "is_available", None)
     try:

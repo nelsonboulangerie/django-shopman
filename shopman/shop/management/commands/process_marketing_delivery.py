@@ -111,7 +111,7 @@ class Command(BaseCommand):
             reconcile_calling,
         )
         from shopman.shop.services.marketing_delivery_runtime import (
-            SUPPORTED_PLATFORMS,
+            delivery_lanes,
             delivery_provider,
         )
         from shopman.shop.services.marketing_delivery_worker import (
@@ -147,8 +147,16 @@ class Command(BaseCommand):
         # operator rehearsal does not require an unexplained second invocation.
         clock = timezone.now()
 
+        # Plataforma desligada pela flag é escolha de quem opera o ambiente: não se
+        # pede o adapter dela, senão o aviso de "método não configurado" do
+        # `get_adapter` sairia a cada ciclo. Os destinos dela seguem `queued`, sem
+        # reserva. Plataforma com a flag ligada e sem adapter registrado continua
+        # sendo pedida — ali o aviso aponta configuração quebrada.
         providers = {}
-        for platform in SUPPORTED_PLATFORMS:
+        for lane in delivery_lanes():
+            if lane.state == "switched_off":
+                continue
+            platform = lane.platform
             try:
                 provider = delivery_provider(platform)
             except Exception:

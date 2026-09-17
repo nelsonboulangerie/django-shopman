@@ -18,7 +18,8 @@ export type PlatformReadiness = Pick<
   | "limitation"
   | "source_status"
   | "canary_recipients"
->;
+> &
+  Partial<Pick<Platform, "reason_code">>;
 
 export type ReadinessTone = "ready" | "limited" | "blocked" | "unknown";
 
@@ -68,6 +69,14 @@ export function platformReadinessNote(
       tone: "limited",
       badge: "simulação",
       text: `${label}: ${item.reason || "simulação local ativa"}`,
+    };
+  }
+  if (tone === "blocked" && item.reason_code === "platform_switched_off") {
+    // Desligada de propósito: "até resolver" diria que há algo quebrado.
+    return {
+      tone,
+      badge: "desligada",
+      text: `${label}: ${item.reason} O que for aprovado para ela fica na fila, sem envio, até ela ser ligada.`,
     };
   }
   if (tone === "blocked") {

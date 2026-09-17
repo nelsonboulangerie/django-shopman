@@ -103,13 +103,24 @@ function kindLabel(kind: string): string {
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
 function tone(
-  platform: Pick<Platform, "state" | "source_status" | "canary_recipients">,
+  platform: Pick<
+    Platform,
+    "state" | "source_status" | "canary_recipients" | "reason_code"
+  >,
 ) {
   if (platform.source_status === "simulated")
     return {
       chip: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
       icon: "lucide:flask-conical",
       label: "Simulação local",
+    };
+  // Desligada pela flag do ambiente é escolha de quem opera, não defeito: não
+  // pinta de vermelho como integração quebrada.
+  if (platform.reason_code === "platform_switched_off")
+    return {
+      chip: "bg-muted text-muted-foreground",
+      icon: "lucide:power-off",
+      label: "Desligada",
     };
   if (platform.state === "blocked")
     return {

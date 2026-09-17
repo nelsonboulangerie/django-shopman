@@ -5,6 +5,9 @@ import {
   deliveryCountItems,
   deliveryStatePresentation,
   marketingLoadError,
+  platformDeliveryLabel,
+  platformSwitchedOff,
+  platformSwitchedOffNote,
   recoveryActionExplanation,
 } from "~/presentation/marketingResult";
 import type {
@@ -54,6 +57,43 @@ describe("Marketing result presentation", () => {
       "3 falhas que podem ser tentadas novamente",
       "4 resultados incertos",
     ]);
+  });
+
+  it("says a queued target of a switched-off platform waits for it, not that its turn will come", () => {
+    const readiness = {
+      state: "blocked" as const,
+      platforms: [
+        {
+          platform_ref: "instagram",
+          state: "blocked" as const,
+          reason_code: "platform_switched_off",
+          version: 1,
+          checked_at: "2026-09-17T10:00:00-03:00",
+          facts_as_of: null,
+          fresh_until: null,
+          source_status: "fresh",
+        },
+      ],
+    };
+    const counts = { ...emptyCounts, queued: 3 };
+
+    expect(platformSwitchedOff({ readiness }, "instagram")).toBe(true);
+    expect(platformSwitchedOff({ readiness }, "whatsapp")).toBe(false);
+    expect(
+      deliveryCountItems(counts, { platformSwitchedOff: true }).map(
+        (item) => `${item.count} ${item.label}`,
+      ),
+    ).toEqual(["3 aguardando a plataforma ligar"]);
+    expect(deliveryCountItems(counts)[0]?.label).toBe("na fila");
+    expect(
+      platformDeliveryLabel({ state: "delivering", counts }, true),
+    ).toBe("Aguardando a plataforma ligar");
+    expect(
+      platformDeliveryLabel({ state: "delivering", counts }, false),
+    ).toBe("Entrega em andamento");
+    const note = platformSwitchedOffNote("instagram");
+    expect(note).toContain("Instagram está desligado");
+    expect(note).not.toMatch(/adapt|integração|credencial|erro/i);
   });
 
   it("explains that reconcile is lookup-only", () => {

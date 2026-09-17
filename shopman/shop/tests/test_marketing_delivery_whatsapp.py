@@ -361,6 +361,24 @@ def test_boot_registers_the_whatsapp_adapter_only_behind_the_platform_flag(monke
     )
 
 
+def test_each_platform_switch_registers_exactly_its_own_platform(monkeypatch):
+    """`PLATFORM_SWITCHES` é o que a prontidão cita como "desligada (flag X)".
+
+    Se a flag citada não for a que registra o adapter no boot, a tela manda ligar
+    a flag errada.
+    """
+    from shopman.shop.services.marketing_delivery_runtime import PLATFORM_SWITCHES
+
+    # TikTok não está no catálogo selecionável; a flag dele fica desligada aqui.
+    for switch in (*PLATFORM_SWITCHES.values(), "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED"):
+        monkeypatch.delenv(switch, raising=False)
+    assert set(_boot_settings(monkeypatch).SHOPMAN_MARKETING_DELIVERY_ADAPTERS) == set()
+    for platform, switch in PLATFORM_SWITCHES.items():
+        booted = _boot_settings(monkeypatch, **{switch: "true"})
+        monkeypatch.delenv(switch)
+        assert set(booted.SHOPMAN_MARKETING_DELIVERY_ADAPTERS) == {platform}, switch
+
+
 def test_demo_profile_keeps_the_whatsapp_lane_on_the_local_simulator():
     from config import settings_marketing_demo
 
