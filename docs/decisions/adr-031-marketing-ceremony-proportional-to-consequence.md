@@ -1,6 +1,10 @@
 # ADR-031 — A cerimônia de confirmação do Marketing mede a consequência
 
-**Status:** Aceito em 2026-09-17
+**Status:** Aceito em 2026-09-17 · **superada em parte** por
+[ADR-032](adr-032-marketing-ceremony-threshold-is-proportional.md) em 2026-09-17: os
+limiares fixos de 50 e 500 descritos abaixo viraram uma proporção da base de clientes (ou
+o teto de gasto, o que chegar primeiro), ajustável no Admin, e passaram a contar PESSOAS
+em vez de destinos externos. Tudo o mais desta ADR continua valendo.
 
 ## Contexto
 
@@ -44,12 +48,18 @@ A cerimônia passa a medir só a consequência — quantos destinos externos o c
 - **abaixo de 50 destinos:** resumo + um toque. Sem frase, sem senha.
 - **de 50 a 499 destinos:** frase digitada + senha.
 - **500 destinos ou mais:** frase digitada + TOTP + duplo controle.
+
+  > ⚠️ Estas três faixas foram substituídas pela ADR-032. O 50 era herdado e nunca havia
+  > rodado; hoje o limiar é `max(piso, min(2% da base, teto de gasto ÷ custo por
+  > mensagem))`, conta pessoas e mora no Admin.
 - **`immediate` deixa de escalar sozinho.** Agendar e entregar agora pedem a mesma coisa
   para o mesmo público.
 
 Os limiares viram constantes nomeadas — `CEREMONY_TYPED_THRESHOLD` e
 `CEREMONY_DUAL_CONTROL_THRESHOLD` — para que mudar a política seja mudar um número com
-nome, e não descobrir um booleano escondido numa condição.
+nome, e não descobrir um booleano escondido numa condição. (A ADR-032 foi além e tirou os
+dois do código: um número com nome ainda é um número absoluto, e absoluto só está certo
+para um tamanho de base.)
 
 Nada mais foi afrouxado: RBAC, token de uso único, CAS por versão, idempotência,
 comprovante, congelamento de emergência, quota durável de 5.000 destinos externos por dia,

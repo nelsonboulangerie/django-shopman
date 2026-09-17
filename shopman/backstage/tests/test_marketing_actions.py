@@ -227,6 +227,57 @@ def test_pending_decision_uses_readiness_zero_audience_and_fresh_permissions():
     )
 
 
+def test_the_preview_knows_which_axis_the_announcement_is_on():
+    """Postagem não pede senha na prévia, e mensagem do mesmo tamanho pede.
+
+    A projeção resolvia a confirmação SEM passar as plataformas, e o servidor caía no
+    caminho conservador: contava o público elegível como se fosse destinatário. Um
+    anúncio só de postagem prometia na tela a cerimônia de trezentas pessoas — e o
+    comando, que sabe as plataformas, pediria outra coisa. Ver ADR-032.
+    """
+    publisher = _actor(
+        "axis-preview",
+        "view_marketing",
+        "publish_marketing_announcements",
+    )
+    postagem = _pending(suffix="axis-post", eligible_count=300, platforms=["instagram"])
+    mensagem = _pending(suffix="axis-dm", eligible_count=300, platforms=["whatsapp"])
+
+    post_actions = resolve_actions(_ready_projection(postagem), actor=publisher)
+    dm_actions = resolve_actions(_ready_projection(mensagem), actor=publisher)
+
+    assert _action(post_actions, "publish_announcement_now").confirmation.mode == "summary"
+    assert _action(post_actions, "publish_announcement_now").confirmation.step_up == "none"
+    # 300 pessoas contra uma base vazia: o piso manda (10 e 100), e 300 passa dos dois —
+    # frase digitada, autenticador e segunda pessoa. Base desconhecida aperta, não afrouxa.
+    assert _action(dm_actions, "publish_announcement_now").confirmation.mode == "typed"
+    assert _action(dm_actions, "publish_announcement_now").confirmation.step_up == "totp"
+    assert _action(dm_actions, "publish_announcement_now").confirmation.dual_control is True
+
+
+def test_a_platform_ref_the_authorization_would_refuse_does_not_break_the_board():
+    """O código de domínio da projeção é mais largo que o do contexto de autorização.
+
+    Passar o ref cru levantaria ``ValueError`` e derrubaria o quadro inteiro. Ele é
+    descartado, e sem plataforma o servidor conta o público como PESSOAS — mais
+    cerimônia, não menos.
+    """
+    publisher = _actor(
+        "odd-platform",
+        "view_marketing",
+        "publish_marketing_announcements",
+    )
+    estranho = _pending(
+        suffix="odd-platform",
+        eligible_count=300,
+        platforms=["google-business.legado"],
+    )
+
+    actions = resolve_actions(_ready_projection(estranho), actor=publisher)
+
+    assert _action(actions, "publish_announcement_now").confirmation.mode == "typed"
+
+
 def test_freeze_blocks_effects_but_keeps_lookup_only_reconciliation_possible():
     announcement, _targets_list = _targets(
         suffix="actions-freeze",

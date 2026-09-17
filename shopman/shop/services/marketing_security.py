@@ -40,11 +40,9 @@ STEP_UP_TTL = timedelta(minutes=15)
 SECURITY_RETENTION = timedelta(days=365 * 5)
 MAX_EXTERNAL_TARGETS_PER_DAY = 5_000
 MAX_BLAST = 5_000
-# A partir de quantos destinos a confirmação deixa de ser "leia e confirme". Abaixo do
-# primeiro limiar, o resumo da consequência é a confirmação: a tela anterior já mostrou
-# o público, as plataformas e o texto, e o gestor está autenticado na sessão de operador.
-CEREMONY_TYPED_THRESHOLD = 50
-CEREMONY_DUAL_CONTROL_THRESHOLD = 500
+# A partir de quantas mensagens o envio precisa ser agendado: acima disso o disparo
+# ocupa a fila por tempo bastante para que "agora" deixe de ser uma promessa honesta.
+LARGE_BLAST_SCHEDULE_THRESHOLD = 2_000
 MIN_LARGE_SCHEDULE_DELAY = timedelta(minutes=15)
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ACTION_RE = re.compile(r"^[a-z0-9_]{1,32}$")
@@ -202,11 +200,12 @@ def authorization_context(
 
 def requirement_for(context: AuthorizationContext, *, now: datetime | None = None) -> AuthorizationRequirement:
     clock = _aware_now(now)
-    # Uma consequência pública tem um destino por plataforma mesmo quando não
-    # existe audiência de mensagens diretas. O número digitado deve descrever o
-    # efeito real; "PUBLICAR 0" para um Story é uma confirmação enganosa.
-    count = _external_target_count(context)
-    if count > MAX_BLAST:
+    # Destino externo é a grandeza da QUOTA e do teto: uma postagem ocupa um destino por
+    # plataforma, uma mensagem ocupa um destino por pessoa. Serve para dizer "quanto
+    # deste comando sai da casa hoje" — não serve para medir risco, porque soma duas
+    # grandezas diferentes.
+    destinations = external_destination_count(context)
+    if destinations > MAX_BLAST:
         raise MarketingAuthorizationError(
             code="marketing_blast_limit_exceeded",
             detail=f"O limite aprovado é {MAX_BLAST} destinos por comando.",
@@ -229,11 +228,21 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
     if context.action == ACTION_FIRE:
         return AuthorizationRequirement("none", "none", False, "")
 
-    if count >= 2_000:
+    # Daqui para baixo quem manda é a grandeza PERIGOSA: pessoas que recebem mensagem.
+    # Mensagem enviada não se apaga, custa por unidade e chega em quem não pediu aquele
+    # horário. Postagem é mural: some com um toque, não tem custo por pessoa, e o número
+    # de plataformas não mede risco nenhum — três postagens e três pessoas não são a
+    # mesma grandeza, e nenhum limiar serve para as duas. Num disparo misto quem decide
+    # é a parte de mensagem, porque é a irreversível.
+    recipients = direct_message_recipient_count(context)
+    if recipients >= LARGE_BLAST_SCHEDULE_THRESHOLD:
         if context.scheduled_for is None:
             raise MarketingAuthorizationError(
                 code="large_blast_must_be_scheduled",
-                detail="A partir de 2.000 destinos, o envio precisa ser agendado.",
+                detail=(
+                    f"A partir de {LARGE_BLAST_SCHEDULE_THRESHOLD} mensagens, "
+                    "o envio precisa ser agendado."
+                ),
                 status_code=422,
             )
         if context.scheduled_for < clock + MIN_LARGE_SCHEDULE_DELAY:
@@ -242,15 +251,19 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
                 detail="Agende com pelo menos 15 minutos de antecedência.",
                 status_code=422,
             )
-    # A cerimônia mede a consequência, e a consequência é quanta gente recebe. Antes,
-    # entregar agora escalava sozinho para frase digitada + senha, qualquer que fosse o
-    # tamanho: mandar uma mensagem para uma pessoa pedia o mesmo ritual de um disparo
-    # para quinhentas. Agendar as mesmas quinhentas pedia menos, o que não se sustenta —
-    # o agendamento adia o efeito, não o diminui.
-    if count >= CEREMONY_DUAL_CONTROL_THRESHOLD:
-        return AuthorizationRequirement("typed", "totp", True, f"PUBLICAR {count}")
-    if count >= CEREMONY_TYPED_THRESHOLD:
-        return AuthorizationRequirement("typed", "password", False, f"PUBLICAR {count}")
+    if recipients <= 0:
+        return AuthorizationRequirement("summary", "none", False, "")
+    # A cerimônia mede a consequência, e a consequência é quanta gente recebe — medida
+    # contra o tamanho da casa, não contra um número absoluto herdado. Um limiar fixo só
+    # está certo para uma base: com 200 clientes, 50 é alto demais; com 20.000, baixo
+    # demais. A política e a base vivem no Admin; ver ADR-032.
+    from shopman.shop.services.marketing_ceremony import ceremony_threshold
+
+    threshold = ceremony_threshold()
+    if recipients >= threshold.dual_control:
+        return AuthorizationRequirement("typed", "totp", True, f"ENVIAR {recipients}")
+    if recipients >= threshold.typed:
+        return AuthorizationRequirement("typed", "password", False, f"ENVIAR {recipients}")
     return AuthorizationRequirement("summary", "none", False, "")
 
 
@@ -449,6 +462,13 @@ def issue_confirmation(
             "resource_ref": required.context.resource_ref,
             "base_version": required.context.base_version,
             "audience_count": required.context.audience_count,
+            # Os dois eixos, separados, para a tela poder dizer o efeito pelo nome em vez
+            # de somar pessoa com plataforma: "500 mensagens" e "2 postagens" não são
+            # "502 destinos". ``ceremony_threshold`` é a partir de quantas MENSAGENS a
+            # casa passa a pedir frase digitada — a tela pode explicar por que pediu.
+            "direct_message_count": direct_message_recipient_count(required.context),
+            "public_post_count": public_post_count(required.context),
+            "ceremony_threshold": _ceremony_threshold_for_challenge(),
             "platforms": list(required.context.platforms),
             "scheduled_for": (
                 required.context.scheduled_for.isoformat()
@@ -875,7 +895,7 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         ACTION_UNFREEZE,
     }:
         return
-    target_count = _external_target_count(context)
+    target_count = external_destination_count(context)
     since = now - timedelta(days=1)
     used = sum(
         MarketingQuotaUsage.objects.filter(occurred_at__gte=since).values_list(
@@ -906,25 +926,53 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
     )
 
 
-def _external_target_count(context: AuthorizationContext) -> int:
-    # ``audience_count`` is the sealed cohort available to direct-message lanes;
-    # it is not the cardinality of a public post.  Mixed campaigns must add both
-    # consequences: N WhatsApp messages + one publication for every other
-    # selected platform.  ``max(...)`` used to undercount that sum precisely at
-    # the thresholds where step-up and dual control become stronger.
-    # Some non-delivery/legacy callers do not carry platforms yet.  Preserve
-    # their conservative cohort count until those contexts are migrated.
+def _ceremony_threshold_for_challenge() -> int:
+    from shopman.shop.services.marketing_ceremony import ceremony_threshold
+
+    return ceremony_threshold().typed
+
+
+def direct_message_recipient_count(context: AuthorizationContext) -> int:
+    """PESSOAS que recebem mensagem direta. A grandeza irreversível e cobrada.
+
+    Zero quando o comando só publica: uma postagem não tem destinatário, tem mural.
+    ``audience_count`` é o público selado das faixas de mensagem — em um anúncio só de
+    postagem ele continua preenchido (é quem a casa poderia alcançar), e lê-lo como
+    destinatário faria três plataformas pedirem a senha de quinhentas pessoas.
+    """
     if not context.platforms:
-        return max(context.audience_count, 1)
+        # Chamadores legados (e a projeção do cockpit até migrarem) não carregam
+        # plataforma. Sem saber o eixo, conte como PESSOA: é o lado que pede mais
+        # cerimônia, e errar para o lado seguro é a regra da casa.
+        return max(context.audience_count, 0)
     from shopman.shop.services.marketing_capabilities import platform_kind
 
-    direct_messages = (
-        context.audience_count
-        if any(platform_kind(platform) == "direct_message" for platform in context.platforms)
-        else 0
-    )
-    public_publications = sum(platform_kind(platform) == "publication" for platform in context.platforms)
-    return max(direct_messages + public_publications, 1)
+    if any(platform_kind(platform) == "direct_message" for platform in context.platforms):
+        return max(context.audience_count, 0)
+    return 0
+
+
+def public_post_count(context: AuthorizationContext) -> int:
+    """PLATAFORMAS em que o anúncio vira postagem. Uma postagem por mural."""
+    if not context.platforms:
+        return 0
+    from shopman.shop.services.marketing_capabilities import platform_kind
+
+    return sum(platform_kind(platform) == "publication" for platform in context.platforms)
+
+
+def external_destination_count(context: AuthorizationContext) -> int:
+    """DESTINOS externos do comando: mensagens + postagens, somadas.
+
+    Esta soma continua existindo, e continua somando as duas grandezas, porque é a
+    grandeza da quota diária e do teto por comando: ali a pergunta é "quanto deste
+    comando sai da casa hoje", e uma postagem ocupa a API da plataforma tanto quanto uma
+    mensagem ocupa a do WhatsApp. O que ela NÃO faz mais é decidir cerimônia — para isso
+    somar pessoa com plataforma é somar peso com metro.
+    """
+    if not context.platforms:
+        return max(context.audience_count, 1)
+    return max(direct_message_recipient_count(context) + public_post_count(context), 1)
 
 
 def _require_second_actor(

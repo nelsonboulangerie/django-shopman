@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -52,6 +53,17 @@ _EMPTY_CONFIRMATION = ActionConfirmationProjectionV2(
     dual_control=False,
 )
 _NOT_PROVIDED = object()
+# A projeção aceita um código de domínio mais largo do que o contexto de autorização
+# (que só admite ``[a-z0-9_]`` até 32). Passar um ref fora disso levantaria ``ValueError``
+# e derrubaria o quadro inteiro, então ele é descartado aqui: sem plataforma, o servidor
+# cai no caminho conservador e conta o público como PESSOAS — mais cerimônia, não menos.
+_AUTHORIZATION_PLATFORM_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+
+
+def _authorization_platforms(announcement: AnnouncementProjectionV2) -> tuple[str, ...]:
+    return tuple(
+        ref for ref in announcement.platform_refs if _AUTHORIZATION_PLATFORM_RE.fullmatch(ref)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +317,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=announcement.audience.eligible_count,
+            platforms=_authorization_platforms(announcement),
             consequence="publishes_now_to_eligible_audience",
             now=now,
         )
@@ -313,6 +326,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=announcement.audience.eligible_count,
+            platforms=_authorization_platforms(announcement),
             consequence="schedules_eligible_audience",
             scheduled_for=now + MIN_LARGE_SCHEDULE_DELAY,
             now=now,
@@ -392,6 +406,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=announcement.audience.eligible_count,
+            platforms=_authorization_platforms(announcement),
             consequence="cancels_only_reversible_delivery_lanes",
             scheduled_for=announcement.scheduled_for,
             now=now,
@@ -419,6 +434,7 @@ def _announcement_actions(
                 resource_ref=resource_ref,
                 version=version,
                 audience_count=announcement.audience.eligible_count,
+                platforms=_authorization_platforms(announcement),
                 consequence="changes_scheduled_delivery_time",
                 scheduled_for=now + MIN_LARGE_SCHEDULE_DELAY,
                 now=now,
@@ -447,6 +463,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=recovery.retryable_count,
+            platforms=_authorization_platforms(announcement),
             consequence="retries_only_failed_retryable_targets",
             now=now,
         )
@@ -777,14 +794,19 @@ def _confirmation(
     audience_count: int,
     consequence: str,
     now: datetime,
+    platforms: tuple[str, ...] = (),
     scheduled_for: datetime | None = None,
 ) -> tuple[ActionConfirmationProjectionV2, str]:
+    # As plataformas vão junto de propósito: sem elas o servidor não sabe se este anúncio
+    # manda MENSAGEM ou faz POSTAGEM, e a prévia do cockpit prometeria a cerimônia da
+    # grandeza errada — senha para três postagens, um toque para trezentas mensagens.
     try:
         context = authorization_context(
             action=action,
             resource_ref=resource_ref,
             base_version=version,
             audience_count=audience_count,
+            platforms=platforms,
             scheduled_for=scheduled_for,
             consequence=consequence,
         )

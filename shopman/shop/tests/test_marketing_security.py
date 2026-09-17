@@ -33,8 +33,11 @@ from shopman.shop.services.marketing_security import (
     authorization_context,
     authorize_command,
     deactivate_freeze,
+    direct_message_recipient_count,
+    external_destination_count,
     issue_confirmation,
     permission_fingerprint,
+    public_post_count,
     requirement_for,
     safety_state,
 )
@@ -74,6 +77,30 @@ def _step_up(actor, level: str, *, at=None) -> StepUpEvidence:
         permission_fingerprint=permission_fingerprint(actor, state=state),
         safety_generation=state.generation,
     )
+
+
+@pytest.fixture(autouse=True)
+def customer_base(monkeypatch):
+    """Fixa o tamanho da base de clientes que o limiar de cerimônia usa.
+
+    O limiar é ``max(piso, min(2% da base, teto de gasto ÷ custo por mensagem))``. Uma
+    base de 2.500 dá 50 pessoas para frase+senha e 500 para duplo controle — de
+    propósito: são os números que a política anterior cravava no código, e amarrá-los
+    aqui deixa cada faixa deste arquivo continuar exercitando o que exercitava.
+
+    Sem chamar, a base é ZERO: o limiar cai no piso (10), que é o lado fechado da conta.
+    """
+    from shopman.shop.services import marketing_ceremony
+
+    state = {"size": 0}
+
+    def _set(size: int) -> None:
+        state["size"] = int(size)
+
+    monkeypatch.setattr(
+        marketing_ceremony, "customer_base_size", lambda **_: state["size"]
+    )
+    return _set
 
 
 def _open_confirmation(actor, context, *, capability, now=None):
@@ -264,7 +291,8 @@ def test_dangerous_api_rate_limit_returns_retry_after_before_effect(
     assert MarketingOutbox.objects.count() == 0
 
 
-def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context():
+def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context(customer_base):
+    customer_base(2_500)
     actor = _actor("direct-publisher", "publish_marketing_announcements")
     now = timezone.now()
     context = authorization_context(
@@ -290,7 +318,7 @@ def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context():
         capability="shop.publish_marketing_announcements",
         context=context,
         token=challenge["token"],
-        typed_confirmation="PUBLICAR 50",
+        typed_confirmation="ENVIAR 50",
         step_up=evidence,
         now=now + timedelta(seconds=1),
     )
@@ -300,7 +328,7 @@ def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context():
             capability="shop.publish_marketing_announcements",
             context=context,
             token=challenge["token"],
-            typed_confirmation="PUBLICAR 50",
+            typed_confirmation="ENVIAR 50",
             step_up=evidence,
             now=now + timedelta(seconds=2),
         )
@@ -320,7 +348,7 @@ def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context():
             capability="shop.publish_marketing_announcements",
             context=changed,
             token=other["token"],
-            typed_confirmation="PUBLICAR 49",
+            typed_confirmation="ENVIAR 49",
             step_up=evidence,
             now=now + timedelta(seconds=1),
         )
@@ -338,14 +366,15 @@ def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context():
             capability="shop.publish_marketing_announcements",
             context=context,
             token=expired["token"],
-            typed_confirmation="PUBLICAR 50",
+            typed_confirmation="ENVIAR 50",
             step_up=_step_up(actor, "password", at=now + timedelta(minutes=6)),
             now=now + timedelta(minutes=6),
         )
     assert stale.value.code == "confirmation_expired"
 
 
-def test_500_targets_requires_totp_and_distinct_second_authorized_actor():
+def test_500_targets_requires_totp_and_distinct_second_authorized_actor(customer_base):
+    customer_base(2_500)
     publisher = _actor("publisher-large", "publish_marketing_announcements")
     approver = _actor("approver-large", "approve_marketing_announcements")
     context = authorization_context(
@@ -377,7 +406,7 @@ def test_500_targets_requires_totp_and_distinct_second_authorized_actor():
         capability="shop.publish_marketing_announcements",
         context=context,
         token=challenge["token"],
-        typed_confirmation="PUBLICAR 500",
+        typed_confirmation="ENVIAR 500",
         step_up=_step_up(publisher, "totp"),
     )
 
@@ -385,7 +414,14 @@ def test_500_targets_requires_totp_and_distinct_second_authorized_actor():
     assert MarketingQuotaUsage.objects.get().target_count == 500
 
 
-def test_mixed_campaign_adds_direct_messages_and_public_publications_to_gate():
+def test_mixed_dispatch_is_decided_by_the_message_half_not_by_the_sum(customer_base):
+    """Postagem não empurra o disparo para a faixa de cima, e nem segura embaixo.
+
+    Somar 498 pessoas com 2 murais dava 500 e mudava a cerimônia de faixa por causa de
+    duas postagens — que se apagam com um toque e não custam por pessoa. Quem manda num
+    disparo misto é a metade irreversível: as 498 mensagens.
+    """
+    customer_base(2_500)
     context = authorization_context(
         action="approve",
         resource_ref="announcement:mixed-500",
@@ -398,31 +434,68 @@ def test_mixed_campaign_adds_direct_messages_and_public_publications_to_gate():
 
     requirement = requirement_for(context)
 
-    assert requirement.typed_phrase == "PUBLICAR 500"
-    assert requirement.step_up_level == "totp"
-    assert requirement.dual_control is True
+    assert requirement.typed_phrase == "ENVIAR 498"
+    assert requirement.step_up_level == "password"
+    assert requirement.dual_control is False
+    # E a quota continua somando as duas grandezas: 498 mensagens + 2 postagens saem
+    # da casa hoje, e é isso que o teto diário conta.
+    assert external_destination_count(context) == 500
+    assert direct_message_recipient_count(context) == 498
+    assert public_post_count(context) == 2
 
 
-def test_publication_only_gate_counts_platforms_not_unused_audience_members():
+def test_the_same_dispatch_changes_ceremony_when_the_house_changes_size(customer_base):
+    """O mesmo disparo, duas casas: 300 pessoas é muito numa, rotina na outra.
+
+    Era isto que um número no código não conseguia dizer. Com 2.500 clientes, 300
+    mensagens são 12% da casa e pedem frase digitada e senha; com 100.000, são 0,3% e
+    pedem o resumo — o mesmo resumo que 2.000 pediriam lá, porque lá o limiar é 714,
+    onde o teto de gasto chega antes da fatia.
+    """
+    payload = {
+        "action": "approve",
+        "resource_ref": "announcement:same-300",
+        "base_version": 1,
+        "audience_count": 300,
+        "platforms": ("whatsapp",),
+        "consequence": "publishes_now_to_eligible_audience",
+    }
+    context = authorization_context(**payload)
+
+    customer_base(2_500)
+    assert requirement_for(context) == AuthorizationRequirement(
+        "typed", "password", False, "ENVIAR 300"
+    )
+
+    customer_base(100_000)
+    assert requirement_for(context) == AuthorizationRequirement("summary", "none", False, "")
+
+
+def test_public_post_asks_for_the_summary_however_many_platforms(customer_base):
+    """Plataforma não é pessoa. Nenhum número de murais vira senha.
+
+    Postagem é apagável, não tem custo por pessoa e não chega em ninguém que não tenha
+    ido olhar. Contar plataformas contra um limiar de gente era medir peso com metro —
+    e com a base pequena deste teste (piso em 10) três postagens pediriam senha.
+    """
+    customer_base(0)
     context = authorization_context(
         action="approve",
         resource_ref="announcement:public-only",
         base_version=1,
         audience_count=498,
-        platforms=("instagram", "facebook"),
+        platforms=("instagram", "facebook", "google_business"),
         consequence="publishes_now_to_eligible_audience",
     )
 
     requirement = requirement_for(context)
 
-    # Duas publicações públicas continuam sendo dois destinos — o que mudou é o preço
-    # de dois destinos, que agora é ler o resumo e confirmar.
-    assert requirement.typed_phrase == ""
-    assert requirement.step_up_level == "none"
-    assert requirement.dual_control is False
+    assert requirement == AuthorizationRequirement("summary", "none", False, "")
+    assert direct_message_recipient_count(context) == 0
+    assert public_post_count(context) == 3
 
 
-def test_firing_asks_for_nothing_because_it_publishes_nothing():
+def test_firing_asks_for_nothing_because_it_publishes_nothing(customer_base):
     """Disparar cria um rascunho em revisão; a revisão é o portão, não o disparo.
 
     O módulo já tratava o disparo como consequência zero — `_reserve_external_quota`
@@ -431,6 +504,7 @@ def test_firing_asks_for_nothing_because_it_publishes_nothing():
     aprovar. O token continua sendo emitido, porque é ele que ancora versão, permissão
     e congelamento.
     """
+    customer_base(2_500)
     fire = authorization_context(
         action="fire",
         resource_ref="campaign:7",
@@ -449,12 +523,13 @@ def test_firing_asks_for_nothing_because_it_publishes_nothing():
     )
 
     assert requirement_for(fire) == AuthorizationRequirement("none", "none", False, "")
-    assert requirement_for(approve).typed_phrase == "PUBLICAR 481"
+    assert requirement_for(approve).typed_phrase == "ENVIAR 480"
     assert requirement_for(approve).step_up_level == "password"
 
 
-def test_a_large_retry_still_escalates_because_it_still_sends():
+def test_a_large_retry_still_escalates_because_it_still_sends(customer_base):
     """Reentregar é entregar. O que mudou foi o preço do pequeno, não o do grande."""
+    customer_base(2_500)
     small = authorization_context(
         action="retry_delivery",
         resource_ref="announcement:88",
@@ -475,12 +550,13 @@ def test_a_large_retry_still_escalates_because_it_still_sends():
 
     assert requirement_for(small) == AuthorizationRequirement("summary", "none", False, "")
     assert requirement_for(large) == AuthorizationRequirement(
-        "typed", "totp", True, "PUBLICAR 800"
+        "typed", "totp", True, "ENVIAR 800"
     )
 
 
-def test_a_big_audience_is_not_cheaper_to_send_just_because_it_was_scheduled():
+def test_a_big_audience_is_not_cheaper_to_send_just_because_it_was_scheduled(customer_base):
     """Agendar adia o efeito; não o diminui. Antes, o agora escalava e o agendado não."""
+    customer_base(2_500)
     payload = {
         "action": "approve",
         "resource_ref": "announcement:77",
@@ -495,11 +571,12 @@ def test_a_big_audience_is_not_cheaper_to_send_just_because_it_was_scheduled():
     )
 
     assert requirement_for(now) == requirement_for(later)
-    assert requirement_for(later).typed_phrase == "PUBLICAR 120"
+    assert requirement_for(later).typed_phrase == "ENVIAR 120"
     assert requirement_for(later).step_up_level == "password"
 
 
-def test_second_actor_password_change_invalidates_open_dual_control():
+def test_second_actor_password_change_invalidates_open_dual_control(customer_base):
+    customer_base(2_500)
     publisher = _actor("publisher-dual-revoked", "publish_marketing_announcements")
     approver = _actor("approver-dual-revoked", "approve_marketing_announcements")
     context = authorization_context(
@@ -529,7 +606,7 @@ def test_second_actor_password_change_invalidates_open_dual_control():
             capability="shop.publish_marketing_announcements",
             context=context,
             token=challenge["token"],
-            typed_confirmation="PUBLICAR 500",
+            typed_confirmation="ENVIAR 500",
             step_up=_step_up(publisher, "totp"),
         )
 
@@ -593,7 +670,7 @@ def test_daily_external_target_quota_returns_retry_after_and_is_append_only():
             capability="shop.publish_marketing_announcements",
             context=context,
             token=challenge["token"],
-            typed_confirmation="PUBLICAR 1",
+            typed_confirmation="",
             step_up=_step_up(actor, "password", at=now),
             now=now,
         )

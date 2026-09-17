@@ -37,6 +37,10 @@ from shopman.shop.loyalty_config import (
     LoyaltyConfig,
 )
 from shopman.shop.marketing_policy import (
+    DEFAULT_CEREMONY_AUDIENCE_PERCENT,
+    DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE,
+    DEFAULT_CEREMONY_RECIPIENT_FLOOR,
+    DEFAULT_CEREMONY_SPEND_LIMIT_Q,
     DEFAULT_WHATSAPP_MINIMUM_AUDIENCE,
     WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
 )
@@ -540,6 +544,81 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             f"(canário). Em branco = {DEFAULT_WHATSAPP_MINIMUM_AUDIENCE}."
         ),
     )
+    fields["defaults_marketing_ceremony_audience_percent"] = forms.DecimalField(
+        label="Cerimônia a partir de (% da base)",
+        required=False,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        max_digits=5,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_AUDIENCE_PERCENT)}
+        ),
+        help_text=(
+            "Um disparo de mensagem pede frase digitada e senha quando alcança esta "
+            "fatia da base de clientes. Proporção em vez de número fixo porque um "
+            "número fixo só está certo para um tamanho de base. Em branco = "
+            f"{DEFAULT_CEREMONY_AUDIENCE_PERCENT}%."
+        ),
+    )
+    fields["defaults_marketing_ceremony_spend_limit_q"] = forms.DecimalField(
+        label="Cerimônia a partir de (R$ de gasto)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100)}
+        ),
+        help_text=(
+            "O outro lado da mesma pergunta: quanto o disparo pode custar antes de pedir "
+            "senha. Vale o que chegar primeiro, este teto ou a fatia acima. Em branco = "
+            f"R$ {DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100},00. ⚠️ Palpite — confirme com o "
+            "que a casa aceita gastar num disparo."
+        ),
+    )
+    fields["defaults_marketing_direct_message_cost_q"] = forms.DecimalField(
+        label="Custo de uma mensagem (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=6,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(attrs={"placeholder": "0,07"}),
+        help_text=(
+            "Quanto o provedor cobra por mensagem de campanha entregue. Só mensagem "
+            "custa; postagem em Instagram, Facebook ou Google não tem custo por pessoa. "
+            "⚠️ Palpite — o preço real está no contrato com a Meta/ManyChat e muda por "
+            "categoria de modelo. Deixe arredondado para cima: custo superestimado faz o "
+            "teto de gasto morder antes, nunca depois."
+        ),
+    )
+    fields["defaults_marketing_ceremony_recipient_floor"] = forms.IntegerField(
+        label="Piso da cerimônia (pessoas)",
+        required=False,
+        min_value=1,
+        widget=UnfoldAdminIntegerFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_RECIPIENT_FLOOR)}
+        ),
+        help_text=(
+            "O limiar nunca fica abaixo deste número, e é ele que responde enquanto a "
+            "base for pequena ou desconhecida — o cálculo falha fechado, pedindo mais "
+            f"cerimônia, nunca menos. Em branco = {DEFAULT_CEREMONY_RECIPIENT_FLOOR} "
+            "pessoas. ⚠️ Palpite."
+        ),
+    )
+    fields["defaults_marketing_ceremony_dual_control_multiple"] = forms.IntegerField(
+        label="Duas pessoas a partir de (× o limiar)",
+        required=False,
+        min_value=1,
+        widget=UnfoldAdminIntegerFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE)}
+        ),
+        help_text=(
+            "Quantas vezes o limiar acima para o disparo exigir também o aplicativo "
+            "autenticador e a confirmação de uma segunda pessoa. Em branco = "
+            f"{DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE}×."
+        ),
+    )
     percent_errors = {
         "invalid": "Informe um percentual inteiro, de 1 a 100.",
         # ``%%``: a mensagem de min/max passa por ``%`` com os parâmetros do Django.
@@ -1008,6 +1087,25 @@ class ShopForm(forms.ModelForm):
                 "whatsapp_minimum_audience"
             )
 
+        if self._has("defaults_marketing_ceremony_audience_percent"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            stored_percent = marketing.get("ceremony_audience_percent")
+            self.fields["defaults_marketing_ceremony_audience_percent"].initial = (
+                Decimal(str(stored_percent)) if stored_percent is not None else None
+            )
+            self.fields["defaults_marketing_ceremony_recipient_floor"].initial = marketing.get(
+                "ceremony_recipient_floor"
+            )
+            self.fields["defaults_marketing_ceremony_dual_control_multiple"].initial = marketing.get(
+                "ceremony_dual_control_multiple"
+            )
+            self.fields["defaults_marketing_ceremony_spend_limit_q"].initial = _q_to_reais(
+                marketing.get("ceremony_spend_limit_q")
+            )
+            self.fields["defaults_marketing_direct_message_cost_q"].initial = _q_to_reais(
+                marketing.get("direct_message_cost_q")
+            )
+
         if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
             capacity = (
                 defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
@@ -1470,6 +1568,35 @@ class ShopForm(forms.ModelForm):
                 marketing.pop("whatsapp_minimum_audience", None)
             else:
                 marketing["whatsapp_minimum_audience"] = int(minimum)
+            if self._has("defaults_marketing_ceremony_audience_percent"):
+                percent = self.cleaned_data.get("defaults_marketing_ceremony_audience_percent")
+                if percent is None:
+                    marketing.pop("ceremony_audience_percent", None)
+                else:
+                    # String no JSON: Decimal não serializa e float não guarda 2,5% sem
+                    # sobra. Mesmo padrão do ``production_config``.
+                    marketing["ceremony_audience_percent"] = str(percent)
+                for field_name, key in (
+                    ("defaults_marketing_ceremony_recipient_floor", "ceremony_recipient_floor"),
+                    (
+                        "defaults_marketing_ceremony_dual_control_multiple",
+                        "ceremony_dual_control_multiple",
+                    ),
+                ):
+                    value = self.cleaned_data.get(field_name)
+                    if value is None:
+                        marketing.pop(key, None)
+                    else:
+                        marketing[key] = int(value)
+                for field_name, key in (
+                    ("defaults_marketing_ceremony_spend_limit_q", "ceremony_spend_limit_q"),
+                    ("defaults_marketing_direct_message_cost_q", "direct_message_cost_q"),
+                ):
+                    value = self.cleaned_data.get(field_name)
+                    if value is None:
+                        marketing.pop(key, None)
+                    else:
+                        marketing[key] = _reais_to_q(value)
             if marketing:
                 defaults["marketing"] = marketing
             else:
@@ -1958,6 +2085,30 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Cerimônia do disparo",
+        {
+            "fields": (
+                "marketing_ceremony_display",
+                (
+                    "defaults_marketing_ceremony_audience_percent",
+                    "defaults_marketing_ceremony_spend_limit_q",
+                ),
+                (
+                    "defaults_marketing_direct_message_cost_q",
+                    "defaults_marketing_ceremony_recipient_floor",
+                ),
+                "defaults_marketing_ceremony_dual_control_multiple",
+            ),
+            "description": (
+                "A partir de quantas PESSOAS um disparo de mensagem deixa de ser “leia o "
+                "resumo e toque” e passa a pedir frase digitada e senha. Vale o que chegar "
+                "primeiro: a fatia da base ou o teto de gasto. Postagem pública fica de "
+                "fora — ela se apaga, não custa por pessoa, e o número de plataformas não "
+                "mede risco. Quem mudou e quando fica no histórico desta página."
+            ),
+        },
+    ),
+    (
         "Capacidade dos apps de operação",
         {
             "fields": (
@@ -2263,7 +2414,66 @@ class ShopPosAdmin(_ShopSingletonAdmin):
 class ShopIntegrationsAdmin(_ShopSingletonAdmin):
     form = _section_form(_INTEGRATIONS_FIELDSETS)
     fieldsets = _INTEGRATIONS_FIELDSETS
-    readonly_fields = ("channel_refs_display",)
+    readonly_fields = ("channel_refs_display", "marketing_ceremony_display")
+
+    @admin.display(description="A conta, com os números de hoje")
+    def marketing_ceremony_display(self, obj):
+        """O limiar vivo ao lado do ajuste — para o gestor conferir contra a realidade.
+
+        Mostrar a base é o ponto: “2% da base” não quer dizer nada até alguém ver de que
+        base se trata. O número é lido na hora, sem cache, porque é ele que o gestor usa
+        para decidir se o limiar faz sentido.
+        """
+        from shopman.shop.marketing_policy import MarketingPolicy
+        from shopman.shop.services.marketing_ceremony import (
+            customer_base_size,
+            invalidate_customer_base_size,
+        )
+
+        invalidate_customer_base_size()
+        base = customer_base_size(refresh=True)
+        policy = MarketingPolicy.from_defaults(_shop_defaults(obj) if obj else None)
+        threshold = policy.ceremony_threshold(base)
+        binding = {
+            "percent": "a fatia da base",
+            "spend": "o teto de gasto",
+            "floor": "o piso (a base ainda é pequena para a fatia)",
+        }[threshold.binding]
+        spend_row = (
+            f"{threshold.from_spend} pessoas"
+            if threshold.from_spend is not None
+            else "sem teto (custo por mensagem em branco ou zero)"
+        )
+        rows = (
+            ("Base de clientes", f"{base} pessoas no cadastro ativo"),
+            ("Pela fatia", f"{threshold.from_percent} pessoas"),
+            ("Pelo gasto", spend_row),
+            ("Vale", binding),
+            (
+                "Frase digitada + senha",
+                f"a partir de {threshold.typed} pessoas "
+                f"(≈ R$ {policy.estimated_cost_q(threshold.typed) / 100:.2f} de mensagens)",
+            ),
+            (
+                "Autenticador + segunda pessoa",
+                f"a partir de {threshold.dual_control} pessoas",
+            ),
+        )
+        body = format_html_join(
+            "",
+            '<div class="flex gap-3 py-1 border-b border-base-100 dark:border-base-800">'
+            '<dt class="font-medium text-base-500 dark:text-base-400 w-56 shrink-0">{}</dt>'
+            '<dd class="text-sm">{}</dd></div>',
+            rows,
+        )
+        return format_html(
+            '<dl class="flex flex-col">{}</dl>'
+            '<p class="text-xs text-base-500 dark:text-base-400 mt-2">{}</p>',
+            body,
+            "Base de clientes = pessoas no cadastro ativo da casa (quem pediu para ser "
+            "esquecido sai da conta). O histórico importado do Yooga vive no B.I. e não "
+            "cria cadastro: quem só comprou no sistema antigo ainda não entra aqui.",
+        )
 
     @admin.display(description="Canais do sistema")
     def channel_refs_display(self, obj):
