@@ -2237,6 +2237,35 @@ class TestWhatsAppTestSend:
         receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
         assert receipt.state == MarketingTestReceipt.State.FAILED_FINAL
 
+    def test_busy_contact_is_503_denied_and_never_reads_as_accepted(
+        self, client, gestor, test_lane
+    ):
+        """O adiamento do ManyChat é um dict — e `bool(dict)` é True.
+
+        Contar o dict pela verdade dele gravava "aceito" para um teste que não
+        escreveu nada no contato. Ocupado é "espere a janela", não recusa do provedor.
+        """
+        from shopman.shop.models import MarketingTestReceipt
+
+        adapter, recipient = test_lane
+        adapter.accepted = {
+            "success": False,
+            "error": "subscriber_busy",
+            "retry_after_seconds": 120,
+        }
+        client.force_login(gestor)
+
+        response = self._post(client, {"target_ref": "owner-sandbox"})
+
+        assert response.status_code == 503
+        assert response.json()["code"] == "sandbox_unavailable"
+        assert "Nenhuma mensagem saiu" in response.json()["detail"]
+        assert recipient not in response.content.decode()
+        receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
+        assert receipt.state == MarketingTestReceipt.State.DENIED
+        assert receipt.failure_code == "subscriber_busy"
+        assert len(adapter.calls) == 1
+
     def test_sixth_test_in_an_hour_is_throttled_with_retry_after(
         self, client, gestor, test_lane
     ):

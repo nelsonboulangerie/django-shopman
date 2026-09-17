@@ -954,6 +954,24 @@ def _first_name(sub) -> str:
         return ""
 
 
+def delivery_backend(sub) -> str:
+    """O backend de notificação que entrega o aviso desta assinatura.
+
+    Uma pergunta, um dono: o envio (``_deliver``) e a barreira do ensaio no claim
+    precisam concordar sobre QUAL transporte vai ser usado — o ensaio só vale para o
+    ManyChat.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        return (
+            ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend
+        ) or "manychat"
+    except Exception:
+        logger.debug("stock_alerts: backend resolve failed, default manychat", exc_info=True)
+        return "manychat"
+
+
 def _deliver(
     sub,
     *,
@@ -962,7 +980,6 @@ def _deliver(
     available_qty: int | None = None,
 ):
     """Send through the configured adapter and return its acceptance result."""
-    from shopman.shop.config import ChannelConfig
     from shopman.shop.notifications import notify
     from shopman.shop.services import storefront_links
     from shopman.shop.services.availability_copy import availability_phrase
@@ -976,13 +993,7 @@ def _deliver(
 
         return NotificationResult(success=False, error="missing_recipient")
 
-    try:
-        backend = (
-            ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend
-        ) or "manychat"
-    except Exception:
-        logger.debug("stock_alerts: backend resolve failed, default manychat", exc_info=True)
-        backend = "manychat"
+    backend = delivery_backend(sub)
 
     try:
         alert_management_url = management_url(sub)
@@ -991,6 +1002,9 @@ def _deliver(
             recipient=recipient,
             context={
                 "sku": sub.sku,
+                # Não vira campo no ManyChat (denylist do adapter): é o que a última
+                # porta antes do provedor confere contra a lista do ensaio do WhatsApp.
+                "customer_ref": (sub.customer_ref or "").strip(),
                 # Nome que a mensagem usa: o sufixo que o template gruda no fim do link
                 # do botão. Ver o gêmeo em `handlers/_stock_receivers.py`.
                 "product_sku": sub.sku,
