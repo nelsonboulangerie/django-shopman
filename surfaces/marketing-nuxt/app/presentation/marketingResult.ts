@@ -417,3 +417,168 @@ function errorStatus(error: unknown): number {
     value.statusCode || value.status || value.response?.status || 0,
   );
 }
+
+/** WhatsApp é mensagem direta; o resto do catálogo é publicação pública. */
+const DIRECT_MESSAGE_PLATFORM = "whatsapp";
+
+/**
+ * A linha que explica por que o gestor caiu direto na revisão.
+ *
+ * O disparo leva a tela até aqui sem escala. Quem chega precisa saber, numa frase, que
+ * este anúncio nasceu do toque que ele acabou de dar e que NADA saiu ainda — a mesma
+ * promessa que antes vivia no painel de sucesso do disparo.
+ *
+ * Publicação pública conta destinos por plataforma; mensagem direta conta pessoas.
+ * Misturar os dois números diria ao gestor que o mural tem público de gente.
+ */
+export function announcementDispatchNotice(input: {
+  platforms: string[];
+  audienceCount: number;
+  replayed: boolean;
+}): { title: string; detail: string; replayNote: string } {
+  const platforms = (input.platforms ?? []).filter(Boolean);
+  const publicPlatforms = platforms.filter(
+    (platform) => platform !== DIRECT_MESSAGE_PLATFORM,
+  );
+  const publicOnly =
+    platforms.length > 0 && publicPlatforms.length === platforms.length;
+  const audienceCount = Math.max(0, Math.trunc(input.audienceCount || 0));
+  const detail = publicOnly
+    ? `${formatCount(publicPlatforms.length)} ${
+        publicPlatforms.length === 1
+          ? "postagem pública preparada"
+          : "postagens públicas preparadas"
+      }. Nada foi publicado ainda.`
+    : `${formatCount(audienceCount)} ${
+        audienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis"
+      }. Nenhuma publicação ou mensagem foi enviada.`;
+  return {
+    title: "Este anúncio acabou de ser criado pelo seu disparo",
+    detail,
+    replayNote: input.replayed
+      ? "Este é o mesmo resultado do toque anterior; nenhum anúncio foi duplicado."
+      : "",
+  };
+}
+
+/**
+ * O que acabou de acontecer, dito em estado — não em toast que some.
+ *
+ * A entrega é assíncrona: no instante da decisão nada foi entregue, e prometer entrega
+ * seria inventar. Verdade é que a decisão foi registrada e a entrega entrou na fila; a
+ * confirmação vem depois, no quadro de resultado.
+ */
+export function decisionOutcomeNotice(input: {
+  action: "approve" | "reject";
+  publishMode?: "now" | "scheduled";
+  includesDirectMessage: boolean;
+  includesPublicPublication: boolean;
+  scheduledSummary?: string;
+}): { title: string; detail: string; tone: ResultTone; icon: string } {
+  if (input.action === "reject") {
+    return {
+      title: "Anúncio recusado",
+      detail:
+        "Nada foi enviado a nenhuma plataforma e ele não volta para a fila de revisão.",
+      tone: "quiet",
+      icon: "lucide:circle-slash",
+    };
+  }
+  if (input.publishMode === "scheduled") {
+    const when = (input.scheduledSummary || "").trim();
+    return {
+      title: when ? `Agendado para ${when}` : "Agendado",
+      detail:
+        "Nada sai antes desse horário. O resultado por plataforma aparece abaixo quando a entrega começar.",
+      tone: "quiet",
+      icon: "lucide:calendar-clock",
+    };
+  }
+  if (input.includesDirectMessage && input.includesPublicPublication) {
+    return {
+      title: "Entrega autorizada agora",
+      detail:
+        "As mensagens e a publicação entraram na fila de entrega. Cada confirmação chega depois e aparece em “Resultado da entrega”, abaixo.",
+      tone: "ok",
+      icon: "lucide:send",
+    };
+  }
+  if (input.includesDirectMessage) {
+    return {
+      title: "Envio autorizado agora",
+      detail:
+        "As mensagens entraram na fila de entrega. A confirmação de cada uma chega depois e aparece em “Resultado da entrega”, abaixo.",
+      tone: "ok",
+      icon: "lucide:send",
+    };
+  }
+  return {
+    title: "Publicação autorizada agora",
+    detail:
+      "A publicação entrou na fila. A confirmação da plataforma chega depois e aparece em “Resultado da entrega”, abaixo.",
+    tone: "ok",
+    icon: "lucide:megaphone",
+  };
+}
+
+/**
+ * Enquanto a entrega está nestes estados, o quadro de resultado ainda não responde
+ * nada sobre o que saiu: perguntar de novo, daqui a pouco, é o único caminho honesto.
+ */
+const UNSETTLED_DELIVERY_STATES: ReadonlySet<string> = new Set([
+  "not_started",
+  "fanout_pending",
+  "delivering",
+]);
+
+/**
+ * O teto do acompanhamento, declarado num lugar só.
+ *
+ * Sem SSE de marketing, a tela pergunta de novo — mas com fim. Seis perguntas, espera
+ * dobrando até o teto de 8s: cerca de meio minuto de paciência, e depois a tela admite
+ * que não sabe em vez de ficar batendo no servidor para sempre.
+ */
+export const DELIVERY_TRACKING_POLICY = {
+  attempts: 6,
+  baseDelayMs: 1_500,
+  capMs: 8_000,
+} as const;
+
+/** Quanto tempo de espera o acompanhamento consome, no pior caso (sem contar a rede). */
+export function deliveryTrackingCeilingMs(
+  policy: {
+    attempts: number;
+    baseDelayMs: number;
+    capMs: number;
+  } = DELIVERY_TRACKING_POLICY,
+): number {
+  let total = 0;
+  for (let attempt = 1; attempt < policy.attempts; attempt++) {
+    total += Math.min(policy.capMs, policy.baseDelayMs * 2 ** (attempt - 1));
+  }
+  return total;
+}
+
+/** O resultado já assentou? Envelope ausente NUNCA conta como assentado. */
+export function deliverySettled(
+  delivery: Pick<DeliveryAggregateProjectionV2, "state"> | null | undefined,
+): boolean {
+  if (!delivery) return false;
+  return !UNSETTLED_DELIVERY_STATES.has(delivery.state);
+}
+
+/**
+ * "aceito pelo provedor; entrega ainda não confirmada" é correto e inútil sozinho: o
+ * gestor lê e não sabe o que fazer com isso. A frase abaixo diz o que o estado
+ * significa na prática, de onde vem a confirmação e por que reenviar seria pior que
+ * esperar.
+ */
+export function acceptedAwaitingConfirmationNote(count: number): string {
+  const total = Math.max(0, Math.trunc(count || 0));
+  if (total <= 0) return "";
+  const subject =
+    total === 1
+      ? "Uma entrega foi aceita pelo provedor"
+      : `${formatCount(total)} entregas foram aceitas pelo provedor`;
+  return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo — quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
+}

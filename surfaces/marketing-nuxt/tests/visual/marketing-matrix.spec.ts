@@ -515,15 +515,20 @@ test.describe("disparo manual seguro", () => {
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
   });
 
-  test("aceite mantém comprovante e próximo passo no mesmo painel", async ({ page }) => {
+  test("aceite leva direto à revisão, dizendo que nada saiu", async ({ page }) => {
     await openScenario(page, "fire-accepted", "/campaigns", V1440);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByRole("heading", { name: "Anúncio criado para revisão" })).toBeVisible();
-    await expect(page.getByText("visual-fire-receipt-20260910")).toBeVisible();
+    // Sem senha e sem frase digitada: o servidor declara o disparo dispensado de
+    // cerimônia (ADR-031) e o navegador consome o token sozinho. O toque em "Disparar
+    // agora" é a última coisa que o gestor faz antes de estar na revisão.
+    await expect(page).toHaveURL(/\/announcements\/\d+\?dispatch=new#review/);
+    await expect(page.getByText("Este anúncio acabou de ser criado pelo seu disparo")).toBeVisible();
     await expect(page.getByText(/Nenhuma publicação ou mensagem foi enviada/)).toBeVisible();
-    await expectStableScreenshot(page, "fire-campaign__receipt", V1440, "light", { fullPage: false });
+    // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
+    await waitForFaithfulPreview(page);
+    await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });
   });
 });
 

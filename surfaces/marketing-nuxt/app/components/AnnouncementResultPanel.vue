@@ -13,6 +13,7 @@ import {
 } from "~/composables/useMarketingRecovery";
 import { formatCount } from "~/presentation/campaign";
 import {
+  acceptedAwaitingConfirmationNote,
   approvalCanaryNote,
   commandReceiptPresentation,
   deliveryCountItems,
@@ -61,6 +62,14 @@ const result = computed(() =>
     props.announcement.delivery.state,
     props.announcement.state,
   ),
+);
+/**
+ * "aceito pelo provedor; entrega ainda não confirmada" é o estado que mais confunde:
+ * o número está lá e o gestor não sabe se fez alguma coisa errada. A nota diz o que
+ * acontece a seguir, e onde.
+ */
+const acceptedNote = computed(() =>
+  acceptedAwaitingConfirmationNote(props.announcement.delivery.counts.accepted),
 );
 const showsPlatformResults = computed(
   () =>
@@ -396,6 +405,12 @@ function closeDialog(open: boolean) {
               )
             }}
             ({{ shopTimezone }}).
+          </p>
+          <p
+            v-if="acceptedNote"
+            class="mt-2 border-t border-current/20 pt-2 text-sm opacity-90"
+          >
+            {{ acceptedNote }}
           </p>
         </div>
       </div>
