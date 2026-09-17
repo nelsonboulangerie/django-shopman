@@ -27,6 +27,7 @@ function active (to: string) {
 <template>
   <nav
     class="shop-bottomnav-bar fixed inset-x-0 bottom-0 z-40 border-t bg-bottomnav pb-[env(safe-area-inset-bottom)] md:hidden"
+    data-focus-obstruction
     aria-label="Navegação principal"
   >
     <div class="mx-auto grid h-16 max-w-md grid-cols-4 items-center px-2">
