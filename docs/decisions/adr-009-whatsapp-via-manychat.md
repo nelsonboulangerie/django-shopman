@@ -97,6 +97,16 @@ impossível por construção:
      A prontidão aparece como `degraded` com a contagem, nunca os refs;
    - `open`: exige serialização ativa; todo contato elegível recebe.
 
+5. **Campanha aprovada chega pelo ledger durável** — `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED`
+   (padrão `false`) registra `shopman.shop.adapters.marketing_delivery_whatsapp` em
+   `SHOPMAN_MARKETING_DELIVERY_ADAPTERS`. Até esta emenda só as plataformas de postagem
+   pública tinham adapter, e a campanha de WhatsApp aprovada ficava na fila. O adapter
+   não é atalho: recusa pelo modo na última porta (antes de resolver assinante), relê
+   consentimento, exige que o flow ativo seja o selado na aprovação e manda ao flow só
+   variáveis do artefato aprovado — nunca do catálogo vivo. `200` vira
+   `accepted_unconfirmed` sem recibo; resposta ambígua vira `unknown`; `subscriber_busy`
+   devolve a tentativa à fila. A flag registra; o modo decide quem recebe.
+
 **O que G-H03 ainda cobria e continua como limitação conhecida:** não há receipt nem
 callback correlacionável de entrega; `Retry-After` e rate limit reais do ManyChat não
 foram medidos; o efeito de timeout depois de uma escrita continua ambíguo. O sistema
