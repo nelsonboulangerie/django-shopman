@@ -17,10 +17,12 @@ Três invariantes:
    (``ConsentService``), nunca por model interno de contrib.
 2. **Um destinatário por telefone.** As três regras se sobrepõem muito; o
    telefone normalizado é a chave de dedupe, então ninguém recebe em dobro.
-3. **Sem prova de maioridade não há marketing direto.** Cadastro com data que
-   comprove 18+ ou aceite específico do “Avise-me” é obrigatório. Idade
-   desconhecida e menor conhecido falham fechados; consentimento de canal
-   sozinho não substitui a prova de maioridade.
+3. **Sem prova de maioridade não há marketing direto.** Vale a declaração
+   feita ao ENTRAR na loja (``Customer.metadata.adult_declaration``, carimbada
+   em toda autenticação), a data de nascimento que comprove 18+ ou o aceite
+   específico do “Avise-me”. Sem nenhuma delas falha fechado; data que prova
+   menor vence qualquer declaração; consentimento de canal sozinho não
+   substitui a prova de maioridade.
 4. **VIP primeiro é vantagem, não exclusão.** O atraso do grupo geral é uma
    janela de privilégio, e todo mundo acaba recebendo.
 
@@ -45,7 +47,7 @@ from django.conf import settings
 from django.utils import timezone
 from shopman.utils.phone import normalize_phone
 
-from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
+from shopman.shop.services.marketing_age import is_known_minor, is_proved_adult
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +165,8 @@ class Recipient:
     is_vip: bool = False
     #: Data conhecida prova idade inferior a 18 anos. Nunca sai no summary/browser.
     is_known_minor: bool = False
-    #: Prova de 18+: data de nascimento adulta ou declaração específica do alerta.
+    #: Prova de maioridade: declaração feita ao entrar na loja, data de
+    #: nascimento adulta ou declaração específica do alerta.
     has_adult_declaration: bool = False
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
     #: ``None`` para quem ainda não tem padrão — esse recebe na hora.
@@ -628,7 +631,10 @@ def _pending_alerts(sku: str) -> list[Recipient]:
                 first_name=profile.get("first_name", ""),
                 is_vip=bool(profile.get("is_vip", False)),
                 is_known_minor=bool(profile.get("is_known_minor", False)),
-                has_adult_declaration=adult_declared,
+                # A assinatura prova por si; a declaração do login do cliente
+                # conhecido também vale, e cobre linha antiga sem o aceite.
+                has_adult_declaration=adult_declared
+                or bool(profile.get("has_adult_declaration", False)),
                 preferred_hour=profile.get("preferred_hour"),
                 source_subscription_ref=source_subscription_ref,
             )
@@ -701,6 +707,7 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                 "customer__first_name",
                 "customer__phone",
                 "customer__birthday",
+                "customer__metadata",
             )
         )
         if (
@@ -728,8 +735,9 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                     first_name=(getattr(customer, "first_name", "") or "").strip(),
                     is_vip=bool(getattr(insight, "is_vip", False)),
                     is_known_minor=is_known_minor(getattr(customer, "birthday", None)),
-                    has_adult_declaration=is_known_adult(
-                        getattr(customer, "birthday", None)
+                    has_adult_declaration=is_proved_adult(
+                        getattr(customer, "birthday", None),
+                        getattr(customer, "metadata", None),
                     ),
                     preferred_hour=getattr(insight, "preferred_hour", None),
                 )
@@ -1035,6 +1043,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                     "uuid",
                     "first_name",
                     "birthday",
+                    "metadata",
                     "insight__rfm_segment",
                     "insight__preferred_hour",
                     "loyalty_account__tier",
@@ -1046,6 +1055,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                 customer_uuid,
                 first_name,
                 birthday,
+                metadata,
                 rfm_segment,
                 preferred_hour,
                 loyalty_tier,
@@ -1055,7 +1065,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                     "customer_uuid": str(customer_uuid or ""),
                     "first_name": (first_name or "").strip(),
                     "is_known_minor": is_known_minor(birthday),
-                    "has_adult_declaration": is_known_adult(birthday),
+                    "has_adult_declaration": is_proved_adult(birthday, metadata),
                     "is_vip": bool(
                         rfm_segment in VIP_RFM_SEGMENTS
                         or loyalty_tier in VIP_LOYALTY_TIERS
@@ -1077,6 +1087,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
         "uuid",
         "first_name",
         "birthday",
+        "metadata",
         "insight__rfm_segment",
         "insight__preferred_hour",
         "loyalty_account__tier",
@@ -1088,6 +1099,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
         customer_uuid,
         first_name,
         birthday,
+        metadata,
         rfm_segment,
         preferred_hour,
         loyalty_tier,
@@ -1107,7 +1119,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
                     or loyalty_tier in VIP_LOYALTY_TIERS
                 ),
                 is_known_minor=is_known_minor(birthday),
-                has_adult_declaration=is_known_adult(birthday),
+                has_adult_declaration=is_proved_adult(birthday, metadata),
                 preferred_hour=preferred_hour,
             )
         )
@@ -1117,7 +1129,12 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
 def _exclude_without_adult_declaration(
     recipients,
 ) -> tuple[list[Recipient], dict[str, int]]:
-    """Fail closed unless 18+ is proved, retaining non-PII reason counts."""
+    """Fail closed unless adulthood is proved, retaining non-PII reason counts.
+
+    ``age_not_declared`` = nem declaração no login, nem data adulta, nem aceite
+    do alerta. A tela do Marketing lê a chave; o cliente resolve entrando na
+    loja de novo (a entrada carimba).
+    """
 
     eligible: list[Recipient] = []
     excluded: dict[str, int] = {}

@@ -429,6 +429,78 @@ def test_general_direct_message_without_canonical_adult_proof_is_suppressed_at_c
     assert target.last_error_code == "recipient_age_not_verified"
 
 
+def test_login_declaration_without_birthday_reaches_the_provider():
+    """Sem data de nascimento, com a declaração feita ao entrar: claim E provider.
+
+    É o caso comum a partir de agora — a loja não pede data para mandar
+    novidades. As duas barreiras (claim e boundary do provider) leem a mesma
+    prova, senão o remédio ficaria no resolvedor e morreria aqui.
+    """
+    from shopman.shop.services import account as account_service
+
+    outbox, members, _report = _fanout_whatsapp(
+        suffix="claim-login-declaration",
+        count=1,
+        opted_in=True,
+    )
+    customer = members[0].customer
+    customer.birthday = None
+    customer.save(update_fields=["birthday"])
+    account_service.record_adult_declaration(customer)
+    _queue_all(outbox)
+
+    claim = claim_due_targets(
+        worker_id="worker-login-declaration",
+        now=_next_allowed_time(),
+    )
+    assert claim.suppressed == 0
+    assert len(claim.targets) == 1
+    target = claim.targets[0]
+    provider = CountingAcceptedProvider()
+    artifact = _artifact("whatsapp")
+
+    result = execute_target(
+        target.ref,
+        provider=provider,
+        artifact=artifact,
+        idempotency_token="login-declaration-token-0001",
+        request_hash=artifact.artifact_hash,
+        worker_id="worker-login-declaration",
+        now=target.lease_until - timedelta(seconds=1),
+    )
+
+    target.refresh_from_db()
+    assert provider.calls == 1
+    assert result.provider_called is True
+    assert target.state == DeliveryTarget.State.ACCEPTED
+
+
+def test_a_minor_birthday_added_after_the_login_declaration_still_suppresses():
+    from shopman.shop.services import account as account_service
+
+    outbox, members, _report = _fanout_whatsapp(
+        suffix="claim-declared-minor",
+        count=1,
+        opted_in=True,
+    )
+    customer = members[0].customer
+    account_service.record_adult_declaration(customer)
+    today = timezone.localdate()
+    customer.birthday = today.replace(year=today.year - 17)
+    customer.save(update_fields=["birthday"])
+    _queue_all(outbox)
+
+    report = claim_due_targets(
+        worker_id="worker-declared-minor",
+        now=_next_allowed_time(),
+    )
+
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    assert report.suppressed == 1
+    assert target.state == DeliveryTarget.State.SUPPRESSED
+    assert target.last_error_code == "recipient_age_not_verified"
+
+
 def test_legacy_claim_is_stopped_if_birthday_disappears_before_provider():
     outbox, members, _report = _fanout_whatsapp(
         suffix="provider-age-removed",
@@ -522,7 +594,7 @@ def test_age_source_failure_before_provider_is_retryable_without_effect(monkeypa
     target = claim.targets[0]
     first_call_at = target.lease_until - timedelta(seconds=1)
     monkeypatch.setattr(
-        "shopman.shop.services.marketing_age.canonical_birthday_for_customer_id",
+        "shopman.shop.services.marketing_age.canonical_age_evidence_for_customer_id",
         lambda _customer_id: (_ for _ in ()).throw(RuntimeError("database unavailable")),
     )
     provider = CountingAcceptedProvider()
@@ -586,8 +658,8 @@ def test_delivery_command_reports_terminal_age_guard_as_not_attempted():
 
     with (
         patch(
-            "shopman.shop.services.marketing_age.canonical_birthday_for_customer_id",
-            return_value=None,
+            "shopman.shop.services.marketing_age.canonical_age_evidence_for_customer_id",
+            return_value=(None, {}),
         ),
         patch(
             "shopman.shop.services.marketing_delivery_runtime.delivery_provider",

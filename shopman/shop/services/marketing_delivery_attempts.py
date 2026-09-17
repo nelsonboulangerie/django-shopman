@@ -609,13 +609,13 @@ def _validate_recipient_age_at_provider_boundary(
         )
 
     from shopman.shop.services.marketing_age import (
-        canonical_birthday_for_customer_id,
-        is_known_adult,
+        canonical_age_evidence_for_customer_id,
         is_known_minor,
+        is_proved_adult,
     )
 
     try:
-        birthday = canonical_birthday_for_customer_id(member.customer_id)
+        birthday, metadata = canonical_age_evidence_for_customer_id(member.customer_id)
     except Exception as exc:
         raise MarketingContractError(
             code="recipient_age_source_unavailable",
@@ -652,10 +652,13 @@ def _validate_recipient_age_at_provider_boundary(
             )
         return
 
-    if not is_known_adult(birthday):
+    if not is_proved_adult(birthday, metadata):
         raise MarketingContractError(
             code="recipient_age_not_verified",
-            detail="O cadastro não comprova idade igual ou superior a 18 anos.",
+            detail=(
+                "O cadastro não comprova maioridade: nem declaração feita ao "
+                "entrar na loja, nem data de nascimento adulta."
+            ),
         )
 
 
