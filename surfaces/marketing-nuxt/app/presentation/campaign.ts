@@ -96,8 +96,9 @@ export function alertsNote(
  *
  * ⚠️ O caso da Baguete Gergelim, de novo, com outra causa: o Pablo favoritou o produto
  * pelo celular, abriu o Marketing e leu "0 pessoas recebem — ninguém se encaixa". A regra
- * tinha achado 1 pessoa; o envio a excluiu por falta de data de nascimento (sem prova de
- * 18+ não há marketing direto) e por falta de consentimento de WhatsApp. O backend mandava
+ * tinha achado 1 pessoa; o envio a excluiu por falta de confirmação de maioridade (sem
+ * ela não há marketing direto; a loja a colhe ao ENTRAR, não pede data de nascimento) e
+ * por falta de consentimento de WhatsApp. O backend mandava
  * `excluded_by_reason` desde sempre; a tela é que não lia. Zero calado com 1 achado é
  * indistinguível de tela quebrada.
  *
@@ -105,7 +106,7 @@ export function alertsNote(
  * genérica em vez de sumir, porque motivo novo no servidor não pode virar silêncio aqui.
  */
 const EXCLUSION_LABELS: ReadonlyArray<readonly [string, string]> = [
-  ["age_not_declared", "sem data de nascimento no cadastro (a prova de 18+ que o envio exige)"],
+  ["age_not_declared", "sem confirmação de maioridade (feita ao entrar na loja)"],
   ["known_minor", "com menos de 18 anos"],
   ["missing_consent", "sem consentimento para receber no WhatsApp"],
   ["global_optout", "pediram para não receber"],
@@ -113,9 +114,6 @@ const EXCLUSION_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["rule_mismatch", "fora do cruzamento (não se encaixam em todas as regras)"],
   ["invalid_contact", "com telefone que não serve para WhatsApp"],
 ];
-
-/** Motivos que o CLIENTE resolve sozinho na loja, e onde. */
-const EXCLUSIONS_THE_CUSTOMER_FIXES = new Set(["age_not_declared", "missing_consent"]);
 
 export function exclusionNotes(
   excluded: Record<string, number> | undefined,
@@ -144,9 +142,13 @@ export function exclusionHint(
   excluded: Record<string, number> | undefined,
 ): string {
   const counts = excluded ?? {};
-  const fixable = [...EXCLUSIONS_THE_CUSTOMER_FIXES].some((key) => (counts[key] ?? 0) > 0);
-  if (!fixable) return "";
-  return "O cliente resolve isso na loja: aniversário em Conta › Perfil e WhatsApp em Conta › Preferências.";
+  const fixes: string[] = [];
+  // A maioridade é confirmada ao ENTRAR na loja (toda porta carimba o cadastro);
+  // quem entrou antes dessa regra ganha a confirmação no próximo login.
+  if ((counts.age_not_declared ?? 0) > 0) fixes.push("a maioridade, ele confirma ao entrar na loja de novo");
+  if ((counts.missing_consent ?? 0) > 0) fixes.push("o WhatsApp, ele liga em Conta › Preferências");
+  if (fixes.length === 0) return "";
+  return `O cliente resolve isso na loja: ${fixes.join("; ")}.`;
 }
 
 /**

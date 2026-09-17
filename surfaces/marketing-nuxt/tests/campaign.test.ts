@@ -108,7 +108,7 @@ describe("audienceSummary", () => {
 
   it("explains a zero that came from people the rules found but the delivery barred", () => {
     // A Baguete Gergelim de 16/09: o gestor favoritou pelo celular, a regra achou 1,
-    // e o envio barrou por falta de data de nascimento. O card dizia "ninguém para avisar".
+    // e o envio barrou por falta de confirmação de maioridade. O card dizia "ninguém para avisar".
     expect(
       audienceSummary({
         favorites_count: 1,
@@ -116,7 +116,7 @@ describe("audienceSummary", () => {
         excluded_by_reason: { age_not_declared: 1 },
       }),
     ).toBe(
-      "1 favoritos, mas ninguém pôde receber: 1 pessoa sem data de nascimento no cadastro (a prova de 18+ que o envio exige)",
+      "1 favoritos, mas ninguém pôde receber: 1 pessoa sem confirmação de maioridade (feita ao entrar na loja)",
     );
   });
 
@@ -143,7 +143,7 @@ describe("exclusionNotes", () => {
     expect(
       exclusionNotes({ age_not_declared: 1, missing_consent: 2 }),
     ).toEqual([
-      "1 pessoa sem data de nascimento no cadastro (a prova de 18+ que o envio exige)",
+      "1 pessoa sem confirmação de maioridade (feita ao entrar na loja)",
       "2 pessoas sem consentimento para receber no WhatsApp",
     ]);
     expect(exclusionNotes({ global_optout: 1 })).toEqual([
@@ -172,8 +172,17 @@ describe("exclusionNotes", () => {
 
 describe("exclusionHint", () => {
   it("points to the store only when the customer can fix it there", () => {
-    expect(exclusionHint({ age_not_declared: 1 })).toContain("Conta › Perfil");
-    expect(exclusionHint({ missing_consent: 1 })).toContain("Conta › Preferências");
+    // A maioridade é confirmada ao ENTRAR — a dica não aponta mais para o perfil.
+    expect(exclusionHint({ age_not_declared: 1 })).toBe(
+      "O cliente resolve isso na loja: a maioridade, ele confirma ao entrar na loja de novo.",
+    );
+    expect(exclusionHint({ missing_consent: 1 })).toBe(
+      "O cliente resolve isso na loja: o WhatsApp, ele liga em Conta › Preferências.",
+    );
+    expect(exclusionHint({ age_not_declared: 2, missing_consent: 1 })).toBe(
+      "O cliente resolve isso na loja: a maioridade, ele confirma ao entrar na loja de novo; o WhatsApp, ele liga em Conta › Preferências.",
+    );
+    expect(exclusionHint({ age_not_declared: 1 })).not.toContain("Perfil");
     expect(exclusionHint({ global_optout: 1 })).toBe("");
     expect(exclusionHint(undefined)).toBe("");
   });

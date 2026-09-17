@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  LOGIN_ADULT_DECLARATION,
+  LOGIN_ADULT_DECLARATION_LEAD,
+  LOGIN_TERMS_LINK_LABEL,
   RESEND_COOLDOWN_MS,
   accessLinkLanding,
   authErrorView,
@@ -7,7 +10,6 @@ import {
   codeSentPrefix,
   otpValidUntilDisplay,
   resendCooldown,
-  welcomeBirthdayValue,
   welcomeCanContinue,
   welcomeNameValue,
   welcomeProfilePatch
@@ -127,62 +129,56 @@ describe('accessLinkLanding', () => {
   })
 })
 
-// ── A pergunta de novidades no gate ────────────────────────────────────────
+// ── A declaração de maioridade, feita ao ENTRAR ────────────────────────────
 //
-// Medido no alpha em 16/09: 58 clientes ativos, 1 aniversário, 5 consentimentos
-// de WhatsApp. O gate passa a perguntar UMA vez; a caixa nasce desligada e, ligada,
-// exige a data de nascimento.
+// Decisão do dono (16/09): pedir data de nascimento para receber novidades é
+// atrito demais. A prova de maioridade é a declaração feita ao entrar, e a
+// frase é fixa — o servidor carimba a versão que a representa.
 
-const TODAY = new Date(2026, 8, 16)
-
-describe('welcomeBirthdayValue', () => {
-  it('accepts a real ISO date in the past', () => {
-    expect(welcomeBirthdayValue('1990-05-15', TODAY)).toBe('1990-05-15')
-    expect(welcomeBirthdayValue(' 2026-09-16 ', TODAY)).toBe('2026-09-16')
+describe('LOGIN_ADULT_DECLARATION', () => {
+  it('is exactly the sentence the server version stands for', () => {
+    expect(LOGIN_ADULT_DECLARATION).toBe('Ao continuar, você confirma que é maior de idade e aceita os Termos de uso.')
+    expect(`${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_TERMS_LINK_LABEL}.`).toBe(LOGIN_ADULT_DECLARATION)
   })
 
-  it('rejects the future, impossible dates, the 1800s and other formats', () => {
-    expect(welcomeBirthdayValue('2026-09-17', TODAY)).toBe('')
-    expect(welcomeBirthdayValue('1990-02-30', TODAY)).toBe('')
-    expect(welcomeBirthdayValue('1899-12-31', TODAY)).toBe('')
-    expect(welcomeBirthdayValue('15/05/1990', TODAY)).toBe('')
-    expect(welcomeBirthdayValue('', TODAY)).toBe('')
+  it('never says "18", "anos" or "adulto" to the customer', () => {
+    expect(LOGIN_ADULT_DECLARATION).not.toMatch(/18|anos|adult/i)
   })
 })
 
-describe('welcomeCanContinue', () => {
-  const base = { asksName: false, asksMarketing: true, name: '', marketingOptIn: false, birthday: '' }
+// ── A pergunta de novidades no gate ────────────────────────────────────────
+//
+// Medido no alpha em 16/09: 58 clientes ativos, 1 aniversário, 5 consentimentos
+// de WhatsApp. O gate passa a perguntar UMA vez; a caixa nasce desligada e é SÓ
+// consentimento — sem data de nascimento (a maioridade foi declarada ao entrar).
 
-  it('lets the marketing-only gate continue with the box off and no birthday', () => {
-    expect(welcomeCanContinue(base, TODAY)).toBe(true)
+describe('welcomeCanContinue', () => {
+  const base = { asksName: false, asksMarketing: true, name: '', marketingOptIn: false }
+
+  it('lets the marketing-only gate continue with the box off', () => {
+    expect(welcomeCanContinue(base)).toBe(true)
   })
 
-  it('requires a birthday only once the box is on', () => {
-    expect(welcomeCanContinue({ ...base, marketingOptIn: true }, TODAY)).toBe(false)
-    expect(welcomeCanContinue({ ...base, marketingOptIn: true, birthday: '1990-05-15' }, TODAY)).toBe(true)
-    expect(welcomeCanContinue({ ...base, marketingOptIn: true, birthday: '2027-01-01' }, TODAY)).toBe(false)
+  it('lets it continue with the box on too — nothing else is asked', () => {
+    expect(welcomeCanContinue({ ...base, marketingOptIn: true })).toBe(true)
   })
 
   it('still requires the name when the name was asked', () => {
-    expect(welcomeCanContinue({ ...base, asksName: true }, TODAY)).toBe(false)
-    expect(welcomeCanContinue({ ...base, asksName: true, name: '  Ana ' }, TODAY)).toBe(true)
+    expect(welcomeCanContinue({ ...base, asksName: true })).toBe(false)
+    expect(welcomeCanContinue({ ...base, asksName: true, name: '  Ana ' })).toBe(true)
   })
 })
 
 describe('welcomeProfilePatch', () => {
   it('sends nothing to the profile when only the question was answered', () => {
-    expect(welcomeProfilePatch({ asksName: false, asksMarketing: true, name: '', marketingOptIn: false, birthday: '' }, TODAY)).toBeNull()
+    expect(welcomeProfilePatch({ asksName: false, asksMarketing: true, name: '', marketingOptIn: true })).toBeNull()
   })
 
-  it('sends the birthday alone when the name was not asked', () => {
-    expect(welcomeProfilePatch({ asksName: false, asksMarketing: true, name: '', marketingOptIn: true, birthday: '1990-05-15' }, TODAY)).toEqual({ birthday: '1990-05-15' })
+  it('sends the cleaned name when it was asked', () => {
+    expect(welcomeProfilePatch({ asksName: true, asksMarketing: true, name: ' Ana  Silva ', marketingOptIn: true })).toEqual({ first_name: 'Ana Silva' })
   })
 
-  it('sends the name and the birthday together when both were asked', () => {
-    expect(welcomeProfilePatch({ asksName: true, asksMarketing: true, name: ' Ana  Silva ', marketingOptIn: true, birthday: '1990-05-15' }, TODAY)).toEqual({ first_name: 'Ana Silva', birthday: '1990-05-15' })
-  })
-
-  it('never sends a birthday the box did not ask for', () => {
-    expect(welcomeProfilePatch({ asksName: true, asksMarketing: true, name: 'Ana', marketingOptIn: false, birthday: '1990-05-15' }, TODAY)).toEqual({ first_name: 'Ana' })
+  it('sends nothing when the name was asked but left empty', () => {
+    expect(welcomeProfilePatch({ asksName: true, asksMarketing: false, name: '   ', marketingOptIn: false })).toBeNull()
   })
 })

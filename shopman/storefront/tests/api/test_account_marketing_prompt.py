@@ -9,6 +9,9 @@ O que este arquivo trava:
 - Marcar a caixa concede ``opted_in`` no whatsapp e SÓ nele. O caminho de
   Preferências (`set_notification_consent`) completa os outros canais com
   ``opted_out`` explícito; no gate o cliente não viu esses canais.
+- A chave é só consentimento: NÃO pede data de nascimento. A maioridade foi
+  declarada ao entrar (`test_auth_adult_declaration.py`); a data, se existir no
+  perfil, só vale para o contrário — menor conhecido é carimbado sem conceder.
 """
 from __future__ import annotations
 
@@ -110,29 +113,31 @@ def test_stamp_is_idempotent_and_keeps_the_first_answer(client: Client):
     assert customer.metadata[STAMP] == first
 
 
-def test_checked_box_without_birthday_is_refused_by_name(client: Client):
+def test_checked_box_grants_whatsapp_without_a_birthday(client: Client):
+    """A chave não pede data: a maioridade foi declarada ao entrar."""
     customer = _customer()
+    assert customer.birthday is None
     _login_as_customer(client, customer)
 
     response = _post(client, {"whatsapp": True}, **_csrf_headers(client))
 
-    assert response.status_code == 400
-    assert response.json()["field"] == "birthday"
+    assert response.status_code == 200
+    assert response.json()["whatsapp_opted_in"] is True
     customer.refresh_from_db()
-    # Recusa não carimba: o gate volta a perguntar, com a razão dita.
-    assert STAMP not in customer.metadata
-    assert _consent_rows(customer) == {}
+    assert customer.birthday is None
+    assert customer.metadata[STAMP]
+    assert _consent_rows(customer) == {"whatsapp": "opted_in"}
 
 
-def test_checked_box_grants_whatsapp_only_after_the_profile_took_the_birthday(client: Client):
-    """O fluxo da tela: PATCH profile (nome + aniversário) → POST marketing-prompt."""
+def test_the_screen_flow_patches_the_name_and_then_answers(client: Client):
+    """O fluxo da tela quando o nome também faltava: PATCH profile (nome) → POST marketing-prompt."""
     customer = Customer.objects.create(ref="CUS-PROMPT-NEW", first_name="", last_name="", phone="+5543999991002")
     _login_as_customer(client, customer)
     headers = _csrf_headers(client)
 
     profile = client.patch(
         "/api/v1/account/profile/",
-        data=json.dumps({"first_name": "Ana", "birthday": "1990-05-15"}),
+        data=json.dumps({"first_name": "Ana"}),
         content_type="application/json",
         **headers,
     )
@@ -143,7 +148,6 @@ def test_checked_box_grants_whatsapp_only_after_the_profile_took_the_birthday(cl
     assert response.status_code == 200
     assert response.json()["whatsapp_opted_in"] is True
     customer.refresh_from_db()
-    assert customer.birthday.isoformat() == "1990-05-15"
     assert customer.first_name == "Ana"
     assert customer.metadata[STAMP]
     assert ConsentService.has_consent(customer.ref, "whatsapp") is True
@@ -159,7 +163,7 @@ def test_evidence_records_the_sentence_the_person_read(client: Client):
 
     from shopman.storefront.api.account import MARKETING_PROMPT_DISCLOSURE, MARKETING_PROMPT_DISCLOSURE_VERSION
 
-    customer = _customer(birthday="1990-05-15")
+    customer = _customer()
     _login_as_customer(client, customer)
 
     _post(client, {"whatsapp": True}, **_csrf_headers(client))
@@ -181,6 +185,10 @@ def test_the_sentence_in_evidence_is_the_sentence_on_screen():
     source = page.read_text(encoding="utf-8")
     for sentence in MARKETING_PROMPT_DISCLOSURE.split(". "):
         assert sentence.rstrip(".") in source, sentence
+    # A chave é só consentimento: nenhuma frase de idade nela (a maioridade é
+    # declarada ao ENTRAR, não ao ligar novidades).
+    assert "maior" not in MARKETING_PROMPT_DISCLOSURE.lower()
+    assert "18" not in MARKETING_PROMPT_DISCLOSURE
 
 
 def test_known_minor_is_stamped_but_never_opted_in(client: Client):
@@ -197,7 +205,7 @@ def test_known_minor_is_stamped_but_never_opted_in(client: Client):
 
 
 def test_granting_twice_does_not_duplicate_evidence(client: Client):
-    customer = _customer(birthday="1990-05-15")
+    customer = _customer()
     _login_as_customer(client, customer)
     headers = _csrf_headers(client)
 

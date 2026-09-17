@@ -650,21 +650,31 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('data-login-welcome')
     expect(login).toContain('Deixar para depois')
     // A pergunta de novidades no mesmo gate: chave que nasce DESLIGADA (a mesma
-    // linha editorial com switch do confiar-no-aparelho), data de nascimento só
-    // com a chave ligada, e a resposta vai para o endpoint do carimbo — nunca
-    // um opt-out por "deixar para depois".
+    // linha editorial com switch do confiar-no-aparelho), SÓ consentimento — sem
+    // data de nascimento, sem frase de idade —, e a resposta vai para o endpoint
+    // do carimbo — nunca um opt-out por "deixar para depois".
     expect(login).toContain('welcome_asks_marketing')
     expect(login).toContain('data-login-marketing')
     expect(login).toContain('<UiSwitch id="welcome-marketing"')
     expect(login).toContain('const welcomeMarketing = ref(false)')
-    expect(login).toContain('v-if="welcomeMarketing"')
-    expect(login).toContain('type="date"')
+    expect(login).not.toContain('type="date"')
+    expect(login).not.toContain('welcomeBirthday')
     expect(login).toContain("apiPath('/api/v1/account/marketing-prompt/')")
     // A frase é a evidência do consentimento: o servidor grava exatamente esta
     // (MARKETING_PROMPT_DISCLOSURE em shopman/storefront/api/account.py).
-    expect(login).toContain('Quero receber novidades e avisos da Nelson pelo WhatsApp')
-    expect(login).toContain('Você muda isso quando quiser em Conta › Preferências.')
+    expect(login).toContain('Quero receber novidades da Nelson pelo WhatsApp')
+    expect(login).toContain('Mude quando quiser em Conta › Preferências.')
     expect(login).not.toContain("enabled: false")
+    // A maioridade é declarada ao ENTRAR, em toda porta com tela (login e access
+    // link): frase fixa de presentation/auth.ts, com link para os Termos. Nunca
+    // "18", "anos" ou "adulto" na copy voltada ao cliente.
+    const access = read('app/pages/a.vue')
+    for (const source of [login, access]) {
+      expect(source).toContain('data-login-adult-declaration')
+      expect(source).toContain('LOGIN_ADULT_DECLARATION_LEAD')
+      expect(source).toContain('to="/terms"')
+      expect(templateOnly(source)).not.toMatch(/\b18\b|\banos\b|\badult[oa]s?\b/i)
+    }
     // Device trust e ajuda continuam server-driven/editorial.
     expect(login).toContain('device_trust_prompt')
     expect(login).toContain('data-login-support')

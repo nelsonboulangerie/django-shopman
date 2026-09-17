@@ -974,11 +974,14 @@ class NotificationPreferenceToggleView(APIView):
 # (`surfaces/storefront-nuxt/app/pages/entrar.vue`, bloco `data-login-marketing`).
 # É gravada como evidência do consentimento, então tem de ser a MESMA da tela —
 # o teste de contrato lê o .vue e confere. Mudou a copy? Sobe a versão.
+#
+# A chave é SÓ consentimento. A maioridade não entra na frase: foi declarada ao
+# entrar (`account_service.record_adult_declaration`), em toda porta de entrada.
 MARKETING_PROMPT_DISCLOSURE = (
-    "Quero receber novidades e avisos da Nelson pelo WhatsApp. "
-    "Você muda isso quando quiser em Conta › Preferências."
+    "Quero receber novidades da Nelson pelo WhatsApp. "
+    "Mude quando quiser em Conta › Preferências."
 )
-MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v1"
+MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v2"
 
 
 class MarketingPromptView(APIView):
@@ -1015,8 +1018,6 @@ class MarketingPromptView(APIView):
                 disclosure_text=MARKETING_PROMPT_DISCLOSURE,
                 disclosure_version=MARKETING_PROMPT_DISCLOSURE_VERSION,
             )
-        except account_service.MarketingPromptRefused as exc:
-            return Response({"detail": exc.detail, "field": exc.field}, status=400)
         except account_service.AccountUnavailable:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         return Response({"ok": True, **result})
