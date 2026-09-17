@@ -26,7 +26,7 @@ Fontes oficiais usadas para este contrato:
 ## Blueprint
 
 O arquivo `.do/app.alpha-subdomains.yaml` registra o perfil tecnico de pre-go-live
-derivado do spec vivo (ingress host-based: `menu.nelsonboulangerie.com.br` → loja
+derivado do spec vivo (ingress host-based: `www.nelsonboulangerie.com.br` → loja
 Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 

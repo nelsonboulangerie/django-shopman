@@ -30,7 +30,7 @@ SHOPMAN_MARKETING_SIMULATION_FLOWS = (
 )
 # Exact host already used by the canonical seed product images.  Validation is
 # still fail-closed (no wildcard); the simulator itself never fetches the URL.
-SHOPMAN_MARKETING_MEDIA_HOSTS = ("menu.nelsonboulangerie.com.br",)
+SHOPMAN_MARKETING_MEDIA_HOSTS = ("www.nelsonboulangerie.com.br",)
 
 # These repetitions are deliberate fail-safe documentation.  The adapter checks
 # them again immediately before its (local-only) boundary.

@@ -1752,7 +1752,7 @@ class Command(BaseCommand):
         # toda foto de produto virou 404). O host é env com default na loja viva.
         image_base = os.environ.get(
             "SHOPMAN_PRODUCT_IMAGE_BASE",
-            "https://menu.nelsonboulangerie.com.br/img/products",
+            "https://www.nelsonboulangerie.com.br/img/products",
         ).rstrip("/")
         IMG = image_base
         UNSPLASH = "https://images.unsplash.com"
