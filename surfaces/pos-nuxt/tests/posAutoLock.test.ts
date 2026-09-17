@@ -11,6 +11,8 @@ vi.mock("vue", async (original) => ({
 let listeners: Record<string, Array<() => void>>;
 let storage: Map<string, string>;
 let write: ReturnType<typeof vi.fn>;
+let page: { visibilityState: "visible" | "hidden" };
+let pageListeners: Record<string, Array<() => void>>;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-12T10:00:00Z"));
@@ -24,6 +26,13 @@ beforeEach(() => {
     setInterval, clearInterval,
   });
   vi.stubGlobal("navigator", {});
+  pageListeners = {};
+  page = { visibilityState: "visible" };
+  vi.stubGlobal("document", {
+    get visibilityState() { return page.visibilityState; },
+    addEventListener: (event: string, fn: () => void) => (pageListeners[event] ||= []).push(fn),
+    removeEventListener: () => {},
+  });
 });
 afterEach(() => {
   lifecycle.cleanup.splice(0).forEach((fn) => fn());
@@ -77,5 +86,39 @@ describe("auto-lock coordenado entre abas PDV", () => {
     tab();
     for (let i = 0; i < 100; i++) listeners.pointermove![0]!();
     expect(write).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Travar é `logout()` da sessão COMPARTILHADA por todos os apps de operador em
+// `.boulangerie.com.br`. Uma aba do PDV esquecida em segundo plano (ou o PWA
+// minimizado) media ociosidade só pelo que acontece NELA e derrubava o Gestor,
+// o KDS e a Central em uso ativo no mesmo navegador, a cada 60 s.
+describe("auto-lock com o PDV fora da vista", () => {
+  function hide() { page.visibilityState = "hidden"; pageListeners.visibilitychange?.forEach((fn) => fn()); }
+  function show() { page.visibilityState = "visible"; pageListeners.visibilitychange?.forEach((fn) => fn()); }
+
+  it("aba oculta não derruba a sessão dos outros apps enquanto ninguém olha o PDV", async () => {
+    const lock = tab();
+    hide();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(lock).not.toHaveBeenCalled();
+  });
+
+  it("ao voltar à vista depois do prazo, trava na hora, antes de qualquer toque", async () => {
+    const lock = tab();
+    hide();
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lock).toHaveBeenCalledTimes(1);
+  });
+
+  it("voltar à vista dentro do prazo não trava", async () => {
+    const lock = tab();
+    hide();
+    await vi.advanceTimersByTimeAsync(20_000);
+    show();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(lock).not.toHaveBeenCalled();
   });
 });
