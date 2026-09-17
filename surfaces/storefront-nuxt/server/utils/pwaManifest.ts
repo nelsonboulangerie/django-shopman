@@ -28,12 +28,14 @@ export function shortPwaName (shop: PwaShopSource): string {
     .trimEnd()
 }
 
-export function buildStorefrontManifest (shop: PwaShopSource = {}, userAgent = '') {
+// A lista de ícones é a MESMA para todo navegador, como na família de operador
+// (`operator-kit/server/utils/pwa.ts`). O Chrome no macOS monta o ícone do app a
+// partir do `maskable`, recortado na grade do macOS (forma em 412/512 = 80,5% do
+// quadro, com sombra); sem `maskable`, usa o `any` como está, de ponta a ponta
+// (512/512), e o app fica ~24% maior que os vizinhos no Dock. Medido nos `app.icns`
+// gerados pelo Chrome em 17/09/2026: não volte a esconder o `maskable` por aparelho.
+export function buildStorefrontManifest (shop: PwaShopSource = {}) {
   const name = textOrFallback(shop.brand_name, STOREFRONT_PWA_FALLBACK.brand_name)
-
-  // Chrome on macOS may add a second plate around maskable artwork. The
-  // any-purpose icon already carries the approved bordeaux field, with rounded corners.
-  const macDesktop = /Macintosh|Mac OS X/i.test(userAgent) && !/Mobile|iPhone|iPad/i.test(userAgent)
 
   return {
     id: '/',
@@ -50,16 +52,16 @@ export function buildStorefrontManifest (shop: PwaShopSource = {}, userAgent = '
     theme_color: textOrFallback(shop.theme_color, STOREFRONT_PWA_FALLBACK.theme_color),
     background_color: textOrFallback(shop.background_color, STOREFRONT_PWA_FALLBACK.background_color),
     icons: [
-      { src: '/pwa/pwa-64x64.png?v=5', sizes: '64x64', type: 'image/png', purpose: 'any' },
-      { src: '/pwa/pwa-192x192.png?v=5', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/pwa/pwa-512x512.png?v=5', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      ...(!macDesktop ? [{ src: '/pwa/maskable-512x512.png?v=5', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] : []),
-      { src: '/pwa/monochrome-512x512.png?v=5', sizes: '512x512', type: 'image/png', purpose: 'monochrome' }
+      { src: '/pwa/pwa-64x64.png?v=6', sizes: '64x64', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/pwa-192x192.png?v=6', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/pwa-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/maskable-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/pwa/monochrome-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'monochrome' }
     ],
     shortcuts: [
-      { name: 'Cardápio', short_name: 'Cardápio', url: '/menu', icons: [{ src: '/pwa/pwa-192x192.png?v=5', sizes: '192x192' }] },
-      { name: 'Sacola', short_name: 'Sacola', url: '/sacola', icons: [{ src: '/pwa/pwa-192x192.png?v=5', sizes: '192x192' }] },
-      { name: 'Meus pedidos', short_name: 'Pedidos', url: '/conta', icons: [{ src: '/pwa/pwa-192x192.png?v=5', sizes: '192x192' }] }
+      { name: 'Cardápio', short_name: 'Cardápio', url: '/menu', icons: [{ src: '/pwa/pwa-192x192.png?v=6', sizes: '192x192' }] },
+      { name: 'Sacola', short_name: 'Sacola', url: '/sacola', icons: [{ src: '/pwa/pwa-192x192.png?v=6', sizes: '192x192' }] },
+      { name: 'Meus pedidos', short_name: 'Pedidos', url: '/conta', icons: [{ src: '/pwa/pwa-192x192.png?v=6', sizes: '192x192' }] }
     ],
     screenshots: [
       { src: '/pwa/screenshots/home-narrow.png', sizes: '1080x1920', type: 'image/png', form_factor: 'narrow', label: 'Início da Nelson Boulangerie' },
