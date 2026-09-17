@@ -55,7 +55,10 @@ O layer contribui, via auto-import do Nuxt:
 | `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
-| `app/composables/useNextFocus.ts` | `useNextFocus` | a página declara o foco (chave reativa); o bloco `data-focus-target` vai à linha de foco e recebe o foco de teclado — ver "Próximo foco" |
+| `app/composables/useNextFocus.ts` | `useNextFocus`, `measureBottomObstruction` | a página declara o foco (chave reativa); o bloco `data-focus-target` vai à linha de foco e recebe o foco de teclado — ver "Próximo foco" |
+| `app/presentation/moreBelow.ts` | `hintOffset`, `hintMotionClass`, `shouldHint` | regra pura da dica "tem mais abaixo" |
+| `app/composables/useMoreBelow.ts` | `useMoreBelow` | observa o fim do conteúdo (sentinela + IntersectionObserver) descontando o que flutua na base |
+| `app/components/MoreBelow.vue` | `<MoreBelow>` | a dica em si: degradê + pílula com chevron, some ao chegar ao fim — ver "Tem mais abaixo" |
 | `app/presentation/pwaRuntime.ts` | `idleReloadPathAllowed`, `shouldCheckForUpdate`, `idleUpdateBlocker`, `applyIdleUpdate` | regra pura da troca de versão: quando sondar, quando aplicar sozinho e QUAL razão impede |
 | `app/composables/usePwaUpdate.ts` | `usePwaUpdate` | worker em espera + `update()` (skipWaiting + reload) + `checkForUpdate()` (sonda) |
 | `app/composables/usePwaAutoUpdate.ts` | `usePwaAutoUpdate` | sonda periódica/no foco e aplicação automática em momento seguro — ver "Atualização do app instalado" |
@@ -220,6 +223,40 @@ Contrato:
   renderização passa na frente de um `reveal` do mesmo handler.
 - Na montagem só rola se o foco estiver fora da área visível (estado restaurado lá
   embaixo). Respeita `prefers-reduced-motion`. Nunca roda no servidor.
+
+## Tem mais abaixo (`<MoreBelow />`)
+
+A outra metade do contrato com a área visível. O próximo foco responde "onde eu devo
+estar agora"; esta responde "ainda há coisa que você não viu". As duas convivem, e
+devem: com a ação fixa num card e sem a dica, dá para avançar sem nunca ver as opções
+que ficaram abaixo da dobra.
+
+```html
+<!-- No fim do CONTEÚDO — antes de qualquer card/barra flutuante, que é chrome. -->
+<MoreBelow />
+```
+
+Contrato:
+
+- Um sentinela de 1px marca o fim do conteúdo; enquanto ele não aparece, a dica existe.
+  IntersectionObserver em vez de contas de rolagem, então redimensionamento, teclado
+  virtual e conteúdo que cresce funcionam de graça.
+- **O fim só conta ACIMA do obstáculo.** O observador encolhe a área pelo que flutua na
+  base (`data-focus-obstruction`, o mesmo fato que o próximo foco lê). Sem isso a dica
+  some com conteúdo ainda escondido atrás do card.
+- A dica flutua logo acima do obstáculo, com degradê por baixo: sem ele a pílula boia
+  sobre um texto qualquer e vira artefato.
+- Decorativa: `aria-hidden`, sem captura de clique. **O que a impede de se ler como
+  botão é a translucidez, não o tamanho**: fundo sólido com sombra vira chip clicável
+  em qualquer medida. Com o fundo a 33% e sem sombra, o que sobra é o chevron, e o
+  círculo só o separa do conteúdo — por isso ela pôde crescer de 28 para 48, encostando
+  no alvo de toque sem se ler como controle. Sobre o degradê ela rende pouco (fundo da mesma
+  cor); trabalha nas bordas e onde há contraste atrás, que é o caso do operador.
+- `prefers-reduced-motion`: a dica fica **parada**, não some.
+
+⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
+tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como
+obstáculo; é o próximo consumidor natural.
 
 Tela cujo foco de teclado é todo explícito (o PDV, com o shell capturando dígitos e
 letras fora de input) chama `useNextFocus()` sem fonte e usa só o `reveal` — é o caso

@@ -37,6 +37,20 @@ describe('próximo foco — regra pura', () => {
     expect(needsInitialReveal({ top: 600, bottom: 900, viewportHeight: 800 })).toBe(true)
   })
 
+  // Card de ação flutuante: o bloco "cabe na tela" e mesmo assim está metade
+  // atrás dele. Foi o que aconteceu no checkout ao ganhar o card da sacola.
+  it('desconta o que flutua na base da área utilizável', () => {
+    const caixa = { top: 360, bottom: 620, viewportHeight: 667 }
+    expect(needsInitialReveal(caixa)).toBe(false)
+    expect(needsInitialReveal({ ...caixa, obstructedBottom: 197 })).toBe(true)
+  })
+
+  it('obstáculo negativo ou ausente não muda nada', () => {
+    const caixa = { top: 120, bottom: 400, viewportHeight: 800 }
+    expect(needsInitialReveal({ ...caixa, obstructedBottom: 0 })).toBe(false)
+    expect(needsInitialReveal({ ...caixa, obstructedBottom: -50 })).toBe(false)
+  })
+
   it('sem viewport medido (SSR/teste) não rola', () => {
     expect(needsInitialReveal({ top: 900, bottom: 1200, viewportHeight: 0 })).toBe(false)
   })

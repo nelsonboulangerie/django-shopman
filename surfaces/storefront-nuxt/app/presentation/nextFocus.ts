@@ -13,6 +13,10 @@
 
 export const FOCUS_TARGET_ATTRIBUTE = 'data-focus-target'
 export const FOCUS_CONTROL_ATTRIBUTE = 'data-focus-control'
+// Um card de ação flutuante, uma barra: o que cobre a base da tela some da
+// área utilizável. Sem isso o mecanismo acha que o bloco está à vista quando
+// metade dele está atrás do card.
+export const FOCUS_OBSTRUCTION_ATTRIBUTE = 'data-focus-obstruction'
 
 export type FocusAlign = 'start' | 'center'
 
@@ -51,13 +55,15 @@ export interface VisibleBox {
   top: number
   bottom: number
   viewportHeight: number
+  /** Altura tomada por algo flutuante na base (card de ação, barra). */
+  obstructedBottom?: number
 }
 
 // Na primeira pintura a página não salta à toa: quem chega e já vê o bloco de
 // foco inteiro fica onde está (o título da página é contexto). Só sai do lugar
 // se o foco está fora (ou parcialmente fora) da área visível — o caso de quem
 // volta a um rascunho salvo na etapa de pagamento, lá embaixo.
-export function needsInitialReveal ({ top, bottom, viewportHeight }: VisibleBox): boolean {
+export function needsInitialReveal ({ top, bottom, viewportHeight, obstructedBottom = 0 }: VisibleBox): boolean {
   if (viewportHeight <= 0) return false
-  return top < 0 || bottom > viewportHeight
+  return top < 0 || bottom > viewportHeight - Math.max(0, obstructedBottom)
 }

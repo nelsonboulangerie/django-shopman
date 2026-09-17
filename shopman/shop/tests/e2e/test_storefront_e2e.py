@@ -421,13 +421,24 @@ def _authenticate_via_debug_otp(page) -> None:
     raise AssertionError(f"Login não chegou ao checkout (url={page.url})")
 
 
+def _checkout_action(page, name: str):
+    """O botão que avança o checkout.
+
+    ⚠️ Ele NÃO mora mais no rodapé de cada seção: a ação segue o foco e vive no
+    card suspenso (`data-checkout-action-card`), único na tela. Procurar dentro
+    de `[data-checkout-step=...]` dá timeout — foi assim que este teste caiu
+    quando o card entrou.
+    """
+    return page.locator("[data-checkout-action-card]").get_by_role("button", name=name)
+
+
 def _ensure_contact_saved(page) -> None:
     """Se o cartão de contato abriu em edição (cliente sem nome), completa-o."""
     name_input = page.locator("#checkout-name")
     if name_input.count() and name_input.first.is_visible():
         if not (name_input.first.input_value() or "").strip():
             name_input.first.fill(LIVE_ORDER_NAME)
-        page.get_by_role("button", name="Salvar contato").click()
+        _checkout_action(page, "Salvar contato").click()
 
 
 def _ensure_pickup_slot_selected(page) -> None:
@@ -513,23 +524,17 @@ class TestLiveOrderCrossing:
         pickup = page.locator("label[for='checkout-fulfillment-pickup']")
         assert pickup.count(), "Canal web semeado deve oferecer retirada"
         pickup.click()
-        page.locator("[data-checkout-step='fulfillment']").get_by_role(
-            "button", name="Continuar"
-        ).click()
+        _checkout_action(page, "Continuar").click()
 
         _ensure_pickup_slot_selected(page)
-        when_continue = page.locator("[data-checkout-step='when']").get_by_role(
-            "button", name="Continuar"
-        )
+        when_continue = _checkout_action(page, "Continuar")
         expect(when_continue).to_be_enabled(timeout=15_000)
         when_continue.click()
 
         pix = page.locator("label[for='checkout-payment-pix']")
         if pix.count():
             pix.click()
-        page.locator("[data-checkout-step='payment']").get_by_role(
-            "button", name="Revisar pedido"
-        ).click()
+        _checkout_action(page, "Revisar pedido").click()
 
         sheet = page.get_by_role("dialog").filter(has_text="Revise seu pedido")
         expect(sheet).to_be_visible(timeout=15_000)
