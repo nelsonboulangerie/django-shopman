@@ -604,13 +604,13 @@ def _marketing_prompt_pending(request: HttpRequest) -> bool:
     if getattr(request, "customer", None) is None:
         return False
     try:
-        from shopman.shop.services import account as account_service
+        from shopman.shop.projections.customer_context import marketing_prompt_pending
         from shopman.storefront.identity import get_authenticated_customer
 
         customer = get_authenticated_customer(request)
         if customer is None:
             return False
-        return account_service.marketing_prompt_pending(customer)
+        return marketing_prompt_pending(customer)
     except Exception:
         logger.warning(
             "home.marketing_prompt_pending_unavailable: cliente ou consentimento ilegível; "

@@ -16,6 +16,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.shop.projections import customer_context
 from shopman.shop.services import access as access_service
 from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
@@ -68,7 +69,7 @@ def _session_payload(customer) -> dict:
     customer_name = getattr(customer, "name", "") or ""
     # O gate de boas-vindas do login é SÓ o nome (vazio ou importado sujo):
     # `requires_welcome` == `welcome_asks_name`. A pergunta de novidades (nunca
-    # respondida — ver `account_service.marketing_prompt_pending`) sai em
+    # respondida — ver `customer_context.marketing_prompt_pending`) sai em
     # `welcome_asks_marketing` e a loja a faz por conta própria, num sheet na
     # página de destino — nunca como passo de entrada.
     asks_name = needs_confirmation(customer_name)
@@ -80,7 +81,7 @@ def _session_payload(customer) -> dict:
         "customer_email": getattr(customer, "email", "") or "",
         "requires_welcome": asks_name,
         "welcome_asks_name": asks_name,
-        "welcome_asks_marketing": account_service.marketing_prompt_pending(customer),
+        "welcome_asks_marketing": customer_context.marketing_prompt_pending(customer),
         "welcome_suggested_name": clean_display_name(customer_name),
     }
 
