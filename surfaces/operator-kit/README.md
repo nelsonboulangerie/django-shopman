@@ -49,6 +49,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
 | `app/presentation/windowTitle.ts` | `windowTitle` | regra pura do título da janela: `"<App> · <Página>"` (app na frente, senão o Chrome prefixa o nome do PWA) |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle` | instala o `titleTemplate` no `app.vue` (e `error.vue`) lendo o `manifest.name` da capability PWA; as páginas passam só o próprio título |
+| `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
+| `app/composables/useNextFocus.ts` | `useNextFocus` | a página declara o foco (chave reativa); o bloco `data-focus-target` vai à linha de foco e recebe o foco de teclado — ver "Próximo foco" |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -70,6 +72,44 @@ responsável por preservar `X-Forwarded-Proto: https` e a verificação final de
 no host publicado. Marketing usa ainda uma política CSP local mais estrita, com nonce e
 branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao kit
 porque ainda não tem dois consumidores comprovados.
+
+## Próximo foco (`useNextFocus`)
+
+Toda tela com sequência de blocos (etapas, campos, cartões que se abrem um após o
+outro) usa o mesmo mecanismo para deixar a página **sempre posicionada no que se faz
+agora**. A tela diz qual é o foco; o mecanismo leva a página até ele.
+
+```ts
+// A página nomeia o foco do momento — um estado, não um evento.
+const focusKey = computed(() => (customerEditing.value ? "customer" : activeStep.value));
+const { reveal } = useNextFocus(focusKey);
+```
+
+```html
+<!-- Cada bloco candidato se marca com a chave. `scroll-mt-*` declara a folga
+     sob o chrome fixo (o scrollIntoView nativo respeita scroll-margin-top). -->
+<section data-focus-target="payment" class="scroll-mt-20 outline-none" tabindex="-1">
+  <!-- Se a próxima ação é digitar, o controle recebe o foco no lugar do bloco. -->
+  <input data-focus-control />
+</section>
+```
+
+Contrato:
+
+- **Linha de foco** = topo da área visível, abaixo do chrome fixo. Acima, o feito; na
+  linha, o agora; abaixo, o depois. Sempre a mesma posição, o olho não procura.
+- Quando a chave muda, o bloco vai à linha (`scrollIntoView` nativo, funciona em
+  container aninhado) e recebe o foco de teclado: o controle `data-focus-control` se
+  houver, senão o próprio bloco (`tabindex=-1`, para o leitor de tela anunciar).
+- `reveal(alvo, { align: "center", focus: false })` para o foco fora do fluxo (um
+  erro, um item que chegou). Aceita chave, elemento ou função que resolve o elemento.
+- O pedido mais novo vence: trocas rápidas não disputam, e o foco automático da
+  renderização passa na frente de um `reveal` do mesmo handler.
+- Na montagem só rola se o foco estiver fora da área visível (estado restaurado lá
+  embaixo). Respeita `prefers-reduced-motion`. Nunca roda no servidor.
+
+O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
+o checkout (`pages/finalizar.vue`) é o primeiro consumidor.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 
