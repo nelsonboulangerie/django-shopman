@@ -1,16 +1,26 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // Guardrails de CONSISTÊNCIA do design system canônico do backstage (Lente 7).
 // Fonte: docs/engineering/backstage-design-system.md. Estes testes travam a DRIFT
-// entre as 5 superfícies de operador — os tokens canônicos vivem num tema central
-// (operator-theme.css) e cada app o importa; o guardrail garante fonte única +
-// importação. Storefront fica FORA (sistema branded próprio).
+// entre as 8 superfícies de operador — o núcleo de CSS vive em dois arquivos
+// centrais no kit (operator-base.css, que importa operator-theme.css) e cada app
+// os herda por UM @import; o guardrail garante fonte única + importação + que
+// ninguém volte a copiar o núcleo. Storefront fica FORA (sistema branded próprio).
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const OPERATOR_APPS = ["pos-nuxt", "kds-nuxt", "orders-nuxt", "production-nuxt", "hub-nuxt"] as const;
+const OPERATOR_APPS = [
+  "pos-nuxt",
+  "kds-nuxt",
+  "orders-nuxt",
+  "production-nuxt",
+  "hub-nuxt",
+  "marketing-nuxt",
+  "purchase-nuxt",
+  "bi-nuxt",
+] as const;
 
 // Tokens canônicos que vivem no tema central e chegam aos 5 apps pela importação.
 // Cada app pode ter tokens ADICIONAIS (print no POS, dark no KDS) — o guardrail checa
@@ -50,15 +60,14 @@ function blend(foreground: [number, number, number], background: [number, number
   return foreground.map((channel, index) => channel * opacity + background[index] * (1 - opacity)) as [number, number, number];
 }
 
+const KIT_CSS_DIR = resolve(surfacesDir, "operator-kit", "app/assets/css");
+
 describe("design-system: tema operador centralizado (operator-theme.css) herdado por todos", () => {
   // O tema quente do operador vive num ÚNICO arquivo no kit (operator-theme.css),
-  // importado por cada app via @import. A paridade de tokens deixa de ser "mesmo
-  // valor copiado em 5 tailwind.css" e passa a ser "fonte única + todos importam" —
-  // drift torna-se impossível por construção.
-  const operatorTheme = readFileSync(
-    resolve(surfacesDir, "operator-kit", "app/assets/css/operator-theme.css"),
-    "utf8",
-  );
+  // puxado pelo operator-base.css que cada app importa. A paridade de tokens deixa
+  // de ser "mesmo valor copiado em 8 tailwind.css" e passa a ser "fonte única +
+  // todos importam" — drift torna-se impossível por construção.
+  const operatorTheme = readFileSync(resolve(KIT_CSS_DIR, "operator-theme.css"), "utf8");
 
   it("os tokens canônicos vivem no operator-theme.css central (fonte única)", () => {
     for (const token of CANONICAL_TOKENS) {
@@ -83,11 +92,74 @@ describe("design-system: tema operador centralizado (operator-theme.css) herdado
     expect(contrast(warningForeground, warning)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("o operator-base.css puxa o tema — é por ele que os tokens chegam aos apps", () => {
+    expect(
+      readFileSync(resolve(KIT_CSS_DIR, "operator-base.css"), "utf8"),
+      "operator-base.css não importa o operator-theme.css",
+    ).toMatch(/@import\s+"\.\/operator-theme\.css"/);
+  });
+
   for (const app of OPERATOR_APPS) {
-    it(`${app} importa o operator-theme.css do kit (herda os tokens, zero drift)`, () => {
-      expect(cssFor(app), `${app} não importa o tema central`).toMatch(/operator-theme\.css/);
+    it(`${app} importa o operator-base.css do kit (herda o núcleo, zero drift)`, () => {
+      expect(cssFor(app), `${app} não importa a base compartilhada`).toMatch(
+        /@import\s+"\.\.\/\.\.\/\.\.\/\.\.\/operator-kit\/app\/assets\/css\/operator-base\.css"/,
+      );
     });
   }
+});
+
+// --- O núcleo comum mora no kit e em lugar nenhum mais.
+// ~227 linhas idênticas viviam copiadas nos 8 tailwind.css. Cada bloco abaixo é
+// uma assinatura desse núcleo: se voltar a aparecer num app, alguém recopiou em vez
+// de importar, e a drift recomeça. O que PODE ficar no app é o tail próprio
+// (impressão térmica no POS, fontes self-hosted no Marketing, forced-colors no
+// Produção) e as diretivas que resolvem por node_modules — `@import "tailwindcss"`,
+// `@import "tw-animate-css"` e `@plugin`, que o kit não consegue resolver.
+// Os padrões de DIRETIVA são ancorados em início de linha: o texto de um comentário
+// que apenas cite `@source` não é uma cópia, e não pode disparar o guardrail.
+const CORE_SIGNATURES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^@source\s/m, "@source do kit — mora na base, e o caminho relativo muda se copiado"],
+  [/^@custom-variant\s+dark/m, "variante dark"],
+  [/^@theme\s+inline/m, "aliases de token (@theme inline)"],
+  [/^\s*@keyframes\s+(grid|shine|gradientFlow|meteor|background-position-spin)/m, "keyframes das animações"],
+  [/^\s*--animate-(shine|meteor|grid|gradient-flow)\s*:/m, "tokens de animação"],
+  [/ESCALA DE DESIGN/, "bloco-doc da escala de design"],
+  [/^@utility\s+no-scrollbar/m, "utilitário no-scrollbar"],
+  [/^@import\s+"[^"]*operator-theme\.css"/m, "import direto do tema — vem pela base"],
+  [/^\s*scrollbar-color\s*:/m, "reset de scrollbar"],
+];
+
+describe("design-system: o núcleo comum não volta para dentro dos apps", () => {
+  for (const app of OPERATOR_APPS) {
+    it(`${app}: tailwind.css não recopia o núcleo que vive no operator-base.css`, () => {
+      const css = cssFor(app);
+      const offenders = CORE_SIGNATURES.filter(([pattern]) => pattern.test(css)).map(([, what]) => what);
+      expect(offenders, `${app} recopiou o núcleo em vez de importar: ${offenders.join(" · ")}`).toEqual([]);
+    });
+  }
+});
+
+// --- A armadilha do @source: caminho relativo AO ARQUIVO que o declara.
+// Errar não quebra o build — o CSS compila e as classes usadas só nos componentes
+// do kit (OperatorRail, RailItem, RailToggle, OfflineBanner, UiNativeSelect) somem
+// do bundle em silêncio. Medido: um @source errado derruba ~14 KB do CSS do
+// production-nuxt sem uma linha de erro. Este teste resolve o caminho declarado e
+// exige que ele ainda alcance os componentes.
+describe("design-system: o @source da base alcança os componentes do kit", () => {
+  const base = readFileSync(resolve(KIT_CSS_DIR, "operator-base.css"), "utf8");
+
+  it("o @source declarado resolve num diretório que contém os componentes do kit", () => {
+    const declared = base.match(/^@source\s+"([^"]+)"/m);
+    expect(declared, "operator-base.css não declara @source").not.toBeNull();
+
+    const resolved = resolve(KIT_CSS_DIR, declared![1]);
+    for (const component of ["OperatorRail", "RailItem", "RailToggle", "OfflineBanner", "UiNativeSelect"]) {
+      expect(
+        existsSync(join(resolved, "components", `${component}.vue`)),
+        `@source "${declared![1]}" → ${resolved} não alcança ${component}.vue`,
+      ).toBe(true);
+    }
+  });
 });
 
 // --- Escala tipográfica (DS §3): só os 6 papéis; sem `text-2xl` nem `text-[..]`
