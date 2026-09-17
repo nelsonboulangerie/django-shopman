@@ -76,6 +76,57 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect(wrapper.text()).toContain("não envia mensagem direta por pessoa");
   });
 
+  it("chama o efeito pelo nome, em vez de pedir para confirmar uma consequência", () => {
+    // "Confirmar consequência" obrigava o gestor a traduzir jargão no exato momento
+    // da decisão, e a caixa dizia "nada sai até a confirmação final" logo acima do
+    // botão que ERA a confirmação final. Duas frases que não descreviam a tela.
+    const wrapper = mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          announcementId: 42,
+          action: "approve",
+          body: { base_version: 3, publish_mode: "now" },
+          href: "/api/v1/backstage/marketing/announcements/42/approve/",
+          ownerRef: "operator:1",
+          idempotencyKey: "key",
+          challenge: {
+            token: "token",
+            ref: "challenge-summary",
+            expires_at: "2026-09-09T21:00:00-03:00",
+            mode: "summary",
+            step_up: "none",
+            dual_control: false,
+            typed_phrase: "",
+            consequence: "publishes_now_to_eligible_audience",
+            resource_ref: "announcement:42",
+            base_version: 3,
+            audience_count: 1,
+            platforms: ["whatsapp"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: {
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Enviar agora");
+    expect(wrapper.text()).not.toContain("Confirmar consequência");
+    expect(wrapper.text()).toContain("Depois de confirmar, isto sai");
+    // Nada de senha nem de frase: um destino não paga o preço de quinhentos.
+    expect(wrapper.find("#decision-credential").exists()).toBe(false);
+    expect(wrapper.find("#decision-typed-confirmation").exists()).toBe(false);
+  });
+
   it("explica que confirmar o disparo cria revisão sem publicar", () => {
     const wrapper = mount(MarketingCommandConfirmationDialog, {
       props: {
@@ -118,10 +169,8 @@ describe("MarketingCommandConfirmationDialog", () => {
     });
 
     expect(wrapper.text()).toContain("Confirmar este disparo?");
-    expect(wrapper.text()).toContain("cria somente um anúncio para revisão");
-    expect(wrapper.text()).toContain(
-      "nenhuma publicação ou mensagem será enviada agora",
-    );
+    expect(wrapper.text()).toContain("Isto cria um anúncio para revisão");
+    expect(wrapper.text()).toContain("Nada é publicado nem enviado agora");
     expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
     expect(wrapper.text()).toContain("Voltar sem criar");

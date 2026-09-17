@@ -31,6 +31,10 @@ import {
   vipSummary,
 } from "~/presentation/campaign";
 import {
+  deliveryActionLabel,
+  includesDirectMessage,
+} from "~/presentation/marketingDelivery";
+import {
   platformReadinessNote,
   readinessByPlatform,
   readinessPillClass,
@@ -317,15 +321,13 @@ const canPublish = computed(
     body.value.trim().length > 0 &&
     platforms.value.length > 0,
 );
-const hasDirectMessage = computed(() => platforms.value.includes("whatsapp"));
-const hasPublicPublication = computed(() =>
-  platforms.value.some((platform) => platform !== "whatsapp"),
+const hasDirectMessage = computed(() => includesDirectMessage(platforms.value));
+// O mesmo rótulo do botão da caixa de confirmação: o gestor toca "Enviar agora" e a
+// caixa responde "Enviar agora". Duas frases para um efeito só era o que fazia a
+// segunda parecer uma etapa nova.
+const deliverNowLabel = computed(() =>
+  deliveryActionLabel({ platforms: platforms.value }),
 );
-const deliverNowLabel = computed(() => {
-  if (hasDirectMessage.value && hasPublicPublication.value)
-    return "Entregar agora";
-  return hasDirectMessage.value ? "Enviar agora" : "Publicar agora";
-});
 const nowFallsInQuietHours = computed(
   () =>
     hasDirectMessage.value &&

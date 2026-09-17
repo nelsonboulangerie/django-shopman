@@ -40,6 +40,11 @@ STEP_UP_TTL = timedelta(minutes=15)
 SECURITY_RETENTION = timedelta(days=365 * 5)
 MAX_EXTERNAL_TARGETS_PER_DAY = 5_000
 MAX_BLAST = 5_000
+# A partir de quantos destinos a confirmação deixa de ser "leia e confirme". Abaixo do
+# primeiro limiar, o resumo da consequência é a confirmação: a tela anterior já mostrou
+# o público, as plataformas e o texto, e o gestor está autenticado na sessão de operador.
+CEREMONY_TYPED_THRESHOLD = 50
+CEREMONY_DUAL_CONTROL_THRESHOLD = 500
 MIN_LARGE_SCHEDULE_DELAY = timedelta(minutes=15)
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ACTION_RE = re.compile(r"^[a-z0-9_]{1,32}$")
@@ -215,38 +220,37 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
     if context.action == ACTION_UNFREEZE:
         return AuthorizationRequirement("summary", "totp", True, "")
 
-    immediate = context.scheduled_for is None and context.action in {
-        ACTION_APPROVE,
-        ACTION_FIRE,
-        ACTION_RETRY,
-    }
+    # Disparar não publica e não envia: cria um anúncio que nasce em revisão, e a
+    # revisão é o portão real. O próprio módulo já tratava o disparo como consequência
+    # zero — `_reserve_external_quota` o isenta da quota de destinos externos. Pedir
+    # frase digitada e senha para preparar um rascunho cobrava o preço da consequência
+    # sem que a consequência existisse, e ainda por cima duas vezes no mesmo caminho,
+    # porque a aprovação cobra de novo.
+    if context.action == ACTION_FIRE:
+        return AuthorizationRequirement("none", "none", False, "")
+
     if count >= 2_000:
-        if immediate:
+        if context.scheduled_for is None:
             raise MarketingAuthorizationError(
                 code="large_blast_must_be_scheduled",
                 detail="A partir de 2.000 destinos, o envio precisa ser agendado.",
                 status_code=422,
             )
-        assert context.scheduled_for is not None
         if context.scheduled_for < clock + MIN_LARGE_SCHEDULE_DELAY:
             raise MarketingAuthorizationError(
                 code="large_blast_schedule_too_soon",
                 detail="Agende com pelo menos 15 minutos de antecedência.",
                 status_code=422,
             )
-    if immediate or count >= 50:
-        level = "totp" if count >= 500 else "password"
-        # A frase descreve o efeito real da ação. Disparar só PREPARA um anúncio
-        # para revisão — nada é publicado nem enviado — e o dialog diz isso; pedir
-        # "PUBLICAR" ali contradizia a tela na mesma caixa. Publicar e entregar
-        # continuam pedindo "PUBLICAR".
-        verb = "PREPARAR" if context.action == ACTION_FIRE else "PUBLICAR"
-        return AuthorizationRequirement(
-            "typed",
-            level,
-            count >= 500,
-            f"{verb} {count}",
-        )
+    # A cerimônia mede a consequência, e a consequência é quanta gente recebe. Antes,
+    # entregar agora escalava sozinho para frase digitada + senha, qualquer que fosse o
+    # tamanho: mandar uma mensagem para uma pessoa pedia o mesmo ritual de um disparo
+    # para quinhentas. Agendar as mesmas quinhentas pedia menos, o que não se sustenta —
+    # o agendamento adia o efeito, não o diminui.
+    if count >= CEREMONY_DUAL_CONTROL_THRESHOLD:
+        return AuthorizationRequirement("typed", "totp", True, f"PUBLICAR {count}")
+    if count >= CEREMONY_TYPED_THRESHOLD:
+        return AuthorizationRequirement("typed", "password", False, f"PUBLICAR {count}")
     return AuthorizationRequirement("summary", "none", False, "")
 
 
