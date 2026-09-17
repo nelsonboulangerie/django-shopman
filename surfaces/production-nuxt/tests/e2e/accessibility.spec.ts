@@ -256,13 +256,6 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   ).toBe(0);
 });
 
-// "YYYY-MM-DD" → o dia seguinte, em aritmética UTC (sem fuso, sem horário de
-// verão). Controle vazio parte de uma data fixa qualquer.
-function dayAfter(isoDate: string): string {
-  const [year, month, day] = (isoDate || "2026-07-06").split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
-}
-
 for (const { route, label, endpoint } of [
   { route: "/", label: "Escolher outra data", endpoint: "/production/?" },
   {
@@ -280,6 +273,16 @@ for (const { route, label, endpoint } of [
     context,
     page,
   }) => {
+    // A data escolhida NÃO pode ser o hoje da página: o valor igual ao atual
+    // não dispara `change`, não sai request, e o teste morre em timeout — foi
+    // exatamente o que aconteceu em 17/09/2026, dia em que o literal
+    // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias à
+    // frente cobre o fuso do runner (UTC) contra o da loja (-03:00).
+    const target = (() => {
+      const day = new Date();
+      day.setUTCDate(day.getUTCDate() + 2);
+      return day.toISOString().slice(0, 10);
+    })();
     await page.addInitScript(() => {
       Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
         configurable: true,
@@ -297,13 +300,6 @@ for (const { route, label, endpoint } of [
     await input.click();
     await expect(input).toBeFocused();
     expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
-    // A data escolhida tem de ser DIFERENTE da que o controle já mostra: o
-    // `v-model` não reage a valor igual, e sem mudança não há requisição. O
-    // valor era fixo ("2026-09-17") e, no dia em que o calendário chegou lá,
-    // virou o próprio "hoje" do controle — a matriz inteira caiu por timeout,
-    // em todo PR, sem que ninguém tivesse tocado no Produção. Um dia à frente
-    // do valor atual nunca coincide com ele, em qualquer data e fuso.
-    const target = dayAfter(await input.inputValue());
     const changedRequest = page.waitForRequest(
       (request) =>
         request.url().includes(endpoint) && request.url().includes(`date=${target}`),
