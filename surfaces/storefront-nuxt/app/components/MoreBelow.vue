@@ -12,9 +12,14 @@
 // sólido com sombra vira chip clicável em qualquer medida; com o fundo a 60% e
 // sem sombra, o que sobra é o CHEVRON, e o círculo só o separa do conteúdo.
 // Por isso ela pôde crescer: 28 (a versão antiga, inline no bottom-sheet)
-// passava despercebida, e 44 com fundo sólido virava botão — 44 translúcida,
-// não. O anel fica bem fraco para garantir a borda sobre fundo escuro (KDS),
-// sem devolver a aparência de controle. Comparado em 375x667.
+// passava despercebida, e o tamanho deixou de ser o que a define. Está em 48
+// por decisão do Pablo — encosta no alvo de toque, e mesmo assim não se lê como
+// controle, porque não tem fundo sólido nem sombra. O anel fica bem fraco para
+// garantir a borda sobre fundo escuro (KDS). Comparado em 375x667.
+//
+// ⚠️ A translucidez quase não se NOTA aqui, e é esperado: o degradê logo abaixo
+// já lava o fundo para a cor da página, então 60% sobre a mesma cor parece
+// opaco. Ela trabalha nas bordas e onde o conteúdo atrás tem contraste.
 import { hintMotionClass } from '~/presentation/moreBelow'
 
 const { sentinel, visible, offset } = useMoreBelow()
@@ -50,7 +55,7 @@ const motionClass = computed(() => hintMotionClass(reducedMotion.value))
           <div class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent" />
           <div class="relative flex justify-center">
             <span
-              class="flex size-11 items-center justify-center rounded-full bg-background/60 text-foreground ring-1 ring-border/40 backdrop-blur-sm"
+              class="flex size-12 items-center justify-center rounded-full bg-background/60 text-foreground ring-1 ring-border/40 backdrop-blur-sm"
               :class="motionClass"
             >
               <Icon name="lucide:chevron-down" class="size-6" />
