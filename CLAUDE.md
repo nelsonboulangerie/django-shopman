@@ -277,6 +277,12 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   `operator-kit/app/composables/useNextFocus.ts` (espelho no storefront); contrato na
   seção "Próximo foco" do `surfaces/operator-kit/README.md`. Consumidores: checkout do
   storefront (fluxo por seção) e `PosPaymentWorkspace` do PDV (só `reveal`, foco explícito).
+- **Tem mais abaixo (site-wide)**: irmã do próximo foco. Toda tela com conteúdo que
+  passa da dobra usa `<MoreBelow />` no fim do CONTEÚDO (antes de card/barra flutuante,
+  que são chrome) em vez de inventar aviso de rolagem. Sentinela + IntersectionObserver,
+  descontando o que flutua na base pelo mesmo `data-focus-obstruction` do próximo foco.
+  Contrato na seção "Tem mais abaixo" do `surfaces/operator-kit/README.md`. Pendência
+  conhecida: o `BottomSheet` do storefront ainda tem a versão antiga inline.
 - **Envelope de segurança das surfaces de operador**: CSP/cache/security do HTML, BFF,
   erros e SSE é capability compartilhada e **opt-in** do `operator-kit`, nunca arquivos
   copiados nem ativação implícita em todos os consumers. O Marketing é o piloto; não o

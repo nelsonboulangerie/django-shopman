@@ -7,6 +7,10 @@
 //
 // Decorativa: `aria-hidden` e sem captura de clique. Quem usa leitor de tela
 // já sabe que a lista continua — a dica existe para o olho que não rolou.
+//
+// 40px é deliberado: a versão antiga, inline no bottom-sheet, tinha 28 e passava
+// despercebida; 44 já encosta nos 48 de alvo de toque e passa a se ler como
+// botão, que ela não é. Comparado nas três medidas em 375x667.
 import { hintMotionClass } from '../presentation/moreBelow'
 
 const { sentinel, visible, offset } = useMoreBelow()
@@ -42,7 +46,7 @@ const motionClass = computed(() => hintMotionClass(reducedMotion.value))
           <div class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent" />
           <div class="relative flex justify-center">
             <span
-              class="flex size-9 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-border backdrop-blur-sm"
+              class="flex size-10 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-border backdrop-blur-sm"
               :class="motionClass"
             >
               <Icon name="lucide:chevron-down" class="size-5" />
