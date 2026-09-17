@@ -1233,7 +1233,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section pt-0 pb-24 lg:pb-0">
+  <main class="shop-section shop-dock-reserve pt-0 md:pb-24 lg:pb-0">
     <div class="shop-breadcrumb-bar mb-4">
       <div class="shop-container py-2">
         <UiBreadcrumbs
@@ -1818,18 +1818,27 @@ useSeoMeta({
                (cupom, presente e observação ficam abaixo da dobra no pagamento). -->
           <MoreBelow />
 
-          <!-- CARD SUSPENSO DA AÇÃO — o mesmo objeto da sacola, e pelo mesmo
-               motivo: `sticky bottom-20 z-30` faz ele flutuar ACIMA da navegação
-               inferior por ALTURA, não por prioridade de empilhamento.
-               A barra fixa que vivia aqui empatava em `z-40` com a navegação
-               (topo 606 contra 602, medido em 375x667) e ficava escondida atrás
-               dela: o total e o "Resumo" nunca apareciam no celular.
+          <!-- CARD SUSPENSO DA AÇÃO — o mesmo objeto da sacola, e agora o mesmo
+               mecanismo: `.shop-action-dock` flutua ACIMA da navegação inferior
+               por ALTURA, não por prioridade de empilhamento. A barra fixa que
+               vivia aqui empatava em `z-40` com a navegação (topo 606 contra
+               602, medido em 375x667) e ficava escondida atrás dela: o total e
+               o "Resumo" nunca apareciam no celular.
 
-               `md:bottom-4` porque a navegação inferior some em `md` e a folga
-               de 80px deixa de ter o que limpar. `lg:static` porque a partir de
-               `lg` o resumo lateral assume e o card volta ao fim do fluxo. -->
+               O `sticky bottom-20` que a substituiu não prendia de verdade:
+               sticky só gruda na base enquanto o CONTAINER cobre aquela linha,
+               e quando ele acaba o card sobe junto com a rolagem. Aqui isso
+               também estragava os dois mecanismos vizinhos, porque
+               `measureBottomObstruction` descarta obstáculo que subiu da
+               metade da tela — o próximo foco passava a mirar uma linha que o
+               card ainda tapava, e a dica "tem mais abaixo" sumia cedo demais.
+
+               `md:sticky md:bottom-4` porque a navegação inferior some em `md`
+               e a folga de 80px deixa de ter o que limpar (e o dock é inerte
+               acima de `md`). `lg:static` porque a partir de `lg` o resumo
+               lateral assume e o card volta ao fim do fluxo. -->
           <div
-            class="sticky bottom-20 z-30 shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:bottom-4 lg:static"
+            class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:sticky md:bottom-4 lg:static"
             data-checkout-action-card
             data-focus-obstruction
           >
