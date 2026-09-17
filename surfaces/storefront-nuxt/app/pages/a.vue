@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { isInAppBrowser, systemBrowserUrl } from '~/composables/useBrowserHandoff'
-import { accessLinkLanding } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, accessLinkLanding } from '~/presentation/auth'
 
 // Magic-link bridge: the customer arrives from a notification at `/a?t=<token>`.
 // We exchange the token through the BFF (`/api/auth/access/`), so the session
@@ -123,6 +123,11 @@ useSeoMeta({
         <div class="flex flex-col items-center gap-4 py-12 text-center">
           <Icon name="lucide:loader-circle" :size="32" class="animate-spin text-muted-foreground" />
           <p class="shop-body text-muted-foreground">{{ bridgeMessage }}</p>
+          <!-- O access link também é porta de entrada: a mesma declaração de
+               maioridade + Termos das outras portas. A troca do link carimba. -->
+          <p class="shop-meta" data-login-adult-declaration>
+            {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
+          </p>
         </div>
       </template>
 

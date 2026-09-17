@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeCanContinue, welcomeNameValue, welcomeProfilePatch, type AuthErrorView, type WelcomeGateInput } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeCanContinue, welcomeNameValue, welcomeProfilePatch, type AuthErrorView, type WelcomeGateInput } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
 
@@ -58,7 +58,6 @@ const welcomeName = ref('')
 const welcomeAsksName = ref(true)
 const welcomeAsksMarketing = ref(false)
 const welcomeMarketing = ref(false)
-const welcomeBirthday = ref('')
 const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 
@@ -177,16 +176,9 @@ const welcomeGate = computed<WelcomeGateInput>(() => ({
   asksName: welcomeAsksName.value,
   asksMarketing: welcomeAsksMarketing.value,
   name: welcomeName.value,
-  marketingOptIn: welcomeMarketing.value,
-  birthday: welcomeBirthday.value
+  marketingOptIn: welcomeMarketing.value
 }))
 const canContinueWelcome = computed(() => welcomeCanContinue(welcomeGate.value) && !pending.value)
-// `max` do campo de data: hoje, no fuso do aparelho. Aniversário no futuro não existe.
-const welcomeBirthdayMax = computed(() => {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-})
 // Saudação personalizada de retorno: "Bem-vindo de volta, {primeiro nome}!" quando
 // já sabemos o nome (recorrente); sem nome, cai em "Bem-vindo de volta!". O dado vem
 // da própria resposta de auth (customer_name → session.customerName).
@@ -321,7 +313,6 @@ function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
   welcomeAsksMarketing.value = !!sessionResponse.welcome_asks_marketing
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
   welcomeMarketing.value = false
-  welcomeBirthday.value = ''
 }
 
 // Welcome gate a partir da SESSÃO (não de uma resposta de verificação): quem
@@ -334,7 +325,6 @@ function enterWelcomeGateFromSession () {
   welcomeAsksMarketing.value = session.welcomeAsksMarketing.value
   welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
   welcomeMarketing.value = false
-  welcomeBirthday.value = ''
 }
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
@@ -464,13 +454,6 @@ async function submitWelcome () {
   error.value = null
   try {
     if (patch) {
-      // O PATCH do perfil exige `first_name`. Quando o nome não foi pedido (só o
-      // aniversário vai), o nome que vale é o que já está no perfil — nunca o
-      // nome completo da sessão, que viraria "Ana Silva Silva".
-      if (!patch.first_name) {
-        const profile = await $fetch<{ first_name?: string }>(apiPath('/api/v1/account/profile/'), { credentials: 'include' })
-        patch.first_name = (profile?.first_name || '').trim() || (session.customerName.value || '').trim().split(/\s+/)[0] || ''
-      }
       await $fetch(apiPath('/api/v1/account/profile/'), {
         method: 'PATCH',
         headers: await csrfHeaders(),
@@ -480,10 +463,10 @@ async function submitWelcome () {
     }
     if (welcomeAsksMarketing.value) {
       const answer = await answerMarketingPrompt(welcomeMarketing.value)
-      // A caixa estava ligada e o servidor não concedeu (menor de 18 pela data):
-      // dizer, em vez de deixar a pessoa achar que vai receber.
+      // A chave estava ligada e o servidor não concedeu (a data do perfil prova
+      // menor): dizer, em vez de deixar a pessoa achar que vai receber.
       if (welcomeMarketing.value && answer && answer.whatsapp_opted_in === false && import.meta.client) {
-        useSonner.info('Novidades só vão para maiores de 18. Sua resposta ficou guardada.')
+        useSonner.info('Novidades só vão para maiores de idade. Sua resposta ficou guardada.')
       }
     }
     session.setIdentity({ name: name || undefined, requiresWelcome: false })
@@ -752,33 +735,22 @@ useSeoMeta({
           </UiField>
 
           <!-- Novidades: UMA chave, separada de qualquer "aceito os termos", que nasce
-               desligada (LGPD art. 8 §4). Ligada, pede a data de nascimento: novidades
-               só vão para maiores de 18, e a data é o que prova. Desligada, não pede
-               nada e não grava recusa nenhuma — só que a pergunta foi feita. -->
+               desligada (LGPD art. 8 §4). É SÓ consentimento: não pede data de
+               nascimento nem repete a maioridade — isso a pessoa já confirmou ao entrar.
+               Desligada, não grava recusa nenhuma; só que a pergunta foi feita.
+               A frase ao lado da chave é a evidência gravada (MARKETING_PROMPT_DISCLOSURE):
+               mudou aqui, muda lá, e sobe a versão. -->
           <div v-if="welcomeAsksMarketing" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-marketing>
             <p class="shop-body font-semibold">Novidades da Nelson</p>
             <UiFieldLabel for="welcome-marketing" class="w-full">
               <div class="flex w-full items-center gap-4">
                 <div class="min-w-0 flex-1">
-                  <p class="shop-body font-normal">Quero receber novidades e avisos da Nelson pelo WhatsApp</p>
-                  <p class="mt-0.5 shop-meta">Você muda isso quando quiser em Conta › Preferências.</p>
+                  <p class="shop-body font-normal">Quero receber novidades da Nelson pelo WhatsApp</p>
+                  <p class="mt-0.5 shop-meta">Mude quando quiser em Conta › Preferências.</p>
                 </div>
                 <UiSwitch id="welcome-marketing" v-model="welcomeMarketing" />
               </div>
             </UiFieldLabel>
-            <UiField v-if="welcomeMarketing" data-login-birthday>
-              <UiFieldLabel for="welcome-birthday">Data de nascimento</UiFieldLabel>
-              <UiInput
-                id="welcome-birthday"
-                v-model="welcomeBirthday"
-                name="welcome-birthday"
-                type="date"
-                autocomplete="bday"
-                :max="welcomeBirthdayMax"
-                class="w-full max-w-full appearance-none"
-              />
-              <UiFieldDescription>Novidades só vão para maiores de 18. A data fica no seu perfil.</UiFieldDescription>
-            </UiField>
           </div>
 
           <div class="grid gap-3">
@@ -793,6 +765,13 @@ useSeoMeta({
 
         <p v-if="step !== 'welcome'" class="shop-meta">
           {{ copyMessage(authCopy?.terms_note, 'Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.') }}
+        </p>
+        <!-- A declaração de maioridade + Termos, em TODO passo de entrada (telefone,
+             código, aparelho reconhecido). Frase FIXA, fora da copy configurável:
+             a autenticação carimba o cadastro, e a versão carimbada representa
+             exatamente esta frase. -->
+        <p v-if="step !== 'welcome'" class="shop-meta" data-login-adult-declaration>
+          {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
         </p>
 
         <div v-if="supportUrl" class="-mx-4 border-t px-4 pt-4 sm:mx-0 sm:px-0" data-login-support>

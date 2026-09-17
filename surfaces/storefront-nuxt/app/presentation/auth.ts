@@ -71,58 +71,46 @@ export function welcomeNameValue (raw: string): string {
   return raw.replace(/\s+/g, ' ').trim()
 }
 
+// ── A declaração de maioridade, feita ao ENTRAR ────────────────────────────
+//
+// A nota ao lado do botão de entrar, em TODOS os caminhos (telefone/código,
+// aparelho reconhecido, access link): continuar confirma ser maior de idade e
+// aceita os Termos de uso. O servidor carimba o cadastro em toda autenticação
+// (`adult_declaration`, versão `login-terms-pt-BR-v1`); é essa a prova que o
+// marketing direto lê. A frase é FIXA, não copy configurável: a versão do lado
+// do servidor representa exatamente esta frase (o teste de contrato lê este
+// arquivo). Nunca "18", "anos" nem "adulto" — é "maior de idade".
+export const LOGIN_ADULT_DECLARATION_LEAD = 'Ao continuar, você confirma que é maior de idade e aceita os'
+export const LOGIN_TERMS_LINK_LABEL = 'Termos de uso'
+export const LOGIN_ADULT_DECLARATION = `${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_TERMS_LINK_LABEL}.`
+
 // ── A pergunta de novidades no gate de boas-vindas ─────────────────────────
 //
 // O gate abre por duas perguntas independentes (`welcome_asks_name`,
 // `welcome_asks_marketing`); a tela mostra só o que falta. A caixa de novidades
 // nasce DESLIGADA — consentimento de marketing é manifestação afirmativa (LGPD
-// art. 8 §4), nunca vem embutido nem pré-marcado. Ligada, ela pede a data de
-// nascimento, porque novidades só vão para maiores de 18 e a data é o que prova.
+// art. 8 §4), nunca vem embutido nem pré-marcado. A chave é SÓ consentimento:
+// não pede data de nascimento nem repete a declaração de maioridade, que já foi
+// feita ao entrar.
 
 export interface WelcomeGateInput {
   asksName: boolean
   asksMarketing: boolean
   name: string
   marketingOptIn: boolean
-  birthday: string
 }
 
-// `YYYY-MM-DD` válido, nem no futuro nem antes de 1900; qualquer outra coisa é ''.
-export function welcomeBirthdayValue (raw: string, today: Date = new Date()): string {
-  const value = (raw || '').trim()
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
-  if (!match) return ''
-  const [, y, m, d] = match
-  const year = Number(y)
-  const month = Number(m)
-  const day = Number(d)
-  const parsed = new Date(Date.UTC(year, month - 1, day))
-  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return ''
-  if (year < 1900) return ''
-  const todayIso = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
-  if (parsed.getTime() > todayIso.getTime()) return ''
-  return value
-}
-
-export function welcomeCanContinue (input: WelcomeGateInput, today: Date = new Date()): boolean {
+export function welcomeCanContinue (input: WelcomeGateInput): boolean {
   if (input.asksName && !welcomeNameValue(input.name)) return false
-  if (input.asksMarketing && input.marketingOptIn && !welcomeBirthdayValue(input.birthday, today)) return false
   return true
 }
 
-// O que vai no PATCH do perfil: o nome quando foi pedido, o aniversário quando a
-// caixa está ligada. `null` = não há o que gravar no perfil (só a resposta).
-export function welcomeProfilePatch (input: WelcomeGateInput, today: Date = new Date()): { first_name?: string, birthday?: string } | null {
-  const patch: { first_name?: string, birthday?: string } = {}
-  if (input.asksName) {
-    const name = welcomeNameValue(input.name)
-    if (name) patch.first_name = name
-  }
-  if (input.asksMarketing && input.marketingOptIn) {
-    const birthday = welcomeBirthdayValue(input.birthday, today)
-    if (birthday) patch.birthday = birthday
-  }
-  return Object.keys(patch).length ? patch : null
+// O que vai no PATCH do perfil: o nome, quando foi pedido. `null` = não há o
+// que gravar no perfil (só a resposta da pergunta de novidades).
+export function welcomeProfilePatch (input: WelcomeGateInput): { first_name: string } | null {
+  if (!input.asksName) return null
+  const name = welcomeNameValue(input.name)
+  return name ? { first_name: name } : null
 }
 
 // Aterrissagem do access link (a.vue): quem entra por link e ainda precisa

@@ -601,6 +601,11 @@ def _complete_notification_preferences(customer_ref: str) -> set[str]:
 # O carimbo é idempotente e guarda a versão dos termos que a pessoa leu. Quem
 # já tem conta ganha a declaração no próximo login.
 LOGIN_TERMS_VERSION = "login-terms-pt-BR-v1"
+# A frase que a pessoa lê ao lado do botão de entrar, em TODOS os caminhos
+# (`surfaces/storefront-nuxt/app/presentation/auth.ts`). É o que a versão
+# acima representa — o teste de contrato lê o .ts e confere. Mudou a frase?
+# Sobe a versão aqui E em `marketing_age.ADULT_DECLARING_TERMS_VERSIONS`.
+LOGIN_TERMS_SENTENCE = "Ao continuar, você confirma que é maior de idade e aceita os Termos de uso."
 ADULT_DECLARATION_SOURCE = "storefront_login"
 
 
@@ -651,10 +656,12 @@ def record_adult_declaration(
 #
 # Medido no banco vivo em 16/09: 58 clientes ativos, 1 com aniversário, 5 com
 # consentimento de WhatsApp. O resolvedor de audiência (`services/audience.py`)
-# exclui quem não tem `Customer.birthday` provando 18+ e quem não tem
-# `CommunicationConsent` whatsapp `opted_in` — campanha direta alcançava
-# ninguém. O consentimento passa a ser PERGUNTADO no welcome gate, uma vez por
-# cliente, e continua acessível em Conta › Preferências.
+# exclui quem não prova maioridade e quem não tem `CommunicationConsent`
+# whatsapp `opted_in` — campanha direta alcançava ninguém. O consentimento
+# passa a ser PERGUNTADO no welcome gate, uma vez por cliente, e continua
+# acessível em Conta › Preferências. A maioridade NÃO é perguntada aqui: ela
+# é declarada ao entrar (`record_adult_declaration`, acima) — a chave de
+# novidades é só consentimento.
 #
 # "Já respondeu" tem duas provas, qualquer uma basta: existe linha de
 # consentimento no canal whatsapp (qualquer status — quem passou por
@@ -667,15 +674,6 @@ def record_adult_declaration(
 MARKETING_PROMPT_CHANNEL = "whatsapp"
 MARKETING_PROMPT_ANSWERED_AT = "marketing_prompt_answered_at"
 MARKETING_PROMPT_SOURCE = "storefront_welcome"
-
-
-class MarketingPromptRefused(ValueError):
-    """A resposta veio incompleta ou não pode virar consentimento."""
-
-    def __init__(self, detail: str, *, field: str = ""):
-        super().__init__(detail)
-        self.detail = detail
-        self.field = field
 
 
 def marketing_prompt_pending(customer) -> bool:
@@ -723,9 +721,10 @@ def answer_marketing_prompt(
     caixa do WhatsApp; gravar "não quero e-mail/SMS" por ele seria inventar
     recusa, e calaria o recado do próprio pedido nesses canais.
 
-    Exige aniversário gravado quando concede: novidades só vão para maiores de
-    18, e a data é o que prova. Menor conhecido não recebe consentimento (LGPD
-    art. 14) — a resposta fica carimbada e o canal segue sem linha.
+    Não pede data de nascimento: a maioridade foi declarada ao entrar
+    (`record_adult_declaration`). A data continua opcional no perfil e só vale
+    para o contrário — menor conhecido não recebe consentimento (LGPD art. 14):
+    a resposta fica carimbada e o canal segue sem linha.
     """
     from django.utils import timezone
     from shopman.guestman import ConsentService
@@ -736,12 +735,7 @@ def answer_marketing_prompt(
         customer = lock_active_customer(customer_ref=customer_ref)
         granted = False
         if whatsapp:
-            birthday = getattr(customer, "birthday", None)
-            if birthday is None:
-                raise MarketingPromptRefused(
-                    "Informe sua data de nascimento para receber novidades.", field="birthday"
-                )
-            if not is_known_minor(birthday):
+            if not is_known_minor(getattr(customer, "birthday", None)):
                 if not ConsentService.has_consent(customer_ref, MARKETING_PROMPT_CHANNEL):
                     ConsentService.grant_consent(
                         customer_ref,

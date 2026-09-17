@@ -6,10 +6,11 @@ import LoginPage from '~/pages/entrar.vue'
 // O gate de boas-vindas passa a fazer a pergunta de novidades. O que só a
 // PÁGINA decide, e por isso se monta a tela:
 //
-// - a chave nasce desligada e o campo de data só existe com ela ligada;
-// - os três caminhos falam com o servidor do jeito certo: ligada = PATCH do
-//   perfil (aniversário) + resposta `whatsapp: true`; desligada = só a resposta
-//   `whatsapp: false`; "Deixar para depois" = a mesma resposta `false`.
+// - a chave nasce desligada e é SÓ consentimento: nunca pede data de nascimento
+//   nem repete a maioridade (declarada ao ENTRAR, na nota ao lado do botão);
+// - os três caminhos falam com o servidor do jeito certo: ligada = resposta
+//   `whatsapp: true` (PATCH do perfil só quando o nome foi pedido); desligada =
+//   só a resposta `whatsapp: false`; "Deixar para depois" = a mesma resposta `false`.
 //   Em nenhum deles sai um opt-out (`enabled: false` em preferences/notifications).
 
 const { fetchMock, navigate, sonner } = vi.hoisted(() => {
@@ -85,15 +86,21 @@ describe('login — a pergunta de novidades no gate de boas-vindas', () => {
     const page = await openGate({ name: false, marketing: true })
 
     expect(page.find('form[data-login-welcome]').exists()).toBe(true)
-    expect(page.find('[data-login-marketing]').exists()).toBe(true)
-    expect(page.text()).toContain('Novidades da Nelson')
-    expect(page.text()).toContain('Você muda isso quando quiser em Conta › Preferências.')
+    const block = page.find('[data-login-marketing]')
+    expect(block.exists()).toBe(true)
+    expect(block.text()).toContain('Novidades da Nelson')
+    expect(block.text()).toContain('Quero receber novidades da Nelson pelo WhatsApp')
+    expect(block.text()).toContain('Mude quando quiser em Conta › Preferências.')
+    // A chave é só consentimento: nenhuma frase de idade, nenhum campo de data.
+    expect(block.text()).not.toMatch(/maior|18|anos|nascimento/i)
+    expect(page.find('#welcome-birthday').exists()).toBe(false)
     // Só a pergunta de novidades: nenhum campo de nome.
     expect(page.find('#welcome-name').exists()).toBe(false)
     const toggle = page.find('#welcome-marketing')
     expect(toggle.exists()).toBe(true)
     expect(toggle.attributes('aria-checked')).toBe('false')
-    expect(page.find('#welcome-birthday').exists()).toBe(false)
+    // A declaração de maioridade pertence à ENTRADA, não ao gate (já autenticado).
+    expect(page.find('[data-login-adult-declaration]').exists()).toBe(false)
   })
 
   it('asks the name too when the name is missing', async () => {
@@ -102,36 +109,26 @@ describe('login — a pergunta de novidades no gate de boas-vindas', () => {
     expect(page.find('#welcome-marketing').exists()).toBe(true)
   })
 
-  it('reveals the birthday only after the switch is turned on, and requires it', async () => {
+  it('switch on reveals nothing else and the button stays enabled', async () => {
     const page = await openGate({ name: false, marketing: true })
 
     await page.find('#welcome-marketing').trigger('click')
     await flushPromises()
 
     expect(page.find('#welcome-marketing').attributes('aria-checked')).toBe('true')
-    const birthday = page.find('#welcome-birthday')
-    expect(birthday.exists()).toBe(true)
-    expect(birthday.attributes('type')).toBe('date')
-    expect(page.text()).toContain('Novidades só vão para maiores de 18. A data fica no seu perfil.')
-    // Sem a data, o botão não segue.
+    expect(page.find('#welcome-birthday').exists()).toBe(false)
     const submit = page.findAll('button[type="submit"]').find((b: any) => b.text().includes('Continuar'))!
-    expect(submit.attributes('disabled')).toBeDefined()
+    expect(submit.attributes('disabled')).toBeUndefined()
   })
 
-  it('switch on: saves the birthday to the profile, then answers whatsapp=true — and never an opt-out', async () => {
+  it('switch on: answers whatsapp=true — no profile write, and never an opt-out', async () => {
     const page = await openGate({ name: false, marketing: true })
 
     await page.find('#welcome-marketing').trigger('click')
     await flushPromises()
-    await page.find('#welcome-birthday').setValue('1990-05-15')
-    await flushPromises()
     await continuar(page)
 
-    const patches = callsTo('/api/v1/account/profile/').filter(([, o]) => (o as any)?.method === 'PATCH')
-    expect(patches).toHaveLength(1)
-    // O nome não foi pedido: o PATCH leva o first_name que JÁ está no perfil, não o nome completo.
-    expect((patches[0]![1] as any).body).toEqual({ birthday: '1990-05-15', first_name: 'Ana' })
-
+    expect(callsTo('/api/v1/account/profile/').filter(([, o]) => (o as any)?.method === 'PATCH')).toHaveLength(0)
     const answers = callsTo('/api/v1/account/marketing-prompt/')
     expect(answers).toHaveLength(1)
     expect((answers[0]![1] as any)).toMatchObject({ method: 'POST', body: { whatsapp: true } })
@@ -167,24 +164,22 @@ describe('login — a pergunta de novidades no gate de boas-vindas', () => {
     expect(useShopSession().requiresWelcome.value).toBe(false)
   })
 
-  it('name + switch on: one PATCH with both, then the answer', async () => {
+  it('name + switch on: one PATCH with the name only, then the answer', async () => {
     const page = await openGate({ name: true, marketing: true })
 
     await page.find('#welcome-name').setValue('Talita')
     await page.find('#welcome-marketing').trigger('click')
     await flushPromises()
-    await page.find('#welcome-birthday').setValue('1990-05-15')
-    await flushPromises()
     await continuar(page)
 
     const patches = callsTo('/api/v1/account/profile/').filter(([, o]) => (o as any)?.method === 'PATCH')
     expect(patches).toHaveLength(1)
-    expect((patches[0]![1] as any).body).toEqual({ first_name: 'Talita', birthday: '1990-05-15' })
+    expect((patches[0]![1] as any).body).toEqual({ first_name: 'Talita' })
     expect(callsTo('/api/v1/account/marketing-prompt/')).toHaveLength(1)
     expect(navigate).toHaveBeenCalledWith('/conta')
   })
 
-  it('tells the person when the server could not opt them in (under 18 by the date)', async () => {
+  it('tells the person when the server could not opt them in (the profile date proves a minor)', async () => {
     fetchMock.mockImplementation((url: string, options?: { method?: string }) => {
       if (String(url).endsWith('/api/v1/account/marketing-prompt/')) return Promise.resolve({ ok: true, whatsapp_opted_in: false })
       return routeFetch(String(url), options)
@@ -193,12 +188,10 @@ describe('login — a pergunta de novidades no gate de boas-vindas', () => {
 
     await page.find('#welcome-marketing').trigger('click')
     await flushPromises()
-    await page.find('#welcome-birthday').setValue('2015-01-01')
-    await flushPromises()
     await continuar(page)
 
     expect(callsTo('/api/v1/account/marketing-prompt/')).toHaveLength(1)
     expect(navigate).toHaveBeenCalledWith('/conta')
-    expect(sonner.info).toHaveBeenCalledWith('Novidades só vão para maiores de 18. Sua resposta ficou guardada.')
+    expect(sonner.info).toHaveBeenCalledWith('Novidades só vão para maiores de idade. Sua resposta ficou guardada.')
   })
 })

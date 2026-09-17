@@ -62,6 +62,29 @@ def test_the_login_terms_version_is_one_the_marketing_recognizes():
     assert account_service.LOGIN_TERMS_VERSION in ADULT_DECLARING_TERMS_VERSIONS
 
 
+def test_the_sentence_on_screen_is_the_one_the_version_stands_for():
+    """A versão carimbada representa UMA frase. Se a tela mudar a frase, este
+    teste obriga a subir a versão (e a ensinar o marketing a nova)."""
+    from pathlib import Path
+
+    surface = Path(__file__).resolve().parents[4] / "surfaces" / "storefront-nuxt" / "app"
+    presentation = surface / "presentation" / "auth.ts"
+    if not presentation.exists():
+        pytest.skip("superfície Nuxt ausente neste checkout")
+    source = presentation.read_text(encoding="utf-8")
+    lead, _, terms = account_service.LOGIN_TERMS_SENTENCE.rstrip(".").rpartition(" os ")
+    assert f"'{lead} os'" in source, lead
+    assert f"'{terms}'" in source, terms
+    # Nunca "18", "anos" nem "adulto" na copy voltada ao cliente.
+    assert "18" not in account_service.LOGIN_TERMS_SENTENCE
+    assert "anos" not in account_service.LOGIN_TERMS_SENTENCE
+    assert "adult" not in account_service.LOGIN_TERMS_SENTENCE.lower()
+    # Toda porta de entrada com tela mostra a mesma frase (passkey ainda não tem tela).
+    for page in ("pages/entrar.vue", "pages/a.vue"):
+        assert "LOGIN_ADULT_DECLARATION_LEAD" in (surface / page).read_text(encoding="utf-8"), page
+
+
+
 # ── Código (OTP) ────────────────────────────────────────────────────────
 
 
