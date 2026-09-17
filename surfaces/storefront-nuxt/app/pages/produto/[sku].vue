@@ -139,7 +139,7 @@ useHead({
 </script>
 
 <template>
-  <main class="pb-6 pt-0 lg:pb-8">
+  <main class="shop-dock-reserve pt-0 md:pb-6 lg:pb-8">
     <!-- Breadcrumb full-width encostando na navbar. Mobile: sem respiro (a barra
          dourada encosta direto na foto full-bleed). Desktop: respiro (lg:mb-6)
          antes do card contido, no mesmo ritmo da tela de conta. -->
@@ -379,7 +379,7 @@ useHead({
         </section>
 
         <div
-          class="sticky bottom-20 z-30 mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
+          class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
