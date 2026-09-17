@@ -61,17 +61,20 @@ BRAND_PROFILES: tuple[str, ...] = (
 )
 
 #: A FAQ inicial. Cada resposta saiu de um fato que o sistema já afirma (seed,
-#: configuração de canal, copy da loja). O que depende de decisão do dono nasce
-#: como RASCUNHO (``published=False``): cancelamento (os termos ainda aguardam
-#: aval), CPF na nota do pedido online (sem campo no checkout), iFood (integração
-#: em homologação) e fidelidade (sem decisão de negócio registrada).
+#: configuração de canal, copy da loja), mas a copy pública ainda não passou pela
+#: revisão do dono (17/09/2026: "essas copies estão erradas, precisam de revisão").
+#: Por isso TODAS nascem como RASCUNHO: o gestor revisa e publica no Admin. A
+#: revisão é bloqueio de go-live (``config/public_copy_review.py``). As que
+#: dependem de decisão de negócio além do texto: cancelamento (os termos ainda
+#: aguardam aval), CPF na nota do pedido online (sem campo no checkout), iFood
+#: (integração em homologação) e fidelidade (sem decisão registrada).
 #: As quatro perguntas operacionais (entrega, horário, endereço, contato) NÃO
 #: estão aqui: a loja as responde da configuração viva (``FAQEntry`` as recusa).
 PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "o-que-e-fermentacao-natural",
         "position": 10,
-        "published": True,
+        "published": False,
         "question": "O que é fermentação natural (levain)?",
         "answer": (
             "Levain é o fermento natural feito só de farinha e água, que alimentamos todos os "
@@ -85,7 +88,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "voces-tem-opcoes-sem-gluten",
         "position": 20,
-        "published": True,
+        "published": False,
         "question": "Vocês têm opções sem glúten? E quanto a alérgenos?",
         "answer": (
             "Não temos. Somos uma padaria e trabalhamos com farinha de trigo todos os dias, então "
@@ -99,7 +102,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "como-faco-um-pedido-pelo-site",
         "position": 30,
-        "published": True,
+        "published": False,
         "question": "Como faço um pedido pelo site?",
         "answer": (
             "Navegue pelo cardápio e adicione os itens à sacola; a disponibilidade aparece em tempo "
@@ -112,7 +115,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "preciso-criar-uma-conta",
         "position": 40,
-        "published": True,
+        "published": False,
         "question": "Preciso criar uma conta? Como faço para entrar?",
         "answer": (
             "Você vê o cardápio à vontade; para finalizar um pedido, pedimos que entre com seu "
@@ -125,7 +128,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "quais-formas-de-pagamento-voces-aceitam",
         "position": 50,
-        "published": True,
+        "published": False,
         "question": "Quais formas de pagamento vocês aceitam?",
         "answer": (
             "No site, aceitamos Pix e cartão. O cartão é processado por um provedor seguro, e nós "
@@ -138,7 +141,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "posso-encomendar-para-outro-dia",
         "position": 60,
-        "published": True,
+        "published": False,
         "question": "Posso encomendar para outro dia? Preciso pagar antes?",
         "answer": (
             "Sim. Na finalização do pedido, escolha outra data; o calendário mostra só os dias "
@@ -151,7 +154,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "por-que-um-produto-aparece-como-indisponivel",
         "position": 70,
-        "published": True,
+        "published": False,
         "question": "Por que um produto aparece como indisponível?",
         "answer": (
             "Nossa produção é artesanal, feita em fornadas ao longo do dia e em quantidade "
@@ -164,7 +167,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "como-funciona-a-lista-de-espera",
         "position": 80,
-        "published": True,
+        "published": False,
         "question": "Como funciona a lista de espera de uma fornada?",
         "answer": (
             "Quando um item aparece em lista de espera, a próxima fornada dele já está planejada. "
@@ -177,7 +180,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "como-funciona-o-me-avise",
         "position": 90,
-        "published": True,
+        "published": False,
         "question": "Como funciona o botão Me avise?",
         "answer": (
             "Quando um produto está indisponível, toque em Me avise. Avisamos pelo WhatsApp "
@@ -190,7 +193,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
     {
         "ref": "como-acompanho-meu-pedido",
         "position": 100,
-        "published": True,
+        "published": False,
         "question": "Como acompanho meu pedido?",
         "answer": (
             "Depois de enviar o pedido, você acompanha cada etapa na página do pedido: pagamento, "
