@@ -22,7 +22,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E017  Catálogo de qualidade não tem grau ativo a preço cheio
   SHOPMAN_E018  Catálogo de qualidade tem política ativa incoerente
   SHOPMAN_E019  Configuração de produção da loja é inválida
-  SHOPMAN_W020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado (o envio já falha fechado em runtime)
+  SHOPMAN_W020  WhatsApp Marketing com flow ainda fechado ou em ensaio (o envio já falha fechado em runtime)
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
   SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
@@ -49,6 +49,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
   SHOPMAN_W019  Web Push do backstage desativado por ausência de VAPID
+  SHOPMAN_W021  Modo do WhatsApp de Marketing pedido sem cache compartilhado, sem lista do ensaio ou desconhecido
 """
 
 from __future__ import annotations
@@ -916,9 +917,10 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     dia em que importa, então ela passa a aparecer na subida.
 
     A ausência de flow é aviso de setup porque a aprovação em runtime já está
-    bloqueada. Um flow configurado sem o ensaio G-H03 também é AVISO: o mesmo
-    `safety_state` fecha o envio em runtime, e um `Error` aqui derrubava o deploy
-    do sistema inteiro por uma faixa que já não podia enviar nada.
+    bloqueada. Um flow configurado com o WhatsApp de Marketing fechado (ou em
+    ensaio) também é AVISO: o mesmo `safety_state` fecha o envio em runtime, e um
+    `Error` aqui derrubava o deploy do sistema inteiro por uma faixa que já não
+    podia enviar nada.
     """
     warnings = []
 
@@ -951,19 +953,34 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
         from shopman.shop.services import manychat_marketing_safety
 
         safety = manychat_marketing_safety.safety_state()
-        if not safety.safe:
+        if safety.state == manychat_marketing_safety.STATE_CANARY:
+            # Ensaio ligado de propósito: avisar na subida que o público inteiro NÃO
+            # recebe, para ninguém ler "deploy verde" como "WhatsApp aberto".
+            warnings.append(
+                Warning(
+                    f"WhatsApp Marketing em ensaio: só {safety.canary_size} contato(s) "
+                    "recebem mensagens de Marketing.",
+                    hint=(
+                        "Voltar SHOPMAN_MARKETING_WHATSAPP_MODE para blocked encerra o "
+                        "ensaio; open abre para todo contato elegível."
+                    ),
+                    id="SHOPMAN_W020",
+                )
+            )
+            return warnings
+        if not safety.allows_delivery:
             # AVISO, não erro. O caminho inseguro já falha fechado em RUNTIME
-            # (`require_safe_delivery`, `delivery_readiness`, `marketing_security`
-            # e a API do cockpit leem o mesmo `safety_state`): nenhum envio real
-            # sai sem o ensaio G-H03. Como `Error`, este check derrubava o job
+            # (`require_safe_delivery` na aprovação, `delivery_readiness` na tela e
+            # o próprio adapter leem o mesmo `safety_state`): nenhum envio real sai
+            # com o modo fechado. Como `Error`, este check derrubava o job
             # `release` inteiro (check --deploy) assim que o banco tinha uma
             # campanha de WhatsApp ativa com flow — e o alpha ficou sem deploy
             # de TODO o sistema por causa de uma faixa que já estava bloqueada
             # (16/09, 22:15 em diante, 7 deployments em rollback).
             warnings.append(
                 Warning(
-                    "WhatsApp Marketing permanece bloqueado: a isolação dos campos "
-                    "persistentes do ManyChat ainda não foi comprovada.",
+                    f"WhatsApp Marketing permanece bloqueado ({safety.reason_code}): "
+                    f"{safety.reason}",
                     hint=safety.action,
                     id="SHOPMAN_W020",
                 )
@@ -982,6 +999,57 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
             id="SHOPMAN_W014",
         )
     )
+    return warnings
+
+
+@register(deploy=True)
+def check_marketing_whatsapp_isolation(app_configs, **kwargs):
+    """Explicar na subida por que o WhatsApp de Marketing pedido continua fechado.
+
+    ``canary``/``open`` só valem com a reserva por assinante vista por TODOS os
+    processos (web e workers). Com cache local cada processo reserva sozinho, a
+    serialização não vale, e ``safety_state`` mantém o bloqueio em runtime.
+
+    ⚠️ AVISO, nunca `Error` — a mesma lição do SHOPMAN_W020 (16/09): o runtime já
+    falha fechado, e um `Error` aqui derrubaria o `release` do sistema inteiro por uma
+    faixa que já não envia nada.
+    """
+    from shopman.shop.services import manychat_marketing_safety as safety
+
+    raw_mode = str(getattr(settings, "SHOPMAN_MARKETING_WHATSAPP_MODE", "") or "").strip().lower()
+    mode = safety.whatsapp_mode()
+    if raw_mode and raw_mode not in safety.MODES:
+        return [
+            Warning(
+                f"SHOPMAN_MARKETING_WHATSAPP_MODE={raw_mode!r} não é um modo conhecido: "
+                "o WhatsApp de Marketing fica bloqueado.",
+                hint="Usar blocked, canary ou open.",
+                id="SHOPMAN_W021",
+            )
+        ]
+    if mode == safety.MODE_BLOCKED:
+        return []
+    warnings = []
+    if not safety.serialization_available():
+        warnings.append(
+            Warning(
+                f"SHOPMAN_MARKETING_WHATSAPP_MODE={mode} pedido, mas o cache não é "
+                "compartilhado entre processos: a serialização das mensagens com flow "
+                "não vale e o WhatsApp de Marketing continua bloqueado.",
+                hint="Configurar REDIS_URL (cache Redis) em web e workers, ou voltar o modo para blocked.",
+                id="SHOPMAN_W021",
+            )
+        )
+    if mode == safety.MODE_CANARY and not safety.canary_customer_refs():
+        warnings.append(
+            Warning(
+                "SHOPMAN_MARKETING_WHATSAPP_MODE=canary sem nenhum contato em "
+                "SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS: o WhatsApp de "
+                "Marketing continua bloqueado.",
+                hint="Informar os customer_ref do ensaio, separados por vírgula, ou voltar o modo para blocked.",
+                id="SHOPMAN_W021",
+            )
+        )
     return warnings
 
 

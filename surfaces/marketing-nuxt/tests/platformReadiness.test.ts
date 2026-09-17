@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canaryText,
   platformReadinessNote,
   readinessByPlatform,
   readinessPillClass,
@@ -77,6 +78,44 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(note.badge).toBe("limitada");
     expect(note.text).toBe("Instagram: Sem imagem pública, o Story não sai.");
     expect(note.text).not.toContain("Não vai publicar");
+  });
+
+  it("ensaio do WhatsApp diz QUANTOS recebem, nunca quem", () => {
+    const note = platformReadinessNote(
+      platform({
+        platform: "whatsapp",
+        state: "degraded",
+        ready: true,
+        limitation: "Ensaio: só 2 contatos recebem. O restante do público não recebe por WhatsApp.",
+        canary_recipients: 2,
+      }),
+      "WhatsApp",
+    );
+
+    expect(note.tone).toBe("limited");
+    expect(note.badge).toBe("ensaio");
+    expect(note.text).toBe("WhatsApp: Ensaio: só 2 contatos recebem.");
+    expect(note.text).not.toContain("Não vai publicar");
+  });
+
+  it("ensaio com um contato fala no singular", () => {
+    expect(canaryText(1)).toBe("Ensaio: só 1 contato recebe.");
+    expect(canaryText(3)).toBe("Ensaio: só 3 contatos recebem.");
+  });
+
+  it("bloqueio vence a contagem do ensaio", () => {
+    const note = platformReadinessNote(
+      platform({
+        platform: "whatsapp",
+        state: "blocked",
+        ready: false,
+        reason: "O ensaio do WhatsApp está ligado sem nenhum contato escolhido.",
+        canary_recipients: 0,
+      }),
+      "WhatsApp",
+    );
+
+    expect(note.badge).toBe("não publica");
   });
 
   it("simulação local é dita como simulação, não como defeito", () => {

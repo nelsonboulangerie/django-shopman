@@ -1,7 +1,7 @@
 # ADR-009 — WhatsApp via ManyChat: vendor lock-in consciente
 
 **Data**: 2026-04-18
-**Atualizado**: 2026-09-09
+**Atualizado**: 2026-09-17
 **Status**: Accepted
 
 ---
@@ -54,6 +54,56 @@ Até essa prova:
   qualquer chamada do caminho Marketing;
 - readiness, aprovação e deploy check expõem o mesmo reason code reparável:
   `manychat_custom_fields_unverified`.
+
+> A emenda de 2026-09-17, abaixo, substitui a exigência de prova externa de
+> isolamento por isolamento construído do nosso lado. Os demais limites desta seção
+> continuam valendo.
+
+### Emenda de 2026-09-17 — isolamento por construção e abertura por etapas
+
+**Decisão do dono (Pablo, 17/09):** resolver a corrida por construção, não por promessa
+do fornecedor, e abrir por canário.
+
+A prova externa de que o ManyChat "não mistura" campos entre flows concorrentes é
+fraca: a corrida depende de tempo, e um ensaio que não a reproduz não prova nada. O
+ponto de falha é conhecido e fica do nosso lado — a sequência "gravar N campos
+persistentes → `sendFlow`" para o MESMO assinante. Então a mistura passa a ser
+impossível por construção:
+
+1. **Uma mensagem com flow por assinante por vez.** Antes de gravar qualquer campo, o
+   adapter reserva o assinante no cache compartilhado
+   (`cache.add("manychat:flow-busy:<subscriber_id>", ..., timeout=SETTLE)`, com
+   `SETTLE = SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS`, padrão 120 s). A reserva não é
+   liberada no fim do envio: ela cobre justamente o tempo em que o flow ainda vai ler os
+   campos, e expira sozinha. Vale para todo envio com flow, inclusive de pedido;
+   `sendContent` não grava campo e não passa por ela.
+2. **Quem não reserva não escreve nada.** O resultado é `subscriber_busy` (ou
+   `flow_reservation_unavailable` quando o cache não responde): retentável, nunca
+   falha final e nunca `unknown`. O "Me avise" devolve a entrega à fila e reagenda a
+   directive para depois da janela sem gastar tentativa; o ledger durável devolve a
+   tentativa a `PREPARED` e o destino a `queued` com `next_attempt_at ≥ SETTLE`,
+   reutilizando o mesmo token; a onda legada de campanha reagenda só os refs
+   ocupados; o teste sandbox responde "aguarde" sem gravar aceite.
+3. **Cache compartilhado é pré-requisito.** Com LocMem/Dummy/arquivo cada processo
+   reserva sozinho e a serialização não vale; o estado continua bloqueado
+   (`manychat_flow_serialization_unavailable`) e o check de deploy `SHOPMAN_W021`
+   explica — como **aviso**, nunca erro (lição do `SHOPMAN_W020` em 16/09).
+4. **Três modos, padrão fechado** — `SHOPMAN_MARKETING_WHATSAPP_MODE`:
+   - `blocked` (padrão): comportamento anterior, `manychat_custom_fields_unverified`;
+   - `canary`: exige `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` não vazio e
+     serialização ativa. Só os refs listados recebem campanha e "Me avise"; outro ref e
+     assinatura anônima ficam de fora — suprimidos no claim com
+     `whatsapp_canary_recipient_excluded` e recusados pelo adapter na última porta.
+     A prontidão aparece como `degraded` com a contagem, nunca os refs;
+   - `open`: exige serialização ativa; todo contato elegível recebe.
+
+**O que G-H03 ainda cobria e continua como limitação conhecida:** não há receipt nem
+callback correlacionável de entrega; `Retry-After` e rate limit reais do ManyChat não
+foram medidos; o efeito de timeout depois de uma escrita continua ambíguo. O sistema
+já trata isso de forma conservadora — `200` é `accepted_unconfirmed`, resposta ambígua
+após possível escrita é `unknown` sem retry automático, e subscriber ID nunca vira
+receipt. A janela de 120 s é escolha operacional, não medida: revisar com a latência
+observada no canário.
 
 ## Motivação
 

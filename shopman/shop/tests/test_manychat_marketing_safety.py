@@ -19,7 +19,7 @@ def test_default_safety_is_an_explicit_non_retryable_block():
     assert state.safe is False
     assert state.state == "blocked_unverified"
     assert state.reason_code == "manychat_custom_fields_unverified"
-    assert "sandbox" in state.action
+    assert "ensaio" in state.action
     with pytest.raises(MarketingContractError) as caught:
         manychat_marketing_safety.require_safe_delivery()
     assert caught.value.code == state.reason_code

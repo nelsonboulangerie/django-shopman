@@ -858,6 +858,29 @@ campanha, então a relâmpago de amanhã também sai.
 em dobro chega ao cliente e não tem desfazer. Anúncio de evento fica com a chave vazia de
 propósito — duas fornadas do mesmo pão são dois anúncios legítimos.
 
+#### `announcement.notify` (onda legada, sem `outbox_ref`)
+
+Uma onda de WhatsApp de um anúncio. Payload com `outbox_ref` segue o ledger durável;
+sem ele, `AnnouncementNotifyHandler` resolve a audiência na hora e envia por pessoa.
+
+Dedupe: `announcement:{id}:wa:{wave}`; reenvio de ocupados:
+`announcement:{id}:wa:{wave}:busy:{directive_pk}`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `announcement_id` | `int` | campaign_service._queue_notify | AnnouncementNotifyHandler |
+| `wave` | `string` | campaign_service._queue_notify | AnnouncementNotifyHandler |
+| `wave_keys` | `list[string]` | campaign_service._queue_notify | audience.select_wave |
+| `sku` | `string` | campaign_service._queue_notify | (evidência) |
+| `waves_expected` | `int` | campaign_service._queue_notify | _record_wave |
+| `only_customer_refs` | `list[string]` | handlers.campaign._requeue_busy_recipients | AnnouncementNotifyHandler |
+
+`only_customer_refs` existe só na directive de reenvio: são os `customer_ref` que o
+ManyChat devolveu como `subscriber_busy` (outra mensagem com flow assentando). A
+directive nasce com `available_at` depois da janela
+`SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
+telefone, e quem já recebeu não recebe de novo.
+
 ---
 
 ## Channel.config

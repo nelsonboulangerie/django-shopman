@@ -555,6 +555,22 @@ try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
 except ValueError:
     MANYCHAT_API_TIMEOUT = 15
+
+# Marketing por WhatsApp (flows de campanha e de "Me avise"). O flow lê CAMPOS
+# PERSISTENTES do contato, então a isolação é por construção: uma mensagem com flow
+# por contato por vez, reservada no cache compartilhado durante a janela abaixo.
+# Modo `blocked` (padrão) fecha tudo; `canary` abre só para os refs listados;
+# `open` abre para todo contato elegível. `canary` e `open` exigem cache
+# compartilhado (Redis) — com cache local o estado continua bloqueado.
+SHOPMAN_MARKETING_WHATSAPP_MODE = (
+    os.environ.get("SHOPMAN_MARKETING_WHATSAPP_MODE", "blocked").strip().lower() or "blocked"
+)
+SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS = tuple(
+    ref.strip()
+    for ref in os.environ.get("SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS", "").split(",")
+    if ref.strip()
+)
+SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS = _env_int("SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS", 120)
 SHOPMAN_MANYCHAT = {
     "api_token": MANYCHAT_API_TOKEN,
     "base_url": os.environ.get("MANYCHAT_API_BASE", "https://api.manychat.com/fb"),

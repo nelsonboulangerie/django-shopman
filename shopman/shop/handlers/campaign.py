@@ -379,8 +379,17 @@ class AnnouncementNotifyHandler:
             sku=sku,
             available_wave_keys=payload.get("wave_keys"),
         )
+        only_refs = payload.get("only_customer_refs")
+        if isinstance(only_refs, list):
+            # Reenvio de quem estava OCUPADO (outra mensagem com flow assentando): a
+            # onda já saiu para os demais, então só estes voltam a ser tentados.
+            wanted = {str(ref) for ref in only_refs}
+            recipients = tuple(r for r in recipients if (r.customer_ref or "") in wanted)
 
-        sent, failed = _send_to(recipients, announcement=announcement)
+        busy_refs: list[str] = []
+        sent, failed = _send_to(recipients, announcement=announcement, busy_refs=busy_refs)
+        if busy_refs:
+            _requeue_busy_recipients(message, payload, announcement=announcement, wave=wave, refs=busy_refs)
         _record_wave(announcement, wave, sent=sent, failed=failed,
                      expected=int(payload.get("waves_expected") or 1))
         _settle(announcement)
@@ -433,9 +442,43 @@ def _whatsapp_backend() -> str | None:
     return None
 
 
-def _send_to(recipients, *, announcement) -> tuple[int, int]:
+def _requeue_busy_recipients(message, payload: dict, *, announcement, wave: str, refs: list[str]) -> None:
+    """Reagendar, depois da janela de assentamento, só quem estava ocupado.
+
+    A directive legada não tem recibo por destinatário: repetir a onda inteira mandaria
+    de novo para quem já recebeu. A nova directive carrega os refs (identificador
+    interno, nunca telefone) e o handler filtra a onda por eles.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.shop.directives import ANNOUNCEMENT_NOTIFY, create_deduped
+    from shopman.shop.services import manychat_marketing_safety
+
+    settle = manychat_marketing_safety.flow_settle_seconds()
+    create_deduped(
+        ANNOUNCEMENT_NOTIFY,
+        payload={**payload, "only_customer_refs": sorted(set(refs))},
+        dedupe_key=f"announcement:{announcement.pk}:wa:{wave}:busy:{getattr(message, 'pk', '')}",
+        available_at=timezone.now() + timedelta(seconds=settle),
+    )
+    logger.info(
+        "campaign.busy_recipients_requeued announcement=%s wave=%s count=%d retry_after=%d",
+        announcement.pk, wave, len(set(refs)), settle,
+    )
+
+
+def _send_to(recipients, *, announcement, busy_refs: list[str] | None = None) -> tuple[int, int]:
+    """Enviar a onda; devolve ``(enviados, falhas)``.
+
+    ``busy_refs``, quando informado, recebe o ``customer_ref`` de quem o ManyChat
+    recusou por OCUPADO (nada foi escrito) — esses não contam como falha, porque quem
+    chama os reagenda. Ocupado sem ref (assinatura anônima) não tem como ser
+    reencontrado e conta como falha.
+    """
     from shopman.shop.notifications import notify
-    from shopman.shop.services import campaign_identity
+    from shopman.shop.services import campaign_identity, manychat_marketing_safety
 
     # Materializa UMA vez: `recipients` pode ser gerador, e contá-lo duas vezes
     # devolveria zero na segunda.
@@ -450,6 +493,24 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
             announcement.pk, len(targets),
         )
         return 0, len(targets)
+
+    if backend == "manychat":
+        safety = manychat_marketing_safety.safety_state()
+        if safety.state == manychat_marketing_safety.STATE_CANARY:
+            # Ensaio do WhatsApp: quem está fora da lista não é tentado (o adapter
+            # recusaria) e não conta como falha — não é defeito do envio, é o ensaio.
+            kept = tuple(
+                r for r in targets
+                if not manychat_marketing_safety.recipient_refusal(
+                    getattr(r, "customer_ref", "") or "", state=safety,
+                )
+            )
+            if len(kept) != len(targets):
+                logger.info(
+                    "campaign.canary_excluded announcement=%s excluded=%d",
+                    announcement.pk, len(targets) - len(kept),
+                )
+            targets = kept
 
     body = announcement.body
     content = announcement.content or {}
@@ -511,6 +572,9 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
                 # os dois caminhos só se os dois falarem igual.
                 context={
                     **shared,
+                    # Não vira campo no ManyChat (denylist do adapter): é o que a última
+                    # porta antes do provedor confere contra a lista do ensaio.
+                    "customer_ref": getattr(recipient, "customer_ref", "") or "",
                     "action_url": personal or link,
                     # O link COMUM viaja junto para o ManyChat ter o que PERSISTIR no
                     # perfil sem levar o token de sessão do cliente para dentro do SaaS.
@@ -521,6 +585,15 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
                 },
                 backend=backend,
             )
+            ref = getattr(recipient, "customer_ref", "") or ""
+            if (
+                busy_refs is not None
+                and ref
+                and not getattr(result, "success", False)
+                and manychat_marketing_safety.is_flow_deferral(getattr(result, "error", None))
+            ):
+                busy_refs.append(ref)
+                continue
             sent += 1 if getattr(result, "success", False) else 0
             failed += 0 if getattr(result, "success", False) else 1
         except Exception:

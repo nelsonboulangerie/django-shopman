@@ -41,6 +41,8 @@ class PlatformReadiness:
     reason: str = ""
     action: str = ""
     limitation: str = ""
+    #: Quantos contatos recebem no ensaio do WhatsApp; ``None`` fora do ensaio.
+    canary_recipients: int | None = None
 
     @property
     def ready(self) -> bool:
@@ -407,13 +409,29 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
         from shopman.shop.services import manychat_marketing_safety
 
         safety = manychat_marketing_safety.safety_state()
-        if not safety.safe:
+        if not safety.allows_delivery:
             return PlatformReadiness(
                 **common,
                 state="blocked",
                 reason_code=safety.reason_code,
                 reason=safety.reason,
                 action=safety.action,
+            )
+        if safety.state == manychat_marketing_safety.STATE_CANARY:
+            # Ensaio: sai, mas só para os contatos escolhidos. "Pronto" prometeria o
+            # público inteiro; o envio recusa quem está fora da lista.
+            size = safety.canary_size
+            return PlatformReadiness(
+                **common,
+                state="degraded",
+                reason_code="whatsapp_canary_active",
+                limitation=(
+                    f"Ensaio: só {size} contato{'s' if size != 1 else ''} "
+                    f"{'recebem' if size != 1 else 'recebe'}. O restante do público não "
+                    "recebe por WhatsApp."
+                ),
+                action="Abrir para todos só depois de conferir as mensagens do ensaio",
+                canary_recipients=size,
             )
         return PlatformReadiness(
             **common,

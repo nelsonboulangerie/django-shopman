@@ -35,6 +35,9 @@ def _isolate_rules_state():
       so a later test that asserts a real send (``test_sms_opt_in_...``) sees no
       call and fails. It only reproduces under full-suite ordering, never in
       isolation — the classic test-pollution signature.
+    * ``notification_manychat`` reserva o assinante no cache por uma janela de
+      assentamento (uma mensagem com flow por pessoa por vez). A reserva de um teste
+      deixaria o MESMO assinante sintético "ocupado" no seguinte.
 
     Clear the caches, reset the bootstrap flag, drop the suppression flag, and
     snapshot/restore the validator registry around each test so state created in
@@ -56,6 +59,7 @@ def _isolate_rules_state():
         cache.delete(rules_engine.CACHE_KEY)
         cache.delete(attributes_service.CACHE_KEY)
         cache.delete(SHOP_CACHE_KEY)
+        _drop_manychat_flow_reservations()
         rules_engine._bootstrapped = False
         _external._suppressed_reason = None
 
@@ -66,6 +70,27 @@ def _isolate_rules_state():
     _reset_process_state()
     with reg._lock:
         reg._validators[:] = validators_snapshot
+
+
+def _drop_manychat_flow_reservations() -> None:
+    """Apagar as reservas ``manychat:flow-busy:*`` do cache local da suíte.
+
+    O cache da suíte é LocMem, que não tem busca por padrão; as chaves são poucas e
+    vivem no dicionário interno, então a varredura é direta.
+    """
+    from django.core.cache import caches
+
+    from shopman.shop.services.manychat_marketing_safety import FLOW_RESERVATION_KEY_PREFIX
+
+    backend = caches["default"]
+    store = getattr(backend, "_cache", None)
+    lock = getattr(backend, "_lock", None)
+    if not isinstance(store, dict) or lock is None:
+        return
+    prefix = backend.make_key(FLOW_RESERVATION_KEY_PREFIX)
+    with lock:
+        for key in [key for key in store if key.startswith(prefix)]:
+            backend._delete(key)
 
 
 # A fixture `_identifica_o_operador_da_sessao` viveu aqui entre o T4 e a D1
