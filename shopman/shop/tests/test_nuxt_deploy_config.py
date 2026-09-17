@@ -215,7 +215,7 @@ def test_operator_group_env_prefixes_name_apps_of_that_group():
 def test_operator_groups_report_capacity_as_one_service():
     """`NUXT_OPERATOR_SERVICE_NAME` é do SERVIÇO: sem prefixo, igual ao nome do grupo.
 
-    O medidor de capacidade (#783) lê o cgroup do contêiner, que é um só para
+    O medidor de capacidade (#783) lê o contêiner, que é um só para
     todos os filhos. Com prefixo por app (ou ausente), cada processo se
     reportaria com o próprio nome e sairia um alerta por app para o mesmo
     contêiner.
@@ -230,6 +230,38 @@ def test_operator_groups_report_capacity_as_one_service():
             assert envs.get("NUXT_OPERATOR_SERVICE_NAME") == group, f"{path.name}: {group} sem nome de serviço"
             per_app = [k for k in envs if k.endswith("__NUXT_OPERATOR_SERVICE_NAME")]
             assert not per_app, f"{path.name}: {group} sobrescreve o nome do serviço por app: {per_app}"
+
+
+def test_operator_groups_declare_container_size_matching_the_instance():
+    """`SHOPMAN_CONTAINER_*` é o tamanho do contêiner para o medidor de capacidade.
+
+    Quando o cgroup não é legível (sandbox do App Platform), o medidor soma os
+    processos e precisa saber o limite. Sem prefixo, porque os filhos dividem o
+    MESMO contêiner; e igual ao `instance_size_slug`, senão o percentual mente
+    assim que alguém trocar o tamanho da instância e esquecer a env.
+    """
+    import re
+
+    import yaml
+
+    for path in DEPLOY_SPECS:
+        spec = yaml.safe_load(path.read_text())
+        services = {svc["name"]: svc for svc in spec.get("services") or []}
+        for group in _operator_groups():
+            service = services[group]
+            envs = _env_map(service)
+            slug = service["instance_size_slug"]
+            match = re.match(r"^apps-[a-z]+-(\d+)vcpu-(\d+(?:\.\d+)?)gb(?:-fixed)?$", slug)
+            assert match, f"{path.name}: {group} com instance_size_slug que o teste não sabe ler: {slug}"
+            vcpus, gigabytes = int(match.group(1)), float(match.group(2))
+            assert envs.get("SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES") == str(int(gigabytes * 1024**3)), (
+                f"{path.name}: {group} ({slug}) declara memória diferente da instância"
+            )
+            assert envs.get("SHOPMAN_CONTAINER_CPU_CORES") == str(vcpus), (
+                f"{path.name}: {group} ({slug}) declara núcleos diferentes da instância"
+            )
+            per_app = [k for k in envs if re.match(r"^[A-Z][A-Z0-9]*__SHOPMAN_CONTAINER_", k)]
+            assert not per_app, f"{path.name}: {group} declara tamanho de contêiner por app: {per_app}"
 
 
 def test_operator_groups_have_capacity_alerts():

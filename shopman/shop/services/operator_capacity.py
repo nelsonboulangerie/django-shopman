@@ -1,8 +1,9 @@
 """Capacidade dos apps de operação — a regra que transforma leitura em aviso.
 
 Quem mede é o próprio app: a rota ``/health/capacity`` da layer ``operator-kit`` lê
-o cgroup do CONTÊINER (memória e CPU do serviço inteiro — certo tanto com um app
-por contêiner quanto com vários processos Nitro dividindo o mesmo) e reporta a
+a memória e a CPU do CONTÊINER (do serviço inteiro — certo tanto com um app por
+contêiner quanto com vários processos Nitro dividindo o mesmo), pelo cgroup ou,
+sem cgroup legível, pela soma dos processos visíveis, e reporta a
 amostra aqui, na mesma chamada que autentica o operador e devolve os limites do
 Admin. Não há processo novo nem laço em segundo plano: a amostra só existe
 enquanto alguém tem um app aberto — e é justamente no pico, com os apps abertos,
@@ -10,7 +11,7 @@ que a pergunta importa. Sem ninguém olhando, o alerta nativo da DigitalOcean
 (``CPU_UTILIZATION``/``MEM_UTILIZATION`` no spec) cobre.
 
 Por que não o ``maintenance-worker``: ele roda no contêiner do Django e não
-enxerga o cgroup dos Nuxt. Medir de lá seria inventar número.
+enxerga o contêiner dos Nuxt. Medir de lá seria inventar número.
 
 A regra (por serviço):
 

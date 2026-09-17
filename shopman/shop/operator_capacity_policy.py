@@ -2,7 +2,7 @@
 
 Os apps Nuxt de operador (PDV, Cozinha, Pedidos, Produção, Central, Marketing, B.I.,
 Compras) rodam em contêineres com memória e CPU contadas. Cada app lê o uso do
-PRÓPRIO contêiner (cgroup) e mostra no rail; estes limites dizem quando a leitura
+PRÓPRIO contêiner (cgroup ou soma dos processos) e mostra no rail; estes limites dizem quando a leitura
 deixa de ser neutra e quando vira aviso para o gestor:
 
 - ``attention_percent`` — a partir deste uso (memória ou CPU, o maior) o indicador

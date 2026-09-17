@@ -2,7 +2,7 @@
 
 ``POST /api/v1/backstage/operator/capacity/`` é chamado pelo BFF da layer
 ``operator-kit`` (rota ``/health/capacity``), nunca pelo navegador direto: o Nitro
-lê o cgroup do próprio contêiner e manda a amostra com o cookie do operador. Uma
+lê o próprio contêiner (cgroup ou soma dos processos) e manda a amostra com o cookie do operador. Uma
 chamada só faz as três coisas de que a rota precisa — prova que há operador
 identificado (``IsBackstageOperator``), devolve os limites de atenção/crítico
 que o Admin guarda e anda a regra de aviso (``shop/services/operator_capacity``).

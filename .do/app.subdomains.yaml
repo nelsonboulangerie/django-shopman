@@ -724,6 +724,16 @@ services:
         value: operator-floor
         scope: RUN_TIME
         type: GENERAL
+      # Tamanho do contêiner para o medidor quando o cgroup não é legível; TEM de
+      # acompanhar o instance_size_slug (apps-s-1vcpu-1gb-fixed = 1 GiB, 1 vCPU).
+      - key: SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES
+        value: "1073741824"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: SHOPMAN_CONTAINER_CPU_CORES
+        value: "1"
+        scope: RUN_TIME
+        type: GENERAL
       - key: NUXT_DJANGO_BASE_URL
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
@@ -842,6 +852,15 @@ services:
       # Nome do SERVIÇO para o medidor de capacidade (ver operator-floor).
       - key: NUXT_OPERATOR_SERVICE_NAME
         value: operator-office
+        scope: RUN_TIME
+        type: GENERAL
+      # Tamanho do contêiner (ver operator-floor): apps-s-1vcpu-0.5gb = 512 MiB, 1 vCPU.
+      - key: SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES
+        value: "536870912"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: SHOPMAN_CONTAINER_CPU_CORES
+        value: "1"
         scope: RUN_TIME
         type: GENERAL
       - key: NUXT_DJANGO_BASE_URL
