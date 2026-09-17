@@ -177,10 +177,16 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   sem gravar. O access link (`/a`) só desvia por `/entrar?welcome=1` quando o nome falta.
 - **Convite de novidades (sheet):** a pergunta "avisos pelo WhatsApp?" **não é passo do login** —
   é o `MarketingPromptSheet` (bottom sheet, montado uma vez no shell), dirigido por
-  `welcome_asks_marketing` no payload de sessão (nunca respondida: sem linha de consentimento whatsapp
-  e sem `Customer.metadata.marketing_prompt_answered_at`). Sobe ~600 ms depois de a página montar, só
-  autenticado, **nunca** em `/entrar`, `/a`, `/finalizar/**` e `/pedido/**`; uma vez por sessão de
-  navegador (`sessionStorage`), mesmo se a resposta falhar. Copy fixa (três linhas + chave + fechar):
+  `useShopSession.welcomeAsksMarketing` (nunca respondida: sem linha de consentimento whatsapp e sem
+  `Customer.metadata.marketing_prompt_answered_at`). A fonte principal é a **home**
+  (`omotenashi.marketing_prompt_pending`, toda visita — cobre quem entra pelo aparelho reconhecido sem
+  passar pelo login; anônimo = false; falha fechado); o `welcome_asks_marketing` do payload de sessão
+  também alimenta. Nenhuma resposta tardia reabre o que foi respondido nesta sessão de navegador.
+  Sobe ~600 ms depois de a página montar, só autenticado, **nunca** em `/entrar`, `/a`,
+  `/finalizar/**` e `/pedido/**`; uma vez por sessão de navegador (`sessionStorage`), mesmo se a
+  resposta falhar. **Um convite por página** (`useShopInvite`): se o convite de instalar o app
+  (`PwaInstallInvite`) está aberto ou abriu nesta página, o de novidades espera a próxima navegação, e
+  vice-versa. Copy fixa (três linhas + chave + fechar):
   "Saber das fornadas antes de todo mundo?" / chave "Avisos pelo WhatsApp" (nasce desligada, SÓ
   consentimento — sem data de nascimento, sem frase de idade) / "Mude quando quiser em Preferências.".
   LIGAR = `POST account/marketing-prompt/ {whatsapp: true}` na hora, fecha e toast "Combinado. Você vai
