@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-16
+- **Última verificação:** 2026-09-17
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -163,6 +163,9 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | Platform/SRE | `false`; sem tentativa | MKT-054 |
 | `SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED` | Release Manager | `false`; comando unitário não cruza a fronteira | desligar após o canário |
 | `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | Platform Owner | vazio; canal indisponível | por adapter/canário |
+| `SHOPMAN_MARKETING_WHATSAPP_MODE` | Platform Owner | `blocked`; nenhum evento de Marketing sai por WhatsApp. `canary`/`open` sem cache compartilhado continuam bloqueados | por etapa: `canary` → `open` |
+| `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` | Platform Owner | vazio; `canary` sem lista fica bloqueado | esvaziar ao fim do ensaio |
+| `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` | Platform Owner | `120`; inválido volta ao padrão | revisar com a latência observada no ensaio |
 | `SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
@@ -177,6 +180,15 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 sintéticos pertencem exclusivamente a `config.settings_marketing_demo`. A simulação
 recusa ambiente não local e qualquer flag que permita saída externa. Nenhuma flag
 desliga consentimento, permissão, CSRF, redaction, unicidade ou revalidação pré-envio.
+
+WhatsApp de Marketing (campanha e "Me avise") abre por modo, não por credencial. Cada
+mensagem com flow reserva o contato no cache compartilhado durante a janela de
+assentamento, antes de gravar qualquer campo; outra mensagem com flow para a mesma
+pessoa volta depois (`subscriber_busy`, retentável, nunca `unknown`). Em `canary`, quem
+está fora da lista é suprimido no claim (`whatsapp_canary_recipient_excluded`) e o
+adapter recusa na última porta; a prontidão aparece como `degraded` com
+`canary_recipients` (contagem, nunca refs). Decisão e limites em
+[ADR-009](../decisions/adr-009-whatsapp-via-manychat.md).
 
 Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
 `META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,
