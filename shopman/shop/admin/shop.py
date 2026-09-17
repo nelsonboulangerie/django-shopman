@@ -36,6 +36,10 @@ from shopman.shop.loyalty_config import (
     TIER_LABELS,
     LoyaltyConfig,
 )
+from shopman.shop.marketing_policy import (
+    DEFAULT_WHATSAPP_MINIMUM_AUDIENCE,
+    WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
+)
 from shopman.shop.models import (
     NotificationTemplate,
     Shop,
@@ -510,6 +514,22 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=purchase_help[key] + " Em branco = padrão do sistema.",
         )
+    fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
+        label="Mínimo de pessoas elegíveis numa campanha de WhatsApp",
+        required=False,
+        min_value=WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_WHATSAPP_MINIMUM_AUDIENCE)}),
+        error_messages={
+            "invalid": "Informe um número inteiro de pessoas (1 ou mais).",
+            "min_value": "O mínimo aceito é 1 pessoa: uma campanha precisa ter para quem ir.",
+        },
+        help_text=(
+            "A campanha geral por WhatsApp só é aprovada com pelo menos este número de "
+            "pessoas elegíveis. Aumentar impede que uma campanha “geral” mire uma pessoa "
+            "só. Começa em 1 de propósito, para o início da operação. Não vale no ensaio "
+            f"(canário). Em branco = {DEFAULT_WHATSAPP_MINIMUM_AUDIENCE}."
+        ),
+    )
     return fields
 
 
@@ -914,6 +934,14 @@ class ShopForm(forms.ModelForm):
         if self._has("defaults_pos_fiscal_toggle"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
+
+        if self._has("defaults_marketing_whatsapp_minimum_audience"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            # Mostra o que está GRAVADO; ausente fica em branco com o padrão no
+            # placeholder — salvar a página por outro motivo não congela o padrão.
+            self.fields["defaults_marketing_whatsapp_minimum_audience"].initial = marketing.get(
+                "whatsapp_minimum_audience"
+            )
 
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
@@ -1349,6 +1377,19 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("pos", None)
 
+        if self._has("defaults_marketing_whatsapp_minimum_audience"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            marketing = dict(marketing)
+            minimum = self.cleaned_data.get("defaults_marketing_whatsapp_minimum_audience")
+            if minimum is None:
+                marketing.pop("whatsapp_minimum_audience", None)
+            else:
+                marketing["whatsapp_minimum_audience"] = int(minimum)
+            if marketing:
+                defaults["marketing"] = marketing
+            else:
+                defaults.pop("marketing", None)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             stock_alerts = dict(stock_alerts)
@@ -1758,6 +1799,16 @@ _INTEGRATIONS_FIELDSETS = (
         {
             "fields": ("integrations_notification_default", "integrations_fiscal"),
             "description": ("Canal padrão de notificação ao cliente e emissor fiscal. Em branco = herda do sistema."),
+        },
+    ),
+    (
+        "Campanhas de WhatsApp",
+        {
+            "fields": ("defaults_marketing_whatsapp_minimum_audience",),
+            "description": (
+                "Política da loja para campanhas gerais de Marketing enviadas por WhatsApp. "
+                "Quem mudou e quando fica no histórico desta página."
+            ),
         },
     ),
     (

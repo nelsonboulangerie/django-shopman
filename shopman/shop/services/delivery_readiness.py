@@ -125,7 +125,7 @@ def _pipeline_block(
             facts_as_of=now,
             source_status="fresh",
             reason="O envio para as plataformas está pausado neste ambiente.",
-            action="Pedir à operação para ativar o worker de entregas",
+            action="Pedir à operação para ligar a entrega de Marketing no worker de manutenção",
         )
     return None
 

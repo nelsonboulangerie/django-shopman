@@ -217,16 +217,20 @@ export function recoveryDisabledReason(reason: string): string {
 
 /**
  * Aprovação feita no ensaio do WhatsApp. Fora do ensaio, campanha geral por WhatsApp
- * exige ao menos 10 pessoas elegíveis (impede mirar uma pessoa); no ensaio quem recebe
- * já é só a lista de canário da operação, e o comprovante registra `canary=true`.
+ * exige o mínimo de pessoas elegíveis configurado no Admin (impede mirar uma pessoa);
+ * no ensaio quem recebe já é só a lista de canário da operação, e o comprovante
+ * registra `canary=true` com o `minimum_count` que não valeu. O número vem do
+ * comprovante — a tela não carrega um mínimo próprio para não mentir quando a loja o
+ * muda. Comprovante antigo, sem o número, recebe a frase sem número.
  */
-export const WHATSAPP_CANARY_APPROVAL_NOTE =
-  "Ensaio: o mínimo de 10 não vale; só a lista de canário recebe.";
-
 export function approvalCanaryNote(receipt: MarketingCommandReceipt): string {
-  return receipt.kind === "approve" && receipt.outcome.canary === true
-    ? WHATSAPP_CANARY_APPROVAL_NOTE
-    : "";
+  if (receipt.kind !== "approve" || receipt.outcome.canary !== true) return "";
+  const minimum = receipt.outcome.minimum_count;
+  const skipped =
+    typeof minimum === "number" && Number.isInteger(minimum) && minimum > 0
+      ? `o mínimo de ${minimum} não vale`
+      : "o mínimo de público não vale";
+  return `Ensaio: ${skipped}; só a lista de canário recebe.`;
 }
 
 export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {

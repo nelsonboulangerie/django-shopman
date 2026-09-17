@@ -80,6 +80,10 @@ describe("Marketing result presentation", () => {
   it("says a canary approval skipped the minimum only when the receipt records it", () => {
     const canary = {
       kind: "approve",
+      outcome: { audience_count: 1, canary: true, minimum_count: 3 },
+    } as MarketingCommandReceipt;
+    const legacyCanary = {
+      kind: "approve",
       outcome: { audience_count: 1, canary: true },
     } as MarketingCommandReceipt;
     const regular = {
@@ -92,7 +96,10 @@ describe("Marketing result presentation", () => {
     } as MarketingCommandReceipt;
 
     expect(approvalCanaryNote(canary)).toBe(
-      "Ensaio: o mínimo de 10 não vale; só a lista de canário recebe.",
+      "Ensaio: o mínimo de 3 não vale; só a lista de canário recebe.",
+    );
+    expect(approvalCanaryNote(legacyCanary)).toBe(
+      "Ensaio: o mínimo de público não vale; só a lista de canário recebe.",
     );
     expect(approvalCanaryNote(regular)).toBe("");
     expect(approvalCanaryNote(forged)).toBe("");

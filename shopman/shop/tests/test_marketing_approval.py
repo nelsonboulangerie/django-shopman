@@ -525,11 +525,13 @@ def test_whatsapp_below_minimum_is_rejected_before_any_effect_shaped_row(actor, 
     assert announcement.version == 1
     receipt = MarketingCommandReceipt.objects.get(ref=caught.value.receipt_ref)
     assert receipt.state == MarketingCommandReceipt.State.REJECTED
+    # Sem política gravada, o mínimo é o padrão do dono (1): ninguém elegível recusa.
     assert receipt.outcome == {
         "code": "audience_below_minimum",
         "eligible_count": 0,
-        "minimum_count": 10,
+        "minimum_count": 1,
     }
+    assert "ao menos 1 pessoa elegível." in caught.value.detail
     assert MarketingContentArtifact.objects.count() == 0
     assert MarketingOutbox.objects.count() == 0
 

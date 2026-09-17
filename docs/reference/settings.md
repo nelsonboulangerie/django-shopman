@@ -400,7 +400,7 @@ Esse segredo pertence ao Doorman, nao ao ManyChat API token.
 |---------|------|---------|-----------|
 | `SHOPMAN_MARKETING_BASE_URL` | URL | vazio | Host público do cockpit. Vazio remove o atalho da Central/Admin em vez de criar link morto. |
 | `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` | bool | `false` | Autoriza somente o handoff da outbox transacional. Não autoriza tentativa de provider. |
-| `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | bool | `false` | Autoriza o worker de destinos. Ainda exige adapter configurado e pronto. |
+| `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | bool | `false` | Autoriza a passada de entrega de destinos, que roda dentro do `maintenance_worker` (sem componente próprio). Ainda exige adapter configurado e pronto. |
 | `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | dict por plataforma | `{}` | Registro Python dos adapters de entrega. Ausência deixa a plataforma indisponível; não existe fallback entre plataformas. |
 | `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` | bool | `false` | Registra `marketing_delivery_whatsapp` em `SHOPMAN_MARKETING_DELIVERY_ADAPTERS`: campanha de WhatsApp aprovada passa do ledger durável ao ManyChat. Não decide quem recebe — isso é `SHOPMAN_MARKETING_WHATSAPP_MODE`, conferido de novo na última porta. `settings_marketing_demo` mantém o simulador local. |
 | `SHOPMAN_MARKETING_WHATSAPP_MODE` | `blocked` \| `canary` \| `open` | `blocked` | Abertura do Marketing por WhatsApp (campanha e "Me avise"). `canary` e `open` exigem cache compartilhado (Redis); com cache local o estado fica bloqueado. Valor desconhecido conta como `blocked`. Ver ADR-009 (emenda 17/09). |
