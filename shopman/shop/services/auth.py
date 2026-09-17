@@ -70,9 +70,10 @@ def trusted_device_prefill(request) -> tuple[str, str]:
         return "", ""
 
 
-# O BFF da loja se identifica por este cabeçalho (segredo compartilhado com o
-# Nitro: `SHOPMAN_BFF_PROXY_SECRET` aqui, `NUXT_DJANGO_PROXY_SECRET` lá). Sem ele,
-# ninguém consegue pedir ao Django que leia um salto a mais do X-Forwarded-For.
+# Os BFFs Nuxt (loja e apps de operador) se identificam por este cabeçalho
+# (segredo compartilhado com o Nitro: `SHOPMAN_BFF_PROXY_SECRET` aqui,
+# `NUXT_DJANGO_PROXY_SECRET` lá). Sem ele, ninguém consegue pedir ao Django que
+# leia um salto a mais do X-Forwarded-For.
 BFF_PROXY_SECRET_HEADER = "X-Shopman-Proxy-Secret"
 
 
@@ -89,7 +90,7 @@ def _is_trusted_bff(request) -> bool:
 
 
 def _client_ip_behind_bff(request, depth: int) -> str | None:
-    """IP do cliente final quando quem conectou foi o BFF da loja.
+    """IP do cliente final quando quem conectou foi um BFF Nuxt (loja ou operador).
 
     O navegador fala com o Nitro, e o Nitro abre conexão NOVA para o `api.` pela
     rede pública. A borda da plataforma trata o Nitro como um cliente qualquer e
@@ -126,7 +127,7 @@ def client_ip(request) -> str:
     Resolve via ``X-Forwarded-For`` com o mesmo ``TRUSTED_PROXY_DEPTH`` que os
     endpoints do doorman já usam.
 
-    Quando a requisição traz o segredo do BFF da loja, lê um salto a mais: o
+    Quando a requisição traz o segredo dos BFFs Nuxt, lê um salto a mais: o
     N-ésimo da direita seria o IP de saída do Nitro, igual para todo visitante.
     Sem o segredo, o cabeçalho é ignorado — um cliente direto não consegue pedir
     a leitura mais funda para escolher o IP que quer ver gravado.

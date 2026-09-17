@@ -597,10 +597,10 @@ services:
       - key: VAPID_CLAIMS_EMAIL
         scope: RUN_TIME
         type: SECRET
-      # Segredo compartilhado com o BFF da loja (lá: NUXT_DJANGO_PROXY_SECRET,
-      # MESMO valor). Com ele o Django lê um salto a mais do X-Forwarded-For nos
+      # Segredo compartilhado com os BFFs Nuxt (loja e apps de operador; lá:
+      # NUXT_DJANGO_PROXY_SECRET, MESMO valor). Com ele o Django lê um salto a mais do X-Forwarded-For nos
       # pedidos que vêm do Nitro — senão grava o IP de saída do Nitro como IP de
-      # consentimento/maioridade (LGPD). Vazio = desligado. Ver config/settings.py.
+      # consentimento/maioridade (LGPD) e na trilha de acesso de operador. Vazio = desligado. Ver config/settings.py.
       - key: SHOPMAN_BFF_PROXY_SECRET
         scope: RUN_TIME
         type: SECRET
@@ -684,6 +684,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       # O PDV vive na RAIZ do subdomínio pos.
       - key: NUXT_APP_BASE_URL
         value: /
@@ -716,6 +723,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
@@ -755,6 +769,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
@@ -798,6 +819,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
@@ -837,6 +865,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
@@ -884,6 +919,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
@@ -919,6 +961,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
@@ -965,6 +1014,13 @@ services:
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: este BFF chama o `api.`
+      # pela rede pública e, sem o segredo, o Django grava o IP de SAÍDA do Nitro
+      # na trilha de acesso de operador (SignInEvent) e no aviso "Sua conta foi
+      # usada". Lido pela layer operator-kit (runtimeConfig.djangoProxySecret).
+      - key: NUXT_DJANGO_PROXY_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: NUXT_APP_BASE_URL
         value: /
         scope: RUN_TIME
