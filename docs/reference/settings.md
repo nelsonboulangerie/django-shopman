@@ -173,7 +173,7 @@ de compra todo dia, em silêncio.
 
 | Setting | Tipo | Default | Descrição |
 |---------|------|---------|-----------|
-| `MESSAGE_SENDER_CLASS` | str | `"...ConsoleSender"` | Sender padrão. **Não usar em produção** (boot check impede). |
+| `MESSAGE_SENDER_CLASS` | str | `"...ConsoleSender"` | Sender único, usado **só quando `DELIVERY_CHAIN` está vazia**. Sender que revela o código (`reveals_code = True`) é recusado no boot fora de DEBUG. |
 | `DELIVERY_CHAIN` | list | `[]` | Cadeia de fallback: `["whatsapp", "sms", "email"]` |
 | `DELIVERY_SENDERS` | dict | `{}` | Map método → classe sender para a chain |
 | `WHATSAPP_ACCESS_TOKEN` | str | `""` | Token da WhatsApp Cloud API |
@@ -222,7 +222,10 @@ N-ésimo da direita seria o IP de saída do Nitro. Sem ele, o cabeçalho é igno
 
 O app **recusa iniciar** com `DEBUG=False` se:
 - `ACCESS_LINK_API_KEY` está vazio
-- `MESSAGE_SENDER_CLASS` é `ConsoleSender`
+- `DELIVERY_CHAIN` está vazia **e** `MESSAGE_SENDER_CLASS` aponta para um sender
+  que revela o código em vez de entregá-lo (`reveals_code = True` — hoje
+  `ConsoleSender` e `LogSender`). A pergunta é de capability, não de nome: a
+  trava comparava `ConsoleSender` por string e deixava o irmão passar.
 - `DEFAULT_DOMAIN` contém "localhost"
 
 ### Exemplo de configuração para produção
