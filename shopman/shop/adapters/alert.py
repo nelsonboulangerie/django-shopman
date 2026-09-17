@@ -96,6 +96,13 @@ def resolve(type: str, *, order_ref: str, actor: str) -> int:
     return resolve_alerts(type, order_ref=order_ref, actor=actor)
 
 
+def resolve_matching(type: str, *, message_contains: str, actor: str) -> int:
+    """Resolve causas abertas sem pedido (ex.: um serviço), casando o marcador da mensagem."""
+    from shopman.backstage.services.alerts import resolve_alerts_matching
+
+    return resolve_alerts_matching(type, message_contains=message_contains, actor=actor)
+
+
 def connect_saved(receiver, *, dispatch_uid: str, weak: bool = False) -> None:
     """Connect a receiver to OperatorAlert post-save without leaking imports."""
     from django.db.models.signals import post_save

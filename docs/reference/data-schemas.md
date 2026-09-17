@@ -1142,6 +1142,23 @@ Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketin
 |-------|------|----------|-----------|
 | `marketing.whatsapp_minimum_audience` | `int` (≥ 1) | `resolve_marketing_policy` → `approve_command` (`shop/services/marketing_approval.py`) | Mínimo de pessoas elegíveis para aprovar campanha **geral** por WhatsApp (impede mirar uma pessoa). **Ausente = 1** (decisão do dono, 2026-09-17). Não vale no modo `canary`. Editado na página "Integrações" do ShopAdmin; em branco remove a chave. Valor gravado fora do contrato (0, negativo, texto, booleano) cai no padrão com `logger.warning`. |
 
+### Capacidade dos apps de operação — `Shop.defaults["operator_capacity"]`
+
+Limites do indicador de capacidade dos apps Nuxt de operador e do alerta
+`operator_capacity_critical`. Source-of-truth tipado em
+`shopman/shop/operator_capacity_policy.py` (`OperatorCapacityPolicy`); a regra mora em
+`shopman/shop/services/operator_capacity.py`.
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `operator_capacity.attention_percent` | `int` (1–100) | `resolve_operator_capacity_policy` → `OperatorCapacityView` → rail dos apps | Uso (maior entre memória% e CPU% do contêiner) a partir do qual o indicador fica âmbar. Não gera aviso. **Ausente = 75.** |
+| `operator_capacity.critical_percent` | `int` (1–100, > atenção) | idem + `evaluate_sample` | A partir deste uso o indicador fica vermelho; acima por `sustain_minutes` nasce `OperatorAlert` crítico (dedupe por serviço). **Ausente = 90.** |
+| `operator_capacity.sustain_minutes` | `int` (1–60) | `evaluate_sample` | Minutos acima do crítico antes do alerta; e abaixo da atenção antes de o sistema resolvê-lo. **Ausente = 5.** |
+
+Editado na página "Integrações" do ShopAdmin (seção "Capacidade dos apps de operação"); em
+branco remove a chave. Par invertido (atenção ≥ crítico) ou valor fora da faixa gravado por
+edição crua do JSON cai no padrão com `logger.warning`.
+
 ### Alertas de estoque — `Shop.defaults["stock_alerts"]`
 
 | Chave | Tipo | Lido por | Descrição |

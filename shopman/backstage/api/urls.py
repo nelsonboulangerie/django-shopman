@@ -189,6 +189,7 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .operator_capacity import OperatorCapacityView
 from .print_jobs import (
     PrintAgentAckView,
     PrintAgentClaimView,
@@ -266,6 +267,8 @@ urlpatterns = [
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
     # Provisionamento da ESTAÇÃO: uma vez por dispositivo, por quem gere operadores.
     path("operator/station/", StationProvisionView.as_view(), name="api-backstage-operator-station"),
+    # Capacidade do contêiner dos apps de operação (BFF operator-kit → /health/capacity)
+    path("operator/capacity/", OperatorCapacityView.as_view(), name="api-backstage-operator-capacity"),
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
     path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),

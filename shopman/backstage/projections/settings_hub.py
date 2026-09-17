@@ -74,7 +74,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Busca e compartilhamento", "shop_shopsearch", "Como a loja aparece no Google e no cartão de link compartilhado.", "travel_explore"),
             _model("Horários e operação", "shop_shopoperation", "Dias e horas de funcionamento, feriados e fechamentos.", "schedule"),
             _model("Cardápio", "shop_shopmenu", "Coleções que aparecem na loja e como o cardápio se monta.", "restaurant_menu"),
-            _model("Integrações", "shop_shopintegrations", "Serviços externos: pagamento, mensagens, iFood e o mínimo de público das campanhas de WhatsApp.", "extension"),
+            _model("Integrações", "shop_shopintegrations", "Serviços externos: pagamento, mensagens, iFood, o mínimo de público das campanhas de WhatsApp e os limites de capacidade dos apps de operação.", "extension"),
         ),
     ),
     SettingsGroup(
