@@ -9,9 +9,13 @@ async function loadSession () {
   return s
 }
 
-function home (authenticated: boolean) {
+function home (authenticated: boolean, marketingPromptPending = false) {
   return {
-    omotenashi: { audience: authenticated ? 'known' : 'anon', customer_name: authenticated ? 'Ana' : null },
+    omotenashi: {
+      audience: authenticated ? 'known' : 'anon',
+      customer_name: authenticated ? 'Ana' : null,
+      marketing_prompt_pending: marketingPromptPending
+    },
     shop: { name: 'Nelson' },
     shop_status: { is_open: true },
     notices: [{ id: 1 }],
@@ -108,6 +112,43 @@ describe('useShopSession', () => {
     s.markMarketingPromptAnswered()
     expect(s.welcomeAsksMarketing.value).toBe(false)
     expect(s.isAuthenticated.value).toBe(true)
+  })
+
+  // Carga fria: quem volta com aparelho reconhecido não passa pelo login. A
+  // pergunta de novidades tem de chegar pela home, que vem em toda visita.
+  it('the home alone brings the marketing question on a cold load', async () => {
+    const s = await loadSession()
+    s.setFromHome(home(true, true))
+    expect(s.isAuthenticated.value).toBe(true)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
+    // Nada disso abre o gate do login.
+    expect(s.requiresWelcome.value).toBe(false)
+
+    s.setFromHome(home(true, false))
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+  })
+
+  it('a late home (or session) never brings back a question answered in this browser session', async () => {
+    const s = await loadSession()
+    s.setFromHome(home(true, true))
+    s.markMarketingPromptAnswered()
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+
+    // Resposta lida antes do carimbo chegando depois: não reabre.
+    s.setFromHome(home(true, true))
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', welcome_asks_name: false, welcome_asks_marketing: true })
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+  })
+
+  it('an anonymous home never asks, and a preserved auth route keeps what it knew', async () => {
+    const s = await loadSession()
+    s.setFromHome(home(false, true))
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', welcome_asks_name: false, welcome_asks_marketing: true })
+    s.setFromHome(home(false), { preserveAuthenticated: true })
+    expect(s.welcomeAsksMarketing.value).toBe(true)
   })
 
   it('answering the name gate clears the name question only', async () => {

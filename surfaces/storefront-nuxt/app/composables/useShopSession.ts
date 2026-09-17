@@ -10,7 +10,11 @@ interface ShopSessionState {
   welcomeAsksName: boolean
   // A pergunta de novidades (nunca respondida) não abre o gate: sobe como sheet
   // na página de destino (MarketingPromptSheet) e se apaga ao ser respondida.
+  // Alimentada pela home (toda visita) e pelo payload de sessão do login.
   welcomeAsksMarketing: boolean
+  // Respondida ou fechada nesta sessão de navegador: nenhuma resposta tardia do
+  // servidor (home ou sessão lidas antes do carimbo) a traz de volta.
+  marketingPromptAnswered: boolean
   welcomeSuggestedName: string | null
   lastOrderRef: string | null
   shop: ShopProjection | null
@@ -48,6 +52,7 @@ function emptyState (): ShopSessionState {
     requiresWelcome: false,
     welcomeAsksName: false,
     welcomeAsksMarketing: false,
+    marketingPromptAnswered: false,
     welcomeSuggestedName: null,
     lastOrderRef: null,
     shop: NELSON_FALLBACK_SHOP,
@@ -84,7 +89,11 @@ export function useShopSession () {
       isAuthenticated: keepIdentity,
       requiresWelcome: keepIdentity ? state.value.requiresWelcome : false,
       welcomeAsksName: keepIdentity ? state.value.welcomeAsksName : false,
-      welcomeAsksMarketing: keepIdentity ? state.value.welcomeAsksMarketing : false,
+      // A home é a fonte da pergunta para quem não passa pelo login (aparelho
+      // reconhecido): autenticada, ela manda; anônima preservada, mantém.
+      welcomeAsksMarketing: homeAuthenticated
+        ? !state.value.marketingPromptAnswered && !!home.omotenashi.marketing_prompt_pending
+        : preserveAuthenticated ? state.value.welcomeAsksMarketing : false,
       welcomeSuggestedName: keepIdentity ? state.value.welcomeSuggestedName : null,
       lastOrderRef: homeAuthenticated
         ? home.last_order_ref
@@ -123,7 +132,7 @@ export function useShopSession () {
       isAuthenticated: true,
       requiresWelcome: !!session.requires_welcome || asksName,
       welcomeAsksName: asksName,
-      welcomeAsksMarketing: !!session.welcome_asks_marketing,
+      welcomeAsksMarketing: !state.value.marketingPromptAnswered && !!session.welcome_asks_marketing,
       welcomeSuggestedName: cleanOptionalText(session.welcome_suggested_name)
     }
   }
@@ -145,7 +154,7 @@ export function useShopSession () {
   // O sheet de novidades foi respondido ou fechado: não volta nesta sessão,
   // mesmo que o carimbo no servidor tenha falhado (não se insiste).
   function markMarketingPromptAnswered () {
-    state.value = { ...state.value, welcomeAsksMarketing: false }
+    state.value = { ...state.value, welcomeAsksMarketing: false, marketingPromptAnswered: true }
   }
 
   function reset () {

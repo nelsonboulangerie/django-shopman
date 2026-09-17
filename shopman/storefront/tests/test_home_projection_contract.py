@@ -154,3 +154,86 @@ def test_home_projection_promotes_whatsapp_origin_only_with_real_cart(rf):
     assert notices["origin_whatsapp"]["tone"] == "info"
     assert notices["origin_whatsapp"]["title"] == "Sua sacola está aqui"
     assert notices["origin_whatsapp"]["actions"][0]["href"] == "/finalizar"
+
+
+# ── A pergunta de novidades chega pela HOME ──────────────────────────────
+#
+# Quem volta com aparelho reconhecido raramente passa pelo login, então o sheet
+# de novidades da loja não pode depender do payload de sessão do login: ele lê
+# `omotenashi.marketing_prompt_pending`, que a home devolve em toda visita.
+
+
+def _login_home_customer(client, *, ref: str, phone: str, **extra):
+    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Shop
+
+    Shop.load() or Shop.objects.create(name="Test Padaria")
+    customer = Customer.objects.create(ref=ref, first_name="Ana", last_name="Silva", phone=phone, **extra)
+    info = AuthCustomerInfo(uuid=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True)
+    user, _ = get_or_create_user_for_customer(info)
+    client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    return customer
+
+
+def test_home_marks_the_marketing_question_pending_for_a_customer_who_never_answered(client, settings):
+    settings.RATELIMIT_ENABLE = False
+    _login_home_customer(client, ref="CUS-HOME-MKT-ASK", phone="+5543999990040")
+
+    omotenashi = client.get("/api/v1/storefront/home/").json()["home"]["omotenashi"]
+
+    assert omotenashi["audience"] != "anon"
+    assert omotenashi["marketing_prompt_pending"] is True
+
+
+def test_home_does_not_ask_again_once_the_question_was_answered(client, settings):
+    settings.RATELIMIT_ENABLE = False
+    _login_home_customer(
+        client,
+        ref="CUS-HOME-MKT-DONE",
+        phone="+5543999990041",
+        metadata={"marketing_prompt_answered_at": "2026-09-16T10:00:00+00:00"},
+    )
+
+    omotenashi = client.get("/api/v1/storefront/home/").json()["home"]["omotenashi"]
+
+    assert omotenashi["audience"] != "anon"
+    assert omotenashi["marketing_prompt_pending"] is False
+
+
+def test_home_never_asks_an_anonymous_visitor(client, settings):
+    from shopman.shop.models import Shop
+
+    settings.RATELIMIT_ENABLE = False
+    Shop.load() or Shop.objects.create(name="Test Padaria")
+
+    omotenashi = client.get("/api/v1/storefront/home/").json()["home"]["omotenashi"]
+
+    assert omotenashi["audience"] == "anon"
+    assert omotenashi["marketing_prompt_pending"] is False
+
+
+def test_home_fails_closed_and_says_why_when_the_lookup_breaks(rf, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from shopman.storefront import identity
+    from shopman.storefront.presentation import home
+
+    def boom(_request):
+        raise RuntimeError("consent source down")
+
+    # O logger `shopman` não propaga para o root: espiar o do módulo é o que
+    # prova a razão escrita, sem depender da configuração de logging.
+    spy = MagicMock()
+    monkeypatch.setattr(home, "logger", spy)
+    monkeypatch.setattr(identity, "get_authenticated_customer", boom)
+    request = rf.get("/api/v1/storefront/home/")
+    request.customer = SimpleNamespace(uuid="00000000-0000-0000-0000-000000000000")
+
+    assert home._marketing_prompt_pending(request) is False
+
+    spy.warning.assert_called_once()
+    assert "home.marketing_prompt_pending_unavailable" in spy.warning.call_args.args[0]
