@@ -16,7 +16,7 @@ const {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("Marketing");
+useOperatorWindowTitle();
 
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;
@@ -46,9 +46,6 @@ watch(sessionState, async (next, previous) => {
       <template v-if="sessionState === 'authenticated'">
         <div class="sticky top-0 flex h-screen shrink-0 print:hidden">
           <OperatorRail
-            app-icon="megaphone"
-            app-icon-src="/pwa/pwa-64x64.png?v=3"
-            app-label="Marketing"
             :central-url="hubUrl"
             :operator-name="operator?.name"
             @lock="lock"

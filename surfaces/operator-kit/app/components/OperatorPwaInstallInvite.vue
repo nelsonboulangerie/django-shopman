@@ -1,10 +1,33 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
+// O convite de instalação tem DUAS camadas, e elas estavam trocadas.
+//
+// O COMO é comum — instalar um PWA é o mesmo gesto em todo app, e no iOS é o mesmo
+// caminho no Safari. O QUÊ é de cada app: o que ele passa a fazer da tela inicial.
+// Estava ao contrário: o título era genérico ao ponto de dizer a marca ("Instale
+// Shopman" — o componente lia `manifest.name`, chave que o manifesto resolvido não tem,
+// e caía no default), e a frase de benefício era específica do app errado ("Abra o
+// caixa direto da tela inicial", no B.I., na Cozinha e no Marketing).
+//
+// Agora o nome e a frase saem da identidade canônica (`app-identity.json`), pelo
+// `runtimeConfig` — a mesma fonte do manifesto, do ícone e da barra de título.
+interface OperatorInstallIdentity {
+  label: string;
+  article: string;
+  install: string;
+}
+
+const props = defineProps<{
   app: string;
-  appName: string;
-}>(), {
-  appName: "Shopman",
-});
+  /** Sobrescreve a identidade canônica — existe para o harness de teste. */
+  identity?: OperatorInstallIdentity;
+}>();
+
+const runtimeIdentity = (useRuntimeConfig().public?.operatorPwa as { identity?: OperatorInstallIdentity } | undefined)
+  ?.identity;
+const identity = computed<OperatorInstallIdentity | null>(() => props.identity || runtimeIdentity || null);
+const title = computed(() =>
+  identity.value ? `Instale ${identity.value.article} ${identity.value.label}` : "Instale este aplicativo",
+);
 
 const pwa = usePwaInstall({ app: props.app });
 const visible = computed(() => !pwa.isStandalone.value
@@ -25,12 +48,13 @@ async function install() {
   >
     <div class="flex items-start gap-3">
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold">Instale {{ appName }}</p>
+        <p class="text-sm font-semibold">{{ title }}</p>
+        <!-- O COMO é comum aos oito apps; o QUÊ é de cada um. -->
         <p v-if="pwa.isIos.value" class="mt-1 text-sm text-muted-foreground">
           No Safari, toque em Compartilhar e depois em Adicionar à Tela de Início.
         </p>
-        <p v-else class="mt-1 text-sm text-muted-foreground">
-          Abra o caixa direto da tela inicial deste aparelho.
+        <p v-else-if="identity" class="mt-1 text-sm text-muted-foreground">
+          {{ identity.install }}
         </p>
       </div>
       <button

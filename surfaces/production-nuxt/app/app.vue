@@ -18,7 +18,7 @@ const isKiosk = computed(() => route.path.startsWith("/board"));
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("Produção");
+useOperatorWindowTitle();
 
 async function goToHome() {
   await navigateTo("/");
@@ -51,9 +51,6 @@ async function goToRecipes() {
         class="sticky top-0 flex h-screen shrink-0 print:hidden"
       >
         <OperatorRail
-          app-icon="croissant"
-          app-icon-src="/pwa/pwa-64x64.png?v=3"
-          app-label="Produção"
           :central-url="hubUrl"
           :operator-name="operator?.name"
           @lock="lock"

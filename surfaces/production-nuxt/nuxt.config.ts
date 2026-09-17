@@ -37,22 +37,10 @@ export default defineNuxtConfig({
       kiosk: true,
       idleReloadPaths: ["/board"],
       push: { surfaceRef: "production", categories: ["production", "system"] },
-      manifest: {
-        label: "Produção",
-        description: "Planejamento, preparo e fornadas.",
-        themeColor: "#FFFFFF",
-        backgroundColor: "#FAFAF9",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Plano", shortName: "Plano", url: "/plan", icon: "/pwa/pwa-192x192.png?v=3" },
-          { name: "Fornadas", shortName: "Fornadas", url: "/board", icon: "/pwa/pwa-192x192.png?v=3" },
-        ],
-      },
+      shortcuts: [
+        { name: "Plano", shortName: "Plano", url: "/plan" },
+        { name: "Fornadas", shortName: "Fornadas", url: "/board" },
+      ],
     }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
@@ -127,13 +115,14 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Produção",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         {
           name: "viewport",
           content: "width=device-width, initial-scale=1, viewport-fit=cover",
         },
-        { name: "theme-color", content: "#ffffff" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

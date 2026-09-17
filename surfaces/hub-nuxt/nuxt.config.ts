@@ -34,23 +34,11 @@ export default defineNuxtConfig({
         surfaceRef: "hub",
         categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
       },
-      manifest: {
-        label: "Central",
-        description: "Central dos aplicativos de operação.",
-        themeColor: "#7C3A40",
-        backgroundColor: "#FCF6F1",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders", icon: "/pwa/pwa-192x192.png?v=3" },
-          { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos", icon: "/pwa/pwa-192x192.png?v=3" },
-          { name: "Produção", shortName: "Produção", url: "/shortcuts/production", icon: "/pwa/pwa-192x192.png?v=3" },
-        ],
-      },
+      shortcuts: [
+        { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders" },
+        { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos" },
+        { name: "Produção", shortName: "Produção", url: "/shortcuts/production" },
+      ],
     }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
@@ -80,6 +68,11 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
+    // LIGHT-first — a Central é a casa dos apps de escritório e balcão, todos claros;
+    // só a Cozinha é escura. Sem a declaração ela seguia o tema do SISTEMA e abria de
+    // um jeito no Mac e de outro no tablet. O escuro segue no toggle do rail.
+    preference: "light",
+    fallback: "light",
     storageKey: "hub-nuxt-color-mode",
     classSuffix: "",
   },
@@ -98,10 +91,11 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Central",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#fafafa" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

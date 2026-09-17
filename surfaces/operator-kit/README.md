@@ -94,15 +94,32 @@ no host publicado. Marketing usa ainda uma política CSP local mais estrita, com
 branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao kit
 porque ainda não tem dois consumidores comprovados.
 
-## Nome do app instalado (`"Nelson · PDV"`)
+## Identidade do app (`app-identity.json`)
+
+Rótulo, descrição, símbolo, cor e frase de instalação de cada app de operador vivem em
+**`operator-kit/app-identity.json`**, e só ali. Um app declara em
+`definePwaCapability({ app: "pos", ... })` apenas o que de facto varia: como a janela
+abre, se a tela fica acesa, o que ele recebe por push e quais atalhos o SO oferece.
+
+Estavam escritos em seis lugares (`nuxt.config`, `package.json`, `tools/pwa-gate`,
+`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — a Central com ícone ardósia e barra
+de título vinho, o Gestor com dois nomes, a Cozinha com três. Ver `PWA_ICONS.md` para a
+tabela e para a regra "a barra de título é a cor do ícone".
+
+O que a identidade passa a mandar, sem prop em nenhum call site: `theme_color` e
+`background_color` do manifesto, `<title>` e `theme-color` do `<head>`, o rótulo e o
+ícone do `<OperatorRail>` e do `<OperatorLogin>`, e o convite de instalação.
+
+### Nome do app instalado (`"Nelson · PDV"`)
 
 Todo app de operador instalado se chama `"<casa> · <App>"`: "Nelson · PDV", "Nelson ·
-KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie").
+Cozinha", "Nelson · Gestor de pedidos". A loja do cliente fica fora (é "Nelson
+Boulangerie").
 
 - **A casa não mora no código.** A fonte única é `Shop.short_name` ("nome curto (PWA)",
   editável no Admin), servido por `GET /api/v1/backstage/operator/tenant/` (público,
-  sem sessão: o navegador busca o manifesto sem cookie). O app declara só o rótulo em
-  `definePwaCapability({ manifest: { label: "PDV", ... } })`.
+  sem sessão: o navegador busca o manifesto sem cookie). O rótulo vem da identidade;
+  nem ele nem a casa se escrevem num app.
 - **Lido em runtime, não no build.** `server/utils/operatorTenant.ts` pergunta ao
   Django com cache de 5 min no processo Nitro; a mesma imagem serve todo deployment.
   Falha é macia: vale o último nome que o Django deu (nova tentativa em 30 s) e, sem
@@ -130,9 +147,21 @@ KDS", "Nelson · Central". A loja do cliente fica fora (é "Nelson Boulangerie")
   navegador rebusca o manifesto (`max-age=3600`, o contrato do gate estrutural de PWA); o Chrome atualiza o nome do app
   instalado na verificação periódica dele.
 
-A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa, sem
-`name`/`shortName` fixos, título começando pelo `name`, nenhum título com hífen de
-separador, nenhum `document.title` cru).
+A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem casa nem
+separador, `nuxt.config` sem rótulo/cor/ícone reescritos, título começando pelo `name`,
+nenhum título com hífen de separador, nenhum `document.title` cru, nenhum `app-label` nem
+caminho de ícone escrito à mão, e a barra de título na cor do ícone). Do lado do Django,
+`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles da Central com
+os mesmos nomes.
+
+### Convite de instalação: o COMO é comum, o QUÊ é de cada app
+
+`<OperatorPwaInstallInvite>` diz `"Instale {artigo} {rótulo}"` e, embaixo, a frase
+`install` do próprio app ("Abra a fila de pedidos direto da tela inicial deste
+aparelho."). O caminho do iOS (Compartilhar → Adicionar à Tela de Início) é o mesmo em
+todo app e fica no componente. Os oito diziam **"Instale Shopman"** — o componente lia
+`manifest.name`, chave que o manifesto resolvido não tem, e caía no nome da marca — com
+"Abra o caixa direto da tela inicial" embaixo, no B.I., na Cozinha e no Marketing.
 
 ## Próximo foco (`useNextFocus`)
 

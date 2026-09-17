@@ -77,7 +77,17 @@ class _AppSpec:
 
 
 # Registro declarativo das superfícies (ordem = ordem de exibição). Ícone forte por
-# app conforme o design system canônico (DS §6). O nome Lucide é o FALLBACK do tile:
+# app conforme o design system canônico (DS §6).
+#
+# ⚠️ O `label` e o `icon` de cada app têm de bater com
+# `surfaces/operator-kit/app-identity.json`, a identidade que as próprias superfícies
+# publicam (manifesto, barra de título, rail). Um app com dois nomes é o que o dono viu:
+# o tile dizia "Gestor de Pedidos", a janela dizia "Gestor". O Python não lê o JSON em
+# runtime (o deploy do Django não empacota `surfaces/`); quem compara os dois lados é
+# `shopman/backstage/tests/test_hub_projection_identity.py`, que falha no CI se
+# divergirem. A Loja fica de fora: é superfície de cliente, com marca própria.
+#
+# O nome Lucide é o FALLBACK do tile:
 # a Central mostra o PNG da família PWA (`surfaces/operator-kit/PWA_ICONS.md`) e só
 # cai no Lucide quando a imagem não carrega — por isso os nomes seguem a família
 # (Produção usa `tabler:baguette` no PNG; o fallback fica em `croissant`, único
@@ -85,7 +95,7 @@ class _AppSpec:
 _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("pos", "PDV", "Vender no balcão", "shopping-basket", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
-    _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_manage_orders),
+    _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_manage_orders),
     # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
     # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`
     # exige `shop.manage_production` ou alguma permissão de COLUNA FINA do console

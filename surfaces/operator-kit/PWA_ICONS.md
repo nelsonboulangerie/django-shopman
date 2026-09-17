@@ -5,17 +5,53 @@ Os ícones instaláveis usam fundo de cor, símbolo centralizado e desenho creme
 `npm run pwa:assets` no app; o Storefront tem o próprio, em
 `storefront-nuxt/scripts/finalize-pwa-assets.mjs`, com a mesma regra de forma).
 
-| Superfície | Símbolo | Fundo |
-| --- | --- | --- |
-| Storefront | `lucide:store` | `#6D1F32` |
-| Central | `lucide:layout-grid` | `#34373B` |
-| Gestor | `lucide:square-kanban` | `#8B2F4D` |
-| PDV | `lucide:shopping-basket` | `#A95032` |
-| Produção | `tabler:baguette` | `#B9781B` |
-| KDS | `lucide:chef-hat` | `#2E7168` |
-| Marketing | `lucide:megaphone` | `#7D4B88` |
-| Compras | `lucide:package` | `#386F9A` |
-| B.I. | `lucide:chart-no-axes-combined` | `#414F91` |
+## A identidade de um app mora num arquivo só
+
+`operator-kit/app-identity.json` — rótulo, descrição, símbolo, ícone de recurso e
+**cor**. Quem lê: o gerador de ícones (`--app=<chave>`), o manifesto
+(`pwa.config.ts` → `resolveOperatorPwa`), a barra de título, o rail, o gate de login,
+o convite de instalação e o gate `tools/pwa-gate/check.mjs`. **Esta tabela é o
+espelho legível do arquivo, não a fonte** — mude o JSON e rode `npm run pwa:assets`.
+
+Antes, os mesmos três dados estavam escritos em seis lugares, e derivaram: a Central
+tinha ícone ardósia (`#34373B`) e barra de título vinho (`#7C3A40`); cinco apps tinham
+barra branca; o Gestor se chamava "Gestor" na janela e "Gestor de Pedidos" no
+launcher; a Cozinha era "Cozinha" no rail e "KDS" no título.
+
+| Superfície | Chave | Símbolo | Cor (ícone **e** barra de título) |
+| --- | --- | --- | --- |
+| Storefront | — (fora do kit) | `lucide:store` | `#6D1F32` |
+| Central | `hub` | `lucide:layout-grid` | `#34373B` |
+| PDV | `pos` | `lucide:shopping-basket` | `#A95032` |
+| Cozinha | `kds` | `lucide:chef-hat` | `#2E7168` |
+| Gestor de pedidos | `orders` | `lucide:square-kanban` | `#8B2F4D` |
+| Produção | `production` | `tabler:baguette` | `#B9781B` |
+| Marketing | `marketing` | `lucide:megaphone` | `#7D4B88` |
+| Compras | `purchase` | `lucide:package` | `#386F9A` |
+| B.I. | `bi` | `lucide:chart-no-axes-combined` | `#414F91` |
+
+### A barra de título é a cor do ícone
+
+O `theme_color` do manifesto é o que o Chrome pinta na barra de título do app
+instalado (no Mac, no Windows e no ChromeOS) e na barra do navegador no Android. Ele
+é a cor do ÍCONE, e não uma cor de tela: é por ela que o operador sabe em qual app
+está antes de ler qualquer palavra, e oito barras sem relação com o ícone eram oito
+janelas iguais. O `background_color` é outra coisa — a tela de abertura — e segue o
+`--background` do `operator-theme.css`: `#FCF6F1` no claro, `#221610` na Cozinha
+(dark-first). Nenhum dos dois se escreve no `nuxt.config`; os dois saem da identidade.
+
+### O nome do app também
+
+O app instalado se chama `"<casa> · <rótulo>"` (a casa é `Shop.short_name`, lida do
+Django em runtime). O rótulo da tabela acima é o MESMO na barra de título, no
+`short_name`, no rail, no gate de login, no tile da Central
+(`shopman/backstage/projections/hub.py`) e no menu do Admin. Quem impede os dois lados
+de divergirem é `shopman/backstage/tests/test_hub_projection_identity.py` — o Django
+não lê o JSON em runtime, porque o deploy do backend não empacota `surfaces/`.
+
+Exceção com razão escrita: no menu do Admin o item que abre a Produção se chama
+"Produção ao vivo", para não colidir com o grupo "Produção" (fichas, ordens, insumos)
+logo abaixo. "ao vivo" é qualificador, não um segundo nome.
 
 Fontes vetoriais:
 
@@ -86,12 +122,17 @@ até o app ser atualizado ou reinstalado.
 A identidade de cada app é UMA: o PNG acima. Os lugares que a mostram apontam
 para o arquivo publicado, nunca copiam o desenho.
 
+Nenhum desses lugares escreve o caminho: todos recebem `identity.iconSrc` pelo
+`runtimeConfig`, montado por `operatorAppIconSrc()` a partir do `assetVersion` da
+identidade. Era o caminho `?v=` que envelhecia num app só.
+
 | Lugar | Fonte | Fallback |
 | --- | --- | --- |
-| Manifesto / launcher do SO | `public/pwa/*.png?v=3` (via `pwa.config`); Storefront: `?v=6` em `server/utils/pwaManifest.ts` e `nuxt.config.ts` | — |
-| Central de Apps (tile) | `<origem do tile>/pwa/pwa-192x192.png?v=3` (`tileIconUrl`, hub-nuxt) | Lucide vindo do Django (`backstage/projections/hub.py`) |
-| Rail de cada app (quadrado de identidade) | `app-icon-src="/pwa/pwa-64x64.png?v=3"` no `<OperatorRail>` | Lucide de `app-icon` |
-| Gate de login da Central | `icon-src="/pwa/pwa-64x64.png?v=3"` no `<OperatorLogin>` | Lucide de `icon` |
+| Manifesto / launcher do SO | `operatorAppIcons()` (`appIdentity.ts`); Storefront: `?v=6` em `server/utils/pwaManifest.ts` e `nuxt.config.ts` | — |
+| Central de Apps (tile) | `<origem do tile>` + `operatorShortcutIconSrc()` (`tileIconUrl`, hub-nuxt) | Lucide de `fallbackIcon`, vindo do Django (`backstage/projections/hub.py`) |
+| Rail de cada app (quadrado de identidade) | `identity.iconSrc` no `<OperatorRail>` (sem prop) | Lucide de `identity.fallbackIcon` |
+| Gate de login | `identity.iconSrc` no `<OperatorLogin>` (sem prop) | Lucide de `identity.fallbackIcon` |
+| Convite de instalação | título `"Instale {artigo} {rótulo}"` + a frase `install` do app | — |
 
 O fallback Lucide existe para a imagem que não carrega (app fora do ar, build
 sem a família, CSP `img-src 'self'` no hub) — cai por `@error`, por tile/app, sem

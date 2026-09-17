@@ -9,7 +9,7 @@ const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPER
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("B.I.");
+useOperatorWindowTitle();
 </script>
 
 <template>
@@ -19,9 +19,6 @@ useOperatorWindowTitle("B.I.");
     <OfflineBanner />
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
-        app-icon="chart-no-axes-combined"
-        app-icon-src="/pwa/pwa-64x64.png?v=3"
-        app-label="B.I."
         :central-url="hubUrl"
         :operator-name="operator?.name"
         @lock="lock"

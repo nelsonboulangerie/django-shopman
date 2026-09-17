@@ -40,7 +40,12 @@ async function pngSize (path) {
 }
 
 const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-const operatorProfile = (surface, { display = 'standalone', orientation = 'any', shortcuts = true, icon, background } = {}) => ({
+// Identidade canônica dos apps de operador: rótulo, símbolo e cor. O gate NÃO repete
+// nenhum dos três — pergunta ao mesmo arquivo que o gerador de ícones e o manifesto
+// leem. Era a terceira cópia da cor, e cópia é como o ícone da Central (ardósia) ficou
+// com barra de título vinho.
+const identity = JSON.parse(await readFile(join(repository, 'surfaces/operator-kit/app-identity.json'), 'utf8'))
+const operatorProfile = (surface, { display = 'standalone', orientation = 'any', shortcuts = true } = {}) => ({
   surface: `${surface}-nuxt`,
   manifestUrl: '/manifest.webmanifest',
   manifestHref: '/manifest.webmanifest',
@@ -50,8 +55,7 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
   display,
   orientation,
   shortcuts,
-  icon,
-  background,
+  identity: identity.apps[surface],
 })
 const profiles = {
   storefront: {
@@ -64,15 +68,15 @@ const profiles = {
     display: 'standalone',
     orientation: 'portrait',
   },
-  pos: operatorProfile('pos', { icon: 'lucide:shopping-basket', background: '#A95032' }),
-  hub: operatorProfile('hub', { icon: 'lucide:layout-grid', background: '#34373B' }),
-  orders: operatorProfile('orders', { icon: 'lucide:square-kanban', background: '#8B2F4D' }),
+  pos: operatorProfile('pos'),
+  hub: operatorProfile('hub'),
+  orders: operatorProfile('orders'),
   // Kiosks giram livres (tablets); quem trava é o operador, no rail (useOrientationLock).
-  kds: operatorProfile('kds', { display: 'fullscreen', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
-  production: operatorProfile('production', { display: 'fullscreen', icon: 'tabler:baguette', background: '#B9781B' }),
-  marketing: operatorProfile('marketing', { icon: 'lucide:megaphone', background: '#7D4B88' }),
-  purchase: operatorProfile('purchase', { icon: 'lucide:package', background: '#386F9A' }),
-  bi: operatorProfile('bi', { icon: 'lucide:chart-no-axes-combined', background: '#414F91' }),
+  kds: operatorProfile('kds', { display: 'fullscreen', shortcuts: false }),
+  production: operatorProfile('production', { display: 'fullscreen' }),
+  marketing: operatorProfile('marketing'),
+  purchase: operatorProfile('purchase'),
+  bi: operatorProfile('bi'),
 }
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
 const profile = profiles[requestedApp]
@@ -92,10 +96,10 @@ if (profile.storefront) {
   check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
 }
 if (!profile.storefront) {
+  check(Boolean(profile.identity), `${requestedApp} tem identidade em app-identity.json`)
   const assetScript = surfacePackage.scripts?.['pwa:assets'] || ''
-  check(assetScript.includes(`--icon=${profile.icon}`), `gerador usa ${profile.icon}`)
-  check(assetScript.includes(`--background=${profile.background}`), `gerador usa fundo ${profile.background}`)
-  check(assetScript.includes('--foreground=#FCF7EE'), 'gerador usa desenho creme canônico')
+  check(assetScript.includes(`--app=${requestedApp}`), `gerador de ícones recebe a chave --app=${requestedApp}`)
+  check(!/--icon=|--background=|--foreground=/.test(assetScript), 'símbolo e cor não são repetidos na linha de comando')
 }
 
 const swPath = join(output, 'public/sw.js')
@@ -201,6 +205,18 @@ try {
   } else {
     if (profile.shortcuts) check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
     else check(manifest.shortcuts.length === 0, 'manifesto do kiosk não inventa atalhos')
+    // A BARRA DE TÍTULO do app instalado é o `theme_color`. Ela tem de ser a cor do
+    // ÍCONE: é por ela que o operador sabe em qual app está antes de ler uma palavra.
+    // Oito apps no Mac, oito barras sem relação com o ícone — foi o que o dono viu.
+    check(manifest.theme_color === profile.identity.color,
+      `barra de título usa a cor do ícone (${profile.identity.color})`)
+    check(manifest.background_color === (profile.identity.dark ? identity.canvas.dark : identity.canvas.light),
+      'tela de abertura usa o fundo do tema do operador')
+    // Sem casa configurada o BFF devolve só o rótulo; com ela, `"<casa> · <rótulo>"`.
+    check(manifest.name.endsWith(profile.identity.label) && manifest.short_name === profile.identity.label,
+      `manifesto se chama pelo rótulo canônico ("${profile.identity.label}")`)
+    check(!/\s[-–—|]\s/.test(manifest.name), 'nome do app não tem hífen, meia-risca, travessão nem barra')
+    check(manifest.description === profile.identity.description, 'descrição vem da identidade canônica')
   }
 
   const swResponse = await fetch(`${baseUrl}/sw.js`, { method: 'HEAD' })
@@ -213,6 +229,12 @@ try {
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
+  if (!profile.storefront) {
+    check(document.includes(`content="${profile.identity.color}"`), 'theme-color do HTML é a mesma cor do manifesto')
+    const titleText = (document.match(/<title[^>]*>([^<]*)<\/title>/) || [])[1] || ''
+    check(titleText.endsWith(profile.identity.label), `título da janela termina no rótulo canônico ("${profile.identity.label}", visto "${titleText}")`)
+    check(!/\s[-–—|]\s/.test(titleText), 'título da janela não tem hífen, meia-risca, travessão nem barra')
+  }
   check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${assetVersion}`), 'HTML referencia apple-touch-icon versionado')
   if (!profile.storefront) {
     check(document.includes('href="/favicon.svg?v=1"') && document.includes('href="/favicon.ico?v=1"'), 'HTML referencia favicon SVG e ICO versionados')
