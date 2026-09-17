@@ -109,8 +109,8 @@ na maquina local.
 
 ### Marketing permanece fechado até o canário
 
-O componente `marketing-nuxt` usa `/health/live` para liveness e
-`/health/ready` para readiness do BFF + Django. Antes de propor qualquer mudança
+O componente `marketing-nuxt` usa `/health/live` no health check da plataforma;
+`/health/ready` (BFF + Django) fica para smoke e diagnóstico. Antes de propor qualquer mudança
 no spec vivo:
 
 ```bash

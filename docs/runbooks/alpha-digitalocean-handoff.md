@@ -1,5 +1,14 @@
 # DigitalOcean - handoff operacional do app unico
 
+> **Troca aplicada em 17/09/2026 (decisão do dono):** o site é
+> `www.nelsonboulangerie.com.br`, servido pelo `storefront-nuxt` do `shopman-nelson`;
+> o domínio sem www e `boulangerie.com.br` redirecionam (301) para ele. O `menu.`
+> voltou para o cardápio antigo (`nb-catalog-app`), para onde apontam os links já
+> divulgados; lá, as rotas do site (`/pedido`, `/produto`, `/conta`, `/entrar`...)
+> redirecionam para o `www.`, e `/menu` leva à raiz do cardápio antigo. A landing
+> antiga (`nb-site`) ficou sem domínio. Depois do go-live, o `menu.` também vem
+> para o site. O estado de 11/09 abaixo fica como histórico.
+
 > **Estado confirmado em 11/09/2026:** `menu.nelsonboulangerie.com.br` e o
 > dominio definitivo da loja. `alpha.*` e `staging.*` foram aposentados e nao
 > devem ser recriados. O app vivo se chama `shopman-nelson` e continua com
@@ -22,7 +31,7 @@ separado e explicitamente autorizado.
 - Nao manter `staging.*` e `alpha.*` como ambientes separados.
 - Reaproveitar o App Platform atual, nomeado `shopman-nelson`.
 - Manter o perfil de pre-go-live ate autorizacao especifica de producao.
-- Usar `menu.nelsonboulangerie.com.br` como URL definitiva da loja.
+- Usar `www.nelsonboulangerie.com.br` como URL definitiva da loja.
 - Nao recriar `alpha.*` ou `staging.*`.
 - Nao reclassificar o banco existente sem gate de producao e plano de recuo.
 - Manter API, Admin e apps de operador nos dominios tecnicos/operacionais existentes.
@@ -112,7 +121,7 @@ documental #617 não publicou imagem nem iniciou novo deployment.
 Configurar a loja em seu dominio definitivo:
 
 ```text
-menu.nelsonboulangerie.com.br -> storefront-nuxt
+www.nelsonboulangerie.com.br -> storefront-nuxt
 ```
 
 Manter API, Admin e backstage nos dominios operacionais existentes:
@@ -186,15 +195,15 @@ app alvo e mostra custo/diff antes de qualquer update.
 ```env
 DJANGO_DEBUG=false
 SHOPMAN_ENVIRONMENT=staging
-SHOPMAN_PREPROD_URL=https://menu.nelsonboulangerie.com.br
+SHOPMAN_PREPROD_URL=https://www.nelsonboulangerie.com.br
 
 DJANGO_ALLOWED_HOSTS=api.boulangerie.com.br,admin.boulangerie.com.br
-CSRF_TRUSTED_ORIGINS=https://menu.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
+CSRF_TRUSTED_ORIGINS=https://www.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
 
-SHOPMAN_STOREFRONT_BASE_URL=https://menu.nelsonboulangerie.com.br
-SHOPMAN_DOMAIN=https://menu.nelsonboulangerie.com.br
-AUTH_DEFAULT_DOMAIN=menu.nelsonboulangerie.com.br
-WHATSAPP_STOREFRONT_URL=https://menu.nelsonboulangerie.com.br
+SHOPMAN_STOREFRONT_BASE_URL=https://www.nelsonboulangerie.com.br
+SHOPMAN_DOMAIN=https://www.nelsonboulangerie.com.br
+AUTH_DEFAULT_DOMAIN=www.nelsonboulangerie.com.br
+WHATSAPP_STOREFRONT_URL=https://www.nelsonboulangerie.com.br
 
 SHOPMAN_OPERATOR_API_HOST=api.boulangerie.com.br
 SHOPMAN_OPERATOR_COOKIE_DOMAIN=.boulangerie.com.br
@@ -221,8 +230,8 @@ Google:
 
 - Verificar `nelsonboulangerie.com.br` como dominio autorizado.
 - Usar um OAuth client identificado para o app Shopman/Nelson.
-- Cadastrar origem exata `https://menu.nelsonboulangerie.com.br`.
-- Cadastrar callback exato usado pelo app em `https://menu.nelsonboulangerie.com.br/...`.
+- Cadastrar origem exata `https://www.nelsonboulangerie.com.br`.
+- Cadastrar callback exato usado pelo app em `https://www.nelsonboulangerie.com.br/...`.
 - Trocar credenciais de teste somente no gate autorizado de producao.
 
 Fiscal:
@@ -252,7 +261,7 @@ Pagamentos:
 Antes de liberar testadores:
 
 ```bash
-make alpha-readiness preprod_url=https://menu.nelsonboulangerie.com.br
+make alpha-readiness preprod_url=https://www.nelsonboulangerie.com.br
 make smoke-gateways
 make omotenashi-qa strict=1
 ```
@@ -266,7 +275,7 @@ Antes de producao:
 ```bash
 make production-readiness \
   manual_qa=docs/reports/manual-qa.md \
-  preprod_url=https://menu.nelsonboulangerie.com.br
+  preprod_url=https://www.nelsonboulangerie.com.br
 ```
 
 Esse comando ainda e insatisfazivel com um unico app porque os hosts de operador

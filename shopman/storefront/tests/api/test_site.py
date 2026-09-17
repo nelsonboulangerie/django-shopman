@@ -223,8 +223,8 @@ def test_apply_search_presence_fills_only_what_is_missing():
     edited = FAQEntry.objects.get(ref="o-que-e-fermentacao-natural")
     assert (edited.question, edited.is_published) == ("Pergunta editada no Admin", False)
     assert FAQEntry.objects.count() == len(PUBLIC_FAQ)
-    drafts = set(FAQEntry.objects.filter(is_published=False).values_list("ref", flat=True))
-    assert {"posso-cancelar-meu-pedido", "voces-estao-no-ifood"} <= drafts
+    # A copy pública espera o aval do dono: nada nasce publicado (17/09/2026).
+    assert not FAQEntry.objects.filter(is_published=True).exists()
 
     assert apply_search_presence(shop) == []
 

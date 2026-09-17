@@ -4,12 +4,22 @@ alerts:
 - rule: DEPLOYMENT_FAILED
 - rule: DOMAIN_FAILED
 # ⛔ `alpha.` e `staging.` estão MORTOS desde o corte de 01/09/2026, sem alias e
-#    para sempre. A loja é `menu.nelsonboulangerie.com.br`. Nunca re-adicionar:
-#    já aconteceu uma vez, por um update feito a partir de snapshot velho.
+#    para sempre. Nunca re-adicionar: já aconteceu uma vez, por um update feito a
+#    partir de snapshot velho.
+# 🌐 O SITE é `www.nelsonboulangerie.com.br` desde 17/09/2026 (decisão do dono):
+#    o domínio sem www e `boulangerie.com.br` redirecionam para ele. O `menu.`
+#    voltou para o cardápio antigo (app `nb-catalog-app`), porque é para lá que
+#    os links divulgados apontam; depois do go-live ele também vem para o site.
 domains:
-- domain: menu.nelsonboulangerie.com.br
+- domain: www.nelsonboulangerie.com.br
   type: PRIMARY
   zone: nelsonboulangerie.com.br
+- domain: nelsonboulangerie.com.br
+  type: ALIAS
+  zone: nelsonboulangerie.com.br
+- domain: boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
 - domain: gestor.boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
@@ -48,11 +58,41 @@ domains:
   zone: boulangerie.com.br
 ingress:
   rules:
+  - match:
+      authority:
+        exact: nelsonboulangerie.com.br
+      path:
+        prefix: /
+    redirect:
+      authority: www.nelsonboulangerie.com.br
+      redirect_code: 301
+      scheme: https
+  - match:
+      authority:
+        exact: boulangerie.com.br
+      path:
+        prefix: /
+    redirect:
+      authority: www.nelsonboulangerie.com.br
+      redirect_code: 301
+      scheme: https
+  # A landing antiga mandava /catalogo para o cardápio antigo; o link impresso
+  # continua levando para lá enquanto o `menu.` for dele.
+  - match:
+      authority:
+        exact: www.nelsonboulangerie.com.br
+      path:
+        prefix: /catalogo
+    redirect:
+      authority: menu.nelsonboulangerie.com.br
+      redirect_code: 302
+      scheme: https
+      uri: /
   - component:
       name: storefront-nuxt
     match:
       authority:
-        exact: menu.nelsonboulangerie.com.br
+        exact: www.nelsonboulangerie.com.br
       path:
         prefix: /
   - component:
@@ -156,7 +196,7 @@ envs:
   type: GENERAL
 - key: CSRF_TRUSTED_ORIGINS
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br,https://compras.boulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br,https://compras.boulangerie.com.br'
   type: GENERAL
 - key: DJANGO_TRUST_X_FORWARDED_PROTO
   scope: RUN_TIME
@@ -168,15 +208,15 @@ envs:
   type: GENERAL
 - key: SHOPMAN_STOREFRONT_BASE_URL
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: SHOPMAN_DOMAIN
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: AUTH_DEFAULT_DOMAIN
   scope: RUN_TIME
-  value: 'menu.nelsonboulangerie.com.br'
+  value: 'www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: SHOPMAN_OPERATOR_API_HOST
   scope: RUN_TIME
@@ -228,7 +268,7 @@ envs:
   type: GENERAL
 - key: WHATSAPP_STOREFRONT_URL
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 - key: DOORMAN_MESSAGE_SENDER_CLASS
   scope: RUN_TIME
@@ -498,7 +538,7 @@ envs:
   type: SECRET
 - key: SHOPMAN_PREPROD_URL
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br'
+  value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
 
 # ── O spec versionado ESTAVA menor que o app vivo ─────────────────────
@@ -623,7 +663,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_PRODUCT_IMAGE_BASE
   scope: RUN_TIME
-  value: 'https://menu.nelsonboulangerie.com.br/img/products'
+  value: 'https://www.nelsonboulangerie.com.br/img/products'
   type: GENERAL
 services:
 - alerts:
@@ -639,9 +679,13 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
+  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+  # que não chama o Django (WP-PERFORMANCE P1).
   health_check:
     failure_threshold: 5
-    http_path: /health/ready/
+    http_path: /health/live/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -714,7 +758,7 @@ services:
     type: SECRET
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 60
     period_seconds: 15
     success_threshold: 1
@@ -772,7 +816,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -818,7 +862,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -868,7 +912,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -914,7 +958,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -968,7 +1012,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1022,7 +1066,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1068,7 +1112,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /health/ready
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1121,7 +1165,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/live
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1

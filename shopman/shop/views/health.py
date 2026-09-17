@@ -5,7 +5,9 @@ must remain healthy when a dependency is unavailable, otherwise an orchestrator
 can turn a database incident into a restart loop.
 
 ``/health/ready/`` checks the local dependency chain used by the operator BFF:
-database, shared cache/session storage, migrations and the durable queue. It
+database, shared cache/session storage, migrations and the durable queue. The
+migration plan is computed until it is first found clean and then trusted for
+the rest of the process (see ``_check_migrations``). It
 never calls a provider. Public responses contain only ``ok``, ``fail`` or
 ``skipped``; diagnostic reasons remain in protected logs.
 
@@ -114,7 +116,19 @@ def _check_cache() -> tuple[str, str | None]:
     return "ok", None
 
 
+# O plano de migrations só muda com código novo, e código novo é processo novo: o
+# `release` roda `migrate` antes de o container subir. Montar o grafo a cada
+# chamada do `/ready/` custava uma leitura de `django_migrations` e a carga de todos
+# os módulos de migração a cada 10 s. Por isso o "ok" vale pelo resto da vida do
+# processo. Pendência e erro NÃO ficam guardados: são medidos de novo na próxima
+# chamada, para o processo voltar a ficar pronto quando o schema alcançar o código.
+_migrations_verified = False
+
+
 def _check_migrations() -> tuple[str, str | None]:
+    global _migrations_verified
+    if _migrations_verified:
+        return "ok", None
     try:
         executor = MigrationExecutor(connections[DEFAULT_DB_ALIAS])
         targets = executor.loader.graph.leaf_nodes()
@@ -124,6 +138,7 @@ def _check_migrations() -> tuple[str, str | None]:
         return "fail", exc.__class__.__name__
     if pending:
         return "fail", "pending_migrations"
+    _migrations_verified = True
     return "ok", None
 
 
