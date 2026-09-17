@@ -97,7 +97,9 @@ def _deploy_errors(path: Path) -> list[str]:
     if marketing is None:
         return [f"{path.relative_to(ROOT)}: serviço marketing-nuxt ausente"]
     expected = {
-        "health_check": "/health/ready",
+        # O health check da plataforma NÃO consulta o Django: `/health/ready` é
+        # do smoke e do diagnóstico (WP-PERFORMANCE P1).
+        "health_check": "/health/live",
         "liveness_health_check": "/health/live",
     }
     errors: list[str] = []

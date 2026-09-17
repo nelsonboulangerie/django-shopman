@@ -604,8 +604,12 @@ services:
       - key: SHOPMAN_BFF_PROXY_SECRET
         scope: RUN_TIME
         type: SECRET
+    # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+    # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+    # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+    # que não chama o Django (WP-PERFORMANCE P1).
     health_check:
-      http_path: /health/ready/
+      http_path: /health/live/
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -658,7 +662,7 @@ services:
         scope: RUN_TIME
         type: SECRET
     health_check:
-      http_path: /menu
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -697,7 +701,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -743,7 +747,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -793,7 +797,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -839,7 +843,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -893,7 +897,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -935,7 +939,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -981,7 +985,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /health/ready
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
@@ -1034,7 +1038,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
     health_check:
-      http_path: /
+      http_path: /health/live
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
