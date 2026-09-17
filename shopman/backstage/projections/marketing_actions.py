@@ -305,6 +305,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=announcement.audience.eligible_count,
+            platforms=announcement.platform_refs,
             consequence="publishes_now_to_eligible_audience",
             now=now,
         )
@@ -313,6 +314,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=announcement.audience.eligible_count,
+            platforms=announcement.platform_refs,
             consequence="schedules_eligible_audience",
             scheduled_for=now + MIN_LARGE_SCHEDULE_DELAY,
             now=now,
@@ -392,6 +394,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=announcement.audience.eligible_count,
+            platforms=announcement.platform_refs,
             consequence="cancels_only_reversible_delivery_lanes",
             scheduled_for=announcement.scheduled_for,
             now=now,
@@ -419,6 +422,7 @@ def _announcement_actions(
                 resource_ref=resource_ref,
                 version=version,
                 audience_count=announcement.audience.eligible_count,
+                platforms=announcement.platform_refs,
                 consequence="changes_scheduled_delivery_time",
                 scheduled_for=now + MIN_LARGE_SCHEDULE_DELAY,
                 now=now,
@@ -447,6 +451,7 @@ def _announcement_actions(
             resource_ref=resource_ref,
             version=version,
             audience_count=recovery.retryable_count,
+            platforms=announcement.platform_refs,
             consequence="retries_only_failed_retryable_targets",
             now=now,
         )
@@ -777,14 +782,19 @@ def _confirmation(
     audience_count: int,
     consequence: str,
     now: datetime,
+    platforms: tuple[str, ...] = (),
     scheduled_for: datetime | None = None,
 ) -> tuple[ActionConfirmationProjectionV2, str]:
+    # As plataformas vão junto de propósito: sem elas o servidor não sabe se este anúncio
+    # manda MENSAGEM ou faz POSTAGEM, e a prévia do cockpit prometeria a cerimônia da
+    # grandeza errada — senha para três postagens, um toque para trezentas mensagens.
     try:
         context = authorization_context(
             action=action,
             resource_ref=resource_ref,
             base_version=version,
             audience_count=audience_count,
+            platforms=platforms,
             scheduled_for=scheduled_for,
             consequence=consequence,
         )
