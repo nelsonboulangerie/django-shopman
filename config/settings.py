@@ -506,8 +506,8 @@ else:
 # mesmo caminho spoof-safe já usado pelos gates de IP do doorman).
 RATELIMIT_IP_META_KEY = "shopman.shop.services.auth.client_ip"
 
-# Segredo que o BFF da loja (surfaces/storefront-nuxt, `NUXT_DJANGO_PROXY_SECRET`)
-# apresenta no cabeçalho `X-Shopman-Proxy-Secret`. O BFF chama o `api.` pela rede
+# Segredo que os BFFs Nuxt (storefront-nuxt e os apps de operador via operator-kit,
+# `NUXT_DJANGO_PROXY_SECRET`) apresentam no cabeçalho `X-Shopman-Proxy-Secret`. O BFF chama o `api.` pela rede
 # pública, então a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For e o
 # rightmost TRUSTED_PROXY_DEPTH deixa de ser o cliente. Com o segredo, `client_ip`
 # lê um salto a mais; sem ele (vazio = desligado), o cabeçalho não muda nada.

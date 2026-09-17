@@ -201,8 +201,9 @@ de compra todo dia, em silêncio.
 | `TRUSTED_PROXY_DEPTH` | int | `1` | Profundidade de X-Forwarded-For para IP |
 
 `SHOPMAN_BFF_PROXY_SECRET` (setting Django, env de mesmo nome, default `""` = desligado):
-segredo que o BFF da loja apresenta em `X-Shopman-Proxy-Secret` (no Nuxt,
-`NUXT_DJANGO_PROXY_SECRET`, mesmo valor). Com ele, `shopman.shop.services.auth.client_ip`
+segredo que os BFFs Nuxt apresentam em `X-Shopman-Proxy-Secret` — o da loja
+(`storefront-nuxt`) e o dos apps de operador (layer `operator-kit`, `runtimeConfig.djangoProxySecret`)
+— no Nuxt, `NUXT_DJANGO_PROXY_SECRET`, mesmo valor em cada componente. Com ele, `shopman.shop.services.auth.client_ip`
 lê um salto a mais do X-Forwarded-For — o BFF chama o `api.` pela rede pública e o
 N-ésimo da direita seria o IP de saída do Nitro. Sem ele, o cabeçalho é ignorado.
 

@@ -1814,6 +1814,14 @@ achado a linha**, e por isso não vira coluna.
 no banco a resposta de ontem para uma pergunta que o gerente pode mudar hoje. O
 que se filtra — método, estação, resultado — é fato, não julgamento.
 
+A coluna `ip_address` vem de `shop/services/auth.client_ip` (rightmost
+`DOORMAN_TRUSTED_PROXY_DEPTH`, um salto a mais quando o BFF apresenta o
+`SHOPMAN_BFF_PROXY_SECRET`); valor que não é IP grava `NULL`. **Linhas antigas não
+são reescritas:** até 17/09/2026 a trilha lia a ponta ESQUERDA do X-Forwarded-For,
+escrita por quem chama (forjável), e depois disso, enquanto o segredo não estiver
+nos componentes de operador, acesso feito pelos apps Nuxt grava o IP de saída do
+Nitro.
+
 Chaves ausentes quando vazias — a ausência diz "não havia", e uma chave com `""`
 fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).
 
