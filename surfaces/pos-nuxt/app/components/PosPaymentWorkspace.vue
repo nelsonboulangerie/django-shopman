@@ -719,16 +719,16 @@ const ctaLabel = computed(() => {
 const scheduleConflictReason = computed(
   () => selectedWindowConflict(props.deliverySlots, props.deliveryTimeSlot),
 );
-// Levar o foco ao campo que resolve. Por `aria-label` porque é o nome que o
-// campo já carrega para quem não enxerga — um `ref` a mais seria um segundo
-// nome para a mesma coisa, e o primeiro a envelhecer.
+// Levar o foco ao campo que resolve — pelo mecanismo de próximo foco do kit
+// (`reveal`: espera o DOM assentar, rola a coluna de trabalho até o campo e
+// foca). Sem fonte de fluxo de propósito: nesta tela o foco de teclado é todo
+// explícito (o shell captura dígitos e letras fora de input), então só o
+// `reveal` entra. Por `aria-label` porque é o nome que o campo já carrega para
+// quem não enxerga — um `ref` a mais seria um segundo nome para a mesma coisa,
+// e o primeiro a envelhecer.
+const { reveal } = useNextFocus();
 function focusByAriaLabel(label: string) {
-  if (!import.meta.client) return;
-  void nextTick(() => {
-    const field = document.querySelector<HTMLInputElement>(`[aria-label="${label}"]`);
-    field?.focus();
-    field?.scrollIntoView({ block: "center", behavior: "auto" });
-  });
+  reveal(() => document.querySelector<HTMLInputElement>(`[aria-label="${label}"]`), { align: "center" });
 }
 
 type CheckoutAction = { label: string; run: () => void };
@@ -738,13 +738,10 @@ function removePixAndFocusAlternative() {
     .filter((index) => index >= 0)
     .reverse();
   pixIndexes.forEach((index) => emit("removeTender", index));
-  void nextTick(() => {
-    const alternative = document.querySelector<HTMLElement>(
-      '[data-payment-method]:not([data-payment-method="pix"]):not(:disabled)',
-    );
-    alternative?.focus();
-    alternative?.scrollIntoView({ block: "center", behavior: "auto" });
-  });
+  reveal(
+    () => document.querySelector<HTMLElement>('[data-payment-method]:not([data-payment-method="pix"]):not(:disabled)'),
+    { align: "center" },
+  );
 }
 
 function returnToCart() {

@@ -219,7 +219,10 @@ def enabled_notification_channels(
             if ConsentService.has_consent(customer_ref, channel):
                 enabled.add(channel)
         except Exception:
-            logger.debug(
+            # Canal ilegível aparece DESLIGADO (falha fechado para envio), mas a tela
+            # de Preferências mente sobre ele: tem de gritar, como a pergunta de
+            # novidades logo abaixo já grita quando a mesma fonte cai.
+            logger.warning(
                 "customer_context_consent_channel_failed customer=%s channel=%s",
                 customer_ref,
                 channel,
@@ -317,3 +320,34 @@ def _address_context(addr: Any) -> CustomerAddressContext:
         place_id=addr.place_id or "",
         delivery_instructions=addr.delivery_instructions or "",
     )
+
+
+# ── Pergunta de novidades (convite em sheet na loja) ─────────────────────────
+#
+# Leitura pura: a pergunta está pendente enquanto não há consentimento no canal
+# (qualquer status) nem o carimbo de resposta em `Customer.metadata`. Quem grava a
+# resposta é `services.account.answer_marketing_prompt`.
+MARKETING_PROMPT_CHANNEL = "whatsapp"
+MARKETING_PROMPT_ANSWERED_AT = "marketing_prompt_answered_at"
+
+
+def marketing_prompt_pending(customer) -> bool:
+    """Se a loja ainda deve PERGUNTAR sobre novidades a este cliente.
+
+    Falha fechado: se a fonte de consentimento não responde, não pergunta — o
+    payload de sessão não pode derrubar a sessão inteira por causa disso.
+    """
+    customer_ref = (getattr(customer, "ref", "") or "").strip()
+    if not customer_ref:
+        return False
+    metadata = getattr(customer, "metadata", None) or {}
+    if isinstance(metadata, dict) and metadata.get(MARKETING_PROMPT_ANSWERED_AT):
+        return False
+    try:
+        from shopman.guestman import ConsentService
+
+        consents = ConsentService.get_consents(customer_ref)
+    except Exception:
+        logger.warning("marketing_prompt.consent_source_unavailable customer=%s", customer_ref, exc_info=True)
+        return False
+    return not any(consent.channel == MARKETING_PROMPT_CHANNEL for consent in consents)

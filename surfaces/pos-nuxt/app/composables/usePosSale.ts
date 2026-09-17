@@ -686,6 +686,14 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   const checkoutContract = computed(() => pos.value?.checkout || null);
+  // O bloco "Nota e comprovante" existe na tela? MESMA régua do workspace
+  // (`supports_fiscal_document`, ausente = não). Quando ele não existe, a venda
+  // não carrega pedido fiscal nenhum: o operador não vê CPF, papel nem e-mail,
+  // não tem onde desmarcar, e o resolver emitiria uma nota que ninguém pediu na
+  // tela. Os padrões do cliente continuam no CADASTRO; só não pré-marcam a venda.
+  const fiscalFormOffered = computed(
+    () => checkoutContract.value?.capabilities?.supports_fiscal_document === true,
+  );
   const checkoutCapabilities = computed<POSCheckoutCapabilities>(
     () => (checkoutContract.value?.capabilities ?? {}) as POSCheckoutCapabilities,
   );
@@ -1562,7 +1570,7 @@ export function usePosSale(deps: PosSaleDeps) {
       customerTaxId: cart.customerTaxId,
       // O switch é que decide se o documento viaja. Desligado, o valor fica
       // guardado na tela (religar devolve) mas NÃO vai para a nota.
-      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
+      invoiceTaxId: fiscalFormOffered.value && cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
       customerEmail: cart.customerEmail,
       customerMemoryAction: cart.customerMemoryAction,
       salesMode: cart.salesMode,
@@ -1587,11 +1595,13 @@ export function usePosSale(deps: PosSaleDeps) {
         && cart.paymentTenders.some((t) => t.method === "cash" && !t._virgin)
         ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
-      receiptChannels: cart.receiptChannels,
-      receiptEmail: cart.receiptChannels.includes("email") ? cart.receiptEmail || cart.customerEmail : "",
+      // Mesma regra do CPF acima: sem o bloco na tela, nenhum canal de
+      // documento viaja — nem o que veio de comanda reaberta.
+      receiptChannels: fiscalFormOffered.value ? cart.receiptChannels : [],
+      receiptEmail: fiscalFormOffered.value && cart.receiptChannels.includes("email") ? cart.receiptEmail || cart.customerEmail : "",
       // O padrão da oferta vale enquanto o operador não tocar — e a régua é o
       // cadastro que o lookup trouxe, a mesma que a tela usou para perguntar.
-      saveReceiptContact: cart.receiptChannels.includes("email") && receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
+      saveReceiptContact: fiscalFormOffered.value && cart.receiptChannels.includes("email") && receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
       // ⚠️ `receiptContactArmed` e não `receiptContactChecked`: no CPF divergente
       // a caixa marcada sem a reconfirmação não grava NADA. É aqui que a
       // fricção deixa de ser conversa de tela e vira consequência.
@@ -1678,7 +1688,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
     // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
     // decide se ele viaja.
-    const prefs = customer.fiscal_prefs || {};
+    const prefs = fiscalFormOffered.value ? (customer.fiscal_prefs || {}) : {};
     cart.invoiceTaxId = cart.invoiceTaxId || customer.tax_id || "";
     if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
     if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
@@ -1811,7 +1821,7 @@ export function usePosSale(deps: PosSaleDeps) {
       customerEmail: cart.customerEmail,
       customerTaxId: cart.customerTaxId,
       receiptEmail: cart.receiptEmail,
-      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
+      invoiceTaxId: fiscalFormOffered.value && cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
     });
   }
 
@@ -1884,7 +1894,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
       // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
       // decide se ele viaja.
-      const prefs = response.customer.fiscal_prefs || {};
+      const prefs = fiscalFormOffered.value ? (response.customer.fiscal_prefs || {}) : {};
       cart.invoiceTaxId = cart.invoiceTaxId || response.customer.tax_id || "";
       if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
@@ -2297,6 +2307,8 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!cart.customerRef.trim()) {
       pendingCustomerPrefs.value = { ...pendingCustomerPrefs.value, [key]: value };
     }
+    // Sem o bloco na tela, o padrão vai para o cadastro e para aí.
+    if (!fiscalFormOffered.value) return;
     if (key === "cpf_na_nota") {
       cart.wantsCpfOnInvoice = value;
       if (value && !cart.invoiceTaxId.trim()) {

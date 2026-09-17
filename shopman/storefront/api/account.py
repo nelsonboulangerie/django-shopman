@@ -970,18 +970,20 @@ class NotificationPreferenceToggleView(APIView):
         })
 
 
-# A frase que a pessoa lê ao lado da chave no gate de boas-vindas
-# (`surfaces/storefront-nuxt/app/pages/entrar.vue`, bloco `data-login-marketing`).
-# É gravada como evidência do consentimento, então tem de ser a MESMA da tela —
-# o teste de contrato lê o .vue e confere. Mudou a copy? Sobe a versão.
+# A frase que a pessoa lê ao lado da chave no sheet de novidades
+# (`surfaces/storefront-nuxt/app/components/MarketingPromptSheet.vue`): o rótulo
+# da chave + a linha miúda. É gravada como evidência do consentimento, então tem
+# de ser a MESMA da tela — o teste de contrato lê o .vue e confere. Mudou a
+# copy? Sobe a versão. (v2 era o bloco "Novidades da Nelson" do passo de login,
+# que virou sheet na página de destino em 17/09.)
 #
 # A chave é SÓ consentimento. A maioridade não entra na frase: foi declarada ao
 # entrar (`account_service.record_adult_declaration`), em toda porta de entrada.
 MARKETING_PROMPT_DISCLOSURE = (
-    "Quero receber novidades da Nelson pelo WhatsApp. "
-    "Mude quando quiser em Conta › Preferências."
+    "Avisos pelo WhatsApp. "
+    "Mude quando quiser em Preferências."
 )
-MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v2"
+MARKETING_PROMPT_DISCLOSURE_VERSION = "storefront-welcome-whatsapp-pt-BR-v3"
 
 
 class MarketingPromptView(APIView):
@@ -989,9 +991,9 @@ class MarketingPromptView(APIView):
 
     Corpo: ``{"whatsapp": bool}`` (ausente = ``false``). Idempotente: a primeira
     resposta carimba ``Customer.metadata["marketing_prompt_answered_at"]`` e o
-    gate de boas-vindas para de perguntar; repetir não regrava o carimbo.
+    sheet de novidades da loja para de perguntar; repetir não regrava o carimbo.
 
-    ⚠️ ``whatsapp=false`` (não marcou, ou "Deixar para depois") grava SÓ o
+    ⚠️ ``whatsapp=false`` (fechou o sheet sem ligar a chave) grava SÓ o
     carimbo. Nunca ``opted_out``: isso é proibição, e cala até o recado do
     próprio pedido naquele canal (`services/notification.py`). Ver
     `account_service.answer_marketing_prompt`.
@@ -1561,13 +1563,35 @@ class FavoriteDetailView(APIView):
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
 
+        from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
         from shopman.storefront.services import favorites
 
         if value:
-            favorites.add(customer.ref, sku)
-        else:
-            favorites.remove(customer.ref, sku)
-        return Response({"ok": True, "is_favorite": value})
+            # Favoritar um esgotado de verdade, com opt-in de WhatsApp e maioridade
+            # provada, anota o aviso do "Me avise" (Pablo, 17/09). O sino volta na
+            # resposta para o card virar "Anotado" sem esperar a próxima projeção.
+            outcome = favorites.add_noting_stock_alert(
+                customer,
+                sku,
+                # A mesma vitrine da lista de favoritos: o sino que se anota é o
+                # que o card de `conta/favoritos` mostra.
+                channel_ref=STOREFRONT_CHANNEL_REF,
+                session_key=str(request.session.get("cart_session_key") or ""),
+            )
+            return Response({
+                "ok": True,
+                "is_favorite": outcome.is_favorite,
+                "is_notify_subscribed": outcome.is_notify_subscribed,
+                "stock_alert_noted": outcome.stock_alert_noted,
+            })
+        # Desfavoritar não cancela o aviso: o sino continua como estava.
+        favorites.remove(customer.ref, sku)
+        return Response({
+            "ok": True,
+            "is_favorite": False,
+            "is_notify_subscribed": favorites.notify_subscribed(customer, sku),
+            "stock_alert_noted": False,
+        })
 
 # ── Passkey: a lista que a pessoa vê e revoga ────────────────────────
 

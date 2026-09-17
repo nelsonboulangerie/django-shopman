@@ -179,7 +179,7 @@ def test_the_sentence_in_evidence_is_the_sentence_on_screen():
     obriga a mudar a frase gravada (e a versão) junto."""
     from shopman.storefront.api.account import MARKETING_PROMPT_DISCLOSURE
 
-    page = Path(__file__).resolve().parents[4] / "surfaces" / "storefront-nuxt" / "app" / "pages" / "entrar.vue"
+    page = Path(__file__).resolve().parents[4] / "surfaces" / "storefront-nuxt" / "app" / "components" / "MarketingPromptSheet.vue"
     if not page.exists():
         pytest.skip("superfície Nuxt ausente neste checkout")
     source = page.read_text(encoding="utf-8")

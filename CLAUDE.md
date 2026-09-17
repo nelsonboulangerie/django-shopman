@@ -269,6 +269,14 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **NUNCA**: `onclick="..."`, `onchange="..."`, `document.getElementById`, `classList.toggle/add/remove` em templates. Usar `@click`, `x-show`, `x-data`, `x-text`, `$store`.
   - **Exceção**: IntersectionObserver e APIs do browser que não têm equivalente Alpine (geolocation, clipboard, service worker).
 - **Tempo real por SSE (cross-surface, site-wide)**: sempre que houver estado que muda no servidor e importa na tela (acompanhamento, estoque, verificação, KDS, badges), preferir **push por SSE** em vez de depender de polling. O SSE é camada de push sobre um **fetch canônico** que continua sendo a fonte da verdade (no evento, refaça o fetch REST); o **poll fica só como fallback** em cadência calma. Canais nomeados + permissão no `ShopmanChannelManager`, proxy same-origin no BFF via `server/utils/eventStream.ts` (`proxyEventStream`). Ver [ADR-016](docs/decisions/adr-016-sse-first-realtime.md).
+- **Próximo foco (site-wide, Storefront e Backstage)**: toda tela com sequência de blocos
+  (etapas, campos, cartões) declara qual é o foco do momento e usa `useNextFocus` para
+  levar a página até ele — bloco `data-focus-target="<chave>"` na **linha de foco** (topo
+  da área visível, sob o chrome fixo, via `scroll-margin-top`) com foco de teclado no
+  bloco ou no `data-focus-control`. Não escrever `scrollIntoView` ad hoc por tela. Vive em
+  `operator-kit/app/composables/useNextFocus.ts` (espelho no storefront); contrato na
+  seção "Próximo foco" do `surfaces/operator-kit/README.md`. Consumidores: checkout do
+  storefront (fluxo por seção) e `PosPaymentWorkspace` do PDV (só `reveal`, foco explícito).
 - **Envelope de segurança das surfaces de operador**: CSP/cache/security do HTML, BFF,
   erros e SSE é capability compartilhada e **opt-in** do `operator-kit`, nunca arquivos
   copiados nem ativação implícita em todos os consumers. O Marketing é o piloto; não o

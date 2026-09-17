@@ -355,6 +355,10 @@ export interface OmotenashiProjection {
   customer_name: string | null
   is_birthday: boolean
   audience: 'anon' | 'new' | 'returning' | 'vip'
+  // A pergunta de novidades ainda não foi respondida (anônimo: sempre false).
+  // Chega em toda visita — é daqui que o sheet de novidades sabe se sobe para
+  // quem entra pelo aparelho reconhecido, sem passar pelo login.
+  marketing_prompt_pending: boolean
 }
 
 export interface ShopStatusProjection {
@@ -1142,6 +1146,15 @@ export interface AccountDeviceResponse {
   devices: AccountDeviceProjection[]
   copy: AccountDeviceCopy
   privacy_requests_available?: boolean
+}
+
+// POST/DELETE /api/v1/account/favorites/<sku>/. `is_notify_subscribed` é o sino
+// DEPOIS do gesto; `stock_alert_noted` diz se este favorito criou o aviso.
+export interface FavoriteToggleResponse {
+  ok: boolean
+  is_favorite: boolean
+  is_notify_subscribed: boolean
+  stock_alert_noted: boolean
 }
 
 export interface FavoritesResponse {

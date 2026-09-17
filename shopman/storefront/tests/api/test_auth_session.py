@@ -95,7 +95,8 @@ def test_auth_session_marks_nameless_customer_for_welcome(client: Client):
     assert data["is_authenticated"] is True
     assert data["requires_welcome"] is True
     assert data["welcome_asks_name"] is True
-    # Nunca respondeu sobre novidades: o gate pergunta as duas coisas de uma vez.
+    # Nunca respondeu sobre novidades: a flag sai junto, mas quem pergunta é o
+    # sheet na página de destino — o gate do login é só o nome.
     assert data["welcome_asks_marketing"] is True
     assert data["welcome_suggested_name"] == ""
 
@@ -117,10 +118,13 @@ def test_auth_session_marks_dirty_customer_name_for_welcome(client: Client):
     assert data["welcome_suggested_name"] == "João & Maria"
 
 
-# ── A pergunta de novidades abre o gate sozinha ─────────────────────────
+# ── A pergunta de novidades sai na sessão, mas NÃO abre o gate ──────────
 #
 # Medido no alpha em 16/09: 58 clientes ativos, 1 aniversário, 5 consentimentos
-# de WhatsApp. Sem perguntar na entrada, campanha direta não alcança ninguém.
+# de WhatsApp. Sem perguntar, campanha direta não alcança ninguém — mas a
+# pergunta não é passo de login (decisão de 17/09): a loja a faz num sheet na
+# página de destino, lendo `welcome_asks_marketing` por conta própria.
+# `requires_welcome` é só o nome.
 
 
 def _named_customer(ref: str, phone: str, **extra) -> Customer:
@@ -135,8 +139,8 @@ def test_auth_session_asks_marketing_when_the_question_was_never_answered(client
 
     assert data["welcome_asks_name"] is False
     assert data["welcome_asks_marketing"] is True
-    # Só a pergunta de novidades basta para abrir o gate.
-    assert data["requires_welcome"] is True
+    # A pergunta de novidades sozinha NÃO abre o gate: ela é sheet, não passo.
+    assert data["requires_welcome"] is False
 
 
 def test_auth_session_stamp_silences_the_marketing_question(client: Client):

@@ -643,28 +643,48 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('data-login-trust')
     expect(login).toContain('<UiSwitch id="trusted-device"')
     expect(login).not.toContain('<UiCheckbox')
-    // Welcome gate omotenashi: nome via PATCH profile, com saída discreta.
+    // Welcome gate omotenashi = SÓ o nome: PATCH profile, com saída discreta.
     expect(login).toContain('requires_welcome')
     expect(login).toContain('welcome_suggested_name')
     expect(login).toContain("apiPath('/api/v1/account/profile/')")
     expect(login).toContain('data-login-welcome')
     expect(login).toContain('Deixar para depois')
-    // A pergunta de novidades no mesmo gate: chave que nasce DESLIGADA (a mesma
-    // linha editorial com switch do confiar-no-aparelho), SÓ consentimento — sem
-    // data de nascimento, sem frase de idade —, e a resposta vai para o endpoint
-    // do carimbo — nunca um opt-out por "deixar para depois".
-    expect(login).toContain('welcome_asks_marketing')
-    expect(login).toContain('data-login-marketing')
-    expect(login).toContain('<UiSwitch id="welcome-marketing"')
-    expect(login).toContain('const welcomeMarketing = ref(false)')
+    expect(login).toContain("'Como podemos te chamar?'")
+    // A pergunta de novidades NÃO é passo do login (decisão de 17/09): nada de
+    // bloco de novidades, "Antes de entrar" ou marketing-prompt na tela de entrada.
+    expect(login).not.toContain('marketing-prompt')
+    expect(login).not.toContain('welcomeMarketing')
+    expect(login).not.toContain('welcomeAsks')
+    expect(login).not.toContain('Antes de entrar')
+    expect(login).not.toContain('Uma pergunta rápida')
+    expect(login).not.toContain('Novidades')
     expect(login).not.toContain('type="date"')
     expect(login).not.toContain('welcomeBirthday')
-    expect(login).toContain("apiPath('/api/v1/account/marketing-prompt/')")
-    // A frase é a evidência do consentimento: o servidor grava exatamente esta
-    // (MARKETING_PROMPT_DISCLOSURE em shopman/storefront/api/account.py).
-    expect(login).toContain('Quero receber novidades da Nelson pelo WhatsApp')
-    expect(login).toContain('Mude quando quiser em Conta › Preferências.')
-    expect(login).not.toContain("enabled: false")
+    // Ela é um bottom sheet na página de destino, montado UMA vez no shell e
+    // dirigido pela sessão: chave que nasce DESLIGADA, SÓ consentimento — sem
+    // data de nascimento, sem frase de idade —, e a resposta vai para o endpoint
+    // do carimbo (fechar = `whatsapp: false`) — nunca um opt-out.
+    const sheet = read('app/components/MarketingPromptSheet.vue')
+    expect(read('app/app.vue')).toContain('<MarketingPromptSheet />')
+    expect(sheet).toContain('<BottomSheet')
+    expect(sheet).toContain('isMarketingPromptRouteExcluded(route.path)')
+    expect(sheet).toContain('session.welcomeAsksMarketing.value')
+    expect(sheet).toContain('<UiSwitch')
+    expect(sheet).toContain('id="marketing-prompt-whatsapp"')
+    expect(sheet).toContain('const whatsapp = ref(false)')
+    expect(sheet).toContain("apiPath('/api/v1/account/marketing-prompt/')")
+    expect(sheet).toContain('body: { whatsapp: optIn }')
+    expect(sheet).not.toContain("enabled: false")
+    expect(sheet).not.toContain('type="date"')
+    // Copy FINAL, três linhas + chave + fechar, e nada além.
+    expect(sheet).toContain('title="Saber das fornadas antes de todo mundo?"')
+    expect(sheet).toContain('Combinado. Você vai saber primeiro.')
+    expect(templateOnly(sheet)).not.toMatch(/Continuar|Deixar para depois|Novidades da Nelson|Termos|Conta ›|\b18\b|maior|nascimento/i)
+    // O rótulo da chave + a linha miúda são a evidência do consentimento: o
+    // servidor grava exatamente estas (MARKETING_PROMPT_DISCLOSURE em
+    // shopman/storefront/api/account.py).
+    expect(sheet).toContain('Avisos pelo WhatsApp')
+    expect(sheet).toContain('Mude quando quiser em Preferências.')
     // A maioridade é declarada ao ENTRAR, em toda porta com tela (login e access
     // link): frase fixa de presentation/auth.ts, com link para os Termos. Nunca
     // "18", "anos" ou "adulto" na copy voltada ao cliente.
