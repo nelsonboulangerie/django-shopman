@@ -950,6 +950,7 @@ class TestProxyPagesIsolation:
             ShopPos,
             ShopProduction,
             ShopPurchase,
+            ShopSearch,
         )
 
         for model in (
@@ -962,6 +963,7 @@ class TestProxyPagesIsolation:
             ShopPos,
             ShopProduction,
             ShopIntegrations,
+            ShopSearch,
         ):
             assert model in admin.site._registry
 

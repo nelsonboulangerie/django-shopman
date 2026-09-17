@@ -65,6 +65,7 @@ from .surface import (
     StorefrontHomeView,
     StorefrontMenuView,
     StorefrontProductView,
+    StorefrontSiteView,
 )
 from .telemetry import ClientErrorView
 from .tracking import (
@@ -81,6 +82,7 @@ from .whatsapp_verify import WhatsAppVerifyStartView
 urlpatterns = [
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
+    path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),
     path("storefront/menu/<slug:collection>/", StorefrontMenuView.as_view(), name="api-storefront-menu-collection"),
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),

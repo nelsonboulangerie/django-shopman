@@ -241,6 +241,98 @@ class Shop(models.Model):
         ),
     )
 
+    # ── Busca e compartilhamento (SEO) ──
+    # Vazio = o texto que a loja deriva sozinha da marca, do slogan e da cidade
+    # (`shopman.storefront.presentation.site`). Preencher é afinar, nunca
+    # pré-requisito: a loja nasce indexável sem ninguém abrir esta página.
+    seo_home_title = models.CharField(
+        "título da página inicial",
+        max_length=70,
+        blank=True,
+        help_text=(
+            "O título azul no resultado do Google. Até 60 caracteres aparecem inteiros. "
+            "Vazio = marca · slogan em cidade."
+        ),
+    )
+    seo_home_description = models.CharField(
+        "descrição da página inicial",
+        max_length=170,
+        blank=True,
+        help_text="O texto cinza sob o título no Google. Até 155 caracteres aparecem inteiros.",
+    )
+    seo_menu_description = models.CharField(
+        "descrição do cardápio",
+        max_length=170,
+        blank=True,
+        help_text="Aparece no Google para a página /menu.",
+    )
+    seo_faq_description = models.CharField(
+        "descrição das perguntas frequentes",
+        max_length=170,
+        blank=True,
+        help_text="Aparece no Google para a página /faq.",
+    )
+    seo_share_image_url = models.URLField(
+        "imagem de compartilhamento",
+        max_length=500,
+        blank=True,
+        help_text=(
+            "Imagem do cartão quando alguém compartilha o site (WhatsApp, Instagram, Facebook). "
+            "Ideal 1200×630. Vazio = foto do primeiro destaque do cardápio."
+        ),
+    )
+    business_type = models.CharField(
+        "tipo de negócio",
+        max_length=40,
+        choices=[
+            ("Bakery", "Padaria"),
+            ("CafeOrCoffeeShop", "Café"),
+            ("Restaurant", "Restaurante"),
+            ("FoodEstablishment", "Estabelecimento de alimentação"),
+            ("Store", "Loja"),
+        ],
+        default="Bakery",
+        help_text="Como o Google classifica o negócio nos dados estruturados.",
+    )
+    price_range = models.CharField(
+        "faixa de preço",
+        max_length=10,
+        blank=True,
+        help_text='Como o Google exibe o preço médio do negócio: "$", "$$" ou "$$$".',
+    )
+    founding_year = models.PositiveSmallIntegerField(
+        "ano de fundação",
+        null=True,
+        blank=True,
+    )
+    google_site_verification = models.CharField(
+        "verificação do Google Search Console",
+        max_length=100,
+        blank=True,
+        help_text=(
+            "Só o código do atributo content da meta tag. Vazio se a propriedade já foi "
+            "verificada pelo DNS."
+        ),
+    )
+    bing_site_verification = models.CharField(
+        "verificação do Bing Webmaster",
+        max_length=100,
+        blank=True,
+        help_text="Só o código da meta tag msvalidate.01.",
+    )
+    facebook_domain_verification = models.CharField(
+        "verificação de domínio do Facebook",
+        max_length=100,
+        blank=True,
+        help_text="Só o código da meta tag facebook-domain-verification.",
+    )
+    pinterest_domain_verification = models.CharField(
+        "verificação de domínio do Pinterest",
+        max_length=100,
+        blank=True,
+        help_text="Só o código da meta tag p:domain_verify.",
+    )
+
     # ── Motivos de cancelamento/recusa (presets do operador) ──
     cancellation_presets = models.JSONField(
         "motivos de cancelamento/recusa",

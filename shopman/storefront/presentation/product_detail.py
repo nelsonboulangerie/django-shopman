@@ -474,9 +474,12 @@ def _seo_description(
     allergen: AllergenInfoProjection | None,
     conservation: ConservationInfoProjection | None,
 ) -> str:
-    parts = [
-        product.short_description or product.long_description or product.name,
-    ]
+    # A descrição do catálogo raramente termina em ponto ("fermentação natural
+    # (levain)"), e sem ele o Google lia "(levain) Atenção a alergias" como uma frase só.
+    lead = " ".join(str(product.short_description or product.long_description or product.name or "").split())
+    if lead and lead[-1] not in ".!?…":
+        lead = f"{lead}."
+    parts = [lead]
     if allergen and allergen.allergens:
         parts.append(f"Atenção a alergias: {', '.join(allergen.allergens)}.")
     if allergen and allergen.dietary_info:

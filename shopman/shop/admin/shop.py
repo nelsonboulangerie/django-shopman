@@ -48,6 +48,7 @@ from shopman.shop.models import (
     ShopPos,
     ShopProduction,
     ShopPurchase,
+    ShopSearch,
 )
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
@@ -1449,6 +1450,51 @@ _IDENTITY_FIELDSETS = (
     ),
 )
 
+_SEARCH_FIELDSETS = (
+    (
+        "Como a loja aparece no Google",
+        {
+            "fields": (
+                "seo_home_title",
+                "seo_home_description",
+                "seo_menu_description",
+                "seo_faq_description",
+            ),
+            "description": (
+                "Campo vazio não é buraco: a loja usa o texto que deriva da marca, do slogan "
+                "e da cidade. O Google pode levar dias para refletir uma mudança. Produtos e "
+                "coleções usam a descrição do próprio catálogo."
+            ),
+        },
+    ),
+    (
+        "Cartão de compartilhamento",
+        {"fields": ("seo_share_image_url",)},
+    ),
+    (
+        "Dados do negócio para o Google",
+        {
+            "fields": ("business_type", "price_range", "founding_year"),
+            "description": (
+                "Somam-se ao endereço, telefone, horários e redes sociais já cadastrados. "
+                "Para o mapa apontar para a sua ficha, preencha o Google Place ID em Loja e contato."
+            ),
+        },
+    ),
+    (
+        "Verificação de propriedade",
+        {
+            "fields": (
+                "google_site_verification",
+                "bing_site_verification",
+                "facebook_domain_verification",
+                "pinterest_domain_verification",
+            ),
+            "description": "Códigos que as plataformas pedem para provar que o site é seu.",
+        },
+    ),
+)
+
 _APPEARANCE_FIELDSETS = (
     (
         "Marca",
@@ -1996,6 +2042,12 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             'style="min-height:min(70vh,640px)"></iframe>'
             "</div>"
         )
+
+
+@admin.register(ShopSearch)
+class ShopSearchAdmin(_ShopSingletonAdmin):
+    form = _section_form(_SEARCH_FIELDSETS)
+    fieldsets = _SEARCH_FIELDSETS
 
 
 @admin.register(ShopOperation)

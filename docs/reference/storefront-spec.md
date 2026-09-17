@@ -68,6 +68,10 @@ GETs de storefront fazem `ensure_csrf_cookie` (estabelecem sessão+token).
 `storefront/products/<sku>/`, `storefront/cart/`, `storefront/checkout/` — cada um devolve a projeção
 + o carrinho. Catálogo público: `catalog/products/` (filtros collection/search/available, paginado),
 `catalog/products/<sku>/`, `catalog/collections/`, `availability/<sku>/` (cache 10s).
+**Site público:** `storefront/site/` devolve o que busca e cartão de link precisam (títulos e
+descrições por página, códigos de verificação, dados do negócio para o JSON-LD `LocalBusiness`) e
+a FAQ pública. Editável em Admin → Busca e compartilhamento; campo vazio cai no texto derivado da
+marca (`presentation/site.py`).
 
 **Carrinho:** `PUT /api/v1/cart/skus/<sku>/` (set qty absoluta; qty ∈ [0,99] validado no serializer
 antes da lógica; 409 com `available_qty`+substitutos+ações em falta de estoque; 120/m), `cart/coupon/`

@@ -52,6 +52,7 @@
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
+| [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 
 ---
 
@@ -109,6 +110,27 @@ python manage.py release_expired_holds
 ```
 
 **Recomendação:** Executar via cron a cada 5–15 minutos.
+
+---
+
+
+### apply_search_presence
+
+Leva a presença de busca da Nelson a um banco que já existe: textos de busca e
+dados do negócio (Admin → Busca e compartilhamento), perfis reais da marca em
+`Shop.social_links` e a FAQ inicial (`FAQEntry`). É a MESMA fonte que o `seed`
+grava num banco novo.
+
+```bash
+python manage.py apply_search_presence            # só mostra o que faria
+python manage.py apply_search_presence --apply    # grava
+```
+
+Só preenche campo de busca **vazio**, só cria pergunta que **não existe** (casa
+pela `ref`) e só acrescenta perfil que **falta**; tira o link de exemplo
+(`example`). O que depende de decisão do dono (cancelamento, CPF na nota do
+pedido online, iFood, fidelidade) nasce como rascunho. **Não** mexe em horário,
+endereço, coordenadas, preço nem catálogo. Idempotente.
 
 ---
 

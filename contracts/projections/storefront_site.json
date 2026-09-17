@@ -1,0 +1,94 @@
+{
+  "business": {
+    "address": {
+      "country_code": "BR",
+      "locality": "Londrina",
+      "neighborhood": "Centro",
+      "postal_code": "86000-000",
+      "region": "PR",
+      "street": "Rua do Contrato, 100"
+    },
+    "description": "Pães de fermentação natural.",
+    "email": "contato@padaria.test",
+    "founding_year": 1997,
+    "geo": {
+      "latitude": -23.3348384,
+      "longitude": -51.1673157
+    },
+    "legal_name": "",
+    "logo_url": "",
+    "maps_url": "https://www.google.com/maps/@-23.3348384,-51.1673157,17z",
+    "name": "Padaria Contrato",
+    "opening_hours": [
+      {
+        "closes": "18:00",
+        "days": [
+          "Monday"
+        ],
+        "opens": "09:00"
+      },
+      {
+        "closes": "13:00",
+        "days": [
+          "Saturday"
+        ],
+        "opens": "08:00"
+      }
+    ],
+    "price_range": "$$",
+    "same_as": [
+      "https://www.instagram.com/padariacontrato"
+    ],
+    "telephone": "+554300000000",
+    "type": "Bakery",
+    "url": ""
+  },
+  "faq": [
+    {
+      "answer": "Sim. Fazemos entrega. Para confirmar se o endereço está na área atendida e calcular a taxa, precisamos do endereço completo com número.",
+      "question": "Vocês fazem entrega?",
+      "ref": "delivery"
+    },
+    {
+      "answer": "Segunda: 9h às 18h; Terça a Sexta: Fechado; Sábado: 8h às 13h; Domingo: Fechado",
+      "question": "Quais são os horários de funcionamento?",
+      "ref": "hours"
+    },
+    {
+      "answer": "Ficamos em Rua do Contrato, 100, Centro, Londrina — PR — CEP 86000-000.",
+      "question": "Onde vocês ficam?",
+      "ref": "location"
+    },
+    {
+      "answer": "Você pode falar conosco por telefone (43) 0000-0000 ou e-mail contato@padaria.test.",
+      "question": "Como falar com vocês?",
+      "ref": "contact"
+    },
+    {
+      "answer": "Resposta do contrato.",
+      "question": "Pergunta do contrato?",
+      "ref": "curated-pergunta-do-contrato"
+    }
+  ],
+  "pages": {
+    "faq": {
+      "description": "Perguntas frequentes sobre pedidos, retirada, horários e atendimento da Padaria Contrato.",
+      "title": "Perguntas frequentes"
+    },
+    "home": {
+      "description": "Pães de fermentação natural.",
+      "title": "Padaria Contrato · Padaria Artesanal em Londrina"
+    },
+    "menu": {
+      "description": "Cardápio do contrato.",
+      "title": "Cardápio"
+    }
+  },
+  "share_image_url": "",
+  "verifications": {
+    "bing": "",
+    "facebook": "contrato-facebook",
+    "google": "",
+    "pinterest": ""
+  }
+}

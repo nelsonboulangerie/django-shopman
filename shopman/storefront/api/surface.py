@@ -31,6 +31,7 @@ from shopman.storefront.presentation import (
     build_home,
     build_product_detail,
     build_reorder_conflict,
+    build_site,
     notify_subscribed_skus,
 )
 from shopman.storefront.services import catalog as catalog_service
@@ -279,6 +280,31 @@ class StorefrontHomeView(APIView):
             "home": projection_data(home),
             "cart": projection_data(cart),
         })
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Storefront public site projection",
+        responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
+    ),
+)
+class StorefrontSiteView(APIView):
+    """GET /api/v1/storefront/site/ — o que busca e cartão de link precisam saber."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from django.http import Http404
+
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        if shop is None:
+            raise Http404
+        site = build_site(shop=shop, channel_ref=STOREFRONT_CHANNEL_REF)
+        return Response({"site": projection_data(site)})
 
 
 @extend_schema_view(
