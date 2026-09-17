@@ -36,7 +36,7 @@ async function goToStations() {
       >
         <OperatorRail
           app-icon="chef-hat"
-          app-icon-src="/pwa/pwa-64x64.png?v=2"
+          app-icon-src="/pwa/pwa-64x64.png?v=3"
           app-label="Cozinha"
           :central-url="hubUrl"
           :operator-name="operator?.name"

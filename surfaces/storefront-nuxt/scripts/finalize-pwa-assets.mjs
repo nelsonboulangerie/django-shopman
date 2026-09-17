@@ -20,11 +20,19 @@ const storeIcon = lucide.icons.store
 const storeWidth = storeIcon.width || lucide.width || 24
 const storeHeight = storeIcon.height || lucide.height || 24
 
+// Raio do canto do ícone `purpose: any`, em fração do lado — mesmo padrão da família
+// de operador (`operator-kit/scripts/generate-pwa-assets.mjs`). Desktop (Windows, macOS
+// sem maskable, Linux) mostra o `any` como está, sem máscara; quadrado cheio vira
+// azulejo de quinas vivas. `maskable` e `apple-touch-icon` seguem cheios: o launcher
+// Android e o iOS recortam sozinhos.
+const ICON_CORNER_RATIO = 0.225
+
 function storeIconSvg (size, {
   background = '#6D1F32',
   foreground = '#FCF7EE',
   symbolRatio = 0.56,
-  transparent = false
+  transparent = false,
+  rounded = false
 } = {}) {
   const symbolWidth = size * symbolRatio
   const symbolHeight = symbolWidth * (storeHeight / storeWidth)
@@ -32,9 +40,10 @@ function storeIconSvg (size, {
   const left = (size - symbolWidth) / 2
   const top = (size - symbolHeight) / 2
   const body = storeIcon.body.replaceAll('currentColor', foreground)
+  const radius = rounded ? size * ICON_CORNER_RATIO : 0
   return Buffer.from(`
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      ${transparent ? '' : `<rect width="${size}" height="${size}" fill="${background}"/>`}
+      ${transparent ? '' : `<rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="${background}"/>`}
       <g transform="translate(${left} ${top}) scale(${scale})">${body}</g>
     </svg>
   `)
@@ -103,13 +112,13 @@ await sharp(storeIconSvg(512, { foreground: '#000000', transparent: true }))
   .toFile(fileURLToPath(new URL('monochrome-512x512.png', output)))
 
 await Promise.all([
-  sharp(storeIconSvg(64))
+  sharp(storeIconSvg(64, { rounded: true }))
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toFile(fileURLToPath(new URL('pwa-64x64.png', output))),
-  sharp(storeIconSvg(192))
+  sharp(storeIconSvg(192, { rounded: true }))
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toFile(fileURLToPath(new URL('pwa-192x192.png', output))),
-  sharp(storeIconSvg(512))
+  sharp(storeIconSvg(512, { rounded: true }))
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toFile(fileURLToPath(new URL('pwa-512x512.png', output))),
   sharp(storeIconSvg(512, { symbolRatio: 0.48 }))

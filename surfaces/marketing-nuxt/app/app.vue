@@ -47,7 +47,7 @@ watch(sessionState, async (next, previous) => {
         <div class="sticky top-0 flex h-screen shrink-0 print:hidden">
           <OperatorRail
             app-icon="megaphone"
-            app-icon-src="/pwa/pwa-64x64.png?v=2"
+            app-icon-src="/pwa/pwa-64x64.png?v=3"
             app-label="Marketing"
             :central-url="hubUrl"
             :operator-name="operator?.name"

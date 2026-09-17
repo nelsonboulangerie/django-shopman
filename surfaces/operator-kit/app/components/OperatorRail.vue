@@ -14,7 +14,7 @@ import { computed, ref } from "vue";
 const props = defineProps<{
   /** Ícone forte do app (DS §6), com ou sem `lucide:`. Fallback quando `appIconSrc` falta ou falha. */
   appIcon: string;
-  /** O ícone REAL do app — o PNG da família PWA (`/pwa/pwa-64x64.png?v=2`, ver PWA_ICONS.md). */
+  /** O ícone REAL do app — o PNG da família PWA (`/pwa/pwa-64x64.png?v=3`, ver PWA_ICONS.md). */
   appIconSrc?: string;
   appLabel: string;
   /** URL da Central (launcher). Omitido na própria Central → some o item. */
@@ -32,6 +32,22 @@ function toggleTheme() {
   colorMode.preference = colorMode.value === "dark" ? "light" : "dark";
 }
 const themeLabel = computed(() => (colorMode.value === "dark" ? "Tema claro" : "Tema escuro"));
+
+// Trava de giro (tablets): só aparece em aparelho de toque com a API; a recusa do
+// aparelho é dita ao operador, nunca fingida como travada.
+const orientation = useOrientationLock();
+const orientationLabel = computed(() => (orientation.isLocked.value ? "Liberar giro" : "Travar giro"));
+const orientationAriaLabel = computed(() => {
+  if (!orientation.isLocked.value) return "Travar o giro da tela na orientação atual";
+  return orientation.locked.value === "portrait"
+    ? "Liberar o giro da tela (travado em retrato)"
+    : "Liberar o giro da tela (travado em paisagem)";
+});
+async function toggleOrientation() {
+  const result = await orientation.toggle();
+  if (result.ok) useSonner.success(result.message);
+  else useSonner.warning(result.message);
+}
 
 const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.appIcon : `lucide:${props.appIcon}`));
 
@@ -62,9 +78,15 @@ const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.
       class="group mb-1 flex items-center gap-2"
       :class="isExtended ? 'w-full' : ''"
     >
+      <!-- O PNG da família tem os cantos arredondados e transparentes (PWA_ICONS.md):
+           o fundo do quadrado só existe para o Lucide e para a seta do hover, senão
+           apareceria como uma moldura clara nos quatro cantos do ícone. -->
       <span
-        class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md bg-rail-foreground/15 transition"
-        :class="centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : ''"
+        class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md transition"
+        :class="[
+          showAppImage ? '' : 'bg-rail-foreground/15',
+          centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : '',
+        ]"
       >
         <img
           v-if="showAppImage"
@@ -114,6 +136,15 @@ const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.
       />
 
       <ClientOnly>
+        <RailItem
+          v-if="orientation.available.value"
+          :icon="orientation.isLocked.value ? 'lucide:lock-keyhole' : 'lucide:rotate-cw-square'"
+          :label="orientationLabel"
+          :aria-label="orientationAriaLabel"
+          :aria-pressed="orientation.isLocked.value"
+          data-orientation-lock
+          @activate="toggleOrientation"
+        />
         <RailItem
           icon="lucide:moon"
           :label="themeLabel"

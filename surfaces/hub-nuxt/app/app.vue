@@ -8,7 +8,7 @@ import type { HubTileProjection } from "~/types/hub";
 import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileTarget } from "~/presentation/hub";
 
 // O ícone do PWA da Central — a mesma família que cada tile mostra (PWA_ICONS.md).
-const HUB_ICON_SRC = "/pwa/pwa-64x64.png?v=2";
+const HUB_ICON_SRC = "/pwa/pwa-64x64.png?v=3";
 
 const apiPath = useHubApiPath();
 useOperatorWindowTitle("Central de Apps");
@@ -131,7 +131,12 @@ function tileImageSrc(tile: HubTileProjection): string | null {
               :target="tileTarget(tile)"
               class="flex min-h-28 flex-col gap-2 rounded-md border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span class="grid size-11 place-items-center overflow-hidden rounded-md bg-primary/10 text-primary">
+              <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
+                   Lucide de fallback, senão vira moldura nos cantos do ícone. -->
+              <span
+                class="grid size-11 place-items-center overflow-hidden rounded-md text-primary"
+                :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
+              >
                 <img
                   v-if="tileImageSrc(tile)"
                   :src="tileImageSrc(tile)!"
@@ -155,6 +160,8 @@ function tileImageSrc(tile: HubTileProjection): string | null {
         </div>
       </div>
     </template>
+    <!-- Avisos do rail (ex.: "este aparelho não deixa travar o giro"). -->
+    <OperatorSonner />
     <OperatorPwaRuntime />
   </main>
 </template>

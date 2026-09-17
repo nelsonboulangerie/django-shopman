@@ -1,7 +1,9 @@
 # Ícones PWA das superfícies
 
-Os ícones instaláveis usam fundo opaco, símbolo centralizado e desenho creme
-`#FCF7EE`. O gerador canônico é `scripts/generate-pwa-assets.mjs`.
+Os ícones instaláveis usam fundo de cor, símbolo centralizado e desenho creme
+`#FCF7EE`. O gerador canônico é `scripts/generate-pwa-assets.mjs` (rode
+`npm run pwa:assets` no app; o Storefront tem o próprio, em
+`storefront-nuxt/scripts/finalize-pwa-assets.mjs`, com a mesma regra de forma).
 
 | Superfície | Símbolo | Fundo |
 | --- | --- | --- |
@@ -20,8 +22,25 @@ Fontes vetoriais:
 - [Lucide](https://lucide.dev/), licença ISC;
 - [Tabler Icons](https://tabler.io/icons), licença MIT.
 
-Os PNGs versionados em cada `public/pwa/` são derivados dessas fontes. O
-`maskable` reduz o símbolo para preservar a zona segura do launcher.
+Os PNGs versionados em cada `public/pwa/` são derivados dessas fontes.
+
+## Forma: quem arredonda o canto
+
+| Arquivo | Forma | Por quê |
+| --- | --- | --- |
+| `pwa-64x64`, `pwa-192x192`, `pwa-512x512` (`purpose: any`) | retângulo arredondado, raio 22,5% do lado, **transparente fora** | Windows, macOS e Linux desktop usam o `any` como está, sem máscara. Quadrado cheio aparecia de quinas vivas no menu Iniciar/barra de tarefas (visto no PDV no Windows, 17/09/2026). |
+| `maskable-512x512` (`purpose: maskable`) | quadrado **cheio**, símbolo em 48% do lado | O launcher Android recorta na forma dele; a arte fica dentro da zona segura (círculo de 80%). |
+| `apple-touch-icon-180x180` | quadrado **cheio e opaco** | O iOS arredonda sozinho e pinta de preto o que for transparente. Nunca arredondar este. |
+
+Como o PNG `any` tem cantos transparentes, quem o exibe dentro de um quadrado
+(rail, tile da Central) só pinta o fundo quando mostra o Lucide de fallback — senão
+o fundo vira uma moldura clara nos quatro cantos.
+
+Trocou a forma ou o desenho? Suba o `?v=` em todos os lugares da tabela abaixo. O
+SO só relê o ícone de um app **já instalado** quando o navegador revisita o
+manifesto (Chrome/Edge: em até um dia de uso, às vezes pedindo confirmação de
+atualização); no Windows o atalho do menu Iniciar pode seguir com o ícone antigo
+até o app ser atualizado ou reinstalado.
 
 ## Onde a família aparece
 
@@ -30,10 +49,10 @@ para o arquivo publicado, nunca copiam o desenho.
 
 | Lugar | Fonte | Fallback |
 | --- | --- | --- |
-| Manifesto / launcher do SO | `public/pwa/*.png?v=2` (via `pwa.config`) | — |
-| Central de Apps (tile) | `<origem do tile>/pwa/pwa-192x192.png?v=2` (`tileIconUrl`, hub-nuxt) | Lucide vindo do Django (`backstage/projections/hub.py`) |
-| Rail de cada app (quadrado de identidade) | `app-icon-src="/pwa/pwa-64x64.png?v=2"` no `<OperatorRail>` | Lucide de `app-icon` |
-| Gate de login da Central | `icon-src="/pwa/pwa-64x64.png?v=2"` no `<OperatorLogin>` | Lucide de `icon` |
+| Manifesto / launcher do SO | `public/pwa/*.png?v=3` (via `pwa.config`) | — |
+| Central de Apps (tile) | `<origem do tile>/pwa/pwa-192x192.png?v=3` (`tileIconUrl`, hub-nuxt) | Lucide vindo do Django (`backstage/projections/hub.py`) |
+| Rail de cada app (quadrado de identidade) | `app-icon-src="/pwa/pwa-64x64.png?v=3"` no `<OperatorRail>` | Lucide de `app-icon` |
+| Gate de login da Central | `icon-src="/pwa/pwa-64x64.png?v=3"` no `<OperatorLogin>` | Lucide de `icon` |
 
 O fallback Lucide existe para a imagem que não carrega (app fora do ar, build
 sem a família, CSP `img-src 'self'` no hub) — cai por `@error`, por tile/app, sem

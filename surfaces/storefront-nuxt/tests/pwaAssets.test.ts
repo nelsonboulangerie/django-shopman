@@ -26,14 +26,30 @@ describe('storefront PWA assets', () => {
       return count
     }
 
-    expect(Array.from(regular.data.subarray(0, 3))).toEqual(bordeaux)
+    // Meio da borda superior: fora do raio do canto, é campo bordô opaco nos três.
+    const topEdgeMiddle = (image: typeof regular) => (Math.floor(image.info.width / 2)) * 4
+
+    expect(Array.from(regular.data.subarray(topEdgeMiddle(regular), topEdgeMiddle(regular) + 4))).toEqual([...bordeaux, 255])
     expect(Array.from(maskable.data.subarray(0, 3))).toEqual(bordeaux)
     expect(Array.from(apple.data.subarray(0, 3))).toEqual(bordeaux)
-    expect(regular.data[3]).toBe(255)
     expect(maskable.data[3]).toBe(255)
     expect(apple.data[3]).toBe(255)
     expect(foregroundPixels(regular.data)).toBeGreaterThan(5_000)
     expect(foregroundPixels(maskable.data)).toBeLessThan(foregroundPixels(regular.data))
+  })
+
+  it('rounds only the any-purpose icons: desktop shows them unmasked, Android and iOS mask the rest', async () => {
+    // Windows/macOS/Linux desktop exibem o ícone `any` como está; quadrado cheio vira
+    // azulejo de quinas vivas. `maskable` (launcher Android) e `apple-touch-icon` (iOS)
+    // continuam cheios — o SO recorta, e o iOS pinta de preto o que for transparente.
+    for (const size of [64, 192, 512]) {
+      const { data } = await sharp(resolve(`public/pwa/pwa-${size}x${size}.png`)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      expect(data[3], `pwa-${size}x${size} corner`).toBe(0)
+    }
+    for (const name of ['maskable-512x512.png', 'apple-touch-icon-180x180.png']) {
+      const { data } = await sharp(resolve(`public/pwa/${name}`)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      expect(data[3], `${name} corner`).toBe(255)
+    }
   })
 
   it('uses the same high-contrast instruction grammar in both iOS steps', () => {
