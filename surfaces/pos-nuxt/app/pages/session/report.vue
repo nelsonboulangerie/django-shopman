@@ -17,7 +17,7 @@ const { pos, actions, refresh: refreshPos } = await usePosTerminal();
 const { report, pending, accessDenied, refresh } = await useCashReport({
   terminalRef: () => pos.value?.terminal_ref || "",
 });
-const { busy, canOpenDrawer, reprintMovementReceipt } = usePosCashSession({
+const { busy, canPrintReceipt, reprintMovementReceipt } = usePosCashSession({
   pos,
   actions,
   refresh: refreshPos,
@@ -26,7 +26,9 @@ const { busy, canOpenDrawer, reprintMovementReceipt } = usePosCashSession({
 
 // A segunda via só é oferecida onde existe caminho de impressão (agente do
 // balcão). Num terminal sem agente o botão seria porta que bate na cara.
-const canReprint = computed(() => canOpenDrawer.value === true);
+// É a IMPRESSORA que responde por isto, não a gaveta: este botão sumia no
+// balcão que tem bobina e abre a gaveta com a chave.
+const canReprint = computed(() => canPrintReceipt.value === true);
 
 function reprint(entryId: number) {
   void reprintMovementReceipt(entryId);

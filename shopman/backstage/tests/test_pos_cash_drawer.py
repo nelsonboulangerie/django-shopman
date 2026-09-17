@@ -162,6 +162,92 @@ def test_terminal_sem_gaveta_nao_vaza_token_para_a_superficie():
     assert "token" not in payload
 
 
+def _terminal_com_impressora(ref="pdv-com-bobina", drawer=None) -> Terminal:
+    """Balcão como o dono configurou: impressora ligada, gaveta de chave.
+
+    É EXATAMENTE a combinação que o Admin produz quando se liga a impressora e
+    não se escolhe adapter de gaveta — e era a que deixava o PDV mudo.
+    """
+    hardware = {
+        "device_agent": {
+            "enabled": True,
+            "agent_url": "http://127.0.0.1:47811",
+            "token": "token-da-impressora-com-tamanho",
+        },
+        "printer": {"enabled": True, "adapter": "relay", "role": "preparation"},
+    }
+    if drawer:
+        hardware["cash_drawer"] = drawer
+    return Terminal.objects.create(ref=ref, label="Balcão", metadata={"hardware": hardware})
+
+
+def test_impressora_ligada_e_gaveta_ausente_ainda_imprime():
+    """A regressão, em uma linha: papel não pode depender do flag da gaveta.
+
+    O dono ligou a impressora pelo Admin e o PDV recusou TODO caminho de
+    impressão, porque a superfície lia `can_kick`. A projection agora entrega
+    as duas capacidades separadas, e a de impressão não some com a gaveta.
+    """
+    from shopman.backstage.projections.pos import build_pos
+
+    projection = build_pos(terminal=_terminal_com_impressora())
+
+    assert projection.cash_drawer["can_kick"] is False
+    assert projection.device_agent["can_print"] is True
+    assert projection.device_agent["agent_url"] == "http://127.0.0.1:47811"
+    assert projection.device_agent["token"] == "token-da-impressora-com-tamanho"
+
+
+def test_impressora_ligada_com_gaveta_de_chave_tambem_imprime():
+    """Gaveta DECLARADA como manual é o mesmo caso: a bobina não é da gaveta."""
+    from shopman.backstage.projections.pos import build_pos
+
+    projection = build_pos(
+        terminal=_terminal_com_impressora(ref="pdv-chave", drawer={"adapter": "manual"}),
+    )
+
+    assert projection.cash_drawer["can_kick"] is False
+    assert projection.device_agent["can_print"] is True
+
+
+def test_terminal_sem_agente_nenhum_nao_imprime_e_diz_de_impressora():
+    """A frase é DE IMPRESSORA. Ler frase de gaveta mandava procurar o defeito
+    no periférico errado — foi assim que a busca começou pelo lado errado."""
+    payload = DeviceAgentConfig.from_terminal(_terminal()).surface_payload()
+
+    assert payload["can_print"] is False
+    assert "Impressora" in payload["reason"]
+    assert "Gaveta" not in payload["reason"]
+    assert "token" not in payload
+
+
+def test_agente_sem_token_nao_imprime_e_o_defeito_e_dito():
+    terminal = Terminal.objects.create(
+        ref="pdv-sem-token",
+        label="Balcão",
+        metadata={"hardware": {"device_agent": {"enabled": True, "agent_url": "http://127.0.0.1:47811"}}},
+    )
+    payload = DeviceAgentConfig.from_terminal(terminal).surface_payload()
+
+    assert payload["can_print"] is False
+    assert "token" in payload["reason"]
+
+
+def test_gaveta_por_agente_tambem_declara_impressao():
+    """Um agente só por dispositivo: quem chuta a gaveta também alcança a fila.
+
+    Sem isto, o balcão instalado pelo caminho antigo (só `cash_drawer`) perderia
+    a impressão no mesmo dia em que a superfície passou a ler `device_agent`.
+    """
+    from shopman.backstage.projections.pos import build_pos
+
+    projection = build_pos(terminal=_terminal(AGENT_CONFIG))
+
+    assert projection.cash_drawer["can_kick"] is True
+    assert projection.device_agent["can_print"] is True
+    assert projection.device_agent["token"] == "token-do-agente-com-tamanho"
+
+
 # ── Abrir sem venda ───────────────────────────────────────────────────────
 
 

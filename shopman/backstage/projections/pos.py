@@ -414,6 +414,11 @@ class POSProjection:
     # Como ESTE balcão abre a gaveta. Vai para a superfície porque quem alcança
     # o agente na loopback é o navegador do balcão, não o servidor.
     cash_drawer: dict = field(default_factory=dict)
+    # Como ESTE balcão IMPRIME. Capacidade separada da gaveta, e é preciso que
+    # seja: o Admin liga impressora e gaveta de forma independente, e enquanto
+    # o PDV pendurava a impressão no flag da gaveta, um balcão com impressora e
+    # gaveta de chave recusava recibo, DANFE, ficha e comprovante de caixa.
+    device_agent: dict = field(default_factory=dict)
     # Nome fantasia da loja (Shop singleton) — a tela do cliente (segundo
     # monitor do balcão) dá as boas-vindas em nome da LOJA, não do terminal.
     shop_name: str = ""
@@ -515,7 +520,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         # resolve; duas sem estação válida pedem a escolha).
         terminal = resolve_terminal(terminal_ref, strict=False)
     cash_shift = _active_cash_shift_for_terminal(terminal)
-    from shopman.backstage.services.pos_hardware import CashDrawerConfig
+    from shopman.backstage.services.pos_hardware import CashDrawerConfig, DeviceAgentConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
 
     runtime = runtime_profile(terminal)
@@ -566,6 +571,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         terminal_roll_width_mm=runtime.printer.roll_width_mm,
         terminal_roll_margin_mm=runtime.printer.margin_mm,
         cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
+        device_agent=DeviceAgentConfig.from_terminal(terminal).surface_payload(),
         shop_name=_shop_name(),
     )
 

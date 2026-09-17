@@ -1604,6 +1604,13 @@ exigindo token. Configurações antigas que ainda
 guardam URL/token em `hardware.cash_drawer` são lidas como compatibilidade e
 migram ao próximo salvamento no Admin.
 
+**Impressora e gaveta são capacidades INDEPENDENTES, e a projeção do PDV as
+entrega separadas.** `POSProjection.device_agent` (`{can_print, reason,
+agent_url, token}`) responde pela bobina; `POSProjection.cash_drawer`
+(`{can_kick, …}`) responde pela gaveta. Pendurar impressão no `can_kick` deixa
+mudo o balcão que tem impressora e abre a gaveta com a chave — combinação que o
+próprio Admin produz.
+
 ---
 
 ## cashman.Entry.payload

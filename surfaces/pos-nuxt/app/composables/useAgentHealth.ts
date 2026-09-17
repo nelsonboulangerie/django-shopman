@@ -25,7 +25,9 @@ export function useAgentHealth(pos: ComputedRef<POSProjection | null>) {
 
   async function check(): Promise<void> {
     if (!import.meta.client) return;
-    if (!agent.canKick.value) {
+    // O card existe onde existe AGENTE — impressora OU gaveta por software.
+    // Gatear na gaveta apagava a saúde do balcão que só tem bobina.
+    if (!agent.hasAgent.value) {
       probe.value = null;
       return;
     }
@@ -53,9 +55,9 @@ export function useAgentHealth(pos: ComputedRef<POSProjection | null>) {
   });
   // A Projection pode chegar depois do mount (fetch em voo): quando o terminal
   // ganhar agente, a primeira sonda sai na hora em vez de esperar o intervalo.
-  watch(agent.canKick, (can) => {
+  watch(agent.hasAgent, (can) => {
     if (can && probe.value === null) void check();
   });
 
-  return { probe, checking, check, agentConfigured: agent.canKick };
+  return { probe, checking, check, agentConfigured: agent.hasAgent };
 }
