@@ -161,7 +161,7 @@ def test_publication_without_an_adapter_is_blocked(no_transport):
         assert state.ready is False, platform
         assert state.reason_code == "publication_adapter_missing", platform
         assert "erro de configuração" in state.reason
-        assert "desligad" not in state.reason
+        assert "não está desligada" in state.reason
 
 
 # ── Desligada pela flag ≠ adapter ausente ────────────────────────────────────
