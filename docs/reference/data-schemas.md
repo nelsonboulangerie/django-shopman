@@ -1133,6 +1133,15 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 |-------|------|----------|-----------|
 | `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (a exceção de preço alterado segue exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 
+### Marketing — `Shop.defaults["marketing"]`
+
+Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketing_policy.py`
+(`MarketingPolicy`).
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `marketing.whatsapp_minimum_audience` | `int` (≥ 1) | `resolve_marketing_policy` → `approve_command` (`shop/services/marketing_approval.py`) | Mínimo de pessoas elegíveis para aprovar campanha **geral** por WhatsApp (impede mirar uma pessoa). **Ausente = 1** (decisão do dono, 2026-09-17). Não vale no modo `canary`. Editado na página "Integrações" do ShopAdmin; em branco remove a chave. Valor gravado fora do contrato (0, negativo, texto, booleano) cai no padrão com `logger.warning`. |
+
 ### Alertas de estoque — `Shop.defaults["stock_alerts"]`
 
 | Chave | Tipo | Lido por | Descrição |

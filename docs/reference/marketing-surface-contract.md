@@ -205,11 +205,21 @@ roda no `maintenance-worker`, sem componente próprio — ver
 
 Cada mensagem com flow de Marketing grava o conjunto completo de campos declarado para o
 evento (`MARKETING_FLOW_FIELDS`), com vazio para o que não tiver — nunca herda preço,
-nome ou link da mensagem anterior. Campanha geral por WhatsApp exige ao menos 10 pessoas
-elegíveis para não virar mensagem mirada em uma pessoa; no modo `canary` o mínimo não se
-aplica, porque só a lista de canário controlada pela operação recebe — a aprovação
-registra `canary=true` e o cockpit diz "Ensaio: o mínimo de 10 não vale; só a lista de
-canário recebe". Em `blocked` e `open` o mínimo continua igual.
+nome ou link da mensagem anterior.
+
+Campanha geral por WhatsApp exige um **mínimo de pessoas elegíveis configurável no
+Admin** (Configuração → A loja → Integrações → "Campanhas de WhatsApp"), gravado em
+`Shop.defaults["marketing"]["whatsapp_minimum_audience"]`. Aumentar o número impede que
+uma campanha "geral" vire mensagem mirada em uma pessoa. **Padrão 1** (chave ausente),
+por decisão do dono em 2026-09-17: no início da operação um mínimo alto seguraria
+campanhas boas antes de a casa sentir o impacto. O Admin aceita inteiro a partir de 1 e
+recusa zero, negativo e texto com mensagem em português; quem mudou e quando fica no
+histórico da página (`LogEntry`). A aprovação lê o valor na hora e, abaixo dele, recusa
+com `audience_below_minimum`, `minimum_count` igual ao número configurado e o número na
+mensagem. No modo `canary` o mínimo não se aplica, porque só a lista de canário
+controlada pela operação recebe — a aprovação registra `canary=true` com o
+`minimum_count` que não valeu, e o cockpit diz "Ensaio: o mínimo de N não vale; só a
+lista de canário recebe". Em `blocked` e `open` o mínimo vale.
 
 Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
 `META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,
