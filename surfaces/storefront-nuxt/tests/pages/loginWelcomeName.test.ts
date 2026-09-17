@@ -10,9 +10,11 @@ import LoginPage from '~/pages/entrar.vue'
 //   (a pergunta virou sheet na página de destino: MarketingPromptSheet);
 // - "Continuar" = PATCH do perfil com o nome, e só; "Deixar para depois" segue
 //   sem gravar; nenhum dos dois fala com `account/marketing-prompt/`;
-// - ao entrar num passo, a página rola ao TOPO antes de focar o campo, e foca
-//   sem rolar — no celular, `focus()` abria o teclado e o navegador rolava o
-//   campo até a borda, deixando o título fora da tela ("meio rolada").
+// - cada passo (telefone, código, nome) é o foco da página pelo mecanismo
+//   canônico (`useNextFocus`): o bloco do passo — que carrega o TÍTULO — vai à
+//   linha de foco, e o primeiro campo recebe o foco SEM rolar. No celular,
+//   `focus()` sem isso abria o teclado e o navegador rolava o campo até a borda,
+//   deixando o título fora da tela ("meio rolada").
 
 const { fetchMock, navigate } = vi.hoisted(() => ({ fetchMock: vi.fn(), navigate: vi.fn() }))
 mockNuxtImport('$fetch', () => fetchMock)
@@ -35,7 +37,37 @@ function callsTo (suffix: string) {
 }
 
 const mounted: Array<{ unmount: () => void }> = []
-let scrollTo: ReturnType<typeof vi.fn>
+// Fronteira com o browser, espionada como no teste do próprio mecanismo
+// (tests/composables/useNextFocus.test.ts): quem rolou até onde, e quem recebeu
+// o foco com quais opções.
+let scrolled: ReturnType<typeof vi.fn>
+let focused: ReturnType<typeof vi.spyOn>
+const nativeScrollIntoView = Element.prototype.scrollIntoView
+
+function lastScroll () {
+  const call = scrolled.mock.calls.at(-1)
+  return call ? { element: scrolled.mock.contexts.at(-1) as HTMLElement, options: call[0] as ScrollIntoViewOptions } : null
+}
+
+function lastFocus () {
+  const call = focused.mock.calls.at(-1)
+  return call ? { element: focused.mock.contexts.at(-1) as HTMLElement, options: call[0] as FocusOptions | undefined } : null
+}
+
+// O passo como a página o declara: o bloco de foco da chave, levado à linha de
+// foco (`block: 'start'`), com o título DENTRO dele — o título sobe junto com o
+// campo, nunca fica para trás.
+async function expectStepRevealed (step: 'phone' | 'code' | 'welcome', title: string) {
+  const block = document.querySelector<HTMLElement>(`[data-focus-target="${step}"]`)
+  expect(block).not.toBeNull()
+  await vi.waitFor(() => expect(lastScroll()?.element).toBe(block))
+  expect(lastScroll()?.options).toMatchObject({ block: 'start' })
+  expect(block!.querySelector('h1')?.textContent?.trim()).toBe(title)
+  // O campo recebe o foco sem o navegador rolar até ele.
+  expect(lastFocus()?.options).toEqual({ preventScroll: true })
+  expect(block!.contains(document.activeElement)).toBe(true)
+  return document.activeElement as HTMLElement
+}
 
 async function openNameGate () {
   // Chegada pelo access link (`/entrar?welcome=1`): a sessão JÁ está autenticada
@@ -66,12 +98,15 @@ describe('login — o passo do nome', () => {
     fetchMock.mockReset()
     fetchMock.mockImplementation(routeFetch)
     navigate.mockReset()
-    scrollTo = vi.fn()
-    Object.defineProperty(window, 'scrollTo', { value: scrollTo, configurable: true, writable: true })
+    scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled as unknown as Element['scrollIntoView']
+    focused = vi.spyOn(HTMLElement.prototype, 'focus')
   })
 
   afterEach(() => {
     for (const page of mounted.splice(0)) page.unmount()
+    Element.prototype.scrollIntoView = nativeScrollIntoView
+    focused.mockRestore()
   })
 
   it('pede só o nome: título, campo e Continuar — sem bloco de novidades', async () => {
@@ -122,22 +157,21 @@ describe('login — o passo do nome', () => {
     expect(useShopSession().requiresWelcome.value).toBe(false)
   })
 
-  it('ao entrar no passo do nome, rola ao topo e SÓ então foca o campo, sem rolar', async () => {
-    const page = await openNameGate()
-    await flushPromises()
+  it('ao chegar no passo do nome, o bloco com o título vai à linha de foco e o campo recebe o foco', async () => {
+    await openNameGate()
 
-    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' })
-    expect((document.activeElement as HTMLElement | null)?.id).toBe('welcome-name')
-    expect(page.find('#welcome-name').exists()).toBe(true)
+    const active = await expectStepRevealed('welcome', 'Como podemos te chamar?')
+    expect(active.id).toBe('welcome-name')
   })
 
-  it('a troca para o passo do código também começa no topo, com o foco no campo', async () => {
+  it('a troca para o passo do código leva o bloco do código à linha de foco, com o foco no 1º dígito', async () => {
     const session = useShopSession()
     session.reset()
     const page = await mountSuspended(LoginPage, { route: '/entrar', attachTo: document.body })
     mounted.push(page)
     await flushPromises()
-    scrollTo.mockClear()
+    // Na chegada ao passo do telefone, com o bloco à vista, nada se move.
+    expect(scrolled).not.toHaveBeenCalled()
 
     await page.findAll('button').find((b: any) => b.text().includes('Não consigo usar WhatsApp'))!.trigger('click')
     await flushPromises()
@@ -147,9 +181,29 @@ describe('login — o passo do nome', () => {
 
     expect(page.find('form[data-login-welcome]').exists()).toBe(false)
     expect(page.text()).toContain('Código de 6 dígitos')
-    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' })
-    const active = document.activeElement as HTMLElement | null
-    expect(active?.tagName).toBe('INPUT')
-    expect(page.find('form').element.contains(active)).toBe(true)
+    const active = await expectStepRevealed('code', 'Informe o código')
+    expect(active.tagName).toBe('INPUT')
+    expect(active.getAttribute('aria-label')).toBe('Dígito 1 de 6')
+  })
+
+  it('"Trocar telefone" volta ao bloco do telefone, com o foco no campo do número', async () => {
+    const session = useShopSession()
+    session.reset()
+    const page = await mountSuspended(LoginPage, { route: '/entrar', attachTo: document.body })
+    mounted.push(page)
+    await flushPromises()
+
+    await page.findAll('button').find((b: any) => b.text().includes('Não consigo usar WhatsApp'))!.trigger('click')
+    await flushPromises()
+    await page.find('#login-phone').setValue('43999998888')
+    await page.find('form').trigger('submit')
+    await flushPromises()
+    await expectStepRevealed('code', 'Informe o código')
+
+    await page.findAll('button').find((b: any) => b.text().includes('Trocar telefone'))!.trigger('click')
+    await flushPromises()
+
+    const active = await expectStepRevealed('phone', 'Vamos entrar?')
+    expect(active.id).toBe('login-phone')
   })
 })

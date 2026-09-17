@@ -65,9 +65,6 @@ const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
 const trustSaved = ref(false)
 const nowMs = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
-const phoneForm = ref<HTMLFormElement | null>(null)
-const codeForm = ref<HTMLFormElement | null>(null)
-const welcomeForm = ref<HTMLFormElement | null>(null)
 
 const { data: loginHome } = useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include',
@@ -97,6 +94,12 @@ const step = computed(() => authStep({
   verified: verified.value,
   requiresWelcome: welcomeNeeded.value
 }))
+// Próximo foco: o passo É o foco da página. O bloco do passo (título + campos)
+// se marca com `data-focus-target`; a cada troca de passo, o mecanismo leva o
+// bloco à linha de foco e entrega o foco ao primeiro campo (`data-focus-control`)
+// sem rolar — no celular o teclado abre com o título no lugar, não empurrado
+// para fora da tela.
+const { reveal } = useNextFocus(step)
 const code = computed(() => codeDigits.value.join('').slice(0, 6))
 const canVerifyCode = computed(() => code.value.length === 6 && !pending.value)
 const authCopy = computed(() => loginHome.value?.home.auth_copy || null)
@@ -190,9 +193,11 @@ onMounted(async () => {
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client) void waStart(nextUrl.value)
-  // Passo do nome aberto já no setup (access link): o watcher de `step` não
-  // dispara, então o foco e a rolagem ao topo são pedidos aqui.
-  if (step.value === 'welcome') await settleStep(step.value)
+  // Passo do nome aberto já no setup (access link): não houve troca de passo, e
+  // na montagem o mecanismo só se move se o bloco estiver fora da vista. Mas
+  // quem chega aqui ENTROU num passo cuja próxima ação é digitar o nome — o
+  // campo recebe o foco como em qualquer outra troca.
+  if (step.value === 'welcome') reveal('welcome')
   // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
   // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
   // antes de mostrar o passo de telefone a quem já entrou.
@@ -218,25 +223,6 @@ onBeforeUnmount(() => {
 watch(code, value => {
   if (value.length === 6 && step.value === 'code' && !pending.value) verifyCode()
 })
-
-// A cada troca de passo, o foco segue para o primeiro campo do passo novo
-// (leitor de tela anuncia o contexto certo; teclado já abre no lugar certo).
-watch(step, async next => {
-  await settleStep(next)
-})
-
-// ⚠️ A ordem importa: rolar ao topo ANTES de focar, e focar SEM rolar. No
-// celular, `focus()` abre o teclado e o navegador rola o campo até a borda da
-// área visível — a tela do nome chegava "meio rolada", com o título fora da
-// tela. O passo novo começa no topo (rolagem instantânea, sem animação — nada
-// a reduzir em `prefers-reduced-motion`) e o campo recebe o foco no lugar.
-async function settleStep (next: 'phone' | 'code' | 'welcome') {
-  await nextTick()
-  if (!import.meta.client) return
-  const container = next === 'code' ? codeForm.value : next === 'welcome' ? welcomeForm.value : phoneForm.value
-  shopScrollTarget().scrollTo({ top: 0, behavior: 'auto' })
-  container?.querySelector('input')?.focus({ preventScroll: true })
-}
 
 function copyTitle (entry: CopyEntryProjection | null | undefined, fallback: string) {
   return entry?.title?.trim() || fallback
@@ -489,6 +475,12 @@ useSeoMeta({
         </div>
 
         <template v-else>
+        <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
+             campos. A página de entrada é UM bloco por passo, e ele começa no
+             topo: `scroll-mt-40` (10rem) cobre o chrome expandido (6.25rem) mais
+             o respiro da seção, então a linha de foco deste bloco é o topo da
+             página — o passo novo começa ali, com o cabeçalho aberto. -->
+        <section :data-focus-target="step" class="shop-stack-block scroll-mt-40 outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>
@@ -535,7 +527,7 @@ useSeoMeta({
             Não consigo usar WhatsApp
           </UiButton>
 
-          <form v-else ref="phoneForm" class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
+          <form v-else class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
             <UiField>
               <div class="flex items-center justify-between gap-3">
                 <UiFieldLabel for="login-phone">Telefone</UiFieldLabel>
@@ -563,6 +555,7 @@ useSeoMeta({
                   :autocomplete="phoneAutocomplete"
                   :placeholder="phonePlaceholder"
                   :maxlength="phoneRegion === 'INTL' ? 24 : 16"
+                  data-focus-control
                   @input="syncPhoneFromInput"
                 />
               </UiInputGroup>
@@ -587,7 +580,7 @@ useSeoMeta({
           </form>
         </div>
 
-        <form v-else-if="step === 'code'" ref="codeForm" class="shop-stack-block" @submit.prevent="verifyCode">
+        <form v-else-if="step === 'code'" class="shop-stack-block" @submit.prevent="verifyCode">
           <p class="shop-body">
             {{ codeSentLine }}
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
@@ -693,7 +686,7 @@ useSeoMeta({
 
         <!-- Boas-vindas = SÓ o nome. O convite de novidades não mora aqui: sobe
              como sheet na página de destino (MarketingPromptSheet). -->
-        <form v-else ref="welcomeForm" class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
+        <form v-else class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
           <UiField class="rounded-lg border bg-card p-4">
             <UiFieldLabel for="welcome-name">Nome</UiFieldLabel>
             <UiInput
@@ -702,6 +695,7 @@ useSeoMeta({
               name="welcome-name"
               autocomplete="given-name"
               placeholder="Primeiro nome ou apelido"
+              data-focus-control
             />
           </UiField>
 
@@ -714,6 +708,7 @@ useSeoMeta({
             </UiButton>
           </div>
         </form>
+        </section>
 
         <p v-if="step !== 'welcome'" class="shop-meta">
           {{ copyMessage(authCopy?.terms_note, 'Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.') }}
