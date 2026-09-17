@@ -19,6 +19,7 @@ const emit = defineEmits<{
   board: [];
   cash: [];
   tickets: [];
+  display: [];
   lock: [];
   refresh: [];
 }>();
@@ -57,6 +58,16 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
         label="Fichas de pedido"
         :active="view === 'tickets'"
         @activate="emit('tickets')"
+      />
+      <!-- Tela do cliente: o segundo monitor da MESMA máquina e navegador. Morava só
+           no cabeçalho da antessala de caixa, onde só se chega abrindo o turno — e a
+           janela, uma vez fechada sem querer, não tinha volta de dentro da venda.
+           Aqui ela é função do balcão, alcançável de qualquer tela. -->
+      <RailItem
+        icon="monitor"
+        label="Tela do cliente"
+        aria-label="Abrir a tela do cliente no segundo monitor"
+        @activate="emit('display')"
       />
     </template>
 

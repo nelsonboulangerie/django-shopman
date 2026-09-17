@@ -53,6 +53,15 @@ async function goToOrderTickets() {
   await navigateTo("/tickets");
 }
 
+// Tela do cliente: segunda janela desta máquina, para arrastar ao monitor virado ao
+// cliente. A abertura (e a sonda de versão que vai junto) mora no composable.
+const customerDisplayWindow = useCustomerDisplayWindow();
+function openCustomerDisplay() {
+  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
+    description: "Permita pop-ups para este site e tente novamente.",
+  });
+}
+
 // Write-side of the open sale: cart draft + every session command.
 const {
   cart,
@@ -837,6 +846,7 @@ onBeforeUnmount(() => {
       @board="goToTabs"
       @cash="goToCashSession"
       @tickets="goToOrderTickets"
+      @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
     />
