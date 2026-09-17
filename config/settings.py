@@ -506,6 +506,14 @@ else:
 # mesmo caminho spoof-safe já usado pelos gates de IP do doorman).
 RATELIMIT_IP_META_KEY = "shopman.shop.services.auth.client_ip"
 
+# Segredo que o BFF da loja (surfaces/storefront-nuxt, `NUXT_DJANGO_PROXY_SECRET`)
+# apresenta no cabeçalho `X-Shopman-Proxy-Secret`. O BFF chama o `api.` pela rede
+# pública, então a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For e o
+# rightmost TRUSTED_PROXY_DEPTH deixa de ser o cliente. Com o segredo, `client_ip`
+# lê um salto a mais; sem ele (vazio = desligado), o cabeçalho não muda nada.
+# Os dois lados precisam do MESMO valor — ver .do/app.alpha-subdomains.yaml.
+SHOPMAN_BFF_PROXY_SECRET = os.environ.get("SHOPMAN_BFF_PROXY_SECRET", "").strip()
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATIC_URL = "/static/"
@@ -1048,7 +1056,7 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
+        "shopman.shop.api_throttles.ClientIpAnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
@@ -1068,9 +1076,11 @@ REST_FRAMEWORK = {
     # `doorman.get_client_ip(trusted_proxy_depth=...)`. As duas TÊM de casar,
     # senão o mesmo cliente é dois baldes diferentes; por isso leem a mesma env.
     #
-    # A contagem é: [cliente, BFF Nitro] → o edge da plataforma acrescenta o IP
-    # de saída do Nitro, e o BFF repassa o XFF que recebeu. Valor forjado entra
-    # à ESQUERDA e não desloca a contagem pela direita.
+    # O throttle anônimo padrão NÃO usa este número: `ClientIpAnonRateThrottle`
+    # conta por `auth.client_ip`, que sabe ler o salto a mais do BFF da loja
+    # (SHOPMAN_BFF_PROXY_SECRET). Fica para os throttles DRF que ainda usam o
+    # `get_ident` de fábrica. Valor forjado entra à ESQUERDA e não desloca a
+    # contagem pela direita.
     "NUM_PROXIES": _env_int("DOORMAN_TRUSTED_PROXY_DEPTH", 1),
 }
 
