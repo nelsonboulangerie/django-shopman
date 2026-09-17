@@ -195,6 +195,115 @@ def test_notify_turns_busy_into_a_retryable_result_never_unknown(provider, flows
     assert safety.is_flow_deferral(result.error)
 
 
+# ── 1b. Campos obsoletos: o conjunto completo de cada evento ─────────
+
+
+def _last_fields(calls) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for endpoint, payload in calls:
+        if endpoint.endswith("setCustomFieldByName"):
+            fields[payload["field_name"]] = payload["field_value"]
+    return fields
+
+
+def _fields_between_flows(calls) -> list[dict[str, str]]:
+    """Os campos gravados antes de cada ``sendFlow``, um dict por mensagem."""
+    batches: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for endpoint, payload in calls:
+        if endpoint.endswith("setCustomFieldByName"):
+            current[payload["field_name"]] = payload["field_value"]
+        elif endpoint.endswith("sendFlow"):
+            batches.append(current)
+            current = {}
+    return batches
+
+
+@override_settings(DEBUG=False, SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS=1)
+def test_a_message_without_price_clears_the_price_of_the_previous_one(provider, flows, open_mode):
+    """A com ``price``, B sem ``price``: B grava ``price=""``, nunca herda o de A."""
+    assert mc.send(
+        "+5543999990001",
+        "announcement_published",
+        {"body": "Baguete por R$ 12,00", "product_name": "Baguete", "price": "R$ 12,00"},
+    ) is True
+    time.sleep(1.2)
+    assert mc.send(
+        "+5543999990001",
+        "announcement_published",
+        {"body": "Croissant saiu do forno", "product_name": "Croissant"},
+    ) is True
+
+    first, second = _fields_between_flows(provider)
+    assert first["price"] == "R$ 12,00"
+    assert second["price"] == ""
+    assert second["product_name"] == "Croissant"
+    assert set(second) == set(safety.MARKETING_FLOW_FIELDS["announcement_published"])
+
+
+@override_settings(DEBUG=False)
+@pytest.mark.parametrize("event", sorted(safety.MARKETING_FLOW_EVENTS))
+def test_every_marketing_event_writes_its_whole_declared_set_and_nothing_else(
+    provider, flows, open_mode, event
+):
+    assert mc.send(
+        "+5543999990001",
+        event,
+        {"product_name": "Baguete", "undeclared_secret": "x", "sku": "BE", "customer_ref": "CLI-1"},
+    ) is True
+
+    fields = _last_fields(provider)
+    assert set(fields) == set(safety.MARKETING_FLOW_FIELDS[event])
+    assert fields["product_name"] == "Baguete"
+    assert "undeclared_secret" not in fields
+    assert all(value == "" for name, value in fields.items() if name not in {
+        "product_name", "product_label", "customer_name_greeting",
+    })
+
+
+@override_settings(DEBUG=False)
+def test_a_personal_link_without_public_twin_is_cleared_not_kept_from_before(provider, flows, open_mode):
+    assert mc.send(
+        "+5543999990001",
+        "stock_arrived",
+        {"action_url": "https://loja.example/a?t=token-pessoal"},
+    ) is True
+
+    assert _last_fields(provider)["action_url"] == ""
+
+
+@override_settings(DEBUG=False)
+def test_order_flows_keep_writing_only_what_they_have(provider, flows):
+    assert mc.send("+5543999990001", "order_accepted", {"order_ref": "PED-1"}) is True
+
+    fields = _last_fields(provider)
+    assert fields["order_ref"] == "PED-1"
+    assert "price" not in fields
+    assert all(value != "" for value in fields.values())
+
+
+def test_the_durable_adapter_fills_every_sealed_campaign_variable_the_flow_declares():
+    from shopman.shop.adapters.marketing_delivery_whatsapp import SEALED_VARIABLES
+    from shopman.shop.services.campaign import available_variables
+
+    declared = set(safety.MARKETING_FLOW_FIELDS["announcement_published"])
+    assert set(SEALED_VARIABLES) <= declared
+    # Tudo o que o gestor pode escrever num modelo tem de onde sair no envio durável:
+    # das variáveis seladas, do link resolvido ou do destino (nome do cliente).
+    assert set(available_variables()) <= set(SEALED_VARIABLES) | {"link", "customer_name"}
+
+
+def test_declared_sets_cover_exactly_the_marketing_events_and_the_campaign_vocabulary():
+    from shopman.shop.services.campaign import available_variables
+
+    assert set(safety.MARKETING_FLOW_FIELDS) == set(safety.MARKETING_FLOW_EVENTS)
+    announcement = set(safety.MARKETING_FLOW_FIELDS["announcement_published"])
+    assert set(available_variables()) <= announcement
+    assert {"body", "cta", "action_url"} <= announcement
+    for fields in safety.MARKETING_FLOW_FIELDS.values():
+        assert not set(fields) & mc._FIELD_DENYLIST
+
+
 # ── 2. Modos ─────────────────────────────────────────────────────────
 
 

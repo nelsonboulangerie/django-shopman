@@ -163,6 +163,7 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | Platform/SRE | `false`; sem tentativa | MKT-054 |
 | `SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED` | Release Manager | `false`; comando unitário não cruza a fronteira | desligar após o canário |
 | `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | Platform Owner | vazio; canal indisponível | por adapter/canário |
+| `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` | Platform Owner | `false`; adapter durável do WhatsApp nem é registrado — campanha aprovada fica na fila | por etapa, junto do modo: `canary` → `open` |
 | `SHOPMAN_MARKETING_WHATSAPP_MODE` | Platform Owner | `blocked`; nenhum evento de Marketing sai por WhatsApp. `canary`/`open` sem cache compartilhado continuam bloqueados | por etapa: `canary` → `open` |
 | `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` | Platform Owner | vazio; `canary` sem lista fica bloqueado | esvaziar ao fim do ensaio |
 | `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` | Platform Owner | `120`; inválido volta ao padrão | revisar com a latência observada no ensaio |
@@ -189,6 +190,26 @@ está fora da lista é suprimido no claim (`whatsapp_canary_recipient_excluded`)
 adapter recusa na última porta; a prontidão aparece como `degraded` com
 `canary_recipients` (contagem, nunca refs). Decisão e limites em
 [ADR-009](../decisions/adr-009-whatsapp-via-manychat.md).
+
+Campanha de WhatsApp aprovada chega ao ManyChat pelo ledger durável só quando
+`SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` registra o adapter
+`marketing_delivery_whatsapp` — sem ele a prontidão diz
+`whatsapp_durable_provider_missing` e nada sai. O adapter confere o modo na última
+porta, relê consentimento, exige o flow selado na aprovação e monta as variáveis do
+flow só do artefato aprovado (corpo, link, foto e fatos selados; do destino, só
+telefone e primeiro nome). Aceite do ManyChat é `accepted_unconfirmed`; resposta
+ambígua depois de possível escrita é `unknown`; recusa antes de chamar é falha final
+com código; contato ocupado volta pela fila. O worker de destinos
+(`process_marketing_delivery`) não é componente de nenhum spec versionado: ligar a
+consequência exige rodá-lo explicitamente.
+
+Cada mensagem com flow de Marketing grava o conjunto completo de campos declarado para o
+evento (`MARKETING_FLOW_FIELDS`), com vazio para o que não tiver — nunca herda preço,
+nome ou link da mensagem anterior. Campanha geral por WhatsApp exige ao menos 10 pessoas
+elegíveis para não virar mensagem mirada em uma pessoa; no modo `canary` o mínimo não se
+aplica, porque só a lista de canário controlada pela operação recebe — a aprovação
+registra `canary=true` e o cockpit diz "Ensaio: o mínimo de 10 não vale; só a lista de
+canário recebe". Em `blocked` e `open` o mínimo continua igual.
 
 Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
 `META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,

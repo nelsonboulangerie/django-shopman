@@ -13,6 +13,7 @@ import {
 } from "~/composables/useMarketingRecovery";
 import { formatCount } from "~/presentation/campaign";
 import {
+  approvalCanaryNote,
   commandReceiptPresentation,
   deliveryCountItems,
   deliveryStatePresentation,
@@ -111,6 +112,7 @@ const approvalEvidence = computed(() => {
         );
   return {
     audience: `${formatCount(audienceCount)} ${audienceCount === 1 ? "pessoa" : "pessoas"}`,
+    canary: approvalCanaryNote(receipt),
     platforms: platforms.join(", "),
     execution:
       mode === "scheduled" || props.announcement.scheduled_for
@@ -415,6 +417,12 @@ function closeDialog(open: boolean) {
             <div class="border-b border-sky-500/20 p-3">
               <dt class="text-xs font-medium text-muted-foreground">Público</dt>
               <dd class="mt-1 font-semibold">{{ approvalEvidence.audience }}</dd>
+              <dd
+                v-if="approvalEvidence.canary"
+                class="mt-1 text-xs text-muted-foreground"
+              >
+                {{ approvalEvidence.canary }}
+              </dd>
             </div>
             <div class="border-b border-sky-500/20 p-3 sm:border-r">
               <dt class="text-xs font-medium text-muted-foreground">Plataformas</dt>

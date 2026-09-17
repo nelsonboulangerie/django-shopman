@@ -325,6 +325,45 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("sem efeito externo");
   });
 
+  it("diz que a aprovação foi ensaio e que o mínimo de 10 não valeu", () => {
+    const mountWith = (outcome: Record<string, unknown>) =>
+      mount(AnnouncementResultPanel, {
+        props: {
+          announcement: announcement(),
+          actions: [],
+          shopTimezone: "America/Sao_Paulo",
+          receipt: {
+            ...response().receipt,
+            kind: "approve",
+            outcome: {
+              audience_count: 1,
+              effective_at: "2026-09-09T09:01:00-03:00",
+              platforms: ["whatsapp"],
+              publish_mode: "now",
+              ...outcome,
+            },
+          },
+        },
+        global: {
+          components: { UiVerificationCodeInput: VerificationCodeInput },
+          stubs: {
+            Icon: true,
+            UiDialog: DialogStub,
+            UiDialogContent: SlotStub,
+            UiDialogHeader: SlotStub,
+            UiDialogTitle: SlotStub,
+            UiDialogDescription: SlotStub,
+            UiDialogFooter: SlotStub,
+          },
+        },
+      });
+
+    expect(mountWith({ canary: true }).text()).toContain(
+      "Ensaio: o mínimo de 10 não vale; só a lista de canário recebe.",
+    );
+    expect(mountWith({}).text()).not.toContain("Ensaio: o mínimo de 10");
+  });
+
   it("explains a rejected decision without suggesting a delivery or cancellation", () => {
     const wrapper = mount(AnnouncementResultPanel, {
       props: {
