@@ -458,6 +458,15 @@ const steps = computed<Step[]>(() => checkoutSteps(state.fulfillment_type))
 const stepLabels = checkoutStepLabels
 const stepIcons = checkoutStepIcons
 
+// Foco da página: a seção em que o cliente trabalha AGORA. Cada seção se marca
+// com `data-focus-target`; quando o foco muda (etapa concluída, "Editar",
+// erro), o mecanismo leva a página até ela — sempre na mesma linha, sob a
+// navbar. O contato passa na frente só quando pede atenção deliberada (edição
+// ou erro); com o nome ainda em aberto e o cliente avançando as etapas, o
+// foco é a etapa ativa.
+const focusKey = computed<string>(() => (contactEditing.value || contactState.value === 'error' ? 'contact' : activeStep.value))
+const { reveal } = useNextFocus(focusKey)
+
 // Rascunho do checkout: sair do navegador e voltar (ou o iOS recarregar a aba por
 // memória) NÃO pode perder o que já foi preenchido. Usa localStorage (sobrevive à aba
 // ser morta/recarregada — sessionStorage é apagado nesses casos). O parse/validação
@@ -842,16 +851,16 @@ function saveContact () {
 }
 
 // Omotenashi: um gate de validação NUNCA falha em silêncio. O erro vem até o
-// cliente (toast) e a tela rola até o primeiro campo com erro (role="alert"),
-// em vez de ficar quietinho num campo fora da view.
+// cliente (toast) e a tela mostra o primeiro campo com erro (role="alert"),
+// em vez de ficar quietinho num campo fora da view. Se o erro abriu OUTRA
+// seção, o foco da página muda e o reveal automático (mais novo) passa na
+// frente: a seção inteira vai para a linha de foco, com o erro no cabeçalho.
 function revealFirstError () {
   if (!import.meta.client) return
   const first = firstCheckoutError(fieldErrors.value)
   if (!first) return
   useSonner.error(first.message)
-  void nextTick(() => {
-    document.querySelector('[data-slot="field-error"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  })
+  reveal(() => document.querySelector('[data-slot="field-error"]'), { align: 'center', focus: false })
 }
 
 async function continueFromFulfillment () {
@@ -956,16 +965,13 @@ async function goToMenu () {
   await navigateTo('/menu')
 }
 
-async function changeFromPix () {
+function changeFromPix () {
   const alternative = paymentMethods.value.find(method => method.ref !== 'pix')
   state.payment_method = ''
   clearFieldError('payment_method')
-  await nextTick()
-  const target = alternative
+  reveal(() => (alternative
     ? document.getElementById(`checkout-payment-${alternative.ref}`)
-    : document.querySelector<HTMLElement>('[data-checkout-payment-option]')
-  target?.focus()
-  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    : document.querySelector<HTMLElement>('[data-checkout-payment-option]')), { align: 'center' })
 }
 
 async function adjustCartForPix () {
@@ -1233,6 +1239,7 @@ useSeoMeta({
               icon="lucide:user-round"
               :summary="contactComplete && !contactEditing ? contactCardSummary : 'Nome e telefone'"
               data-checkout-contact-card
+              data-focus-target="contact"
               @edit="contactEditing = true"
             >
               <!-- Card branco, padronizado com endereço; edição deliberada. -->
@@ -1250,7 +1257,8 @@ useSeoMeta({
                       @click="cancelEditName"
                     />
                   </div>
-                  <UiInput id="checkout-name" ref="nameInput" v-model="state.name" autocomplete="name" />
+                  <!-- Com o nome em aberto, a próxima ação é digitar: o foco cai no campo. -->
+                  <UiInput id="checkout-name" ref="nameInput" v-model="state.name" autocomplete="name" data-focus-control />
                   <UiFieldError v-if="fieldErrors.name" :errors="fieldErrors.name" />
                 </div>
                 <div class="divide-y">
@@ -1286,6 +1294,7 @@ useSeoMeta({
               :icon="stepIcons.fulfillment"
               :summary="stepHeaderSummary('fulfillment')"
               data-checkout-step="fulfillment"
+              data-focus-target="fulfillment"
               body-class="space-y-4"
               @edit="goToStep('fulfillment')"
             >
@@ -1369,6 +1378,7 @@ useSeoMeta({
               :icon="stepIcons.address"
               :summary="stepHeaderSummary('address')"
               data-checkout-step="address"
+              data-focus-target="address"
               body-class="space-y-4"
               @edit="goToStep('address')"
             >
@@ -1427,6 +1437,7 @@ useSeoMeta({
               :icon="stepIcons.when"
               :summary="stepHeaderSummary('when')"
               data-checkout-step="when"
+              data-focus-target="when"
               body-class="shop-stack-block"
               @edit="goToStep('when')"
             >
@@ -1538,6 +1549,7 @@ useSeoMeta({
               :icon="stepIcons.payment"
               :summary="stepHeaderSummary('payment')"
               data-checkout-step="payment"
+              data-focus-target="payment"
               body-class="space-y-4"
               @edit="goToStep('payment')"
             >
