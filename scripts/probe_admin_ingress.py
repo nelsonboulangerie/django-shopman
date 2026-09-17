@@ -10,14 +10,27 @@ import hmac
 import json
 import os
 import secrets
+import socket
+import ssl
 from http.client import HTTPSConnection
+from ipaddress import ip_address
 from urllib.parse import urlsplit
 
 
-def send_case(host, token, marker, extra, connection_factory=HTTPSConnection):
+def send_case(host, token, marker, extra, connection_factory=HTTPSConnection, connect_ip=None):
     """One HTTPS GET, preserving duplicate field lines; no redirects/cookie jar."""
     connection = connection_factory(host, timeout=20)
     try:
+        if connect_ip:
+            # Resolve-only override: HTTPS authority, certificate validation and SNI
+            # remain the reviewed hostname. Controller verifies DNS -> isolated app.
+            address = str(ip_address(connect_ip))
+            plain = socket.create_connection((address, 443), timeout=20)
+            try:
+                connection.sock = ssl.create_default_context().wrap_socket(plain, server_hostname=host)
+            except BaseException:
+                plain.close()
+                raise
         connection.putrequest("GET", "/admin/login/", skip_accept_encoding=True)
         connection.putheader("X-Shopman-Admin-IP-Probe", token)
         connection.putheader("X-Shopman-Admin-IP-Probe-ID", marker)
@@ -52,6 +65,7 @@ def main():
     parser.add_argument("--url", required=True, help="Reviewed staging URL ending in /admin/login/")
     parser.add_argument("--staging-host", required=True, help="Exact staging host from the reviewed inventory")
     parser.add_argument("--omit-synthetic-fingerprints", action="store_true")
+    parser.add_argument("--connect-ip", help="Optional IP from DNS verified by the isolated experiment controller")
     args = parser.parse_args()
     if args.app_id == "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f":
         parser.error("The online Shopman app is forbidden for this experiment")
@@ -76,7 +90,7 @@ def main():
             print(json.dumps({"synthetic_spoof_fingerprint": expected}), flush=True)
     for case, extra in probe_cases():
         marker = secrets.token_hex(8)
-        status = send_case(args.staging_host, token, marker, extra)
+        status = send_case(args.staging_host, token, marker, extra, connect_ip=args.connect_ip)
         print(json.dumps({"case": case, "marker": marker, "status": status}), flush=True)
 
 

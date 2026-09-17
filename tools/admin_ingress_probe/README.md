@@ -1,6 +1,6 @@
 # Imagem efêmera de observação
 
-Este serviço não carrega Shopman, apps comerciais, banco, autenticação, sessões ou integrações. Usa Django/WSGI e o middleware observado para GET `/admin/login/`, com corpo fixo; `/health/` também é fixo. POST é recusado. O servidor single-process wsgiref é apenas para cinco probes por origem em ambiente efêmero; não é servidor de produção ou teste de carga.
+Este serviço não carrega Shopman, apps comerciais, banco, autenticação, sessões ou integrações. Usa Django/WSGI e o middleware observado para GET `/admin/login/`, com corpo fixo; `/health/` também é fixo. POST é recusado. O servidor single-process wsgiref é apenas para sete probes por host e origem em ambiente efêmero; não é servidor de produção ou teste de carga.
 
 O build usa exatamente Dockerfile, .dockerignore, requirements.txt, server.py e observer_middleware.py, copiados por prepare_context.py. Nenhum checkout inteiro, .git, .env, chave, certificado ou configuração real entra no contexto. O token de teste é sintético e passado só no `docker run`, nunca no build. A verificação OCI confere hashes dos blobs, usuário não-root e ausência de variáveis de segredos na configuração da imagem. Isso prova a fronteira dos inputs deste build, não uma auditoria de toda a distribuição pública base.
 

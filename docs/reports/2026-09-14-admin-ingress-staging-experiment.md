@@ -17,16 +17,16 @@ O logger existente `shopman` recebe o marcador e HMAC-SHA256 de IPs normalizados
 1. Inventariar os hosts Admin, API, domínio padrão DO e qualquer BFF que exponha o login. Exigir app ID isolado aprovado, diferente de 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f; conferir via API/CLI DO que os destinos pertencem a esse app. Não basta confiar no Host fornecido pelo cliente. Nenhum host do app online pode entrar no ensaio. Identificar quais rotas são permitidas e quais têm bloqueio real. Host HTTP sozinho não autentica o ingress. Comparar topologia de staging com produção; diferenças impedem extrapolar o resultado.
 2. Revisar o diff exclusivo da instrumentação e seu rollback. Preservar os segredos existentes; não reaplicar o spec do repositório. Instalar apenas em staging com fonte Admin ainda não liberada para produção.
 3. Configurar somente os hosts isolados aprovados em SHOPMAN_ADMIN_IP_PROBE_HOSTS e token aleatório temporário pelo canal de segredos existente e prazo Unix de no máximo 15 minutos. Não colocar o token em argv, comandos salvos ou logs. Compartilhá-lo com os dois clientes do ensaio por canal autorizado. Não usar contas, senhas, PIN, cookies ou sessões.
-4. Executar `python scripts/probe_admin_ingress.py --app-id APP-ID-ISOLADO-APROVADO --url https://HOST-STAGING/admin/login/ --staging-host HOST-STAGING` em duas redes externas independentes. O token é lido da variável SHOPMAN_ADMIN_IP_PROBE_TOKEN no cliente. Repetir para cada entrada permitida, uma a uma. O script não segue redirects nem usa proxy HTTP de ambiente; faz cinco GETs e imprime somente caso, marcador, status e fingerprint de um endereço documental sintético. Redirecionamento é observado, não seguido com o segredo.
+4. Executar `python scripts/probe_admin_ingress.py --app-id APP-ID-ISOLADO-APROVADO --url https://HOST-STAGING/admin/login/ --staging-host HOST-STAGING` em duas redes externas independentes. O token é lido da variável SHOPMAN_ADMIN_IP_PROBE_TOKEN no cliente. Repetir para cada entrada permitida, uma a uma. O script não segue redirects nem usa proxy HTTP de ambiente; faz sete GETs e imprime somente caso, marcador, status e fingerprint de um endereço documental sintético. Redirecionamento é observado, não seguido com o segredo.
 5. Recolher somente registros `admin_ip_probe` associados aos marcadores gerados, usando acesso de logs já existente e restrito. Um 200 sozinho não constitui evidência; ausência de registro é inconclusiva. Não habilitar log de headers ou usar endpoint echo.
 
 ## Critérios objetivos
 
 | Prova | Resultado exigido |
 |---|---|
-| Estabilidade por origem | Campo `do` é estável entre baseline, forged-do, forged-forwarded, forged-all e baseline-repeat da mesma rede; não é `absent_or_invalid`. |
+| Estabilidade por origem | Campo `do` é estável entre baseline, forged-do, forged-forwarded, forged-all, duplicate-do, duplicate-do-reverse e baseline-repeat da mesma rede; não é `absent_or_invalid`. |
 | Separação | Duas origens reais distintas têm fingerprints `do` distintos sob o mesmo segredo. Registrar apenas igualdade/desigualdade no laudo final. |
-| Sobrescrita de input | Campo `do` nunca coincide com `synthetic_spoof_fingerprint`, mesmo quando o cliente enviou DO-Connecting-IP. XFF, CF e X-Real-IP forjados não mudam `do`. |
+| Sobrescrita de input | Campo `do` nunca coincide com `synthetic_spoof_fingerprint`, mesmo quando o cliente enviou DO-Connecting-IP em campo único ou duplicado nas duas ordens. XFF, CF e X-Real-IP forjados não mudam `do`. |
 | Entradas alternativas | Toda rota que alcança a view satisfaz a mesma prova; uma rota não equivalente deve estar bloqueada antes da view, com evidência de regra e resposta. Não inferir bloqueio apenas pela ausência do log. |
 | Ausência de efeitos | Nenhuma tentativa de autenticação, criação de sessão de usuário, alerta de senha ou consumo do bucket de POST. GET pode ter os efeitos normais da página, como cookie CSRF descartado pelo cliente. |
 
