@@ -215,7 +215,7 @@ def test_operator_group_env_prefixes_name_apps_of_that_group():
 def test_operator_groups_report_capacity_as_one_service():
     """`NUXT_OPERATOR_SERVICE_NAME` é do SERVIÇO: sem prefixo, igual ao nome do grupo.
 
-    O medidor de capacidade (#783) lê o cgroup do contêiner, que é um só para
+    O medidor de capacidade (#783) lê o contêiner, que é um só para
     todos os filhos. Com prefixo por app (ou ausente), cada processo se
     reportaria com o próprio nome e sairia um alerta por app para o mesmo
     contêiner.

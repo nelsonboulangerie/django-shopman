@@ -19,6 +19,7 @@ A lista vive em [`groups.json`](groups.json) e é a mesma que o `deploy-images.y
 | `OPERATOR_HOSTS` | roteador | `app=host,app=host`; todo app precisa de ≥ 1 host |
 | `<APP>__<CHAVE>` | só o app `<APP>` | chega a ele como `<CHAVE>` (ex.: `POS__NUXT_PUBLIC_ORDERS_URL`) |
 | qualquer outra | todos os apps do grupo | inclui as envs do nível do app na DO |
+| `SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES` / `_CPU_CORES` | todos os apps do grupo | tamanho do contêiner para o medidor de capacidade quando o cgroup não é legível; igual ao `instance_size_slug` (o teste de spec trava) |
 | `PORT`, `HOST` | roteador | onde o roteador escuta; os filhos recebem porta própria em 127.0.0.1 |
 | `OPERATOR_CHILD_PORT_BASE` | roteador | filhos em base+1…base+N (default 3100) |
 | `OPERATOR_HEALTH_CACHE_MS` / `_TIMEOUT_MS` | roteador | cache (2 s) e timeout (2 s) da sonda agregada |
