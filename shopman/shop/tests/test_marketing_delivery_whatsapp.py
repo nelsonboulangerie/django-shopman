@@ -285,6 +285,47 @@ def test_registered_adapter_turns_the_missing_provider_into_the_canary_readiness
     assert with_adapter.canary_recipients == 1
 
 
+def _boot_settings(monkeypatch, **env):
+    """Re-executa ``config/settings.py`` com a env controlada (o boot real)."""
+
+    import importlib.util
+    from pathlib import Path
+
+    from config import settings as project_settings
+
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", raising=False)
+    monkeypatch.setenv("DJANGO_DEBUG", "true")
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    spec = importlib.util.spec_from_file_location(
+        "shopman_settings_whatsapp_delivery", Path(project_settings.__file__)
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_boot_registers_the_whatsapp_adapter_only_behind_the_platform_flag(monkeypatch):
+    default = _boot_settings(monkeypatch)
+    enabled = _boot_settings(monkeypatch, SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED="true")
+
+    assert default.SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED is False
+    assert "whatsapp" not in default.SHOPMAN_MARKETING_DELIVERY_ADAPTERS
+    assert enabled.SHOPMAN_MARKETING_DELIVERY_ADAPTERS["whatsapp"] == (
+        "shopman.shop.adapters.marketing_delivery_whatsapp"
+    )
+
+
+def test_demo_profile_keeps_the_whatsapp_lane_on_the_local_simulator():
+    from config import settings_marketing_demo
+
+    assert settings_marketing_demo.SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED is False
+    assert settings_marketing_demo.SHOPMAN_MARKETING_DELIVERY_ADAPTERS["whatsapp"] == (
+        "shopman.shop.adapters.marketing_delivery_console"
+    )
+
+
 def test_without_the_platform_flag_the_lane_has_no_available_provider(settings, campaign):
     settings.SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = False
 
