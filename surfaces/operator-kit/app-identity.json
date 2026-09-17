@@ -13,7 +13,7 @@
       "fallbackIcon": "layout-grid",
       "color": "#34373B",
       "article": "a",
-      "install": "Abra a Central direto da tela inicial deste aparelho."
+      "install": "Abra a Central direto da tela inicial deste dispositivo."
     },
     "pos": {
       "label": "PDV",
@@ -22,7 +22,7 @@
       "fallbackIcon": "shopping-basket",
       "color": "#A95032",
       "article": "o",
-      "install": "Abra o caixa direto da tela inicial deste aparelho."
+      "install": "Abra o caixa direto da tela inicial deste dispositivo."
     },
     "kds": {
       "label": "Cozinha",
@@ -31,7 +31,7 @@
       "fallbackIcon": "chef-hat",
       "color": "#2E7168",
       "article": "a",
-      "install": "Abra o painel de preparo direto da tela inicial deste aparelho.",
+      "install": "Abra o painel de preparo direto da tela inicial deste dispositivo.",
       "dark": true
     },
     "orders": {
@@ -41,7 +41,7 @@
       "fallbackIcon": "square-kanban",
       "color": "#8B2F4D",
       "article": "o",
-      "install": "Abra a fila de pedidos direto da tela inicial deste aparelho."
+      "install": "Abra a fila de pedidos direto da tela inicial deste dispositivo."
     },
     "production": {
       "label": "Produção",
@@ -50,7 +50,7 @@
       "fallbackIcon": "croissant",
       "color": "#B9781B",
       "article": "a",
-      "install": "Abra o plano do dia direto da tela inicial deste aparelho."
+      "install": "Abra o plano do dia direto da tela inicial deste dispositivo."
     },
     "marketing": {
       "label": "Marketing",
@@ -59,7 +59,7 @@
       "fallbackIcon": "megaphone",
       "color": "#7D4B88",
       "article": "o",
-      "install": "Abra as campanhas direto da tela inicial deste aparelho."
+      "install": "Abra as campanhas direto da tela inicial deste dispositivo."
     },
     "purchase": {
       "label": "Compras",
@@ -68,7 +68,7 @@
       "fallbackIcon": "package",
       "color": "#386F9A",
       "article": "as",
-      "install": "Abra os pedidos de compra direto da tela inicial deste aparelho."
+      "install": "Abra os pedidos de compra direto da tela inicial deste dispositivo."
     },
     "bi": {
       "label": "B.I.",
@@ -77,7 +77,7 @@
       "fallbackIcon": "chart-no-axes-combined",
       "color": "#414F91",
       "article": "o",
-      "install": "Abra os números da operação direto da tela inicial deste aparelho."
+      "install": "Abra os números da operação direto da tela inicial deste dispositivo."
     }
   }
 }

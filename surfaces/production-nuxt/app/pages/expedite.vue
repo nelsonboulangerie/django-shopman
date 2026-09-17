@@ -813,7 +813,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           <UiDialogTitle
             >Timer do forno · {{ ovenOrder?.recipe_name }}</UiDialogTitle
           >
-          <UiDialogDescription>Toca neste aparelho.</UiDialogDescription>
+          <UiDialogDescription>Toca neste dispositivo.</UiDialogDescription>
         </UiDialogHeader>
 
         <p

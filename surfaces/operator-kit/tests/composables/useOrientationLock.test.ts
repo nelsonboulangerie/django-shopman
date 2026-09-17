@@ -1,4 +1,4 @@
-// Trava de giro no aparelho real é Android/ChromeOS instalado; aqui a Screen Orientation
+// Trava de giro no dispositivo real é Android/ChromeOS instalado; aqui a Screen Orientation
 // API é substituída por um dublê que resolve (Android) ou rejeita (iOS/Windows) — o que
 // se prova é que o estado só diz "travado" quando o navegador confirmou, que a recusa
 // vira cópia para o operador, e que a escolha volta no boot do app instalado.
@@ -86,7 +86,7 @@ describe("useOrientationLock", () => {
     wrapper.unmount();
   });
 
-  it("aparelho instalado que recusa (Windows): diz ao operador e NÃO finge que travou", async () => {
+  it("dispositivo instalado que recusa (Windows): diz ao operador e NÃO finge que travou", async () => {
     stubOrientation({
       type: "landscape-primary",
       lock: vi.fn().mockRejectedValue(new DOMException("not supported", "NotSupportedError")),
@@ -117,7 +117,7 @@ describe("useOrientationLock", () => {
     wrapper.unmount();
   });
 
-  it("iPad sem lock(): o aparelho não deixa — nada de mandar instalar", async () => {
+  it("iPad sem lock(): o dispositivo não deixa — nada de mandar instalar", async () => {
     stubOrientation({ type: "landscape-primary" });
     stubDevice({ installed: false, userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)" });
     const { state, wrapper } = await mountOrientation();

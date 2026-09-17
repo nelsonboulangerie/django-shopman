@@ -465,7 +465,7 @@ useHead({ title: "Plataformas" });
             <section class="mt-5 border-t border-border pt-4">
               <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Envia uma mensagem a um aparelho verificado. Nunca usa público
+                Envia uma mensagem a um número verificado. Nunca usa público
                 de campanha.
               </p>
 
@@ -502,10 +502,10 @@ useHead({ title: "Plataformas" });
                     for="test-target"
                     class="mb-1 block text-xs font-medium text-muted-foreground"
                   >
-                    Aparelho verificado
+                    Número verificado
                   </label>
                   <UiNativeSelect id="test-target" v-model="testTargetRef">
-                    <option value="" disabled>Escolha o aparelho</option>
+                    <option value="" disabled>Escolha o número</option>
                     <option
                       v-for="target in waTemplate.testTargets.value"
                       :key="target.ref"
