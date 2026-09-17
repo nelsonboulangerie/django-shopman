@@ -1,6 +1,6 @@
 // Presentation — KDS board shaping (Arc 2). Pure transforms over the board
 // Projection (served by shopman/backstage/api/kds.py). The projection is already
-// screen-ready (timer_class, status_label, all_checked pre-resolved); this layer
+// screen-ready (timer_class, status_label pre-resolved); this layer
 // only derives the view shape + the functional-color tone for the semaphore. No
 // time/SLA arithmetic (the backend owns elapsed/target/timer_class).
 import type {
@@ -81,7 +81,7 @@ export interface KDSAllDayCount {
 }
 
 /** "All-day" aggregate (KDS best practice — mise en place / batch prep): how many
- *  of each item are still to make across all active prep tickets (unchecked only). */
+ *  of each item are still to make across all active prep tickets. */
 export function allDayCounts(
   cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
 ): KDSAllDayCount[] {
@@ -89,13 +89,73 @@ export function allDayCounts(
   for (const card of cards) {
     if (isExpeditionCard(card)) continue;
     for (const item of card.items) {
-      if (item.checked) continue;
       counts.set(item.name, (counts.get(item.name) || 0) + Number(item.qty));
     }
   }
   return [...counts.entries()]
     .map(([name, qty]) => ({ name, qty: Number(qty.toFixed(9)) }))
     .sort((a, b) => b.qty - a.qty);
+}
+
+// ── O toque da cozinha ──────────────────────────────────────────────────────
+// O card não tem botão de ação: o CABEÇALHO inteiro é o alvo. Um toque põe o
+// ticket em preparo; o seguinte finaliza. O preparo é estado do TICKET (o
+// servidor guarda e todos os tablets veem), nunca do item.
+
+/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de finalizar. Um
+ *  toque duplo (ou o dedo que quica na tela molhada) não pode iniciar e
+ *  finalizar o mesmo pedido em 300 ms. */
+export const KDS_ARM_DELAY_MS = 900;
+
+/** Janela de "Desfazer" do finalizar. Finalizar tem efeito fora da cozinha
+ *  (o pedido vira PRONTO e o cliente é avisado), e o "Reabrir" não desavisa
+ *  ninguém — então o POST só sai quando a janela fecha. */
+export const KDS_UNDO_WINDOW_MS = 5000;
+
+export type KDSTicketTap = "start" | "finish" | "blocked" | "none";
+
+/** O que um toque no cabeçalho faz, dado o estado do ticket. `blocked` = há
+ *  item cancelado deste pedido esperando "Ciente": o servidor recusaria o
+ *  finalizar, então a tela recusa antes, dizendo por quê. Iniciar nunca é
+ *  bloqueado — começar o que sobrou é seguro. */
+export function ticketTapAction(
+  ticket: Pick<KDSTicketProjection, "status" | "is_scheduled">,
+  state: { armed: boolean; blocked: boolean },
+): KDSTicketTap {
+  if (ticket.is_scheduled) return "none";
+  if (ticket.status === "pending") return "start";
+  if (ticket.status !== "in_progress") return "none";
+  if (state.blocked) return "blocked";
+  return state.armed ? "finish" : "none";
+}
+
+/** Pedidos com item cancelado ainda sem "Ciente" nesta estação. O servidor
+ *  bloqueia o finalizar por pedido+estação; a referência exibida é a mesma
+ *  para o ticket vivo e o cancelado da mesma venda. */
+export function blockedOrderRefs(cancelled: KDSTicketProjection[]): Set<string> {
+  return new Set(cancelled.map((ticket) => ticket.order_ref));
+}
+
+/** Tickets que são ADICIONAL de um pedido que já passou por esta estação.
+ *  Item novo numa comanda nunca altera o ticket que já está em preparo: o
+ *  servidor dispara só o delta, num ticket novo. A tela diz isso, para a
+ *  cozinha não achar que é pedido repetido. */
+export function additionTicketPks(
+  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
+  recentDone: KDSTicketProjection[],
+): Set<number> {
+  const firstPkByRef = new Map<string, number>();
+  for (const ticket of [...cards, ...recentDone]) {
+    if (isExpeditionCard(ticket) || ticket.is_scheduled) continue;
+    const first = firstPkByRef.get(ticket.order_ref);
+    if (first === undefined || ticket.pk < first) firstPkByRef.set(ticket.order_ref, ticket.pk);
+  }
+  const additions = new Set<number>();
+  for (const card of cards) {
+    if (isExpeditionCard(card) || card.is_scheduled) continue;
+    if (firstPkByRef.get(card.order_ref) !== card.pk) additions.add(card.pk);
+  }
+  return additions;
 }
 
 export interface KDSBoardView {
@@ -110,24 +170,48 @@ export interface KDSBoardView {
   allDay: KDSAllDayCount[];
   counts: Record<string, number>;
   total: number;
+  /** Pedidos com cancelado sem "Ciente" — finalizar espera. */
+  blockedRefs: Set<string>;
+  /** Tickets que são adicional de um pedido já visto nesta estação. */
+  additionPks: Set<number>;
   serviceDate: string;
   serviceDateDisplay: string;
   today: string;
   availableDates: string[];
 }
 
-export function boardView(board: KDSBoardProjection): KDSBoardView {
-  const cards = sortByUrgency(board.tickets);
+/** `hidden`: tickets finalizados cuja janela de "Desfazer" ainda está aberta —
+ *  já saíram da grade para a cozinha, mas o servidor ainda os tem abertos. Os
+ *  contadores de preparo são recontados sobre o que a tela mostra, para que o
+ *  toque otimista (iniciar/finalizar) mude o cabeçalho junto com o card. */
+export function boardView(
+  board: KDSBoardProjection,
+  hidden: ReadonlySet<number> = new Set(),
+): KDSBoardView {
+  const visible = board.tickets.filter((card) => !hidden.has(card.pk));
+  const cards = sortByUrgency(visible);
+  const recentDone = [...(board.recent_done ?? [])];
+  const counts = { ...(board.counts || {}) };
+  if (!board.is_expedition) {
+    const tickets = cards as KDSTicketProjection[];
+    counts.pending = tickets.filter((t) => t.status === "pending").length;
+    counts.in_progress = tickets.filter((t) => t.status === "in_progress").length;
+    counts.total = tickets.length;
+  } else if (hidden.size) {
+    counts.total = cards.length;
+  }
   return {
     instanceRef: board.instance_ref,
     instanceName: board.instance_name,
     isExpedition: board.is_expedition,
     cards,
     cancelled: [...board.cancelled_tickets],
-    recentDone: [...(board.recent_done ?? [])],
+    recentDone,
     allDay: allDayCounts(cards),
-    counts: board.counts || {},
-    total: board.counts?.total ?? board.tickets.length,
+    counts,
+    total: counts.total ?? cards.length,
+    blockedRefs: blockedOrderRefs(board.cancelled_tickets),
+    additionPks: additionTicketPks(cards, recentDone),
     serviceDate: board.service_date,
     serviceDateDisplay: board.service_date_display,
     today: board.today,
@@ -159,14 +243,6 @@ export function splitRef(ref: string): { prefix: string; code: string } {
   const i = ref.lastIndexOf("-");
   if (i < 0) return { prefix: "", code: ref };
   return { prefix: ref.slice(0, i + 1), code: ref.slice(i + 1) };
-}
-
-/** Total unchecked vs total item lines — for the minimal card's progress hint. */
-export function itemProgress(items: { checked: boolean }[]): {
-  done: number;
-  total: number;
-} {
-  return { done: items.filter((i) => i.checked).length, total: items.length };
 }
 
 /** Elapsed seconds → compact timer label. Segundos só no 1º minuto ("45s"); a partir

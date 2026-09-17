@@ -5,7 +5,9 @@ import {
   boardView,
   elapsedLabel,
   isExpeditionCard,
-  itemProgress,
+  KDS_UNDO_WINDOW_MS,
+  additionTicketPks,
+  ticketTapAction,
   lucideIcon,
   slaPercent,
   sortByUrgency,
@@ -40,12 +42,10 @@ const ticket = (
       name: "Pão",
       qty: 2,
       notes: "",
-      checked: false,
       stock_warning: "",
     },
   ],
   status: "in_progress",
-  all_checked: false,
   previous_tab_ref: "",
   is_scheduled: false,
   status_label: "",
@@ -108,6 +108,29 @@ describe("kds board presentation", () => {
     expect(view.cards).toHaveLength(2);
     expect(view.cancelled).toHaveLength(1);
     expect(view.total).toBe(2);
+    expect(view.blockedRefs.has("PDV-1")).toBe(true);
+  });
+
+  it("hides tickets inside the undo window and recounts from what is on screen", () => {
+    const board: KDSBoardProjection = {
+      instance_ref: "cafes",
+      instance_name: "Cafés",
+      instance_type: "prep",
+      is_expedition: false,
+      tickets: [ticket({ pk: 1, status: "pending" }), ticket({ pk: 2 })],
+      counts: { total: 2, pending: 1, in_progress: 1 },
+      service_date: "2026-09-15",
+      service_date_display: "Hoje",
+      today: "2026-09-15",
+      available_dates: ["2026-09-15"],
+      cancelled_tickets: [],
+      recent_done: [],
+    };
+    const view = boardView(board, new Set([2]));
+    expect(view.cards.map((c) => c.pk)).toEqual([1]);
+    expect(view.total).toBe(1);
+    expect(view.counts.in_progress).toBe(0);
+    expect(view.counts.pending).toBe(1);
   });
 
   it("formats elapsed compactly — seconds only in the first minute, then whole minutes", () => {
@@ -191,13 +214,7 @@ describe("kds board presentation", () => {
     expect(splitRef("SEMTRACO")).toEqual({ prefix: "", code: "SEMTRACO" });
   });
 
-  it("reports item progress (done/total)", () => {
-    expect(
-      itemProgress([{ checked: true }, { checked: false }, { checked: false }]),
-    ).toEqual({ done: 1, total: 3 });
-  });
-
-  it("aggregates all-day counts of unchecked items", () => {
+  it("aggregates all-day counts across active tickets", () => {
     const t1 = ticket({
       pk: 1,
       items: [
@@ -206,7 +223,6 @@ describe("kds board presentation", () => {
           name: "Baguete",
           qty: 2,
           notes: "",
-          checked: false,
           stock_warning: "",
         },
         {
@@ -214,7 +230,6 @@ describe("kds board presentation", () => {
           name: "Café",
           qty: 1,
           notes: "",
-          checked: true,
           stock_warning: "",
         },
       ],
@@ -227,13 +242,15 @@ describe("kds board presentation", () => {
           name: "Baguete",
           qty: 3,
           notes: "",
-          checked: false,
           stock_warning: "",
         },
       ],
     });
     const allDay = allDayCounts([t1, t2]);
-    expect(allDay).toEqual([{ name: "Baguete", qty: 5 }]); // café excluded (checked)
+    expect(allDay).toEqual([
+      { name: "Baguete", qty: 5 },
+      { name: "Café", qty: 1 },
+    ]);
   });
 });
 
@@ -243,4 +260,51 @@ it("soma quantidades decimais sem concatenar strings nem arredondar unidades", (
   const second = ticket();
   second.items[0]!.qty = "0.2";
   expect(allDayCounts([first, second])).toEqual([{ name: "Pão", qty: 0.3 }]);
+});
+
+describe("o toque no cabeçalho do card", () => {
+  const armed = { armed: true, blocked: false };
+
+  it("pendente → inicia; em preparo e armado → finaliza", () => {
+    expect(ticketTapAction(ticket({ status: "pending" }), armed)).toBe("start");
+    expect(ticketTapAction(ticket({ status: "in_progress" }), armed)).toBe("finish");
+  });
+
+  it("recém-iniciado ainda não finaliza: o toque duplo não conclui o pedido", () => {
+    expect(
+      ticketTapAction(ticket({ status: "in_progress" }), { armed: false, blocked: false }),
+    ).toBe("none");
+  });
+
+  it("item cancelado sem Ciente trava o finalizar, mas não o iniciar", () => {
+    const blocked = { armed: true, blocked: true };
+    expect(ticketTapAction(ticket({ status: "in_progress" }), blocked)).toBe("blocked");
+    expect(ticketTapAction(ticket({ status: "pending" }), blocked)).toBe("start");
+  });
+
+  it("encomenda futura não reage ao toque", () => {
+    expect(
+      ticketTapAction(ticket({ status: "scheduled", is_scheduled: true }), armed),
+    ).toBe("none");
+  });
+
+  it("a janela de desfazer é curta o bastante para não segurar a cozinha", () => {
+    expect(KDS_UNDO_WINDOW_MS).toBeGreaterThanOrEqual(3000);
+    expect(KDS_UNDO_WINDOW_MS).toBeLessThanOrEqual(8000);
+  });
+});
+
+describe("ticket adicional do mesmo pedido", () => {
+  it("marca como adicional o ticket mais novo do mesmo pedido, não o primeiro", () => {
+    const first = ticket({ pk: 10, order_ref: "PDV-7" });
+    const extra = ticket({ pk: 14, order_ref: "PDV-7" });
+    const other = ticket({ pk: 12, order_ref: "PDV-8" });
+    expect([...additionTicketPks([extra, other, first], [])]).toEqual([14]);
+  });
+
+  it("conta o primeiro ticket já finalizado nos concluídos recentes", () => {
+    const done = ticket({ pk: 3, order_ref: "PDV-7", status: "done" });
+    const extra = ticket({ pk: 9, order_ref: "PDV-7" });
+    expect([...additionTicketPks([extra], [done])]).toEqual([9]);
+  });
 });

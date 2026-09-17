@@ -50,7 +50,7 @@ const d = computed(
 
 <template>
   <article
-    class="flex flex-col gap-3 overflow-hidden rounded-md border bg-card shadow-sm"
+    class="flex w-full flex-col gap-3 overflow-hidden rounded-md border bg-card shadow-sm"
     :class="[d.inset, d.padT, d.padB]"
   >
     <!-- identidade: código herói + badge neutro de despacho/balcão -->
