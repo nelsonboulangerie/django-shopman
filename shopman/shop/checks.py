@@ -22,7 +22,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E017  Catálogo de qualidade não tem grau ativo a preço cheio
   SHOPMAN_E018  Catálogo de qualidade tem política ativa incoerente
   SHOPMAN_E019  Configuração de produção da loja é inválida
-  SHOPMAN_W020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado (o envio já falha fechado em runtime)
+  SHOPMAN_W020  WhatsApp Marketing com flow ainda fechado ou em ensaio (o envio já falha fechado em runtime)
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
   SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
@@ -49,6 +49,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
   SHOPMAN_W019  Web Push do backstage desativado por ausência de VAPID
+  SHOPMAN_W021  Modo do WhatsApp de Marketing pedido sem cache compartilhado, sem lista do ensaio ou desconhecido
 """
 
 from __future__ import annotations
