@@ -19,6 +19,38 @@ from shopman.guestman.models import (
 logger = logging.getLogger(__name__)
 
 
+#: Os campos de identidade que NÃO têm dono no Core — e o que, em cada um,
+#: quer dizer "vazio".
+#:
+#: A distinção é a regra deste arquivo, e é ela que decide o que se escreve
+#: aqui. ``Customer.phone``/``email`` também moram na linha, mas NÃO entram
+#: nesta lista: eles são cache de um ``ContactPoint``, o Core já sabe propagá-lo
+#: (``ContactPoint.set_as_primary`` → ``_sync_to_customer``), e reimplementar a
+#: propagação aqui criaria uma segunda régua para a mesma verdade. O que o merge
+#: fazia de errado com eles não era deixar de copiar: era mover o
+#: ``ContactPoint`` sem avisar o Core. Ver ``_adopt_contact_cache``.
+#:
+#: Já ``document`` e ``birthday`` não têm mecanismo nenhum atrás — ``document``
+#: é coluna escrita à mão por ``create_customer`` e zerada por ``purge_pii``, e
+#: ``CustomerIdentifier`` não o espelha. Sem dono no Core, o dono é o merge:
+#: por isso o cadastro largado só com um CPF era unificado sem que o CPF
+#: chegasse na cara do sobrevivente.
+_IDENTITY_GAP_FIELDS: tuple[tuple[str, object], ...] = (
+    ("document", ""),
+    ("birthday", None),
+)
+
+#: O "vazio" de cada campo que a unificação pode mover, para o desfazer repor.
+#: Inclui o par do nome e o cache de contato, que não estão na lista acima.
+_IDENTITY_EMPTY: dict[str, object] = {
+    **dict(_IDENTITY_GAP_FIELDS),
+    "first_name": "",
+    "last_name": "",
+    "phone": "",
+    "email": "",
+}
+
+
 @dataclass(frozen=True)
 class MergeResult:
     """Summary of a completed merge."""
@@ -125,6 +157,13 @@ class MergeService:
 
             # Audit trail — timeline event on target
             cls._log_merge_event(source, target, evidence, actor)
+
+            # ⚠️ DEPOIS do evento de timeline, e isso é ordem, não estilo: o
+            # evento nomeia o doador ("Customer X (Ana) merged into…") e esta
+            # etapa esvazia a linha dele. Invertida, a trilha registraria um
+            # doador sem nome — justo no lugar onde alguém vai procurar o que
+            # foi desfeito.
+            cls._fill_identity_gaps(source, target, snapshot)
 
             # Deactivate source — use .update() to bypass _sync_contact_points()
             # which would fail since source's CPs were migrated to target.
@@ -302,6 +341,13 @@ class MergeService:
             # NOTE: Loyalty is NOT reverted automatically — too complex.
             # Manual adjustment via LoyaltyService if needed.
 
+            # Devolver o documento / contato / nome / aniversário que a
+            # unificação tirou da linha do doador para tapar a lacuna do
+            # sobrevivente. A ordem é a da ida ao contrário — limpa no
+            # sobrevivente ANTES de repor no doador — pelo mesmo motivo de lá: o
+            # UNIQUE do telefone é global e recusaria os dois juntos.
+            cls._restore_identity_gaps(source, target, snapshot)
+
             # Reactivate source
             Customer.objects.filter(pk=source.pk).update(is_active=True)
 
@@ -356,6 +402,120 @@ class MergeService:
     # ======================================================================
 
     @classmethod
+    def _fill_identity_gaps(
+        cls, source: Customer, target: Customer, snapshot: dict
+    ) -> dict:
+        """O que o doador tinha, o sobrevivente NÃO tinha, e o Core não governa.
+
+        Aqui mora SÓ o que não tem mecanismo atrás (``document``, ``birthday``,
+        o nome). O contato não entra: ele é cache de ``ContactPoint`` e quem o
+        propaga é o Core, em ``_adopt_contact_cache``.
+
+        Só LACUNA. Quem sobrevive nunca é sobrescrito: é ele que está na
+        comanda, é dele que o operador acabou de falar com o cliente, e um
+        merge que troca o CPF de quem fica não unifica — adultera.
+
+        É por isto que o caso mais comum do balcão existia e não tinha conserto.
+        O cadastro largado só com um CPF é um FANTASMA: um documento sem rosto,
+        nascido de uma nota pedida no balcão. Quando ele reencontra o dono, a
+        unificação movia contato, pedido e fidelidade — e deixava o documento
+        para trás, na linha do doador que ela mesma acabava de desativar. O
+        operador unificava, via "cadastros unificados", e o CPF que ele queria
+        cadastrar continuava fora do cadastro.
+
+        ⚠️ O valor é LIMPO no doador antes de ser escrito no sobrevivente.
+        Limpar mantém UM dono por dado — dois cadastros respondendo "este CPF é
+        meu" é exatamente a pergunta que o conflito do PDV faz, e ela precisa de
+        uma resposta só.
+
+        O que saiu de onde fica no ``snapshot``, que é o que o ``undo`` lê.
+        """
+        moved: dict[str, object] = {}
+
+        for field, empty in _IDENTITY_GAP_FIELDS:
+            donor_value = getattr(source, field, empty)
+            if donor_value in (empty, None):
+                continue
+            if getattr(target, field, empty) not in (empty, None):
+                continue
+            moved[field] = donor_value
+
+        # O NOME anda inteiro ou não anda. Emprestar só o sobrenome de um
+        # cadastro para o primeiro nome de outro constrói uma pessoa que não
+        # existe — "Fulano" + "Silva" de outra ficha vira "Fulano Silva".
+        if not target.first_name and not target.last_name and (source.first_name or source.last_name):
+            moved["first_name"] = source.first_name
+            moved["last_name"] = source.last_name
+
+        # ⚠️ `setdefault`, nunca atribuição: `_adopt_contact_cache` já pode ter
+        # anotado o contato que o doador cedeu, e sobrescrever aqui apagaria do
+        # desfazer justamente o que o Core moveu.
+        filled = snapshot.setdefault("identity_filled", {})
+        if not moved:
+            return {}
+
+        Customer.objects.filter(pk=source.pk).update(
+            **{field: _IDENTITY_EMPTY.get(field, "") for field in moved}
+        )
+        for field, value in moved.items():
+            setattr(target, field, value)
+        target.save(update_fields=[*moved, "updated_at"])
+
+        # `birthday` é date e não atravessa JSON sozinho.
+        filled.update({
+            field: value.isoformat() if hasattr(value, "isoformat") else value
+            for field, value in moved.items()
+        })
+        logger.info(
+            "Merge filled identity gaps on %s from %s: %s",
+            target.ref,
+            source.ref,
+            sorted(moved),
+        )
+        return moved
+
+    @classmethod
+    def _restore_identity_gaps(
+        cls, source: Customer, target: Customer, snapshot: dict
+    ) -> None:
+        """Desfaz ``_fill_identity_gaps``: o dado volta para o doador.
+
+        ⚠️ Só volta o que NINGUÉM mexeu depois. Entre a unificação e o desfazer
+        cabem 24 horas de balcão, e se alguém corrigiu o CPF do sobrevivente
+        nesse meio-tempo o valor que está lá agora é uma decisão de alguém — não
+        o resíduo de um merge. Devolver por cima dela apagaria o trabalho de
+        quem corrigiu, calado, dentro de um "desfazer" que prometia o contrário.
+        """
+        filled = snapshot.get("identity_filled") or {}
+        if not filled:
+            return
+
+        cleared: dict[str, object] = {}
+        restored: dict[str, object] = {}
+        for field, raw in filled.items():
+            current = getattr(target, field, None)
+            # O snapshot passou por JSON: `birthday` voltou como texto.
+            stored = current if str(current) == str(raw) else None
+            if stored is None:
+                continue
+            cleared[field] = _IDENTITY_EMPTY.get(field, "")
+            restored[field] = current
+
+        if not restored:
+            logger.info(
+                "Undo kept identity fields on %s: changed since the merge", target.ref
+            )
+            return
+
+        # `.update()` dos dois lados: `save()` espelharia o contato num
+        # ContactPoint novo, e os ContactPoints originais já voltaram para o
+        # doador alguns passos acima.
+        Customer.objects.filter(pk=target.pk).update(**cleared)
+        Customer.objects.filter(pk=source.pk).update(**restored)
+        for field, value in cleared.items():
+            setattr(target, field, value)
+
+    @classmethod
     def _migrate_contact_points(
         cls, source: Customer, target: Customer, snapshot: dict
     ) -> int:
@@ -407,11 +567,56 @@ class MergeService:
 
             cp.customer = target
             cp.save(update_fields=["customer", "is_primary", "updated_at"])
+            # Continuou PRINCIPAL no alvo? Então ele passa a ser o contato do
+            # cadastro, e o cache do `Customer` tem de acompanhar. Quem sabe
+            # fazer isso é o Core, não este arquivo.
+            if cp.is_primary:
+                cls._adopt_contact_cache(source, target, cp, snapshot)
             moved_pks.append(str(cp.pk))
             migrated += 1
 
         snapshot["contact_points"] = moved_pks
         return migrated
+
+    @classmethod
+    def _adopt_contact_cache(
+        cls, source: Customer, target: Customer, cp: ContactPoint, snapshot: dict
+    ) -> None:
+        """O sobrevivente assume o contato que chegou — pela porta do Core.
+
+        ``Customer.phone``/``email`` são cache: quem manda é o ``ContactPoint``
+        principal. O Core já tem o caminho (``set_as_primary`` chama
+        ``_sync_to_customer``, e o docstring dele diz para quê: manter o
+        ``get_by_phone``/``get_by_email`` consistentes). O merge movia o
+        ``ContactPoint`` e não chamava ninguém — o contato mudava de dono na
+        tabela e o cadastro do sobrevivente seguia com o campo vazio, que é
+        justamente o campo que a tela lê.
+
+        Não se copia o valor à mão aqui. Pede-se ao Core que propague.
+
+        Só LACUNA: com o campo já preenchido, quem manda é o principal que o
+        sobrevivente já tinha — e nesse caso o que chegou foi demovido antes de
+        mudar de dono, então nem chega até aqui.
+
+        ⚠️ O doador perde o cache ANTES, e a ordem é obrigatória:
+        ``unique_customer_phone`` é global e não olha ``is_active``, então os
+        dois com o mesmo número por um instante já é o ``IntegrityError``.
+        """
+        field = {
+            ContactPoint.Type.PHONE: "phone",
+            ContactPoint.Type.WHATSAPP: "phone",
+            ContactPoint.Type.EMAIL: "email",
+        }.get(cp.type)
+        if not field or getattr(target, field, ""):
+            return
+
+        if getattr(source, field, "") == cp.value_normalized:
+            Customer.objects.filter(pk=source.pk).update(**{field: ""})
+            setattr(source, field, "")
+            snapshot.setdefault("identity_filled", {})[field] = cp.value_normalized
+
+        cp.set_as_primary()
+        setattr(target, field, cp.value_normalized)
 
     @classmethod
     def _migrate_external_identities(

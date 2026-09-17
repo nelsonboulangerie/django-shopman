@@ -1139,3 +1139,160 @@ class TestMergeIntegration:
 
         pref.refresh_from_db()
         assert pref.customer == source
+
+
+# ======================================================================
+# O fantasma encontra o dono
+# ======================================================================
+
+
+class TestMergeFillsIdentityGaps:
+    """O cadastro largado só com um dado, quando reencontra a pessoa.
+
+    Ele vai existir — nasce toda vez que alguém pede a nota no balcão e o CPF
+    não é de ninguém conhecido. É um documento sem rosto. O dia em que o rosto
+    aparece, unificar tem de entregar o documento a ele: mover contato e pedido
+    e deixar o CPF para trás, na ficha que a própria unificação desativa, é
+    unificar pela metade — e é a metade que o operador estava tentando cadastrar.
+    """
+
+    @pytest.fixture
+    def fantasma(self, tier):
+        """Só um CPF. Sem nome, sem telefone, sem e-mail."""
+        return Customer.objects.create(
+            ref="GHOST-001", first_name="", last_name="", document="11144477735",
+            price_tier=tier,
+        )
+
+    def test_documento_do_fantasma_chega_no_sobrevivente(self, fantasma, target, evidence):
+        MergeService.merge(fantasma, target, evidence=evidence, actor="pdv")
+
+        target.refresh_from_db()
+        assert target.document == "11144477735"
+
+    def test_documento_sai_do_doador(self, fantasma, target, evidence):
+        """UM dono por dado. Dois cadastros dizendo "este CPF é meu" é
+        exatamente a pergunta que o conflito do PDV faz — e ela tem uma resposta
+        só."""
+        MergeService.merge(fantasma, target, evidence=evidence, actor="pdv")
+
+        fantasma.refresh_from_db()
+        assert fantasma.document == ""
+
+    def test_email_solto_chega_no_cache_do_sobrevivente(self, tier, evidence):
+        """O `email` do Customer é cache do ContactPoint principal.
+
+        O ContactPoint já migrava; o cache ficava vazio, e é ele que a tela lê.
+        Quem preenche NÃO é este service copiando o campo — é o Core, quando o
+        contato que chegou assume o posto de principal (`set_as_primary`).
+        """
+        sem_email = Customer.objects.create(
+            ref="TGT-SEM-EMAIL", first_name="Maria", last_name="Silva", price_tier=tier,
+        )
+        fantasma = Customer.objects.create(
+            ref="GHOST-002", first_name="", last_name="",
+            email="fantasma@example.com", price_tier=tier,
+        )
+
+        MergeService.merge(fantasma, sem_email, evidence=evidence, actor="pdv")
+
+        sem_email.refresh_from_db()
+        assert sem_email.email == "fantasma@example.com"
+
+    def test_contato_ja_existente_no_sobrevivente_MANDA(self, tier, source, target, evidence):
+        """Com principal próprio, quem governa o cache é ele — não o que chegou.
+
+        É a regra do Core, e é por isso que o cache não se copia à mão aqui: o
+        ContactPoint que chega é demovido antes de mudar de dono, e um preencher
+        manual passaria por cima do principal que o sobrevivente já tinha.
+        """
+        MergeService.merge(source, target, evidence=evidence, actor="pdv")
+
+        target.refresh_from_db()
+        assert target.email == "maria.silva@example.com"
+        assert target.phone == "+5543922222222"
+
+    def test_telefone_solto_troca_de_dono_sem_violar_o_unique(self, tier, evidence):
+        """`unique_customer_phone` é GLOBAL e não olha `is_active`: o número tem
+        de sair do doador ANTES de entrar no sobrevivente, ou os dois o têm por
+        um instante e o banco recusa."""
+        sem_telefone = Customer.objects.create(
+            ref="TGT-SEM-TEL", first_name="Maria", last_name="Silva", price_tier=tier,
+        )
+        fantasma = Customer.objects.create(
+            ref="GHOST-003", first_name="", last_name="",
+            phone="+5543933333333", price_tier=tier,
+        )
+
+        MergeService.merge(fantasma, sem_telefone, evidence=evidence, actor="pdv")
+
+        sem_telefone.refresh_from_db()
+        fantasma.refresh_from_db()
+        assert sem_telefone.phone == "+5543933333333"
+        assert fantasma.phone == ""
+
+    def test_quem_sobrevive_nunca_e_sobrescrito(self, tier, target, evidence):
+        """Só LACUNA. O sobrevivente está na comanda e é dele que o operador
+        acabou de falar com o cliente: um merge que troca o CPF de quem fica não
+        unifica, adultera."""
+        doador = Customer.objects.create(
+            ref="SRC-DOC", first_name="Maria", last_name="Souza",
+            document="52998224725", price_tier=tier,
+        )
+        target.document = "11144477735"
+        target.save(update_fields=["document"])
+
+        MergeService.merge(doador, target, evidence=evidence, actor="pdv")
+
+        target.refresh_from_db()
+        assert target.document == "11144477735"
+
+    def test_o_nome_anda_inteiro_ou_nao_anda(self, tier, evidence):
+        """Emprestar só o sobrenome constrói uma pessoa que não existe."""
+        doador = Customer.objects.create(
+            ref="SRC-NOME", first_name="Ana", last_name="Souza", price_tier=tier,
+        )
+        sem_sobrenome = Customer.objects.create(
+            ref="TGT-NOME", first_name="Ana", last_name="", price_tier=tier,
+        )
+
+        MergeService.merge(doador, sem_sobrenome, evidence=evidence, actor="pdv")
+
+        sem_sobrenome.refresh_from_db()
+        assert sem_sobrenome.last_name == ""
+        assert sem_sobrenome.name == "Ana"
+
+    def test_fantasma_como_alvo_ganha_o_nome_do_doador(self, tier, fantasma, evidence):
+        """A direção inversa (possível pelo Admin): quem fica é o sem rosto."""
+        com_nome = Customer.objects.create(
+            ref="SRC-ROSTO", first_name="Ana", last_name="Souza", price_tier=tier,
+        )
+
+        MergeService.merge(com_nome, fantasma, evidence=evidence, actor="admin")
+
+        fantasma.refresh_from_db()
+        assert fantasma.name == "Ana Souza"
+
+    def test_undo_devolve_o_documento_ao_doador(self, fantasma, target, evidence):
+        result = MergeService.merge(fantasma, target, evidence=evidence, actor="pdv")
+
+        MergeService.undo(result.audit_id, actor="gerente")
+
+        target.refresh_from_db()
+        fantasma.refresh_from_db()
+        assert target.document == ""
+        assert fantasma.document == "11144477735"
+
+    def test_undo_nao_pisa_em_correcao_feita_depois(self, fantasma, target, evidence):
+        """Entre a unificação e o desfazer cabem 24h de balcão. Se alguém
+        corrigiu o CPF nesse meio-tempo, o valor que está lá é decisão de
+        alguém — e "desfazer" não pode apagá-la calado."""
+        result = MergeService.merge(fantasma, target, evidence=evidence, actor="pdv")
+        target.refresh_from_db()
+        target.document = "52998224725"
+        target.save(update_fields=["document"])
+
+        MergeService.undo(result.audit_id, actor="gerente")
+
+        target.refresh_from_db()
+        assert target.document == "52998224725"
