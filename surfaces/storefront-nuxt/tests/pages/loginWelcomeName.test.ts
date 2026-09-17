@@ -173,7 +173,7 @@ describe('login — o passo do nome', () => {
     // Na chegada ao passo do telefone, com o bloco à vista, nada se move.
     expect(scrolled).not.toHaveBeenCalled()
 
-    await page.findAll('button').find((b: any) => b.text().includes('Não consigo usar WhatsApp'))!.trigger('click')
+    await page.findAll('button').find((b: any) => b.text().includes('Receber código por SMS'))!.trigger('click')
     await flushPromises()
     await page.find('#login-phone').setValue('43999998888')
     await page.find('form').trigger('submit')
@@ -193,7 +193,7 @@ describe('login — o passo do nome', () => {
     mounted.push(page)
     await flushPromises()
 
-    await page.findAll('button').find((b: any) => b.text().includes('Não consigo usar WhatsApp'))!.trigger('click')
+    await page.findAll('button').find((b: any) => b.text().includes('Receber código por SMS'))!.trigger('click')
     await flushPromises()
     await page.find('#login-phone').setValue('43999998888')
     await page.find('form').trigger('submit')

@@ -30,6 +30,10 @@ O layer contribui, via auto-import do Nuxt:
 | `app/utils/clientErrorReport.ts` | `reportClientError`, `buildClientErrorReport` | telemetria → `backstage/client-error/` |
 | `app/utils/tw-helper.ts` | `tw` | identidade para strings de classes Tailwind (DX/lint) |
 | `app/utils/translucent.ts` | `getTranslucentFloatingPanelClasses`, … | classes canônicas de painel flutuante translúcido |
+| `app/utils/api.ts` | `apiPath` | prefixa um caminho com o `baseURL` do app (no-op em `/`) |
+| `app/composables/useApiPath.ts` | `useApiPath` | `apiPath` já amarrado ao `baseURL` do runtime config — a forma que o app consome |
+| `app/utils/operatorSession.ts` | `operatorSessionOnError` | política comum de 401/403 no `useFetch`: reabre o gate com `refreshNuxtData("operator-session")`. O Marketing tem a própria (`marketingSessionOnError`), que distingue `station_locked` e guarda o intent de decisão pendente |
+| `server/api/v1/[...path].ts` | — | o `/api/v1/**` do app: rota única do BFF para os oito, sobre `proxyDjangoApi` |
 | `server/utils/djangoProxy.ts` | `proxyDjangoApi`, `proxyDjangoPath` | proxy BFF → Django (sessão de operador isolada, CSRF, redirects, X-API-Version) |
 | `server/utils/operatorCookies.ts` | `operatorCookieHeaderForDjango`, `operatorSetCookieHeaderForBrowser` | fronteira de cookies entre browser e Django |
 | `server/utils/djangoBaseUrl.ts` | `configuredDjangoBaseUrl`, `resolveDjangoBaseUrl` | fail-fast de upstream ausente/local/inseguro em produção |
@@ -52,6 +56,10 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
+| `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
+| `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
+| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
+| `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (44 px, `size-control`), com `active` e `spinning` |
 | `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
@@ -206,6 +214,23 @@ editores de receita), `"/"` no PDV (**só a raiz** — `/session` tem contagem d
 `/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Central,
 Gestor, Compras, B.I., Marketing) mantém só o aviso.
 
+⚠️ **`skipWaiting` vale para a ORIGEM inteira.** Quem aplica não recarrega só a si: o
+`vite-plugin-pwa` registra, em **toda** janela que viu o worker em espera, um listener de
+`controlling` que chama `location.reload()`. Duas consequências: (a) janelas irmãs do
+mesmo host entram na versão nova juntas, de graça; (b) uma janela que nunca é tocada —
+a tela do cliente do PDV — não pode estar em `idleReloadPaths`, porque ela seria
+considerada ociosa sempre e quem recarregaria no meio da venda seria a janela do
+operador. Apps diferentes são hosts diferentes (`pdv.` × `cozinha.`), então nada disso
+atravessa de um app para outro.
+
+ℹ️ **Abrir uma janela nova já traz a versão nova**, mesmo com o worker velho ativo:
+a navegação é `NetworkOnly`, o HTML fresco aponta para arquivos com hash novo, e o
+precache do worker velho não tem esses nomes — deixa passar para a rede (conferido no
+build do PDV: o manifesto de precache não tem nenhuma entrada de navegação, só
+`offline.html`). Quem fica preso numa versão é a janela que **não recarrega**, não a que
+abre. É por isso que abrir a tela do cliente no PDV leva junto um `checkForUpdate()`:
+a janela nova não precisa de ajuda, a do operador precisa.
+
 **3. Provar.** A troca termina em `location.reload()`, e nada que fique na memória
 sobrevive para contar o que houve. Então a marca vai ao `localStorage` **antes** do
 reload e é relatada no boot seguinte, quando as duas versões são conhecidas:
@@ -298,6 +323,43 @@ O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
 
+## Base de CSS (`operator-base.css`)
+
+O núcleo de CSS dos oito apps de operador vive em
+`app/assets/css/operator-base.css`, que puxa o `operator-theme.css` (tokens) ao
+lado. Cobre: o `@source` do kit, a variante `dark`, fontes, animações e keyframes,
+os aliases de `@theme inline`, o bloco-doc da escala de design, o `@layer base`
+(reset, scrollbar, `color-scheme`, cursor de botão) e o utilitário `no-scrollbar`.
+
+O `tailwind.css` de cada app fica com três coisas, e só elas:
+
+```css
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../../../operator-kit/app/assets/css/operator-base.css";
+@plugin "@tailwindcss/forms" { strategy: "class"; }
+/* e o tail do app */
+```
+
+**Por que `@import "tailwindcss"` e o `@plugin` não sobem para a base:** eles
+resolvem por especificador nu, a partir do diretório do arquivo que os declara. O
+kit é uma layer do Nuxt, não um app — não tem `node_modules` com o Tailwind, e não
+há `node_modules` acima de `surfaces/`. Na base eles não resolveriam.
+
+**Tail legítimo** é o que pertence a um app só: impressão térmica de 80 mm e
+`.pos-tile-fallback` no POS; `.date-input-hit-area` e `forced-colors` no Produção;
+`@font-face` self-hosted, alvos de toque de 44 px e `prefers-reduced-motion` no
+Marketing (piloto do ADR-026). Os outros cinco apps não têm tail.
+
+⚠️ **A armadilha do `@source`:** o caminho é relativo ao arquivo que o declara. Na
+base, `../..` é a raiz `operator-kit/app`. Errar não quebra o build — o CSS compila
+e as classes usadas só nos componentes do kit (`OperatorRail`, `RailItem`,
+`RailToggle`, `OfflineBanner`, `UiNativeSelect`) somem do bundle em silêncio.
+Medido: um `@source` errado derrubou 14 KB do CSS do `production-nuxt` com exit 0 e
+zero avisos. `tests/guardrails.test.ts` resolve o caminho declarado e exige que ele
+ainda alcance esses componentes; o mesmo arquivo recusa que qualquer app volte a
+copiar o núcleo.
+
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 
 - **Lock do POS** — o POS mantém deliberadamente a própria variante
@@ -305,8 +367,6 @@ do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por pass
   transporte via `usePosAction` e lock local-first. A família canônica
   (`useOperatorLock`/`OperatorLock`/`OperatorPinChange`) vive aqui e serve
   kds/orders/production.
-- **DS tokens canônicos** (`tailwind.css`) — hoje idênticos por app; extrair o bloco
-  canônico para cá (com split das partes app-específicas: print no POS, dark no KDS).
 - **Interceptor global de 401/403** (reabre o gate de operador) — plugin compartilhado.
 - **Tooling base** (ESLint flat + Prettier + vitest 2-projects + Playwright) — configs
   compartilhadas adotadas por cada app no seu WP.

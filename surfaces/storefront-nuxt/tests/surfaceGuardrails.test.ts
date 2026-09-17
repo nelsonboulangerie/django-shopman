@@ -406,14 +406,18 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
     expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
-    // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto
-    // (`sticky bottom-20 z-30` + card ink). O guardrail dizia o contrário, e o
-    // contrário custava caro: a barra `fixed bottom-0 z-40` que vivia aqui
-    // empatava em empilhamento com a navegação inferior (topo 606 contra 602,
-    // medido em 375x667) e ficava ESCONDIDA atrás dela — total e "Resumo"
-    // invisíveis no celular. O card flutua acima da navegação por ALTURA, não
-    // por prioridade, e por isso funciona nas outras duas telas.
-    expect(checkout).toContain('sticky bottom-20 z-30')
+    // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto,
+    // e o mesmo mecanismo (`.shop-action-dock` + card ink). Duas correções
+    // moram nesta linha. A primeira: a barra `fixed bottom-0 z-40` que vivia
+    // aqui empatava em empilhamento com a navegação inferior (topo 606 contra
+    // 602, medido em 375x667) e ficava ESCONDIDA atrás dela — total e "Resumo"
+    // invisíveis no celular. A segunda: o `sticky bottom-20` que a substituiu
+    // não prendia de verdade, porque sticky só gruda na base enquanto o
+    // CONTAINER cobre aquela linha. O dock flutua acima da navegação por
+    // ALTURA, não por prioridade, e não larga a base no meio da rolagem.
+    expect(checkout).toContain('shop-action-dock')
+    expect(checkout).toContain('shop-dock-reserve')
+    expect(checkout).not.toContain('class="sticky bottom-20')
     expect(checkout).toContain('data-checkout-action-card')
     // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA
     // (dois botões para a mesma intenção divergem no primeiro carregamento).
@@ -507,7 +511,7 @@ describe('surface UX guardrails', () => {
     // dock 15 em toda a rolagem, e igual no PWA iOS instalado.
     expect(cartPage).toContain('shop-action-dock')
     expect(cartPage).toContain('shop-dock-reserve')
-    expect(cartPage).not.toContain('sticky bottom-20')
+    expect(cartPage).not.toContain('class="sticky bottom-20')
     expect(cartPage).toContain('rateLimitRecovery')
     // Indisponibilidade + substitutos saíram do banner inline da sacola e viraram
     // o SubstituteSheet global (bottom-sheet canônico, 1 toque, dispensável).
@@ -544,7 +548,7 @@ describe('surface UX guardrails', () => {
     // CTA flutuante mobile = card ink (burgundy escuro) + ação invertida (Faubourg/Brass escuro).
     expect(productRoute).toContain('shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden')
     expect(productRoute).toContain('shop-dock-reserve')
-    expect(productRoute).not.toContain('sticky bottom-20')
+    expect(productRoute).not.toContain('class="sticky bottom-20')
     expect(productRoute).toContain(':qty="currentQty"')
     expect(productRoute).toContain('tone="inverted"')
     expect(cartState).not.toContain('drawerOpen')
@@ -617,7 +621,25 @@ describe('surface UX guardrails', () => {
     expect(read('app/composables/useWhatsAppConfirm.ts')).toContain('settleCart')
     expect(login).toContain("requestCode('sms', $event)")
     expect(login).toContain('class="w-full justify-center"')
-    expect(login).toContain('Não consigo usar WhatsApp')
+    // A PORTA DO SMS NOMEIA O QUE ENTREGA. Dizia "Não consigo usar WhatsApp":
+    // pedia que a pessoa declarasse uma incapacidade para receber uma opção, e
+    // não dizia SMS em lugar nenhum — a palavra só aparecia depois do clique.
+    // E era o elemento mais fraco da tela (ghost, 32px, cinza) sendo a única
+    // alternativa real, enquanto o envio manual ostentava dois botões sólidos.
+    expect(login).toContain('Receber código por SMS')
+    expect(login).toContain('data-login-sms-door')
+    // Sem `not.toContain` do rótulo antigo de propósito: ele aparece no
+    // comentário que explica a troca, e uma asserção que obriga a escrever ao
+    // redor dela não está medindo o código. Quem garante que a porta é uma só
+    // são os testes de página, que clicam pelo rótulo.
+    // UM ÚNICO SÓLIDO NA TELA: o CTA do WhatsApp. A porta do SMS é contorno no
+    // mesmo tamanho (caminho de verdade, não sussurro) e o envio manual é
+    // rodapé do cartão do WhatsApp — ícone para copiar, link para abrir.
+    const waPanel = read('app/components/WhatsappVerifyPanel.vue')
+    expect(waPanel).not.toContain('bg-cta text-cta-foreground')
+    expect(waPanel).not.toContain('data-login-whatsapp-or')
+    expect(waPanel).toContain('size="icon-lg"')
+    expect(waPanel).toContain('variant="link"')
     expect(login).not.toContain('Entrar com o rosto ou a digital')
     expect(login).not.toContain('passkeySignIn')
     expect(read('app/components/WhatsappVerifyPanel.vue')).toContain('Gerando link')
@@ -916,7 +938,14 @@ describe('surface UX guardrails', () => {
 
     expect(header).toContain('flex min-h-11 items-center gap-3')
     expect(header).toContain('inline-flex min-h-6 items-center text-sm font-semibold')
-    expect(loginWhatsapp).toContain('bg-cta text-cta-foreground')
+    // Este exigia `bg-cta text-cta-foreground` nos dois botões do envio manual:
+    // prendia por teste a ênfase que fazia o rodapé manual competir com o CTA
+    // principal. O que ele deve garantir é ALVO DE TOQUE, não cor — o copiar
+    // tem a altura do CTA (`icon-lg`, 40px), com nome acessível, e o abrir é
+    // link com altura de toque em vez de texto colado no parágrafo.
+    expect(loginWhatsapp).toContain('size="icon-lg"')
+    expect(loginWhatsapp).toContain('aria-label="codeCopied')
+    expect(loginWhatsapp).not.toContain('class="h-auto px-0"')
     expect(payment).toContain('Pagamento de teste')
     expect(payment).toContain('size="lg"')
     expect(payment).toContain('{{ copy.pix_pending_note }}')

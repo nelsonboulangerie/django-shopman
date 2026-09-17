@@ -33,13 +33,13 @@ const [legacyRequest, resultRequest] = await Promise.all([
     quiet_hours_suspended_for_local_simulation: boolean;
   }>(() => `/api/v1/backstage/marketing/announcements/${pk.value}/`, {
     key: () => `announcement-${pk.value}`,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   }),
   useFetch<MarketingEnvelopeV2>(
     () => `/api/v1/backstage/marketing/v2/announcements/${pk.value}/`,
     {
       key: () => `announcement-result-v2-${pk.value}`,
-      onResponseError: operatorSessionOnError,
+      onResponseError: marketingSessionOnError,
     },
   ),
 ]);

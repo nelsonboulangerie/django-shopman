@@ -188,12 +188,11 @@ async function goToDayClosing() {
 }
 
 // Tela do cliente: segunda janela do MESMO navegador, para arrastar ao monitor
-// virado ao cliente. Janela nomeada de propósito — clicar de novo reaproveita a
-// existente em vez de empilhar outra.
+// virado ao cliente. A abertura (e a sonda de versão que vai junto) mora no
+// composable; a antessala e a venda chamam a MESMA peça, pelo rail.
+const customerDisplayWindow = useCustomerDisplayWindow();
 function openCustomerDisplay() {
-  if (!import.meta.client) return;
-  const display = window.open("/display", "pos-customer-display");
-  if (!display) toast.error("O navegador bloqueou a Tela do Cliente.", {
+  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
     description: "Permita pop-ups para este site e tente novamente.",
   });
 }
@@ -474,6 +473,7 @@ async function confirmClose() {
       @board="goToSaleBoard"
       @cash="() => {}"
       @tickets="goToOrderTickets"
+      @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
     />
@@ -486,20 +486,6 @@ async function confirmClose() {
           {{ pos.terminal_label || "Terminal" }}
           <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
         </span>
-        <!-- Tela do cliente: abre a janela do segundo monitor. Discreto de
-             propósito — é gesto de preparação da estação, não de venda. -->
-        <UiButton
-          variant="ghost"
-          size="sm"
-          class="shrink-0 gap-2"
-          :class="pos ? '' : 'ml-auto'"
-          aria-label="Abrir tela do cliente"
-          title="Tela do cliente: segundo monitor da mesma máquina e navegador (não conecta outro tablet)"
-          @click="openCustomerDisplay"
-        >
-          <Icon name="lucide:monitor" class="size-5" />
-          <span class="hidden sm:inline">Tela do cliente</span>
-        </UiButton>
       </header>
 
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">

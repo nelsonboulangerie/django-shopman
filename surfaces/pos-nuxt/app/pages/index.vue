@@ -17,7 +17,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 const contextHeader = ref<HTMLElement | null>(null);
 const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined, { box: "border-box" });
 
-const apiPath = usePosApiPath();
+const apiPath = useApiPath();
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
 // The Django admin (login) lives on its own operator host (api.<zona>), a different
@@ -51,6 +51,15 @@ async function goToCashSession() {
 // Fichas de pedido: o lote da semana para o painel físico da padaria.
 async function goToOrderTickets() {
   await navigateTo("/tickets");
+}
+
+// Tela do cliente: segunda janela desta máquina, para arrastar ao monitor virado ao
+// cliente. A abertura (e a sonda de versão que vai junto) mora no composable.
+const customerDisplayWindow = useCustomerDisplayWindow();
+function openCustomerDisplay() {
+  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
+    description: "Permita pop-ups para este site e tente novamente.",
+  });
 }
 
 // Write-side of the open sale: cart draft + every session command.
@@ -837,6 +846,7 @@ onBeforeUnmount(() => {
       @board="goToTabs"
       @cash="goToCashSession"
       @tickets="goToOrderTickets"
+      @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
     />

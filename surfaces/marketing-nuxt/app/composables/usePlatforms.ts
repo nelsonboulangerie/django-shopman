@@ -30,7 +30,7 @@ export type Platform = {
 export function usePlatforms() {
   const { data, refresh, pending, error } = useFetch<{ platforms: Platform[] }>(
     "/api/v1/backstage/marketing/platforms/",
-    { key: "marketing-platforms", onResponseError: operatorSessionOnError },
+    { key: "marketing-platforms", onResponseError: marketingSessionOnError },
   );
 
   const platforms = computed(() => data.value?.platforms ?? []);

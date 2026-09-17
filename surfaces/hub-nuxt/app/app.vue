@@ -7,7 +7,7 @@ import type { HubFailure } from "~/presentation/hub";
 import type { HubTileProjection } from "~/types/hub";
 import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileTarget } from "~/presentation/hub";
 
-const apiPath = useHubApiPath();
+const apiPath = useApiPath();
 useOperatorWindowTitle();
 
 const { tiles, operatorName, error, refresh } = await useOperatorHub();

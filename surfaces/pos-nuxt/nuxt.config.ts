@@ -48,10 +48,14 @@ export default defineNuxtConfig({
       // SÓ a tela de venda, e mesmo nela só com o balcão vazio: as razões de espera
       // (`useOperatorReloadHold` em `pages/index.vue`) barram carrinho, comanda,
       // pagamento e resultado na tela. `/session` fica de fora porque a contagem de
-      // fechamento é digitada e não está salva; `/display` fica de fora porque a tela
-      // do cliente nunca é tocada — seria sempre "ociosa" e recarregaria no meio da
-      // venda de outra estação; `/tickets` fica de fora porque a seleção de fichas
+      // fechamento é digitada e não está salva; `/tickets`, porque a seleção de fichas
       // para impressão é rascunho.
+      //
+      // ⚠️ `/display` fica de fora pelo motivo mais forte de todos: `skipWaiting` vale
+      // para a ORIGEM inteira, e toda janela que viu o worker em espera recarrega
+      // junto (o vite-plugin-pwa registra `controlling` → reload em cada uma). A tela
+      // do cliente ninguém toca, então ela seria considerada ociosa SEMPRE — e quem
+      // recarregaria no meio da venda seria o PDV, não ela.
       idleReloadPaths: ["/"],
       push: { surfaceRef: "pos", categories: ["order", "system"] },
       shortcuts: [

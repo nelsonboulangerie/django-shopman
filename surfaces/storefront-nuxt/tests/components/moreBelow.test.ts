@@ -9,7 +9,8 @@ import MoreBelow from '~/components/MoreBelow.vue'
 // O IntersectionObserver é a fronteira com o browser — controlado à mão, para
 // o teste dirigir "cheguei ao fim" em vez de torcer pelo layout do happy-dom.
 
-let entregar: ((entries: Array<{ isIntersecting: boolean }>) => void) | null = null
+type Entrada = { isIntersecting: boolean, boundingClientRect: { top: number }, rootBounds: { bottom: number } | null }
+let entregar: ((entries: Entrada[]) => void) | null = null
 let margemObservada = ''
 
 beforeEach(() => {
@@ -17,7 +18,7 @@ beforeEach(() => {
   margemObservada = ''
   vi.stubGlobal('IntersectionObserver', class {
     rootMargin: string
-    constructor (cb: (entries: Array<{ isIntersecting: boolean }>) => void, options?: IntersectionObserverInit) {
+    constructor (cb: (entries: Entrada[]) => void, options?: IntersectionObserverInit) {
       entregar = cb
       this.rootMargin = options?.rootMargin || ''
       margemObservada = this.rootMargin
@@ -53,16 +54,48 @@ async function montar (alturaDoObstaculo = 0) {
 
 const dica = () => document.querySelector('[data-more-below]') as HTMLElement | null
 
+/** O sentinela está em `topo`; a área observada termina em `tela - recuo`. */
+function sentinelaEm (topo: number, recuo = 0) {
+  const tela = window.innerHeight
+  const limite = tela - recuo
+  entregar?.([{
+    isIntersecting: topo >= 0 && topo <= limite,
+    boundingClientRect: { top: topo },
+    rootBounds: { bottom: limite }
+  }])
+}
+
 describe('MoreBelow — a dica de que ainda há conteúdo', () => {
   it('aparece enquanto o fim do conteúdo não apareceu e some quando ele aparece', async () => {
     const wrapper = await montar()
     expect(document.querySelector('[data-more-below-sentinel]')).not.toBeNull()
 
-    entregar?.([{ isIntersecting: false }])
+    sentinelaEm(window.innerHeight + 85)
     await nextTick()
     expect(dica()).not.toBeNull()
 
-    entregar?.([{ isIntersecting: true }])
+    sentinelaEm(Math.round(window.innerHeight / 2))
+    await nextTick()
+    expect(dica()).toBeNull()
+    wrapper.unmount()
+  })
+
+  // ⚠️ `isIntersecting` é falso DOS DOIS LADOS. Com ele, a dica sumia no fim do
+  // conteúdo e VOLTAVA assim que a pessoa rolava para dentro do rodapé do site
+  // — anunciando "tem mais abaixo" justamente no fim da página. Medido no login
+  // em 375x667: sentinela em 752 (dica certa), 37 (some, certo), -11 (voltava).
+  it('continua sumida depois que o fim do conteúdo passa por cima', async () => {
+    const wrapper = await montar()
+
+    sentinelaEm(window.innerHeight + 85)
+    await nextTick()
+    expect(dica()).not.toBeNull()
+
+    sentinelaEm(37)
+    await nextTick()
+    expect(dica()).toBeNull()
+
+    sentinelaEm(-11)
     await nextTick()
     expect(dica()).toBeNull()
     wrapper.unmount()
@@ -70,7 +103,7 @@ describe('MoreBelow — a dica de que ainda há conteúdo', () => {
 
   it('flutua acima do que ocupa a base da tela', async () => {
     const wrapper = await montar(97)
-    entregar?.([{ isIntersecting: false }])
+    sentinelaEm(window.innerHeight + 85)
     await nextTick()
     // 97 do card + a folga da regra pura.
     expect(dica()?.style.bottom).toBe('109px')
@@ -90,7 +123,7 @@ describe('MoreBelow — a dica de que ainda há conteúdo', () => {
   // Decorativa: nunca rouba clique nem entra na árvore de acessibilidade.
   it('não captura toque e fica fora do leitor de tela', async () => {
     const wrapper = await montar()
-    entregar?.([{ isIntersecting: false }])
+    sentinelaEm(window.innerHeight + 85)
     await nextTick()
     expect(dica()?.getAttribute('aria-hidden')).toBe('true')
     expect(dica()?.className).toContain('pointer-events-none')

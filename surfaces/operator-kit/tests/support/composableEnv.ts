@@ -18,6 +18,7 @@ import {
   httpErrorMessage,
 } from "../../app/utils/httpError";
 import { retryWithBackoff } from "../../app/utils/retryBackoff";
+import { useApiPath } from "../../app/composables/useApiPath";
 import { useStationLock } from "../../app/composables/useStationLock";
 import { useAlertSound } from "../../app/composables/useAlertSound";
 
@@ -152,6 +153,7 @@ export function installNuxtGlobals(): ComposableEnv {
   // de gerente (`manager_approval_required`) de uma falha de verdade.
   vi.stubGlobal("httpErrorCode", httpErrorCode); // implementação REAL do kit
   vi.stubGlobal("retryWithBackoff", retryWithBackoff); // implementação REAL do kit
+  vi.stubGlobal("useApiPath", useApiPath); // implementação REAL do kit (sobre o useRuntimeConfig mockado)
   vi.stubGlobal("useStationLock", useStationLock); // implementação REAL do kit (sobre o useState mockado)
   vi.stubGlobal("useAlertSound", useAlertSound); // implementação REAL do kit (AudioContext ausente em node → beep no-op)
   vi.stubGlobal("reportClientError", env.clientErrorReport);

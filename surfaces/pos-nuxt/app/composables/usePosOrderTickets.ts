@@ -44,7 +44,7 @@ interface TicketPrintResponse {
 }
 
 export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, options: { loadBatch?: boolean } = {}) {
-  const apiPath = usePosApiPath();
+  const apiPath = useApiPath();
   const agent = useCounterAgent(pos);
 
   const today = isoDate(new Date());

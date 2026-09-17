@@ -31,11 +31,39 @@ export function useMoreBelow () {
     observer?.disconnect()
     observer = null
     if (!import.meta.client || !el || typeof IntersectionObserver !== 'function') return
+    const recuo = Math.round(Math.max(0, obstaculo))
     observer = new IntersectionObserver(entries => {
       const entry = entries[entries.length - 1]
-      if (entry) endReached.value = entry.isIntersecting
-    }, { rootMargin: `0px 0px -${Math.round(Math.max(0, obstaculo))}px 0px` })
+      if (!entry) return
+      // ⚠️ `isIntersecting` É FALSO DOS DOIS LADOS: antes de o sentinela subir
+      // para dentro da área observada E depois de ele sair por cima. Com ele, a
+      // dica SUMIA no fim do conteúdo e VOLTAVA assim que a pessoa rolava para
+      // dentro do rodapé do site — dizendo "tem mais abaixo" justamente no fim
+      // da página. Medido no login em 375x667: sentinela em 752 (dica certa),
+      // 37 (some, certo), -11 (voltava). A pergunta certa não é "está à vista",
+      // é "o fim do conteúdo já passou da linha de baixo da área observada".
+      const limite = entry.rootBounds?.bottom ?? window.innerHeight - recuo
+      chegouAoFim(entry.boundingClientRect.top, limite)
+    }, { rootMargin: `0px 0px -${recuo}px 0px` })
     observer.observe(el)
+  }
+
+  /** O fim chegou quando o sentinela está na linha de baixo da área observada, ou acima dela. */
+  function chegouAoFim (topoDoSentinela: number, limite: number) {
+    endReached.value = topoDoSentinela <= limite
+  }
+
+  // ⚠️ SALTO NÃO DISPARA OBSERVADOR. O IntersectionObserver só avisa quando o
+  // elemento CRUZA a fronteira; num salto direto para o fim (âncora, tecla End,
+  // restauração de rolagem ao voltar) o sentinela vai de "abaixo da tela" para
+  // "acima dela" sem cruzar nada, e nenhum callback acontece — a dica ficava
+  // pendurada no fim da página. `scrollend` cobre exatamente esse caso e não
+  // custa nada por quadro, porque só dispara quando a rolagem para. Onde ele
+  // não existir, vale o observador sozinho, que é o comportamento de antes.
+  function reavaliar () {
+    const el = sentinel.value
+    if (!el) return
+    chegouAoFim(el.getBoundingClientRect().top, window.innerHeight - obstruction.value)
   }
 
   function measure () {
@@ -50,6 +78,7 @@ export function useMoreBelow () {
   // O que flutua na base muda de altura (o botão vira "Autorizar e validar", o
   // aviso do mínimo aparece): a folga e a área de observação acompanham.
   useEventListener(() => (import.meta.client ? window : null), 'resize', measure)
+  useEventListener(() => (import.meta.client ? window : null), 'scrollend', reavaliar)
   onMounted(measure)
   onBeforeUnmount(() => {
     observer?.disconnect()

@@ -1,12 +1,9 @@
 /* ============================================================================
    TEMA OPERADOR — variante QUENTE (decisão Pablo 2026-07-13, piloto no Gestor)
-   Fonte única dos tokens de tema das superfícies de operador. Cada app importa
-   este arquivo no topo do seu app/assets/css/tailwind.css:
-
-     @import "../../../../operator-kit/app/assets/css/operator-theme.css";
-
-   (mesmo caminho relativo do @source que os apps já usam para o kit; o arquivo
-   entra no pipeline Tailwind v4 do próprio app, então o @theme daqui vale.)
+   Fonte única dos tokens de tema das superfícies de operador. Nenhum app importa
+   este arquivo diretamente: ele entra junto com o resto do núcleo comum, pelo
+   operator-base.css ao lado, que cada app importa no seu tailwind.css. O arquivo
+   entra no pipeline Tailwind v4 do próprio app, então o @theme daqui vale.
 
    Deriva das MESMAS escalas de matiz da vitrine (shopman/shop/brand_tokens.py:
    Burgundy · Brass · Moss · Faubourg) — cliente e operador são UM sistema.

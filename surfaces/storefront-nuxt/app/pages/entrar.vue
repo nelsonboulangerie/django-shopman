@@ -458,7 +458,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section">
+  <main class="shop-section shop-bottom-safe">
     <div class="shop-container">
       <div class="mx-auto max-w-md shop-stack-block">
         <div v-if="moment !== 'none'" class="py-10 text-center" data-login-moment>
@@ -513,19 +513,36 @@ useSeoMeta({
             @used="() => waStart(nextUrl)"
           />
 
-          <!-- Alternativa: usar OUTRO número = via SMS (o único caminho que mira um número
-               digitado; pelo WhatsApp a conta é sempre a de quem envia a mensagem). -->
-          <UiButton
-            v-if="!revealPhone"
-            type="button"
-            variant="ghost"
-            size="sm"
-            class="w-full justify-center text-muted-foreground hover:text-foreground"
-            icon="lucide:smartphone"
-            @click="revealPhone = true"
-          >
-            Não consigo usar WhatsApp
-          </UiButton>
+          <!-- A ALTERNATIVA DE VERDADE, e é aqui que o "ou" pertence. O caminho
+               por SMS é o único que mira um número DIGITADO (pelo WhatsApp a
+               conta é sempre a de quem envia a mensagem) — ele é irmão do
+               principal, e o envio manual não é: aquele é o mesmo caminho,
+               feito à mão, e por isso mora dentro do cartão do WhatsApp.
+
+               Dizia "Não consigo usar WhatsApp": pedia que a pessoa declarasse
+               uma INCAPACIDADE para receber uma opção, e não dizia SMS em
+               lugar nenhum — a palavra só aparecia depois do clique. Agora
+               nomeia o que entrega. Contorno em vez de sólido mantém a
+               hierarquia (um único sólido na tela); `size="lg"` igual ao
+               principal diz que é um caminho de verdade, não um sussurro. -->
+          <template v-if="!revealPhone">
+            <div class="flex items-center gap-3" aria-hidden="true" data-login-or>
+              <span class="h-px flex-1 bg-border" />
+              <span class="shop-meta uppercase tracking-widest">ou</span>
+              <span class="h-px flex-1 bg-border" />
+            </div>
+            <UiButton
+              type="button"
+              variant="outline"
+              size="lg"
+              class="w-full justify-center"
+              icon="lucide:smartphone"
+              data-login-sms-door
+              @click="revealPhone = true"
+            >
+              Receber código por SMS
+            </UiButton>
+          </template>
 
           <form v-else class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
             <UiField>
@@ -564,7 +581,13 @@ useSeoMeta({
 
             <div class="grid gap-3">
               <UiButton type="submit" size="lg" :loading="pending" icon="lucide:smartphone" class="w-full justify-center">
-                {{ copyTitle(authCopy?.phone_cta_sms, 'Receber código por SMS') }}
+                <!-- O fallback local dizia "Receber código por SMS" e o default do
+                     servidor diz "Receber por SMS": dois textos para o mesmo botão,
+                     e quem via cada um dependia de a home ter carregado. Agora o
+                     fallback é igual ao servidor — e, de quebra, deixa de repetir
+                     o rótulo da PORTA do SMS, que é quem promete o canal. Aqui a
+                     pergunta já é outra: enviar para ESTE número. -->
+                {{ copyTitle(authCopy?.phone_cta_sms, 'Receber por SMS') }}
               </UiButton>
               <UiButton
                 type="button"
@@ -735,6 +758,12 @@ useSeoMeta({
             Falar com a loja
           </UiButton>
         </div>
+
+        <!-- Tem mais abaixo. Medido em 375x667: a porta do SMS nasce em 597
+             numa tela cuja navegação começa em 602 — quem não rolar não a vê,
+             e ela é a alternativa de verdade. Rolar um dedo resolve; não saber
+             que há o que rolar, não. -->
+        <MoreBelow />
         </template>
       </div>
     </div>
