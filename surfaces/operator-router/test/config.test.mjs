@@ -83,6 +83,17 @@ test("env do filho: prefixo é privado do app, sem prefixo é do grupo, prefixo 
   assert.equal(kds.PORT, "3102");
 });
 
+test("tamanho do contêiner (medidor de capacidade) chega igual a TODOS os filhos do grupo", () => {
+  const env = { SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES: "1073741824", SHOPMAN_CONTAINER_CPU_CORES: "1" };
+  for (const group of [floor, office]) {
+    group.apps.forEach((child, index) => {
+      const built = buildChildEnv({ app: child, group, groups, env, port: 3101 + index });
+      assert.equal(built.SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES, "1073741824", `${child.id} sem limite de memória`);
+      assert.equal(built.SHOPMAN_CONTAINER_CPU_CORES, "1", `${child.id} sem núcleos`);
+    });
+  }
+});
+
 test("env do filho: erros que não podem passar calados", () => {
   const build = (env) => buildChildEnv({ app: app(floor, "pos"), group: floor, groups, env, port: 3101 });
   assert.throws(() => build({ PDV__NUXT_PUBLIC_ORDERS_URL: "x" }), /PDV__ não é app/);

@@ -818,6 +818,17 @@ services:
     scope: RUN_TIME
     value: 'operator-floor'
     type: GENERAL
+  # Tamanho do contêiner para o medidor de capacidade quando o cgroup não é
+  # legível (sandbox): sem prefixo, os cinco processos medem o mesmo contêiner.
+  # TEM de acompanhar o instance_size_slug (apps-s-1vcpu-1gb-fixed = 1 GiB, 1 vCPU).
+  - key: SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES
+    scope: RUN_TIME
+    value: '1073741824'
+    type: GENERAL
+  - key: SHOPMAN_CONTAINER_CPU_CORES
+    scope: RUN_TIME
+    value: '1'
+    type: GENERAL
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
     value: 'https://api.boulangerie.com.br'
@@ -938,6 +949,15 @@ services:
   - key: NUXT_OPERATOR_SERVICE_NAME
     scope: RUN_TIME
     value: 'operator-office'
+    type: GENERAL
+  # Tamanho do contêiner (ver operator-floor): apps-s-1vcpu-0.5gb = 512 MiB, 1 vCPU.
+  - key: SHOPMAN_CONTAINER_MEMORY_LIMIT_BYTES
+    scope: RUN_TIME
+    value: '536870912'
+    type: GENERAL
+  - key: SHOPMAN_CONTAINER_CPU_CORES
+    scope: RUN_TIME
+    value: '1'
     type: GENERAL
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
