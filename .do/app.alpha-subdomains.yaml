@@ -807,6 +807,13 @@ services:
     value: 'pos=pdv.boulangerie.com.br,kds=kds.boulangerie.com.br,orders=gestor.boulangerie.com.br,production=prod.boulangerie.com.br,hub=central.boulangerie.com.br'
     type: GENERAL
   # ── do grupo (mesmo valor nos cinco apps) ──
+  # Nome do SERVIÇO para o medidor de capacidade (#783): sem prefixo, de
+  # propósito — os cinco processos medem o mesmo contêiner e têm de se reportar
+  # como um só; com o nome de cada app sairia um alerta por app.
+  - key: NUXT_OPERATOR_SERVICE_NAME
+    scope: RUN_TIME
+    value: 'operator-floor'
+    type: GENERAL
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
     value: 'https://api.boulangerie.com.br'
@@ -923,6 +930,11 @@ services:
     value: 'marketing=mkt.boulangerie.com.br,bi=bi.boulangerie.com.br,purchase=compras.boulangerie.com.br'
     type: GENERAL
   # ── do grupo (mesmo valor nos três apps) ──
+  # Nome do SERVIÇO para o medidor de capacidade (#783); sem prefixo (ver operator-floor).
+  - key: NUXT_OPERATOR_SERVICE_NAME
+    scope: RUN_TIME
+    value: 'operator-office'
+    type: GENERAL
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
     value: 'https://api.boulangerie.com.br'

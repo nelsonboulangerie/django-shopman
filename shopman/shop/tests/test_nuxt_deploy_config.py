@@ -210,6 +210,26 @@ def test_operator_group_env_prefixes_name_apps_of_that_group():
             assert declared == ids, f"{path.name}: OPERATOR_HOSTS de {group} cobre {declared}, grupo é {ids}"
 
 
+def test_operator_groups_report_capacity_as_one_service():
+    """`NUXT_OPERATOR_SERVICE_NAME` é do SERVIÇO: sem prefixo, igual ao nome do grupo.
+
+    O medidor de capacidade (#783) lê o cgroup do contêiner, que é um só para
+    todos os filhos. Com prefixo por app (ou ausente), cada processo se
+    reportaria com o próprio nome e sairia um alerta por app para o mesmo
+    contêiner.
+    """
+    import yaml
+
+    for path in DEPLOY_SPECS:
+        spec = yaml.safe_load(path.read_text())
+        services = {svc["name"]: svc for svc in spec.get("services") or []}
+        for group in _operator_groups():
+            envs = _env_map(services[group])
+            assert envs.get("NUXT_OPERATOR_SERVICE_NAME") == group, f"{path.name}: {group} sem nome de serviço"
+            per_app = [k for k in envs if k.endswith("__NUXT_OPERATOR_SERVICE_NAME")]
+            assert not per_app, f"{path.name}: {group} sobrescreve o nome do serviço por app: {per_app}"
+
+
 def test_operator_groups_have_capacity_alerts():
     import yaml
 

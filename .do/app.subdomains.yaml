@@ -699,6 +699,12 @@ services:
         scope: RUN_TIME
         type: GENERAL
       # do grupo (mesmo valor nos cinco apps)
+      # Nome do SERVIÇO para o medidor de capacidade: sem prefixo, os cinco
+      # processos medem o mesmo contêiner e se reportam como um só.
+      - key: NUXT_OPERATOR_SERVICE_NAME
+        value: operator-floor
+        scope: RUN_TIME
+        type: GENERAL
       - key: NUXT_DJANGO_BASE_URL
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
@@ -814,6 +820,11 @@ services:
         scope: RUN_TIME
         type: GENERAL
       # do grupo (mesmo valor nos três apps)
+      # Nome do SERVIÇO para o medidor de capacidade (ver operator-floor).
+      - key: NUXT_OPERATOR_SERVICE_NAME
+        value: operator-office
+        scope: RUN_TIME
+        type: GENERAL
       - key: NUXT_DJANGO_BASE_URL
         value: "https://api.STORE_DOMAIN"
         scope: RUN_TIME
