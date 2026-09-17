@@ -92,4 +92,4 @@ class KDSTicket(models.Model):
         permissions = [("operate_kds", "Pode operar telas KDS (check, done, expedition)")]
 
     def __str__(self):
-        return f"KDS #{self.pk} — {self.session_key} → {self.kds_instance.ref}"
+        return f"KDS #{self.pk} · {self.session_key} → {self.kds_instance.ref}"

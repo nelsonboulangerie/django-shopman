@@ -194,7 +194,7 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
              dinheiro andando e zero bloqueio não é um balcão caprichoso, é um
              sensor que não estava falando com o PDV. -->
         <section v-if="anomalies.length" class="rounded-md border border-warning/40 bg-warning/5 p-3">
-          <h2 class="text-lg font-semibold text-foreground">Gaveta — o que pede explicação</h2>
+          <h2 class="text-lg font-semibold text-foreground">Gaveta · o que pede explicação</h2>
           <p class="mb-3 text-xs text-muted-foreground">
             Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.
           </p>
@@ -203,7 +203,7 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
               <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
               <span class="text-foreground">
                 <span class="font-medium">{{ item.operator }}</span>
-                <span class="text-muted-foreground"> · turno {{ item.shift_key }} — </span>{{ item.detail }}
+                <span class="text-muted-foreground"> · turno {{ item.shift_key }} · </span>{{ item.detail }}
               </span>
             </li>
           </ul>

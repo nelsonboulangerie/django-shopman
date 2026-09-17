@@ -9,5 +9,5 @@ from django.utils.translation import gettext_lazy as _
 class RefsConfig(AppConfig):
     name = "shopman.refs"
     label = "refs"
-    verbose_name = _("Referencias")
+    verbose_name = _("Referências")
     default_auto_field = "django.db.models.BigAutoField"
