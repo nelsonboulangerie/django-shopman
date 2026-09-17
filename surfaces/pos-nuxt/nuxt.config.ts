@@ -47,8 +47,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "pos", categories: ["order", "system"] },
       manifest: {
-        name: "PDV",
-        shortName: "PDV",
+        label: "PDV",
         description: "Ponto de venda da Nelson Boulangerie.",
         themeColor: "#FCF6F1",
         backgroundColor: "#FCF6F1",

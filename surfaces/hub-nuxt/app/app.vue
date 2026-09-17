@@ -11,7 +11,7 @@ import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIcon
 const HUB_ICON_SRC = "/pwa/pwa-64x64.png?v=3";
 
 const apiPath = useHubApiPath();
-useOperatorWindowTitle("Central de Apps");
+useOperatorWindowTitle("Central");
 
 const { tiles, operatorName, error, refresh } = await useOperatorHub();
 

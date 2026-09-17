@@ -35,8 +35,7 @@ export default defineNuxtConfig({
         categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
       },
       manifest: {
-        name: "Central de Apps",
-        shortName: "Central",
+        label: "Central",
         description: "Central dos aplicativos de operação.",
         themeColor: "#7C3A40",
         backgroundColor: "#FCF6F1",
@@ -99,7 +98,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Central de Apps",
+      title: "Central",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#fafafa" },

@@ -29,7 +29,7 @@ async function restoreAuthenticatedWorkspace() {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("Gestor de Pedidos");
+useOperatorWindowTitle("Gestor");
 </script>
 
 <template>
