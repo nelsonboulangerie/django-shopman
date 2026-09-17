@@ -41,10 +41,38 @@ function percentText(value: number | null | undefined): string {
   return typeof value === "number" ? `${Math.round(value)}%` : "sem leitura";
 }
 
+const MEGABYTES = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+
+/** Memória com limite conhecido é percentual; sem limite, é o uso em MB — nunca um percentual inventado. */
+function memoryText(memory: CapacityResponse["memory"] | undefined): string {
+  if (typeof memory?.percent === "number") return percentText(memory.percent);
+  if (memory && memory.limit_bytes == null && typeof memory.used_bytes === "number") {
+    return `${MEGABYTES.format(memory.used_bytes / 1024 ** 2)} MB`;
+  }
+  return "sem leitura";
+}
+
 /** "Memória 62% · CPU 18%" — ou a frase de ambiente sem leitura. */
 export function capacitySummary(reading: CapacityResponse | null): string {
   if (!reading?.available) return "Este ambiente não informa a capacidade do serviço.";
-  return `Memória ${percentText(reading.memory?.percent)} · CPU ${percentText(reading.cpu?.percent)}`;
+  return `Memória ${memoryText(reading.memory)} · CPU ${percentText(reading.cpu?.percent)}`;
+}
+
+/**
+ * De onde veio o número, sem jargão: o sistema do contêiner mede; a soma dos
+ * processos estima (conta duas vezes a memória que eles dividem). Sem leitura, nada.
+ */
+export function capacitySourceText(reading: CapacityResponse | null): string {
+  if (!reading?.available) return "";
+  switch (reading.source) {
+    case "cgroup-v2":
+    case "cgroup-v1":
+      return "Medido pelo sistema do contêiner.";
+    case "proc":
+      return "Estimado pelos processos do serviço.";
+    default:
+      return "";
+  }
 }
 
 /** "atualizado há 20 s" / "há 3 min" / "agora". */

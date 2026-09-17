@@ -18,6 +18,7 @@ import {
   capacityAriaLabel,
   capacityGuidance,
   capacityLevel,
+  capacitySourceText,
   capacitySummary,
   capacityThresholdsText,
   capacityUpdatedAgo,
@@ -34,6 +35,7 @@ const ariaLabel = computed(() => capacityAriaLabel(reading.value, level.value));
 const updated = computed(() => capacityUpdatedAgo(reading.value?.measured_at, now.value.getTime()));
 const guidance = computed(() => capacityGuidance(level.value, reading.value?.thresholds ?? null));
 const thresholdsText = computed(() => capacityThresholdsText(reading.value?.thresholds ?? null));
+const sourceText = computed(() => capacitySourceText(reading.value));
 </script>
 
 <template>
@@ -80,6 +82,7 @@ const thresholdsText = computed(() => capacityThresholdsText(reading.value?.thre
         <p v-if="thresholdsText && level !== 'unknown'" class="mt-1 text-xs text-muted-foreground">
           {{ thresholdsText }}
         </p>
+        <p v-if="sourceText" class="mt-2 text-xs text-muted-foreground" data-capacity-source>{{ sourceText }}</p>
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>

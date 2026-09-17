@@ -22,6 +22,7 @@ function sample(memory: number, cpu: number, overrides: Partial<CapacityResponse
   return {
     service: "pos",
     available: true,
+    source: "cgroup-v2",
     memory: { used_bytes: 1, limit_bytes: 2, percent: memory },
     cpu: { percent: cpu, limit_cores: 1, window_ms: 30_000 },
     measured_at: new Date(Date.now() - 20_000).toISOString(),
@@ -114,6 +115,38 @@ describe("OperatorCapacityStatus", () => {
     expect(text).toMatch(/atualizado há 2\d s/);
     expect(text).toContain("Se continuar por 5 min, o gestor é avisado.");
     expect(text).toContain("Atenção a partir de 75% · crítico a partir de 90%");
+  });
+
+  it.each([
+    ["cgroup-v2", "Medido pelo sistema do contêiner."],
+    ["cgroup-v1", "Medido pelo sistema do contêiner."],
+    ["proc", "Estimado pelos processos do serviço."],
+  ] as const)("o detalhe diz de onde veio o número (%s), sem jargão", async (source, text) => {
+    reading.value = sample(40, 10, { source });
+    authorized.value = true;
+    const wrapper = await mount();
+
+    await wrapper.get("[data-capacity-trigger]").trigger("click");
+    await nextTick();
+    await nextTick();
+
+    const line = document.body.querySelector("[data-capacity-source]");
+    expect(line?.textContent?.trim()).toBe(text);
+    expect(document.body.querySelector("[data-capacity-detail]")?.textContent).not.toMatch(/cgroup|proc\b/);
+  });
+
+  it("sem leitura nenhuma: a frase de ambiente, e nenhuma linha de fonte", async () => {
+    reading.value = sample(0, 0, { available: false, source: "none", memory: null, cpu: null });
+    authorized.value = true;
+    const wrapper = await mount();
+
+    await wrapper.get("[data-capacity-trigger]").trigger("click");
+    await nextTick();
+    await nextTick();
+
+    const detail = document.body.querySelector("[data-capacity-detail]");
+    expect(detail?.textContent).toContain("Este ambiente não informa a capacidade do serviço.");
+    expect(document.body.querySelector("[data-capacity-source]")).toBeNull();
   });
 
   it("falha na última tentativa fica dita, sem apagar a leitura anterior", async () => {

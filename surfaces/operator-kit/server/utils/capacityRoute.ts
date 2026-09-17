@@ -51,6 +51,7 @@ export async function handleCapacityRequest(event: H3Event, deps: CapacityRouteD
   return {
     service,
     available: reading.available,
+    source: reading.source,
     memory: reading.memory,
     cpu: reading.cpu,
     measured_at: reading.measured_at,

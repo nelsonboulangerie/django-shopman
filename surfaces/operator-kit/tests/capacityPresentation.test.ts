@@ -3,6 +3,7 @@ import {
   capacityAriaLabel,
   capacityGuidance,
   capacityLevel,
+  capacitySourceText,
   capacitySummary,
   capacityThresholdsText,
   capacityUpdatedAgo,
@@ -15,6 +16,7 @@ function reading(memory: number | null, cpu: number | null, overrides: Partial<C
   return {
     service: "pos",
     available: true,
+    source: "cgroup-v2",
     memory: { used_bytes: 1, limit_bytes: 2, percent: memory },
     cpu: { percent: cpu, limit_cores: 1, window_ms: 30_000 },
     measured_at: "2026-09-17T15:00:00.000Z",
@@ -56,6 +58,24 @@ describe("textos em pt-BR", () => {
     expect(capacitySummary(reading(1, 1, { available: false }))).toBe(
       "Este ambiente não informa a capacidade do serviço.",
     );
+  });
+
+  it("memória sem limite conhecido sai em MB, nunca em percentual inventado", () => {
+    const noLimit = reading(null, 18, {
+      source: "proc",
+      memory: { used_bytes: 1_536 * 1024 * 1024, limit_bytes: null, percent: null },
+    });
+    expect(capacitySummary(noLimit)).toBe("Memória 1.536 MB · CPU 18%");
+    expect(capacitySummary(reading(null, 18, { memory: null }))).toBe("Memória sem leitura · CPU 18%");
+  });
+
+  it("de onde veio o número, sem jargão — e nada quando não há leitura", () => {
+    expect(capacitySourceText(reading(50, 10, { source: "cgroup-v2" }))).toBe("Medido pelo sistema do contêiner.");
+    expect(capacitySourceText(reading(50, 10, { source: "cgroup-v1" }))).toBe("Medido pelo sistema do contêiner.");
+    expect(capacitySourceText(reading(50, 10, { source: "proc" }))).toBe("Estimado pelos processos do serviço.");
+    expect(capacitySourceText(reading(50, 10, { source: "none", available: false }))).toBe("");
+    expect(capacitySourceText(reading(50, 10, { source: "proc", available: false }))).toBe("");
+    expect(capacitySourceText(null)).toBe("");
   });
 
   it("há quanto tempo foi lido", () => {

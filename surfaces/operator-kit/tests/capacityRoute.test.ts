@@ -17,6 +17,7 @@ const THRESHOLDS = { attention_percent: 75, critical_percent: 90, sustain_minute
 
 const READING: ContainerCapacityReading = {
   available: true,
+  source: "cgroup-v2",
   memory: { used_bytes: 330_000_000, limit_bytes: 536_870_912, percent: 61.5 },
   cpu: { percent: 18.2, limit_cores: 1, window_ms: 30_000 },
   measured_at: "2026-09-17T15:00:00.000Z",
@@ -24,6 +25,7 @@ const READING: ContainerCapacityReading = {
 
 const NO_CGROUP: ContainerCapacityReading = {
   available: false,
+  source: "none",
   memory: null,
   cpu: null,
   measured_at: "2026-09-17T15:00:00.000Z",
@@ -61,6 +63,7 @@ describe("handleCapacityRequest", () => {
     expect(body).toEqual({
       service: "pos",
       available: true,
+      source: "cgroup-v2",
       memory: READING.memory,
       cpu: READING.cpu,
       measured_at: READING.measured_at,
@@ -118,7 +121,7 @@ describe("handleCapacityRequest", () => {
     const body = await handleCapacityRequest(event, { read: async () => NO_CGROUP, report });
 
     expect(res.statusCode).toBe(200);
-    expect(body).toMatchObject({ available: false, memory: null, cpu: null, level: "unknown", thresholds: THRESHOLDS });
+    expect(body).toMatchObject({ available: false, source: "none", memory: null, cpu: null, level: "unknown", thresholds: THRESHOLDS });
   });
 });
 
