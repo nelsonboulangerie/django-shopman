@@ -627,7 +627,12 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('requestedPhoneDisplay')
     expect(login).toContain('code_expires_at')
     expect(login).toContain('Vale até')
-    expect(login).toContain("watch(step, async next => {")
+    // O foco segue o passo pelo mecanismo canônico (useNextFocus), não por
+    // rolagem/foco escritos à mão na página.
+    expect(login).toContain('useNextFocus(step)')
+    expect(login).toContain(':data-focus-target="step"')
+    expect(login).not.toContain('scrollTo(')
+    expect(login).not.toContain('.focus(')
     expect(login).toContain('data-login-moment')
     expect(login).toContain('device_trust_redirecting')
     expect(login).toContain('device_trust_saved')

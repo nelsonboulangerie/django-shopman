@@ -9,11 +9,14 @@
         <!-- A reka-ui rotula cada campo como "pin input 1 of 6", em inglês, e
              era isso que o leitor de tela anunciava para o cliente brasileiro
              no login. O atributo passado aqui chega por fallthrough e vence o
-             padrão da biblioteca. -->
+             padrão da biblioteca. O primeiro campo é onde se começa a digitar:
+             é ele o controle quando o PIN está num bloco de próximo foco
+             (`data-focus-control`, ver useNextFocus). -->
         <UiPinInputInput
           :aria-invalid
           :index="k"
           :aria-label="`Dígito ${k + 1} de ${inputCount}`"
+          :data-focus-control="k === 0 ? '' : undefined"
         />
         <template v-if="k < inputCount - 1">
           <span v-if="separator" class="text-muted-foreground">{{ separator }}</span>
