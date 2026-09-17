@@ -521,7 +521,9 @@ def _conservation(product: Any) -> ConservationInfoProjection | None:
             default_tip = (shop.conservation_tips_default or "").strip() if shop else ""
             storage_tip = default_tip or None
         except Exception:
-            logger.debug(
+            # A PDP abre sem a dica padrão da casa, mas a falha de ler o Shop
+            # é relatada: é a mesma leitura que alimenta o resto da loja.
+            logger.warning(
                 "product_detail_projection_conservation_tip_failed sku=%s",
                 product.sku,
                 exc_info=True,
