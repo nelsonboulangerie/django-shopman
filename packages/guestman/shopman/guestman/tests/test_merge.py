@@ -1197,7 +1197,12 @@ class TestMergeFillsIdentityGaps:
         MergeService.merge(fantasma, sem_email, evidence=evidence, actor="pdv")
 
         sem_email.refresh_from_db()
+        fantasma.refresh_from_db()
         assert sem_email.email == "fantasma@example.com"
+        # O e-mail do doador FICA: nenhum UNIQUE o força a sair, e o Core guarda
+        # o cache do doador de propósito, como registro do que era dele. Limpar
+        # o que ninguém pediu já foi proposto e recusado nesta casa.
+        assert fantasma.email == "fantasma@example.com"
 
     def test_contato_ja_existente_no_sobrevivente_MANDA(self, tier, source, target, evidence):
         """Com principal próprio, quem governa o cache é ele — não o que chegou.

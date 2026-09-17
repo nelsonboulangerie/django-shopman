@@ -598,9 +598,14 @@ class MergeService:
         sobrevivente já tinha — e nesse caso o que chegou foi demovido antes de
         mudar de dono, então nem chega até aqui.
 
-        ⚠️ O doador perde o cache ANTES, e a ordem é obrigatória:
+        ⚠️ Só o TELEFONE sai do doador, e sai porque o banco obriga:
         ``unique_customer_phone`` é global e não olha ``is_active``, então os
-        dois com o mesmo número por um instante já é o ``IntegrityError``.
+        dois com o mesmo número por um instante já é o ``IntegrityError``. O
+        e-mail do doador FICA — não há UNIQUE que o force, e o Core guarda o
+        cache do doador de propósito, como registro histórico do que era dele.
+        Limpar o que ninguém pediu já foi proposto e recusado nesta casa; o que
+        se limpa aqui é o mínimo que o esquema não deixa em paz, e mesmo esse
+        vai para o ``snapshot`` para o desfazer repor.
         """
         field = {
             ContactPoint.Type.PHONE: "phone",
@@ -610,10 +615,10 @@ class MergeService:
         if not field or getattr(target, field, ""):
             return
 
-        if getattr(source, field, "") == cp.value_normalized:
-            Customer.objects.filter(pk=source.pk).update(**{field: ""})
-            setattr(source, field, "")
-            snapshot.setdefault("identity_filled", {})[field] = cp.value_normalized
+        if field == "phone" and getattr(source, field, "") == cp.value_normalized:
+            Customer.objects.filter(pk=source.pk).update(phone="")
+            source.phone = ""
+            snapshot.setdefault("identity_filled", {})["phone"] = cp.value_normalized
 
         cp.set_as_primary()
         setattr(target, field, cp.value_normalized)
