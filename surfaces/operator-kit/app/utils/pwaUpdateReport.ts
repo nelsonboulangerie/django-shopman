@@ -52,7 +52,7 @@ export function markPwaUpdateApplied(mark: PwaUpdateMark): boolean {
 export function takePwaUpdateMark(): PwaUpdateMark | null {
   const store = storage();
   if (!store) return null;
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = store.getItem(PWA_UPDATE_STORAGE_KEY);
     store.removeItem(PWA_UPDATE_STORAGE_KEY);
