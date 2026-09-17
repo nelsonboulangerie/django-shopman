@@ -166,6 +166,30 @@ def _record_identity_strength(request, metadata, *, customer) -> None:
     )
 
 
+def _declare_adult(request, customer) -> None:
+    """Carimbar a declaração de maioridade feita ao entrar (toda porta de entrada).
+
+    A nota ao lado do botão da loja diz "Ao continuar, você confirma que é maior de
+    idade e aceita os Termos de uso". Quem passou por ela e autenticou — por código,
+    aparelho reconhecido, access link ou passkey — declarou; o carimbo em
+    ``Customer.metadata["adult_declaration"]`` é a evidência que o marketing direto
+    lê (``marketing_age.is_proved_adult``). Idempotente: a primeira fica.
+
+    A entrada NÃO pode falhar por causa do carimbo: sem ele a pessoa só fica fora
+    do marketing direto (fail-closed do lado do envio) e volta a ser carimbada no
+    próximo login. Por isso a falha vira aviso no log, com traceback, e a sessão
+    segue.
+    """
+    if customer is None:
+        return
+    try:
+        account_service.record_adult_declaration(
+            customer, ip_address=auth_service.client_ip(request)
+        )
+    except Exception:  # silêncio-deliberado: a sessão abre mesmo sem o carimbo; sem ele o marketing direto exclui a pessoa (fail-closed) e o próximo login carimba
+        logger.warning("auth.adult_declaration_failed customer=%s", getattr(customer, "ref", "?"), exc_info=True)
+
+
 def _access_link_redirect(metadata: dict | None) -> str:
     """Derive the Nuxt store destination from AccessLink metadata.
 
@@ -295,6 +319,7 @@ class AccessLinkExchangeView(APIView):
                 customer = auth_service.customer_by_uuid(result.customer.uuid)
         except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
             logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
+        _declare_adult(request, customer)
 
         payload = {
             "ok": True,
@@ -555,6 +580,7 @@ class DeviceCheckView(APIView):
         if not customer:
             return Response({"ok": True, "trusted": False, "phone": phone, **_session_payload(None)})
 
+        _declare_adult(request, customer)
         return Response({"ok": True, "trusted": True, "phone": phone, **_session_payload(customer)})
 
 
@@ -609,6 +635,7 @@ class VerifyCodeView(APIView):
         except Exception:
             logger.debug("auth.post degraded; using fallback", exc_info=True)
             customer = None
+        _declare_adult(request, customer)
 
         session = _session_payload(customer)
         session["customer_name"] = auth_service.confirmed_customer_name(auth_result) or session["customer_name"]
@@ -826,4 +853,5 @@ class PasskeyLoginView(APIView):
             return Response({"detail": str(err)}, status=400)
 
         request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
+        _declare_adult(request, customer)
         return Response({"ok": True, **_session_payload(customer)})

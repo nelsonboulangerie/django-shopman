@@ -584,6 +584,69 @@ def _complete_notification_preferences(customer_ref: str) -> set[str]:
     return enabled_notification_channels(customer_ref)
 
 
+# ── A declaração de maioridade, feita ao ENTRAR ─────────────────────────
+#
+# Decisão do dono (16/09): pedir data de nascimento para receber novidades é
+# atrito demais e "parece conteúdo adulto". A prova de maioridade para
+# marketing direto passa a ser autodeclaração, e ela mora na ENTRADA da loja:
+# a nota ao lado do botão diz "Ao continuar, você confirma que é maior de idade
+# e aceita os Termos de uso", e toda autenticação bem-sucedida (código,
+# aparelho reconhecido, access link, passkey) carimba o cadastro. A data de
+# nascimento continua opcional no perfil e só vale para o CONTRÁRIO: se provar
+# menor, vence a declaração (`marketing_age.is_proved_adult`).
+#
+# Precedente da casa: o "Avise-me" (`StockAlertSubscription.adult_declared`)
+# já prova maioridade por aceite específico, sem data.
+#
+# O carimbo é idempotente e guarda a versão dos termos que a pessoa leu. Quem
+# já tem conta ganha a declaração no próximo login.
+LOGIN_TERMS_VERSION = "login-terms-pt-BR-v1"
+ADULT_DECLARATION_SOURCE = "storefront_login"
+
+
+def record_adult_declaration(
+    customer,
+    *,
+    terms_version: str = LOGIN_TERMS_VERSION,
+    ip_address: str = "",
+) -> dict:
+    """Carimbar ``Customer.metadata["adult_declaration"]`` na autenticação.
+
+    Idempotente: a PRIMEIRA declaração fica — é ela a evidência de quando a
+    pessoa aceitou os termos. Já carimbado, não toca o banco (o ``customer``
+    que os views recebem veio de uma leitura recente). Só a primeira vez
+    trava a linha e grava.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.services.marketing_age import ADULT_DECLARATION_KEY
+
+    existing = (getattr(customer, "metadata", None) or {}).get(ADULT_DECLARATION_KEY)
+    if isinstance(existing, dict) and existing.get("terms_version"):
+        return existing
+
+    with transaction.atomic():
+        locked = lock_active_customer(customer_pk=customer.pk)
+        metadata = dict(locked.metadata or {})
+        current = metadata.get(ADULT_DECLARATION_KEY)
+        if isinstance(current, dict) and current.get("terms_version"):
+            customer.metadata = metadata
+            return current
+        declaration = {
+            "at": timezone.now().isoformat(),
+            "terms_version": terms_version,
+            "source": ADULT_DECLARATION_SOURCE,
+        }
+        if ip_address:
+            declaration["ip_address"] = ip_address
+        metadata[ADULT_DECLARATION_KEY] = declaration
+        locked.metadata = metadata
+        locked.save(update_fields=["metadata", "updated_at"])
+    # O objeto do chamador passa a refletir o carimbo sem nova leitura.
+    customer.metadata = metadata
+    return declaration
+
+
 # ── A pergunta de marketing, feita UMA vez, na entrada ──────────────────
 #
 # Medido no banco vivo em 16/09: 58 clientes ativos, 1 com aniversário, 5 com
