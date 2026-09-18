@@ -60,8 +60,8 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=6',
-    manifestHref: '/manifest.webmanifest?v=6',
+    manifestUrl: '/manifest.webmanifest?v=7',
+    manifestHref: '/manifest.webmanifest?v=7',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
@@ -186,7 +186,7 @@ try {
     check(field in manifest, `manifesto contém ${field}`)
   }
   // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
-  const assetVersion = profile.storefront ? '6' : '3'
+  const assetVersion = profile.storefront ? '7' : '3'
   check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
   if (profile.storefront) {

@@ -24,7 +24,7 @@ describe('manifest HTTP cache boundary', () => {
     const bodies = new Set<string>()
     for (const order of [['mac', 'android', 'mac', 'ipad'], ['android', 'mac', 'android', 'ipad']] as const) {
       for (const client of order) {
-        const response = await handle(new Request('http://store.test/manifest.webmanifest?v=6', {
+        const response = await handle(new Request('http://store.test/manifest.webmanifest?v=7', {
           headers: { 'user-agent': agents[client] }
         }))
         expect(response.status).toBe(200)
