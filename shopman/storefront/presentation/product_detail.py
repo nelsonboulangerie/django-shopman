@@ -158,7 +158,7 @@ class ProductDetailProjection:
     is_bundle: bool
     components: tuple[ComponentProjection, ...]
 
-    # Unit weight (spec próxima ao preço — "~250g a unidade")
+    # Unit weight (spec próxima ao preço — "peça de ~250 g")
     unit_weight_label: str | None
     approx_dimensions_label: str | None
 
@@ -560,7 +560,9 @@ def _food_safety_notice() -> str:
 
 
 def _unit_weight_label(product: Any) -> str | None:
-    return f"~{product.unit_weight_g}g a unidade" if product.unit_weight_g else None
+    # Ver `catalog._unit_weight_label`: o rótulo diz de quem é o peso, porque ao lado
+    # do preço dois números sem conector admitem "R$ 18,00 POR 500 g".
+    return f"peça de ~{product.unit_weight_g} g" if product.unit_weight_g else None
 
 
 def _approx_dimensions_label(product: Any) -> str | None:

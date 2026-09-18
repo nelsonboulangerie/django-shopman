@@ -62,6 +62,56 @@ não renderiza. É a forma mais cara do D1 numa loja, porque o cliente não tem 
 precisa tentar outra coisa: ele toca, nada acontece, e vai embora. Estão em A2, A11, B11 e
 no item 2 de "Onde eu procuraria o resto".
 
+## Onda 1 — aplicada em 18/09/2026
+
+**Escopo da onda:** D1 (rótulo que mente), D3 (frase que obriga a completar sentido) e as
+**sete recusas que não aparecem** — que entram aqui mesmo quando a ficha as classificou
+noutro defeito, porque numa loja essa é a classe mais cara. Mais a uniformização de
+**aparelho** (B3), que é a dívida que a §5.5 da régua nomeia como desta frente.
+
+**Aplicado:** A1 · A2 · A3 (com a correção do dono, abaixo) · A4 (com ressalva de
+contrato) · A5 · A6 · A9 · A11 · B5 · B8 · B9 · B10 · B11 · B14 · B15 · B16 · B17 · C2 ·
+C5 · C6 · B3 · e as recusas silenciosas de `AddressLabelSheet.choose`,
+`enderecos.setDefaultAddress` e `WhatsappVerifyPanel.copyMessage`.
+
+**Fica para as ondas seguintes**, com motivo:
+
+- **A7, A8, A10, A12, B1, B2, B4, B6, B7, B13, B18, B19, C1, C3, C4** — D7/D2/D6, que são
+  a Onda 2 e a 3. A §4.2 manda **fechar o vocabulário do Storefront antes**, e sete destes
+  dependem dele ("Onde eu procuraria o resto", item 1); aplicá-los agora trocaria um nome
+  errado por outro.
+- **As 45 miudezas da Parte D** — a maioria é D1 ou D3 e entra na Onda 1b. Ficaram fora
+  desta por volume: são 45 endereços em mais de 20 arquivos, e misturá-las com as fichas
+  faria um diff que ninguém revisa de verdade.
+- **A6, a metade de produto** — ligar `usePasskey().signIn()` em `/entrar` é outra frente.
+  Aqui a tela só parou de prometer a porta que não existe.
+- **A8, a decisão de esconder o ambiente de teste de cliente real** — é decisão de produto,
+  não de redação, e está dita na própria ficha.
+
+**Três lugares onde este relatório estava errado, e foram corrigidos junto:**
+
+1. **A3 descrevia o defeito errado.** Ver a ficha: não há promessa quebrada, e a pergunta
+   de produto do fim não existia.
+2. **A1 dizia que a porta da recompra tem "aceite explícito".** Ela tem as chaves
+   (`REORDER_CONFLICT_REPLACE_HELP` e `_ACK_LABEL`) **no registro e não na tela**: nenhum
+   dos três diálogos de conflito (`pedido/[ref]`, `conta/index`, `conta/pedidos`) as
+   renderizava. A onda fez as duas portas dizerem a consequência e pedirem o aceite — a da
+   oferta, que não tinha nada, e a da recompra, que tinha a frase escrita e invisível.
+3. **A substituição escrita para A4 colidia com um contrato P1.** O
+   `COPY-WAITLIST-001` ([storefront-surface-parity-contract](../../reference/storefront-surface-parity-contract.md))
+   proíbe transformar a data do lote em disponibilidade, e a varredura de
+   `test_remote_multisurface_contract.py` bloqueia justamente a expressão que o relatório
+   propunha. O achado continua válido — a data existe, escolhe o ramo e era descartada —,
+   então a frase entrou dizendo a data como **previsão** e mantendo "fila de espera" como
+   termo canônico: `"Sua reserva está na fila de espera da fornada prevista para {when}.
+   Avisamos quando sair."`
+
+**E uma que já estava resolvida antes da varredura:** **B12** pede que o bloqueio de pedido
+mínimo diga quanto falta. `shopman/storefront/presentation/cart.py` já montava
+`f"Faltam {…} para o pedido mínimo."` no HEAD `76935e597` — o mesmo que o relatório mediu.
+A chave `CART_CHECKOUT_BLOCK_MIN_ORDER` é o fallback de quando **não há** número a dizer, e
+aí a frase genérica é honesta. Nada a fazer.
+
 A ordem é a do dano (§6.1): **Parte A** faz o cliente desistir ou concluir errado sobre o
 pedido; **Parte B** faz parar para pensar; **Parte C** é só feio; **Parte D** são miudezas
 com endereço. A **Parte E** diz o que examinei e considerei bom — é metade do resultado.
@@ -89,14 +139,21 @@ com endereço. A **Parte E** diz o que examinei e considerei bom — é metade d
   (`"Substituir sacola"`), `REORDER_CONFLICT_REPLACE_HELP` (`"Os itens atuais serão
   removidos antes de recriar o pedido anterior."`), um **aceite explícito**
   (`REORDER_CONFLICT_REPLACE_ACK_LABEL`: `"Entendo que os itens atuais serão removidos."`)
-  e um cancelar que diz o estado (`"Manter minha sacola"`). Um ato destrutivo, duas portas,
-  e só uma delas avisa.
-- **Substituição:** a porta da oferta passa a dizer o que a porta da recompra já diz.
+  e um cancelar que diz o estado (`"Manter minha sacola"`).
+  ⛔ **Correção de 18/09 (Onda 1): a porta da recompra tinha essas duas frases no registro
+  e NÃO as renderizava.** Os três diálogos de conflito (`pedido/[ref]/index.vue`,
+  `conta/index.vue`, `conta/pedidos.vue`) mostravam só título, mensagem, cancelar e os
+  rótulos das ações — `replace_help` e `replace_ack_label` eram chaves mortas na tela. O
+  ato destrutivo, portanto, não avisava por porta nenhuma; a comparação continua sendo o
+  argumento, mas ela era entre uma porta muda e um registro mudo.
+- **Substituição:** as duas portas passam a dizer a mesma coisa.
   - descrição → `"Somar mantém o que você já escolheu. Trocar apaga os itens de agora e
     deixa só os da oferta."`
   - botão 2 → `"Trocar: deixar só a oferta"`
-  - e o aceite do `REORDER_CONFLICT_REPLACE_ACK_LABEL` passa a cobrir as duas portas — é a
-    mesma consequência.
+  - aceite explícito, com a frase do `REORDER_CONFLICT_REPLACE_ACK_LABEL`, travando o botão
+    até ser marcado — nas duas portas.
+- **Aplicado:** sim (Onda 1), nos quatro arquivos: `pages/oferta/[ref].vue`,
+  `pages/pedido/[ref]/index.vue`, `pages/conta/index.vue` e `pages/conta/pedidos.vue`.
 
 ## A2. O endereço que a busca não achou responde com silêncio
 
@@ -137,31 +194,30 @@ com endereço. A **Parte E** diz o que examinei e considerei bom — é metade d
     o navegador ou o contexto inseguro: `"Este navegador não informa sua localização. Busque
     pela rua ou pelo CEP aqui em cima."`
 
-## A3. "Salvar para a próxima vez" desligado não impede o endereço de ser salvo
+## A3. O interruptor do checkout não diz o que governa
+
+> ⛔ **Corrigido em 18/09/2026, na aplicação da Onda 1.** A versão original desta ficha
+> descrevia o defeito como promessa quebrada — "desligar não impede o endereço de ser
+> salvo" — e propunha dar ao endereço uma recusa própria. **O dono refutou:** não há
+> promessa quebrada. O endereço novo sempre vai para a agenda do cliente, e **tem que
+> ir** — ninguém redigita CEP a cada pedido. O interruptor governa os **padrões**: qual
+> endereço vem escolhido, a forma de pagamento e o horário. São coisas distintas, e o
+> defeito é só de texto. A pergunta de produto que o relatório fazia no fim **não existe**;
+> ela foi respondida e está riscada lá embaixo.
 
 - **Onde:** `pages/finalizar.vue`, o toggle `data-checkout-save-default`:
   `"Salvar para a próxima vez"` · `"Guardamos suas escolhas para agilizar seu próximo
-  pedido."` Contra `shopman/storefront/api/serializers.py`, no comentário do campo:
-  `# "Salvar para a próxima vez" → save_as_default=false. (O endereço novo salva sempre.)`
+  pedido."`
 - **Defeito:** D1.
-- **Por que dói:** é um interruptor que promete cobertura maior do que tem, sobre **dado
-  pessoal**. "Suas escolhas" é o conjunto inteiro do que a pessoa acabou de preencher, e o
-  endereço é o item mais sensível dele. Quem desliga conclui, com toda a razão, que nada
-  fica guardado — e o endereço fica, por caminho independente
-  (`shop/services/customer._save_delivery_address`). O código sabe disso e registra em
-  comentário; a tela não. Ainda: a linha `"Vamos guardar este endereço para a sua próxima
-  entrega."`, três seções acima, é honesta e **não tem recusa** — quem a lê e quer dizer
-  "não" procura o interruptor, encontra este, desliga, e sai achando que resolveu.
-- **Substituição:** o interruptor diz exatamente o que cobre, e o endereço ganha a recusa
-  que hoje não existe.
-  - título → `"Guardar entrega, pagamento e horário"`
-  - descrição → `"Na próxima vez já vêm preenchidos. O endereço fica salvo de qualquer
-    jeito, e você pode apagá-lo em Conta › Endereços."`
-  - e a linha do endereço passa a oferecer o gesto: `"Vamos guardar este endereço para a sua
-    próxima entrega."` + link `"Não guardar"`.
-  - ⚠️ se o produto decidir que o endereço deve seguir a chave, a copy acima fica errada
-    junto — é a única do relatório cuja substituição depende de uma decisão do dono, e ela
-    está repetida no fim.
+- **Por que dói:** o título fica logo abaixo do campo de endereço e se lê como "salvar
+  **este endereço**" — que não é o que a chave faz. "Suas escolhas" não nomeia nenhuma
+  das três coisas que ela de fato governa, então quem desliga não sabe o que desligou.
+- **Substituição** (decidida pelo dono, e é só isto — sem frase de reforço):
+  - título → `"Lembrar destas escolhas"`
+  - linha de apoio → `"Endereço, pagamento e horário."`
+- **Aplicado:** sim (Onda 1). O comentário do `save_as_default` em
+  `shopman/storefront/api/serializers.py` e o de `utils/checkoutPayload.ts` foram
+  reescritos junto — citavam o rótulo antigo e descreviam mal o que a chave cobre.
 
 ## A4. A espera pela fornada joga fora a data que o sistema tem na mão
 
@@ -184,10 +240,17 @@ com endereço. A **Parte E** diz o que examinei e considerei bom — é metade d
   São dois caminhos (`fulfillment_wait_kind == "planned_batch"` × `waitlist_state`), e só um
   deles fala a data.
 - **Substituição:** a mensagem com data carrega a data, e a sem data diz o que sabe.
-  - `TRACKING_PROMISE_WAITLIST_MESSAGE` → `"Sua reserva está na fila da fornada de {when}.
-    Avisamos quando sair."`
+  ⛔ **Correção de 18/09 (Onda 1):** a frase escrita aqui na primeira versão —
+  *"na fila da fornada de {when}"* — colide com o **COPY-WAITLIST-001**
+  ([storefront-surface-parity-contract](../../reference/storefront-surface-parity-contract.md)),
+  um contrato P1 que proíbe transformar a data do lote em disponibilidade (o hold planejado
+  não está materializado) e cuja varredura em `test_remote_multisurface_contract.py` bloqueia
+  exatamente aquela expressão. O achado continua de pé; a frase mudou para dizer a data como
+  **previsão**, mantendo "fila de espera" como termo canônico.
+  - `TRACKING_PROMISE_WAITLIST_MESSAGE` → `"Sua reserva está na fila de espera da fornada
+    prevista para {when}. Avisamos quando sair."`
   - `TRACKING_PROMISE_WAITLIST_MESSAGE_PAID` → `"Pagamento confirmado. Sua reserva está na
-    fila da fornada de {when}. Avisamos quando sair."`
+    fila de espera da fornada prevista para {when}. Avisamos quando sair."`
   - os dois `_NO_DATE` ficam como estão — aí a frase é verdadeira.
   - ⚠️ enquanto a substituição não entra, o `.replace("{when}", …)` nas duas funções é
     código morto que **parece** cobertura. Vale apagá-lo junto, ou alguém vai ler o
@@ -615,6 +678,11 @@ com endereço. A **Parte E** diz o que examinei e considerei bom — é metade d
   não responde — e é o único dos dois que não diz **quanto falta** nem oferece gesto. O dado
   está na mesma projection.
 - **Substituição:** `"Faltam {remaining_display} para o pedido mínimo."`
+  ⛔ **Correção de 18/09 (Onda 1): isto já era verdade no HEAD medido.**
+  `shopman/storefront/presentation/cart.py` monta exatamente essa frase quando há
+  `minimum_order_progress`; a chave `CART_CHECKOUT_BLOCK_MIN_ORDER` é só o fallback de
+  quando **não há** número a dizer — e aí a frase genérica é honesta. O achado é falso e
+  nada foi alterado.
   ⚠️ Irmãs no mesmo registro: `CART_CHECKOUT_BLOCK_UNAVAILABLE` (`"Revise itens
   indisponíveis antes de finalizar."`) e `CHECKOUT_WHEN_REQUIRED` (`"Escolha data e horário
   para seguir."`) usam **finalizar** e **seguir** para o gesto cujo botão na mesma tela diz
@@ -1223,17 +1291,12 @@ simpática.
 
 ---
 
-## Uma pergunta para o Pablo, e ela é de produto
+## ~~Uma pergunta para o Pablo, e ela é de produto~~ — respondida em 18/09/2026
 
-**O endereço deve seguir o interruptor "Salvar para a próxima vez"?** (achado A3.) Hoje ele
-salva sempre, e a chave não cobre isso. Há duas saídas e elas não são equivalentes:
+**Era:** "o endereço deve seguir o interruptor?" (achado A3.)
 
-- **a copy se ajusta ao comportamento** — o interruptor passa a se chamar `"Guardar entrega,
-  pagamento e horário"` e a tela diz, sem rodeio, que o endereço fica salvo de qualquer jeito
-  (com o link para apagar em Conta › Endereços);
-- **o comportamento se ajusta à copy** — desligar a chave passa a impedir também o
-  `_save_delivery_address`.
-
-A primeira é uma mudança de texto. A segunda mexe no Core e muda o que a loja faz com dado
-pessoal de cliente. Escrevi a substituição para a primeira porque ela não precisa da sua
-palavra; se a resposta for a segunda, a frase muda junto e eu reescrevo.
+**Resposta do dono:** a pergunta partia de uma leitura errada. O endereço novo vai para a
+agenda do cliente sempre, e tem que ir — ninguém redigita CEP a cada pedido. O interruptor
+governa os **padrões** (qual endereço vem escolhido, pagamento, horário), não o
+armazenamento. Não há promessa quebrada, e nada muda no Core: o conserto é de texto, e
+está na ficha A3.

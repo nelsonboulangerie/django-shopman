@@ -444,7 +444,7 @@ def test_the_security_page_data_loads(client, person):
 
 
 def test_the_device_list_survives_a_trusted_device(client, person):
-    """Com dispositivo de verdade na tabela — o caso que o filtro errado quebrava."""
+    """Com aparelho de verdade na tabela — o caso que o filtro errado quebrava."""
     from shopman.doorman.models import TrustedDevice
     from shopman.doorman.models.device_trust import SubjectType
 

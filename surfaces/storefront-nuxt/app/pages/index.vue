@@ -60,7 +60,11 @@ const operationalStatus = computed(() => {
   } as const
 })
 const quickReorderItems = computed(() => home.value?.last_order_items.slice(0, 3) || [])
+// Sem ação de repetir disponível, o card não pode perguntar "quer repetir?" e responder
+// "ver histórico": pergunta e botão têm de ser a mesma coisa. E o gesto tem UM nome na
+// home inteira — "Repetir pedido", o mesmo do slide do hero.
 const quickReorderTitle = computed(() => {
+  if (!reorderAction.value) return 'Seus pedidos anteriores'
   const name = home.value?.omotenashi.customer_name
   return `Quer repetir seu último pedido${name ? `, ${name}` : ''}?`
 })
@@ -93,7 +97,8 @@ onMounted(async () => {
 
 async function handleReorder (action: Action | null) {
   if (!action) {
-    await navigateTo('/conta')
+    // O botão diz "Ver meus pedidos": o destino é a lista, não a raiz da Conta.
+    await navigateTo('/conta/pedidos')
     return
   }
   try {
@@ -239,7 +244,8 @@ useHead({
               :reorder-action="reorderAction"
               :reorder-loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
               :status-open="operationalStatus.isOpen"
-              closed-cta-label="Montar pedido"
+              :status-label="operationalStatus.label"
+              closed-cta-label="Montar pedido para depois"
               @reorder="handleReorder"
             />
 
@@ -305,7 +311,7 @@ useHead({
                       <span>{{ item.name }}</span>
                     </li>
                   </ul>
-                  <p v-else class="shop-muted">Seu pedido anterior volta à sacola para revisão.</p>
+                  <p v-else class="shop-muted">Os itens voltam para a sacola; você confere antes de finalizar.</p>
                 </div>
                 <UiButton
                   icon="lucide:shopping-bag"
@@ -313,7 +319,7 @@ useHead({
                   class="w-full sm:w-fit"
                   @click="handleReorder(reorderAction)"
                 >
-                  {{ reorderAction?.label || 'Ver histórico' }}
+                  {{ reorderAction ? 'Repetir pedido' : 'Ver meus pedidos' }}
                 </UiButton>
               </UiCardContent>
             </div>

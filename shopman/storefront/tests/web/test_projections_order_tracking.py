@@ -1381,8 +1381,14 @@ class TestStatusColours:
         assert proj.promise.state == "payment_confirmed"
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
-        assert proj.promise.message == "Sua reserva está na fila de espera. Avisamos quando estiver pronto."
+        # A data da fornada existe (é ela que escolhe este ramo) e a frase passou a
+        # dizê-la — como PREVISÃO, que é o que o COPY-WAITLIST-001 permite.
+        assert proj.promise.message == (
+            "Sua reserva está na fila de espera da fornada prevista para hoje. "
+            "Avisamos quando sair."
+        )
         assert "começar o preparo" not in proj.promise.message.lower()
+        assert "fila da fornada" not in proj.promise.message.lower()
 
     def test_eta_uses_preparing_timestamp_not_order_creation(self, order):
         from django.utils import timezone

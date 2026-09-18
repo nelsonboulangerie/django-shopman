@@ -149,7 +149,7 @@ class TestCatalogItemProjection:
         item = _find_item(proj, product.sku)
 
         assert item is not None
-        assert item.unit_weight_label == "~100g a unidade"
+        assert item.unit_weight_label == "peça de ~100 g"
 
     def test_item_search_terms_include_remote_purchase_facts(
         self, listing, collection, collection_item, product,
