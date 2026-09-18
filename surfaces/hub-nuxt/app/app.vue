@@ -19,6 +19,10 @@ const linkContext = computed(() => ({
 const apiPath = useApiPath();
 useOperatorWindowTitle();
 
+// Versão publicada deste build (`NUXT_PUBLIC_APP_VERSION`/`SOURCE_VERSION`; "local" na
+// máquina de quem desenvolve). É o que o operador lê para o suporte ao relatar algo.
+const appVersion = String(useRuntimeConfig().public.appVersion || "local");
+
 const { tiles, operatorName, error, refresh } = await useOperatorHub();
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
@@ -167,6 +171,13 @@ function tileImageSrc(tile: HubTileProjection): string | null {
           </li>
           </ul>
           <OperatorPushSettings />
+
+          <!-- Carimbo da versão publicada. Ele morava colado no título dos avisos e se
+               lia como se fosse propriedade do aviso ("local"); é a versão do build que
+               está no ar, e é assim que ele se apresenta agora. -->
+          <p class="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
+            Versão do {{ HUB_NAME }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
+          </p>
           </section>
         </div>
       </div>
