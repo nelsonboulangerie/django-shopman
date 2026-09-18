@@ -444,13 +444,109 @@ def test_mixed_dispatch_is_decided_by_the_message_half_not_by_the_sum(customer_b
     assert public_post_count(context) == 2
 
 
+def test_one_message_to_one_person_still_types_the_phrase(customer_base):
+    """O atrito segue o que não tem desfazer. Uma pessoa no WhatsApp digita `ENVIAR 1`.
+
+    A base aqui é enorme de propósito — o limiar é 714 —, para que a frase NÃO possa
+    estar vindo do tamanho: ela vem da irreversibilidade. Mensagem enviada não se apaga.
+    Senha, essa sim, só a partir do limiar: com uma pessoa, não há.
+
+    O que a ADR-031 matou foi a DUPLICAÇÃO (o disparo cobrava a frase para criar um
+    rascunho e a aprovação cobrava de novo), não a frase do ato final. O `fire` segue sem
+    cerimônia — ver o teste do disparo neste arquivo.
+    """
+    customer_base(100_000)
+    context = authorization_context(
+        action="approve",
+        resource_ref="announcement:one-person",
+        base_version=1,
+        audience_count=1,
+        platforms=("whatsapp",),
+        consequence="publishes_now_to_eligible_audience",
+    )
+
+    assert requirement_for(context) == AuthorizationRequirement(
+        "typed", "none", False, "ENVIAR 1"
+    )
+
+
+def test_one_post_to_one_platform_asks_only_for_the_summary(customer_base):
+    """Postagem não digita, nem quando o limiar está no seu ponto mais exigente.
+
+    Base zero: o limiar cai no piso, dez pessoas. Se a regra da postagem fosse o limiar
+    de gente, uma única postagem já estaria perto de pedir frase — e um mural se apaga
+    com um toque. Este é o par do teste acima: um caso por eixo, para que nenhuma das
+    duas regras fique sem dono.
+    """
+    customer_base(0)
+    context = authorization_context(
+        action="approve",
+        resource_ref="announcement:one-post",
+        base_version=1,
+        audience_count=0,
+        platforms=("instagram",),
+        consequence="publishes_now_to_eligible_audience",
+    )
+
+    assert requirement_for(context) == AuthorizationRequirement("summary", "none", False, "")
+
+
+def test_the_challenge_says_which_axis_asked_and_where_the_rest_starts(customer_base):
+    """Quem escolhe a política é o servidor — e é ele quem a explica para a tela."""
+    customer_base(2_500)
+    actor = _actor("challenge-reason", "publish_marketing_announcements")
+    context = authorization_context(
+        action="approve",
+        resource_ref="announcement:mixed-reason",
+        base_version=1,
+        audience_count=4,
+        platforms=("whatsapp", "instagram"),
+        consequence="publishes_now_to_eligible_audience",
+    )
+
+    challenge = _open_confirmation(
+        actor, context, capability="shop.publish_marketing_announcements"
+    )
+
+    assert challenge["typed_phrase"] == "ENVIAR 4"
+    assert challenge["ceremony_reason"] == "direct_message"
+    assert challenge["direct_message_count"] == 4
+    assert challenge["public_post_count"] == 1
+    # A frase veio da mensagem, não do tamanho: quatro pessoas estão bem abaixo das 50.
+    assert challenge["ceremony_threshold"] == 50
+    assert challenge["step_up"] == "none"
+
+
+def test_a_post_only_challenge_carries_no_reason_because_it_asks_no_phrase(customer_base):
+    customer_base(0)
+    actor = _actor("challenge-post", "publish_marketing_announcements")
+    context = authorization_context(
+        action="approve",
+        resource_ref="announcement:post-reason",
+        base_version=1,
+        audience_count=0,
+        platforms=("instagram", "facebook"),
+        consequence="publishes_now_to_eligible_audience",
+    )
+
+    challenge = _open_confirmation(
+        actor, context, capability="shop.publish_marketing_announcements"
+    )
+
+    assert challenge["typed_phrase"] == ""
+    assert challenge["ceremony_reason"] == ""
+    assert challenge["direct_message_count"] == 0
+    assert challenge["public_post_count"] == 2
+
+
 def test_the_same_dispatch_changes_ceremony_when_the_house_changes_size(customer_base):
     """O mesmo disparo, duas casas: 300 pessoas é muito numa, rotina na outra.
 
-    Era isto que um número no código não conseguia dizer. Com 2.500 clientes, 300
-    mensagens são 12% da casa e pedem frase digitada e senha; com 100.000, são 0,3% e
-    pedem o resumo — o mesmo resumo que 2.000 pediriam lá, porque lá o limiar é 714,
-    onde o teto de gasto chega antes da fatia.
+    Era isto que um número no código não conseguia dizer. O que muda com o tamanho da
+    casa é o RESTO da cerimônia — a senha —, não a frase: a frase acompanha a mensagem,
+    que não tem desfazer, e sai igual nas duas. Com 2.500 clientes, 300 mensagens são 12%
+    da casa e pedem senha; com 100.000 são 0,3% e o limiar já é 714 (onde o teto de gasto
+    chega antes da fatia), então basta digitar.
     """
     payload = {
         "action": "approve",
@@ -468,7 +564,9 @@ def test_the_same_dispatch_changes_ceremony_when_the_house_changes_size(customer
     )
 
     customer_base(100_000)
-    assert requirement_for(context) == AuthorizationRequirement("summary", "none", False, "")
+    assert requirement_for(context) == AuthorizationRequirement(
+        "typed", "none", False, "ENVIAR 300"
+    )
 
 
 def test_public_post_asks_for_the_summary_however_many_platforms(customer_base):
@@ -548,7 +646,11 @@ def test_a_large_retry_still_escalates_because_it_still_sends(customer_base):
         consequence="schedules_publish_to_eligible_audience",
     )
 
-    assert requirement_for(small) == AuthorizationRequirement("summary", "none", False, "")
+    # Três pessoas também digitam: o que muda do pequeno para o grande é a senha e a
+    # segunda pessoa, não a frase.
+    assert requirement_for(small) == AuthorizationRequirement(
+        "typed", "none", False, "ENVIAR 3"
+    )
     assert requirement_for(large) == AuthorizationRequirement(
         "typed", "totp", True, "ENVIAR 800"
     )
@@ -670,7 +772,7 @@ def test_daily_external_target_quota_returns_retry_after_and_is_append_only():
             capability="shop.publish_marketing_announcements",
             context=context,
             token=challenge["token"],
-            typed_confirmation="",
+            typed_confirmation="ENVIAR 1",
             step_up=_step_up(actor, "password", at=now),
             now=now,
         )

@@ -252,19 +252,32 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
                 status_code=422,
             )
     if recipients <= 0:
+        # Só postagem. O mural se apaga, então não há o que a frase proteja aqui — e o
+        # limiar conta PESSOAS, de modo que aplicá-lo a plataformas seria repetir o erro
+        # que a ADR-032 corrigiu. Resumo, qualquer que seja o número de murais.
         return AuthorizationRequirement("summary", "none", False, "")
-    # A cerimônia mede a consequência, e a consequência é quanta gente recebe — medida
-    # contra o tamanho da casa, não contra um número absoluto herdado. Um limiar fixo só
-    # está certo para uma base: com 200 clientes, 50 é alto demais; com 20.000, baixo
-    # demais. A política e a base vivem no Admin; ver ADR-032.
+    # **O atrito segue o que não tem desfazer** (decisão do dono, 2026-09-18). Saiu
+    # mensagem, a frase é pedida — uma pessoa ou dez mil, digita-se `ENVIAR <pessoas>`.
+    # Mensagem enviada não se apaga; postagem se apaga. Por isso a IRREVERSIBILIDADE
+    # manda na frase, e o TAMANHO manda no resto: senha a partir do limiar, autenticador
+    # e segunda pessoa a partir do múltiplo dele.
+    #
+    # O que a ADR-031 matou, e que NÃO volta aqui, foi a DUPLICAÇÃO: o `fire` cobrava a
+    # frase para criar um rascunho e a aprovação cobrava de novo pelo mesmo envio. O
+    # `fire` continua sem cerimônia nenhuma; esta frase é a do ato final.
+    #
+    # O limiar continua sendo proporção da casa (ou teto de gasto), nunca número absoluto
+    # herdado: com 200 clientes, 50 é alto demais; com 20.000, baixo demais. A política e
+    # a base vivem no Admin; ver ADR-032 e ADR-033.
     from shopman.shop.services.marketing_ceremony import ceremony_threshold
 
+    phrase = f"ENVIAR {recipients}"
     threshold = ceremony_threshold()
     if recipients >= threshold.dual_control:
-        return AuthorizationRequirement("typed", "totp", True, f"ENVIAR {recipients}")
+        return AuthorizationRequirement("typed", "totp", True, phrase)
     if recipients >= threshold.typed:
-        return AuthorizationRequirement("typed", "password", False, f"ENVIAR {recipients}")
-    return AuthorizationRequirement("summary", "none", False, "")
+        return AuthorizationRequirement("typed", "password", False, phrase)
+    return AuthorizationRequirement("typed", "none", False, phrase)
 
 
 def authorize_command(
@@ -464,10 +477,11 @@ def issue_confirmation(
             "audience_count": required.context.audience_count,
             # Os dois eixos, separados, para a tela poder dizer o efeito pelo nome em vez
             # de somar pessoa com plataforma: "500 mensagens" e "2 postagens" não são
-            # "502 destinos". ``ceremony_threshold`` é a partir de quantas MENSAGENS a
-            # casa passa a pedir frase digitada — a tela pode explicar por que pediu.
+            # "502 destinos". ``ceremony_reason`` diz por que a FRASE foi pedida e
+            # ``ceremony_threshold``, a partir de quantas mensagens o resto aperta.
             "direct_message_count": direct_message_recipient_count(required.context),
             "public_post_count": public_post_count(required.context),
+            "ceremony_reason": _ceremony_reason(required),
             "ceremony_threshold": _ceremony_threshold_for_challenge(),
             "platforms": list(required.context.platforms),
             "scheduled_for": (
@@ -924,6 +938,28 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         occurred_at=now,
         retention_until=now + SECURITY_RETENTION,
     )
+
+
+def _ceremony_reason(required: MarketingAuthorizationRequired) -> str:
+    """Por que a frase digitada foi pedida. Vazio quando não foi.
+
+    Quem escolhe a política é o servidor, e é ele quem a explica: a tela poderia deduzir
+    "saiu mensagem" de ``direct_message_count``, mas aí o motivo passaria a morar no
+    navegador, que é exatamente o que este módulo não faz.
+
+    - ``direct_message`` — sai mensagem direta, e mensagem enviada não se apaga. É o
+      único motivo que existe hoje, porque postagem nunca pede frase.
+    - ``""`` — nenhuma frase foi pedida.
+
+    O motivo da SENHA (ou do autenticador e da segunda pessoa) é outro, e a tela o lê de
+    ``step_up``/``dual_control`` contra ``direct_message_count`` e ``ceremony_threshold``:
+    ali quem apertou foi o tamanho, não a irreversibilidade.
+    """
+    if not required.requirement.typed_phrase:
+        return ""
+    if direct_message_recipient_count(required.context) > 0:
+        return "direct_message"
+    return "volume"
 
 
 def _ceremony_threshold_for_challenge() -> int:

@@ -131,13 +131,17 @@ def test_delivery_recovery_actions_carry_current_authority_and_consequence():
     assert retry.enabled is True
     assert retry.eligible_count == 1
     assert retry.idempotency == "required"
-    # Uma entrega para reenviar: a Action anuncia leitura e um toque. A cerimônia
-    # cresce com o público, e o tamanho dela por faixa vive em test_marketing_security.
-    assert retry.confirmation.mode == "summary"
+    # Reenviar UMA mensagem já pede a frase: o atrito segue o que não tem desfazer, e
+    # uma mensagem reenviada não se apaga. O que ainda cresce com o público é o RESTO —
+    # aqui, com uma pessoa, nenhuma senha. O tamanho por faixa vive em
+    # test_marketing_security.
+    assert retry.confirmation.mode == "typed"
     assert retry.confirmation.step_up == "none"
     assert retry.creates_external_effect is True
     assert reconcile.enabled is True
     assert reconcile.eligible_count == 1
+    # Reconciliar é CONSULTAR: não reenvia nada, não tem o que desfazer, e por isso
+    # segue no resumo — com TOTP, que é sobre quem pode olhar, não sobre o que sai.
     assert reconcile.confirmation.mode == "summary"
     assert reconcile.confirmation.step_up == "totp"
     assert reconcile.creates_external_effect is False
