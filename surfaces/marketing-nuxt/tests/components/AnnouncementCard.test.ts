@@ -198,10 +198,10 @@ describe("AnnouncementCard", () => {
     expect(text).not.toContain("12 favoritos, 3 alertas = 15 clientes");
   });
 
-  it("names the decision button after where it goes, not after what it promises", () => {
-    // Este botão abre a caixa da consequência; quem entrega é o botão de lá. Enquanto
-    // ele dizia "Entregar agora", o caminho tinha dois botões prometendo a mesma coisa
-    // e só um cumprindo — e o gestor aprendia que a tela mente.
+  it("a decisão desta tela é binária e não promete o disparo", () => {
+    // Este botão NÃO dispara: leva à caixa, onde o botão final se chama pelo ato
+    // (Enviar/Publicar/Disparar/Agendar). Ele também não muda de nome com o destino —
+    // quem carrega o destino é a caixa. E "Recusar" vem ANTES, pedido do dono.
     for (const platforms of [
       ["instagram", "whatsapp"],
       ["whatsapp"],
@@ -209,8 +209,13 @@ describe("AnnouncementCard", () => {
     ]) {
       const wrapper = mountCard(makeAnnouncement({ platforms }));
       const action = wrapper.get("[data-testid=publish-now]");
-      expect(action.text()).toContain("Visualizar consequência");
+      expect(action.text()).toContain("Continuar");
       expect(action.text()).not.toContain("agora");
+      const rotulos = wrapper
+        .findAll("button")
+        .map((b) => b.text())
+        .filter((t) => t === "Recusar" || t === "Continuar");
+      expect(rotulos).toEqual(["Recusar", "Continuar"]);
     }
   });
 
@@ -263,42 +268,40 @@ describe("AnnouncementCard", () => {
     expect(wrapper.text()).toContain("Escolha ao menos uma plataforma");
   });
 
-  // ⚠️ "Agendar (recomendado)" era fixo, a qualquer hora, sem porquê. Às 09:00,
-  // com Instagram, não há nada que recomende esperar: entregar agora é o primário.
-  it("fora do silêncio, entregar agora é o primário e agendar é só agendar", () => {
+  // ⚠️ "Quando" deixou de ser botão e virou CAMPO: Imediato | Agendado. O botão
+  // "Agendar" não agendava — abria o seletor de hora — e por isso nunca encaixou ao
+  // lado de "Recusar", que decide o destino da coisa.
+  it("fora do silêncio, o envio abre em Imediato e nada recomenda esperar", () => {
     const wrapper = mountCard(makeAnnouncement());
-    const schedule = wrapper.get("[data-testid=schedule-recommended]");
-    const publishNow = wrapper.get("[data-testid=publish-now]");
 
     expect(wrapper.text()).toContain("Aprovar sela esta versão");
-    expect(schedule.text()).toBe("Agendar");
-    expect(schedule.classes()).toContain("border");
-    expect(schedule.classes()).not.toContain("bg-primary");
-    expect(publishNow.text()).toContain("Visualizar consequência");
-    expect(publishNow.classes()).toContain("bg-primary");
-    expect(wrapper.text()).toContain("Agora, ou na hora que você marcar");
-    expect(wrapper.text()).not.toContain("recomendado");
+    expect(wrapper.get("[data-testid=delivery-now]").attributes("aria-pressed")).toBe("true");
+    expect(
+      wrapper.get("[data-testid=delivery-scheduled]").attributes("aria-pressed"),
+    ).toBe("false");
+    expect(wrapper.get("[data-testid=publish-now]").text()).toContain("Continuar");
+    expect(wrapper.text()).not.toContain("silêncio");
   });
 
-  it("no silêncio do WhatsApp, agendar vira o recomendado — e diz o porquê", () => {
-    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
+  it("no silêncio do WhatsApp, a tela diz o porquê de agendar — sem mandar", () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 no relógio da loja.
     const wrapper = mountCard(makeAnnouncement({ platforms: ["whatsapp"] }));
-    const schedule = wrapper.get("[data-testid=schedule-recommended]");
-    const publishNow = wrapper.get("[data-testid=publish-now]");
 
-    expect(schedule.text()).toContain("Agendar (recomendado)");
-    expect(schedule.classes()).toContain("bg-primary");
-    expect(publishNow.classes()).toContain("border");
+    // O aviso mora junto da escolha de hora, que é onde ele serve. O envio continua
+    // abrindo em Imediato: quem decide é o gestor, a tela só conta o fato.
     expect(wrapper.text()).toContain(
-      "Agendar é o recomendado agora: o WhatsApp está em silêncio das 20:00 às 08:00",
+      "O WhatsApp está em silêncio das 20:00 às 08:00",
     );
+    expect(
+      (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("publicação pública no silêncio não recomenda esperar: o silêncio é do WhatsApp", () => {
     vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
     const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
 
-    expect(wrapper.get("[data-testid=schedule-recommended]").text()).toBe(
+    expect(wrapper.get("[data-testid=delivery-scheduled]").text()).toBe(
       "Agendar",
     );
     expect(
@@ -311,13 +314,13 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(makeAnnouncement());
     expect(wrapper.find("input[type=datetime-local]").exists()).toBe(false);
 
-    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
+    await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
     expect(wrapper.find("input[type=datetime-local]").exists()).toBe(true);
   });
 
   it("carries publish_at when scheduling", async () => {
     const wrapper = mountCard(makeAnnouncement());
-    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
+    await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
     await wrapper
       .find("input[type=datetime-local]")
       .setValue("2026-07-19T07:00");
@@ -344,7 +347,7 @@ describe("AnnouncementCard", () => {
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("WhatsApp está em silêncio das 20:00 às 08:00");
 
-    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
+    await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
 
     expect(
       (wrapper.find("input[type=datetime-local]").element as HTMLInputElement)
@@ -378,26 +381,26 @@ describe("AnnouncementCard", () => {
         expires_at: "2026-07-19T07:00:00-03:00",
       }),
     );
-    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
+    await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
     await wrapper
       .find("input[type=datetime-local]")
       .setValue("2026-07-19T07:00");
 
     expect(wrapper.text()).toContain("expiraria antes desse horário");
-    const confirm = wrapper.get("[data-testid=schedule-submit]");
+    const confirm = wrapper.get("[data-testid=publish-now]");
     expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("waits for the operator to choose one of two DST occurrences", async () => {
     vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
     const wrapper = mountCard(makeAnnouncement(), "", "America/New_York");
-    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
+    await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
     await wrapper
       .find("input[type=datetime-local]")
       .setValue("2026-11-01T01:30");
 
     expect(wrapper.text()).toContain("acontece duas vezes");
-    const confirm = wrapper.get("[data-testid=schedule-submit]");
+    const confirm = wrapper.get("[data-testid=publish-now]");
     expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
 
     await wrapper.findAll('[role="radio"]').at(-1)!.trigger("click");

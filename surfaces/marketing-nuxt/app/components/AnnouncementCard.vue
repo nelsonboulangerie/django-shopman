@@ -319,11 +319,6 @@ const canPublish = computed(
     platforms.value.length > 0,
 );
 const hasDirectMessage = computed(() => includesDirectMessage(platforms.value));
-// ⚠️ Este botão NÃO entrega: ele abre a caixa que mostra a consequência, e é lá que a
-// entrega acontece. Enquanto ele dizia "Entregar agora", o caminho tinha dois botões
-// prometendo a mesma coisa e só um cumprindo — e quem toca no primeiro e vê aparecer
-// mais uma tela aprende que a tela mente. O nome do botão é o destino dele.
-const REVIEW_CONSEQUENCE_LABEL = "Visualizar consequência";
 const nowFallsInQuietHours = computed(
   () =>
     hasDirectMessage.value &&
@@ -392,9 +387,11 @@ function schedule() {
   );
 }
 
-function toggleScheduling() {
-  scheduling.value = !scheduling.value;
-  if (!scheduling.value || publishAt.value) return;
+/** Ligar "Agendado" já traz um horário sugerido — quem escolheu agendar não deve
+ *  encontrar um campo vazio e ter que inventar a hora do zero. */
+function openScheduling() {
+  scheduling.value = true;
+  if (publishAt.value) return;
   publishAt.value = suggestedScheduleLocal({
     timeZone: timezoneName.value,
     suggestedAt: props.announcement.scheduled_for,
@@ -758,76 +755,52 @@ function askToReject() {
         </p>
       </div>
 
-      <!-- ⚠️ "Agendar (recomendado)" era fixo, a qualquer hora, e "recomendado" sem
-           porquê é ruído. Só é recomendado quando o agora cai no silêncio do WhatsApp
-           (20–08h), e aí a frase de baixo diz o motivo; fora dele, entregar agora é
-           o gesto primário. -->
-      <UiButton
-        type="button"
-        data-testid="schedule-recommended"
-        :aria-expanded="scheduling"
-        :variant="scheduleRecommended ? 'default' : 'outline'"
-        @click="toggleScheduling"
-      >
-        <Icon name="lucide:clock" class="size-4" />
-        {{
-          scheduling
-            ? "Fechar agendamento"
-            : scheduleRecommended
-              ? "Agendar (recomendado)"
-              : "Agendar"
-        }}
-      </UiButton>
-
-      <UiButton
-        type="button"
-        data-testid="publish-now"
-        :disabled="!canPublishNow"
-        :variant="scheduleRecommended ? 'outline' : 'default'"
-        @click="publishNow"
-      >
-        <Icon
-          :name="busy ? 'line-md:loading-loop' : 'lucide:send'"
-          class="size-4"
-        />
-        {{ REVIEW_CONSEQUENCE_LABEL }}
-      </UiButton>
-
-      <UiButton
-        type="button"
-        :disabled="busy"
-        variant="outline"
-        class="ml-auto text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-        @click="askToReject"
-      >
-        <Icon name="lucide:trash-2" class="size-4" />
-        Recusar
-      </UiButton>
-
-      <p
-        v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
-        class="w-full text-xs font-medium text-sky-700 dark:text-sky-300"
-        role="status"
-      >
-        Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem
-        sai deste computador.
-      </p>
-      <p
-        v-else-if="nowFallsInQuietHours"
-        class="w-full text-xs font-medium text-warning"
-        role="status"
-      >
-        Agendar é o recomendado agora: o WhatsApp está em silêncio das 20:00 às
-        08:00 ({{ timezoneName }}). O próximo horário permitido já vem
-        preenchido.
-      </p>
-      <p
-        v-else-if="expired"
-        class="w-full text-xs font-medium text-destructive"
-        role="alert"
-      >
-        O prazo terminou. Atualize os fatos antes de publicar.
-      </p>
+      <!-- ⚠️ "Quando" é ATRIBUTO do disparo, não destino. Era um botão "Agendar" que
+           não agendava — abria o seletor de hora —, ao lado de "Recusar", que decide o
+           destino da coisa. Botão é para caminho; atributo é para campo. Com o quando
+           virando campo, a decisão desta tela fica binária de verdade: segue ou não
+           segue. Quem agenda é o botão final da caixa, onde o ato acontece. -->
+      <div class="w-full space-y-1.5">
+        <span class="text-xs font-medium text-muted-foreground">Envio</span>
+        <div
+          role="group"
+          aria-label="Envio"
+          class="flex gap-1 rounded-lg bg-muted p-1"
+        >
+          <button
+            type="button"
+            data-testid="delivery-now"
+            :aria-pressed="!scheduling"
+            class="min-h-11 flex-1 basis-0 rounded-md text-sm transition"
+            :class="
+              scheduling
+                ? 'font-medium text-muted-foreground'
+                : 'bg-card font-semibold shadow-sm'
+            "
+            @click="scheduling = false"
+          >
+            Imediato
+          </button>
+          <button
+            type="button"
+            data-testid="delivery-scheduled"
+            :aria-pressed="scheduling"
+            class="min-h-11 flex-1 basis-0 rounded-md text-sm transition"
+            :class="
+              scheduling
+                ? 'bg-card font-semibold shadow-sm'
+                : 'font-medium text-muted-foreground'
+            "
+            @click="openScheduling"
+          >
+            Agendado
+          </button>
+        </div>
+        <p v-if="scheduleRecommended" class="text-xs font-medium text-warning">
+          O WhatsApp está em silêncio das 20:00 às 08:00 ({{ timezoneName }}).
+          Agendar entrega no próximo horário permitido.
+        </p>
+      </div>
 
       <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->
       <div v-if="scheduling" class="w-full space-y-2 pt-2">
@@ -847,19 +820,6 @@ function askToReject() {
           <span class="text-xs font-semibold text-muted-foreground">{{
             timezoneName
           }}</span>
-          <!-- Mesmo texto do botão de cima, porque os dois abrem a mesma caixa; o
-               nome acessível distingue, já que "Visualizar consequência" duas vezes
-               num card deixa quem usa leitor de tela sem saber qual é qual. -->
-          <UiButton
-            type="button"
-            data-testid="schedule-submit"
-            :disabled="!canSchedule"
-            :aria-label="`${REVIEW_CONSEQUENCE_LABEL} do agendamento`"
-            @click="schedule"
-          >
-            <Icon name="lucide:calendar-check" class="size-4" />
-            {{ REVIEW_CONSEQUENCE_LABEL }}
-          </UiButton>
         </div>
         <p
           v-if="
@@ -920,6 +880,38 @@ function askToReject() {
           }}
         </p>
       </div>
-    </footer>
+    
+      <!-- ⚠️ Recusar ANTES de Continuar, os dois da mesma largura: pedido do dono. E
+           "Continuar" não promete o disparo, porque não dispara — leva à caixa onde o
+           ato acontece e lá o botão se chama pelo nome (Enviar/Publicar/Disparar/
+           Agendar). Um botão só, porque a decisão desta tela virou binária quando o
+           "quando" saiu de botão e virou campo. -->
+      <div class="flex w-full gap-2 pt-1">
+        <UiButton
+          type="button"
+          :disabled="busy"
+          variant="outline"
+          class="min-h-11 flex-1 basis-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          @click="askToReject"
+        >
+          <Icon name="lucide:trash-2" class="size-4" />
+          Recusar
+        </UiButton>
+
+        <UiButton
+          type="button"
+          data-testid="publish-now"
+          :disabled="scheduling ? !canSchedule : !canPublishNow"
+          class="min-h-11 flex-1 basis-0"
+          @click="scheduling ? schedule() : publishNow()"
+        >
+          <Icon
+            :name="busy ? 'line-md:loading-loop' : 'lucide:arrow-right'"
+            class="size-4"
+          />
+          Continuar
+        </UiButton>
+      </div>
+</footer>
   </article>
 </template>
