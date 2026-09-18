@@ -4,6 +4,16 @@ import { beforeAll, describe, expect, it } from "vitest";
 import MarketingCommandConfirmationDialog from "~/components/MarketingCommandConfirmationDialog.vue";
 
 const SlotStub = defineComponent({ template: "<div><slot /></div>" });
+// A prévia em tamanho real é sobreposição: aqui ela vira um dublê que só publica os
+// retratos que recebeu, para que o teste possa dizer DE ONDE eles saíram.
+const simulatedPreviewScenes: unknown[][] = [];
+const SimulatedPreviewStub = defineComponent({
+  props: { scenes: { type: Array, default: () => [] } },
+  setup(props) {
+    simulatedPreviewScenes.push(props.scenes);
+    return () => null;
+  },
+});
 const DialogStub = defineComponent({
   props: { open: Boolean },
   template: '<div v-if="open"><slot /></div>',
@@ -51,6 +61,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
       global: {
         stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
           UiDialog: DialogStub,
           UiDialogContent: SlotStub,
           UiDialogHeader: SlotStub,
@@ -116,6 +127,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
       global: {
         stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
           UiDialog: DialogStub,
           UiDialogContent: SlotStub,
           UiDialogHeader: SlotStub,
@@ -163,6 +175,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
       global: {
         stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
           UiDialog: DialogStub,
           UiDialogContent: SlotStub,
           UiDialogHeader: SlotStub,
@@ -208,6 +221,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
       global: {
         stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
           UiDialog: DialogStub,
           UiDialogContent: SlotStub,
           UiDialogHeader: SlotStub,
@@ -255,6 +269,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
       global: {
         stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
           UiDialog: DialogStub,
           UiDialogContent: SlotStub,
           UiDialogHeader: SlotStub,
@@ -306,6 +321,7 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
       global: {
         stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
           UiDialog: DialogStub,
           UiDialogContent: SlotStub,
           UiDialogHeader: SlotStub,
@@ -323,5 +339,129 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect(wrapper.text()).toContain("Voltar sem criar");
     expect(wrapper.text()).toContain("WhatsApp · 12 pessoas");
     expect(wrapper.text()).toContain("Instagram · 1 postagem");
+  });
+  it("a prévia em tamanho real sai do corpo CONGELADO, e o formato vem do anúncio", () => {
+    // ⚠️ A diferença que este teste guarda: na caixa de confirmação o retrato grande NÃO
+    // pode sair do anúncio na tela. O que o servidor vai publicar é o corpo selado no
+    // desafio; uma edição posterior mostraria ao gestor algo que não vai acontecer.
+    // Formato e foto vêm do anúncio porque não são editáveis no card e não viajam no
+    // corpo do comando.
+    simulatedPreviewScenes.length = 0;
+    mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          announcementId: 42,
+          action: "approve",
+          body: {
+            base_version: 3,
+            publish_mode: "now",
+            body: "Texto selado no comando",
+            hashtags: ["padaria"],
+          },
+          href: "/api/v1/backstage/marketing/announcements/42/approve/",
+          ownerRef: "operator:1",
+          idempotencyKey: "key",
+          challenge: {
+            token: "token",
+            ref: "challenge-simulated",
+            expires_at: "2026-09-09T21:00:00-03:00",
+            mode: "summary",
+            step_up: "none",
+            dual_control: false,
+            typed_phrase: "",
+            consequence: "publishes_now_to_eligible_audience",
+            resource_ref: "announcement:42",
+            base_version: 3,
+            audience_count: 12,
+            platforms: ["instagram", "whatsapp"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+        imageUrl: "/media/fornada.jpg",
+        platformContent: {
+          instagram: {
+            publication_format: "story",
+            image_url: "/media/vertical.jpg",
+          },
+          whatsapp: {},
+        },
+      },
+      global: {
+        stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    const scenes = simulatedPreviewScenes.at(-1) as Array<{
+      kind: string;
+      label: string;
+      body: string;
+      imageUrl: string;
+    }>;
+    expect(scenes.map((scene) => scene.label)).toEqual([
+      "Story no Instagram",
+      "Mensagem no WhatsApp",
+    ]);
+    expect(scenes.map((scene) => scene.body)).toEqual([
+      "Texto selado no comando",
+      "Texto selado no comando",
+    ]);
+    expect(scenes.map((scene) => scene.imageUrl)).toEqual([
+      "/media/vertical.jpg",
+      "/media/fornada.jpg",
+    ]);
+  });
+
+  it("recusar não abre prévia de um anúncio que não vai a lugar nenhum", () => {
+    simulatedPreviewScenes.length = 0;
+    mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          announcementId: 42,
+          action: "reject",
+          body: { base_version: 3, body: "Texto recusado" },
+          href: "/api/v1/backstage/marketing/announcements/42/reject/",
+          ownerRef: "operator:1",
+          idempotencyKey: "key",
+          challenge: {
+            token: "token",
+            ref: "challenge-reject",
+            expires_at: "2026-09-09T21:00:00-03:00",
+            mode: "summary",
+            step_up: "none",
+            dual_control: false,
+            typed_phrase: "",
+            consequence: "rejects_announcement",
+            resource_ref: "announcement:42",
+            base_version: 3,
+            audience_count: 12,
+            platforms: ["instagram"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    expect(simulatedPreviewScenes.at(-1)).toEqual([]);
   });
 });

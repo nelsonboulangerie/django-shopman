@@ -28,6 +28,25 @@ VISUAL_STORY_IMAGE = (
     "c120-300 280-300 400 0-90 150-310 150-400 0Z' fill='%239a582d'/%3E%3C/svg%3E"
 )
 
+# A peça 1:1 do mural e a 16:9 do Google: o retrato em tamanho real existe para mostrar
+# o ENQUADRAMENTO, e enquadramento só aparece quando a proporção da peça é a de verdade.
+VISUAL_SQUARE_IMAGE = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+    "viewBox='0 0 1080 1080'%3E%3Cdefs%3E%3ClinearGradient id='s' x2='0' y2='1'"
+    "%3E%3Cstop stop-color='%23e3b878'/%3E%3Cstop offset='1' stop-color='%236b3a22'/%3E"
+    "%3C/linearGradient%3E%3C/defs%3E%3Crect width='1080' height='1080' fill='url(%23s)'/"
+    "%3E%3Ccircle cx='540' cy='540' r='300' fill='%23f4d7a3'/%3E%3Cpath d='M300 600"
+    "c130-320 310-320 440 0-100 160-340 160-440 0Z' fill='%239a582d'/%3E%3C/svg%3E"
+)
+VISUAL_WIDE_IMAGE = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+    "viewBox='0 0 1200 675'%3E%3Cdefs%3E%3ClinearGradient id='w' x2='0' y2='1'"
+    "%3E%3Cstop stop-color='%23d8ab6f'/%3E%3Cstop offset='1' stop-color='%23643520'/%3E"
+    "%3C/linearGradient%3E%3C/defs%3E%3Crect width='1200' height='675' fill='url(%23w)'/"
+    "%3E%3Ccircle cx='600' cy='330' r='190' fill='%23f4d7a3'/%3E%3Cpath d='M440 370"
+    "c80-200 240-200 320 0-60 100-260 100-320 0Z' fill='%239a582d'/%3E%3C/svg%3E"
+)
+
 
 def action(
     resource: str,
@@ -163,6 +182,29 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "rejected_reason": "A informação da fornada mudou." if status == "rejected" else "",
         "ai_suggestion_enabled": False,
     }
+
+
+def all_formats_announcement() -> dict:
+    """Um anúncio que sai nos quatro retratos ao mesmo tempo: Story, Feed, Atualização
+    do Google e mensagem de WhatsApp. É o cenário que prova a prévia em tamanho real."""
+    post = legacy_announcement()
+    post["platforms"] = ["instagram", "facebook", "google_business", "whatsapp"]
+    post["platform_content"] = {
+        "instagram": {
+            "publication_format": "story",
+            "image_url": VISUAL_STORY_IMAGE,
+        },
+        "facebook": {
+            "publication_format": "feed",
+            "image_url": VISUAL_SQUARE_IMAGE,
+        },
+        "google_business": {
+            "publication_format": "standard",
+            "image_url": VISUAL_WIDE_IMAGE,
+        },
+        "whatsapp": {"image_url": VISUAL_SQUARE_IMAGE},
+    }
+    return post
 
 
 def counts(**overrides: int) -> dict:
@@ -450,7 +492,10 @@ class Handler(BaseHTTPRequestHandler):
             if scenario == "login-expired":
                 self._send(401, {"detail": "Sua sessão terminou."})
                 return
-            pending = [] if scenario in {"board-empty", "board-normal"} else [legacy_announcement()]
+            if scenario == "board-all-formats":
+                pending = [all_formats_announcement()]
+            else:
+                pending = [] if scenario in {"board-empty", "board-normal"} else [legacy_announcement()]
             recent = [legacy_announcement(40, status="settled")] if scenario == "board-normal" else []
             reach_limits = []
             if scenario == "board-degraded":
@@ -520,7 +565,11 @@ class Handler(BaseHTTPRequestHandler):
                     {"value": "production_finished", "label": "Fornada concluída"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
-                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}, {"value": "whatsapp", "label": "WhatsApp"}],
+                # Google entra só no cenário dos quatro retratos: acrescentá-lo em todos
+                # mexeria numa pílula a mais em cada baseline que já existe.
+                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
+                + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
+                + [{"value": "whatsapp", "label": "WhatsApp"}],
                 "templates": [template()],
                 "variables": ["product_name", "link"],
                 "price_tiers": [{"value": "varejo", "label": "Varejo"}],
