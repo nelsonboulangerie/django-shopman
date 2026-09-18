@@ -1,6 +1,10 @@
 # ADR-032 — O limiar da cerimônia é proporcional à casa, e mede pessoas
 
-**Status:** Aceito em 2026-09-17
+**Status:** Aceito em 2026-09-17 · **emendada** por
+[ADR-033](adr-033-marketing-typed-phrase-follows-the-irreversible.md) em 2026-09-18: o
+limiar abaixo continua valendo inteiro, mas deixou de governar a FRASE digitada, que hoje
+é pedida sempre que sai mensagem direta. O limiar governa o resto — senha, autenticador,
+segunda pessoa.
 **Sucede:** [ADR-031](adr-031-marketing-ceremony-proportional-to-consequence.md), que
 mantém tudo o que disse sobre `fire`, `immediate` e agendamento. O que muda aqui são os
 dois números que ela deixou no código, e a grandeza que eles mediam.
@@ -87,6 +91,9 @@ Uma função por grandeza, e o nome diz qual:
 Daí:
 
 - **mensagem** — a cerimônia escala com o número de pessoas, pela regra acima;
+  > ⚠️ Emendado pela ADR-033: a FRASE passou a ser pedida sempre que sai mensagem, de uma
+  > pessoa em diante. O que escala com o número é o resto — senha a partir do limiar,
+  > autenticador e segunda pessoa a partir do múltiplo.
 - **postagem** — pede sempre só o resumo, qualquer que seja o número de plataformas;
 - **disparo misto** — manda a parte de mensagem, porque é a irreversível;
 - a obrigação de agendar acima de 2.000 passa a contar **mensagens**
