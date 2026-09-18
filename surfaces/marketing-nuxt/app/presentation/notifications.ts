@@ -8,12 +8,18 @@ export type NotificationActionKind =
   "open_announcement" | "mark_notification_seen" | "acknowledge_notification";
 
 // "Assumido" era *acknowledge* traduzido, e o gestor não assume plantão nenhum:
-// ele diz que viu. O rótulo passa a nomear QUEM marcou, que é a única diferença
-// real entre este estado e `seen` — lá quem marcou foi o app, ao abrir o painel.
+// ele diz que viu. A palavra da casa para esse gesto é **Visto**, e ela já vive
+// nos timers da Produção (`FloorTimersPanel`, `AlertsBell`), no botão e no estado.
+//
+// `seen` fica SEM rótulo de propósito. Ele não é um gesto de ninguém: é o app
+// registrando que mostrou o alerta ao abrir o painel. Dar a ele a mesma palavra
+// do gesto do operador seria um carimbo para dois estados; dar outra palavra
+// seria inventar vocabulário para uma informação que não decide nada. Sem chip,
+// "não é mais novo" se lê pela ausência do "Novo".
 const STATE_LABELS: Record<NotificationLifecycle, string> = {
   unseen: "Novo",
-  seen: "Visto",
-  acknowledged: "Você já viu",
+  seen: "",
+  acknowledged: "Visto",
   resolved: "Resolvido",
   expired: "Expirado",
 };
