@@ -21,7 +21,7 @@ _RETENTION_DAYS = 7
 
 
 class Command(BaseCommand):
-    help = "Remove links, códigos e aparelhos confiáveis após a retenção de segurança."
+    help = "Remove links, códigos e dispositivos confiáveis após a retenção de segurança."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -59,13 +59,13 @@ class Command(BaseCommand):
             self.stdout.write("DRY-RUN — nenhuma alteração; saída sem dados pessoais.")
             self.stdout.write(f"links_de_acesso={tokens_count}")
             self.stdout.write(f"codigos_de_verificacao={codes_count}")
-            self.stdout.write(f"aparelhos_confiaveis={devices_count}")
+            self.stdout.write(f"dispositivos_confiaveis={devices_count}")
             return
 
         tasks = (
             ("links_de_acesso", AccessLinkService.cleanup_expired_tokens),
             ("codigos_de_verificacao", AuthService.cleanup_expired_codes),
-            ("aparelhos_confiaveis", DeviceTrustService.cleanup),
+            ("dispositivos_confiaveis", DeviceTrustService.cleanup),
         )
         counts: dict[str, int] = {}
         failures: list[str] = []

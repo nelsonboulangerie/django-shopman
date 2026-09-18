@@ -54,7 +54,7 @@ def test_auth_cleanup_dry_run_uses_the_exact_seven_day_boundary(db) -> None:
     rendered = output.getvalue()
     assert "links_de_acesso=1" in rendered
     assert "codigos_de_verificacao=1" in rendered
-    assert "aparelhos_confiaveis=1" in rendered
+    assert "dispositivos_confiaveis=1" in rendered
 
 
 def test_auth_cleanup_dry_run_is_non_mutating_and_uses_pt_br_output(db) -> None:
@@ -101,4 +101,4 @@ def test_auth_cleanup_isolates_a_failure_and_finishes_the_other_steps(caplog) ->
     assert "segredo" not in str(caught.value)
     assert "segredo" not in caplog.text
     assert "codigos_de_verificacao=2" in output.getvalue()
-    assert "aparelhos_confiaveis=3" in output.getvalue()
+    assert "dispositivos_confiaveis=3" in output.getvalue()
