@@ -683,30 +683,25 @@ function askToReject() {
           <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
                quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
           <div class="grid gap-1.5 sm:flex sm:flex-wrap">
-            <label
+          <!-- ⚠️ `UiToggleChip` do kit: escolha múltipla desenhada como pílula, que é
+               o que estas sempre foram. Antes era um `<input type="checkbox">` `sr-only`
+               embrulhado num `<label>` pintado — semântica escondida num lugar, alvo de
+               toque noutro, e o desenho da seleção escrito à mão em cada tela.
+               O estado da plataforma ("não publica", "não verificada") continua na
+               pílula, passado como classe: ele conta ANTES do clique, e era por não
+               contar que a recusa só chegava depois de aprovar. -->
+            <UiToggleChip
               v-for="option in platformOptions"
               :key="option.value"
-              class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-              :class="[
-                platforms.includes(option.value)
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-muted',
-                readinessPillClass(readinessNote(option).tone),
-              ]"
+              :model-value="platforms.includes(option.value)"
+              :class="readinessPillClass(readinessNote(option).tone)"
               :data-readiness="readinessNote(option).tone"
+              @update:model-value="togglePlatform(option.value)"
             >
-              <!-- Checkbox nativo sr-only preserva a semântica enquanto a pílula amplia o alvo visual. -->
-              <input
-                type="checkbox"
-                class="sr-only"
-                :aria-label="option.label"
-                :checked="platforms.includes(option.value)"
-                @change="togglePlatform(option.value)"
-              />
               <Icon :name="platformIcon(option.value)" class="size-3.5" />
               {{ option.label }}
               <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
-            </label>
+            </UiToggleChip>
           </div>
           <p
             v-if="platforms.length === 0"

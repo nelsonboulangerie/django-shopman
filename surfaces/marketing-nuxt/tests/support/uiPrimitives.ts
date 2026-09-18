@@ -10,6 +10,7 @@ import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
 import UiSelect from "../../../operator-kit/app/components/UiSelect.vue";
 import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
+import UiToggleChip from "../../../operator-kit/app/components/UiToggleChip.vue";
 
 function invoke(listener: unknown, event: Event) {
   if (Array.isArray(listener)) {
@@ -98,4 +99,5 @@ config.global.components = {
   UiSelect,
   UiSwitch,
   UiTextarea,
+  UiToggleChip,
 };

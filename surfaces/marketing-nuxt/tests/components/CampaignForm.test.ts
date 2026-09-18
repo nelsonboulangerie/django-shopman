@@ -472,11 +472,14 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect(
       (restored.find("#rule-name").element as HTMLInputElement).value,
     ).toBe("Campanha em revisão");
+    // O chip é `role="checkbox"` com `aria-checked`, e não um botão com
+    // `aria-pressed`: escolher etiqueta é marcar item, não apertar um botão que fica
+    // apertado. O leitor de tela diz "marcada", que é o que a pessoa está fazendo.
     expect(
       restored
-        .findAll("button")
-        .find((button) => button.text() === "Sem glúten")!
-        .attributes("aria-pressed"),
+        .findAll('[role="checkbox"]')
+        .find((chip) => chip.text() === "Sem glúten")!
+        .attributes("aria-checked"),
     ).toBe("true");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
@@ -555,17 +558,21 @@ describe("CampaignForm — as escolhas são peças do kit", () => {
     ).toBe(true);
   });
 
-  // ⚠️ A pílula de plataforma NÃO é um `UiCheckbox`: ela é um chip cuja caixa inteira
-  // acende e que ainda carrega o estado da plataforma. O primitivo que ela pede — um
-  // `UiToggleChip` — não existe no kit, e enfiar o quadrado com rótulo ao lado no
-  // lugar dela seria trocar a peça certa por uma parecida. Até lá, ela fica onde está.
-  it("deixa a pílula de plataforma fora da conversão, e ela continua marcando", async () => {
+  // ⚠️ A pílula de plataforma é um `UiToggleChip`, não um `UiCheckbox`: ela é um chip
+  // cuja caixa inteira acende e que ainda carrega o estado da plataforma. Era um
+  // `<input type="checkbox" class="sr-only">` embrulhado num `<label>` pintado —
+  // semântica escondida num lugar, alvo de toque noutro.
+  it("a pílula de plataforma é um chip com ARIA de escolha, e marcar chega ao envio", async () => {
     const wrapper = form(makeRule({ platforms: [] }));
 
-    const pill = wrapper.find('input[type="checkbox"].sr-only');
-    expect(pill.exists()).toBe(true);
+    expect(wrapper.find('input[type="checkbox"].sr-only').exists()).toBe(false);
+    const pill = wrapper
+      .findAll('[role="checkbox"]')
+      .find((chip) => chip.text().includes("WhatsApp"))!;
+    expect(pill.attributes("aria-checked")).toBe("false");
 
-    await pill.setValue(true);
+    await pill.trigger("click");
+    expect(pill.attributes("aria-checked")).toBe("true");
     await wrapper.find("form").trigger("submit");
     const [payload] = wrapper.emitted("submit")![0] as [
       Record<string, unknown>,
