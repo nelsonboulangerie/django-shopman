@@ -278,7 +278,7 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("Imediata");
     expect(wrapper.text()).toContain("Estado da entrega");
     expect(wrapper.text()).toContain("Próxima ação");
-    expect(wrapper.text()).toContain("Tentar novamente 1 falha");
+    expect(wrapper.text()).toContain("Tentar de novo 1 falha");
     expect(wrapper.text()).toContain("Fuso e horário permitido");
     expect(wrapper.text()).toContain("Horário de São Paulo");
     expect(wrapper.text()).toContain(
@@ -432,7 +432,7 @@ describe("AnnouncementResultPanel", () => {
     const wrapper = panel();
     const actionButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Tentar novamente 1 falha"))!;
+      .find((button) => button.text().includes("Tentar de novo 1 falha"))!;
 
     await Promise.all([
       actionButton.trigger("click"),
