@@ -269,6 +269,16 @@ marketing-capacity: ## Gate local isolado: 200k candidatos + 20k targets, sem pr
 marketing-diagnose: ## Snapshot Marketing read-only/sem PII (receipt=UUID platform=... opcionais)
 	DJANGO_SETTINGS_MODULE="$${DJANGO_SETTINGS_MODULE:-config.settings_test}" PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(PYTHON) manage.py diagnose_marketing --json $(if $(receipt),--receipt $(receipt),) $(if $(platform),--platform $(platform),)
 
+# ⚠️ Este alvo exige o `.venv` — e recusa rodar sem ele em vez de cair no `python`
+# global. O artefato gerado depende da VERSÃO do pydantic (2.13 publica docstring de
+# dataclass como `description`; 2.12 não), então um interpretador fora do
+# `constraints.txt` escreve um contrato que o gate do CI recusa, sem erro nenhum na
+# hora. Numa worktree, onde não há `.venv`, era exatamente o que acontecia.
+marketing-client: ## Regera contrato, OpenAPI e cliente TS do Marketing (check=1 só confere)
+	@[ -x "$(PYTHON)" ] || { echo "marketing-client precisa do .venv (make install) ou de PYTHON=<caminho do venv>"; exit 1; }
+	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \
+	$(PYTHON) manage.py export_marketing_client $(if $(check),--check,)
+
 marketing-docs: ## Confere docs, rotas e probes de deploy do Marketing contra o HEAD
 	$(PYTHON) scripts/check_marketing_docs.py
 

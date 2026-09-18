@@ -528,10 +528,16 @@ class Handler(BaseHTTPRequestHandler):
                 "recent": recent,
                 "counters": {
                     "pending_decision_count": len(pending),
-                    "accepted_unconfirmed_targets_today": 1,
-                    "confirmed_targets_today": 13,
-                    "failed_final_targets_today": 0,
-                    "unknown_targets_open": 0,
+                    # Nove pessoas e quatro murais: o retrato existe para provar que o
+                    # Painel não volta a apresentar isso como "13 entregas".
+                    "confirmed_people_today": 9,
+                    "confirmed_posts_today": 4,
+                    "accepted_unconfirmed_people_today": 1,
+                    "accepted_unconfirmed_posts_today": 0,
+                    "failed_final_people_today": 0,
+                    "failed_final_posts_today": 0,
+                    "unknown_people_open": 0,
+                    "unknown_posts_open": 0,
                 },
             }, freshness=fresh))
             return
