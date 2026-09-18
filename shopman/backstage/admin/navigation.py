@@ -73,7 +73,7 @@ def get_sidebar_navigation(request):
     if orders_url:
         live_items.append(
             _item(
-                "Pedidos",
+                "Gestor de pedidos",
                 "receipt_long",
                 orders_url,
                 permission=_can_manage_orders,
@@ -97,11 +97,15 @@ def get_sidebar_navigation(request):
         live_items.append(_item("PDV", "point_of_sale", pos_url, permission=_can_operate_pos))
     kds_url = _kds_base_url()
     if kds_url:
-        live_items.append(_item("KDS", "tv", kds_url, permission=_can_operate_kds))
+        live_items.append(_item("Cozinha", "tv", kds_url, permission=_can_operate_kds))
     production_url = _production_base_url()
     if production_url:
         live_items.append(
             _item(
+                # "ao vivo" não é um segundo nome do app: é o que separa ESTE item
+                # (abre a superfície) do grupo "Produção" logo abaixo (fichas, ordens,
+                # insumos). Mesma razão pela qual o Gestor de pedidos não se chama só
+                # "Pedidos": o CRUD de pedidos tem grupo próprio com esse nome.
                 "Produção ao vivo",
                 "factory",
                 production_url,

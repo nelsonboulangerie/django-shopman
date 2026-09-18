@@ -14,7 +14,7 @@ const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("KDS");
+useOperatorWindowTitle();
 
 async function goToStations() {
   await navigateTo("/");
@@ -35,9 +35,6 @@ async function goToStations() {
         class="sticky top-0 flex h-screen shrink-0 print:hidden"
       >
         <OperatorRail
-          app-icon="chef-hat"
-          app-icon-src="/pwa/pwa-64x64.png?v=3"
-          app-label="Cozinha"
           :central-url="hubUrl"
           :operator-name="operator?.name"
           @lock="lock"

@@ -29,7 +29,7 @@ async function restoreAuthenticatedWorkspace() {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useOperatorWindowTitle("Gestor");
+useOperatorWindowTitle();
 </script>
 
 <template>
@@ -41,9 +41,6 @@ useOperatorWindowTitle("Gestor");
          fixo enquanto o conteúdo rola. Colapsado → não renderiza (some de verdade). -->
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
-        app-icon="square-kanban"
-        app-icon-src="/pwa/pwa-64x64.png?v=3"
-        app-label="Gestor"
         :central-url="hubUrl"
         :operator-name="operator?.name"
         @lock="lock"

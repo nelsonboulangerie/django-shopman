@@ -7,9 +7,6 @@ import type { HubFailure } from "~/presentation/hub";
 import type { HubTileProjection } from "~/types/hub";
 import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
 
-// O ícone do PWA da Central — a mesma família que cada tile mostra (PWA_ICONS.md).
-const HUB_ICON_SRC = "/pwa/pwa-64x64.png?v=3";
-
 // Como cada tile abre depende de a Central estar instalada (janela própria por app)
 // ou ser uma aba comum. A leitura é reativa: instalar com a tela aberta já muda o link.
 const { installed } = useOperatorAppLink();
@@ -19,7 +16,7 @@ const linkContext = computed(() => ({
 }));
 
 const apiPath = useApiPath();
-useOperatorWindowTitle("Central");
+useOperatorWindowTitle();
 
 const { tiles, operatorName, error, refresh } = await useOperatorHub();
 
@@ -65,8 +62,6 @@ function tileImageSrc(tile: HubTileProjection): string | null {
     <OperatorLogin
       v-if="needsLogin"
       mode="page"
-      icon="lucide:layout-grid"
-      :icon-src="HUB_ICON_SRC"
       :login-url="apiPath('/api/v1/backstage/operator/login/')"
       :title="sessionExpired ? 'Sua sessão expirou' : 'Central de Apps'"
       :description="
@@ -108,7 +103,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
         <!-- Rail canônico (kit). A Central é o launcher: sem botão "Central" (é a casa) e
              sem travar-operador. Só identidade + tema — a mesma espinha das outras. -->
         <div class="sticky top-0 flex h-dvh shrink-0">
-          <OperatorRail app-icon="layout-grid" :app-icon-src="HUB_ICON_SRC" app-label="Central" />
+          <OperatorRail />
         </div>
 
         <div class="flex min-w-0 flex-1 flex-col">

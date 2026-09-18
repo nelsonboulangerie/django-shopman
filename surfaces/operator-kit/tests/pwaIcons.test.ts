@@ -4,7 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { FAVICON_VERSION, OPERATOR_HEAD_LINKS } from "../pwa.config";
+import { FAVICON_VERSION, OPERATOR_HEAD_LINKS, resolveOperatorPwa } from "../pwa.config";
+import { OPERATOR_ASSET_VERSION, operatorAppIdentity } from "../appIdentity";
 
 // Varredura da FORMA dos ícones instalados das oito superfícies de operador
 // (PWA_ICONS.md, "Forma: quem arredonda o canto"). Windows/macOS/Linux desktop mostram
@@ -22,7 +23,7 @@ const OPERATOR_APPS = [
 ] as const;
 const ROUNDED = ["pwa-64x64.png", "pwa-192x192.png", "pwa-512x512.png"] as const;
 const FULL_BLEED = ["maskable-512x512.png", "apple-touch-icon-180x180.png"] as const;
-const ICON_VERSION = "?v=3";
+const ICON_VERSION = `?v=${OPERATOR_ASSET_VERSION}`;
 // sha256 do `public/favicon.ico` do template do Nuxt (o logo verde, 32×32). Os apps de
 // operador nasceram com ele e a aba mostrava o Nuxt em vez do app até 17/09/2026.
 const NUXT_DEFAULT_FAVICON_SHA256 = "1057b17aec08a7191d134000203947f195a8aa7c84c39f1164cee8d01279762a";
@@ -49,10 +50,14 @@ describe.each(OPERATOR_APPS)("ícones PWA de %s", (app) => {
   });
 
   it(`manifesto aponta os ícones com ${ICON_VERSION} (o SO só relê ícone com URL nova)`, () => {
+    // Os três ícones são os mesmos em todo app e saem da capability, não do `nuxt.config`
+    // — antes cada config listava os três e a versão envelhecia num app só.
+    const icons = resolveOperatorPwa({ app: app.replace(/-nuxt$/, "") as never, display: "standalone" })
+      .manifest.icons;
+    expect(icons.length).toBeGreaterThan(0);
+    for (const icon of icons) expect(icon.src).toContain(ICON_VERSION);
     const config = readFileSync(resolve(surfacesDir, app, "nuxt.config.ts"), "utf8");
-    const iconUrls = config.match(/\/pwa\/[\w-]+\.png\?v=\d+/g) || [];
-    expect(iconUrls.length).toBeGreaterThan(0);
-    for (const url of iconUrls) expect(url).toContain(ICON_VERSION);
+    expect(config, `${app} voltou a escrever ícone à mão`).not.toMatch(/\/pwa\/[\w-]+\.png/);
   });
 });
 
@@ -77,11 +82,15 @@ async function rgbaAt(image: Buffer, x: (size: number) => number, y: (size: numb
   return [...data.subarray(start, start + 4)];
 }
 
+/**
+ * A cor do ÍCONE, lida da identidade canônica — a mesma que pinta a barra de título do
+ * app instalado. Este teste renderiza o PNG e confere que ele saiu nessa cor: se alguém
+ * mudar a cor na tabela e esquecer de rodar `pwa:assets`, o ícone e a janela divergem e
+ * reprova aqui.
+ */
 function backgroundOf(app: string): number[] {
-  const scripts = JSON.parse(readFileSync(resolve(surfacesDir, app, "package.json"), "utf8")).scripts;
-  const hex = /--background=#([0-9A-Fa-f]{6})/.exec(scripts["pwa:assets"])?.[1];
-  expect(hex, `${app} declara --background no pwa:assets`).toBeTruthy();
-  return [0, 2, 4].map((start) => Number.parseInt(hex!.slice(start, start + 2), 16));
+  const hex = operatorAppIdentity(app.replace(/-nuxt$/, "")).color.replace("#", "");
+  return [0, 2, 4].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));
 }
 
 // A aba do navegador mostra a identidade do app (PWA_ICONS.md, "Favicon da aba"): a

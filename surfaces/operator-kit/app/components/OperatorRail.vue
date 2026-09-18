@@ -12,17 +12,31 @@
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
 import { computed, ref } from "vue";
 
+interface OperatorRailIdentity { label: string; icon: string; iconSrc: string }
+
 const props = defineProps<{
-  /** Ícone forte do app (DS §6), com ou sem `lucide:`. Fallback quando `appIconSrc` falta ou falha. */
-  appIcon: string;
-  /** O ícone REAL do app — o PNG da família PWA (`/pwa/pwa-64x64.png?v=3`, ver PWA_ICONS.md). */
+  /**
+   * Ícone forte do app (DS §6), com ou sem `lucide:`. Recurso para quando o PNG falha.
+   * Omitido → vem da identidade canônica do app (`app-identity.json`).
+   */
+  appIcon?: string;
+  /** O ícone REAL do app — o PNG da família PWA. Omitido → vem da identidade canônica. */
   appIconSrc?: string;
-  appLabel: string;
+  /** Rótulo do app. Omitido → vem da identidade canônica. */
+  appLabel?: string;
   /** URL da Central (launcher). Omitido na própria Central → some o item. */
   centralUrl?: string;
   /** Operador ativo — mostra o item de travar/trocar; emite `lock` ao acionar. */
   operatorName?: string;
 }>();
+
+// A identidade do app (rótulo, PNG, ícone de recurso) sai de `app-identity.json` pela
+// capability PWA e chega aqui pelo `runtimeConfig`. Cada app escrevia os três à mão no
+// próprio `app.vue`, e foi assim que a Cozinha ficou "Cozinha" no rail e "KDS" na
+// janela. As props seguem aceitas para o app sem a capability (harness de teste).
+const identity = (useRuntimeConfig().public?.operatorPwa as { identity?: OperatorRailIdentity } | undefined)?.identity;
+const label = computed(() => props.appLabel || identity?.label || "");
+const iconSrc = computed(() => props.appIconSrc || identity?.iconSrc);
 
 const emit = defineEmits<{ lock: [] }>();
 
@@ -55,12 +69,15 @@ async function toggleOrientation() {
   else useSonner.warning(result.message);
 }
 
-const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.appIcon : `lucide:${props.appIcon}`));
+const appIconName = computed(() => {
+  const icon = props.appIcon || identity?.icon || "layout-grid";
+  return icon.startsWith("lucide:") ? icon : `lucide:${icon}`;
+});
 
 // Imagem que não carregou (build sem a família, cache velho) cai no Lucide — o rail
 // nunca fica com um quadrado vazio no lugar da identidade.
 const appIconBroken = ref(false);
-const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.value);
+const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.value);
 </script>
 
 <template>
@@ -70,7 +87,7 @@ const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.
     v-if="!isCollapsed"
     class="flex shrink-0 flex-col bg-rail py-2 text-rail-foreground print:hidden"
     :class="isExtended ? 'w-52 px-2' : 'w-14 items-center px-1.5'"
-    :aria-label="`Barra do app ${appLabel}`"
+    :aria-label="`Barra do app ${label}`"
     :data-rail-state="state"
   >
     <!-- Identidade + voltar à Central (padrão Odoo): o ícone forte do app é também o
@@ -98,7 +115,7 @@ const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.
       >
         <img
           v-if="showAppImage"
-          :src="appIconSrc"
+          :src="iconSrc"
           class="size-11 rounded-md"
           :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
           alt=""
@@ -119,15 +136,15 @@ const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.
       </span>
       <span v-if="isExtended" class="truncate text-sm font-semibold">
         <template v-if="centralUrl">
-          <span class="group-hover:hidden group-focus-visible:hidden">{{ appLabel }}</span>
+          <span class="group-hover:hidden group-focus-visible:hidden">{{ label }}</span>
           <span class="hidden group-hover:inline group-focus-visible:inline">Central</span>
         </template>
-        <template v-else>{{ appLabel }}</template>
+        <template v-else>{{ label }}</template>
       </span>
     </component>
 
     <!-- Funções específicas do app (RailItem no slot). -->
-    <nav class="flex w-full flex-col gap-0.5" :aria-label="`Funções do app ${appLabel}`">
+    <nav class="flex w-full flex-col gap-0.5" :aria-label="`Funções do app ${label}`">
       <slot name="nav" />
     </nav>
 

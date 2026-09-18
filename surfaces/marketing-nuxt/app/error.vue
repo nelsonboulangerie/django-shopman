@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
 
 // O Nuxt renderiza o error.vue NO LUGAR do app.vue: o template do título tem
 // que ser instalado aqui também, senão a janela perde o nome do app.
-useOperatorWindowTitle("Marketing");
+useOperatorWindowTitle();
 useHead({ title: presentation.value.title });
 </script>
 

@@ -53,6 +53,51 @@ ATTENDED = "attended"
 #: loja lhe conceder, e recusar superusuário aqui é regra, não recomendação.
 AUTONOMOUS = "autonomous"
 
+#: A ÚNICA superfície onde uma estação autônoma age: a API de Produção.
+#:
+#: ⚠️ Isto é o controle de segurança, não um enfeite — e o motivo é o cookie.
+#: ``SHOPMAN_OPERATOR_COOKIE_DOMAIN`` é ``.boulangerie.com.br``: o cookie de
+#: confiança tem nome por terminal, mas o DOMÍNIO é o pai. O mesmo tablet que é
+#: kiosk de Produção, ao abrir ``pdv.boulangerie.com.br``, leva o cookie junto —
+#: e sem esta trava ``_operador()`` resolveria a conta do totem lá também, dando
+#: as permissões dela no balcão. É a forma exata do buraco de 20/08 que este
+#: módulo existe para fechar: identidade trocada, cookie válido no domínio
+#: inteiro.
+#:
+#: **Por que o PREFIXO DE ROTA e não outra coisa.** Este é o único discriminador
+#: que o SERVIDOR possui e o cliente não pode afirmar sobre si: é a MESMA string
+#: que o roteador do Django usou para escolher a view que está rodando. Se o
+#: caminho começa por aqui, quem responde é uma view de Produção — isso se
+#: confere lendo ``shopman/backstage/api/urls.py``, e um teste de varredura
+#: prende as duas pontas. O host servido não serve (todas as superfícies falam
+#: com ``api.boulangerie.com.br``, e Host é cabeçalho do cliente); um cabeçalho
+#: posto pelo BFF não serve (o navegador alcança a API direto e o forja).
+#:
+#: **Por que só Produção, e por que NÃO existe aqui um campo genérico de
+#: superfície.** Cada superfície a mais é uma conta com poder permanente num
+#: aparelho físico, num prédio onde qualquer pessoa alcança o aparelho. O KDS
+#: tem gente na frente (a decisão de 17/09 foi trava por ociosidade + sessão de
+#: operador deslizante, que é o caminho ATENDIDO); o PDV mexe em dinheiro.
+#: Estender esta lista é revisão de segurança própria, com o dono, não uma
+#: constante a mais.
+PRODUCTION_API_PREFIX = "/api/v1/backstage/production/"
+
+
+def is_production_surface(request) -> bool:
+    """A requisição é da superfície de Produção? Falha FECHADO.
+
+    Superfície que não reconhecemos = atendida = pede PIN. Um caminho vazio, um
+    request de teste sem ``path_info``, uma rota nova que ninguém pensou em
+    conferir: todos caem do lado seguro, que é o lado onde o totem não age.
+
+    Compara ``path_info`` (não ``path``) porque é contra ele que o Django
+    resolve a URL: se o projeto ganhasse um ``SCRIPT_NAME``, ``path`` teria o
+    prefixo de montagem e ``path_info`` continuaria sendo o que casou o padrão.
+    Comparar a string que NÃO decide o despacho seria comparar outra pergunta.
+    """
+    caminho = getattr(request, "path_info", "") or getattr(request, "path", "") or ""
+    return str(caminho).startswith(PRODUCTION_API_PREFIX)
+
 
 def station_cookie_name(terminal_ref: str) -> str:
     """O nome do cookie de estação daquele terminal — uma pergunta, um dono.
@@ -138,22 +183,47 @@ def _station_config(terminal_ref: str) -> dict:
     return bloco if isinstance(bloco, dict) else {}
 
 
-def station_mode(request) -> str:
-    """``ATTENDED`` ou ``AUTONOMOUS`` para a estação desta requisição.
+def terminal_mode(terminal_ref: str) -> str:
+    """``ATTENDED`` ou ``AUTONOMOUS`` para AQUELE terminal.
 
-    Sem estação, ou com um valor que não reconhecemos, a resposta é ``ATTENDED``.
-    O default fecha a porta: um modo escrito errado no Admin não pode transformar
+    Sem terminal, ou com um valor que não reconhecemos, a resposta é ``ATTENDED``.
+    O default fecha a porta: um modo escrito errado no JSON não pode transformar
     um balcão em dispositivo que age sozinho.
     """
-    ref = station_ref(request)
-    if not ref:
+    if not terminal_ref:
         return ATTENDED
-    modo = str(_station_config(ref).get("mode") or "").strip().lower()
+    modo = str(_station_config(terminal_ref).get("mode") or "").strip().lower()
     return AUTONOMOUS if modo == AUTONOMOUS else ATTENDED
 
 
-def station_operator(request):
-    """A conta em cujo nome uma estação AUTÔNOMA age, ou ``None``.
+def station_mode(request) -> str:
+    """``ATTENDED`` ou ``AUTONOMOUS`` para a estação desta requisição."""
+    return terminal_mode(station_ref(request))
+
+
+def eligible_station_operators():
+    """As contas que ``autonomous_operator_for`` ACEITA — a mesma pergunta, em lista.
+
+    Existe para o Admin não oferecer o que o servidor vai recusar. Os três
+    filtros são os mesmos, na mesma ordem de importância: da casa (``is_staff``),
+    ligada (``is_active``) e **nunca superusuária** — ver
+    ``autonomous_operator_for`` para o porquê do terceiro.
+
+    Uma função só, dois consumidores, para que a tela não possa contradizer o
+    gate. Quando as duas listas saem de lugares diferentes, elas divergem — e a
+    divergência aparece como "salvei e não funciona", sem nada escrito em tela.
+    """
+    from django.contrib.auth import get_user_model
+
+    return list(
+        get_user_model()
+        .objects.filter(is_active=True, is_staff=True, is_superuser=False)
+        .order_by("username")
+    )
+
+
+def autonomous_operator_for(terminal_ref: str):
+    """A conta em cujo nome AQUELE terminal age, ou ``None``.
 
     Tudo aqui falha fechado, e cada recusa tem uma razão vivida:
 
@@ -167,13 +237,17 @@ def station_operator(request):
       aba ao lado. Um totem com chave-mestra é o mesmo defeito com outro nome.
 
     O que a conta PODE fazer não se decide aqui: são as permissões que a loja lhe
-    conceder. Enquanto a superfície do totem não existir, ela não precisa de
-    nenhuma — e o gate já a trata como qualquer operador sem permissão.
+    conceder.
+
+    ⚠️ Esta função responde sobre o TERMINAL, não sobre a requisição: ela não
+    sabe de que superfície o pedido veio, e por isso não pode ser o gate. Quem
+    fecha a porta da superfície é ``station_operator`` logo abaixo. O Admin usa
+    esta aqui justamente porque quer saber o que está CONFIGURADO, e mostrar
+    isso ao lado do campo que o resolve.
     """
-    ref = station_ref(request)
-    if not ref or station_mode(request) != AUTONOMOUS:
+    if terminal_mode(terminal_ref) != AUTONOMOUS:
         return None
-    username = str(_station_config(ref).get("operator") or "").strip()
+    username = str(_station_config(terminal_ref).get("operator") or "").strip()
     if not username:
         return None
 
@@ -187,10 +261,35 @@ def station_operator(request):
     if conta.is_superuser:
         logger.error(
             "Estação autônoma aponta para conta SUPERUSUÁRIA — recusada.",
-            extra={"station": ref, "account": username},
+            extra={"station": terminal_ref, "account": username},
         )
         return None
     return conta
+
+
+def station_operator(request):
+    """A conta em cujo nome uma estação AUTÔNOMA age NESTA requisição, ou ``None``.
+
+    Duas perguntas, nesta ordem, e a primeira é a trava de superfície:
+
+    1. **a requisição é da Produção?** Se não, ``None`` — e o balcão, o KDS e
+       qualquer rota que não seja de Produção seguem pedindo PIN, ainda que o
+       cookie de estação autônoma esteja ali. Ver ``PRODUCTION_API_PREFIX`` para
+       o porquê: o cookie vale no domínio inteiro, então sem esta linha a conta
+       do totem operaria no PDV na aba ao lado.
+    2. **o terminal está declarado autônomo, com uma conta que o servidor
+       aceita?** Se não, ``None``.
+
+    A trava vem PRIMEIRO de propósito. É a única barreira que não depende de
+    configuração da loja estar certa: mesmo com o JSON perfeito e a conta
+    perfeita, fora da Produção a resposta é ``None``.
+    """
+    if not is_production_surface(request):
+        return None
+    ref = station_ref(request)
+    if not ref:
+        return None
+    return autonomous_operator_for(ref)
 
 
 @transaction.atomic

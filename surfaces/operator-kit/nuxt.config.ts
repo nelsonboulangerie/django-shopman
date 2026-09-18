@@ -47,6 +47,18 @@ export default defineNuxtConfig({
       // URL do Produção (production-nuxt) — links cross-app "resolver na produção"
       // (ex.: fechamento do dia com ordens abertas). Dev: :3005; prod: prod.<zona>.
       productionUrl: process.env.NUXT_PUBLIC_PRODUCTION_URL || "http://127.0.0.1:3005/",
+      // A antessala deste app ("estou travado? quem está operando?"). O padrão é a
+      // compartilhada, e ele serve a todo app de operador ATENDIDO.
+      //
+      // ⚠️ NÃO é env, e não é preferência: é o outro lado de uma trava de servidor.
+      // Uma estação AUTÔNOMA (painel de parede da Produção, sem ninguém para digitar
+      // PIN) só tem a conta dela resolvida sob `/api/v1/backstage/production/` — o
+      // cookie de estação vale no domínio inteiro, e essa é a única barreira que
+      // impede a conta do painel de virar operador no PDV da aba ao lado (ver
+      // `shopman/backstage/station_trust.py`). Por isso a Produção aponta esta
+      // chave para a antessala DELA; um app que não é a Produção não tem por que
+      // mexer aqui, e mexer não lhe dá nada — quem decide é o servidor.
+      operatorSessionPath: "/api/v1/backstage/operator/session/",
     },
   },
 });

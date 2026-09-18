@@ -20,7 +20,7 @@ function applyShortcutView(value: unknown) {
 applyShortcutView(route.query.view);
 watch(() => route.query.view, applyShortcutView);
 
-useOperatorWindowTitle("Compras");
+useOperatorWindowTitle();
 </script>
 
 <template>
@@ -29,9 +29,6 @@ useOperatorWindowTitle("Compras");
     <OfflineBanner />
     <div v-if="canIdentify" class="sticky top-0 hidden h-screen shrink-0 print:hidden md:flex">
       <OperatorRail
-        app-icon="package"
-        app-icon-src="/pwa/pwa-64x64.png?v=3"
-        app-label="Compras"
         :central-url="hubUrl"
         :operator-name="operator?.name"
         @lock="lock"

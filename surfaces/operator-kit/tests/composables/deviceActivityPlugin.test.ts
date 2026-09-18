@@ -1,4 +1,4 @@
-// O plugin da layer registra todo toque real no relógio do aparelho — sem que
+// O plugin da layer registra todo toque real no relógio do dispositivo — sem que
 // nenhum app monte componente. Roda no runtime Nuxt de verdade (o kit é a raiz
 // do projeto de teste, então o plugin `deviceActivity.client.ts` está carregado).
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe("plugin deviceActivity.client", () => {
   it.each(["pointerdown", "keydown", "wheel", "touchstart", "pointermove"])(
-    "%s em qualquer app de operador marca o relógio do aparelho",
+    "%s em qualquer app de operador marca o relógio do dispositivo",
     (event) => {
       clearClock();
       expect(deviceActivity()).toBeNull();

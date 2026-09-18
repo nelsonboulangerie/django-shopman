@@ -115,6 +115,11 @@ export function installNuxtGlobals(): ComposableEnv {
       // Estado compartilhado é por-app em runtime; entre testes ele tem que morrer,
       // senão uma estação travada num teste vaza travada para o seguinte.
       env.states.clear();
+      // O runtime config é FIXO por app em produção — um teste que o ajusta está
+      // simulando OUTRO app, e deixá-lo de pé faria o seguinte medir esse outro
+      // sem saber. Vale para o `operatorSessionPath`, que é a antessala do app.
+      env.runtimeConfig.app = { baseURL: "/" };
+      env.runtimeConfig.public = { djangoBaseUrl: "" };
     },
   };
 

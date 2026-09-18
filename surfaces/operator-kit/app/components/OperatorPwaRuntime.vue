@@ -4,7 +4,6 @@ interface OperatorPwaRuntimeConfig {
   kiosk?: boolean;
   wakeLock?: boolean;
   idleReloadPaths?: string[];
-  manifest?: { name?: string };
   push?: { surfaceRef?: string };
 }
 
@@ -45,7 +44,7 @@ const autoUpdate = usePwaAutoUpdate({
 
 <template>
   <ClientOnly v-if="enabled && showPrompts">
-    <OperatorPwaInstallInvite :app="config.app!" :app-name="config.manifest?.name || 'Shopman'" />
+    <OperatorPwaInstallInvite :app="config.app!" />
     <!-- Aplicando sozinho, o aviso sairia da tela no mesmo instante em que ela
          recarrega: pisca sem ninguém para ler. -->
     <OperatorPwaUpdatePrompt v-if="!autoUpdate.applying.value" />

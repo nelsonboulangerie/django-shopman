@@ -116,7 +116,7 @@ const PAD_ADD =
           ></UiDialogTitle
         >
         <UiDialogDescription
-          >Lembretes deste aparelho — fermentação, descanso, o que for. Não
+          >Lembretes deste dispositivo — fermentação, descanso, o que for. Não
           travam nada.</UiDialogDescription
         >
       </UiDialogHeader>

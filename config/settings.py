@@ -1852,6 +1852,10 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {
+            # A mesma barreira do JSON vale para o log legível: o formatter de
+            # produção redigia PII e o de desenvolvimento não, então bastava
+            # rodar sem `SHOPMAN_JSON_LOGS` para o dado sair em claro.
+            "()": "shopman.shop.logging.PrivacySafeFormatter",
             "format": "{levelname} {asctime} {name} {message}",
             "style": "{",
         },

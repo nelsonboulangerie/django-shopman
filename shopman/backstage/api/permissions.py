@@ -24,6 +24,14 @@ aparece; sem uma pessoa identificada, nenhuma leitura passa.
   com uma conta declarada no ``Terminal.metadata`` e cujas permissões são dados
   do deployment. Continua valendo que o dispositivo não concede nada: quem concede é
   a conta, e o gate a trata como trata qualquer operador.
+
+  ⚠️ E ela só age na superfície de **Produção**. O cookie de estação vale em
+  ``.boulangerie.com.br`` inteiro, então o mesmo tablet que é kiosk de Produção
+  leva a confiança para o PDV na aba ao lado. A trava de superfície vive em
+  ``station_trust.is_production_surface``, roda dentro de ``station_operator`` —
+  por onde todo caminho passa — e é o que impede a conta do totem de virar
+  operador no balcão. Sem ela, a estação autônoma reabriria o buraco de 20/08
+  com outro nome.
 """
 
 from __future__ import annotations

@@ -110,9 +110,10 @@ export const gestorAttentionStorageKey = (serviceDay: string) =>
 export function useOrdersBoard() {
   const intentions = useOrderIntention();
   const config = useRuntimeConfig();
-  // O título que pisca também começa pelo nome do app instalado ("Nelson · Gestor"):
-  // sem ele o Chrome prefixa "<nome> - " na barra da janela a cada troca.
-  const appName = useOperatorAppName("Gestor");
+  // O título que pisca também começa pelo nome do app instalado ("Nelson · Gestor de
+  // pedidos"): sem ele o Chrome prefixa "<nome> - " na barra da janela a cada troca.
+  // O rótulo vem da identidade canônica; escrevê-lo aqui criava um segundo nome.
+  const appName = useOperatorAppName();
   const path = "/api/v1/backstage/orders/";
 
   // Antes do destravamento por PIN toda leitura volta 403 `station_locked`, e o

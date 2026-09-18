@@ -1,7 +1,7 @@
 import type {
-  OperatorPwaCapabilityOptions,
   OperatorPwaIcon,
   OperatorPwaShortcut,
+  ResolvedOperatorPwa,
 } from "../../pwa.config";
 import { operatorAppName, type OperatorAppName } from "../../app/presentation/windowTitle";
 
@@ -33,7 +33,7 @@ export function operatorPwaShortcuts(shortcuts: OperatorPwaShortcut[] = []) {
  * um do outro ("Nelson · Pro…"). Desktop (macOS/Windows/ChromeOS) mostra o `name`.
  */
 export function buildOperatorManifest(
-  options: OperatorPwaCapabilityOptions,
+  options: ResolvedOperatorPwa,
   appName: OperatorAppName = operatorAppName("", options.manifest.label),
 ) {
   return {

@@ -292,7 +292,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                 class="max-h-72 w-auto rounded-md border object-contain"
               />
               <p class="text-xs text-muted-foreground">
-                A foto é reduzida neste aparelho antes de subir (até 1600 px no maior lado).
+                A foto é reduzida neste dispositivo antes de subir (até 1600 px no maior lado).
               </p>
               <div class="flex flex-wrap items-end gap-3">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">

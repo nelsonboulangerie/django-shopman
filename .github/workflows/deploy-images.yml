@@ -57,8 +57,25 @@ env:
   # que reaplicar o spec anterior (8 services) suba a versão atual e não uma
   # velha. Desligar depois de 14 dias de prova dos grupos no ar (sem
   # RESTART_COUNT, SSE de KDS/PDV reconectando): trocar para "false" num PR,
-  # e só então apagar as tags por app do registry. Aplicado em: ____ (preencher
-  # no dia do `apps update`); desligar a partir de: aplicado + 14 dias.
+  # e só então apagar as tags por app do registry.
+  #
+  # Aplicado em: 2026-09-17 (15:54 UTC) · desligar a partir de: 2026-10-01.
+  #
+  # A data não foi preenchida no dia e foi RECONSTITUÍDA do App Platform, que
+  # guarda o que aconteceu. Ela se apoia em dois fatos e na emenda entre eles:
+  #
+  #   · a ÚLTIMA implantação causada por tag POR APP foi 17/09 15:43:27 UTC;
+  #   · a implantação de spec seguinte foi 17/09 15:54:05 UTC;
+  #   · depois dela, nenhuma tag por app voltou a causar implantação — nunca.
+  #
+  # Uma tag só dispara implantação se o spec a referencia. Logo o spec de
+  # 15:54:05 é o que tirou os 8 services por app do ar, e é dele que o prazo
+  # conta. (Havia specs às 16:07 e 17:14 do mesmo dia; nenhuma muda o dia.)
+  #
+  # ⚠️ O prazo mede o ar, não o calendário: os 14 dias são de PROVA. Chegando
+  # 01/10, confirme o que a linha de cima pede antes de desligar — o alerta
+  # RESTART_COUNT está armado nos dois services de grupo (conferido em 18/09) e
+  # é ele que responde a primeira metade.
   OPERATOR_PER_APP_IMAGES: "true"
 
 jobs:

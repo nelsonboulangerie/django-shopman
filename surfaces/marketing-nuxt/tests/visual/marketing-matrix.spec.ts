@@ -11,6 +11,10 @@ const V1024: Viewport = { width: 1024, height: 768, label: "1024x768" };
 const V1280: Viewport = { width: 1280, height: 800, label: "1280x800" };
 const V1440: Viewport = { width: 1440, height: 900, label: "1440x900" };
 
+// Mesmo instante que `FIXED_NOW` do mock hermético (2026-09-10T10:30:00-03:00),
+// para que a tela e o backend contem a mesma hora.
+const VISUAL_NOW = new Date("2026-09-10T13:30:00Z");
+
 async function openScenario(
   page: Page,
   scenario: string,
@@ -27,12 +31,19 @@ async function openScenario(
       path: "/",
     },
   ]);
+  // O relógio do navegador é congelado no mesmo instante que o backend hermético
+  // declara em FIXED_NOW. Tem que ser `clock.setFixedTime`, não `Date.now = ...`:
+  // trocar só `Date.now` deixa `new Date()` lendo o relógio da máquina, e qualquer
+  // tela que formate hora absoluta (o aviso de throttle é a nossa) entra no retrato
+  // com a hora em que o teste rodou — baseline que nasce vencida e derruba a fila
+  // de merge no dia seguinte. `setFixedTime` cobre construtor e `Date.now`, e
+  // deixa os timers correndo (o "Contando…" continua chegando por conta própria).
+  await page.clock.setFixedTime(VISUAL_NOW);
   await page.addInitScript(
-    ({ selectedTheme, now }) => {
+    ({ selectedTheme }) => {
       localStorage.setItem("marketing-nuxt-color-mode", selectedTheme);
-      Date.now = () => now;
     },
-    { selectedTheme: theme, now: Date.parse("2026-09-10T13:30:00Z") },
+    { selectedTheme: theme },
   );
   await page.emulateMedia({
     colorScheme: theme,

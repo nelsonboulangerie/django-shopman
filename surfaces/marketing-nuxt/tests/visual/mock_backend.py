@@ -921,6 +921,16 @@ def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9011
     server = QuietServer(("127.0.0.1", port), Handler)
     print(f"marketing visual mock listening on {port}", flush=True)
+    # ⚠️ A matriz visual crava a hora da PÁGINA em VISUAL_NOW e conta com o backend
+    # declarando o MESMO instante em FIXED_NOW — o aviso de throttle desenha hora de
+    # parede DENTRO da imagem. Com o relógio vivo os dois discordam e retratos
+    # reprovam sem que o diff tenha nada a ver. Quem ligou tem que ver isto.
+    if _DESLOCAMENTO is not None:
+        print(
+            "⚠️  relógio VIVO (MARKETING_MOCK_LIVE_CLOCK=1): serve para o preview local. "
+            "NÃO rode a matriz visual contra este processo — ela espera o relógio fixo.",
+            flush=True,
+        )
     server.serve_forever()
 
 

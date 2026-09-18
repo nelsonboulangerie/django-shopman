@@ -141,7 +141,7 @@ describe("OperatorRail — trava de giro", () => {
     expect(wrapper.get("[data-orientation-lock]").attributes("aria-pressed")).toBe("true");
   });
 
-  it("aparelho que recusa: aviso honesto e o controle continua oferecendo travar", async () => {
+  it("dispositivo que recusa: aviso honesto e o controle continua oferecendo travar", async () => {
     Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 });
     Object.defineProperty(screen, "orientation", {
       configurable: true,
@@ -152,7 +152,7 @@ describe("OperatorRail — trava de giro", () => {
 
     await wrapper.get("[data-orientation-lock]").trigger("click");
     await vi.waitFor(() => expect(sonner.warning).toHaveBeenCalledWith(
-      "Este aparelho não deixa o app travar o giro — use o bloqueio de rotação do sistema.",
+      "Este dispositivo não deixa o app travar o giro — use o bloqueio de rotação do sistema.",
     ));
     expect(sonner.success).not.toHaveBeenCalled();
     expect(wrapper.get("[data-orientation-lock]").attributes("aria-pressed")).toBe("false");
