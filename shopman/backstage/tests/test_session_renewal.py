@@ -1,4 +1,4 @@
-"""Sessão de operador: renova com o uso, expira após 7 dias parada, Admin intocado.
+"""Renovação de sessão: as duas valem enquanto são usadas — operador (7 dias) e Admin (14).
 
 Decisão do dono (17/09/2026). O relógio não é congelado: o teste escreve na própria
 sessão o prazo que "sobrou" (``set_expiry``) e observa o que a requisição seguinte
@@ -22,8 +22,8 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from shopman.doorman.models import PinCredential
 
-from shopman.backstage.middleware import OperatorSessionRenewalMiddleware
-from shopman.backstage.services import operator_session
+from shopman.backstage.middleware import SessionRenewalMiddleware
+from shopman.backstage.services import admin_session, operator_session
 from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Channel, Shop
 
@@ -206,29 +206,101 @@ class OperatorSessionRenewalTests(TestCase):
 
 
 @override_settings(ALLOWED_HOSTS=["*"], SHOPMAN_ADMIN_REQUIRE_2FA=False)
-class AdminSessionIsUntouchedTests(TestCase):
+class AdminSessionRenewsWithUseTests(TestCase):
+    """A sessão do Admin também vale enquanto é usada.
+
+    Esta classe afirmava o CONTRÁRIO: que usar o Admin um dia antes do
+    vencimento não mudava nada. Era a queixa do dono escrita como garantia — a
+    decisão de 17/09 tratou a zona de operador e deixou o Admin com o default do
+    Django (14 dias do login, sem renovação), que é justamente o corte seco de
+    duas em duas semanas de que ele reclamava. O NÚMERO segue 14 dias; o que
+    muda é o ponto de partida, que passa a ser o último uso.
+    """
+
     def setUp(self):
         Shop.objects.create(name="Test Shop", brand_name="Test")
         User.objects.create_superuser("dono", "dono@example.com", "segredo123")
 
-    def test_admin_login_keeps_the_django_default_and_is_never_renewed(self):
+    def _login(self) -> str:
         resp = self.client.post("/admin/login/", {"username": "dono", "password": "segredo123", "next": "/admin/"})
         self.assertEqual(resp.status_code, 302)
-        key = self.client.cookies[settings.SESSION_COOKIE_NAME].value
+        return self.client.cookies[settings.SESSION_COOKIE_NAME].value
 
+    def _set_remaining(self, key: str, seconds: int) -> None:
+        """A sessão chega à requisição com ``seconds`` de prazo — como se o tempo tivesse passado."""
         store = _session_store(key)
+        store.set_expiry(timedelta(seconds=seconds))
+        store.save()
+
+    # ── nascimento ──────────────────────────────────────────────────────────
+
+    def test_admin_login_still_starts_with_the_django_default(self):
+        # O login continua sendo o do Django: não marca e não escreve prazo.
+        store = _session_store(self._login())
         self.assertIsNone(store.get(operator_session.SESSION_MARKER))
-        self.assertIsNone(store.get("_session_expiry"))
-        self.assertEqual(store.get_expiry_age(), settings.SESSION_COOKIE_AGE)
+        self.assertIsNone(store.get(admin_session.SESSION_EXPIRY_KEY))
 
-        # Um dia antes de a sessão do Admin vencer, ela é usada — no Admin e na API.
-        almost_gone = timezone.now() + timedelta(days=1)
-        Session.objects.filter(session_key=key).update(expire_date=almost_gone)
+    def test_the_first_admin_request_plants_the_clock(self):
+        # Sem a chave `_session_expiry`, `get_expiry_age()` devolveria o número
+        # do settings para sempre e a renovação seria letra morta. A primeira
+        # requisição planta o relógio — inclusive em sessão aberta antes disto.
+        key = self._login()
 
-        for path in ("/admin/", ORDERS):
-            used = self.client.get(path)
-            self.assertNotIn(settings.SESSION_COOKIE_NAME, used.cookies, path)
-            self.assertEqual(Session.objects.get(session_key=key).expire_date, almost_gone, path)
+        resp = self.client.get("/admin/")
+
+        self.assertIn(settings.SESSION_COOKIE_NAME, resp.cookies)
+        store = _session_store(key)
+        self.assertIsNotNone(store.get(admin_session.SESSION_EXPIRY_KEY))
+        self.assertAlmostEqual(
+            store.get_expiry_age(), settings.SHOPMAN_ADMIN_SESSION_IDLE_SECONDS, delta=SLACK
+        )
+
+    # ── renovação ───────────────────────────────────────────────────────────
+
+    def test_using_the_admin_near_the_deadline_pushes_it_back(self):
+        key = self._login()
+        self.client.get("/admin/")          # planta
+        self._set_remaining(key, 1 * DAY)   # um dia para vencer
+
+        resp = self.client.get("/admin/")
+
+        self.assertIn(settings.SESSION_COOKIE_NAME, resp.cookies)
+        self.assertAlmostEqual(
+            _session_store(key).get_expiry_age(),
+            settings.SHOPMAN_ADMIN_SESSION_IDLE_SECONDS,
+            delta=SLACK,
+        )
+
+    def test_use_within_the_same_day_neither_writes_nor_reemits(self):
+        # Mesma economia da gêmea: no máximo uma gravação por dia.
+        key = self._login()
+        self.client.get("/admin/")
+        self._set_remaining(key, 13 * DAY + 12 * 60 * 60)  # usou há 12 h
+        before = Session.objects.get(session_key=key).expire_date
+
+        resp = self.client.get("/admin/")
+
+        self.assertNotIn(settings.SESSION_COOKIE_NAME, resp.cookies)
+        self.assertEqual(Session.objects.get(session_key=key).expire_date, before)
+
+    # ── quem NÃO renova ─────────────────────────────────────────────────────
+
+    def test_the_api_does_not_renew_an_admin_session(self):
+        # Fora de `/admin/` vale a regra de operador, e esta sessão não tem a
+        # marca: ninguém renova. O Admin se identifica pelo CAMINHO.
+        key = self._login()
+        self.client.get("/admin/")
+        self._set_remaining(key, 1 * DAY)
+        almost_gone = Session.objects.get(session_key=key).expire_date
+
+        resp = self.client.get(ORDERS)
+
+        self.assertNotIn(settings.SESSION_COOKIE_NAME, resp.cookies)
+        self.assertEqual(Session.objects.get(session_key=key).expire_date, almost_gone)
+
+    def test_an_anonymous_visitor_renews_nothing(self):
+        resp = self.client.get("/admin/login/")
+        self.assertNotIn(settings.SESSION_COOKIE_NAME, resp.cookies)
 
 
 class RenewalMiddlewareGuardTests(TestCase):
@@ -249,17 +321,17 @@ class RenewalMiddlewareGuardTests(TestCase):
         # O proxy de SSE do BFF não repassa Set-Cookie: renovar ali adiantaria o
         # banco e deixaria o cookie do navegador morrer antes da sessão.
         request = self._marked_request("/events/backstage/")
-        OperatorSessionRenewalMiddleware(lambda r: StreamingHttpResponse(iter(["data: x\n\n"])))(request)
+        SessionRenewalMiddleware(lambda r: StreamingHttpResponse(iter(["data: x\n\n"])))(request)
         self.assertFalse(request.session.modified)
 
     def test_plain_response_on_the_same_session_renews(self):
         request = self._marked_request()
-        OperatorSessionRenewalMiddleware(lambda r: HttpResponse())(request)
+        SessionRenewalMiddleware(lambda r: HttpResponse())(request)
         self.assertTrue(request.session.modified)
         self.assertGreater(request.session.get_expiry_age(), SEVEN_DAYS - SLACK)
 
     def test_request_without_session_cookie_does_not_touch_the_session(self):
         request = RequestFactory().get("/api/v1/backstage/orders/")
         request.session = _session_store(None)
-        OperatorSessionRenewalMiddleware(lambda r: HttpResponse())(request)
+        SessionRenewalMiddleware(lambda r: HttpResponse())(request)
         self.assertFalse(request.session.accessed)
