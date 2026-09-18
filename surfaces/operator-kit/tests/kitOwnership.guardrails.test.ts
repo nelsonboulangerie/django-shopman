@@ -54,8 +54,22 @@ const KIT_OWNED_TOOLBAR_PRIMITIVES = ["FilterChip", "IconButton", "SearchInput",
  * por 7 telas), e mais três telas tinham reescrito o mesmo trilho à mão — em três
  * tamanhos, com duas cores de trilho desligado, e a do PDV num alvo de toque de
  * 24 px. Não é hipótese de deriva: é a deriva medida.
+ *
+ * `ToggleChip` fechou o vazio que a própria conversão dos outros tinha registrado em
+ * comentário: escolha múltipla desenhada como pílula, onde o quadrado com rótulo ao
+ * lado seria a peça parecida no lugar da certa. Antes dele havia 50 `aria-pressed`
+ * escritos à mão nas superfícies de operador, mais as pílulas de plataforma do
+ * Marketing embrulhando um `<input class="sr-only">` num `<label>` pintado — três
+ * desenhos para o mesmo gesto.
  */
-const KIT_OWNED_CHOICE_PRIMITIVES = ["Checkbox", "Radio", "RadioGroup", "Select", "Switch"] as const;
+const KIT_OWNED_CHOICE_PRIMITIVES = [
+  "Checkbox",
+  "Radio",
+  "RadioGroup",
+  "Select",
+  "Switch",
+  "ToggleChip",
+] as const;
 
 /** Nomes próprios que a promoção do `UiSelect` aposentou. */
 const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
