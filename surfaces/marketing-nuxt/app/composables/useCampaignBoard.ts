@@ -167,7 +167,7 @@ export function useCampaignBoard() {
       command,
       publishMode === "scheduled"
         ? "Anúncio agendado."
-        : "Anúncio preparado para publicação.",
+        : "Anúncio autorizado. É disparado nos próximos minutos.",
       idempotencyKey,
     );
   }
@@ -240,7 +240,7 @@ export function useCampaignBoard() {
           ? "Anúncio recusado."
           : command.body.publish_mode === "scheduled"
             ? "Anúncio agendado."
-            : "Anúncio preparado para publicação.";
+            : "Anúncio autorizado. É disparado nos próximos minutos.";
       useSonner.success(message);
       await refresh();
       return response;
@@ -282,7 +282,7 @@ export function useCampaignBoard() {
           ? "Anúncio recusado."
           : command.body.publish_mode === "scheduled"
             ? "Anúncio agendado."
-            : "Anúncio preparado para publicação.",
+            : "Anúncio autorizado. É disparado nos próximos minutos.",
       );
       await refresh();
       return response;

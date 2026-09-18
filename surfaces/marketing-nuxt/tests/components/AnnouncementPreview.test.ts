@@ -275,7 +275,9 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
 
     expect(wrapper.text()).toContain("Exemplo com Croissant");
     expect(wrapper.text()).toContain("Dados conferidos às");
-    expect(wrapper.text()).toContain("Versão bbbbbbbb");
+    // O hash sai da linha e continua no `title` de quem carrega a data.
+    expect(wrapper.text()).not.toContain("Versão bbbbbbbb");
+    expect(wrapper.html()).toContain("versão bbbbbbbb");
     wrapper.unmount();
   });
 

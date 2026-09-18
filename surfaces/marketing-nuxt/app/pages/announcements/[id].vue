@@ -373,8 +373,7 @@ useHead({ title: "Anúncio" });
     >
       <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        O rascunho e a intenção foram preservados. Retome para receber uma nova
-        conferência do servidor.
+        Seu texto e sua escolha estão guardados. Retome para confirmar de novo.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
         <UiButton
@@ -439,8 +438,7 @@ useHead({ title: "Anúncio" });
           </p>
           <template v-else-if="trackingExhausted">
             <p class="mt-2 text-sm opacity-90">
-              O registro de entrega ainda não respondeu. Não vamos inferir
-              sucesso sem ele: pode ser só demora da fila.
+              Ainda não sabemos se saiu. Provavelmente é a fila.
             </p>
             <UiButton
               type="button"
@@ -600,8 +598,7 @@ useHead({ title: "Anúncio" });
           O conteúdo abriu, mas o resultado de entrega não.
         </p>
         <p class="mt-1 text-muted-foreground">
-          Não vamos inferir sucesso enquanto o registro de entrega não
-          responder. O comprovante preservado continua abaixo quando existir.
+          Ainda não sabemos o que saiu. O comprovante continua abaixo.
         </p>
         <UiButton
           type="button"

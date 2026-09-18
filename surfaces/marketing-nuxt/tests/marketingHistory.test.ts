@@ -56,7 +56,7 @@ describe("apresentação do histórico canônico", () => {
       historySubject(announcement(), { "OUTRO-01": "Outro" }),
     ).toBe("Fornada concluída · Produto PAO-01");
     expect(historyActorLabel("operator")).toBe("Decisão de uma pessoa");
-    expect(historyActorLabel("automation")).toContain("sem autoria registrada");
+    expect(historyActorLabel("automation")).toBe("Disparo automático");
   });
 
   it("uses the latest meaningful immutable result timestamp", () => {

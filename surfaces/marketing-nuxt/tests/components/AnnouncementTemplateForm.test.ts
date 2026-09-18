@@ -133,7 +133,7 @@ describe("AnnouncementTemplateForm draft recovery", () => {
   it("avisa no próprio campo quando Stories ficaria sem imagem", async () => {
     const wrapper = form(template());
 
-    expect(wrapper.text()).toContain("O Story usará a foto do produto");
+    expect(wrapper.text()).toContain("Usa a foto do produto, em JPEG");
     await wrapper.find("#tpl-image").setValue("none");
 
     expect(wrapper.text()).toContain(

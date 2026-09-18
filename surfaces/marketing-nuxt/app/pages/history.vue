@@ -108,7 +108,7 @@ const FILTERS = [
     options: [
       ["", "Todas"],
       ["operator", "Pessoa"],
-      ["automation", "Automação ou sem autoria"],
+      ["automation", "Automação"],
     ],
   },
 ] as const;
@@ -380,7 +380,7 @@ useHead({ title: "Histórico" });
                 </li>
               </ul>
               <p v-else class="mt-3 text-xs text-muted-foreground">
-                Não há contagem rastreável por plataforma neste registro.
+                Este registro é antigo e não guarda contagem por plataforma.
               </p>
 
               <NuxtLink

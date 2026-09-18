@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   announcementSourceId,
   notificationAction,
-  notificationOwnerLabel,
   notificationReasonLabel,
   notificationStateLabel,
 } from "~/presentation/notifications";
@@ -149,10 +148,11 @@ describe("notification Actions", () => {
     ).toBeNull();
   });
 
-  it("keeps lifecycle, responsibility and disabled reasons explicit", () => {
+  it("keeps lifecycle and disabled reasons explicit", () => {
     expect(notificationStateLabel("seen")).toBe("Visto");
     expect(notificationStateLabel("resolved")).toBe("Resolvido");
-    expect(notificationOwnerLabel("ops")).toBe("Operações");
+    // `acknowledged` nomeia quem marcou — é a única diferença real para `seen`.
+    expect(notificationStateLabel("acknowledged")).toBe("Você já viu");
     expect(notificationReasonLabel("missing_capability")).toContain("acesso");
   });
 

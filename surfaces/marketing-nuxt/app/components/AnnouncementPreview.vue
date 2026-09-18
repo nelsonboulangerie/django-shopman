@@ -283,7 +283,7 @@ const simulatedScenes = computed(() =>
         id="announcement-preview-title"
         class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
       >
-        Prévia fiel
+        Prévia
       </p>
       <Icon
         v-if="pending"
@@ -365,11 +365,13 @@ const simulatedScenes = computed(() =>
       <div
         class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
       >
-        <span v-if="factTime" :title="preview.facts.as_of"
+        <!-- O hash do artefato não tem leitor: ninguém confere oito dígitos
+             hexadecimais no balcão. Ele continua alcançável no `title`, para quem
+             precisa correlacionar com o comprovante. -->
+        <span
+          v-if="factTime"
+          :title="`Dados de ${preview.facts.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
           >Dados conferidos às {{ factTime }}</span
-        >
-        <span v-if="shortHash" :title="selected?.artifact_hash"
-          >Versão {{ shortHash }}</span
         >
       </div>
 
@@ -404,8 +406,7 @@ const simulatedScenes = computed(() =>
         class="mt-3 flex items-start gap-1.5 rounded-md bg-background px-2 py-1.5 text-xs text-muted-foreground"
       >
         <Icon name="lucide:sparkles" class="mt-0.5 size-3.5 shrink-0" />
-        A IA ainda pode sugerir outro texto; qualquer sugestão precisa de nova
-        prévia e revisão.
+        Se você usar uma sugestão da IA, a prévia refaz.
       </p>
 
       <div v-if="isWhatsapp" class="mt-3" role="tabpanel">
@@ -432,13 +433,10 @@ const simulatedScenes = computed(() =>
           </div>
         </div>
         <p v-if="whatsappTemplate" class="mt-1.5 text-xs text-muted-foreground">
-          Modelo aprovado: {{ whatsappTemplate }}. Os campos técnicos exibidos
-          pertencem à mesma versão do artefato.
+          Modelo aprovado: {{ whatsappTemplate }}.
         </p>
         <p v-if="selected?.flow" class="mt-1.5 text-xs text-muted-foreground">
-          Fluxo conferido: {{ selected.flow.name }} · configuração v{{
-            selected.flow.version
-          }}. Esta é a versão selada para aprovação e envio.
+          Fluxo do WhatsApp: {{ selected.flow.name }}.
         </p>
       </div>
 
@@ -512,8 +510,7 @@ const simulatedScenes = computed(() =>
         <span>
           Sem valor nesta amostra:
           <span class="font-mono">{{ emptyFields.join(", ") }}</span
-          >. Campos por destinatário serão resolvidos apenas na etapa protegida
-          de envio.
+          >. Aqui é um exemplo: cada pessoa recebe o nome dela.
         </span>
       </p>
 
@@ -537,7 +534,7 @@ const simulatedScenes = computed(() =>
     >
       A resposta não trouxe a plataforma escolhida.
       <UiButton type="button" variant="link" class="ml-1" @click="retry">
-        Revalidar
+        Tentar de novo
       </UiButton>
     </div>
   </aside>

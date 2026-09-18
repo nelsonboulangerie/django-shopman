@@ -45,7 +45,7 @@ export function historyActorLabel(
 ): string {
   return policy === "operator"
     ? "Decisão de uma pessoa"
-    : "Automação ou origem sem autoria registrada";
+    : "Disparo automático";
 }
 
 export function historyOccurredAt(item: AnnouncementProjectionV2): string {
