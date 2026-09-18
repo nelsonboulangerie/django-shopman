@@ -18,6 +18,7 @@ import type {
   POSSaleReviewProjection,
   POSScheduleResponse,
   POSSaleReviewResponse,
+  PosFiscalState,
   POSTabPayload,
   POSTabProjection,
   SavedAddressProjection,
@@ -35,7 +36,7 @@ import {
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import type { ScheduleWindow } from "~/presentation/schedule";
+import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -55,7 +56,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
-import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
+import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
   CustomerDecision,
   CustomerDecisionField,
@@ -424,7 +425,16 @@ export function usePosSale(deps: PosSaleDeps) {
         );
         if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
         applyPaymentDelivery(orderRef, status.payment_delivery);
-        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(generation); }
+        if (status?.is_paid) {
+          pixStatus.value = "paid";
+          // A NFC-e que esperava o Pix agora está na fila: a tela de resultado
+          // troca "sai quando o pagamento confirmar" por "na fila", e a
+          // impressão automática começa a esperar a autorização.
+          if (result.value?.orderRef === orderRef && result.value.fiscalState === "awaiting_payment") {
+            markFiscalState(orderRef, "queued");
+          }
+          stopPixPolling(generation);
+        }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
       // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
@@ -452,6 +462,18 @@ export function usePosSale(deps: PosSaleDeps) {
    * aguardando não é descartado: vira o chip pendente no header e o polling
    * continua até resolver/expirar. Sem prova pendente, o polling encerra.
    */
+  /**
+   * A tela de resultado descobre o estado da nota DEPOIS do fechamento: a
+   * impressão automática vê o 409 virar 200 (`authorized`), o polling do Pix vê
+   * o pagamento confirmar (`awaiting_payment` → `queued`). Só a venda que está
+   * na tela é promovida; a de uma venda que já saiu não tem onde aparecer.
+   */
+  function markFiscalState(orderRef: string, state: PosFiscalState) {
+    if (!result.value || result.value.orderRef !== orderRef) return;
+    if (result.value.fiscalState === state) return;
+    result.value = { ...result.value, fiscalState: state };
+  }
+
   function dismissResult() {
     if (!result.value) return;
     stopDeliveryPolling();
@@ -664,6 +686,14 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   const checkoutContract = computed(() => pos.value?.checkout || null);
+  // O bloco "Nota e comprovante" existe na tela? MESMA régua do workspace
+  // (`supports_fiscal_document`, ausente = não). Quando ele não existe, a venda
+  // não carrega pedido fiscal nenhum: o operador não vê CPF, papel nem e-mail,
+  // não tem onde desmarcar, e o resolver emitiria uma nota que ninguém pediu na
+  // tela. Os padrões do cliente continuam no CADASTRO; só não pré-marcam a venda.
+  const fiscalFormOffered = computed(
+    () => checkoutContract.value?.capabilities?.supports_fiscal_document === true,
+  );
   const checkoutCapabilities = computed<POSCheckoutCapabilities>(
     () => (checkoutContract.value?.capabilities ?? {}) as POSCheckoutCapabilities,
   );
@@ -807,6 +837,14 @@ export function usePosSale(deps: PosSaleDeps) {
   const deliverySlotsPending = computed(
     () => scheduleBusy.value || (!review.value && !schedule.value && !scheduleFailed.value),
   );
+  // Os slots CANÔNICOS da casa, com o rótulo real do servidor. A grade acima só
+  // conhece o dia carregado: uma comanda salva com `slot-09` para HOJE, antes de
+  // alguém buscar a agenda, mostrava o ref cru no chip e na leitura de volta.
+  const canonicalDeliverySlots = computed<ScheduleWindow[]>(() => pos.value?.delivery_slots_canonical ?? []);
+  /** O rótulo da janela escolhida: grade do dia → canônicos → humanização. */
+  const deliveryWindowLabel = computed(
+    () => resolveWindowLabel(cart.deliveryTimeSlot, [deliverySlots.value, canonicalDeliverySlots.value]),
+  );
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
   // the method is derived (no "mixed" selection). Finalize is gated until covered.
@@ -928,7 +966,8 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function addTender(method: string) {
     if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
-      toast.info("Na entrega, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.");
+      const handoff = cart.fulfillmentType === "pickup" ? "retirada" : "entrega";
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
       return;
     }
     const amountQ = Math.max(0, splitNextShareQ.value);
@@ -1065,10 +1104,15 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const suggestedSplitRef = computed(() => (cart.tabDisplay ? `${cart.tabDisplay}-2` : ""));
 
+  // ⚠️ Sem cláusula de método. `cart.paymentMethod` é campo LEGADO (o primeiro
+  // método da projeção, "cash", ou o que a comanda salva trouxe): filtrar por
+  // ele fazia o watcher abaixo reescrever "Na entrega" para "No caixa" em
+  // silêncio numa comanda reaberta com `payment_method: "pix"`. Os tenders são a
+  // verdade, e o workspace já valida cada linha contra a coleta (`blockedForDelivery`).
   const availablePaymentCollections = computed(() =>
     (pos.value?.payment_collections || []).filter((collection) =>
       collection.fulfillment_types.includes(cart.fulfillmentType)
-      && collection.payment_method_refs.includes(cart.paymentMethod),
+      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order"),
     ),
   );
 
@@ -1257,6 +1301,7 @@ export function usePosSale(deps: PosSaleDeps) {
   function resetCart() {
     tabConflict.value = false;
     receiptIdentityChoices.value = [];
+    pendingCustomerPrefs.value = {};
     cart.tabRef = "";
     cart.tabDisplay = "";
     cart.tabSessionKey = "";
@@ -1525,7 +1570,7 @@ export function usePosSale(deps: PosSaleDeps) {
       customerTaxId: cart.customerTaxId,
       // O switch é que decide se o documento viaja. Desligado, o valor fica
       // guardado na tela (religar devolve) mas NÃO vai para a nota.
-      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
+      invoiceTaxId: fiscalFormOffered.value && cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
       customerEmail: cart.customerEmail,
       customerMemoryAction: cart.customerMemoryAction,
       salesMode: cart.salesMode,
@@ -1542,14 +1587,21 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedQ: resolvedPayment.tenderedQ,
-      changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
+      // "Troco para quanto?" só existe quando o operador PERGUNTOU: a linha de
+      // dinheiro virgem é o auto-preenchimento do sistema (= total), e mandá-la
+      // gravava "troco para R$ 42 num pedido de R$ 42" sem ninguém ter falado
+      // com o cliente — o entregador saía com troco zero por engano.
+      changeForQ: cart.paymentCollection === "on_delivery"
+        && cart.paymentTenders.some((t) => t.method === "cash" && !t._virgin)
         ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
-      receiptChannels: cart.receiptChannels,
-      receiptEmail: cart.receiptChannels.includes("email") ? cart.receiptEmail || cart.customerEmail : "",
+      // Mesma regra do CPF acima: sem o bloco na tela, nenhum canal de
+      // documento viaja — nem o que veio de comanda reaberta.
+      receiptChannels: fiscalFormOffered.value ? cart.receiptChannels : [],
+      receiptEmail: fiscalFormOffered.value && cart.receiptChannels.includes("email") ? cart.receiptEmail || cart.customerEmail : "",
       // O padrão da oferta vale enquanto o operador não tocar — e a régua é o
       // cadastro que o lookup trouxe, a mesma que a tela usou para perguntar.
-      saveReceiptContact: cart.receiptChannels.includes("email") && receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
+      saveReceiptContact: fiscalFormOffered.value && cart.receiptChannels.includes("email") && receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
       // ⚠️ `receiptContactArmed` e não `receiptContactChecked`: no CPF divergente
       // a caixa marcada sem a reconfirmação não grava NADA. É aqui que a
       // fricção deixa de ser conversa de tela e vira consequência.
@@ -1636,7 +1688,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
     // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
     // decide se ele viaja.
-    const prefs = customer.fiscal_prefs || {};
+    const prefs = fiscalFormOffered.value ? (customer.fiscal_prefs || {}) : {};
     cart.invoiceTaxId = cart.invoiceTaxId || customer.tax_id || "";
     if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
     if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
@@ -1769,7 +1821,7 @@ export function usePosSale(deps: PosSaleDeps) {
       customerEmail: cart.customerEmail,
       customerTaxId: cart.customerTaxId,
       receiptEmail: cart.receiptEmail,
-      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
+      invoiceTaxId: fiscalFormOffered.value && cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
     });
   }
 
@@ -1817,6 +1869,11 @@ export function usePosSale(deps: PosSaleDeps) {
           customer_email: email,
           ...(options.contactCorrection ? { customer_contact_correction: true } : {}),
           ...(customerRef ? { customer_name_correction: true } : {}),
+          // Os padrões virados no modal ANTES do cadastro existir nascem junto
+          // com ele. Só sem ref: com cadastro o modal já gravou no perfil.
+          ...(!customerRef && Object.values(pendingCustomerPrefs.value).some(Boolean)
+            ? { fiscal_prefs: { ...pendingCustomerPrefs.value } }
+            : {}),
         },
       });
       customerDecision.value = null;
@@ -1824,6 +1881,8 @@ export function usePosSale(deps: PosSaleDeps) {
       // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
       customerResolvedNew.value = !!response.created;
       customerLookup.value = response.customer;
+      // O cadastro existe: o rascunho dos padrões já mora nele (`fiscal_prefs`).
+      pendingCustomerPrefs.value = {};
       cart.customerRef = response.customer.ref;
       cart.customerName = response.customer.name || cart.customerName;
       cart.customerPhone = response.customer.phone || cart.customerPhone;
@@ -1835,7 +1894,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
       // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
       // decide se ele viaja.
-      const prefs = response.customer.fiscal_prefs || {};
+      const prefs = fiscalFormOffered.value ? (response.customer.fiscal_prefs || {}) : {};
       cart.invoiceTaxId = cart.invoiceTaxId || response.customer.tax_id || "";
       if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
@@ -2011,11 +2070,18 @@ export function usePosSale(deps: PosSaleDeps) {
     await attendCustomer(candidate.ref, candidate.name);
   }
 
-  /** É a MESMA pessoa: os dois cadastros viram um, e a comanda segue no alvo. */
+  /** É a MESMA pessoa: os dois cadastros viram um, e a comanda segue no alvo.
+   *
+   *  O candidato viaja quando a escolha foi por LINHA (a lista, onde o dado
+   *  solto é um dos vários lados e `decision.other` é só o primeiro deles). No
+   *  painel de um lado só ele não vem, e o doador é o `other` de sempre.
+   */
   const customerMergeBusy = ref(false);
-  async function mergeConflictCustomers() {
+  async function mergeConflictCustomers(candidate?: ServerConflictCandidate) {
     const decision = customerDecision.value;
-    const other = decision?.other;
+    const other = candidate
+      ? { ref: candidate.ref, name: candidate.name, value: "" }
+      : decision?.other;
     const current = decision?.current;
     if (!other || !current) return;
     customerMergeBusy.value = true;
@@ -2193,6 +2259,13 @@ export function usePosSale(deps: PosSaleDeps) {
   // O cliente associado foi CRIADO agora (resolve just-in-time devolveu
   // created=true) — a confirmação do modal distingue novo × encontrado.
   const customerResolvedNew = ref(false);
+  // Os PADRÕES do cliente (CPF na nota / nota por e-mail) virados no modal
+  // ANTES de o cadastro existir. Com cadastro, o modal grava direto no perfil
+  // e aqui só a venda de agora muda; sem cadastro, o rascunho mora AQUI (é o
+  // que o interruptor mostra) e viaja no "Cadastrar cliente" como
+  // `fiscal_prefs` do resolve. Zera quando o cadastro nasce, ao remover o
+  // cliente e ao trocar de comanda.
+  const pendingCustomerPrefs = ref<{ cpf_na_nota?: boolean; email_receipt?: boolean }>({});
   async function searchCustomers(query: string) {
     const q = (query || "").trim();
     if (q.length < 2) { customerSearchResults.value = []; return; }
@@ -2232,7 +2305,33 @@ export function usePosSale(deps: PosSaleDeps) {
   // Disassociate the customer from the tab (Odoo's UNSELECT): drop every customer
   // field + the loaded lookup so nothing lingers (clearing only the name would
   // leave customerRef attached). The debounced autosave then persists the removal.
+  // Virar um padrão no modal vale NESTA venda, na hora — e nas próximas (o
+  // perfil ou o cadastro novo gravam por fora). `cpf_na_nota` segue a MESMA
+  // regra de `applyCustomerDefaults`: o CPF do cadastro entra como DEFAULT do
+  // campo da nota, sem passar por cima de um já digitado; o switch decide se
+  // ele viaja. `email_receipt` liga ou desliga o canal de e-mail do comprovante.
+  function applyCustomerPreference(key: "cpf_na_nota" | "email_receipt", value: boolean) {
+    if (!cart.customerRef.trim()) {
+      pendingCustomerPrefs.value = { ...pendingCustomerPrefs.value, [key]: value };
+    }
+    // Sem o bloco na tela, o padrão vai para o cadastro e para aí.
+    if (!fiscalFormOffered.value) return;
+    if (key === "cpf_na_nota") {
+      cart.wantsCpfOnInvoice = value;
+      if (value && !cart.invoiceTaxId.trim()) {
+        cart.invoiceTaxId = cart.customerTaxId.trim() || customerLookup.value?.tax_id || "";
+      }
+      return;
+    }
+    if (value && !cart.receiptChannels.includes("email")) {
+      cart.receiptChannels = [...cart.receiptChannels, "email"];
+    } else if (!value && cart.receiptChannels.includes("email")) {
+      cart.receiptChannels = cart.receiptChannels.filter((channel) => channel !== "email");
+    }
+  }
+
   function clearCustomer() {
+    pendingCustomerPrefs.value = {};
     cart.customerRef = "";
     cart.customerName = "";
     cart.customerPhone = "";
@@ -2595,6 +2694,9 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       if (guarded.kind === "error") throw guarded.error;
       const { response, orderRef } = guarded;
+      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
+      // calculado é o que o entregador vai separar, não o que sai da gaveta.
+      const paidOnDelivery = cart.paymentCollection === "on_delivery";
       // Freeze a receipt snapshot before the cart resets (spec §D3): the
         // printed receipt is a record of what was sold, not live state.
         const receipt: PosReceiptSnapshot = {
@@ -2617,7 +2719,22 @@ export function usePosSale(deps: PosSaleDeps) {
           })),
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
+          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
+          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
+          // como digitada. "Recebido" é medição — só viaja quando o operador
+          // digitou (`tendered_q`, dinheiro sozinho no caixa).
+          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          paymentPending: paidOnDelivery,
         };
+        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
+        // operador confere de relance e repete ao cliente.
+        function orderFulfillmentLabel(): string {
+          const base = receipt.fulfillmentLabel;
+          if (cart.fulfillmentType !== "delivery") return base;
+          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+          return bairro ? `${base} · ${bairro}` : base;
+        }
         const proof = paymentProofView(response.payment);
         result.value = {
           salesMode: cart.salesMode,
@@ -2629,13 +2746,28 @@ export function usePosSale(deps: PosSaleDeps) {
           // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
           // emitem por forma de pagamento, sem o operador marcar nada.
           fiscalExpected: !!response.fiscal_expected,
+          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
+          fiscalState: resolveFiscalState(response),
           // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
           // o troco computado voltaria a zero. Uma fonte só: a tela de
           // resultado do operador e a tela do cliente leem daqui.
-          changeQ: Math.max(0, paymentChangeQ.value),
+          //
+          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
+          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
+          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
+          // entregador leva vai em `courierChangeQ`, informativo.
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
           // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
           // apaga os canais, e a nota autoriza depois — segundos ou minutos.
           wantsPrintedInvoice: cart.receiptChannels.includes("print"),
+          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
+          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
+          // data, a janela e o bairro, e a tela de resultado precisa deles.
+          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
+          scheduleLabel: cart.salesMode === "order"
+            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
+            : "",
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) {
@@ -3077,6 +3209,9 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryDistanceKm,
     deliverySlots,
     deliverySlotsPending,
+    availablePaymentCollections,
+    canonicalDeliverySlots,
+    deliveryWindowLabel,
     deliveryDateEffective,
     scheduleToday,
     scheduleAvailableDates,
@@ -3134,6 +3269,8 @@ export function usePosSale(deps: PosSaleDeps) {
     customerSearchResults,
     customerSearchBusy,
     customerResolvedNew,
+    pendingCustomerPrefs,
+    applyCustomerPreference,
     searchCustomers,
     selectCustomerResult,
     clearCustomer,
@@ -3144,6 +3281,7 @@ export function usePosSale(deps: PosSaleDeps) {
     reviewCheckout,
     submitSale,
     dismissResult,
+    markFiscalState,
     resendingLink,
     sendPaymentNotice,
     resendPaymentLink,

@@ -69,6 +69,52 @@ diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
 - **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
   O que ficou de fora se diz com nome e motivo.
 
+## ⛔ A ESTEIRA: aprovado vira commit, push, PR e fila — no mesmo turno
+
+Medido em 16/09/2026: 150 worktrees, dezenas de branches com 10 a 77 commits à
+frente do `main` e nenhum PR, decisões aprovadas que nunca viraram código, código
+pronto que nunca chegou ao ar. A regra já estava escrita e era ignorada. Regra sem
+trava é lembrete; o que segue é a trava, e vale para todo agente (Claude, Codex,
+quem for) e para humano.
+
+**Aprovação é autorização da esteira inteira.** Quando o Pablo aprova ou pede uma
+mudança, ele já autorizou: commit → push → PR → `gh pr merge <N>` (fila) → deploy do
+alpha (push no `main` é o deploy, 6 min). Não pergunte "posso commitar?", "abro o
+PR?", "enfileiro?". Faça e relate. Versionamento reverte; trabalho dormente não se
+recupera, porque ninguém lembra que ele existe.
+
+**O que AINDA pede a palavra dele** — o que muda o negócio ou o ambiente vivo, não a
+mecânica do repositório: reseed do alpha · credencial dele em qualquer ambiente ·
+decisão de produto ou de escopo · apagar dado ou branch que não seja comprovadamente
+redundante. Se a pergunta é dessas, publique o que existe e escreva a pergunta no
+relatório, com o número do PR.
+
+**Nenhum turno termina com trabalho dormente.** Ao encerrar, cada frente está num
+destes estados, e o relatório diz qual:
+
+1. **mergeado** — número do PR;
+2. **na fila** — `gh pr merge <N>` dado, `autoMergeRequest` ligado;
+3. **PR aberto vermelho** — a CAUSA nomeada e o próximo passo;
+4. **esperando decisão dele** — a pergunta escrita, PR (draft) já aberto.
+
+Trabalho parcial no fim da sessão vira commit + push + **PR draft** com `WIP:` no
+título. Nunca fica só na worktree: worktree é invisível para `gh pr list`, para as
+outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
+
+**Mecanismo, não lembrete:**
+
+- `make inflight` — o inventário do que está em voo e dormindo: worktrees sujas,
+  branches locais sem PR, PRs verdes fora da fila, vermelhos, conflitantes. Rode
+  antes de agir (para não colidir) e ao relatar (para não deixar nada para trás).
+  `make audit-branches` olha só branch remota; a que dorme é local.
+- Hook de `Stop` (`scripts/esteira-stop-hook.sh`, registrado em
+  `~/.claude/settings.json`) — bloqueia a sessão de encerrar com arquivo não
+  commitado, commit não empurrado, branch sem PR ou PR verde fora da fila, e devolve
+  a lista com o comando de cada item. Bloqueia uma vez por turno: a segunda
+  tentativa passa, para que "esperando o Pablo sobre X" continue sendo saída
+  legítima, desde que dita e com o trabalho publicado. Não contorne: publique.
+- `AGENTS.md` é link para este arquivo: o Codex lê a mesma regra.
+
 ## Estrutura do Projeto
 
 ```
@@ -216,6 +262,16 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
   - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
+- **"dispositivo", nunca "aparelho".** O objeto que o operador segura — tablet, celular,
+  terminal, o que recebe aviso e guarda confiança — se chama **dispositivo** em toda
+  superfície de operador e em todo texto de tela do Admin. ⚠️ Duas ressalvas que são
+  regra, não exceção: a **maquininha de cartão tem nome próprio** (o entregador leva uma
+  *maquininha*, não um dispositivo) e o **Storefront fica de fora** por concessão
+  explícita do dono — é superfície de cliente final, com voz própria. A regra vale para
+  STRING (o que chega a alguém), não para comentário e docstring. Trava:
+  `shopman/backstage/tests/test_vocabulario_de_tela.py`, varredura por AST sobre 1.083
+  arquivos. Esta regra não estava escrita em lugar nenhum até 17/09/2026, e foi por isso
+  que 104 arquivos derivaram e o convite de instalação dos oito apps nasceu errado.
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
   - **HTMX**: toda comunicação com servidor (GET, POST, polling, swaps). Incluindo `hx-on::before-request`/`after-request` para estados visuais de loading atrelados a requests.
@@ -223,6 +279,21 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **NUNCA**: `onclick="..."`, `onchange="..."`, `document.getElementById`, `classList.toggle/add/remove` em templates. Usar `@click`, `x-show`, `x-data`, `x-text`, `$store`.
   - **Exceção**: IntersectionObserver e APIs do browser que não têm equivalente Alpine (geolocation, clipboard, service worker).
 - **Tempo real por SSE (cross-surface, site-wide)**: sempre que houver estado que muda no servidor e importa na tela (acompanhamento, estoque, verificação, KDS, badges), preferir **push por SSE** em vez de depender de polling. O SSE é camada de push sobre um **fetch canônico** que continua sendo a fonte da verdade (no evento, refaça o fetch REST); o **poll fica só como fallback** em cadência calma. Canais nomeados + permissão no `ShopmanChannelManager`, proxy same-origin no BFF via `server/utils/eventStream.ts` (`proxyEventStream`). Ver [ADR-016](docs/decisions/adr-016-sse-first-realtime.md).
+- **Próximo foco (site-wide, Storefront e Backstage)**: toda tela com sequência de blocos
+  (etapas, campos, cartões) declara qual é o foco do momento e usa `useNextFocus` para
+  levar a página até ele — bloco `data-focus-target="<chave>"` na **linha de foco** (topo
+  da área visível, sob o chrome fixo, via `scroll-margin-top`) com foco de teclado no
+  bloco ou no `data-focus-control`. Não escrever `scrollIntoView` ad hoc por tela. Vive em
+  `operator-kit/app/composables/useNextFocus.ts` (espelho no storefront); contrato na
+  seção "Próximo foco" do `surfaces/operator-kit/README.md`. Consumidores: checkout do
+  storefront (fluxo por seção), login do storefront (`entrar.vue`, um bloco por passo) e
+  `PosPaymentWorkspace` do PDV (só `reveal`, foco explícito).
+- **Tem mais abaixo (site-wide)**: irmã do próximo foco. Toda tela com conteúdo que
+  passa da dobra usa `<MoreBelow />` no fim do CONTEÚDO (antes de card/barra flutuante,
+  que são chrome) em vez de inventar aviso de rolagem. Sentinela + IntersectionObserver,
+  descontando o que flutua na base pelo mesmo `data-focus-obstruction` do próximo foco.
+  Contrato na seção "Tem mais abaixo" do `surfaces/operator-kit/README.md`. Pendência
+  conhecida: o `BottomSheet` do storefront ainda tem a versão antiga inline.
 - **Envelope de segurança das surfaces de operador**: CSP/cache/security do HTML, BFF,
   erros e SSE é capability compartilhada e **opt-in** do `operator-kit`, nunca arquivos
   copiados nem ativação implícita em todos os consumers. O Marketing é o piloto; não o

@@ -1,0 +1,12 @@
+{
+  "backend_limit_ms": 500,
+  "browser_limit_ms": 1500,
+  "backend_p95_ms": [
+    239.558,
+    386.044,
+    2500.444
+  ],
+  "browser_p95_ms": 2229,
+  "scope": "Ephemeral CI with application CPU/memory ceilings; no store PC/network or managed DB equivalence.",
+  "pass": false
+}

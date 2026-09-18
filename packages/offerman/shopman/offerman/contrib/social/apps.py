@@ -14,7 +14,7 @@ class OffermanSocialConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "shopman.offerman.contrib.social"
     label = "offerman_social"
-    verbose_name = _("Redes sociais — produtos")
+    verbose_name = _("Redes sociais · produtos")
 
     def ready(self):
         from django.contrib import admin

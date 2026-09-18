@@ -47,3 +47,6 @@ class PaymentResult:
     amount_q: int | None = None
     error_code: str | None = None
     message: str | None = None
+    # Cartão: "credit" | "debit" | "prepaid" | "unknown", como o gateway informa
+    # DEPOIS da captura. Só a Stripe preenche; é o que separa 03 de 04 na NFC-e.
+    card_funding: str | None = None

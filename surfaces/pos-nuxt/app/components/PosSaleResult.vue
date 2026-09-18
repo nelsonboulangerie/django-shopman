@@ -11,7 +11,10 @@
 import {
   autoAdvanceSeconds,
   changeDisplay as toChangeDisplay,
+  courierChangeLine,
+  danfeOffer,
   enterAdvances,
+  orderReadback,
   paymentFailed,
   pixAwaiting,
   type PixPollStatus,
@@ -29,26 +32,37 @@ const props = defineProps<{
   printingDanfe: boolean;
   /** Reenvio do link de pagamento em voo (só o pedido de link usa). */
   resendingLink?: boolean;
+  /** A ficha do pedido (encomenda) está saindo na bobina. */
+  printingTicket?: boolean;
 }>();
 
 const emit = defineEmits<{
   newSale: [];
   printReceipt: [];
   printDanfe: [];
+  /** ENCOMENDA: a ficha do pedido para o painel de parede. */
+  printTicket: [];
   cancelSale: [];
   paymentNotice: ["send" | "resend"];
 }>();
 
+const readback = computed(() => orderReadback(props.result));
 const title = computed(() => props.result.salesMode === "order"
   ? paymentFailed(props.result.payment) ? "Encomenda registrada, cobrança não criada" : "Encomenda registrada"
   : saleResultTitle(props.result.receipt.customerName, props.result.payment));
 const chargeFailed = computed(() => paymentFailed(props.result.payment));
 const changeDisplay = computed(() => toChangeDisplay(props.result.changeQ));
+// COBRANÇA NA ENTREGA/RETIRADA: o troco ainda não saiu da gaveta — é o que o
+// entregador vai separar. Linha discreta, sem herói e sem segurar a tela.
+const courierChange = computed(() => courierChangeLine(props.result.courierChangeQ));
+// A DANFE por EXISTÊNCIA da nota, não por previsão (ver `danfeOffer`).
+const danfe = computed(() => danfeOffer(props.result.fiscalState));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
 const enterHint = computed(() => enterAdvances({
   changeQ: props.result.changeQ,
   payment: props.result.payment,
   pixStatus: props.pixStatus,
+  salesMode: props.result.salesMode,
 }));
 
 // Auto-avanço: decidido UMA vez, na entrada da tela (presentation pura decide;
@@ -64,7 +78,7 @@ function cancelCountdown() {
   countdown.value = 0;
 }
 onMounted(() => {
-  // A encomenda precisa ficar disponível para conferir e imprimir a filipeta.
+  // A encomenda precisa ficar disponível para conferir e imprimir a ficha do pedido.
   if (props.result.salesMode === "order") return;
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   const seconds = autoAdvanceSeconds({
@@ -118,11 +132,47 @@ function onNewSale() {
       </p>
     </div>
 
+    <!-- LEITURA DE VOLTA da encomenda: como e quando, ditos em voz alta antes
+         de desligar o telefone. É a última chance de pegar um "era sábado, não
+         sexta" — depois disso o combinado só existe no Gestor. -->
+    <div
+      v-if="readback"
+      class="grid w-full max-w-md gap-2 rounded-md border bg-card p-4 text-left"
+      data-order-readback
+      role="status"
+    >
+      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Confirme com o cliente</p>
+      <p v-if="readback.fulfillment" class="flex items-center gap-2 text-base font-semibold">
+        <Icon :name="readback.fulfillment.startsWith('Entrega') ? 'lucide:bike' : 'lucide:store'" class="size-5 shrink-0 text-muted-foreground" />
+        {{ readback.fulfillment }}
+      </p>
+      <p v-if="readback.schedule" class="flex items-center gap-2 text-base font-semibold">
+        <Icon name="lucide:calendar-clock" class="size-5 shrink-0 text-muted-foreground" />
+        {{ readback.schedule }}
+      </p>
+    </div>
+
     <!-- TROCO — o herói da tela quando existe. `aria-live` anuncia o valor. -->
     <div v-if="changeDisplay" class="grid justify-items-center gap-1" aria-live="polite" role="status">
       <p class="text-sm font-medium uppercase tracking-wide text-muted-foreground">Troco</p>
       <p class="text-7xl font-bold tabular-nums tracking-tight text-primary md:text-8xl">{{ changeDisplay }}</p>
       <p class="text-sm text-muted-foreground">Confira o troco antes de seguir para a próxima venda.</p>
+    </div>
+    <!-- TROCO A SEPARAR — cobrança na entrega/retirada: o dinheiro ainda não
+         entrou, o troco é o que sai com o entregador. Nem herói, nem trava. -->
+    <p v-else-if="courierChange" class="text-sm text-muted-foreground" data-courier-change>
+      {{ courierChange }}
+    </p>
+
+    <!-- NFC-e FALHOU — a venda existe, a nota não. Dito aqui, e não num toast
+         que some: o próximo passo mora nas Últimas vendas (reenfileirar). -->
+    <div
+      v-if="danfe?.kind === 'failed'"
+      class="grid w-full max-w-md gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-left"
+      role="alert"
+      data-fiscal-failed
+    >
+      <p class="text-sm font-semibold text-destructive">{{ danfe.label }}</p>
     </div>
 
     <!-- COBRANÇA NÃO CRIADA. O caminho que não tinha tela: o pedido está de pé
@@ -181,14 +231,38 @@ function onNewSale() {
           <Icon name="lucide:printer" class="size-4" />
           Imprimir recibo
         </UiButton>
+        <!-- A DANFE só é botão vivo quando a nota EXISTE. Na fila, o botão
+             fica desabilitado e a impressão automática o promove quando o 409
+             da bobina vira 200; aguardando pagamento, a frase diz o quando. -->
         <UiButton
-          v-if="result.fiscalExpected"
+          v-if="danfe?.kind === 'print' || danfe?.kind === 'queued'"
           variant="outline" size="sm" class="gap-1.5"
-          :disabled="printingDanfe"
+          :disabled="printingDanfe || danfe.kind === 'queued'"
+          :aria-busy="danfe.kind === 'queued' ? 'true' : undefined"
+          data-danfe-action
           @click="emit('printDanfe')"
         >
+          <Icon :name="danfe.kind === 'queued' ? 'lucide:loader-circle' : 'lucide:printer'" class="size-4" :class="danfe.kind === 'queued' ? 'animate-spin' : ''" />
+          {{ danfe.label }}
+        </UiButton>
+        <p
+          v-else-if="danfe?.kind === 'awaiting_payment'"
+          class="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"
+          data-danfe-awaiting
+        >
+          <Icon name="lucide:clock" class="size-4" />
+          {{ danfe.label }}
+        </p>
+        <!-- A FICHA DO PEDIDO mora AQUI, com as outras saídas de papel. Era um
+             cartaz separado acima da tela, como se fosse outra coisa. -->
+        <UiButton
+          v-if="result.salesMode === 'order'"
+          variant="outline" size="sm" class="gap-1.5"
+          :disabled="printingTicket"
+          @click="emit('printTicket')"
+        >
           <Icon name="lucide:printer" class="size-4" />
-          Imprimir DANFE
+          {{ printingTicket ? "Imprimindo…" : "Imprimir ficha do pedido" }}
         </UiButton>
         <UiButton v-if="result.salesMode === 'order'" variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
           <Icon name="lucide:external-link" class="size-4" />
@@ -199,7 +273,7 @@ function onNewSale() {
       <!-- Terciárias: discretas, alinhadas num único grupo -->
       <div class="flex flex-wrap items-center justify-center gap-2">
         <UiButton
-          v-if="result.fiscalExpected && danfeScreenUrl"
+          v-if="danfe?.kind === 'print' && danfeScreenUrl"
           variant="ghost"
           size="sm"
           class="gap-1.5 text-muted-foreground hover:text-foreground"

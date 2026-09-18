@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { absoluteImage, bakeryJsonLd, faqJsonLd, jsonLdText } from '~/presentation/seo'
+import {
+  absoluteImage,
+  bakeryJsonLd,
+  businessJsonLdId,
+  jsonLdText,
+  localBusinessJsonLd,
+  sitePageSeo,
+  websiteJsonLd
+} from '~/presentation/seo'
 import type { HomeResponse, Action } from '~/types/shopman'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
@@ -10,9 +18,11 @@ const { setFromServer } = useCartState()
 const { performAction, pending: reorderPending } = useReorder()
 const { openSearch } = useSearchOverlay()
 
+const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 const { data, pending, error, refresh } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include'
 })
+await siteSeoReady
 
 watch(() => data.value, value => {
   session.setFromHome(value?.home)
@@ -101,54 +111,81 @@ function noticeVariant (tone: string) {
 }
 
 const canonicalUrl = computed(() => `${requestUrl.origin}/`)
-// A meta-description da home prioriza a copy funcional de "como funciona" (feita
-// para SEO: diz o que o cliente pode fazer), caindo para a descrição da marca.
+const brandName = computed(() => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name)
+const homePageSeo = computed(() => sitePageSeo(siteSeo.value, 'home'))
+// O título da home é o título INTEIRO ("Marca · o que ela é, onde"), escrito no
+// Admin — por isso `titleTemplate: null` abaixo: o template do shell colaria a
+// marca de novo no fim. Sem título escrito, a home continua sendo só a marca.
+const homeTitle = computed(() => homePageSeo.value.title || brandName.value)
+// A descrição escrita para a home vence. Sem ela, a copy funcional de "como
+// funciona" (diz o que o cliente pode fazer), caindo para a descrição da marca.
 const homeDescription = computed(() =>
-  sectionsCopy.value?.how_it_works_meta_description.message
+  homePageSeo.value.description
+  || sectionsCopy.value?.how_it_works_meta_description.message
   || home.value?.shop.description
   || home.value?.shop.tagline
   || NELSON_FALLBACK_SHOP.description
 )
 const homeOgImage = computed(() => absoluteImage(
   requestUrl.origin,
-  featured.value[0]?.image_url || home.value?.shop.logo_url
+  siteSeo.value?.share_image_url || featured.value[0]?.image_url || home.value?.shop.logo_url
 ))
 
 useSeoMeta({
-  title: () => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name,
+  title: () => homeTitle.value,
   description: () => homeDescription.value,
-  ogTitle: () => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name,
+  ogTitle: () => homeTitle.value,
   ogDescription: () => homeDescription.value,
   ogType: 'website',
   ogUrl: () => canonicalUrl.value,
   ogImage: () => homeOgImage.value || undefined,
   twitterCard: 'summary_large_image',
-  twitterTitle: () => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name,
+  twitterTitle: () => homeTitle.value,
   twitterDescription: () => homeDescription.value,
   twitterImage: () => homeOgImage.value || undefined
 })
 
-// JSON-LD Bakery (LocalBusiness) — endereço, geo, contato server-driven.
+// JSON-LD do estabelecimento. Com o cadastro do site (/storefront/site/), um
+// LocalBusiness completo: endereço estruturado, horário, faixa de preço, mapa.
+// Sem ele (endpoint ausente ou sem nome), o Bakery de antes, montado da loja.
+// O FAQPage NÃO mora aqui: foi para /faq, a página que é das perguntas.
+const businessLd = computed<Record<string, unknown> | null>(() => {
+  const business = siteSeo.value?.business
+  if (business?.name) {
+    return localBusinessJsonLd({
+      business,
+      origin: requestUrl.origin,
+      images: [siteSeo.value?.share_image_url, featured.value[0]?.image_url],
+      fallbackLogoUrl: home.value?.shop.logo_url
+    })
+  }
+  if (!home.value) return null
+  return bakeryJsonLd({
+    shop: home.value.shop,
+    origin: requestUrl.origin,
+    url: canonicalUrl.value,
+    latitude: home.value.public_config.shop_latitude,
+    longitude: home.value.public_config.shop_longitude
+  })
+})
+
 useHead({
+  titleTemplate: null,
   link: [{ rel: 'canonical', href: () => canonicalUrl.value }],
-  script: () => home.value
+  script: () => businessLd.value
     ? [
         {
           type: 'application/ld+json' as const,
-          innerHTML: jsonLdText(bakeryJsonLd({
-            shop: home.value.shop,
-            origin: requestUrl.origin,
-            url: canonicalUrl.value,
-            latitude: home.value.public_config.shop_latitude,
-            longitude: home.value.public_config.shop_longitude
-          }))
+          innerHTML: jsonLdText(businessLd.value)
         },
-        ...(faq.value.length
-          ? [{
-              type: 'application/ld+json' as const,
-              innerHTML: jsonLdText(faqJsonLd(faq.value))
-            }]
-          : [])
+        {
+          type: 'application/ld+json' as const,
+          innerHTML: jsonLdText(websiteJsonLd({
+            origin: requestUrl.origin,
+            name: siteSeo.value?.business.name || brandName.value,
+            publisherId: businessJsonLdId(requestUrl.origin)
+          }))
+        }
       ]
     : []
 })
@@ -321,7 +358,7 @@ useHead({
             <UiAspectRatio :ratio="16 / 9" class="bg-muted">
               <img
                 src="https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=900&q=80"
-                alt=""
+                alt="Cesta com pães artesanais variados"
                 loading="lazy"
                 decoding="async"
                 class="size-full object-cover"
@@ -348,7 +385,7 @@ useHead({
             <UiAspectRatio :ratio="16 / 9" class="bg-muted">
               <img
                 src="https://images.unsplash.com/photo-1517433670267-08bbd4be890f?auto=format&fit=crop&w=900&q=80"
-                alt=""
+                alt="Vitrine de padaria com pães expostos"
                 loading="lazy"
                 decoding="async"
                 class="size-full object-cover"
@@ -425,6 +462,11 @@ useHead({
               <UiAccordionContent>{{ item.content }}</UiAccordionContent>
             </template>
           </UiAccordion>
+          <div class="mt-4 text-center">
+            <UiButton to="/faq" variant="ghost" icon="lucide:arrow-right" icon-placement="right" class="shop-gold-hover">
+              Ver todas as perguntas
+            </UiButton>
+          </div>
         </div>
       </div>
     </section>

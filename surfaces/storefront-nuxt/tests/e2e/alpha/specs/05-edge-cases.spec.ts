@@ -7,7 +7,7 @@ test.describe('casos de borda', () => {
     const errors = collectConsoleErrors(page)
     await page.goto('/entrar', { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2200)
-    await page.getByText(/Não consigo usar WhatsApp/i).first().click()
+    await page.getByText(/Receber código por SMS/i).first().click()
     await page.waitForTimeout(1400)
     const phone = page.locator('input[inputmode="tel"], input[type="tel"]').filter({ visible: true }).first()
     await expect(phone).toBeVisible()
@@ -29,7 +29,7 @@ test.describe('casos de borda', () => {
     // passa pela tela de código SEM clicar em "usar código de teste"
     await page.goto('/entrar', { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2200)
-    await page.getByText(/Não consigo usar WhatsApp/i).first().click()
+    await page.getByText(/Receber código por SMS/i).first().click()
     await page.waitForTimeout(1400)
     const phone = page.locator('input[inputmode="tel"], input[type="tel"]').filter({ visible: true }).first()
     await phone.fill('11999999999')

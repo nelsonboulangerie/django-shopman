@@ -31,6 +31,11 @@ class OmotenashiProjection:
     customer_name: str | None
     is_birthday: bool
     audience: str
+    # A pergunta de novidades por WhatsApp ainda não foi respondida por este
+    # cliente. A home chega em TODA sessão — inclusive a de quem entra pelo
+    # aparelho reconhecido e nunca passa pelo login —, então é daqui que o sheet
+    # de novidades da loja sabe se deve subir. Anônimo: sempre False.
+    marketing_prompt_pending: bool
 
 
 @dataclass(frozen=True)
@@ -253,6 +258,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         customer_name=omo.customer_name,
         is_birthday=omo.is_birthday,
         audience=omo.audience,
+        marketing_prompt_pending=_marketing_prompt_pending(request),
     )
 
     shop = Shop.load()
@@ -586,6 +592,32 @@ def _copy_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProje
 
     entry = resolve_copy(key, moment=omotenashi.moment, audience=omotenashi.audience)
     return CopyEntryProjection(title=entry.title, message=entry.message)
+
+
+def _marketing_prompt_pending(request: HttpRequest) -> bool:
+    """Se a loja deve oferecer o sheet de novidades a quem está vendo a home.
+
+    Falha fechado: sem cliente resolvido, ou se a leitura quebra, não pergunta.
+    Perguntar a quem já respondeu é pior do que deixar de perguntar numa visita;
+    e a home não pode cair por causa de um convite. O `warning` diz a razão.
+    """
+    if getattr(request, "customer", None) is None:
+        return False
+    try:
+        from shopman.shop.projections.customer_context import marketing_prompt_pending
+        from shopman.storefront.identity import get_authenticated_customer
+
+        customer = get_authenticated_customer(request)
+        if customer is None:
+            return False
+        return marketing_prompt_pending(customer)
+    except Exception:
+        logger.warning(
+            "home.marketing_prompt_pending_unavailable: cliente ou consentimento ilegível; "
+            "o sheet de novidades não sobe nesta visita",
+            exc_info=True,
+        )
+        return False
 
 
 def _reorder_context(request: HttpRequest) -> tuple[str | None, tuple[LastOrderItemProjection, ...]]:

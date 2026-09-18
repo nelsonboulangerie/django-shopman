@@ -92,7 +92,7 @@ class DeliveryZone(models.Model):
 
     def __str__(self) -> str:
         fee_label = "grátis" if self.fee_q == 0 else f"R$ {self.fee_q / 100:.2f}"
-        return f"{self.name} ({self.get_zone_type_display()}: {self.match_value}) — {fee_label}"
+        return f"{self.name} ({self.get_zone_type_display()}: {self.match_value}) · {fee_label}"
 
     @classmethod
     def match(cls, *, postal_code: str, neighborhood: str) -> DeliveryZone | None:
@@ -173,7 +173,7 @@ class DeliveryDistanceBand(models.Model):
 
     def __str__(self) -> str:
         fee_label = "grátis" if self.fee_q == 0 else f"R$ {self.fee_q / 100:.2f}"
-        return f"até {self.max_distance_km} km — {fee_label}"
+        return f"até {self.max_distance_km} km · {fee_label}"
 
     @classmethod
     def match(cls, distance_km: float) -> DeliveryDistanceBand | None:

@@ -33,7 +33,7 @@ DEPLOY_SPECS = (
 )
 
 #: Hosts cortados em 01/09/2026 por decisão do dono, sem alias e para sempre.
-#: A loja é `menu.nelsonboulangerie.com.br`.
+#: O site é `www.nelsonboulangerie.com.br` (17/09/2026).
 DEAD_HOSTS = (
     "alpha.nelsonboulangerie.com.br",
     "staging.nelsonboulangerie.com.br",
@@ -96,7 +96,7 @@ def test_deploy_spec_never_resurrects_a_dead_host(path: pathlib.Path):
     offenders = sorted(host for host in DEAD_HOSTS if host in configured)
     assert not offenders, (
         f"{path.name} reintroduz host cortado em 01/09: {', '.join(offenders)}. "
-        "A loja é menu.nelsonboulangerie.com.br."
+        "O site é www.nelsonboulangerie.com.br."
     )
 
 
@@ -131,4 +131,38 @@ def test_backup_sheet_host_is_a_declared_domain(path: pathlib.Path):
     )
     assert host in _authorities(spec), (
         f"{path.name}: SHOPMAN_BACKUP_SHEET_HOST={host} não tem regra de ingress"
+    )
+
+
+@pytest.mark.parametrize("path", DEPLOY_SPECS, ids=lambda p: p.name)
+def test_product_images_live_on_a_host_that_is_not_a_site(path: pathlib.Path):
+    """A foto de produto tem hostname próprio, roteado só para `/img/`.
+
+    Quebrou duas vezes pelo mesmo motivo: a foto morava no host de um site
+    (`menu.` em 01/09, `www.` em 17/09) e o site mudou de lugar. Com o host
+    dedicado, trocar o site de domínio não toca em nenhuma `image_url`.
+    """
+    spec = _spec(path)
+    base = _env_values(spec).get("SHOPMAN_PRODUCT_IMAGE_BASE")
+    if not base:
+        pytest.skip("spec não declara a base das fotos")
+    host = base.split("://", 1)[-1].split("/", 1)[0]
+    domains = _domains(spec)
+
+    assert host in domains, f"{path.name}: host das fotos {host} não é domínio declarado"
+    assert domains[host] != "PRIMARY", f"{path.name}: host das fotos {host} é o site (PRIMARY)"
+    for key in ("SHOPMAN_STOREFRONT_BASE_URL", "SHOPMAN_DOMAIN"):
+        site = _env_values(spec).get(key, "")
+        assert host not in site, f"{path.name}: host das fotos {host} é o mesmo de {key}"
+
+    rules = [
+        rule
+        for rule in (spec.get("ingress") or {}).get("rules") or []
+        if ((rule.get("match") or {}).get("authority") or {}).get("exact") == host
+    ]
+    assert len(rules) == 1, f"{path.name}: host das fotos {host} precisa de exatamente uma regra"
+    component = rules[0].get("component") or {}
+    assert component.get("name") == "storefront-nuxt"
+    assert component.get("rewrite") == "/img/", (
+        f"{path.name}: {host} precisa reescrever para /img/ — sem isso ele serve o site inteiro"
     )

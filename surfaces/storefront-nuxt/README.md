@@ -81,7 +81,9 @@ projeção pública de Loja; nome, nome curto, descrição e cores não devem se
 duplicados em componentes. Se o Django estiver indisponível, o builder usa o
 fallback da Nelson gravado em `server/utils/pwaManifest.ts`.
 
-O SVG mestre dos ícones é `brand/nelson-mark.svg`. Para regenerar favicon,
+O ícone instalável usa o pictograma `store` do Lucide centralizado no campo
+bordeaux `#6D1F32`, com desenho creme `#FCF7EE`. Os SVGs de marca continuam
+como fonte do favicon, do logotipo e dos splash screens. Para regenerar favicon,
 ícones, maskable, monochrome, apple-touch-icon e todos os splash screens iOS:
 
 ```bash
@@ -89,17 +91,19 @@ npm run pwa:assets
 ```
 
 Revise visualmente `public/pwa/maskable-512x512.png` depois de qualquer troca do
-SVG: todo o símbolo precisa continuar dentro da zona segura central de 80%. A
+pictograma: todo o símbolo precisa continuar dentro da zona segura central. A
 saída é versionada; o comando deve ser executado e o diff conferido antes do
 commit.
 
-Os ícones `any` usam o selo circular sem margem adicional e com transparência.
-No Mac, o manifesto omite `maskable` para o Chrome selecionar esse selo; a
-resposta varia por `User-Agent` e usa `private, no-store`, pois a borda pode
-ignorar `Vary` ao formar a chave de cache. O link versionado do manifesto evita
-reutilizar a resposta pública anterior; `id`, `scope` e `start_url` não mudam. O ícone Apple é opaco, amarelo `#FFD25C`, com
-98% de ocupação. O adaptativo Android usa o mesmo amarelo com 80% de ocupação,
-preservando a zona segura contra recortes do launcher. Ícones já instalados
+Os ícones `any` usam fundo bordeaux em retângulo arredondado e o símbolo
+centralizado, com a mesma forma da família de operador. O manifesto é o mesmo para
+todo navegador e sempre publica o `maskable`: o Chrome no macOS monta o ícone do Dock
+a partir dele, recortado na grade do macOS; sem ele, usava o `any` de ponta a ponta e
+o app ficava ~24% maior que os vizinhos (ver `operator-kit/PWA_ICONS.md`). A resposta
+usa `private, no-store`, porque nome e cores vêm da loja. O link versionado do
+manifesto evita reutilizar a resposta anterior; `id`, `scope` e `start_url` não mudam.
+O ícone Apple usa a mesma composição; o adaptativo Android reduz o símbolo para
+preservar a zona segura contra recortes do launcher. Ícones já instalados
 precisam receber a atualização do navegador; validar também uma instalação nova.
 
 O gate completo da fase parte da raiz do repositório:

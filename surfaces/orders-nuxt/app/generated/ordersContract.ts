@@ -227,7 +227,7 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Um aparelho que o entregador pode levar no despacho (ref do canal + rótulo). */
+/** Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo). */
 export interface EquipmentOptionProjection {
   ref: string;
   label: string;
@@ -235,7 +235,7 @@ export interface EquipmentOptionProjection {
   reason: string;
 }
 
-/** Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou. */
+/** Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou. */
 export interface EquipmentOutProjection {
   ref: string;
   label: string;
@@ -302,6 +302,7 @@ export interface OrderCardProjection {
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;
+  fiscal_state: string;
   has_kitchen_note: boolean;
   has_customer_note: boolean;
   is_gift: boolean;
@@ -374,6 +375,7 @@ export interface OperatorOrderProjection {
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;
+  fiscal_state: string;
   fiscal_links: Record<string, string>[];
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   is_gift: boolean;
@@ -421,6 +423,8 @@ export interface TwoZoneQueueProjection {
   expedition_delivery_count: number;
   expedition_count: number;
   total_count: number;
+  service_day: string;
+  service_day_ends_at: string;
   preorders: OrderCardProjection[];
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];

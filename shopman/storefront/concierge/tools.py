@@ -322,15 +322,19 @@ def _fulfillment_payload(data: dict) -> dict:
 
 
 def _slot_label(fulfillment_type: str, slot_ref: str) -> str:
+    """O rótulo da janela como o cliente lê no WhatsApp.
+
+    Um resolvedor só (``fulfillment_window.window_label``), pelas DUAS grades.
+    Partir o ref no hífen para a entrega dava "slot às 09" — o canônico de uma
+    encomenda de entrega vazando como texto. Quem decide é a FORMA do ref, não
+    o tipo de recebimento.
+    """
     if not slot_ref:
         return ""
-    if fulfillment_type == "delivery" and "-" in slot_ref:
-        start, _, end = slot_ref.partition("-")
-        return f"{start} às {end}"
-    from shopman.storefront.services.pickup_slots import slot_label
+    from shopman.shop.services.fulfillment_window import window_label
 
     try:
-        return slot_label(slot_ref) or slot_ref
+        return window_label(slot_ref) or slot_ref
     except Exception:
         logger.debug("concierge.slot_label degraded slot=%s", slot_ref, exc_info=True)
         return slot_ref

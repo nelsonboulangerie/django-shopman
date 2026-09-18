@@ -26,8 +26,8 @@ export function useOrderCashDrafts() {
   const hasDirty = computed(() => Object.entries(drafts.value.settlement).some(([ref_, value]) => settlementInputs(value) !== drafts.value.baseline[`settlement:${ref_}`])
     || Object.entries(drafts.value.dispatch).some(([ref_, value]) => JSON.stringify(value) !== drafts.value.baseline[`dispatch:${ref_}`]));
   function clear(kind: "settlement" | "dispatch", ref_: string) {
-    delete drafts.value[kind][ref_];
-    delete drafts.value.baseline[`${kind}:${ref_}`];
+    Reflect.deleteProperty(drafts.value[kind], ref_);
+    Reflect.deleteProperty(drafts.value.baseline, `${kind}:${ref_}`);
   }
   return { settlement, dispatch, clear, hasDirty, settlements: computed(() => drafts.value.settlement), dispatches: computed(() => drafts.value.dispatch) };
 }

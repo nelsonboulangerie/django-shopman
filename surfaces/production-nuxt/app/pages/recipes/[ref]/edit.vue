@@ -41,7 +41,7 @@ const entryRef = String(route.params.ref ?? "");
 const { entry, canEdit, latestDraft, versionByNumber, notFound, forbidden, pending, error, refresh, busy, createVersion, updateDraft, publish } =
   useRecipeEntry(entryRef);
 
-useHead({ title: computed(() => `Editar · ${entry.value?.name || "Receita"} · Produção`) });
+useHead({ title: computed(() => `Editar · ${entry.value?.name || "Receita"}`) });
 
 // ── O rascunho em edição ────────────────────────────────────────────────────
 const requestedNumber = computed(() => Number(route.query.v) || null);

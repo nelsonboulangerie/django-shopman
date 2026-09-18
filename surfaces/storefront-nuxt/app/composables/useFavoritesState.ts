@@ -1,3 +1,6 @@
+import { favoriteNotedAlertMessage } from '~/presentation/stockNotify'
+import type { FavoriteToggleResponse } from '~/types/shopman'
+
 // Estado otimista de favoritos do cliente (WP-4). Um único mapa SKU→bool
 // compartilhado entre todos os corações (card/PDP) e a coleção "Seus favoritos",
 // para que favoritar num lugar reflita em todos. A projeção server-side traz o
@@ -6,6 +9,7 @@ export function useFavoritesState () {
   const apiPath = useShopmanApiPath()
   const csrfHeaders = useShopmanCsrfHeaders()
   const { isAuthenticated } = useShopSession()
+  const { setStockNotifySubscribed } = useStockNotifyTransientState()
 
   const overrides = useState<Record<string, boolean>>('shopman-favorites', () => ({}))
   // Incrementa APÓS cada mutação confirmada pelo servidor — sinal de reload para
@@ -25,11 +29,19 @@ export function useFavoritesState () {
     const next = !current
     overrides.value = { ...overrides.value, [sku]: next }
     try {
-      await $fetch(apiPath(`/api/v1/account/favorites/${encodeURIComponent(sku)}/`), {
+      const result = await $fetch<FavoriteToggleResponse | undefined>(apiPath(`/api/v1/account/favorites/${encodeURIComponent(sku)}/`), {
         method: next ? 'POST' : 'DELETE',
         headers: await csrfHeaders(),
         credentials: 'include'
       })
+      // Favoritar um esgotado pode anotar o aviso (e desfavoritar nunca o
+      // cancela): o sino de todo botão deste SKU segue o que o servidor disse.
+      if (typeof result?.is_notify_subscribed === 'boolean') {
+        setStockNotifySubscribed(sku, result.is_notify_subscribed)
+      }
+      if (result?.stock_alert_noted === true && import.meta.client) {
+        useSonner.success(favoriteNotedAlertMessage())
+      }
       version.value += 1
       return next
     } catch (e) {

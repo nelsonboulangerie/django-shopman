@@ -1,14 +1,12 @@
 import { computed, onBeforeUnmount, onMounted, readonly, ref } from "vue";
 
+import { isInstalledDisplay } from "../utils/displayMode";
+
 const DEFAULT_DISMISS_DAYS = 7;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
-
-interface NavigatorWithStandalone extends Navigator {
-  standalone?: boolean;
 }
 
 interface PwaInstallOptions {
@@ -33,8 +31,7 @@ export function usePwaInstall(options: PwaInstallOptions = {}) {
     const ua = navigator.userAgent;
     isIos.value = /iPad|iPhone|iPod/.test(ua)
       || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    isStandalone.value = window.matchMedia("(display-mode: standalone)").matches
-      || Boolean((navigator as NavigatorWithStandalone).standalone);
+    isStandalone.value = isInstalledDisplay();
     try {
       const stored = Number.parseInt(localStorage.getItem(storageKey) || "", 10);
       dismissedUntil.value = Number.isFinite(stored) ? stored : null;

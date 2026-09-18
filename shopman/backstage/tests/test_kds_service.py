@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
@@ -20,65 +21,38 @@ def ticket(db):
     return KDSTicket.objects.create(
         session_key=order.session_key,
         kds_instance=instance,
-        items=[{"sku": "A", "name": "Item", "qty": 1, "checked": False}],
+        items=[{"sku": "A", "name": "Item", "qty": 1}],
     )
 
 
-# ⚠️ Estes dois testes AFIRMAVAM O DEFEITO. Um se chamava `..._is_idempotent` e
-# provava `core.assert_not_called()`; o outro, `..._delegates_only_when_state_changes`.
-# Os dois fixavam a leitura PRÉ-LOCK — a decisão "isto muda ou não" tomada com dado
-# que envelhece entre ler e travar, que é onde a outra requisição escreve. Com dois
-# tablets na bancada, o item desmarcava sozinho.
-#
-# Idempotente não é "a segunda chamada é pulada": é "a segunda chamada deixa o mesmo
-# estado". A primeira definição exige comparar antes; a segunda, não — e é só a
-# segunda que sobrevive à concorrência.
-
-
 @pytest.mark.django_db
-def test_set_ticket_item_checked_is_idempotent(ticket):
-    """Chamar duas vezes com o mesmo estado desejado deixa o mesmo estado.
-
-    Sem mock: o que importa aqui é o RESULTADO, e o mock era justamente o que
-    permitia afirmar "não chamou" como se fosse idempotência.
-    """
-    kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:op")
-    kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:outro")
+def test_start_ticket_is_idempotent(ticket):
+    """Idempotente é "a segunda chamada deixa o mesmo estado", sem mock."""
+    kds.start_ticket(ticket_pk=ticket.pk, actor="kds:op")
+    kds.start_ticket(ticket_pk=ticket.pk, actor="kds:outro")
 
     ticket.refresh_from_db()
-    assert ticket.items[0]["checked"] is True
+    assert ticket.status == "in_progress"
 
 
 @pytest.mark.django_db
-def test_set_ticket_item_checked_delegates_always(ticket, monkeypatch):
-    """Delega SEMPRE — inclusive quando o estado atual já é o desejado.
-
-    É o oposto do que este teste afirmava, e é o conserto: enquanto o serviço
-    comparasse antes de travar, a corrida voltava.
-    """
-    core = Mock(return_value=True)
-    monkeypatch.setattr(kds.kds_core, "set_ticket_item_checked", core)
-
-    result = kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=False, actor="kds:op")
-
-    assert result.pk == ticket.pk
-    core.assert_called_once_with(ticket, index=0, checked=False, actor="kds:op")
-
-
-@pytest.mark.django_db
-def test_set_ticket_item_checked_raises_for_missing_item(ticket):
-    with pytest.raises(KDSError):
-        kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=9, checked=True, actor="kds:op")
-
-
-@pytest.mark.django_db
-def test_set_ticket_item_checked_raises_for_cancelled_ticket(ticket):
+def test_start_ticket_raises_for_cancelled_ticket(ticket):
     ticket.status = "cancelled"
     ticket.cancelled_at = timezone.now()
     ticket.save(update_fields=["status", "cancelled_at"])
 
     with pytest.raises(KDSError):
-        kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:op")
+        kds.start_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+
+@pytest.mark.django_db
+def test_start_ticket_raises_for_done_ticket(ticket):
+    ticket.status = "done"
+    ticket.completed_at = timezone.now()
+    ticket.save(update_fields=["status", "completed_at"])
+
+    with pytest.raises(KDSError):
+        kds.start_ticket(ticket_pk=ticket.pk, actor="kds:op")
 
 
 @pytest.mark.django_db
@@ -111,6 +85,23 @@ def test_mark_ticket_done_surfaces_lifecycle_block_reason(ticket, monkeypatch):
 
     with pytest.raises(KDSError, match="Pagamento ainda não foi confirmado."):
         kds.mark_ticket_done(ticket_pk=ticket.pk, actor="kds:op")
+
+
+@pytest.mark.django_db
+def test_mark_ticket_done_requires_acknowledging_item_cancellation(ticket):
+    KDSTicket.objects.create(
+        session_key=ticket.session_key,
+        kds_instance=ticket.kds_instance,
+        items=[{"line_id": "removed", "sku": "B", "name": "Item retirado", "qty": 1}],
+        status="cancelled",
+        cancelled_at=timezone.now(),
+    )
+
+    with pytest.raises(KDSError, match="toque em Ciente"):
+        kds.mark_ticket_done(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.refresh_from_db()
+    assert ticket.status == "pending"
 
 
 @pytest.mark.django_db
@@ -172,6 +163,50 @@ def test_acknowledge_ticket_marks_cancelled(ticket):
 def test_acknowledge_ticket_raises_when_not_cancelled(ticket):
     with pytest.raises(KDSError):
         kds.acknowledge_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+
+@pytest.mark.django_db
+def test_future_ticket_rejects_all_mutations(ticket):
+    order = Order.objects.get(session_key=ticket.session_key)
+    order.data = {"delivery_date": (timezone.localdate() + timedelta(days=1)).isoformat()}
+    order.save(update_fields=["data", "updated_at"])
+
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.start_ticket(ticket_pk=ticket.pk, actor="kds:op")
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.mark_ticket_done(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.status = "done"
+    ticket.completed_at = timezone.now()
+    ticket.save(update_fields=["status", "completed_at"])
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.recall_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.status = "cancelled"
+    ticket.cancelled_at = timezone.now()
+    ticket.save(update_fields=["status", "cancelled_at"])
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.acknowledge_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.refresh_from_db()
+    assert ticket.acknowledged_at is None
+
+
+@pytest.mark.django_db
+def test_future_expedition_action_is_blocked_even_on_replay():
+    order = Order.objects.create(
+        ref="KDS-EXP-FUTURE",
+        channel_ref="web",
+        status=Order.Status.COMPLETED,
+        total_q=1000,
+        data={
+            "delivery_date": (timezone.localdate() + timedelta(days=1)).isoformat(),
+            "fulfillment_type": "pickup",
+        },
+    )
+
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.expedition_action(order_id=order.pk, action="complete", actor="kds:op")
 
 
 def test_expedition_action_preserves_core_message(monkeypatch):

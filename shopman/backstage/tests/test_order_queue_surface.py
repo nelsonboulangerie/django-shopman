@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
+import pytest
 from django.test import TestCase
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order, OrderItem
 
@@ -325,6 +329,22 @@ class OrderQueueSurfaceTests(TestCase):
         card = build_order_card(Order.objects.get(pk=order.pk))
 
         self.assertEqual(card.payment_tone, "neutral")
+
+    def test_ready_pickup_exposes_receipt_action_and_never_says_delivery(self) -> None:
+        order = _order("A-CASH-RETIRADA", "ready")
+        order.data["payment"] = {
+            "method": "cash",
+            "collection": "on_delivery",
+            "tenders": [{"method": "cash", "amount_q": order.total_q, "status": "pending"}],
+        }
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertTrue(card.can_settle_delivery_cash)
+        self.assertEqual(card.payment_method_label, "Dinheiro na retirada")
+        action = next(action for action in card.actions if action.ref == "settle-delivery-cash")
+        self.assertEqual(action.label, "Registrar pagamento na retirada")
 
     def test_web_pay_on_pickup_cash_stays_neutral(self) -> None:
         """Pedido web para pagar na retirada não tem tender ainda: neutro, não verde."""
@@ -767,3 +787,16 @@ class TimelineSpeaksPortugueseTests(TestCase):
 
                 self.assertEqual(event.label, order_status_label("accepted"))
                 self.assertNotIn("Status", event.label)
+
+
+@pytest.mark.django_db
+def test_queue_projects_server_operational_day_and_its_boundary(settings):
+    settings.TIME_ZONE = "America/Sao_Paulo"
+
+    queue = build_two_zone_queue()
+
+    assert queue.service_day == timezone.localdate().isoformat()
+    assert queue.service_day_ends_at.endswith("-03:00")
+    assert queue.service_day_ends_at.startswith(
+        (timezone.localdate() + timedelta(days=1)).isoformat()
+    )

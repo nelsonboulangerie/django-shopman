@@ -128,6 +128,26 @@ def test_cash_on_delivery_also_starts_prep():
     assert order.status == Order.Status.PREPARING
 
 
+def test_payment_on_pickup_blocks_handoff_until_manager_records_receipt():
+    order = _order(
+        "PICKUP-PENDING",
+        status=Order.Status.READY,
+        fulfillment_type="pickup",
+        payment={"method": "cash", "collection": "on_delivery"},
+    )
+
+    assert payment_gate.payment_blocks_transition(
+        order, current_status=Order.Status.READY, target_status=Order.Status.COMPLETED,
+    ) is True
+    assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
+
+    order.data["payment"]["cod_settled_at"] = "2026-09-15T12:00:00-03:00"
+    order.save(update_fields=["data", "updated_at"])
+    assert payment_gate.payment_blocks_transition(
+        order, current_status=Order.Status.READY, target_status=Order.Status.COMPLETED,
+    ) is False
+
+
 def test_storefront_cash_delivery_is_read_as_cash_on_delivery():
     """Pedido antigo da loja online: dinheiro + entrega, sem a marca ``collection``.
 

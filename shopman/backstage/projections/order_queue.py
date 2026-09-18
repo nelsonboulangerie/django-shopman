@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.db.models import Q
 from django.utils import timezone
@@ -91,7 +91,7 @@ class AwaitingWorkOrderProjection:
 
 @dataclass(frozen=True)
 class EquipmentOptionProjection:
-    """Um aparelho que o entregador pode levar no despacho (ref do canal + rótulo)."""
+    """Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo)."""
 
     ref: str
     label: str
@@ -101,7 +101,7 @@ class EquipmentOptionProjection:
 
 @dataclass(frozen=True)
 class EquipmentOutProjection:
-    """Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou."""
+    """Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou."""
 
     ref: str
     label: str
@@ -160,6 +160,8 @@ class OrderCardProjection:
     can_settle_delivery_cash: bool
     fiscal_status_label: str
     fiscal_status: str
+    # Vocabulário canônico da NFC-e (``fiscal_service.FISCAL_STATES``), o mesmo do PDV.
+    fiscal_state: str
     # Duas notas, dois donos (data-schemas): ``kitchen_note`` é a nota do
     # OPERADOR; ``order_notes`` é a observação do CLIENTE no checkout. O antigo
     # ``has_notes`` só olhava a nota do operador — a voz do cliente chegava ao
@@ -340,6 +342,7 @@ class OperatorOrderProjection:
     can_settle_delivery_cash: bool
     fiscal_status_label: str
     fiscal_status: str
+    fiscal_state: str
     fiscal_links: tuple[dict[str, str], ...]
     awaiting_work_orders: tuple[AwaitingWorkOrderProjection, ...]
     is_gift: bool
@@ -417,6 +420,11 @@ class TwoZoneQueueProjection:
     expedition_delivery_count: int
     expedition_count: int
     total_count: int
+    # Relógio operacional canônico da loja. O tablet pode estar em UTC, com
+    # timezone errado ou atravessar a meia-noite local em outro instante; som e
+    # memória diária devem seguir o dia calculado pelo Django.
+    service_day: str
+    service_day_ends_at: str
     # Encomendas para datas futuras (WP-D): fora das colunas do dia, ordenadas
     # pela data combinada. Inclui pedidos NOVOS (ainda a aceitar) e confirmados —
     # ambos carregam o badge "Agendado · <data>", então pertencem aqui, não na
@@ -540,8 +548,8 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
     payment_status = _payment_status(order)
-    payment_method_label = _payment_method_label(method, payment_data)
-    fiscal_status, fiscal_status_label, fiscal_links = _fiscal_status(order)
+    payment_method_label = _payment_method_label(method, payment_data, order=order)
+    fiscal_status, fiscal_status_label, fiscal_state, fiscal_links = _fiscal_status(order)
 
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     is_delivery = _is_delivery(order)
@@ -633,6 +641,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
         fiscal_status_label=fiscal_status_label,
+        fiscal_state=fiscal_state,
         fiscal_links=fiscal_links,
         awaiting_work_orders=_awaiting_work_orders(order),
         is_gift=bool(order.data.get("is_gift")),
@@ -1068,6 +1077,14 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("dispatched", "delivered")
     )
 
+    from datetime import datetime, time, timedelta
+
+    service_day = timezone.localdate()
+    service_day_ends_at = timezone.make_aware(
+        datetime.combine(service_day + timedelta(days=1), time.min),
+        timezone.get_current_timezone(),
+    )
+
     return TwoZoneQueueProjection(
         equipment_out=_equipment_out(user=user, devices=devices),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
@@ -1087,6 +1104,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         + len(expedition_delivery)
         + len(expedition_delivery_transit),
         total_count=len(all_orders),
+        service_day=service_day.isoformat(),
+        service_day_ends_at=service_day_ends_at.isoformat(),
         preorders=preorders,
         preorders_count=len(preorders),
     )
@@ -1232,9 +1251,11 @@ def _build_card(
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
     payment_status = (_payment_status(order) if order.channel_ref == "ifood" else (payment_svc.get_payment_status(order, payment_reads=payment_reads) or ""))
-    payment_method_label = _payment_method_label(method, payment_data, labels=method_labels)
-    fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(
-        order, directive_status=fiscal_states.get(order.ref, "") if fiscal_states is not None else None,
+    payment_method_label = _payment_method_label(method, payment_data, labels=method_labels, order=order)
+    fiscal_status, fiscal_status_label, fiscal_state, _fiscal_links = _fiscal_status(
+        order,
+        directive_status=fiscal_states.directive_status.get(order.ref, "") if fiscal_states is not None else None,
+        emit_failed_alert=(order.ref in fiscal_states.failed_alert_refs) if fiscal_states is not None else None,
     )
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
@@ -1291,6 +1312,7 @@ def _build_card(
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
+        fiscal_state=fiscal_state,
         has_kitchen_note=bool(order.data.get("kitchen_note")),
         has_customer_note=bool(str(order.data.get("order_notes", "") or "").strip()),
         is_gift=bool(order.data.get("is_gift")),
@@ -1565,7 +1587,7 @@ def _payment_status(order: Order) -> str:
     return payment_svc.get_payment_status(order) or ""
 
 
-def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None) -> str:
+def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None, order: Order | None = None) -> str:
     if _has_no_payment_info(payment_data):
         # Pill explícito em vez de rótulo vazio (que sumiria o pill). Ver
         # _has_no_payment_info: card mudo se confunde com pedido pago.
@@ -1578,8 +1600,9 @@ def _payment_method_label(method: str, payment_data: dict, *, labels: dict | Non
         )
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
-            return f"{label} — acerto confirmado"
-        return f"{label} na entrega"
+            return f"{label} — pagamento confirmado"
+        handoff = "retirada" if order is not None and not _is_delivery(order) else "entrega"
+        return f"{label} na {handoff}"
     return label
 
 
@@ -1608,7 +1631,10 @@ def _cash_settlement_actions(order, user, context):
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
     if not authorized:
         reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
-    return (Action(ref="settle-delivery-cash", kind="mutation", label="Registrar dinheiro recebido",
+    is_pickup = not _is_delivery(order)
+    return (Action(ref="settle-delivery-cash", kind="mutation", label=(
+        "Registrar pagamento na retirada" if is_pickup else "Registrar pagamento da entrega"
+    ),
         enabled=authorized and not reason, reason=reason, method="POST", idempotency="required",
         payload_schema={"base_revision": operator_orders.cash_settlement_revision(order, shift),
             "expected_actor_id": getattr(user, "pk", None), "cash_shift_id": shift.pk if shift else None},
@@ -1616,12 +1642,16 @@ def _cash_settlement_actions(order, user, context):
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
+    fulfillment_ready = (
+        order.status == Order.Status.READY
+        if not _is_delivery(order)
+        else order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
+    )
     return (
-        _is_delivery(order)
-        and payment_data.get("method") in {"cash", "credit", "debit", "mixed"}
+        payment_data.get("method") in {"cash", "credit", "debit", "mixed"}
         and payment_data.get("collection") == "on_delivery"
         and not payment_data.get("cod_settled_at")
-        and order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
+        and fulfillment_ready
     )
 
 
@@ -1685,84 +1715,80 @@ def _format_time_of_day(dt) -> str:
     return f"em {local:%d/%m} às {hour}"
 
 
-def _fiscal_status(order: Order, *, directive_status: str | None = None) -> tuple[str, str, tuple[dict[str, str], ...]]:
+#: ``fiscal_state`` (serviço) → ``(fiscal_status, fiscal_status_label)`` da pill.
+#:
+#: A copy segue o PONTO em que a nota nasce, não o status do pedido: pix/link
+#: emitem na captura (``lifecycle._on_paid``), e "Fiscal na conclusão" mentia
+#: para eles. ``fiscal_status`` mantém as chaves que a tela do Gestor já lê
+#: (``failed`` liga o "Reprocessar fiscal"); ``fiscal_state`` é o vocabulário
+#: canônico, o mesmo do PDV.
+_FISCAL_PILL = {
+    "authorized": ("authorized", "NFC-e autorizada"),
+    "failed": ("failed", "NFC-e falhou"),
+    "queued": ("pending", "NFC-e na fila"),
+    "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
+    "not_expected": ("not_requested", "Fiscal não solicitado"),
+}
+
+
+class _FiscalEvidence(NamedTuple):
+    """Evidência fiscal lida em LOTE para um quadro: uma query por fonte, não por card."""
+
+    directive_status: dict[str, str]
+    failed_alert_refs: frozenset[str]
+
+
+def _fiscal_status(
+    order: Order,
+    *,
+    directive_status: str | None = None,
+    emit_failed_alert: bool | None = None,
+) -> tuple[str, str, str, tuple[dict[str, str], ...]]:
+    """``(fiscal_status, fiscal_status_label, fiscal_state, links)`` da pill fiscal."""
+    from shopman.shop.services import fiscal as fiscal_service
+
     data = order.data or {}
+    state = fiscal_service.fiscal_state(
+        order, directive_status=directive_status, emit_failed_alert=emit_failed_alert,
+    )
     if data.get("nfce_cancelled"):
-        status = "cancelled"
-        label = "NFC-e cancelada"
-    elif data.get("nfce_access_key"):
-        status = "authorized"
-        label = "NFC-e autorizada"
+        # Nota cancelada é fato posterior à autorização: a chave continua lá, o
+        # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
+        status, label = "cancelled", "NFC-e cancelada"
     else:
-        if directive_status is None:
-            directive_status = _latest_fiscal_directive_status(order.ref)
-        # Configuration governs new emission; it cannot erase an existing attempt.
-        if directive_status == "failed":
-            status = "failed"
-            label = "NFC-e com falha"
-        elif directive_status in {"queued", "running", "done"}:
-            status = "pending"
-            label = "NFC-e pendente"
-        elif not _fiscal_emission_expected(order):
-            status = "not_requested"
-            label = "Fiscal não solicitado"
-        elif order.status != Order.Status.COMPLETED:
-            status = "waiting_completion"
-            label = "Fiscal na conclusão"
-        else:
-            status = "pending"
-            label = "NFC-e pendente"
+        status, label = _FISCAL_PILL[state]
 
     links = []
     if data.get("nfce_danfe_url"):
         links.append({"label": "DANFE", "url": data["nfce_danfe_url"]})
     if data.get("nfce_qrcode_url"):
         links.append({"label": "QR Code", "url": data["nfce_qrcode_url"]})
-    return status, label, tuple(links)
+    return status, label, state, tuple(links)
 
 
-def _fiscal_emission_expected(order: Order) -> bool:
-    try:
-        from shopman.shop.services import fiscal as fiscal_service
-
-        return fiscal_service.emission_expected(order)
-    except Exception:
-        logger.debug("orders.fiscal_emission_expected_failed order=%s", order.ref, exc_info=True)
-        return bool(((order.data or {}).get("fiscal") or {}).get("issue_document"))
-
-
-def _fiscal_states_for(orders) -> dict[str, str]:
-    """Latest canonical Directive evidence in one query for this read only."""
+def _fiscal_states_for(orders) -> _FiscalEvidence:
+    """Latest canonical Directive evidence + open emit-failed alerts, one query each."""
     from shopman.orderman.models import Directive
 
+    from shopman.backstage.models import OperatorAlert
     from shopman.shop.directives import FISCAL_EMIT_NFCE
+    from shopman.shop.services.fiscal import EMIT_FAILED_ALERT_TYPE
 
     refs = [order.ref for order in orders]
     if not refs:
-        return {}
-    result = {}
+        return _FiscalEvidence({}, frozenset())
+    result: dict[str, str] = {}
     rows = Directive.objects.filter(
         topic=FISCAL_EMIT_NFCE, payload__order_ref__in=refs,
     ).order_by("-created_at", "-pk").values_list("payload__order_ref", "status")
     for ref, status in rows:
         result.setdefault(ref, status)
-    return result
-
-
-def _latest_fiscal_directive_status(order_ref: str) -> str:
-    try:
-        from shopman.orderman.models import Directive
-
-        from shopman.shop.directives import FISCAL_EMIT_NFCE
-    except Exception:
-        logger.debug("orders.fiscal_directive_import_failed order_ref=%s", order_ref, exc_info=True)
-        return ""
-    directive = (
-        Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order_ref)
-        .order_by("-created_at", "-pk")
-        .first()
+    failed = frozenset(
+        OperatorAlert.objects.filter(
+            type=EMIT_FAILED_ALERT_TYPE, resolved_at__isnull=True, order_ref__in=refs,
+        ).values_list("order_ref", flat=True)
     )
-    return directive.status if directive else ""
+    return _FiscalEvidence(result, failed)
 
 
 def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:

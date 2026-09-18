@@ -14,13 +14,24 @@ const {
 } = usePwaInstall()
 const open = ref(false)
 const iosStep = ref<0 | 1>(0)
+// UM convite por página: divide a vez com o sheet de novidades (useShopInvite).
+const invite = useShopInvite()
 
 const excluded = computed(() => isPwaInviteRouteExcluded(route.path))
 const eligible = computed(() => Boolean(props.copy)
   && !excluded.value
   && !isStandalone.value
   && !isDismissed.value
-  && (canInstall.value || isIos.value))
+  && (canInstall.value || isIos.value)
+  && invite.canOpen('pwa-install', route.path))
+
+// Síncrono: a vez fica marcada no mesmo instante em que o convite abre, antes de
+// o outro convite reavaliar se pode subir.
+watch(open, value => {
+  if (value) invite.claim('pwa-install', route.path)
+  else invite.release('pwa-install', route.path)
+}, { flush: 'sync' })
+watch(() => route.path, path => invite.leavePage(path))
 
 watch(eligible, (value) => {
   if (!value || open.value) return

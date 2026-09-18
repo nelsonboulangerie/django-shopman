@@ -40,23 +40,39 @@ async function pngSize (path) {
 }
 
 const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const operatorProfile = (surface, { display = 'standalone', orientation = 'any', shortcuts = true, icon, background } = {}) => ({
+  surface: `${surface}-nuxt`,
+  manifestUrl: '/manifest.webmanifest',
+  manifestHref: '/manifest.webmanifest',
+  manifestCache: 'public, max-age=3600',
+  packageWithPwaDependency: 'operator-kit',
+  storefront: false,
+  display,
+  orientation,
+  shortcuts,
+  icon,
+  background,
+})
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=3',
-    manifestHref: '/manifest.webmanifest?v=3',
+    manifestUrl: '/manifest.webmanifest?v=6',
+    manifestHref: '/manifest.webmanifest?v=6',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
+    display: 'standalone',
+    orientation: 'portrait',
   },
-  pos: {
-    surface: 'pos-nuxt',
-    manifestUrl: '/manifest.webmanifest',
-    manifestHref: '/manifest.webmanifest',
-    manifestCache: 'public, max-age=3600',
-    packageWithPwaDependency: 'operator-kit',
-    storefront: false,
-  },
+  pos: operatorProfile('pos', { icon: 'lucide:shopping-basket', background: '#A95032' }),
+  hub: operatorProfile('hub', { icon: 'lucide:layout-grid', background: '#34373B' }),
+  orders: operatorProfile('orders', { icon: 'lucide:square-kanban', background: '#8B2F4D' }),
+  // Kiosks giram livres (tablets); quem trava é o operador, no rail (useOrientationLock).
+  kds: operatorProfile('kds', { display: 'fullscreen', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
+  production: operatorProfile('production', { display: 'fullscreen', icon: 'tabler:baguette', background: '#B9781B' }),
+  marketing: operatorProfile('marketing', { icon: 'lucide:megaphone', background: '#7D4B88' }),
+  purchase: operatorProfile('purchase', { icon: 'lucide:package', background: '#386F9A' }),
+  bi: operatorProfile('bi', { icon: 'lucide:chart-no-axes-combined', background: '#414F91' }),
 }
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
 const profile = profiles[requestedApp]
@@ -66,6 +82,7 @@ check(process.versions.node.startsWith('22.'), `Node 22 em uso (${process.versio
 const surface = join(repository, 'surfaces', profile.surface)
 const output = join(surface, '.output')
 const pwaPackage = JSON.parse(await readFile(join(repository, 'surfaces', profile.packageWithPwaDependency, 'package.json'), 'utf8'))
+const surfacePackage = JSON.parse(await readFile(join(surface, 'package.json'), 'utf8'))
 const splashScreens = profile.storefront
   ? JSON.parse(await readFile(join(surface, 'pwa-splash-screens.json'), 'utf8'))
   : []
@@ -73,6 +90,12 @@ check(pwaPackage.dependencies['@vite-pwa/nuxt'] === '1.1.1', '@vite-pwa/nuxt usa
 if (profile.storefront) {
   check(splashScreens.length === 40, 'matriz canônica contém 40 splash screens iOS')
   check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
+}
+if (!profile.storefront) {
+  const assetScript = surfacePackage.scripts?.['pwa:assets'] || ''
+  check(assetScript.includes(`--icon=${profile.icon}`), `gerador usa ${profile.icon}`)
+  check(assetScript.includes(`--background=${profile.background}`), `gerador usa fundo ${profile.background}`)
+  check(assetScript.includes('--foreground=#FCF7EE'), 'gerador usa desenho creme canônico')
 }
 
 const swPath = join(output, 'public/sw.js')
@@ -107,6 +130,12 @@ for (const [name, width, height] of requiredAssets) {
   const actual = await pngSize(join(surface, 'public/pwa', name))
   check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
 }
+if (!profile.storefront) {
+  // Favicon da aba: a identidade do app gerada por `pwa:assets` (operator-kit/PWA_ICONS.md).
+  for (const name of ['favicon.ico', 'favicon.svg']) {
+    check(await stat(join(surface, 'public', name)).then(() => true, () => false), `${name} existe em public/`)
+  }
+}
 if (profile.storefront) {
   await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
   const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
@@ -128,6 +157,8 @@ const preview = spawn(process.execPath, [join(output, 'server/index.mjs')], {
     ...process.env,
     HOST: '127.0.0.1',
     PORT: String(port),
+    NUXT_SHOPMAN_ENVIRONMENT: 'test',
+    SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: '1',
     NUXT_DJANGO_BASE_URL: 'http://127.0.0.1:1'
   },
   stdio: ['ignore', 'pipe', 'pipe']
@@ -141,20 +172,35 @@ try {
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
   check(manifestResponse.headers.get('cache-control') === profile.manifestCache, `manifesto usa cache esperado (${profile.manifestCache})`)
-  if (profile.storefront) check(manifestResponse.headers.get('vary') === 'User-Agent', 'manifesto declara variação por dispositivo')
+  // O manifesto do storefront é o MESMO para todo aparelho (#784): esconder o
+  // `maskable` do macOS deixava o ícone do Dock ~24% maior que os vizinhos.
+  if (profile.storefront) check(!/user-agent/i.test(manifestResponse.headers.get('vary') || ''), 'manifesto não varia por dispositivo')
   const manifest = await manifestResponse.json()
   const requiredManifestFields = ['id', 'name', 'short_name', 'description', 'lang', 'dir', 'start_url', 'scope', 'display', 'display_override', 'orientation', 'theme_color', 'background_color', 'icons', 'shortcuts']
   if (profile.storefront) requiredManifestFields.push('categories', 'screenshots')
   for (const field of requiredManifestFields) {
     check(field in manifest, `manifesto contém ${field}`)
   }
+  // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
+  const assetVersion = profile.storefront ? '6' : '3'
+  check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
+  if (profile.storefront) {
+    const macResponse = await fetch(`${baseUrl}${profile.manifestUrl}`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36' }
+    })
+    const macManifest = await macResponse.json()
+    check(macManifest.icons.some(icon => icon.purpose === 'maskable'), 'macOS também recebe o ícone maskable (tamanho do Dock)')
+  }
+  check(manifest.display === (profile.display || 'standalone'), `manifesto usa display ${profile.display || 'standalone'}`)
+  check(manifest.orientation === (profile.orientation || 'any'), `manifesto usa orientação ${profile.orientation || 'any'}`)
   if (profile.storefront) {
     check(manifest.icons.some(icon => icon.purpose === 'monochrome'), 'manifesto declara ícone monochrome')
     check(manifest.screenshots.filter(item => item.form_factor === 'narrow').length === 2, 'manifesto declara duas screenshots narrow')
     check(manifest.screenshots.filter(item => item.form_factor === 'wide').length === 1, 'manifesto declara uma screenshot wide')
   } else {
-    check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
+    if (profile.shortcuts) check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
+    else check(manifest.shortcuts.length === 0, 'manifesto do kiosk não inventa atalhos')
   }
 
   const swResponse = await fetch(`${baseUrl}/sw.js`, { method: 'HEAD' })
@@ -167,6 +213,12 @@ try {
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
+  check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${assetVersion}`), 'HTML referencia apple-touch-icon versionado')
+  if (!profile.storefront) {
+    check(document.includes('href="/favicon.svg?v=1"') && document.includes('href="/favicon.ico?v=1"'), 'HTML referencia favicon SVG e ICO versionados')
+    const favicon = await fetch(`${baseUrl}/favicon.svg?v=1`)
+    check(favicon.ok && (await favicon.text()).includes('<rect '), 'favicon.svg responde 200 com o retângulo arredondado')
+  }
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
 } catch (error) {

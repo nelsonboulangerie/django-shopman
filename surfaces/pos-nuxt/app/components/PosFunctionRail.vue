@@ -19,6 +19,7 @@ const emit = defineEmits<{
   board: [];
   cash: [];
   tickets: [];
+  display: [];
   lock: [];
   refresh: [];
 }>();
@@ -28,7 +29,8 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 <template>
   <OperatorRail
-    app-icon="banknote"
+    app-icon="shopping-basket"
+    app-icon-src="/pwa/pwa-64x64.png?v=3"
     app-label="PDV"
     :central-url="hubUrl"
     :operator-name="operatorName || undefined"
@@ -49,26 +51,39 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
         :attention="!hasOpenCashSession"
         @activate="emit('cash')"
       />
-      <!-- Filipetas: o pedido remoto virando papel para o painel de parede. Mora
+      <!-- Fichas de pedido: o pedido remoto virando papel para o painel de parede. Mora
            no rail do PDV porque a bobina e o agente do balcão moram aqui. -->
       <RailItem
         icon="printer"
-        label="Filipetas"
+        label="Fichas de pedido"
         :active="view === 'tickets'"
         @activate="emit('tickets')"
+      />
+      <!-- Tela do cliente: o segundo monitor da MESMA máquina e navegador. Morava só
+           no cabeçalho da antessala de caixa, onde só se chega abrindo o turno — e a
+           janela, uma vez fechada sem querer, não tinha volta de dentro da venda.
+           Aqui ela é função do balcão, alcançável de qualquer tela. -->
+      <RailItem
+        icon="monitor"
+        label="Tela do cliente"
+        aria-label="Abrir a tela do cliente no segundo monitor"
+        @activate="emit('display')"
       />
     </template>
 
     <template #status>
-      <!-- O card recebe a Projection inteira porque ele mesmo sonda o agente do
-           balcão (useAgentHealth) e promove o resultado às linhas. -->
-      <PosTerminalHealth v-if="pos" compact :pos="pos" />
+      <!-- Ordem pedida pelo Pablo (17/09): Atualizar primeiro, para a saúde do
+           terminal ficar colada na capacidade do servidor, que o OperatorRail põe
+           logo depois deste slot — as duas leituras de "como está" lado a lado. -->
       <RailItem
         icon="refresh-cw"
         label="Atualizar"
         :busy="pending"
         @activate="emit('refresh')"
       />
+      <!-- O card recebe a Projection inteira porque ele mesmo sonda o agente do
+           balcão (useAgentHealth) e promove o resultado às linhas. -->
+      <PosTerminalHealth v-if="pos" compact :pos="pos" />
     </template>
   </OperatorRail>
 </template>

@@ -459,13 +459,11 @@ def test_recovery_api_enforces_distinct_capabilities(client):
     )
     retry_confirmation = retry_response.json()["confirmation"]
     assert retry_response.status_code == 428
-    assert retry_confirmation["step_up"] == "password"
-    step_up = client.post(
-        "/api/v1/backstage/marketing/security/step-up/",
-        data={"method": "password", "credential": "x"},
-        content_type="application/json",
-    )
-    assert step_up.status_code == 200
+    # Reentregar para UMA pessoa pede leitura e um toque. A capacidade continua sendo
+    # exigida — é disso que este teste trata —, mas a cerimônia mede a consequência, e
+    # o tamanho da cerimônia por tamanho de público é assunto de
+    # `test_marketing_security.py`.
+    assert retry_confirmation["step_up"] == "none"
     retry_response = client.post(
         f"{base}/retry-deliveries/",
         data={

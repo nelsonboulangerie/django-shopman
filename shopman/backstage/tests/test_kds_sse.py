@@ -14,7 +14,7 @@ def kds_ticket(db):
     return KDSTicket.objects.create(
         session_key=order.session_key,
         kds_instance=station,
-        items=[{"sku": "P1", "name": "Produto", "qty": 1, "checked": False}],
+        items=[{"sku": "P1", "name": "Produto", "qty": 1}],
     )
 
 
@@ -89,7 +89,7 @@ def test_kds_ticket_items_change_emits_update(monkeypatch, kds_ticket):
         lambda kind, event_type, payload, **kwargs: calls.append(event_type) if kind == "kds" else None,
     )
 
-    kds_ticket.items = [{"sku": "P1", "name": "Produto", "qty": 1, "checked": True}]
+    kds_ticket.items = [{"sku": "P1", "name": "Produto", "qty": 2}]
     kds_ticket.save(update_fields=["items"])
 
     assert calls == ["backstage-kds-update"]

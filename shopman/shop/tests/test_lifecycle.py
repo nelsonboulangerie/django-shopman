@@ -793,6 +793,32 @@ class TestOnCompleted:
         mock_fiscal.emit.assert_called_once_with(order)
 
 
+class TestOnDispatchedFiscal:
+    """Cobrar na entrega: a NFC-e sai COM a sacola, não na conclusão."""
+
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.fiscal")
+    @patch("shopman.shop.services.payment_gate.collects_on_delivery", return_value=True)
+    def test_cod_emits_the_nfce_at_dispatch(self, _cod, mock_fiscal, mock_notification, mock_cc):
+        mock_cc.for_channel.return_value = _config()
+        order = _make_order(data={"payment": {"method": "cash", "collection": "on_delivery"}})
+        dispatch(order, "on_dispatched")
+        mock_fiscal.emit.assert_called_once_with(order)
+        mock_notification.send.assert_called_once_with(order, "order_dispatched")
+
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.fiscal")
+    @patch("shopman.shop.services.payment_gate.collects_on_delivery", return_value=False)
+    def test_prepaid_keeps_the_existing_emission_points(self, _cod, mock_fiscal, mock_notification, mock_cc):
+        mock_cc.for_channel.return_value = _config()
+        order = _make_order(data={"payment": {"method": "pix"}})
+        dispatch(order, "on_dispatched")
+        mock_fiscal.emit.assert_not_called()
+        mock_notification.send.assert_called_once_with(order, "order_dispatched")
+
+
 class TestOnCancelled:
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")

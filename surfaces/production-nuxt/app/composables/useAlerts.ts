@@ -4,7 +4,7 @@
 import type { AlertProjection, AlertsResponse } from "~/types/production";
 import { acknowledgeOperatorAlert } from "~/generated/productionContract";
 import { useProductionMutationGuard } from "~/composables/useProductionMutationGuard";
-import { newProductionMutationKey } from "~/utils/api";
+import { newProductionMutationKey } from "~/utils/mutationKey";
 
 export function useAlerts() {
   const { data, refresh } = useFetch<AlertsResponse>(

@@ -40,6 +40,7 @@ from .catalog import (
     _resolve_availability,
     build_catalog_items_for_skus,
     notify_subscribed_skus,
+    pause_and_notifiability,
 )
 from .dietary import dietary_warnings as _dietary_warnings
 
@@ -299,12 +300,12 @@ def build_product_detail(
         raw_avail_session, can_add=can_add_to_cart
     )
     # Pausado = decisão do operador (publicado mas não vendável, ou stock pausado);
-    # distingue-se do esgotado honesto que habilita "Me avise".
-    is_paused = (not effective_is_sellable) or bool(
-        raw_avail_session and raw_avail_session.get("is_paused")
-    )
-    is_notifiable = (
-        availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
+    # distingue-se do esgotado honesto que habilita "Me avise". Régua única com o
+    # card do cardápio e com o favorito que anota o aviso.
+    is_paused, is_notifiable = pause_and_notifiability(
+        availability,
+        effective_is_sellable=effective_is_sellable,
+        raw_avail=raw_avail_session,
     )
 
     # Bundle components — expand only if the product declares itself a bundle.
@@ -473,9 +474,12 @@ def _seo_description(
     allergen: AllergenInfoProjection | None,
     conservation: ConservationInfoProjection | None,
 ) -> str:
-    parts = [
-        product.short_description or product.long_description or product.name,
-    ]
+    # A descrição do catálogo raramente termina em ponto ("fermentação natural
+    # (levain)"), e sem ele o Google lia "(levain) Atenção a alergias" como uma frase só.
+    lead = " ".join(str(product.short_description or product.long_description or product.name or "").split())
+    if lead and lead[-1] not in ".!?…":
+        lead = f"{lead}."
+    parts = [lead]
     if allergen and allergen.allergens:
         parts.append(f"Atenção a alergias: {', '.join(allergen.allergens)}.")
     if allergen and allergen.dietary_info:
@@ -520,7 +524,9 @@ def _conservation(product: Any) -> ConservationInfoProjection | None:
             default_tip = (shop.conservation_tips_default or "").strip() if shop else ""
             storage_tip = default_tip or None
         except Exception:
-            logger.debug(
+            # A PDP abre sem a dica padrão da casa, mas a falha de ler o Shop
+            # é relatada: é a mesma leitura que alimenta o resto da loja.
+            logger.warning(
                 "product_detail_projection_conservation_tip_failed sku=%s",
                 product.sku,
                 exc_info=True,

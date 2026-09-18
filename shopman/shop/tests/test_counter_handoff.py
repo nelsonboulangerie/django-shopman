@@ -296,7 +296,7 @@ def test_last_counter_prep_ticket_completes_the_sale_in_kds():
     KDSTicket.objects.create(
         session_key=order.session_key,
         kds_instance=station,
-        items=[{"sku": "LANCHE", "name": "Lanche", "qty": 1, "checked": True}],
+        items=[{"sku": "LANCHE", "name": "Lanche", "qty": 1}],
         status="done",
     )
 
@@ -325,7 +325,7 @@ def test_last_counter_ticket_never_hands_over_unpaid_digital_order():
     KDSTicket.objects.create(
         session_key=order.session_key,
         kds_instance=station,
-        items=[{"sku": "LANCHE", "name": "Lanche", "qty": 1, "checked": True}],
+        items=[{"sku": "LANCHE", "name": "Lanche", "qty": 1}],
         status="done",
     )
 

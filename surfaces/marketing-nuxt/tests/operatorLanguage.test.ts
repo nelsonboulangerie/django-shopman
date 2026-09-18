@@ -2,8 +2,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+// ⚠️ Os últimos termos são CHAVES de JSON que chegaram a aparecer na tela
+// ("collections, skus", "bought_skus"): chave é contrato com o servidor, não
+// vocabulário do gestor.
 const FORBIDDEN_OPERATOR_TERMS =
-  /\b(announcements?|churn|flows?|providers?|receipts?|sandboxes?|templates?)\b/i;
+  /\b(announcements?|churn|flows?|providers?|receipts?|sandboxes?|templates?|skus?|collections?|bought_\w+|price_tiers|rfm_segments|audience_rules|trigger_filter)\b/i;
 
 function vueFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
@@ -36,6 +39,20 @@ describe("linguagem normal do operador", () => {
     const leaks = vueFiles(appRoot).flatMap((path) => {
       const text = literalTemplateText(readFileSync(path, "utf8"));
       const found = text.match(FORBIDDEN_OPERATOR_TERMS)?.[0];
+      return found ? [`${path}: ${found}`] : [];
+    });
+
+    expect(leaks).toEqual([]);
+  });
+
+  // ⚠️ "A fornada segue normalmente" no recusar: fornada é UM dos gatilhos (há
+  // estoque baixo, produto novo, hora marcada, disparo manual). Copy que nomeia
+  // um caso ensina o gestor a esperar só aquele.
+  it("não nomeia um gatilho como se fosse o único", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = vueFiles(appRoot).flatMap((path) => {
+      const text = literalTemplateText(readFileSync(path, "utf8"));
+      const found = text.match(/\bfornada segue\b/i)?.[0];
       return found ? [`${path}: ${found}`] : [];
     });
 

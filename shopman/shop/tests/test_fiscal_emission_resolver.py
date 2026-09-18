@@ -224,12 +224,13 @@ def test_example_above_amount_factory():
 # ── deferred_settlement: a mercadoria sai antes do dinheiro ──────────────────
 
 
-def test_deferred_settlement_cod_pending_tender():
-    o = _order(payment={
+def test_deferred_settlement_pickup_or_delivery_pending_tender():
+    payment = {
         "method": "cash", "collection": "on_delivery",
         "tenders": [{"method": "cash", "amount_q": 5000, "status": "pending"}],
-    })
-    assert fiscal_resolvers.deferred_settlement(o) is True
+    }
+    assert fiscal_resolvers.deferred_settlement(_order(payment=payment, fulfillment_type="pickup")) is True
+    assert fiscal_resolvers.deferred_settlement(_order(payment=payment, fulfillment_type="delivery")) is True
 
 
 def test_deferred_settlement_house_account_tender():

@@ -33,6 +33,14 @@ export interface PosReceiptSnapshot {
   payments: PosReceiptPayment[];
   fulfillmentLabel: string;
   printedAtMs: number;
+  /** Com quanto o cliente pagou (dinheiro sozinho no caixa), em centavos. É
+   *  MEDIÇÃO: ausente/0 é "não medido", nunca "pagou justo" — a mesma régua do
+   *  `tendered_q` do servidor. */
+  tenderedQ?: number;
+  /** Troco que saiu da gaveta, em centavos. */
+  changeQ?: number;
+  /** Cobrança na entrega/retirada: o papel sai ANTES do dinheiro. */
+  paymentPending?: boolean;
 }
 
 export interface ReceiptLineView {
@@ -97,12 +105,37 @@ export function receiptLines(snap: PosReceiptSnapshot): ReceiptLineView[] {
   }));
 }
 
+/**
+ * As linhas de pagamento COMO O SERVIDOR IMPRIME (`receipt_escpos.sale_receipt`):
+ * "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58". O recibo do navegador é o
+ * fallback da bobina, e imprimia a linha como digitada ("Dinheiro R$ 100,00") —
+ * dois papéis da mesma venda dizendo valores diferentes. O troco só existe no
+ * dinheiro sozinho (o servidor recusa sobra dentro da lista de tenders), então
+ * é da linha de dinheiro que ele sai.
+ */
 export function receiptPayments(
   snap: PosReceiptSnapshot,
   methods: POSPaymentMethodProjection[],
 ): { label: string; amountDisplay: string }[] {
-  return snap.payments.map((payment) => ({
+  const changeQ = Math.max(0, snap.changeQ ?? 0);
+  const tenderedQ = Math.max(0, snap.tenderedQ ?? 0);
+  const lines = snap.payments.map((payment) => ({
     label: methodLabel(payment.method, methods),
-    amountDisplay: formatBRL(payment.amount_q),
+    amountDisplay: formatBRL(
+      payment.method === "cash" && changeQ > 0 ? Math.max(0, payment.amount_q - changeQ) : payment.amount_q,
+    ),
   }));
+  if (tenderedQ > 0) lines.push({ label: "Recebido", amountDisplay: formatBRL(tenderedQ) });
+  if (changeQ > 0) lines.push({ label: "Troco", amountDisplay: formatBRL(changeQ) });
+  return lines;
+}
+
+/**
+ * O papel saiu antes do dinheiro? Cobrança na entrega/retirada carimba
+ * "PAGAMENTO PENDENTE", como o servidor — sem a marca, um recibo com total
+ * impresso é indistinguível de um comprovante.
+ */
+export function receiptPaymentPending(snap: PosReceiptSnapshot): boolean {
+  if (snap.paymentPending) return true;
+  return snap.payments.length > 0 && snap.payments.every((payment) => payment.collection === "on_delivery");
 }

@@ -2,6 +2,8 @@
 // vivem no mesmo registrable domain, mas nao podem ser o mesmo cookie. Um
 // lock/PIN do PDV deve afetar gestor/KDS/etc., nunca a aba do Admin.
 
+import { DEVICE_ACTIVITY_COOKIE_NAME } from "../../app/utils/deviceActivity";
+
 export const DJANGO_SESSION_COOKIE_NAME = "sessionid";
 export const DJANGO_CSRF_COOKIE_NAME = "csrftoken";
 export const OPERATOR_SESSION_COOKIE_NAME = "shopman_operator_sessionid";
@@ -13,6 +15,9 @@ const COOKIE_DOMAIN = /^\.?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const COOKIE_ATTRIBUTE_VALUE = /^[\x20-\x3A\x3C-\x7E]*$/;
 
 export function isSafeDjangoSetCookieHeader(header: string): boolean {
+  // Casar caractere de controle É o ponto: um Set-Cookie com CR/LF/NUL injeta cabeçalho
+  // na resposta que o BFF devolve ao operador. A regra supõe engano; aqui é a defesa.
+  // eslint-disable-next-line no-control-regex
   if (!header || header.length > 4096 || /[\x00-\x1F\x7F]/.test(header)) return false;
 
   const [pair = "", ...rawAttributes] = header.split(";");
@@ -87,7 +92,9 @@ function cookiePairs(header: string | undefined): CookiePair[] {
  * `sessionid`/`csrftoken` crus pertencem ao Admin e morrem nesta fronteira. Os
  * cookies namespaced, compartilhados em `.boulangerie.com.br`, viram os nomes
  * que o Django conhece somente na conexao interna BFF -> Django. Cookies de
- * confianca da estacao e os demais pares continuam intactos.
+ * confianca da estacao e os demais pares continuam intactos. O relogio de
+ * atividade do aparelho (`app/utils/deviceActivity.ts`) e assunto do navegador
+ * — a trava do PDV — e tambem morre aqui: o Django nao tem o que fazer com ele.
  */
 export function operatorCookieHeaderForDjango(browserCookie: string | undefined): string {
   let operatorSession: string | undefined;
@@ -99,7 +106,11 @@ export function operatorCookieHeaderForDjango(browserCookie: string | undefined)
       operatorSession = pair.value;
     } else if (pair.name === OPERATOR_CSRF_COOKIE_NAME) {
       operatorCsrf = pair.value;
-    } else if (pair.name !== DJANGO_SESSION_COOKIE_NAME && pair.name !== DJANGO_CSRF_COOKIE_NAME) {
+    } else if (
+      pair.name !== DJANGO_SESSION_COOKIE_NAME
+      && pair.name !== DJANGO_CSRF_COOKIE_NAME
+      && pair.name !== DEVICE_ACTIVITY_COOKIE_NAME
+    ) {
       passthrough.push(pair);
     }
   }

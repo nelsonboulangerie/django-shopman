@@ -144,7 +144,7 @@ class OperationChecklistTemplateTask(models.Model):
         return self.task_template.is_required
 
     def __str__(self) -> str:
-        return f"{self.checklist_template} — {self.task_template}"
+        return f"{self.checklist_template} · {self.task_template}"
 
 
 class OperationChecklistRun(models.Model):
@@ -211,7 +211,7 @@ class OperationChecklistRun(models.Model):
 
     def __str__(self) -> str:
         suffix = f" / {self.shift_ref}" if self.shift_ref else ""
-        return f"{self.template} — {self.business_date}{suffix}"
+        return f"{self.template} · {self.business_date}{suffix}"
 
 
 class OperationTaskRun(models.Model):
@@ -289,4 +289,4 @@ class OperationTaskRun(models.Model):
         return bool(self.supervised_at and self.supervised_by_id)
 
     def __str__(self) -> str:
-        return f"{self.checklist_run} — {self.template.title}"
+        return f"{self.checklist_run} · {self.template.title}"

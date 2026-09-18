@@ -100,7 +100,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section pb-36 pt-0 md:pb-0">
+  <main class="shop-section shop-dock-reserve pt-0 md:pb-0">
     <div class="shop-breadcrumb-bar mb-4">
       <div class="shop-container py-2">
         <UiBreadcrumbs
@@ -392,7 +392,7 @@ useSeoMeta({
 
       <div
         v-if="!cart.is_empty"
-        class="sticky bottom-20 z-30 shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
+        class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
       >
         <div class="flex items-baseline justify-between gap-3">
           <p class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</p>

@@ -10,9 +10,9 @@ const HUB = {
   hub: {
     operator_name: "Ana",
     tiles: [
-      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "banknote", url: "http://127.0.0.1:3002/", kind: "launch" },
-      { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "clipboard-list", url: "http://127.0.0.1:3004/", kind: "launch" },
-      { ref: "loja", label: "Loja online", description: "Configurar a loja", icon: "store", url: "/admin/shop/shop/", kind: "config" },
+      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch" },
+      { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "square-kanban", url: "http://127.0.0.1:3004/", kind: "launch" },
+      { ref: "loja", label: "Loja online", description: "Configurar a loja", icon: "store", url: "/admin/shop/shop/", kind: "external" },
     ],
   },
 };

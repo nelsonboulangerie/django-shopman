@@ -6,7 +6,8 @@ import {
   hubGreeting,
   hubIsEmpty,
   tileIcon,
-  tileTarget,
+  tileIconUrl,
+  tileLinkAttrs,
 } from "../app/presentation/hub";
 import type { HubTileProjection } from "../app/types/hub";
 
@@ -14,7 +15,7 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   ref: "pos",
   label: "PDV",
   description: "Vender no balcão",
-  icon: "banknote",
+  icon: "shopping-basket",
   url: "http://127.0.0.1:3002/",
   kind: "launch",
   ...over,
@@ -22,13 +23,57 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
 
 describe("presentation/hub", () => {
   it("tileIcon prefixa lucide: quando falta e preserva quando já tem", () => {
-    expect(tileIcon("banknote")).toBe("lucide:banknote");
+    expect(tileIcon("shopping-basket")).toBe("lucide:shopping-basket");
     expect(tileIcon("lucide:store")).toBe("lucide:store");
   });
 
-  it("tileTarget: launch na mesma aba, external (loja do cliente) em nova aba", () => {
-    expect(tileTarget(tile({ kind: "launch" }))).toBe("_self");
-    expect(tileTarget(tile({ kind: "external" }))).toBe("_blank");
+  it("tileIconUrl aponta para o PNG da família PWA na origem do próprio tile", () => {
+    expect(tileIconUrl(tile({ url: "http://127.0.0.1:3002/" }))).toBe(
+      "http://127.0.0.1:3002/pwa/pwa-192x192.png?v=3",
+    );
+    // Em produção o tile é o subdomínio; caminho/query do tile não vazam no ícone.
+    expect(tileIconUrl(tile({ url: "https://pdv.boulangerie.com.br/session?x=1" }))).toBe(
+      "https://pdv.boulangerie.com.br/pwa/pwa-192x192.png?v=3",
+    );
+    // A Loja (external) publica a mesma família — mesma regra.
+    expect(tileIconUrl(tile({ kind: "external", url: "https://boulangerie.com.br/" }))).toBe(
+      "https://boulangerie.com.br/pwa/pwa-192x192.png?v=3",
+    );
+  });
+
+  it("tileIconUrl devolve null para URL que não resolve — a tela cai no Lucide", () => {
+    expect(tileIconUrl(tile({ url: "" }))).toBeNull();
+    expect(tileIconUrl(tile({ url: "/admin/" }))).toBeNull();
+  });
+
+  describe("tileLinkAttrs — como o tile abre", () => {
+    const CENTRAL = "https://central.boulangerie/";
+    const PDV = "https://pdv.boulangerie/";
+    const browser = { installed: false, currentOrigin: CENTRAL };
+    const installed = { installed: true, currentOrigin: CENTRAL };
+
+    it("Central em ABA: o app abre na mesma aba, como antes", () => {
+      expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), browser)).toEqual({ target: "_self" });
+    });
+
+    it("Central INSTALADA: o app abre na janela DELE — é o conserto da tarja", () => {
+      // Abrir dentro da janela da Central sai do `scope` dela: o Chrome desenha a
+      // barra de "você saiu do app" e a janela continua com o nome e a cor da
+      // Central, não do PDV.
+      expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), installed))
+        .toEqual({ target: "_blank", rel: "noopener" });
+    });
+
+    it("a loja do cliente abre em outra janela sempre", () => {
+      const store = tile({ kind: "external", url: "https://boulangerie.com.br/" });
+      for (const context of [browser, installed]) {
+        expect(tileLinkAttrs(store, context)).toEqual({ target: "_blank", rel: "noopener" });
+      }
+    });
+
+    it("tile que aponta para a própria Central não sai da janela", () => {
+      expect(tileLinkAttrs(tile({ kind: "launch", url: CENTRAL }), installed)).toEqual({ target: "_self" });
+    });
   });
 
   it("hubIsEmpty reflete a ausência de tiles", () => {

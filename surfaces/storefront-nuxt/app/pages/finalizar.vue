@@ -19,7 +19,6 @@ import {
   checkoutStepLabels,
   checkoutStepState,
   checkoutSteps,
-  confirmItemSummary as buildConfirmItemSummary,
   confirmSheetDescription as buildConfirmSheetDescription,
   contactComplete as buildContactComplete,
   contactSummary as buildContactSummary,
@@ -363,7 +362,6 @@ const fulfillmentSummary = computed(() => buildFulfillmentSummary(fulfillmentLab
 const hasReviewWaitlist = computed(() =>
   (cart.value?.items || []).some(line => reviewWaitlist(line, state.delivery_date))
 )
-const confirmItemSummary = computed(() => buildConfirmItemSummary(checkout.value))
 const phoneDisplay = computed(() => displayBrazilianPhone(state.phone || checkout.value?.customer_phone || '', defaultDdd.value))
 const contactComplete = computed(() => buildContactComplete(state, phoneDisplay.value))
 // O campo Nome aparece por ESTADO explícito, nunca por conteúdo.
@@ -457,6 +455,96 @@ const canContinueWhen = computed(() => {
 const steps = computed<Step[]>(() => checkoutSteps(state.fulfillment_type))
 const stepLabels = checkoutStepLabels
 const stepIcons = checkoutStepIcons
+
+// Foco da página: a seção em que o cliente trabalha AGORA. Cada seção se marca
+// com `data-focus-target`; quando o foco muda (etapa concluída, "Editar",
+// erro), o mecanismo leva a página até ela — sempre na mesma linha, sob a
+// navbar.
+//
+// `nameEditing` entra aqui, e não é detalhe: com o campo de nome aberto, a
+// próxima ação é salvá-lo. Sem ele na conta, o card oferecia "Continuar" para
+// quem ainda não tinha nome preenchido, e o cadastro só reclamava lá na
+// revisão. As duas portas que abrem o campo são deliberadas — a hidratação de
+// quem chega sem nome, e o "Editar" —, então o foco ir para lá não atropela
+// ninguém no meio do caminho.
+const focusKey = computed<string>(() => (
+  contactEditing.value || nameEditing.value || contactState.value === 'error' ? 'contact' : activeStep.value
+))
+const { reveal } = useNextFocus(focusKey)
+
+// A AÇÃO SEGUE O FOCO. A etapa em que o cliente trabalha decide qual é o único
+// botão que avança, e ele mora no card suspenso, nunca no fim da seção.
+//
+// Medido num iPhone SE (375x667) na etapa de pagamento: o "Revisar pedido"
+// ficava a 883px do topo, 216px ABAIXO da dobra. O botão que conclui o pedido
+// só existia para quem rolava atrás dele.
+//
+// UM botão, UM lugar: duplicar o CTA no fluxo e no card criaria dois estados
+// para a mesma intenção, e eles divergem no primeiro estado de carregamento.
+// Por isso os rodapés das seções deixaram de ter botão.
+//
+// `reason` nunca é decorativo: botão desabilitado no lugar mais nobre da tela
+// tem que dizer o que falta (a sacola vazia já fazia isso, virando "Adicionar
+// itens" em vez de um "Revisar pedido" morto).
+interface CheckoutPrimaryAction {
+  label: string
+  icon: string
+  loading: boolean
+  disabled: boolean
+  reason: string
+  run: () => void
+}
+
+const primaryAction = computed<CheckoutPrimaryAction>(() => {
+  if (focusKey.value === 'contact') {
+    return { label: 'Salvar contato', icon: 'lucide:check', loading: false, disabled: false, reason: '', run: saveContact }
+  }
+  if (focusKey.value === 'fulfillment') {
+    return {
+      label: 'Continuar',
+      icon: 'lucide:arrow-right',
+      loading: draftSyncing.value,
+      disabled: deliveryBelowMinimum.value || draftSyncing.value,
+      reason: deliveryBelowMinimum.value && cart.value?.delivery_minimum_progress
+        ? `Faltam ${cart.value.delivery_minimum_progress.remaining_display} para o mínimo de entrega`
+        : '',
+      run: continueFromFulfillment
+    }
+  }
+  if (focusKey.value === 'address') {
+    return {
+      label: 'Continuar',
+      icon: 'lucide:arrow-right',
+      loading: draftSyncing.value,
+      disabled: draftSyncing.value || !addressSelection.value,
+      reason: addressSelection.value ? '' : 'Escolha ou informe o endereço de entrega.',
+      run: continueFromAddress
+    }
+  }
+  if (focusKey.value === 'when') {
+    return {
+      label: 'Continuar',
+      icon: 'lucide:arrow-right',
+      loading: false,
+      disabled: !canContinueWhen.value,
+      reason: canContinueWhen.value ? '' : 'Escolha a data e o horário.',
+      run: continueFromWhen
+    }
+  }
+  // Sacola vazia é beco sem saída se o botão só ficar apagado: vira o caminho
+  // de volta ao cardápio, ativo.
+  if (bagIsEmpty.value) {
+    return { label: 'Adicionar itens', icon: 'lucide:utensils', loading: false, disabled: false, reason: 'Sacola vazia.', run: goToMenu }
+  }
+  return {
+    label: 'Revisar pedido',
+    icon: 'lucide:clipboard-check',
+    loading: submitting.value,
+    disabled: submitDisabled.value,
+    reason: submitDisabled.value ? (action.value?.reason || '') : '',
+    run: continueFromPayment
+  }
+})
 
 // Rascunho do checkout: sair do navegador e voltar (ou o iOS recarregar a aba por
 // memória) NÃO pode perder o que já foi preenchido. Usa localStorage (sobrevive à aba
@@ -842,16 +930,16 @@ function saveContact () {
 }
 
 // Omotenashi: um gate de validação NUNCA falha em silêncio. O erro vem até o
-// cliente (toast) e a tela rola até o primeiro campo com erro (role="alert"),
-// em vez de ficar quietinho num campo fora da view.
+// cliente (toast) e a tela mostra o primeiro campo com erro (role="alert"),
+// em vez de ficar quietinho num campo fora da view. Se o erro abriu OUTRA
+// seção, o foco da página muda e o reveal automático (mais novo) passa na
+// frente: a seção inteira vai para a linha de foco, com o erro no cabeçalho.
 function revealFirstError () {
   if (!import.meta.client) return
   const first = firstCheckoutError(fieldErrors.value)
   if (!first) return
   useSonner.error(first.message)
-  void nextTick(() => {
-    document.querySelector('[data-slot="field-error"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  })
+  reveal(() => document.querySelector('[data-slot="field-error"]'), { align: 'center', focus: false })
 }
 
 async function continueFromFulfillment () {
@@ -956,16 +1044,13 @@ async function goToMenu () {
   await navigateTo('/menu')
 }
 
-async function changeFromPix () {
+function changeFromPix () {
   const alternative = paymentMethods.value.find(method => method.ref !== 'pix')
   state.payment_method = ''
   clearFieldError('payment_method')
-  await nextTick()
-  const target = alternative
+  reveal(() => (alternative
     ? document.getElementById(`checkout-payment-${alternative.ref}`)
-    : document.querySelector<HTMLElement>('[data-checkout-payment-option]')
-  target?.focus()
-  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    : document.querySelector<HTMLElement>('[data-checkout-payment-option]')), { align: 'center' })
 }
 
 async function adjustCartForPix () {
@@ -1148,7 +1233,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section pt-0 pb-24 lg:pb-0">
+  <main class="shop-section shop-dock-reserve pt-0 md:pb-24 lg:pb-0">
     <div class="shop-breadcrumb-bar mb-4">
       <div class="shop-container py-2">
         <UiBreadcrumbs
@@ -1233,6 +1318,7 @@ useSeoMeta({
               icon="lucide:user-round"
               :summary="contactComplete && !contactEditing ? contactCardSummary : 'Nome e telefone'"
               data-checkout-contact-card
+              data-focus-target="contact"
               @edit="contactEditing = true"
             >
               <!-- Card branco, padronizado com endereço; edição deliberada. -->
@@ -1250,7 +1336,8 @@ useSeoMeta({
                       @click="cancelEditName"
                     />
                   </div>
-                  <UiInput id="checkout-name" ref="nameInput" v-model="state.name" autocomplete="name" />
+                  <!-- Com o nome em aberto, a próxima ação é digitar: o foco cai no campo. -->
+                  <UiInput id="checkout-name" ref="nameInput" v-model="state.name" autocomplete="name" data-focus-control />
                   <UiFieldError v-if="fieldErrors.name" :errors="fieldErrors.name" />
                 </div>
                 <div class="divide-y">
@@ -1273,11 +1360,6 @@ useSeoMeta({
                   </div>
                 </div>
               </div>
-              <template #footer>
-                <div class="mt-4">
-                  <UiButton class="w-full" size="lg" @click="saveContact">Salvar contato</UiButton>
-                </div>
-              </template>
             </CheckoutProgressSection>
 
             <CheckoutProgressSection
@@ -1286,6 +1368,7 @@ useSeoMeta({
               :icon="stepIcons.fulfillment"
               :summary="stepHeaderSummary('fulfillment')"
               data-checkout-step="fulfillment"
+              data-focus-target="fulfillment"
               body-class="space-y-4"
               @edit="goToStep('fulfillment')"
             >
@@ -1353,13 +1436,6 @@ useSeoMeta({
                   </UiButton>
                 </UiAlertDescription>
               </UiAlert>
-              <template #footer>
-                <div class="mt-4">
-                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :loading="draftSyncing" :disabled="deliveryBelowMinimum || draftSyncing" @click="continueFromFulfillment">
-                    Continuar
-                  </UiButton>
-                </div>
-              </template>
             </CheckoutProgressSection>
 
             <CheckoutProgressSection
@@ -1369,6 +1445,7 @@ useSeoMeta({
               :icon="stepIcons.address"
               :summary="stepHeaderSummary('address')"
               data-checkout-step="address"
+              data-focus-target="address"
               body-class="space-y-4"
               @edit="goToStep('address')"
             >
@@ -1412,13 +1489,6 @@ useSeoMeta({
                 </div>
                 <UiProgress :model-value="freeDeliveryUpsell.percent" />
               </div>
-              <template v-if="addressSelection && !pickupSwapOffer" #footer>
-                <div class="mt-4">
-                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :loading="draftSyncing" :disabled="draftSyncing" @click="continueFromAddress">
-                    Continuar
-                  </UiButton>
-                </div>
-              </template>
             </CheckoutProgressSection>
 
             <CheckoutProgressSection
@@ -1427,6 +1497,7 @@ useSeoMeta({
               :icon="stepIcons.when"
               :summary="stepHeaderSummary('when')"
               data-checkout-step="when"
+              data-focus-target="when"
               body-class="shop-stack-block"
               @edit="goToStep('when')"
             >
@@ -1516,20 +1587,6 @@ useSeoMeta({
                   <UiFieldError v-if="fieldErrors.delivery_time_slot" :errors="fieldErrors.delivery_time_slot" />
                 </div>
               </div>
-              <template #footer>
-                <div class="mt-4">
-                  <UiButton
-                    class="w-full"
-                    size="lg"
-                    icon="lucide:arrow-right"
-                    icon-placement="right"
-                    :disabled="!canContinueWhen"
-                    @click="continueFromWhen"
-                  >
-                    Continuar
-                  </UiButton>
-                </div>
-              </template>
             </CheckoutProgressSection>
 
             <CheckoutProgressSection
@@ -1538,6 +1595,7 @@ useSeoMeta({
               :icon="stepIcons.payment"
               :summary="stepHeaderSummary('payment')"
               data-checkout-step="payment"
+              data-focus-target="payment"
               body-class="space-y-4"
               @edit="goToStep('payment')"
             >
@@ -1749,46 +1807,71 @@ useSeoMeta({
                 </UiField>
               </UiFieldLabel>
 
-              <template #footer>
-                <div class="mt-4 space-y-2">
-                  <div class="flex items-end justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="shop-kicker">Total do pedido</p>
-                      <p class="shop-price-strong">{{ cart?.grand_total_display || 'R$ 0,00' }}</p>
-                      <p class="truncate shop-meta">{{ confirmItemSummary }}</p>
-                    </div>
-                  </div>
-                  <template v-if="bagIsEmpty">
-                    <!-- Texto explicativo (barato e ajuda a entender o estado)
-                         ACIMA do CTA que resolve — nunca o botão morto sozinho. -->
-                    <p class="text-center shop-muted">Sacola vazia.</p>
-                    <UiButton
-                      icon="lucide:utensils"
-                      size="lg"
-                      class="w-full"
-                      @click="goToMenu"
-                    >
-                      Adicionar itens
-                    </UiButton>
-                  </template>
-                  <template v-else>
-                    <UiButton
-                      :loading="submitting"
-                      :disabled="submitDisabled"
-                      icon="lucide:clipboard-check"
-                      size="lg"
-                      class="w-full"
-                      @click="continueFromPayment"
-                    >
-                      Revisar pedido
-                    </UiButton>
-                    <p v-if="submitDisabled && action?.reason" class="text-center shop-muted">
-                      {{ action.reason }}
-                    </p>
-                  </template>
-                </div>
-              </template>
             </CheckoutProgressSection>
+          </div>
+
+          <!-- Tem mais abaixo: o sentinela fecha o CONTEÚDO, antes do card (que
+               é chrome, não conteúdo — depois dele o fim nunca chegaria, porque
+               o card fica sempre entre o sentinela e a área observada).
+               As duas affordances convivem de propósito: o card diz qual é a
+               próxima ação, a dica diz que ainda há opções que a pessoa não viu
+               (cupom, presente e observação ficam abaixo da dobra no pagamento). -->
+          <MoreBelow />
+
+          <!-- CARD SUSPENSO DA AÇÃO — o mesmo objeto da sacola, e agora o mesmo
+               mecanismo: `.shop-action-dock` flutua ACIMA da navegação inferior
+               por ALTURA, não por prioridade de empilhamento. A barra fixa que
+               vivia aqui empatava em `z-40` com a navegação (topo 606 contra
+               602, medido em 375x667) e ficava escondida atrás dela: o total e
+               o "Resumo" nunca apareciam no celular.
+
+               O `sticky bottom-20` que a substituiu não prendia de verdade:
+               sticky só gruda na base enquanto o CONTAINER cobre aquela linha,
+               e quando ele acaba o card sobe junto com a rolagem. Aqui isso
+               também estragava os dois mecanismos vizinhos, porque
+               `measureBottomObstruction` descarta obstáculo que subiu da
+               metade da tela — o próximo foco passava a mirar uma linha que o
+               card ainda tapava, e a dica "tem mais abaixo" sumia cedo demais.
+
+               `md:sticky md:bottom-4` porque a navegação inferior some em `md`
+               e a folga de 80px deixa de ter o que limpar (e o dock é inerte
+               acima de `md`). `lg:static` porque a partir de `lg` o resumo
+               lateral assume e o card volta ao fim do fluxo. -->
+          <div
+            class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:sticky md:bottom-4 lg:static"
+            data-checkout-action-card
+            data-focus-obstruction
+          >
+            <!-- A linha do total abre o resumo. Era um botão "Resumo" próprio na
+                 barra invisível; aqui ela é o toque, e o ícone de nota diz isso. -->
+            <UiButton
+              variant="ghost"
+              class="h-auto w-full p-0 text-left hover:bg-transparent"
+              aria-label="Ver o resumo do pedido"
+              data-checkout-open-receipt
+              @click="openReceiptSheet"
+            >
+              <span class="flex w-full items-baseline justify-between gap-2">
+                <span class="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-foreground/70">
+                  <Icon name="lucide:receipt-text" class="size-4 shrink-0" />
+                  Total do pedido
+                </span>
+                <span class="shop-price-strong shrink-0">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
+              </span>
+            </UiButton>
+            <UiButton
+              size="lg"
+              :icon="primaryAction.icon"
+              class="w-full shop-action-inverted"
+              :loading="primaryAction.loading"
+              :disabled="primaryAction.disabled"
+              @click="primaryAction.run"
+            >
+              {{ primaryAction.label }}
+            </UiButton>
+            <p v-if="primaryAction.reason" class="text-center text-xs text-ink-foreground/70">
+              {{ primaryAction.reason }}
+            </p>
           </div>
 
           <BottomSheet
@@ -1995,18 +2078,5 @@ useSeoMeta({
       </aside>
     </div>
 
-    <div v-if="checkout" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 shadow-lg backdrop-blur lg:hidden">
-      <div class="mx-auto flex max-w-screen-sm items-center gap-3">
-        <div class="min-w-0 flex-1">
-          <p class="shop-kicker">Seu pedido</p>
-          <p class="truncate text-sm font-semibold">
-            {{ formatCount(cart?.items_count || 0, 'item', 'itens') }} · {{ cart?.grand_total_display || 'R$ 0,00' }}
-          </p>
-        </div>
-        <UiButton variant="outline" size="sm" icon="lucide:receipt-text" @click="openReceiptSheet">
-          Resumo
-        </UiButton>
-      </div>
-    </div>
   </main>
 </template>

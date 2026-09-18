@@ -94,6 +94,55 @@ class POSHeadlessSurfaceContractTests(TestCase):
         bind_station(self.client, self.terminal.ref)
         self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
+    def test_projection_publishes_the_canonical_slots_of_the_house(self) -> None:
+        """A grade de encomenda sai inteira, ``{ref, label, starts_at}``, para a
+        tela resolver um ``slot-09`` gravado num pedido cuja data virou hoje."""
+        from django.core.cache import cache
+
+        from shopman.shop.models.shop import SHOP_CACHE_KEY
+
+        Shop.objects.update(defaults={"pickup_slots": [
+            {"ref": "slot-07", "label": "A partir das 07h", "starts_at": "07:00"},
+            {"ref": "slot-16", "label": "A partir das 16h", "starts_at": "16:00"},
+        ]})
+        cache.delete(SHOP_CACHE_KEY)
+
+        pos = self.client.get("/api/v1/backstage/pos/").json()["pos"]
+
+        self.assertIn("delivery_slots_today", pos)  # a grade de hoje continua
+        self.assertEqual(pos["delivery_slots_canonical"], [
+            {"ref": "slot-07", "label": "A partir das 07h", "starts_at": "07:00"},
+            {"ref": "slot-16", "label": "A partir das 16h", "starts_at": "16:00"},
+        ])
+
+    def test_projection_falls_back_to_the_default_canonical_slots(self) -> None:
+        pos = self.client.get("/api/v1/backstage/pos/").json()["pos"]
+
+        self.assertEqual(
+            [slot["ref"] for slot in pos["delivery_slots_canonical"]], ["slot-09", "slot-12", "slot-15"]
+        )
+        self.assertEqual(pos["delivery_slots_canonical"][0]["starts_at"], "09:00")
+
+    def test_checkout_says_whether_asking_for_paper_emits_the_note(self) -> None:
+        """"Pedir papel já pede a nota" só é verdade com o resolver de comprovante na env."""
+        with override_settings(
+            SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+                "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+                "shopman.shop.fiscal_resolvers.on_requested_receipt"
+            ),
+        ):
+            capabilities = self.client.get("/api/v1/backstage/pos/").json()["pos"]["checkout"]["capabilities"]
+            self.assertTrue(capabilities["receipt_requests_emission"])
+
+        with override_settings(
+            SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+                "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+                "shopman.shop.fiscal_resolvers.eletronic_payment"
+            ),
+        ):
+            capabilities = self.client.get("/api/v1/backstage/pos/").json()["pos"]["checkout"]["capabilities"]
+            self.assertFalse(capabilities["receipt_requests_emission"])
+
     def test_products_expose_sold_out_from_stock_scope(self) -> None:
         """Esgotado de verdade (SKU rastreado, zero promissível) vira selo no tile.
 
@@ -177,6 +226,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             ["cash", "pix", "credit", "debit", "link", "mixed"],
         )
         self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "credit", "debit", "mixed"])
+        self.assertEqual(payment_collections["on_delivery"]["fulfillment_types"], ["pickup", "delivery"])
         action_refs = {action["ref"] for action in payload["pos"]["actions"]}
         self.assertIn("review_sale", action_refs)
         self.assertIn("close_sale", action_refs)
@@ -237,6 +287,24 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(checkout["capabilities"]["cash_management"]["movement_kinds"], ["sangria", "suprimento"])
         self.assertEqual(checkout["capabilities"]["sale_correction"]["cancel_recent_action_ref"], "cancel_recent_sale")
         self.assertTrue(checkout["capabilities"]["idempotent_replay"]["safe_for_offline_queue"])
+
+    def test_pickup_only_contract_advertises_deferred_handoff_payment(self) -> None:
+        channel = Channel.objects.get(ref="pdv")
+        channel.config = {
+            **channel.config,
+            "surface_policy": {"fulfillment_types": ["pickup"]},
+        }
+        channel.save(update_fields=["config"])
+
+        payload = projection_data(build_pos(operator=self.operator))
+
+        self.assertEqual(
+            [option["ref"] for option in payload["fulfillment_options"]],
+            ["pickup"],
+        )
+        self.assertTrue(
+            payload["checkout"]["capabilities"]["supports_on_delivery_cash"]
+        )
 
     def test_api_pos_exposes_shop_name_for_customer_display(self) -> None:
         # A tela do cliente (segundo monitor do balcão) dá as boas-vindas em
@@ -352,6 +420,10 @@ class POSHeadlessSurfaceContractTests(TestCase):
         closed = self._close_sale_for_fiscal(payment_method="credit")
 
         self.assertTrue(closed["fiscal_expected"])
+        # Crédito no terminal não exige captura: a nota é enfileirada no
+        # fechamento e a resposta diz em que pé ela está, no vocabulário
+        # canônico (``fiscal_service.FISCAL_STATES``).
+        self.assertEqual(closed["fiscal_state"], "queued")
 
     @override_settings(
         SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
@@ -365,6 +437,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         closed = self._close_sale_for_fiscal(payment_method="cash")
 
         self.assertFalse(closed["fiscal_expected"])
+        self.assertEqual(closed["fiscal_state"], "not_expected")
 
     @override_settings(
         SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",

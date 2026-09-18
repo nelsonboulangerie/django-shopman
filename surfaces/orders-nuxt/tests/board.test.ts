@@ -154,6 +154,8 @@ describe("zonesView", () => {
     expedition_delivery_count: 2,
     expedition_count: 3,
     total_count: 6,
+    service_day: "2026-09-16",
+    service_day_ends_at: "2026-09-17T00:00:00-03:00",
     preorders: [],
     preorders_count: 0,
     ifood_negotiation_orders: [],
@@ -203,8 +205,10 @@ describe("cardAffordances", () => {
     expect(refs).toEqual(["advance"]);
   });
   it("adds settle_cash when delivery cash is collectable", () => {
-    const refs = cardAffordances(card({ can_settle_delivery_cash: true })).map((a) => a.ref);
-    expect(refs).toContain("settle_cash");
+    const pickup = cardAffordances(card({ can_settle_delivery_cash: true })).find((a) => a.ref === "settle_cash");
+    const delivery = cardAffordances(card({ can_settle_delivery_cash: true, fulfillment_type: "delivery" })).find((a) => a.ref === "settle_cash");
+    expect(pickup?.label).toBe("Receber na retirada");
+    expect(delivery?.label).toBe("Acertar entrega");
   });
 });
 
@@ -478,6 +482,8 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
     expedition_delivery_count: 0,
     expedition_count: 0,
     total_count: cards.length,
+    service_day: "2026-09-16",
+    service_day_ends_at: "2026-09-17T00:00:00-03:00",
     preorders: [],
     preorders_count: 0,
     ifood_negotiation_orders: [],
@@ -498,6 +504,15 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
     const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
     const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
     expect(newlyTreatableOrderRefs(before, after)).toEqual([]);
+  });
+
+  it("encomenda futura não toca agora e toca quando entra no fluxo do dia", () => {
+    const scheduled = card({ ref: "PRE-1", can_confirm: true, can_advance: true, is_preorder: true });
+    const before = { ...queue([]), preorders: [scheduled], preorders_count: 1, total_count: 1 };
+    expect([...treatableOrderRefs(before)]).toEqual([]);
+
+    const due = { ...queue([card({ ...scheduled, is_preorder: false })]), total_count: 1 };
+    expect(newlyTreatableOrderRefs(before, due)).toEqual(["PRE-1"]);
   });
 });
 

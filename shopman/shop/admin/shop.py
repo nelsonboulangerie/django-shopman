@@ -36,6 +36,14 @@ from shopman.shop.loyalty_config import (
     TIER_LABELS,
     LoyaltyConfig,
 )
+from shopman.shop.marketing_policy import (
+    DEFAULT_CEREMONY_AUDIENCE_PERCENT,
+    DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE,
+    DEFAULT_CEREMONY_RECIPIENT_FLOOR,
+    DEFAULT_CEREMONY_SPEND_LIMIT_Q,
+    DEFAULT_WHATSAPP_MINIMUM_AUDIENCE,
+    WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
+)
 from shopman.shop.models import (
     NotificationTemplate,
     Shop,
@@ -48,6 +56,16 @@ from shopman.shop.models import (
     ShopPos,
     ShopProduction,
     ShopPurchase,
+    ShopSearch,
+)
+from shopman.shop.operator_capacity_policy import (
+    DEFAULT_ATTENTION_PERCENT,
+    DEFAULT_CRITICAL_PERCENT,
+    DEFAULT_SUSTAIN_MINUTES,
+    PERCENT_CEILING,
+    PERCENT_FLOOR,
+    SUSTAIN_MINUTES_CEILING,
+    SUSTAIN_MINUTES_FLOOR,
 )
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
@@ -455,8 +473,9 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         required=False,
         widget=UnfoldBooleanSwitchWidget,
         help_text=(
-            "Mostra a opção 'Nota fiscal' no PDV (o operador decide emitir por venda). "
-            "Desligado = o recurso não aparece, mesmo com o Focus configurado. "
+            "Mostra o bloco 'Nota e comprovante' (CPF na nota, impressa, por e-mail) no PDV. "
+            "NÃO decide se a NFC-e sai: quem decide é a regra fiscal configurada no ambiente "
+            "(SHOPMAN_FISCAL_EMISSION_RESOLVER), que pode emitir mesmo com isto desligado. "
             "Também depende do adapter fiscal estar pronto."
         ),
     )
@@ -509,7 +528,153 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=purchase_help[key] + " Em branco = padrão do sistema.",
         )
+    fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
+        label="Mínimo de pessoas elegíveis numa campanha de WhatsApp",
+        required=False,
+        min_value=WHATSAPP_MINIMUM_AUDIENCE_FLOOR,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_WHATSAPP_MINIMUM_AUDIENCE)}),
+        error_messages={
+            "invalid": "Informe um número inteiro de pessoas (1 ou mais).",
+            "min_value": "O mínimo aceito é 1 pessoa: uma campanha precisa ter para quem ir.",
+        },
+        help_text=(
+            "A campanha geral por WhatsApp só é aprovada com pelo menos este número de "
+            "pessoas elegíveis. Aumentar impede que uma campanha “geral” mire uma pessoa "
+            "só. Começa em 1 de propósito, para o início da operação. Não vale no ensaio "
+            f"(canário). Em branco = {DEFAULT_WHATSAPP_MINIMUM_AUDIENCE}."
+        ),
+    )
+    fields["defaults_marketing_ceremony_audience_percent"] = forms.DecimalField(
+        label="Cerimônia a partir de (% da base)",
+        required=False,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        max_digits=5,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_AUDIENCE_PERCENT)}
+        ),
+        help_text=(
+            "Um disparo de mensagem pede frase digitada e senha quando alcança esta "
+            "fatia da base de clientes. Proporção em vez de número fixo porque um "
+            "número fixo só está certo para um tamanho de base. Em branco = "
+            f"{DEFAULT_CEREMONY_AUDIENCE_PERCENT}%."
+        ),
+    )
+    fields["defaults_marketing_ceremony_spend_limit_q"] = forms.DecimalField(
+        label="Cerimônia a partir de (R$ de gasto)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100)}
+        ),
+        help_text=(
+            "O outro lado da mesma pergunta: quanto o disparo pode custar antes de pedir "
+            "senha. Vale o que chegar primeiro, este teto ou a fatia acima. Em branco = "
+            f"R$ {DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100},00. ⚠️ Palpite — confirme com o "
+            "que a casa aceita gastar num disparo."
+        ),
+    )
+    fields["defaults_marketing_direct_message_cost_q"] = forms.DecimalField(
+        label="Custo de uma mensagem (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=6,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(attrs={"placeholder": "0,07"}),
+        help_text=(
+            "Quanto o provedor cobra por mensagem de campanha entregue. Só mensagem "
+            "custa; postagem em Instagram, Facebook ou Google não tem custo por pessoa. "
+            "⚠️ Palpite — o preço real está no contrato com a Meta/ManyChat e muda por "
+            "categoria de modelo. Deixe arredondado para cima: custo superestimado faz o "
+            "teto de gasto morder antes, nunca depois."
+        ),
+    )
+    fields["defaults_marketing_ceremony_recipient_floor"] = forms.IntegerField(
+        label="Piso da cerimônia (pessoas)",
+        required=False,
+        min_value=1,
+        widget=UnfoldAdminIntegerFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_RECIPIENT_FLOOR)}
+        ),
+        help_text=(
+            "O limiar nunca fica abaixo deste número, e é ele que responde enquanto a "
+            "base for pequena ou desconhecida — o cálculo falha fechado, pedindo mais "
+            f"cerimônia, nunca menos. Em branco = {DEFAULT_CEREMONY_RECIPIENT_FLOOR} "
+            "pessoas. ⚠️ Palpite."
+        ),
+    )
+    fields["defaults_marketing_ceremony_dual_control_multiple"] = forms.IntegerField(
+        label="Duas pessoas a partir de (× o limiar)",
+        required=False,
+        min_value=1,
+        widget=UnfoldAdminIntegerFieldWidget(
+            attrs={"placeholder": str(DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE)}
+        ),
+        help_text=(
+            "Quantas vezes o limiar acima para o disparo exigir também o aplicativo "
+            "autenticador e a confirmação de uma segunda pessoa. Em branco = "
+            f"{DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE}×."
+        ),
+    )
+    percent_errors = {
+        "invalid": "Informe um percentual inteiro, de 1 a 100.",
+        # ``%%``: a mensagem de min/max passa por ``%`` com os parâmetros do Django.
+        "min_value": "O menor percentual aceito é 1%%.",
+        "max_value": "O maior percentual aceito é 100%%.",
+    }
+    fields["defaults_operator_capacity_attention_percent"] = forms.IntegerField(
+        label="Atenção a partir de (% da capacidade)",
+        required=False,
+        min_value=PERCENT_FLOOR,
+        max_value=PERCENT_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_ATTENTION_PERCENT)}),
+        error_messages=percent_errors,
+        help_text=(
+            "Acima deste uso de memória ou CPU, o indicador de capacidade no rail dos apps "
+            f"fica âmbar. Não gera aviso. Em branco = {DEFAULT_ATTENTION_PERCENT}%."
+        ),
+    )
+    fields["defaults_operator_capacity_critical_percent"] = forms.IntegerField(
+        label="Crítico a partir de (% da capacidade)",
+        required=False,
+        min_value=PERCENT_FLOOR,
+        max_value=PERCENT_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_CRITICAL_PERCENT)}),
+        error_messages=percent_errors,
+        help_text=(
+            "Acima deste uso o indicador fica vermelho e, se continuar pelo tempo abaixo, "
+            f"o gestor recebe um alerta crítico. Em branco = {DEFAULT_CRITICAL_PERCENT}%."
+        ),
+    )
+    fields["defaults_operator_capacity_sustain_minutes"] = forms.IntegerField(
+        label="Avisar depois de quantos minutos acima do crítico",
+        required=False,
+        min_value=SUSTAIN_MINUTES_FLOOR,
+        max_value=SUSTAIN_MINUTES_CEILING,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_SUSTAIN_MINUTES)}),
+        error_messages={
+            "invalid": "Informe um número inteiro de minutos, de 1 a 60.",
+            "min_value": "O mínimo é 1 minuto.",
+            "max_value": "O máximo é 60 minutos: mais que isso, o aviso chega depois do movimento.",
+        },
+        help_text=(
+            "Um pico curto (abrir o caixa, um relatório pesado) não vira alarme: o uso "
+            "precisa ficar acima do crítico por este tempo. O alerta se resolve sozinho "
+            "quando o uso volta a ficar abaixo da atenção pelo mesmo tempo. "
+            f"Em branco = {DEFAULT_SUSTAIN_MINUTES} min."
+        ),
+    )
     return fields
+
+
+OPERATOR_CAPACITY_FIELDS = (
+    ("defaults_operator_capacity_attention_percent", "attention_percent", DEFAULT_ATTENTION_PERCENT),
+    ("defaults_operator_capacity_critical_percent", "critical_percent", DEFAULT_CRITICAL_PERCENT),
+    ("defaults_operator_capacity_sustain_minutes", "sustain_minutes", DEFAULT_SUSTAIN_MINUTES),
+)
 
 
 # ── Integrações (seleção de adapters tipada com dropdowns) ──────────────────
@@ -914,6 +1079,41 @@ class ShopForm(forms.ModelForm):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
 
+        if self._has("defaults_marketing_whatsapp_minimum_audience"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            # Mostra o que está GRAVADO; ausente fica em branco com o padrão no
+            # placeholder — salvar a página por outro motivo não congela o padrão.
+            self.fields["defaults_marketing_whatsapp_minimum_audience"].initial = marketing.get(
+                "whatsapp_minimum_audience"
+            )
+
+        if self._has("defaults_marketing_ceremony_audience_percent"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            stored_percent = marketing.get("ceremony_audience_percent")
+            self.fields["defaults_marketing_ceremony_audience_percent"].initial = (
+                Decimal(str(stored_percent)) if stored_percent is not None else None
+            )
+            self.fields["defaults_marketing_ceremony_recipient_floor"].initial = marketing.get(
+                "ceremony_recipient_floor"
+            )
+            self.fields["defaults_marketing_ceremony_dual_control_multiple"].initial = marketing.get(
+                "ceremony_dual_control_multiple"
+            )
+            self.fields["defaults_marketing_ceremony_spend_limit_q"].initial = _q_to_reais(
+                marketing.get("ceremony_spend_limit_q")
+            )
+            self.fields["defaults_marketing_direct_message_cost_q"].initial = _q_to_reais(
+                marketing.get("direct_message_cost_q")
+            )
+
+        if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
+            capacity = (
+                defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
+            )
+            # Mostra o GRAVADO; ausente fica em branco com o padrão no placeholder.
+            for field, key, _default in OPERATOR_CAPACITY_FIELDS:
+                self.fields[field].initial = capacity.get(key)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             cooldown = stock_alerts.get("cooldown_minutes")
@@ -1044,6 +1244,18 @@ class ShopForm(forms.ModelForm):
                 self.add_error(
                     "defaults_purchase_lead_time_max_days",
                     "O teto do prazo de entrega precisa ser maior ou igual ao prazo mínimo.",
+                )
+
+        if self._has("defaults_operator_capacity_critical_percent"):
+            # Em branco vale o padrão — a comparação é entre os valores que VÃO valer.
+            attention = cleaned_data.get("defaults_operator_capacity_attention_percent")
+            critical = cleaned_data.get("defaults_operator_capacity_critical_percent")
+            effective_attention = DEFAULT_ATTENTION_PERCENT if attention is None else attention
+            effective_critical = DEFAULT_CRITICAL_PERCENT if critical is None else critical
+            if effective_attention >= effective_critical and "defaults_operator_capacity_critical_percent" not in self.errors:
+                self.add_error(
+                    "defaults_operator_capacity_critical_percent",
+                    f"O crítico ({effective_critical}%) precisa ser maior que a atenção ({effective_attention}%).",
                 )
 
         if self._has("defaults_production_low_yield_threshold"):
@@ -1348,6 +1560,64 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("pos", None)
 
+        if self._has("defaults_marketing_whatsapp_minimum_audience"):
+            marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
+            marketing = dict(marketing)
+            minimum = self.cleaned_data.get("defaults_marketing_whatsapp_minimum_audience")
+            if minimum is None:
+                marketing.pop("whatsapp_minimum_audience", None)
+            else:
+                marketing["whatsapp_minimum_audience"] = int(minimum)
+            if self._has("defaults_marketing_ceremony_audience_percent"):
+                percent = self.cleaned_data.get("defaults_marketing_ceremony_audience_percent")
+                if percent is None:
+                    marketing.pop("ceremony_audience_percent", None)
+                else:
+                    # String no JSON: Decimal não serializa e float não guarda 2,5% sem
+                    # sobra. Mesmo padrão do ``production_config``.
+                    marketing["ceremony_audience_percent"] = str(percent)
+                for field_name, key in (
+                    ("defaults_marketing_ceremony_recipient_floor", "ceremony_recipient_floor"),
+                    (
+                        "defaults_marketing_ceremony_dual_control_multiple",
+                        "ceremony_dual_control_multiple",
+                    ),
+                ):
+                    value = self.cleaned_data.get(field_name)
+                    if value is None:
+                        marketing.pop(key, None)
+                    else:
+                        marketing[key] = int(value)
+                for field_name, key in (
+                    ("defaults_marketing_ceremony_spend_limit_q", "ceremony_spend_limit_q"),
+                    ("defaults_marketing_direct_message_cost_q", "direct_message_cost_q"),
+                ):
+                    value = self.cleaned_data.get(field_name)
+                    if value is None:
+                        marketing.pop(key, None)
+                    else:
+                        marketing[key] = _reais_to_q(value)
+            if marketing:
+                defaults["marketing"] = marketing
+            else:
+                defaults.pop("marketing", None)
+
+        if self._has(OPERATOR_CAPACITY_FIELDS[0][0]):
+            capacity = (
+                defaults.get("operator_capacity") if isinstance(defaults.get("operator_capacity"), dict) else {}
+            )
+            capacity = dict(capacity)
+            for field, key, _default in OPERATOR_CAPACITY_FIELDS:
+                value = self.cleaned_data.get(field)
+                if value is None:
+                    capacity.pop(key, None)
+                else:
+                    capacity[key] = int(value)
+            if capacity:
+                defaults["operator_capacity"] = capacity
+            else:
+                defaults.pop("operator_capacity", None)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             stock_alerts = dict(stock_alerts)
@@ -1444,6 +1714,51 @@ _IDENTITY_FIELDSETS = (
         "Contato",
         {
             "fields": ("phone", "email", "default_ddd"),
+        },
+    ),
+)
+
+_SEARCH_FIELDSETS = (
+    (
+        "Como a loja aparece no Google",
+        {
+            "fields": (
+                "seo_home_title",
+                "seo_home_description",
+                "seo_menu_description",
+                "seo_faq_description",
+            ),
+            "description": (
+                "Campo vazio não é buraco: a loja usa o texto que deriva da marca, do slogan "
+                "e da cidade. O Google pode levar dias para refletir uma mudança. Produtos e "
+                "coleções usam a descrição do próprio catálogo."
+            ),
+        },
+    ),
+    (
+        "Cartão de compartilhamento",
+        {"fields": ("seo_share_image_url",)},
+    ),
+    (
+        "Dados do negócio para o Google",
+        {
+            "fields": ("business_type", "price_range", "founding_year"),
+            "description": (
+                "Somam-se ao endereço, telefone, horários e redes sociais já cadastrados. "
+                "Para o mapa apontar para a sua ficha, preencha o Google Place ID em Loja e contato."
+            ),
+        },
+    ),
+    (
+        "Verificação de propriedade",
+        {
+            "fields": (
+                "google_site_verification",
+                "bing_site_verification",
+                "facebook_domain_verification",
+                "pinterest_domain_verification",
+            ),
+            "description": "Códigos que as plataformas pedem para provar que o site é seu.",
         },
     ),
 )
@@ -1760,6 +2075,56 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Campanhas de WhatsApp",
+        {
+            "fields": ("defaults_marketing_whatsapp_minimum_audience",),
+            "description": (
+                "Política da loja para campanhas gerais de Marketing enviadas por WhatsApp. "
+                "Quem mudou e quando fica no histórico desta página."
+            ),
+        },
+    ),
+    (
+        "Cerimônia do disparo",
+        {
+            "fields": (
+                "marketing_ceremony_display",
+                (
+                    "defaults_marketing_ceremony_audience_percent",
+                    "defaults_marketing_ceremony_spend_limit_q",
+                ),
+                (
+                    "defaults_marketing_direct_message_cost_q",
+                    "defaults_marketing_ceremony_recipient_floor",
+                ),
+                "defaults_marketing_ceremony_dual_control_multiple",
+            ),
+            "description": (
+                "A partir de quantas PESSOAS um disparo de mensagem deixa de ser “leia o "
+                "resumo e toque” e passa a pedir frase digitada e senha. Vale o que chegar "
+                "primeiro: a fatia da base ou o teto de gasto. Postagem pública fica de "
+                "fora — ela se apaga, não custa por pessoa, e o número de plataformas não "
+                "mede risco. Quem mudou e quando fica no histórico desta página."
+            ),
+        },
+    ),
+    (
+        "Capacidade dos apps de operação",
+        {
+            "fields": (
+                ("defaults_operator_capacity_attention_percent", "defaults_operator_capacity_critical_percent"),
+                "defaults_operator_capacity_sustain_minutes",
+            ),
+            "description": (
+                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Central, Marketing, "
+                "B.I., Compras) mede a memória e a CPU do serviço em que roda e mostra no "
+                "indicador de capacidade do rail. Estes limites decidem quando o indicador "
+                "muda de cor e quando o gestor é avisado. Quem mudou e quando fica no "
+                "histórico desta página."
+            ),
+        },
+    ),
+    (
         "Canais do sistema (deployment)",
         {
             "fields": ("channel_refs_display",),
@@ -1997,6 +2362,12 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
         )
 
 
+@admin.register(ShopSearch)
+class ShopSearchAdmin(_ShopSingletonAdmin):
+    form = _section_form(_SEARCH_FIELDSETS)
+    fieldsets = _SEARCH_FIELDSETS
+
+
 @admin.register(ShopOperation)
 class ShopOperationAdmin(_ShopSingletonAdmin):
     form = _section_form(_OPERATION_FIELDSETS)
@@ -2043,7 +2414,66 @@ class ShopPosAdmin(_ShopSingletonAdmin):
 class ShopIntegrationsAdmin(_ShopSingletonAdmin):
     form = _section_form(_INTEGRATIONS_FIELDSETS)
     fieldsets = _INTEGRATIONS_FIELDSETS
-    readonly_fields = ("channel_refs_display",)
+    readonly_fields = ("channel_refs_display", "marketing_ceremony_display")
+
+    @admin.display(description="A conta, com os números de hoje")
+    def marketing_ceremony_display(self, obj):
+        """O limiar vivo ao lado do ajuste — para o gestor conferir contra a realidade.
+
+        Mostrar a base é o ponto: “2% da base” não quer dizer nada até alguém ver de que
+        base se trata. O número é lido na hora, sem cache, porque é ele que o gestor usa
+        para decidir se o limiar faz sentido.
+        """
+        from shopman.shop.marketing_policy import MarketingPolicy
+        from shopman.shop.services.marketing_ceremony import (
+            customer_base_size,
+            invalidate_customer_base_size,
+        )
+
+        invalidate_customer_base_size()
+        base = customer_base_size(refresh=True)
+        policy = MarketingPolicy.from_defaults(_shop_defaults(obj) if obj else None)
+        threshold = policy.ceremony_threshold(base)
+        binding = {
+            "percent": "a fatia da base",
+            "spend": "o teto de gasto",
+            "floor": "o piso (a base ainda é pequena para a fatia)",
+        }[threshold.binding]
+        spend_row = (
+            f"{threshold.from_spend} pessoas"
+            if threshold.from_spend is not None
+            else "sem teto (custo por mensagem em branco ou zero)"
+        )
+        rows = (
+            ("Base de clientes", f"{base} pessoas no cadastro ativo"),
+            ("Pela fatia", f"{threshold.from_percent} pessoas"),
+            ("Pelo gasto", spend_row),
+            ("Vale", binding),
+            (
+                "Frase digitada + senha",
+                f"a partir de {threshold.typed} pessoas "
+                f"(≈ R$ {policy.estimated_cost_q(threshold.typed) / 100:.2f} de mensagens)",
+            ),
+            (
+                "Autenticador + segunda pessoa",
+                f"a partir de {threshold.dual_control} pessoas",
+            ),
+        )
+        body = format_html_join(
+            "",
+            '<div class="flex gap-3 py-1 border-b border-base-100 dark:border-base-800">'
+            '<dt class="font-medium text-base-500 dark:text-base-400 w-56 shrink-0">{}</dt>'
+            '<dd class="text-sm">{}</dd></div>',
+            rows,
+        )
+        return format_html(
+            '<dl class="flex flex-col">{}</dl>'
+            '<p class="text-xs text-base-500 dark:text-base-400 mt-2">{}</p>',
+            body,
+            "Base de clientes = pessoas no cadastro ativo da casa (quem pediu para ser "
+            "esquecido sai da conta). O histórico importado do Yooga vive no B.I. e não "
+            "cria cadastro: quem só comprou no sistema antigo ainda não entra aqui.",
+        )
 
     @admin.display(description="Canais do sistema")
     def channel_refs_display(self, obj):

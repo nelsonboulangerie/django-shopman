@@ -11,6 +11,17 @@ import type {
   AnnouncementTemplate,
 } from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import {
+  audienceRulesSummary,
+  choiceLabels,
+  platformsSummary,
+} from "~/presentation/campaign";
+import {
+  platformReadinessNote,
+  readinessByPlatform,
+  readinessPillClass,
+} from "~/presentation/platformReadiness";
+import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
   resolveScheduleInput,
@@ -30,6 +41,9 @@ const props = defineProps<{
   /** Rótulos de plataforma e template do WhatsApp: a prévia precisa dos dois para não
    *  prometer o que o envio não faz. */
   platformLabels: Record<string, string>;
+  /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto.
+   *  Pinta a pílula e explica, ANTES do clique, onde a campanha não vai sair. */
+  platformReadiness?: PlatformReadiness[];
   whatsappTemplate?: string;
   busy?: boolean;
   draftOwner?: string;
@@ -107,10 +121,96 @@ const DRAFT_LABELS = {
   requires_approval: "Revisão antes de publicar",
   expires_after_minutes: "Prazo de revisão",
   promotion_ref: "Oferta",
-  is_active: "Regra ativa",
+  is_active: "Campanha ligada",
   schedule: "Agendamento",
   audience_rules: "Público",
 };
+
+// ⚠️ A tela imprimia a CHAVE do JSON ("collections, skus", "bought_skus") quando
+// avisava que um filtro salvo seria preservado. Chave é contrato com o servidor,
+// não vocabulário do gestor: aqui vira rótulo; chave que o formulário não conhece
+// vira contagem, nunca texto em inglês.
+const TRIGGER_FILTER_LABELS: Record<string, string> = {
+  collections: "coleções",
+  skus: "produtos",
+  quality_min: "qualidade mínima da fornada",
+  quality_min_share: "parcela mínima na qualidade",
+  max_remaining: "estoque máximo restante",
+};
+const PRESERVED_AUDIENCE_LABELS: Record<string, string> = {
+  bought_skus: "produtos comprados",
+  bought_collections: "coleções compradas",
+};
+
+/** "coleções, produtos" — ou "coleções e mais 1 critério" quando a chave é nova. */
+function preservedSummary(
+  keys: string[],
+  labels: Record<string, string>,
+): string {
+  const named = keys.flatMap((key) => (labels[key] ? [labels[key]] : []));
+  const unknown = keys.length - named.length;
+  const rest = unknown
+    ? `${unknown} ${unknown === 1 ? "critério" : "critérios"}`
+    : "";
+  if (!named.length) return rest;
+  return rest ? `${named.join(", ")} e mais ${rest}` : named.join(", ");
+}
+
+const audienceLabels = computed(() => ({
+  priceTiers: choiceLabels(props.priceTiers ?? []),
+  tags: choiceLabels(props.tags ?? []),
+  segments: choiceLabels(props.rfmSegments ?? []),
+}));
+
+/** Frase de um agendamento salvo, para o aviso de conflito do rascunho. */
+function scheduleDraftSummary(schedule: Record<string, unknown>): string {
+  if (schedule.type === "once" && typeof schedule.at === "string") {
+    return scheduleSummary(schedule.at, timezoneName.value) || "uma vez";
+  }
+  const windows = Array.isArray(schedule.windows)
+    ? schedule.windows
+        .filter(Array.isArray)
+        .map((window) => String(window[0]))
+        .join(", ")
+    : "";
+  const days = Array.isArray(schedule.weekdays)
+    ? schedule.weekdays
+        .map((day) => WEEKDAY_LABELS[Number(day)])
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  if (!windows) return "sem horário definido";
+  return days ? `${days} às ${windows}` : `todo dia às ${windows}`;
+}
+
+// Prontidão por plataforma: a pílula ganha cor e palavra, e a escolhida que não
+// publica ganha a frase completa embaixo — antes do clique, não depois de aprovar.
+const readinessMap = computed(() =>
+  readinessByPlatform(props.platformReadiness),
+);
+function readinessNote(option: Choice) {
+  return platformReadinessNote(readinessMap.value[option.value], option.label);
+}
+const selectedReadinessNotes = computed(() =>
+  props.platformOptions
+    .filter((option) => platforms.value.includes(option.value))
+    .map((option) => ({ platform: option.value, ...readinessNote(option) }))
+    .filter((note) => note.tone !== "ready"),
+);
+
+/** O aviso de conflito pede uma frase, não JSON: o formulário é quem sabe ler o campo. */
+function describeDraftValue(field: string, value: unknown): string | undefined {
+  if (field === "platforms" && Array.isArray(value)) {
+    return platformsSummary(value.map(String), props.platformLabels);
+  }
+  if (field === "audience_rules" && value && typeof value === "object") {
+    return audienceRulesSummary(value as AudienceRules, audienceLabels.value);
+  }
+  if (field === "schedule" && value && typeof value === "object") {
+    return scheduleDraftSummary(value as Record<string, unknown>);
+  }
+  return undefined;
+}
 
 function cloneRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -545,6 +645,7 @@ function submit() {
       :saved-at="draft.savedAt.value"
       :conflicts="draft.conflicts.value"
       :labels="DRAFT_LABELS"
+      :describe="describeDraftValue"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
       @discard="draft.discard()"
@@ -839,8 +940,9 @@ function submit() {
       v-if="!schedules && preservedTriggerFilterKeys.length"
       class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Os filtros do evento ({{ preservedTriggerFilterKeys.join(", ") }}) serão
-      preservados.
+      Os filtros do evento já salvos ({{
+        preservedSummary(preservedTriggerFilterKeys, TRIGGER_FILTER_LABELS)
+      }}) continuam valendo.
     </p>
 
     <fieldset>
@@ -848,16 +950,20 @@ function submit() {
         Entregar por
       </legend>
       <div class="flex flex-wrap gap-1.5">
-        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos. -->
+        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos.
+             ⚠️ A pílula já conta o estado da plataforma ("não publica", "não verificada"):
+             antes, as quatro apareciam iguais e a recusa só vinha depois de aprovar. -->
         <label
           v-for="option in platformOptions"
           :key="option.value"
           class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-          :class="
+          :class="[
             platforms.includes(option.value)
               ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:bg-muted'
-          "
+              : 'border-border text-muted-foreground hover:bg-muted',
+            readinessPillClass(readinessNote(option).tone),
+          ]"
+          :data-readiness="readinessNote(option).tone"
         >
           <input
             type="checkbox"
@@ -867,8 +973,28 @@ function submit() {
             @change="togglePlatform(option.value)"
           />
           {{ option.label }}
+          <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
         </label>
       </div>
+      <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
+           mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
+      <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
+        <li
+          v-for="note in selectedReadinessNotes"
+          :key="note.platform"
+          class="text-xs"
+          :class="note.tone === 'blocked' ? 'text-destructive' : 'text-warning'"
+          role="status"
+        >
+          {{ note.text }}
+          <template v-if="note.tone !== 'limited'">
+            A campanha pode ser salva assim mesmo.
+            <NuxtLink to="/platforms" class="font-semibold underline">
+              Ver em Plataformas
+            </NuxtLink>
+          </template>
+        </li>
+      </ul>
       <p class="mt-1.5 text-xs text-muted-foreground">
         Instagram, Facebook e Google criam uma postagem pública por plataforma.
         WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
@@ -1097,8 +1223,9 @@ function submit() {
           v-if="preservedAudienceKeys.length"
           class="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground"
         >
-          Filtros protegidos ({{ preservedAudienceKeys.join(", ") }}) serão
-          preservados sem alteração.
+          Filtros de público já salvos ({{
+            preservedSummary(preservedAudienceKeys, PRESERVED_AUDIENCE_LABELS)
+          }}) continuam valendo, sem alteração.
         </p>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">
@@ -1148,7 +1275,7 @@ function submit() {
           type="checkbox"
           class="size-4 rounded border-border"
         />
-        Regra ativa
+        Campanha ligada
       </label>
     </div>
 

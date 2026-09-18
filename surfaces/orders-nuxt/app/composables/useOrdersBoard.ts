@@ -10,7 +10,10 @@ import { useOrderIntention } from "./useOrderIntention";
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
-import { newlyTreatableOrderRefs, preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { showTreatableOrderNotification } from "~/utils/treatableNotification";
+import { useOperatorAppName } from "../../../operator-kit/app/composables/useOperatorWindowTitle";
+import { windowTitle } from "../../../operator-kit/app/presentation/windowTitle";
 
 export type { CancellationReason };
 
@@ -55,6 +58,47 @@ export const GESTOR_ALERT = {
   ],
 };
 
+export function gestorAttentionDecision(
+  queue: TwoZoneQueueProjection | null,
+  seenRefs: ReadonlySet<string>,
+  previousSignature: string,
+  serviceDay: string,
+): { signature: string; firstUnseen: string; shouldStop: boolean } {
+  const refs = [...treatableOrderRefs(queue)].sort();
+  const signature = `${serviceDay}:${refs.join("|")}`;
+  const noUnseen = refs.every((ref_) => seenRefs.has(ref_));
+  if (signature === previousSignature) {
+    return { signature, firstUnseen: "", shouldStop: noUnseen };
+  }
+  return {
+    signature,
+    firstUnseen: refs.find((ref_) => !seenRefs.has(ref_)) || "",
+    shouldStop: noUnseen,
+  };
+}
+
+const MAX_BROWSER_TIMEOUT_MS = 2_147_000_000;
+
+/** Delay until the server's next operational day, independent of tablet TZ. */
+export function gestorServiceDayBoundaryDelay(
+  serviceDayEndsAt: string,
+  serverGeneratedAt: string,
+): number | null {
+  const boundary = Date.parse(serviceDayEndsAt);
+  const observedAt = Date.parse(serverGeneratedAt);
+  if (!Number.isFinite(boundary) || !Number.isFinite(observedAt)) return null;
+  // Dois timestamps do servidor: nem o timezone nem o relógio civil do tablet
+  // participam do cálculo. A latência só pode atrasar a leitura por poucos ms.
+  const remaining = boundary - observedAt;
+  // Relógio do tablet adiantado ou resposta capturada na virada: não cria loop
+  // apertado; o poll e esta retentativa buscarão o novo dia do servidor.
+  if (remaining <= 0) return 30_000;
+  return Math.min(remaining + 250, MAX_BROWSER_TIMEOUT_MS);
+}
+
+export const gestorAttentionStorageKey = (serviceDay: string) =>
+  `gestor_seen_${serviceDay}`;
+
 // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
 // O SSE só dispara o refetch; a mudança da projection para ação liberada avisa.
 //
@@ -66,6 +110,9 @@ export const GESTOR_ALERT = {
 export function useOrdersBoard() {
   const intentions = useOrderIntention();
   const config = useRuntimeConfig();
+  // O título que pisca também começa pelo nome do app instalado ("Nelson · Gestor"):
+  // sem ele o Chrome prefixa "<nome> - " na barra da janela a cada troca.
+  const appName = useOperatorAppName("Gestor");
   const path = "/api/v1/backstage/orders/";
 
   // Antes do destravamento por PIN toda leitura volta 403 `station_locked`, e o
@@ -120,21 +167,69 @@ export function useOrdersBoard() {
   const {
     soundOn,
     soundBlocked,
+    alerting,
+    playbackCount,
     toggleSound: toggleAlertSound,
+    activateSound,
     startAlert,
+    stopAlert,
   } = useAlertSound("gestor_sound", GESTOR_ALERT);
+
+  let attentionReady = false;
+  let lastAttentionSignature = "";
+  const attentionPending = ref(false);
+  let pendingAttentionRefs = new Set<string>();
+  let pendingAttentionDay = "";
+
+  function seenTreatableRefs(day: string): Set<string> {
+    if (!import.meta.client) return new Set();
+    try {
+      const value = JSON.parse(localStorage.getItem(gestorAttentionStorageKey(day)) || "[]");
+      return new Set(Array.isArray(value) ? value.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function rememberPendingTreatableRefs() {
+    if (!import.meta.client) return;
+    const day = pendingAttentionDay;
+    if (!day) return;
+    const seen = seenTreatableRefs(day);
+    for (const ref_ of pendingAttentionRefs) seen.add(ref_);
+    try {
+      localStorage.setItem(gestorAttentionStorageKey(day), JSON.stringify([...seen].slice(-500)));
+    } catch {
+      // Sem storage, a assinatura ainda impede repetição nesta montagem.
+    }
+    pendingAttentionRefs = new Set();
+    pendingAttentionDay = "";
+    attentionPending.value = false;
+    stopAlert();
+    stopTitleAlert();
+  }
+
+  function acknowledgeAttention() {
+    rememberPendingTreatableRefs();
+  }
+
+  async function activateAttentionSound() {
+    await activateSound();
+  }
 
   function toggleSound() {
     toggleAlertSound();
-    // Mesmo gesto que destrava o autoplay pede a permissão de notificação: fora
-    // de um gesto do usuário o browser ignora (ou penaliza) o pedido.
+    // O mesmo gesto que liga o som pode pedir a permissão da notificação local.
+    // A assinatura Web Push continua sendo uma ação própria e explícita.
     if (
-      soundOn.value &&
-      import.meta.client &&
-      "Notification" in window &&
-      Notification.permission === "default"
+      soundOn.value
+      && typeof window !== "undefined"
+      && "Notification" in window
+      && Notification.permission === "default"
     ) {
-      Notification.requestPermission().catch(() => {});
+      void Notification.requestPermission().catch(() => {
+        // silêncio-deliberado: som e título continuam mesmo se o prompt falhar
+      });
     }
   }
 
@@ -154,31 +249,87 @@ export function useOrdersBoard() {
     let flip = false;
     titleTimer = setInterval(() => {
       flip = !flip;
-      document.title = flip ? `● Pedido para tratar${ref_ ? ` ${ref_}` : ""}` : baseTitle;
+      document.title = flip
+        ? windowTitle(appName, `● Pedido para tratar${ref_ ? ` ${ref_}` : ""}`)
+        : baseTitle;
     }, 1_500);
-  }
-
-  function notifyTreatableOrder(ref_: string) {
-    // Silenciosamente degradável: sem API ou sem permissão, som e título cobrem.
-    try {
-      if (!("Notification" in window) || Notification.permission !== "granted") return;
-      const n = new Notification(`Pedido para tratar${ref_ ? ` ${ref_}` : ""}`, {
-        body: "Há um pedido que já pode ser tratado no quadro.",
-        tag: "gestor-treatable-order",
-      });
-      n.onclick = () => { window.focus(); n.close(); };
-    } catch {
-      // construtor pode lançar (ex.: Android sem service worker) — sem drama
-    }
   }
 
   function announceTreatableOrder(ref_: string) {
     startAlert();
     if (document.visibilityState !== "visible") {
-      notifyTreatableOrder(ref_);
       startTitleAlert(ref_);
+      const worker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+      const location = window.location;
+      void showTreatableOrderNotification(ref_, {
+        permission: "Notification" in window ? Notification.permission : "denied",
+        serviceWorker: worker,
+        actionUrl: location
+          ? `${location.pathname || "/"}${location.search || ""}${location.hash || ""}`
+          : "/",
+      });
     }
   }
+
+  function evaluateTreatableAttention() {
+    if (!attentionReady) return;
+    const day = queue.value?.service_day || "";
+    if (!day) return;
+    const decision = gestorAttentionDecision(
+      queue.value,
+      seenTreatableRefs(day),
+      lastAttentionSignature,
+      day,
+    );
+    lastAttentionSignature = decision.signature;
+    if (decision.shouldStop) {
+      pendingAttentionRefs = new Set();
+      pendingAttentionDay = "";
+      attentionPending.value = false;
+      stopAlert();
+      stopTitleAlert();
+    }
+    if (decision.firstUnseen) {
+      const seen = seenTreatableRefs(day);
+      pendingAttentionRefs = new Set(
+        [...treatableOrderRefs(queue.value)].filter((ref_) => !seen.has(ref_)),
+      );
+      pendingAttentionDay = day;
+      attentionPending.value = pendingAttentionRefs.size > 0;
+      announceTreatableOrder(decision.firstUnseen);
+    }
+  }
+
+  // Tentar tocar com autoplay bloqueado não é recibo. Persistimos as refs como
+  // vistas somente quando o kit confirma uma reprodução real, ou no Ciente.
+  watch(playbackCount, (count, previous) => {
+    if (count > previous && attentionPending.value) rememberPendingTreatableRefs();
+  });
+
+  // Uma única régua para SSE, poll, retorno da aba e primeira abertura. Assim
+  // a encomenda que virou tratável com a tela fechada não depende de ter havido
+  // um evento SSE exatamente depois que o browser conectou.
+  let serviceDayTimer: ReturnType<typeof setTimeout> | null = null;
+  let serviceDayClockReady = false;
+  function scheduleServiceDayRefresh() {
+    if (serviceDayTimer) clearTimeout(serviceDayTimer);
+    serviceDayTimer = null;
+    // Só é habilitado em onMounted, portanto nunca agenda no SSR.
+    if (!serviceDayClockReady) return;
+    const delay = gestorServiceDayBoundaryDelay(
+      queue.value?.service_day_ends_at || "",
+      data.value?.generated_at || "",
+    );
+    if (delay == null) return;
+    serviceDayTimer = setTimeout(() => {
+      serviceDayTimer = null;
+      void Promise.resolve(refresh()).finally(scheduleServiceDayRefresh);
+    }, delay);
+  }
+  watch(queue, () => {
+    evaluateTreatableAttention();
+    scheduleServiceDayRefresh();
+  }, { flush: "post" });
 
   function connectSse() {
     if (source) return;
@@ -188,24 +339,18 @@ export function useOrdersBoard() {
     try {
       realtime.value = "connecting";
       source = new EventSource(url, { withCredentials: true });
-      // SSE é somente um sinal. O som nasce da diferença entre as projections
-      // canônicas antes/depois do refresh: espera de PIX/data não incomoda, mas
-      // o pagamento que libera uma ação passa a avisar naquele instante.
+      // SSE é somente um sinal. A atenção nasce do watch da projection
+      // canônica, compartilhado com poll/primeira abertura.
       let attentionRefresh: Promise<void> | null = null;
       let attentionQueued = false;
       const onPush = () => {
         attentionQueued = true;
         if (attentionRefresh) return;
-        const before = queue.value;
         attentionRefresh = (async () => {
           do {
             attentionQueued = false;
             await refresh();
           } while (attentionQueued);
-          if (!error.value) {
-            const [ref_] = newlyTreatableOrderRefs(before, queue.value);
-            if (ref_) announceTreatableOrder(ref_);
-          }
         })()
           .catch(() => {})
           .finally(() => {
@@ -245,6 +390,10 @@ export function useOrdersBoard() {
     refresh();
   };
   onMounted(() => {
+    attentionReady = true;
+    serviceDayClockReady = true;
+    evaluateTreatableAttention();
+    scheduleServiceDayRefresh();
     pollTimer = setInterval(() => refresh(), 30_000);
     connectWhenReady();
     // Voltou à aba / reconectou: refetch imediato (o poll de 30s é longo demais
@@ -255,6 +404,7 @@ export function useOrdersBoard() {
   onBeforeUnmount(() => {
     stopWaitingForRead?.();
     if (pollTimer) clearInterval(pollTimer);
+    if (serviceDayTimer) clearTimeout(serviceDayTimer);
     if (source) { source.close(); source = null; }
     stopTitleAlert();
     document.removeEventListener("visibilitychange", onVisible);
@@ -395,5 +545,12 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { readMetadata, queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, equipmentAvailable, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
+  return {
+    readMetadata, queue, zones, totalCount, preorders, realtime, pending, error,
+    refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
+    fetchCancellationReasons, settleCash, equipmentBack, equipmentOut,
+    equipmentAvailable, assign, unassign, confirmMany, advanceMany,
+    soundOn, soundBlocked, alerting, attentionPending, toggleSound,
+    activateAttentionSound, acknowledgeAttention,
+  };
 }

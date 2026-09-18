@@ -97,10 +97,10 @@ class ProductConsumptionTagAdmin(ModelAdmin):
 
     @display(
         description="curadoria",
-        label={"revisada": "success", "proposta — revisar": "warning"},
+        label={"revisada": "success", "proposta · revisar": "warning"},
     )
     def review_display(self, obj):
-        return "revisada" if obj.reviewed else "proposta — revisar"
+        return "revisada" if obj.reviewed else "proposta · revisar"
 
     # Mesma razão do `complete_selected`: ação sem `permissions=` passa sem
     # filtro. "Revisada" é a afirmação de que GENTE conferiu a proposta da

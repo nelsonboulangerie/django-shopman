@@ -22,10 +22,12 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E017  Catálogo de qualidade não tem grau ativo a preço cheio
   SHOPMAN_E018  Catálogo de qualidade tem política ativa incoerente
   SHOPMAN_E019  Configuração de produção da loja é inválida
-  SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
+  SHOPMAN_W020  WhatsApp Marketing com flow ainda fechado ou em ensaio (o envio já falha fechado em runtime)
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
   SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
+  SHOPMAN_E024  Configuração VAPID parcial ou inválida
+  SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -46,16 +48,23 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W016  Captura simulada exposta em staging técnico
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
+  SHOPMAN_W019  Web Push do backstage desativado por ausência de VAPID
+  SHOPMAN_W021  Modo do WhatsApp de Marketing pedido sem cache compartilhado, sem lista do ensaio ou desconhecido
 """
 
 from __future__ import annotations
 
+import hmac
+import json
 import logging
 import os
+from collections.abc import Mapping
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 
 from shopman.shop.environment import (
     NON_PRODUCTION_ENVIRONMENTS,
@@ -907,9 +916,11 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     número frio, e um erro opaco. É o tipo de configuração faltando que só aparece no
     dia em que importa, então ela passa a aparecer na subida.
 
-    A ausência de flow remains a setup warning because runtime approval is already
-    blocked.  A configured flow whose persistent custom-field isolation has not
-    passed G-H03 is a deploy error: credentials must never turn an unproven path on.
+    A ausência de flow é aviso de setup porque a aprovação em runtime já está
+    bloqueada. Um flow configurado com o WhatsApp de Marketing fechado (ou em
+    ensaio) também é AVISO: o mesmo `safety_state` fecha o envio em runtime, e um
+    `Error` aqui derrubava o deploy do sistema inteiro por uma faixa que já não
+    podia enviar nada.
     """
     warnings = []
 
@@ -942,13 +953,36 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
         from shopman.shop.services import manychat_marketing_safety
 
         safety = manychat_marketing_safety.safety_state()
-        if not safety.safe:
+        if safety.state == manychat_marketing_safety.STATE_CANARY:
+            # Ensaio ligado de propósito: avisar na subida que o público inteiro NÃO
+            # recebe, para ninguém ler "deploy verde" como "WhatsApp aberto".
             warnings.append(
-                Error(
-                    "WhatsApp Marketing permanece bloqueado: a isolação dos campos "
-                    "persistentes do ManyChat ainda não foi comprovada.",
+                Warning(
+                    f"WhatsApp Marketing em ensaio: só {safety.canary_size} contato(s) "
+                    "recebem mensagens de Marketing.",
+                    hint=(
+                        "Voltar SHOPMAN_MARKETING_WHATSAPP_MODE para blocked encerra o "
+                        "ensaio; open abre para todo contato elegível."
+                    ),
+                    id="SHOPMAN_W020",
+                )
+            )
+            return warnings
+        if not safety.allows_delivery:
+            # AVISO, não erro. O caminho inseguro já falha fechado em RUNTIME
+            # (`require_safe_delivery` na aprovação, `delivery_readiness` na tela e
+            # o próprio adapter leem o mesmo `safety_state`): nenhum envio real sai
+            # com o modo fechado. Como `Error`, este check derrubava o job
+            # `release` inteiro (check --deploy) assim que o banco tinha uma
+            # campanha de WhatsApp ativa com flow — e o alpha ficou sem deploy
+            # de TODO o sistema por causa de uma faixa que já estava bloqueada
+            # (16/09, 22:15 em diante, 7 deployments em rollback).
+            warnings.append(
+                Warning(
+                    f"WhatsApp Marketing permanece bloqueado ({safety.reason_code}): "
+                    f"{safety.reason}",
                     hint=safety.action,
-                    id="SHOPMAN_E020",
+                    id="SHOPMAN_W020",
                 )
             )
         return warnings
@@ -965,6 +999,57 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
             id="SHOPMAN_W014",
         )
     )
+    return warnings
+
+
+@register(deploy=True)
+def check_marketing_whatsapp_isolation(app_configs, **kwargs):
+    """Explicar na subida por que o WhatsApp de Marketing pedido continua fechado.
+
+    ``canary``/``open`` só valem com a reserva por assinante vista por TODOS os
+    processos (web e workers). Com cache local cada processo reserva sozinho, a
+    serialização não vale, e ``safety_state`` mantém o bloqueio em runtime.
+
+    ⚠️ AVISO, nunca `Error` — a mesma lição do SHOPMAN_W020 (16/09): o runtime já
+    falha fechado, e um `Error` aqui derrubaria o `release` do sistema inteiro por uma
+    faixa que já não envia nada.
+    """
+    from shopman.shop.services import manychat_marketing_safety as safety
+
+    raw_mode = str(getattr(settings, "SHOPMAN_MARKETING_WHATSAPP_MODE", "") or "").strip().lower()
+    mode = safety.whatsapp_mode()
+    if raw_mode and raw_mode not in safety.MODES:
+        return [
+            Warning(
+                f"SHOPMAN_MARKETING_WHATSAPP_MODE={raw_mode!r} não é um modo conhecido: "
+                "o WhatsApp de Marketing fica bloqueado.",
+                hint="Usar blocked, canary ou open.",
+                id="SHOPMAN_W021",
+            )
+        ]
+    if mode == safety.MODE_BLOCKED:
+        return []
+    warnings = []
+    if not safety.serialization_available():
+        warnings.append(
+            Warning(
+                f"SHOPMAN_MARKETING_WHATSAPP_MODE={mode} pedido, mas o cache não é "
+                "compartilhado entre processos: a serialização das mensagens com flow "
+                "não vale e o WhatsApp de Marketing continua bloqueado.",
+                hint="Configurar REDIS_URL (cache Redis) em web e workers, ou voltar o modo para blocked.",
+                id="SHOPMAN_W021",
+            )
+        )
+    if mode == safety.MODE_CANARY and not safety.canary_customer_refs():
+        warnings.append(
+            Warning(
+                "SHOPMAN_MARKETING_WHATSAPP_MODE=canary sem nenhum contato em "
+                "SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS: o WhatsApp de "
+                "Marketing continua bloqueado.",
+                hint="Informar os customer_ref do ensaio, separados por vírgula, ou voltar o modo para blocked.",
+                id="SHOPMAN_W021",
+            )
+        )
     return warnings
 
 
@@ -1177,3 +1262,100 @@ def check_google_maps_credential_boundary(app_configs, **kwargs):
                       hint="Remova GOOGLE_MAPS_API_KEY e provisione chaves distintas para browser (referrers) e servidor (Geocoding).",
                       id="SHOPMAN_E023")]
     return []
+
+
+@register(deploy=True)
+def check_vapid_configuration(app_configs, **kwargs):
+    private_key = str(getattr(settings, "VAPID_PRIVATE_KEY", "") or "").strip()
+    public_key = str(getattr(settings, "VAPID_PUBLIC_KEY", "") or "").strip()
+    claims_email = str(getattr(settings, "VAPID_CLAIMS_EMAIL", "") or "").strip()
+    configured = (private_key, public_key, claims_email)
+
+    if not any(configured):
+        if not is_production():
+            return []
+        return [Warning(
+            "Web Push do backstage está desativado porque as chaves VAPID não foram configuradas.",
+            hint=(
+                "Provisione VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY e VAPID_CLAIMS_EMAIL "
+                "como um único conjunto antes de habilitar Web Push."
+            ),
+            id="SHOPMAN_W019",
+        )]
+
+    invalid = not all(configured) or private_key == public_key or len(private_key) < 32 or len(public_key) < 32
+    try:
+        validate_email(claims_email)
+    except ValidationError:
+        invalid = True
+    if not invalid:
+        return []
+    return [Error(
+        "A configuração VAPID está parcial ou inválida.",
+        hint=(
+            "Defina em conjunto VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY e um "
+            "VAPID_CLAIMS_EMAIL válido; nunca reutilize a mesma chave nos dois campos."
+        ),
+        id="SHOPMAN_E024",
+    )]
+
+
+@register(deploy=True)
+def check_privacy_receipt_hmac_configuration(app_configs, **kwargs):
+    """Block non-debug releases with an unusable privacy receipt keyring."""
+    if settings.DEBUG:
+        return []
+
+    current_key = str(
+        getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY", "") or ""
+    ).encode("utf-8")
+    raw_version = getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1)
+    raw_previous = getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS", {})
+
+    invalid = len(current_key) < 32
+    try:
+        current_version = int(raw_version)
+        invalid = invalid or current_version < 1
+    except (TypeError, ValueError):
+        current_version = None
+        invalid = True
+
+    if isinstance(raw_previous, str):
+        try:
+            previous = json.loads(raw_previous)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            previous = None
+    else:
+        previous = raw_previous
+
+    if not isinstance(previous, Mapping):
+        invalid = True
+    else:
+        for raw_previous_version, raw_previous_key in previous.items():
+            try:
+                previous_version = int(raw_previous_version)
+            except (TypeError, ValueError):
+                invalid = True
+                continue
+            previous_key = str(raw_previous_key or "").encode("utf-8")
+            if previous_version < 1 or len(previous_key) < 32:
+                invalid = True
+            if (
+                current_version is not None
+                and previous_version == current_version
+                and not hmac.compare_digest(previous_key, current_key)
+            ):
+                invalid = True
+
+    if not invalid:
+        return []
+    return [
+        Error(
+            "A configuração HMAC dos recibos de privacidade está ausente ou inválida.",
+            hint=(
+                "Defina uma chave atual exclusiva com ao menos 32 bytes, versão inteira "
+                "positiva e um keyring JSON de chaves anteriores igualmente válidas."
+            ),
+            id="SHOPMAN_E025",
+        )
+    ]

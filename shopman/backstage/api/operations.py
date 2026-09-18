@@ -22,7 +22,6 @@ POST endpoints (operator actions):
   POST /api/v1/backstage/production/plan/                 → plan/adjust matrix cell
   POST /api/v1/backstage/production/<wo_id>/start/        → start a planned WO
   POST /api/v1/backstage/production/<wo_id>/finish/       → finish a started WO
-  POST /api/v1/backstage/production/<wo_id>/advance-step/ → next step
   POST /api/v1/backstage/production/quick-finish/         → plan + finish in one step
   POST /api/v1/backstage/production/<wo_id>/void/         → void work order
   POST /api/v1/backstage/closing/                    → finalize day closing
@@ -70,7 +69,6 @@ from shopman.backstage.api._production_filters import (
     validated_query,
 )
 from shopman.backstage.api._production_mutations import (
-    ProductionAdvanceStepMutationSerializer,
     ProductionFinishMutationSerializer,
     ProductionMutationValidationError,
     ProductionOvenArmMutationSerializer,
@@ -124,6 +122,7 @@ from shopman.backstage.projections.production import (
 from shopman.backstage.services import (
     closing as closing_service,
 )
+from shopman.backstage.services import operator_session, sign_in_audit
 from shopman.backstage.services import (
     orders as orders_service,
 )
@@ -133,7 +132,6 @@ from shopman.backstage.services import (
 from shopman.backstage.services import (
     production as production_service,
 )
-from shopman.backstage.services import sign_in_audit
 from shopman.backstage.services.exceptions import (
     OrderConflict,
     OrderError,
@@ -805,6 +803,7 @@ class OperatorLoginView(APIView):
         # linha da trilha quem grava é o receiver do `user_logged_in`.
         sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
         login(request, user)
+        operator_session.start(request)
         # `operator`, e não `device_user`: entrar com senha é identificar-se como
         # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
         return Response({"ok": True, "operator": operator_card(user)})
@@ -904,6 +903,7 @@ class OperatorUnlockView(APIView):
         # ``ValueError``. Sem isto, o destrave respondia 500 no balcão.
         sign_in_audit.mark_method(request, metodo)
         login(request, operator, backend=MODEL_BACKEND)
+        operator_session.start(request)
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
 
@@ -1791,7 +1791,7 @@ class OrderAdvanceView(_OrderActionBase):
             return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
         equipment = body.get("equipment") or []
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
-            return Response({"detail": "Aparelhos devem ser uma lista de referências."}, status=400)
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
         equipment = sorted(set(equipment))
         change_out = body.get("change_out")
         if change_out is not None:
@@ -2047,8 +2047,8 @@ class OrderCancellationReasonsView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Settle delivery cash-on-delivery into the operator's open shift",
-        responses={200: OpenApiResponse(description="Cash settled.")},
+        summary="Register payment collected at pickup or delivery in the operator's open shift",
+        responses={200: OpenApiResponse(description="Payment registered.")},
     ),
 )
 class OrderSettleDeliveryCashView(_OrderActionBase):
@@ -2061,7 +2061,7 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
         change_back = request.data.get("change_back")
         equipment_back = request.data.get("equipment_back", False)
         if not isinstance(equipment_back, bool):
-            return Response({"detail": "Informe a devolução do aparelho como verdadeiro ou falso."}, status=400)
+            return Response({"detail": "Informe a devolução da maquininha como verdadeiro ou falso."}, status=400)
         amount = str(request.data.get("amount", ""))
         change = None if change_back is None else str(change_back)
 
@@ -2495,50 +2495,22 @@ class POSCustomerProfileView(APIView):
 
     def post(self, request, ref: str):
         try:
-            from shopman.guestman.models import Customer
+            result = pos_tabs_service.update_pos_customer_profile(
+                customer_ref=ref,
+                payload=request.data or {},
+            )
         except ImportError:
             return Response({"detail": "Guestman indisponível."}, status=503)
-        customer = Customer.objects.filter(ref=ref).first()
-        if customer is None:
+        except pos_tabs_service.PosCustomerUnavailable:
             return Response({"detail": "Cliente não encontrado."}, status=404)
-
-        body = request.data or {}
-        updates: list[str] = []
-        metadata = dict(customer.metadata or {})
-
-        if "fiscal_prefs" in body:
-            incoming = body.get("fiscal_prefs") or {}
-            if not isinstance(incoming, dict):
-                return Response({"detail": "fiscal_prefs inválido.", "field": "fiscal_prefs"}, status=400)
-            prefs = dict(metadata.get("fiscal_prefs") or {})
-            for key in ("cpf_na_nota", "email_receipt"):
-                if key in incoming:
-                    prefs[key] = bool(incoming[key])
-            metadata["fiscal_prefs"] = prefs
-            customer.metadata = metadata
-            updates.append("metadata")
-
-        if "dietary_restrictions" in body:
-            metadata["preferences"] = str(body.get("dietary_restrictions") or "").strip()
-            customer.metadata = metadata
-            if "metadata" not in updates:
-                updates.append("metadata")
-
-        if "notes" in body:
-            customer.notes = str(body.get("notes") or "").strip()
-            updates.append("notes")
-
-        if not updates:
-            return Response({"detail": "Nada para atualizar."}, status=400)
-        customer.save(update_fields=[*updates, "updated_at"])
-        return Response(
-            {
-                "ok": True,
-                "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
-                "notes": customer.notes,
-                "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
-            }
-        )
+        except ValueError as exc:
+            detail = str(exc)
+            field = "fiscal_prefs" if detail == "fiscal_prefs inválido." else None
+            return Response(
+                {"detail": detail, **({"field": field} if field else {})},
+                status=400,
+            )
+        return Response(result)
 
 
 @extend_schema_view(
@@ -3141,54 +3113,6 @@ class WorkOrderQualityCorrectionView(_ProductionActionBase):
                 "wo_ref": work_order.ref,
                 "quantity": _production_quantity(work_order.finished or 0),
                 "current": _current_work_order_projection(work_order.pk),
-            }
-        )
-
-
-@extend_schema_view(
-    post=extend_schema(
-        tags=["backstage"],
-        summary="Advance work order step",
-        responses={200: OpenApiResponse(description="Step advanced.")},
-    ),
-)
-class WorkOrderAdvanceStepView(_ProductionActionBase):
-    required_production_capability = "can_advance_step"
-
-    def post(self, request, wo_id: int):
-        body = validated_body(
-            request,
-            ProductionAdvanceStepMutationSerializer,
-            projection_kind="kds",
-            action_kind="advance_step",
-            action_href=f"/api/v1/backstage/production/{wo_id}/advance-step/",
-            action_ref=f"advance_step:{wo_id}",
-            work_order_id=wo_id,
-        )
-        _require_projected_work_order(
-            request,
-            wo_id,
-            committed_replay=body.get("_committed_replay", False),
-        )
-        try:
-            new_index = production_service.apply_advance_step(
-                work_order_id=wo_id,
-                actor=_production_actor(request),
-                expected_rev=body["expected_rev"],
-                idempotency_key=body["idempotency_key"],
-            )
-        except ProductionError as exc:
-            return _production_error_response(
-                exc,
-                idempotency_key=body["idempotency_key"],
-                projection_generated_at=body.get("projection_generated_at"),
-            )
-        return Response(
-            {
-                "ok": True,
-                "wo_id": wo_id,
-                "step_index": new_index,
-                "current": _current_work_order_projection(wo_id),
             }
         )
 
@@ -4191,6 +4115,13 @@ def _fiscal_expected(order_ref: str | None) -> bool:
         return False
 
 
+def _fiscal_state(order) -> str:
+    """O estado da NFC-e da venda recém-fechada. Sem pedido carregado, não há nota."""
+    if order is None:
+        return fiscal_service.FISCAL_STATE_NOT_EXPECTED
+    return fiscal_service.fiscal_state(order)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -4581,6 +4512,9 @@ class POSCustomerResolveView(APIView):
                 contact_correction=as_bool(body, "customer_contact_correction", default=False),
                 name_correction=as_bool(body, "customer_name_correction", default=False),
                 receipt_identity_action=body.get("receipt_identity_action"),
+                # Os PADRÕES do cliente novo (cpf_na_nota / email_receipt), virados
+                # no modal antes de o cadastro existir. Ausente = nada a gravar.
+                fiscal_prefs=body.get("fiscal_prefs"),
                 operator_username=_username(request),
             )
         except PosIntentError as exc:
@@ -4591,6 +4525,10 @@ class POSCustomerResolveView(APIView):
             # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
             return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
+            # Mesma recusa do endpoint de perfil: payload malformado é 400 com o
+            # campo nomeado, não "cadastro conflitante".
+            if str(exc) == "fiscal_prefs inválido.":
+                return Response({"detail": str(exc), "field": "fiscal_prefs"}, status=400)
             return Response(
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
                 status=422,
@@ -4803,6 +4741,10 @@ class POSCloseSaleView(APIView):
                 "payment": getattr(result, "payment", None) or {},
                 "payment_delivery": build_pos_payment_delivery(closed_order) if closed_order else {},
                 "fiscal_expected": _fiscal_expected(order_ref),
+                # Em que pé a nota está AGORA (``fiscal_service.fiscal_state``):
+                # ``not_expected`` | ``queued`` | ``awaiting_payment`` |
+                # ``authorized`` | ``failed``. ``fiscal_expected`` fica por compat.
+                "fiscal_state": _fiscal_state(closed_order),
             }
         )
 

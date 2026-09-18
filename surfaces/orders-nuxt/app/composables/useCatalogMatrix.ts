@@ -39,7 +39,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     const conflict = productConflicts.value[sku];
     if (!conflict?.action) return null;
     detailActions.set(sku, conflict.action);
-    delete productConflicts.value[sku];
+    Reflect.deleteProperty(productConflicts.value, sku);
     clearError();
     return conflict.product;
   }
@@ -285,7 +285,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     try {
       const res = await $fetch<ProductDetailResponse>(`/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`);
       if (res?.action) detailActions.set(sku, res.action);
-      delete productConflicts.value[sku];
+      Reflect.deleteProperty(productConflicts.value, sku);
       return res?.product ?? null;
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha ao carregar o produto.");

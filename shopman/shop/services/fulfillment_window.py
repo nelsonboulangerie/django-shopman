@@ -18,7 +18,7 @@ chega às 11:30 tem razão.
   granularidade fina: "14:00 às 14:30" é o que o operador combina com o
   entregador.
 - **OUTRO DIA (encomenda)** → os slots canônicos da casa
-  (``Shop.defaults["pickup_slots"]``: *A partir das 09h / 12h / 15h*, editáveis
+  (``Shop.defaults["pickup_slots"]``: *A partir das 9h / 12h / 15h*, editáveis
   no Admin). Encomenda não é hora marcada, é fornada: o cliente escolhe o TURNO,
   e é assim que a loja já pergunta. Oferecer meia hora para daqui a três dias
   seria uma precisão que a padaria não tem como cumprir — e faria a loja e o
@@ -70,6 +70,12 @@ def _window_start(slot: dict) -> time | None:
     ⚠️ Ler só o ref quebraria os canônicos em silêncio: ``"slot-09"`` partido no
     hífen dá ``"slot"``, que não é hora nenhuma — a janela passaria a não ter
     início e NENHUM corte de prontidão se aplicaria a ela.
+
+    ⚠️ E um canônico SEM ``starts_at`` (só o ref, como chega do payload de um
+    pedido cuja data virou hoje) resolve pela configuração da casa. A grade de
+    hoje é de meias horas e não o conhece; sem esta volta, ``validate`` lia
+    ``None`` e recusava "slot-09" como "não reconhecido" — a encomenda feita
+    ontem para hoje não fechava no balcão.
     """
     from shopman.shop.services.product_readiness import parse_clock
 
@@ -78,12 +84,19 @@ def _window_start(slot: dict) -> time | None:
     declared = parse_clock(slot.get("starts_at"))
     if declared is not None:
         return declared
-    return parse_clock(str(slot.get("ref") or "").split("-")[0])
+    ref = str(slot.get("ref") or "").strip()
+    inicio = parse_clock(ref.split("-")[0])
+    if inicio is not None:
+        return inicio
+    for canonico in canonical_slots():
+        if str(canonico.get("ref") or "") == ref:
+            return parse_clock(canonico.get("starts_at"))
+    return None
 
 
 #: Os slots de encomenda quando a casa ainda não configurou os dela.
 DEFAULT_CANONICAL_SLOTS = [
-    {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
     {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
     {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
 ]
@@ -109,7 +122,9 @@ def canonical_slots() -> list[dict]:
             if slots:
                 return [s for s in slots if isinstance(s, dict) and s.get("ref")]
     except Exception:
-        logger.debug("fulfillment_window: could not load canonical slots", exc_info=True)
+        # A casa configurou os slots dela e a leitura falhou: oferecer os
+        # padrões no lugar é prometer turno que a padaria pode não ter. Grita.
+        logger.warning("fulfillment_window: could not load canonical slots; using defaults", exc_info=True)
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
@@ -199,7 +214,9 @@ def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict
             return []
         janela = business_calendar.selling_hours_for(day, shop=shop)
     except Exception:
-        logger.debug("fulfillment_window: could not read the calendar for %s", day, exc_info=True)
+        # Sem calendário não dá para saber se o dia está fechado: a grade sai
+        # inteira, e alguém precisa ficar sabendo que ela saiu no escuro.
+        logger.warning("fulfillment_window: could not read the calendar for %s", day, exc_info=True)
         return canonical_slots()
 
     slots = canonical_slots()
@@ -312,7 +329,7 @@ def annotate(
         enabled = True
         reason = ""
         # O corte é o mesmo nas duas grades. Numa meia hora ele apaga
-        # "09:00 às 09:30"; num slot canônico apaga "A partir das 09h". A
+        # "09:00 às 09:30"; num slot canônico apaga "A partir das 9h". A
         # mediana precisa (11:37) vira o slot que a cobre porque a comparação é
         # com o INÍCIO da janela — 09:00 < 11:37 apaga, 12:00 >= 11:37 fica.
         if ready_at is not None and start is not None and start < ready_at:

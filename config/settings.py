@@ -37,6 +37,18 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_int_or_raw(name: str, default: int) -> int | str:
+    """Parse an integer without hiding an explicitly invalid deployment value."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
 def _materialized_secret_file(*, content: str, filename: str) -> str:
     secret_dir = Path(os.environ.get("SHOPMAN_RUNTIME_SECRET_DIR", "/tmp/shopman-secrets"))
     secret_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -142,6 +154,12 @@ SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = _env_bool(
 SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED", False
 )
+# Mensagem direta de campanha por WhatsApp (ManyChat, ADR-009) no ledger durável.
+# A flag só REGISTRA o adapter: quem recebe continua decidido por
+# SHOPMAN_MARKETING_WHATSAPP_MODE (blocked/canary/open) na última porta.
+SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", False
+)
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -150,6 +168,21 @@ SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = max(
     1,
     _env_int("SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION", 1),
 )
+# Recibos de direitos de dados usam segredo próprio e versionado. A chave
+# anterior permanece no keyring durante a retenção dos recibos para que replay
+# e prova de idempotência sobrevivam a rotações sem reutilizar SECRET_KEY.
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY",
+    "",
+).strip()
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = _env_int_or_raw(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION",
+    1,
+)
+SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS",
+    "{}",
+).strip()
 
 # ⚠️ PRODUÇÃO: Restringir a domínios reais. "*" é apenas para desenvolvimento.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
@@ -305,6 +338,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Sessão de operador renova com o uso, no máximo 1 gravação/dia (7 dias parada
+    # ⇒ expira). Depois de Session/Auth: a resposta dela passa pelo Session, que grava
+    # e reemite o cookie. Admin intocado. Ver shopman/backstage/services/operator_session.py.
+    "shopman.backstage.middleware.SessionRenewalMiddleware",
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
@@ -473,6 +510,14 @@ else:
 # mesmo caminho spoof-safe já usado pelos gates de IP do doorman).
 RATELIMIT_IP_META_KEY = "shopman.shop.services.auth.client_ip"
 
+# Segredo que os BFFs Nuxt (storefront-nuxt e os apps de operador via operator-kit,
+# `NUXT_DJANGO_PROXY_SECRET`) apresentam no cabeçalho `X-Shopman-Proxy-Secret`. O BFF chama o `api.` pela rede
+# pública, então a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For e o
+# rightmost TRUSTED_PROXY_DEPTH deixa de ser o cliente. Com o segredo, `client_ip`
+# lê um salto a mais; sem ele (vazio = desligado), o cabeçalho não muda nada.
+# Os dois lados precisam do MESMO valor — ver .do/app.alpha-subdomains.yaml.
+SHOPMAN_BFF_PROXY_SECRET = os.environ.get("SHOPMAN_BFF_PROXY_SECRET", "").strip()
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATIC_URL = "/static/"
@@ -528,6 +573,22 @@ try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
 except ValueError:
     MANYCHAT_API_TIMEOUT = 15
+
+# Marketing por WhatsApp (flows de campanha e de "Me avise"). O flow lê CAMPOS
+# PERSISTENTES do contato, então a isolação é por construção: uma mensagem com flow
+# por contato por vez, reservada no cache compartilhado durante a janela abaixo.
+# Modo `blocked` (padrão) fecha tudo; `canary` abre só para os refs listados;
+# `open` abre para todo contato elegível. `canary` e `open` exigem cache
+# compartilhado (Redis) — com cache local o estado continua bloqueado.
+SHOPMAN_MARKETING_WHATSAPP_MODE = (
+    os.environ.get("SHOPMAN_MARKETING_WHATSAPP_MODE", "blocked").strip().lower() or "blocked"
+)
+SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS = tuple(
+    ref.strip()
+    for ref in os.environ.get("SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS", "").split(",")
+    if ref.strip()
+)
+SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS = _env_int("SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS", 120)
 SHOPMAN_MANYCHAT = {
     "api_token": MANYCHAT_API_TOKEN,
     "base_url": os.environ.get("MANYCHAT_API_BASE", "https://api.manychat.com/fb"),
@@ -537,12 +598,16 @@ SHOPMAN_MANYCHAT = {
         "MANYCHAT_SUBSCRIBER_RESOLVER",
         "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
     ),
+    "otp_resolver": os.environ.get(
+        "MANYCHAT_OTP_SUBSCRIBER_RESOLVER",
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve_active_customer",
+    ),
     "flow_map": MANYCHAT_FLOW_MAP,
 }
 
 # Test-send de Marketing é fechado por padrão. A env contém um objeto por ref
 # segura; o recipient real jamais volta à API/log. Exemplo operacional:
-# {"owner-sandbox":{"label":"Aparelho verificado","recipient":"123456",
+# {"owner-sandbox":{"label":"Número verificado","recipient":"123456",
 #  "backend":"manychat","sandbox":true,"ownership_verified":true}}
 try:
     SHOPMAN_MARKETING_TEST_TARGETS = json.loads(
@@ -648,11 +713,19 @@ SHOPMAN_MARKETING_META = {
     "timeout": _env_int("META_MARKETING_TIMEOUT", 30),
 }
 
-# Public Google Business Profile posts. The OAuth token needs the
-# business.manage scope; all three values plus the independent switch are
-# required before the adapter reports ready.
+# Public Google Business Profile posts. Renewable OAuth needs client ID,
+# client secret and refresh token; the static access token remains only as a
+# short-lived canary fallback. Account, location and the independent switch
+# are always required before the adapter reports ready.
 SHOPMAN_MARKETING_GOOGLE = {
     "access_token": os.environ.get("GOOGLE_BUSINESS_ACCESS_TOKEN", "").strip(),
+    "client_id": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_ID", "").strip(),
+    "client_secret": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET", "").strip(),
+    "refresh_token": os.environ.get("GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN", "").strip(),
+    # Fixed credential boundary: a production environment variable must not be
+    # able to redirect long-lived secrets to another host. Tests may override
+    # this settings dictionary with a fake HTTPS provider.
+    "token_url": "https://oauth2.googleapis.com/token",
     "account_id": os.environ.get("GOOGLE_BUSINESS_ACCOUNT_ID", "").strip(),
     "location_id": os.environ.get("GOOGLE_BUSINESS_LOCATION_ID", "").strip(),
     "api_base": os.environ.get(
@@ -690,6 +763,10 @@ if SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED:
 if SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED:
     SHOPMAN_MARKETING_DELIVERY_ADAPTERS["tiktok"] = (
         "shopman.shop.adapters.marketing_delivery_tiktok"
+    )
+if SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["whatsapp"] = (
+        "shopman.shop.adapters.marketing_delivery_whatsapp"
     )
 
 # ── Machine (courier — despacho de entregadores) ───────────────────
@@ -941,6 +1018,14 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # Em produção, declare `DEFAULT_FROM_EMAIL` no spec de deploy.
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@shopman.local")
 
+# Web Push do backstage. O Storefront não lê estas chaves e a privada nunca
+# atravessa a API. As três vazias mantêm o canal desativado; configuração
+# parcial falha no deploy check SHOPMAN_E024.
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+VAPID_CLAIMS_EMAIL = os.environ.get("VAPID_CLAIMS_EMAIL", "").strip()
+VAPID_TIMEOUT_SECONDS = _env_int("VAPID_TIMEOUT_SECONDS", 10)
+
 # Quanto esperar por um servidor de SMTP que não responde. Sem isto o socket
 # herda o timeout do sistema — na prática, dois minutos pendurado.
 #
@@ -975,7 +1060,7 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
+        "shopman.shop.api_throttles.ClientIpAnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
@@ -995,9 +1080,11 @@ REST_FRAMEWORK = {
     # `doorman.get_client_ip(trusted_proxy_depth=...)`. As duas TÊM de casar,
     # senão o mesmo cliente é dois baldes diferentes; por isso leem a mesma env.
     #
-    # A contagem é: [cliente, BFF Nitro] → o edge da plataforma acrescenta o IP
-    # de saída do Nitro, e o BFF repassa o XFF que recebeu. Valor forjado entra
-    # à ESQUERDA e não desloca a contagem pela direita.
+    # O throttle anônimo padrão NÃO usa este número: `ClientIpAnonRateThrottle`
+    # conta por `auth.client_ip`, que sabe ler o salto a mais do BFF da loja
+    # (SHOPMAN_BFF_PROXY_SECRET). Fica para os throttles DRF que ainda usam o
+    # `get_ident` de fábrica. Valor forjado entra à ESQUERDA e não desloca a
+    # contagem pela direita.
     "NUM_PROXIES": _env_int("DOORMAN_TRUSTED_PROXY_DEPTH", 1),
 }
 
@@ -1621,6 +1708,30 @@ SHOPMAN_PURCHASE_BASE_URL = (os.environ.get("SHOPMAN_PURCHASE_BASE_URL") or "").
 #     "api.boulangerie.com.br" (o proxy Nuxt reescreve o Host para esse alias).
 SHOPMAN_OPERATOR_COOKIE_DOMAIN = (os.environ.get("SHOPMAN_OPERATOR_COOKIE_DOMAIN") or "").strip()
 SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").strip()
+
+# Sessão dos apps de operador (decisão de 17/09/2026): renova com o uso e expira
+# após 7 dias SEM uso. Só vale para a sessão aberta nas portas de operador (senha do
+# app, PIN, crachá), marcada no login. O uso regrava o prazo no máximo uma vez por
+# intervalo, para o poll não virar UPDATE por requisição.
+# Constantes de código, sem env: mudar a regra é decisão de produto, não de deploy.
+SHOPMAN_OPERATOR_SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
+SHOPMAN_OPERATOR_SESSION_RENEW_INTERVAL_SECONDS = 24 * 60 * 60
+
+# Sessão do Admin. A decisão de 17/09 deixou o Admin de fora e ele ficou com o
+# default do Django: 14 dias contados do LOGIN, sem renovação — um corte seco de
+# duas em duas semanas mesmo para quem entra todo dia, e com 2FA cada corte custa
+# o TOTP. Era essa a queixa que continuava voltando. O NÚMERO não muda: continua
+# 14 dias, agora contados do último USO. Isso não afrouxa o prazo do navegador
+# esquecido, só para de punir quem usa.
+SHOPMAN_ADMIN_SESSION_IDLE_SECONDS = 14 * 24 * 60 * 60
+SHOPMAN_ADMIN_SESSION_RENEW_INTERVAL_SECONDS = 24 * 60 * 60
+
+# Para onde `LoginRequiredMixin` manda quem chega sem sessão. SEM isto o Django
+# usa `/accounts/login/`, que NÃO existe neste projeto: a única view protegida
+# assim é a DANFE (`shopman/shop/views/fiscal_danfe.py`), aberta em aba nova pelo
+# PDV. Com a sessão vencida, o operador tomava 404 em vez da tela de login — o
+# que se lê como "o login quebrou", e não como "a sessão venceu".
+LOGIN_URL = "/admin/login/"
 
 #: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
 #: diz o que é, e obrigar a repetir a palavra no caminho é redundância.

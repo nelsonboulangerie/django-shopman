@@ -131,11 +131,17 @@ def test_delivery_recovery_actions_carry_current_authority_and_consequence():
     assert retry.enabled is True
     assert retry.eligible_count == 1
     assert retry.idempotency == "required"
+    # Reenviar UMA mensagem já pede a frase: o atrito segue o que não tem desfazer, e
+    # uma mensagem reenviada não se apaga. O que ainda cresce com o público é o RESTO —
+    # aqui, com uma pessoa, nenhuma senha. O tamanho por faixa vive em
+    # test_marketing_security.
     assert retry.confirmation.mode == "typed"
-    assert retry.confirmation.step_up == "password"
+    assert retry.confirmation.step_up == "none"
     assert retry.creates_external_effect is True
     assert reconcile.enabled is True
     assert reconcile.eligible_count == 1
+    # Reconciliar é CONSULTAR: não reenvia nada, não tem o que desfazer, e por isso
+    # segue no resumo — com TOTP, que é sobre quem pode olhar, não sobre o que sai.
     assert reconcile.confirmation.mode == "summary"
     assert reconcile.confirmation.step_up == "totp"
     assert reconcile.creates_external_effect is False
@@ -180,8 +186,11 @@ def test_pending_decision_uses_readiness_zero_audience_and_fresh_permissions():
     publish = _action(ready, "publish_announcement_now")
     schedule = _action(ready, "schedule_announcement")
     assert publish.enabled is True
-    assert publish.confirmation.mode == "typed"
-    assert publish.confirmation.step_up == "password"
+    # Publicar agora e agendar pedem a MESMA coisa quando a consequência é a mesma.
+    # Enquanto o agora escalava sozinho, agendar era literalmente mais barato do que
+    # entregar — e o agendamento adia o efeito, não o diminui.
+    assert publish.confirmation.mode == "summary"
+    assert publish.confirmation.step_up == "none"
     assert schedule.enabled is True
     assert schedule.confirmation.mode == "summary"
     assert schedule.confirmation.step_up == "none"
@@ -220,6 +229,57 @@ def test_pending_decision_uses_readiness_zero_audience_and_fresh_permissions():
     assert _action(empty_direct_actions, "publish_announcement_now").reason == (
         "no_eligible_audience"
     )
+
+
+def test_the_preview_knows_which_axis_the_announcement_is_on():
+    """Postagem não pede senha na prévia, e mensagem do mesmo tamanho pede.
+
+    A projeção resolvia a confirmação SEM passar as plataformas, e o servidor caía no
+    caminho conservador: contava o público elegível como se fosse destinatário. Um
+    anúncio só de postagem prometia na tela a cerimônia de trezentas pessoas — e o
+    comando, que sabe as plataformas, pediria outra coisa. Ver ADR-032.
+    """
+    publisher = _actor(
+        "axis-preview",
+        "view_marketing",
+        "publish_marketing_announcements",
+    )
+    postagem = _pending(suffix="axis-post", eligible_count=300, platforms=["instagram"])
+    mensagem = _pending(suffix="axis-dm", eligible_count=300, platforms=["whatsapp"])
+
+    post_actions = resolve_actions(_ready_projection(postagem), actor=publisher)
+    dm_actions = resolve_actions(_ready_projection(mensagem), actor=publisher)
+
+    assert _action(post_actions, "publish_announcement_now").confirmation.mode == "summary"
+    assert _action(post_actions, "publish_announcement_now").confirmation.step_up == "none"
+    # 300 pessoas contra uma base vazia: o piso manda (10 e 100), e 300 passa dos dois —
+    # frase digitada, autenticador e segunda pessoa. Base desconhecida aperta, não afrouxa.
+    assert _action(dm_actions, "publish_announcement_now").confirmation.mode == "typed"
+    assert _action(dm_actions, "publish_announcement_now").confirmation.step_up == "totp"
+    assert _action(dm_actions, "publish_announcement_now").confirmation.dual_control is True
+
+
+def test_a_platform_ref_the_authorization_would_refuse_does_not_break_the_board():
+    """O código de domínio da projeção é mais largo que o do contexto de autorização.
+
+    Passar o ref cru levantaria ``ValueError`` e derrubaria o quadro inteiro. Ele é
+    descartado, e sem plataforma o servidor conta o público como PESSOAS — mais
+    cerimônia, não menos.
+    """
+    publisher = _actor(
+        "odd-platform",
+        "view_marketing",
+        "publish_marketing_announcements",
+    )
+    estranho = _pending(
+        suffix="odd-platform",
+        eligible_count=300,
+        platforms=["google-business.legado"],
+    )
+
+    actions = resolve_actions(_ready_projection(estranho), actor=publisher)
+
+    assert _action(actions, "publish_announcement_now").confirmation.mode == "typed"
 
 
 def test_freeze_blocks_effects_but_keeps_lookup_only_reconciliation_possible():

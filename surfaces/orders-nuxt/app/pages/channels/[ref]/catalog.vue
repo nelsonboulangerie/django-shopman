@@ -43,7 +43,7 @@ function selectSnapshot(event: Event) {
   selected.value = element.value;
 }
 onBeforeRouteLeave(() => !(dirty.value || rawJson.value) || window.confirm("Há uma revisão local não concluída. Sair e descartar a seleção?"));
-useHead({ title: "Revisão de vínculos · Gestor" });
+useHead({ title: "Revisão de vínculos" });
 </script>
 
 <template>

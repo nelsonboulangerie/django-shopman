@@ -64,7 +64,7 @@ class Listing(models.Model):
         ordering = ["-priority", "name"]
 
     def __str__(self):
-        return f"{self.ref} - {self.name}"
+        return f"{self.ref} · {self.name}"
 
     def is_valid(self, date=None) -> bool:
         """Check if listing is valid for a given date."""

@@ -10,12 +10,23 @@ import math
 from django.db import transaction
 from django.db.models import Count
 from shopman.guestman.exceptions import CustomerError
-from shopman.guestman.models import CustomerAddress
+from shopman.guestman.models import Customer, CustomerAddress
 from shopman.guestman.services.customer import get
 
 # Max distance (km) between device location and a saved address
 # for them to count as "geo-compatible" in the pre-selection cascade.
 GEO_MATCH_RADIUS_KM = 0.5
+
+
+def _lock_active_customer(customer_ref: str) -> Customer:
+    customer = (
+        Customer.objects.select_for_update()
+        .filter(ref=customer_ref, is_active=True)
+        .first()
+    )
+    if customer is None:
+        raise CustomerError("CUSTOMER_NOT_FOUND", customer_ref=customer_ref)
+    return customer
 
 
 def addresses(customer_ref: str) -> list[CustomerAddress]:
@@ -95,14 +106,11 @@ def add_address(
         label_custom: Custom label (when label="other")
         is_default: Set as default
     """
-    cust = get(customer_ref)
-    if not cust:
-        raise CustomerError("CUSTOMER_NOT_FOUND", customer_ref=customer_ref)
-
     comp = components or {}
 
     # is_default=True triggers save() which demotes other defaults → atomic
     with transaction.atomic():
+        cust = _lock_active_customer(customer_ref)
         addr = CustomerAddress.objects.create(
             customer=cust,
             label=label,
@@ -131,11 +139,8 @@ def add_address(
 
 def set_default_address(customer_ref: str, address_id: int) -> CustomerAddress:
     """Set address as default."""
-    cust = get(customer_ref)
-    if not cust:
-        raise CustomerError("CUSTOMER_NOT_FOUND", customer_ref=customer_ref)
-
     with transaction.atomic():
+        cust = _lock_active_customer(customer_ref)
         try:
             addr = CustomerAddress.objects.get(pk=address_id, customer=cust)
         except CustomerAddress.DoesNotExist as e:
@@ -148,15 +153,6 @@ def set_default_address(customer_ref: str, address_id: int) -> CustomerAddress:
 
 def update_address(customer_ref: str, address_id: int, **fields) -> CustomerAddress:
     """Update an existing address owned by the customer."""
-    cust = get(customer_ref)
-    if not cust:
-        raise CustomerError("CUSTOMER_NOT_FOUND", customer_ref=customer_ref)
-
-    try:
-        addr = CustomerAddress.objects.get(pk=address_id, customer=cust)
-    except CustomerAddress.DoesNotExist as e:
-        raise CustomerError("ADDRESS_NOT_FOUND", address_id=address_id) from e
-
     updatable_fields = {
         "label",
         "label_custom",
@@ -178,40 +174,44 @@ def update_address(customer_ref: str, address_id: int, **fields) -> CustomerAddr
         "place_id",
         "is_verified",
     }
-    updates: list[str] = []
-    for key, value in fields.items():
-        if key == "place_id" and value is None:
-            value = ""
-        if key in updatable_fields and hasattr(addr, key) and getattr(addr, key) != value:
-            setattr(addr, key, value)
-            updates.append(key)
+    with transaction.atomic():
+        cust = _lock_active_customer(customer_ref)
+        try:
+            addr = CustomerAddress.objects.get(pk=address_id, customer=cust)
+        except CustomerAddress.DoesNotExist as e:
+            raise CustomerError("ADDRESS_NOT_FOUND", address_id=address_id) from e
 
-    if updates:
-        addr.save(update_fields=updates)
+        updates: list[str] = []
+        for key, value in fields.items():
+            if key == "place_id" and value is None:
+                value = ""
+            if key in updatable_fields and hasattr(addr, key) and getattr(addr, key) != value:
+                setattr(addr, key, value)
+                updates.append(key)
+
+        if updates:
+            addr.save(update_fields=updates)
     return addr
 
 
 def delete_address(customer_ref: str, address_id: int) -> bool:
     """Delete address."""
-    cust = get(customer_ref)
-    if not cust:
-        raise CustomerError("CUSTOMER_NOT_FOUND", customer_ref=customer_ref)
-
-    try:
-        addr = CustomerAddress.objects.get(pk=address_id, customer=cust)
-        addr.delete()
-        return True
-    except CustomerAddress.DoesNotExist as e:
-        raise CustomerError("ADDRESS_NOT_FOUND", address_id=address_id) from e
+    with transaction.atomic():
+        cust = _lock_active_customer(customer_ref)
+        try:
+            addr = CustomerAddress.objects.get(pk=address_id, customer=cust)
+            addr.delete()
+            return True
+        except CustomerAddress.DoesNotExist as e:
+            raise CustomerError("ADDRESS_NOT_FOUND", address_id=address_id) from e
 
 
 def delete_all_addresses(customer_ref: str) -> int:
     """Delete all addresses belonging to the customer."""
-    cust = get(customer_ref)
-    if not cust:
-        raise CustomerError("CUSTOMER_NOT_FOUND", customer_ref=customer_ref)
-    deleted, _ = cust.addresses.all().delete()
-    return deleted
+    with transaction.atomic():
+        cust = _lock_active_customer(customer_ref)
+        deleted, _ = cust.addresses.all().delete()
+        return deleted
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -288,7 +288,7 @@ def suggest_address(
         )
         if most_used is not None:
             return most_used
-    except Exception:
+    except Exception:  # silêncio-deliberado: o reverse accessor é opcional; usa a mais recente
         # Reverse accessor `orders` does not exist — graceful fallback.
         pass
 

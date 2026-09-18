@@ -6,9 +6,48 @@ fotografias históricas. Esta consolidação cobre o código até **062a7b5ec**,
 **8318b9b03**, ícones CSS **062a7b5ec**, alvos de interação, Actions de corrida
 e inventário **84e609641**. Não declara T, P ou R concluídos.
 
-## Resultado mais recente — fonte922fb522c
+## Capacidade: verificação da DigitalOcean e CI — 11/09
 
-**Esta atualização prevalece sobre as rodadas históricas abaixo.** Evidências completas,
+Spec ativo consultado read-only: backend1CPU/1GB, Gestor512MB, PG16/Valkey8.
+CI isolado na topologia de1leitor reprovou p95backend2500ms/10clientes e browser2229ms.
+Cinco leitores também reprovaram1322/1622ms e browser2573/3044ms no runner4CPU.
+Preparação e jornadas passaram; vereditos de budget falharam. Sem liberação de
+capacidade nem indicação comprovada de aumento permanente. Não atribuir tudo ao
+swap do Mac. Três fontes/artefatos/perfis estão em [do_capacity/README.md](do_capacity/README.md).
+
+Pablo aceitou rascunhos em memória com proteção de saída. A proposta de novo
+laboratório pago foi retirada por orientação explícita dele; não há decisão de
+infraestrutura pendente nem recurso novo criado. PC da loja, rede existente e
+DigitalOcean são o contexto informado, sem necessidade de rediscutir hospedagem.
+
+Correção de escopo: G06 condiciona o início do piloto; §10 item 4 permite deploy
+técnico antes da ativação de capacidades. As reprovações acima permanecem como
+limite do ensaio de capacidade, sem bloquear automaticamente toda publicação.
+A tarefa PDV coordena a publicação técnica já autorizada: integrar main atual,
+revisar migração/compatibilidade, obter CI da fonte final e verificar rollout/smoke
+sem efeitos reais. Isso não declara T, P ou R globalmente concluídos.
+
+## Atualização vigente — extensão de maquininhas individuais47e9c657a
+
+Esta atualização prevalece sobre budgets históricos abaixo. Cadastro nativo,
+alocação exclusiva no despacho, devolução independente e contrato PDV integrados.
+M00–M03 implementados; M04 funcionalmente verificado:90 PostgreSQL sem skips,
+corrida forçada1,31 jornadas browser,303 unidade Orders,264 gate Admin, typecheck/build.
+Suíte ampla6f0f38145:23 falhas/9452 passes/79 skips; os23 nós passaram após correções
+emc1063c850. Não atribuir suíte inteira ao HEAD atual nem somar famílias sobrepostas.
+
+**Capacidade atual reprovada:**500 pedidos+10 aparelhos,5 leitores/10 clientes,
+p95backend954/2036/1058ms; browser1857/1695/1620ms em três rodadas. Limites500/1500
+não mudaram. T permanece aberto por capacidade e demais aceites; P não iniciado;
+R não autorizado. Fonte antiga922 também reprovou agora2290ms no mesmo host; seu passe histórico
+não libera a nova versão nem esta comparação prova regressão causal. Logs,
+proveniência, decisões, esforço, migration0061/rollback e scripts reproduzíveis em
+[delivery_devices/README.md](delivery_devices/README.md). Persistir drafts pós-reload
+é opcional em C07 e não está implementado; não é bloqueio obrigatório de T.
+
+## Resultado histórico — fonte922fb522c
+
+**Rodada histórica; desempenho atual está na extensão acima.** Evidências completas,
 falhas preservadas, testes e rollback em [performance_completion/README.md](performance_completion/README.md).
 Commits429e0a2b2 e922fb522c reduziram trabalho repetido de projeção e hidratação.
 500 pedidos: browser p951329 ms; backend p95451,290 ms em10 clientes com **cinco
@@ -18,8 +57,8 @@ runtime PostgreSQL341 pass sem skips;29 jornadas integradas passaram.
 Restore atual162 tabelas/151 sequências iguais inicialmente; após probes apenas
 sequência de alerta10→11, linhas intactas. Worker antigo permanece inseguro.
 
-G05/G08: decisão de retenção por aba apresentada, ainda sem resposta. Persistência
-pós-reload suspensa; confirmação de descarte e contexto em memória mantidos.
+Retenção pós-reload é opcional em C07: não implementada, contexto em memória e
+confirmação de descarte mantidos. Não constitui bloqueio técnico obrigatório.
 T continua aberto pelos aceites listados; P preparado, R não executado.
 
 ## Atualização do brief / rebase — 11/09
@@ -58,8 +97,8 @@ upstream. Não houve produção nem efeitos reais. T/P/R mantêm os estados abai
 | WP03 | Cancelamento fresco e motivos, barreiras Payman→transição, custódia/turno observado, acerto único, estorno/retorno preservados | Custódia operacional G02; procedimentos externos G03 |
 | WP04 | Fases duráveis, retorno com um dono, courier e avisos started/unknown/accepted, crash entre processos e alerta | Consulta/retry de fornecedor homologados G03; não repetir unknown por idade |
 | WP05 | Patch/lote integral, prévia exata, recibos, ordem canônica por drag/teclado, feed sem preço próprio, sync separado | Publicação sensível/tiers reais e evidência fiscal/nutricional G05; volume de campo H08 |
-| WP06 | Draft por pessoa/recurso, merge/conflito, SKU atrasado, sessão e navegação, nota confirmada com GET falho, alvos compartilhados | 29 jornadas integradas e alvos frequentes44/48; AT físico e compreensão humana sem ensaio; persistência pós-reload G05/G08 |
-| WP07 | Hold/Payman/fiscal em lote, leitura útil/erro, relógio, coalescimento, HTTP rico e SSE real medidos | Budgets passam no laboratório com cinco processos; quatro falham. Rede/aparelho/topologia G06 e cobertura completa de carga/fallback |
+| WP06 | Draft por pessoa/recurso, merge/conflito, SKU atrasado, sessão e navegação, nota confirmada com GET falho, alvos compartilhados | 29 jornadas integradas e alvos frequentes44/48; AT físico e compreensão humana sem ensaio; persistência pós-reload opcional não adotada |
+| WP07 | Hold/Payman/fiscal em lote, leitura útil/erro, relógio, coalescimento, HTTP rico e SSE real medidos | Rodada nova com aparelhos falha500/1500ms; capacidade/ambiente G06 e cobertura completa de carga/fallback abertos |
 | WP08 | Eventos correlacionados, estados de efeitos, alertas existentes, runbook e placar readonly canônico | Contagem limitada por endpoint/trace; coleta supervisionada draft/stale preparada, sem medidas humanas; nem todo efeito sem Directive é coberto pelo sweeper |
 | WP09 | Suíte ampla fixa, PostgreSQL, browser integrado, restore populado com livros/chaves, incompatibilidade antiga comprovada | Depende dos aceites técnicos abertos WP00–08; gates de liberação ainda não assinados |
 | WP10 | Protocolo e folha de observação preparados | Piloto **não iniciado**: WP09 e G01–G08 aplicáveis, cinco turnos e pessoas reais |

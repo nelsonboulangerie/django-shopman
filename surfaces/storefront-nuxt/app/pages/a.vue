@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { isInAppBrowser, systemBrowserUrl } from '~/composables/useBrowserHandoff'
-import { accessLinkLanding } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, accessLinkLanding } from '~/presentation/auth'
 
 // Magic-link bridge: the customer arrives from a notification at `/a?t=<token>`.
 // We exchange the token through the BFF (`/api/auth/access/`), so the session
@@ -14,6 +14,7 @@ interface AccessResponse {
   customer_name?: string
   customer_phone?: string
   requires_welcome?: boolean
+  welcome_asks_name?: boolean
   welcome_suggested_name?: string
   // Handoff do site expirou: entrou logado, mas a sacola não veio (link vencido).
   handoff_expired?: boolean
@@ -79,12 +80,14 @@ async function exchangeToken () {
     // Sacola não veio (handoff expirou): aviso gentil que sobrevive à navegação (Sonner
     // vive no layout). O login segue normal; só comunicamos a sacola ausente.
     if (response.handoff_expired && response.notice) useSonner(response.notice)
-    // Boas-vindas pendentes (nome veio do WhatsApp, ainda não confirmado): o
-    // destino passa pelo passo do nome em /entrar, com o campo já semeado pela
+    // Boas-vindas pendentes = SÓ o nome (veio do WhatsApp, ainda não confirmado):
+    // o destino passa pelo passo do nome em /entrar, com o campo já semeado pela
     // sessão (welcome_suggested_name) e o destino original preservado em `next`.
+    // O convite de novidades não desvia ninguém: sobe como sheet no destino.
+    const asksName = response.welcome_asks_name ?? response.requires_welcome
     const redirect = accessLinkLanding(
       response.redirect || '/',
-      !!(response.is_authenticated && response.requires_welcome)
+      !!(response.is_authenticated && asksName)
     )
     if (await trySystemBrowserHandoff(redirect)) return
     await navigateTo(redirect)
@@ -123,6 +126,11 @@ useSeoMeta({
         <div class="flex flex-col items-center gap-4 py-12 text-center">
           <Icon name="lucide:loader-circle" :size="32" class="animate-spin text-muted-foreground" />
           <p class="shop-body text-muted-foreground">{{ bridgeMessage }}</p>
+          <!-- O access link também é porta de entrada: a mesma declaração de
+               maioridade + Termos das outras portas. A troca do link carimba. -->
+          <p class="shop-meta" data-login-adult-declaration>
+            {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
+          </p>
         </div>
       </template>
 

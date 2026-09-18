@@ -40,6 +40,22 @@ describe("useAlertSound — preferência de som", () => {
     expect(() => beep()).not.toThrow();
     expect(soundBlocked.value).toBe(false);
   });
+
+  it("ativar som nunca desliga uma preferência que já estava ligada", async () => {
+    const { activateSound, soundOn, playbackCount } = useAlertSound("test_sound");
+
+    expect(soundOn.value).toBe(true);
+    expect(await activateSound()).toBe(false); // node: sem AudioContext, logo sem recibo
+    expect(soundOn.value).toBe(true);
+    expect(playbackCount.value).toBe(0);
+  });
+
+  it("tentativa muda não produz recibo de reprodução", () => {
+    const { startAlert, playbackCount } = useAlertSound("test_sound");
+
+    startAlert();
+    expect(playbackCount.value).toBe(0);
+  });
 });
 
 describe("useAlertSound — o aviso que insiste", () => {

@@ -56,6 +56,13 @@ class AuthCustomerResolver:
         c = customer_service.get_by_uuid(str(uuid))
         return self._to_info(c) if c else None
 
+    def lock_active_by_uuid(self, uuid: UUID) -> AuthCustomerInfo | None:
+        """Lock an active Guestman customer in the surrounding transaction."""
+        from shopman.guestman.models import Customer
+
+        c = Customer.objects.select_for_update().filter(uuid=uuid, is_active=True).first()
+        return self._to_info(c) if c else None
+
     def get_by_identifier(self, identifier_type: str, identifier_value: str) -> AuthCustomerInfo | None:
         """Lookup customer by a Guestman external identifier."""
         from shopman.guestman.contrib.identifiers.models import CustomerIdentifier

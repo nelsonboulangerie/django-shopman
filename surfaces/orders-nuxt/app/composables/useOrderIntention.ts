@@ -23,7 +23,7 @@ export function useOrderIntention() {
       if ([400, 409, 422].includes(status) && body?.outcome === "not_applied"
         && !["intention_conflict", "manager_approval_required", "manager_approval_invalid"].includes(code)
         && session.value?.operator?.id === intent.owner && pending.value[resource]?.key === intent.key) {
-        delete pending.value[resource];
+        Reflect.deleteProperty(pending.value, resource);
       }
       throw error;
     }
@@ -46,7 +46,7 @@ export function useOrderIntention() {
       const result = await readReceipt(resource, path, current);
       if (!samePerson()) throw new Error("A identificação mudou. Confira os dados.");
       if (result.outcome === "applied") {
-        delete pending.value[resource];
+        Reflect.deleteProperty(pending.value, resource);
         throw new Error("A gravação anterior foi confirmada. Seu novo rascunho ainda não foi salvo.");
       }
       throw new Error("Há uma gravação anterior sem resultado confirmado. Seu novo rascunho foi preservado.");
@@ -54,7 +54,7 @@ export function useOrderIntention() {
     const finish = (result: Result) => {
       if (!samePerson()) throw new Error("A identificação mudou. Confira os dados antes de continuar.");
       if (result.outcome === "applied") {
-        delete pending.value[resource];
+        Reflect.deleteProperty(pending.value, resource);
         return result;
       }
       throw new Error(result.detail || "Resultado ainda desconhecido. Verifique esta intenção antes de uma nova ação.");
@@ -70,7 +70,7 @@ export function useOrderIntention() {
       if (status && status >= 400 && status < 500) {
         const directCode = (httpError(error).data as { code?: unknown } | null)?.code;
         const code = httpErrorCode(error) || (typeof directCode === "string" ? directCode : "");
-        if (status !== 401 && status !== 403 && !["intention_conflict", "manager_approval_required", "manager_approval_invalid"].includes(code)) delete pending.value[resource];
+        if (status !== 401 && status !== 403 && !["intention_conflict", "manager_approval_required", "manager_approval_invalid"].includes(code)) Reflect.deleteProperty(pending.value, resource);
         throw error;
       }
       // A resposta pode ter se perdido depois do commit. Consultar não executa efeitos.
@@ -83,7 +83,7 @@ export function useOrderIntention() {
     if (!intent || intent.owner !== session.value?.operator?.id) throw new Error("Não há gravação pendente para consultar. Confira a ordem atual.");
     const result = await readReceipt(resource, path, intent);
     if (intent.owner !== session.value?.operator?.id) throw new Error("A identificação mudou. Confira os dados.");
-    if (result.outcome === "applied") delete pending.value[resource];
+    if (result.outcome === "applied") Reflect.deleteProperty(pending.value, resource);
     return result;
   }
   async function execute(ref_: string, operation: string, action: Action | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {

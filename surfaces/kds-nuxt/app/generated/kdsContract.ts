@@ -8,7 +8,6 @@ export interface KDSItemProjection {
   name: string;
   qty: number | string;
   notes: string;
-  checked: boolean;
   stock_warning: string;
 }
 
@@ -25,7 +24,8 @@ export interface KDSTicketProjection {
   timer_class: string;
   items: KDSItemProjection[];
   status: string;
-  all_checked: boolean;
+  previous_tab_ref: string;
+  is_scheduled: boolean;
   is_expedition: boolean;
   status_label: string;
   is_cancelled: boolean;
@@ -48,6 +48,7 @@ export interface KDSExpeditionCardProjection {
   line_count: number;
   total_display: string;
   items: KDSItemProjection[];
+  is_scheduled: boolean;
   is_expedition: boolean;
   advance_block_label: string;
   advance_block_reason: string;
@@ -70,6 +71,10 @@ export interface KDSBoardProjection {
   is_expedition: boolean;
   tickets: (KDSTicketProjection | KDSExpeditionCardProjection)[];
   counts: Record<string, number>;
+  service_date: string;
+  service_date_display: string;
+  today: string;
+  available_dates: string[];
   cancelled_tickets: KDSTicketProjection[];
   recent_done: KDSTicketProjection[];
 }

@@ -24,4 +24,19 @@ describe("entrada da encomenda", () => {
     await buttons()[3]!.trigger("click");
     expect(w.emitted("complete")).toHaveLength(1);
   });
+
+  it("diz qual passo é a vez: um só `aria-current`, e ele anda com o issue", async () => {
+    const w = await mountSuspended(PosOrderEntry, { props });
+    const current = () => w.findAll("li").map((li) => li.attributes("aria-current") === "step");
+    expect(current()).toEqual([true, false, false]);
+    await w.setProps({ issue: "fulfillment" });
+    expect(current()).toEqual([false, true, false]);
+    await w.setProps({ issue: "address" });
+    expect(current()).toEqual([false, true, false]);
+    await w.setProps({ issue: "schedule" });
+    expect(current()).toEqual([false, false, true]);
+    // Tudo feito: nenhum passo é "a vez"; o que resta é montar o pedido.
+    await w.setProps({ issue: "" });
+    expect(current()).toEqual([false, false, false]);
+  });
 });

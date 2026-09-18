@@ -148,6 +148,7 @@ class TestConsent:
         assert audience.resolve({"favorites": True}, sku=SKU).total == 1
 
     def test_unknown_age_is_excluded_even_with_channel_consent(self):
+        """Consentiu, sem aniversário e sem a declaração do login → fica de fora."""
         customer = _customer("+5543999990097", birthday=None)
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
@@ -155,6 +156,63 @@ class TestConsent:
 
         assert result.total == 0
         assert result.excluded_by_reason == {"age_not_declared": 1}
+
+    # ── A declaração feita ao ENTRAR na loja ─────────────────────────
+    #
+    # Decisão do dono (16/09): a loja não pede data de nascimento para mandar
+    # novidades. Quem entra confirma que é maior de idade (`record_adult_declaration`,
+    # carimbado em toda autenticação), e é essa a prova que o resolvedor lê.
+
+    def test_login_declaration_without_birthday_is_reached(self):
+        from shopman.shop.services import account as account_service
+
+        customer = _customer("+5543999990096", birthday=None)
+        account_service.record_adult_declaration(customer)
+        CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
+
+        result = audience.resolve({"favorites": True}, sku=SKU)
+
+        assert [r.customer_ref for r in result.general] == [customer.ref]
+        assert result.general[0].has_adult_declaration is True
+        assert result.excluded_by_reason == {}
+
+    def test_login_declaration_under_an_unknown_terms_version_proves_nothing(self):
+        customer = _customer("+5543999990095", birthday=None)
+        customer.metadata = {"adult_declaration": {"terms_version": "termos-de-outra-casa"}}
+        customer.save(update_fields=["metadata"])
+        CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
+
+        result = audience.resolve({"favorites": True}, sku=SKU)
+
+        assert result.total == 0
+        assert result.excluded_by_reason == {"age_not_declared": 1}
+
+    def test_minor_birthday_beats_the_login_declaration(self):
+        from shopman.shop.services import account as account_service
+
+        today = timezone.localdate()
+        minor = _customer(
+            "+5543999990094",
+            birthday=today.replace(year=today.year - 17),
+        )
+        account_service.record_adult_declaration(minor)
+        CustomerFavorite.objects.create(customer_ref=minor.ref, sku=SKU)
+
+        result = audience.resolve({"favorites": True}, sku=SKU)
+
+        assert result.total == 0
+        assert result.excluded_by_reason == {"known_minor": 1}
+
+    def test_login_declaration_counts_for_the_manager_chosen_publics_too(self):
+        """Os resolvedores do disparo manual leem a mesma prova que os de evento."""
+        from shopman.shop.services import account as account_service
+
+        customer = _customer("+5543999990093", birthday=None)
+        account_service.record_adult_declaration(customer)
+
+        result = audience.resolve({"customer_refs": [customer.ref]})
+
+        assert [r.customer_ref for r in result.general] == [customer.ref]
 
 
 # ── Alertas por SKU (F9) ─────────────────────────────────────────────

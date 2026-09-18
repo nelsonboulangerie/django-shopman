@@ -3,9 +3,11 @@ import {
   readFile,
   writeFile
 } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
+const require = createRequire(import.meta.url)
 const root = new URL('../', import.meta.url)
 const sourceMark = new URL('brand/nelson-mark.svg', root)
 const sourceLogo = new URL('brand/nelson-logo.svg', root)
@@ -13,9 +15,39 @@ const splashScreensSource = new URL('pwa-splash-screens.json', root)
 const output = new URL('public/pwa/', root)
 
 const source = await readFile(sourceMark, 'utf8')
-const monochrome = source
-  .replace(/\s*<path class="st0" d="M639,320[^>]+\/>/, '')
-  .replace(/fill:\s*#[0-9a-f]{6};/gi, 'fill: #000000;')
+const lucide = require('@iconify-json/lucide/icons.json')
+const storeIcon = lucide.icons.store
+const storeWidth = storeIcon.width || lucide.width || 24
+const storeHeight = storeIcon.height || lucide.height || 24
+
+// Raio do canto do ícone `purpose: any`, em fração do lado — mesmo padrão da família
+// de operador (`operator-kit/scripts/generate-pwa-assets.mjs`). Desktop (Windows, macOS
+// sem maskable, Linux) mostra o `any` como está, sem máscara; quadrado cheio vira
+// azulejo de quinas vivas. `maskable` e `apple-touch-icon` seguem cheios: o launcher
+// Android e o iOS recortam sozinhos.
+const ICON_CORNER_RATIO = 0.225
+
+function storeIconSvg (size, {
+  background = '#6D1F32',
+  foreground = '#FCF7EE',
+  symbolRatio = 0.56,
+  transparent = false,
+  rounded = false
+} = {}) {
+  const symbolWidth = size * symbolRatio
+  const symbolHeight = symbolWidth * (storeHeight / storeWidth)
+  const scale = symbolWidth / storeWidth
+  const left = (size - symbolWidth) / 2
+  const top = (size - symbolHeight) / 2
+  const body = storeIcon.body.replaceAll('currentColor', foreground)
+  const radius = rounded ? size * ICON_CORNER_RATIO : 0
+  return Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      ${transparent ? '' : `<rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="${background}"/>`}
+      <g transform="translate(${left} ${top}) scale(${scale})">${body}</g>
+    </svg>
+  `)
+}
 
 const paperTexture = (width, height) => Buffer.from(`
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
@@ -75,12 +107,26 @@ for (const [width, height] of splashScreens) {
     .toFile(fileURLToPath(new URL(`apple-splash-${width}-${height}.png`, output)))
 }
 
-await sharp(Buffer.from(monochrome))
-  .resize(512, 512, { fit: 'contain' })
+await sharp(storeIconSvg(512, { foreground: '#000000', transparent: true }))
   .png({ compressionLevel: 9 })
   .toFile(fileURLToPath(new URL('monochrome-512x512.png', output)))
 
 await Promise.all([
+  sharp(storeIconSvg(64, { rounded: true }))
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(fileURLToPath(new URL('pwa-64x64.png', output))),
+  sharp(storeIconSvg(192, { rounded: true }))
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(fileURLToPath(new URL('pwa-192x192.png', output))),
+  sharp(storeIconSvg(512, { rounded: true }))
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(fileURLToPath(new URL('pwa-512x512.png', output))),
+  sharp(storeIconSvg(512, { symbolRatio: 0.48 }))
+    .png({ compressionLevel: 9 })
+    .toFile(fileURLToPath(new URL('maskable-512x512.png', output))),
+  sharp(storeIconSvg(180))
+    .png({ compressionLevel: 9 })
+    .toFile(fileURLToPath(new URL('apple-touch-icon-180x180.png', output))),
   writeFile(new URL('favicon.svg', output), source),
   copyFile(sourceLogo, new URL('nelson-logo.svg', output))
 ])

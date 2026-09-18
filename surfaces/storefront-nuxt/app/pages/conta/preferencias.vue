@@ -12,6 +12,7 @@ const stockAlertCancelTarget = ref<AccountStockAlertSubscription | null>(null)
 const stockAlertConfirmTarget = ref<AccountStockAlertSubscription | null>(null)
 const adultDeclared = ref(false)
 const adultDeclarationError = ref('')
+const { setStockNotifyState, clearStockNotifyState } = useStockNotifyTransientState()
 
 const { data: summary, pending, refresh: refreshSummary } = await useFetch<AccountSummary>(apiPath('/api/v1/account/summary/'), {
   credentials: 'include',
@@ -73,6 +74,8 @@ async function changeStockAlert (subscription: AccountStockAlertSubscription, ac
         ? { subscription_ref: subscription.ref }
         : { subscription_ref: subscription.ref, action }
     })
+    if (action === 'pause' || action === 'cancel') setStockNotifyState(subscription.sku, action === 'pause' ? 'paused' : 'cancelled')
+    else clearStockNotifyState(subscription.sku)
     await refreshSummary()
     if (import.meta.client) {
       useSonner.success(action === 'cancel' ? 'Aviso cancelado.' : action === 'pause' ? 'Aviso pausado.' : 'Aviso retomado.')
@@ -108,6 +111,7 @@ async function confirmStockAlert () {
       credentials: 'include',
       body: { adult_declared: true, alert_type: subscription.event_type }
     })
+    clearStockNotifyState(subscription.sku)
     await refreshSummary()
     stockAlertConfirmTarget.value = null
     adultDeclared.value = false

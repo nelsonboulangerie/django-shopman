@@ -405,7 +405,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
-          <Icon name="lucide:banknote" class="size-4" /> Acertar entrega
+          <Icon name="lucide:banknote" class="size-4" /> {{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
         </button>
         <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
@@ -622,8 +622,8 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <UiDialog :open="dialog === 'settle'" @update:open="(v) => { if (!v) dialog = '' }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
-          <UiDialogDescription>Confirme após conferir o dinheiro e os comprovantes da maquininha.</UiDialogDescription>
+          <UiDialogTitle>{{ order?.fulfillment_type === "pickup" ? "Pagamento na retirada" : "Acerto da entrega" }}</UiDialogTitle>
+          <UiDialogDescription>{{ order?.fulfillment_type === "pickup" ? "Confirme o recebimento antes de concluir e entregar o pedido ao cliente." : "Confirme após conferir o dinheiro e os comprovantes da maquininha." }}</UiDialogDescription>
         </UiDialogHeader>
         <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}

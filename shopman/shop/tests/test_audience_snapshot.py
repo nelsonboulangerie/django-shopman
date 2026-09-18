@@ -101,6 +101,23 @@ def test_known_minor_is_subtracted_if_birthday_changes_after_snapshot() -> None:
     assert materialized.excluded_by_reason == {"known_minor": 1}
 
 
+def test_login_declaration_survives_materialization_without_a_birthday() -> None:
+    from shopman.shop.services import account as account_service
+
+    customer = _customer("CLI-SNAP-DECLARED", "+5543999002096", opted_in=True)
+    Customer.objects.filter(pk=customer.pk).update(birthday=None)
+    customer.refresh_from_db()
+    account_service.record_adult_declaration(customer)
+    rules = {"customer_refs": [customer.ref]}
+    snapshot = audience_snapshot.create_snapshot(audience.resolve(rules), rules=rules)
+
+    materialized = audience_snapshot.materialize_active_recipients(snapshot)
+
+    assert [recipient.customer_ref for recipient in materialized.recipients] == [customer.ref]
+    assert materialized.recipients[0].has_adult_declaration is True
+    assert materialized.excluded_by_reason == {}
+
+
 def test_removed_birthday_is_subtracted_as_age_not_declared() -> None:
     customer = _customer("CLI-SNAP-UNKNOWN", "+5543999002097", opted_in=True)
     rules = {"customer_refs": [customer.ref]}

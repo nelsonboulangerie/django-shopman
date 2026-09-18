@@ -284,6 +284,42 @@ def resolve_alerts(
         return len(rows)
 
 
+def resolve_alerts_matching(
+    type: str,
+    *,
+    message_contains: str,
+    actor: str,
+) -> int:
+    """Resolve causas SEM pedido (um serviço, uma integração) pelo marcador de dedupe.
+
+    Gêmea de ``resolve_alerts`` para os alertas cujo dono não é um pedido: o
+    marcador que ``create_operator_alert`` grava na mensagem é a identidade da
+    causa. Mesmo lock, mesma trilha (quem/quando/revisão).
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    resolved_actor = str(actor or "").strip()[:100]
+    marker = str(message_contains or "").strip()
+    if not resolved_actor:
+        raise AlertError("Identidade da resolução do alerta é obrigatória.")
+    if not marker:
+        raise AlertError("Marcador da causa é obrigatório para resolver alertas.")
+    with transaction.atomic():
+        rows = list(
+            OperatorAlert.objects.select_for_update()
+            .filter(type=type, resolved_at__isnull=True, message__contains=marker)
+            .order_by("pk")
+        )
+        resolved_at = timezone.now()
+        for alert in rows:
+            alert.acknowledged = True
+            alert.resolved_at = resolved_at
+            alert.resolved_by = resolved_actor
+            alert.rev += 1
+            alert.save(update_fields=["acknowledged", "resolved_at", "resolved_by", "rev"])
+        return len(rows)
+
+
 def _validate_choice(value: str, allowed: set[str], label: str) -> None:
     if value not in allowed:
         raise AlertError(f"{label.capitalize()} inválida: {value}")

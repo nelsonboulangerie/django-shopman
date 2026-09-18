@@ -115,16 +115,29 @@ def _queued_target(*, suffix: str) -> DeliveryTarget:
     return claimed.targets[0]
 
 
-def _artifact() -> ResolvedDispatchArtifact:
-    return ResolvedDispatchArtifact(
-        platform="instagram",
-        body="Fornada pronta",
-        content_version=2,
+def _queued_direct_target(*, suffix: str):
+    outbox, members = _graph(
+        platform="whatsapp",
+        suffix=suffix,
+        target_keys=("direct-recipient",),
     )
+    fanout_in_chunks(outbox.ref)
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    queue_target(target.ref)
+    DeliveryTarget.objects.filter(pk=target.pk).update(
+        lease_owner=WORKER_ID,
+        lease_until=timezone.now() + timedelta(minutes=5),
+    )
+    target.refresh_from_db()
+    return target, members[0]
 
 
 def _execute(target, provider, *, token="attempt-token-0001", now=None):
-    artifact = _artifact()
+    artifact = ResolvedDispatchArtifact(
+        platform=target.platform,
+        body="Fornada pronta",
+        content_version=2,
+    )
     return execute_target(
         target.ref,
         provider=provider,
@@ -134,6 +147,20 @@ def _execute(target, provider, *, token="attempt-token-0001", now=None):
         worker_id=WORKER_ID,
         now=now,
     )
+
+
+def test_inactive_recipient_is_suppressed_before_provider_call() -> None:
+    target, member = _queued_direct_target(suffix="attempt-inactive-recipient")
+    member.customer.is_active = False
+    member.customer.save(update_fields=["is_active"])
+    adapter = CanonicalFakeAdapter(ProviderScenario.ACCEPT)
+
+    result = _execute(target, adapter)
+
+    assert result.provider_called is False
+    assert result.target.state == DeliveryTarget.State.SUPPRESSED
+    assert result.attempt.error_code == "recipient_account_inactive"
+    assert adapter.provider.calls == []
 
 
 def test_provider_accept_is_persisted_and_same_token_replays_without_call():
@@ -274,12 +301,10 @@ def test_unclassified_exception_becomes_sanitized_unknown():
     persisted = json.dumps(
         {
             "attempt": {
-                field.name: getattr(result.attempt, field.attname)
-                for field in result.attempt._meta.concrete_fields
+                field.name: getattr(result.attempt, field.attname) for field in result.attempt._meta.concrete_fields
             },
             "target": {
-                field.name: getattr(result.target, field.attname)
-                for field in result.target._meta.concrete_fields
+                field.name: getattr(result.target, field.attname) for field in result.target._meta.concrete_fields
             },
         },
         default=str,

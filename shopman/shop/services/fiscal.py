@@ -267,6 +267,186 @@ def emission_expected(order) -> bool:
     return bool(fiscal_pool.get_backend()) and emission_resolver(order)
 
 
+# ── Estado da NFC-e de um pedido ─────────────────────────────────────────
+#
+# A nota nasce em TRÊS pontos, e nenhuma tela pode adivinhar qual deles vale:
+# no fechamento da venda para quem não exige captura (``pos.close_sale``), na
+# captura do pix/link (``lifecycle._on_paid``) e na conclusão como rede
+# (``lifecycle._on_completed``). "Fiscal na conclusão" era a tela chutando o
+# terceiro ponto para um pedido que emite no segundo. O estado sai daqui, com
+# um vocabulário só, para o PDV, as últimas vendas e a pill do Gestor.
+
+FISCAL_STATE_NOT_EXPECTED = "not_expected"
+FISCAL_STATE_QUEUED = "queued"
+FISCAL_STATE_AWAITING_PAYMENT = "awaiting_payment"
+FISCAL_STATE_AUTHORIZED = "authorized"
+FISCAL_STATE_FAILED = "failed"
+FISCAL_STATES = (
+    FISCAL_STATE_NOT_EXPECTED,
+    FISCAL_STATE_QUEUED,
+    FISCAL_STATE_AWAITING_PAYMENT,
+    FISCAL_STATE_AUTHORIZED,
+    FISCAL_STATE_FAILED,
+)
+
+#: Directive viva ou concluída: houve tentativa de emissão, e a configuração de
+#: hoje não apaga esse fato (o backend pode ter saído da env depois).
+_DIRECTIVE_ATTEMPTED = frozenset({"queued", "running", "done"})
+
+EMIT_FAILED_ALERT_TYPE = "fiscal_emit_failed"
+
+
+def latest_emit_directive_status(order_ref: str) -> str:
+    """Status da Directive ``FISCAL_EMIT_NFCE`` mais recente deste pedido, ou ``""``."""
+    from shopman.orderman.models import Directive
+
+    directive = (
+        Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order_ref)
+        .order_by("-created_at", "-pk")
+        .values_list("status", flat=True)
+        .first()
+    )
+    return str(directive or "")
+
+
+def emit_failed_alert_open(order_ref: str) -> bool:
+    """Há alerta ``fiscal_emit_failed`` ABERTO para este pedido?
+
+    Cobre a falha que morreu antes de virar Directive (o fechamento do PDV que
+    não conseguiu enfileirar) e a falha terminal do worker — as duas gritam
+    pelo mesmo tipo, com ``Dedupe: fiscal_emit_failed:{ref}`` no corpo.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.adapters import alert as alert_adapter
+
+    return alert_adapter.recent_exists(
+        EMIT_FAILED_ALERT_TYPE,
+        timezone.now(),
+        message_contains=f"{EMIT_FAILED_ALERT_TYPE}:{order_ref}",
+        order_ref=order_ref,
+    )
+
+
+def fiscal_state(order, *, directive_status: str | None = None, emit_failed_alert: bool | None = None) -> str:
+    """Em que pé está a NFC-e deste pedido — um de :data:`FISCAL_STATES`.
+
+    - ``authorized``: ``order.data["nfce_access_key"]`` existe. É FATO, e vale
+      antes de qualquer regra.
+    - ``failed``: a Directive de emissão mais recente morreu (``failed``) ou há
+      alerta ``fiscal_emit_failed`` aberto para o pedido.
+    - ``queued``: há Directive viva/concluída sem chave ainda — ou a emissão é
+      esperada, o dinheiro não segura, e a nota só está esperando a vez (no
+      fechamento, ou na conclusão para quem paga na porta).
+    - ``not_expected``: :func:`emission_expected` disse não.
+    - ``awaiting_payment``: esperada, sem chave, e a cobrança é digital
+      antecipada ainda não capturada — a nota nasce na captura
+      (``lifecycle._on_paid``), não na conclusão.
+
+    A evidência de tentativa (Directive/alerta) vem ANTES da regra: mudar o
+    resolver ou tirar o backend da env não apaga uma nota que já tentou sair.
+
+    ``directive_status``/``emit_failed_alert`` existem para o painel do Gestor
+    ler em lote (uma query por quadro, não uma por card); sozinho, o serviço
+    pergunta ao banco.
+    """
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    data = order.data or {}
+    if data.get("nfce_access_key"):
+        return FISCAL_STATE_AUTHORIZED
+
+    if directive_status is None:
+        directive_status = latest_emit_directive_status(order.ref)
+    if directive_status == "failed":
+        return FISCAL_STATE_FAILED
+    if emit_failed_alert is None:
+        emit_failed_alert = emit_failed_alert_open(order.ref)
+    if emit_failed_alert:
+        return FISCAL_STATE_FAILED
+    if directive_status in _DIRECTIVE_ATTEMPTED:
+        return FISCAL_STATE_QUEUED
+
+    if not emission_expected(order):
+        return FISCAL_STATE_NOT_EXPECTED
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return FISCAL_STATE_AWAITING_PAYMENT
+    return FISCAL_STATE_QUEUED
+
+
+#: Resolvers com os quais "pedir papel já pede a nota" é verdade.
+_RECEIPT_REQUEST_RESOLVERS = frozenset({
+    "shopman.shop.fiscal_resolvers.on_requested_receipt",
+    "shopman.shop.fiscal_resolvers.always",
+})
+
+
+def receipt_request_emits() -> bool:
+    """Pedir o comprovante (papel ou e-mail) faz a NFC-e sair?
+
+    Só é verdade quando ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` carrega o resolver
+    de comprovante (``on_requested_receipt``) — ou ``always``. A env do
+    deployment sobrescreve o default do código, então a frase do balcão
+    ("imprime sozinha assim que autorizar") tem que perguntar aqui, nunca ao
+    default.
+    """
+    from django.conf import settings
+
+    raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
+    paths = {p.strip() for p in str(raw).split(",") if p.strip()}
+    return bool(paths & _RECEIPT_REQUEST_RESOLVERS)
+
+
+HANDOFF_WITHOUT_NFCE_ALERT_TYPE = "fiscal_handoff_without_nfce"
+
+#: Transições em que a mercadoria SAI da casa: a sacola com o entregador ou a
+#: mão do cliente no balcão. ``PREPARING`` fica de fora — nada sai ali.
+_HANDOFF_STATUSES = frozenset({"dispatched", "completed"})
+
+
+def alert_handoff_without_nfce(order, *, target_status: str) -> None:
+    """A mercadoria vai sair sem NFC-e autorizada: GRITA, não barra.
+
+    Nenhum portão de expedição conferia ``nfce_access_key`` — um pedido podia
+    ser despachado ou concluído com a nota na fila ou com a emissão morta, e
+    ninguém ficava sabendo. Barrar a saída é decisão do dono (a nota do COD só
+    nasce na conclusão, por desenho); avisar não é. Um alerta por pedido.
+
+    Nunca levanta: a transição já é a operação de verdade, e o aviso dela não
+    pode derrubá-la.
+    """
+    target = str(target_status or "").strip().lower()
+    if target not in _HANDOFF_STATUSES:
+        return
+    try:
+        state = fiscal_state(order)
+    except Exception:
+        logger.warning("fiscal.handoff_state_failed order=%s", getattr(order, "ref", "?"), exc_info=True)
+        return
+    if state not in {FISCAL_STATE_QUEUED, FISCAL_STATE_FAILED}:
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    verbo = "despachado" if target == "dispatched" else "concluído"
+    logger.warning(
+        "fiscal.handoff_without_nfce order=%s target=%s fiscal_state=%s", order.ref, target, state,
+    )
+    create_operator_alert(
+        type=HANDOFF_WITHOUT_NFCE_ALERT_TYPE,
+        severity="warning",
+        message=(
+            f"Pedido {order.ref} saiu sem NFC-e autorizada: {verbo} com a nota "
+            + ("na fila." if state == FISCAL_STATE_QUEUED else "com falha de emissão.")
+            + " Confira a fila fiscal."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"{HANDOFF_WITHOUT_NFCE_ALERT_TYPE}:{order.ref}",
+        fiscal_state=state,
+        target_status=target,
+    )
+
+
 def _build_fiscal_items(order) -> list[dict]:
     """Build item list for fiscal emission from order items.
 

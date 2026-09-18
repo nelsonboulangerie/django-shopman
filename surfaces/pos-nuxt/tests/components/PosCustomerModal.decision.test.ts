@@ -350,30 +350,34 @@ describe("cadastro novo com telefone existente", () => {
   });
 });
 
-describe("buscar existente e cadastrar novo são atos separados", () => {
-  it("expõe abas acessíveis e preserva a associação ao navegar", async () => {
+describe("busca e formulário convivem na mesma tela", () => {
+  // Não há mais abas: a diferença existente × novo é um SELO, e a busca fica
+  // sempre no topo. O que as abas provavam continua provado — navegar entre
+  // buscar e editar nunca desassocia o cliente.
+  it("com cadastro associado, o selo diz quem é e a busca segue disponível sem desassociar", async () => {
     const wrapper = await mount({
       customerLookup: { ref: "CUST-A", name: "Ana Prado", phone: "+5543999990022", email: "", tax_id: "" },
     });
-    const tabs = Array.from(document.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
-    expect(tabs).toHaveLength(2);
-    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual(["false", "true"]);
-    expect(tabs[1]!.textContent).toContain("Editar cadastro");
-    tabs[0]!.click();
-    await wrapper.vm.$nextTick();
-    tabs[1]!.click();
+    expect(document.querySelector('[role="tablist"]')).toBeNull();
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(screenText()).toContain("Cadastro existente · Ana Prado");
+    expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();
+    expect((document.querySelector('input[placeholder="Nome no balcão"]') as HTMLInputElement).value).toBe("Ana Prado");
+    const search = document.querySelector('input[aria-label="Buscar cliente"]') as HTMLInputElement;
+    search.value = "Bru";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("clear")).toBeUndefined();
-    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
+    expect(wrapper.emitted("selectResult")).toBeUndefined();
+    expect(screenText()).toContain("Cadastro existente · Ana Prado");
   });
 
   it("digitar telefone no cadastro novo e sair do campo não busca nem seleciona", async () => {
     const wrapper = await mount({ customerName: "", customerPhone: "" });
+    // Busca E formulário na mesma tela, sem trocar de painel.
     expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();
-    buttonByText("Cadastrar novo")!.click();
-    await wrapper.vm.$nextTick();
-    expect(document.querySelector('input[aria-label="Buscar cliente"]')).toBeNull();
     const phone = document.querySelector('input[inputmode="tel"]') as HTMLInputElement;
+    expect(phone).not.toBeNull();
     phone.value = "43999990022";
     phone.dispatchEvent(new Event("input", { bubbles: true }));
     phone.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -383,17 +387,19 @@ describe("buscar existente e cadastrar novo são atos separados", () => {
     expect(wrapper.emitted("selectResult")).toBeUndefined();
     expect(wrapper.emitted("resolveCustomer")).toBeUndefined();
     expect(document.body.textContent).not.toContain("Remover cliente");
+    await wrapper.setProps({ customerPhone: "43999990022" });
     buttonByText("Cadastrar cliente")!.click();
     expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
   });
 
-  it("alternar para busca e voltar preserva o rascunho de cadastro", async () => {
+  it("digitar na busca preserva o rascunho de cadastro", async () => {
     const wrapper = await mount({ customerName: "Outra Pessoa", customerPhone: "43999990022" });
-    buttonByText("Buscar existente")!.click();
-    await wrapper.vm.$nextTick();
-    buttonByText("Cadastrar novo")!.click();
+    const search = document.querySelector('input[aria-label="Buscar cliente"]') as HTMLInputElement;
+    search.value = "Ana";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("clear")).toBeUndefined();
+    expect(wrapper.emitted("update:customerName")).toBeUndefined();
     expect((document.querySelector('input[inputmode="tel"]') as HTMLInputElement).value).toBe("43999990022");
   });
 });
@@ -405,13 +411,15 @@ describe("decisão do documento", () => {
       ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true,
     } });
     expect(screenText()).toContain("CPF na nota");
-    expect(buttonByText("Buscar existente")).toBeUndefined();
-    expect(buttonByText("Cadastrar novo")).toBeUndefined();
+    // Sem busca, sem selo, sem formulário: a decisão do documento é a tela inteira.
+    expect(document.querySelector("[data-customer-state]")).toBeNull();
+    expect(screenText()).not.toContain("Cliente novo");
+    expect(screenText()).not.toContain("Cadastro existente");
     expect(buttonByText("Concluir")).toBeUndefined();
     expect(document.querySelector('input')).toBeNull();
     expect(document.activeElement?.tagName).toBe("H2");
     const actions = Array.from(document.querySelectorAll('button'));
-    expect(actions.indexOf(buttonByText("Usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
+    expect(actions.indexOf(buttonByText("Não, usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
     expect(screenText()).toContain("529.982.247-25");
     expect(screenText()).toContain("Bruno Souza");
     expect(buttonByText("unificar")).toBeUndefined();
@@ -421,7 +429,7 @@ describe("decisão do documento", () => {
     expect(screenText()).toContain("Vincular Bruno Souza ao pedido?");
     buttonByText("Voltar")!.click();
     await wrapper.vm.$nextTick();
-    buttonByText("Usar dados só neste pedido")!.click();
+    buttonByText("Não, usar dados só neste pedido")!.click();
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
   });
   it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
@@ -444,7 +452,7 @@ describe("atalhos da decisão do documento", () => {
     key("ArrowRight");
     expect(document.activeElement).toBe(buttonByText("Sim, vincular ao pedido"));
     key("ArrowLeft");
-    expect(document.activeElement).toBe(buttonByText("Usar dados só neste pedido"));
+    expect(document.activeElement).toBe(buttonByText("Não, usar dados só neste pedido"));
     key("1");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
@@ -467,7 +475,7 @@ describe("atalhos da decisão do documento", () => {
     document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
     await wrapper.setProps({ lookupBusy: false });
-    buttonByText("Usar dados só neste pedido")!.focus();
+    buttonByText("Não, usar dados só neste pedido")!.focus();
     key("2");
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
@@ -533,5 +541,100 @@ describe("cadastro pelo documento", () => {
     expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
     buttonByText('Confirmar cliente')!.click();
     expect(wrapper.emitted('decisionConfirm')).toEqual([['__save_confirmed__']]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// O dado solto e o dono — o beco, pela tela
+// ──────────────────────────────────────────────────────────────────────────
+
+const ORPHAN: CustomerDecision = {
+  kind: "orphan_value",
+  field: "tax_id",
+  typed: "11144477735",
+  current: { ref: "CUST-F", name: "Fulano Silva", value: "" },
+  other: { ref: "CUST-GHOST", name: "", value: "11144477735", unnamed: true },
+};
+
+describe("o CPF guardado sem nome reencontra o dono", () => {
+  it("dois botões, sim e não — e nenhum deles é 'atender ninguém'", async () => {
+    await mount({ customerDecision: ORPHAN });
+
+    expect(buttonByText("Sim, é de Fulano")).toBeTruthy();
+    expect(buttonByText("Não, não é o CPF de Fulano")).toBeTruthy();
+    expect(buttonByText("Atender")).toBeUndefined();
+    // A palavra de mecanismo não aparece: o operador está dizendo de quem é um
+    // CPF, não administrando cadastro.
+    expect(screenText()).not.toContain("unificar cadastros");
+  });
+
+  it("o SIM vem antes do NÃO na ordem de leitura", async () => {
+    await mount({ customerDecision: ORPHAN });
+
+    const botoes = Array.from(document.querySelectorAll("button"));
+    expect(botoes.indexOf(buttonByText("Sim, é de Fulano")!))
+      .toBeLessThan(botoes.indexOf(buttonByText("Não, não é o CPF de Fulano")!));
+  });
+
+  it("o sim é um toque: unifica sem segunda palavra", async () => {
+    const wrapper = await mount({ customerDecision: ORPHAN });
+
+    buttonByText("Sim, é de Fulano")!.click();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("decisionMerge")).toHaveLength(1);
+  });
+
+  it("o não devolve a tela ao operador, sem deixar a pergunta pendurada", async () => {
+    const wrapper = await mount({ customerDecision: ORPHAN });
+
+    buttonByText("Não, não é o CPF de Fulano")!.click();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
+  });
+
+  it("no conflito com PESSOA, unificar continua sendo a terceira saída, por último", async () => {
+    await mount({ customerDecision: CONFLICT });
+
+    const botoes = Array.from(document.querySelectorAll("button"));
+    expect(botoes.indexOf(buttonByText("É a mesma pessoa")!))
+      .toBeGreaterThan(botoes.indexOf(buttonByText("Atender Bruno")!));
+  });
+});
+
+describe("a LISTA não deixa atender um dado solto", () => {
+  const COM_FANTASMA: CustomerDecision = {
+    ...CANDIDATE_LIST,
+    candidates: [
+      candidate(),
+      candidate({
+        ref: "CUST-GHOST", name: "", phone: "", tax_id: "11144477735",
+        matched_by: ["document"], is_current: false, owner_unnamed: true,
+      }),
+      candidate({ ref: "CUST-C", name: "Célia Dias", phone: "+5543999990033", matched_by: ["phone"], is_current: false }),
+    ],
+  };
+
+  it("a linha sem rosto oferece entregar o dado, não atender", async () => {
+    const wrapper = await mount({ customerDecision: COM_FANTASMA });
+
+    expect(buttonByText("É de Ana")).toBeTruthy();
+    expect(screenText()).toContain("Sem nome");
+    expect(screenText()).toContain("só o dado, sem cadastro");
+
+    buttonByText("É de Ana")!.click();
+    await wrapper.vm.$nextTick();
+
+    const merged = wrapper.emitted("decisionMerge");
+    expect(merged).toHaveLength(1);
+    expect((merged![0] as ServerConflictCandidate[])[0]!.ref).toBe("CUST-GHOST");
+  });
+
+  it("as linhas de gente seguem com 'Atender este'", async () => {
+    await mount({ customerDecision: COM_FANTASMA });
+
+    expect(buttonByText("Atender este")).toBeTruthy();
+    expect(screenText()).toContain("Célia Dias");
   });
 });

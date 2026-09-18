@@ -23,6 +23,7 @@ from shopman.utils.monetary import format_money
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
+from shopman.shop.services import account as account_service
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import sessions as session_service
 from shopman.shop.services.cancellation import cancel
@@ -37,6 +38,10 @@ class PosRecentSaleNotFound(ValueError):
     Tipo distinto para a camada HTTP mapear para 404 sem inspecionar a
     mensagem; as demais violações de janela/estado seguem como ``ValueError``.
     """
+
+
+class PosCustomerUnavailable(ValueError):
+    """The selected customer was removed or became inactive before mutation."""
 
 
 _TAB_REF_MAX_LENGTH = 64
@@ -1143,9 +1148,9 @@ def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str)
         cleared = session_service.abandon_session(session_key=session.session_key, channel_ref=channel_ref)
         if cleared and fired:
             # A cozinha não pode continuar produzindo uma comanda descartada.
-            from shopman.shop.adapters import kds as kds_adapter
+            from shopman.shop.services import kds as kds_service
 
-            cancelled = kds_adapter.cancel_open_tickets_for_session(session.session_key)
+            cancelled = kds_service.cancel_tickets_for_session(session.session_key)
             if cancelled:
                 logger.info(
                     "pos_clear_tab: %d ticket(s) de cozinha cancelados session=%s",
@@ -1440,6 +1445,41 @@ def fire_pos_tab(
     from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
 
     validate_sales_mode(session_sales_payload(session), require_ready=True)
+
+    # Uma comanda de encomenda pode ser montada (e até paga) antes do dia
+    # combinado, mas o gesto ``Enviar`` significa trabalho físico AGORA. O
+    # lifecycle do Order já posterga o KDS de encomendas futuras; o disparo
+    # progressivo da comanda é um atalho anterior ao commit e, sem esta mesma
+    # fronteira temporal, furava o lifecycle: criava KDSTicket, emitia SSE e
+    # fazia a cozinha apitar no dia em que o pedido foi anotado.
+    #
+    # A comparação é estrita. No próprio dia o botão volta a funcionar sem
+    # migração nem limpeza de estado — basta repetir o comando, e o ledger do
+    # KDS continua sendo a trava de idempotência.
+    raw_delivery_date = str((session.data or {}).get("delivery_date") or "").strip()
+    if raw_delivery_date:
+        from datetime import date as _date
+
+        try:
+            delivery_day = _date.fromisoformat(raw_delivery_date)
+        except ValueError:
+            delivery_day = None
+        today = timezone.localdate()
+        if delivery_day is not None and delivery_day > today:
+            raise PosIntentError(
+                code="preorder_not_due",
+                message=(
+                    f"Esta encomenda está marcada para {delivery_day.strftime('%d/%m/%Y')}. "
+                    "Envie à cozinha somente no dia combinado."
+                ),
+                field="delivery_date",
+                focus="schedule",
+                recovery="A comanda fica salva e poderá ser enviada nessa data.",
+                context={
+                    "delivery_date": delivery_day.isoformat(),
+                    "today": today.isoformat(),
+                },
+            )
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -2183,7 +2223,10 @@ def _payload_fulfillment_type(payload: dict) -> str:
 
 def _payload_payment_collection(payload: dict, fulfillment_type: str) -> str:
     value = str(payload.get("payment_collection") or "terminal").strip().lower()
-    if fulfillment_type == "delivery" and value == "on_delivery":
+    if value == "on_delivery" and (
+        fulfillment_type == "delivery"
+        or (fulfillment_type == "pickup" and str(payload.get("sales_mode") or "").strip().lower() == "order")
+    ):
         return "on_delivery"
     return "terminal"
 
@@ -2709,19 +2752,20 @@ def _payload_tenders(
             if collection not in {"terminal", "on_delivery"}:
                 collection = payment_collection
             if collection == "on_delivery" and method not in {"cash", "credit", "debit"}:
+                handoff = "retirada" if _payload_fulfillment_type(payload) == "pickup" else "entrega"
                 raise PosIntentError(
                     code="invalid_on_delivery_tender_payment",
-                    message="Na entrega, use dinheiro ou cartão na maquininha.",
+                    message=f"Na {handoff}, use dinheiro ou cartão na maquininha.",
                     field=f"payment_tenders.{len(tenders)}.collection",
                     focus="payment",
-                    recovery="PIX Efí e pagamentos online exigem confirmação automática antes da entrega.",
+                    recovery=f"PIX Efí e pagamentos online exigem confirmação automática antes da {handoff}.",
                 )
             if collection != payment_collection:
                 raise PosIntentError(
                     code="payment_collection_mismatch",
                     message="Todas as formas devem usar o mesmo momento de recebimento.",
                     field="payment_tenders", focus="payment",
-                    recovery="Revise Receber no caixa ou Receber na entrega.",
+                    recovery="Revise Receber no caixa ou Pagamento na retirada/entrega.",
                 )
             entry = {
                 "method": method,
@@ -3572,6 +3616,52 @@ class PosTaxIdOverwriteError(ValueError):
     field = "customer_tax_id"
 
 
+def update_pos_customer_profile(*, customer_ref: str, payload: dict) -> dict:
+    """Atualiza o perfil do balcão sob a cerca canônica do titular.
+
+    A exclusão e todas as mutações pessoais disputam primeiro a linha de
+    ``Customer``. Assim uma requisição que esperou a exclusão não reaproveita a
+    instância lida antes da espera para recriar metadata ou observações.
+    """
+
+    incoming_fiscal = (payload.get("fiscal_prefs") or {}) if "fiscal_prefs" in payload else None
+    if incoming_fiscal is not None and not isinstance(incoming_fiscal, dict):
+        raise ValueError("fiscal_prefs inválido.")
+    if not any(key in payload for key in ("fiscal_prefs", "dietary_restrictions", "notes")):
+        raise ValueError("Nada para atualizar.")
+
+    with transaction.atomic():
+        try:
+            customer = account_service.lock_active_customer(customer_ref=customer_ref)
+        except account_service.AccountUnavailable as exc:
+            raise PosCustomerUnavailable("Cliente não encontrado.") from exc
+
+        updates: list[str] = []
+        if "fiscal_prefs" in payload:
+            _merge_fiscal_prefs(customer, incoming_fiscal or {})
+            updates.append("metadata")
+        metadata = dict(customer.metadata or {})
+
+        if "dietary_restrictions" in payload:
+            metadata["preferences"] = str(payload.get("dietary_restrictions") or "").strip()
+            if "metadata" not in updates:
+                updates.append("metadata")
+
+        if "notes" in payload:
+            customer.notes = str(payload.get("notes") or "").strip()
+            updates.append("notes")
+
+        if "metadata" in updates:
+            customer.metadata = metadata
+        customer.save(update_fields=[*updates, "updated_at"])
+        return {
+            "ok": True,
+            "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
+            "notes": customer.notes,
+            "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
+        }
+
+
 def resolve_or_create_customer(
     *,
     ref: str = "",
@@ -3582,6 +3672,7 @@ def resolve_or_create_customer(
     contact_correction: bool = False,
     name_correction: bool = False,
     receipt_identity_action: dict | None = None,
+    fiscal_prefs: dict | None = None,
     operator_username: str,
 ) -> dict:
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
@@ -3603,7 +3694,15 @@ def resolve_or_create_customer(
     merge só preenche lacuna. ``name_correction`` tem a mesma natureza, mas é
     separada: o botão "Salvar cadastro" pode corrigir o nome sem transformar o
     payload passivo de toda venda em editor de CRM.
+
+    ``fiscal_prefs`` são os PADRÕES do cliente (``cpf_na_nota`` /
+    ``email_receipt``) virados no modal ANTES de o cadastro existir: viajam no
+    "Cadastrar cliente" e nascem junto com o registro. Mesma validação e mesma
+    escrita do endpoint de perfil (``_merge_fiscal_prefs``) — o cliente
+    existente continua gravando pelo perfil ao virar o interruptor.
     """
+    if fiscal_prefs is not None and not isinstance(fiscal_prefs, dict):
+        raise ValueError("fiscal_prefs inválido.")
     if receipt_identity_action is not None:
         from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
 
@@ -3617,6 +3716,7 @@ def resolve_or_create_customer(
             "customer_email": email,
             "customer_contact_correction": contact_correction,
             "customer_name_correction": name_correction,
+            **({"fiscal_prefs": fiscal_prefs} if fiscal_prefs is not None else {}),
         },
         operator_username=operator_username,
     )
@@ -3726,6 +3826,17 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             email=resolve_email,
             require_selection=bool((name or phone or tax_id or email or payload.get("_receipt_registration")) and not raw_ref),
         )
+        if customer is not None:
+            try:
+                # Customer vem PRIMEIRO. ContactPoint, identificador, endereco e
+                # metadata abaixo so podem nascer enquanto esta linha ativa
+                # estiver travada; a instancia usada passa a ser a releitura
+                # posterior a qualquer espera pela exclusao.
+                customer = account_service.lock_active_customer(customer_pk=customer.pk)
+            except account_service.AccountUnavailable as exc:
+                raise PosCustomerUnavailable(
+                    "O cadastro selecionado não está disponível. Busque o cliente novamente.",
+                ) from exc
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
         # ninguém. Se o resolve caiu em outro cliente (ou criou um), corrigir
@@ -3808,6 +3919,12 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         if address:
             _ensure_customer_address(address_service, customer.ref, address, structured_address)
         _remember_fiscal_prefs(customer, payload)
+        # Os padrões EXPLÍCITOS (o operador virou o interruptor no cadastro
+        # novo) vêm depois do gravador passivo, e mandam: ele só liga; estes
+        # dizem o valor.
+        explicit_prefs = payload.get("fiscal_prefs")
+        if isinstance(explicit_prefs, dict) and _merge_fiscal_prefs(customer, explicit_prefs):
+            customer.save(update_fields=["metadata", "updated_at"])
 
         customer.refresh_from_db()
         return {
@@ -3820,6 +3937,30 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             # "criei agora" ≠ "achei": a tela distingue o cadastro recém-criado.
             "created": created,
         }
+
+
+def _merge_fiscal_prefs(customer, incoming: dict) -> bool:
+    """UM escritor para os padrões fiscais EXPLÍCITOS em ``metadata["fiscal_prefs"]``.
+
+    Dois caminhos chegam aqui: o perfil do balcão (liga E desliga um cadastro
+    que existe) e o cadastro novo pelo resolve (os interruptores viajam junto
+    com o "Cadastrar cliente"). Parcial: só as chaves presentes mudam, e sempre
+    como ``bool``. Não salva — quem chama grava junto com o resto. Devolve se
+    algum valor mudou de fato.
+    """
+    if not isinstance(incoming, dict):
+        raise ValueError("fiscal_prefs inválido.")
+    metadata = dict(customer.metadata or {})
+    prefs = dict(metadata.get("fiscal_prefs") or {})
+    changed = False
+    for key in ("cpf_na_nota", "email_receipt"):
+        if key in incoming:
+            value = bool(incoming[key])
+            changed = changed or prefs.get(key) != value
+            prefs[key] = value
+    metadata["fiscal_prefs"] = prefs
+    customer.metadata = metadata
+    return changed
 
 
 def _remember_fiscal_prefs(customer, payload: dict) -> None:
@@ -4017,6 +4158,18 @@ def _conflict_row(customer, sources: list[str]) -> dict:
         # conflito nasce lá embaixo, no INSERT, e o operador nem conseguia
         # descobrir de quem era o número. A tela tem copy e saída próprias.
         "owner_inactive": not customer.is_active,
+        # ⚠️ Dono SEM ROSTO — o cadastro que só tem o dado, sem nome de gente.
+        # Ele nasce sozinho toda vez que alguém pede a nota no balcão (o
+        # `_receipt_registration` cria sem nome nenhum) ou recebe o rótulo de
+        # espera "Cliente 0011". Quem decide isso é `_should_refresh_name`, a
+        # MESMA régua que o resolve usa para saber se pode escrever um nome por
+        # cima — duas definições de "sem nome" divergiriam no primeiro
+        # "Cliente Doc 4477", que tem nome no campo e nenhum rosto atrás.
+        #
+        # A tela precisa saber porque a pergunta muda de natureza: "qual dos
+        # dois você está atendendo?" não existe quando um dos dois não é
+        # ninguém. Ali só há um cliente e um dado solto para entregar a ele.
+        "owner_unnamed": _should_refresh_name(customer),
     }
 
 
@@ -4322,28 +4475,45 @@ def merge_pos_customers(*, source_ref: str, target_ref: str, operator_username: 
     if source_ref == target_ref:
         raise PosCustomerMergeError("Os dois cadastros são o mesmo.")
 
-    # ⚠️ SEM filtro de ativo na busca: o caso que mais pede unificação é
-    # justamente o do dono DESATIVADO segurando o contato. Quem recusa merge de
-    # inativo é o `MergeService`, com a frase dele — não uma busca vazia aqui,
-    # que viraria "cadastro não encontrado" sobre um cadastro que existe.
-    source = Customer.objects.filter(ref=source_ref).first()
-    target = Customer.objects.filter(ref=target_ref).first()
-    if source is None or target is None:
-        raise PosCustomerMergeError("Cadastro não encontrado.")
-
     try:
-        result = MergeService.merge(
-            source,
-            target,
-            evidence={
-                # A chave que o gate G6 conhece. As outras duas são o contexto
-                # da auditoria: quem disse, e de onde.
-                "staff_override": True,
-                "operator_confirmed": True,
-                "source_surface": "pdv",
-            },
-            actor=operator_username or "pdv",
-        )
+        with transaction.atomic():
+            # As duas linhas de Customer vêm antes de qualquer filho movido
+            # pelo MergeService. A ordem por PK é estável inclusive quando dois
+            # operadores tentam unificações invertidas.
+            locked = list(
+                Customer.objects.select_for_update()
+                .filter(ref__in=(source_ref, target_ref))
+                .order_by("pk")
+            )
+            by_ref = {customer.ref: customer for customer in locked}
+            source = by_ref.get(source_ref)
+            target = by_ref.get(target_ref)
+            if source is None or target is None:
+                raise PosCustomerMergeError("Cadastro não encontrado.")
+            # Revalida DEPOIS da espera. Sem isto uma exclusão vencedora deixava
+            # o merge mover contatos/endereços usando as instâncias antigas.
+            if not source.is_active:
+                raise PosCustomerMergeError(
+                    "O cadastro que sairia já está desativado. Unifique na outra direção.",
+                )
+            if not target.is_active:
+                raise PosCustomerMergeError(
+                    "O cadastro que ficaria está desativado. Reative-o antes de unificar.",
+                )
+
+            result = MergeService.merge(
+                source,
+                target,
+                evidence={
+                    # A chave que o gate G6 conhece. As outras duas são o contexto
+                    # da auditoria: quem disse, e de onde.
+                    "staff_override": True,
+                    "operator_confirmed": True,
+                    "source_surface": "pdv",
+                },
+                actor=operator_username or "pdv",
+            )
+            target.refresh_from_db()
     except GateError as exc:
         # A frase do Core é de engenharia e em inglês; o balcão lê português.
         logger.warning("pos_customer_merge_denied gate=%s", exc, exc_info=True)
@@ -4367,7 +4537,6 @@ def merge_pos_customers(*, source_ref: str, target_ref: str, operator_username: 
         operator_username,
         result.audit_id,
     )
-    target.refresh_from_db()
     return {
         "source_ref": result.source_ref,
         "target_ref": result.target_ref,

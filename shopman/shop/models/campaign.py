@@ -1115,6 +1115,10 @@ class MarketingConfirmation(models.Model):
     """Hashed, one-use transaction authorization bound to exact consequences."""
 
     class Mode(models.TextChoices):
+        # Dispensada: o servidor concluiu que o comando não tem consequência externa
+        # e que o toque anterior já foi a decisão. O token continua existindo — ele é
+        # a âncora de versão, permissão e congelamento —, só não interrompe ninguém.
+        NONE = "none", "dispensada"
         SUMMARY = "summary", "resumo"
         TYPED = "typed", "digitada"
 

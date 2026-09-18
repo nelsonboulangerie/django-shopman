@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { dynamicCollectionMenuTarget } from '~/presentation/menu'
-import { breadcrumbJsonLd, collectionJsonLd, jsonLdText } from '~/presentation/seo'
+import {
+  absoluteImage,
+  breadcrumbJsonLd,
+  collectionJsonLd,
+  jsonLdText,
+  listingDescription,
+  truncateClean
+} from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
 // Página de coleção indexável (rota própria, self-canonical) — diferente das
@@ -9,6 +16,7 @@ import type { MenuResponse } from '~/types/shopman'
 const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
+const session = useShopSession()
 const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 
@@ -44,15 +52,29 @@ const title = computed(() => section.value?.label || 'Coleção')
 const description = computed(() => section.value?.description || '')
 
 const canonicalUrl = computed(() => `${requestUrl.origin}${route.path}`)
-const pageDescription = computed(() => description.value
-  || (items.value.length ? `${items.value.length} itens em ${title.value}.` : title.value))
+// A descrição da coleção escrita no Admin vence. Sem ela, "12 itens em Rústicos."
+// não dizia de onde nem o quê: a frase padrão nomeia a casa, a cidade e os
+// primeiros itens de verdade da coleção.
+const pageDescription = computed(() => truncateClean(description.value, 160) || listingDescription({
+  subject: title.value,
+  brandName: session.shop.value?.brand_name || '',
+  tagline: session.shop.value?.tagline,
+  city: session.shop.value?.default_city,
+  names: items.value.map(item => item.name)
+}))
+// Cartão de link com foto do que a coleção tem, não com o padrão genérico do shell.
+const ogImage = computed(() => absoluteImage(requestUrl.origin, items.value.find(item => item.image_url)?.image_url))
 
 useSeoMeta({
   title: () => title.value,
   description: () => pageDescription.value,
   ogTitle: () => title.value,
   ogDescription: () => pageDescription.value,
-  ogUrl: () => canonicalUrl.value
+  ogUrl: () => canonicalUrl.value,
+  ogImage: () => ogImage.value || undefined,
+  twitterTitle: () => title.value,
+  twitterDescription: () => pageDescription.value,
+  twitterImage: () => ogImage.value || undefined
 })
 useCanonical()
 

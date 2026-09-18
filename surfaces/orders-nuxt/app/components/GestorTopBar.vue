@@ -32,7 +32,7 @@ const customersUrl = computed(() =>
     <RailToggle />
     <div class="h-6 w-px bg-border"></div>
     <!-- section switcher: um conjunto claro (segmented control); a aba ativa "sobe" -->
-    <nav class="inline-flex items-center gap-0.5 rounded-md bg-muted p-1" aria-label="Seções do Gestor">
+    <nav class="inline-flex w-full shrink-0 items-center gap-0.5 rounded-md bg-muted p-1 sm:w-auto sm:shrink" aria-label="Seções do Gestor">
       <NuxtLink
         v-for="t in tabs"
         :key="t.key"

@@ -21,6 +21,7 @@ from .account import (
     FavoriteDetailView,
     FavoriteListView,
     FoodPreferenceToggleView,
+    MarketingPromptView,
     NotificationPreferenceToggleView,
     OrderHistoryView,
     PhoneChangeConfirmView,
@@ -41,7 +42,12 @@ from .auth import (
     TrustDeviceView,
     VerifyCodeView,
 )
-from .availability import AvailabilityView, StockAlertManagementView, StockAlertSubscribeView
+from .availability import (
+    AvailabilityView,
+    StockAlertIntentView,
+    StockAlertManagementView,
+    StockAlertSubscribeView,
+)
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
@@ -59,6 +65,7 @@ from .surface import (
     StorefrontHomeView,
     StorefrontMenuView,
     StorefrontProductView,
+    StorefrontSiteView,
 )
 from .telemetry import ClientErrorView
 from .tracking import (
@@ -75,6 +82,7 @@ from .whatsapp_verify import WhatsAppVerifyStartView
 urlpatterns = [
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
+    path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),
     path("storefront/menu/<slug:collection>/", StorefrontMenuView.as_view(), name="api-storefront-menu-collection"),
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),
@@ -104,6 +112,7 @@ urlpatterns = [
     path("checkout/loyalty/", CheckoutLoyaltyView.as_view(), name="api-checkout-loyalty"),
     # Availability
     path("availability/<str:sku>/", AvailabilityView.as_view(), name="api-availability"),
+    path("availability/<str:sku>/notify/intent/", StockAlertIntentView.as_view(), name="api-availability-notify-intent"),
     path("availability/<str:sku>/notify/", StockAlertSubscribeView.as_view(), name="api-availability-notify"),
     path("stock-alert/manage/", StockAlertManagementView.as_view(), name="api-stock-alert-manage"),
     # FOMO — badges de urgência real (últimas unidades, saiu do forno…).
@@ -165,6 +174,9 @@ urlpatterns = [
         NotificationPreferenceToggleView.as_view(),
         name="api-account-notification-preferences",
     ),
+    # A pergunta de novidades, feita uma vez num sheet da loja depois de entrar
+    # (carimbo em Customer.metadata). A chave continua em account/preferences/notifications/.
+    path("account/marketing-prompt/", MarketingPromptView.as_view(), name="api-account-marketing-prompt"),
     path("account/passkeys/", AccountPasskeyListView.as_view(), name="api-account-passkeys"),
     path("account/passkeys/<str:credential_id>/", AccountPasskeyDetailView.as_view(), name="api-account-passkey-detail"),
     path("account/devices/", AccountDeviceListView.as_view(), name="api-account-devices"),

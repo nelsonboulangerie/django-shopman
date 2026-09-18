@@ -13,7 +13,6 @@ import {
   cashOrdersNote,
   changeHabitNotes,
   changeMixCaveat,
-  changeMixLabel,
   coinFloorHint,
   formatInt,
   formatMoney,

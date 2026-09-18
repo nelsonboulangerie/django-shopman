@@ -445,26 +445,19 @@ def _build_items(
     # Batch: listing prices.
     price_map = catalog_context.listing_price_map(skus, channel_ref)
 
-    # Batch: channel-level commercial state. Product.is_sellable is global; a
-    # ListingItem can pause only the web surface while keeping the card visible.
-    listing_sellable = catalog_context.listing_sellable_map(skus, channel_ref)
-
-    # Batch: availability for the storefront scope.
-    avail_map = _batch_availability(skus, channel_ref)
+    # Batch: disponibilidade + pausa comercial + "esgotado honesto", pela mesma
+    # régua que `notifiable_skus` usa ao favoritar.
+    states = _availability_states(
+        products,
+        channel_ref=channel_ref,
+        own_holds=own_holds,
+        low_stock_threshold=low_stock_threshold,
+    )
 
     # Batch: active automatic promotions once, evaluated per SKU in memory by the
     # pricing backend (via the ``active_promotions`` context key) instead of one
     # Promotion query per SKU.
     active_promotions = _active_storefront_promotions(channel_ref)
-
-    # Bundles nao tem quant proprio: sua disponibilidade e o min() dos
-    # componentes (o mais escasso limita), senao o card mostraria "Disponivel"
-    # com um componente esgotado. Sobrescreve o raw do bundle antes de resolver.
-    bundle_skus = [p.sku for p in products if getattr(p, "is_bundle", False)]
-    if bundle_skus:
-        avail_map.update(
-            catalog_context.bundle_availability_for_skus(bundle_skus, channel_ref=channel_ref)
-        )
 
     result: list[CatalogItemProjection] = []
     for p in products:
@@ -498,33 +491,16 @@ def _build_items(
 
         effective_q = price.final_unit_price_q
 
-        # O hold da própria sessão não pode fazer o card mentir: quem colocou as
-        # duas últimas unidades na sacola tem de continuar vendo o stepper com "2",
-        # e não um selo "Indisponível" com sino para ser avisado do que já é dele.
-        # A PDP (`product_detail`) e a sacola (`cart._line_availability`) já
-        # corrigiam; o card do cardápio era a única superfície que não — e as três
-        # respondiam coisas diferentes sobre o mesmo SKU no mesmo segundo.
-        raw_avail = catalog_context.availability_with_own_hold(
-            avail_map.get(p.sku), int(own_holds.get(p.sku, 0))
-        )
-        effective_is_sellable = p.is_sellable and listing_sellable.get(p.sku, True)
-        availability = _resolve_availability(
-            raw_avail,
-            is_sellable=effective_is_sellable,
-            low_stock_threshold=low_stock_threshold,
-        )
+        state = states[p.sku]
+        raw_avail = state.raw
+        availability = state.availability
+        is_paused = state.is_paused
+        is_notifiable = state.is_notifiable
         avail_label = availability_label(availability)
         can_add = availability in (
             Availability.AVAILABLE,
             Availability.LOW_STOCK,
             Availability.PLANNED_OK,
-        )
-        # Pausado = decisão do operador: produto publicado (aparece no cardápio)
-        # mas não vendável, ou stock marcado como pausado. Distingue-se do esgotado
-        # honesto (que habilita "Me avise"). Espelha catalog_context (`or not is_sellable`).
-        is_paused = (not effective_is_sellable) or bool(raw_avail and raw_avail.get("is_paused"))
-        is_notifiable = (
-            availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
         )
         available_qty = catalog_context.orderable_ceiling(raw_avail, can_add=can_add)
 
@@ -579,6 +555,127 @@ def _build_items(
             ),
         )
     return result
+
+
+@dataclass(frozen=True)
+class _AvailabilityState:
+    raw: dict | None
+    availability: Availability
+    is_paused: bool
+    is_notifiable: bool
+
+
+def pause_and_notifiability(
+    availability: Availability,
+    *,
+    effective_is_sellable: bool,
+    raw_avail: dict | None,
+) -> tuple[bool, bool]:
+    """``(is_paused, is_notifiable)`` — a régua ÚNICA do "esgotado honesto".
+
+    Pausado = decisão do operador: produto publicado (aparece no cardápio) mas
+    não vendável — global ou só nesta vitrine —, ou estoque marcado como
+    pausado. Notificável = indisponível, vendável e não pausado: é o que
+    habilita "Me avise" no card e na PDP, e é o que faz o favorito anotar o
+    aviso. Espelha catalog_context (`or not is_sellable`).
+    """
+    is_paused = (not effective_is_sellable) or bool(raw_avail and raw_avail.get("is_paused"))
+    is_notifiable = (
+        availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
+    )
+    return is_paused, is_notifiable
+
+
+def _availability_states(
+    products: list[Any],
+    *,
+    channel_ref: str,
+    own_holds: dict[str, Any],
+    low_stock_threshold: Decimal,
+) -> dict[str, _AvailabilityState]:
+    """Disponibilidade resolvida por SKU, em lote — card do cardápio e favorito."""
+    skus = [p.sku for p in products]
+
+    # Channel-level commercial state. Product.is_sellable is global; a
+    # ListingItem can pause only the web surface while keeping the card visible.
+    listing_sellable = catalog_context.listing_sellable_map(skus, channel_ref)
+
+    # Availability for the storefront scope.
+    avail_map = _batch_availability(skus, channel_ref)
+
+    # Bundles nao tem quant proprio: sua disponibilidade e o min() dos
+    # componentes (o mais escasso limita), senao o card mostraria "Disponivel"
+    # com um componente esgotado. Sobrescreve o raw do bundle antes de resolver.
+    bundle_skus = [p.sku for p in products if getattr(p, "is_bundle", False)]
+    if bundle_skus:
+        avail_map.update(
+            catalog_context.bundle_availability_for_skus(bundle_skus, channel_ref=channel_ref)
+        )
+
+    states: dict[str, _AvailabilityState] = {}
+    for p in products:
+        # O hold da própria sessão não pode fazer o card mentir: quem colocou as
+        # duas últimas unidades na sacola tem de continuar vendo o stepper com "2",
+        # e não um selo "Indisponível" com sino para ser avisado do que já é dele.
+        # A PDP (`product_detail`) e a sacola (`cart._line_availability`) já
+        # corrigiam; o card do cardápio era a única superfície que não — e as três
+        # respondiam coisas diferentes sobre o mesmo SKU no mesmo segundo.
+        raw_avail = catalog_context.availability_with_own_hold(
+            avail_map.get(p.sku), int(own_holds.get(p.sku, 0))
+        )
+        effective_is_sellable = p.is_sellable and listing_sellable.get(p.sku, True)
+        availability = _resolve_availability(
+            raw_avail,
+            is_sellable=effective_is_sellable,
+            low_stock_threshold=low_stock_threshold,
+        )
+        is_paused, is_notifiable = pause_and_notifiability(
+            availability,
+            effective_is_sellable=effective_is_sellable,
+            raw_avail=raw_avail,
+        )
+        states[p.sku] = _AvailabilityState(
+            raw=raw_avail,
+            availability=availability,
+            is_paused=is_paused,
+            is_notifiable=is_notifiable,
+        )
+    return states
+
+
+def notifiable_skus(skus: list[str], *, channel_ref: str, session_key: str = "") -> set[str]:
+    """SKUs que o card desta vitrine mostraria com "Me avise" (esgotado honesto).
+
+    Mesmo portão e mesma régua de :func:`build_catalog_items_for_skus` — publicado,
+    visível no canal, disponibilidade com o hold da própria sessão, pausa global
+    e da vitrine — sem montar preço nem card. É a pergunta que o favorito faz
+    antes de anotar o aviso: se o card não ofereceria o sino, o favorito também
+    não promete aviso.
+    """
+    if not skus:
+        return set()
+    products_by_sku = catalog_context.products_by_sku(skus, only_published=True)
+    visible = catalog_context.visible_skus_in_channel(skus, channel_ref)
+    products = [
+        products_by_sku[sku]
+        for sku in skus
+        if sku in products_by_sku and (visible is None or sku in visible)
+    ]
+    if not products:
+        return set()
+    config = ChannelConfig.for_channel(channel_ref)
+    own_holds = (
+        catalog_context.own_holds_by_sku(session_key, [p.sku for p in products])
+        if session_key
+        else {}
+    )
+    states = _availability_states(
+        products,
+        channel_ref=channel_ref,
+        own_holds=own_holds,
+        low_stock_threshold=Decimal(str(config.stock.low_stock_threshold)),
+    )
+    return {sku for sku, state in states.items() if state.is_notifiable}
 
 
 def _active_storefront_promotions(channel_ref: str) -> list[Any]:

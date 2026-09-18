@@ -173,6 +173,61 @@ class SignInAuditTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(SignInEvent.objects.count(), 0)
 
+    # ── De onde: o IP é o da borda, não o que o chamador escreve ─────────
+    #
+    # Cadeias na forma da App Platform (depth=2: cliente + ingress acrescentados
+    # pela borda). O que vem à esquerda disso é texto livre de quem chama.
+
+    def _login_com_xff(self, xff, **extra):
+        self.client.post(
+            LOGIN, {"username": "ana", "password": "senha-forte-123"},
+            content_type="application/json",
+            HTTP_X_FORWARDED_FOR=xff,
+            **extra,
+        )
+        return SignInEvent.objects.get()
+
+    def test_xff_forjado_pelo_chamador_nao_vira_o_ip_da_trilha(self):
+        """A ponta esquerda do XFF é do chamador: lida ali, o intruso escolhia o IP gravado."""
+        with self.settings(DOORMAN={"TRUSTED_PROXY_DEPTH": 2}, SHOPMAN_BFF_PROXY_SECRET=""):
+            evento = self._login_com_xff("6.6.6.6, 203.0.113.9, 10.244.0.3")
+
+        self.assertEqual(evento.ip_address, "203.0.113.9")
+
+    def test_pelo_bff_de_operador_com_segredo_grava_o_operador_e_nao_o_nitro(self):
+        via_bff = "6.6.6.6, 203.0.113.9, 10.244.1.7, 147.182.186.185, 10.244.0.3"
+        with self.settings(DOORMAN={"TRUSTED_PROXY_DEPTH": 2}, SHOPMAN_BFF_PROXY_SECRET="s3cr3t"):
+            evento = self._login_com_xff(via_bff, HTTP_X_SHOPMAN_PROXY_SECRET="s3cr3t")
+
+        self.assertEqual(evento.ip_address, "203.0.113.9")
+
+    def test_segredo_errado_nao_autoriza_ler_o_salto_a_mais(self):
+        via_bff = "203.0.113.9, 10.244.1.7, 147.182.186.185, 10.244.0.3"
+        with self.settings(DOORMAN={"TRUSTED_PROXY_DEPTH": 2}, SHOPMAN_BFF_PROXY_SECRET="s3cr3t"):
+            evento = self._login_com_xff(via_bff, HTTP_X_SHOPMAN_PROXY_SECRET="chute")
+
+        self.assertEqual(evento.ip_address, "147.182.186.185")
+
+    def test_ip_ilegivel_nao_apaga_a_linha_da_trilha(self):
+        """Lixo no lugar do IP vira ``None``, e o acesso continua com linha.
+
+        Sem borda na frente (cadeia mais curta que a profundidade) o helper
+        devolve o que houver; gravar ``"lixo"`` num ``GenericIPAddressField``
+        falharia no banco e ``record()`` engoliria o erro em silêncio.
+        """
+        from django.test import RequestFactory
+
+        pedido = RequestFactory().post(LOGIN, HTTP_X_FORWARDED_FOR="lixo")
+        with self.settings(DOORMAN={"TRUSTED_PROXY_DEPTH": 2}, SHOPMAN_BFF_PROXY_SECRET=""):
+            evento = sign_in_audit.record(
+                user=self.op, method=SignInMethod.PASSWORD, request=pedido, notify_owner=False
+            )
+
+        self.assertIsNotNone(evento)
+        evento.refresh_from_db()
+        self.assertIsNone(evento.ip_address)
+        self.assertEqual(evento.user, self.op)
+
     # ── Retenção ──────────────────────────────────────────────────────────
 
     def test_purge_apaga_so_o_que_passou_do_prazo(self):

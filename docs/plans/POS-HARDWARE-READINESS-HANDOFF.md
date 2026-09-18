@@ -188,6 +188,11 @@ O seed passa a declarar o aparelho real da Nelson (`epson-tm-t20`, 80mm). Como
 80mm já era o default, a declaração não muda o desenho: torna explícito o que era
 sorte, e é o gancho para um balcão com rolo diferente.
 
+> ⚠️ **Corrigido em 18/09:** o `model` (e o `adapter`) saíram do seed. Ninguém os
+> lia, e o `adapter` chegou a ter dois nomes — o seed cunhava `driver`, o Admin
+> cunhava `relay` — para zero diferença de comportamento. A largura do rolo
+> (`roll_width_mm`) continua declarada, que é o que este parágrafo comprava.
+
 **O que ainda quer aparelho:** densidade/contraste, alinhamento lateral do rolo
 (o texto agora encosta no limite da área imprimível) e o comportamento de avanço
 e corte no fim do recibo, que é configuração do driver, não do CSS.

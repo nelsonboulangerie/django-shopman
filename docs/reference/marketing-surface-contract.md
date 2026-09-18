@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-11
+- **Última verificação:** 2026-09-17
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -66,7 +66,8 @@ mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automati
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`
 transporta apenas invalidação pessoal, `/health/live` prova o processo/BFF e
-`/health/ready` inclui a prontidão do Django. O alias legado
+`/health/ready` inclui a prontidão do Django. As duas rotas vêm da layer
+`operator-kit` (`server/routes/health/`), iguais nos oito apps de operador. O alias legado
 `/campaign/announcements/:id` redireciona para `/announcements/:id`.
 
 ## Rotas Django
@@ -124,17 +125,52 @@ motivo, versão, esquema, idempotência e confirmação. O cliente não deduz au
 nem transição a partir do status.
 
 Comandos sensíveis usam CAS, idempotência, confirmação contextual e comprovante.
-Conforme consequência e limiar, exigem nova autenticação, TOTP ou duplo controle.
+A cerimônia mede a consequência, e a consequência é medida em **pessoas que recebem
+mensagem** — nunca em plataformas, que é outra grandeza:
+
+- **`fire`** não pede cerimônia nenhuma (modo `none` — cria rascunho em revisão e não
+  entrega);
+- **postagem pública** pede sempre só o resumo + um toque, qualquer que seja o número de
+  plataformas: ela se apaga, não custa por pessoa e alcance não é fatura;
+- **mensagem direta** pede a **frase digitada (`ENVIAR <pessoas>`) SEMPRE**, de uma
+  pessoa em diante: o atrito segue o que não tem desfazer, e mensagem enviada não se
+  apaga. O que escala com o limiar da loja é o resto —
+  `max(piso, min(percentual × base de clientes, teto de gasto ÷ custo por mensagem))`:
+  abaixo dele, só a frase; dele até `× múltiplo`, frase + senha; daí em diante, frase +
+  TOTP + duplo controle;
+- **disparo misto** é decidido pela parte de mensagem, porque é a irreversível — e a
+  frase continua sendo `ENVIAR <pessoas>` mesmo com o botão dizendo "Disparar agora": o
+  que se digita é o número que não volta, nunca a soma de pessoas com murais;
+- os cinco ajustes (percentual, teto de gasto, custo por mensagem, piso e múltiplo) vivem
+  em `Shop.defaults["marketing"]`, editáveis em Loja → Integrações → "Cerimônia do
+  disparo", que mostra a base viva e a conta ao lado dos campos. Base de clientes = o
+  cadastro ativo (`Customer.is_active=True`); o histórico do Yooga vive no B.I. e não
+  cria cadastro.
+
+Agendar não é mais barato que entregar agora, e a obrigação de agendar acima de 2.000
+conta mensagens. A quota diária de 5.000 destinos externos e o teto de 5.000 por comando
+continuam somando mensagens + postagens, porque ali a pergunta é volume, não risco. Ver
+[ADR-031](../decisions/adr-031-marketing-ceremony-proportional-to-consequence.md) e
+[ADR-032](../decisions/adr-032-marketing-ceremony-threshold-is-proportional.md) e
+[ADR-033](../decisions/adr-033-marketing-typed-phrase-follows-the-irreversible.md).
+
+O desafio de confirmação diz por que pediu: `ceremony_reason` vale `direct_message`
+quando a frase veio da mensagem e `""` quando não houve frase; `direct_message_count`,
+`public_post_count` e `ceremony_threshold` completam a explicação.
 Outbox, público selado, artefato imutável, destinos e tentativas formam o grafo durável.
 `accepted_unconfirmed`, `confirmed`, falha final, falha repetível e `unknown` são estados
 distintos. `unknown` nunca recebe repetição cega.
+
+Dialeto de erro: comandos respondem `{code, detail, field_errors}`, o CRUD de
+campanhas/modelos `{detail, field, fields}` e o 401 leva `code`; `detail` está sempre
+presente. Ver [Superset do Marketing em `errors.md`](errors.md#superset-do-marketing-deliberado).
 
 ## Capacidades
 
 | Capacidade | Autoriza |
 |---|---|
 | `shop.view_marketing` | leitura agregada |
-| `shop.edit_marketing_campaigns` | criar/editar campanhas |
+| `shop.edit_marketing_campaigns` | criar/editar campanhas; editar anúncio antes de aprovar (`PATCH announcements/:id/`) |
 | `shop.edit_marketing_templates` | criar/editar modelos |
 | `shop.preview_marketing_audience` | contar e pré-visualizar público |
 | `shop.approve_marketing_announcements` | aprovar, rejeitar e usar assistência de texto |
@@ -159,6 +195,10 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | Platform/SRE | `false`; sem tentativa | MKT-054 |
 | `SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED` | Release Manager | `false`; comando unitário não cruza a fronteira | desligar após o canário |
 | `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | Platform Owner | vazio; canal indisponível | por adapter/canário |
+| `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` | Platform Owner | `false`; adapter durável do WhatsApp nem é registrado — campanha aprovada fica na fila | por etapa, junto do modo: `canary` → `open` |
+| `SHOPMAN_MARKETING_WHATSAPP_MODE` | Platform Owner | `blocked`; nenhum evento de Marketing sai por WhatsApp. `canary`/`open` sem cache compartilhado continuam bloqueados | por etapa: `canary` → `open` |
+| `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` | Platform Owner | vazio; `canary` sem lista fica bloqueado | esvaziar ao fim do ensaio |
+| `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` | Platform Owner | `120`; inválido volta ao padrão | revisar com a latência observada no ensaio |
 | `SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
@@ -173,6 +213,45 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 sintéticos pertencem exclusivamente a `config.settings_marketing_demo`. A simulação
 recusa ambiente não local e qualquer flag que permita saída externa. Nenhuma flag
 desliga consentimento, permissão, CSRF, redaction, unicidade ou revalidação pré-envio.
+
+WhatsApp de Marketing (campanha e "Me avise") abre por modo, não por credencial. Cada
+mensagem com flow reserva o contato no cache compartilhado durante a janela de
+assentamento, antes de gravar qualquer campo; outra mensagem com flow para a mesma
+pessoa volta depois (`subscriber_busy`, retentável, nunca `unknown`). Em `canary`, quem
+está fora da lista é suprimido no claim (`whatsapp_canary_recipient_excluded`) e o
+adapter recusa na última porta; a prontidão aparece como `degraded` com
+`canary_recipients` (contagem, nunca refs). Decisão e limites em
+[ADR-009](../decisions/adr-009-whatsapp-via-manychat.md).
+
+Campanha de WhatsApp aprovada chega ao ManyChat pelo ledger durável só quando
+`SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED` registra o adapter
+`marketing_delivery_whatsapp` — com a flag desligada a prontidão diz
+`platform_switched_off` e os destinos ficam na fila, sem envio. O adapter confere o modo na última
+porta, relê consentimento, exige o flow selado na aprovação e monta as variáveis do
+flow só do artefato aprovado (corpo, link, foto e fatos selados; do destino, só
+telefone e primeiro nome). Aceite do ManyChat é `accepted_unconfirmed`; resposta
+ambígua depois de possível escrita é `unknown`; recusa antes de chamar é falha final
+com código; contato ocupado volta pela fila. A etapa que leva o destino ao provedor
+roda no `maintenance-worker`, sem componente próprio — ver
+[Entrega sem componente próprio](#entrega-sem-componente-próprio).
+
+Cada mensagem com flow de Marketing grava o conjunto completo de campos declarado para o
+evento (`MARKETING_FLOW_FIELDS`), com vazio para o que não tiver — nunca herda preço,
+nome ou link da mensagem anterior.
+
+Campanha geral por WhatsApp exige um **mínimo de pessoas elegíveis configurável no
+Admin** (Configuração → A loja → Integrações → "Campanhas de WhatsApp"), gravado em
+`Shop.defaults["marketing"]["whatsapp_minimum_audience"]`. Aumentar o número impede que
+uma campanha "geral" vire mensagem mirada em uma pessoa. **Padrão 1** (chave ausente),
+por decisão do dono em 2026-09-17: no início da operação um mínimo alto seguraria
+campanhas boas antes de a casa sentir o impacto. O Admin aceita inteiro a partir de 1 e
+recusa zero, negativo e texto com mensagem em português; quem mudou e quando fica no
+histórico da página (`LogEntry`). A aprovação lê o valor na hora e, abaixo dele, recusa
+com `audience_below_minimum`, `minimum_count` igual ao número configurado e o número na
+mensagem. No modo `canary` o mínimo não se aplica, porque só a lista de canário
+controlada pela operação recebe — a aprovação registra `canary=true` com o
+`minimum_count` que não valeu, e o cockpit diz "Ensaio: o mínimo de N não vale; só a
+lista de canário recebe". Em `blocked` e `open` o mínimo vale.
 
 Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
 `META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,
@@ -189,6 +268,63 @@ somente uma fronteira testável e inerte: token estático serve no máximo a can
 controlado; operação contínua exige armazenamento OAuth com renovação, consulta de
 `creator_info`, aprovação de `video.publish` e auditoria Direct Post. A simples
 presença da flag ou da credencial não autoriza adicionar TikTok a uma campanha.
+
+### Plataforma desligada × integração não registrada
+
+Os adapters de Instagram, Facebook, Google e WhatsApp existem no código; a flag de
+cada plataforma (tabela acima) decide se ele é registrado em
+`SHOPMAN_MARKETING_DELIVERY_ADAPTERS` neste ambiente. `Shop.integrations`, quando
+define `marketing_delivery`, responde antes das settings, como em `get_adapter`.
+O estado de cada plataforma sai de `marketing_delivery_runtime.delivery_lanes()`,
+sem chamar adapter nem provedor:
+
+| Estado | Quando | Prontidão | Worker | Log |
+|---|---|---|---|---|
+| `registered` | há integração registrada | segue para simulação/credencial/probe | pede o adapter | — |
+| `switched_off` | nada registrado e a flag da plataforma desligada | `blocked`, `platform_switched_off`, "desligada neste ambiente"; a ação cita a flag | não pede o adapter; destinos seguem `queued`, sem reserva | nenhum |
+| `unconfigured` | nada registrado com a flag ligada | `blocked`, `publication_adapter_missing` / `whatsapp_durable_provider_missing`, "erro de configuração" | pede o adapter | WARNING do `get_adapter` a cada ciclo |
+
+Desligada é escolha de quem opera; o aviso do `get_adapter` fica para a integração
+que deveria existir e não existe. A aprovação não recusa plataforma desligada: o que
+for aprovado para ela é materializado e fica `queued`. No cockpit, o resultado da
+plataforma diz "aguardando a plataforma ligar", e não só "na fila"; o
+`diagnose_marketing` mostra o bloco `lanes` (estado, flag e destinos na fila) e
+aponta `observe:platform_switched_off_holds_queued`. Ao ligar, cada destino ainda
+passa pelas conferências de prazo e consentimento antes do envio.
+
+## Entrega sem componente próprio
+
+A etapa final da entrega — destino `queued` → adapter → provedor
+(`process_marketing_delivery`) — **não tem componente próprio** no App Platform. Ela roda
+dentro do `maintenance-worker` que já existe (`python manage.py maintenance_worker`, ciclo
+de 300 s), uma passada por ciclo, logo **depois** de `process_marketing_outbox`. A ordem é
+proposital: a outbox publica a Directive, o dispatch por signal materializa e enfileira os
+destinos no commit, e a passada de entrega os encontra no mesmo ciclo. Decisão do dono
+(2026-09-17): um worker a mais custaria mais do que a entrega que ele faz.
+
+| Opção da passada | Valor | Por quê |
+|---|---|---|
+| `worker_id` | `maintenance_worker:marketing-delivery` | estável: o `lease_owner` diz qual componente segura o destino |
+| `limit` | `20` destinos (e 20 consultas) por passada | uma mensagem de WhatsApp com flow custa ~20 chamadas ao ManyChat; o lote cabe no ciclo |
+| `lease_seconds` | `300` | cobre a passada inteira; se o processo cair, o destino volta a ser elegível em até 5 min |
+| `--with-reconciliation` | ligado | só executa consultas somente-leitura já pedidas pelo operador; `unknown` nunca é reenviado |
+| `--watch` / `--with-outbox` | desligados | passada única; a outbox já roda como tarefa própria do ciclo |
+
+`SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` continua sendo o portão: desligada, a passada
+volta calada (sem aviso a cada ciclo) e nenhum destino é reservado. Exceção na entrega é
+logada e **não** derruba o ciclo das demais tarefas. Ligar a consequência é ligar as flags;
+não há worker para criar, escalar ou pagar. O comando avulso continua servindo ao
+simulador local (`make marketing-simulator`) e a ensaio explícito.
+
+**Latência esperada (aprovação → chamada ao provedor).** Uma campanha aprovada entra na
+próxima passada, não sai no mesmo segundo. No pior caso, a aprovação chega logo depois da
+outbox do ciclo corrente e espera o ciclo seguinte: **até ~300 s + a duração das tarefas
+que vêm antes da outbox no ciclo + a própria passada**, na prática **até ~7 minutos** para
+o último dos primeiros 20 destinos. Cada 20 destinos a mais somam um ciclo (≈300 s): 100 pessoas
+elegíveis levam até ~30 minutos para esgotar a fila. Se a Directive não for processada no
+commit e ficar para o `directive-worker`, soma-se mais um ciclo. Horário comercial,
+contato ocupado (`subscriber_busy`) e freeze adiam por conta própria. **"Enviar agora"
+significa "na próxima passada" e pode levar alguns minutos** — não é defeito.
 
 ## Operação, diagnóstico e gates
 
@@ -213,8 +349,16 @@ Capacidade: [`docs/engineering/marketing-capacity-gate.md`](../engineering/marke
 
 O host é `mkt.<domínio>`, com `NUXT_DJANGO_BASE_URL`/`NUXT_PUBLIC_DJANGO_BASE_URL`
 apontando para `api.<domínio>` e `NUXT_PUBLIC_OPERATOR_HUB_URL` para `central.<domínio>`.
-Os dois blueprints versionados usam readiness `/health/ready` e liveness
-`/health/live`. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
+Os dois blueprints versionados usam `/health/live` no `health_check` e no
+`liveness_health_check`: o probe da plataforma não consulta o Django. `/health/ready`
+fica para smoke e diagnóstico. Desde a
+[ADR-030](../decisions/adr-030-operator-nuxt-dois-servicos.md) o Marketing roda no
+service de grupo `operator-office` (com B.I. e Compras): o ingress de `mkt.` aponta
+para ele e o roteador do contêiner entrega ao Nitro do Marketing. A sonda da
+plataforma recebe o `/health/live` agregado do grupo (200 só com os três Nitro de
+pé); no host `mkt.`, `/health/live` e `/health/ready` continuam sendo os do próprio
+Marketing. O envelope CSP/nonce continua gerado pelo Nitro do Marketing; o roteador
+não reescreve cabeçalho. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
 segredos e obter autorização explícita.
 
 Em 2026-09-11, o cockpit e o pipeline-base de `#601` estão em produção e o teste

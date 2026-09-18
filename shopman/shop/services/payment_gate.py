@@ -139,6 +139,17 @@ def payment_blocks_transition(order, *, current_status: str, target_status: str,
     """
     if not transition_hands_over_goods(current_status, target_status):
         return False
+    # A retirada agendada também é recebida no hand-off, mas, ao contrário do
+    # delivery, não existe um retorno posterior do entregador para liquidar a
+    # cobrança. O Gestor precisa registrar o recebimento enquanto o pedido está
+    # READY; só então pode concluir e liberar a comanda/sacola.
+    payment = (order.data or {}).get("payment") or {}
+    if collects_on_delivery(order):
+        from shopman.shop.services.order_helpers import get_fulfillment_type
+
+        if get_fulfillment_type(order) == "pickup" and str(target_status) == Order.Status.COMPLETED:
+            return not bool(payment.get("cod_settled_at"))
+        return False
     if not requires_captured_payment(order):
         return False
     return not (payment_is_captured(order) if payment_reads is None else payment_is_captured(order, payment_reads=payment_reads))

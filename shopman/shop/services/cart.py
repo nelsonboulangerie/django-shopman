@@ -395,9 +395,32 @@ def apply_coupon_code(
     and RFM segment from the session, and does so on every later reprice too.
     Open (non-segmented) coupons pass ``None``.
     """
+    if customer and customer.get("ref"):
+        from shopman.shop.services import account as account_service
+
+        try:
+            locked_customer = account_service.lock_active_customer(
+                customer_ref=str(customer["ref"])
+            )
+        except account_service.AccountUnavailable as exc:
+            raise SessionError(
+                code="customer_inactive",
+                message="O titular deste cupom não está mais ativo.",
+            ) from exc
+        # The payload was built before a possible wait on Customer.  Derive the
+        # pricing identity again from the locked, active owner.
+        customer = {
+            "ref": locked_customer.ref,
+            "price_tier": (
+                locked_customer.price_tier.ref if locked_customer.price_tier_id else ""
+            ),
+        }
+
     session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
+    if customer:
+        session.assert_accepts_personal_data("customer")
 
     data = session.data or {}
     data["coupon_code"] = code
@@ -465,6 +488,8 @@ def set_delivery_draft(
     session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
+    if delivery_address_structured:
+        session.assert_accepts_personal_data("delivery_address_structured")
 
     data = dict(session.data or {})
     data["fulfillment_type"] = fulfillment_type

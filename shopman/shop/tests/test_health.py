@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.conf import settings
@@ -44,6 +44,79 @@ def test_legacy_health_alias_keeps_the_safe_liveness_contract(client):
 
     assert response.status_code == 200
     assert response.json()["checks"] == {"process": "ok"}
+
+
+@pytest.fixture
+def unverified_migrations(monkeypatch):
+    """Processo que ainda não viu o plano de migrations limpo."""
+    from shopman.shop.views import health
+
+    monkeypatch.setattr(health, "_migrations_verified", False)
+    return health
+
+
+def _executor_with_plans(*plans):
+    """MigrationExecutor falso: cada construção devolve o próximo plano."""
+    executor_class = MagicMock()
+    instances = []
+    for plan in plans:
+        instance = MagicMock()
+        instance.loader.graph.leaf_nodes.return_value = []
+        instance.migration_plan.return_value = plan
+        instances.append(instance)
+    executor_class.side_effect = instances
+    return executor_class
+
+
+@pytest.mark.parametrize("route", ["health", "health-live"])
+def test_liveness_never_builds_the_migration_graph(client, unverified_migrations, route):
+    with patch("shopman.shop.views.health.MigrationExecutor") as executor:
+        response = client.get(reverse(route))
+
+    assert response.status_code == 200
+    executor.assert_not_called()
+
+
+@pytest.mark.parametrize("route", ["ready", "health-ready"])
+def test_ready_builds_the_migration_graph_once_per_process(client, db, unverified_migrations, route):
+    executor = _executor_with_plans([])
+    with patch("shopman.shop.views.health.MigrationExecutor", executor):
+        first = client.get(reverse(route))
+        second = client.get(reverse(route))
+        third = client.get(reverse(route))
+
+    assert executor.call_count == 1
+    for response in (first, second, third):
+        assert response.status_code == 200
+        assert response.json()["checks"]["migrations"] == "ok"
+
+
+def test_pending_migrations_are_not_remembered(client, db, unverified_migrations):
+    executor = _executor_with_plans([("app", "0002")], [])
+    with patch("shopman.shop.views.health.MigrationExecutor", executor):
+        pending = client.get(reverse("ready"))
+        caught_up = client.get(reverse("ready"))
+        remembered = client.get(reverse("ready"))
+
+    assert pending.status_code == 503
+    assert pending.json()["checks"]["migrations"] == "fail"
+    assert caught_up.status_code == 200
+    assert remembered.status_code == 200
+    assert executor.call_count == 2
+
+
+def test_migration_check_error_is_not_remembered(unverified_migrations):
+    health = unverified_migrations
+    broken = MagicMock(side_effect=RuntimeError("database unavailable"))
+    with patch("shopman.shop.views.health.MigrationExecutor", broken):
+        assert health._check_migrations() == ("fail", "RuntimeError")
+    assert health._migrations_verified is False
+
+    executor = _executor_with_plans([])
+    with patch("shopman.shop.views.health.MigrationExecutor", executor):
+        assert health._check_migrations() == ("ok", None)
+        assert health._check_migrations() == ("ok", None)
+    assert executor.call_count == 1
 
 
 def test_ready_ok(client, db):

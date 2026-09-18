@@ -1,3 +1,8 @@
+import {
+  crossAppLinkAttrs,
+  EXTERNAL_LINK_ATTRS,
+  type CrossAppLinkAttrs,
+} from "../../../operator-kit/app/presentation/appLaunch";
 import type { HubTileProjection } from "~/types/hub";
 
 // Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
@@ -7,9 +12,41 @@ export function tileIcon(icon: string): string {
   return icon.startsWith("lucide:") ? icon : `lucide:${icon}`;
 }
 
-/** Launch (superfície de operador) fica na mesma aba; external (loja do cliente) abre em nova. */
-export function tileTarget(tile: Pick<HubTileProjection, "kind">): "_self" | "_blank" {
-  return tile.kind === "external" ? "_blank" : "_self";
+/**
+ * O ícone REAL do app: o PNG da família PWA que cada superfície publica em
+ * `/pwa/pwa-192x192.png` (ver operator-kit/PWA_ICONS.md). A Central não copia o
+ * arquivo — aponta para a origem do próprio tile, então ícone e app nunca divergem.
+ * A Loja (`external`) também publica a família. Devolve `null` para URL que não se
+ * resolve; a tela cai no Lucide (`tileIcon`).
+ */
+export const PWA_ICON_PATH = "/pwa/pwa-192x192.png?v=3";
+
+export function tileIconUrl(tile: Pick<HubTileProjection, "url" | "kind">): string | null {
+  try {
+    return new URL(PWA_ICON_PATH, tile.url).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Como o tile abre.
+ *
+ * `external` (a loja do cliente) sempre em outra janela. `launch` (superfície de
+ * operador) depende de a Central estar INSTALADA: como app, cada superfície tem janela
+ * própria e é lá que ela deve abrir — abrir dentro da janela da Central produz a tarja
+ * de "saiu do app" e mantém o título e a cor da Central na barra. Como aba de
+ * navegador, segue na mesma aba, que é o que se espera de um navegador.
+ *
+ * A regra mora no kit (`presentation/appLaunch.ts`), porque o caminho de volta — o
+ * ícone da Central no rail de cada app — é exatamente o mesmo problema.
+ */
+export function tileLinkAttrs(
+  tile: Pick<HubTileProjection, "kind" | "url">,
+  context: { installed: boolean; currentOrigin: string },
+): CrossAppLinkAttrs {
+  if (tile.kind === "external") return EXTERNAL_LINK_ATTRS;
+  return crossAppLinkAttrs({ installed: context.installed, href: tile.url, currentOrigin: context.currentOrigin });
 }
 
 /** Grade vazia = operador autenticado sem nenhum app liberado (estado acolhedor). */

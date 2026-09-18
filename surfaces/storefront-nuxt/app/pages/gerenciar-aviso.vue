@@ -1,6 +1,7 @@
 <script setup lang="ts">
 interface StockAlertManagementState {
   ok: boolean
+  sku: string
   product_name: string
   event_label: string
   state: 'active' | 'paused' | 'cancelled'
@@ -20,6 +21,21 @@ const alertState = ref<StockAlertManagementState | null>(null)
 const pending = ref(true)
 const changing = ref(false)
 const error = ref('')
+const { setStockNotifyState, clearStockNotifyState } = useStockNotifyTransientState()
+const stateLabel = computed(() => alertState.value?.state === 'paused'
+  ? 'Pausado'
+  : alertState.value?.state === 'cancelled' ? 'Cancelado' : 'Anotado'
+)
+const stateDescription = computed(() => alertState.value?.state === 'paused'
+  ? 'Aviso pausado. Você pode retomá-lo para ocorrências futuras.'
+  : alertState.value?.state === 'cancelled'
+    ? 'Aviso cancelado. No cardápio, Me avise ficará disponível novamente.'
+    : 'Aviso anotado e ativo para as próximas ocorrências.'
+)
+const stateIcon = computed(() => alertState.value?.state === 'paused'
+  ? 'lucide:pause'
+  : alertState.value?.state === 'cancelled' ? 'lucide:bell-off' : 'lucide:bell-ring'
+)
 
 useSeoMeta({
   title: 'Gerenciar aviso',
@@ -56,6 +72,8 @@ async function changeState(action: 'pause' | 'resume') {
       credentials: 'include',
       body: { action },
     })
+    if (action === 'pause') setStockNotifyState(alertState.value.sku, 'paused')
+    else clearStockNotifyState(alertState.value.sku)
     useSonner.success(action === 'pause' ? 'Aviso pausado.' : 'Aviso retomado para as próximas ocorrências.')
   } catch (e) {
     error.value = errorDetail(e, 'Não foi possível alterar este aviso.')
@@ -74,6 +92,7 @@ async function cancelAlert() {
       headers: capabilityHeaders(await csrfHeaders()),
       credentials: 'include',
     })
+    setStockNotifyState(alertState.value.sku, 'cancelled')
     useSonner.success('Aviso cancelado.')
   } catch (e) {
     error.value = errorDetail(e, 'Não foi possível cancelar este aviso.')
@@ -113,15 +132,19 @@ onMounted(() => {
             <p class="shop-muted">{{ alertState.event_label }}</p>
           </div>
 
-          <UiAlert v-if="alertState.state === 'active'" role="status">
-            <UiAlertDescription>O aviso está ativo e vale para as próximas ocorrências.</UiAlertDescription>
-          </UiAlert>
-          <UiAlert v-else-if="alertState.state === 'paused'" role="status" variant="warning">
-            <UiAlertDescription>O aviso está pausado. Retomar vale somente para ocorrências futuras.</UiAlertDescription>
-          </UiAlert>
-          <UiAlert v-else role="status">
-            <UiAlertDescription>O aviso foi cancelado e não pode ser retomado.</UiAlertDescription>
-          </UiAlert>
+          <div role="status" aria-live="polite">
+            <UiButton
+              disabled
+              variant="outline"
+              size="sm"
+              :icon="stateIcon"
+              class="disabled:opacity-100"
+              :aria-label="stateDescription"
+              :title="stateDescription"
+            >
+              {{ stateLabel }}
+            </UiButton>
+          </div>
 
           <p class="shop-meta text-muted-foreground">{{ alertState.delivery_note }}</p>
           <p v-if="alertState.unresolved_deliveries" class="shop-meta text-warning">

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 const OPERATOR_PERM = "backstage.operate_purchase";
-const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 const { view, metrics } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const route = useRoute();
 
 const railItems = [
   { key: "panel", label: "Painel", icon: "layout-dashboard" },
@@ -11,7 +12,15 @@ const railItems = [
   { key: "base", label: "Base", icon: "database" },
 ] as const;
 
-useHead({ title: "Compras" });
+function applyShortcutView(value: unknown) {
+  if (typeof value === "string" && railItems.some((item) => item.key === value)) {
+    view.value = value as typeof view.value;
+  }
+}
+applyShortcutView(route.query.view);
+watch(() => route.query.view, applyShortcutView);
+
+useOperatorWindowTitle("Compras");
 </script>
 
 <template>
@@ -20,7 +29,8 @@ useHead({ title: "Compras" });
     <OfflineBanner />
     <div v-if="canIdentify" class="sticky top-0 hidden h-screen shrink-0 print:hidden md:flex">
       <OperatorRail
-        app-icon="shopping-basket"
+        app-icon="package"
+        app-icon-src="/pwa/pwa-64x64.png?v=3"
         app-label="Compras"
         :central-url="hubUrl"
         :operator-name="operator?.name"
@@ -58,12 +68,16 @@ useHead({ title: "Compras" });
         <span>{{ item.label }}</span>
       </button>
     </nav>
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="as compras" @retry="refresh()" />
     <OperatorLogin
-      v-if="!canIdentify"
+      v-if="!canIdentify && !sessionUnavailable"
       title="Entre para operar Compras"
       description="Use uma conta autorizada a comprar e receber insumos."
     />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
+    <OperatorPwaRuntime />
   </div>
 </template>

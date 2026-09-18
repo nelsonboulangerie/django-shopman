@@ -162,6 +162,8 @@ class PlatformProjection:
     reason: str = ""
     action: str = ""
     limitation: str = ""
+    #: Ensaio do WhatsApp: quantos contatos recebem (nunca QUAIS). ``None`` fora do ensaio.
+    canary_recipients: int | None = None
     #: Alguma campanha ATIVA aponta para esta plataforma? Ligar credencial de algo que
     #: ninguém usa é trabalho jogado fora, e desligado-e-sem-uso não é problema.
     in_use: bool = False
@@ -653,6 +655,7 @@ def build_platforms() -> tuple[PlatformProjection, ...]:
             reason=state.reason,
             action=state.action,
             limitation=state.limitation,
+            canary_recipients=state.canary_recipients,
             in_use=state.platform in used,
         )
         for state in states

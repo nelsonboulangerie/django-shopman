@@ -79,6 +79,16 @@ jobs:
       - name: Vitest
         run: npm test
 
+      # `eslint .` roda a partir do diretório de cada app e NUNCA alcança
+      # `../operator-kit`. Resultado: o layer — BFF (`server/utils/djangoProxy.ts`),
+      # composables, 24 componentes, 176 arquivos — era o único código de surfaces
+      # que jamais via ESLint, enquanto ditava a base de lint dos nove apps. O kit
+      # ganhou `eslint.config.mjs` e `lint` próprios; este passo tira o lint de
+      # opt-in (só Marketing e Produção o rodavam, nos seus jobs de browser).
+      # `--if-present` pelo mesmo motivo do typecheck: mantém a matriz uniforme.
+      - name: Lint
+        run: npm run lint --if-present
+
       # `--if-present`: o operator-kit (layer, sem app Nuxt próprio) não tem
       # typecheck; todos os 6 apps têm — storefront e pos ganharam o script
       # junto com este gate.
@@ -98,6 +108,20 @@ jobs:
             surface: storefront-nuxt
           - app: pos
             surface: pos-nuxt
+          - app: hub
+            surface: hub-nuxt
+          - app: orders
+            surface: orders-nuxt
+          - app: kds
+            surface: kds-nuxt
+          - app: production
+            surface: production-nuxt
+          - app: marketing
+            surface: marketing-nuxt
+          - app: purchase
+            surface: purchase-nuxt
+          - app: bi
+            surface: bi-nuxt
 
     steps:
       - name: Checkout
@@ -127,7 +151,17 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Production build
+        if: matrix.app != 'production'
         working-directory: surfaces/${{ matrix.surface }}
+        run: npm run build
+
+      - name: Production build (hermetic test upstream)
+        if: matrix.app == 'production'
+        working-directory: surfaces/production-nuxt
+        env:
+          NUXT_SHOPMAN_ENVIRONMENT: test
+          SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1"
+          NUXT_DJANGO_BASE_URL: http://127.0.0.1:1
         run: npm run build
 
       - name: Structural PWA gate
@@ -141,9 +175,9 @@ jobs:
       # O deploy usa esta receita genérica, não o workspace já preparado pelo
       # job. Construí-la aqui prova a ordem real de instalação e impede que o
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
-      - name: Build POS deployment image
-        if: matrix.app == 'pos'
-        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=pos-nuxt .
+      - name: Build operator deployment image
+        if: matrix.app != 'storefront'
+        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=${{ matrix.surface }} .
 
   marketing-complete:
     name: Marketing — cadeia completa

@@ -551,6 +551,40 @@ def test_acerto_de_entrega_grava_cod_settled_no_turno_de_quem_recebeu(counter):
     assert cash.balance(counter.shift) == 13000
 
 
+def test_pagamento_na_retirada_e_capturado_no_gestor_antes_da_conclusao(counter):
+    order = Order.objects.create(
+        ref="PICKUP-PAY-1",
+        channel_ref="pdv",
+        status=Order.Status.READY,
+        total_q=3000,
+        data={
+            "fulfillment_type": "pickup",
+            "payment": {
+                "method": "cash",
+                "collection": "on_delivery",
+                "amount_q": 3000,
+                "tenders": [{
+                    "method": "cash", "amount_q": 3000,
+                    "collection": "on_delivery", "status": "pending",
+                }],
+            },
+        },
+    )
+
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
+
+    order.refresh_from_db()
+    intent = PaymentIntent.objects.get(order_ref=order.ref)
+    assert intent.status == PaymentIntent.Status.CAPTURED
+    assert order.data["payment"]["cod_settled_at"]
+    assert order.data["payment"]["tenders"][0]["status"] == "received"
+    assert Entry.objects.get(order_ref=order.ref, kind=Entry.Kind.COD_SETTLED).amount_q == 3000
+
+    operator_orders.advance_order(order, actor="pos:marina")
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+
+
 def test_acerto_exige_turno_aberto_e_nao_repete(counter):
     order = _cod_order("COD-2")
     with pytest.raises(ValueError, match="turno"):
