@@ -113,7 +113,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
     }
 
 
-def template(pk: int = 1, *, dependency: bool = False) -> dict:
+def template(pk: int = 1, *, dependency: bool = False, requires_product: bool = False) -> dict:
     return {
         "pk": pk,
         "name": "Novidades da padaria" if pk == 1 else f"Modelo sazonal {pk}",
@@ -135,6 +135,7 @@ def template(pk: int = 1, *, dependency: bool = False) -> dict:
         "is_active": True,
         "updated_at": "2026-09-10T09:40:00-03:00",
         "used_by_campaigns": ["Fornada artesanal 01", "Volta do pão integral"] if dependency else [],
+        "requires_product": requires_product,
     }
 
 
@@ -576,8 +577,20 @@ class Handler(BaseHTTPRequestHandler):
                 "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
                 + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
                 + [{"value": "whatsapp", "label": "WhatsApp"}],
-                "templates": [template()],
+                "templates": [template(requires_product=scenario == "fire-product")],
                 "variables": ["product_name", "link"],
+                # ⚠️ Catálogo LONGO de propósito neste cenário: o `UiSelect` só abre o
+                # campo de busca acima de doze opções, e é justamente a busca que o
+                # retrato existe para provar. Com a lista curta de sempre ele degradaria
+                # para lista simples e o retrato não mostraria nada de novo.
+                "products": (
+                    [
+                        {"value": f"PAO-{index:03d}", "label": f"Pão artesanal {index:02d}"}
+                        for index in range(1, 15)
+                    ]
+                    if scenario == "fire-product"
+                    else [{"value": "PAO-001", "label": "Pão artesanal"}]
+                ),
                 "price_tiers": [{"value": "varejo", "label": "Varejo"}],
                 "tags": [{"value": "clientes-da-casa", "label": "clientes da casa (1.999)"}],
                 "rfm_segments": [{"value": "champion", "label": "Campeões"}],

@@ -33,6 +33,20 @@ export interface ViewportVariables {
   "--viewport-bottom-inset": string;
 }
 
+export interface ViewportState {
+  variables: ViewportVariables;
+  /**
+   * Há algo cobrindo a base — na prática, o teclado.
+   *
+   * ⚠️ É ISTO que liga o CSS, e não as variáveis. Com o teclado fechado nenhuma regra
+   * nova entra em vigor: `top: 50%` continua sendo `top: 50%`, e não uma conta
+   * equivalente escrita de outro jeito. A diferença importa porque `50%` e `50dvh` não
+   * são a mesma coisa em todo navegador de celular, e nove superfícies montam esta
+   * folha — mudança inerte precisa ser inerte de verdade, não quase.
+   */
+  covered: boolean;
+}
+
 /** Tolerância em pixels antes de chamar uma diferença de "teclado".
  *
  * ⚠️ A barra de endereço do Safari muda a altura visual em um ou dois pixels durante a
@@ -40,33 +54,30 @@ export interface ViewportVariables {
  * cada rolagem — um defeito pior do que o que estamos consertando. */
 export const VIEWPORT_NOISE_PX = 24;
 
-export function viewportVariables(
-  geometry: ViewportGeometry,
-): ViewportVariables {
+const OPEN_VIEWPORT: ViewportVariables = {
+  "--viewport-visible-height": "100dvh",
+  "--viewport-visible-top": "0px",
+  "--viewport-bottom-inset": "0px",
+};
+
+export function viewportState(geometry: ViewportGeometry): ViewportState {
   const layout = Math.max(0, Math.round(geometry.layoutHeight || 0));
   const visual = Math.max(0, Math.round(geometry.visualHeight || 0));
   const offset = Math.max(0, Math.round(geometry.offsetTop || 0));
   // Sem dado utilizável, devolve a janela inteira: o CSS volta a ser o de sempre.
   if (!layout || !visual) {
-    return {
-      "--viewport-visible-height": "100dvh",
-      "--viewport-visible-top": "0px",
-      "--viewport-bottom-inset": "0px",
-    };
+    return { variables: OPEN_VIEWPORT, covered: false };
   }
   const covered = Math.max(0, layout - visual - offset);
   // Diferença pequena é ruído da barra de endereço, não teclado.
   const settled = covered <= VIEWPORT_NOISE_PX && offset <= VIEWPORT_NOISE_PX;
-  if (settled) {
-    return {
-      "--viewport-visible-height": "100dvh",
-      "--viewport-visible-top": "0px",
-      "--viewport-bottom-inset": "0px",
-    };
-  }
+  if (settled) return { variables: OPEN_VIEWPORT, covered: false };
   return {
-    "--viewport-visible-height": `${visual}px`,
-    "--viewport-visible-top": `${offset}px`,
-    "--viewport-bottom-inset": `${covered}px`,
+    variables: {
+      "--viewport-visible-height": `${visual}px`,
+      "--viewport-visible-top": `${offset}px`,
+      "--viewport-bottom-inset": `${covered}px`,
+    },
+    covered: true,
   };
 }

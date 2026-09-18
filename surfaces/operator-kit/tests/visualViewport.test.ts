@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   VIEWPORT_NOISE_PX,
-  viewportVariables,
+  viewportState,
 } from "../app/utils/visualViewport";
 
 // ⚠️ O defeito que isto existe para impedir, medido num iPhone: ao tocar no campo
@@ -12,14 +12,19 @@ import {
 // layout, só o visual. O navegador seguia centrando a caixa no meio de uma janela cuja
 // metade de baixo estava debaixo do teclado.
 describe("o espaço que sobra quando o teclado sobe", () => {
-  it("com o teclado fechado, devolve a janela inteira — nada na tela se mexe", () => {
-    expect(
-      viewportVariables({
-        layoutHeight: 844,
-        visualHeight: 844,
-        offsetTop: 0,
-      }),
-    ).toEqual({
+  // ⚠️ `covered: false` é o que deixa o CSS DESLIGADO. Não basta as variáveis voltarem
+  // ao valor neutro: `top: 50%` e `50dvh` não são a mesma coisa em todo navegador de
+  // celular, e nove superfícies montam esta folha. Com o teclado fechado nenhuma regra
+  // nova pode entrar em vigor.
+  it("com o teclado fechado, nenhuma regra nova entra em vigor", () => {
+    const state = viewportState({
+      layoutHeight: 844,
+      visualHeight: 844,
+      offsetTop: 0,
+    });
+
+    expect(state.covered).toBe(false);
+    expect(state.variables).toEqual({
       "--viewport-visible-height": "100dvh",
       "--viewport-visible-top": "0px",
       "--viewport-bottom-inset": "0px",
@@ -29,25 +34,28 @@ describe("o espaço que sobra quando o teclado sobe", () => {
   it("com o teclado aberto, a caixa se centra no que sobrou", () => {
     // iPhone de 844pt com o teclado do iOS ocupando 336pt.
     expect(
-      viewportVariables({
+      viewportState({
         layoutHeight: 844,
         visualHeight: 508,
         offsetTop: 0,
       }),
     ).toEqual({
-      "--viewport-visible-height": "508px",
-      "--viewport-visible-top": "0px",
-      "--viewport-bottom-inset": "336px",
+      covered: true,
+      variables: {
+        "--viewport-visible-height": "508px",
+        "--viewport-visible-top": "0px",
+        "--viewport-bottom-inset": "336px",
+      },
     });
   });
 
   it("conta o deslocamento do topo, que o iOS soma quando rola o viewport visual", () => {
     expect(
-      viewportVariables({
+      viewportState({
         layoutHeight: 844,
         visualHeight: 508,
         offsetTop: 100,
-      }),
+      }).variables,
     ).toEqual({
       "--viewport-visible-height": "508px",
       "--viewport-visible-top": "100px",
@@ -60,20 +68,20 @@ describe("o espaço que sobra quando o teclado sobe", () => {
   // que estamos consertando.
   it("ignora o ruído da barra de endereço em vez de tremer a caixa", () => {
     expect(
-      viewportVariables({
+      viewportState({
         layoutHeight: 844,
         visualHeight: 844 - VIEWPORT_NOISE_PX,
         offsetTop: 0,
-      })["--viewport-visible-height"],
-    ).toBe("100dvh");
+      }).covered,
+    ).toBe(false);
 
     expect(
-      viewportVariables({
+      viewportState({
         layoutHeight: 844,
         visualHeight: 844 - VIEWPORT_NOISE_PX - 1,
         offsetTop: 0,
-      })["--viewport-visible-height"],
-    ).toBe(`${844 - VIEWPORT_NOISE_PX - 1}px`);
+      }).covered,
+    ).toBe(true);
   });
 
   // Degradação, nunca erro: navegador sem `visualViewport` ou medida impossível
@@ -84,19 +92,18 @@ describe("o espaço que sobra quando o teclado sobe", () => {
       { layoutHeight: 844, visualHeight: 0, offsetTop: 0 },
       { layoutHeight: Number.NaN, visualHeight: 508, offsetTop: 0 },
     ]) {
-      expect(viewportVariables(geometry)["--viewport-visible-height"]).toBe(
-        "100dvh",
-      );
+      expect(viewportState(geometry).covered).toBe(false);
     }
   });
 
   it("nunca devolve número negativo, mesmo com medida incoerente", () => {
-    const variables = viewportVariables({
+    const state = viewportState({
       layoutHeight: 400,
       visualHeight: 900,
       offsetTop: 0,
     });
 
-    expect(variables["--viewport-bottom-inset"]).toBe("0px");
+    expect(state.variables["--viewport-bottom-inset"]).toBe("0px");
+    expect(state.covered).toBe(false);
   });
 });

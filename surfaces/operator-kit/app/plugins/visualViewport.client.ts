@@ -6,13 +6,13 @@
 // e escrevemos as variáveis. Quem as consome é `operator-base.css`, e só as caixas e
 // folhas — nenhuma outra tela muda de posição por causa disto.
 //
-// ⚠️ Com o teclado fechado as variáveis voltam a `100dvh` / `0px`, que é exatamente o
-// que o CSS já fazia. Isto é de propósito: nada na tela se mexe enquanto ninguém está
-// digitando, e a matriz visual não vê diferença nenhuma.
+// ⚠️ Com o teclado fechado o atributo `data-keyboard` some do `<html>` e NENHUMA regra
+// nova entra em vigor. Isto é de propósito: nada na tela se mexe enquanto ninguém está
+// digitando, e a matriz visual das nove superfícies não vê diferença nenhuma.
 //
 // ⚠️ `visualViewport` pode não existir (navegador antigo, ambiente de teste). Sem ela o
 // plugin não faz nada e o sistema continua como está — degradação, nunca erro.
-import { viewportVariables } from "../utils/visualViewport";
+import { viewportState } from "../utils/visualViewport";
 
 export default defineNuxtPlugin(() => {
   const viewport = window.visualViewport;
@@ -21,14 +21,21 @@ export default defineNuxtPlugin(() => {
   let frame = 0;
   const apply = () => {
     frame = 0;
-    const variables = viewportVariables({
+    const state = viewportState({
       layoutHeight: window.innerHeight,
       visualHeight: viewport.height,
       offsetTop: viewport.offsetTop,
     });
-    for (const [name, value] of Object.entries(variables)) {
-      document.documentElement.style.setProperty(name, value);
+    const root = document.documentElement;
+    for (const [name, value] of Object.entries(state.variables)) {
+      root.style.setProperty(name, value);
     }
+    // ⚠️ É o ATRIBUTO que liga o CSS. Com o teclado fechado nenhuma regra nova entra
+    // em vigor — `top: 50%` continua sendo `top: 50%`, e não uma conta equivalente
+    // escrita de outro jeito. Nove superfícies montam esta folha; mudança inerte
+    // precisa ser inerte de verdade.
+    if (state.covered) root.dataset.keyboard = "open";
+    else delete root.dataset.keyboard;
   };
   // O iOS dispara `resize`/`scroll` do viewport visual em rajada enquanto o teclado
   // sobe. Um quadro por rajada basta, e evita escrever no `style` dezenas de vezes.

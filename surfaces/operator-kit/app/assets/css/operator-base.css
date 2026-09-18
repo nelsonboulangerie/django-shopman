@@ -253,9 +253,10 @@
    `window.visualViewport` — e é dela que saem as variáveis abaixo, escritas
    por `plugins/visualViewport.client.ts`.
 
-   ⚠️ Com o teclado FECHADO as variáveis valem `100dvh` / `0px`, e estas regras
-   reproduzem exatamente o que o Tailwind já fazia. Nada se mexe enquanto
-   ninguém digita.
+   ⚠️ Com o teclado FECHADO o atributo `data-keyboard` não existe e NENHUMA das
+   duas regras entra em vigor. Isto não é preciosismo: `top: 50%` e `50dvh` não
+   são a mesma coisa em todo navegador de celular, e nove superfícies montam
+   esta folha. Mudança inerte precisa ser inerte de verdade, não quase.
 
    ⚠️ Regra sem `@layer`: utilitário do Tailwind vive em `@layer utilities`, e
    CSS fora de camada vence CSS em camada. É o que deixa estas duas linhas
@@ -267,13 +268,13 @@
   --viewport-bottom-inset: 0px;
 }
 
-[data-slot="dialog-content"] {
+:root[data-keyboard="open"] [data-slot="dialog-content"] {
   top: calc(var(--viewport-visible-top) + var(--viewport-visible-height) / 2);
   max-height: calc(var(--viewport-visible-height) - 2rem);
 }
 
-/* A folha lateral ocupa a altura inteira: ela não se recentra, só encurta e sobe
-   o bastante para o teclado não comer o campo do fim. */
-[data-slot="sheet-content"] {
+/* A folha lateral ocupa a altura inteira: ela não se recentra, só encurta o
+   bastante para o teclado não comer o campo do fim. */
+:root[data-keyboard="open"] [data-slot="sheet-content"] {
   max-height: calc(var(--viewport-visible-height) - var(--viewport-visible-top));
 }

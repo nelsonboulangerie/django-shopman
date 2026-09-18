@@ -467,7 +467,7 @@ function askToReject() {
       @discard="draft.discard()"
     />
 
-    <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-stretch">
+    <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
       <!-- Foto do produto: o anúncio é visual antes de ser texto.
            ⚠️ A foto NÃO mora em `announcement.image_url` — esse campo é o óbvio e quase
            sempre está vazio. A imagem de verdade está no conteúdo POR PLATAFORMA
@@ -476,19 +476,23 @@ function askToReject() {
            anúncio que TEM foto — e o gestor aprovava achando que ia sair sem imagem.
            `outgoingImageUrl()` é a mesma função que a caixa de confirmação usa; a
            armadilha já estava documentada lá e o cartão tinha caído nela.
-           Largura cheia no celular, e `self-stretch` no desktop para o alto e o pé da
-           foto baterem com a coluna dos campos ao lado — antes ela flutuava 128px
-           soltos, desalinhada dos dois. -->
-      <div class="w-full shrink-0 sm:w-32 sm:self-stretch">
+           Largura cheia no celular; no desktop volta ao quadrado.
+           ⚠️ O alinhamento com os campos ao lado sai do RÓTULO, não de margem
+           calculada: a foto ganhou o dela, no mesmo estilo de "Texto do anúncio", e aí
+           as duas colunas começam na mesma linha de base sozinhas. Antes o quadrado
+           nascia colado no topo do cartão e os campos nasciam abaixo dos rótulos
+           deles — desencontro de uma linha, que não se conserta com número mágico. -->
+      <div class="w-full shrink-0 sm:w-32">
+        <p class="mb-1 block text-xs font-medium text-muted-foreground">Foto</p>
         <img
           v-if="outgoingImage"
           :src="outgoingImage"
           :alt="`Foto de ${productLabel || 'produto'}`"
-          class="h-40 w-full rounded-lg border border-border object-cover sm:h-full"
+          class="h-40 w-full rounded-lg border border-border object-cover sm:size-32"
         />
         <div
           v-else
-          class="grid h-40 w-full place-content-center justify-items-center gap-1 rounded-lg border border-dashed border-border bg-muted/40 text-xs text-muted-foreground sm:h-full"
+          class="grid h-40 w-full place-content-center justify-items-center gap-1 rounded-lg border border-dashed border-border bg-muted/40 text-xs text-muted-foreground sm:size-32"
         >
           <Icon name="lucide:image-off" class="size-6" />
           Sem foto
