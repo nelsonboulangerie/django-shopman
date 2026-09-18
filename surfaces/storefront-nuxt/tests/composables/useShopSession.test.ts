@@ -114,7 +114,7 @@ describe('useShopSession', () => {
     expect(s.isAuthenticated.value).toBe(true)
   })
 
-  // Carga fria: quem volta com dispositivo reconhecido não passa pelo login. A
+  // Carga fria: quem volta com aparelho reconhecido não passa pelo login. A
   // pergunta de novidades tem de chegar pela home, que vem em toda visita.
   it('the home alone brings the marketing question on a cold load', async () => {
     const s = await loadSession()

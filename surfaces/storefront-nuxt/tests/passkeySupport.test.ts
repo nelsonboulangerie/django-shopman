@@ -92,7 +92,7 @@ describe('quando não dá, a tela DIZ — não some', () => {
   it('⚠️ o motivo existe, porque silêncio é a única resposta que não dá para depurar', async () => {
     // Nasceu de um relato de uma palavra: "não vi nada aqui". A seção se escondia em quatro
     // condições diferentes, cada uma certa sozinha, e juntas produziam uma tela vazia sem
-    // explicação — impossível distinguir bug, falta de deploy e limitação do dispositivo.
+    // explicação — impossível distinguir bug, falta de deploy e limitação do aparelho.
     pretendHost('127.0.0.1')
     const { passkeyBlockedReason } = await import('../app/composables/usePasskey')
 

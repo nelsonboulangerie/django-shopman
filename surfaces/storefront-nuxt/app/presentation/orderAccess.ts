@@ -17,7 +17,7 @@ export function orderAccessErrorView (
   if (statusCode === 404 || statusCode === 403) {
     return {
       title: kind === 'payment' ? 'Não encontramos este pagamento' : 'Não encontramos este pedido',
-      message: 'Ele pode estar em outra conta ou em outro dispositivo. Entre com seu telefone para ver seus pedidos.',
+      message: 'Ele pode estar em outra conta ou em outro aparelho. Entre com seu telefone para ver seus pedidos.',
       icon: 'lucide:user-round-search',
       showLogin: true,
       canRetry: false

@@ -7,7 +7,7 @@ import { LOGIN_ADULT_DECLARATION } from '~/presentation/auth'
 
 // A declaração de maioridade é feita ao ENTRAR. O que só a PÁGINA prova, e por
 // isso se monta a tela: a frase aparece em todo passo de entrada (telefone,
-// código; o dispositivo reconhecido passa pelos mesmos passos) e na aterrissagem
+// código; o aparelho reconhecido passa pelos mesmos passos) e na aterrissagem
 // do access link — e some no gate de boas-vindas, que já é pós-autenticação.
 // Nunca "18", "anos" nem "adulto" na tela de entrada.
 

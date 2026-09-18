@@ -50,8 +50,8 @@ const privacyRequestsAvailable = computed(() => devicesResponse.value?.privacy_r
 // ── Acesso rápido (passkey) ─────────────────────────────────────────
 //
 // Fica ACIMA dos dispositivos confiáveis porque é a credencial mais forte que a pessoa tem: o
-// dispositivo confiável dispensa o código, a passkey dispensa a espera. O cadastro é opt-in nesta
-// página porque capacidade do dispositivo é contexto, não promessa no checkout.
+// aparelho confiável dispensa o código, a passkey dispensa a espera. O cadastro é opt-in nesta
+// página porque capacidade do aparelho é contexto, não promessa no checkout.
 type PasskeyRow = {
   credential_id: string
   label: string
@@ -88,9 +88,9 @@ onMounted(async () => {
   passkeyBlocked.value = passkeyBlockedReason()
   passkeyReady.value = await passkeyIsQuick()
   if (!passkeyBlocked.value && !passkeyReady.value) {
-    // Navegador e endereço servem, mas o dispositivo não oferece um autenticador local rápido.
+    // Navegador e endereço servem, mas o aparelho não oferece um autenticador local rápido.
     // Dizer isso é melhor que sumir: a pessoa entende que o recurso existe e não é para ali.
-    passkeyBlocked.value = 'Este dispositivo não oferece acesso rápido por uma chave dele mesmo.'
+    passkeyBlocked.value = 'Este aparelho não oferece acesso rápido pela chave do próprio dispositivo.'
   }
   await loadPasskeys()
 })
@@ -435,7 +435,7 @@ useSeoMeta({ title: 'Segurança e dados' })
           <div>
             <h2 class="shop-heading">Acesso rápido</h2>
             <p class="shop-muted">
-              Entrar com uma chave deste dispositivo, sem código e sem esperar mensagem.
+              Entrar com uma chave deste aparelho, sem código e sem esperar mensagem.
             </p>
           </div>
           <UiButton
@@ -446,7 +446,7 @@ useSeoMeta({ title: 'Segurança e dados' })
             :loading="passkeyBusy"
             @click="addPasskey"
           >
-            Ativar neste dispositivo
+            Ativar neste aparelho
           </UiButton>
         </div>
 
@@ -455,7 +455,7 @@ useSeoMeta({ title: 'Segurança e dados' })
         <UiAlert v-if="needsConfirmation" variant="info" icon="lucide:message-circle">
           <UiAlertTitle>Confirme que é você para ativar</UiAlertTitle>
           <UiAlertDescription>
-            <p>O acesso rápido vale para sempre neste dispositivo, então pedimos uma confirmação.</p>
+            <p>O acesso rápido vale para sempre neste aparelho, então pedimos uma confirmação.</p>
             <UiButton
               size="sm"
               class="mt-2"
@@ -468,11 +468,11 @@ useSeoMeta({ title: 'Segurança e dados' })
           </UiAlertDescription>
         </UiAlert>
 
-        <!-- Não dá neste dispositivo/endereço: dizer o motivo, em vez de sumir. Some a OFERTA,
+        <!-- Não dá neste aparelho/endereço: dizer o motivo, em vez de sumir. Some a OFERTA,
              não a seção — quem vem ver o recurso precisa saber que ele existe e por que não
              está disponível aqui. -->
         <UiAlert v-if="passkeyBlocked" variant="info" icon="lucide:info">
-          <UiAlertTitle>Não disponível neste dispositivo</UiAlertTitle>
+          <UiAlertTitle>Não disponível neste aparelho</UiAlertTitle>
           <UiAlertDescription>
             <p>{{ passkeyBlocked }}</p>
             <p class="shop-caption mt-1 text-muted-foreground">
@@ -520,7 +520,7 @@ useSeoMeta({ title: 'Segurança e dados' })
         </UiItemGroup>
       </section>
 
-      <!-- Dispositivos confiáveis -->
+      <!-- Aparelhos confiáveis -->
       <section class="space-y-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

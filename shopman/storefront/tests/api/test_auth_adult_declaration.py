@@ -7,13 +7,13 @@ cadastro ganha ``Customer.metadata["adult_declaration"]``.
 
 O que este arquivo trava:
 
-- os QUATRO caminhos carimbam: código (verify-code), dispositivo reconhecido
+- os QUATRO caminhos carimbam: código (verify-code), aparelho reconhecido
   (device-check), access link (auth/access) e passkey;
 - o carimbo é idempotente — a primeira declaração fica — e guarda a versão dos
   termos que o marketing reconhece (``ADULT_DECLARING_TERMS_VERSIONS``);
 - já carimbado, o login não toca o banco para carimbar de novo;
 - clientes antigos ganham a declaração no próximo login (é isso que o teste do
-  dispositivo reconhecido mostra: cadastro sem carimbo, entra, sai carimbado).
+  aparelho reconhecido mostra: cadastro sem carimbo, entra, sai carimbado).
 """
 from __future__ import annotations
 
@@ -157,11 +157,11 @@ def test_the_birthday_that_proves_a_minor_beats_the_declaration():
     assert is_proved_adult(None, {}) is False
 
 
-# ── Dispositivo reconhecido ───────────────────────────────────────────────
+# ── Aparelho reconhecido ───────────────────────────────────────────────
 
 
 def test_trusted_device_login_stamps_an_old_customer(client: Client):
-    """Cliente de antes desta regra: entra pelo dispositivo reconhecido e sai declarado."""
+    """Cliente de antes desta regra: entra pelo aparelho reconhecido e sai declarado."""
     from shopman.doorman import TrustedDevice
     from shopman.doorman.conf import doorman_settings
 

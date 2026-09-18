@@ -1,5 +1,5 @@
 """A palavra da casa para o objeto que se segura é "dispositivo" — e "maquininha", quando
-é a do cartão. "Aparelho" não existe.
+é a do cartão. "Aparelho" não é nenhuma das duas, e não se usa.
 
 O dono já tinha padronizado, mas a regra não estava escrita em lugar nenhum — nem no
 glossário, nem no CLAUDE.md. Por isso derivou: 104 arquivos Python diziam a palavra
@@ -13,29 +13,36 @@ Regra sem trava é lembrete. Esta é a trava.
 A primeira versão varria só STRING — o texto que chega a alguém —, e deixava comentário
 e docstring livres, "porque a regra é sobre a palavra na tela". O dono ampliou:
 
-    "Não usamos o termo aparelho em lugar algum. Aparelho é dispositivo! Então só temos
-    maquininha (a do cartão) e dispositivo (celular, tablet, pc, etc)."
+    "Maquininha é maquininha mesmo. Aparelho não é maquininha. Não usamos o termo
+    aparelho. Aparelho é dispositivo! Então só temos maquininha (a do cartão) e
+    dispositivo (celular, tablet, pc, etc)."
 
 Então o CANAL deixou de importar. O que mudou não foi o rigor, foi o sujeito da regra:
 era a tela, virou a palavra. Com prosa dentro do alcance, a separação por AST perdeu a
 função — o arquivo inteiro conta, e a varredura fica legível por linha, que é também o
 que permite apontar onde está.
 
-Isso arrasta duas exenções que existiam e não existem mais:
+⚠️ E a ampliação vale para o lado de DENTRO da casa — operador, Admin, Core. Perguntado
+sobre a loja na mesma conversa, o dono manteve a concessão: *"pode manter assim só lá:
+aparelho"*. Alcance largo no canal, não na superfície.
 
-  * **O Storefront entra.** Ele ficava de fora por concessão do dono (05/2026, e de novo
-    em 17/09/2026): superfície de cliente final, com voz própria. A frase de 18/09 é
-    absoluta e alcança a loja também, inclusive o `omotenashi/copy.py`. A concessão
-    anterior está NOMEADA no PR que fez esta troca, para veto em um comentário.
-  * **Teste entra.** Prosa de teste é prosa.
+Isso arrasta **teste para dentro** — prosa de teste é prosa —, e nada mais. O que fica
+de fora fica por decisão escrita, não por herança:
 
-Fica de fora só o que é história: **migração aplicada**. Reescrevê-la não muda nada no
-banco e quebra o hash do grafo.
+  * **O Storefront continua fora, e é deliberado.** A palavra do cliente final é
+    "aparelho", autorizada pelo dono e reafirmada por ele em 18/09/2026 — *"pode manter
+    assim só lá: aparelho"* —, na mesma conversa em que fechou a regra para as
+    superfícies de operador. A loja tem voz própria: quem escreve para o cliente não
+    herda o vocabulário de quem escreve para o balcão. Isso alcança
+    `shopman/storefront/`, a copy da loja em `shopman/shop/omotenashi/` e o texto de FAQ
+    do `apply_search_presence`, que é a mesma voz servida na landing de busca.
+  * **Migração aplicada fica fora porque é história.** Reescrevê-la não muda nada no
+    banco e quebra o hash do grafo.
 
 ## A irmã dela
 
 `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts` faz o mesmo nos `.vue`,
-`.ts`, `.mjs` e `.py` das nove superfícies — o `WP-COPY-VUE-SWEEP` da §5.5 de
+`.ts`, `.mjs` e `.py` das superfícies de operador — o `WP-COPY-VUE-SWEEP` da §5.5 de
 `docs/reference/omotenashi-copy.md`. Enquanto ela não existia, esta regra valia em
 metade do sistema, o que, como já está escrito no CLAUDE.md sobre URLs, "não é
 convenção, é lembrança".
@@ -65,6 +72,13 @@ ROOTS = ("shopman", "packages", "config")
 # nominal de propósito: a lista que cresce sem ninguém olhar é como a regra morre.
 MAY_QUOTE = ("shopman/backstage/tests/test_vocabulario_de_tela.py",)
 
+# Voz do cliente final, por decisão do dono (ver docstring). Não é dívida a pagar.
+EXEMPT = (
+    "shopman/storefront/",
+    "shopman/shop/omotenashi/",
+    "config/management/commands/apply_search_presence.py",
+)
+
 
 def _sources() -> list[Path]:
     files: list[Path] = []
@@ -74,6 +88,8 @@ def _sources() -> list[Path]:
                 continue
             relative = path.relative_to(REPO).as_posix()
             if relative in MAY_QUOTE:
+                continue
+            if any(relative.startswith(prefix) for prefix in EXEMPT):
                 continue
             files.append(path)
     return files

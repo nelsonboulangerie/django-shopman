@@ -343,7 +343,7 @@ class CheckoutView(APIView):
         # ⚠️ A única rota de perda MATERIAL que uma sessão de link abria: gastar os pontos
         # da pessoa num pedido entregue num endereço digitado na hora. Pontos valem onde ela
         # já vai — endereço salvo ou balcão. Custo para quem é dona de verdade: nenhum, e o
-        # dispositivo dela é conhecido de qualquer forma. Ver `storefront/identity.py`.
+        # aparelho dela é conhecido de qualquer forma. Ver `storefront/identity.py`.
         if use_loyalty and knows_only_the_number(request):
             if fulfillment_type == "delivery" and not saved_address_id:
                 message = (

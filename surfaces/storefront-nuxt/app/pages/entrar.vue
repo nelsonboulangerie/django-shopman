@@ -60,7 +60,7 @@ const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 
 const codeExpiresAt = ref('')
-// Momento de feedback antes do redirect: dispositivo reconhecido ou código confirmado.
+// Momento de feedback antes do redirect: aparelho reconhecido ou código confirmado.
 const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
 const trustSaved = ref(false)
 const nowMs = ref(0)
@@ -695,8 +695,8 @@ useSeoMeta({
           <UiFieldLabel for="trusted-device" class="w-full">
             <div class="-mx-4 flex w-full items-center gap-4 border-y px-4 py-3 sm:mx-0 sm:px-0" data-login-trust>
               <div class="min-w-0 flex-1">
-                <p class="shop-body font-semibold">{{ copyTitle(authCopy?.device_trust_prompt, 'Salvar este dispositivo?') }}</p>
-                <p class="mt-0.5 shop-meta">{{ copyMessage(authCopy?.device_trust_prompt, 'Use só em um dispositivo seu. Por 30 dias, você entra sem código.') }}</p>
+                <p class="shop-body font-semibold">{{ copyTitle(authCopy?.device_trust_prompt, 'Salvar este aparelho?') }}</p>
+                <p class="mt-0.5 shop-meta">{{ copyMessage(authCopy?.device_trust_prompt, 'Use só em um aparelho seu. Por 30 dias, você entra sem código.') }}</p>
               </div>
               <UiSwitch id="trusted-device" v-model="trustedDevice" />
             </div>
@@ -737,7 +737,7 @@ useSeoMeta({
           {{ copyMessage(authCopy?.terms_note, 'Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.') }}
         </p>
         <!-- A declaração de maioridade + Termos, em TODO passo de entrada (telefone,
-             código, dispositivo reconhecido). Frase FIXA, fora da copy configurável:
+             código, aparelho reconhecido). Frase FIXA, fora da copy configurável:
              a autenticação carimba o cadastro, e a versão carimbada representa
              exatamente esta frase. -->
         <p v-if="step !== 'welcome'" class="shop-meta" data-login-adult-declaration>

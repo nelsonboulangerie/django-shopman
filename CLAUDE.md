@@ -262,23 +262,28 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
   - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
-- **"aparelho" não existe. Só há dispositivo e maquininha.** O objeto que alguém segura —
-  tablet, celular, PC, terminal, o que recebe aviso e guarda confiança — se chama
-  **dispositivo**; o que o entregador leva para receber cartão é a **maquininha**, que tem
-  nome próprio e não é um dispositivo. Duas palavras, e a palavra proibida não tem lugar
-  onde caiba. ⚠️ **A regra é da palavra, não do canal**: desde 18/09/2026 ela vale para
-  string, template, comentário, docstring e nome de teste — o dono disse "não usamos o
-  termo em lugar algum", e "em lugar algum" inclui o que só o programador lê. ⚠️ **E ela
-  vale em toda superfície, Storefront incluído**: a concessão de voz própria que a loja
-  tinha caiu com essa frase. Trocar mecanicamente não serve: onde o objeto é a maquininha,
-  a palavra é *maquininha* — leia a linha e escolha. Duas travas, uma por metade do
-  sistema: `shopman/backstage/tests/test_vocabulario_de_tela.py` (2.220 `.py` de
-  `shopman`, `packages` e `config`; só migração fica de fora, porque é história) e
-  `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts` (1.553 arquivos das nove
-  superfícies + a layer). Esta regra não estava escrita em lugar nenhum até 17/09/2026, e
-  foi por isso que 104 arquivos derivaram e o convite de instalação dos oito apps nasceu
-  errado; a varredura manual que a consertou deixou para trás justamente uma string de
-  tela, no arquivo que ela mesma editou — daí as travas.
+- **Só existem duas palavras: "dispositivo" e "maquininha". "Aparelho" não é nenhuma
+  delas.** O objeto que o operador segura — tablet, celular, PC, terminal, o que recebe
+  aviso e guarda confiança — se chama **dispositivo**; o que o entregador leva para
+  receber cartão é a **maquininha**, que tem nome próprio e não é um dispositivo.
+  ⚠️ **A regra é da palavra, não do canal**: desde 18/09/2026 vale para string, template,
+  comentário, docstring e nome de teste — o dono disse "não usamos o termo aparelho", e
+  isso inclui o que só o programador lê. ⚠️ **O Storefront fica de fora, e é decisão
+  escrita, não herança**: a loja diz *aparelho* ao cliente, autorizado pelo dono e
+  reafirmado por ele na mesma conversa ("pode manter assim só lá: aparelho") — superfície
+  de cliente final tem voz própria, e quem escreve para o cliente não herda o vocabulário
+  de quem escreve para o balcão. A exenção é da superfície inteira: meia superfície com
+  duas palavras é pior que qualquer uma das duas. Trocar mecanicamente também não serve:
+  onde o objeto é a maquininha, a palavra é *maquininha* — leia a linha e escolha. Duas
+  travas, uma por metade do sistema:
+  `shopman/backstage/tests/test_vocabulario_de_tela.py` (1.951 `.py` de `shopman`,
+  `packages` e `config`; fora dela, migração porque é história, e a voz da loja
+  — `shopman/storefront/`, `shop/omotenashi/`) e
+  `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts` (1.073 arquivos dos oito
+  apps de operador + a layer + o router). Esta regra não estava escrita em lugar nenhum
+  até 17/09/2026, e foi por isso que 104 arquivos derivaram e o convite de instalação dos
+  oito apps nasceu errado; a varredura manual que a consertou deixou para trás justamente
+  uma string de tela, no arquivo que ela mesma editou — daí as travas.
 - **Copy de UI: primeiro inequívoco, depois curto.** Omotenashi na linguagem é precisão
   semântica e clareza inequívoca — não é coloquialidade, simploriedade nem brevidade a
   qualquer custo. O teste é um só: *o leitor precisou completar sentido, escolher entre

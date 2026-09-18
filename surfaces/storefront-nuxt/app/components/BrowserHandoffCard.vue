@@ -5,7 +5,7 @@
 // já está identificada. Fora dali não há nada a atravessar, e o convite seria ruído.
 //
 // O que ele resolve: o webview tem pote de cookie próprio, então tudo o que ela conquista ali
-// — sessão, dispositivo confiado — não existe no navegador que ela usa no resto do dia. Em vez de
+// — sessão, aparelho confiado — não existe no navegador que ela usa no resto do dia. Em vez de
 // aceitar essa perda, atravessamos de propósito, agora que já sabemos quem ela é.
 //
 // A copy não promete tecnologia; promete o resultado ("não pedimos de novo").

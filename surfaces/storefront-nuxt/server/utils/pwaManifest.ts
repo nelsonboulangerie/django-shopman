@@ -33,7 +33,7 @@ export function shortPwaName (shop: PwaShopSource): string {
 // partir do `maskable`, recortado na grade do macOS (forma em 412/512 = 80,5% do
 // quadro, com sombra); sem `maskable`, usa o `any` como está, de ponta a ponta
 // (512/512), e o app fica ~24% maior que os vizinhos no Dock. Medido nos `app.icns`
-// gerados pelo Chrome em 17/09/2026: não volte a esconder o `maskable` por dispositivo.
+// gerados pelo Chrome em 17/09/2026: não volte a esconder o `maskable` por aparelho.
 export function buildStorefrontManifest (shop: PwaShopSource = {}) {
   const name = textOrFallback(shop.brand_name, STOREFRONT_PWA_FALLBACK.brand_name)
 

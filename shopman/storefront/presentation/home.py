@@ -33,7 +33,7 @@ class OmotenashiProjection:
     audience: str
     # A pergunta de novidades por WhatsApp ainda não foi respondida por este
     # cliente. A home chega em TODA sessão — inclusive a de quem entra pelo
-    # dispositivo reconhecido e nunca passa pelo login —, então é daqui que o sheet
+    # aparelho reconhecido e nunca passa pelo login —, então é daqui que o sheet
     # de novidades da loja sabe se deve subir. Anônimo: sempre False.
     marketing_prompt_pending: bool
 

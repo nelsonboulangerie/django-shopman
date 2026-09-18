@@ -1203,7 +1203,7 @@ class AccountStepUpView(APIView):
         if not getattr(result, "success", False):
             return Response({"detail": "Código inválido ou expirado."}, status=400)
 
-        # ⚠️ E o dispositivo passa a ser CONHECIDO. É o que dissolve a cerca em vez de
+        # ⚠️ E o aparelho passa a ser CONHECIDO. É o que dissolve a cerca em vez de
         # empilhá-la: quem chegou por um link de campanha (`identity_strength = number`)
         # confirma UMA vez neste navegador e nunca mais — endereço completo volta a
         # aparecer, pontos valem em qualquer entrega, a conta abre.
@@ -1604,7 +1604,7 @@ def _serialize_passkey(passkey, *, is_current: bool = False) -> dict:
     """
     return {
         "credential_id": passkey.credential_id,
-        "label": passkey.label or "Este dispositivo",
+        "label": passkey.label or "Este aparelho",
         "created_at": _fmt_dt(passkey.created_at),
         "last_used_at": _fmt_dt(passkey.last_used_at),
         "is_current": is_current,

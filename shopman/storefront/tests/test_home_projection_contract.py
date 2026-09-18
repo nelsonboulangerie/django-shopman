@@ -158,7 +158,7 @@ def test_home_projection_promotes_whatsapp_origin_only_with_real_cart(rf):
 
 # ── A pergunta de novidades chega pela HOME ──────────────────────────────
 #
-# Quem volta com dispositivo reconhecido raramente passa pelo login, então o sheet
+# Quem volta com aparelho reconhecido raramente passa pelo login, então o sheet
 # de novidades da loja não pode depender do payload de sessão do login: ele lê
 # `omotenashi.marketing_prompt_pending`, que a home devolve em toda visita.
 

@@ -184,7 +184,7 @@ class TestIdentityStrength:
 
     ⚠️ O `audience` do `AccessLink` existe no model e **ninguém o aplica**:
     `exchange_token` nunca passa `required_audience`. Então a cerca não pode ser ele. A
-    pergunta que decide é outra, e é mais simples: **este dispositivo é conhecido?**
+    pergunta que decide é outra, e é mais simples: **este aparelho é conhecido?**
     """
 
     def _campaign_token(self, customer, **metadata):
@@ -362,11 +362,11 @@ class TestReplyProvesPossession:
 
     `source=manychat` significa que o link nasceu porque a pessoa MANDOU mensagem no
     WhatsApp. Enviar de um número prova posse dele: é a mesma prova que o OTP dá, e o OTP já
-    confia no dispositivo. `source=internal` é link que NÓS empurramos (campanha): prova que
+    confia no aparelho. `source=internal` é link que NÓS empurramos (campanha): prova que
     sabemos o número, não que quem tocou é a dona.
 
     Sem essa distinção, ou nenhuma confirmação seria durável, ou toda campanha confiaria no
-    dispositivo de quem tocasse primeiro — que é exactamente o que não se quer.
+    aparelho de quem tocasse primeiro — que é exactamente o que não se quer.
     """
 
     def _token(self, customer, *, source):
@@ -429,11 +429,11 @@ class TestBrowserHandoff:
     """A travessia do webview para o navegador de verdade dela.
 
     ⚠️ Existe por um fato de plataforma: o navegador embutido do WhatsApp tem **pote de cookie
-    próprio**. Sessão e dispositivo confiado conquistados ali não existem no Safari que ela usa no
-    resto do dia — "confirmado para sempre neste dispositivo" era, na prática, "neste webview".
+    próprio**. Sessão e aparelho confiado conquistados ali não existem no Safari que ela usa no
+    resto do dia — "confirmado para sempre neste aparelho" era, na prática, "neste webview".
 
     A regra que estes testes guardam: a travessia **carrega** a identidade, nunca a promove.
-    Trocar de navegador não é prova de nada — é a mesma pessoa, no mesmo dispositivo, com a mesma
+    Trocar de navegador não é prova de nada — é a mesma pessoa, no mesmo aparelho, com a mesma
     dúvida.
     """
 
@@ -478,7 +478,7 @@ class TestBrowserHandoff:
 
     @pytest.mark.django_db
     def test_the_handoff_link_is_short_lived(self, client, customer):
-        """Não é link para guardar: é um trilho entre dois navegadores do mesmo dispositivo."""
+        """Não é link para guardar: é um trilho entre dois navegadores do mesmo aparelho."""
         from datetime import timedelta
 
         from django.utils import timezone

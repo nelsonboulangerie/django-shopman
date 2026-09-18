@@ -687,7 +687,7 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('Falar com a loja')
     expect(login).not.toContain('<UiBreadcrumbs')
     // Visual aprovado (2026-06-12): PIN sem placeholder "0" fantasma; telefone
-    // não quebra no meio; CTAs principais ≥40px; confiar-no-dispositivo é linha
+    // não quebra no meio; CTAs principais ≥40px; confiar-no-aparelho é linha
     // editorial (hairlines) com switch, não caixa com checkbox.
     expect(login).not.toContain('placeholder="0"')
     expect(login).toContain('whitespace-nowrap font-semibold tabular-nums')
@@ -761,7 +761,7 @@ describe('surface UX guardrails', () => {
     expect(surfaceVueFiles).not.toContain('app/components/PasskeyInviteCard.vue')
     expect(checkout).not.toContain('PasskeyInviteCard')
     expect(account).not.toContain('PasskeyInviteCard')
-    expect(security).toContain('Entrar com uma chave deste dispositivo')
+    expect(security).toContain('Entrar com uma chave deste aparelho')
     expect(security).toContain('lucide:key-round')
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })
@@ -969,7 +969,7 @@ describe('surface UX guardrails', () => {
 
   it('keeps account logic in the pure presentation layer and guards every sub-page', () => {
     // Arc 9: conta deixa de ser monólito de tabs; vira hub + sub-páginas, com a
-    // lógica pura (fidelidade, navegação, ícone de dispositivo) em presentation/account.ts.
+    // lógica pura (fidelidade, navegação, ícone de aparelho) em presentation/account.ts.
     const presentation = read('app/presentation/account.ts')
     expect(presentation).toContain('export function loyaltyView')
     expect(presentation).toContain('export function loyaltyStampSlots')

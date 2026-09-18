@@ -18,7 +18,7 @@ pelo `webauthn` — nenhuma dependência nova.
 
 ⚠️ E ele marca **user verified** (flag `0x04`), que era o motivo de eu já ter subclassado o
 `soft-webauthn` antes: o dublê de lá só ligava "usuário presente". "Presente" é alguém tocando o
-dispositivo; "verificado" é rosto, digital ou PIN — e é isso que o nosso serviço exige. A tentação
+aparelho; "verificado" é rosto, digital ou PIN — e é isso que o nosso serviço exige. A tentação
 era baixar `require_user_verification` para o teste passar, o que trocaria a segurança de
 produção pela conveniência do dublê.
 """

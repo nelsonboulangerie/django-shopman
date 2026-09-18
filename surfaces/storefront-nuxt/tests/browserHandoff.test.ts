@@ -1,7 +1,7 @@
 // A travessia do webview para o navegador de verdade.
 //
 // ⚠️ O motivo é pote de cookie: o webview do WhatsApp tem o seu, separado do Safari. Sessão e
-// dispositivo confiado conquistados ali não existem no navegador que ela usa no resto do dia.
+// aparelho confiado conquistados ali não existem no navegador que ela usa no resto do dia.
 //
 // Estes testes guardam as três coisas que decidem se isso funciona no mundo real: reconhecer
 // que estamos num webview, montar o esquema CERTO para cada plataforma, e nunca deixar a

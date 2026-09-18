@@ -319,9 +319,10 @@ elas; reescrevê-las criaria uma segunda fonte que envelhece sozinha.
 - **`cpf`, `cnpj`, `cep` em português.** Nome próprio de documento brasileiro.
 - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.**
   O `valor` da Efí é o contrato deles; para dentro vira `amount`.
-- **"aparelho" não existe: só dispositivo e maquininha** — em toda superfície, Storefront
-  incluído, e em qualquer canal (string, template, comentário, docstring). É a única destas
-  quatro que tem trava, e desde 18/09/2026 são duas, uma por metade do sistema (§5.1).
+- **Só dispositivo e maquininha; "aparelho" não é nenhuma das duas** — em toda superfície
+  de operador e em qualquer canal (string, template, comentário, docstring), com o
+  Storefront de fora por decisão do dono. É a única destas quatro que tem trava, e desde
+  18/09/2026 são duas, uma por metade do sistema (§5.1).
 
 ### 4.2 O vocabulário fechado, por domínio
 
@@ -359,17 +360,18 @@ honesta sobre qual metade é qual.
 ### 5.1 As duas travas de vocabulário
 
 [`shopman/backstage/tests/test_vocabulario_de_tela.py`](../../shopman/backstage/tests/test_vocabulario_de_tela.py)
-varre os `.py` de `shopman`, `packages` e `config` — 2.220 arquivos — e recusa a palavra
+varre os `.py` de `shopman`, `packages` e `config` — 1.951 arquivos — e recusa a palavra
 `aparelh`. [`surfaces/operator-kit/tests/guardrails.vocabulary.test.ts`](../../surfaces/operator-kit/tests/guardrails.vocabulary.test.ts)
-faz o mesmo nos 1.553 `.vue`, `.ts`, `.mjs` e `.py` das nove superfícies e da layer. Só
-migração fica de fora, porque é história, e dois arquivos podem escrever a palavra: os que
-a recusam.
+faz o mesmo nos 1.073 `.vue`, `.ts`, `.mjs` e `.py` dos oito apps de operador, da layer e
+do router. Ficam de fora a **voz da loja** (§5.5), a **migração aplicada** porque é
+história, e os dois arquivos que precisam escrever a palavra: os que a recusam.
 
 **Elas varrem o arquivo inteiro — string, template, comentário, docstring.** Não foi
 sempre assim. A primeira versão distinguia tela de prosa por AST e deixava comentário e
 docstring livres, "porque a regra é sobre a palavra na tela"; em 18/09/2026 o dono ampliou
-a regra para "não usamos o termo em lugar algum", e com isso o CANAL deixou de importar. O
-que mudou não foi o rigor, foi o sujeito: era a tela, virou a palavra.
+para "não usamos o termo aparelho", e com isso o CANAL deixou de importar. O que mudou não
+foi o rigor, foi o sujeito: era a tela, virou a palavra. ⚠️ A ampliação é de canal, não de
+superfície: na mesma conversa o dono manteve a loja como estava.
 
 ⚠️ **Isso não generaliza para o resto deste catálogo.** A distinção tela/prosa segue sendo
 o molde de tudo o que vem na §5.3, porque as outras regras continuam sendo sobre a tela.
@@ -453,12 +455,16 @@ Como cada ponto foi resolvido:
 - **Onde mora:** nos testes do `operator-kit`, que já leem os arquivos sob `surfaces/` a
   partir do disco — cobre os nove apps de um lugar só. ⚠️ Por ler arquivo e não branch, ela
   mede a árvore de trabalho; num worktree, verde só vale para o que está ali.
-- **O Storefront NÃO fica de fora.** A concessão de voz própria que a loja tinha caiu com a
-  frase do dono em 18/09: "não usamos o termo em lugar algum". A trava de Python perdeu a
-  exenção de `shopman/storefront/` e `shopman/shop/omotenashi/` no mesmo PR.
-- **Teste de varredura trava o gêmeo que falta** — o piso de arquivos e a lista das onze
-  superfícies são assertivas: quando alguém adicionar a décima primeira, ela nasce coberta
-  sem ninguém lembrar.
+- **O Storefront fica de fora, e a exenção é decisão escrita.** Perguntado em 18/09 sobre a
+  loja, o dono manteve o que já valia: *"pode manter assim só lá: aparelho"*. Superfície de
+  cliente final tem voz própria, e quem escreve para o cliente não herda o vocabulário de
+  quem escreve para o balcão. A exenção é da **superfície inteira**, de propósito: meia
+  superfície com duas palavras é pior do que qualquer uma das duas — é o D7c, e ele já
+  existe lá dentro (`conta/seguranca.vue` diz as duas, no mesmo gesto). Fechar isso é da
+  frente que aplica o relatório de copy do Storefront, com `aparelho` como palavra única.
+- **Teste de varredura trava o gêmeo que falta** — o piso de arquivos e a lista fechada das
+  superfícies são assertivas: quem exentar uma superfície tem de dizer ali, e a próxima
+  nasce coberta sem ninguém lembrar.
 
 O que ela **não** faz continua valendo como desenho (V1 da §5.3): ela recusa, não escreve a
 substituição. Onde o objeto é a maquininha de cartão, a palavra é *maquininha* — trocar

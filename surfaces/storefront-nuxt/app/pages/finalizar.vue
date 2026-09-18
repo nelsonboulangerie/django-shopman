@@ -1162,7 +1162,7 @@ async function submitCheckout () {
     // sheet mostrar o novo total em vez de deixar o valor velho ao lado do aviso —
     // o cliente reconfirma sobre o número certo (o próximo envio casa a baseline).
     // Confirmação de identidade: não é erro de dado, é um degrau — e ele se paga UMA vez
-    // naquele dispositivo. O aviso diz o que dá para fazer agora (salvo/balcão) e oferece o
+    // naquele aparelho. O aviso diz o que dá para fazer agora (salvo/balcão) e oferece o
     // toque que resolve, em vez de deixar a pessoa adivinhando.
     if (data.error_code === 'identity_confirmation_required') {
       identityConfirmOffer.value = true

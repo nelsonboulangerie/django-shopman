@@ -1,7 +1,7 @@
 """Passkey: entrar com o rosto, e o que NUNCA pode acontecer.
 
 Exercitado com um autenticador de software (`soft-webauthn`), que é o único jeito honesto de
-testar WebAuthn sem dispositivo na mão. Sem ele, o fluxo mais sensível do login ficaria com teste
+testar WebAuthn sem aparelho na mão. Sem ele, o fluxo mais sensível do login ficaria com teste
 de fachada — e é justamente aqui que fachada não serve: a verificação é criptográfica, então ou
 o teste assina de verdade ou não testa nada.
 
@@ -108,7 +108,7 @@ def _as_json_credential(attestation: dict) -> dict:
 
 
 def _enroll(client, person, *, device: VerifyingDevice | None = None, origin="http://testserver"):
-    """Cadastra uma passkey de verdade e devolve o dispositivo de software."""
+    """Cadastra uma passkey de verdade e devolve o aparelho de software."""
     device = device or VerifyingDevice()
 
     options = client.post(REGISTER_OPTIONS, content_type="application/json")
@@ -171,7 +171,7 @@ def test_a_known_device_enrolls_and_the_key_is_stored(client, person):
     assert str(passkey.customer_id) == str(person.uuid)
     assert passkey.label == "iPhone da Ana"
     assert passkey.public_key, "a chave PÚBLICA fica guardada"
-    # A privada nunca sai do dispositivo — não há campo para ela, e é isso que faz vazar esta
+    # A privada nunca sai do aparelho — não há campo para ela, e é isso que faz vazar esta
     # tabela não permitir entrar como ninguém.
     assert not hasattr(passkey, "private_key")
 
@@ -264,7 +264,7 @@ def test_the_cart_survives_the_passkey_login(client, person):
 
 
 def test_a_credential_we_never_saw_is_refused(client, person):
-    """Dispositivo de outra pessoa (ou de outro site) não entra."""
+    """Aparelho de outra pessoa (ou de outro site) não entra."""
     _sign_in(client, person)
     _enroll(client, person)
     client.logout()

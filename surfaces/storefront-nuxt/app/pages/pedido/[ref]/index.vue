@@ -131,7 +131,7 @@ const progressTimelineStep = computed(() => timelineActiveStep(tracking.value?.p
 // Deadline vivo (timeouts transparentes): countdown ancorado em server_now_iso
 // quando a promise pede contagem (ex.: prazo de confirmação/pagamento).
 // Conteúdo dependente do relógio (contador, frescor) só renderiza DEPOIS do
-// mount: no SSR o relógio é o do servidor e no cliente é o do dispositivo, e a
+// mount: no SSR o relógio é o do servidor e no cliente é o do aparelho, e a
 // diferença dava hydration mismatch. Com o gate, SSR e primeira hidratação
 // batem (ambos sem o tempo vivo); o valor entra logo após montar.
 const mounted = ref(false)

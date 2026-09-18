@@ -63,7 +63,7 @@ Termos de domínio usados no código e na documentação.
 |-------|-----------|
 | **AccessLink** | Token para criar sessão web a partir de chat ou email. Audience-scoped, single-use, TTL curto (5min). Fluxo: Manychat → backend → customer → exchange. |
 | **VerificationCode** | Código OTP de 6 dígitos para verificação. Hash HMAC, entrega via SMS/WhatsApp, TTL configurável. |
-| **Dispositivo** | O objeto que alguém segura (tablet, celular, PC, terminal). A palavra da casa em TODA superfície, Storefront incluído, e em qualquer canal — string, template, comentário, docstring. "Aparelho" não se usa em lugar nenhum (regra do dono, 18/09/2026). A **maquininha** de cartão é outra coisa e tem nome próprio: onde o objeto é ela, a palavra é *maquininha*. Travas: `test_vocabulario_de_tela.py` (Python) e `guardrails.vocabulary.test.ts` (superfícies). |
+| **Dispositivo** | O objeto que o operador segura (tablet, celular, PC, terminal). A palavra da casa em toda superfície de operador, no Admin e no Core, em qualquer canal — string, template, comentário, docstring (ampliação do dono, 18/09/2026) — nunca "aparelho". A **maquininha** de cartão é outra coisa e tem nome próprio: onde o objeto é ela, a palavra é *maquininha*. O **Storefront fica de fora por decisão**: a loja diz "aparelho" ao cliente, com autorização do dono. Travas: `test_vocabulario_de_tela.py` (Python) e `guardrails.vocabulary.test.ts` (superfícies de operador). |
 | **TrustedDevice** | Registro de confiança de dispositivo (fingerprint, IP, user agent, `last_used`, `expires_at`). |
 | **CustomerUser** | Mapeia Django User ↔ Customer (1:1). Desacopla autenticação de gestão de clientes. |
 
