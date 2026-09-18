@@ -114,7 +114,7 @@ describe("PosCustomerSearch — sem resultado, o ato vira BOTÃO", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("Nenhum cadastro encontrado.");
-    expect(wrapper.text()).toContain("Cadastrar «Maria Silva» só com o nome");
+    expect(wrapper.text()).toContain("Começar um cadastro com «Maria Silva»");
     expect(wrapper.text()).toContain("Sem WhatsApp");
     // A copy do mecanismo morreu: nada de "Enter preenche o cadastro novo…".
     expect(wrapper.text()).not.toContain("Enter preenche");
@@ -131,14 +131,14 @@ describe("PosCustomerSearch — sem resultado, o ato vira BOTÃO", () => {
     expect(wrapper.emitted("createNameOnly")?.[0]).toEqual(["Maria Silva"]);
   });
 
-  it("CPF sem cadastro: o botão cadastra com o documento, sem falar de tecla", async () => {
+  it("CPF sem cadastro: o botão diz que USA o documento — cadastrar é o rodapé", async () => {
     const wrapper = await mount();
     await type(wrapper, "529.982.247-25");
     vi.advanceTimersByTime(400);
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("Nenhum cadastro com este CPF.");
-    expect(wrapper.text()).toContain("Cadastrar cliente novo com este CPF");
+    expect(wrapper.text()).toContain("Usar este CPF no cadastro novo");
     await wrapper.findAll("button").at(-1)!.trigger("click");
     expect(wrapper.emitted("resolveCpf")?.[0]).toEqual([CPF]);
   });
