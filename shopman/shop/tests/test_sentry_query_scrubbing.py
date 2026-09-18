@@ -55,10 +55,40 @@ def test_scrubbing_is_not_limited_to_the_efi_route(scrub):
     assert "43999998888" not in str(scrub(event, None))
 
 
-def test_url_without_query_survives_intact(scrub):
+def test_url_without_query_keeps_the_route(scrub):
+    """A rota é o que faz o bilhete de erro valer: ela FICA."""
+
     event = {"request": {"url": "https://api.exemplo.test/health/"}}
 
     assert scrub(event, None)["request"]["url"] == "https://api.exemplo.test/health/"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # userinfo sai SEMPRE: `usuário:senha@` é credencial por contrato, e o
+        # `netloc` cru a levava junto sem ninguém notar.
+        (
+            "https://user:password@api.exemplo.test/customer/CUS-PRIVATE/",
+            "https://api.exemplo.test/customer/CUS-PRIVATE/",
+        ),
+        # ⚠️ Percent-encoded NÃO é redigido: `%40` não casa com o regex de
+        # e-mail, e a barreira não decodifica a URL de propósito — decodificar
+        # criaria um segundo texto para tudo que passa por aqui. A rota fica e
+        # o valor sai como veio. Forma legível (`pablo@example.test`) é redigida;
+        # esta não é, e por isso está escrita aqui.
+        (
+            "https://api.exemplo.test/customer/pablo%40example.test/",
+            "https://api.exemplo.test/customer/pablo%40example.test/",
+        ),
+        (
+            "https://api.exemplo.test/session/session-private/",
+            "https://api.exemplo.test/session/session-private/",
+        ),
+    ],
+)
+def test_url_never_exports_userinfo_but_keeps_the_route(scrub, url, expected):
+    assert scrub({"request": {"url": url}}, None)["request"]["url"] == expected
 
 
 def test_request_headers_body_cookies_and_user_never_leave(scrub):
