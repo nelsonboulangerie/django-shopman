@@ -473,7 +473,7 @@ Limpa artefatos de autenticação expirados: AccessLinks, VerificationCodes e Tr
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
-| `--days` | `7` | Remove registros mais antigos que N dias |
+| `--days` | `7` | Compatibilidade de CLI; aceita somente os 7 dias fixados pela política R10 |
 | `--dry-run` | — | Mostra o que seria removido |
 
 ```bash
@@ -483,8 +483,8 @@ python manage.py auth_cleanup --dry-run
 # Cleanup padrão
 python manage.py auth_cleanup
 
-# Cleanup conservador
-python manage.py auth_cleanup --days 30
+# O prazo é fixo; qualquer valor diferente de 7 é recusado antes de alterar dados
+python manage.py auth_cleanup --days 7
 ```
 
 **Recomendação:** Executar via cron diariamente.

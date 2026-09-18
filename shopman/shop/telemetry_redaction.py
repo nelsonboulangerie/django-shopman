@@ -17,16 +17,33 @@ REDACTED = "[redacted]"
 
 _SENSITIVE_KEYS = frozenset({
     "authorization",
+    "actor_ref",
+    "address_id",
     "body",
     "content",
     "cookie",
     "cookies",
+    "cpf",
+    "cnpj",
     "customer",
     "customer_data",
+    "customer_id",
+    "customer_ref",
     "data",
+    "device_id",
     "email",
+    "endereco",
+    "endereço",
     "idempotency_key",
+    "ip",
+    "ip_address",
+    "lat",
+    "latitude",
+    "lng",
+    "longitude",
     "members",
+    "name",
+    "nome",
     "password",
     "phone",
     "prompt",
@@ -36,10 +53,26 @@ _SENSITIVE_KEYS = frozenset({
     "recipient",
     "request_body",
     "secret",
+    "session_key",
     "set_cookie",
+    "subscriber_id",
+    "subscriber_ref",
+    "subject_id",
     "target_key",
     "token",
+    "user",
+    "user_id",
+    "username",
 })
+_SENSITIVE_KEY_SUFFIXES = (
+    "_address",
+    "_cpf",
+    "_cnpj",
+    "_email",
+    "_ip",
+    "_phone",
+    "_session_key",
+)
 _URL_KEYS = frozenset({"url", "request_url", "source_url"})
 _SAFE_SENTRY_HEADERS = frozenset({"content-type", "x-request-id"})
 
@@ -49,42 +82,81 @@ _BEARER_RE = re.compile(r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+")
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)\b(token|password|secret|api[_-]?key|authorization)\s*[:=]\s*[^\s,;]+"
 )
+_PERSONAL_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(customer(?:[_-]?(?:ref|id))?|subscriber(?:[_-]?(?:id|ref))?|"
+    r"session[_-]?key|user(?:[_-]?id|name)?|subject[_-]?id|device[_-]?id|"
+    r"address[_-]?id|actor[_-]?ref|cpf|cnpj|endere[cç]o|address|lat(?:itude)?|"
+    r"l(?:o)?ng(?:itude)?)\s*[:=]\s*[^,;]+"
+)
+_DOCUMENT_RE = re.compile(
+    r"(?<!\d)(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}|"
+    r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})(?!\d)"
+)
 _URL_RE = re.compile(r"https?://[^\s<>\]\[\"']+")
 
 
 def redact_text(value: str) -> str:
     """Remove common PII/secret shapes and URL query/fragment values."""
 
-    text = _EMAIL_RE.sub("[email]", str(value))
-    text = _PHONE_RE.sub("[phone]", text)
-    text = _BEARER_RE.sub(REDACTED, text)
+    # Segredo e bearer vêm ANTES do corte de URL: um `token=` dentro da query
+    # precisa deixar o marcador `[redacted]` no texto, porque é por ele que a
+    # observação do concierge classifica a redação como `secret`. O regex de URL
+    # para em `[`, então o marcador sobrevive ao corte. A atribuição pessoal
+    # fica DEPOIS da URL, senão o `[^,;]+` engoliria a URL inteira.
+    text = _BEARER_RE.sub(REDACTED, str(value))
     text = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
-    return _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
+    text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
+    text = _PERSONAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
+    text = _EMAIL_RE.sub("[email]", text)
+    text = _PHONE_RE.sub("[phone]", text)
+    return _DOCUMENT_RE.sub("[document]", text)
 
 
 def strip_url_query(value: str) -> str:
-    """Keep scheme/host/path while dropping query and fragment defensively."""
+    """Keep scheme, host and PATH; drop userinfo, query and fragment.
+
+    O caminho FICA de propósito. Ele é o que transforma "alguma coisa quebrou"
+    em "o webhook do Pix da Efí quebrou" — sem ele o bilhete de erro não paga
+    o próprio custo. O que sai é o que carrega segredo por contrato: a query
+    (`?token=` da Efí), o fragmento, e o `usuário:senha@` do userinfo, que o
+    `netloc` cru levava junto sem ninguém notar.
+
+    Dado pessoal que apareça NO caminho (`/customer/alguem@exemplo.test/`) é
+    tratado por `redact_text`, que roda os regex de e-mail, telefone e documento
+    sobre o resultado — redigir o trecho, não amputar a rota.
+    """
 
     try:
         split = urlsplit(str(value))
     except (TypeError, ValueError):
         return REDACTED
-    if not split.scheme or not split.netloc:
+    if not split.scheme or not split.hostname:
         return str(value).split("?", 1)[0].split("#", 1)[0]
-    return urlunsplit((split.scheme, split.netloc, split.path, "", ""))
+    try:
+        port = split.port
+    except ValueError:
+        return REDACTED
+    hostname = split.hostname
+    safe_netloc = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None:
+        safe_netloc += f":{port}"
+    return urlunsplit((split.scheme, safe_netloc, split.path, "", ""))
 
 
 def redact_observability_value(value: Any, *, key: str = "") -> Any:
     """Recursively sanitize a value before it enters logs or error telemetry."""
 
     normalized_key = str(key).strip().lower().replace("-", "_")
-    if normalized_key in _SENSITIVE_KEYS:
+    if normalized_key in _SENSITIVE_KEYS or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES):
         return REDACTED
     if value is None or isinstance(value, bool | int | float):
         return value
     if isinstance(value, str):
         if normalized_key in _URL_KEYS:
-            return strip_url_query(value)
+            # Corta userinfo/query/fragmento E redige o que sobrou. Sem o segundo
+            # passo, `https://x.test/customer/alguem@exemplo.test/` saía inteiro:
+            # o caminho fica de propósito, o dado pessoal dentro dele não.
+            return redact_text(strip_url_query(value))
         return redact_text(value)
     if isinstance(value, Mapping):
         return {
