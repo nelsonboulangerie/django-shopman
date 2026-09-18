@@ -388,7 +388,10 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     expect(
       wrapper.find('button[type="submit"]').attributes("disabled"),
     ).toBeDefined();
-    expect(wrapper.text()).toContain("Contar novamente");
+    // ⚠️ Dois rótulos no app inteiro, não nove: "Tentar de novo" recarrega o que
+    // falhou, "Atualizar" busca o estado novo do que já carregou. Aqui a contagem
+    // FALHOU (`countFailed`), então é o primeiro.
+    expect(wrapper.text()).toContain("Tentar de novo");
 
     Object.assign(globalThis, {
       $fetch: vi.fn(

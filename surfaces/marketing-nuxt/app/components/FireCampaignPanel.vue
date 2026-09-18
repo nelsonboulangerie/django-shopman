@@ -627,7 +627,7 @@ watch(
         class="mt-3"
         @click="measureAgain"
       >
-        Contar novamente
+        Tentar de novo
       </UiButton>
 
       <!-- O zero da fila de "me avise" precisa dizer QUAL zero é: ninguém pediu, ou

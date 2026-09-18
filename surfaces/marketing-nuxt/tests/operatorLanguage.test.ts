@@ -210,3 +210,44 @@ describe("o sistema não sai: ele envia, publica ou dispara", () => {
     expect(leaks).toEqual([]);
   });
 });
+
+describe("um gesto, um rótulo", () => {
+  // ⚠️ Havia NOVE maneiras de dizer a mesma coisa, em 20 lugares: "Tentar novamente",
+  // "Verificar novamente", "Atualizar verificação", "Contar novamente", "Revalidar",
+  // "Conferir de novo", "Tentar atualizar", "Tentar carregar o resultado". Nenhuma
+  // errada sozinha; juntas, ensinam o gestor a ler cada tela do zero.
+  //
+  // São dois, e a diferença é real: "Tentar de novo" recarrega o que FALHOU;
+  // "Atualizar" busca o estado novo de algo que JÁ carregou. Quem inventar um terceiro
+  // trombar aqui, e a pergunta certa é qual dos dois ele é.
+  const BANNED = [
+    "Tentar novamente",
+    "Verificar novamente",
+    "Atualizar verificação",
+    "Contar novamente",
+    "Revalidar",
+    "Conferir de novo",
+    "Tentar atualizar",
+    "Tentar carregar",
+  ];
+
+  it("só existem dois rótulos para recarregar e atualizar", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = [
+      ...vueFiles(appRoot).flatMap((path) => {
+        const text = screenText(readFileSync(path, "utf8"));
+        const found = BANNED.filter((label) => text.includes(label));
+        return found.map((label) => `${path} (tela): ${label}`);
+      }),
+      ...sourceFiles(appRoot, [".ts"])
+        .filter((path) => !path.includes("/generated/"))
+        .flatMap((path) => {
+          const code = codeWithoutComments(readFileSync(path, "utf8"));
+          const found = BANNED.filter((label) => code.includes(label));
+          return found.map((label) => `${path} (código): ${label}`);
+        }),
+    ];
+
+    expect(leaks).toEqual([]);
+  });
+});

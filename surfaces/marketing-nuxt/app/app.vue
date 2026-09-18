@@ -80,7 +80,7 @@ watch(sessionState, async (next, previous) => {
             class="mt-4"
             @click="refreshSession()"
           >
-            Tentar novamente
+            Tentar de novo
           </UiButton>
         </div>
       </main>

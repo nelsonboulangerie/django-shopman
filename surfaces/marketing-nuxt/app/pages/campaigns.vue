@@ -507,7 +507,7 @@ useHead({ title: "Campanhas" });
           class="mt-2"
           @click="refresh()"
         >
-          Tentar atualizar
+          Atualizar
         </UiButton>
       </div>
 

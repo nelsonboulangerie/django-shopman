@@ -447,7 +447,7 @@ useHead({ title: "Anúncio" });
               @click="trackDeliveryUntilSettled"
             >
               <Icon name="lucide:refresh-cw" class="size-4" />
-              Conferir de novo
+              Atualizar
             </UiButton>
           </template>
         </div>
@@ -478,7 +478,7 @@ useHead({ title: "Anúncio" });
         @click="refreshAll"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar novamente
+        Tentar de novo
       </UiButton>
       <NuxtLink
         v-else
@@ -606,7 +606,7 @@ useHead({ title: "Anúncio" });
           class="mt-2"
           @click="refreshResult()"
         >
-          Tentar carregar o resultado
+          Tentar de novo
         </UiButton>
       </div>
       <AnnouncementResultPanel

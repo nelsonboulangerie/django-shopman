@@ -216,7 +216,7 @@ export function recoveryActionLabel(
 ): string {
   const count = action.eligible_count;
   if (action.kind === "retry_failed_delivery") {
-    return `Tentar novamente ${formatCount(count)} ${count === 1 ? "falha" : "falhas"}`;
+    return `Tentar de novo ${formatCount(count)} ${count === 1 ? "falha" : "falhas"}`;
   }
   if (action.kind === "reconcile_unknown_delivery") {
     return `Consultar ${formatCount(count)} ${count === 1 ? "resultado incerto" : "resultados incertos"}`;

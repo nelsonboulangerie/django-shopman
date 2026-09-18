@@ -103,7 +103,7 @@ useHead({ title: "Modelos" });
             :disabled="loading"
             @click="load()"
           >
-            {{ loading ? "Carregando…" : "Tentar novamente" }}
+            {{ loading ? "Carregando…" : "Tentar de novo" }}
           </UiButton>
         </div>
       </div>

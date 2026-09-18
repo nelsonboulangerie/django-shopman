@@ -191,10 +191,9 @@ describe("AnnouncementCard", () => {
       makeAnnouncement({ platforms: ["instagram"] }),
     ).text();
 
-    expect(text).toContain("Publicação para o público geral da plataforma");
-    expect(text).toContain(
-      "Não usa lista de contatos nem envia mensagem direta",
-    );
+    expect(text).toContain("Postagem pública. Não escolhe contatos.");
+    // "Publicação" é o termo do ciclo anterior; o nome do resultado público é POSTAGEM.
+    expect(text).not.toContain("Publicação");
     expect(text).not.toContain("12 favoritos, 3 alertas = 15 clientes");
   });
 
