@@ -289,7 +289,8 @@ describe("FireCampaignPanel — postagem pública", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("1 postagem pública");
-    expect(wrapper.text()).toContain("Não escolhe contatos");
+    expect(wrapper.text()).toContain("Uma postagem por plataforma");
+    expect(wrapper.text()).toContain("Não seleciona contatos");
     expect(wrapper.text()).not.toContain("Para quem");
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();

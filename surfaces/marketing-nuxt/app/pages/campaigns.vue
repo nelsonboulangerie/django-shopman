@@ -541,26 +541,14 @@ useHead({ title: "Campanhas" });
         :key="rule.pk"
         class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
       >
-        <!-- Liga/desliga permanece nativo porque expõe role=switch e estado aria-checked. -->
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="rule.is_active"
+        <!-- Liga/desliga é o <UiSwitch> do kit: mesmo role=switch e mesmo
+             aria-checked que esta página escrevia à mão, e agora o alvo de 44 px
+             vem do token, não de um `size-11` que esta tela precisava lembrar. -->
+        <UiSwitch
+          :model-value="rule.is_active"
           :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
-          class="-ml-2 grid size-11 shrink-0 place-items-center rounded-md"
-          @click="toggle(rule)"
-        >
-          <span
-            aria-hidden="true"
-            class="flex h-5 w-9 items-center rounded-full transition-colors"
-            :class="rule.is_active ? 'bg-primary' : 'bg-muted-foreground/30'"
-          >
-            <span
-              class="size-4 rounded-full bg-white shadow transition-transform"
-              :class="rule.is_active ? 'translate-x-4' : 'translate-x-0.5'"
-            ></span>
-          </span>
-        </button>
+          @update:model-value="toggle(rule)"
+        />
 
         <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
         <button

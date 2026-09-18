@@ -1289,8 +1289,8 @@ onBeforeUnmount(() => {
           <UiDialogTitle>Você conferiu pedido e pagamento?</UiDialogTitle>
           <UiDialogDescription>Verifique primeiro em Últimas vendas ou no Gestor. Liberar sem conferir pode repetir uma cobrança cujo resultado não chegou a esta tela.</UiDialogDescription>
         </UiDialogHeader>
-        <label class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm">
-          <UiSwitch v-model="uncertainCloseReviewed" class="mt-0.5" />
+        <label class="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm">
+          <UiSwitch v-model="uncertainCloseReviewed" />
           <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
         </label>
         <UiDialogFooter class="gap-2">
