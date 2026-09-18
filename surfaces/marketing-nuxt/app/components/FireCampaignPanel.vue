@@ -1,5 +1,9 @@
 <script setup lang="ts">
-// Escolher público — a campanha manual, com o público escolhido na hora.
+// Definir público — a campanha manual, com o público montado na hora.
+//
+// "Definir", não "escolher": aqui não se pega de uma lista pronta, se MONTA o público
+// com regras (etiquetas, faixa, comportamento, cruzamento). Escolher descreve um menu;
+// definir descreve o que esta tela faz.
 //
 // ⚠️ O botão daqui NÃO dispara: ele cria o anúncio e leva à revisão. Enquanto dizia
 // "Disparar agora", prometia o fim do caminho logo no começo dele.
