@@ -124,7 +124,7 @@ useHead({ title: presentation.value.title });
           type="button"
           @click="clearError({ redirect: route.fullPath })"
         >
-          Tentar novamente
+          Tentar de novo
         </UiButton>
       </div>
     </section>

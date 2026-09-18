@@ -229,7 +229,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
             class="mt-1"
             @click="refresh"
           >
-            Tentar novamente
+            Tentar de novo
           </UiButton>
         </div>
 

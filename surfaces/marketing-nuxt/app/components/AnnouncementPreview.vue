@@ -346,7 +346,7 @@ const simulatedScenes = computed(() =>
         @click="retry"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar novamente
+        Tentar de novo
       </UiButton>
       <UiButton
         v-else-if="problem.repairHref"

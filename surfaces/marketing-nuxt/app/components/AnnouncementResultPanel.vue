@@ -593,11 +593,12 @@ function closeDialog(open: boolean) {
           class="rounded-md border border-border bg-card p-3"
         >
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <!-- ⚠️ O rótulo mora no BOTÃO, e só lá. Impresso também aqui, a tela lia
+                 "Consultar 2 resultados incertos" duas vezes na mesma linha, e a
+                 explicação — que é o que o gestor precisa para decidir — virava a
+                 letra miúda de um eco. -->
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium">
-                {{ recoveryActionLabel(action) }}
-              </p>
-              <p class="mt-0.5 text-xs text-muted-foreground">
+              <p class="text-sm">
                 {{
                   action.enabled
                     ? recoveryActionExplanation(action)

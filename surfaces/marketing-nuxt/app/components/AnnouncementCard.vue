@@ -239,7 +239,7 @@ const DRAFT_LABELS = {
   body: "Texto",
   hashtags: "Hashtags",
   platforms: "Plataformas",
-  scheduling: "Modo de entrega",
+  scheduling: "Agendamento",
   publish_at: "Data e hora",
   publish_fold: "Ocorrência do horário",
 };
@@ -276,6 +276,10 @@ function describeDraftValue(field: string, value: unknown): string | undefined {
   if (field === "platforms" && Array.isArray(value)) {
     return platformsSummary(value.map(String), platformLabels.value);
   }
+  // ⚠️ Booleano cru no aviso de conflito lia "Agendamento — Versão atual: não · Seu
+  // rascunho: sim", que não quer dizer nada. A porta para traduzir já existia; só
+  // estava servindo a plataforma e mais ninguém.
+  if (field === "scheduling") return value ? "agendado" : "disparar agora";
   return undefined;
 }
 
@@ -756,13 +760,14 @@ function askToReject() {
             {{ vip }}
           </p>
         </div>
+        <!-- ⚠️ "Postagem pública. Não escolhe contatos." — a MESMA frase que o painel
+             de disparo já usa. Eram quinze palavras dizendo isso, e metade delas em
+             "publicação", que é o termo do ciclo anterior: o nome do resultado público
+             nesta casa é POSTAGEM. -->
         <div v-else class="rounded-lg bg-muted/50 px-3 py-2 text-sm">
           <p class="flex items-center gap-1.5">
             <Icon name="lucide:globe-2" class="size-4 text-muted-foreground" />
-            <span>Publicação para o público geral da plataforma</span>
-          </p>
-          <p class="mt-0.5 pl-6 text-xs text-muted-foreground">
-            Não usa lista de contatos nem envia mensagem direta.
+            <span>Postagem pública. Não escolhe contatos.</span>
           </p>
         </div>
       </div>

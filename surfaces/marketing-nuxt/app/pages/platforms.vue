@@ -224,7 +224,7 @@ useHead({ title: "Plataformas" });
             :disabled="loading"
             @click="loadPlatforms()"
           >
-            {{ loading ? "Verificando…" : "Verificar novamente" }}
+            {{ loading ? "Verificando…" : "Tentar de novo" }}
           </UiButton>
         </div>
       </div>
@@ -261,7 +261,7 @@ useHead({ title: "Plataformas" });
         class="mt-3"
         @click="loadPlatforms()"
       >
-        Atualizar verificação
+        Atualizar
       </UiButton>
     </div>
 
@@ -339,7 +339,7 @@ useHead({ title: "Plataformas" });
               </p>
               <p class="mt-0.5">
                 {{
-                  opened.reason || opened.limitation || "Nada impede a entrega."
+                  opened.reason || opened.limitation || "Nada impede o disparo."
                 }}
               </p>
             </div>
@@ -400,7 +400,7 @@ useHead({ title: "Plataformas" });
                   @click="onVerifyCatalog"
                 >
                   <Icon name="lucide:refresh-cw" class="size-4" />
-                  Verificar novamente
+                  Atualizar
                 </UiButton>
               </div>
 
@@ -453,12 +453,11 @@ useHead({ title: "Plataformas" });
                 v-if="!waTemplate.canSendTest.value"
                 class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
               >
-                <p class="font-semibold">
-                  Teste não disponível para este papel
-                </p>
+                <!-- ⚠️ "Este papel" e "Editor habilitado" são o modelo de permissão
+                     falando; quem lê quer saber se PODE e, se não, a quem pedir. -->
+                <p class="font-semibold">Sua conta não pode fazer o teste.</p>
                 <p class="mt-1 text-muted-foreground">
-                  Um Editor habilitado ou responsável pelas plataformas pode
-                  fazer o teste no ambiente seguro.
+                  Peça a quem cuida das plataformas.
                 </p>
               </div>
 
