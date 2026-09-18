@@ -210,8 +210,14 @@ test.describe("painel", () => {
         await expect(
           page.getByRole("group", { name: "Entregar por" }),
         ).toBeVisible();
+        // O "quando" é campo (Imediato | Agendado) e a decisão é binária: o botão que
+        // leva à caixa se chama "Continuar", porque daqui nada dispara.
+        await expect(page.getByRole("group", { name: "Envio" })).toBeVisible();
         await expect(
-          page.getByRole("button", { name: "Visualizar consequência" }),
+          page.getByRole("button", { name: "Continuar", exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Recusar", exact: true }),
         ).toBeVisible();
         await expect(
           page.getByText("Agora, ou na hora que você marcar", {
@@ -290,7 +296,7 @@ test.describe("cartão de anúncio", () => {
   test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Visualizar consequência" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
     await expect(page.getByRole("dialog")).toContainText("Disparar agora");
     // A caixa mostra o texto que vai sair, não só para quem e onde.
@@ -362,7 +368,7 @@ test.describe("cartão de anúncio", () => {
     await page.getByLabel("Texto do anúncio").fill("Texto selado na decisão");
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Visualizar consequência" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     const dialog = page.getByRole("dialog").first();
     await dialog
       .getByRole("button", { name: "Ver a prévia em tamanho real" })
@@ -744,7 +750,9 @@ test.describe("modos transversais", () => {
         p { margin-bottom: 2em !important; }
       `,
     });
-    await expect(page.getByRole("button", { name: "Visualizar consequência" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Continuar", exact: true }),
+    ).toBeVisible();
     await expectStableScreenshot(page, "panel__text-spacing", V1024);
   });
 });

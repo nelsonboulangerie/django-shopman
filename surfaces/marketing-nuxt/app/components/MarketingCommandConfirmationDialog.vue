@@ -86,7 +86,7 @@ const hasPublicPost = computed(() =>
 );
 
 /** Este é o último botão do caminho e o único que faz alguma coisa sair. Os anteriores
- *  levam a algum lugar e dizem o lugar ("Revisar anúncio", "Visualizar consequência");
+ *  levam a algum lugar ("Revisar anúncio" leva à revisão, "Continuar" leva a esta caixa);
  *  este diz o ato, e o ato tem verbo próprio por destino — enviar, publicar, ou o
  *  genérico disparar quando o anúncio faz os dois. */
 const confirmLabel = computed(() => {
