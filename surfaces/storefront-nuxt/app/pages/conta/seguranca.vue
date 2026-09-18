@@ -49,7 +49,7 @@ const privacyRequestsAvailable = computed(() => devicesResponse.value?.privacy_r
 
 // ── Acesso rápido (passkey) ─────────────────────────────────────────
 //
-// Fica ACIMA dos dispositivos confiáveis porque é a credencial mais forte que a pessoa tem: o
+// Fica ACIMA dos aparelhos confiáveis porque é a credencial mais forte que a pessoa tem: o
 // aparelho confiável dispensa o código, a passkey dispensa a espera. O cadastro é opt-in nesta
 // página porque capacidade do aparelho é contexto, não promessa no checkout.
 type PasskeyRow = {
@@ -90,7 +90,7 @@ onMounted(async () => {
   if (!passkeyBlocked.value && !passkeyReady.value) {
     // Navegador e endereço servem, mas o aparelho não oferece um autenticador local rápido.
     // Dizer isso é melhor que sumir: a pessoa entende que o recurso existe e não é para ali.
-    passkeyBlocked.value = 'Este aparelho não oferece acesso rápido pela chave do próprio dispositivo.'
+    passkeyBlocked.value = 'Este aparelho não guarda chave de acesso rápido.'
   }
   await loadPasskeys()
 })
@@ -114,17 +114,17 @@ async function removePasskey (row: PasskeyRow) {
 // Copy da tela vem do registro omotenashi (configurável no Admin). Fallback só cobre
 // o intervalo de carregamento.
 const devicesCopy = computed(() => devicesResponse.value?.copy || {
-  page_message: 'Controle os dispositivos confiáveis e seus dados pessoais.',
-  empty_title: 'Nenhum dispositivo confiável',
-  empty_message: 'Quando você optar por confiar neste dispositivo no login, ele aparecerá aqui.',
-  current_badge: 'Este dispositivo',
+  page_message: 'Controle os aparelhos confiáveis e seus dados pessoais.',
+  empty_title: 'Nenhum aparelho confiável',
+  empty_message: 'Quando você optar por confiar neste aparelho no login, ele aparecerá aqui.',
+  current_badge: 'Este aparelho',
   registered_prefix: 'Registrado em',
   revoke_cta: 'Remover',
-  revoke_all_cta: 'Remover todos os dispositivos',
-  revoke_confirm: 'Remover este dispositivo?',
-  revoke_all_confirm: 'Remover todos os dispositivos?',
-  unknown_label: 'Dispositivo desconhecido',
-  delete_warning: 'Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo.'
+  revoke_all_cta: 'Remover todos os aparelhos',
+  revoke_confirm: 'Remover este aparelho?',
+  revoke_all_confirm: 'Remover todos os aparelhos?',
+  unknown_label: 'Aparelho desconhecido',
+  delete_warning: 'Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste aparelho.'
 })
 
 async function exportData () {
@@ -217,10 +217,10 @@ async function confirmRevokeDevice () {
     await refreshDevices()
     revokeDeviceOpen.value = false
     if (import.meta.client) {
-      useSonner.success(revokeDeviceMode.value === 'all' ? 'Dispositivos removidos.' : 'Dispositivo removido.')
+      useSonner.success(revokeDeviceMode.value === 'all' ? 'Aparelhos removidos.' : 'Aparelho removido.')
     }
   } catch (e) {
-    deviceIssue.value = errorDetail(e, 'Não foi possível remover o dispositivo agora.')
+    deviceIssue.value = errorDetail(e, 'Não foi possível remover o aparelho agora.')
     if (import.meta.client) useSonner.error(deviceIssue.value)
   } finally {
     revokeDevicePending.value = false
@@ -434,8 +434,13 @@ useSeoMeta({ title: 'Segurança e dados' })
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="shop-heading">Acesso rápido</h2>
+            <!-- ⚠️ A entrada pela chave ainda NÃO existe: `usePasskey().signIn()` está
+                 escrito e exportado, e não é chamado em lugar nenhum — `/entrar` só
+                 oferece WhatsApp e SMS. Enquanto a porta não nascer, esta seção guarda a
+                 chave e não promete entrada com ela. Ligar a entrada é outra frente; no
+                 dia em que ela existir, a promessa volta junto com o botão. -->
             <p class="shop-muted">
-              Entrar com uma chave deste aparelho, sem código e sem esperar mensagem.
+              Guardar uma chave deste aparelho para entrar sem código.
             </p>
           </div>
           <UiButton
@@ -492,8 +497,8 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiEmptyHeader>
             <UiEmptyTitle>Você ainda não ativou</UiEmptyTitle>
             <UiEmptyDescription>
-              Ativando, na próxima visita você entra num toque — e continua podendo entrar pelo
-              WhatsApp quando quiser.
+              Ativando, esta loja passa a reconhecer a chave deste aparelho. Você continua
+              entrando pelo WhatsApp quando quiser.
             </UiEmptyDescription>
           </UiEmptyHeader>
         </UiEmpty>
@@ -524,9 +529,9 @@ useSeoMeta({ title: 'Segurança e dados' })
       <section class="space-y-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 class="shop-heading">Dispositivos confiáveis</h2>
+            <h2 class="shop-heading">Aparelhos confiáveis</h2>
             <p class="shop-muted">
-              {{ devicesPending ? 'Carregando…' : formatCount(accountDevices.length, 'dispositivo autorizado', 'dispositivos autorizados') }}
+              {{ devicesPending ? 'Carregando…' : formatCount(accountDevices.length, 'aparelho autorizado', 'aparelhos autorizados') }}
             </p>
           </div>
           <UiButton v-if="accountDevices.length > 1" variant="outline" size="sm" icon="lucide:shield-x" @click="askRevokeAllDevices">
@@ -635,7 +640,7 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiAlertDialogDescription>
               {{ revokeDeviceMode === 'all'
                 ? 'Você precisará confirmar o telefone novamente nos próximos acessos.'
-                : `Você precisará confirmar o telefone novamente neste dispositivo: ${revokeDeviceCandidate?.label || devicesCopy.unknown_label}.` }}
+                : `Você precisará confirmar o telefone novamente neste aparelho: ${revokeDeviceCandidate?.label || devicesCopy.unknown_label}.` }}
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>

@@ -52,8 +52,10 @@ class CheckoutSerializer(serializers.Serializer):
     # (`shop/services/pos.py`) e não passam por aqui.
     expected_total_q = serializers.IntegerField(required=True, min_value=0)
     expected_revision = serializers.IntegerField(required=True, min_value=0)
-    # Omotenashi: lembrar endereço/escolhas é o default; o cliente desmarca o toggle
-    # "Salvar para a próxima vez" → save_as_default=false. (O endereço novo salva sempre.)
+    # Omotenashi: lembrar as escolhas é o default; o cliente desmarca o toggle
+    # "Lembrar destas escolhas" → save_as_default=false. Ele governa os PADRÕES
+    # (endereço escolhido, forma de pagamento, horário); o endereço novo entra na
+    # agenda do cliente de qualquer jeito, porque ninguém redigita CEP a cada pedido.
     save_as_default = serializers.BooleanField(required=False, default=True)
     # Presente (entrega para terceiro) — GIFT-UX-PLAN. Validação de integridade
     # em intents.gift.build_gift_data (is_gift=True exige recipient name+phone).

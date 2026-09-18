@@ -66,6 +66,11 @@ async function setDefaultAddress (address: SavedAddressProjection) {
       body: { action: 'default' }
     })
     await refreshAddresses()
+  } catch (e) {
+    // Sem isto a falha era muda: o cliente tocava em "Definir padrão", a lista voltava
+    // igual, e ele tocava de novo. O `addressIssue` não serve aqui — ele só é renderizado
+    // dentro do diálogo de remoção.
+    if (import.meta.client) useSonner.error(errorDetail(e, 'Não conseguimos definir este endereço como padrão agora. Tente de novo.'))
   } finally {
     addressDefaultPending.value = omitKey(addressDefaultPending.value, address.id)
   }

@@ -34,7 +34,11 @@ export function formatCount (value: number | null | undefined, singular: string,
 }
 
 export function compactUnitWeightLabel (value: string | null | undefined): string {
-  return (value || '').replace(/\s+a unidade$/i, '/un.')
+  // "peça de ~500 g" → "~500 g/un.": no cartão não cabe a frase inteira, e a unidade
+  // continua dita — ali o peso está sozinho numa linha, sem número vizinho.
+  const text = (value || '').trim()
+  if (!text) return ''
+  return `${text.replace(/^peça de\s*/i, '').replace(/\s+a unidade$/i, '')}/un.`
 }
 
 // Quebra um endereço "Rua, nº - Bairro, Cidade - UF, CEP" em linhas legíveis.

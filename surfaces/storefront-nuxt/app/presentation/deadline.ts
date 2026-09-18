@@ -4,7 +4,7 @@
 // manter as funções puras e testáveis (mesmo padrão de cart.ts/holdCountdown).
 
 // Diferença servidor−cliente. A UI alinha seu relógio ao do servidor para que o
-// countdown não derrape se o relógio do dispositivo estiver errado.
+// countdown não derrape se o relógio do aparelho estiver errado.
 export function serverClockOffsetMs (serverNowIso: string | null | undefined, clientNowMs: number): number {
   if (!serverNowIso) return 0
   const server = Date.parse(serverNowIso)

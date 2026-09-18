@@ -8,7 +8,6 @@ const {
   isPending,
   addSubstitute,
   acceptAvailableQty,
-  retryLastMutation,
   dismissCartIssue
 } = useCartState()
 
@@ -39,11 +38,16 @@ const title = computed(() => {
   if (hasAvailable.value) return 'Ajuste a quantidade'
   return cartIssue.value?.shortage_title || 'Ficou indisponível enquanto você escolhia.'
 })
+// A frase segue o que a tela DE FATO tem. Sem saldo e sem substituto, "Veja boas
+// alternativas" mandava ver um bloco que não é renderizado — placa apontando para a
+// parede, com o único botão ("Tentar de novo") refazendo a mutação que acabou de falhar
+// pelo mesmo motivo.
 const description = computed(() => {
   if (isPlanned.value && cartIssue.value?.planned_offer_message) return cartIssue.value.planned_offer_message
-  return hasAvailable.value
-    ? `Agora temos ${formatCount(availableQty.value!, 'unidade', 'unidades')} de ${itemName.value}.`
-    : `${itemName.value} está indisponível agora. Veja boas alternativas.`
+  if (hasAvailable.value) return `Agora temos ${formatCount(availableQty.value!, 'unidade', 'unidades')} de ${itemName.value}.`
+  if (substitutes.value.length) return `${itemName.value} está indisponível agora. Veja boas alternativas.`
+  if (isNotifiable.value) return `${itemName.value} acabou agora. Dá para avisarmos você quando voltar.`
+  return `${itemName.value} acabou agora, e não temos substituto para oferecer hoje.`
 })
 const primaryQtyLabel = computed(() => {
   const n = formatCount(availableQty.value!, 'unidade', 'unidades')
@@ -55,9 +59,6 @@ function useAvailable () {
 }
 function chooseSubstitute (sub: typeof substitutes.value[number]) {
   void addSubstitute(sub)
-}
-function tryAgain () {
-  void retryLastMutation()
 }
 </script>
 
@@ -102,15 +103,17 @@ function tryAgain () {
         </ul>
       </div>
 
+      <!-- Beco fechado: sem saldo, sem substituto e sem aviso. Refazer a mesma mutação
+           falharia de novo pelo mesmo motivo — a saída é o cardápio de hoje. -->
       <UiButton
         v-else-if="!hasAvailable && !isNotifiable"
         variant="outline"
         size="lg"
         class="w-full"
-        :loading="!!cartIssue && isPending(cartIssue.sku)"
-        @click="tryAgain"
+        to="/menu"
+        @click="open = false"
       >
-        Tentar de novo
+        Ver o cardápio de hoje
       </UiButton>
 
       <!-- Esgotou de vez, mas dá para assinar o retorno: caminho acolhedor no lugar
