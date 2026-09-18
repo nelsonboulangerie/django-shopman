@@ -153,7 +153,12 @@ test.describe("gate global", () => {
   test("acesso proibido não recomenda novo login", async ({ page }) => {
     await openScenario(page, "login-forbidden", "/", V1280);
     await expect(page.getByRole("heading", { name: "Seu acesso não inclui Marketing" })).toBeVisible();
-    await expect(page.getByText("Entrar novamente não amplia permissões")).toBeVisible();
+    // O fato que este teste protege é que a tela NÃO manda entrar de novo, e diz a
+    // quem pedir. A frase mudou no 21adc94c8 e a asserção ficou para trás; o fato, não.
+    await expect(page.getByText("Entrar de novo não resolve")).toBeVisible();
+    await expect(
+      page.getByText("Peça a um responsável o acesso ao Marketing"),
+    ).toBeVisible();
     await expectStableScreenshot(page, "login__forbidden", V1280);
   });
 
@@ -647,6 +652,12 @@ test.describe("disparo manual seguro", () => {
     await expect(page.getByText(/Nada foi disparado ainda/)).toBeVisible();
     // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
     await waitForFaithfulPreview(page);
+    // ⚠️ A âncora `#review` rola a página, e o alvo dela AINDA CRESCE enquanto a prévia
+    // carrega: o navegador parava em 15px numa rodada e 12px na outra, e o retrato
+    // inteiro saía três pixels deslocado. Medido: 3 falhas em 5 rodadas, com e sem as
+    // mudanças desta frente. A URL acima já prova que a tela chegou na revisão; o
+    // retrato quer o conteúdo, não a posição de rolagem que ninguém decidiu.
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });
   });
 });

@@ -320,7 +320,7 @@ useHead({ title: "Plataformas" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{ opened?.label }}</UiSheetTitle>
           <UiSheetDescription>{{
             opened ? kindLabel(opened.kind) : ""
