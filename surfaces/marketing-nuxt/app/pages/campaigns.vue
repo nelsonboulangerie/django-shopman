@@ -577,7 +577,7 @@ useHead({ title: "Campanhas" });
             class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
           >
             <span class="text-muted-foreground">
-              Saiu {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
+              Disparou {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
               {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
             </span>
             <span v-if="rule.failed_count" class="text-destructive">

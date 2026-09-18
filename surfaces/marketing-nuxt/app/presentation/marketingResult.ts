@@ -101,7 +101,7 @@ export function deliveryStatePresentation(
     completed_with_failures: {
       label: "Entrega parcial — precisa de atenção",
       detail:
-        "Parte saiu e parte falhou. O sucesso de uma plataforma não esconde as outras.",
+        "Parte foi disparada e parte falhou. O sucesso de uma plataforma não esconde as outras.",
       tone: "danger",
       icon: "lucide:triangle-alert",
     },
@@ -188,7 +188,7 @@ export function platformDeliveryLabel(
 }
 
 export function platformSwitchedOffNote(platformRef: string): string {
-  return `${platformResultLabel(platformRef)} está desligado neste ambiente: os destinos na fila só podem sair depois que a operação ligar a plataforma.`;
+  return `${platformResultLabel(platformRef)} está desligado neste ambiente: o que está na fila só é disparado depois que a operação ligar a plataforma.`;
 }
 
 function pluralizeCountLabel(label: string): string {

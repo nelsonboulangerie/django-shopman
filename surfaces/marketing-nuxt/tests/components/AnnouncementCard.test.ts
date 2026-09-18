@@ -277,7 +277,7 @@ describe("AnnouncementCard", () => {
     // ⚠️ O rodapé mandava "Aprovar" num card que não tem botão "Aprovar" — e "selar" é
     // palavra de ADR, não de padaria. Ele descreve o que a próxima tela mostra.
     expect(wrapper.text()).toContain(
-      "O texto que você conferir na próxima tela é o que sai",
+      "O texto que você conferir na próxima tela é o que será disparado",
     );
     expect(wrapper.text()).not.toMatch(/\bAprovar\b|\bsela\b/);
     expect(wrapper.get("[data-testid=delivery-now]").attributes("aria-pressed")).toBe("true");
@@ -286,6 +286,36 @@ describe("AnnouncementCard", () => {
     ).toBe("false");
     expect(wrapper.get("[data-testid=publish-now]").text()).toContain("Continuar");
     expect(wrapper.text()).not.toContain("silêncio");
+  });
+
+  // ⚠️ `announcement.image_url` é o campo óbvio e quase sempre está VAZIO: a foto de
+  // verdade mora no conteúdo por plataforma, porque cada mural tem o seu formato. Lendo
+  // só o campo do topo, o cartão mostrava o quadrado tracejado em anúncio que TEM foto
+  // — e o gestor aprovava achando que ia sair sem imagem. A armadilha já estava
+  // documentada em `outgoingImageUrl()`; era o cartão que não a usava.
+  it("mostra a foto que vai com o anúncio, não o campo do topo que vive vazio", () => {
+    const wrapper = mountCard(
+      makeAnnouncement({
+        image_url: "",
+        platform_content: {
+          instagram: { image_url: "https://cdn.example.test/croissant.jpg" },
+        },
+      } as Partial<Announcement>),
+    );
+
+    const photo = wrapper.find("img[alt^='Foto de']");
+    expect(photo.exists()).toBe(true);
+    expect(photo.attributes("src")).toBe(
+      "https://cdn.example.test/croissant.jpg",
+    );
+    expect(wrapper.text()).not.toContain("Sem foto");
+  });
+
+  it("sem foto em lugar nenhum, o lugar dela DIZ que não há foto", () => {
+    const wrapper = mountCard(makeAnnouncement({ image_url: "" }));
+
+    expect(wrapper.find("img[alt^='Foto de']").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Sem foto");
   });
 
   it("no silêncio do WhatsApp, a tela diz o porquê de agendar — sem mandar", () => {
@@ -379,7 +409,9 @@ describe("AnnouncementCard", () => {
 
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(false);
     expect(wrapper.text()).toContain("Ensaio local");
-    expect(wrapper.text()).toContain("nenhuma mensagem sai deste computador");
+    expect(wrapper.text()).toContain(
+      "nenhuma mensagem é enviada deste computador",
+    );
     await publishNow.trigger("click");
     expect(wrapper.emitted("approve")![0]![2]).toBe("now");
   });

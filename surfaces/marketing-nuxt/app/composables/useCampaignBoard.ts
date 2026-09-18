@@ -138,7 +138,7 @@ export function useCampaignBoard() {
     const announcement = pendingPosts.value.find((item) => item.pk === pk);
     if (!announcement) {
       useSonner.error(
-        "Este anúncio mudou ou saiu da fila. Atualizamos o painel.",
+        "Este anúncio mudou ou não está mais na fila. Atualizamos o painel.",
       );
       await refresh();
       return null;
@@ -180,7 +180,7 @@ export function useCampaignBoard() {
     const announcement = pendingPosts.value.find((item) => item.pk === pk);
     if (!announcement) {
       useSonner.error(
-        "Este anúncio mudou ou saiu da fila. Atualizamos o painel.",
+        "Este anúncio mudou ou não está mais na fila. Atualizamos o painel.",
       );
       await refresh();
       return null;
