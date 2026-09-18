@@ -14,7 +14,7 @@ function protectSessionExit(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", protectSessionExit));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", protectSessionExit));
-const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 // Keep drafts through a lock/re-identification by the same person. A different
 // identified person receives a new page instance and their own read-cache keys.
@@ -53,7 +53,10 @@ useOperatorWindowTitle();
         <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
       </div>
     </div>
-    <OperatorLogin v-if="!canIdentify" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="os pedidos" @retry="refresh()" />
+    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />

@@ -213,6 +213,51 @@ class POSConflitoComSaidaTests(TestCase):
         self.assertFalse(candidatos[antigo.ref]["is_current"])
         self.assertFalse(candidatos[ana.ref]["owner_inactive"])
 
+    def test_dono_sem_rosto_e_anunciado_como_tal(self) -> None:
+        """O cadastro que só tem o dado — e a tela precisa saber que é isso.
+
+        Ele nasce sozinho toda vez que alguém pede a nota no balcão e o CPF não
+        é de conhecido: uma ficha sem nome, um documento sem rosto. Quando o
+        dono aparece, a recusa chegava igual à de uma pessoa, e a tela oferecia
+        "atender o outro" — que ali significa trocar o cliente do pedido por
+        ninguém. Com a bandeira, ela oferece a única coisa que resolve.
+        """
+        ana = self._customer("CUST-GHOST-A", "Ana", "Prado", phone="+5543999990011")
+        fantasma = self._customer("CUST-GHOST-B", "", "", document="52998224725")
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            customer_tax_id="529.982.247-25",
+        ))
+
+        self.assertEqual(response.status_code, 422)
+        candidatos = {row["ref"]: row for row in response.json()["error"]["candidates"]}
+        self.assertTrue(candidatos[fantasma.ref]["owner_unnamed"])
+        self.assertFalse(candidatos[ana.ref]["owner_unnamed"])
+
+    def test_rotulo_de_espera_tambem_conta_como_sem_rosto(self) -> None:
+        """"Cliente 0011" tem nome no campo e nenhum rosto atrás.
+
+        É o rótulo que o próprio PDV escreve quando cria um cadastro sem nome
+        informado. Uma tela que decidisse "sem rosto" por `name` vazio trataria
+        essa ficha como gente — e é exatamente o engano que a régua do servidor
+        (`_should_refresh_name`, a mesma que autoriza escrever nome por cima)
+        evita. Duas definições divergiriam aqui.
+        """
+        ana = self._customer("CUST-LABEL-A", "Ana", "Prado", phone="+5543999990011")
+        rotulado = self._customer("CUST-LABEL-B", "Cliente", "0022", document="52998224725")
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            customer_tax_id="529.982.247-25",
+        ))
+
+        self.assertEqual(response.status_code, 422)
+        candidatos = {row["ref"]: row for row in response.json()["error"]["candidates"]}
+        self.assertTrue(candidatos[rotulado.ref]["owner_unnamed"])
+
     def test_cpf_de_dono_inativo_tambem_e_nomeado(self) -> None:
         """O irmão fiscal do caso acima — mesma cegueira, mesma saída."""
         from shopman.guestman.contrib.identifiers.models import CustomerIdentifier

@@ -11,6 +11,10 @@ const V1024: Viewport = { width: 1024, height: 768, label: "1024x768" };
 const V1280: Viewport = { width: 1280, height: 800, label: "1280x800" };
 const V1440: Viewport = { width: 1440, height: 900, label: "1440x900" };
 
+// Mesmo instante que `FIXED_NOW` do mock hermético (2026-09-10T10:30:00-03:00),
+// para que a tela e o backend contem a mesma hora.
+const VISUAL_NOW = new Date("2026-09-10T13:30:00Z");
+
 async function openScenario(
   page: Page,
   scenario: string,
@@ -27,12 +31,19 @@ async function openScenario(
       path: "/",
     },
   ]);
+  // O relógio do navegador é congelado no mesmo instante que o backend hermético
+  // declara em FIXED_NOW. Tem que ser `clock.setFixedTime`, não `Date.now = ...`:
+  // trocar só `Date.now` deixa `new Date()` lendo o relógio da máquina, e qualquer
+  // tela que formate hora absoluta (o aviso de throttle é a nossa) entra no retrato
+  // com a hora em que o teste rodou — baseline que nasce vencida e derruba a fila
+  // de merge no dia seguinte. `setFixedTime` cobre construtor e `Date.now`, e
+  // deixa os timers correndo (o "Contando…" continua chegando por conta própria).
+  await page.clock.setFixedTime(VISUAL_NOW);
   await page.addInitScript(
-    ({ selectedTheme, now }) => {
+    ({ selectedTheme }) => {
       localStorage.setItem("marketing-nuxt-color-mode", selectedTheme);
-      Date.now = () => now;
     },
-    { selectedTheme: theme, now: Date.parse("2026-09-10T13:30:00Z") },
+    { selectedTheme: theme },
   );
   await page.emulateMedia({
     colorScheme: theme,
@@ -191,10 +202,10 @@ test.describe("painel", () => {
           page.getByRole("group", { name: "Entregar por" }),
         ).toBeVisible();
         await expect(
-          page.getByRole("button", { name: "Entregar agora" }),
+          page.getByRole("button", { name: "Visualizar consequência" }),
         ).toBeVisible();
         await expect(
-          page.getByText("São duas decisões separadas", {
+          page.getByText("Agora, ou na hora que você marcar", {
             exact: false,
           }),
         ).toBeVisible();
@@ -265,11 +276,21 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
+  // O único retrato de caixa de confirmação que sobrou, porque é a única caixa que
+  // sobrou: o disparo deixou de pedir cerimônia (ADR-031). Ela diz o efeito pelo nome.
   test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Entregar agora" }).click();
+    await page.getByRole("button", { name: "Visualizar consequência" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
+    await expect(page.getByRole("dialog")).toContainText("Disparar agora");
+    // A caixa mostra o texto que vai sair, não só para quem e onde.
+    await expect(page.getByRole("dialog")).toContainText(
+      "Pães de fermentação natural",
+    );
+    await expect(page.getByRole("dialog")).not.toContainText(
+      "Confirmar consequência",
+    );
     await expectStableScreenshot(page, "announcement-card__confirm-now", V390, "light", { fullPage: false });
   });
 
@@ -489,21 +510,12 @@ test.describe("disparo manual seguro", () => {
     await expectStableScreenshot(page, "fire-campaign__count-loading", V390, "light", { fullPage: false });
   });
 
-  test("confirmação mostra a consequência calculada pelo servidor", async ({ page }) => {
-    await openScenario(page, "fire-normal", "/campaigns", V390);
-    await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
-    await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByRole("heading", { name: "Confirmar este disparo?" })).toBeVisible();
-    await expect(page.getByText(/cria somente um anúncio para revisão/i)).toBeVisible();
-    await expectStableScreenshot(page, "fire-campaign__confirmation", V390, "light", { fullPage: false });
-  });
 
   test("throttle explica a espera sem perder o painel", async ({ page }) => {
     await openScenario(page, "fire-throttled", "/campaigns", V768);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
+    await page.getByRole("button", { name: "Revisar anúncio" }).click();
     await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
     await expect(page.getByRole("alert")).toContainText("Nada foi criado");
     await expectStableScreenshot(page, "fire-campaign__throttled", V768, "light", { fullPage: false });
@@ -513,26 +525,25 @@ test.describe("disparo manual seguro", () => {
     await openScenario(page, "fire-conflict", "/campaigns", V1024);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
-    await page.getByLabel("Sua senha").fill("senha-visual");
-    await page.getByLabel("Digite exatamente").fill("PUBLICAR 48");
-    await page.getByRole("button", { name: "Criar para revisão" }).click();
-    await expect(page.getByLabel("Disparar agora").getByRole("alert")).toContainText("mudou em outra sessão");
+    await page.getByRole("button", { name: "Revisar anúncio" }).click();
+    await expect(page.getByLabel("Definir público").getByRole("alert")).toContainText("mudou em outra sessão");
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
   });
 
-  test("aceite mantém comprovante e próximo passo no mesmo painel", async ({ page }) => {
+  test("aceite leva direto à revisão, dizendo que nada saiu", async ({ page }) => {
     await openScenario(page, "fire-accepted", "/campaigns", V1440);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
-    await page.getByRole("button", { name: "Disparar agora" }).click();
-    await page.getByLabel("Sua senha").fill("senha-visual");
-    await page.getByLabel("Digite exatamente").fill("PUBLICAR 48");
-    await page.getByRole("button", { name: "Criar para revisão" }).click();
-    await expect(page.getByRole("heading", { name: "Anúncio criado para revisão" })).toBeVisible();
-    await expect(page.getByText("visual-fire-receipt-20260910")).toBeVisible();
-    await expect(page.getByText(/Nenhuma publicação ou mensagem foi enviada/)).toBeVisible();
-    await expectStableScreenshot(page, "fire-campaign__receipt", V1440, "light", { fullPage: false });
+    await page.getByRole("button", { name: "Revisar anúncio" }).click();
+    // Sem senha e sem frase digitada: o servidor declara o disparo dispensado de
+    // cerimônia (ADR-031) e o navegador consome o token sozinho. O toque em "Disparar
+    // agora" é a última coisa que o gestor faz antes de estar na revisão.
+    await expect(page).toHaveURL(/\/announcements\/\d+\?dispatch=new#review/);
+    await expect(page.getByText("Este anúncio acabou de ser criado pelo seu disparo")).toBeVisible();
+    await expect(page.getByText(/Nada saiu ainda/)).toBeVisible();
+    // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
+    await waitForFaithfulPreview(page);
+    await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });
   });
 });
 
@@ -653,7 +664,7 @@ test.describe("modos transversais", () => {
         p { margin-bottom: 2em !important; }
       `,
     });
-    await expect(page.getByRole("button", { name: "Entregar agora" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Visualizar consequência" })).toBeVisible();
     await expectStableScreenshot(page, "panel__text-spacing", V1024);
   });
 });

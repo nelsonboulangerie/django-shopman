@@ -10,7 +10,11 @@ import {
   formatCount,
   platformsSummary,
 } from "~/presentation/campaign";
-import { fireActionFor, fireAvailability } from "~/presentation/campaignFire";
+import {
+  fireActionFor,
+  fireAvailability,
+  fireDispatchRoute,
+} from "~/presentation/campaignFire";
 import type {
   Campaign,
   ChosenAudience,
@@ -21,6 +25,7 @@ import {
   useMarketingDraftOwner,
 } from "~/composables/useMarketingDraft";
 import { marketingThrottleMessage } from "~/utils/marketingRetry";
+import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
 
 const {
   rules,
@@ -80,7 +85,6 @@ const editing = computed<Campaign | null>(() =>
     : rules.value.find((rule) => rule.pk === editingPk.value) ?? null,
 );
 const firing = ref<Campaign | null>(null);
-const fireResult = ref<MarketingCommandResponse | null>(null);
 const fireError = ref("");
 const busy = ref(false);
 const draftOwner = useMarketingDraftOwner();
@@ -231,14 +235,12 @@ function close() {
 /** Disparar agora: a campanha manual, sem esperar evento da padaria. */
 function openFire(rule: Campaign) {
   cancelFireCommand();
-  fireResult.value = null;
   fireError.value = "";
   firing.value = rule;
 }
 
 function closeFire() {
   cancelFireCommand();
-  fireResult.value = null;
   fireError.value = "";
   firing.value = null;
 }
@@ -272,10 +274,21 @@ async function recordFireFailure(error: unknown) {
   );
 }
 
+/**
+ * O disparo deu certo — a tela vai para onde o gestor já queria ir.
+ *
+ * O painel de sucesso era uma escala que não decidia nada: quem acabou de pedir o
+ * disparo só podia tocar "Revisar anúncio agora" para chegar à revisão. Agora a
+ * navegação é a resposta, e o comprovante viaja junto (`preserveMarketingReceipt`)
+ * para que a revisão mostre a prova do disparo que acabou de acontecer.
+ */
 async function showFireResult(response: MarketingCommandResponse) {
-  fireResult.value = response;
   fireError.value = "";
+  const announcementId = response.announcement.pk;
+  preserveMarketingReceipt(announcementId, response.receipt);
+  closeFire();
   await refresh();
+  await navigateTo(fireDispatchRoute(response));
 }
 
 async function onFire(request: {
@@ -736,7 +749,7 @@ useHead({ title: "Campanhas" });
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>Disparar agora</UiSheetTitle>
+          <UiSheetTitle>Definir público</UiSheetTitle>
           <UiSheetDescription>
             {{ firing?.name }} — escolha o público. O texto vem do modelo e o
             anúncio nasce para revisão.
@@ -752,7 +765,6 @@ useHead({ title: "Campanhas" });
             :product-required="firingTemplateRequiresProduct"
             :busy="busy"
             :error="fireError"
-            :result="fireResult"
             @submit="onFire"
             @cancel="closeFire"
           />

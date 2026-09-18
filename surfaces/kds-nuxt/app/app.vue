@@ -6,7 +6,7 @@
 // lock overlay (Opção C). The overlay covers the OPERATOR screens only — never the
 // PUBLIC customer pickup board (/pickup), which has no auth. Gated OFF → never shows.
 const OPERATOR_PERM = "backstage.operate_kds";
-const { canIdentify, locked, mustChange, operator, lock } =
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 
 const route = useRoute();
@@ -54,7 +54,10 @@ async function goToStations() {
         <NuxtPage />
       </div>
     </div>
-    <OperatorLogin v-if="!canIdentify && !isCustomerBoard" />
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="a cozinha" @retry="refresh()" />
+    <OperatorLogin v-if="!canIdentify && !sessionUnavailable && !isCustomerBoard" />
     <OperatorLock
       v-else-if="(locked || mustChange) && !isCustomerBoard"
       :perm="OPERATOR_PERM"

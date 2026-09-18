@@ -50,6 +50,12 @@ export function buildOperatorManifest(
     orientation: options.manifest.orientation || "any",
     theme_color: options.manifest.themeColor,
     background_color: options.manifest.backgroundColor,
+    // Chegar neste app vindo de outro NÃO pode levar embora a tela em uso: com a
+    // janela já aberta, o Chrome a traz para a frente e o URL de destino é
+    // descartado (é o que `focus-existing` faz sem um consumidor de `launchQueue`).
+    // `navigate-existing` recarregaria o PDV com venda na mão só porque alguém tocou
+    // no atalho da Central — a mesma regra do `useOperatorReloadHold`.
+    launch_handler: { client_mode: "focus-existing" },
     icons: operatorPwaIcons(options.manifest.icons),
     shortcuts: operatorPwaShortcuts(options.manifest.shortcuts),
   };

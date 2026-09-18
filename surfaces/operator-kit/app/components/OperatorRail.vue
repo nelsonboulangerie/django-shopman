@@ -42,6 +42,11 @@ const emit = defineEmits<{ lock: [] }>();
 
 const { state, isCollapsed, isExtended } = useRailState();
 
+// Voltar à Central é ir para OUTRA origem (`central.<zona>`). No app instalado isso
+// precisa acontecer na janela da Central, não dentro desta — ver `presentation/appLaunch.ts`.
+const { attrsFor } = useOperatorAppLink();
+const centralLink = computed(() => attrsFor(props.centralUrl || ""));
+
 const colorMode = useColorMode();
 function toggleTheme() {
   colorMode.preference = colorMode.value === "dark" ? "light" : "dark";
@@ -91,6 +96,8 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
     <component
       :is="centralUrl ? 'a' : 'div'"
       :href="centralUrl"
+      :target="centralUrl ? centralLink.target : undefined"
+      :rel="centralUrl ? centralLink.rel : undefined"
       :aria-label="centralUrl ? 'Voltar à Central de Apps' : undefined"
       :title="centralUrl ? 'Voltar à Central de Apps' : undefined"
       class="group mb-1 flex items-center gap-2"

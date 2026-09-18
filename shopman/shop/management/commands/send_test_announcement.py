@@ -94,7 +94,7 @@ class Command(BaseCommand):
             self.stdout.write("  repetição  : receipt existente; nenhum segundo envio")
         if outcome.accepted:
             self.stdout.write(self.style.SUCCESS(
-                "Sandbox aceitou; isso ainda não confirma entrega no aparelho."
+                "Sandbox aceitou; isso ainda não confirma entrega no dispositivo."
             ))
         else:
             self.stdout.write(self.style.WARNING(

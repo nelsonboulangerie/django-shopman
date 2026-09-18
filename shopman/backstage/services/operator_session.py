@@ -9,8 +9,11 @@ ser a do uso: cada dia com uso empurra o prazo para 7 dias à frente.
 ``OperatorLoginView`` (senha no app) e ``OperatorUnlockView`` (PIN ou crachá) —,
 marcada com :data:`SESSION_MARKER` logo depois do ``login()``. A marca mora DENTRO
 da sessão, gravada pelo servidor; nenhum header que o chamador escreva a produz. A
-sessão do Admin nasce no ``LoginView`` do Django, sem marca, e segue com o
-comportamento de sempre (``SESSION_COOKIE_AGE``, 14 dias fixos, 2FA).
+sessão do Admin nasce no ``LoginView`` do Django, sem marca, e tem regra
+própria em :mod:`shopman.backstage.services.admin_session` — mesma ideia, 14
+dias, reconhecida pelo CAMINHO em vez da marca. (Até 17/09 ela ficava com o
+default do Django, 14 dias fixos a partir do login; foi o que fez a queixa do
+"login do Django caindo" sobreviver à correção da zona de operador.)
 
 **Uma gravação por dia, no máximo.** A renovação só acontece quando o prazo
 restante cai abaixo de ``IDLE - RENEW_INTERVAL`` (6 dias). Poll de 5 s não vira

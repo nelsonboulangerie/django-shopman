@@ -7,7 +7,7 @@ import {
   hubIsEmpty,
   tileIcon,
   tileIconUrl,
-  tileTarget,
+  tileLinkAttrs,
 } from "../app/presentation/hub";
 import type { HubTileProjection } from "../app/types/hub";
 
@@ -46,9 +46,34 @@ describe("presentation/hub", () => {
     expect(tileIconUrl(tile({ url: "/admin/" }))).toBeNull();
   });
 
-  it("tileTarget: launch na mesma aba, external (loja do cliente) em nova aba", () => {
-    expect(tileTarget(tile({ kind: "launch" }))).toBe("_self");
-    expect(tileTarget(tile({ kind: "external" }))).toBe("_blank");
+  describe("tileLinkAttrs — como o tile abre", () => {
+    const CENTRAL = "https://central.boulangerie/";
+    const PDV = "https://pdv.boulangerie/";
+    const browser = { installed: false, currentOrigin: CENTRAL };
+    const installed = { installed: true, currentOrigin: CENTRAL };
+
+    it("Central em ABA: o app abre na mesma aba, como antes", () => {
+      expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), browser)).toEqual({ target: "_self" });
+    });
+
+    it("Central INSTALADA: o app abre na janela DELE — é o conserto da tarja", () => {
+      // Abrir dentro da janela da Central sai do `scope` dela: o Chrome desenha a
+      // barra de "você saiu do app" e a janela continua com o nome e a cor da
+      // Central, não do PDV.
+      expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), installed))
+        .toEqual({ target: "_blank", rel: "noopener" });
+    });
+
+    it("a loja do cliente abre em outra janela sempre", () => {
+      const store = tile({ kind: "external", url: "https://boulangerie.com.br/" });
+      for (const context of [browser, installed]) {
+        expect(tileLinkAttrs(store, context)).toEqual({ target: "_blank", rel: "noopener" });
+      }
+    });
+
+    it("tile que aponta para a própria Central não sai da janela", () => {
+      expect(tileLinkAttrs(tile({ kind: "launch", url: CENTRAL }), installed)).toEqual({ target: "_self" });
+    });
   });
 
   it("hubIsEmpty reflete a ausência de tiles", () => {

@@ -74,9 +74,17 @@ IFOOD_WEBHOOK_TOKEN=<token webhook sandbox/produção>
 MANYCHAT_WEBHOOK_SECRET=<segredo HMAC webhook>
 ```
 
-O blueprint define `DOORMAN_MESSAGE_SENDER_CLASS=shopman.doorman.senders.LogSender`
-para permitir staging técnico sem envio real de OTP; o código é exposto na UI
-somente porque `SHOPMAN_EXPOSE_DEBUG_OTP=true` e `SHOPMAN_ENVIRONMENT=staging`.
+O blueprint **não** define `DOORMAN_MESSAGE_SENDER_CLASS`, e isso é deliberado.
+Ele declarava `shopman.doorman.senders.LogSender` para permitir staging técnico
+sem envio real de OTP — só que esse sender entra em cena sempre que
+`SHOPMAN_OTP_DELIVERY_CHAIN` fica vazia, e esvaziar a cadeia é a primeira coisa
+que alguém tenta durante uma queda da Comtele. O resultado seria o código de
+login de todo cliente no log de produção. Sem a env, o default é o
+`ConsoleSender`, que a trava de boot recusa fora de DEBUG: a mesma edição agora
+derruba o processo em vez de vazar em silêncio. Quem quiser staging sem envio
+declara a cadeia (`SHOPMAN_OTP_DELIVERY_CHAIN=console`) com `DJANGO_DEBUG=true`.
+O código é exposto na UI somente porque `SHOPMAN_EXPOSE_DEBUG_OTP=true` e
+`SHOPMAN_ENVIRONMENT=staging`.
 Se a spec ativa ainda não tiver essas variáveis, `config.settings` infere
 `staging` quando os domínios do ambiente contêm `staging`, mantendo produção
 fechada por padrão.

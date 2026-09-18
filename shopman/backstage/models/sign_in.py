@@ -115,4 +115,4 @@ class SignInEvent(models.Model):
         return list(valores) if isinstance(valores, list) else []
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
-        return f"{self.username} — {self.get_method_display()} ({self.get_outcome_display()})"
+        return f"{self.username} · {self.get_method_display()} ({self.get_outcome_display()})"

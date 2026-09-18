@@ -13,6 +13,7 @@ from shopman.shop.middleware import OperatorSessionDomainMiddleware
 
 OPERATOR_COOKIE_DOMAIN = ".boulangerie.com.br"
 OPERATOR_API_HOST = "api.boulangerie.com.br"
+ADMIN_HOST = "admin.boulangerie.com.br"
 
 
 def _run(host: str) -> HttpResponse:
@@ -82,3 +83,46 @@ def test_lookalike_suffix_is_not_matched():
     # "evilboulangerie.com.br" must NOT match ".boulangerie.com.br".
     response = _run("evilboulangerie.com.br")
     assert _domain(response, settings.SESSION_COOKIE_NAME) == ""
+
+
+@override_settings(
+    ALLOWED_HOSTS=["*"],
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=OPERATOR_COOKIE_DOMAIN,
+    SHOPMAN_OPERATOR_API_HOST=OPERATOR_API_HOST,
+    SHOPMAN_ADMIN_HOST=ADMIN_HOST,
+)
+def test_admin_host_stays_host_only():
+    # O Admin TERMINA em ".boulangerie.com.br" e por isso casava na regra de
+    # sufixo: a sessão dele saía com Domain do domínio-pai e era enviada aos 9
+    # subdomínios de operador sem precisar. Colateral de cronologia — o
+    # middleware é de 25/06, quando o Admin não morava nessa zona; o host
+    # `admin.` nasceu em 15/08 e herdou o sufixo em silêncio.
+    response = _run(ADMIN_HOST)
+    assert _domain(response, settings.SESSION_COOKIE_NAME) == ""
+    assert _domain(response, settings.CSRF_COOKIE_NAME) == ""
+
+
+@override_settings(
+    ALLOWED_HOSTS=["*"],
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=OPERATOR_COOKIE_DOMAIN,
+    SHOPMAN_OPERATOR_API_HOST=OPERATOR_API_HOST,
+    SHOPMAN_ADMIN_HOST=ADMIN_HOST,
+)
+def test_operator_hosts_keep_the_zone_cookie_with_the_admin_host_declared():
+    # A exceção é do host do Admin e de mais ninguém: declarar `SHOPMAN_ADMIN_HOST`
+    # não pode encolher a zona de operador, que é o que faz o login valer nos 9 apps.
+    for host in (OPERATOR_API_HOST, "gestor.boulangerie.com.br", "pdv.boulangerie.com.br"):
+        response = _run(host)
+        assert _domain(response, settings.SESSION_COOKIE_NAME) == OPERATOR_COOKIE_DOMAIN, host
+
+
+@override_settings(
+    ALLOWED_HOSTS=["*"],
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=OPERATOR_COOKIE_DOMAIN,
+    SHOPMAN_OPERATOR_API_HOST=OPERATOR_API_HOST,
+    SHOPMAN_ADMIN_HOST="",
+)
+def test_without_the_admin_host_declared_nothing_changes():
+    # Sem a variável (dev local, outro deployment), vale a regra de sufixo de antes.
+    response = _run(ADMIN_HOST)
+    assert _domain(response, settings.SESSION_COOKIE_NAME) == OPERATOR_COOKIE_DOMAIN

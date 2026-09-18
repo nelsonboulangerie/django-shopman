@@ -75,8 +75,12 @@ class TerminalProfileGeometryTests(TestCase):
     def setUp(self):
         self.terminal = Terminal.objects.create(ref="pdv-geometria", label="PDV geometria")
 
+    #: A ponte que entrega o papel. Sem ela a impressora lê `warning` mesmo com
+    #: geometria perfeita — é `device_agent`, não um rótulo, que a acende.
+    _AGENT = {"enabled": True, "agent_url": "http://127.0.0.1:47811", "token": "token-do-balcao-inteiro"}
+
     def _set_printer(self, config):
-        self.terminal.metadata = {"hardware": {"printer": config}}
+        self.terminal.metadata = {"hardware": {"printer": config, "device_agent": self._AGENT}}
         self.terminal.save(update_fields=["metadata"])
 
     def test_terminal_sem_hardware_nao_declara_geometria(self):
@@ -85,13 +89,13 @@ class TerminalProfileGeometryTests(TestCase):
         self.assertEqual(_printer_health(self.terminal).status, "absent")
 
     def test_terminal_declara_o_rolo_e_o_perfil_carrega(self):
-        self._set_printer({"adapter": "driver", "roll_width_mm": 58})
+        self._set_printer({"roll_width_mm": 58})
         profile = runtime_profile(self.terminal)
         self.assertEqual((profile.printer.roll_width_mm, profile.printer.margin_mm), (58, 5))
         self.assertEqual(_printer_health(self.terminal).status, "ready")
 
     def test_declaracao_invalida_acende_a_saude_da_impressora(self):
-        self._set_printer({"adapter": "driver", "roll_width_mm": 999})
+        self._set_printer({"roll_width_mm": 999})
         health = _printer_health(self.terminal)
         self.assertEqual(health.status, "warning")
         self.assertIn("inválida", health.message)
@@ -111,7 +115,7 @@ class POSProjectionGeometryTests(TestCase):
         terminal = Terminal.objects.create(
             ref="pdv-projection",
             label="PDV projection",
-            metadata={"hardware": {"printer": {"adapter": "driver", "roll_width_mm": 58}}},
+            metadata={"hardware": {"printer": {"roll_width_mm": 58}}},
         )
         projection = build_pos(terminal=terminal)
         self.assertEqual(projection.terminal_roll_width_mm, 58)

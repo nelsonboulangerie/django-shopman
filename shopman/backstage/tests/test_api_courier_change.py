@@ -179,7 +179,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
         advance_payload(client, "DLV-M2", **{"equipment": ["drone"]}), content_type="application/json",
     )
     assert response.status_code == 400
-    assert "não previsto" in response.json()["detail"]
+    assert "não prevista" in response.json()["detail"]
 
     response = client.post(
         reverse("api-backstage-order-advance", args=["DLV-M1"]),

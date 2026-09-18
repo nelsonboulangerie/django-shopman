@@ -8477,11 +8477,13 @@ class Command(BaseCommand):
         # A geometria e o papel operacional fazem parte do cenário canônico de
         # impressão. Preenchemos somente lacunas: `seed` sem `--flush` também é
         # usado para refrescar datas em ambientes vivos e jamais pode apagar a
-        # configuração aferida no Admin (adapter/modelo/rolo/corte).
+        # configuração aferida no Admin (rolo, corte, geometria da etiqueta).
         printer = dict(hardware.get("printer") or {})
         printer.setdefault("enabled", True)
-        printer.setdefault("adapter", "driver")
-        printer.setdefault("model", "epson-tm-t20")
+        # ⚠️ `adapter` e `model` não são semeados. Eram rótulos sem leitor: o
+        # seed cunhava "driver", o Admin cunhava "relay", e o mesmo terminal
+        # mudava de texto na saúde conforme quem tinha salvado por último. Quem
+        # responde se este terminal imprime é `hardware.device_agent`.
         printer.setdefault("roll_width_mm", 80)
         printer.setdefault("columns", 48)
         printer.setdefault("cut_mode", "partial")

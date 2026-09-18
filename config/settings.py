@@ -341,7 +341,7 @@ MIDDLEWARE = [
     # Sessão de operador renova com o uso, no máximo 1 gravação/dia (7 dias parada
     # ⇒ expira). Depois de Session/Auth: a resposta dela passa pelo Session, que grava
     # e reemite o cookie. Admin intocado. Ver shopman/backstage/services/operator_session.py.
-    "shopman.backstage.middleware.OperatorSessionRenewalMiddleware",
+    "shopman.backstage.middleware.SessionRenewalMiddleware",
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
@@ -607,7 +607,7 @@ SHOPMAN_MANYCHAT = {
 
 # Test-send de Marketing é fechado por padrão. A env contém um objeto por ref
 # segura; o recipient real jamais volta à API/log. Exemplo operacional:
-# {"owner-sandbox":{"label":"Aparelho verificado","recipient":"123456",
+# {"owner-sandbox":{"label":"Número verificado","recipient":"123456",
 #  "backend":"manychat","sandbox":true,"ownership_verified":true}}
 try:
     SHOPMAN_MARKETING_TEST_TARGETS = json.loads(
@@ -1711,12 +1711,27 @@ SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").
 
 # Sessão dos apps de operador (decisão de 17/09/2026): renova com o uso e expira
 # após 7 dias SEM uso. Só vale para a sessão aberta nas portas de operador (senha do
-# app, PIN, crachá), marcada no login; a do Admin segue o default do Django
-# (`SESSION_COOKIE_AGE`, 14 dias fixos a partir do login). O uso regrava o prazo no
-# máximo uma vez por intervalo, para o poll não virar UPDATE por requisição.
+# app, PIN, crachá), marcada no login. O uso regrava o prazo no máximo uma vez por
+# intervalo, para o poll não virar UPDATE por requisição.
 # Constantes de código, sem env: mudar a regra é decisão de produto, não de deploy.
 SHOPMAN_OPERATOR_SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
 SHOPMAN_OPERATOR_SESSION_RENEW_INTERVAL_SECONDS = 24 * 60 * 60
+
+# Sessão do Admin. A decisão de 17/09 deixou o Admin de fora e ele ficou com o
+# default do Django: 14 dias contados do LOGIN, sem renovação — um corte seco de
+# duas em duas semanas mesmo para quem entra todo dia, e com 2FA cada corte custa
+# o TOTP. Era essa a queixa que continuava voltando. O NÚMERO não muda: continua
+# 14 dias, agora contados do último USO. Isso não afrouxa o prazo do navegador
+# esquecido, só para de punir quem usa.
+SHOPMAN_ADMIN_SESSION_IDLE_SECONDS = 14 * 24 * 60 * 60
+SHOPMAN_ADMIN_SESSION_RENEW_INTERVAL_SECONDS = 24 * 60 * 60
+
+# Para onde `LoginRequiredMixin` manda quem chega sem sessão. SEM isto o Django
+# usa `/accounts/login/`, que NÃO existe neste projeto: a única view protegida
+# assim é a DANFE (`shopman/shop/views/fiscal_danfe.py`), aberta em aba nova pelo
+# PDV. Com a sessão vencida, o operador tomava 404 em vez da tela de login — o
+# que se lê como "o login quebrou", e não como "a sessão venceu".
+LOGIN_URL = "/admin/login/"
 
 #: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
 #: diz o que é, e obrigar a repetir a palavra no caminho é redundância.

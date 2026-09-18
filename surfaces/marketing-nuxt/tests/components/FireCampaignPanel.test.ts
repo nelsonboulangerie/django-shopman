@@ -211,9 +211,11 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
   it("não oferece corpo livre capaz de contornar a revisão", () => {
     const wrapper = panel();
 
+    // A trava é a AUSÊNCIA de campo de texto, não a frase que explica isso: sem
+    // campo, não há caminho para contornar a revisão, diga a tela o que disser.
     expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.text()).toContain("Texto protegido pelo fluxo de revisão");
-    expect(wrapper.text()).toContain("cria um anúncio para revisão");
+    expect(wrapper.find("input[type=text]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("O texto vem do modelo da campanha");
   });
 
   it("pede o produto antes da senha quando o modelo depende do catálogo", async () => {
@@ -256,42 +258,22 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
     ]);
   });
 
-  it("mantém o comprovante e o próximo passo no painel", () => {
+  // O painel não tem mais tela de sucesso: o disparo bem-sucedido leva o gestor à
+  // revisão, e uma escala que só oferecia "Revisar anúncio agora" não pode voltar.
+  it("não guarda tela de sucesso nem link para a revisão", () => {
     const wrapper = mount(FireCampaignPanel, {
       props: {
         rule: makeRule(),
         priceTiers: TIERS,
         tags: TAGS,
         rfmSegments: SEGMENTS,
-        result: {
-          ok: true,
-          replayed: false,
-          receipt: {
-            ref: "fire-receipt-local",
-            kind: "fire",
-            state: "completed",
-            base_version: 1,
-            resulting_version: 2,
-            resource_ref: "campaign:3",
-            outcome: { audience_count: 2 },
-            created_at: "2026-09-10T10:00:00-03:00",
-            completed_at: "2026-09-10T10:00:01-03:00",
-          },
-          announcement: { pk: 77 },
-        } as never,
       },
       global: { stubs: { Icon: true, NuxtLink: true } },
     });
 
-    expect(wrapper.text()).toContain("Anúncio criado para revisão");
-    expect(wrapper.text()).toContain(
-      "Nenhuma publicação ou mensagem foi enviada",
-    );
-    expect(wrapper.text()).toContain("fire-receipt-local");
-    expect(wrapper.find("nuxt-link-stub").attributes("to")).toBe(
-      "/announcements/77#review",
-    );
-    expect(wrapper.find("form").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Anúncio criado para revisão");
+    expect(wrapper.text()).not.toContain("Revisar anúncio agora");
+    expect(wrapper.find("form").exists()).toBe(true);
   });
 });
 
@@ -307,12 +289,12 @@ describe("FireCampaignPanel — postagem pública", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("1 postagem pública");
-    expect(wrapper.text()).toContain("Não há seleção de contatos");
+    expect(wrapper.text()).toContain("Não escolhe contatos");
     expect(wrapper.text()).not.toContain("Para quem");
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();
     const submit = wrapper.find('button[type="submit"]');
-    expect(submit.text()).toContain("Preparar para revisão");
+    expect(submit.text()).toContain("Revisar anúncio");
     expect(submit.attributes("disabled")).toBeUndefined();
 
     await wrapper.find("form").trigger("submit");

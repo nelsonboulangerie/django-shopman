@@ -3,7 +3,11 @@
 // A lista de campanhas escondia a razão num `title` de botão desabilitado, e o
 // Firefox não mostra tooltip em botão desabilitado: a tela dizia "Indisponível"
 // e calava. A frase agora nasce aqui, para a linha poder mostrá-la por extenso.
-import type { Campaign, MarketingActionProjectionV2 } from "~/types/campaign";
+import type {
+  Campaign,
+  MarketingActionProjectionV2,
+  MarketingCommandResponse,
+} from "~/types/campaign";
 
 export interface FireAvailability {
   enabled: boolean;
@@ -50,5 +54,23 @@ export function fireAvailability(
   return {
     enabled: false,
     reason: "O disparo manual não está disponível agora.",
+  };
+}
+
+/**
+ * Para onde o disparo bem-sucedido leva a tela.
+ *
+ * O painel de sucesso não decidia nada: o único caminho adiante era tocar "Revisar
+ * anúncio agora". Quem disparou já queria a revisão, então a navegação É a resposta.
+ * O `dispatch` na query não carrega número nenhum — só diz de onde a tela veio, para a
+ * revisão poder explicar por que o gestor está ali e se foi o mesmo toque de antes.
+ */
+export function fireDispatchRoute(
+  response: Pick<MarketingCommandResponse, "replayed" | "announcement">,
+): { path: string; query: { dispatch: "new" | "replayed" }; hash: string } {
+  return {
+    path: `/announcements/${response.announcement.pk}`,
+    query: { dispatch: response.replayed ? "replayed" : "new" },
+    hash: "#review",
   };
 }

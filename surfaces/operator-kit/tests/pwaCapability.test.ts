@@ -57,6 +57,14 @@ describe("operator PWA capability", () => {
     expect(manifest).not.toHaveProperty("gcm_sender_id");
   });
 
+  it("chegar de outro app FOCA a janela existente em vez de levá-la embora", () => {
+    // `navigate-existing` recarregaria o PDV com venda na mão só porque alguém tocou
+    // no atalho da Central. `focus-existing`, sem consumidor de `launchQueue`, traz a
+    // janela para a frente e descarta o URL — que é o que um launcher deve fazer.
+    const manifest = buildOperatorManifest(options);
+    expect(manifest.launch_handler).toEqual({ client_mode: "focus-existing" });
+  });
+
   it("sem a casa (Django fora e nenhum nome anterior) o manifesto é só o rótulo", () => {
     const manifest = buildOperatorManifest(options);
     expect(manifest.name).toBe("PDV");

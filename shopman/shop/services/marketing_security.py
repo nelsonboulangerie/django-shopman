@@ -40,6 +40,9 @@ STEP_UP_TTL = timedelta(minutes=15)
 SECURITY_RETENTION = timedelta(days=365 * 5)
 MAX_EXTERNAL_TARGETS_PER_DAY = 5_000
 MAX_BLAST = 5_000
+# A partir de quantas mensagens o envio precisa ser agendado: acima disso o disparo
+# ocupa a fila por tempo bastante para que "agora" deixe de ser uma promessa honesta.
+LARGE_BLAST_SCHEDULE_THRESHOLD = 2_000
 MIN_LARGE_SCHEDULE_DELAY = timedelta(minutes=15)
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ACTION_RE = re.compile(r"^[a-z0-9_]{1,32}$")
@@ -197,11 +200,12 @@ def authorization_context(
 
 def requirement_for(context: AuthorizationContext, *, now: datetime | None = None) -> AuthorizationRequirement:
     clock = _aware_now(now)
-    # Uma consequência pública tem um destino por plataforma mesmo quando não
-    # existe audiência de mensagens diretas. O número digitado deve descrever o
-    # efeito real; "PUBLICAR 0" para um Story é uma confirmação enganosa.
-    count = _external_target_count(context)
-    if count > MAX_BLAST:
+    # Destino externo é a grandeza da QUOTA e do teto: uma postagem ocupa um destino por
+    # plataforma, uma mensagem ocupa um destino por pessoa. Serve para dizer "quanto
+    # deste comando sai da casa hoje" — não serve para medir risco, porque soma duas
+    # grandezas diferentes.
+    destinations = external_destination_count(context)
+    if destinations > MAX_BLAST:
         raise MarketingAuthorizationError(
             code="marketing_blast_limit_exceeded",
             detail=f"O limite aprovado é {MAX_BLAST} destinos por comando.",
@@ -215,39 +219,65 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
     if context.action == ACTION_UNFREEZE:
         return AuthorizationRequirement("summary", "totp", True, "")
 
-    immediate = context.scheduled_for is None and context.action in {
-        ACTION_APPROVE,
-        ACTION_FIRE,
-        ACTION_RETRY,
-    }
-    if count >= 2_000:
-        if immediate:
+    # Disparar não publica e não envia: cria um anúncio que nasce em revisão, e a
+    # revisão é o portão real. O próprio módulo já tratava o disparo como consequência
+    # zero — `_reserve_external_quota` o isenta da quota de destinos externos. Pedir
+    # frase digitada e senha para preparar um rascunho cobrava o preço da consequência
+    # sem que a consequência existisse, e ainda por cima duas vezes no mesmo caminho,
+    # porque a aprovação cobra de novo.
+    if context.action == ACTION_FIRE:
+        return AuthorizationRequirement("none", "none", False, "")
+
+    # Daqui para baixo quem manda é a grandeza PERIGOSA: pessoas que recebem mensagem.
+    # Mensagem enviada não se apaga, custa por unidade e chega em quem não pediu aquele
+    # horário. Postagem é mural: some com um toque, não tem custo por pessoa, e o número
+    # de plataformas não mede risco nenhum — três postagens e três pessoas não são a
+    # mesma grandeza, e nenhum limiar serve para as duas. Num disparo misto quem decide
+    # é a parte de mensagem, porque é a irreversível.
+    recipients = direct_message_recipient_count(context)
+    if recipients >= LARGE_BLAST_SCHEDULE_THRESHOLD:
+        if context.scheduled_for is None:
             raise MarketingAuthorizationError(
                 code="large_blast_must_be_scheduled",
-                detail="A partir de 2.000 destinos, o envio precisa ser agendado.",
+                detail=(
+                    f"A partir de {LARGE_BLAST_SCHEDULE_THRESHOLD} mensagens, "
+                    "o envio precisa ser agendado."
+                ),
                 status_code=422,
             )
-        assert context.scheduled_for is not None
         if context.scheduled_for < clock + MIN_LARGE_SCHEDULE_DELAY:
             raise MarketingAuthorizationError(
                 code="large_blast_schedule_too_soon",
                 detail="Agende com pelo menos 15 minutos de antecedência.",
                 status_code=422,
             )
-    if immediate or count >= 50:
-        level = "totp" if count >= 500 else "password"
-        # A frase descreve o efeito real da ação. Disparar só PREPARA um anúncio
-        # para revisão — nada é publicado nem enviado — e o dialog diz isso; pedir
-        # "PUBLICAR" ali contradizia a tela na mesma caixa. Publicar e entregar
-        # continuam pedindo "PUBLICAR".
-        verb = "PREPARAR" if context.action == ACTION_FIRE else "PUBLICAR"
-        return AuthorizationRequirement(
-            "typed",
-            level,
-            count >= 500,
-            f"{verb} {count}",
-        )
-    return AuthorizationRequirement("summary", "none", False, "")
+    if recipients <= 0:
+        # Só postagem. O mural se apaga, então não há o que a frase proteja aqui — e o
+        # limiar conta PESSOAS, de modo que aplicá-lo a plataformas seria repetir o erro
+        # que a ADR-032 corrigiu. Resumo, qualquer que seja o número de murais.
+        return AuthorizationRequirement("summary", "none", False, "")
+    # **O atrito segue o que não tem desfazer** (decisão do dono, 2026-09-18). Saiu
+    # mensagem, a frase é pedida — uma pessoa ou dez mil, digita-se `ENVIAR <pessoas>`.
+    # Mensagem enviada não se apaga; postagem se apaga. Por isso a IRREVERSIBILIDADE
+    # manda na frase, e o TAMANHO manda no resto: senha a partir do limiar, autenticador
+    # e segunda pessoa a partir do múltiplo dele.
+    #
+    # O que a ADR-031 matou, e que NÃO volta aqui, foi a DUPLICAÇÃO: o `fire` cobrava a
+    # frase para criar um rascunho e a aprovação cobrava de novo pelo mesmo envio. O
+    # `fire` continua sem cerimônia nenhuma; esta frase é a do ato final.
+    #
+    # O limiar continua sendo proporção da casa (ou teto de gasto), nunca número absoluto
+    # herdado: com 200 clientes, 50 é alto demais; com 20.000, baixo demais. A política e
+    # a base vivem no Admin; ver ADR-032 e ADR-033.
+    from shopman.shop.services.marketing_ceremony import ceremony_threshold
+
+    phrase = f"ENVIAR {recipients}"
+    threshold = ceremony_threshold()
+    if recipients >= threshold.dual_control:
+        return AuthorizationRequirement("typed", "totp", True, phrase)
+    if recipients >= threshold.typed:
+        return AuthorizationRequirement("typed", "password", False, phrase)
+    return AuthorizationRequirement("typed", "none", False, phrase)
 
 
 def authorize_command(
@@ -445,6 +475,14 @@ def issue_confirmation(
             "resource_ref": required.context.resource_ref,
             "base_version": required.context.base_version,
             "audience_count": required.context.audience_count,
+            # Os dois eixos, separados, para a tela poder dizer o efeito pelo nome em vez
+            # de somar pessoa com plataforma: "500 mensagens" e "2 postagens" não são
+            # "502 destinos". ``ceremony_reason`` diz por que a FRASE foi pedida e
+            # ``ceremony_threshold``, a partir de quantas mensagens o resto aperta.
+            "direct_message_count": direct_message_recipient_count(required.context),
+            "public_post_count": public_post_count(required.context),
+            "ceremony_reason": _ceremony_reason(required),
+            "ceremony_threshold": _ceremony_threshold_for_challenge(),
             "platforms": list(required.context.platforms),
             "scheduled_for": (
                 required.context.scheduled_for.isoformat()
@@ -871,7 +909,7 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         ACTION_UNFREEZE,
     }:
         return
-    target_count = _external_target_count(context)
+    target_count = external_destination_count(context)
     since = now - timedelta(days=1)
     used = sum(
         MarketingQuotaUsage.objects.filter(occurred_at__gte=since).values_list(
@@ -902,25 +940,75 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
     )
 
 
-def _external_target_count(context: AuthorizationContext) -> int:
-    # ``audience_count`` is the sealed cohort available to direct-message lanes;
-    # it is not the cardinality of a public post.  Mixed campaigns must add both
-    # consequences: N WhatsApp messages + one publication for every other
-    # selected platform.  ``max(...)`` used to undercount that sum precisely at
-    # the thresholds where step-up and dual control become stronger.
-    # Some non-delivery/legacy callers do not carry platforms yet.  Preserve
-    # their conservative cohort count until those contexts are migrated.
+def _ceremony_reason(required: MarketingAuthorizationRequired) -> str:
+    """Por que a frase digitada foi pedida. Vazio quando não foi.
+
+    Quem escolhe a política é o servidor, e é ele quem a explica: a tela poderia deduzir
+    "saiu mensagem" de ``direct_message_count``, mas aí o motivo passaria a morar no
+    navegador, que é exatamente o que este módulo não faz.
+
+    - ``direct_message`` — sai mensagem direta, e mensagem enviada não se apaga. É o
+      único motivo que existe hoje, porque postagem nunca pede frase.
+    - ``""`` — nenhuma frase foi pedida.
+
+    O motivo da SENHA (ou do autenticador e da segunda pessoa) é outro, e a tela o lê de
+    ``step_up``/``dual_control`` contra ``direct_message_count`` e ``ceremony_threshold``:
+    ali quem apertou foi o tamanho, não a irreversibilidade.
+    """
+    if not required.requirement.typed_phrase:
+        return ""
+    if direct_message_recipient_count(required.context) > 0:
+        return "direct_message"
+    return "volume"
+
+
+def _ceremony_threshold_for_challenge() -> int:
+    from shopman.shop.services.marketing_ceremony import ceremony_threshold
+
+    return ceremony_threshold().typed
+
+
+def direct_message_recipient_count(context: AuthorizationContext) -> int:
+    """PESSOAS que recebem mensagem direta. A grandeza irreversível e cobrada.
+
+    Zero quando o comando só publica: uma postagem não tem destinatário, tem mural.
+    ``audience_count`` é o público selado das faixas de mensagem — em um anúncio só de
+    postagem ele continua preenchido (é quem a casa poderia alcançar), e lê-lo como
+    destinatário faria três plataformas pedirem a senha de quinhentas pessoas.
+    """
     if not context.platforms:
-        return max(context.audience_count, 1)
+        # Chamadores legados (e a projeção do cockpit até migrarem) não carregam
+        # plataforma. Sem saber o eixo, conte como PESSOA: é o lado que pede mais
+        # cerimônia, e errar para o lado seguro é a regra da casa.
+        return max(context.audience_count, 0)
     from shopman.shop.services.marketing_capabilities import platform_kind
 
-    direct_messages = (
-        context.audience_count
-        if any(platform_kind(platform) == "direct_message" for platform in context.platforms)
-        else 0
-    )
-    public_publications = sum(platform_kind(platform) == "publication" for platform in context.platforms)
-    return max(direct_messages + public_publications, 1)
+    if any(platform_kind(platform) == "direct_message" for platform in context.platforms):
+        return max(context.audience_count, 0)
+    return 0
+
+
+def public_post_count(context: AuthorizationContext) -> int:
+    """PLATAFORMAS em que o anúncio vira postagem. Uma postagem por mural."""
+    if not context.platforms:
+        return 0
+    from shopman.shop.services.marketing_capabilities import platform_kind
+
+    return sum(platform_kind(platform) == "publication" for platform in context.platforms)
+
+
+def external_destination_count(context: AuthorizationContext) -> int:
+    """DESTINOS externos do comando: mensagens + postagens, somadas.
+
+    Esta soma continua existindo, e continua somando as duas grandezas, porque é a
+    grandeza da quota diária e do teto por comando: ali a pergunta é "quanto deste
+    comando sai da casa hoje", e uma postagem ocupa a API da plataforma tanto quanto uma
+    mensagem ocupa a do WhatsApp. O que ela NÃO faz mais é decidir cerimônia — para isso
+    somar pessoa com plataforma é somar peso com metro.
+    """
+    if not context.platforms:
+        return max(context.audience_count, 1)
+    return max(direct_message_recipient_count(context) + public_post_count(context), 1)
 
 
 def _require_second_actor(

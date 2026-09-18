@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -303,6 +303,20 @@ test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alph
 	$(PYTHON) scripts/check_workflow_budgets.py
 	$(PYTHON) -m pytest shopman/shop/tests/test_workflow_budget_gate.py -q
 
+# Gate do deploy que não esquece componente. O defeito de 17/09/2026: run
+# cancelado no meio da leva + detecção contra o commit ANTERIOR = imagem do PDV
+# não construída por run nenhum, com tudo verde.
+test-deploy-selection: ## Gate: a seleção de componentes do deploy não deixa ninguém para trás
+	@echo "── Seleção de componentes do Deploy Images ──"
+	$(PYTHON) -m pytest shopman/shop/tests/test_deploy_component_selection.py -q
+
+# ⚠️ NÃO é alvo de CI por si só (o job `drift` do Deploy Images é quem roda isto
+# no ar, com a credencial do workflow). Aqui serve de conferência de MÃO:
+# "o que está publicado é o que o main pede?". Exige DO_TOKEN.
+deploy-drift: ## Confere o registry contra o main — quem ficou para trás? (leitura)
+	@echo "── Componentes para trás no registry ──"
+	$(PYTHON) scripts/check_registry_drift.py
+
 # ⚠️ NÃO é alvo de CI: exige credencial da DigitalOcean, que a CI não tem (nem
 # deve ter). É conferência de MÃO, obrigatória antes de qualquer `apps update`.
 deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; roda ANTES de apps update)
@@ -559,6 +573,16 @@ surfaces-types: ## Só os tipos (rápido) — pega import morto e contrato diver
 		(cd surfaces/$$app && npm run typecheck --silent) || exit 1; \
 	done
 	@echo "✓ Tipos das superfícies"
+
+# O operator-kit entra NOMEADO aqui. `eslint .` roda do diretório de cada app e
+# nunca alcança `../operator-kit`: o layer ditava a base de lint dos nove apps e
+# era o único código de surfaces que jamais via ESLint.
+surfaces-lint: ## ESLint de todas as superfícies + do layer operator-kit
+	@for app in $(SURFACES) operator-kit; do \
+		echo "── $$app"; \
+		(cd surfaces/$$app && npm run lint --silent) || exit 1; \
+	done
+	@echo "✓ Lint das superfícies"
 
 admin: ## Admin: valida tudo de Admin/Unfold
 	$(PYTHON) scripts/check_unfold_canonical.py --maturity $(ADMIN_SCOPE_ARGS)

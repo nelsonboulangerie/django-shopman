@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const OPERATOR_PERM = "backstage.operate_purchase";
-const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 const { view, metrics } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const route = useRoute();
@@ -65,8 +65,11 @@ useOperatorWindowTitle();
         <span>{{ item.label }}</span>
       </button>
     </nav>
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="as compras" @retry="refresh()" />
     <OperatorLogin
-      v-if="!canIdentify"
+      v-if="!canIdentify && !sessionUnavailable"
       title="Entre para operar Compras"
       description="Use uma conta autorizada a comprar e receber insumos."
     />

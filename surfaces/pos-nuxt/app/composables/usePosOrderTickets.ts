@@ -78,7 +78,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
   /** A queda avisada: sem agente, dizer o que falta em vez de falhar mudo. */
   function warnNoAgent() {
     toast.error(
-      `Esta estação não imprime: ${agent.unavailableReason.value} `
+      `Esta estação não imprime: ${agent.printUnavailableReason.value} `
       + "As fichas saem no balcão que tem impressora.",
     );
   }
@@ -93,7 +93,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
   /** O lote inteiro, em fichas consecutivas. */
   async function printBatch(): Promise<boolean> {
     if (!import.meta.client || printing.value || !canPrint.value) return false;
-    if (!agent.canKick.value) {
+    if (!agent.canPrint.value) {
       warnNoAgent();
       return false;
     }
@@ -123,7 +123,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
   /** Uma ficha só — a que caiu, a que rasgou, a que chegou agora. */
   async function printOne(ref: string): Promise<boolean> {
     if (!import.meta.client || printingRef.value) return false;
-    if (!agent.canKick.value) {
+    if (!agent.canPrint.value) {
       warnNoAgent();
       return false;
     }
@@ -160,8 +160,8 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
     refresh,
     printing,
     printingRef,
-    hasPrinter: agent.canKick,
-    printerUnavailableReason: agent.unavailableReason,
+    hasPrinter: agent.canPrint,
+    printerUnavailableReason: agent.printUnavailableReason,
     setPreset,
     setRange,
     printBatch,

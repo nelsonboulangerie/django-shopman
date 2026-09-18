@@ -5,7 +5,15 @@
 // o OfflineBanner, o re-gate de 401 (useOperatorSession) e httpErrorMessage.
 import type { HubFailure } from "~/presentation/hub";
 import type { HubTileProjection } from "~/types/hub";
-import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileTarget } from "~/presentation/hub";
+import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
+
+// Como cada tile abre depende de a Central estar instalada (janela própria por app)
+// ou ser uma aba comum. A leitura é reativa: instalar com a tela aberta já muda o link.
+const { installed } = useOperatorAppLink();
+const linkContext = computed(() => ({
+  installed: installed.value,
+  currentOrigin: import.meta.client ? window.location.origin : "",
+}));
 
 const apiPath = useApiPath();
 useOperatorWindowTitle();
@@ -123,7 +131,8 @@ function tileImageSrc(tile: HubTileProjection): string | null {
           <li v-for="tile in tiles" :key="tile.ref">
             <a
               :href="tile.url"
-              :target="tileTarget(tile)"
+              :target="tileLinkAttrs(tile, linkContext).target"
+              :rel="tileLinkAttrs(tile, linkContext).rel"
               class="flex min-h-28 flex-col gap-2 rounded-md border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do

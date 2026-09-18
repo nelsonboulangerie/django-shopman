@@ -285,10 +285,6 @@ envs:
   scope: RUN_TIME
   value: 'https://www.nelsonboulangerie.com.br'
   type: GENERAL
-- key: DOORMAN_MESSAGE_SENDER_CLASS
-  scope: RUN_TIME
-  value: 'shopman.doorman.senders.LogSender'
-  type: GENERAL
 - key: DATABASE_URL
   scope: RUN_TIME
   value: '${postgres.shopman-staging-pool.DATABASE_URL}'

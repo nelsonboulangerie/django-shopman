@@ -125,7 +125,38 @@ motivo, versão, esquema, idempotência e confirmação. O cliente não deduz au
 nem transição a partir do status.
 
 Comandos sensíveis usam CAS, idempotência, confirmação contextual e comprovante.
-Conforme consequência e limiar, exigem nova autenticação, TOTP ou duplo controle.
+A cerimônia mede a consequência, e a consequência é medida em **pessoas que recebem
+mensagem** — nunca em plataformas, que é outra grandeza:
+
+- **`fire`** não pede cerimônia nenhuma (modo `none` — cria rascunho em revisão e não
+  entrega);
+- **postagem pública** pede sempre só o resumo + um toque, qualquer que seja o número de
+  plataformas: ela se apaga, não custa por pessoa e alcance não é fatura;
+- **mensagem direta** pede a **frase digitada (`ENVIAR <pessoas>`) SEMPRE**, de uma
+  pessoa em diante: o atrito segue o que não tem desfazer, e mensagem enviada não se
+  apaga. O que escala com o limiar da loja é o resto —
+  `max(piso, min(percentual × base de clientes, teto de gasto ÷ custo por mensagem))`:
+  abaixo dele, só a frase; dele até `× múltiplo`, frase + senha; daí em diante, frase +
+  TOTP + duplo controle;
+- **disparo misto** é decidido pela parte de mensagem, porque é a irreversível — e a
+  frase continua sendo `ENVIAR <pessoas>` mesmo com o botão dizendo "Disparar agora": o
+  que se digita é o número que não volta, nunca a soma de pessoas com murais;
+- os cinco ajustes (percentual, teto de gasto, custo por mensagem, piso e múltiplo) vivem
+  em `Shop.defaults["marketing"]`, editáveis em Loja → Integrações → "Cerimônia do
+  disparo", que mostra a base viva e a conta ao lado dos campos. Base de clientes = o
+  cadastro ativo (`Customer.is_active=True`); o histórico do Yooga vive no B.I. e não
+  cria cadastro.
+
+Agendar não é mais barato que entregar agora, e a obrigação de agendar acima de 2.000
+conta mensagens. A quota diária de 5.000 destinos externos e o teto de 5.000 por comando
+continuam somando mensagens + postagens, porque ali a pergunta é volume, não risco. Ver
+[ADR-031](../decisions/adr-031-marketing-ceremony-proportional-to-consequence.md) e
+[ADR-032](../decisions/adr-032-marketing-ceremony-threshold-is-proportional.md) e
+[ADR-033](../decisions/adr-033-marketing-typed-phrase-follows-the-irreversible.md).
+
+O desafio de confirmação diz por que pediu: `ceremony_reason` vale `direct_message`
+quando a frase veio da mensagem e `""` quando não houve frase; `direct_message_count`,
+`public_post_count` e `ceremony_threshold` completam a explicação.
 Outbox, público selado, artefato imutável, destinos e tentativas formam o grafo durável.
 `accepted_unconfirmed`, `confirmed`, falha final, falha repetível e `unknown` são estados
 distintos. `unknown` nunca recebe repetição cega.

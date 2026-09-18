@@ -27,6 +27,9 @@ export default [
     files: ["tests/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+      // Um arquivo de teste monta vários componentes-cobaia (`defineComponent`) de
+      // propósito: são fixtures do caso, não componentes do app procurando um arquivo.
+      "vue/one-component-per-file": "off",
     },
   },
   {

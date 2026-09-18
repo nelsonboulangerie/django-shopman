@@ -39,7 +39,7 @@ def allocate(order, equipment, *, allowed):
     try:
         ref = UUID(selected[0][len(PREFIX):])
     except ValueError:
-        raise ValueError("Maquininha inválida. Atualize os aparelhos disponíveis.") from None
+        raise ValueError("Maquininha inválida. Atualize as maquininhas disponíveis.") from None
     device = DeliveryDevice.objects.select_for_update().filter(ref=ref).first()
     if device is None or not device.active or device.current_order_id is not None:
         raise OrderStateConflict("Esta maquininha não está disponível. Escolha outra ou aguarde a devolução.")

@@ -1,5 +1,12 @@
 <script setup lang="ts">
-// Disparar agora — a campanha manual, com o público escolhido na hora.
+// Definir público — a campanha manual, com o público montado na hora.
+//
+// "Definir", não "escolher": aqui não se pega de uma lista pronta, se MONTA o público
+// com regras (etiquetas, faixa, comportamento, cruzamento). Escolher descreve um menu;
+// definir descreve o que esta tela faz.
+//
+// ⚠️ O botão daqui NÃO dispara: ele cria o anúncio e leva à revisão. Enquanto dizia
+// "Disparar agora", prometia o fim do caminho logo no começo dele.
 //
 // Uma pergunta: "para quem". O texto sempre vem do modelo salvo e o anúncio nasce para
 // revisão. Aceitar texto livre aqui criaria um caminho capaz de contornar a revisão.
@@ -29,7 +36,6 @@ import type {
   Campaign,
   Choice,
   ChosenAudience,
-  MarketingCommandResponse,
 } from "~/types/campaign";
 
 const props = defineProps<{
@@ -42,7 +48,6 @@ const props = defineProps<{
   productRequired?: boolean;
   busy?: boolean;
   error?: string;
-  result?: MarketingCommandResponse | null;
 }>();
 
 const emit = defineEmits<{ submit: [FireRequest]; cancel: [] }>();
@@ -78,7 +83,7 @@ const publicOnly = computed(
     campaignPlatforms.value.length > 0 &&
     campaignPlatforms.value.every((platform) => PUBLIC_PLATFORMS.has(platform)),
 );
-const publicPublicationCount = computed(() => campaignPlatforms.value.length);
+const publicPostCount = computed(() => campaignPlatforms.value.length);
 
 const {
   count,
@@ -240,11 +245,6 @@ const cannotSubmit = computed(() => {
   );
 });
 
-const resultAudienceCount = computed(() => {
-  const value = props.result?.receipt.outcome.audience_count;
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-});
-
 function measureAgain() {
   const rules = useSaved.value
     ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
@@ -275,67 +275,7 @@ watch(
 </script>
 
 <template>
-  <section v-if="result" class="space-y-4" aria-labelledby="fire-result-title">
-    <div class="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
-      <div class="flex items-start gap-3">
-        <Icon
-          name="lucide:badge-check"
-          class="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-400"
-        />
-        <div class="min-w-0">
-          <h2 id="fire-result-title" class="font-semibold">
-            Anúncio criado para revisão
-          </h2>
-          <p v-if="publicOnly" class="mt-1 text-sm text-muted-foreground">
-            {{ formatCount(publicPublicationCount) }}
-            {{
-              publicPublicationCount === 1
-                ? "postagem pública preparada"
-                : "postagens públicas preparadas"
-            }}. Nada foi publicado ainda.
-          </p>
-          <p v-else class="mt-1 text-sm text-muted-foreground">
-            {{ formatCount(resultAudienceCount) }}
-            {{
-              resultAudienceCount === 1
-                ? "pessoa elegível"
-                : "pessoas elegíveis"
-            }}. Nenhuma publicação ou mensagem foi enviada.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <dl class="rounded-lg border border-border bg-muted/40 p-3 text-sm">
-      <div>
-        <dt class="text-xs text-muted-foreground">Comprovante</dt>
-        <dd class="mt-0.5 break-all font-mono">{{ result.receipt.ref }}</dd>
-      </div>
-      <div class="mt-2">
-        <dt class="text-xs text-muted-foreground">Versão registrada</dt>
-        <dd class="font-semibold">{{ result.receipt.resulting_version }}</dd>
-      </div>
-      <p v-if="result.replayed" class="mt-2 text-xs text-muted-foreground">
-        Este é o mesmo resultado do toque anterior; nenhum anúncio foi
-        duplicado.
-      </p>
-    </dl>
-
-    <div class="flex flex-wrap justify-end gap-2">
-      <UiButton type="button" variant="outline" @click="emit('cancel')">
-        Fechar
-      </UiButton>
-      <NuxtLink
-        :to="`/announcements/${result.announcement.pk}#review`"
-        class="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
-      >
-        Revisar anúncio agora
-      </NuxtLink>
-    </div>
-  </section>
-
   <form
-    v-else
     class="space-y-5"
     @submit.prevent="
       emit('submit', {
@@ -345,16 +285,9 @@ watch(
       })
     "
   >
-    <div
-      class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
-    >
-      <p class="font-semibold">Texto protegido pelo fluxo de revisão</p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        Este disparo usa o modelo salvo da campanha e cria um anúncio para
-        revisão antes de qualquer publicação. Para mudar a mensagem, edite o
-        modelo da campanha.
-      </p>
-    </div>
+    <p class="text-xs text-muted-foreground">
+      O texto vem do modelo da campanha. Para mudá-lo, edite a campanha.
+    </p>
 
     <div v-if="needsProduct">
       <label
@@ -397,16 +330,15 @@ watch(
         />
         <div>
           <p class="text-sm font-semibold">
-            {{ formatCount(publicPublicationCount) }}
+            {{ formatCount(publicPostCount) }}
             {{
-              publicPublicationCount === 1
+              publicPostCount === 1
                 ? "postagem pública"
                 : "postagens públicas"
             }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            Este anúncio será preparado uma vez por plataforma para revisão. Não
-            há seleção de contatos e nenhuma mensagem direta será enviada.
+            Uma em cada plataforma. Não escolhe contatos.
           </p>
         </div>
       </div>
@@ -747,8 +679,7 @@ watch(
       v-if="!publicOnly"
       class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se
-      estiver no público escolhido.
+      Sem consentimento de WhatsApp, fica de fora.
     </p>
 
     <p v-if="error" class="text-sm text-destructive" role="alert">
@@ -763,14 +694,10 @@ watch(
         <Icon name="lucide:send" class="size-4" />
         {{
           busy
-            ? publicOnly
-              ? "Preparando…"
-              : "Disparando…"
-            : publicOnly
-              ? "Preparar para revisão"
-              : countFailed
-                ? "Aguardando contagem"
-                : "Disparar agora"
+            ? "Preparando…"
+            : countFailed && !publicOnly
+              ? "Aguardando contagem"
+              : "Revisar anúncio"
         }}
       </UiButton>
     </div>

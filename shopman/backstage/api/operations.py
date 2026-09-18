@@ -1791,7 +1791,7 @@ class OrderAdvanceView(_OrderActionBase):
             return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
         equipment = body.get("equipment") or []
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
-            return Response({"detail": "Aparelhos devem ser uma lista de referências."}, status=400)
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
         equipment = sorted(set(equipment))
         change_out = body.get("change_out")
         if change_out is not None:
@@ -2061,7 +2061,7 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
         change_back = request.data.get("change_back")
         equipment_back = request.data.get("equipment_back", False)
         if not isinstance(equipment_back, bool):
-            return Response({"detail": "Informe a devolução do aparelho como verdadeiro ou falso."}, status=400)
+            return Response({"detail": "Informe a devolução da maquininha como verdadeiro ou falso."}, status=400)
         amount = str(request.data.get("amount", ""))
         change = None if change_back is None else str(change_back)
 

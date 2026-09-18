@@ -1,4 +1,4 @@
-"""Terminal — o aparelho onde a gaveta está.
+"""Terminal — o dispositivo onde a gaveta está.
 
 Config, não dinheiro (ADR-011: "terminal não guarda dinheiro"). O que a loja
 decide sobre o balcão mora aqui: canal, local, hardware em ``metadata``. Quem
@@ -26,7 +26,7 @@ class Terminal(models.Model):
         _("metadados"),
         default=dict,
         blank=True,
-        help_text=_("Configuração do aparelho (hardware, trava). Schema em docs/reference/data-schemas.md."),
+        help_text=_("Configuração do dispositivo (hardware, trava). Schema em docs/reference/data-schemas.md."),
     )
     created_at = models.DateTimeField(_("criado em"), auto_now_add=True)
     updated_at = models.DateTimeField(_("atualizado em"), auto_now=True)

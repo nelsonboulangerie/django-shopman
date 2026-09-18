@@ -7,7 +7,7 @@ import { usePosCashSession } from "~/composables/usePosCashSession";
 
 import { makeProjection } from "./_posSaleHarness";
 
-vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 
 function makeCashSession(opts: {
   projection?: POSProjection | null;
@@ -116,6 +116,13 @@ const AGENT_DRAWER = {
   pulse: { pin: 0, on_ms: 50, off_ms: 500 },
 } satisfies POSProjection["cash_drawer"];
 
+/** A IMPRESSORA do balcão — o comprovante de caixa sai por ela, não pela gaveta. */
+const AGENT_PRINTER = {
+  can_print: true,
+  agent_url: "http://127.0.0.1:47811",
+  token: "token-do-balcao",
+} satisfies POSProjection["device_agent"];
+
 function makeDrawerSession(opts: { actionCall?: ReturnType<typeof vi.fn> } = {}) {
   const kicks: string[] = [];
   vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
@@ -123,7 +130,7 @@ function makeDrawerSession(opts: { actionCall?: ReturnType<typeof vi.fn> } = {})
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
   }));
   const made = makeCashSession({
-    projection: makeProjection({ cash_drawer: AGENT_DRAWER }),
+    projection: makeProjection({ cash_drawer: AGENT_DRAWER, device_agent: AGENT_PRINTER }),
     actionCall: opts.actionCall,
   });
   return { ...made, kicks };
@@ -210,7 +217,7 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
     });
 
     const made = makeCashSession({
-      projection: makeProjection({ cash_drawer: AGENT_DRAWER }),
+      projection: makeProjection({ cash_drawer: AGENT_DRAWER, device_agent: AGENT_PRINTER }),
       actionCall,
     });
     return { ...made, servidor, agentCalls };
@@ -258,7 +265,7 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
     }));
     const actionCall = vi.fn().mockRejectedValue(new Error("recusado"));
     const { session } = makeCashSession({
-      projection: makeProjection({ cash_drawer: AGENT_DRAWER }),
+      projection: makeProjection({ cash_drawer: AGENT_DRAWER, device_agent: AGENT_PRINTER }),
       actionCall,
     });
 
@@ -296,9 +303,67 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
     await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
     await new Promise((r) => setTimeout(r, 10));
 
-    const chamadas = vi.mocked(toast.error).mock.calls;
-    const opcoes = chamadas[chamadas.length - 1]?.[1] as { action?: { label?: unknown } } | undefined;
-    expect(opcoes?.action?.label).toBe("Tentar de novo");
+    const calls = vi.mocked(toast.error).mock.calls;
+    const options = calls[calls.length - 1]?.[1] as { action?: { label?: unknown } } | undefined;
+    expect(options?.action?.label).toBe("Tentar de novo");
+  });
+
+  it("balcão com bobina e gaveta de CHAVE imprime o comprovante", async () => {
+    // A regressão: a impressão do comprovante pendurava no flag da gaveta, e
+    // este balcão — impressora ligada no Admin, gaveta de chave — não imprimia
+    // nada. O dono configurou a impressora e o PDV disse que não havia uma.
+    const agentCalls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      agentCalls.push(String(url));
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    }));
+    const actionCall = vi.fn((path: string, opts?: { method?: string }) =>
+      path.includes("/receipt/") && opts?.method === "GET"
+        ? Promise.resolve({ payload_b64: "SEVMTE8=", title: "comprovante:sangria" })
+        : Promise.resolve({ ok: true, entry_id: 77 }),
+    );
+    const { session } = makeCashSession({
+      projection: makeProjection({
+        cash_drawer: { adapter: "manual", can_kick: false, open_on_cash_sale: false },
+        device_agent: AGENT_PRINTER,
+      }),
+      actionCall,
+    });
+
+    expect(session.canOpenDrawer.value).toBe(false);
+    expect(session.canPrintReceipt.value).toBe(true);
+
+    await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(agentCalls.some((u) => u.endsWith("/print"))).toBe(true);
+  });
+
+  it("estação SEM impressora não fica calada — 'skipped' era falha muda", async () => {
+    // O comprovante simplesmente não saía e ninguém ficava sabendo: só
+    // `failed` virava toast. O operador ia procurar o papel na bobina.
+    vi.mocked(toast.warning).mockClear();
+    const actionCall = vi.fn((path: string, opts?: { method?: string }) =>
+      path.includes("/receipt/") && opts?.method === "GET"
+        ? Promise.resolve({ payload_b64: "SEVMTE8=", title: "comprovante:sangria" })
+        : Promise.resolve({ ok: true, entry_id: 77 }),
+    );
+    const { session, actionCall: call } = makeCashSession({
+      projection: makeProjection({
+        cash_drawer: { adapter: "manual", can_kick: false, open_on_cash_sale: false },
+      }),
+      actionCall,
+    });
+
+    await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const aviso = vi.mocked(toast.warning).mock.calls.at(-1);
+    expect(String(aviso?.[0])).toContain("Impressora");
+    // E o movimento continua registrado: avisar não pode virar desfazer.
+    const registro = call.mock.calls.find(([path, o]) =>
+      String(path).endsWith("/receipt/") && (o as { body?: unknown })?.body);
+    expect((registro?.[1] as { body: { status: string } }).body.status).toBe("skipped");
   });
 });
 
@@ -375,16 +440,16 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     expect(ok).toBe(true);
     // "Sem corpo de dinheiro" continua valendo: nenhum campo de valor vai junto.
     // A chave de replay não é dinheiro — é a identidade DESTE gesto.
-    const [, opcoes] = actionCall.mock.calls[0]!;
-    expect(Object.keys(opcoes.body as object)).toEqual(["client_request_id"]);
+    const [, options] = actionCall.mock.calls[0]!;
+    expect(Object.keys(options.body as object)).toEqual(["client_request_id"]);
   });
 
   it("todo comando de caixa carrega a chave de replay", async () => {
     // Sem ela o servidor não tem o que travar, e a sangria em dobro volta.
     const { session, actionCall } = makeCashSession();
     await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
-    const [, opcoes] = actionCall.mock.calls[0]!;
-    expect((opcoes.body as Record<string, unknown>).client_request_id).toMatch(/^pos-cash:/);
+    const [, options] = actionCall.mock.calls[0]!;
+    expect((options.body as Record<string, unknown>).client_request_id).toMatch(/^pos-cash:/);
   });
 
   it("o RETRY do mesmo lançamento reusa a chave — é o que impede a linha dobrada", async () => {
@@ -392,28 +457,28 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     // novo. Chave igual = o servidor reconhece o replay e devolve o mesmo resultado.
     const actionCall = vi.fn().mockRejectedValue(new Error("timeout"));
     const { session } = makeCashSession({ actionCall });
-    const movimento = { kind: "sangria", amount: "200", reason: "cofre" };
+    const movement = { kind: "sangria", amount: "200", reason: "cofre" };
 
-    await session.registerCashMovement(movimento);
-    await session.registerCashMovement(movimento);
+    await session.registerCashMovement(movement);
+    await session.registerCashMovement(movement);
 
-    const primeira = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
-    const segunda = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
-    expect(segunda).toBe(primeira);
+    const first = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
+    const second = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
+    expect(second).toBe(first);
   });
 
   it("depois do SUCESSO a chave é descartada — duas sangrias iguais são duas linhas", async () => {
     // É o outro lado, e sem ele a trava viraria uma porta fechada: o operador que
     // precisa fazer a mesma sangria duas vezes de propósito não conseguiria.
     const { session, actionCall } = makeCashSession();
-    const movimento = { kind: "sangria", amount: "200", reason: "cofre" };
+    const movement = { kind: "sangria", amount: "200", reason: "cofre" };
 
-    await session.registerCashMovement(movimento);
-    await session.registerCashMovement(movimento);
+    await session.registerCashMovement(movement);
+    await session.registerCashMovement(movement);
 
-    const primeira = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
-    const segunda = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
-    expect(segunda).not.toBe(primeira);
+    const first = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
+    const second = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
+    expect(second).not.toBe(first);
   });
 
   it("NENHUMA ação de troco encosta em movimento de caixa nem imprime comprovante", async () => {

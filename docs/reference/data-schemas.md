@@ -1517,7 +1517,7 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO APARELHO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
-| `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este dispositivo. Ver abaixo. |
+| `station` | `dict` | Admin | `backstage/station_trust.py`, `services/print_jobs.py` | Que ESPÉCIE de estação é este dispositivo, em nome de quem ela age, e para onde vão as etiquetas que ela pede. Ver abaixo. |
 
 ⚠️ **Nada disto é dado de seed, e o `seed --flush` não custa nenhum.** O flush precisa apagar
 `Terminal` (o turno pendura ali por FK), então ele fotografa a config por `ref` e
@@ -1535,9 +1535,9 @@ dele, pelo gate de permissão do backstage. Ausente = **atendida**.
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. |
-| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. |
-| `print_target_ref` | `str` | Terminal físico que recebe as etiquetas pedidas nesta estação. Ausente: o servidor usa a própria estação quando ela tem a capacidade ou deduz o único destino de preparação disponível. O tablet nunca recebe endereço ou segredo do agente. |
+| `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. **Escrito no Admin do terminal**, seção "Identificação desta estação". |
+| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. **Escrito no Admin**, numa lista fechada com as contas que `station_trust.eligible_station_operators()` aceita (ativa, `is_staff`, **nunca** superusuária) — a mesma pergunta que o gate faz, nunca texto livre. Conta que saiu do ar continua aparecendo marcada e barra o salvamento até o gestor repontar. Voltar o modo para `attended` APAGA a chave: conta com poder permanente esquecida num aparelho físico é arma carregada. |
+| `print_target_ref` | `str` | Terminal físico que recebe as etiquetas pedidas nesta estação. Ausente: o servidor usa a própria estação quando ela tem a capacidade ou deduz o único destino de preparação disponível. O tablet nunca recebe endereço ou segredo do agente. **Escrito no Admin do terminal** (seção "Destino das etiquetas desta estação"), numa lista fechada com os terminais que `print_jobs.preparation_destinations()` aceita — nunca texto livre, porque ref inventada viraria recusa só na hora de imprimir. Destino que saiu do ar continua aparecendo marcado e barra o salvamento até o gestor repontar. |
 
 **Atendida** é o balcão: tem gente na frente, e não faz nada sem PIN ou crachá.
 **Autônoma** é o totem: não há quem digite PIN, então ele age em nome próprio, com uma conta
@@ -1550,6 +1550,26 @@ E conta **superusuária é recusada com log de erro**: `is_superuser` curto-circ
 então um totem assim ignoraria qualquer conjunto mínimo — que é literalmente o buraco que a
 D1 Parte B fechou, só que com um dispositivo no lugar do `admin`.
 
+⛔ **A estação autônoma só age na superfície de PRODUÇÃO**, e isso é controle de segurança,
+não escopo de produto. O cookie de confiança é nomeado por terminal, mas o domínio dele é
+`.boulangerie.com.br` inteiro (`SHOPMAN_OPERATOR_COOKIE_DOMAIN`): o mesmo painel de parede,
+aberto em `pdv.boulangerie.com.br`, leva a confiança junto. Sem o corte, a conta do painel
+viraria operador no balcão — a forma exata do buraco de 20/08. O discriminador é o **prefixo
+de rota** (`station_trust.PRODUCTION_API_PREFIX`, `/api/v1/backstage/production/`): a mesma
+string que o roteador do Django usou para escolher a view, e a única que o cliente não pode
+afirmar sobre si (Host, Referer e cabeçalho de BFF são todos do cliente). Superfície não
+reconhecida = atendida = pede PIN.
+
+Por isso a antessala do painel mora em `production/session/` (`api-backstage-production-session`),
+e não na compartilhada `operator/session/`: se a compartilhada resolvesse a conta do painel, o
+PDV com o mesmo cookie leria "destravado" com o nome dele e a pessoa perderia a tela de PIN.
+O app do Produção aponta para lá por `runtimeConfig.public.operatorSessionPath`.
+
+⚠️ **Não existe campo genérico de superfície, e não é esquecimento.** Cada superfície a mais é
+uma conta com poder permanente num aparelho físico: estender pede revisão de segurança própria,
+com o dono, não uma constante a mais. KDS tem gente na frente (a decisão de 17/09 é trava por
+ociosidade + sessão deslizante, o caminho *atendido*); o PDV mexe em dinheiro.
+
 ### hardware — periféricos declarados
 
 Um dict por periférico: `printer`, `cash_drawer`, `scanner`, `payment_terminal`, `customer_display`.
@@ -1561,8 +1581,8 @@ alerta que ninguém lê.
 | Chave | Tipo | Aplica a | Descrição |
 |-------|------|----------|-----------|
 | `enabled` | `bool` | todos | `false` → `absent` ("desligado"). Ausente = ligado. |
-| `adapter` | `str` | todos | Nome do adapter. Presente → `ready`; declarado sem adapter → `warning`. |
-| `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde. |
+| `adapter` | `str` | `scanner`, `payment_terminal`, `customer_display` | Nome do adapter. Presente → `ready`; declarado sem adapter → `warning`. ⚠️ **A `cash_drawer` tem vocabulário fechado próprio** (`manual`/`agent`, em `pos_hardware.CASH_DRAWER_ADAPTERS`) e responde pelo `_cash_drawer_health`. A `printer` **não usa mais esta chave**: era texto livre, ninguém a lia para decidir nada, e quem responde por ela é o `device_agent` (ver abaixo). Valor antigo no JSON sobrevive e é ignorado. |
+| `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde, ninguém lê, e nem o Admin nem o `seed` escrevem — só sobrevive onde já existia. |
 | `roll_width_mm` | `int` | `printer` | Largura do rolo em mm (40–120). É o que a loja sabe: o papel que ela compra. Vira `--pos-roll-width` no print CSS do PDV via projection. Ausente → o default do CSS (80mm) manda. |
 | `print_width_mm` | `int` | `printer` | Largura que o cabeçote alcança, em mm. **Só é necessária para rolo fora dos dois padrões** (80mm→72mm, 58mm→48mm), porque a área imprimível não é proporcional à largura do papel e chutar imprime fora do alcance. |
 | `columns` | `int` | `printer` | Colunas ESC/POS aferidas para o recibo do PDV. O perfil de etiqueta deriva suas próprias colunas da área útil; não reutiliza este número. |
@@ -1582,6 +1602,14 @@ segunda configuração divergente no Admin.
 de etiqueta fora da faixa, ou área útil maior que a mídia, vira indisponibilidade
 com o motivo. Config ignorada em silêncio é pior que config ausente: a loja
 acha que configurou.
+
+⚠️ **A saúde da `printer` sai do `device_agent`, não de um rótulo.** Declarada e
+ligada, com geometria válida, ela ainda depende da ponte local do dispositivo
+para existir: `warning` enquanto o agente não estiver declarado, ligado e com
+token; `ready` quando estiver
+(`shopman/backstage/services/pos_terminal.py::_printer_health`). Era um texto
+livre em `adapter` que acendia o verde, e ele ficava verde num balcão em que o
+PDV recusava imprimir.
 
 A margem é derivada, nunca declarada: `ceil((roll_width_mm - print_width_mm) / 2)`. Um rolo de 80mm
 dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segundo botão para alguém errar.
@@ -1603,6 +1631,13 @@ não entra por acidente. O processo continua escutando apenas na loopback e
 exigindo token. Configurações antigas que ainda
 guardam URL/token em `hardware.cash_drawer` são lidas como compatibilidade e
 migram ao próximo salvamento no Admin.
+
+**Impressora e gaveta são capacidades INDEPENDENTES, e a projeção do PDV as
+entrega separadas.** `POSProjection.device_agent` (`{can_print, reason,
+agent_url, token}`) responde pela bobina; `POSProjection.cash_drawer`
+(`{can_kick, …}`) responde pela gaveta. Pendurar impressão no `can_kick` deixa
+mudo o balcão que tem impressora e abre a gaveta com a chave — combinação que o
+próprio Admin produz.
 
 ---
 

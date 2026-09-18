@@ -31,14 +31,26 @@ _PATCH_BUILD_URL = patch.object(
 
 
 class FakeSender:
-    """Sender that captures the raw code instead of sending it."""
+    """Dublê de entrega: captura o código em vez de entregá-lo.
+
+    O gancho é ``send_code_with_fallback``, o único ponto por onde a view
+    sempre passa. O ``send_code`` do adapter NÃO serve como gancho: quando
+    ``DOORMAN["DELIVERY_CHAIN"]`` está declarada — o caso de
+    ``config.settings_test`` e do ambiente de produção — o adapter resolve um
+    sender por método e entrega por ele, sem nunca chamar o próprio
+    ``send_code``. Com o dublê instalado lá embaixo estes testes passavam sob
+    ``doorman_test_settings`` (cadeia vazia) e falhavam sob qualquer settings
+    que declarasse uma: o código saía pelo ConsoleSender de verdade e
+    ``last_code`` ficava ``None``. Teste de view não pode depender de qual
+    cadeia de entrega o ambiente configurou.
+    """
 
     def __init__(self):
         self.last_code = None
 
-    def send_code(self, target, code, method):
+    def send_code_with_fallback(self, target, code, preferred_method="whatsapp"):
         self.last_code = code
-        return True
+        return True, preferred_method
 
 
 def _fake_redirect(to, *args, **kwargs):
@@ -92,7 +104,10 @@ class TestVerificationCodeRequestViewForm:
             data="phone=41999999999",
             content_type="application/x-www-form-urlencoded",
         )
-        with patch("shopman.doorman.adapter.DefaultAuthAdapter.send_code", sender.send_code):
+        with patch(
+            "shopman.doorman.adapter.DefaultAuthAdapter.send_code_with_fallback",
+            sender.send_code_with_fallback,
+        ):
             response = VerificationCodeRequestView.as_view()(request)
 
         assert response.status_code == 302
@@ -122,13 +137,21 @@ class TestVerificationCodeRequestViewJSON:
 
         body = json.dumps({"phone": "41999999999"})
         request = _make_request("post", data=body, content_type="application/json")
-        with patch("shopman.doorman.adapter.DefaultAuthAdapter.send_code", sender.send_code):
+        with patch(
+            "shopman.doorman.adapter.DefaultAuthAdapter.send_code_with_fallback",
+            sender.send_code_with_fallback,
+        ):
             response = VerificationCodeRequestView.as_view()(request)
 
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["success"] is True
         assert data["phone"] == "+5541999999999"
+        # O dublê precisa ter sido o caminho de entrega: sem esta asserção ele
+        # podia voltar a ser decorativo — instalado num gancho que o adapter
+        # não percorre — e ninguém notaria.
+        assert sender.last_code is not None
+        assert len(sender.last_code) == 6
 
 
 # ===================================================
@@ -288,7 +311,10 @@ class TestFullJourney:
         # Step 1: Request code
         body = json.dumps({"phone": "41888888888"})
         request1 = _make_request("post", data=body, content_type="application/json")
-        with patch("shopman.doorman.adapter.DefaultAuthAdapter.send_code", sender.send_code):
+        with patch(
+            "shopman.doorman.adapter.DefaultAuthAdapter.send_code_with_fallback",
+            sender.send_code_with_fallback,
+        ):
             response1 = VerificationCodeRequestView.as_view()(request1)
 
         assert response1.status_code == 200

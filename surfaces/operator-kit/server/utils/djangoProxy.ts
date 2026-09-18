@@ -50,6 +50,10 @@ export function isSafeDjangoLocation(location: string): boolean {
   return location.startsWith("/")
     && !location.startsWith("//")
     && !location.includes("\\")
+    // Casar caractere de controle É o ponto: CR/LF/NUL num Location refletido pelo
+    // Django viram response splitting. A regra supõe que control char em regex é engano
+    // de digitação; aqui é a defesa, não o descuido.
+    // eslint-disable-next-line no-control-regex
     && !/[\x00-\x1F\x7F]/.test(location);
 }
 

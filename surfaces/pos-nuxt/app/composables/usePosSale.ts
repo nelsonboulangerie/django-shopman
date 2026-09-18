@@ -2070,11 +2070,18 @@ export function usePosSale(deps: PosSaleDeps) {
     await attendCustomer(candidate.ref, candidate.name);
   }
 
-  /** É a MESMA pessoa: os dois cadastros viram um, e a comanda segue no alvo. */
+  /** É a MESMA pessoa: os dois cadastros viram um, e a comanda segue no alvo.
+   *
+   *  O candidato viaja quando a escolha foi por LINHA (a lista, onde o dado
+   *  solto é um dos vários lados e `decision.other` é só o primeiro deles). No
+   *  painel de um lado só ele não vem, e o doador é o `other` de sempre.
+   */
   const customerMergeBusy = ref(false);
-  async function mergeConflictCustomers() {
+  async function mergeConflictCustomers(candidate?: ServerConflictCandidate) {
     const decision = customerDecision.value;
-    const other = decision?.other;
+    const other = candidate
+      ? { ref: candidate.ref, name: candidate.name, value: "" }
+      : decision?.other;
     const current = decision?.current;
     if (!other || !current) return;
     customerMergeBusy.value = true;

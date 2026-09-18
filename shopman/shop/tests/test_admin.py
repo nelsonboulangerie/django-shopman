@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, time
+from decimal import Decimal
 
 import pytest
 from django import forms
@@ -804,6 +805,128 @@ class TestMarketingWhatsappMinimumAudiencePolicy:
         assert "O mínimo aceito é 1 pessoa".encode() in refused.content
         shop.refresh_from_db()
         assert shop.defaults["marketing"]["whatsapp_minimum_audience"] == 4
+
+
+class TestMarketingCeremonyThresholdPolicy:
+    """Decisão do dono (17/09): "2% da base de clientes. Ou threshold para gasto, o que
+    chegar primeiro. ponto. Tudo ajustável via admin, claro."
+
+    Os cinco ajustes moram em ``Shop.defaults["marketing"]`` e são editados na página
+    "Integrações", com a base viva e a conta ao lado. Ver ADR-032.
+    """
+
+    FIELDS = (
+        "defaults_marketing_ceremony_audience_percent",
+        "defaults_marketing_ceremony_spend_limit_q",
+        "defaults_marketing_direct_message_cost_q",
+        "defaults_marketing_ceremony_recipient_floor",
+        "defaults_marketing_ceremony_dual_control_multiple",
+    )
+
+    @staticmethod
+    def _integrations_data(**overrides):
+        data = {
+            "integrations_payment_pix": "",
+            "integrations_payment_card": "",
+            "integrations_notification_default": "",
+            "integrations_fiscal": "",
+            "defaults_marketing_whatsapp_minimum_audience": "",
+            "defaults_marketing_ceremony_audience_percent": "",
+            "defaults_marketing_ceremony_spend_limit_q": "",
+            "defaults_marketing_direct_message_cost_q": "",
+            "defaults_marketing_ceremony_recipient_floor": "",
+            "defaults_marketing_ceremony_dual_control_multiple": "",
+        }
+        data.update(overrides)
+        return data
+
+    @staticmethod
+    def _form(shop, data=None):
+        from shopman.shop.admin.shop import _INTEGRATIONS_FIELDSETS, _section_form
+
+        Form = _section_form(_INTEGRATIONS_FIELDSETS)
+        return Form(data=data, instance=shop) if data is not None else Form(instance=shop)
+
+    def test_every_knob_lives_on_the_integrations_page(self, shop):
+        fields = self._form(shop).fields
+
+        for name in self.FIELDS:
+            assert name in fields, name
+            assert fields[name].required is False
+        # O que é palpite diz que é palpite na própria tela — é assim que o gestor sabe
+        # o que precisa conferir com o contrato dele.
+        assert "⚠️ Palpite" in fields["defaults_marketing_direct_message_cost_q"].help_text
+        assert "⚠️ Palpite" in fields["defaults_marketing_ceremony_spend_limit_q"].help_text
+        assert "⚠️ Palpite" in fields["defaults_marketing_ceremony_recipient_floor"].help_text
+
+    def test_saving_stores_the_five_knobs_and_the_policy_reads_them(self, shop):
+        from shopman.shop.marketing_policy import resolve_marketing_policy
+
+        form = self._form(shop, self._integrations_data(
+            defaults_marketing_ceremony_audience_percent="5",
+            defaults_marketing_ceremony_spend_limit_q="120.50",
+            defaults_marketing_direct_message_cost_q="0.09",
+            defaults_marketing_ceremony_recipient_floor="15",
+            defaults_marketing_ceremony_dual_control_multiple="4",
+        ))
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        saved.refresh_from_db()
+
+        assert saved.defaults["marketing"] == {
+            "ceremony_audience_percent": "5",
+            "ceremony_spend_limit_q": 12_050,
+            "direct_message_cost_q": 9,
+            "ceremony_recipient_floor": 15,
+            "ceremony_dual_control_multiple": 4,
+        }
+        policy = resolve_marketing_policy()
+        assert policy.ceremony_audience_percent == Decimal("5")
+        assert policy.ceremony_spend_limit_q == 12_050
+        threshold = policy.ceremony_threshold(2_000)
+        assert (threshold.typed, threshold.dual_control) == (100, 400)
+
+    def test_blank_removes_the_keys_and_the_defaults_come_back(self, shop):
+        from shopman.shop.marketing_policy import (
+            DEFAULT_CEREMONY_AUDIENCE_PERCENT,
+            resolve_marketing_policy,
+        )
+
+        shop.defaults = {"marketing": {"ceremony_audience_percent": "9"}}
+        shop.save(update_fields=["defaults"])
+        form = self._form(shop, self._integrations_data())
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        saved.refresh_from_db()
+
+        assert "marketing" not in saved.defaults
+        assert resolve_marketing_policy().ceremony_audience_percent == DEFAULT_CEREMONY_AUDIENCE_PERCENT
+
+    def test_the_page_shows_the_live_base_next_to_the_knobs(self, db, admin_user, shop):
+        """O número vivo ao lado do ajuste: "2%" não quer dizer nada sem a base."""
+        from shopman.guestman.models import Customer
+
+        Customer.objects.create(ref="CLI-ADMIN-1", first_name="Ana", phone="+5543999990101")
+        Customer.objects.create(ref="CLI-ADMIN-2", first_name="Bia", phone="+5543999990102")
+        Customer.objects.create(
+            ref="CLI-ADMIN-3", first_name="Cida", phone="+5543999990103", is_active=False
+        )
+        client = Client()
+        client.force_login(admin_user)
+
+        page = client.get(reverse("admin:shop_shopintegrations_change", args=[shop.pk]))
+
+        assert page.status_code == 200
+        body = page.content.decode()
+        assert "Cerimônia do disparo" in body
+        # Duas pessoas: a terceira foi esquecida e sai da base.
+        assert "2 pessoas no cadastro ativo" in body
+        # E a conta inteira, para conferir de olho em vez de de fé.
+        assert "a partir de 10 pessoas" in body
+        assert "o piso (a base ainda é pequena para a fatia)" in body
+        assert "não cria cadastro" in body
 
 
 class TestMarketingPolicyResolution:

@@ -1,14 +1,21 @@
 """Duas espécies de estação: a atendida e a autônoma.
 
-O balcão tem gente na frente e não faz nada sem PIN. O totem não tem — e por isso
-age em NOME PRÓPRIO, com uma conta que é dele. As duas dividem a mesma regra: o
-DISPOSITIVO não concede nada; quem concede é a identidade.
+O balcão tem gente na frente e não faz nada sem PIN. O painel de parede da
+Produção não tem — e por isso age em NOME PRÓPRIO, com uma conta que é dele. As
+duas dividem a mesma regra: o DISPOSITIVO não concede nada; quem concede é a
+identidade.
 
-⚠️ A superfície do totem ainda não existe, e este arquivo não a inventa. O que se
-prova aqui é só a camada de identidade — que é o que precisa estar certo ANTES,
-porque é ela que ficaria cara de mudar depois. Quando o totem chegar (Stone
-AutoTEF ou o que for), o deployment cria a conta, concede o que aquela superfície
-precisa, e vira o modo do terminal. Nada de identidade se redesenha.
+⚠️ **E a autônoma só vale na Produção.** Esta é a metade do arquivo que importa,
+e ela é sobre o COOKIE, não sobre o produto. O cookie de confiança de estação é
+nomeado por terminal, mas o domínio dele é ``.boulangerie.com.br`` inteiro
+(``SHOPMAN_OPERATOR_COOKIE_DOMAIN``): o mesmo tablet que é kiosk de Produção, ao
+abrir ``pdv.boulangerie.com.br``, leva a confiança junto. Sem uma trava de
+SUPERFÍCIE do lado do servidor, ``_operador()`` resolveria a conta do totem lá
+também e daria as permissões dela no balcão — a forma exata do buraco de 20/08
+que o ``station_trust`` existe para fechar.
+
+Por isso os testes que provam este arquivo são os NEGATIVOS: o que o cookie do
+totem NÃO faz fora da Produção.
 """
 
 from __future__ import annotations
@@ -17,6 +24,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.urls import reverse
 from shopman.cashman.models import Shift, Terminal
 
 from shopman.backstage import station_trust
@@ -26,7 +34,14 @@ from shopman.shop.models import Shop
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("_loja")]
 
 POS_URL = "/api/v1/backstage/pos/"
+KDS_URL = "/api/v1/backstage/kds/"
+ORDERS_URL = "/api/v1/backstage/orders/"
 SESSION_URL = "/api/v1/backstage/operator/session/"
+
+#: A superfície onde a estação autônoma age. Tudo que é positivo neste arquivo
+#: passa por aqui; tudo que é negativo passa por fora.
+PRODUCTION_URL = "/api/v1/backstage/production/"
+PRODUCTION_SESSION_URL = "/api/v1/backstage/production/session/"
 
 
 @pytest.fixture
@@ -40,6 +55,21 @@ def _grant(user, codename: str):
     return get_user_model().objects.get(pk=user.pk)
 
 
+def _backstage_perm(codename: str) -> Permission:
+    from shopman.backstage.models import DayClosing
+
+    return Permission.objects.get(
+        content_type=ContentType.objects.get_for_model(DayClosing),
+        codename=codename,
+    )
+
+
+def _grant_production(user):
+    """O que a loja concede ao painel: entrar na superfície de Produção."""
+    user.user_permissions.add(_backstage_perm("operate_production"))
+    return get_user_model().objects.get(pk=user.pk)
+
+
 def _terminal(ref: str, *, mode: str, operator: str = "") -> Terminal:
     bloco = {"mode": mode}
     if operator:
@@ -50,6 +80,19 @@ def _terminal(ref: str, *, mode: str, operator: str = "") -> Terminal:
 def _conta_do_totem(username: str = "totem-entrada", **extra):
     user = get_user_model().objects.create_user(username, password="x", is_staff=True, **extra)
     return get_user_model().objects.get(pk=user.pk)
+
+
+def _totem_pronto(ref: str = "totem-1", username: str = "totem-entrada"):
+    """Uma estação autônoma COMPLETA: declarada, com conta e com permissão.
+
+    Os negativos usam isto de propósito. Um negativo montado sobre config
+    quebrada provaria a config, não a trava — e passaria verde mesmo se a trava
+    de superfície fosse apagada amanhã.
+    """
+    terminal = _terminal(ref, mode=station_trust.AUTONOMOUS, operator=username)
+    conta = _grant_production(_conta_do_totem(username))
+    _grant(conta, "operate_pos")  # o balcão inteiro, de propósito — ver os negativos
+    return terminal, get_user_model().objects.get(pk=conta.pk)
 
 
 # ── A atendida ───────────────────────────────────────────────────────────────
@@ -74,56 +117,47 @@ def test_terminal_sem_bloco_de_estacao_e_ATENDIDO(client):
 
 
 def test_modo_escrito_errado_cai_em_ATENDIDA(client):
-    """Config inválida não pode promover um balcão a dispositivo que age sozinho."""
-    _terminal("balcao", mode="autonoma", operator="totem-entrada")  # não é `autonomous`
-    _grant(_conta_do_totem(), "operate_pos")
-    trust_station(client, "balcao")
+    """Config inválida não pode promover um painel a dispositivo que age sozinho."""
+    _terminal("painel", mode="autonoma", operator="totem-entrada")  # não é `autonomous`
+    _grant_production(_conta_do_totem())
+    trust_station(client, "painel")
 
-    assert client.get(POS_URL).status_code == 403
+    resposta = client.get(PRODUCTION_SESSION_URL)
+
+    assert resposta.status_code == 200
+    assert resposta.json()["locked"] is True
 
 
-# ── A autônoma ───────────────────────────────────────────────────────────────
+# ── A autônoma, na Produção ──────────────────────────────────────────────────
 
 
 def test_a_estacao_AUTONOMA_age_em_nome_da_PROPRIA_conta(client):
-    _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
-    _grant(_conta_do_totem(), "operate_pos")
+    _totem_pronto()
     trust_station(client, "totem-1")
 
-    resposta = client.get(POS_URL)
-
-    assert resposta.status_code == 200
-    # E a tela sabe quem ela é: a antessala não a reporta travada, porque não há
-    # ninguém para destravá-la.
-    sessao = client.get(SESSION_URL).json()
+    assert client.get(PRODUCTION_URL).status_code == 200
+    # E a tela sabe quem ela é: a antessala da Produção não a reporta travada,
+    # porque não há ninguém para destravá-la.
+    sessao = client.get(PRODUCTION_SESSION_URL).json()
     assert sessao["locked"] is False
     assert sessao["operator"]["username"] == "totem-entrada"
     assert sessao["station"] == "totem-1"
 
 
 def test_a_conta_do_totem_so_pode_o_que_lhe_concederam(client):
-    """O conjunto mínimo é DADO, não código — e sem concessão o totem não faz nada.
+    """Ser o dispositivo não dá permissão nenhuma — nem dentro da Produção.
 
-    É a diferença que separa este desenho do anterior: ser o dispositivo não dá
-    permissão nenhuma. Enquanto a superfície do totem não existir, a conta dele
-    não precisa de permissão alguma, e o gate a trata como qualquer operador sem
-    permissão — recusa comum, não `station_locked`, porque PIN não resolveria.
+    Sem concessão, a recusa é a comum (capacidade que falta), não
+    `station_locked`: PIN não resolveria, porque não há quem digite.
     """
     _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
     _conta_do_totem()  # nenhuma permissão concedida
     trust_station(client, "totem-1")
 
-    resposta = client.get(POS_URL)
+    resposta = client.get(PRODUCTION_URL)
 
     assert resposta.status_code == 403
-    corpo = resposta.json()
-    assert "error" not in corpo
-    # E a recusa diz a VERDADE. O totem opera sem sessão (não há quem digite
-    # PIN), então enquanto o gate devolvia False o DRF trocava a recusa por
-    # `NotAuthenticated` e o totem identificado ouvia "as credenciais não foram
-    # fornecidas" — mensagem errada, e um caminho que não leva a lugar nenhum,
-    # porque este dispositivo não tem login a oferecer.
-    assert corpo["detail"] == "Operador sem permissão para esta ação."
+    assert resposta.json()["error"]["code"] == "forbidden"
 
 
 def test_totem_SUPERUSUARIO_e_recusado(client):
@@ -131,13 +165,13 @@ def test_totem_SUPERUSUARIO_e_recusado(client):
 
     `is_superuser` curto-circuita `has_perm`, então uma conta dessas ignoraria
     qualquer conjunto mínimo que a loja tentasse declarar. A recusa é dura de
-    propósito — o totem volta a ser um dispositivo sem identidade.
+    propósito — o painel volta a ser um dispositivo sem identidade.
     """
     _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-root")
     get_user_model().objects.create_superuser("totem-root", password="x")
     trust_station(client, "totem-1")
 
-    resposta = client.get(POS_URL)
+    resposta = client.get(PRODUCTION_URL)
 
     assert resposta.status_code == 403
     assert resposta.json()["error"]["code"] == "station_locked"
@@ -155,31 +189,83 @@ def test_autonoma_mal_declarada_volta_a_pedir_PIN(client, quebra):
     _terminal("totem-1", mode=station_trust.AUTONOMOUS, **quebra)
     trust_station(client, "totem-1")
 
-    resposta = client.get(POS_URL)
+    resposta = client.get(PRODUCTION_URL)
 
     assert resposta.status_code == 403
     assert resposta.json()["error"]["code"] == "station_locked"
 
 
 def test_desativar_a_conta_DESLIGA_o_totem(client):
-    """É como se desliga um totem sem ir até ele — e tem de bastar."""
-    _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
-    conta = _grant(_conta_do_totem(), "operate_pos")
+    """É como se desliga um painel sem ir até ele — e tem de bastar."""
+    _, conta = _totem_pronto()
     trust_station(client, "totem-1")
-    assert client.get(POS_URL).status_code == 200
+    assert client.get(PRODUCTION_URL).status_code == 200
 
     conta.is_active = False
     conta.save(update_fields=["is_active"])
 
-    assert client.get(POS_URL).status_code == 403
+    assert client.get(PRODUCTION_URL).status_code == 403
+    assert client.get(PRODUCTION_SESSION_URL).json()["locked"] is True
 
 
 def test_a_confianca_de_um_totem_nao_serve_para_o_balcao_do_lado(client):
     """Cada dispositivo carrega o cookie do SEU ref; um não empresta identidade ao outro."""
-    _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
+    _totem_pronto()
     _terminal("balcao", mode=station_trust.ATTENDED)
-    _grant(_conta_do_totem(), "operate_pos")
     trust_station(client, "balcao")
+
+    resposta = client.get(PRODUCTION_URL)
+
+    assert resposta.status_code == 403
+    assert resposta.json()["error"]["code"] == "station_locked"
+
+
+def test_a_requisicao_da_producao_tem_o_totem_como_ATOR(client, rf):
+    """Agir em nome próprio vale também para a trilha: o que ele faz tem dono.
+
+    `request.user` É a conta do totem — não um segundo sujeito ao lado dela —
+    então a atribuição (`_actor`, `Entry.operator`) sai certa de graça em todo
+    caminho de Produção, sem que nenhum deles precise conhecer a estação.
+    """
+    from shopman.backstage.api.permissions import _operador
+
+    _, conta = _totem_pronto()
+    requisicao = rf.get(PRODUCTION_URL)
+    requisicao.COOKIES[station_trust.station_cookie_name("totem-1")] = _token("totem-1")
+
+    ator = _operador(requisicao)
+
+    assert ator is not None and ator.pk == conta.pk
+    assert requisicao.user.pk == conta.pk
+
+
+def _token(terminal_ref: str) -> str:
+    from shopman.doorman.models import SubjectType, TrustedDevice
+
+    _, raw = TrustedDevice.create_for(
+        subject_type=SubjectType.STATION,
+        subject_id=terminal_ref,
+        user_agent="teste",
+        ip_address="127.0.0.1",
+    )
+    return raw
+
+
+# ── Os NEGATIVOS: onde o cookie do totem não vale nada ───────────────────────
+#
+# Cada um destes monta uma estação autônoma PERFEITA — declarada, com conta
+# válida, e com a permissão que a superfície do teste pede — e prova que ela
+# mesmo assim não age. Se a trava de superfície sumir, eles ficam vermelhos.
+
+
+def test_o_cookie_do_totem_NAO_vira_operador_no_PDV(client):
+    """O caso que a trava existe para impedir: o mesmo aparelho, na aba do PDV.
+
+    A conta deste teste TEM `cashman.operate_pos`. É o pior caso de propósito:
+    sem a trava de superfície o balcão abriria inteiro, sem PIN e sem ninguém.
+    """
+    _totem_pronto()
+    trust_station(client, "totem-1")
 
     resposta = client.get(POS_URL)
 
@@ -187,65 +273,9 @@ def test_a_confianca_de_um_totem_nao_serve_para_o_balcao_do_lado(client):
     assert resposta.json()["error"]["code"] == "station_locked"
 
 
-def test_a_trilha_sai_no_nome_do_TOTEM(client):
-    """Agir em nome próprio vale também para a trilha: o que ele faz tem dono.
-
-    Sem isto, "age em nome próprio" seria só uma permissão a mais, e a linha
-    sairia órfã — o mesmo defeito que a Parte B existe para fechar, com um
-    dispositivo no lugar do ``admin``.
-
-    O caminho aqui é um pedido, não a gaveta: abrir pedido é o que o dono disse
-    que o totem faz. A gaveta segue exigindo ``cashman.operate_pos``, que a conta
-    deste teste não tem.
-    """
-    from django.urls import reverse
-    from shopman.orderman.models import Order, OrderItem
-
-    _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
-    conta = _conta_do_totem()
-    conta.user_permissions.add(
-        Permission.objects.get(
-            content_type=ContentType.objects.get(app_label="shop", model="shop"),
-            codename="manage_orders",
-        )
-    )
-    conta = get_user_model().objects.get(pk=conta.pk)
-    pedido = Order.objects.create(
-        ref="ORD-TOTEM-1", channel_ref="totem", status="accepted", total_q=1500,
-        data={"customer": {"name": "Ana"}, "payment": {"method": "pix"}},
-    )
-    OrderItem.objects.create(
-        order=pedido, line_id="1", sku="SKU", name="Pão", qty=1,
-        unit_price_q=1500, line_total_q=1500,
-    )
-    trust_station(client, "totem-1")
-
-    from shopman.backstage.tests._order_intent import context_payload
-
-    resposta = client.post(
-        reverse("api-backstage-order-comment", args=[pedido.ref]),
-        context_payload(client, pedido.ref, "comment", note="Retirada pelo totem"),
-        content_type="application/json",
-    )
-
-    assert resposta.status_code == 200, resposta.content
-    detalhe = client.get(reverse("api-backstage-order-detail", args=[pedido.ref])).json()["order"]
-    comentarios = [e for e in detalhe["timeline"] if e["event_type"] == "operator_comment"]
-    assert comentarios, "o comentário não entrou na linha do tempo"
-    assert conta.username in str(comentarios[0])
-
-
-def test_a_gaveta_continua_fora_do_alcance_do_totem(client):
-    """"Nada de gaveta": a conta do totem não tem `operate_pos`, e o gate basta.
-
-    Não foi preciso inventar regra nova para isto — é a mesma pergunta que o gate
-    faz a qualquer operador. É por isso que o conjunto mínimo pode ser decidido
-    depois, quando a superfície do totem existir, sem mexer na identidade.
-    """
-    from django.urls import reverse
-
-    terminal = _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
-    _conta_do_totem()
+def test_o_cookie_do_totem_NAO_abre_caixa(client):
+    """Dinheiro é o teste de fogo: a recusa vale para a escrita, não só a leitura."""
+    terminal, _ = _totem_pronto()
     trust_station(client, "totem-1")
 
     abrir = client.post(
@@ -256,3 +286,137 @@ def test_a_gaveta_continua_fora_do_alcance_do_totem(client):
 
     assert abrir.status_code == 403
     assert not Shift.objects.exists()
+
+
+def test_o_cookie_do_totem_NAO_vira_operador_no_KDS(client):
+    """O KDS tem gente na frente; lá o caminho é o atendido, com PIN."""
+    _totem_pronto()
+    _grant_kds(get_user_model().objects.get(username="totem-entrada"))
+    trust_station(client, "totem-1")
+
+    resposta = client.get(KDS_URL)
+
+    assert resposta.status_code == 403
+    assert resposta.json()["error"]["code"] == "station_locked"
+
+
+def _grant_kds(user):
+    from shopman.backstage.models import KDSTicket
+
+    user.user_permissions.add(
+        Permission.objects.get(
+            content_type=ContentType.objects.get_for_model(KDSTicket),
+            codename="operate_kds",
+        )
+    )
+    return get_user_model().objects.get(pk=user.pk)
+
+
+def test_o_cookie_do_totem_NAO_vira_operador_no_gestor_de_pedidos(client):
+    """Qualquer rota fora da Produção, não só as três superfícies conhecidas."""
+    _totem_pronto()
+    conta = get_user_model().objects.get(username="totem-entrada")
+    conta.user_permissions.add(
+        Permission.objects.get(
+            content_type=ContentType.objects.get(app_label="shop", model="shop"),
+            codename="manage_orders",
+        )
+    )
+    trust_station(client, "totem-1")
+
+    resposta = client.get(ORDERS_URL)
+
+    assert resposta.status_code == 403
+    assert resposta.json()["error"]["code"] == "station_locked"
+
+
+def test_a_antessala_COMPARTILHADA_reporta_o_totem_como_travado(client):
+    """`operator/session/` é de todas as superfícies — e por isso fica de fora.
+
+    Se ela resolvesse o totem, o PDV com o mesmo cookie leria `locked: false`
+    com o nome do painel: a pessoa no balcão perderia a tela de PIN e ficaria
+    olhando um PDV que recusa toda leitura. A antessala da Produção mora sob o
+    prefixo da Produção — ver `api-backstage-production-session`.
+    """
+    _totem_pronto()
+    trust_station(client, "totem-1")
+
+    sessao = client.get(SESSION_URL).json()
+
+    assert sessao["locked"] is True
+    assert sessao["operator"] is None
+    # A estação continua RECONHECIDA: o balcão sabe de que terminal é, e por isso
+    # tem como pedir PIN. Perder isso trancaria o aparelho para a pessoa também.
+    assert sessao["station"] == "totem-1"
+
+
+# ── A trava é o PREFIXO, e o prefixo não pode derivar ────────────────────────
+
+
+def test_o_prefixo_da_trava_e_o_MESMO_que_o_roteador_usa():
+    """A constante sai do `urls.py`, ou a trava viraria uma string decorativa.
+
+    Mover a Produção de caminho e esquecer desta linha teria dois sintomas, os
+    dois calados: o painel parando de agir, ou — pior — o prefixo antigo passando
+    a cobrir uma rota que não é de Produção.
+    """
+    assert station_trust.PRODUCTION_API_PREFIX == reverse("api-backstage-production")
+
+
+@pytest.mark.parametrize(
+    "nome",
+    [
+        "api-backstage-pos",
+        "api-backstage-kds-index",
+        "api-backstage-orders",
+        "api-backstage-operator-session",
+        "api-backstage-operator-unlock",
+        # ⚠️ O quase-acerto: `bi/production/` tem "production" no caminho e NÃO é a
+        # superfície de Produção — é o B.I., persona gestor. Uma trava escrita com
+        # `"production" in path` teria dado a ele a conta do painel.
+        "api-backstage-bi-production",
+    ],
+)
+def test_rota_que_NAO_e_da_producao_fica_fora_do_prefixo(nome):
+    assert not reverse(nome).startswith(station_trust.PRODUCTION_API_PREFIX)
+
+
+@pytest.mark.parametrize(
+    "nome",
+    [
+        "api-backstage-production",
+        "api-backstage-production-session",
+        "api-backstage-production-kds",
+        "api-backstage-production-weighing",
+        "api-backstage-wo-plan",
+        "api-backstage-wo-quick-finish",
+    ],
+)
+def test_rota_da_producao_fica_DENTRO_do_prefixo(nome):
+    assert reverse(nome).startswith(station_trust.PRODUCTION_API_PREFIX)
+
+
+def test_a_trava_nao_acredita_no_que_o_cliente_diz_de_si(rf):
+    """Nada que o navegador afirme sobre si mesmo entra nesta decisão.
+
+    Host, Referer, Origin e um cabeçalho de superfície são todos escritos pelo
+    cliente. Quem responde é o caminho — a mesma string que escolheu a view.
+    """
+    mentira = rf.get(
+        POS_URL,
+        HTTP_HOST="prod.boulangerie.com.br",
+        HTTP_REFERER="https://prod.boulangerie.com.br/board",
+        HTTP_X_SHOPMAN_SURFACE="production",
+    )
+
+    assert station_trust.is_production_surface(mentira) is False
+    assert station_trust.is_production_surface(rf.get(PRODUCTION_URL)) is True
+
+
+def test_requisicao_sem_caminho_cai_do_lado_SEGURO():
+    """Superfície que não se reconhece = atendida. Falha fechado, sempre."""
+
+    class _SemCaminho:
+        pass
+
+    assert station_trust.is_production_surface(_SemCaminho()) is False

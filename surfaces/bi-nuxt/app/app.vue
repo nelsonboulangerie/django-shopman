@@ -5,7 +5,7 @@
 // Gate: `backstage.view_bi` — leitura analítica cross-suite é persona de
 // gestão (ADR-021 §5), não de quem opera o turno.
 const OPERATOR_PERM = "backstage.view_bi";
-const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -28,7 +28,10 @@ useOperatorWindowTitle();
       <BiTopBar v-if="canIdentify" />
       <NuxtPage />
     </div>
-    <OperatorLogin v-if="!canIdentify" />
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="o painel de B.I." @retry="refresh()" />
+    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />
