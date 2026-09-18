@@ -645,6 +645,12 @@ test.describe("disparo manual seguro", () => {
     await expect(page.getByText(/Nada foi disparado ainda/)).toBeVisible();
     // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
     await waitForFaithfulPreview(page);
+    // ⚠️ A âncora `#review` rola a página, e o alvo dela AINDA CRESCE enquanto a prévia
+    // carrega: o navegador parava em 15px numa rodada e 12px na outra, e o retrato
+    // inteiro saía três pixels deslocado. Medido: 3 falhas em 5 rodadas, com e sem as
+    // mudanças desta frente. A URL acima já prova que a tela chegou na revisão; o
+    // retrato quer o conteúdo, não a posição de rolagem que ninguém decidiu.
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });
   });
 });
