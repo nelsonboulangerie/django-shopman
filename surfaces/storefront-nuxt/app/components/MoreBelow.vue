@@ -79,16 +79,24 @@ function irAteOFim() {
                lavagem, e a lavagem precisa chegar colada no card. -->
           <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
           <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
-            <button
+            <!-- ⚠️ `UiButton`, nunca o controle nativo cru: a loja trava isso em
+                 `app/pages` e `app/components` (tests/surfaceGuardrails), e a
+                 trava lê a FONTE — citar a tag num comentário já derruba. O
+                 `ghost` já traz foco de teclado e o `active`; o resto da
+                 aparência é a translucidez de sempre, que é o que impede a
+                 dica de se ler como controle pesado. -->
+            <UiButton
               type="button"
-              class="pointer-events-auto flex size-12 items-center justify-center rounded-full bg-background/33 text-foreground ring-1 ring-border/40 backdrop-blur-sm transition hover:bg-background/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+              variant="ghost"
+              size="icon"
+              class="pointer-events-auto size-12 rounded-full bg-background/33 text-foreground ring-1 ring-border/40 backdrop-blur-sm hover:bg-background/60"
               :class="motionClass"
               aria-label="Ir para o fim do conteúdo"
               data-more-below-jump
               @click="irAteOFim"
             >
               <Icon name="lucide:chevron-down" class="size-6" />
-            </button>
+            </UiButton>
           </div>
         </div>
       </Transition>
