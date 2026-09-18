@@ -678,6 +678,7 @@ useHead({ title: "Anúncio" });
       :error="decisionError"
       :shop-timezone="shopTimezone"
       :image-url="announcement ? outgoingImageUrl(announcement) : ''"
+      :platform-content="announcement?.platform_content || {}"
       @confirm="confirmServerDecision"
       @cancel="cancelServerDecision"
     />

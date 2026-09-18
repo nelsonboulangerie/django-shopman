@@ -84,6 +84,15 @@ async function expectStableScreenshot(
   );
 }
 
+// O rótulo de cada aba da prévia simulada, como o operador lê. A divisão é por
+// FORMATO: Story e Feed do mesmo Instagram são dois retratos, e não um.
+const SCENE_TABS = {
+  story: "Story no Instagram",
+  feed: "Feed no Facebook",
+  google_update: "Atualização do Google",
+  whatsapp_message: "Mensagem no WhatsApp",
+} as const;
+
 async function waitForFaithfulPreview(page: Page) {
   await expect(
     page.getByText("Exemplo com Pão artesanal").first(),
@@ -312,6 +321,66 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(page, "announcement-card__draft-conflict", V768);
   });
 
+  // A prévia em tamanho real: um retrato por FORMATO, no lugar onde a pessoa vai ver.
+  // Quatro fotos porque são quatro enquadramentos diferentes, e é pelo enquadramento
+  // que o gestor decide. O `waitForFaithfulPreview` vem antes de abrir: a sobreposição
+  // lê os artefatos que a prévia fiel trouxe, e fotografá-la antes deles chegarem já
+  // deixou esta matriz instável uma vez.
+  for (const [format, sceneKind, viewport] of [
+    ["story", "story", V390],
+    ["feed", "feed", V390],
+    ["google-update", "google_update", V390],
+    ["whatsapp-message", "whatsapp_message", V390],
+  ] as const) {
+    test(`prévia simulada de ${format}`, async ({ page }) => {
+      await openScenario(page, "board-all-formats", "/", viewport);
+      await waitForFaithfulPreview(page);
+      await page
+        .getByRole("button", { name: "Ver a prévia em tamanho real" })
+        .click();
+      const overlay = page.getByTestId("simulated-preview");
+      await expect(overlay).toBeVisible();
+      await overlay.getByRole("tab", { name: SCENE_TABS[sceneKind] }).click();
+      await expect(
+        overlay.locator(`[data-scene-kind="${sceneKind}"]`),
+      ).toBeVisible();
+      await expectStableScreenshot(
+        page,
+        `simulated-preview__${format}`,
+        viewport,
+        "light",
+        { fullPage: false },
+      );
+    });
+  }
+
+  test("a prévia em tamanho real da confirmação sai do conteúdo congelado", async ({
+    page,
+  }) => {
+    await openScenario(page, "board-all-formats", "/", V390);
+    await waitForFaithfulPreview(page);
+    await page.getByLabel("Texto do anúncio").fill("Texto selado na decisão");
+    await expect(page.getByTestId("preview-status")).toHaveCount(0);
+    await waitForFaithfulPreview(page);
+    await page.getByRole("button", { name: "Visualizar consequência" }).click();
+    const dialog = page.getByRole("dialog").first();
+    await dialog
+      .getByRole("button", { name: "Ver a prévia em tamanho real" })
+      .click();
+    const overlay = page.getByTestId("simulated-preview");
+    // O Story retrata só a imagem — é o contrato da plataforma. O texto selado se lê
+    // no retrato que tem texto, e é ele que prova de onde o conteúdo saiu.
+    await overlay.getByRole("tab", { name: SCENE_TABS.whatsapp_message }).click();
+    await expect(overlay).toContainText("Texto selado na decisão");
+    await expectStableScreenshot(
+      page,
+      "simulated-preview__from-frozen-command",
+      V390,
+      "light",
+      { fullPage: false },
+    );
+  });
+
   test("prévia de plataforma permanece ao lado da decisão", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V1280);
     await expect(page.getByText("Prévia fiel")).toBeVisible();
@@ -360,6 +429,10 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
     await page.locator("main li").first().locator("button").nth(1).click();
     await expect(page.getByRole("dialog")).toContainText("Avisar quem");
+    // ⚠️ Sem esta espera o retrato era cara ou coroa: às vezes a prévia fiel ainda
+    // dizia "Atualizando todas as plataformas…", às vezes já tinha chegado, e o
+    // baseline guardava o que a máquina daquele dia decidiu. O estado assentado é um só.
+    await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "campaign-form__long-rules", V390, "light", { fullPage: false });
   });
 
@@ -530,6 +603,10 @@ test.describe("disparo manual seguro", () => {
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
     await expect(page.getByLabel("Definir público").getByRole("alert")).toContainText("mudou em outra sessão");
+    // ⚠️ O conflito manda recontar o público. Sem esperar o número assentado, o retrato
+    // guardava "Contando…" num dia e o total no outro — cara ou coroa decidida pela
+    // velocidade da máquina, não pela tela.
+    await expect(page.getByText("Contando…")).toHaveCount(0);
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
   });
 
