@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Ref } from "vue";
 // Formulário de campanha — "que evento vira o quê, para quem, onde".
 //
 // Apresentacional: o pai é dono do fetch e da escrita; aqui mora só o estado do
@@ -90,7 +91,22 @@ const alerts = ref(false);
 const boughtOn = ref(false);
 const boughtDays = ref(90);
 const vipFirstMinutes = ref(0);
+// ⚠️ Os três interruptores abaixo NÃO guardam estado próprio: eles leem e escrevem o
+// número, porque o número é a verdade que o servidor recebe. Um booleano paralelo
+// criaria o estado "ligado com zero minutos", que não quer dizer nada e que o contrato
+// não sabe representar. Desligar zera; ligar devolve um padrão útil.
+function toggleMinutos(alvo: Ref<number>, padrao: number) {
+  return computed({
+    get: () => alvo.value > 0,
+    set: (ligado: boolean) => {
+      alvo.value = ligado ? padrao : 0;
+    },
+  });
+}
 const preferredHourWindowHours = ref(0);
+const vipFirstEnabled = toggleMinutos(vipFirstMinutes, 15);
+const expiresEnabled = toggleMinutos(expiresAfterMinutes, 60);
+const preferredHourEnabled = toggleMinutos(preferredHourWindowHours, 2);
 const audienceMatch = ref<"any" | "all">("any");
 const selectedPriceTiers = ref<string[]>([]);
 const selectedTags = ref<string[]>([]);
@@ -739,7 +755,7 @@ function submit() {
         </option>
       </UiNativeSelect>
       <p class="mt-1 text-xs text-muted-foreground">
-        Com oferta, quem toca no link já recebe a sacola montada.
+        Com oferta, o link abre a loja com a sacola montada.
       </p>
     </div>
 
@@ -846,7 +862,7 @@ function submit() {
           · UTC{{ onceResolution.candidate.offset }}.
         </p>
         <p class="mt-1 text-xs text-muted-foreground">
-          Dispara uma única vez. Depois disso a campanha não volta sozinha.
+          Dispara uma vez e não se repete.
         </p>
       </div>
 
@@ -887,7 +903,7 @@ function submit() {
             </button>
           </div>
           <p class="mt-1 text-xs text-muted-foreground">
-            Nenhum dia marcado quer dizer todos os dias.
+            Sem nenhum dia marcado, dispara todos os dias.
           </p>
         </div>
 
@@ -988,7 +1004,7 @@ function submit() {
         >
           {{ note.text }}
           <template v-if="note.tone !== 'limited'">
-            A campanha pode ser salva assim mesmo.
+            A campanha pode ser salva; a plataforma só não publica enquanto não ficar pronta.
             <NuxtLink to="/platforms" class="font-semibold underline">
               Ver em Plataformas
             </NuxtLink>
@@ -996,9 +1012,7 @@ function submit() {
         </li>
       </ul>
       <p class="mt-1.5 text-xs text-muted-foreground">
-        Instagram, Facebook e Google criam uma postagem pública por plataforma.
-        WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
-        Instagram ainda não fazem parte deste app.
+        Instagram, Facebook e Google publicam uma postagem por plataforma. WhatsApp envia uma mensagem por pessoa.
       </p>
     </fieldset>
 
@@ -1007,7 +1021,7 @@ function submit() {
       class="rounded-lg border border-border p-3"
     >
       <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Avisar quem
+        Público alvo
       </legend>
       <div class="space-y-2.5">
         <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
@@ -1032,7 +1046,7 @@ function submit() {
           <span>
             Quem pediu "me avise" deste produto
             <span class="block text-xs text-muted-foreground">
-              A fila do sino da loja: fornada para pão, reposição para o resto.
+              Quem pediu para ser avisado quando este produto voltar.
             </span>
           </span>
         </label>
@@ -1046,32 +1060,48 @@ function submit() {
             />
             Quem comprou nos últimos
           </label>
-          <input
-            v-model.number="boughtDays"
-            type="number"
-            min="1"
-            max="365"
-            :disabled="!boughtOn"
-            aria-label="Dias de recompra"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
-          />
-          <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
+          <!-- ⚠️ O número e a unidade andam JUNTOS. Soltos no wrap do pai, o "dias"
+               caía sozinho na linha de baixo e o campo ficava sem unidade — medido na
+               tela, em 390px. Um número sem unidade não é dado, é adivinhação. -->
+          <span class="inline-flex shrink-0 items-center gap-2">
+            <input
+              v-model.number="boughtDays"
+              type="number"
+              min="1"
+              max="365"
+              :disabled="!boughtOn"
+              aria-label="Dias de recompra"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
+            />
+            <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
+          </span>
         </div>
         <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label for="rule-vip">VIPs recebem</label>
+        <!-- ⚠️ Era um número solto com "(0 = todo mundo junto)" ao lado. Zero que
+             significa "desligado" é código secreto: obriga o gestor a decorar o que o
+             campo faz quando está vazio. O interruptor DIZ, e o número só existe
+             quando ele muda alguma coisa. -->
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            v-model="vipFirstEnabled"
+            type="checkbox"
+            class="size-4 rounded border-border"
+          />
+          <span>Melhores clientes recebem antes</span>
+        </label>
+        <div
+          v-if="vipFirstEnabled"
+          class="flex flex-wrap items-center gap-2 pl-6 text-sm"
+        >
           <input
             id="rule-vip"
             v-model.number="vipFirstMinutes"
             type="number"
-            min="0"
+            min="1"
             max="120"
             class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
           />
-          <span>minutos antes</span>
-          <span class="text-xs text-muted-foreground"
-            >(0 = todo mundo junto)</span
-          >
+          <label for="rule-vip">minutos antes dos outros</label>
         </div>
 
         <div class="border-t border-border pt-3">
@@ -1086,8 +1116,8 @@ function submit() {
             v-model="audienceMatch"
             class="w-auto"
           >
-            <option value="any">Atender a qualquer um</option>
-            <option value="all">Atender a todos</option>
+            <option value="any">Qualquer uma</option>
+            <option value="all">Todas</option>
           </UiNativeSelect>
         </div>
 
@@ -1200,23 +1230,27 @@ function submit() {
           />
         </div>
 
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label for="rule-preferred-window"
-            >Respeitar horário preferido em uma janela de</label
-          >
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            v-model="preferredHourEnabled"
+            type="checkbox"
+            class="size-4 rounded border-border"
+          />
+          <span>Respeitar o horário em que cada um costuma comprar</span>
+        </label>
+        <div
+          v-if="preferredHourEnabled"
+          class="flex flex-wrap items-center gap-2 pl-6 text-sm"
+        >
           <input
             id="rule-preferred-window"
             v-model.number="preferredHourWindowHours"
             type="number"
-            min="0"
+            min="1"
             max="12"
             class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
           />
-          <span>horas</span>
-          <span class="text-xs text-muted-foreground"
-            >(0 = não segmentar por horário)</span
-          >
+          <label for="rule-preferred-window">horas de folga em volta</label>
         </div>
 
         <p
@@ -1229,8 +1263,7 @@ function submit() {
         </p>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">
-        Só quem aceitou receber novidades entra na conta. Assinatura de alerta
-        por produto já é um aceite daquele produto.
+        Só entra quem aceitou receber novidades no WhatsApp.
       </p>
     </fieldset>
 
@@ -1238,8 +1271,7 @@ function submit() {
       v-else
       class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Estas publicações vão para o público geral das plataformas. A lista de
-      contatos só é usada quando o WhatsApp está selecionado.
+      Estas postagens vão para o público geral da plataforma, sem lista de contatos.
     </p>
 
     <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
@@ -1253,21 +1285,30 @@ function submit() {
         Revisar antes de publicar
       </label>
       <p v-if="!requiresApproval" class="pl-6 text-xs text-warning">
-        Sem revisão, o anúncio sai sozinho assim que o evento acontecer.
+        Sem revisão, o anúncio é disparado assim que o gatilho acontecer.
       </p>
       <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-      <div class="flex flex-wrap items-center gap-2 text-sm">
-        <label for="rule-expiry">O anúncio aguarda revisão por</label>
+      <label v-if="requiresApproval" class="flex items-center gap-2 text-sm">
+        <input
+          v-model="expiresEnabled"
+          type="checkbox"
+          class="size-4 rounded border-border"
+        />
+        <span>O anúncio expira se ninguém decidir</span>
+      </label>
+      <div
+        v-if="requiresApproval && expiresEnabled"
+        class="flex flex-wrap items-center gap-2 pl-6 text-sm"
+      >
         <input
           id="rule-expiry"
           v-model.number="expiresAfterMinutes"
           type="number"
-          min="0"
+          min="1"
           max="1440"
           class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
         />
-        <span>minutos</span>
-        <span class="text-xs text-muted-foreground">(0 = sem prazo)</span>
+        <label for="rule-expiry">minutos para decidir</label>
       </div>
       <label class="flex items-center gap-2 text-sm">
         <input
