@@ -1,10 +1,28 @@
 <script setup lang="ts">
+// Avisos deste dispositivo. Montado hoje só na home (Shopman Apps), que é onde o
+// operador administra o que chega a ele.
+//
+// ⚠️ Este bloco já disse três coisas que ninguém conseguia usar, e as três eram de
+// redação, não de mecanismo:
+//   1. o carimbo da versão do build ("local") ficava colado no título dos avisos e se
+//      lia como um selo do recurso — saiu daqui e foi para o rodapé da home, com rótulo;
+//   2. "Receba só alertas operacionais" não dizia o que chega nem quando;
+//   3. UMA frase cobria duas causas opostas — instalação sem chave de envio e navegador
+//      que não entrega aviso com o app fechado. Agora cada causa tem a sua, porque
+//      `useWebPush` sabe distingui-las (`unavailableReason`).
+import { OPERATOR_APPS } from "../../appIdentity";
+
 const {
-  supported, active, permission, loading, error, devices, categories,
+  supported, unavailableReason, active, permission, loading, error, devices, categories,
   currentDevice, activate, updateCategories, removeDevice,
 } = useWebPush();
-const runtime = useRuntimeConfig().public as Record<string, unknown>;
-const appVersion = String(runtime.appVersion || "local");
+
+const hubName = OPERATOR_APPS.hub.label;
+
+/** `surface_ref` é chave de API ("hub", "pos"). Na tela vai o nome do app. */
+function surfaceLabel(ref: string): string {
+  return OPERATOR_APPS[ref as keyof typeof OPERATOR_APPS]?.label || ref;
+}
 
 function checked(category: string): boolean {
   return currentDevice.value?.categories.includes(category) === true;
@@ -22,16 +40,14 @@ async function toggleCategory(category: string): Promise<void> {
 
 <template>
   <section data-hub-push-settings class="mt-6 rounded-xl border border-border bg-card p-4">
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <h2 class="text-base font-semibold">Avisos neste dispositivo</h2>
-        <p class="mt-1 text-sm text-muted-foreground">Receba só alertas operacionais, mesmo com a Central fechada.</p>
-      </div>
-      <span class="shrink-0 text-xs text-muted-foreground">{{ appVersion }}</span>
-    </div>
+    <h2 class="text-base font-semibold">Avisos neste dispositivo</h2>
+    <p class="mt-1 text-sm text-muted-foreground">
+      Avisos da operação chegam a este dispositivo mesmo com o {{ hubName }} fechado.
+    </p>
 
     <p v-if="permission === 'denied'" role="status" class="mt-4 text-sm text-muted-foreground">
-      Os avisos estão bloqueados no navegador. Libere-os nos ajustes deste site.
+      Este navegador está bloqueando os avisos deste site. Libere a permissão de notificações
+      nos ajustes do site e recarregue esta tela.
     </p>
     <button
       v-else-if="supported && !active"
@@ -43,8 +59,14 @@ async function toggleCategory(category: string): Promise<void> {
     >
       {{ loading ? 'Ativando…' : 'Ativar avisos' }}
     </button>
-    <p v-else-if="!supported" role="status" data-push-unavailable class="mt-4 text-sm text-muted-foreground">
-      Avisos em segundo plano ainda não estão disponíveis neste ambiente. No iPhone, use a Central instalada na Tela de Início.
+    <p v-else-if="unavailableReason === 'deploy'" role="status" data-push-unavailable="deploy" class="mt-4 text-sm text-muted-foreground">
+      O envio de avisos ainda não foi configurado nesta instalação. Peça a quem cuida do
+      sistema para ligá-lo — enquanto isso, nenhum dispositivo recebe aviso.
+    </p>
+    <p v-else-if="unavailableReason === 'browser'" role="status" data-push-unavailable="browser" class="mt-4 text-sm text-muted-foreground">
+      Este navegador não entrega avisos com o app fechado. No iPhone e no iPad, adicione o
+      {{ hubName }} à Tela de Início (botão Compartilhar › Adicionar à Tela de Início) e
+      ative os avisos por lá.
     </p>
     <p v-if="error" role="status" class="mt-2 text-sm text-destructive">{{ error }}</p>
 
@@ -62,12 +84,12 @@ async function toggleCategory(category: string): Promise<void> {
     </fieldset>
 
     <div v-if="devices.length" class="mt-5 border-t border-border pt-4">
-      <h3 class="text-sm font-semibold">Dispositivos ativos</h3>
+      <h3 class="text-sm font-semibold">Dispositivos que recebem estes avisos</h3>
       <ul class="mt-2 divide-y divide-border">
         <li v-for="device in devices" :key="device.id" class="flex items-center justify-between gap-3 py-2 text-sm">
           <span class="min-w-0">
             <span class="block truncate font-medium">{{ device.device_label }}</span>
-            <span class="block text-xs text-muted-foreground">{{ device.surface_ref }}</span>
+            <span class="block text-xs text-muted-foreground">{{ surfaceLabel(device.surface_ref) }}</span>
           </span>
           <button type="button" class="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:underline" @click="removeDevice(device)">
             Remover

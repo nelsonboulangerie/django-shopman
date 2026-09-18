@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Cabeçalho de seção do Produção — mora no topo do CONTEÚDO (não é o rail). Segura o
 // controle do rail (kit) + a nav das visões de produção (Planejamento/Preparação/
-// Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Central,
+// Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Shopman Apps,
 // operador/travar, tema) vivem no OperatorRail à esquerda — o rail as concentra e economiza
 // a horizontal. Touch-first e light-first, como o Gestor.
 import {

@@ -37,7 +37,7 @@ const GATES: Record<string, string> = {
 
 /**
  * Cada app tem o direito de classificar a falha do seu jeito — o que ele NÃO
- * pode é ignorar que ela existe. A Central classifica com `hubFailure`; os
+ * pode é ignorar que ela existe. O Shopman Apps classifica com `hubFailure`; os
  * outros consomem `sessionUnavailable` direto.
  */
 const GUARDAS = ["sessionUnavailable", "hubFailure"];

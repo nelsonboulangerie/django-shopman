@@ -54,7 +54,7 @@ export function buildOperatorManifest(
     // janela já aberta, o Chrome a traz para a frente e o URL de destino é
     // descartado (é o que `focus-existing` faz sem um consumidor de `launchQueue`).
     // `navigate-existing` recarregaria o PDV com venda na mão só porque alguém tocou
-    // no atalho da Central — a mesma regra do `useOperatorReloadHold`.
+    // no atalho do Shopman Apps — a mesma regra do `useOperatorReloadHold`.
     launch_handler: { client_mode: "focus-existing" },
     icons: operatorPwaIcons(options.manifest.icons),
     shortcuts: operatorPwaShortcuts(options.manifest.shortcuts),

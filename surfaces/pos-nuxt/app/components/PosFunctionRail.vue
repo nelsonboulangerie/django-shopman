@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Rail do PDV = o `OperatorRail` canônico (kit) + as funções do balcão nos slots. A
-// espinha, os 3 estados, o botão Central, operador/travar e tema vêm do kit — mesma
+// espinha, os 3 estados, o botão do Shopman Apps, operador/travar e tema vêm do kit — mesma
 // gramática das outras superfícies. Aqui ficam só as funções do PDV: ir às Comandas,
 // abrir o caixa, saúde do terminal e atualizar. É a adoção-prova do shell (WP-B0.2): o
 // POS é a origem do rail, então é onde o padrão nasce de pé.
@@ -29,7 +29,7 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 <template>
   <OperatorRail
-    :central-url="hubUrl"
+    :hub-url="hubUrl"
     :operator-name="operatorName || undefined"
     @lock="emit('lock')"
   >

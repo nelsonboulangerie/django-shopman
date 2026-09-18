@@ -36,7 +36,7 @@ describe("idleReloadPathAllowed", () => {
     expect(idleReloadPathAllowed(["/"], "/tickets")).toBe(false);
   });
 
-  it("lista vazia nunca aplica sozinho (Central, Gestor, Compras, B.I., Marketing)", () => {
+  it("lista vazia nunca aplica sozinho (Shopman Apps, Gestor, Compras, B.I., Marketing)", () => {
     expect(idleReloadPathAllowed([], "/")).toBe(false);
     expect(idleReloadPathAllowed([], "/campaigns")).toBe(false);
   });
