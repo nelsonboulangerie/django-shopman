@@ -346,7 +346,7 @@ watch(
 
     <fieldset v-else class="space-y-2">
       <legend class="text-xs font-medium text-muted-foreground">
-        Para quem
+        Público alvo
       </legend>
 
       <!-- Rádios nativos tornam explícita a escolha exclusiva entre público salvo e escolha avulsa. -->

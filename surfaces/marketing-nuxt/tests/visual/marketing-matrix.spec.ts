@@ -348,7 +348,7 @@ test.describe("listas operacionais", () => {
   test("edição longa mostra schema completo", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
     await page.locator("main li").first().locator("button").nth(1).click();
-    await expect(page.getByRole("dialog")).toContainText("Avisar quem");
+    await expect(page.getByRole("dialog")).toContainText("Público alvo");
     await expectStableScreenshot(page, "campaign-form__long-rules", V390, "light", { fullPage: false });
   });
 

@@ -12,12 +12,36 @@ import re
 import sys
 import time
 from http.cookies import SimpleCookie
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 from urllib.parse import parse_qs, urlparse
 
-FIXED_NOW = "2026-09-10T10:30:00-03:00"
-FIXED_UTC = "2026-09-10T13:30:00+00:00"
+# ⚠️ O relógio é FIXO de propósito: baseline visual com data relativa vira vermelho
+# sozinha no dia seguinte — a casa já perdeu uma matriz inteira assim. A folga existe
+# só para o preview local, onde "Expirou" em cima de tudo torna a tela injulgável:
+# MARKETING_MOCK_LIVE_CLOCK=1 anda o relógio para hoje SEM mexer no que os testes veem.
+_FIXED_LOCAL = "2026-09-10T10:30:00-03:00"
+_FIXED_UTC = "2026-09-10T13:30:00+00:00"
+
+if os.environ.get("MARKETING_MOCK_LIVE_CLOCK") == "1":
+    from datetime import datetime, timedelta, timezone as _tz
+
+    _agora = datetime.now(_tz(timedelta(hours=-3)))
+    _DESLOCAMENTO = _agora - datetime.fromisoformat(_FIXED_LOCAL)
+    FIXED_NOW = _agora.isoformat(timespec="seconds")
+    FIXED_UTC = _agora.astimezone(_tz.utc).isoformat(timespec="seconds")
+
+    def _anda(carimbo: str) -> str:
+        """Empurra um instante da fixture pelo mesmo tanto que o 'agora' andou."""
+        return (datetime.fromisoformat(carimbo) + _DESLOCAMENTO).isoformat(timespec="seconds")
+else:
+    _DESLOCAMENTO = None
+    FIXED_NOW = _FIXED_LOCAL
+    FIXED_UTC = _FIXED_UTC
+
+    def _anda(carimbo: str) -> str:
+        return carimbo
 REQUEST_REF = "visual-mkt046-request"
 VISUAL_STORY_IMAGE = (
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
@@ -154,7 +178,7 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "template_name": "Novidades da padaria",
         "sku": "PAO-VISUAL-001",
         "created_at": "2026-09-10T10:00:00-03:00",
-        "expires_at": "2026-09-10T11:30:00-03:00",
+        "expires_at": _anda("2026-09-10T11:30:00-03:00"),
         "expires_in_minutes": 60 if status == "pending_review" else 0,
         "scheduled_for": "",
         "published_at": "2026-09-10T10:10:00-03:00" if status == "settled" else "",
@@ -225,7 +249,7 @@ def v2_announcement(
         "platform_refs": ["instagram", "whatsapp"],
         "created_at": "2026-09-10T10:00:00-03:00",
         "age_seconds": 1800,
-        "expires_at": "2026-09-10T11:30:00-03:00",
+        "expires_at": _anda("2026-09-10T11:30:00-03:00"),
         "expires_in_seconds": 3600 if state == "pending_review" else 0,
         "scheduled_for": None,
         "approved_at": "2026-09-10T10:05:00-03:00" if state != "pending_review" else None,
@@ -244,7 +268,7 @@ def v2_announcement(
             "policy_version": "visual-v1",
             "cohort_hash": "b" * 64,
             "calculated_at": "2026-09-10T10:04:00-03:00",
-            "expires_at": "2026-09-10T11:30:00-03:00",
+            "expires_at": _anda("2026-09-10T11:30:00-03:00"),
             "freshness": {"state": "fresh", "as_of": FIXED_NOW, "degraded_sources": []},
         },
         "artifact": None,
@@ -340,7 +364,7 @@ def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> 
         "source": {"condition": "announcement_review", "ref": "announcement:41", "version": 3},
         "owner": {"user_id": 7, "role": "product"},
         "escalation": {"role": "ops", "at": "2026-09-10T11:00:00-03:00"},
-        "expires_at": "2026-09-10T11:30:00-03:00",
+        "expires_at": _anda("2026-09-10T11:30:00-03:00"),
         "seen_at": None,
         "acknowledged_at": None,
         "resolved_at": None,
@@ -781,7 +805,7 @@ class Handler(BaseHTTPRequestHandler):
                     "confirmation": {
                         "token": "visual-fire-confirmation-token",
                         "ref": "visual-fire-confirmation-ref",
-                        "expires_at": "2026-09-10T10:35:00-03:00",
+                        "expires_at": _anda("2026-09-10T10:35:00-03:00"),
                         "mode": "none",
                         "step_up": "none",
                         "dual_control": False,
@@ -835,7 +859,7 @@ class Handler(BaseHTTPRequestHandler):
                 "confirmation": {
                     "token": "visual-confirmation-token",
                     "ref": "visual-confirmation-ref",
-                    "expires_at": "2026-09-10T10:35:00-03:00",
+                    "expires_at": _anda("2026-09-10T10:35:00-03:00"),
                     "mode": "summary",
                     "step_up": "none",
                     "dual_control": False,

@@ -1007,7 +1007,7 @@ function submit() {
       class="rounded-lg border border-border p-3"
     >
       <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Avisar quem
+        Público alvo
       </legend>
       <div class="space-y-2.5">
         <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
