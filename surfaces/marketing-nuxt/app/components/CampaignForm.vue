@@ -949,14 +949,20 @@ function submit() {
       <legend class="mb-1 text-xs font-medium text-muted-foreground">
         Entregar por
       </legend>
-      <div class="flex flex-wrap gap-1.5">
-        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos.
-             ⚠️ A pílula já conta o estado da plataforma ("não publica", "não verificada"):
-             antes, as quatro apareciam iguais e a recusa só vinha depois de aprovar. -->
+      <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos.
+           ⚠️ A pílula já conta o estado da plataforma ("não publica", "não verificada"):
+           antes, as quatro apareciam iguais e a recusa só vinha depois de aprovar. -->
+      <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
+           Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
+           numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
+           não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
+           tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
+           de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
+      <div class="grid gap-1.5 sm:flex sm:flex-wrap">
         <label
           v-for="option in platformOptions"
           :key="option.value"
-          class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
+          class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
           :class="[
             platforms.includes(option.value)
               ? 'border-primary bg-primary/10 text-foreground'

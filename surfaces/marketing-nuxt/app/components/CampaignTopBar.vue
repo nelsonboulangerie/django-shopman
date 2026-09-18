@@ -35,6 +35,25 @@ const tabs = [
     icon: "lucide:share-2",
   },
 ] as const;
+
+/** A aba em que o gestor está tem que estar VISÍVEL.
+ *
+ * ⚠️ A nav rola dentro de si mesma no celular (ver o comentário no template), e a 390px
+ * cabem duas abas e meia. Em /platforms — a última — a aba ativa nascia fora da área
+ * visível: a tela mostrava "Painel" e meia "Campanhas", e a seção em que o gestor
+ * estava não aparecia em lugar nenhum da barra. Ele lia a barra e concluía que estava
+ * no Painel.
+ *
+ * `inline: "nearest"` rola só o contêiner que precisa e só o necessário; `block:
+ * "nearest"` impede que isso arraste a PÁGINA junto quando a barra já está visível. */
+const nav = useTemplateRef<HTMLElement>("nav");
+function revealActiveTab() {
+  nav.value
+    ?.querySelector<HTMLElement>('[data-active="true"]')
+    ?.scrollIntoView({ inline: "nearest", block: "nearest" });
+}
+onMounted(revealActiveTab);
+watch(section, () => nextTick(revealActiveTab));
 </script>
 
 <template>
@@ -46,6 +65,7 @@ const tabs = [
     <!-- min-w-0 + overflow-x-auto: no celular a nav rola DENTRO de si mesma. Sem
          isso ela empurra o header e a página inteira ganha scroll horizontal. -->
     <nav
+      ref="nav"
       class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-md bg-muted p-1"
       aria-label="Seções do Marketing"
     >
@@ -53,6 +73,7 @@ const tabs = [
         v-for="t in tabs"
         :key="t.key"
         :to="t.to"
+        :data-active="section === t.key"
         class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         :class="
           section === t.key
