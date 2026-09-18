@@ -8,11 +8,12 @@ nenhum adapter/provider é importado e nenhum estado sobrevive a uma requisiçã
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
+from datetime import UTC
 from http.cookies import SimpleCookie
-import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 from urllib.parse import parse_qs, urlparse
@@ -25,12 +26,13 @@ _FIXED_LOCAL = "2026-09-10T10:30:00-03:00"
 _FIXED_UTC = "2026-09-10T13:30:00+00:00"
 
 if os.environ.get("MARKETING_MOCK_LIVE_CLOCK") == "1":
-    from datetime import datetime, timedelta, timezone as _tz
+    from datetime import datetime, timedelta
+    from datetime import timezone as _tz
 
     _agora = datetime.now(_tz(timedelta(hours=-3)))
     _DESLOCAMENTO = _agora - datetime.fromisoformat(_FIXED_LOCAL)
     FIXED_NOW = _agora.isoformat(timespec="seconds")
-    FIXED_UTC = _agora.astimezone(_tz.utc).isoformat(timespec="seconds")
+    FIXED_UTC = _agora.astimezone(UTC).isoformat(timespec="seconds")
 
     def _anda(carimbo: str) -> str:
         """Empurra um instante da fixture pelo mesmo tanto que o 'agora' andou."""
