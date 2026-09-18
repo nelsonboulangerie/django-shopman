@@ -67,7 +67,7 @@ class AdminNavigationTests(TestCase):
         apps = next(g for g in groups if g["title"] == "Aplicativos")
         live = [item for item in apps["items"] if item["has_permission"]]
         live_items = [item["title"] for item in live]
-        self.assertEqual(live_items, ["Pedidos", "Fechamento", "PDV", "Produção ao vivo"])
+        self.assertEqual(live_items, ["Gestor de pedidos", "Fechamento", "PDV", "Produção ao vivo"])
         self.assertNotIn("Produção", live_items)
         closing_item = next(item for item in live if item["title"] == "Fechamento")
         self.assertEqual(closing_item["link"], "https://pos.example.com/session/closing")
@@ -146,8 +146,8 @@ class AdminNavigationTests(TestCase):
         with override_settings(SHOPMAN_ORDERS_BASE_URL="", SHOPMAN_KDS_BASE_URL=""):
             apps = next(g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos")
             live = {item["title"]: item for item in apps["items"]}
-            self.assertNotIn("Pedidos", live)
-            self.assertNotIn("KDS", live)
+            self.assertNotIn("Gestor de pedidos", live)
+            self.assertNotIn("Cozinha", live)
 
         with override_settings(
             SHOPMAN_ORDERS_BASE_URL="https://gestor.example.com",
@@ -155,8 +155,8 @@ class AdminNavigationTests(TestCase):
         ):
             apps = next(g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos")
             live = {item["title"]: item for item in apps["items"]}
-            self.assertEqual(live["Pedidos"]["link"], "https://gestor.example.com")
-            self.assertEqual(live["KDS"]["link"], "https://kds.example.com")
+            self.assertEqual(live["Gestor de pedidos"]["link"], "https://gestor.example.com")
+            self.assertEqual(live["Cozinha"]["link"], "https://kds.example.com")
 
     def test_configuration_left_the_operation_menu_for_a_destination(self) -> None:
         """Config e dado deixam de disputar o mesmo menu.

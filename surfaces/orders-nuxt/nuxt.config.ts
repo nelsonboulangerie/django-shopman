@@ -42,22 +42,10 @@ export default defineNuxtConfig({
       wakeLock: false,
       kiosk: false,
       push: { surfaceRef: "orders", categories: ["order"] },
-      manifest: {
-        label: "Gestor",
-        description: "Fila e acompanhamento de pedidos.",
-        themeColor: "#FFFFFF",
-        backgroundColor: "#FAFAF9",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Fila", shortName: "Fila", url: "/?view=board", icon: "/pwa/pwa-192x192.png?v=3" },
-          { name: "Hoje", shortName: "Hoje", url: "/?sort=commitment", icon: "/pwa/pwa-192x192.png?v=3" },
-        ],
-      },
+      shortcuts: [
+        { name: "Fila", shortName: "Fila", url: "/?view=board" },
+        { name: "Hoje", shortName: "Hoje", url: "/?sort=commitment" },
+      ],
     }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
@@ -125,10 +113,11 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Gestor",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#ffffff" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

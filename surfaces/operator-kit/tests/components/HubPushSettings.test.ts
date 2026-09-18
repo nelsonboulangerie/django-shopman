@@ -44,7 +44,7 @@ describe("HubPushSettings", () => {
     expect(state.activate).not.toHaveBeenCalled();
   });
 
-  it("mostra categorias e permite remover um aparelho", async () => {
+  it("mostra categorias e permite remover um dispositivo", async () => {
     const state = holder.state;
     const device = { id: 7, endpoint: "https://push.test/7", surface_ref: "hub", device_label: "iPhone", categories: ["order"] };
     state.active.value = true;

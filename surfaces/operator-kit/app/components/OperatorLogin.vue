@@ -5,8 +5,9 @@ const props = withDefaults(
   defineProps<{
     title?: string;
     description?: string;
+    /** Ícone de recurso. Omitido → o ícone canônico do app (`app-identity.json`). */
     icon?: string;
-    /** Identidade do app no gate: o PNG da família PWA. Cai no `icon` se faltar ou falhar. */
+    /** Identidade do app no gate: o PNG da família PWA. Omitido → o PNG canônico do app. */
     iconSrc?: string;
     loginUrl?: string;
     mode?: LoginMode;
@@ -15,7 +16,6 @@ const props = withDefaults(
     expired?: boolean;
   }>(),
   {
-    icon: "lucide:log-in",
     loginUrl: "/api/v1/backstage/operator/login/",
     mode: "overlay",
     largeFields: false,
@@ -33,7 +33,12 @@ const dialog = ref<HTMLFormElement | null>(null);
 const usernameInput = ref<HTMLInputElement | null>(null);
 const { reset: resetSession } = useOperatorSession();
 const iconBroken = ref(false);
-const showIconImage = computed(() => Boolean(props.iconSrc) && !iconBroken.value);
+// Mesma identidade do rail: o PNG e o ícone de recurso saem de `app-identity.json` pelo
+// `runtimeConfig`. O app sem a capability (harness de teste) cai no cadeado genérico.
+const identity = (useRuntimeConfig().public?.operatorPwa as { identity?: { icon: string; iconSrc: string } } | undefined)?.identity;
+const icon = computed(() => props.icon || (identity?.icon ? `lucide:${identity.icon}` : "lucide:log-in"));
+const iconSrc = computed(() => props.iconSrc || identity?.iconSrc);
+const showIconImage = computed(() => Boolean(iconSrc.value) && !iconBroken.value);
 
 const displayTitle = computed(() =>
   props.title ?? (props.expired ? "Sua sessão terminou" : "Entre para operar"),

@@ -58,22 +58,10 @@ export default defineNuxtConfig({
       // recarregaria no meio da venda seria o PDV, não ela.
       idleReloadPaths: ["/"],
       push: { surfaceRef: "pos", categories: ["order", "system"] },
-      manifest: {
-        label: "PDV",
-        description: "Ponto de venda da Nelson Boulangerie.",
-        themeColor: "#FCF6F1",
-        backgroundColor: "#FCF6F1",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Venda", shortName: "Venda", url: "/", icon: "/pwa/pwa-192x192.png?v=3" },
-          { name: "Caixa", shortName: "Caixa", url: "/session", icon: "/pwa/pwa-192x192.png?v=3" },
-        ],
-      },
+      shortcuts: [
+        { name: "Venda", shortName: "Venda", url: "/" },
+        { name: "Caixa", shortName: "Caixa", url: "/session" },
+      ],
     }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
@@ -110,6 +98,12 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
+    // LIGHT-first — o PDV é superfície de balcão, em ambiente claro e virada para o
+    // cliente, como o Gestor e ao contrário do KDS (escuro, fundo de casa). Sem esta
+    // declaração ele seguia o tema do SISTEMA: um Mac no escuro abria o caixa escuro,
+    // e o comentário do KDS já descrevia o PDV como claro. O escuro segue no toggle.
+    preference: 'light',
+    fallback: 'light',
     storageKey: 'pos-nuxt-color-mode',
     classSuffix: ''
   },
@@ -132,7 +126,9 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "PDV",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "robots", content: "noindex, nofollow" },

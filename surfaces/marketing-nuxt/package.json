@@ -19,7 +19,7 @@
     "test:security": "vitest run --project unit --run tests/securityDelivery.test.ts tests/operatorLanguage.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=lucide:megaphone --out=public/pwa --background=#7D4B88 --foreground=#FCF7EE",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --app=marketing --out=public/pwa",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "nuxi typecheck",
     "postinstall": "nuxt prepare"

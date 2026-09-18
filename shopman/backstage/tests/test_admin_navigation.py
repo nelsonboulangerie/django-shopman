@@ -155,7 +155,7 @@ def test_apps_group_holds_only_actual_apps():
     apps_group = next(g for g in groups if g["title"] == "Aplicativos")
     titles = [item["title"] for item in apps_group["items"]]
 
-    assert titles == ["Pedidos", "Fechamento", "PDV", "KDS", "Produção ao vivo", "Compras"]
+    assert titles == ["Gestor de pedidos", "Fechamento", "PDV", "Cozinha", "Produção ao vivo", "Compras"]
     assert "Alertas ativos" not in titles, "o alarme não é um aplicativo"
     for item in apps_group["items"]:
         assert item["link"].startswith("https://"), (

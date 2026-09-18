@@ -1,3 +1,4 @@
+import { operatorShortcutIconSrc } from "../../../operator-kit/appIdentity";
 import {
   crossAppLinkAttrs,
   EXTERNAL_LINK_ATTRS,
@@ -19,7 +20,7 @@ export function tileIcon(icon: string): string {
  * A Loja (`external`) também publica a família. Devolve `null` para URL que não se
  * resolve; a tela cai no Lucide (`tileIcon`).
  */
-export const PWA_ICON_PATH = "/pwa/pwa-192x192.png?v=3";
+export const PWA_ICON_PATH = operatorShortcutIconSrc();
 
 export function tileIconUrl(tile: Pick<HubTileProjection, "url" | "kind">): string | null {
   try {

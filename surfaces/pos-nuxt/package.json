@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=lucide:shopping-basket --out=public/pwa --background=#A95032 --foreground=#FCF7EE",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --app=pos --out=public/pwa",
     "typecheck": "nuxi typecheck",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "postinstall": "nuxt prepare"

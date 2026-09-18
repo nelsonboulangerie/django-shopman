@@ -1,0 +1,83 @@
+{
+  "foreground": "#FCF7EE",
+  "assetVersion": "3",
+  "canvas": {
+    "light": "#FCF6F1",
+    "dark": "#221610"
+  },
+  "apps": {
+    "hub": {
+      "label": "Central",
+      "description": "Central dos aplicativos de operação.",
+      "symbol": "lucide:layout-grid",
+      "fallbackIcon": "layout-grid",
+      "color": "#34373B",
+      "article": "a",
+      "install": "Abra a Central direto da tela inicial deste dispositivo."
+    },
+    "pos": {
+      "label": "PDV",
+      "description": "Ponto de venda do balcão.",
+      "symbol": "lucide:shopping-basket",
+      "fallbackIcon": "shopping-basket",
+      "color": "#A95032",
+      "article": "o",
+      "install": "Abra o caixa direto da tela inicial deste dispositivo."
+    },
+    "kds": {
+      "label": "Cozinha",
+      "description": "Painel de preparo e expedição da cozinha.",
+      "symbol": "lucide:chef-hat",
+      "fallbackIcon": "chef-hat",
+      "color": "#2E7168",
+      "article": "a",
+      "install": "Abra o painel de preparo direto da tela inicial deste dispositivo.",
+      "dark": true
+    },
+    "orders": {
+      "label": "Gestor de pedidos",
+      "description": "Fila e acompanhamento de pedidos.",
+      "symbol": "lucide:square-kanban",
+      "fallbackIcon": "square-kanban",
+      "color": "#8B2F4D",
+      "article": "o",
+      "install": "Abra a fila de pedidos direto da tela inicial deste dispositivo."
+    },
+    "production": {
+      "label": "Produção",
+      "description": "Planejamento, preparo e fornadas.",
+      "symbol": "tabler:baguette",
+      "fallbackIcon": "croissant",
+      "color": "#B9781B",
+      "article": "a",
+      "install": "Abra o plano do dia direto da tela inicial deste dispositivo."
+    },
+    "marketing": {
+      "label": "Marketing",
+      "description": "Campanhas e anúncios da operação.",
+      "symbol": "lucide:megaphone",
+      "fallbackIcon": "megaphone",
+      "color": "#7D4B88",
+      "article": "o",
+      "install": "Abra as campanhas direto da tela inicial deste dispositivo."
+    },
+    "purchase": {
+      "label": "Compras",
+      "description": "Compras e recebimento de insumos.",
+      "symbol": "lucide:package",
+      "fallbackIcon": "package",
+      "color": "#386F9A",
+      "article": "as",
+      "install": "Abra os pedidos de compra direto da tela inicial deste dispositivo."
+    },
+    "bi": {
+      "label": "B.I.",
+      "description": "Leitura dos números da operação.",
+      "symbol": "lucide:chart-no-axes-combined",
+      "fallbackIcon": "chart-no-axes-combined",
+      "color": "#414F91",
+      "article": "o",
+      "install": "Abra os números da operação direto da tela inicial deste dispositivo."
+    }
+  }
+}

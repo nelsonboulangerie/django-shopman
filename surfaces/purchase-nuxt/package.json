@@ -15,7 +15,7 @@
     "test:component": "vitest run --project component",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=lucide:package --out=public/pwa --background=#386F9A --foreground=#FCF7EE",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --app=purchase --out=public/pwa",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "nuxi typecheck",
     "postinstall": "nuxt prepare"

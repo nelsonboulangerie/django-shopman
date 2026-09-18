@@ -1,6 +1,6 @@
 import type { H3Event } from "h3";
 import { operatorAppName, type OperatorAppName } from "../../app/presentation/windowTitle";
-import type { OperatorPwaCapabilityOptions } from "../../pwa.config";
+import type { ResolvedOperatorPwa } from "../../pwa.config";
 import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
 import { resolveOperatorTenantPrefix } from "./operatorTenant";
 
@@ -11,7 +11,7 @@ import { resolveOperatorTenantPrefix } from "./operatorTenant";
  */
 export async function resolveOperatorAppName(event: H3Event): Promise<OperatorAppName> {
   const config = useRuntimeConfig(event);
-  const options = config.public.operatorPwa as OperatorPwaCapabilityOptions | undefined;
+  const options = config.public.operatorPwa as ResolvedOperatorPwa | undefined;
   const label = options?.manifest?.label || "";
   let baseUrl: string;
   try {

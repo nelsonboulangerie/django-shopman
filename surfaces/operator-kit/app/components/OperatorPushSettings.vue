@@ -24,7 +24,7 @@ async function toggleCategory(category: string): Promise<void> {
   <section data-hub-push-settings class="mt-6 rounded-xl border border-border bg-card p-4">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h2 class="text-base font-semibold">Avisos neste aparelho</h2>
+        <h2 class="text-base font-semibold">Avisos neste dispositivo</h2>
         <p class="mt-1 text-sm text-muted-foreground">Receba só alertas operacionais, mesmo com a Central fechada.</p>
       </div>
       <span class="shrink-0 text-xs text-muted-foreground">{{ appVersion }}</span>

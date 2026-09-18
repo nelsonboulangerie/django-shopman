@@ -1,10 +1,10 @@
 import { setResponseHeaders } from "h3";
 import { buildOperatorManifest } from "../../server/utils/pwa";
 import { resolveOperatorAppName } from "../../server/utils/operatorAppName";
-import type { OperatorPwaCapabilityOptions } from "../../pwa.config";
+import type { ResolvedOperatorPwa } from "../../pwa.config";
 
 export default defineEventHandler(async (event) => {
-  const options = useRuntimeConfig(event).public.operatorPwa as OperatorPwaCapabilityOptions;
+  const options = useRuntimeConfig(event).public.operatorPwa as ResolvedOperatorPwa;
   const appName = await resolveOperatorAppName(event);
   setResponseHeaders(event, {
     // Curto o bastante para a troca do `Shop.short_name` no Admin chegar ao app

@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 const require = createRequire(import.meta.url);
@@ -14,17 +15,28 @@ function argument(name, fallback = "") {
   return process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length) || fallback;
 }
 
+// Símbolo e cor saíam da linha de comando de cada `package.json`, e a mesma cor estava
+// escrita de novo no `nuxt.config` e no gate de PWA — três cópias para manter a página, o
+// ícone e a barra de título iguais. Agora o gerador recebe só a CHAVE do app e pergunta
+// à identidade canônica, a mesma que o manifesto lê.
+const identityPath = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app-identity.json");
+const identity = JSON.parse(await readFile(identityPath, "utf8"));
+const app = argument("app");
+
+if (!argument("out") || !app) {
+  throw new Error("uso: --app=<hub|pos|kds|orders|production|marketing|purchase|bi> --out=<public/pwa>");
+}
+if (!identity.apps[app]) {
+  throw new Error(`app de operador desconhecido: ${app} (ver ${identityPath})`);
+}
+
 const output = resolve(argument("out"));
 // O favicon da aba mora na raiz do `public/` (o navegador pede `/favicon.ico` sozinho,
 // até em página sem `<head>`), um nível acima dos PNGs PWA.
 const faviconOutput = dirname(output);
-const background = argument("background", "#34373B");
-const foreground = argument("foreground", "#FCF7EE");
-const iconReference = argument("icon");
-
-if (!argument("out") || !iconReference) {
-  throw new Error("uso: --icon=<lucide|tabler>:<name> --out=<public/pwa> [--background=#RRGGBB] [--foreground=#RRGGBB]");
-}
+const background = identity.apps[app].color;
+const foreground = identity.foreground;
+const iconReference = identity.apps[app].symbol;
 
 const [collectionName, iconName, ...extra] = iconReference.split(":");
 const collection = collections[collectionName];

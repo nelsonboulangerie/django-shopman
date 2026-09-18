@@ -28,7 +28,7 @@ function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
 }
 
 function defaultDeviceLabel(): string {
-  if (!import.meta.client) return "Este aparelho";
+  if (!import.meta.client) return "Este dispositivo";
   const platform = navigator.userAgentData?.platform || navigator.platform || "Aparelho";
   return `${platform} · ${new Date().toLocaleDateString("pt-BR")}`.slice(0, 120);
 }
@@ -76,7 +76,7 @@ export function useWebPush() {
       currentEndpoint.value = subscription?.endpoint || "";
       error.value = "";
     } catch {
-      error.value = "Não foi possível consultar os avisos deste aparelho.";
+      error.value = "Não foi possível consultar os avisos deste dispositivo.";
     }
   }
 
@@ -116,7 +116,7 @@ export function useWebPush() {
       await refresh();
       return true;
     } catch {
-      error.value = "Não foi possível ativar os avisos neste aparelho.";
+      error.value = "Não foi possível ativar os avisos neste dispositivo.";
       return false;
     } finally {
       loading.value = false;
