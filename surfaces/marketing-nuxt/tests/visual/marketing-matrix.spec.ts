@@ -472,7 +472,15 @@ test.describe("listas operacionais", () => {
     // A prévia fiel chega DEPOIS e empurra o conteúdo; rolar antes dela assentar
     // retrataria o topo do diálogo, que é o que este retrato não quer.
     await waitForFaithfulPreview(page);
-    await page.getByRole("dialog").getByText("Avisar quem").scrollIntoViewIfNeeded();
+    // ⚠️ `scrollIntoView({block:"start"})`, não `scrollIntoViewIfNeeded()`: o segundo
+    // rola O MÍNIMO, e o mínimo depende de onde o conteúdo estava quando ele rodou —
+    // duas rodadas param em lugares diferentes e o retrato inteiro sai deslocado. Foi
+    // o que derrubou os quatro retratos do painel de disparo. "Começa no topo" é um
+    // lugar só.
+    await page
+      .getByRole("dialog")
+      .getByText("Avisar quem")
+      .evaluate((element) => element.scrollIntoView({ block: "start" }));
     await expect(
       page.getByRole("checkbox", { name: "Quem favoritou o produto" }),
     ).toBeInViewport();
