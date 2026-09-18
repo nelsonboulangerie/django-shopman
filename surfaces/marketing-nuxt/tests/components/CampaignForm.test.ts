@@ -618,7 +618,7 @@ describe("CampaignForm — a voz do gestor", () => {
     );
     // A escolhida ganha a frase completa; a não escolhida não faz barulho.
     expect(text).toContain(
-      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
     );
     expect(text).toContain("A campanha pode ser salva assim mesmo.");
     expect(text).not.toContain("Não foi possível verificar o transporte");

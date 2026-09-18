@@ -4,6 +4,7 @@ import {
   includesDirectMessage,
   includesPublicPost,
   outgoingImageUrl,
+  reachLines,
 } from "~/presentation/marketingDelivery";
 
 describe("rótulo do último gesto", () => {
@@ -64,5 +65,36 @@ describe("a foto que vai sair", () => {
     expect(
       outgoingImageUrl({ image_url: "  ", platform_content: { instagram: {} } }),
     ).toBe("");
+  });
+});
+
+describe("o que o disparo alcança", () => {
+  // ⚠️ Um número só, chamado "destinos", faz "37" valer para pessoa e para mural. A
+  // caixa de confirmação já contava certo; o diálogo de RECUPERAÇÃO — onde se autoriza
+  // reenvio, e onde a confusão custa mais caro — continuava no modelo antigo. A regra
+  // vive aqui porque duas telas precisam dela, e uma delas não tinha.
+  it("conta pessoas na mensagem e uma postagem por mural", () => {
+    expect(
+      reachLines({ platforms: ["whatsapp", "instagram"], audienceCount: 37 }),
+    ).toEqual(["WhatsApp · 37 pessoas", "Instagram · 1 postagem"]);
+  });
+
+  it("o singular da pessoa é pessoa", () => {
+    expect(reachLines({ platforms: ["whatsapp"], audienceCount: 1 })).toEqual([
+      "WhatsApp · 1 pessoa",
+    ]);
+  });
+
+  // ⚠️ Murais NÃO se juntam numa linha só: "Instagram, Facebook · 1 postagem em cada"
+  // obriga o leitor a distribuir o "1" entre as duas, e com uma plataforma sozinha o
+  // "em cada" fica sem complemento e não quer dizer nada.
+  it("dá uma linha a cada mural, sem pedir que o leitor distribua o número", () => {
+    expect(
+      reachLines({ platforms: ["instagram", "facebook"], audienceCount: 0 }),
+    ).toEqual(["Instagram · 1 postagem", "Facebook · 1 postagem"]);
+  });
+
+  it("sem plataforma, não inventa alcance", () => {
+    expect(reachLines({ platforms: [], audienceCount: 99 })).toEqual([]);
   });
 });
