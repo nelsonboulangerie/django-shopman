@@ -273,8 +273,11 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     await vi.advanceTimersByTimeAsync(400);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Exemplo com Croissant");
-    expect(wrapper.text()).toContain("Dados conferidos às");
+    // A procedência virou RODAPÉ: os mesmos fatos, agora rotulados e juntos depois do
+    // conteúdo, em vez de espalhados por três cantos do cartão.
+    expect(wrapper.text()).toContain("Exemplo com:");
+    expect(wrapper.text()).toContain("Croissant");
+    expect(wrapper.text()).toContain("Dados conferidos às:");
     // O hash sai da linha e continua no `title` de quem carrega a data.
     expect(wrapper.text()).not.toContain("Versão bbbbbbbb");
     expect(wrapper.html()).toContain("versão bbbbbbbb");

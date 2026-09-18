@@ -278,7 +278,12 @@ const simulatedScenes = computed(() =>
     :aria-busy="pending"
     aria-labelledby="announcement-preview-title"
   >
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <!-- ⚠️ Cabeçalho, corpo e RODAPÉ. O que o gestor veio ver é o conteúdo; o resto é
+         procedência (de qual modelo saiu, de que produto é o exemplo, de quando são os
+         dados) e procedência se lê depois, não antes. Antes disso tudo dividia a
+         primeira linha com o título, e o botão que abre o tamanho real ficava no meio
+         da frase — ele é a ação do cartão e mora no canto, onde a mão procura. -->
+    <div class="flex items-center gap-2">
       <p
         id="announcement-preview-title"
         class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -298,15 +303,8 @@ const simulatedScenes = computed(() =>
            fora da dobra. -->
       <AnnouncementSimulatedPreview
         :scenes="simulatedScenes"
-        trigger-class="-my-3"
+        trigger-class="-my-3 ml-auto"
       />
-      <span
-        v-if="preview?.sample"
-        class="ml-auto text-xs text-muted-foreground"
-        :title="preview.sku"
-      >
-        Exemplo com {{ preview.product_name || preview.sku }}
-      </span>
     </div>
 
     <p
@@ -363,19 +361,6 @@ const simulatedScenes = computed(() =>
 
     <template v-else-if="preview && artifact">
       <div
-        class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-      >
-        <!-- O hash do artefato não tem leitor: ninguém confere oito dígitos
-             hexadecimais no balcão. Ele continua alcançável no `title`, para quem
-             precisa correlacionar com o comprovante. -->
-        <span
-          v-if="factTime"
-          :title="`Dados de ${preview.facts.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
-          >Dados conferidos às {{ factTime }}</span
-        >
-      </div>
-
-      <div
         v-if="Object.keys(preview.previews).length > 1"
         class="mt-3 flex flex-wrap gap-1.5"
         role="tablist"
@@ -391,7 +376,7 @@ const simulatedScenes = computed(() =>
           :class="
             platform === activePlatform
               ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border bg-background text-muted-foreground'
+              : 'border-border bg-card text-muted-foreground'
           "
           :aria-selected="platform === activePlatform"
           :data-platform="platform"
@@ -403,7 +388,7 @@ const simulatedScenes = computed(() =>
 
       <p
         v-if="preview.ai_writes"
-        class="mt-3 flex items-start gap-1.5 rounded-md bg-background px-2 py-1.5 text-xs text-muted-foreground"
+        class="mt-3 flex items-start gap-1.5 rounded-md bg-card px-2 py-1.5 text-xs text-muted-foreground"
       >
         <Icon name="lucide:sparkles" class="mt-0.5 size-3.5 shrink-0" />
         Se você usar uma sugestão da IA, a prévia refaz.
@@ -414,7 +399,7 @@ const simulatedScenes = computed(() =>
           {{ platformLabel }}
         </p>
         <div
-          class="max-w-[18rem] overflow-hidden rounded-lg rounded-tl-none bg-background shadow-sm"
+          class="max-w-[18rem] overflow-hidden rounded-lg rounded-tl-none bg-card shadow-sm"
         >
           <img
             v-if="artifact.image_url"
@@ -432,12 +417,6 @@ const simulatedScenes = computed(() =>
             </p>
           </div>
         </div>
-        <p v-if="whatsappTemplate" class="mt-1.5 text-xs text-muted-foreground">
-          Modelo aprovado: {{ whatsappTemplate }}.
-        </p>
-        <p v-if="selected?.flow" class="mt-1.5 text-xs text-muted-foreground">
-          Fluxo do WhatsApp: {{ selected.flow.name }}.
-        </p>
       </div>
 
       <div v-else-if="isInstagramStory" class="mt-3" role="tabpanel">
@@ -445,7 +424,7 @@ const simulatedScenes = computed(() =>
           Story do Instagram
         </p>
         <div
-          class="aspect-[9/16] w-full max-w-[14rem] overflow-hidden rounded-xl border border-border bg-background"
+          class="aspect-[9/16] w-full max-w-[14rem] overflow-hidden rounded-xl border border-border bg-card"
         >
           <img
             :src="artifact.image_url"
@@ -454,7 +433,7 @@ const simulatedScenes = computed(() =>
           />
         </div>
         <div
-          class="mt-2 rounded-md bg-background px-3 py-2 text-xs text-muted-foreground"
+          class="mt-2 rounded-md bg-card px-3 py-2 text-xs text-muted-foreground"
         >
           <p class="font-medium text-foreground">O que será publicado</p>
           <p>A imagem vertical acima, como Story público e efêmero.</p>
@@ -476,7 +455,7 @@ const simulatedScenes = computed(() =>
           >
         </p>
         <div
-          class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-background"
+          class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-card"
         >
           <img
             v-if="artifact.image_url"
@@ -525,6 +504,43 @@ const simulatedScenes = computed(() =>
             : "A postagem é publicada sem foto."
         }}
       </p>
+
+      <!-- RODAPÉ: procedência, toda junta e DEPOIS do conteúdo — de qual modelo saiu,
+           de que produto é o exemplo, de quando são os dados. Espalhada (uma linha no
+           cabeçalho, outra sob a bolha, outra no canto) ela disputava a atenção com o
+           que o gestor veio ver, e nenhuma das três ficava fácil de achar.
+           O hash do artefato continua fora da tela: ninguém confere oito dígitos
+           hexadecimais no balcão. Ele vive no `title`, para quem precisa correlacionar
+           com o comprovante. -->
+      <dl
+        v-if="whatsappTemplate || selected?.flow || preview.sample || factTime"
+        class="mt-3 space-y-0.5 border-t border-border/60 pt-2 text-xs text-muted-foreground"
+      >
+        <div v-if="whatsappTemplate" class="flex gap-1">
+          <dt>Modelo aprovado:</dt>
+          <dd class="min-w-0 truncate" :title="whatsappTemplate">
+            {{ whatsappTemplate }}
+          </dd>
+        </div>
+        <div v-if="selected?.flow" class="flex gap-1">
+          <dt>Fluxo do WhatsApp:</dt>
+          <dd class="min-w-0 truncate">{{ selected.flow.name }}</dd>
+        </div>
+        <div v-if="preview.sample" class="flex gap-1">
+          <dt>Exemplo com:</dt>
+          <dd class="min-w-0 truncate" :title="preview.sku">
+            {{ preview.product_name || preview.sku }}
+          </dd>
+        </div>
+        <div v-if="factTime" class="flex gap-1">
+          <dt>Dados conferidos às:</dt>
+          <dd
+            :title="`Dados de ${preview.facts.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
+          >
+            {{ factTime }}
+          </dd>
+        </div>
+      </dl>
     </template>
 
     <div

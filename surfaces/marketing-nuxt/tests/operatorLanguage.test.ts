@@ -151,3 +151,62 @@ describe("a palavra da casa é dispositivo", () => {
     expect(mock).not.toMatch(/aparelh/i);
   });
 });
+
+/** Texto de tela de um `.vue`: o que está entre as tags MAIS o que está em atributo
+ *  que chega a alguém (`placeholder`, `aria-label`, `title`, `alt`). Sem os dois, meia
+ *  varredura: "Sai por" é conteúdo, e um `placeholder="quando sai"` é atributo. */
+function screenText(source: string): string {
+  const attributes = Array.from(
+    source.matchAll(/(?:placeholder|aria-label|title|alt)="([^"]*)"/g),
+    (match) => match[1] ?? "",
+  ).join(" ");
+  return `${literalTemplateText(source)} ${attributes}`;
+}
+
+describe("o sistema não sai: ele envia, publica ou dispara", () => {
+  // ⚠️ Vocabulário fechado do dono: mensagem se ENVIA (direta, não se apaga), postagem
+  // se PUBLICA (pública, se apaga), e o genérico dos dois é DISPARAR. "Sair" não é ato
+  // desta casa — quem lê "o que sai" tem que adivinhar qual dos três aconteceu, e os
+  // três têm consequências diferentes.
+  //
+  // Esta varredura existe porque a primeira leva consertou as SEIS frases que a lista
+  // nomeava e não varreu a classe: sobraram treze, em nove arquivos, e quem achou foi o
+  // dono abrindo a tela. Instância consertada sem trava volta.
+  const LEAVES = /\b(sai|saiu|saem|sair|sairá|sairão|saíram|saía)\b/i;
+
+  /** O que PODE dizer "sair", com o motivo. Lista que só encolhe.
+   *
+   *  A regra é sobre o SISTEMA agindo. A padaria continua tendo forno, e pão continua
+   *  saindo dele: quando a frase é a voz do padeiro, e não a do sistema, "sair" é a
+   *  palavra certa e trocá-la produziria um português que ninguém fala. */
+  const ALLOWED = [
+    // Exemplo de mensagem no formulário de modelo — é o texto que o PADEIRO escreve.
+    "acabou de sair do forno",
+    // Exemplo de NOME de modelo, no mesmo formulário e pela mesma razão: quem nomeia
+    // é o padeiro, e o que sai do forno é o pão.
+    "Saiu do forno",
+  ];
+
+  it("nenhum texto de tela diz que alguma coisa 'sai'", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const strip = (text: string) =>
+      ALLOWED.reduce((rest, allowed) => rest.split(allowed).join(" "), text);
+
+    const leaks = [
+      ...vueFiles(appRoot).flatMap((path) => {
+        const found = strip(screenText(readFileSync(path, "utf8"))).match(LEAVES);
+        return found ? [`${path} (tela): ${found[0]}`] : [];
+      }),
+      ...sourceFiles(appRoot, [".ts"])
+        .filter((path) => !path.includes("/generated/"))
+        .flatMap((path) => {
+          const found = strip(
+            codeWithoutComments(readFileSync(path, "utf8")),
+          ).match(LEAVES);
+          return found ? [`${path} (código): ${found[0]}`] : [];
+        }),
+    ];
+
+    expect(leaks).toEqual([]);
+  });
+});

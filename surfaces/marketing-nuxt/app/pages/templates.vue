@@ -128,7 +128,7 @@ useHead({ title: "Modelos" });
       />
       <p class="mt-3 font-semibold">Nenhum modelo ainda</p>
       <p class="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        O modelo é o texto que sai para o cliente. Sem pelo menos um, não há
+        O modelo é o texto que o cliente recebe. Sem pelo menos um, não há
         como criar campanha.
       </p>
       <UiButton
@@ -207,7 +207,7 @@ useHead({ title: "Modelos" });
             editing ? "Editar modelo" : "Novo modelo"
           }}</UiSheetTitle>
           <UiSheetDescription>
-            O texto que sai para o cliente. As variáveis são substituídas no
+            O texto que o cliente recebe. As variáveis são substituídas no
             envio.
           </UiSheetDescription>
         </UiSheetHeader>
@@ -249,7 +249,7 @@ useHead({ title: "Modelos" });
             alteração foi feita.
           </UiDialogDescription>
           <UiDialogDescription v-else>
-            O modelo será removido. Nada do que já saiu muda.
+            O modelo será removido. Nada do que já foi disparado muda.
           </UiDialogDescription>
         </UiDialogHeader>
         <ul

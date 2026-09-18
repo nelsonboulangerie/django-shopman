@@ -111,7 +111,7 @@ const decisionNextStep = computed(() => {
   const available = recoveryActions.value.find((action) => action.enabled);
   if (available) return recoveryActionLabel(available);
   if (waitingSwitchedOffLabels.value.length) {
-    return `Pedir à operação para ligar ${waitingSwitchedOffLabels.value.join(", ")}; até lá, esses destinos não saem.`;
+    return `Pedir à operação para ligar ${waitingSwitchedOffLabels.value.join(", ")}; até lá, nada é disparado para eles.`;
   }
   if (result.value.tone === "ok") return "Nenhuma ação necessária.";
   return "Acompanhar o resultado antes de tomar outra decisão.";
