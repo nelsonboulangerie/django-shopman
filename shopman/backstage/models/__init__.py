@@ -38,6 +38,7 @@ from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .seating import SeatingSpot, SpotKind
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
+from .timer_tag import TimerTag, TimerTagOrigin
 
 __all__ = [
     "AdminTwoFactorEnrollment",
@@ -88,6 +89,8 @@ __all__ = [
     "SignInMethod",
     "SignInOutcome",
     "SpotKind",
+    "TimerTag",
+    "TimerTagOrigin",
     "OutageReason",
     "ShelfOutage",
 ]

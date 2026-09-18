@@ -25,11 +25,13 @@ const route = useRoute();
 const searchInput = ref<{ inputRef: HTMLInputElement | null } | null>(null);
 const shortcutsHelpOpen = ref(false);
 
-// Timers da bancada: ferramenta de primeira classe, em toda tela. O contador
-// vem do localStorage — o servidor não o conhece —, então o primeiro render
-// do cliente precisa BATER com o SSR (0) e só depois de montar mostrar o real.
+// Timers da bancada: ferramenta de primeira classe, em toda tela. O botão LEVA
+// à página /timers — o diálogo morreu em 18/09/2026 porque o gesto de toda hora
+// não cabia num modal: no fournil o timer é coisa que fica à vista, não que se
+// abre e fecha. O contador vem do localStorage — o servidor não o conhece —,
+// então o primeiro render do cliente precisa BATER com o SSR (0) e só depois de
+// montar mostrar o real.
 const floorTimers = useFloorTimers();
-const timersOpen = ref(false);
 const hydrated = ref(false);
 const timersCount = computed(() =>
   hydrated.value ? floorTimers.activeCount.value : 0,
@@ -221,16 +223,19 @@ function isActive(to: string): boolean {
           aria-hidden="true"
           >/</OperatorKbd>
       </div>
-      <!-- Timers: contador de ativos; pulsa quando algum toca. Nunca bloqueia nada. -->
-      <UiButton
-        type="button"
-        variant="outline"
-        size="sm"
-        class="relative min-h-11 min-w-11"
-        :class="timersRinging ? 'border-destructive text-destructive' : ''"
+      <!-- Timers: contador de ativos; pulsa quando algum toca. LEVA à página,
+           não abre diálogo. Nunca bloqueia nada. -->
+      <NuxtLink
+        to="/timers"
+        class="relative inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition"
+        :class="[
+          timersRinging ? 'border-destructive text-destructive' : '',
+          isActive('/timers')
+            ? 'bg-primary text-primary-foreground'
+            : 'hover:bg-accent hover:text-foreground',
+        ]"
         :aria-label="`Timers (${timersCount} ativos)`"
         title="Timers da bancada"
-        @click="timersOpen = true"
       >
         <Icon
           name="lucide:alarm-clock"
@@ -248,7 +253,7 @@ function isActive(to: string): boolean {
           "
           >{{ timersCount }}</span
         >
-      </UiButton>
+      </NuxtLink>
       <AlertsBell />
       <UiButton
         type="button"
@@ -286,5 +291,4 @@ function isActive(to: string): boolean {
   </header>
 
   <ProductionShortcutsHelp v-model:open="shortcutsHelpOpen" />
-  <FloorTimersPanel v-model:open="timersOpen" />
 </template>

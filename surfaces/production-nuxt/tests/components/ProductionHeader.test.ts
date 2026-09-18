@@ -24,11 +24,6 @@ const stubs = {
     emits: ["update:open"],
     template: '<div v-if="open" data-shortcuts-help />',
   },
-  FloorTimersPanel: {
-    props: ["open"],
-    emits: ["update:open"],
-    template: '<div v-if="open" data-floor-timers-panel />',
-  },
 };
 
 const timersActive = ref(0);
@@ -127,8 +122,10 @@ describe("ProductionHeader — atalhos descobríveis", () => {
   });
 });
 
+// O botão de timers LEVA à página /timers (o diálogo morreu em 18/09/2026);
+// o que o cabeçalho ainda prova é o contador e o link.
 describe("ProductionHeader — timers da bancada", () => {
-  it("o botão Timers mostra os ativos depois de montar e abre o painel", async () => {
+  it("o botão Timers mostra os ativos depois de montar e leva a /timers", async () => {
     timersActive.value = 2;
     wrapper?.unmount();
     wrapper = mount(ProductionHeader, {
@@ -138,18 +135,15 @@ describe("ProductionHeader — timers da bancada", () => {
     });
     await nextTick();
 
-    const button = wrapper.find('button[aria-label="Timers (2 ativos)"]');
-    expect(button.exists()).toBe(true);
-    expect(button.text()).toContain("2");
-    expect(wrapper.find("[data-floor-timers-panel]").exists()).toBe(false);
-
-    await button.trigger("click");
-    expect(wrapper.find("[data-floor-timers-panel]").exists()).toBe(true);
+    const link = wrapper.find('a[aria-label="Timers (2 ativos)"]');
+    expect(link.exists()).toBe(true);
+    expect(link.attributes("href")).toBe("/timers");
+    expect(link.text()).toContain("2");
   });
 
-  it("sem timer ativo não há badge — e o botão continua lá", () => {
-    const button = wrapper!.find('button[aria-label="Timers (0 ativos)"]');
-    expect(button.exists()).toBe(true);
-    expect(button.text()).not.toMatch(/\d/);
+  it("sem timer ativo não há badge — e o link continua lá", () => {
+    const link = wrapper!.find('a[aria-label="Timers (0 ativos)"]');
+    expect(link.exists()).toBe(true);
+    expect(link.text()).not.toMatch(/\d/);
   });
 });
