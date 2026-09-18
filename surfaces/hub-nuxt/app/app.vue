@@ -134,7 +134,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
               :href="tile.url"
               :target="tileLinkAttrs(tile, linkContext).target"
               :rel="tileLinkAttrs(tile, linkContext).rel"
-              class="flex min-h-28 flex-col gap-2 rounded-md border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              class="flex h-38 flex-col gap-2 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
                    Lucide de fallback, senão vira moldura nos cantos do ícone. -->
@@ -153,9 +153,15 @@ function tileImageSrc(tile: HubTileProjection): string | null {
                 >
                 <Icon v-else :name="tileIcon(tile.icon)" class="size-6" />
               </span>
-              <span class="mt-auto">
-                <span class="block text-sm font-semibold leading-tight">{{ tile.label }}</span>
-                <span class="block text-xs text-muted-foreground">{{ tile.description }}</span>
+              <!-- Altura FIXA e conteúdo no topo: no celular a grade tem duas colunas
+                   estreitas, e cada tile parava numa altura diferente conforme o nome e a
+                   frase quebrassem em uma ou duas linhas — a grade ficava serrilhada e o
+                   olho perdia a coluna. O teto é duas linhas para cada um; o que passa
+                   disso é cortado com reticências pelo `line-clamp`, e o `h-38` reserva o
+                   pior caso, de modo que nenhum tile encolhe quando o texto é curto. -->
+              <span class="grid min-w-0">
+                <span data-tile-title class="line-clamp-2 text-sm font-semibold leading-tight">{{ tile.label }}</span>
+                <span data-tile-description class="line-clamp-2 text-xs text-muted-foreground">{{ tile.description }}</span>
               </span>
             </a>
           </li>
