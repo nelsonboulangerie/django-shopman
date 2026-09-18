@@ -22,6 +22,7 @@ const props = defineProps<{
   reorderAction: Action | null
   reorderLoading?: boolean
   statusOpen: boolean
+  statusLabel?: string
   closedCtaLabel?: string
 }>()
 
@@ -128,6 +129,13 @@ const slides = computed<HeroSlide[]>(() => {
   const customerName = omo.customer_name?.trim()
   const description = shopDescription()
   const menuLabel = (!props.statusOpen && props.closedCtaLabel) || titleOf(copy.menu_cta, 'Ver cardápio')
+  // Loja fechada: o rótulo do hero era a ÚNICA pista do estado, e convidava a montar
+  // pedido sem dizer que a loja estava fechada — o cliente só descobria no checkout,
+  // com a sacola pronta. O selo de estado existe, mas vive lá embaixo, no card
+  // "visite a loja". Aqui ele sobe para o topo, que é o que a pessoa lê.
+  const closedEyebrow = props.statusOpen
+    ? undefined
+    : `${props.statusLabel ? `${props.statusLabel}. ` : ''}Você monta agora e finaliza quando abrirmos.`
   const handmadeTitle = `${titleOf(copy.handmade_title_prefix, 'Feito à mão,')} ${titleOf(copy.handmade_title_suffix, 'todo dia')}`
   const greetingTitle = sentence(omo.greeting_with_name || handmadeTitle)
   const list: HeroSlide[] = []
@@ -135,7 +143,11 @@ const slides = computed<HeroSlide[]>(() => {
   if (omo.is_birthday) {
     list.push({
       ref: 'birthday',
-      titleLines: [`${titleOf(copy.birthday_heading, 'Um cuidado especial hoje')}${customerName ? `, ${customerName}` : ''}!`],
+      // "Um cuidado especial hoje" anunciava um cuidado e não dizia qual — e o botão
+      // abaixo leva ao cardápio de sempre. Calor sem promessa vazia é o que vale aqui.
+      // O "!" final é do TEMPLATE: o registro já traz "Feliz aniversário!", e concatenar
+      // produzia "Feliz aniversário!, Nome!".
+      titleLines: [`${titleOf(copy.birthday_heading, 'Feliz aniversário').replace(/!+$/, '')}${customerName ? `, ${customerName}` : ''}!`],
       description: messageOf(copy.birthday_sub, description),
       imageUrl: HERO_IMAGE_URLS.greeting,
       imageAlt: shop.brand_name,
@@ -176,7 +188,9 @@ const slides = computed<HeroSlide[]>(() => {
         titleOf(copy.reorder_title_prefix, 'Quer repetir seu'),
         `${titleOf(copy.reorder_title_suffix, 'último pedido')}${customerName ? `, ${customerName}` : ''}?`
       ],
-      description: messageOf(copy.reorder_subtitle, 'Com um toque, seu favorito volta à sacola.'),
+      // "favorito" é conceito próprio da loja (o coração, a seção "Seus favoritos"):
+      // usá-lo para o último pedido faz o cliente procurar onde ele marcou.
+      description: messageOf(copy.reorder_subtitle, 'Os itens do seu último pedido voltam para a sacola.'),
       imageUrl: HERO_IMAGE_URLS.reorder,
       imageAlt: shop.brand_name,
       primaryLabel: 'Repetir pedido',
@@ -209,7 +223,7 @@ const slides = computed<HeroSlide[]>(() => {
     primaryTo: menuTo.value
   })
 
-  return list
+  return closedEyebrow ? list.map(slide => ({ ...slide, eyebrow: slide.eyebrow || closedEyebrow })) : list
 })
 const activeSlide = computed(() => slides.value[activeIndex.value] || slides.value[0])
 const heroTitleLabel = computed(() => activeSlide.value?.titleLines.join(' ') || '')
@@ -278,7 +292,11 @@ onBeforeUnmount(() => {
       <div class="relative z-10 flex h-full flex-col justify-end px-6 pb-10 pt-8 text-center text-white sm:px-8 sm:pb-14 sm:pt-12 lg:px-10">
         <Transition name="hero-text" mode="out-in">
           <div :key="activeSlide.ref" class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center">
-            <p v-if="activeSlide.eyebrow" class="text-sm font-semibold uppercase tracking-wide text-white/80">{{ activeSlide.eyebrow }}</p>
+            <p
+              v-if="activeSlide.eyebrow"
+              class="text-sm font-semibold text-white/80"
+              :class="statusOpen ? 'uppercase tracking-wide' : ''"
+            >{{ activeSlide.eyebrow }}</p>
             <h1 class="shop-display mt-2 [text-shadow:0_2px_18px_rgba(0,0,0,0.45)]" :aria-label="heroTitleLabel">
               <span v-for="line in activeSlide.titleLines" :key="line" class="block" aria-hidden="true">
                 {{ line }}

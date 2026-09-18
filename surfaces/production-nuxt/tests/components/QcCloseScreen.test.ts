@@ -149,7 +149,7 @@ describe("QcCloseScreen — classificação por grau", () => {
     await enter(wrapper, "5");
     await buttonByText(wrapper, "Mínimo")!.trigger("click");
     await enter(wrapper, "3");
-    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
 
     await buttonByText(wrapper, "Formato")!.trigger("click");
     await nextTick();
@@ -186,7 +186,7 @@ describe("QcCloseScreen — classificação por grau", () => {
 
     await buttonByText(wrapper, "Ótimo")!.trigger("click");
     await enter(wrapper, "40");
-    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
       quantity: "40",
@@ -207,7 +207,7 @@ describe("QcCloseScreen — classificação por grau", () => {
       wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
     ).toContain("0 unidades");
 
-    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
     await buttonByText(wrapper, "Formato")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
@@ -251,7 +251,7 @@ describe("QcCloseScreen — classificação por grau", () => {
 
     await buttonByText(wrapper, "Razoável")!.trigger("click");
     await enter(wrapper, "5");
-    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
 
     expect(wrapper.emitted("confirm")).toBeUndefined();
     await buttonByText(wrapper, "Formato")!.trigger("click");
@@ -271,7 +271,7 @@ describe("QcCloseScreen — classificação por grau", () => {
 
     await buttonByText(wrapper, "Perda")!.trigger("click");
     await enter(wrapper, "4");
-    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
     await buttonByText(wrapper, "Queimado")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
@@ -292,7 +292,7 @@ describe("QcCloseScreen — classificação por grau", () => {
 
     await buttonByText(wrapper, "Perda")!.trigger("click");
     await enter(wrapper, "40");
-    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
     await buttonByText(wrapper, "Queimado")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({

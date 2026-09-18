@@ -59,7 +59,7 @@ describe("operator PWA capability", () => {
 
   it("chegar de outro app FOCA a janela existente em vez de levá-la embora", () => {
     // `navigate-existing` recarregaria o PDV com venda na mão só porque alguém tocou
-    // no atalho da Central. `focus-existing`, sem consumidor de `launchQueue`, traz a
+    // no atalho do Shopman Apps. `focus-existing`, sem consumidor de `launchQueue`, traz a
     // janela para a frente e descarta o URL — que é o que um launcher deve fazer.
     const manifest = buildOperatorManifest(options);
     expect(manifest.launch_handler).toEqual({ client_mode: "focus-existing" });

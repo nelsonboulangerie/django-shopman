@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import type { VueWrapper } from "@vue/test-utils";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAudienceCount } from "~/composables/useAudienceCount";
@@ -68,6 +69,24 @@ async function settleCount(wrapper: {
 }) {
   await vi.advanceTimersByTimeAsync(400);
   await wrapper.vm.$nextTick();
+}
+
+/** Escolhe o produto pelo `UiSelect` do kit — abre e clica na opção, como a mão faz.
+ *
+ * ⚠️ O primitivo entra de VERDADE no harness (`tests/support/uiPrimitives.ts`), então o
+ * teste dirige o contrato real: `aria-haspopup="listbox"` no gatilho e `role="option"`
+ * na lista. Era um `<select>` do sistema e o teste dava `setValue`; o catálogo da
+ * padaria passa de doze itens, e acima disso ninguém varre a lista com o olho. */
+async function chooseProduct(
+  wrapper: VueWrapper,
+  label: string,
+): Promise<void> {
+  await wrapper.get('[aria-haspopup="listbox"]').trigger("click");
+  const option = wrapper
+    .findAll('[role="option"]')
+    .find((item) => item.text().includes(label));
+  if (!option) throw new Error(`Produto "${label}" não está na lista.`);
+  await option.trigger("click");
 }
 
 const TIERS = [
@@ -242,7 +261,7 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
       wrapper.find('button[type="submit"]').attributes("disabled"),
     ).toBeDefined();
 
-    await wrapper.get("#fire-product").setValue("MDL");
+    await chooseProduct(wrapper, "Madeleine (MDL)");
     expect(
       wrapper.find('button[type="submit"]').attributes("disabled"),
     ).toBeDefined();
@@ -398,7 +417,7 @@ describe("FireCampaignPanel — o zero diz qual zero é", () => {
     const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
       products: PRODUCTS,
     });
-    await wrapper.get("#fire-product").setValue("MDL");
+    await chooseProduct(wrapper, "Madeleine (MDL)");
     await settleCount(wrapper);
 
     const text = wrapper.text();
@@ -422,7 +441,7 @@ describe("FireCampaignPanel — o zero diz qual zero é", () => {
     const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
       products: PRODUCTS,
     });
-    await wrapper.get("#fire-product").setValue("MDL");
+    await chooseProduct(wrapper, "Madeleine (MDL)");
     await settleCount(wrapper);
 
     const items = wrapper
@@ -443,7 +462,7 @@ describe("FireCampaignPanel — o zero diz qual zero é", () => {
     const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
       products: PRODUCTS,
     });
-    await wrapper.get("#fire-product").setValue("MDL");
+    await chooseProduct(wrapper, "Madeleine (MDL)");
     await settleCount(wrapper);
 
     expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");

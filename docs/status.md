@@ -18,7 +18,7 @@ falando com o Django via BFF Nitro (cookie de sessão cross-subdomínio `.boulan
 | Superfície | App | Porta dev | Papel |
 |------------|-----|-----------|-------|
 | Loja do cliente | `surfaces/storefront-nuxt` | :3000 | apex, mobile-first, branded |
-| Central de Apps | `surfaces/hub-nuxt` | :3001 | hub do operador |
+| Shopman Apps | `surfaces/hub-nuxt` | :3001 | a home do operador |
 | PDV | `surfaces/pos-nuxt` | :3002 | desktop-first, tabs, turno, caixa |
 | Cozinha (KDS) | `surfaces/kds-nuxt` | :3003 | prep, picking, expedição, painel de retirada |
 | Gestor de pedidos | `surfaces/orders-nuxt` | :3004 | fila, cardápio, showcases |

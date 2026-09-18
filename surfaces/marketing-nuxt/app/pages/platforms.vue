@@ -198,7 +198,7 @@ useHead({ title: "Plataformas" });
   <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <h1 class="mb-1 text-lg font-semibold">Plataformas</h1>
     <p class="mb-4 text-sm text-muted-foreground">
-      Por onde o anúncio sai. Quem vende é o canal; aqui é quem fala.
+      Por onde o anúncio é disparado. Quem vende é o canal; aqui é quem fala.
     </p>
 
     <div
@@ -435,7 +435,7 @@ useHead({ title: "Plataformas" });
                 v-if="waTemplate.current.value"
                 class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
               >
-                Com o modelo escolhido, o texto que sai no WhatsApp é o aprovado
+                Com o modelo escolhido, o texto enviado no WhatsApp é o aprovado
                 na Meta — o modelo entra só com as variáveis. O texto do modelo
                 continua valendo para Instagram, Facebook e para a sua revisão.
               </p>

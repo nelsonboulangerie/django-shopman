@@ -38,8 +38,8 @@ def kds_setup(db):
 def test_build_kds_index_counts_prep_and_expedition(kds_setup):
     index = {item.ref: item for item in build_kds_index()}
 
-    assert index["prep-proj"].pending_count == 1
-    assert index["exp-proj"].pending_count == 1
+    assert index["prep-proj"].active_count == 1
+    assert index["exp-proj"].active_count == 1
 
 
 @pytest.mark.django_db

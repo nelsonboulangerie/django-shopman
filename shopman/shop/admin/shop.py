@@ -2116,7 +2116,7 @@ _INTEGRATIONS_FIELDSETS = (
                 "defaults_operator_capacity_sustain_minutes",
             ),
             "description": (
-                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Central, Marketing, "
+                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Shopman Apps, Marketing, "
                 "B.I., Compras) mede a memória e a CPU do serviço em que roda e mostra no "
                 "indicador de capacidade do rail. Estes limites decidem quando o indicador "
                 "muda de cor e quando o gestor é avisado. Quem mudou e quando fica no "

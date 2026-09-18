@@ -12,7 +12,7 @@ coisa, ou a conversão muda o que o operador vê.
 
 | Arquivo | O quê |
 |---|---|
-| `operator-kit/app/components/OperatorPushSettings.vue` | categorias de aviso → `UiCheckbox` (e "Aparelhos ativos" virou "Dispositivos ativos", regra da casa) |
+| `operator-kit/app/components/OperatorPushSettings.vue` | categorias de aviso → `UiCheckbox` (e o rótulo da lista virou "Dispositivos ativos", regra da casa) |
 | `operator-kit/app/components/OperatorStationSetup.vue` | escolha do balcão → `UiRadioGroup` |
 | `operator-kit/app/components/OperatorPinChange.vue` | dois botões de ícone puro ganharam nome acessível |
 | `marketing-nuxt/app/components/FireCampaignPanel.vue` | 2 rádios + 3 checkboxes |

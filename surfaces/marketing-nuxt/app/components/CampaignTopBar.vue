@@ -5,7 +5,7 @@
 // ⚠️ O Histórico saiu daqui: ele respondia uma pergunta fraca ("o que saiu?", cronológico). A
 // forte — "esta campanha está funcionando?" — mora na campanha, e a linha do tempo completa
 // ficou como "ver tudo" no Painel. Ver `docs/plans/MARKETING-UX-PLAN.md` §8.
-// As funções comuns (Central, operador, tema) vivem no OperatorRail à esquerda.
+// As funções comuns (Shopman Apps, operador, tema) vivem no OperatorRail à esquerda.
 const route = useRoute();
 const section = computed(() =>
   // `/templates` conta como Campanhas: a biblioteca de modelos é vista secundária dela,

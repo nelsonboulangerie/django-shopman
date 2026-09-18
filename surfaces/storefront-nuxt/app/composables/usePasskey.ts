@@ -149,7 +149,9 @@ function deviceLabel(): string {
   if (/android/i.test(ua)) return 'Celular Android'
   if (/mac/i.test(ua)) return 'Mac'
   if (/windows/i.test(ua)) return 'Windows'
-  return 'Este aparelho'
+  // Este texto vira o NOME salvo da linha, lido depois de outro aparelho: "Este
+  // aparelho" mentiria ali. Sem marca conhecida, dizemos a natureza do que é.
+  return /mobi|phone/i.test(ua) ? 'Celular' : 'Computador'
 }
 
 export function usePasskey() {

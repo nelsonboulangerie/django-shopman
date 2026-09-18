@@ -290,22 +290,29 @@ watch(
     </p>
 
     <div v-if="needsProduct">
-      <label
-        for="fire-product"
+      <!-- ⚠️ `UiSelect`, não o select do sistema: o catálogo da padaria passa de doze
+           itens com folga, e acima disso ninguém varre a lista com o olho — é para isso
+           que o primitivo traz busca (e ela ignora acento).
+           ⚠️ O rótulo é um `<span id>` com `labelledBy`, NUNCA um `<label>`: um
+           `<label>` sem `for` adota o botão que abre e reencaminha para ele todo clique
+           que caia em parte não interativa, inclusive o véu de fechar — o painel
+           fechava e reabria no mesmo gesto. Isto é memória de um defeito pago no
+           recebimento do Compras. -->
+      <span
+        id="fire-product-label"
         class="mb-1 block text-xs font-medium text-muted-foreground"
       >
         Produto desta ocorrência
-      </label>
-      <UiNativeSelect id="fire-product" v-model="productSku" required>
-        <option value="">Escolha o produto</option>
-        <option
-          v-for="product in products ?? []"
-          :key="product.value"
-          :value="product.value"
-        >
-          {{ product.label }}
-        </option>
-      </UiNativeSelect>
+      </span>
+      <UiSelect
+        :model-value="productSku"
+        :options="products ?? []"
+        labelled-by="fire-product-label"
+        placeholder="Escolha o produto"
+        search-placeholder="Buscar produto"
+        empty-text="Nenhum produto com esse nome"
+        @update:model-value="productSku = String($event)"
+      />
       <p
         v-if="(products ?? []).length"
         class="mt-1 text-xs text-muted-foreground"

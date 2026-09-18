@@ -113,11 +113,16 @@ describe("KdsTicketCard — render", () => {
     expect(w.text()).toContain("Massa acabando");
   });
 
-  it("mostra encomenda futura como prévia, sem alvo de toque", () => {
-    const wrapper = mountCard({ ticket: ticket({ is_scheduled: true, status: "scheduled" }) });
-    expect(wrapper.text()).toContain("Agendado");
-    expect(wrapper.text()).toContain("Prévia · libera na data");
-    expect(wrapper.find("[data-kds-tap]").exists()).toBe(false);
+  it("mostra encomenda futura como prévia, com a DATA, e sem botão de ação", () => {
+    const wrapper = mountCard({
+      ticket: ticket({ is_scheduled: true, status: "scheduled" }),
+      serviceDate: "2026-09-19",
+    });
+    // "libera na data" obrigava a lembrar do seletor lá no topo do cabeçalho.
+    expect(wrapper.text()).toContain("Prévia · começa em 19/09");
+    expect(wrapper.text()).toContain("19/09");
+    expect(wrapper.text()).not.toContain("Agendado");
+    expect(wrapper.find("button[data-kds-action]").exists()).toBe(false);
   });
 
   it("nunca trunca nome de item nem observação: quebram linha", () => {
@@ -132,7 +137,7 @@ describe("KdsTicketCard — render", () => {
     expect(w.find("ul").html()).not.toContain("line-clamp");
   });
 
-  it("marca ticket adicional e pedido de entrega no cabeçalho", () => {
+  it("marca ticket adicional e pedido de entrega na linha de contexto", () => {
     const t = mountCard({
       ticket: ticket({ fulfillment_icon: "local_shipping" }),
       addition: true,
@@ -155,49 +160,110 @@ describe("KdsTicketCard — render", () => {
   });
 });
 
-describe("KdsTicketCard — o toque no cabeçalho", () => {
+describe("KdsTicketCard — os dois gestos", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("pendente: um toque emite start e a faixa convida a iniciar", async () => {
+  it("pendente: o botão diz o ato e emite start", async () => {
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
-    expect(w.get("[data-kds-strip]").text()).toContain("Toque para iniciar");
-    await w.get("[data-kds-tap]").trigger("click");
+    const action = w.get("button[data-kds-action]");
+    expect(action.text()).toContain("Iniciar preparo");
+    await action.trigger("click");
     expect(w.emitted("start")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
   });
 
-  it("em preparo (já armado): um toque emite finish", async () => {
+  it("em preparo (já armado): o botão vira Finalizar preparo e emite finish", async () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }) });
-    expect(w.get("[data-kds-strip]").text()).toContain("toque para finalizar");
-    await w.get("[data-kds-tap]").trigger("click");
+    const action = w.get("button[data-kds-action]");
+    expect(action.text()).toContain("Finalizar preparo");
+    await action.trigger("click");
     expect(w.emitted("finish")).toHaveLength(1);
   });
 
-  it("toque duplo não inicia e finaliza: o finalizar só arma depois do intervalo", async () => {
+  it("toque duplo não inicia e finaliza: o botão só arma depois do intervalo", async () => {
     vi.useFakeTimers();
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
-    await w.get("[data-kds-tap]").trigger("click");
+    await w.get("button[data-kds-action]").trigger("click");
     await w.setProps({ ticket: ticket({ status: "in_progress" }) }); // otimista
-    await w.get("[data-kds-tap]").trigger("click"); // o quique do dedo
+    // O rótulo já é o do próximo ato — o que não passa é o toque.
+    expect(w.get("button[data-kds-action]").text()).toContain("Finalizar preparo");
+    expect(w.get("button[data-kds-action]").attributes("disabled")).toBeDefined();
+    await w.get("button[data-kds-action]").trigger("click"); // o quique do dedo
     expect(w.emitted("finish")).toBeUndefined();
     vi.advanceTimersByTime(1000);
     await nextTick();
-    await w.get("[data-kds-tap]").trigger("click");
+    expect(w.get("button[data-kds-action]").attributes("disabled")).toBeUndefined();
+    await w.get("button[data-kds-action]").trigger("click");
     expect(w.emitted("finish")).toHaveLength(1);
   });
 
-  it("item cancelado sem Ciente: o toque emite blocked, nunca finish", async () => {
+  it("item cancelado: o botão diz PARA ONDE ir e emite blocked, nunca finish", async () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }), blocked: true });
-    expect(w.get("[data-kds-strip]").text()).toContain("Item cancelado");
-    await w.get("[data-kds-tap]").trigger("click");
+    const action = w.get("button[data-kds-action]");
+    expect(action.text()).toContain("Item cancelado");
+    expect(action.text()).toContain("cartão vermelho");
+    await action.trigger("click");
     expect(w.emitted("blocked")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
   });
 
-  it("o `i` abre o detalhe sem acionar o gesto do cabeçalho", async () => {
+  it("a área de leitura abre o detalhe e NUNCA dispara o ato", async () => {
+    // A inversão do desenho: a área grande faz o que é seguro; o ato exige o botão.
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
     await w.get("[data-kds-open]").trigger("click");
     expect(w.emitted("open")).toHaveLength(1);
     expect(w.emitted("start")).toBeUndefined();
+    expect(w.emitted("finish")).toBeUndefined();
+  });
+});
+
+describe("KdsTicketCard — o Desfazer mora no card", () => {
+  it("finalizado dentro da janela: o card fica, apagado, com o Desfazer no lugar do ato", async () => {
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true });
+    // O pedido continua legível — é o mesmo card, não um aviso no topo da tela.
+    expect(w.text()).toContain("0007");
+    expect(w.text()).toContain("Pão na Chapa");
+    expect(w.get("[data-kds-undo]").text()).toContain("Finalizado");
+    const action = w.get("button[data-kds-action]");
+    expect(action.text()).toContain("Desfazer");
+    await action.trigger("click");
+    expect(w.emitted("undo")).toHaveLength(1);
+    expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("durante a janela a área de leitura não aceita toque: o único gesto é desfazer", () => {
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true });
+    expect(w.find("[data-kds-open]").exists()).toBe(false);
+  });
+
+  it("o Desfazer ganha até de um pedido travado por cancelamento", async () => {
+    const w = mountCard({
+      ticket: ticket({ status: "in_progress" }),
+      blocked: true,
+      finishing: true,
+    });
+    expect(w.get("button[data-kds-action]").text()).toContain("Desfazer");
+  });
+});
+
+describe("KdsTicketCard — o canon do kit", () => {
+  it("o botão de ação nunca desce do alvo de toque (h-11), nem no compact", () => {
+    for (const [density, height] of [
+      ["compact", "h-11"],
+      ["cozy", "h-11"],
+      ["roomy", "h-14"],
+    ] as const) {
+      const action = mountCard({ ticket: ticket({ status: "pending" }), density }).get(
+        "button[data-kds-action]",
+      );
+      expect(action.classes()).toContain(height);
+    }
+  });
+
+  it("o destaque do próximo usa borda + tint, nunca ring (ring = foco de teclado)", () => {
+    const w = mountCard({ ticket: ticket(), next: true });
+    const classes = w.get("article").classes();
+    expect(classes.some((c) => c.startsWith("ring"))).toBe(false);
+    expect(classes).toContain("border-primary");
   });
 });

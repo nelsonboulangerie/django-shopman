@@ -235,7 +235,7 @@ def _cash_drawer_health(terminal) -> TerminalComponentHealth:
     DO. Não existe requisição que saia daqui e chegue lá. Então, com adapter
     ``agent``, qualquer status conclusivo deste lado seria invenção — inclusive
     ``ready``, que é o que o código antigo devolvia para ``simulated`` sem
-    nunca ter tocado em aparelho nenhum.
+    nunca ter tocado em dispositivo nenhum.
 
     ``deferred`` diz a verdade: a resposta existe, só que quem tem como buscá-la
     é a estação. A superfície sonda o ``/health`` do agente e preenche.

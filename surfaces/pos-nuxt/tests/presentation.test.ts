@@ -90,7 +90,7 @@ import {
   kitchenLineState,
   unfiredCount,
 } from "../app/presentation/kitchen";
-import { pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
+import { countUnits, pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
 import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
@@ -1026,6 +1026,24 @@ describe("presentation/selection — multi-select batch shaping", () => {
     expect([...toggleSelected(b, "L1")].sort()).toEqual(["L2"]);
     // original set is untouched (new Set each time)
     expect([...a]).toEqual(["L1"]);
+  });
+
+  // ⚠️ ITEM é unidade em todo o PDV: três croissants numa linha são três
+  // itens. `count` conta LINHAS e é grandeza interna (quantos `line_id`s
+  // viajam); quem vai à tela é `units`. O carrinho dizia "2 itens" onde o
+  // pagamento, o quadro de comandas e a tela do cliente diziam "4".
+  it("units conta ITENS (Σ qty) e count conta linhas — nunca se trocam", () => {
+    const comQtd = [
+      cartItem({ sku: "CROISSANT", line_id: "L1", qty: 3 }),
+      cartItem({ sku: "CAFE", line_id: "L2", qty: 1 }),
+    ];
+    expect(countUnits(comQtd)).toBe(4);
+    const view = selectionView(comQtd, new Set(["L1", "L2"]));
+    expect(view.units).toBe(4);
+    expect(view.count).toBe(2);
+    // marcar só a linha dos três croissants seleciona TRÊS itens
+    expect(selectionView(comQtd, new Set(["L1"])).units).toBe(3);
+    expect(countUnits([])).toBe(0);
   });
 
   it("shapes the batch toolbar: counts, firable vs unfirable line_ids", () => {

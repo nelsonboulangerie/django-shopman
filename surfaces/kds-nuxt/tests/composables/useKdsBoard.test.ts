@@ -135,15 +135,18 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("tira o card da grade na hora e só POSTa quando a janela fecha", async () => {
+  it("tira o card do TRABALHO na hora, mas o deixa na grade, e só POSTa quando a janela fecha", async () => {
     env.fetchData.value = board();
     const { finalize, view } = useKdsBoard("bancada");
     finalize(1);
-    expect(view.value?.cards).toHaveLength(0);
-    expect(env.sonner.success).toHaveBeenCalledWith(
-      "Pedido 0007 finalizado",
-      expect.objectContaining({ action: expect.objectContaining({ label: "Desfazer" }) }),
-    );
+    // O card fica desenhado: é ele que carrega o "Desfazer", onde o dedo tocou.
+    expect(view.value?.cards).toHaveLength(1);
+    expect(view.value?.finishingPks.has(1)).toBe(true);
+    expect(view.value?.total).toBe(0);
+    expect(view.value?.nextPk).toBeNull();
+    // Sem toast: o aviso no topo da tela não se alcança com a mão ocupada, e dois
+    // caminhos para o mesmo desfazer é um caminho a mais para errar.
+    expect(env.sonner.success).not.toHaveBeenCalled();
     await flushPromises();
     expect(env.fetchMock).not.toHaveBeenCalled();
 
@@ -155,27 +158,29 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
     );
   });
 
-  it("Desfazer devolve o card e nada vai ao servidor", async () => {
+  it("Desfazer devolve o card ao trabalho e nada vai ao servidor", async () => {
     env.fetchData.value = board();
-    const { finalize, view } = useKdsBoard("bancada");
+    const { finalize, undoFinish, view } = useKdsBoard("bancada");
     finalize(1);
-    const [, options] = env.sonner.success.mock.calls[0]!;
-    options.action.onClick();
+    undoFinish(1);
     expect(view.value?.cards).toHaveLength(1);
+    expect(view.value?.finishingPks.has(1)).toBe(false);
+    expect(view.value?.total).toBe(1);
     vi.advanceTimersByTime(10_000);
     await flushPromises();
     expect(env.fetchMock).not.toHaveBeenCalled();
   });
 
-  it("um refresh durante a janela não traz o card de volta", () => {
+  it("um refresh durante a janela não devolve o card ao trabalho", () => {
     env.fetchData.value = board();
     const { finalize, view } = useKdsBoard("bancada");
     finalize(1);
     env.fetchData.value = board(); // poll/SSE trouxe o servidor, que ainda o tem aberto
-    expect(view.value?.cards).toHaveLength(0);
+    expect(view.value?.finishingPks.has(1)).toBe(true);
+    expect(view.value?.total).toBe(0);
   });
 
-  it("recusa do servidor devolve o card e avisa", async () => {
+  it("recusa do servidor devolve o card ao trabalho e avisa", async () => {
     env.fetchData.value = board();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Há item cancelado" } });
     const { finalize, view } = useKdsBoard("bancada");
@@ -183,6 +188,7 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
     vi.advanceTimersByTime(5000);
     await flushPromises();
     expect(view.value?.cards).toHaveLength(1);
+    expect(view.value?.finishingPks.has(1)).toBe(false);
     expect(env.sonner.error).toHaveBeenCalled();
   });
 });

@@ -54,7 +54,7 @@ class SubjectType(models.TextChoices):
 
     ``operator`` continua NÃO existindo, e a distinção é o ponto: o terceiro valor
     é a ESTAÇÃO, não a pessoa. Lembrar quem opera seria lembrar de gente; lembrar a
-    estação é lembrar de um aparelho — o balcão, o totem —, que é justamente o que
+    estação é lembrar de um dispositivo — o balcão, o totem —, que é justamente o que
     não muda quando o turno troca.
 
     ``station`` foi previsto aqui em 21/08/2026 (D1, opção B). O que ele guarda é a

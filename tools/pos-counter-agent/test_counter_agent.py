@@ -1118,10 +1118,10 @@ def test_windows_tenta_ler_em_vez_de_recusar(monkeypatch):
 
 
 def test_windows_tenta_o_usb_quando_o_spooler_nao_devolve(monkeypatch, capsys, tmp_path):
-    """Spooler mudo não é o fim: o aparelho ainda pode responder direto.
+    """Spooler mudo não é o fim: o dispositivo ainda pode responder direto.
 
     A fila de impressão perde a bidirecionalidade em muitas instalações; o
-    `usbprint.sys` fala com o aparelho e a preserva. Desistir no primeiro
+    `usbprint.sys` fala com o dispositivo e a preserva. Desistir no primeiro
     "não devolveu nada" mandaria instalar driver sem necessidade.
     """
     cfg = tmp_path / "agent.json"
@@ -1130,7 +1130,7 @@ def test_windows_tenta_o_usb_quando_o_spooler_nao_devolve(monkeypatch, capsys, t
     monkeypatch.setattr(counter_agent, "_ler_pino_windows", lambda q, **k: (None, "porta nao bidirecional"))
 
     # A gaveta muda só o bit 0x04 do `DLE EOT 1`, que é onde o manual diz que
-    # ele vive. Os outros status ficam iguais — é assim no aparelho real.
+    # ele vive. Os outros status ficam iguais — é assim no dispositivo real.
     estado = {"aberta": False}
 
     def usb(*, query, **k):
@@ -1165,7 +1165,7 @@ def test_windows_so_manda_instalar_driver_quando_os_DOIS_falham(monkeypatch, cap
     cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo", "port": 47811}')
     monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
     monkeypatch.setattr(counter_agent, "_ler_pino_windows", lambda q, **k: (None, "porta nao bidirecional"))
-    monkeypatch.setattr(counter_agent, "_ler_pino_usb_windows", lambda **k: (None, "aparelho mudo"))
+    monkeypatch.setattr(counter_agent, "_ler_pino_usb_windows", lambda **k: (None, "dispositivo mudo"))
     monkeypatch.setattr("builtins.input", lambda _: "")
 
     assert counter_agent._drawer_status_windows() == 1

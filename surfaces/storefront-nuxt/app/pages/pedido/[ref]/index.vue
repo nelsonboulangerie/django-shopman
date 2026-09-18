@@ -414,6 +414,12 @@ async function confirmWaitlistSlot () {
   }
 }
 
+// Substituir apaga a sacola que o cliente montou, e isso não se desfaz: a consequência
+// é nomeada e o aceite é explícito, como na porta da oferta. As duas chaves já existiam
+// no registro (`REORDER_CONFLICT_REPLACE_HELP`/`_ACK_LABEL`) e não chegavam à tela.
+const replaceAcknowledged = ref(false)
+watch(conflict, () => { replaceAcknowledged.value = false })
+
 function dismissReorderConflict () {
   conflict.value = null
 }
@@ -981,13 +987,23 @@ useSeoMeta({
                vinda do backend. "Adicionar" (append) some antes: forçava o cliente
                a substituir ou cancelar. Substituir descarta a sacola atual, então
                fica em outline (menos proeminente que somar). -->
+          <UiField v-if="conflict?.actions.some(action => action.ref.includes('replace'))" orientation="horizontal">
+            <UiFieldContent>
+              <UiFieldLabel for="reorder-replace-ack">
+                {{ conflict?.copy.replace_ack_label?.message || 'Entendo que os itens atuais serão removidos.' }}
+              </UiFieldLabel>
+              <UiFieldDescription>{{ conflict?.copy.replace_help?.message }}</UiFieldDescription>
+            </UiFieldContent>
+            <UiCheckbox id="reorder-replace-ack" v-model="replaceAcknowledged" />
+          </UiField>
           <UiAlertDialogFooter class="flex-col gap-2 sm:flex-row">
-            <UiAlertDialogCancel>{{ conflict?.copy.cancel_label?.title || 'Cancelar' }}</UiAlertDialogCancel>
+            <UiAlertDialogCancel>{{ conflict?.copy.cancel_label?.title || 'Manter minha sacola' }}</UiAlertDialogCancel>
             <template v-if="conflict">
               <UiAlertDialogAction
                 v-for="action in conflict.actions"
                 :key="action.ref"
                 :variant="action.ref.includes('replace') ? 'outline' : 'default'"
+                :disabled="action.ref.includes('replace') && !replaceAcknowledged"
                 @click="performReorderSafely(action)"
               >
                 {{ action.label }}

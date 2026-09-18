@@ -146,7 +146,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   }
 
   /**
-   * Sonda o agente. É o quanto dá para saber sem tocar no aparelho: a fila do
+   * Sonda o agente. É o quanto dá para saber sem tocar no dispositivo: a fila do
    * sistema está de pé. Se a gaveta está plugada na impressora, ou se abriu,
    * isto NÃO sabe — a resposta viria pelo canal bidirecional, que um trabalho
    * de spool não tem. Por isso o teste termina no olho do operador.

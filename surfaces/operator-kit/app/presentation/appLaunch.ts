@@ -1,7 +1,7 @@
 // Como um app de operador MANDA o operador para outro app.
 //
 // O problema, relatado em 17/09/2026 com os oito apps já instaláveis: sair do PDV para
-// a Central abria "uma tarja grande em cima", como se o navegador tivesse entrado em
+// o Shopman Apps abria "uma tarja grande em cima", como se o navegador tivesse entrado em
 // outro site, e o título e a cor da barra da janela continuavam sendo os do PRIMEIRO
 // app aberto, qualquer que fosse ele.
 //

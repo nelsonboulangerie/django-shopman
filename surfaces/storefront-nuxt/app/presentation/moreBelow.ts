@@ -9,13 +9,19 @@
 // `composables/useMoreBelow` e `components/MoreBelow.vue`.
 // Espelhado em `operator-kit/app/presentation/moreBelow.ts`.
 
-// Folga entre a dica e o que estiver flutuando na base (card de ação, barra).
-// Encostada nele a dica vira parte do card; longe demais ela boia no meio do
-// conteúdo e perde o sentido de "continua para baixo".
+// Folga entre o CHEVRON e o que flutua na base (card de ação, barra).
+//
+// ⚠️ A folga é do chevron, NÃO do degradê. Enquanto ela morou aqui, no
+// posicionamento da dica inteira, o degradê parava 12px acima do card e sobrava
+// uma faixa de conteúdo cru entre os dois — a lavagem prometia dissolver e
+// largava o texto legível justo na borda. O degradê encosta no obstáculo; o
+// chevron recua por dentro. Por isso `hintOffset` não soma mais nada: quem
+// aplica a folga é o recuo interno do desenho.
 export const HINT_GAP = 12
 
-export function hintOffset (obstructedBottom: number, gap = HINT_GAP): number {
-  return Math.max(0, obstructedBottom) + gap
+// Onde a base da dica se apoia: exatamente no topo do que flutua embaixo.
+export function hintOffset (obstructedBottom: number): number {
+  return Math.max(0, obstructedBottom)
 }
 
 // Quem pediu menos movimento recebe a dica PARADA, não a ausência dela: a
@@ -23,6 +29,12 @@ export function hintOffset (obstructedBottom: number, gap = HINT_GAP): number {
 // grande o bastante para ser vista sem animar.
 export function hintMotionClass (reducedMotion: boolean): string {
   return reducedMotion ? '' : 'animate-bounce [animation-duration:1.6s]'
+}
+
+// Quem pediu menos movimento também não quer a página deslizando sob o olho:
+// o toque na dica leva ao fim do mesmo jeito, só que de uma vez.
+export function hintScrollBehavior (reducedMotion: boolean): ScrollBehavior {
+  return reducedMotion ? 'auto' : 'smooth'
 }
 
 // A dica existe enquanto o FIM do conteúdo não apareceu. Nada de calcular

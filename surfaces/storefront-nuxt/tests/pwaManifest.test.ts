@@ -23,7 +23,7 @@ describe('storefront PWA manifest', () => {
       expect.objectContaining({ sizes: '192x192', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'maskable' }),
-      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=6', purpose: 'monochrome' })
+      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=7', purpose: 'monochrome' })
     ]))
     expect(manifest.screenshots).toEqual(expect.arrayContaining([
       expect.objectContaining({ sizes: '1080x1920', form_factor: 'narrow' }),
@@ -37,8 +37,8 @@ describe('storefront PWA manifest', () => {
     // (412/512). A família de operador publica os dois; a loja também.
     const { icons } = buildStorefrontManifest()
     expect(icons).toEqual(expect.arrayContaining([
-      { src: '/pwa/pwa-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/pwa/maskable-512x512.png?v=6', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      { src: '/pwa/pwa-512x512.png?v=7', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/maskable-512x512.png?v=7', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
     ]))
   })
 

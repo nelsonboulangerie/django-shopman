@@ -145,13 +145,25 @@ describe("enterAction — a decisão do Enter, em ordem de intenção", () => {
 });
 
 describe("enterActionLabel / enterActionCaveat — o botão e a tecla dizem a MESMA coisa", () => {
-  it("o rótulo fala do RESULTADO, nunca da tecla", () => {
+  // ⚠️ Os três PREENCHEM o formulário e movem o foco; quem cadastra é o
+  // "Cadastrar cliente" do rodapé do modal. O rótulo diz o gesto que ele faz.
+  it("o rótulo fala do RESULTADO, e o resultado é preencher — não cadastrar", () => {
     expect(enterActionLabel({ type: "create_name_only", name: "Maria Silva" }))
-      .toBe("Cadastrar «Maria Silva» só com o nome");
+      .toBe("Começar um cadastro com «Maria Silva»");
     expect(enterActionLabel({ type: "resolve_cpf", cpf: CPF }))
-      .toBe("Cadastrar cliente novo com este CPF");
+      .toBe("Usar este CPF no cadastro novo");
     expect(enterActionLabel({ type: "transfer", field: "phone", value: "43999990000" }))
-      .toBe("Cadastrar cliente novo com o 43999990000");
+      .toBe("Usar o 43999990000 no cadastro novo");
+  });
+
+  it("nenhum dos três diz 'Cadastrar' — só o rodapé do modal cadastra", () => {
+    for (const action of [
+      { type: "create_name_only", name: "Maria Silva" },
+      { type: "resolve_cpf", cpf: CPF },
+      { type: "transfer", field: "phone", value: "43999990000" },
+    ] as const) {
+      expect(enterActionLabel(action)).not.toMatch(/^Cadastrar/);
+    }
   });
 
   it("sem ato para oferecer, não há botão", () => {

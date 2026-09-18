@@ -438,7 +438,7 @@ useHead({ title: "Anúncio" });
           </p>
           <template v-else-if="trackingExhausted">
             <p class="mt-2 text-sm opacity-90">
-              Ainda não sabemos se saiu. Provavelmente é a fila.
+              Ainda não sabemos se foi disparado. Provavelmente é a fila.
             </p>
             <UiButton
               type="button"
@@ -598,7 +598,7 @@ useHead({ title: "Anúncio" });
           O conteúdo abriu, mas o resultado de entrega não.
         </p>
         <p class="mt-1 text-muted-foreground">
-          Ainda não sabemos o que saiu. O comprovante continua abaixo.
+          Ainda não sabemos o que foi disparado. O comprovante continua abaixo.
         </p>
         <UiButton
           type="button"
