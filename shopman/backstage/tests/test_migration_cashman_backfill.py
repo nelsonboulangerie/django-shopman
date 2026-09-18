@@ -129,7 +129,7 @@ def _build_legacy(apps, shift_pk_holder):
     gerente.permissions.add(legacy_perms["audit_cashshift"], legacy_perms["adjust_cashshift"])
     ana.user_permissions.add(legacy_perms["operate_pos"])
 
-    # Terminal legado com a configuração do aparelho; o do pacote já existe sem ela.
+    # Terminal legado com a configuração do dispositivo; o do pacote já existe sem ela.
     legacy_main = POSTerminal.objects.create(
         ref="pdv-main",
         label="PDV principal",
@@ -246,7 +246,7 @@ def test_backfill_moves_the_legacy_cash_into_the_ledger_to_the_cent():
     Shift = new_apps.get_model("cashman", "Shift")
     Entry = new_apps.get_model("cashman", "Entry")
 
-    # Terminais: o existente ganha a configuração do aparelho; o que faltava nasce.
+    # Terminais: o existente ganha a configuração do dispositivo; o que faltava nasce.
     main = Terminal.objects.get(ref="pdv-main")
     assert main.metadata == {"hardware": {"cash_drawer": {"mode": "agent"}}}
     two = Terminal.objects.get(ref="pdv-2")

@@ -5,7 +5,7 @@
 O caixa físico é um pacote do Core, `shopman.cashman` ([ADR-022](../decisions/adr-022-cashman-ledger.md)),
 com três models e uma regra:
 
-1. **`Terminal`** — o aparelho (ref, canal, configuração de hardware em `metadata`). Não guarda dinheiro.
+1. **`Terminal`** — o dispositivo (ref, canal, configuração de hardware em `metadata`). Não guarda dinheiro.
 2. **`Shift`** — a custódia: quem (operador) está com qual gaveta (terminal), de quando a quando.
    **Zero coluna de dinheiro**, nem cache. Um turno aberto por operador e um por terminal (constraint).
 3. **`Entry`** — o livro do turno, append-only: uma linha por coisa que aconteceu na gaveta, com o
@@ -30,7 +30,7 @@ captura no Payman (`PaymentService.settle`), linha `sale` no livro, ligados pelo
 | `ref` | Slug único (`pdv-main` é o default, `Terminal.default()`). |
 | `label`, `location_ref`, `channel_ref` | Identificação; o canal é o do PDV (`pdv`). |
 | `is_active` | Terminal desligado não abre turno. |
-| `metadata` | Configuração do aparelho (gaveta, trava, favoritos). Schema em [data-schemas.md](../reference/data-schemas.md#cashmanterminalmetadata). |
+| `metadata` | Configuração do dispositivo (gaveta, trava, favoritos). Schema em [data-schemas.md](../reference/data-schemas.md#cashmanterminalmetadata). |
 
 ### Shift
 

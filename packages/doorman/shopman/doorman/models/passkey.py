@@ -4,7 +4,7 @@ O que ela resolve, e por que ela é diferente de tudo o mais que temos aqui:
 
 - **Não tem código para ler nem digitar.** Rosto ou digital, um toque. O OTP existe porque
   não havia melhor; isto é melhor.
-- **Atravessa navegador e aparelho.** A credencial mora no chaveiro do sistema e sincroniza
+- **Atravessa navegador e dispositivo.** A credencial mora no chaveiro do sistema e sincroniza
   (iCloud, Google) — então "reconhecer" deixa de depender de cookie, que é justamente o que
   se perde entre o navegador embutido do WhatsApp e o Safari.
 - **É imune a phishing.** A credencial só assina para o NOSSO domínio, verificado pelo
@@ -31,7 +31,7 @@ from django.utils.translation import gettext_lazy as _
 class Passkey(models.Model):
     """Uma credencial WebAuthn de um cliente, num dispositivo.
 
-    O par de chaves é assimétrico: a **privada nunca sai do aparelho** (e nem nós nem a Meta
+    O par de chaves é assimétrico: a **privada nunca sai do dispositivo** (e nem nós nem a Meta
     nem ninguém a vê). Aqui fica só a pública, que serve para verificar assinatura — vazar
     esta tabela não permite entrar como ninguém, e é isso que faz passkey ser categoricamente
     diferente de guardar senha ou hash de senha.
@@ -53,7 +53,7 @@ class Passkey(models.Model):
     #: guardado, a credencial foi clonada — e o protocolo manda recusar.
     #:
     #: ⚠️ Passkey sincronizada (iCloud/Google) legitimamente reporta 0 sempre, porque existe em
-    #: vários aparelhos. Então `0` não é sinal de clonagem: só comparamos quando os dois lados
+    #: vários dispositivos. Então `0` não é sinal de clonagem: só comparamos quando os dois lados
     #: são maiores que zero.
     sign_count = models.BigIntegerField(_("contador de assinatura"), default=0)
 

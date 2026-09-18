@@ -34,7 +34,7 @@ caixa é o terceiro domínio de quantidade e o único sem livro.
 
 1. **Nasce o pacote `cashman`** (`packages/cashman`, `shopman.cashman`), no
    molde do `payman`, com três modelos:
-   - `Terminal`: o aparelho (config; não guarda dinheiro).
+   - `Terminal`: o dispositivo (config; não guarda dinheiro).
    - `Shift`: a custódia: terminal, operador, aberto/fechado em, status.
      **Nenhuma coluna de dinheiro, nem cache de saldo.** Constraints: um turno
      aberto por operador e um por terminal.

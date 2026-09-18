@@ -12,7 +12,7 @@ import FloorTimersPanel from "../../app/components/FloorTimersPanel.vue";
 import type { FloorTimerEntry } from "../../app/composables/useFloorTimers";
 import { UiButtonStub, UiInputStub } from "../support/nativeUiStubs";
 
-// O painel é dirigido por useFloorTimers (singleton de aparelho). Aqui o
+// O painel é dirigido por useFloorTimers (singleton de dispositivo). Aqui o
 // composable é stubado com refs controláveis: o que se prova é a UX — abrir
 // vazio já cria, numpad + nome opcional, lista com +N / Visto / Encerrar.
 const entries = ref<FloorTimerEntry[]>([]);

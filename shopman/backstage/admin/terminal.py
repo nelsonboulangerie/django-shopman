@@ -445,7 +445,7 @@ class TerminalForm(forms.ModelForm):
             station["operator"] = (self.cleaned_data.get("station_operator") or "").strip()
         else:
             # Voltar para atendida DESFAZ o vínculo, não o guarda para depois. Uma
-            # conta com poder permanente esquecida num aparelho físico é a arma
+            # conta com poder permanente esquecida num dispositivo físico é a arma
             # carregada da gaveta: basta alguém reativar o modo — ou um typo — para
             # ela voltar a agir sem que ninguém tenha escolhido essa conta hoje.
             station.pop("operator", None)

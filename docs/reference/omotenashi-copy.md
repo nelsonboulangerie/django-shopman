@@ -208,8 +208,8 @@ pedido × item × pessoa no Gestor de Pedidos; venda × comanda × pessoa no PDV
 E tem conserto estrutural: **na maior parte dos casos o campo é um interruptor disfarçado de
 número.**
 
-Medido no HEAD, em texto de tela (literal fora de docstring, a mesma aproximação que a trava
-de `aparelho` já aceita):
+Medido no HEAD, em texto de tela (literal fora de docstring — a aproximação que a trava de
+vocabulário usava antes de a regra dela deixar de ser sobre a tela; ver §5.1):
 
 - **12 em Python**, pelo padrão ampliado (`(0 = `, `(vazio = `, `0 ou vazio =`):
   `shopman/shop/models/promotion.py` (6), `shopman/shop/admin/shop.py` (3),
@@ -319,8 +319,10 @@ elas; reescrevê-las criaria uma segunda fonte que envelhece sozinha.
 - **`cpf`, `cnpj`, `cep` em português.** Nome próprio de documento brasileiro.
 - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.**
   O `valor` da Efí é o contrato deles; para dentro vira `amount`.
-- **"dispositivo", nunca "aparelho"** — com a maquininha como nome próprio e o Storefront
-  de fora, por concessão do dono. É a única destas quatro que já tem trava (§5.1).
+- **Só dispositivo e maquininha; "aparelho" não é nenhuma das duas** — em toda superfície
+  de operador e em qualquer canal (string, template, comentário, docstring), com o
+  Storefront de fora por decisão do dono. É a única destas quatro que tem trava, e desde
+  18/09/2026 são duas, uma por metade do sistema (§5.1).
 
 ### 4.2 O vocabulário fechado, por domínio
 
@@ -355,36 +357,43 @@ Regra sem trava é lembrete. Mas metade deste catálogo é indecidível por máq
 contrário produz um portão que reprova frase boa e aprova mentira. A divisão abaixo é
 honesta sobre qual metade é qual.
 
-### 5.1 A trava que já existe
+### 5.1 As duas travas de vocabulário
 
 [`shopman/backstage/tests/test_vocabulario_de_tela.py`](../../shopman/backstage/tests/test_vocabulario_de_tela.py)
-varre por AST os `.py` de `shopman/shop`, `shopman/backstage` e `packages`, e reprova a
-palavra `aparelh` em **literal de string que não é docstring** — texto de tela, não prosa.
-Exenta `shopman/storefront/` e `shopman/shop/omotenashi/`, que são voz de cliente.
+varre os `.py` de `shopman`, `packages` e `config` — 1.951 arquivos — e recusa a palavra
+`aparelh`. [`surfaces/operator-kit/tests/guardrails.vocabulary.test.ts`](../../surfaces/operator-kit/tests/guardrails.vocabulary.test.ts)
+faz o mesmo nos 1.073 `.vue`, `.ts`, `.mjs` e `.py` dos oito apps de operador, da layer e
+do router. Ficam de fora a **voz da loja** (§5.5), a **migração aplicada** porque é
+história, e os dois arquivos que precisam escrever a palavra: os que a recusam.
 
-O desenho dela é o molde de tudo o que vem na §5.3: **distinguir tela de prosa antes de
-medir.** Um `grep` cru não distingue, e erra por um fator de quatro: as **17** ocorrências de
-`(0 = ` nos `.py` (fora migrações) viram **4** quando só o texto de tela conta. O resto é
-comentário e docstring — prosa, que a regra manda deixar em paz.
+**Elas varrem o arquivo inteiro — string, template, comentário, docstring.** Não foi
+sempre assim. A primeira versão distinguia tela de prosa por AST e deixava comentário e
+docstring livres, "porque a regra é sobre a palavra na tela"; em 18/09/2026 o dono ampliou
+para "não usamos o termo aparelho", e com isso o CANAL deixou de importar. O que mudou não
+foi o rigor, foi o sujeito: era a tela, virou a palavra. ⚠️ A ampliação é de canal, não de
+superfície: na mesma conversa o dono manteve a loja como estava.
 
-### 5.2 O buraco, e ele tem o tamanho de nove apps
+⚠️ **Isso não generaliza para o resto deste catálogo.** A distinção tela/prosa segue sendo
+o molde de tudo o que vem na §5.3, porque as outras regras continuam sendo sobre a tela.
+Um `grep` cru não distingue, e erra por um fator de quatro: as **17** ocorrências de
+`(0 = ` nos `.py` (fora migrações) viram **4** quando só o texto de tela conta. A regra do
+vocabulário dispensou o recorte; as outras, não.
 
-**String em `.vue` e `.ts` passa por baixo da varredura**, que só lê Python. Isso não é
-teórico, e a prova é do dia anterior a este documento:
+### 5.2 O buraco que existia, e o que ele custou
+
+Até 18/09/2026, **string em `.vue` e `.ts` passava por baixo da varredura**, que só lia
+Python — ou seja, a regra valia em metade do sistema. Isso não era teórico:
 
 O commit `ab50a503d` (17/09/2026) é uma varredura manual de `aparelho` → `dispositivo`,
 feita de propósito, com mensagem explicando o critério e 17 arquivos tocados. Ela tocou
-`surfaces/operator-kit/app/composables/useWebPush.ts` e
-`surfaces/marketing-nuxt/app/pages/platforms.vue` — seis linhas em cada. Medido hoje, nos
-mesmos dois arquivos:
+`surfaces/operator-kit/app/composables/useWebPush.ts` — seis linhas — e deixou de pé, no
+mesmo arquivo, `navigator.platform || "Aparelho"`: o rótulo que vira o **nome do
+dispositivo na tela** quando o navegador não diz qual é.
 
-- `useWebPush.ts` → `navigator.platform || "Aparelho"` — o rótulo que vira o **nome do
-  dispositivo na tela** quando o navegador não diz qual é;
-- `platforms.vue` → `"Nenhum aparelho de teste verificado foi configurado."`
-
-Uma varredura deliberada, feita à mão, nos arquivos certos, deixou duas para trás. É
-exatamente o argumento de "regra sem trava é lembrete", aplicado a quem já estava com a
-regra na mão.
+Uma varredura deliberada, feita à mão, no arquivo certo, deixou passar a linha que mais
+importava. É exatamente o argumento de "regra sem trava é lembrete", aplicado a quem já
+estava com a regra na mão — e é a razão de a trava nova recusar a palavra por linha, com o
+arquivo e o número, em vez de confiar em quem lê.
 
 ### 5.3 O que a máquina pega
 
@@ -393,7 +402,7 @@ prova e o que não prova.
 
 | # | Varredura | Padrão | O que ela NÃO prova |
 |---|---|---|---|
-| V1 | **palavra proibida em texto de tela** | lista fechada (`aparelh`, `publicação pública`, `ledger`, `artefato`, `SRE`) | que a palavra escolhida no lugar está certa — a trava recusa, não escreve |
+| V1 | **palavra proibida** | lista fechada (`aparelh` — este em qualquer canal, ver §5.1 —, `publicação pública`, `ledger`, `artefato`, `SRE`) | que a palavra escolhida no lugar está certa — a trava recusa, não escreve |
 | V2 | **valor vazio como código secreto** (D5) | `(0 = `, `(vazio = `, `0 ou vazio =` | se o conserto é um interruptor ou uma frase melhor; só que ali há decoreba |
 | V3 | **frase que nega o sistema** (D6) | abertura da string: `Não `, `Nunca `, `O app não`, `O sistema não`, `Não vamos`, `não inferimos` | que a frase é ruim — algumas negações são a informação (`"Não reenvie"`) |
 | V4 | **código interno na tela** (D7a) | hash hexadecimal, `v{n}`, `{...}_version`, chave de permissão com ponto, JSON literal | nada; este é o mais seguro dos seis |
@@ -427,27 +436,40 @@ Cinco, com a razão de cada um ser indecidível:
 Por isso a §6 existe. A varredura humana não é o plano B da automática — é o plano A para
 metade do catálogo, e a automática é o que impede a outra metade de voltar.
 
-### 5.5 A trava que falta, nomeada
+### 5.5 `WP-COPY-VUE-SWEEP` — feito em 18/09/2026
 
-**`WP-COPY-VUE-SWEEP` — estender a varredura de texto de tela aos `.vue` e `.ts` das
-superfícies.** Enquanto ele não existir, toda regra de vocabulário desta casa vale em metade
-do sistema, o que, como já está escrito no `CLAUDE.md` sobre URLs, "não é convenção, é
-lembrança".
+**A varredura de vocabulário foi estendida às superfícies** e vive em
+[`surfaces/operator-kit/tests/guardrails.vocabulary.test.ts`](../../surfaces/operator-kit/tests/guardrails.vocabulary.test.ts).
+O argumento que a pedia continua valendo como razão de ela existir: enquanto não existia, a
+regra de vocabulário desta casa valia em metade do sistema, o que, como já está escrito no
+`CLAUDE.md` sobre URLs, "não é convenção, é lembrança".
 
-O que ele precisa resolver, dito com honestidade:
+Como cada ponto foi resolvido:
 
 - **Em `.vue`, texto de tela não é literal de string** — é texto de template, entre tags e
-  em `{{ }}`. A inversão do problema do Python: lá removem-se as docstrings para ficar com as
-  strings; aqui removem-se código e comentário (`//`, `/* */`, `<!-- -->`) para ficar com o
-  texto. **A ferramenta já existe invertida:** o `stripNoise` de
-  `guardrails.identifiers.test.ts` remove exatamente strings e comentários para contar
-  declarações. O WP escreve a irmã dela.
+  em `{{ }}`. Isto **deixou de ser um problema a resolver**: a regra do vocabulário passou
+  a valer para a palavra em qualquer canal, então não há o que separar — a trava lê o
+  arquivo inteiro, linha a linha. A inversão do `stripNoise` de
+  `guardrails.identifiers.test.ts` seria necessária para uma regra que valesse só na tela;
+  esta vale nos dois lados, e por isso o código dela é mais simples que o da irmã.
 - **Onde mora:** nos testes do `operator-kit`, que já leem os arquivos sob `surfaces/` a
   partir do disco — cobre os nove apps de um lugar só. ⚠️ Por ler arquivo e não branch, ela
   mede a árvore de trabalho; num worktree, verde só vale para o que está ali.
-- **Exenta `surfaces/storefront-nuxt/`**, pela mesma concessão que a trava de Python já faz.
-- **Teste de varredura trava o gêmeo que falta** — é o efeito desejado: quando alguém
-  adicionar a décima superfície, ela nasce coberta sem ninguém lembrar.
+- **O Storefront fica de fora, e a exenção é decisão escrita.** Perguntado em 18/09 sobre a
+  loja, o dono manteve o que já valia: *"pode manter assim só lá: aparelho"*. Superfície de
+  cliente final tem voz própria, e quem escreve para o cliente não herda o vocabulário de
+  quem escreve para o balcão. A exenção é da **superfície inteira**, de propósito: meia
+  superfície com duas palavras é pior do que qualquer uma das duas — é o D7c, e ele já
+  existe lá dentro (`conta/seguranca.vue` diz as duas, no mesmo gesto). Fechar isso é da
+  frente que aplica o relatório de copy do Storefront, com `aparelho` como palavra única.
+- **Teste de varredura trava o gêmeo que falta** — o piso de arquivos e a lista fechada das
+  superfícies são assertivas: quem exentar uma superfície tem de dizer ali, e a próxima
+  nasce coberta sem ninguém lembrar.
+
+O que ela **não** faz continua valendo como desenho (V1 da §5.3): ela recusa, não escreve a
+substituição. Onde o objeto é a maquininha de cartão, a palavra é *maquininha* — trocar
+mecanicamente por "dispositivo" já produziu, no mesmo repositório, a frase que dizia as duas
+coisas na mesma linha.
 
 ---
 

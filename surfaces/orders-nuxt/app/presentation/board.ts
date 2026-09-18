@@ -514,7 +514,7 @@ export function dispatchAsksChange(card: Pick<OrderCardProjection, "next_status"
   return card.next_status === "dispatched" && card.change_out_suggested_q > 0;
 }
 
-/** O despacho tem o que perguntar: troco sugerido OU aparelho que o canal deixa levar.
+/** O despacho tem o que perguntar: troco sugerido OU maquininha que o canal deixa levar.
  *  (Só o troco é exigido pelo servidor; a maquininha é oferta do despacho.) */
 export function dispatchAsks(
   card: Pick<OrderCardProjection, "next_status" | "change_out_suggested_q" | "equipment_options">,

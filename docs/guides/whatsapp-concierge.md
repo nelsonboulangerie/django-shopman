@@ -109,7 +109,7 @@ modelo e o envio rodam depois no worker da fila `Directive`, com payload v3
 contendo `conversation_id` e `binding_id`.
 
 O ACK não é mensagem para o cliente e não comprova pedido, pagamento, aceitação
-do provedor ou entrega no aparelho. Não mapear seu JSON para um campo de resposta
+do provedor ou entrega no dispositivo. Não mapear seu JSON para um campo de resposta
 nem adicionar uma mensagem estática de sucesso no flow.
 
 | HTTP / status | Significado e próxima ação |
@@ -193,12 +193,12 @@ ingresso atual sem ID já fica somente leitura por assurance mesmo sem esse flag
     tentativa e próxima ação devem ser compreensíveis sem consultar logs.
 
 Registrar hora, subject pseudonimizado, resposta HTTP, estado da Directive,
-Message/Binding/OutboundAttempt e observação no aparelho. Não registrar chave,
+Message/Binding/OutboundAttempt e observação no dispositivo. Não registrar chave,
 telefone completo, payload sensível ou conteúdo desnecessário.
 
 O teste local/fake prova o contrato de software. A homologação ManyChat precisa
 provar o flow real, continuidade entre mensagens, janela, handoff e saída no
-aparelho. Piloto mede pessoas e operação numa coorte autorizada. Rollout exige os
+dispositivo. Piloto mede pessoas e operação numa coorte autorizada. Rollout exige os
 gates do plano, alvo/release fixados, backup, janela e rollback exercitado.
 
 ## Contenção e recuperação

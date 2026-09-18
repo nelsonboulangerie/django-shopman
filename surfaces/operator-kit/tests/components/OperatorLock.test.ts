@@ -42,7 +42,7 @@ vi.mock("../../app/composables/useOperatorLock", () => ({
 }));
 
 /** Emula o leitor: teclas no elemento focado + Enter, como um HID de verdade.
- *  Sem espera entre teclas — é essa a velocidade do aparelho. */
+ *  Sem espera entre teclas — é essa a velocidade do dispositivo. */
 function scan(token: string): { enterDefaultPrevented: boolean } {
   for (const char of token) {
     const target = (document.activeElement ?? document.body) as HTMLElement;

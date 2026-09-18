@@ -29,7 +29,7 @@ function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
 
 function defaultDeviceLabel(): string {
   if (!import.meta.client) return "Este dispositivo";
-  const platform = navigator.userAgentData?.platform || navigator.platform || "Aparelho";
+  const platform = navigator.userAgentData?.platform || navigator.platform || "Dispositivo";
   return `${platform} · ${new Date().toLocaleDateString("pt-BR")}`.slice(0, 120);
 }
 

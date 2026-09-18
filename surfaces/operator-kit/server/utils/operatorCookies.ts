@@ -93,7 +93,7 @@ function cookiePairs(header: string | undefined): CookiePair[] {
  * cookies namespaced, compartilhados em `.boulangerie.com.br`, viram os nomes
  * que o Django conhece somente na conexao interna BFF -> Django. Cookies de
  * confianca da estacao e os demais pares continuam intactos. O relogio de
- * atividade do aparelho (`app/utils/deviceActivity.ts`) e assunto do navegador
+ * atividade do dispositivo (`app/utils/deviceActivity.ts`) e assunto do navegador
  * — a trava do PDV — e tambem morre aqui: o Django nao tem o que fazer com ele.
  */
 export function operatorCookieHeaderForDjango(browserCookie: string | undefined): string {

@@ -303,7 +303,7 @@ const dispatchDraft = computed(() => {
   return (dispatchRef.value ? cashDrafts.dispatches.value[dispatchRef.value] : null) ?? initial;
 });
 const dispatchAmount = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
-// Aparelhos marcados para sair com o entregador (refs do canal, ex. card_machine).
+// Equipamento marcado para sair com o entregador (refs do canal, ex. card_machine — hoje, a maquininha).
 const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
 const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
 const dispatchAsksChangeNow = computed(() => Boolean(dispatchCard.value && dispatchAsksChange(dispatchCard.value)));
@@ -827,7 +827,7 @@ function printQueue() {
             aria-label="Troco que o entregador leva"
           />
         </label>
-        <!-- aparelho que o canal deixa levar (maquininha): custódia no pedido -->
+        <!-- maquininha que o canal deixa levar: custódia no pedido -->
         <div v-if="dispatchCard?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
           <label
             v-for="opt in dispatchCard.equipment_options"

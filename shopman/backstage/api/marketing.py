@@ -1199,7 +1199,7 @@ class PreviewView(_CampaignBase):
     """POST campaign/preview/ → como a mensagem vai ficar, antes de existir cliente.
 
     Variável com nome errado devolve erro no campo antes de aprovar. A tela mostra os valores
-    usados sem exigir conferência em aparelho externo.
+    usados sem exigir conferência em dispositivo externo.
 
     Resolve pelo MESMO caminho do envio (`campaign.preview` → `resolve_variables`). Prévia com
     montagem própria concordaria hoje e divergiria no primeiro ajuste, e prévia que mente é
