@@ -284,9 +284,10 @@ class TerminalHealthOnlyWarnsAboutWhatExistsTests(PosGuardsBase):
         self.assertEqual({c.status for c in profile.components}, {"absent"})
 
     def test_a_declared_component_without_adapter_still_warns(self) -> None:
+        """Vale para o periférico cujo caminho de entrega este lado desconhece."""
         from shopman.backstage.services.pos_terminal import runtime_profile
 
-        self.terminal.metadata = {"hardware": {"printer": {"enabled": True}}}
+        self.terminal.metadata = {"hardware": {"scanner": {"enabled": True}}}
         self.terminal.save(update_fields=["metadata"])
 
         profile = runtime_profile(self.terminal)
@@ -296,9 +297,64 @@ class TerminalHealthOnlyWarnsAboutWhatExistsTests(PosGuardsBase):
     def test_a_real_adapter_is_ready_not_suspicious(self) -> None:
         from shopman.backstage.services.pos_terminal import runtime_profile
 
-        self.terminal.metadata = {"hardware": {"printer": {"enabled": True, "adapter": "escpos"}}}
+        self.terminal.metadata = {"hardware": {"scanner": {"enabled": True, "adapter": "hid"}}}
         self.terminal.save(update_fields=["metadata"])
 
         profile = runtime_profile(self.terminal)
 
         self.assertEqual(profile.status, "ready")
+
+
+class PrinterHealthFollowsTheDeviceAgentTests(PosGuardsBase):
+    """A impressora não fica verde por causa de um rótulo que ninguém lê.
+
+    O `adapter` da impressora era texto livre: o Admin gravava "relay", o seed
+    gravava "driver", e qualquer string não vazia acendia `ready`. O mesmo
+    terminal mostrava um rótulo diferente conforme quem tinha salvado por
+    último — e ficava verde mesmo sem token, que é o estado em que o PDV
+    recusa imprimir.
+    """
+
+    _AGENT = {"enabled": True, "agent_url": "http://127.0.0.1:47811", "token": "token-do-balcao-inteiro"}
+
+    def _set(self, hardware: dict) -> None:
+        self.terminal.metadata = {"hardware": hardware}
+        self.terminal.save(update_fields=["metadata"])
+
+    def _printer(self):
+        from shopman.backstage.services.pos_terminal import runtime_profile
+
+        profile = runtime_profile(self.terminal)
+        return next(c for c in profile.components if c.key == "printer")
+
+    def test_um_rotulo_de_adapter_nao_acende_mais_o_verde(self) -> None:
+        self._set({"printer": {"enabled": True, "adapter": "escpos"}})
+
+        health = self._printer()
+
+        self.assertEqual(health.status, "warning")
+        self.assertIn("agente", health.message)
+
+    def test_driver_e_relay_dao_exatamente_a_mesma_linha(self) -> None:
+        """A prova de que eram dois nomes para nada: a saúde não os distingue."""
+        self._set({"printer": {"enabled": True, "adapter": "driver"}, "device_agent": self._AGENT})
+        com_driver = self._printer()
+        self._set({"printer": {"enabled": True, "adapter": "relay"}, "device_agent": self._AGENT})
+        com_relay = self._printer()
+
+        self.assertEqual((com_driver.status, com_driver.message), (com_relay.status, com_relay.message))
+        self.assertEqual(com_driver.status, "ready")
+
+    def test_impressora_sem_token_nao_pode_ler_pronta(self) -> None:
+        """O PDV recusa imprimir nesse estado; o badge não pode dizer o contrário."""
+        self._set({"printer": {"enabled": True}, "device_agent": {**self._AGENT, "token": ""}})
+
+        health = self._printer()
+
+        self.assertEqual(health.status, "warning")
+        self.assertIn("token", health.message)
+
+    def test_impressora_com_o_agente_pronto_le_pronta_sem_adapter_nenhum(self) -> None:
+        self._set({"printer": {"enabled": True}, "device_agent": self._AGENT})
+
+        self.assertEqual(self._printer().status, "ready")

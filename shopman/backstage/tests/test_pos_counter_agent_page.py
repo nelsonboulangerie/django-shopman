@@ -17,6 +17,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils import timezone
 from shopman.cashman.models import Terminal
+from unfold.widgets import UnfoldAdminSelectWidget
 
 from shopman.backstage.admin.print_jobs import PrintAgentCredentialAdmin
 from shopman.backstage.admin.terminal import TerminalForm
@@ -170,6 +171,163 @@ def test_editar_geometria_da_etiqueta_preserva_a_fila_e_o_modelo_aferidos():
     assert printer["model"] == "epson-tm-t20"
     assert printer["queue"] == "TM-T20"
     assert (printer["label_width_mm"], printer["label_height_mm"]) == (60, 40)
+
+
+# ── O destino das etiquetas ───────────────────────────────────────────────
+#
+# `print_target_ref` era documentado no data-schemas, lido por
+# `print_jobs.resolve_destination` e escrito por NINGUÉM: nem Admin, nem seed,
+# nem comando. Loja com duas impressoras de preparação batia na recusa "a
+# estação não tem destino escolhido" pela única porta que o gestor tinha — e a
+# recusa citava o nome da CHAVE, mandando o padeiro procurar um campo que não
+# existia em tela nenhuma.
+
+
+def _preparation_terminal(ref, label="Impressora"):
+    """Um terminal que `PrinterConfig.accepts_preparation` aceita de verdade."""
+    terminal = Terminal.objects.create(ref=ref, label=label)
+    terminal.metadata = {
+        "hardware": {
+            "device_agent": {"enabled": True, "agent_url": "http://127.0.0.1:47811", "token": "t" * 24},
+            "printer": {
+                "enabled": True,
+                "role": "preparation",
+                "roll_width_mm": 80,
+                "label_width_mm": 60,
+                "label_height_mm": 40,
+                "label_print_width_mm": 52,
+                "label_cut_mode": "none",
+            },
+        }
+    }
+    terminal.save(update_fields=("metadata",))
+    return terminal
+
+
+def test_o_destino_e_uma_lista_das_impressoras_que_o_servidor_aceita():
+    """Lista fechada, não texto livre: ref inventada não tem por onde entrar."""
+    _preparation_terminal("prep-bancada", "Bancada")
+    _preparation_terminal("prep-balcao", "Balcão de preparo")
+    station = _terminal(ref="tablet-bancada")
+
+    form = TerminalForm(instance=station)
+    refs = [ref for ref, _ in form.fields["print_target_ref"].choices]
+
+    assert refs == ["", "prep-balcao", "prep-bancada"]
+    assert isinstance(form.fields["print_target_ref"].widget, UnfoldAdminSelectWidget)
+    # A própria estação nunca aparece: quando ela tem impressora, o automático
+    # já resolve nela, e duas opções para a mesma coisa é uma a mais.
+    assert "tablet-bancada" not in refs
+
+
+def test_terminal_sem_impressora_valida_nao_vira_opcao():
+    """Oferecer o que o servidor depois recusa é trocar um beco por outro."""
+    Terminal.objects.create(
+        ref="prep-quebrada",
+        label="Etiqueta impossível",
+        metadata={"hardware": {"printer": {"enabled": True, "role": "preparation", "label_width_mm": 9000}}},
+    )
+    Terminal.objects.create(ref="tablet-sem-nada", label="Só tela")
+    station = _terminal(ref="tablet-bancada")
+
+    refs = [ref for ref, _ in TerminalForm(instance=station).fields["print_target_ref"].choices]
+
+    assert refs == [""]
+
+
+def test_escolher_o_destino_desfaz_a_recusa_de_duas_impressoras():
+    """O teste do buraco inteiro: antes, recusa; depois de escolher, destino."""
+    from shopman.backstage.services.print_jobs import resolve_destination
+
+    _preparation_terminal("prep-bancada", "Bancada")
+    _preparation_terminal("prep-balcao", "Balcão de preparo")
+    station = _terminal(ref="tablet-bancada")
+
+    antes = resolve_destination(station_ref="tablet-bancada")
+    assert antes.terminal is None
+    assert "Terminais do PDV" in antes.problem, "a recusa tem de apontar a tela que resolve"
+
+    form = TerminalForm(
+        _form_data(ref="tablet-bancada", drawer_adapter="", print_target_ref="prep-bancada"),
+        instance=station,
+    )
+    assert form.is_valid(), form.errors
+    form.save()
+
+    depois = resolve_destination(station_ref="tablet-bancada")
+    assert depois.terminal is not None and depois.terminal.ref == "prep-bancada"
+    assert Terminal.objects.get(pk=station.pk).metadata["station"]["print_target_ref"] == "prep-bancada"
+
+
+def test_gravar_o_destino_preserva_o_modo_da_estacao_autonoma():
+    """`mode`/`operator` moram no mesmo bloco e não têm campo aqui.
+
+    Escrever o destino sem reler o bloco apagaria a identidade do totem — e um
+    totem que vira estação atendida passa a pedir PIN que não há quem digite.
+    """
+    station = _terminal(ref="totem-vitrine")
+    station.metadata = {"station": {"mode": "autonomous", "operator": "totem-da-vitrine"}}
+    station.save(update_fields=("metadata",))
+    _preparation_terminal("prep-balcao", "Balcão de preparo")
+
+    form = TerminalForm(
+        _form_data(ref="totem-vitrine", drawer_adapter="", print_target_ref="prep-balcao"),
+        instance=station,
+    )
+    assert form.is_valid(), form.errors
+    form.save()
+
+    bloco = Terminal.objects.get(pk=station.pk).metadata["station"]
+    assert bloco == {"mode": "autonomous", "operator": "totem-da-vitrine", "print_target_ref": "prep-balcao"}
+
+
+def test_limpar_o_destino_apaga_a_chave_sem_levar_o_resto():
+    station = _terminal(ref="totem-vitrine")
+    station.metadata = {"station": {"mode": "autonomous", "operator": "totem-da-vitrine", "print_target_ref": "prep-balcao"}}
+    station.save(update_fields=("metadata",))
+    _preparation_terminal("prep-balcao", "Balcão de preparo")
+
+    form = TerminalForm(_form_data(ref="totem-vitrine", drawer_adapter=""), instance=station)
+    assert form.is_valid(), form.errors
+    form.save()
+
+    bloco = Terminal.objects.get(pk=station.pk).metadata["station"]
+    assert bloco == {"mode": "autonomous", "operator": "totem-da-vitrine"}
+
+
+def test_ref_que_nao_e_destino_nao_passa_pelo_formulario():
+    station = _terminal(ref="tablet-bancada")
+
+    form = TerminalForm(
+        _form_data(ref="tablet-bancada", drawer_adapter="", print_target_ref="impressora-que-nao-existe"),
+        instance=station,
+    )
+
+    assert not form.is_valid()
+    assert "print_target_ref" in form.errors
+
+
+def test_destino_que_saiu_do_ar_aparece_marcado_e_barra_o_salvamento():
+    """Sumir com o valor gravado faria a tela mostrar automático e o banco outra coisa."""
+    alvo = _preparation_terminal("prep-balcao", "Balcão de preparo")
+    station = _terminal(ref="tablet-bancada")
+    station.metadata = {"station": {"print_target_ref": "prep-balcao"}}
+    station.save(update_fields=("metadata",))
+    alvo.is_active = False
+    alvo.save(update_fields=("is_active",))
+
+    form = TerminalForm(instance=station)
+    rotulos = dict(form.fields["print_target_ref"].choices)
+    assert "prep-balcao" in rotulos
+    assert "indisponível" in rotulos["prep-balcao"]
+    assert form.fields["print_target_ref"].initial == "prep-balcao"
+
+    salvando = TerminalForm(
+        _form_data(ref="tablet-bancada", drawer_adapter="", print_target_ref="prep-balcao"),
+        instance=station,
+    )
+    assert not salvando.is_valid()
+    assert "print_target_ref" in salvando.errors
 
 
 # ── A projection das instruções ───────────────────────────────────────────
