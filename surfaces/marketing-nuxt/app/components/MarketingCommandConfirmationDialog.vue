@@ -172,6 +172,21 @@ const missingImageForPost = computed(
   () => hasPublicPost.value && !props.imageUrl,
 );
 
+/** O que acontece depois do botão, quando o disparo tem hora marcada.
+ *
+ * "Sai sozinho na hora marcada" não dizia o ato: o sistema não sai, ele envia, publica
+ * ou dispara. O verbo vem do destino, igual ao do botão — e a segunda frase existe
+ * porque o medo real de quem agenda é precisar voltar aqui para confirmar de novo. */
+const scheduledOutcomeNote = computed(() => {
+  const subject =
+    includesDirectMessages.value && hasPublicPost.value
+      ? "o anúncio é disparado"
+      : includesDirectMessages.value
+        ? "a mensagem é enviada"
+        : "a postagem é publicada";
+  return `Depois de confirmar, ${subject} na hora marcada. Você não precisa voltar aqui.`;
+});
+
 function submit() {
   if (!ready.value) return;
   emit("confirm", {
@@ -196,12 +211,14 @@ function submit() {
         <!-- Uma linha. A descrição diz o que acontece DEPOIS do botão, e nada mais:
              quem está aqui já decidiu, só quer conferir antes de não poder voltar. -->
         <UiDialogDescription>
-          <template v-if="isFire">Nada sai agora; vai para revisão.</template>
+          <template v-if="isFire">
+            Nada é disparado agora. O anúncio vai para revisão.
+          </template>
           <template v-else-if="command?.action === 'reject'">
             Não vai para lugar nenhum e não volta para a fila.
           </template>
           <template v-else-if="challenge?.scheduled_for">
-            Depois de confirmar, sai sozinho na hora marcada.
+            {{ scheduledOutcomeNote }}
           </template>
           <template v-else>Depois de confirmar, não tem desfazer.</template>
         </UiDialogDescription>

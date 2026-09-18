@@ -163,6 +163,9 @@ const decisionNotice = computed(() => {
     scheduledSummary: outcome.scheduledFor
       ? scheduleSummary(outcome.scheduledFor, shopTimezone.value)
       : "",
+    // O mesmo estado que encerra o acompanhamento é o que deixa a faixa trocar o
+    // gerúndio pelo particípio. Enquanto não assentar, "Enviado" seria mentira.
+    settled: deliverySettled(resultAnnouncement.value?.delivery),
   });
 });
 

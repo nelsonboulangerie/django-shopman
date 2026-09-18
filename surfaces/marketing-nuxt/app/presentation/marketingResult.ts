@@ -425,8 +425,8 @@ const DIRECT_MESSAGE_PLATFORM = "whatsapp";
  * A linha que explica por que o gestor caiu direto na revisão.
  *
  * O disparo leva a tela até aqui sem escala. Quem chega precisa saber, numa frase, que
- * este anúncio nasceu do toque que ele acabou de dar e que NADA saiu ainda — a mesma
- * promessa que antes vivia no painel de sucesso do disparo.
+ * este anúncio nasceu do toque que ele acabou de dar e que NADA FOI DISPARADO ainda —
+ * a mesma promessa que antes vivia no painel de sucesso do disparo.
  *
  * Publicação pública conta destinos por plataforma; mensagem direta conta pessoas.
  * Misturar os dois números diria ao gestor que o mural tem público de gente.
@@ -451,7 +451,7 @@ export function announcementDispatchNotice(input: {
       }. Nada foi publicado ainda.`
     : `${formatCount(audienceCount)} ${
         audienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis"
-      }. Nada saiu ainda.`;
+      }. Nada foi disparado ainda.`;
   return {
     title: "Este anúncio acabou de ser criado pelo seu disparo",
     detail,
@@ -474,6 +474,9 @@ export function decisionOutcomeNotice(input: {
   includesDirectMessage: boolean;
   includesPublicPost: boolean;
   scheduledSummary?: string;
+  /** A entrega já assentou? Enquanto não, o título fica no gerúndio: dizer "Enviado"
+   *  com as mensagens ainda na fila é afirmar um ato irreversível que não aconteceu. */
+  settled?: boolean;
 }): { title: string; detail: string; tone: ResultTone; icon: string } {
   if (input.action === "reject") {
     return {
@@ -488,30 +491,42 @@ export function decisionOutcomeNotice(input: {
     const when = (input.scheduledSummary || "").trim();
     return {
       title: when ? `Agendado para ${when}` : "Agendado",
-      detail: "Nada sai antes disso. O resultado aparece abaixo.",
+      detail: "Nada é disparado antes disso. O resultado aparece abaixo.",
       tone: "quiet",
       icon: "lucide:calendar-clock",
     };
   }
+  // ⚠️ O título nomeia o ato, e o ato leva minutos: "Enviar agora" quer dizer "na
+  // próxima passada". Enquanto a entrega não assenta, o título fica no gerúndio e o
+  // detalhe carrega a promessa; quando assenta, a MESMA faixa vira o particípio — aí
+  // é verdade. Antes, a faixa dizia "Enviado" em verde e a linha de baixo, na mesma
+  // caixa, dizia "Mensagens na fila": o gestor fechava o app com a conclusão errada.
+  const settled = input.settled === true;
   if (input.includesDirectMessage && input.includesPublicPost) {
     return {
-      title: "Disparado",
-      detail: "Mensagens e postagem na fila. Cada confirmação aparece abaixo.",
+      title: settled ? "Disparado" : "Disparando",
+      detail: settled
+        ? "Mensagens e postagem foram disparadas. O resultado por plataforma está abaixo."
+        : "Mensagens e postagem na fila. Cada confirmação aparece aqui embaixo.",
       tone: "ok",
       icon: "lucide:send",
     };
   }
   if (input.includesDirectMessage) {
     return {
-      title: "Enviado",
-      detail: "Mensagens na fila. Cada confirmação aparece abaixo.",
+      title: settled ? "Enviado" : "Enviando",
+      detail: settled
+        ? "As mensagens foram enviadas. O resultado por pessoa está abaixo."
+        : "As mensagens entraram na fila. Cada confirmação aparece aqui embaixo.",
       tone: "ok",
       icon: "lucide:send",
     };
   }
   return {
-    title: "Publicado",
-    detail: "Postagem na fila. A confirmação aparece abaixo.",
+    title: settled ? "Publicado" : "Publicando",
+    detail: settled
+      ? "A postagem foi publicada. O resultado está abaixo."
+      : "A postagem entrou na fila. A confirmação aparece aqui embaixo.",
     tone: "ok",
     icon: "lucide:megaphone",
   };
