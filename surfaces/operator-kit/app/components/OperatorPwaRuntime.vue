@@ -18,7 +18,7 @@ const config = (publicConfig.operatorPwa || {}) as OperatorPwaRuntimeConfig;
 const enabled = Boolean(config.app);
 const route = useRoute();
 
-// As APIs de aparelho continuam progressivas: uma surface sem suporte preserva
+// As APIs de dispositivo continuam progressivas: uma surface sem suporte preserva
 // exatamente o comportamento web atual. Só capabilities declaradas no manifesto
 // do app são ativadas aqui.
 useWakeLock({ enabled: enabled && config.wakeLock === true });

@@ -120,7 +120,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
         "answer": (
             "Você vê o cardápio à vontade; para finalizar um pedido, pedimos que entre com seu "
             "telefone. Não usamos senha: você entra pelo WhatsApp, enviando uma mensagem pronta e "
-            "recebendo um link, ou com um código por SMS. Se quiser, o aparelho fica salvo e você "
+            "recebendo um link, ou com um código por SMS. Se quiser, o dispositivo fica salvo e você "
             "entra sem código nas próximas vezes."
         ),
         "search_terms": "conta, cadastro, login, entrar, senha, código, WhatsApp, SMS, telefone, criar conta, acesso",

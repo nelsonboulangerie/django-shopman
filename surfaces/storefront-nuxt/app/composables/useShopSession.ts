@@ -89,7 +89,7 @@ export function useShopSession () {
       isAuthenticated: keepIdentity,
       requiresWelcome: keepIdentity ? state.value.requiresWelcome : false,
       welcomeAsksName: keepIdentity ? state.value.welcomeAsksName : false,
-      // A home é a fonte da pergunta para quem não passa pelo login (aparelho
+      // A home é a fonte da pergunta para quem não passa pelo login (dispositivo
       // reconhecido): autenticada, ela manda; anônima preservada, mantém.
       welcomeAsksMarketing: homeAuthenticated
         ? !state.value.marketingPromptAnswered && !!home.omotenashi.marketing_prompt_pending

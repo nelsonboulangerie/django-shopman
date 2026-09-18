@@ -205,7 +205,7 @@ class OrderCardProjection:
     change_back_pending: bool = False
     change_back_q: int = 0
     change_label: str = ""
-    # Aparelho que saiu com o entregador (maquininha): custódia no pedido
+    # Maquininha que saiu com o entregador: custódia no pedido
     # (``Order.data.dispatch``), não no caixa. ``equipment_options`` é o que o
     # canal permite levar (o despacho pergunta só quando há opção);
     # ``equipment_out`` o que saiu; ``equipment_back_pending`` enquanto não voltou.
@@ -374,7 +374,7 @@ class OperatorOrderProjection:
     change_back_pending: bool = False
     change_back_q: int = 0
     change_label: str = ""
-    # Aparelho que saiu com o entregador (maquininha): custódia no pedido
+    # Maquininha que saiu com o entregador: custódia no pedido
     # (``Order.data.dispatch``), não no caixa. ``equipment_options`` é o que o
     # canal permite levar (o despacho pergunta só quando há opção);
     # ``equipment_out`` o que saiu; ``equipment_back_pending`` enquanto não voltou.
@@ -433,7 +433,7 @@ class TwoZoneQueueProjection:
     # devolve o pedido ao fluxo normal.
     preorders: tuple[OrderCardProjection, ...] = ()
     preorders_count: int = 0
-    # Aparelhos na rua (saíram com o entregador e não voltaram), para o quadro
+    # Maquininhas na rua (saíram com o entregador e não voltaram), para o quadro
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
@@ -1334,7 +1334,7 @@ def _build_card(
     )
 
 
-#: Rótulo pt-BR dos aparelhos (a ref é contrato do canal; o texto é da tela).
+#: Rótulo pt-BR do equipamento (a ref é contrato do canal; o texto é da tela).
 EQUIPMENT_LABELS = {"card_machine": "Maquininha"}
 
 

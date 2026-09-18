@@ -386,7 +386,7 @@ function backToSearch () {
 
 async function locateMe () {
   if (!import.meta.client || !navigator.geolocation) {
-    geoIssue.value = 'Geolocalização não está disponível neste aparelho.'
+    geoIssue.value = 'Geolocalização não está disponível neste dispositivo.'
     return
   }
   locating.value = true

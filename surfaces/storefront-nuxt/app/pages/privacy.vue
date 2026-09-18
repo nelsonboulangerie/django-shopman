@@ -72,7 +72,7 @@ useSeoMeta({
           <li><strong>E-mail.</strong> Opcional, para segunda via e recado quando o WhatsApp não vai.</li>
           <li><strong>Endereço de entrega.</strong> Só quando você pede entrega. Guardamos os endereços que você salva na conta.</li>
           <li><strong>O que você comprou.</strong> Itens, valores, datas, forma de pagamento e o que você escreveu como observação.</li>
-          <li><strong>Aparelhos confiáveis.</strong> Um registro do navegador em que você escolheu não pedir código de novo.</li>
+          <li><strong>Dispositivos confiáveis.</strong> Um registro do navegador em que você escolheu não pedir código de novo.</li>
           <li><strong>Avaliação e favoritos</strong>, quando você usa.</li>
         </ul>
         <p class="text-sm leading-6">

@@ -198,7 +198,7 @@ export function addressSheetDescription (mode: 'create' | 'edit'): string {
     : 'Ajuste o que mudou e salve para os próximos pedidos.'
 }
 
-// ── Aparelhos confiáveis ───────────────────────────────────────────────────
+// ── Dispositivos confiáveis ───────────────────────────────────────────────────
 export function deviceIcon (label: string | null | undefined): string {
   const normalized = (label || '').toLowerCase()
   if (normalized.includes('iphone') || normalized.includes('android')) return 'lucide:smartphone'
@@ -260,7 +260,7 @@ export function accountNavCards (summary: AccountSummary | null | undefined): Ac
     {
       to: '/conta/seguranca',
       label: 'Segurança e dados',
-      description: 'Aparelhos, exportar e excluir',
+      description: 'Dispositivos, exportar e excluir',
       icon: 'lucide:shield-check',
       count: null
     }

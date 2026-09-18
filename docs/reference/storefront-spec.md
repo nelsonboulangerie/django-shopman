@@ -183,7 +183,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   é o `MarketingPromptSheet` (bottom sheet, montado uma vez no shell), dirigido por
   `useShopSession.welcomeAsksMarketing` (nunca respondida: sem linha de consentimento whatsapp e sem
   `Customer.metadata.marketing_prompt_answered_at`). A fonte principal é a **home**
-  (`omotenashi.marketing_prompt_pending`, toda visita — cobre quem entra pelo aparelho reconhecido sem
+  (`omotenashi.marketing_prompt_pending`, toda visita — cobre quem entra pelo dispositivo reconhecido sem
   passar pelo login; anônimo = false; falha fechado); o `welcome_asks_marketing` do payload de sessão
   também alimenta. Nenhuma resposta tardia reabre o que foi respondido nesta sessão de navegador.
   Sobe ~600 ms depois de a página montar, só autenticado, **nunca** em `/entrar`, `/a`,
@@ -201,7 +201,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 - **Declaração de maioridade no login:** a nota ao lado do botão de entrar — "Ao continuar, você confirma
   que é maior de idade e aceita os Termos de uso." (frase fixa em `presentation/auth.ts`, link para
   `/terms`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
-  aparelho reconhecido, access link `/a`). Toda autenticação bem-sucedida (`verify-code`, `device-check`,
+  dispositivo reconhecido, access link `/a`). Toda autenticação bem-sucedida (`verify-code`, `device-check`,
   `auth/access`, `passkey/login`) carimba `Customer.metadata.adult_declaration`
   (`account.record_adult_declaration`, versão `login-terms-pt-BR-v1`, idempotente: a primeira fica). É a
   prova de maioridade que o marketing direto lê (`marketing_age.is_proved_adult`); aniversário que prova

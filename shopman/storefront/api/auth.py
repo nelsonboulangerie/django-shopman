@@ -130,7 +130,7 @@ def _carried_strength(metadata) -> str:
     outro lado continua sabendo só o número.
 
     Promover aqui seria transformar "trocar de navegador" em prova de identidade, o que é
-    absurdo: é a mesma pessoa no mesmo aparelho, com a mesma dúvida.
+    absurdo: é a mesma pessoa no mesmo dispositivo, com a mesma dúvida.
     """
     if not isinstance(metadata, dict) or metadata.get("login_source") != "handoff":
         return ""
@@ -141,7 +141,7 @@ def _carried_strength(metadata) -> str:
 def _record_identity_strength(request, metadata, *, customer) -> None:
     """Marcar a sessão quando ela nasceu de um link de campanha.
 
-    ⚠️ E consultar o APARELHO antes de marcar como fraca: se este navegador já carrega o
+    ⚠️ E consultar o DISPOSITIVO antes de marcar como fraca: se este navegador já carrega o
     cookie de confiança da pessoa (`DeviceTrustService.check`), nós sabemos que é ela —
     o link foi só conveniência, e não há nada a reduzir. É o celular dela, que é o caso da
     esmagadora maioria de quem volta.
@@ -173,7 +173,7 @@ def _declare_adult(request, customer) -> None:
 
     A nota ao lado do botão da loja diz "Ao continuar, você confirma que é maior de
     idade e aceita os Termos de uso". Quem passou por ela e autenticou — por código,
-    aparelho reconhecido, access link ou passkey — declarou; o carimbo em
+    dispositivo reconhecido, access link ou passkey — declarou; o carimbo em
     ``Customer.metadata["adult_declaration"]`` é a evidência que o marketing direto
     lê (``marketing_age.is_proved_adult``). Idempotente: a primeira fica.
 
@@ -332,7 +332,7 @@ class AccessLinkExchangeView(APIView):
         response = Response(payload)
 
         # ⚠️ Link nascido de uma MENSAGEM que a pessoa enviou (`source=manychat`) prova posse
-        # do número — a mesma prova do OTP, que já confia no aparelho. Então este caminho
+        # do número — a mesma prova do OTP, que já confia no dispositivo. Então este caminho
         # também confia: é o que faz a confirmação valer para sempre naquele celular, em vez
         # de virar pedágio semanal. Link que NÓS empurramos (`internal`, campanha) não
         # confia: mensagem se encaminha.
@@ -675,8 +675,8 @@ class BrowserHandoffView(APIView):
 
     ⚠️ Existe por um fato de plataforma, não por capricho: o navegador embutido do WhatsApp é
     um WKWebView com **pote de cookie próprio**. Tudo o que ela conquistar ali — sessão,
-    aparelho confiado — não existe no Safari que ela usa no resto do dia. "Confirmado para
-    sempre neste aparelho" era, na prática, "neste webview".
+    dispositivo confiado — não existe no Safari que ela usa no resto do dia. "Confirmado para
+    sempre neste dispositivo" era, na prática, "neste webview".
 
     Em vez de sofrer isso, atravessamos de propósito: no momento em que já sabemos quem ela
     é, oferecemos o pulo, e a identidade nasce no pote que ela vai usar de verdade. O link é
@@ -691,7 +691,7 @@ class BrowserHandoffView(APIView):
     authentication_classes = [SessionAuthentication]
 
     #: Curto porque o pulo é imediato — ela toca e o navegador abre. Não é link para guardar,
-    #: é um trilho entre dois navegadores do mesmo aparelho.
+    #: é um trilho entre dois navegadores do mesmo dispositivo.
     HANDOFF_TTL_MINUTES = 3
 
     @extend_schema(tags=["auth"], summary="Mint a one-time link to the system browser")
@@ -728,7 +728,7 @@ class BrowserHandoffView(APIView):
             )
         return Response({"url": url, "expires_in_minutes": self.HANDOFF_TTL_MINUTES})
 
-# ── Passkey: acesso rápido do aparelho, sem código nenhum ────────────
+# ── Passkey: acesso rápido do dispositivo, sem código nenhum ────────────
 #
 # ⚠️ A regra de segurança que decide o desenho: **cadastrar passkey exige identidade FORTE**.
 # Uma sessão que só conhece o número (chegou por link de campanha, e mensagem se encaminha)
@@ -773,7 +773,7 @@ class PasskeyRegisterOptionsView(APIView):
 
 
 class PasskeyRegisterView(APIView):
-    """POST /api/v1/auth/passkey/register/ — guarda a chave pública que o aparelho criou."""
+    """POST /api/v1/auth/passkey/register/ — guarda a chave pública que o dispositivo criou."""
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
@@ -833,7 +833,7 @@ class PasskeyLoginView(APIView):
     """POST /api/v1/auth/passkey/login/ — verifica a assinatura e abre a sessão.
 
     A sessão nasce com identidade FORTE: a credencial só assina para o nosso domínio (imune a
-    phishing) e exigimos verificação local do aparelho. Não há nada a reduzir nem a confirmar depois.
+    phishing) e exigimos verificação local do dispositivo. Não há nada a reduzir nem a confirmar depois.
     """
 
     permission_classes = [AllowAny]

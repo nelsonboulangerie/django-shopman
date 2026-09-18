@@ -56,9 +56,9 @@ A variável `{{1}}` do botão mapeia para o campo personalizado **`order_ref`** 
 `tracking_url`. Assim nenhuma URL precisa virar campo personalizado, e o token não tem por
 onde vazar nem por acidente.
 
-Quem clica sem sessão no aparelho **não bate num 404**: `/pedido/{ref}` é fechado por sessão
+Quem clica sem sessão no dispositivo **não bate num 404**: `/pedido/{ref}` é fechado por sessão
 (`customer_orders.request_can_access_order`), e a loja responde com "Ele pode estar em outra
-conta ou em outro aparelho — entre com seu telefone" e um botão **Entrar** que volta para o
+conta ou em outro dispositivo — entre com seu telefone" e um botão **Entrar** que volta para o
 mesmo pedido (`storefront-nuxt/app/presentation/orderAccess.ts`). O link é honesto e se
 recupera sozinho. O preço é um toque a mais; o troco é nenhum segredo fora de casa.
 

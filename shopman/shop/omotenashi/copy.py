@@ -1173,7 +1173,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Receber por SMS")},
     },
     "LOGIN_TRUSTED_DEVICE_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Este aparelho já foi confirmado. Se quiser, entre direto.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Este dispositivo já foi confirmado. Se quiser, entre direto.")},
     },
     "LOGIN_TRUSTED_DEVICE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Entrar sem código")},
@@ -1212,7 +1212,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Dispositivo reconhecido. Entrando automaticamente…")},
     },
     "DEVICE_TRUST_PROMPT": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Salvar este aparelho?", message="Use só em um aparelho seu. Por 30 dias, você entra sem código.")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Salvar este dispositivo?", message="Use só em um dispositivo seu. Por 30 dias, você entra sem código.")},
     },
     "DEVICE_TRUST_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Salvar por 30 dias")},

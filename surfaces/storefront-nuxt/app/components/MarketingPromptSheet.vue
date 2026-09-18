@@ -16,7 +16,7 @@
 // (sessionStorage), mesmo que o carimbo tenha falhado — não se insiste.
 //
 // A pergunta chega pela home (`omotenashi.marketing_prompt_pending`, toda visita,
-// inclusive de quem entra pelo aparelho reconhecido) e pelo login. E divide a
+// inclusive de quem entra pelo dispositivo reconhecido) e pelo login. E divide a
 // vez com o convite de instalar o app: UM convite por página (useShopInvite).
 //
 // O rótulo da chave + a linha miúda são a evidência gravada pelo servidor

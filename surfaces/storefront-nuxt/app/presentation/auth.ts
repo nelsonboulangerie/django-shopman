@@ -74,7 +74,7 @@ export function welcomeNameValue (raw: string): string {
 // ── A declaração de maioridade, feita ao ENTRAR ────────────────────────────
 //
 // A nota ao lado do botão de entrar, em TODOS os caminhos (telefone/código,
-// aparelho reconhecido, access link): continuar confirma ser maior de idade e
+// dispositivo reconhecido, access link): continuar confirma ser maior de idade e
 // aceita os Termos de uso. O servidor carimba o cadastro em toda autenticação
 // (`adult_declaration`, versão `login-terms-pt-BR-v1`); é essa a prova que o
 // marketing direto lê. A frase é FIXA, não copy configurável: a versão do lado

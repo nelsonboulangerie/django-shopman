@@ -526,9 +526,9 @@
    *
    * `calc(5rem + env(safe-area-inset-bottom))` e não `bottom-20` seco: a
    * navegação tem `pb-[env(safe-area-inset-bottom)]`, então ela CRESCE no
-   * aparelho com recorte. Com 5rem fixo o card entraria por baixo dela em
+   * dispositivo com recorte. Com 5rem fixo o card entraria por baixo dela em
    * qualquer iPhone moderno. Somando a mesma medida, a folga de 15px se
-   * mantém em todo aparelho.
+   * mantém em todo dispositivo.
    *
    * Só abaixo de `md`: é onde existe navegação inferior. Acima disso a tela
    * decide sozinha (a coluna do desktop leva a ação no fluxo).

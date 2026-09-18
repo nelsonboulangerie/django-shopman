@@ -1,9 +1,9 @@
 // Atravessar do navegador embutido do WhatsApp para o navegador DE VERDADE dela.
 //
 // ⚠️ O motivo é um fato de plataforma: o webview do WhatsApp (WKWebView no iOS, WebView no
-// Android) tem **pote de cookie próprio**. Sessão e aparelho confiado conquistados ali não
+// Android) tem **pote de cookie próprio**. Sessão e dispositivo confiado conquistados ali não
 // existem no Safari/Chrome que ela usa no resto do dia — "confirmado para sempre neste
-// aparelho" era, na prática, "neste webview".
+// dispositivo" era, na prática, "neste webview".
 //
 // Em vez de sofrer isso, atravessamos de propósito, no momento em que já sabemos quem ela é.
 // E é a porta de entrada da passkey: cadastrar credencial dentro do webview do WhatsApp é

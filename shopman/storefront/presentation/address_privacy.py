@@ -11,7 +11,7 @@ construtor, dois modos.
 
 O grau depende de quanto sabemos de quem está do outro lado (`storefront/identity.py`):
 
-- **inteiro** — sessão em aparelho conhecido, ou login normal. Nada a esconder de quem já
+- **inteiro** — sessão em dispositivo conhecido, ou login normal. Nada a esconder de quem já
   provou que é ela.
 - **reduzido** — sessão que conhece o NÚMERO e não as MÃOS (chegou por link de campanha,
   e mensagem se encaminha). Desce rótulo, bairro e cidade; a rua e o número ficam no

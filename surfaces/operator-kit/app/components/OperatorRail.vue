@@ -53,8 +53,8 @@ function toggleTheme() {
 }
 const themeLabel = computed(() => (colorMode.value === "dark" ? "Tema claro" : "Tema escuro"));
 
-// Trava de giro (tablets): só aparece em aparelho de toque com a API; a recusa do
-// aparelho é dita ao operador, nunca fingida como travada.
+// Trava de giro (tablets): só aparece em dispositivo de toque com a API; a recusa do
+// dispositivo é dita ao operador, nunca fingida como travada.
 const orientation = useOrientationLock();
 const orientationLabel = computed(() => (orientation.isLocked.value ? "Liberar giro" : "Travar giro"));
 const orientationAriaLabel = computed(() => {

@@ -17,7 +17,7 @@ As duas cercas que sobreviveram não custam nada a quem é dona de verdade:
 2. **Pontos valem onde ela já vai** — endereço salvo ou balcão. É a única rota de perda
    material que um link encaminhado abria.
 
-E a cerca inteira desaparece quando o aparelho é conhecido (`identity_strength = device`),
+E a cerca inteira desaparece quando o dispositivo é conhecido (`identity_strength = device`),
 que é o caso da esmagadora maioria de quem volta: o celular dela já provou identidade um dia.
 """
 

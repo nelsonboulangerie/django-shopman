@@ -2,7 +2,7 @@
 
 Decisão do dono (17/09/2026). O default do Django — 14 dias contados do login, e o
 uso não renova — derrubava o gestor em uso no meio da semana e, ao mesmo tempo,
-mantinha viva por duas semanas a sessão de um aparelho esquecido. A regra passa a
+mantinha viva por duas semanas a sessão de um dispositivo esquecido. A regra passa a
 ser a do uso: cada dia com uso empurra o prazo para 7 dias à frente.
 
 **Quem é sessão de operador.** A que nasceu numa das portas de operador —

@@ -55,7 +55,7 @@ def customer_pricing_hints(request) -> tuple[str, str]:
 
 # ── Quanto sabemos de quem está do outro lado ────────────────────────
 #
-# Uma pergunta só, e ela decide tudo o que as telas mostram: **este aparelho é conhecido?**
+# Uma pergunta só, e ela decide tudo o que as telas mostram: **este dispositivo é conhecido?**
 #
 # ⚠️ Não é a `audience` do `AccessLink`. Ela existe no model e ninguém a aplica
 # (`exchange_token` nunca passa `required_audience`), então usá-la como cerca seria confiar

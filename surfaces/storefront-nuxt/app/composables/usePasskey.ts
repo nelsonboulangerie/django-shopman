@@ -1,4 +1,4 @@
-// Passkey: acesso rápido do aparelho, sem código nenhum.
+// Passkey: acesso rápido do dispositivo, sem código nenhum.
 //
 // Este arquivo é, quase inteiro, TRADUÇÃO. O servidor fala JSON (base64url, porque JSON não
 // tem bytes) e o `navigator.credentials` fala `ArrayBuffer`. É aqui que WebAuthn mais escorrega:
@@ -53,7 +53,7 @@ function domainAllowsPasskey(): boolean {
  *  ⚠️ Existe porque a primeira versão apenas ESCONDIA a seção em quatro condições diferentes
  *  (sem autenticador, endereço inválido, já ativado, recusado antes). Cada uma certa sozinha,
  *  e juntas produziram o pior resultado possível: o dono foi ver o recurso e não havia nada na
- *  tela — sem como saber se era bug, se não tinha deploy, ou se era o aparelho dele.
+ *  tela — sem como saber se era bug, se não tinha deploy, ou se era o dispositivo dele.
  *
  *  Silêncio não é neutro: é a única resposta que não dá para depurar.
  */
@@ -69,7 +69,7 @@ export function passkeyBlockedReason(): string {
   return ''
 }
 
-/** O aparelho sabe fazer passkey? Sem isto, oferecemos um botão que não faz nada. */
+/** O dispositivo sabe fazer passkey? Sem isto, oferecemos um botão que não faz nada. */
 export function passkeySupported(): boolean {
   return (
     typeof window !== 'undefined'
@@ -80,7 +80,7 @@ export function passkeySupported(): boolean {
 }
 
 /**
- * ⚠️ Este aparelho tem autenticador PRÓPRIO?
+ * ⚠️ Este dispositivo tem autenticador PRÓPRIO?
  *
  * `passkeySupported` só diz que a API existe. Num desktop, isso pode acabar em fluxo externo,
  * PIN do sistema ou QR; a loja só deve oferecer como atalho quando o navegador afirma que há
@@ -149,7 +149,7 @@ function deviceLabel(): string {
   if (/android/i.test(ua)) return 'Celular Android'
   if (/mac/i.test(ua)) return 'Mac'
   if (/windows/i.test(ua)) return 'Windows'
-  return 'Este aparelho'
+  return 'Este dispositivo'
 }
 
 export function usePasskey() {
@@ -176,7 +176,7 @@ export function usePasskey() {
         publicKey: asCredentialOptions(options)
       }) as PublicKeyCredential | null
       if (!created) {
-        // Cancelou a confirmação do aparelho: não é erro, é uma escolha.
+        // Cancelou a confirmação do dispositivo: não é erro, é uma escolha.
         return false
       }
       await $fetch(apiPath('/api/v1/auth/passkey/register/'), {
@@ -235,7 +235,7 @@ export function usePasskey() {
       return true
     } catch (e) {
       if ((e as DOMException)?.name === 'NotAllowedError') return false
-      error.value = errorDetail(e, 'Não reconhecemos esta chave neste aparelho.')
+      error.value = errorDetail(e, 'Não reconhecemos esta chave neste dispositivo.')
       return false
     } finally {
       busy.value = false

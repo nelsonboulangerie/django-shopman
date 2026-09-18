@@ -596,7 +596,7 @@ def _complete_notification_preferences(customer_ref: str) -> set[str]:
 # marketing direto passa a ser autodeclaração, e ela mora na ENTRADA da loja:
 # a nota ao lado do botão diz "Ao continuar, você confirma que é maior de idade
 # e aceita os Termos de uso", e toda autenticação bem-sucedida (código,
-# aparelho reconhecido, access link, passkey) carimba o cadastro. A data de
+# dispositivo reconhecido, access link, passkey) carimba o cadastro. A data de
 # nascimento continua opcional no perfil e só vale para o CONTRÁRIO: se provar
 # menor, vence a declaração (`marketing_age.is_proved_adult`).
 #

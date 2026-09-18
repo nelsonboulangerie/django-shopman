@@ -1,91 +1,93 @@
-"""A palavra da casa para o objeto que o operador segura é "dispositivo".
+"""A palavra da casa para o objeto que se segura é "dispositivo" — e "maquininha", quando
+é a do cartão. "Aparelho" não existe.
 
 O dono já tinha padronizado, mas a regra não estava escrita em lugar nenhum — nem no
-glossário, nem no CLAUDE.md. Por isso derivou: 104 arquivos Python diziam "aparelho",
-e o convite de instalação dos oito apps, escrito em 17/09/2026, nasceu dizendo "deste
-aparelho" porque quem o escreveu leu os vizinhos.
+glossário, nem no CLAUDE.md. Por isso derivou: 104 arquivos Python diziam a palavra
+proibida, e o convite de instalação dos oito apps, escrito em 17/09/2026, nasceu errado
+porque quem o escreveu leu os vizinhos.
 
-Regra sem trava é lembrete. Esta é a trava, e ela varre STRING — o texto que chega a
-alguém —, não prosa: comentário e docstring seguem livres, porque a regra é sobre a
-palavra na tela.
+Regra sem trava é lembrete. Esta é a trava.
 
-Três recortes deliberados:
+## O que mudou em 18/09/2026, e por quê
 
-  * **Storefront fica de fora**, por concessão explícita do dono (05/2026, e de novo
-    em 17/09/2026): é superfície de cliente final, com voz própria. Inclui o
-    `omotenashi/copy.py`, que é a copy da loja.
-  * **"maquininha" não é "dispositivo".** O que o entregador leva tem nome, e o código
-    já o usava na frase ao lado ("Maquininha inválida. Atualize os aparelhos
-    disponíveis." dizia as duas coisas na mesma linha). A varredura recusa "aparelho"
-    e não força "dispositivo" no lugar: quem escreve escolhe a palavra certa.
-  * **Teste e migração ficam de fora.** Migração aplicada é história; reescrevê-la não
-    muda nada no banco e quebra o hash do grafo.
+A primeira versão varria só STRING — o texto que chega a alguém —, e deixava comentário
+e docstring livres, "porque a regra é sobre a palavra na tela". O dono ampliou:
+
+    "Não usamos o termo aparelho em lugar algum. Aparelho é dispositivo! Então só temos
+    maquininha (a do cartão) e dispositivo (celular, tablet, pc, etc)."
+
+Então o CANAL deixou de importar. O que mudou não foi o rigor, foi o sujeito da regra:
+era a tela, virou a palavra. Com prosa dentro do alcance, a separação por AST perdeu a
+função — o arquivo inteiro conta, e a varredura fica legível por linha, que é também o
+que permite apontar onde está.
+
+Isso arrasta duas exenções que existiam e não existem mais:
+
+  * **O Storefront entra.** Ele ficava de fora por concessão do dono (05/2026, e de novo
+    em 17/09/2026): superfície de cliente final, com voz própria. A frase de 18/09 é
+    absoluta e alcança a loja também, inclusive o `omotenashi/copy.py`. A concessão
+    anterior está NOMEADA no PR que fez esta troca, para veto em um comentário.
+  * **Teste entra.** Prosa de teste é prosa.
+
+Fica de fora só o que é história: **migração aplicada**. Reescrevê-la não muda nada no
+banco e quebra o hash do grafo.
+
+## A irmã dela
+
+`surfaces/operator-kit/tests/guardrails.vocabulary.test.ts` faz o mesmo nos `.vue`,
+`.ts`, `.mjs` e `.py` das nove superfícies — o `WP-COPY-VUE-SWEEP` da §5.5 de
+`docs/reference/omotenashi-copy.md`. Enquanto ela não existia, esta regra valia em
+metade do sistema, o que, como já está escrito no CLAUDE.md sobre URLs, "não é
+convenção, é lembrança".
+
+## O que a trava NÃO faz
+
+Ela recusa; não escreve a substituição. "maquininha" não é "dispositivo": o que o
+entregador leva tem nome, e o código já dizia as duas coisas na mesma linha
+("Maquininha inválida. Atualize os dispositivos disponíveis."). Trocar mecanicamente
+produz "aparelho (maquininha)" virado do avesso — quem escreve lê a linha e escolhe.
 """
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 
-# A palavra proibida em texto de tela, nas duas caixas e no plural.
+# A palavra proibida, nas duas caixas e no plural.
 BANNED = "aparelh"
 
-ROOTS = ("shopman/shop", "shopman/backstage", "packages")
+ROOTS = ("shopman", "packages", "config")
 
-# Superfície de cliente final: voz própria, por concessão do dono.
-EXEMPT = (
-    "shopman/storefront/",
-    "shopman/shop/omotenashi/",
-)
+# O único arquivo que PRECISA escrever a palavra, porque é o que ele recusa. Allowlist
+# nominal de propósito: a lista que cresce sem ninguém olhar é como a regra morre.
+MAY_QUOTE = ("shopman/backstage/tests/test_vocabulario_de_tela.py",)
 
 
 def _sources() -> list[Path]:
     files: list[Path] = []
     for root in ROOTS:
         for path in sorted((REPO / root).rglob("*.py")):
-            parts = path.parts
-            if "tests" in parts or "migrations" in parts or "build" in parts:
+            if "migrations" in path.parts or "build" in path.parts:
                 continue
             relative = path.relative_to(REPO).as_posix()
-            if any(relative.startswith(prefix) for prefix in EXEMPT):
+            if relative in MAY_QUOTE:
                 continue
             files.append(path)
     return files
 
 
-def _screen_strings(path: Path) -> list[tuple[int, str]]:
-    """Literais de string do arquivo, sem docstring — docstring é prosa, não tela."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    docstrings = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        body = getattr(node, "body", None)
-        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-            if isinstance(body[0].value.value, str):
-                docstrings.add(id(body[0].value))
-    return [
-        (node.lineno, node.value)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings
-    ]
-
-
 SOURCES = _sources()
 
 
-@pytest.mark.parametrize(
-    "path", SOURCES, ids=lambda p: p.relative_to(REPO).as_posix()
-)
-def test_screen_text_says_dispositivo(path: Path) -> None:
+@pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(REPO).as_posix())
+def test_a_palavra_da_casa_e_dispositivo(path: Path) -> None:
     offenders = [
-        f"linha {lineno}: {value!r}"
-        for lineno, value in _screen_strings(path)
-        if BANNED in value.lower()
+        f"linha {lineno}: {line.strip()}"
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if BANNED in line.lower()
     ]
     assert offenders == [], (
         f"{path.relative_to(REPO)}: a palavra da casa é 'dispositivo' (ou 'maquininha', "

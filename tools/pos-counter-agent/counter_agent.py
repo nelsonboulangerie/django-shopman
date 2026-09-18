@@ -12,7 +12,7 @@ Sobra este caminho: um processo local que recebe um pedido do navegador em
 recibo já sai. É o mesmo cano para a gaveta (``/kick``) e para o papel
 (``/print``) — comprovante de movimento de caixa hoje, DANFE NFC-e depois, que é
 obrigação legal. Por isso ele é do BALCÃO e não da gaveta: a gaveta é um dos
-aparelhos que ele alcança, não o escopo dele.
+dispositivos que ele alcança, não o escopo dele.
 
 Zero dependências: é um processo que precisa subir junto com o balcão, todo dia,
 sem ninguém olhando. ``pip install`` é uma coisa a mais para quebrar às 6h.
@@ -512,7 +512,7 @@ def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
     """Windows, pelo spooler do sistema (winspool), via ctypes.
 
     O datatype ``RAW`` é o equivalente do ``-o raw`` do CUPS: diz ao spooler
-    para entregar os bytes ao aparelho sem passar pelo driver de impressão.
+    para entregar os bytes ao dispositivo sem passar pelo driver de impressão.
     ctypes em vez de pywin32 porque o agente não tem dependências — o balcão
     não é lugar de `pip install` às 6h da manhã.
     """
@@ -597,7 +597,7 @@ def _job_id(stdout: bytes) -> str:
 def probe_queue(queue: str) -> dict:
     """A fila existe e aceita trabalho?
 
-    Isto é o quanto dá para saber sem aparelho na mão. Se a gaveta está plugada
+    Isto é o quanto dá para saber sem dispositivo na mão. Se a gaveta está plugada
     no RJ11 da impressora, ou se abriu, esta sonda **não** sabe — a resposta
     viria pelo canal bidirecional, que um job de spool não tem. Quem confirma é
     o olho do operador no teste de gaveta.
@@ -2379,7 +2379,7 @@ def _veredito_do_pino(fechada: int, aberta: int) -> int:
 
 
 #: GUID da interface que o `usbprint.sys` do Windows expoe para impressora USB.
-#: Abrir por aqui fala com o APARELHO, sem passar pelo spooler - que e onde a
+#: Abrir por aqui fala com o DISPOSITIVO, sem passar pelo spooler - que e onde a
 #: bidirecionalidade se perde. Documentado pela Microsoft, sem driver de
 #: terceiro: e o mesmo caminho que os utilitarios de fabricante usam.
 _GUID_USBPRINT = "{28d78fad-5a12-11d1-ae5b-0000f803a8c2}"
@@ -2480,7 +2480,7 @@ def _caminho_usb_windows() -> tuple[str, str]:
 
 
 def _ler_pino_usb_windows(*, query: bytes = _DRAWER_STATUS_QUERY, timeout: float = 2.0) -> tuple[int | None, str]:
-    """Fala com o APARELHO, sem spooler. E o caminho de quem precisa de resposta."""
+    """Fala com o DISPOSITIVO, sem spooler. E o caminho de quem precisa de resposta."""
     import ctypes
     import time
     from ctypes import wintypes
@@ -2531,7 +2531,7 @@ def _ler_pino_usb_windows(*, query: bytes = _DRAWER_STATUS_QUERY, timeout: float
         escritos = wintypes.DWORD(0)
         buf = ctypes.create_string_buffer(query, len(query))
         if not kernel32.WriteFile(h, buf, len(query), ctypes.byref(escritos), None):
-            return None, f"nao consegui perguntar ao aparelho (erro {ctypes.get_last_error()})"
+            return None, f"nao consegui perguntar ao dispositivo (erro {ctypes.get_last_error()})"
 
         lido = wintypes.DWORD(0)
         resposta = ctypes.create_string_buffer(8)
@@ -2540,7 +2540,7 @@ def _ler_pino_usb_windows(*, query: bytes = _DRAWER_STATUS_QUERY, timeout: float
             if kernel32.ReadFile(h, resposta, 1, ctypes.byref(lido), None) and lido.value:
                 return resposta.raw[0], ""
             time.sleep(0.1)
-        return None, "o aparelho nao devolveu nada nem falando direto com ele"
+        return None, "o dispositivo nao devolveu nada nem falando direto com ele"
     finally:
         kernel32.CloseHandle(h)
 
@@ -2641,7 +2641,7 @@ def _drawer_status_windows() -> int:
     ler = pelo_spooler
     if byte is None:
         print(f"  - pelo spooler: {motivo}")
-        print("  - tentando falar direto com o aparelho USB...")
+        print("  - tentando falar direto com o dispositivo USB...")
         byte, motivo_usb = _ler_pino_usb_windows(query=_status_query(1))
         if byte is None:
             print(f"  x {motivo_usb}")
@@ -2650,7 +2650,7 @@ def _drawer_status_windows() -> int:
             print("  O caminho que resta e o driver da Epson (OPOS/APD), que expoe o")
             print("  estado como funcao pronta - mas custa uma instalacao aqui.\n")
             return 1
-        print("  (respondeu falando direto com o aparelho)")
+        print("  (respondeu falando direto com o dispositivo)")
         ler = lambda q: _ler_pino_usb_windows(query=q)  # noqa: E731
 
     varreduras: list[dict[int, int]] = []

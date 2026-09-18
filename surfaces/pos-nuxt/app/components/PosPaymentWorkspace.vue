@@ -1308,7 +1308,7 @@ defineExpose({
                  seleção de fato mora.
 
                  Na entrega, as linhas são cobranças pendentes; a confirmação
-                 ocorre no acerto do Gestor, separada da devolução do aparelho. -->
+                 ocorre no acerto do Gestor, separada da devolução do dispositivo. -->
             <button
               v-for="method in injectableMethods"
               :key="method.ref"
