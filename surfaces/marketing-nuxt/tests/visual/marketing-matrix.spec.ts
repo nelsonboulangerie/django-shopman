@@ -153,7 +153,12 @@ test.describe("gate global", () => {
   test("acesso proibido não recomenda novo login", async ({ page }) => {
     await openScenario(page, "login-forbidden", "/", V1280);
     await expect(page.getByRole("heading", { name: "Seu acesso não inclui Marketing" })).toBeVisible();
-    await expect(page.getByText("Entrar novamente não amplia permissões")).toBeVisible();
+    // O fato que este teste protege é que a tela NÃO manda entrar de novo, e diz a
+    // quem pedir. A frase mudou no 21adc94c8 e a asserção ficou para trás; o fato, não.
+    await expect(page.getByText("Entrar de novo não resolve")).toBeVisible();
+    await expect(
+      page.getByText("Peça a um responsável o acesso ao Marketing"),
+    ).toBeVisible();
     await expectStableScreenshot(page, "login__forbidden", V1280);
   });
 
