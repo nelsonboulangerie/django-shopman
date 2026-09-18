@@ -400,7 +400,7 @@ describe("AnnouncementCard", () => {
     const confirm = wrapper.get("[data-testid=schedule-submit]");
     expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
 
-    await wrapper.findAll("input[type=radio]").at(-1)!.setValue();
+    await wrapper.findAll('[role="radio"]').at(-1)!.trigger("click");
     await confirm.trigger("click");
     const [, edits] = wrapper.emitted("approve")![0] as [
       number,

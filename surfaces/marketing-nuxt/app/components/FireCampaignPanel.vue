@@ -349,53 +349,31 @@ watch(
         Para quem
       </legend>
 
-      <!-- Rádios nativos tornam explícita a escolha exclusiva entre público salvo e escolha avulsa. -->
-      <label
-        class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
-      >
-        <input
-          v-model="useSaved"
-          type="radio"
-          :value="true"
-          class="mt-0.5"
-          name="audience-mode"
-        />
-        <span>
-          <span class="block text-sm font-medium">O público da campanha</span>
-          <span class="block text-xs text-muted-foreground">
+      <!-- Escolha exclusiva pelo primitivo da casa: seta anda entre as duas, uma
+           parada de tabulação só, alvo de 44 px. -->
+      <UiRadioGroup v-model="useSaved" label="Para quem">
+        <UiRadio :value="true" label="O público da campanha">
+          <template #description>
             {{
               rule
                 ? audienceRulesSummary(rule.audience_rules, audienceLabels)
                 : ""
             }}
-          </span>
-          <span
-            v-if="savedAudienceEmpty"
-            class="mt-1 block text-xs text-warning"
-          >
-            Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
-            edite a campanha para dar um público a ela.
-          </span>
-        </span>
-      </label>
-
-      <label
-        class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
-      >
-        <input
-          v-model="useSaved"
-          type="radio"
+            <span
+              v-if="savedAudienceEmpty"
+              class="mt-1 block text-warning"
+            >
+              Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
+              edite a campanha para dar um público a ela.
+            </span>
+          </template>
+        </UiRadio>
+        <UiRadio
           :value="false"
-          class="mt-0.5"
-          name="audience-mode"
+          label="Escolher agora"
+          description="Vale só para este disparo. A campanha continua como está."
         />
-        <span>
-          <span class="block text-sm font-medium">Escolher agora</span>
-          <span class="block text-xs text-muted-foreground">
-            Vale só para este disparo. A campanha continua como está.
-          </span>
-        </span>
-      </label>
+      </UiRadioGroup>
     </fieldset>
 
     <div
@@ -485,48 +463,23 @@ watch(
         </div>
       </fieldset>
 
-      <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="winBack"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Quem está sumindo
-          <span class="block text-xs text-muted-foreground">
-            Clientes com risco alto de não voltar.
-          </span>
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="winBack"
+        label="Quem está sumindo"
+        description="Clientes com risco alto de não voltar."
+      />
 
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="birthday"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Aniversariantes de hoje
-          <span class="block text-xs text-muted-foreground"
-            >Só quem tem data cadastrada.</span
-          >
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="birthday"
+        label="Aniversariantes de hoje"
+        description="Só quem tem data cadastrada."
+      />
 
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="vipFirst"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Avisar os melhores clientes 15 min antes
-          <span class="block text-xs text-muted-foreground">
-            Vantagem, não exclusão: todos recebem.
-          </span>
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="vipFirst"
+        label="Avisar os melhores clientes 15 min antes"
+        description="Vantagem, não exclusão: todos recebem."
+      />
 
       <p v-if="nothingChosen" class="text-xs text-muted-foreground">
         Escolha pelo menos um grupo acima para ver quantas pessoas recebem.

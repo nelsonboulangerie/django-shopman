@@ -369,6 +369,84 @@ O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
 
+## Primitivos de escolha (`UiCheckbox`, `UiRadioGroup`/`UiRadio`, `UiSelect`)
+
+Até 18/09/2026 **todo** checkbox e **todo** rádio das nove superfícies era o controle
+nativo do browser com uma tinta do Tailwind por cima (`size-4 rounded border-border`,
+às vezes um `accent-color`): o desenho vinha do sistema operacional, mudava de aparelho
+para aparelho no meio do desenho da casa, e não tinha estado **indeterminado** — que é
+o que falta para um "marcar todos" honesto. O select com busca existia UMA vez,
+escondido no Compras como `MaterialPicker`.
+
+Agora os três vivem aqui, com nome global `Ui<Nome>`, e o `MaterialPicker` foi
+**promovido** (não reescrito) a `UiSelect`.
+
+```html
+<UiCheckbox v-model="birthday" label="Aniversariantes de hoje"
+            description="Só quem tem data cadastrada." />
+
+<!-- "marcar todos" honesto: `mixed` quando só parte das linhas está marcada -->
+<UiCheckbox :model-value="allSelected" :indeterminate="someSelected && !allSelected"
+            aria-label="Selecionar todos" @update:model-value="toggleAll" />
+
+<UiRadioGroup v-model="useSaved" label="Para quem">
+  <UiRadio :value="true" label="O público da campanha" description="…" />
+  <UiRadio :value="false" label="Escolher agora" variant="inline" />
+</UiRadioGroup>
+<!-- ou, sem escrever um filho por item -->
+<UiRadioGroup v-model="format" :options="formatOptions" label="Formato" />
+
+<UiSelect :options="templateOptions" :model-value="current"
+          labelled-by="rotulo-do-campo" placeholder="Sem modelo"
+          @update:model-value="choose" />
+```
+
+Contrato:
+
+- **Alvo de toque de 44 px pelo token** (`min-h-control`/`h-control`/`size-control`),
+  nunca literal. `UiCheckbox` sem rótulo vira um quadrado de 44 px; com rótulo, a linha
+  inteira é o alvo. Quem atende balcão está com uma mão só e o celular na outra.
+- **ARIA de verdade, não `<input>` pintado**: `role="checkbox"` com
+  `aria-checked="true|false|mixed"`, `role="radiogroup"`/`role="radio"`,
+  `aria-haspopup="listbox"` + `role="listbox"` + `aria-activedescendant`.
+- **Uma parada de tabulação por grupo de rádio** (a escolhida, ou a primeira
+  utilizável). A seta anda, pula opção desabilitada e dá a volta; Home/End vão às
+  pontas. Sem isso o Tab passearia por cada opção, que é o erro clássico.
+- **Foco por `outline`, não por `ring`.** Anel de foco feito de `box-shadow` some no
+  modo de alto contraste do sistema, e quem depende dele fica sem foco visível.
+- **Clicar num checkbox indeterminado MARCA tudo.** Sair de "alguns" para "nenhum"
+  desfaria o que o operador já escolheu; ele clica o mestre para alcançar o todo.
+
+Do `UiSelect`, três coisas que valem a leitura:
+
+- **Limiar de busca: `SEARCH_THRESHOLD = 12`** (`app/presentation/choice.ts`). Acima
+  dele a lista ganha campo de busca; abaixo, degrada para lista simples. O número é
+  medido, não chutado: o maior vocabulário FIXO da casa tem 10 itens (`ROLE_OPTIONS` do
+  Produção, filtro de desfecho do Histórico), e busca em cima de dez opções escritas no
+  código é obstáculo; do outro lado estão as listas reclamadas — os modelos aprovados
+  da Meta, os 41 exemplos do Explorar no B.I., os 56 insumos do Compras. O app pode
+  forçar (`:searchable="true|false"`) ou mover o limiar (`:search-threshold`).
+- **A busca ignora acento** e casa por rótulo, detalhe (`hint`) e palavras-chave
+  invisíveis (`keywords` — o `ns` do fluxo, o SKU da etiqueta), com termos soltos em
+  qualquer ordem. A contagem vai para uma região viva (`role="status"`).
+- ⚠️ **Nunca envolva o `UiSelect` num `<label>`.** Um `<label>` sem `for` adota o botão
+  que abre e reencaminha para ele todo clique que caia em parte não interativa —
+  inclusive o véu de fechar. O painel fechava e reabria no mesmo gesto. Rotule com um
+  `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
+  Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
+
+O `UiNativeSelect` ao lado **continua sendo a peça certa** para lista curta e fixa: no
+celular ele abre a roda do sistema, que é ótima. O `UiSelect` é para lista longa.
+
+`tests/kitOwnership.guardrails.test.ts` recusa que qualquer app volte a ter cópia
+própria de `Ui/Checkbox.vue`, `Ui/Radio.vue`, `Ui/RadioGroup.vue`, `Ui/Select.vue` ou um
+`MaterialPicker` — duas implementações vivas é como uma garantia se perde em silêncio.
+`tests/guardrails.a11y.test.ts` varre as nove superfícies e recusa botão de ícone puro
+sem nome acessível (a peça canônica é o `UiIconButton`, que EXIGE `label`).
+
+O inventário do que ainda falta converter, app por app, está em
+[`docs/primitivos-de-escolha-inventario.md`](docs/primitivos-de-escolha-inventario.md).
+
 ## Base de CSS (`operator-base.css`)
 
 O núcleo de CSS dos oito apps de operador vive em

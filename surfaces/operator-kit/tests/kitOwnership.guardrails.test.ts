@@ -42,6 +42,19 @@ const KIT_OWNED_DECLARATIONS = [
 /** Componentes de barra que agora vivem no kit (nome global `Ui<Nome>`). */
 const KIT_OWNED_TOOLBAR_PRIMITIVES = ["FilterChip", "IconButton", "SearchInput", "Toolbar"] as const;
 
+/**
+ * Primitivos de ESCOLHA, que passaram a viver no kit. Antes deles todo checkbox e
+ * todo rádio das nove superfícies era o controle nativo do browser com uma tinta
+ * do Tailwind por cima, e o select com busca existia UMA vez, escondido no
+ * Compras como `MaterialPicker` — que foi promovido a `UiSelect`. Se um app
+ * recriar a peça, a busca que ignora acento, o `mixed` do indeterminado e a
+ * armadilha do `<label>` voltam a existir em duas versões, e uma delas erra.
+ */
+const KIT_OWNED_CHOICE_PRIMITIVES = ["Checkbox", "Radio", "RadioGroup", "Select"] as const;
+
+/** Nomes próprios que a promoção do `UiSelect` aposentou. */
+const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
+
 function sourceFiles(dir: string, found: string[] = []): string[] {
   if (!existsSync(dir)) return found;
   for (const entry of readdirSync(dir)) {
@@ -81,6 +94,30 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
         offenders,
         `Primitiva de barra copiada no app: ${offenders.join(", ")}. ` +
           `A canônica é <Ui${offenders[0] ?? "…"}> do operator-kit.`,
+      ).toEqual([]);
+    });
+
+    it(`${app} não tem cópia própria dos primitivos de escolha`, () => {
+      const offenders = KIT_OWNED_CHOICE_PRIMITIVES.filter(
+        (name) =>
+          existsSync(resolve(surfacesDir, app, "app/components/Ui", `${name}.vue`)) ||
+          existsSync(resolve(surfacesDir, app, "app/components/Ui", name, `${name}.vue`)),
+      );
+      expect(
+        offenders,
+        `Primitivo de escolha copiado no app: ${offenders.join(", ")}. ` +
+          `O canônico é <Ui${offenders[0] ?? "…"}> do operator-kit.`,
+      ).toEqual([]);
+    });
+
+    it(`${app} não guarda o seletor com busca que virou UiSelect`, () => {
+      const offenders = RETIRED_COMPONENTS.filter((name) =>
+        existsSync(resolve(surfacesDir, app, "app/components", `${name}.vue`)),
+      );
+      expect(
+        offenders,
+        `${offenders.join(", ")} foi promovido ao kit como <UiSelect>; ` +
+          `duas implementações vivas é como a busca do balcão perde uma garantia em silêncio.`,
       ).toEqual([]);
     });
 

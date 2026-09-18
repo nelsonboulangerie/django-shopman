@@ -89,11 +89,10 @@ describe("AnnouncementTemplateForm draft recovery", () => {
   it("usa Stories por padrão e só grava Feed após escolha explícita", async () => {
     const wrapper = form(template());
 
-    expect(
-      (wrapper.find('input[value="story"]').element as HTMLInputElement)
-        .checked,
-    ).toBe(true);
-    await wrapper.find('input[value="feed"]').setValue();
+    const formats = wrapper.findAll('[role="radio"]');
+    expect(formats[0]!.attributes("aria-checked")).toBe("true");
+    expect(formats[0]!.text()).toContain("Stories");
+    await formats[1]!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const payload = wrapper.emitted("submit")?.[0]?.[0] as {

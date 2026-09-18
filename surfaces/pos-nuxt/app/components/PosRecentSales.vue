@@ -288,7 +288,7 @@ function fiscalChipClass(status: string): string {
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balcão</p>
           <h2 class="text-lg font-semibold text-foreground">Últimas vendas</h2>
         </div>
-        <UiButton type="button" variant="outline" size="sm" :disabled="loading" @click="load">
+        <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
           <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
         </UiButton>
       </div>
