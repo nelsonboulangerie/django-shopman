@@ -754,10 +754,10 @@ const fieldCard =
         submitting || submitLatched
           ? mode === "correct"
             ? "Salvando correção…"
-            : "Fechando a fornada…"
+            : "Finalizando fornada…"
           : mode === "correct"
             ? "Salvar correção"
-            : "Confirmar"
+            : "Finalizar"
       }}
     </UiButton>
 
