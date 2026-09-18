@@ -86,7 +86,7 @@ describe("o disparo cai direto na revisão", () => {
         replayed: false,
       }),
     ).toMatchObject({
-      detail: "1 pessoa elegível. Nada saiu ainda.",
+      detail: "1 pessoa elegível. Nada foi disparado ainda.",
       replayNote: "",
     });
     expect(
@@ -111,12 +111,14 @@ describe("o disparo cai direto na revisão", () => {
 
 describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
   it("separa mensagem, postagem, disparo misto e agendamento", () => {
+    // Assentado: o ato terminou, e aí o particípio é verdade.
     expect(
       decisionOutcomeNotice({
         action: "approve",
         publishMode: "now",
         includesDirectMessage: true,
         includesPublicPost: false,
+        settled: true,
       }).title,
     ).toBe("Enviado");
     expect(
@@ -125,6 +127,7 @@ describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
         publishMode: "now",
         includesDirectMessage: false,
         includesPublicPost: true,
+        settled: true,
       }).title,
     ).toBe("Publicado");
     expect(
@@ -133,6 +136,7 @@ describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
         publishMode: "now",
         includesDirectMessage: true,
         includesPublicPost: true,
+        settled: true,
       }).title,
     ).toBe("Disparado");
     expect(
@@ -158,6 +162,26 @@ describe("depois da decisão a tela continua dizendo o que aconteceu", () => {
     expect(immediate.detail).toContain("na fila");
     expect(immediate.detail).toContain("confirmação");
     expect(immediate.detail).not.toMatch(/entregue|enviada com sucesso/i);
+  });
+
+  // ⚠️ O defeito morava no TÍTULO, não no detalhe: a faixa dizia "Enviado" em verde e
+  // a linha logo abaixo, na mesma caixa, dizia "Mensagens na fila". O gestor lê o
+  // título, fecha o app e vai atender o balcão com a conclusão errada.
+  it("o título não afirma o ato concluído enquanto a entrega não assenta", () => {
+    for (const [message, post, gerund] of [
+      [true, false, "Enviando"],
+      [false, true, "Publicando"],
+      [true, true, "Disparando"],
+    ] as const) {
+      const pending = decisionOutcomeNotice({
+        action: "approve",
+        publishMode: "now",
+        includesDirectMessage: message,
+        includesPublicPost: post,
+      });
+      expect(pending.title).toBe(gerund);
+      expect(pending.detail).toContain("fila");
+    }
   });
 
   it("recusa não vira promessa de envio", () => {

@@ -333,7 +333,9 @@ describe("MarketingCommandConfirmationDialog", () => {
     });
 
     expect(wrapper.text()).toContain("Criar para revisão?");
-    expect(wrapper.text()).toContain("Nada sai agora; vai para revisão");
+    expect(wrapper.text()).toContain(
+      "Nada é disparado agora. O anúncio vai para revisão",
+    );
     expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
     expect(wrapper.text()).toContain("Voltar sem criar");

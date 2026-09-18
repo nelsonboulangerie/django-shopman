@@ -337,8 +337,10 @@ watch(
                 : "postagens públicas"
             }}
           </p>
+          <!-- "Uma em cada plataforma" deixava o leitor completar o sujeito: uma o
+               quê? A frase nomeia a coisa contada e o gesto que não acontece. -->
           <p class="mt-1 text-xs text-muted-foreground">
-            Uma em cada plataforma. Não escolhe contatos.
+            Uma postagem por plataforma. Não seleciona contatos.
           </p>
         </div>
       </div>
@@ -632,7 +634,7 @@ watch(
       v-if="!publicOnly"
       class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Sem consentimento de WhatsApp, fica de fora.
+      Quem não deu consentimento para o WhatsApp não recebe.
     </p>
 
     <p v-if="error" class="text-sm text-destructive" role="alert">

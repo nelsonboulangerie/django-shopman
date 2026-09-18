@@ -517,8 +517,16 @@ const simulatedScenes = computed(() =>
         </span>
       </p>
 
+      <!-- ⚠️ Uma frase só não servia aqui: "sairá sem imagem" valia para mensagem e
+           para postagem ao mesmo tempo, e os dois atos são diferentes — mensagem se
+           envia e não se apaga, postagem se publica e se apaga. A prévia já sabe em
+           qual plataforma está (`isWhatsapp`), então diz o ato pelo nome. -->
       <p v-if="!artifact.image_url" class="mt-2 text-xs text-muted-foreground">
-        Esta plataforma sairá sem imagem nesta versão.
+        {{
+          isWhatsapp
+            ? "A mensagem é enviada sem foto."
+            : "A postagem é publicada sem foto."
+        }}
       </p>
     </template>
 

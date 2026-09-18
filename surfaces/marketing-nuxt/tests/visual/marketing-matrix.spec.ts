@@ -616,7 +616,7 @@ test.describe("disparo manual seguro", () => {
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
   });
 
-  test("aceite leva direto à revisão, dizendo que nada saiu", async ({ page }) => {
+  test("aceite leva direto à revisão, dizendo que nada foi disparado", async ({ page }) => {
     await openScenario(page, "fire-accepted", "/campaigns", V1440);
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
@@ -626,7 +626,7 @@ test.describe("disparo manual seguro", () => {
     // agora" é a última coisa que o gestor faz antes de estar na revisão.
     await expect(page).toHaveURL(/\/announcements\/\d+\?dispatch=new#review/);
     await expect(page.getByText("Este anúncio acabou de ser criado pelo seu disparo")).toBeVisible();
-    await expect(page.getByText(/Nada saiu ainda/)).toBeVisible();
+    await expect(page.getByText(/Nada foi disparado ainda/)).toBeVisible();
     // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
     await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });
