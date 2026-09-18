@@ -465,7 +465,7 @@ useHead({ title: "Plataformas" });
                   Teste externo bloqueado com segurança
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  Nenhum aparelho de teste verificado foi configurado. Peça ao
+                  Nenhum dispositivo de teste verificado foi configurado. Peça ao
                   responsável pelas plataformas; não é necessário copiar ou
                   informar um telefone aqui.
                 </p>

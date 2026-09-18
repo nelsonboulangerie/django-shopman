@@ -95,3 +95,59 @@ describe("o nome acessível não promete mais do que o controle faz", () => {
     expect(leaks).toEqual([]);
   });
 });
+
+/** Texto e código de um `.ts`, sem os comentários.
+ *
+ *  A regra da casa vale para STRING — o que chega a alguém —, não para comentário nem
+ *  docstring. Tirar os comentários primeiro é o que separa uma coisa da outra. */
+function codeWithoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/^\s*\/\/.*$/gm, " ");
+}
+
+function sourceFiles(directory: string, extensions: string[]): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    const path = join(directory, entry);
+    if (statSync(path).isDirectory()) return sourceFiles(path, extensions);
+    return extensions.some((extension) => path.endsWith(extension)) ? [path] : [];
+  });
+}
+
+describe("a palavra da casa é dispositivo", () => {
+  // ⚠️ Regra escrita do `CLAUDE.md`: **"dispositivo", nunca "aparelho"**, em toda
+  // superfície de operador e em todo texto de tela. Não é opinião — e não é hipótese:
+  // em 17/09 esta deriva custou 104 arquivos, e o convite de instalação dos oito apps
+  // nasceu errado por causa dela. A trava que existe
+  // (`shopman/backstage/tests/test_vocabulario_de_tela.py`) varre PYTHON; string de
+  // `.vue` e de `.ts` passava por baixo dela, e era por baixo dela que o Marketing
+  // estava fora da regra.
+  //
+  // A exceção da maquininha de cartão não cabe aqui: o Marketing não fala de pagamento.
+  it("nenhum texto de tela chama o dispositivo de aparelho", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = [
+      ...vueFiles(appRoot).flatMap((path) => {
+        const text = literalTemplateText(readFileSync(path, "utf8"));
+        return /aparelh/i.test(text) ? [`${path} (template)`] : [];
+      }),
+      ...sourceFiles(appRoot, [".ts"]).flatMap((path) => {
+        const code = codeWithoutComments(readFileSync(path, "utf8"));
+        return /aparelh/i.test(code) ? [`${path} (código)`] : [];
+      }),
+    ];
+
+    expect(leaks).toEqual([]);
+  });
+
+  // O harness visual serve as respostas do servidor: um rótulo errado ali vira um
+  // rótulo errado no retrato, e o retrato é o que diz que a tela está certa.
+  it("o harness visual também não inventa 'aparelho' no lugar do servidor", () => {
+    const mock = readFileSync(
+      new URL("./visual/mock_backend.py", import.meta.url),
+      "utf8",
+    );
+
+    expect(mock).not.toMatch(/aparelh/i);
+  });
+});
