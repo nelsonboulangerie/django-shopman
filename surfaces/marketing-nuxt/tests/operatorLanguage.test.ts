@@ -59,3 +59,39 @@ describe("linguagem normal do operador", () => {
     expect(leaks).toEqual([]);
   });
 });
+
+/** O nome acessível de um controle, estático ou interpolado.
+ *
+ *  Pega `aria-label="..."` e `:aria-label="..."`, inclusive quando o valor ocupa
+ *  várias linhas — que foi exatamente onde o rótulo mentiroso se escondeu. */
+function ariaLabelValues(source: string): string[] {
+  const values: string[] = [];
+  const pattern = /:?aria-label="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source)) !== null) {
+    values.push(match[1]!.replace(/\s+/g, " ").trim());
+  }
+  return values;
+}
+
+describe("o nome acessível não promete mais do que o controle faz", () => {
+  // ⚠️ A régua da casa: "se 'Disparar agora' não dispara, então é mentira". O remédio
+  // foi aplicado nos rótulos VISÍVEIS e o nome acessível ficou para trás — quem usa
+  // leitor de tela ouvia "Disparar a campanha X agora" num botão que só abre um painel
+  // de público. Esta varredura tranca o gêmeo: só o último gesto do caminho pode
+  // prometer o ato agora, e ele vive na caixa de confirmação, onde o ato acontece.
+  const ACT_NOW = /\b(disparar|enviar|publicar)\b[^"]{0,60}\bagora\b/i;
+  const ALLOWED = ["MarketingCommandConfirmationDialog.vue"];
+
+  it("nenhum aria-label diz 'agora' fora da caixa onde o ato acontece", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = vueFiles(appRoot).flatMap((path) => {
+      if (ALLOWED.some((allowed) => path.endsWith(allowed))) return [];
+      return ariaLabelValues(readFileSync(path, "utf8"))
+        .filter((value) => ACT_NOW.test(value))
+        .map((value) => `${path}: ${value}`);
+    });
+
+    expect(leaks).toEqual([]);
+  });
+});
