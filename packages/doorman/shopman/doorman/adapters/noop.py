@@ -77,6 +77,10 @@ class NoopCustomerResolver:
             is_active=True,
         )
 
+    def lock_active_by_uuid(self, uuid: UUID) -> AuthCustomerInfo | None:
+        """Standalone fallback has no database row; resolution is the fence."""
+        return self.get_by_uuid(uuid)
+
     def get_by_identifier(self, identifier_type: str, identifier_value: str) -> AuthCustomerInfo | None:
         """Return a synthetic customer for an external provider identifier."""
         if not identifier_type or not identifier_value:

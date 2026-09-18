@@ -152,5 +152,5 @@ class Move(models.Model):
 
     def __str__(self) -> str:
         signal = '+' if self.delta > 0 else ''
-        return f"{signal}{self.delta} | {self.reason}"
+        return f"{signal}{self.delta} · {self.reason}"
 

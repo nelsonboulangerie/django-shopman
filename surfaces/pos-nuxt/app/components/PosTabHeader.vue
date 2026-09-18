@@ -22,6 +22,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
@@ -60,7 +62,7 @@ const emit = defineEmits<{
   resolveCustomer: [done: (saved: boolean) => void];
   decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
-  decisionMerge: [];
+  decisionMerge: [candidate?: ServerConflictCandidate];
   /** LIBERAR o contato preso num cadastro desativado. */
   decisionRelease: [value: string];
   decisionPick: [ServerConflictCandidate];
@@ -68,6 +70,8 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   openFulfillment: [];
   openSchedule: [];
   /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
@@ -76,6 +80,11 @@ const emit = defineEmits<{
   openCustomer: [];
   customerClosed: [];
 }>();
+
+const SALES_MODES = [
+  { ref: "counter", label: "Balcão", icon: "lucide:store" },
+  { ref: "order", label: "Encomendas", icon: "lucide:calendar-clock" },
+] as const;
 
 const renaming = ref(false);
 const renameValue = ref("");
@@ -124,9 +133,27 @@ function runClear() {
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
-    <div v-if="!readOnly" class="flex shrink-0 items-center rounded-md border p-0.5" role="group" aria-label="Modo de atendimento">
-      <UiButton :variant="salesMode !== 'order' ? 'secondary' : 'ghost'" size="sm" :aria-pressed="salesMode !== 'order'" :disabled="loading" @click="$emit('salesModeChange', 'counter')">Balcão</UiButton>
-      <UiButton :variant="salesMode === 'order' ? 'secondary' : 'ghost'" size="sm" :aria-pressed="salesMode === 'order'" :disabled="loading" @click="$emit('salesModeChange', 'order')">Encomendas</UiButton>
+    <!-- MODO DE ATENDIMENTO — o escolhido é CHEIO (`bg-primary`), como o modo
+         do numpad e o seletor do "Transferir": `secondary` sobre `ghost` era
+         dois cinzas quase iguais, e sob a luz do balcão ninguém dizia qual
+         estava ligado. O ícone dobra a leitura para quem não pára para ler. -->
+    <div v-if="!readOnly" class="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/40 p-0.5" role="group" aria-label="Modo de atendimento">
+      <UiButton
+        v-for="mode in SALES_MODES"
+        :key="mode.ref"
+        variant="ghost"
+        size="sm"
+        class="h-8 gap-1.5 px-3 font-semibold"
+        :class="(salesMode || 'counter') === mode.ref
+          ? 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground'
+          : 'text-muted-foreground hover:text-foreground'"
+        :aria-pressed="(salesMode || 'counter') === mode.ref"
+        :disabled="loading"
+        @click="$emit('salesModeChange', mode.ref)"
+      >
+        <Icon :name="mode.icon" class="size-4 shrink-0" />
+        {{ mode.label }}
+      </UiButton>
     </div>
     <!-- tab number (renameable) -->
     <div v-if="renaming" class="flex items-center gap-1">
@@ -265,6 +292,7 @@ function runClear() {
       :search-busy="searchBusy"
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
+      :new-customer-prefs="newCustomerPrefs"
       :customer-decision="readOnly ? null : customerDecision"
       :customer-merge-busy="customerMergeBusy"
       :customer-release-busy="customerReleaseBusy"
@@ -278,11 +306,12 @@ function runClear() {
       @resolve-customer="$emit('resolveCustomer', $event)"
       @decision-confirm="$emit('decisionConfirm', $event)"
       @decision-cancel="$emit('decisionCancel')"
-      @decision-merge="$emit('decisionMerge')"
+      @decision-merge="$emit('decisionMerge', $event)"
       @decision-release="$emit('decisionRelease', $event)"
       @decision-pick="$emit('decisionPick', $event)"
       @apply-customer-favorite="$emit('applyCustomerFavorite')"
       @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
+      @apply-preference="(key, value) => $emit('applyPreference', key, value)"
     />
 
     <UiDialog :open="confirmClear" @update:open="(value) => { if (!value) confirmClear = false; }">

@@ -28,8 +28,35 @@ class StockAlertDeliveryHandler:
         if outcome != "claimed":
             return
         result = _send_claimed(int(delivery_id))
+        if isinstance(result, _Deferred):
+            _defer_directive(message, seconds=result.seconds)
+            return
         if result == "retryable":
             raise DirectiveTransientError("stock alert provider rejected delivery")
+
+
+class _Deferred:
+    """O provedor não foi chamado e só pode ser depois de ``seconds`` segundos."""
+
+    __slots__ = ("seconds",)
+
+    def __init__(self, seconds: int):
+        self.seconds = seconds
+
+
+def _defer_directive(message, *, seconds: int) -> None:
+    """Devolver a directive à fila para depois da janela, sem gastar tentativa.
+
+    Contato ocupado não é falha do provedor: o backoff exponencial do worker (2, 4,
+    8 s…) chamaria de novo DENTRO da janela de assentamento e esgotaria as tentativas
+    à toa. Mesmo padrão de contenção de ``catalog_projection``.
+    """
+    from datetime import timedelta
+
+    message.status = "queued"
+    message.attempts = max(0, message.attempts - 1)
+    message.available_at = timezone.now() + timedelta(seconds=seconds)
+    message.save(update_fields=["status", "attempts", "available_at", "updated_at"])
 
 
 def _claim(delivery_id: int) -> str:
@@ -86,6 +113,9 @@ def _claim(delivery_id: int) -> str:
             raise DirectiveTransientError("availability_check_failed") from exc
         if not state.can_add_to_cart:
             return _suppress(delivery, "unavailable_before_send")
+        suppressed = _suppress_outside_whatsapp_canary(delivery)
+        if suppressed:
+            return suppressed
 
         delivery.status = StockAlertDelivery.Status.CLAIMED
         delivery.claimed_at = timezone.now()
@@ -94,7 +124,7 @@ def _claim(delivery_id: int) -> str:
         return "claimed"
 
 
-def _send_claimed(delivery_id: int) -> str:
+def _send_claimed(delivery_id: int) -> str | _Deferred:
     from shopman.shop.services.notification import (
         lock_subscription_channel,
         subscription_notification_allowed,
@@ -147,6 +177,18 @@ def _send_claimed(delivery_id: int) -> str:
             event=event,
             available_qty=delivery.occurrence.available_qty,
         )
+        from shopman.shop.services import manychat_marketing_safety
+
+        if not result.success and manychat_marketing_safety.is_flow_deferral(getattr(result, "error", None)):
+            # Nada foi escrito no ManyChat: a pessoa ainda tem outra mensagem com flow
+            # assentando. Volta para a fila, sem virar "tentar novamente" nem incerto.
+            delivery.status = StockAlertDelivery.Status.QUEUED
+            delivery.claimed_at = None
+            delivery.last_error_code = result.error
+            delivery.save(update_fields=["status", "claimed_at", "last_error_code", "updated_at"])
+            settle = manychat_marketing_safety.flow_settle_seconds()
+            return _Deferred(max(settle, int(getattr(result, "retry_after_seconds", None) or 0)))
+
         if result.success:
             accepted_at = timezone.now()
             delivery.status = StockAlertDelivery.Status.ACCEPTED
@@ -183,6 +225,24 @@ def _send_claimed(delivery_id: int) -> str:
         delivery.last_error_code = (error if isinstance(error, str) and error else "provider_rejected")[:100]
         delivery.save(update_fields=["status", "claimed_at", "last_error_code", "updated_at"])
         return "retryable"
+
+
+def _suppress_outside_whatsapp_canary(delivery) -> str:
+    """No ensaio do WhatsApp, quem está fora da lista não vira tentativa.
+
+    Em ``blocked`` nada muda (o adapter continua recusando, como antes); em ``canary``
+    a supressão aqui, com motivo explícito, evita a fila de retries de uma recusa
+    certa. Só vale quando o aviso sai pelo ManyChat.
+    """
+    from shopman.shop.services import manychat_marketing_safety
+    from shopman.storefront.services import stock_alerts
+
+    sub = delivery.subscription
+    if not manychat_marketing_safety.canary_excludes(sub.customer_ref):
+        return ""
+    if stock_alerts.delivery_backend(sub) != "manychat":
+        return ""
+    return _suppress(delivery, manychat_marketing_safety.CANARY_RECIPIENT_EXCLUDED_CODE)
 
 
 def _suppress(delivery, reason: str) -> str:

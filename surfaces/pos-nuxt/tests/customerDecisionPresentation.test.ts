@@ -561,3 +561,123 @@ describe("new customer with an existing contact", () => {
     expect(copy.merge).toBeNull();
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// O dado solto reencontra o dono
+//
+// O cadastro sem rosto existe necessariamente: nasce toda vez que alguém pede
+// a nota no balcão e o CPF não é de conhecido. Quando o dono aparece, a tela
+// oferecia a pergunta errada ("qual dos dois você atende?") e um par de botões
+// em que nenhum dos dois resolvia — "atender" trocava o cliente do pedido por
+// ninguém, "manter" devolvia o operador ao começo. O beco.
+// ──────────────────────────────────────────────────────────────────────────
+
+describe("orphan_value — o dono do valor não é uma pessoa", () => {
+  const fulano = candidate({ ref: "CUST-F", name: "Fulano Silva", tax_id: "", matched_by: ["ref"], is_current: true });
+  const fantasma = candidate({
+    ref: "CUST-GHOST", name: "", phone: "", tax_id: "11144477735",
+    matched_by: ["document"], is_current: false, owner_unnamed: true,
+  });
+
+  it("vira `orphan_value`, não `contact_conflict`", () => {
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, fantasma], typed: "11144477735",
+    });
+
+    expect(decision?.kind).toBe("orphan_value");
+    expect(decision?.other?.unnamed).toBe(true);
+  });
+
+  it("o rótulo de espera 'Cliente 0011' também é sem rosto — quem decide é o servidor", () => {
+    const rotulado = candidate({
+      ref: "CUST-LABEL", name: "Cliente 0011", tax_id: "11144477735",
+      matched_by: ["document"], is_current: false, owner_unnamed: true,
+    });
+
+    expect(conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, rotulado], typed: "11144477735",
+    })?.kind).toBe("orphan_value");
+  });
+
+  it("NÃO oferece atender ninguém: não há confirmar", () => {
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, fantasma], typed: "11144477735",
+    })!;
+
+    const copy = customerDecisionCopy(decision);
+
+    expect(copy.confirmLabel).toBe("");
+    expect(copy.title).not.toContain("outro cadastro");
+  });
+
+  it("a única saída para a frente é de sim, e diz de quem", () => {
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, fantasma], typed: "11144477735",
+    })!;
+
+    const copy = customerDecisionCopy(decision);
+
+    expect(copy.merge?.label).toBe("Sim, é de Fulano");
+    expect(copy.cancelLabel).toBe("Não, não é o CPF de Fulano");
+  });
+
+  it("um toque, sem segunda palavra — a venda não troca de dono aqui", () => {
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, fantasma], typed: "11144477735",
+    })!;
+
+    expect(customerDecisionCopy(decision).requiresConfirmation).toBe(false);
+  });
+
+  it("nunca diz 'de outro' no lugar de um nome", () => {
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, fantasma], typed: "11144477735",
+    })!;
+
+    const copy = customerDecisionCopy(decision);
+
+    // "Sim, a venda é de outro" era o que a copy de pessoa produzia com um
+    // cadastro sem nome: uma frase quebrada oferecendo um erro crasso.
+    expect(`${copy.title} ${copy.body} ${copy.merge?.label} ${copy.cancelLabel}`)
+      .not.toContain("é de outro");
+  });
+
+  it("dono sem rosto mas DESATIVADO continua sendo liberação, não unificação", () => {
+    // O Core recusa unificar com um lado inativo: ali a saída é soltar o
+    // contato, e é ela que tem de aparecer.
+    const morto = candidate({
+      ref: "CUST-DEAD", name: "", tax_id: "11144477735", matched_by: ["document"],
+      is_current: false, owner_unnamed: true, owner_inactive: true,
+    });
+
+    expect(conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, morto], typed: "11144477735",
+    })?.kind).toBe("inactive_owner");
+  });
+
+  it("sem ninguém na comanda, seguir no cadastro sem nome é o caminho", () => {
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fantasma], typed: "11144477735",
+    })!;
+
+    const copy = customerDecisionCopy(decision);
+
+    expect(decision.kind).toBe("existing_customer");
+    expect(copy.confirmLabel).toBe("Seguir neste cadastro");
+    expect(copy.body).not.toContain("o cliente encontrado");
+  });
+
+  it("dono COM nome segue na pergunta de sempre — a mudança não vaza", () => {
+    const bruno = candidate({
+      ref: "CUST-B", name: "Bruno Souza", tax_id: "11144477735",
+      matched_by: ["document"], is_current: false,
+    });
+
+    const decision = conflictDecision({
+      field: "customer_tax_id", candidates: [fulano, bruno], typed: "11144477735",
+    })!;
+
+    expect(decision.kind).toBe("contact_conflict");
+    expect(customerDecisionCopy(decision).confirmLabel).toBe("Sim, a venda é de Bruno");
+  });
+});

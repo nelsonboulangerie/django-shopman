@@ -31,7 +31,7 @@ const {
   toggleSound,
   activateAttentionSound,
   acknowledgeAttention,
-  checkItem,
+  start,
   finalize,
   expedite,
   recall,
@@ -172,10 +172,11 @@ const openTicket = computed<KDSTicketProjection | null>(() => {
 function setModalOpen(value: boolean) {
   if (!value) openTicketPk.value = null;
 }
-function finalizeFromModal(pk: number) {
-  if (readOnly.value) return;
-  finalize(pk); // otimista — fecha o modal na hora
-  openTicketPk.value = null;
+
+// Toque num pedido travado por item cancelado: o card já diz o que fazer; o aviso
+// aponta para o alerta vermelho no topo, que é onde está o "Ciente".
+function warnBlocked() {
+  useSonner.error("Há item cancelado neste pedido. Toque em Ciente no alerta vermelho antes de finalizar.");
 }
 
 // Narrow the union for the template.
@@ -509,13 +510,15 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
                 : `Prévia de ${view.serviceDateDisplay.toLowerCase()} — sem ações e sem som`
             }}
           </p>
+          <!-- Sem items-start: a grade estica os cards de uma mesma linha até o mais
+               alto — nada é cortado e as linhas continuam alinhadas. -->
           <TransitionGroup
             tag="div"
             name="kds-card"
-            class="grid items-start gap-3"
+            class="grid gap-3"
             :style="gridStyle"
           >
-            <div v-for="(card, idx) in filteredCards" :key="card.pk">
+            <div v-for="(card, idx) in filteredCards" :key="card.pk" class="flex">
               <KdsExpeditionCard
                 v-if="view.isExpedition"
                 :card="asExpedition(card)"
@@ -527,9 +530,12 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
                 :ticket="asTicket(card)"
                 :density="density"
                 :next="!query && !view.isExpedition && view.serviceDate === view.today && idx === 0"
-                @open="!readOnly && !asTicket(card).is_scheduled && (openTicketPk = card.pk)"
-                @check="(i, checked) => !readOnly && !asTicket(card).is_scheduled && checkItem(card.pk, i, checked)"
-                @done="!readOnly && !asTicket(card).is_scheduled && finalize(card.pk)"
+                :blocked="view.blockedRefs.has(card.order_ref)"
+                :addition="view.additionPks.has(card.pk)"
+                @open="openTicketPk = card.pk"
+                @start="!readOnly && start(card.pk)"
+                @finish="!readOnly && finalize(card.pk)"
+                @blocked="warnBlocked"
               />
             </div>
           </TransitionGroup>
@@ -542,10 +548,6 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       :open="openTicket != null"
       :ticket="openTicket"
       @update:open="setModalOpen"
-      @check-item="
-        (idx, checked) => !readOnly && openTicket && checkItem(openTicket.pk, idx, checked)
-      "
-      @done="!readOnly && openTicket && finalizeFromModal(openTicket.pk)"
     />
 
     <!-- recall: concluídos recentes (desfazer finalização) -->

@@ -56,6 +56,12 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
     expect(upstreamCookie).not.toContain("shopman_operator_");
   });
 
+  it("o relógio de atividade do aparelho é do navegador e não chega ao Django", () => {
+    expect(operatorCookieHeaderForDjango(
+      "shopman_operator_activity=1789639200000; shopman_operator_sessionid=operator-session",
+    )).toBe("sessionid=operator-session");
+  });
+
   it("reescreve login e CSRF para o namespace de operador sem perder os atributos", () => {
     expect(operatorSetCookieHeaderForBrowser(
       "sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",

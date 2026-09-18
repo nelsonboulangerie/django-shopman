@@ -690,6 +690,12 @@ class Handler(BaseHTTPRequestHandler):
                 "parts": [{"label": "Clientes da casa", "count": total}],
                 "vip_count": 0,
                 "empty_selection": False,
+                "alerts_pending": -1,
+                "alerts_notified": -1,
+                "excluded_by_reason": {},
+                "can_approve": True,
+                "blocked_reason": "",
+                "degraded_sources": [],
             })
             return
         if path == "/api/v1/backstage/marketing/preview/":
@@ -765,6 +771,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not body.get("confirmation_token"):
                 count = 1_999 if scenario == "fire-large" else 48
+                # Disparar não publica e não envia: o servidor emite o token para
+                # congelar versão, permissão e público, e declara `none` — nenhuma
+                # cerimônia humana. O navegador consome o token na sequência, sem
+                # abrir caixa. Ver ADR-031.
                 self._send(428, {
                     "code": "confirmation_required",
                     "detail": "Confirme o público antes de criar o anúncio.",
@@ -772,10 +782,10 @@ class Handler(BaseHTTPRequestHandler):
                         "token": "visual-fire-confirmation-token",
                         "ref": "visual-fire-confirmation-ref",
                         "expires_at": "2026-09-10T10:35:00-03:00",
-                        "mode": "typed",
-                        "step_up": "password",
+                        "mode": "none",
+                        "step_up": "none",
                         "dual_control": False,
-                        "typed_phrase": f"PUBLICAR {count}",
+                        "typed_phrase": "",
                         "consequence": "creates_review_announcement",
                         "resource_ref": "campaign:1",
                         "base_version": 1,
@@ -830,7 +840,7 @@ class Handler(BaseHTTPRequestHandler):
                     "step_up": "none",
                     "dual_control": False,
                     "typed_phrase": "",
-                    "consequence": "Entregar agora para 12 pessoas elegíveis.",
+                    "consequence": "Disparar agora para 12 pessoas elegíveis.",
                     "resource_ref": "announcement:41",
                     "base_version": 3,
                     "audience_count": 12,

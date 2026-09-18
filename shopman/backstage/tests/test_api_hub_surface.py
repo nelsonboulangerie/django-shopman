@@ -69,13 +69,13 @@ def test_hub_superuser_sees_all_tiles(client, db):
 
     by_ref = {tile["ref"]: tile for tile in hub["tiles"]}
     # Ícone forte por app (DS §6).
-    assert by_ref["pos"]["icon"] == "banknote"
+    assert by_ref["pos"]["icon"] == "shopping-basket"
     assert by_ref["kds"]["icon"] == "chef-hat"
-    assert by_ref["gestor"]["icon"] == "clipboard-list"
+    assert by_ref["gestor"]["icon"] == "square-kanban"
     assert by_ref["production"]["icon"] == "croissant"
-    assert by_ref["purchase"]["icon"] == "package-check"
+    assert by_ref["purchase"]["icon"] == "package"
     assert by_ref["marketing"]["icon"] == "megaphone"
-    assert by_ref["bi"]["icon"] == "chart-line"
+    assert by_ref["bi"]["icon"] == "chart-no-axes-combined"
     assert by_ref["bi"]["label"] == "B.I."
     # Nome público sem jargão interno: a superfície "production" é Produção e a
     # A ref da superfície é "marketing" (a seção), não "campaign" (a entidade dentro dela).

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
   app: string;
-  appName: string;
+  appName?: string;
 }>(), {
   appName: "Shopman",
 });

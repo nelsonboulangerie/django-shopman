@@ -23,6 +23,23 @@ Registre versão, estágio, janela, SLO queimado, contagens agregadas e estado d
 O diagnóstico não chama provider. Compare com baseline autorizado e diferencie falha
 de BFF, API, DB/cache/fila e canal.
 
+## Onde a entrega roda
+
+Não existe componente próprio de entrega de Marketing: `process_marketing_delivery` roda
+dentro do `maintenance-worker`, uma passada por ciclo de 300 s, logo depois de
+`process_marketing_outbox` (ver
+[Entrega sem componente próprio](../reference/marketing-surface-contract.md#entrega-sem-componente-próprio)).
+Consequências para este runbook:
+
+- não procure nem crie um worker de entrega no spec; pausar a entrega é desligar
+  `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` (a passada volta calada) ou aplicar freeze;
+- **não reinicie nem pare o `maintenance-worker` para segurar Marketing**: ele também
+  roda reconciliação de pagamentos, holds, pedidos presos e as demais manutenções;
+- não rode `process_marketing_delivery --watch` à mão ao lado dele sem autorização SRE:
+  seria um segundo executor sobre o mesmo ledger;
+- depois de uma aprovação, a entrega começa em até ~7 minutos; ausência de efeito antes
+  disso é espera normal, não travamento.
+
 ## Freeze/circuit
 
 Freeze Marketing e pause o rollout; não desligue reconciler/lookup necessário para

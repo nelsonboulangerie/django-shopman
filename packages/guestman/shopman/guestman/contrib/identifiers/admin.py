@@ -1,12 +1,13 @@
 """Admin for CustomerIdentifier."""
 
 from django.contrib import admin
+from shopman.guestman.admin_privacy import CustomerOwnedPrivacyFenceAdminMixin
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
 from unfold.admin import ModelAdmin
 
 
 @admin.register(CustomerIdentifier)
-class CustomerIdentifierAdmin(ModelAdmin):
+class CustomerIdentifierAdmin(CustomerOwnedPrivacyFenceAdminMixin, ModelAdmin):
     list_display = [
         "customer",
         "identifier_type",

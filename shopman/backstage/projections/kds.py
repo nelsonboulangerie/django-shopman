@@ -46,7 +46,6 @@ class KDSItemProjection:
     name: str
     qty: int | str
     notes: str
-    checked: bool
     stock_warning: str  # "" = no warning
 
 
@@ -65,7 +64,6 @@ class KDSTicketProjection:
     timer_class: str  # "timer-ok", "timer-warning", "timer-late"
     items: tuple[KDSItemProjection, ...]
     status: str
-    all_checked: bool
     # Comanda disparada antes do pagamento muda de dono quando o Order nasce:
     # o pedido vira a referência principal; a comanda permanece riscada apenas
     # para conferência visual e para deixar claro que já foi liberada.
@@ -595,7 +593,6 @@ def _build_ticket(ticket, instance, *, source=None, is_scheduled: bool = False) 
             name=it.get("name", it.get("sku", "")),
             qty=json_quantity(it.get("qty", 1)),
             notes=it.get("notes", ""),
-            checked=bool(it.get("checked", False)),
             stock_warning=it.get("stock_warning", ""),
         )
         for it in raw_items
@@ -613,7 +610,6 @@ def _build_ticket(ticket, instance, *, source=None, is_scheduled: bool = False) 
         timer_class=timer_class,
         items=items,
         status=ticket.status,
-        all_checked=all(it.checked for it in items) if items else False,
         previous_tab_ref=previous_tab_ref,
         is_scheduled=is_scheduled,
         status_label=_ticket_status_label(ticket.status),
@@ -641,7 +637,6 @@ def _build_scheduled_ticket(order: Order, instance, *, raw_items: list[dict]) ->
             name=item.get("name", item.get("sku", "")),
             qty=json_quantity(item.get("qty", 1)),
             notes=item.get("notes", ""),
-            checked=False,
             stock_warning="",
         )
         for item in raw_items
@@ -662,7 +657,6 @@ def _build_scheduled_ticket(order: Order, instance, *, raw_items: list[dict]) ->
         timer_class="timer-ok",
         items=items,
         status="scheduled",
-        all_checked=False,
         previous_tab_ref=previous_tab_ref,
         is_scheduled=True,
         status_label="Agendado",
@@ -708,7 +702,6 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
             name=getattr(item, "name", "") or getattr(item, "sku", "") or "",
             qty=json_quantity(item.qty),
             notes=str(getattr(item, "notes", "") or ""),
-            checked=False,
             stock_warning="",
         )
         for item in items

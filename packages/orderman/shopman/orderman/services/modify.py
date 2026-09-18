@@ -7,6 +7,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from django.apps import apps
 from django.db import transaction
 from shopman.orderman import registry
 from shopman.orderman.exceptions import SessionError, ValidationError
@@ -49,6 +50,27 @@ class ModifyService:
     ) -> Session:
         ctx = ctx or {}
 
+        # Identity association shares the deletion fence.  Resolve the local
+        # canonical owner from the operation payload *before* locking Session;
+        # the global order is Customer -> Session.  Purely commercial set_data
+        # operations do not pay for, or participate in, this lock.
+        locked_customer = None
+        customer_ref = ModifyService._customer_ref_from_ops(ops)
+        if customer_ref:
+            try:
+                Customer = apps.get_model("guestman", "Customer")
+            except LookupError:
+                Customer = None
+            if Customer is not None:
+                locked_customer = (
+                    Customer.objects.select_for_update().filter(ref=customer_ref).first()
+                )
+                if locked_customer is not None and not locked_customer.is_active:
+                    raise SessionError(
+                        code="customer_inactive",
+                        message="O titular desta sessão não está mais ativo.",
+                    )
+
         # 1. Lock session
         try:
             session = Session.objects.select_for_update().get(
@@ -60,6 +82,16 @@ class ModifyService:
                 code="not_found",
                 message=f"Sessão não encontrada: {channel_ref}:{session_key}",
             ) from exc
+
+        if locked_customer is not None and not type(locked_customer).objects.filter(
+            pk=locked_customer.pk,
+            ref=customer_ref,
+            is_active=True,
+        ).exists():
+            raise SessionError(
+                code="customer_inactive",
+                message="O titular desta sessão não está mais ativo.",
+            )
 
         import types
         channel = types.SimpleNamespace(ref=channel_ref, config={})
@@ -155,6 +187,30 @@ class ModifyService:
                 )
 
         return session
+
+    @staticmethod
+    def _customer_ref_from_ops(ops: list[dict]) -> str:
+        refs: set[str] = set()
+        for op in ops:
+            if op.get("op") != "set_data":
+                continue
+            path = str(op.get("path", "")).strip().lower()
+            value = op.get("value")
+            ref = ""
+            if path == "customer_ref":
+                ref = str(value or "").strip()
+            elif path == "customer.ref":
+                ref = str(value or "").strip()
+            elif path == "customer" and isinstance(value, dict):
+                ref = str(value.get("ref") or "").strip()
+            if ref:
+                refs.add(ref)
+        if len(refs) > 1:
+            raise ValidationError(
+                code="customer_identity_ambiguous",
+                message="A sessão recebeu mais de um titular.",
+            )
+        return next(iter(refs), "")
 
     @staticmethod
     @transaction.atomic
@@ -290,6 +346,8 @@ class ModifyService:
         elif op_type == "replace_sku":
             return ModifyService._op_replace_sku(items, data, op, session)
         elif op_type == "set_data":
+            path = str(op.get("path", "")).strip().lower()
+            session.assert_accepts_personal_data(path.split(".", 1)[0])
             return ModifyService._op_set_data(items, data, op)
         elif op_type == "merge_lines":
             return ModifyService._op_merge_lines(items, data, op)
@@ -317,9 +375,27 @@ class ModifyService:
         return price
 
     @staticmethod
+    def _assert_line_meta_is_allowed(session: Session, meta: Any) -> None:
+        """Keep commercial metadata, but reject known free-text PII slots."""
+        if not session.is_anonymized or not isinstance(meta, dict):
+            return
+        customization = meta.get("customization")
+        has_personal_text = "customer_note" in meta or (
+            isinstance(customization, dict)
+            and bool({"note", "text", "message"}.intersection(customization))
+        )
+        if has_personal_text:
+            raise SessionError(
+                code="session_anonymized",
+                message="Esta sessão foi anonimizada e não aceita dados pessoais.",
+                context={"session_key": session.session_key},
+            )
+
+    @staticmethod
     def _op_add_line(items: list[dict], data: dict, op: dict, session: Session) -> tuple[list[dict], dict]:
         if not op.get("sku"):
             raise ValidationError(code="missing_sku", message="SKU é obrigatório")
+        ModifyService._assert_line_meta_is_allowed(session, op.get("meta"))
         qty = ModifyService._parse_positive_qty(op.get("qty"))
 
         if session.pricing_policy == "external" and "unit_price_q" not in op:
@@ -372,6 +448,7 @@ class ModifyService:
     def _op_replace_sku(items: list[dict], data: dict, op: dict, session: Session) -> tuple[list[dict], dict]:
         if not op.get("sku"):
             raise ValidationError(code="missing_sku", message="SKU é obrigatório")
+        ModifyService._assert_line_meta_is_allowed(session, op.get("meta"))
         if session.pricing_policy == "external" and "unit_price_q" not in op:
             raise ValidationError(
                 code="missing_unit_price_q",

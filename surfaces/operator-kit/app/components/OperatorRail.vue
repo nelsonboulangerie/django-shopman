@@ -2,18 +2,21 @@
 // Rail de operador CANÔNICO — a espinha vertical em `bg-rail` (token próprio do chrome,
 // de marca: disciplina de ERP) que TODAS as superfícies de operador adotam. É o portador
 // nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Produção/Central. Segura o que é
-// COMUM (voltar à Central, operador/travar, tema, e o que o app puser em #status); o
-// específico de cada app entra pelos slots (#nav = funções; #status = saúde/conexão).
+// COMUM (voltar à Central, capacidade do serviço, operador/travar, tema, e o que o app
+// puser em #status); o específico de cada app entra pelos slots (#nav = funções;
+// #status = saúde/conexão).
 //
 // Três estados que o operador escolhe conforme precisa (persistidos por dispositivo via
 // `useRailState`): colapsado (só um puxador) · compacto (só ícone) · estendido (ícone +
 // rótulo). A nav de SEÇÃO de cada app (abas do Gestor, visões do Produção) NÃO vive aqui —
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 const props = defineProps<{
-  /** Ícone forte do app (DS §6), com ou sem `lucide:`. */
+  /** Ícone forte do app (DS §6), com ou sem `lucide:`. Fallback quando `appIconSrc` falta ou falha. */
   appIcon: string;
+  /** O ícone REAL do app — o PNG da família PWA (`/pwa/pwa-64x64.png?v=3`, ver PWA_ICONS.md). */
+  appIconSrc?: string;
   appLabel: string;
   /** URL da Central (launcher). Omitido na própria Central → some o item. */
   centralUrl?: string;
@@ -25,13 +28,39 @@ const emit = defineEmits<{ lock: [] }>();
 
 const { state, isCollapsed, isExtended } = useRailState();
 
+// Voltar à Central é ir para OUTRA origem (`central.<zona>`). No app instalado isso
+// precisa acontecer na janela da Central, não dentro desta — ver `presentation/appLaunch.ts`.
+const { attrsFor } = useOperatorAppLink();
+const centralLink = computed(() => attrsFor(props.centralUrl || ""));
+
 const colorMode = useColorMode();
 function toggleTheme() {
   colorMode.preference = colorMode.value === "dark" ? "light" : "dark";
 }
 const themeLabel = computed(() => (colorMode.value === "dark" ? "Tema claro" : "Tema escuro"));
 
+// Trava de giro (tablets): só aparece em aparelho de toque com a API; a recusa do
+// aparelho é dita ao operador, nunca fingida como travada.
+const orientation = useOrientationLock();
+const orientationLabel = computed(() => (orientation.isLocked.value ? "Liberar giro" : "Travar giro"));
+const orientationAriaLabel = computed(() => {
+  if (!orientation.isLocked.value) return "Travar o giro da tela na orientação atual";
+  return orientation.locked.value === "portrait"
+    ? "Liberar o giro da tela (travado em retrato)"
+    : "Liberar o giro da tela (travado em paisagem)";
+});
+async function toggleOrientation() {
+  const result = await orientation.toggle();
+  if (result.ok) useSonner.success(result.message);
+  else useSonner.warning(result.message);
+}
+
 const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.appIcon : `lucide:${props.appIcon}`));
+
+// Imagem que não carregou (build sem a família, cache velho) cai no Lucide — o rail
+// nunca fica com um quadrado vazio no lugar da identidade.
+const appIconBroken = ref(false);
+const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.value);
 </script>
 
 <template>
@@ -50,16 +79,34 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
     <component
       :is="centralUrl ? 'a' : 'div'"
       :href="centralUrl"
+      :target="centralUrl ? centralLink.target : undefined"
+      :rel="centralUrl ? centralLink.rel : undefined"
       :aria-label="centralUrl ? 'Voltar à Central de Apps' : undefined"
       :title="centralUrl ? 'Voltar à Central de Apps' : undefined"
       class="group mb-1 flex items-center gap-2"
       :class="isExtended ? 'w-full' : ''"
     >
+      <!-- O PNG da família tem os cantos arredondados e transparentes (PWA_ICONS.md):
+           o fundo do quadrado só existe para o Lucide e para a seta do hover, senão
+           apareceria como uma moldura clara nos quatro cantos do ícone. -->
       <span
-        class="grid size-11 shrink-0 place-items-center rounded-md bg-rail-foreground/15 transition"
-        :class="centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : ''"
+        class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md transition"
+        :class="[
+          showAppImage ? '' : 'bg-rail-foreground/15',
+          centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : '',
+        ]"
       >
+        <img
+          v-if="showAppImage"
+          :src="appIconSrc"
+          class="size-11 rounded-md"
+          :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
+          alt=""
+          decoding="async"
+          @error="appIconBroken = true"
+        >
         <Icon
+          v-else
           :name="appIconName"
           class="size-5"
           :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
@@ -88,6 +135,13 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
     <div class="mt-auto flex w-full flex-col gap-0.5">
       <slot name="status" />
 
+      <!-- Capacidade do serviço (memória/CPU do contêiner), comum a todo app: só com
+           operador identificado, porque quem autoriza a leitura é a sessão. A chave
+           remonta a leitura quando o operador troca. -->
+      <ClientOnly>
+        <OperatorCapacityStatus v-if="operatorName" :key="operatorName" />
+      </ClientOnly>
+
       <RailItem
         v-if="operatorName"
         icon="user-round"
@@ -97,6 +151,15 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
       />
 
       <ClientOnly>
+        <RailItem
+          v-if="orientation.available.value"
+          :icon="orientation.isLocked.value ? 'lucide:lock-keyhole' : 'lucide:rotate-cw-square'"
+          :label="orientationLabel"
+          :aria-label="orientationAriaLabel"
+          :aria-pressed="orientation.isLocked.value"
+          data-orientation-lock
+          @activate="toggleOrientation"
+        />
         <RailItem
           icon="lucide:moon"
           :label="themeLabel"

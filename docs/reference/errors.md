@@ -85,7 +85,7 @@ quando ela tem nome:
 
 | `error.code` | O que aconteceu | O que resolve |
 |---|---|---|
-| `not_authenticated` | A sessão do operador caiu (ou nunca existiu) | Login |
+| `not_authenticated` | A sessão do operador caiu (ex.: 7 dias sem uso) ou nunca existiu | Login |
 | `station_locked` | O operador ativo saiu; a estação está travada | O PIN, ali mesmo |
 | *(ausente)* | Falta de permissão comum | Nada que a tela possa oferecer |
 
@@ -168,6 +168,34 @@ quem digitou um endereço qualquer vazaria dado pessoal de terceiro. Aqui a recu
 diz que o e-mail não está disponível, aponta o campo, e oferece os dois caminhos
 que servem sem revelar nada — entrar na conta que já o usa (se for dele, o OTP
 prova) ou falar com a padaria. **Nunca acrescente `candidates` a esta resposta.**
+
+### Superset do Marketing (deliberado)
+
+As APIs do Marketing (`/api/v1/backstage/marketing/`,
+`shopman/backstage/api/marketing.py`) falam dois shapes por cima do canônico —
+`detail` continua obrigatório em todos, e um front que só lê `detail` funciona:
+
+- **Comandos** (aprovar, disparar, publicar, cancelar, reagendar, repetir,
+  reconciliar, testar, configurar) respondem `{code, detail, field_errors}` — é o
+  `as_payload()` de `MarketingContractError` (`shopman/shop/services/marketing_contracts.py`)
+  e de `MarketingCommandRejected`/`MarketingCommandConflict` (`marketing_commands.py`),
+  que ainda carregam `retryable`, `request_id`, `current_version` e `receipt_ref`
+  quando existem. `code` é o identificador estável que a tela roteia
+  (`version_conflict`, `invalid_audience_rules`, `no_eligible_audience`…);
+  `field_errors` é `campo → [mensagens]`, o gêmeo do `errors` canônico. Status:
+  409 para conflito, 404 para recurso inexistente, 422 para o resto (ou o
+  `status_code` que a exceção carrega, com `Retry-After` quando há espera). 428
+  com `confirmation` é confirmação pendente, não erro.
+- **CRUD de campanhas e modelos** (`rules/`, `templates/`) responde
+  `{detail, field, fields}` em 400 — `fields` lista as chaves ofensivas (campo
+  desconhecido, valor que não é inteiro); 404 fala só `detail`.
+- **401** leva `code: "not_authenticated"` para o cockpit distinguir sessão
+  expirada (reauth resolve) de capability negada (403, reauth não resolve).
+
+`field_errors` e `fields` só estão declarados no OpenAPI
+(`contracts/openapi/marketing_v2.openapi.json`). Um `MarketingContractError` que
+uma view não traduziu cai em `_CampaignBase.handle_exception` e sai no shape de
+comando (422) — nunca 500 sem código.
 
 ---
 

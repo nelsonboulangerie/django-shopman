@@ -68,6 +68,8 @@ class TestVerificationCode:
         )
         assert code.code_hash is not None
         assert len(code.code_hash) == 64  # HMAC-SHA256 hex digest
+        assert not code.is_valid
+        code.mark_sent()
         assert code.is_valid
         assert code.attempts_remaining == 5
 
@@ -77,6 +79,7 @@ class TestVerificationCode:
             target_value="+5541999999999",
             max_attempts=3,
         )
+        code.mark_sent()
 
         code.record_attempt()
         assert code.attempts == 1

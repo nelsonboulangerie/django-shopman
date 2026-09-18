@@ -217,11 +217,12 @@ def otp_login(client: Client, phone: str = DEFAULT_PHONE) -> dict:
     from shopman.doorman.models.verification_code import generate_raw_code
 
     raw_code, digest = generate_raw_code()
-    VerificationCode.objects.create(
+    verification_code = VerificationCode.objects.create(
         target_value=phone,
         purpose=VerificationCode.Purpose.LOGIN,
         code_hash=digest,
     )
+    verification_code.mark_sent()
     resp = client.post(
         "/api/v1/auth/verify-code/",
         data=json.dumps({"phone": phone, "code": raw_code}),

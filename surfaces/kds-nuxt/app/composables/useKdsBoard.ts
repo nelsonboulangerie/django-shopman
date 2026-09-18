@@ -6,7 +6,12 @@
 //     active-ticket count rises (new order arrived).
 // SSE/poll/beep are client-only (EventSource + Web Audio are browser APIs).
 import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
-import { boardView, type KDSBoardView } from "~/presentation/board";
+import {
+  boardView,
+  KDS_UNDO_WINDOW_MS,
+  splitRef,
+  type KDSBoardView,
+} from "~/presentation/board";
 import type { Ref } from "vue";
 
 /**
@@ -79,13 +84,23 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   const { data, pending, error, refresh } = useFetch<KDSBoardResponse>(path, {
     key: `kds-board-${stationRef}`,
     server: true,
+    // O write-side é otimista e MUTA o board por dentro (status do ticket, splice
+    // de listas). No Nuxt 4 o `data` do useFetch é raso por padrão: a mutação não
+    // re-renderizava, e o toque só aparecia na reconciliação, ~500 ms depois.
+    deep: true,
     // Sessão expirou no meio do turno → o poll passa a 401/403. Reabre o gate de
     // operador (re-fetch da sessão) em vez de deixar "reconectando…" para sempre.
     onResponseError: operatorSessionOnError,
   });
 
   const board = computed<KDSBoardProjection | null>(() => data.value?.board ?? null);
-  const view = computed<KDSBoardView | null>(() => (board.value ? boardView(board.value) : null));
+  // Finalizados dentro da janela de "Desfazer": já saíram da grade, o servidor
+  // ainda os tem abertos. A view os esconde, então o poll e o SSE não os trazem
+  // de volta enquanto a janela está aberta.
+  const finishing = ref<Set<number>>(new Set());
+  const view = computed<KDSBoardView | null>(() =>
+    board.value ? boardView(board.value, finishing.value) : null,
+  );
 
   // Realtime + polling + audio cue (client only). O bloco de áudio (beep 880Hz,
   // mute persistido, desbloqueio de autoplay) é o do kit — chave por estação.
@@ -214,12 +229,20 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     connectSse();
     // Tablet dormiu / voltou à aba: refetch imediato (setInterval é throttlado em
     // aba oculta), em vez de esperar até 15s por dados possivelmente muito velhos.
-    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
+    // (keepalive), em vez de sumir com a aba.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+      else flushFinishes();
+    };
+    const onPageHide = () => flushFinishes();
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
+    window.addEventListener("pagehide", onPageHide);
     removeVisibilityListeners = () => {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", onVisible);
+      window.removeEventListener("pagehide", onPageHide);
     };
   });
 
@@ -238,7 +261,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   // HTTP simples — o cast declara isso com precisão (resposta `unknown`) e corta a recursão.
   const postProxy = $fetch as (
     path: string,
-    opts: { method: string; body: Record<string, unknown> },
+    opts: { method: string; body: Record<string, unknown>; keepalive?: boolean },
   ) => Promise<unknown>;
 
   function scheduleReconcile() {
@@ -247,25 +270,28 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   }
 
   function enqueue(path: string, body?: Record<string, unknown>) {
-    const run = chain.then(() => postProxy(path, { method: "POST", body: body ?? {} }));
+    const run = chain.then(() => postProxy(path, { method: "POST", body: body ?? {}, keepalive: true }));
     chain = run.then(() => undefined, () => undefined); // mantém a fila viva após erro
     return run;
   }
 
-  function checkItem(pk: number, index: number, checked: boolean) {
+  function findTicket(pk: number): KDSTicketProjection | undefined {
+    return data.value?.board?.tickets?.find(
+      (x) => x.pk === pk && !x.is_expedition,
+    ) as KDSTicketProjection | undefined;
+  }
+
+  // Primeiro toque: em preparo. Otimista; reverte e avisa se o servidor recusar.
+  function start(pk: number) {
     if (readOnly.value) return;
-    const t = data.value?.board?.tickets?.find((x) => x.pk === pk && "items" in x) as KDSTicketProjection | undefined;
-    const item = t?.items?.[index];
-    if (!t || !item) return;
-    const prev = item.checked;
-    item.checked = checked; // otimista
-    t.all_checked = t.items.every((i) => i.checked);
-    enqueue(`/api/v1/backstage/kds/tickets/${pk}/items/`, { index, checked })
+    const t = findTicket(pk);
+    if (!t || t.is_scheduled || t.status !== "pending") return;
+    t.status = "in_progress";
+    enqueue(`/api/v1/backstage/kds/tickets/${pk}/start/`)
       .then(() => scheduleReconcile())
       .catch((err) => {
-        item.checked = prev; // reverte
-        t.all_checked = t.items.every((i) => i.checked);
-        useSonner.error(httpErrorMessage(err, "Falha ao marcar item."));
+        t.status = "pending";
+        useSonner.error(httpErrorMessage(err, "Falha ao iniciar o preparo."));
         refresh();
       });
   }
@@ -291,9 +317,57 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       });
   }
 
+  // Segundo toque: finalizar — com janela de "Desfazer". O card sai da grade na
+  // hora; o POST só sai quando a janela fecha (ou o tablet dorme). Assim um toque
+  // errado não vira "pedido pronto" avisado ao cliente.
+  const finishTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  function releaseFinish(pk: number) {
+    if (!finishing.value.has(pk)) return;
+    const next = new Set(finishing.value);
+    next.delete(pk);
+    finishing.value = next;
+  }
+
+  function commitFinish(pk: number) {
+    const timer = finishTimers.get(pk);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    finishTimers.delete(pk);
+    enqueue(`/api/v1/backstage/kds/tickets/${pk}/done/`)
+      .then(async () => {
+        await refresh();
+        releaseFinish(pk);
+      })
+      .catch((err) => {
+        releaseFinish(pk); // volta para a grade
+        useSonner.error(httpErrorMessage(err, "Falha ao finalizar. Tente de novo."));
+        refresh();
+      });
+  }
+
+  function undoFinish(pk: number) {
+    const timer = finishTimers.get(pk);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    finishTimers.delete(pk);
+    releaseFinish(pk);
+  }
+
+  function flushFinishes() {
+    for (const pk of [...finishTimers.keys()]) commitFinish(pk);
+  }
+
   const finalize = (pk: number) => {
-    if (readOnly.value) return;
-    removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/tickets/${pk}/done/`);
+    if (readOnly.value || finishTimers.has(pk)) return;
+    const t = findTicket(pk);
+    if (!t || t.is_scheduled) return;
+    finishing.value = new Set(finishing.value).add(pk);
+    finishTimers.set(pk, setTimeout(() => commitFinish(pk), KDS_UNDO_WINDOW_MS));
+    useSonner.success(`Pedido ${splitRef(t.order_ref).code} finalizado`, {
+      duration: KDS_UNDO_WINDOW_MS,
+      action: { label: "Desfazer", onClick: () => undoFinish(pk) },
+    });
   };
   const expedite = (pk: number, action: "dispatch" | "complete") => {
     if (readOnly.value) return;
@@ -311,6 +385,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   };
 
   onBeforeUnmount(() => {
+    flushFinishes();
     if (pollTimer) clearInterval(pollTimer);
     if (reconcileTimer) clearTimeout(reconcileTimer);
     if (source) { source.close(); source = null; }
@@ -330,8 +405,9 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     toggleSound,
     activateAttentionSound,
     acknowledgeAttention,
-    checkItem,
+    start,
     finalize,
+    undoFinish,
     expedite,
     recall,
     acknowledge,

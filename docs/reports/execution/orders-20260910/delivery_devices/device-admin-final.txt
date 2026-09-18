@@ -1,0 +1,9 @@
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python scripts/check_unfold_canonical.py --maturity 
+Unfold canonical template check passed.
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python -m pytest shopman/backstage/tests/test_unfold_canonical_templates.py shopman/backstage/tests/test_admin_operational_integration.py shopman/backstage/tests/test_admin_smoke.py -q
+........................................................................ [ 27%]
+........................................................................ [ 54%]
+........................................................................ [ 81%]
+................................................                         [100%]
+264 passed in 61.57s (0:01:01)
+✓ Admin canônico

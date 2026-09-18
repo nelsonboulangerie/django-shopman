@@ -113,8 +113,8 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.state == "preorder_scheduled"
         assert proj.status_label == "Encomenda confirmada"
-        assert proj.when_display == "amanhã · A partir das 09h"
-        assert "garantido para amanhã · A partir das 09h" in proj.promise.message
+        assert proj.when_display == "amanhã · A partir das 9h"
+        assert "garantido para amanhã · A partir das 9h" in proj.promise.message
 
     def test_unaccepted_future_order_never_promises_confirmation_or_guarantee(self, order):
         from shopman.orderman.models import Order as _Order
@@ -143,6 +143,15 @@ class TestPreorderTracking:
         expected = f"{formats.date_format(expected_date, 'l')}, {formats.date_format(expected_date, 'd/m')}"
         assert proj.when_display == expected
         assert proj.promise.state == "preorder_scheduled"
+
+    def test_the_half_hour_window_of_a_pos_order_reads_as_hours_not_as_a_raw_ref(self, order):
+        """Pedido anotado no PDV para outro dia com o par de horas: o
+        acompanhamento resolvia só a grade canônica e "14:00-14:30" saía cru."""
+        order, _ = self._make_preorder(order, slot="14:00-14:30")
+
+        proj = build_order_tracking(order)
+
+        assert proj.when_display == "amanhã · 14:00 às 14:30"
 
     def test_on_the_day_the_preorder_rejoins_the_normal_flow(self, order):
         order, _ = self._make_preorder(order, days_ahead=0)
@@ -174,7 +183,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã · A partir das 09h."
+            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã · A partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 
@@ -202,7 +211,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Finalize no ambiente seguro para garantir sua encomenda para amanhã · A partir das 09h."
+            "Finalize no ambiente seguro para garantir sua encomenda para amanhã · A partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 

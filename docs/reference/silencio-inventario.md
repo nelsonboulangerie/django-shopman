@@ -272,7 +272,7 @@ mudez estrita — mas o dano é o da faixa):
 | `shopman/shop/services/courier.py`<br><sub>já grita na linha 304 · except_debug</sub> | `68` | painel não atualiza o status do entregador; operador recarrega para saber | ⬜ aberto |
 | `shopman/shop/models/rules.py`<br><sub>já grita na linha 67 · except_pass</sub> | `111` | auditoria da mudança de regra sai sem o caminho antigo para comparar | ⬜ aberto |
 | `shopman/shop/views/product_feed.py`<br><sub>já grita na linha 53 · except_debug</sub> | `131` | feed de produtos sai sem o nome da marca para Google e Meta | ⬜ aberto |
-| `shopman/storefront/presentation/product_detail.py`<br><sub>já grita na linha 427 · except_debug</sub> | `522` | página do produto fica sem a dica de conservação padrão da casa | ⬜ aberto |
+| `shopman/storefront/presentation/product_detail.py`<br><sub>já grita na linha 427 · except_debug</sub> | `522` | página do produto fica sem a dica de conservação padrão da casa | ✅ 17/09 — `logger.warning` (carona do favorito que anota o aviso) |
 | `shopman/shop/services/whatsapp_verify.py`<br><sub>já grita na linha 53 · except_debug</sub> | `51` | pouco perdido: o erro logo abaixo grita a ausência de número | ⬜ aberto |
 
 ### ✅ Provavelmente inofensivo — 12 arquivos, 18 sites

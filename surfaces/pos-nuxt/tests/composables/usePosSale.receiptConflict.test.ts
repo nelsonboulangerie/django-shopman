@@ -48,7 +48,7 @@ function freeCartProjection() {
   return makeProjection({
     checkout: {
       intent_version: 1,
-      capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
+      capabilities: { supports_fiscal_document: true, tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
     } as ReturnType<typeof makeProjection>["checkout"],
   });
 }

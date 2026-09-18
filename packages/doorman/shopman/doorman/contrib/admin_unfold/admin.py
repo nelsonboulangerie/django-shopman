@@ -180,6 +180,9 @@ class VerificationCodeAdmin(BaseModelAdmin):
         "status",
         "created_at",
         "expires_at",
+        "delivery_started_at",
+        "delivery_reconciled_at",
+        "delivery_evidence_ref",
         "sent_at",
         "verified_at",
         "delivery_method",
@@ -194,7 +197,21 @@ class VerificationCodeAdmin(BaseModelAdmin):
     fieldsets = [
         (None, {"fields": ["id", "code_hash", "target_value"]}),
         ("Finalidade", {"fields": ["purpose", "delivery_method"]}),
-        ("Ciclo de vida", {"fields": ["status", "created_at", "expires_at", "sent_at", "verified_at"]}),
+        (
+            "Ciclo de vida",
+            {
+                "fields": [
+                    "status",
+                    "created_at",
+                    "expires_at",
+                    "delivery_started_at",
+                    "delivery_reconciled_at",
+                    "delivery_evidence_ref",
+                    "sent_at",
+                    "verified_at",
+                ]
+            },
+        ),
         ("Segurança", {"fields": ["attempts", "max_attempts", "ip_address"]}),
         ("Resultado", {"fields": ["customer_id"]}),
     ]

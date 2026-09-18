@@ -272,7 +272,7 @@ class TestPickupSlots:
                 "pickup_slots": [
                     {
                         "ref": "slot-09",
-                        "label": "A partir das 09h",
+                        "label": "A partir das 9h",
                         "starts_at": "09:00",
                         "enabled": False,
                         "reason": "Sem tempo de preparo",

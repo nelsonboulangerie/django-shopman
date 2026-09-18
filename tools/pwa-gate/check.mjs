@@ -56,8 +56,8 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=4',
-    manifestHref: '/manifest.webmanifest?v=4',
+    manifestUrl: '/manifest.webmanifest?v=6',
+    manifestHref: '/manifest.webmanifest?v=6',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
@@ -67,8 +67,9 @@ const profiles = {
   pos: operatorProfile('pos', { icon: 'lucide:shopping-basket', background: '#A95032' }),
   hub: operatorProfile('hub', { icon: 'lucide:layout-grid', background: '#34373B' }),
   orders: operatorProfile('orders', { icon: 'lucide:square-kanban', background: '#8B2F4D' }),
-  kds: operatorProfile('kds', { display: 'fullscreen', orientation: 'landscape', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
-  production: operatorProfile('production', { display: 'fullscreen', orientation: 'landscape', icon: 'tabler:baguette', background: '#B9781B' }),
+  // Kiosks giram livres (tablets); quem trava é o operador, no rail (useOrientationLock).
+  kds: operatorProfile('kds', { display: 'fullscreen', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
+  production: operatorProfile('production', { display: 'fullscreen', icon: 'tabler:baguette', background: '#B9781B' }),
   marketing: operatorProfile('marketing', { icon: 'lucide:megaphone', background: '#7D4B88' }),
   purchase: operatorProfile('purchase', { icon: 'lucide:package', background: '#386F9A' }),
   bi: operatorProfile('bi', { icon: 'lucide:chart-no-axes-combined', background: '#414F91' }),
@@ -129,6 +130,12 @@ for (const [name, width, height] of requiredAssets) {
   const actual = await pngSize(join(surface, 'public/pwa', name))
   check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
 }
+if (!profile.storefront) {
+  // Favicon da aba: a identidade do app gerada por `pwa:assets` (operator-kit/PWA_ICONS.md).
+  for (const name of ['favicon.ico', 'favicon.svg']) {
+    check(await stat(join(surface, 'public', name)).then(() => true, () => false), `${name} existe em public/`)
+  }
+}
 if (profile.storefront) {
   await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
   const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
@@ -165,16 +172,26 @@ try {
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
   check(manifestResponse.headers.get('cache-control') === profile.manifestCache, `manifesto usa cache esperado (${profile.manifestCache})`)
-  if (profile.storefront) check(manifestResponse.headers.get('vary') === 'User-Agent', 'manifesto declara variação por dispositivo')
+  // O manifesto do storefront é o MESMO para todo aparelho (#784): esconder o
+  // `maskable` do macOS deixava o ícone do Dock ~24% maior que os vizinhos.
+  if (profile.storefront) check(!/user-agent/i.test(manifestResponse.headers.get('vary') || ''), 'manifesto não varia por dispositivo')
   const manifest = await manifestResponse.json()
   const requiredManifestFields = ['id', 'name', 'short_name', 'description', 'lang', 'dir', 'start_url', 'scope', 'display', 'display_override', 'orientation', 'theme_color', 'background_color', 'icons', 'shortcuts']
   if (profile.storefront) requiredManifestFields.push('categories', 'screenshots')
   for (const field of requiredManifestFields) {
     check(field in manifest, `manifesto contém ${field}`)
   }
-  const assetVersion = profile.storefront ? '4' : '2'
+  // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
+  const assetVersion = profile.storefront ? '6' : '3'
   check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
+  if (profile.storefront) {
+    const macResponse = await fetch(`${baseUrl}${profile.manifestUrl}`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36' }
+    })
+    const macManifest = await macResponse.json()
+    check(macManifest.icons.some(icon => icon.purpose === 'maskable'), 'macOS também recebe o ícone maskable (tamanho do Dock)')
+  }
   check(manifest.display === (profile.display || 'standalone'), `manifesto usa display ${profile.display || 'standalone'}`)
   check(manifest.orientation === (profile.orientation || 'any'), `manifesto usa orientação ${profile.orientation || 'any'}`)
   if (profile.storefront) {
@@ -196,7 +213,12 @@ try {
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
-  check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${profile.storefront ? '4' : '2'}`), 'HTML referencia apple-touch-icon versionado')
+  check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${assetVersion}`), 'HTML referencia apple-touch-icon versionado')
+  if (!profile.storefront) {
+    check(document.includes('href="/favicon.svg?v=1"') && document.includes('href="/favicon.ico?v=1"'), 'HTML referencia favicon SVG e ICO versionados')
+    const favicon = await fetch(`${baseUrl}/favicon.svg?v=1`)
+    check(favicon.ok && (await favicon.text()).includes('<rect '), 'favicon.svg responde 200 com o retângulo arredondado')
+  }
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
 } catch (error) {

@@ -27,7 +27,7 @@ def kds_setup(db):
     ticket = KDSTicket.objects.create(
         session_key=order.session_key,
         kds_instance=prep,
-        items=[{"sku": "SKU", "name": "Produto", "qty": 1, "notes": "Sem sal", "checked": False}],
+        items=[{"sku": "SKU", "name": "Produto", "qty": 1, "notes": "Sem sal"}],
     )
     ready = Order.objects.create(ref="KDS-READY", channel_ref="web", status="ready", total_q=2000, data={"fulfillment_type": "delivery"})
     OrderItem.objects.create(order=ready, line_id="2", sku="SKU2", name="Produto 2", qty=2, unit_price_q=1000, line_total_q=2000)
@@ -109,7 +109,7 @@ def test_future_materialized_ticket_is_still_read_only(kds_setup):
     legacy = KDSTicket.objects.create(
         session_key=future.session_key,
         kds_instance=prep,
-        items=[{"sku": "F", "name": "Legado", "qty": 1, "checked": False}],
+        items=[{"sku": "F", "name": "Legado", "qty": 1}],
     )
 
     board = build_kds_board(prep.ref, service_date=tomorrow)
@@ -289,15 +289,15 @@ def test_build_kds_board_exposes_recent_cancelled_tickets(kds_setup):
 
 
 @pytest.mark.django_db
-def test_build_kds_ticket_reflects_checked_state(kds_setup):
+def test_build_kds_ticket_reflects_ticket_status(kds_setup):
     _, _, ticket, _ = kds_setup
-    ticket.items = [{"sku": "SKU", "name": "Produto", "qty": 1, "checked": True}]
-    ticket.save(update_fields=["items"])
+    ticket.status = "in_progress"
+    ticket.save(update_fields=["status"])
 
     projection = build_kds_ticket(ticket.pk)
 
-    assert projection.all_checked is True
-    assert projection.items[0].checked is True
+    assert projection.status == "in_progress"
+    assert projection.status_label == "Em preparo"
 
 
 @pytest.mark.django_db

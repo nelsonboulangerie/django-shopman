@@ -47,6 +47,14 @@ describe("apresentação do histórico canônico", () => {
     expect(historySubject(announcement())).toBe(
       "Fornada concluída · Produto PAO-01",
     );
+    // ⚠️ O gestor fala "Pão francês", não "PAO-01". O rótulo vem de
+    // `options.products`; sem ele, o SKU segue, anunciado como "Produto".
+    expect(
+      historySubject(announcement(), { "PAO-01": "Pão francês" }),
+    ).toBe("Fornada concluída · Pão francês");
+    expect(
+      historySubject(announcement(), { "OUTRO-01": "Outro" }),
+    ).toBe("Fornada concluída · Produto PAO-01");
     expect(historyActorLabel("operator")).toBe("Decisão de uma pessoa");
     expect(historyActorLabel("automation")).toContain("sem autoria registrada");
   });

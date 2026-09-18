@@ -20,7 +20,7 @@ npm run test:e2e
 
 ## O que fica para o reviewer local (Django real)
 
-Login efetivo, lock (Opção C), ações reais (marcar item, finalizar, expedir, recall), o beep
+Login efetivo, lock (Opção C), ações reais (iniciar e finalizar pelo cabeçalho do card, expedir, recall), o beep
 de novo ticket e o SSE ao vivo exigem a stack completa + gateway (SSE é same-origin).
 
 ## Portas

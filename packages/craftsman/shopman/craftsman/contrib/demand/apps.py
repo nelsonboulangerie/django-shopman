@@ -11,5 +11,5 @@ class CraftsmanDemandConfig(AppConfig):
 
     name = "shopman.craftsman.contrib.demand"
     label = "craftsman_demand"
-    verbose_name = _("Backend de Demanda")
+    verbose_name = _("Demanda de produção")
     default_auto_field = "django.db.models.BigAutoField"

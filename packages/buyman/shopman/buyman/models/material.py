@@ -50,4 +50,4 @@ class Material(models.Model):
         return self.shelf_life_days is not None
 
     def __str__(self) -> str:
-        return f"{self.sku} — {self.name}"
+        return f"{self.sku} · {self.name}"

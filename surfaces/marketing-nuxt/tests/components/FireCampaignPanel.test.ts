@@ -22,6 +22,10 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
     empty_selection: false,
     alerts_pending: -1,
     alerts_notified: -1,
+    excluded_by_reason: {},
+    can_approve: true,
+    blocked_reason: "",
+    degraded_sources: [],
     ...over,
   };
 }
@@ -98,9 +102,12 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
   } as Campaign;
 }
 
-function panel(rule: Campaign | null = makeRule()) {
+function panel(
+  rule: Campaign | null = makeRule(),
+  extra: { products?: typeof PRODUCTS } = {},
+) {
   return mount(FireCampaignPanel, {
-    props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS },
+    props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS, ...extra },
     global: {
       components: { UiNativeSelect: UiNativeSelectStub },
       stubs: { Icon: true },
@@ -204,9 +211,11 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
   it("não oferece corpo livre capaz de contornar a revisão", () => {
     const wrapper = panel();
 
+    // A trava é a AUSÊNCIA de campo de texto, não a frase que explica isso: sem
+    // campo, não há caminho para contornar a revisão, diga a tela o que disser.
     expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.text()).toContain("Texto protegido pelo fluxo de revisão");
-    expect(wrapper.text()).toContain("cria um anúncio para revisão");
+    expect(wrapper.find("input[type=text]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("O texto vem do modelo da campanha");
   });
 
   it("pede o produto antes da senha quando o modelo depende do catálogo", async () => {
@@ -249,42 +258,22 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
     ]);
   });
 
-  it("mantém o comprovante e o próximo passo no painel", () => {
+  // O painel não tem mais tela de sucesso: o disparo bem-sucedido leva o gestor à
+  // revisão, e uma escala que só oferecia "Revisar anúncio agora" não pode voltar.
+  it("não guarda tela de sucesso nem link para a revisão", () => {
     const wrapper = mount(FireCampaignPanel, {
       props: {
         rule: makeRule(),
         priceTiers: TIERS,
         tags: TAGS,
         rfmSegments: SEGMENTS,
-        result: {
-          ok: true,
-          replayed: false,
-          receipt: {
-            ref: "fire-receipt-local",
-            kind: "fire",
-            state: "completed",
-            base_version: 1,
-            resulting_version: 2,
-            resource_ref: "campaign:3",
-            outcome: { audience_count: 2 },
-            created_at: "2026-09-10T10:00:00-03:00",
-            completed_at: "2026-09-10T10:00:01-03:00",
-          },
-          announcement: { pk: 77 },
-        } as never,
       },
       global: { stubs: { Icon: true, NuxtLink: true } },
     });
 
-    expect(wrapper.text()).toContain("Anúncio criado para revisão");
-    expect(wrapper.text()).toContain(
-      "Nenhuma publicação ou mensagem foi enviada",
-    );
-    expect(wrapper.text()).toContain("fire-receipt-local");
-    expect(wrapper.find("nuxt-link-stub").attributes("to")).toBe(
-      "/announcements/77#review",
-    );
-    expect(wrapper.find("form").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Anúncio criado para revisão");
+    expect(wrapper.text()).not.toContain("Revisar anúncio agora");
+    expect(wrapper.find("form").exists()).toBe(true);
   });
 });
 
@@ -300,12 +289,12 @@ describe("FireCampaignPanel — postagem pública", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("1 postagem pública");
-    expect(wrapper.text()).toContain("Não há seleção de contatos");
+    expect(wrapper.text()).toContain("Não escolhe contatos");
     expect(wrapper.text()).not.toContain("Para quem");
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();
     const submit = wrapper.find('button[type="submit"]');
-    expect(submit.text()).toContain("Preparar para revisão");
+    expect(submit.text()).toContain("Revisar anúncio");
     expect(submit.attributes("disabled")).toBeUndefined();
 
     await wrapper.find("form").trigger("submit");
@@ -315,7 +304,10 @@ describe("FireCampaignPanel — postagem pública", () => {
   });
 
   it("mantém audiência zero bloqueada quando há também WhatsApp", async () => {
-    counted = fakeCount({ total: 0 });
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Faixa de preço", count: 0 }],
+    });
     const wrapper = panel(makeRule({ platforms: ["instagram", "whatsapp"] }));
     await settleCount(wrapper);
 
@@ -351,7 +343,10 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
   });
 
   it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {
-    counted = fakeCount({ total: 0 });
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Faixa de preço", count: 0 }],
+    });
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
     await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
@@ -386,6 +381,137 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
         },
       ),
     });
+  });
+});
+
+describe("FireCampaignPanel — o zero diz qual zero é", () => {
+  // ⚠️ O caso da Baguete Gergelim: o gestor favoritou o produto pelo celular, a campanha
+  // "quem favoritou" contou 0 e a tela disse "ninguém se encaixa". A regra tinha achado
+  // 1 pessoa; o envio a barrou por falta de confirmação de maioridade e de consentimento.
+  it("mostra quem a regra achou e por que não recebe, mesmo com uma regra só", async () => {
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Favoritaram o produto", count: 1 }],
+      excluded_by_reason: { age_not_declared: 1 },
+    });
+    const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
+      products: PRODUCTS,
+    });
+    await wrapper.get("#fire-product").setValue("MDL");
+    await settleCount(wrapper);
+
+    const text = wrapper.text();
+    expect(text).toContain("As regras acharam 1 pessoa, mas ela não pode receber");
+    expect(text).toContain("Favoritaram o produto");
+    expect(text).toContain("Ficam de fora");
+    expect(text).toContain("1 pessoa sem confirmação de maioridade");
+    expect(text).toContain("ele confirma ao entrar na loja de novo");
+    expect(text).not.toContain("Ninguém se encaixa neste público hoje");
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
+  });
+
+  it("lista cada motivo quando há mais de um", async () => {
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Favoritaram o produto", count: 2 }],
+      excluded_by_reason: { age_not_declared: 1, missing_consent: 1 },
+    });
+    const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
+      products: PRODUCTS,
+    });
+    await wrapper.get("#fire-product").setValue("MDL");
+    await settleCount(wrapper);
+
+    const items = wrapper
+      .findAll("[data-audience-exclusions] li")
+      .map((li) => li.text());
+    expect(items).toEqual([
+      "1 pessoa sem confirmação de maioridade (feita ao entrar na loja)",
+      "1 pessoa sem consentimento para receber no WhatsApp",
+    ]);
+    expect(wrapper.text()).toContain("As regras acharam 2 pessoas, mas nenhuma pode receber");
+  });
+
+  it("continua dizendo 'ninguém se encaixa' quando a regra não achou ninguém", async () => {
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Favoritaram o produto", count: 0 }],
+    });
+    const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
+      products: PRODUCTS,
+    });
+    await wrapper.get("#fire-product").setValue("MDL");
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");
+    expect(wrapper.find("[data-audience-exclusions]").exists()).toBe(false);
+  });
+
+  it("mostra quem ficou de fora também quando alguém recebe", async () => {
+    counted = fakeCount({
+      total: 3,
+      parts: [{ label: "Etiquetas", count: 5 }],
+      excluded_by_reason: { missing_consent: 2 },
+    });
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("3");
+    expect(wrapper.text()).toContain("pessoas recebem");
+    expect(wrapper.text()).toContain("2 pessoas sem consentimento para receber no WhatsApp");
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeUndefined();
+  });
+
+  it("bloqueia o disparo quando o servidor diz que o número está incompleto", async () => {
+    counted = fakeCount({
+      total: 7,
+      can_approve: false,
+      blocked_reason:
+        "Não foi possível conferir todas as fontes da audiência. Aguarde a recuperação.",
+      degraded_sources: ["favorites"],
+    });
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Não foi possível conferir todas as fontes da audiência");
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
+  });
+});
+
+describe("FireCampaignPanel — becos sem saída", () => {
+  it("campanha sem público salvo abre em 'Escolher agora' e diz por quê", async () => {
+    const wrapper = panel(makeRule({ audience_rules: {} }));
+    await settleCount(wrapper);
+
+    const radios = wrapper.findAll('input[name="audience-mode"]');
+    expect((radios[0]!.element as HTMLInputElement).checked).toBe(false);
+    expect((radios[1]!.element as HTMLInputElement).checked).toBe(true);
+    expect(wrapper.text()).toContain("Esta campanha não tem público salvo");
+    expect(wrapper.text()).toContain("Escolha pelo menos um grupo acima");
+  });
+
+  it("só 'VIP primeiro' salvo não é público: continua abrindo em 'Escolher agora'", async () => {
+    const wrapper = panel(
+      makeRule({ audience_rules: { vip_first_minutes: 15 } }),
+    );
+    await settleCount(wrapper);
+
+    const radios = wrapper.findAll('input[name="audience-mode"]');
+    expect((radios[1]!.element as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("com público salvo, nada disso aparece", async () => {
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).not.toContain("Esta campanha não tem público salvo");
+    expect(wrapper.text()).not.toContain("Escolha pelo menos um grupo acima");
   });
 });
 

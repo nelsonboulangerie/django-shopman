@@ -95,48 +95,57 @@ async function copyMessage () {
           {{ ctaText }}
         </UiButton>
         <p v-if="noPasswordNote" class="shop-meta text-center" data-login-whatsapp-note>{{ noPasswordNote }}</p>
-      </div>
 
-      <!-- Divisor: a alternativa manual, para quando o app não abre sozinho. -->
-      <div v-if="manualMessage" class="flex items-center gap-3" aria-hidden="true" data-login-whatsapp-or>
-        <span class="h-px flex-1 bg-border" />
-        <span class="shop-meta uppercase tracking-widest">ou</span>
-        <span class="h-px flex-1 bg-border" />
-      </div>
+        <!-- RODAPÉ MANUAL — para quem desconfia de link e prefere mandar a
+             mensagem com as próprias mãos.
 
-      <!-- Bloco 2 — envio manual (alternativa): título com peso de seção + subtítulo,
-           mensagem discreta + copiar + abrir chat cru. -->
-      <div v-if="manualMessage" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-manual>
-        <div class="shop-stack-micro text-center">
-          <p v-if="manualTitle" class="shop-item-title" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
+             Ele morava num CARTÃO IRMÃO, depois de um divisor "ou", com dois
+             botões sólidos na mesma cor do CTA principal. Somados, ocupavam mais
+             área sólida que o próprio CTA — três sólidos na tela, e o olho sem
+             saber onde pousar. O erro era de modelagem, não de estilo: este não
+             é um caminho irmão, é o MESMO caminho feito à mão. Por isso agora é
+             rodapé deste cartão, atrás de uma linha fina. O irmão do WhatsApp é
+             o SMS, e é lá que o "ou" foi morar.
+
+             E os dois botões não eram duas escolhas: "Abrir WhatsApp" leva ao
+             chat SEM texto nenhum, então é o segundo passo de uma sequência —
+             copie, depois abra e cole. Apresentar sequência como escolha é o que
+             mais pesava aqui. Copiar vira ÍCONE sobre o próprio código (é uma
+             micro-ação sobre um texto que está ali, não um destino) e abrir vira
+             link.
+
+             A mensagem continua VISÍVEL, e não escondida atrás de um "mostrar
+             mais": quem desconfia de botão precisa ver o que vai enviar na hora
+             de decidir. O peso cai pela cor e pelo tamanho, nunca pela ausência. -->
+        <div v-if="manualMessage" class="-mx-4 border-t px-4 pt-4 shop-stack-micro" data-login-whatsapp-manual>
+          <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
           <p class="shop-meta">
             {{ manualIntro }}
             <span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>.
           </p>
+          <div class="flex items-center gap-2 rounded-md bg-background py-1 pr-1 pl-3">
+            <span class="min-w-0 flex-1 truncate font-mono text-base tracking-wider text-muted-foreground">{{ manualMessage }}</span>
+            <UiButton
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              :icon="codeCopied ? 'lucide:check' : 'lucide:copy'"
+              :aria-label="codeCopied ? 'Mensagem copiada' : 'Copiar mensagem'"
+              @click="copyMessage"
+            />
+          </div>
+          <UiButton
+            :href="chatLink || undefined"
+            target="_blank"
+            rel="noopener"
+            variant="link"
+            size="sm"
+            icon="lucide:external-link"
+            :disabled="!chatLink"
+          >
+            Abrir WhatsApp
+          </UiButton>
         </div>
-        <div class="rounded-md bg-background py-2 text-center font-mono text-base tracking-wider text-muted-foreground">
-          {{ manualMessage }}
-        </div>
-        <UiButton
-          type="button"
-          variant="default"
-          class="w-full justify-center bg-cta text-cta-foreground hover:bg-cta/90 hover:text-cta-foreground"
-          :icon="codeCopied ? 'lucide:check' : 'lucide:copy'"
-          @click="copyMessage"
-        >
-          {{ codeCopied ? 'Mensagem copiada' : 'Copiar mensagem' }}
-        </UiButton>
-        <UiButton
-          :href="chatLink || undefined"
-          target="_blank"
-          rel="noopener"
-          variant="default"
-          icon="lucide:message-circle"
-          class="w-full justify-center bg-cta text-cta-foreground hover:bg-cta/90 hover:text-cta-foreground"
-          :disabled="!chatLink"
-        >
-          Abrir WhatsApp
-        </UiButton>
       </div>
     </template>
   </section>

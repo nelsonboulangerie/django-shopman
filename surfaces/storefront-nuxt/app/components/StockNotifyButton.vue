@@ -28,10 +28,12 @@ const csrfHeaders = useShopmanCsrfHeaders()
 const { isAuthenticated } = useShopSession()
 const route = useRoute()
 const router = useRouter()
-const { states: transientStates, clearStockNotifyState } = useStockNotifyTransientState()
+const { states: transientStates, subscribed: subscribedOverrides, clearStockNotifyState } = useStockNotifyTransientState()
 
 const submitting = ref(false)
-const isSubscribed = ref(!!props.subscribed)
+// O sino que o servidor devolveu fora deste botão (ex.: o coração anotou o aviso)
+// vale sobre uma projeção montada antes do gesto.
+const isSubscribed = ref(subscribedOverrides.value[props.sku] ?? !!props.subscribed)
 const managementUrl = ref('')
 const managementRecoveryComplete = ref(false)
 const sheetOpen = ref(false)
@@ -181,6 +183,10 @@ onMounted(initialize)
 
 watch(() => props.subscribed, value => {
   isSubscribed.value = !!value
+})
+
+watch(() => subscribedOverrides.value[props.sku], value => {
+  if (value !== undefined) isSubscribed.value = value
 })
 
 const managementHref = computed(() => managementUrl.value || (

@@ -398,12 +398,30 @@ describe('surface UX guardrails', () => {
     expect(checkout).not.toContain('class="flex gap-3 rounded-lg border p-4"')
     expect(checkout).not.toContain('<label v-for="method in paymentMethods"')
     expect(checkout).toContain('Confirmar pedido')
-    expect(checkout).toContain('confirmItemSummary')
+    // A lista de itens NÃO mora no card de ação: trunca no celular e o resumo
+    // completo está a um toque, no bottom-sheet. O card carrega o total, que é
+    // o único fato que não está em outro lugar da tela e que se move.
+    expect(checkout).not.toContain('confirmItemSummary')
     expect(checkout).toContain('paymentMethodLabel')
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
     expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
-    expect(checkout).not.toContain('sticky bottom-20')
+    // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto,
+    // e o mesmo mecanismo (`.shop-action-dock` + card ink). Duas correções
+    // moram nesta linha. A primeira: a barra `fixed bottom-0 z-40` que vivia
+    // aqui empatava em empilhamento com a navegação inferior (topo 606 contra
+    // 602, medido em 375x667) e ficava ESCONDIDA atrás dela — total e "Resumo"
+    // invisíveis no celular. A segunda: o `sticky bottom-20` que a substituiu
+    // não prendia de verdade, porque sticky só gruda na base enquanto o
+    // CONTAINER cobre aquela linha. O dock flutua acima da navegação por
+    // ALTURA, não por prioridade, e não larga a base no meio da rolagem.
+    expect(checkout).toContain('shop-action-dock')
+    expect(checkout).toContain('shop-dock-reserve')
+    expect(checkout).not.toContain('class="sticky bottom-20')
+    expect(checkout).toContain('data-checkout-action-card')
+    // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA
+    // (dois botões para a mesma intenção divergem no primeiro carregamento).
+    expect(checkout).not.toContain('@click="continueFromWhen"\n')
     expect(checkout).toContain('Total do pedido')
     expect(checkout).toContain('checkoutActionLabel')
     expect(checkout).toContain('Revisar pedido')
@@ -484,7 +502,16 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain("action.ref === 'checkout'")
     expect(cartPage).toContain("checkoutAction?.label || 'Finalizar pedido'")
     expect(cartPage).toContain('<CartSummaryBreakdown :cart="cart" flat />')
-    expect(cartPage).toContain('sticky bottom-20')
+    // O card de ação fica PRESO acima da navegação (`.shop-action-dock`), e a
+    // página reserva o espaço dele (`.shop-dock-reserve`). Esta asserção pedia
+    // `sticky bottom-20`, que é exatamente o que NÃO cumpre isso: sticky solta
+    // o elemento quando o container acaba, e na sacola o container acaba 144px
+    // antes do `<main>`, com o rodapé rolando mais ~590px depois. Medido em
+    // 375x667, folga até a navegação: sticky 15 → 148 → 407 → fora da tela;
+    // dock 15 em toda a rolagem, e igual no PWA iOS instalado.
+    expect(cartPage).toContain('shop-action-dock')
+    expect(cartPage).toContain('shop-dock-reserve')
+    expect(cartPage).not.toContain('class="sticky bottom-20')
     expect(cartPage).toContain('rateLimitRecovery')
     // Indisponibilidade + substitutos saíram do banner inline da sacola e viraram
     // o SubstituteSheet global (bottom-sheet canônico, 1 toque, dispensável).
@@ -519,7 +546,9 @@ describe('surface UX guardrails', () => {
     // CTA sticky honesto: pílula com a qty real do carrinho, sem estado fantasma.
     expect(productRoute).not.toContain('mobileCtaTouched')
     // CTA flutuante mobile = card ink (burgundy escuro) + ação invertida (Faubourg/Brass escuro).
-    expect(productRoute).toContain('sticky bottom-20 z-30 mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden')
+    expect(productRoute).toContain('shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden')
+    expect(productRoute).toContain('shop-dock-reserve')
+    expect(productRoute).not.toContain('class="sticky bottom-20')
     expect(productRoute).toContain(':qty="currentQty"')
     expect(productRoute).toContain('tone="inverted"')
     expect(cartState).not.toContain('drawerOpen')
@@ -592,7 +621,25 @@ describe('surface UX guardrails', () => {
     expect(read('app/composables/useWhatsAppConfirm.ts')).toContain('settleCart')
     expect(login).toContain("requestCode('sms', $event)")
     expect(login).toContain('class="w-full justify-center"')
-    expect(login).toContain('Não consigo usar WhatsApp')
+    // A PORTA DO SMS NOMEIA O QUE ENTREGA. Dizia "Não consigo usar WhatsApp":
+    // pedia que a pessoa declarasse uma incapacidade para receber uma opção, e
+    // não dizia SMS em lugar nenhum — a palavra só aparecia depois do clique.
+    // E era o elemento mais fraco da tela (ghost, 32px, cinza) sendo a única
+    // alternativa real, enquanto o envio manual ostentava dois botões sólidos.
+    expect(login).toContain('Receber código por SMS')
+    expect(login).toContain('data-login-sms-door')
+    // Sem `not.toContain` do rótulo antigo de propósito: ele aparece no
+    // comentário que explica a troca, e uma asserção que obriga a escrever ao
+    // redor dela não está medindo o código. Quem garante que a porta é uma só
+    // são os testes de página, que clicam pelo rótulo.
+    // UM ÚNICO SÓLIDO NA TELA: o CTA do WhatsApp. A porta do SMS é contorno no
+    // mesmo tamanho (caminho de verdade, não sussurro) e o envio manual é
+    // rodapé do cartão do WhatsApp — ícone para copiar, link para abrir.
+    const waPanel = read('app/components/WhatsappVerifyPanel.vue')
+    expect(waPanel).not.toContain('bg-cta text-cta-foreground')
+    expect(waPanel).not.toContain('data-login-whatsapp-or')
+    expect(waPanel).toContain('size="icon-lg"')
+    expect(waPanel).toContain('variant="link"')
     expect(login).not.toContain('Entrar com o rosto ou a digital')
     expect(login).not.toContain('passkeySignIn')
     expect(read('app/components/WhatsappVerifyPanel.vue')).toContain('Gerando link')
@@ -627,7 +674,12 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('requestedPhoneDisplay')
     expect(login).toContain('code_expires_at')
     expect(login).toContain('Vale até')
-    expect(login).toContain("watch(step, async next => {")
+    // O foco segue o passo pelo mecanismo canônico (useNextFocus), não por
+    // rolagem/foco escritos à mão na página.
+    expect(login).toContain('useNextFocus(step)')
+    expect(login).toContain(':data-focus-target="step"')
+    expect(login).not.toContain('scrollTo(')
+    expect(login).not.toContain('.focus(')
     expect(login).toContain('data-login-moment')
     expect(login).toContain('device_trust_redirecting')
     expect(login).toContain('device_trust_saved')
@@ -643,12 +695,58 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('data-login-trust')
     expect(login).toContain('<UiSwitch id="trusted-device"')
     expect(login).not.toContain('<UiCheckbox')
-    // Welcome gate omotenashi: nome via PATCH profile, com saída discreta.
+    // Welcome gate omotenashi = SÓ o nome: PATCH profile, com saída discreta.
     expect(login).toContain('requires_welcome')
     expect(login).toContain('welcome_suggested_name')
     expect(login).toContain("apiPath('/api/v1/account/profile/')")
     expect(login).toContain('data-login-welcome')
     expect(login).toContain('Deixar para depois')
+    expect(login).toContain("'Como podemos te chamar?'")
+    // A pergunta de novidades NÃO é passo do login (decisão de 17/09): nada de
+    // bloco de novidades, "Antes de entrar" ou marketing-prompt na tela de entrada.
+    expect(login).not.toContain('marketing-prompt')
+    expect(login).not.toContain('welcomeMarketing')
+    expect(login).not.toContain('welcomeAsks')
+    expect(login).not.toContain('Antes de entrar')
+    expect(login).not.toContain('Uma pergunta rápida')
+    expect(login).not.toContain('Novidades')
+    expect(login).not.toContain('type="date"')
+    expect(login).not.toContain('welcomeBirthday')
+    // Ela é um bottom sheet na página de destino, montado UMA vez no shell e
+    // dirigido pela sessão: chave que nasce DESLIGADA, SÓ consentimento — sem
+    // data de nascimento, sem frase de idade —, e a resposta vai para o endpoint
+    // do carimbo (fechar = `whatsapp: false`) — nunca um opt-out.
+    const sheet = read('app/components/MarketingPromptSheet.vue')
+    expect(read('app/app.vue')).toContain('<MarketingPromptSheet />')
+    expect(sheet).toContain('<BottomSheet')
+    expect(sheet).toContain('isMarketingPromptRouteExcluded(route.path)')
+    expect(sheet).toContain('session.welcomeAsksMarketing.value')
+    expect(sheet).toContain('<UiSwitch')
+    expect(sheet).toContain('id="marketing-prompt-whatsapp"')
+    expect(sheet).toContain('const whatsapp = ref(false)')
+    expect(sheet).toContain("apiPath('/api/v1/account/marketing-prompt/')")
+    expect(sheet).toContain('body: { whatsapp: optIn }')
+    expect(sheet).not.toContain("enabled: false")
+    expect(sheet).not.toContain('type="date"')
+    // Copy FINAL, três linhas + chave + fechar, e nada além.
+    expect(sheet).toContain('title="Saber das fornadas antes de todo mundo?"')
+    expect(sheet).toContain('Combinado. Você vai saber primeiro.')
+    expect(templateOnly(sheet)).not.toMatch(/Continuar|Deixar para depois|Novidades da Nelson|Termos|Conta ›|\b18\b|maior|nascimento/i)
+    // O rótulo da chave + a linha miúda são a evidência do consentimento: o
+    // servidor grava exatamente estas (MARKETING_PROMPT_DISCLOSURE em
+    // shopman/storefront/api/account.py).
+    expect(sheet).toContain('Avisos pelo WhatsApp')
+    expect(sheet).toContain('Mude quando quiser em Preferências.')
+    // A maioridade é declarada ao ENTRAR, em toda porta com tela (login e access
+    // link): frase fixa de presentation/auth.ts, com link para os Termos. Nunca
+    // "18", "anos" ou "adulto" na copy voltada ao cliente.
+    const access = read('app/pages/a.vue')
+    for (const source of [login, access]) {
+      expect(source).toContain('data-login-adult-declaration')
+      expect(source).toContain('LOGIN_ADULT_DECLARATION_LEAD')
+      expect(source).toContain('to="/terms"')
+      expect(templateOnly(source)).not.toMatch(/\b18\b|\banos\b|\badult[oa]s?\b/i)
+    }
     // Device trust e ajuda continuam server-driven/editorial.
     expect(login).toContain('device_trust_prompt')
     expect(login).toContain('data-login-support')
@@ -840,7 +938,14 @@ describe('surface UX guardrails', () => {
 
     expect(header).toContain('flex min-h-11 items-center gap-3')
     expect(header).toContain('inline-flex min-h-6 items-center text-sm font-semibold')
-    expect(loginWhatsapp).toContain('bg-cta text-cta-foreground')
+    // Este exigia `bg-cta text-cta-foreground` nos dois botões do envio manual:
+    // prendia por teste a ênfase que fazia o rodapé manual competir com o CTA
+    // principal. O que ele deve garantir é ALVO DE TOQUE, não cor — o copiar
+    // tem a altura do CTA (`icon-lg`, 40px), com nome acessível, e o abrir é
+    // link com altura de toque em vez de texto colado no parágrafo.
+    expect(loginWhatsapp).toContain('size="icon-lg"')
+    expect(loginWhatsapp).toContain('aria-label="codeCopied')
+    expect(loginWhatsapp).not.toContain('class="h-auto px-0"')
     expect(payment).toContain('Pagamento de teste')
     expect(payment).toContain('size="lg"')
     expect(payment).toContain('{{ copy.pix_pending_note }}')
@@ -906,8 +1011,14 @@ describe('surface UX guardrails', () => {
     expect(security).toContain("apiPath('/api/v1/account/export/')")
     expect(security).toContain("apiPath('/api/v1/account/delete/')")
     expect(security).toContain('deleteAccountAcknowledged')
+    expect(security).toContain('crypto.randomUUID()')
+    expect(security).toContain("'Idempotency-Key': deleteAccountIdempotencyKey.value")
+    expect(security).toContain('body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }')
     expect(security).toContain('Exportar meus dados')
     expect(security).toContain('Excluir minha conta')
+    expect(security).toContain('privacy_requests_available')
+    expect(security).toContain('Solicitações temporariamente indisponíveis')
+    expect(security).toContain(':disabled="!privacyRequestsAvailable"')
     expect(security).toContain('<UiItem v-for="device in accountDevices" :key="device.id" variant="outline" class="bg-card">')
     expect(security).toContain('<UiItemMedia variant="icon"')
     expect(security).toContain(':name="deviceIcon(device.label)"')
@@ -1511,9 +1622,15 @@ describe('surface claims stay inside what the projection actually says', () => {
     // `breadcrumb_category` já vinha calculado e ninguém lia: a trilha fixa
     // Início/Cardápio/nome tirava do cliente o caminho de volta para a coleção,
     // e o rich-result saía sem o nível que o servidor tinha resolvido.
+    // O nível passa por `productCollectionCrumb`: aponta para /colecao/<ref>, e
+    // nunca para o `/menu#ref` que o servidor manda em `url` (fragmento não é
+    // página — o Google descarta e a trilha não leva a lugar nenhum).
     const pdp = read('app/pages/produto/[sku].vue')
 
-    expect((pdp.match(/product(\.value)?\.breadcrumb_category/g) || []).length).toBeGreaterThanOrEqual(2)
+    expect(pdp).toContain('productCollectionCrumb(product.value?.breadcrumb_category)')
+    expect(pdp).toContain('link: collectionCrumb.path')
+    expect(pdp).toContain('collectionCrumb.value.path')
+    expect(pdp).not.toMatch(/breadcrumb_category(\?)?\.url/)
   })
 
   it('takes the payment-method name from the server, not a client map', () => {

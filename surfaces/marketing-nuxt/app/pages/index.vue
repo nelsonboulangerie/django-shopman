@@ -3,6 +3,7 @@
 //
 // Ordem deliberada: primeiro o que PEDE decisão (pendentes), depois o que já
 // saiu. Números do dia por último: contexto, não protagonista.
+import { outgoingImageUrl } from "~/presentation/marketingDelivery";
 import {
   audienceSummary,
   announcementOutcome,
@@ -46,7 +47,17 @@ const {
   resumeDecision,
   cancelDecision,
 } = useCampaignBoard();
-const { platforms } = useCampaigns();
+const { platforms, products } = useCampaigns();
+/** A imagem do anúncio que está na caixa de confirmação — a caixa mostra o que sai,
+ *  e metade do que sai é a foto. */
+const decidingImageUrl = computed(() => {
+  const post = pendingPosts.value.find(
+    (item) => item.pk === pendingDecision.value?.announcementId,
+  );
+  return post ? outgoingImageUrl(post) : "";
+});
+// Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
+const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
@@ -123,7 +134,7 @@ async function resumeServerDecision() {
   await navigateTo(`/announcements/${pk}`);
 }
 
-useHead({ title: "Painel · Marketing" });
+useHead({ title: "Painel" });
 </script>
 
 <template>
@@ -382,6 +393,8 @@ useHead({ title: "Painel · Marketing" });
           :key="announcement.pk"
           :announcement="announcement"
           :platform-options="platforms"
+          :platform-readiness="platformReadiness"
+          :product-options="products"
           :busy="busyPk === announcement.pk"
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"
@@ -479,9 +492,12 @@ useHead({ title: "Painel · Marketing" });
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
+          <!-- ⚠️ Dizia "A fornada segue normalmente" — e fornada é UM dos gatilhos
+               (a regra deste arquivo, lá em cima). A recusa é só do anúncio. -->
           <UiDialogDescription>
-            Ele não vai para nenhuma plataforma e não volta para a fila. A
-            fornada segue normalmente.
+            Ele não vai para nenhuma plataforma e não volta para a fila. Nada
+            mais muda: a campanha e o que aconteceu na padaria seguem como
+            estão.
           </UiDialogDescription>
         </UiDialogHeader>
         <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
@@ -523,6 +539,7 @@ useHead({ title: "Painel · Marketing" });
       :busy="confirmingDecision"
       :error="decisionError"
       :shop-timezone="shopTimezone"
+      :image-url="decidingImageUrl"
       @confirm="confirmServerDecision"
       @cancel="cancelDecision"
     />

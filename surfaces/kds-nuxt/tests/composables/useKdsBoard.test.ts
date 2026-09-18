@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { KDS_ALERT, kdsAttentionDecision, useKdsBoard } from "~/composables/useKdsBoard";
@@ -24,12 +24,10 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
         name: "Pão",
         qty: 1,
         notes: "",
-        checked: false,
         stock_warning: "",
       },
     ],
     status: "in_progress",
-    all_checked: false,
     previous_tab_ref: "",
     is_scheduled: false,
     is_expedition: false,
@@ -74,6 +72,18 @@ describe("useKdsBoard — read derivations", () => {
     expect(view.value?.cards).toHaveLength(1);
   });
 
+  it("pede o board PROFUNDO: o toque otimista muta o ticket por dentro", () => {
+    // Nuxt 4 devolve `data` raso por padrão — mutar `ticket.status` não re-renderiza,
+    // e o toque só aparecia na reconciliação. Este harness usa ref profundo e não
+    // enxerga isso; o que dá para travar aqui é a opção pedida.
+    env.fetchData.value = board();
+    useKdsBoard("bancada");
+    expect(env.useFetchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ deep: true }),
+    );
+  });
+
   it("degrades to null view when there is no board", () => {
     env.fetchData.value = null;
     const { board: b, view } = useKdsBoard("bancada");
@@ -82,61 +92,103 @@ describe("useKdsBoard — read derivations", () => {
   });
 });
 
-describe("useKdsBoard — checkItem (optimistic + rollback)", () => {
+describe("useKdsBoard — start (optimistic + rollback)", () => {
   beforeEach(() => env.reset());
 
-  it("checks the item on the spot and POSTs the change", async () => {
-    env.fetchData.value = board();
-    const { checkItem } = useKdsBoard("bancada");
-    checkItem(1, 0, true);
-    // otimista: a UI já mudou antes da rede responder
-    expect((env.fetchData.value as any).board.tickets[0].items[0].checked).toBe(
-      true,
-    );
-    expect((env.fetchData.value as any).board.tickets[0].all_checked).toBe(
-      true,
-    );
+  it("puts the ticket in progress on the spot and POSTs /start/", async () => {
+    env.fetchData.value = board({ tickets: [ticket({ status: "pending" })] });
+    const { start, view } = useKdsBoard("bancada");
+    start(1);
+    expect((env.fetchData.value as any).board.tickets[0].status).toBe("in_progress");
+    expect(view.value?.counts.in_progress).toBe(1);
     await flushPromises();
     expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/kds/tickets/1/items/",
-      expect.objectContaining({
-        method: "POST",
-        body: { index: 0, checked: true },
-      }),
+      "/api/v1/backstage/kds/tickets/1/start/",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
-  it("reverts the optimistic check and toasts when the POST fails", async () => {
-    env.fetchData.value = board();
+  it("reverts to pending and toasts when the POST fails", async () => {
+    env.fetchData.value = board({ tickets: [ticket({ status: "pending" })] });
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Falhou" } });
-    const { checkItem } = useKdsBoard("bancada");
-    checkItem(1, 0, true);
-    expect((env.fetchData.value as any).board.tickets[0].items[0].checked).toBe(
-      true,
-    ); // otimista
+    const { start } = useKdsBoard("bancada");
+    start(1);
     await flushPromises();
-    expect((env.fetchData.value as any).board.tickets[0].items[0].checked).toBe(
-      false,
-    ); // revertido
+    expect((env.fetchData.value as any).board.tickets[0].status).toBe("pending");
     expect(env.sonner.error).toHaveBeenCalled();
     expect(env.refresh).toHaveBeenCalled();
   });
+
+  it("a ticket already in progress is not started again", async () => {
+    env.fetchData.value = board();
+    const { start } = useKdsBoard("bancada");
+    start(1);
+    await flushPromises();
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
 });
 
-describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
-  beforeEach(() => env.reset());
+describe("useKdsBoard — finalize com janela de desfazer", () => {
+  beforeEach(() => {
+    env.reset();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
 
-  it("finalize removes the ticket and POSTs to /done/", async () => {
+  it("tira o card da grade na hora e só POSTa quando a janela fecha", async () => {
     env.fetchData.value = board();
-    const { finalize } = useKdsBoard("bancada");
+    const { finalize, view } = useKdsBoard("bancada");
     finalize(1);
-    expect((env.fetchData.value as any).board.tickets).toHaveLength(0); // saiu na hora
+    expect(view.value?.cards).toHaveLength(0);
+    expect(env.sonner.success).toHaveBeenCalledWith(
+      "Pedido 0007 finalizado",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Desfazer" }) }),
+    );
+    await flushPromises();
+    expect(env.fetchMock).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(5000);
     await flushPromises();
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/kds/tickets/1/done/",
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("Desfazer devolve o card e nada vai ao servidor", async () => {
+    env.fetchData.value = board();
+    const { finalize, view } = useKdsBoard("bancada");
+    finalize(1);
+    const [, options] = env.sonner.success.mock.calls[0]!;
+    options.action.onClick();
+    expect(view.value?.cards).toHaveLength(1);
+    vi.advanceTimersByTime(10_000);
+    await flushPromises();
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("um refresh durante a janela não traz o card de volta", () => {
+    env.fetchData.value = board();
+    const { finalize, view } = useKdsBoard("bancada");
+    finalize(1);
+    env.fetchData.value = board(); // poll/SSE trouxe o servidor, que ainda o tem aberto
+    expect(view.value?.cards).toHaveLength(0);
+  });
+
+  it("recusa do servidor devolve o card e avisa", async () => {
+    env.fetchData.value = board();
+    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Há item cancelado" } });
+    const { finalize, view } = useKdsBoard("bancada");
+    finalize(1);
+    vi.advanceTimersByTime(5000);
+    await flushPromises();
+    expect(view.value?.cards).toHaveLength(1);
+    expect(env.sonner.error).toHaveBeenCalled();
+  });
+});
+
+describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
+  beforeEach(() => env.reset());
 
   it("expedite POSTs the action to the expedition endpoint", async () => {
     env.fetchData.value = board();
@@ -182,13 +234,13 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
   });
 
   it("re-inserts the card and toasts when the action fails", async () => {
-    env.fetchData.value = board();
+    env.fetchData.value = board({ tickets: [], recent_done: [ticket({ pk: 9 })] });
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "sem rede" } });
-    const { finalize } = useKdsBoard("bancada");
-    finalize(1);
-    expect((env.fetchData.value as any).board.tickets).toHaveLength(0); // otimista
+    const { recall } = useKdsBoard("bancada");
+    recall(9);
+    expect((env.fetchData.value as any).board.recent_done).toHaveLength(0); // otimista
     await flushPromises();
-    expect((env.fetchData.value as any).board.tickets).toHaveLength(1); // recolocado
+    expect((env.fetchData.value as any).board.recent_done).toHaveLength(1); // recolocado
     expect(env.sonner.error).toHaveBeenCalled();
   });
 
@@ -199,10 +251,10 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
       recent_done: [ticket({ pk: 9, status: "done" })],
       cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
     });
-    const { readOnly, checkItem, finalize, expedite, recall, acknowledge } = useKdsBoard("bancada");
+    const { readOnly, start, finalize, expedite, recall, acknowledge, view } = useKdsBoard("bancada");
 
     expect(readOnly.value).toBe(true);
-    checkItem(1, 0, true);
+    start(1);
     finalize(1);
     expedite(1, "dispatch");
     recall(9);
@@ -211,7 +263,9 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
 
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect((env.fetchData.value as any).board.tickets).toHaveLength(1);
-    expect((env.fetchData.value as any).board.tickets[0].items[0].checked).toBe(false);
+    expect((env.fetchData.value as any).board.tickets[0].status).toBe("in_progress");
+    expect(view.value?.cards).toHaveLength(1);
+    expect(env.sonner.success).not.toHaveBeenCalled();
   });
 });
 

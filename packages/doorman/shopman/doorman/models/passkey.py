@@ -1,4 +1,4 @@
-"""Passkey — a identidade que mora no aparelho e viaja com a pessoa.
+"""Passkey — a identidade que mora no dispositivo e viaja com a pessoa.
 
 O que ela resolve, e por que ela é diferente de tudo o mais que temos aqui:
 
@@ -29,7 +29,7 @@ from django.utils.translation import gettext_lazy as _
 
 
 class Passkey(models.Model):
-    """Uma credencial WebAuthn de um cliente, num aparelho.
+    """Uma credencial WebAuthn de um cliente, num dispositivo.
 
     O par de chaves é assimétrico: a **privada nunca sai do aparelho** (e nem nós nem a Meta
     nem ninguém a vê). Aqui fica só a pública, que serve para verificar assinatura — vazar
@@ -57,7 +57,7 @@ class Passkey(models.Model):
     #: são maiores que zero.
     sign_count = models.BigIntegerField(_("contador de assinatura"), default=0)
 
-    #: Como ela se apresenta ("internal" = biometria do próprio aparelho, "hybrid" = QR com o
+    #: Como ela se apresenta ("internal" = biometria do próprio dispositivo, "hybrid" = QR com o
     #: celular, "usb" = chave física). Serve para a tela dizer algo reconhecível.
     transports = models.JSONField(_("transportes"), default=list, blank=True)
 

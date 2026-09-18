@@ -13,7 +13,7 @@ class FiscalmanOffermanConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "shopman.fiscalman.contrib.offerman"
     label = "fiscalman_offerman"
-    verbose_name = _("Fiscal — produtos")
+    verbose_name = _("Fiscal · produtos")
 
     def ready(self):
         # Runs after django.contrib.admin autodiscover (Offerman already

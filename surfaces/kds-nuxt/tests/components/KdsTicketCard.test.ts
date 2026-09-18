@@ -1,17 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
-import { computed, nextTick, ref, watch } from "vue";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import KdsTicketCard from "../../app/components/KdsTicketCard.vue";
 import type { KDSTicketProjection } from "../../app/types/kds";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui). Reatividade
-// Vue REAL; useResizeObserver (vueuse) vira no-op (o clipping é medido no browser → e2e).
+// Vue REAL.
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
 vi.stubGlobal("nextTick", nextTick);
-vi.stubGlobal("useResizeObserver", () => {});
+vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
 
 function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   return {
@@ -30,7 +30,6 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
         name: "Pão na Chapa",
         qty: 2,
         notes: "",
-        checked: false,
         stock_warning: "",
       },
       {
@@ -38,12 +37,10 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
         name: "Café",
         qty: 1,
         notes: "sem açúcar",
-        checked: true,
         stock_warning: "",
       },
     ],
     status: "in_progress",
-    all_checked: false,
     previous_tab_ref: "",
     is_scheduled: false,
     is_expedition: false,
@@ -94,7 +91,7 @@ describe("KdsTicketCard — render", () => {
     // Sem kitchen_note/customer_note o bloco de notas do pedido não aparece
     // (apenas a observação por-item, se houver).
     const t = mountCard({
-      ticket: ticket({ items: [{ sku: "A", name: "Pão", qty: 1, notes: "", checked: false, stock_warning: "" }] }),
+      ticket: ticket({ items: [{ sku: "A", name: "Pão", qty: 1, notes: "", stock_warning: "" }] }),
     }).text();
     expect(t).not.toContain("Bem assado");
   });
@@ -108,7 +105,6 @@ describe("KdsTicketCard — render", () => {
             name: "Pão",
             qty: 1,
             notes: "",
-            checked: false,
             stock_warning: "Massa acabando",
           },
         ],
@@ -117,12 +113,32 @@ describe("KdsTicketCard — render", () => {
     expect(w.text()).toContain("Massa acabando");
   });
 
-  it("mostra encomenda futura como prévia sem check ou finalização", () => {
+  it("mostra encomenda futura como prévia, sem alvo de toque", () => {
     const wrapper = mountCard({ ticket: ticket({ is_scheduled: true, status: "scheduled" }) });
     expect(wrapper.text()).toContain("Agendado");
     expect(wrapper.text()).toContain("Prévia · libera na data");
-    expect(wrapper.text()).not.toContain("Finalizar");
-    expect(wrapper.find("ul button").attributes("disabled")).toBeDefined();
+    expect(wrapper.find("[data-kds-tap]").exists()).toBe(false);
+  });
+
+  it("nunca trunca nome de item nem observação: quebram linha", () => {
+    const longo = "Croissant de amêndoas recheado com creme de pistache e framboesa";
+    const w = mountCard({
+      ticket: ticket({
+        items: [{ sku: "A", name: longo, qty: 1, notes: "sem açúcar de confeiteiro, embalar separado", stock_warning: "" }],
+      }),
+    });
+    expect(w.text()).toContain(longo);
+    expect(w.find("ul").html()).not.toContain("truncate");
+    expect(w.find("ul").html()).not.toContain("line-clamp");
+  });
+
+  it("marca ticket adicional e pedido de entrega no cabeçalho", () => {
+    const t = mountCard({
+      ticket: ticket({ fulfillment_icon: "local_shipping" }),
+      addition: true,
+    }).text();
+    expect(t).toContain("Adicional");
+    expect(t).toContain("Entrega");
   });
 
   it("escala de densidade mapeia aos papéis do canon: compact=title text-xl, roomy=display text-4xl", () => {
@@ -139,36 +155,49 @@ describe("KdsTicketCard — render", () => {
   });
 });
 
-describe("KdsTicketCard — ações emitidas (o toque da cozinha)", () => {
-  it("tocar num item emite check com o índice + o estado INVERTIDO (o risco do write-side)", async () => {
-    const w = mountCard({ ticket: ticket() });
-    const itemButtons = w.findAll("li button");
-    await itemButtons[0]!.trigger("click"); // item 0 está unchecked → deve pedir checked=true
-    await itemButtons[1]!.trigger("click"); // item 1 está checked → deve pedir checked=false
-    expect(w.emitted("check")).toEqual([
-      [0, true],
-      [1, false],
-    ]);
+describe("KdsTicketCard — o toque no cabeçalho", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("pendente: um toque emite start e a faixa convida a iniciar", async () => {
+    const w = mountCard({ ticket: ticket({ status: "pending" }) });
+    expect(w.get("[data-kds-strip]").text()).toContain("Toque para iniciar");
+    await w.get("[data-kds-tap]").trigger("click");
+    expect(w.emitted("start")).toHaveLength(1);
+    expect(w.emitted("finish")).toBeUndefined();
   });
 
-  it("Finalizar emite 'done'; Detalhes emite 'open'", async () => {
-    const w = mountCard({ ticket: ticket() });
-    const done = w
-      .findAll("button")
-      .find((b) => b.text().includes("Finalizar"))!;
-    const open = w
-      .findAll("button")
-      .find((b) => b.text().includes("Detalhes"))!;
-    await done.trigger("click");
-    await open.trigger("click");
-    expect(w.emitted("done")).toHaveLength(1);
+  it("em preparo (já armado): um toque emite finish", async () => {
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }) });
+    expect(w.get("[data-kds-strip]").text()).toContain("toque para finalizar");
+    await w.get("[data-kds-tap]").trigger("click");
+    expect(w.emitted("finish")).toHaveLength(1);
+  });
+
+  it("toque duplo não inicia e finaliza: o finalizar só arma depois do intervalo", async () => {
+    vi.useFakeTimers();
+    const w = mountCard({ ticket: ticket({ status: "pending" }) });
+    await w.get("[data-kds-tap]").trigger("click");
+    await w.setProps({ ticket: ticket({ status: "in_progress" }) }); // otimista
+    await w.get("[data-kds-tap]").trigger("click"); // o quique do dedo
+    expect(w.emitted("finish")).toBeUndefined();
+    vi.advanceTimersByTime(1000);
+    await nextTick();
+    await w.get("[data-kds-tap]").trigger("click");
+    expect(w.emitted("finish")).toHaveLength(1);
+  });
+
+  it("item cancelado sem Ciente: o toque emite blocked, nunca finish", async () => {
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }), blocked: true });
+    expect(w.get("[data-kds-strip]").text()).toContain("Item cancelado");
+    await w.get("[data-kds-tap]").trigger("click");
+    expect(w.emitted("blocked")).toHaveLength(1);
+    expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("o `i` abre o detalhe sem acionar o gesto do cabeçalho", async () => {
+    const w = mountCard({ ticket: ticket({ status: "pending" }) });
+    await w.get("[data-kds-open]").trigger("click");
     expect(w.emitted("open")).toHaveLength(1);
-  });
-
-  it("item concluído recebe a risca (strikethrough) sobre o texto", () => {
-    // O 2º item (Café) está checked → tem o elemento de risca (h-px absoluto).
-    const w = mountCard({ ticket: ticket() });
-    expect(w.find("li:nth-child(2) .h-px").exists()).toBe(true);
-    expect(w.find("li:nth-child(1) .h-px").exists()).toBe(false);
+    expect(w.emitted("start")).toBeUndefined();
   });
 });

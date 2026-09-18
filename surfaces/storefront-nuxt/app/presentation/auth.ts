@@ -1,6 +1,6 @@
 // Transforms puros do fluxo de entrada por OTP: máquina de passos
-// (telefone → código → boas-vindas), normalização de erros da API de auth
-// (rate limit é recuperação calma, não falha) e cooldown de reenvio.
+// (telefone → código → boas-vindas, que é SÓ o nome), normalização de erros da
+// API de auth (rate limit é recuperação calma, não falha) e cooldown de reenvio.
 
 export type AuthStep = 'phone' | 'code' | 'welcome'
 
@@ -71,10 +71,39 @@ export function welcomeNameValue (raw: string): string {
   return raw.replace(/\s+/g, ' ').trim()
 }
 
+// ── A declaração de maioridade, feita ao ENTRAR ────────────────────────────
+//
+// A nota ao lado do botão de entrar, em TODOS os caminhos (telefone/código,
+// aparelho reconhecido, access link): continuar confirma ser maior de idade e
+// aceita os Termos de uso. O servidor carimba o cadastro em toda autenticação
+// (`adult_declaration`, versão `login-terms-pt-BR-v1`); é essa a prova que o
+// marketing direto lê. A frase é FIXA, não copy configurável: a versão do lado
+// do servidor representa exatamente esta frase (o teste de contrato lê este
+// arquivo). Nunca "18", "anos" nem "adulto" — é "maior de idade".
+export const LOGIN_ADULT_DECLARATION_LEAD = 'Ao continuar, você confirma que é maior de idade e aceita os'
+export const LOGIN_TERMS_LINK_LABEL = 'Termos de uso'
+export const LOGIN_ADULT_DECLARATION = `${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_TERMS_LINK_LABEL}.`
+
+// ── O convite de novidades NÃO é passo do login ────────────────────────────
+//
+// A pergunta "avisos pelo WhatsApp?" sobe como bottom sheet (MarketingPromptSheet)
+// na página em que a pessoa cai depois de entrar — não é pré-condição nem
+// bloqueia nada. Ela nunca interrompe o que a pessoa veio fazer: fica fora das
+// portas de entrada (/entrar, /a), do checkout e do pedido (pagamento e
+// acompanhamento). A chave nasce DESLIGADA — consentimento de marketing é
+// manifestação afirmativa (LGPD art. 8 §4), nunca pré-marcado.
+export function isMarketingPromptRouteExcluded (path: string): boolean {
+  return path === '/entrar' || path.startsWith('/entrar/')
+    || path === '/a' || path.startsWith('/a/')
+    || path === '/finalizar' || path.startsWith('/finalizar/')
+    || path === '/pedido' || path.startsWith('/pedido/')
+}
+
 // Aterrissagem do access link (a.vue): quem entra por link e ainda precisa
-// confirmar o nome passa pelo passo de boas-vindas ANTES do destino — o mesmo
+// confirmar o NOME passa pelo passo de boas-vindas ANTES do destino — o mesmo
 // passo do fluxo OTP, com o destino preservado em `next` para depois do
-// confirmar. Sem boas-vindas pendentes, o destino do servidor vale direto.
+// confirmar. Sem nome pendente, o destino do servidor vale direto (o convite de
+// novidades não passa por aqui: é sheet na página de destino).
 export function accessLinkLanding (redirect: string, requiresWelcome: boolean): string {
   const destination = redirect || '/'
   if (!requiresWelcome) return destination

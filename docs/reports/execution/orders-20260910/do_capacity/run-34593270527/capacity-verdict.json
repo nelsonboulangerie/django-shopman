@@ -1,0 +1,13 @@
+{
+  "readers": 5,
+  "backend_limit_ms": 500,
+  "browser_limit_ms": 1500,
+  "backend_p95_ms": [
+    316.02,
+    342.824,
+    1322.247
+  ],
+  "browser_p95_ms": 2573,
+  "scope": "Ephemeral CI with application CPU/memory ceilings; no store PC/network or managed DB equivalence.",
+  "pass": false
+}

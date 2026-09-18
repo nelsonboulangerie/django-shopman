@@ -83,7 +83,7 @@ const hasDraft = computed(() => feeds.value.some((sc) => {
 }));
 onBeforeRouteLeave(() => !hasDraft.value || window.confirm("Há alterações de feed não salvas. Sair e descartá-las?"));
 
-useHead({ title: "Canais · Gestor" });
+useHead({ title: "Canais" });
 </script>
 
 <template>

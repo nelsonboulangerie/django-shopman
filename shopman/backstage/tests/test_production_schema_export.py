@@ -64,7 +64,6 @@ def test_mutation_endpoints_live_only_in_generated_client() -> None:
         "/production/plan/",
         "/start/",
         "/finish/",
-        "/advance-step/",
         "/quick-finish/",
         "/void/",
         "/oven/arm/",

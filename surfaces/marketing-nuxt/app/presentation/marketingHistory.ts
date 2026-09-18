@@ -22,12 +22,22 @@ const RECOVERY_ACTIONS = new Set<MarketingActionProjectionV2["kind"]>([
   "retry_failed_delivery",
 ]);
 
-export function historySubject(item: AnnouncementProjectionV2): string {
+/**
+ * "Fornada concluída · Baguete tradicional". O nome vem de `options.products`
+ * (rótulo por SKU); sem rótulo, o SKU é o que há — e aí a frase diz "Produto",
+ * para o gestor saber que está lendo um código.
+ */
+export function historySubject(
+  item: AnnouncementProjectionV2,
+  productLabels: Record<string, string> = {},
+): string {
   const trigger = TRIGGER_LABELS[item.facts.trigger];
   const sku = item.facts.product_ref.startsWith("product:")
     ? item.facts.product_ref.slice("product:".length)
     : "";
-  return sku ? `${trigger} · Produto ${sku}` : trigger;
+  if (!sku) return trigger;
+  const label = productLabels[sku];
+  return label ? `${trigger} · ${label}` : `${trigger} · Produto ${sku}`;
 }
 
 export function historyActorLabel(

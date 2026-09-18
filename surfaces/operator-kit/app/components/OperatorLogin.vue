@@ -6,6 +6,8 @@ const props = withDefaults(
     title?: string;
     description?: string;
     icon?: string;
+    /** Identidade do app no gate: o PNG da família PWA. Cai no `icon` se faltar ou falhar. */
+    iconSrc?: string;
     loginUrl?: string;
     mode?: LoginMode;
     largeFields?: boolean;
@@ -30,6 +32,8 @@ const error = ref("");
 const dialog = ref<HTMLFormElement | null>(null);
 const usernameInput = ref<HTMLInputElement | null>(null);
 const { reset: resetSession } = useOperatorSession();
+const iconBroken = ref(false);
+const showIconImage = computed(() => Boolean(props.iconSrc) && !iconBroken.value);
 
 const displayTitle = computed(() =>
   props.title ?? (props.expired ? "Sua sessão terminou" : "Entre para operar"),
@@ -114,8 +118,16 @@ async function submit() {
       @submit.prevent="submit"
       @keydown.tab="trapFocus"
     >
-      <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
-        <Icon :name="icon" class="size-7 text-muted-foreground" />
+      <div class="mx-auto grid size-14 place-items-center overflow-hidden rounded-full border bg-muted">
+        <img
+          v-if="showIconImage"
+          :src="iconSrc"
+          class="size-14"
+          alt=""
+          decoding="async"
+          @error="iconBroken = true"
+        >
+        <Icon v-else :name="icon" class="size-7 text-muted-foreground" />
       </div>
       <div class="grid gap-1.5">
         <h2 id="operator-login-title" class="text-lg font-semibold">

@@ -10,7 +10,7 @@ const agents = {
 }
 
 describe('manifest HTTP cache boundary', () => {
-  it.each([false, true])('never makes device variants shareable (fallback=%s)', async fallback => {
+  it.each([false, true])('serves one private manifest, with maskable, to every device (fallback=%s)', async fallback => {
     vi.stubGlobal('defineEventHandler', eventHandler)
     const { default: route } = await import('../server/routes/manifest.webmanifest')
     const app = createApp().use(eventHandler(event => {
@@ -21,18 +21,23 @@ describe('manifest HTTP cache boundary', () => {
       return route(event)
     }))
     const handle = toWebHandler(app)
+    const bodies = new Set<string>()
     for (const order of [['mac', 'android', 'mac', 'ipad'], ['android', 'mac', 'android', 'ipad']] as const) {
       for (const client of order) {
-        const response = await handle(new Request('http://store.test/manifest.webmanifest?v=4', {
+        const response = await handle(new Request('http://store.test/manifest.webmanifest?v=6', {
           headers: { 'user-agent': agents[client] }
         }))
         expect(response.status).toBe(200)
         expect(response.headers.get('cache-control')).toBe('private, no-store')
-        expect(response.headers.get('vary')).toBe('User-Agent')
-        const manifest = await response.json()
-        expect(manifest.icons.some((icon: { purpose: string }) => icon.purpose === 'maskable')).toBe(client !== 'mac')
+        expect(response.headers.get('vary')).toBeNull()
+        const body = await response.text()
+        bodies.add(body)
+        const manifest = JSON.parse(body)
+        // O Mac também recebe o `maskable`: é dele que o Chrome tira o ícone do Dock.
+        expect(manifest.icons.some((icon: { purpose: string }) => icon.purpose === 'maskable')).toBe(true)
         expect(manifest).toMatchObject({ id: '/', scope: '/', start_url: '/?source=pwa', name: fallback ? 'Nelson Boulangerie' : 'Loja de teste' })
       }
     }
+    expect(bodies.size).toBe(1)
   })
 })

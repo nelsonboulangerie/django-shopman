@@ -26,7 +26,7 @@ from shopman.craftsman.models import Recipe, WorkOrder
 from shopman.stockman.models import Position, PositionKind
 
 from shopman.backstage.services import production as backstage_production
-from shopman.backstage.services.exceptions import ProductionConflict, ProductionError
+from shopman.backstage.services.exceptions import ProductionConflict
 
 pytestmark = pytest.mark.django_db
 
@@ -129,20 +129,6 @@ def test_finish_de_ordem_estornada_e_conflito(recipe, vitrine):
             quantity="40",
             **_attempt(wo, "finish-void"),
         )
-
-
-# ── ADVANCE STEP fora de STARTED ─────────────────────────────────────────────
-
-@pytest.mark.parametrize("factory", ["_planned", "_finished", "_void"])
-def test_advance_step_fora_de_started_recusa(recipe, factory):
-    wo = globals()[factory](recipe)
-    with pytest.raises(ProductionError) as excinfo:
-        backstage_production.apply_advance_step(
-            work_order_id=wo.pk,
-            **_attempt(wo, f"advance-invalid-{factory}"),
-        )
-    # Conflito de estado terminal também é aceitável; o que não pode é vazar 500.
-    _no_arithmetic_leak(excinfo)
 
 
 # ── expected_rev: o quadro que a tela leu ainda vale? ────────────────────────

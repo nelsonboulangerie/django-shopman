@@ -5,7 +5,7 @@
 // sinal (o que subiu, o que desceu), calmo por padrão.
 import { compareQuery, parseVersionRef, toneClass } from "~/presentation/recipeBook";
 
-useHead({ title: "Comparar receitas · Produção" });
+useHead({ title: "Comparar receitas" });
 
 const route = useRoute();
 const router = useRouter();

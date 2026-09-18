@@ -115,7 +115,7 @@ O comportamento de cada canal é 100% configurado via `ChannelConfig` — sem cl
 | `on_paid` | Webhook de pagamento | `stock.fulfill()`, `notification.send("payment_confirmed")` |
 | `on_preparing` | Status → PREPARING | `kds.dispatch()`, `notification.send` |
 | `on_ready` | Status → READY | `fulfillment.create()` (se post_commit), `notification.send` |
-| `on_dispatched` | Status → DISPATCHED | `notification.send` |
+| `on_dispatched` | Status → DISPATCHED | `fiscal.emit` (só cobrar na entrega: a NFC-e sai com a sacola) · `notification.send` |
 | `on_delivered` | Status → DELIVERED | `notification.send` |
 | `on_completed` | Status → COMPLETED | `loyalty.earn()`, `fiscal.emit()` |
 | `on_cancelled` | Status → CANCELLED | `kds.cancel_tickets()`, `stock.release()`, `payment.cancel()` para intent não capturada, `payment.refund()` para saldo capturado, `fiscal.cancel()`, `notification.send` |

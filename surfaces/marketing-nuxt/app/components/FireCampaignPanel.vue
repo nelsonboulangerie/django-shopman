@@ -1,5 +1,12 @@
 <script setup lang="ts">
-// Disparar agora — a campanha manual, com o público escolhido na hora.
+// Definir público — a campanha manual, com o público montado na hora.
+//
+// "Definir", não "escolher": aqui não se pega de uma lista pronta, se MONTA o público
+// com regras (etiquetas, faixa, comportamento, cruzamento). Escolher descreve um menu;
+// definir descreve o que esta tela faz.
+//
+// ⚠️ O botão daqui NÃO dispara: ele cria o anúncio e leva à revisão. Enquanto dizia
+// "Disparar agora", prometia o fim do caminho logo no começo dele.
 //
 // Uma pergunta: "para quem". O texto sempre vem do modelo salvo e o anúncio nasce para
 // revisão. Aceitar texto livre aqui criaria um caminho capaz de contornar a revisão.
@@ -18,14 +25,17 @@ import {
   alertsNote,
   audienceRulesSummary,
   choiceLabels,
+  exclusionHint,
+  exclusionNotes,
   formatCount,
+  hasSavedAudience,
+  zeroExplanation,
 } from "~/presentation/campaign";
 import type {
   AudienceMatch,
   Campaign,
   Choice,
   ChosenAudience,
-  MarketingCommandResponse,
 } from "~/types/campaign";
 
 const props = defineProps<{
@@ -38,7 +48,6 @@ const props = defineProps<{
   productRequired?: boolean;
   busy?: boolean;
   error?: string;
-  result?: MarketingCommandResponse | null;
 }>();
 
 const emit = defineEmits<{ submit: [FireRequest]; cancel: [] }>();
@@ -50,7 +59,9 @@ type FireRequest = {
   productLabel: string;
 };
 
-const useSaved = ref(true);
+// Abre no público salvo, que é o caminho seguro — salvo quando a campanha não tem
+// público nenhum: aí o rádio "salvo" media `{}`, o botão morria e a tela não dizia por quê.
+const useSaved = ref(hasSavedAudience(props.rule?.audience_rules));
 const tiers = ref<string[]>([]);
 const chosenTags = ref<string[]>([]);
 const segments = ref<string[]>([]);
@@ -72,7 +83,7 @@ const publicOnly = computed(
     campaignPlatforms.value.length > 0 &&
     campaignPlatforms.value.every((platform) => PUBLIC_PLATFORMS.has(platform)),
 );
-const publicPublicationCount = computed(() => campaignPlatforms.value.length);
+const publicPostCount = computed(() => campaignPlatforms.value.length);
 
 const {
   count,
@@ -81,6 +92,29 @@ const {
   measure,
   clear,
 } = useAudienceCount();
+
+/** Quem as regras acharam mas o envio não alcança, e onde o cliente conserta isso.
+ *  ⚠️ É o que faltava no "0 pessoas recebem" da Baguete Gergelim: a regra tinha achado
+ *  1 pessoa (o próprio gestor, pelo celular) e o envio a barrou por falta de data de
+ *  nascimento e de consentimento — e a tela dizia "ninguém se encaixa". */
+const exclusions = computed(() =>
+  count.value ? exclusionNotes(count.value.excluded_by_reason) : [],
+);
+const exclusionsHint = computed(() =>
+  count.value ? exclusionHint(count.value.excluded_by_reason) : "",
+);
+const zeroText = computed(() => (count.value ? zeroExplanation(count.value) : ""));
+/** As parcelas aparecem com mais de uma regra (ensinam somar × cruzar) OU quando alguém
+ *  ficou de fora: "Favoritaram o produto: 1" ao lado de "0 recebem" conta a história. */
+const showParts = computed(
+  () =>
+    !!count.value &&
+    (count.value.parts.length > 1 || exclusions.value.length > 0),
+);
+/** A campanha salva não escolhe ninguém: sem esta frase o botão morria mudo. */
+const savedAudienceEmpty = computed(
+  () => !publicOnly.value && !hasSavedAudience(props.rule?.audience_rules),
+);
 
 /** Por que a fila de "me avise" está vazia — a mesma frase do card do anúncio.
  *  Zero calado é indistinguível de tela quebrada: foi o que aconteceu com a Baguette. */
@@ -108,7 +142,7 @@ const audienceLabels = computed(() => ({
 watch(
   () => [props.rule?.pk, props.rule?.version] as const,
   () => {
-    useSaved.value = true;
+    useSaved.value = hasSavedAudience(props.rule?.audience_rules);
     tiers.value = [];
     chosenTags.value = [];
     segments.value = [];
@@ -204,13 +238,11 @@ const cannotSubmit = computed(() => {
     countFailed.value ||
     !count.value ||
     count.value.empty_selection ||
+    // Fonte degradada = número incompleto. O servidor já dizia `can_approve: false`;
+    // a tela mostrava o total e deixava disparar.
+    !count.value.can_approve ||
     count.value.total === 0
   );
-});
-
-const resultAudienceCount = computed(() => {
-  const value = props.result?.receipt.outcome.audience_count;
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 });
 
 function measureAgain() {
@@ -243,67 +275,7 @@ watch(
 </script>
 
 <template>
-  <section v-if="result" class="space-y-4" aria-labelledby="fire-result-title">
-    <div class="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
-      <div class="flex items-start gap-3">
-        <Icon
-          name="lucide:badge-check"
-          class="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-400"
-        />
-        <div class="min-w-0">
-          <h2 id="fire-result-title" class="font-semibold">
-            Anúncio criado para revisão
-          </h2>
-          <p v-if="publicOnly" class="mt-1 text-sm text-muted-foreground">
-            {{ formatCount(publicPublicationCount) }}
-            {{
-              publicPublicationCount === 1
-                ? "postagem pública preparada"
-                : "postagens públicas preparadas"
-            }}. Nada foi publicado ainda.
-          </p>
-          <p v-else class="mt-1 text-sm text-muted-foreground">
-            {{ formatCount(resultAudienceCount) }}
-            {{
-              resultAudienceCount === 1
-                ? "pessoa elegível"
-                : "pessoas elegíveis"
-            }}. Nenhuma publicação ou mensagem foi enviada.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <dl class="rounded-lg border border-border bg-muted/40 p-3 text-sm">
-      <div>
-        <dt class="text-xs text-muted-foreground">Comprovante</dt>
-        <dd class="mt-0.5 break-all font-mono">{{ result.receipt.ref }}</dd>
-      </div>
-      <div class="mt-2">
-        <dt class="text-xs text-muted-foreground">Versão registrada</dt>
-        <dd class="font-semibold">{{ result.receipt.resulting_version }}</dd>
-      </div>
-      <p v-if="result.replayed" class="mt-2 text-xs text-muted-foreground">
-        Este é o mesmo resultado do toque anterior; nenhum anúncio foi
-        duplicado.
-      </p>
-    </dl>
-
-    <div class="flex flex-wrap justify-end gap-2">
-      <UiButton type="button" variant="outline" @click="emit('cancel')">
-        Fechar
-      </UiButton>
-      <NuxtLink
-        :to="`/announcements/${result.announcement.pk}#review`"
-        class="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
-      >
-        Revisar anúncio agora
-      </NuxtLink>
-    </div>
-  </section>
-
   <form
-    v-else
     class="space-y-5"
     @submit.prevent="
       emit('submit', {
@@ -313,16 +285,9 @@ watch(
       })
     "
   >
-    <div
-      class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
-    >
-      <p class="font-semibold">Texto protegido pelo fluxo de revisão</p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        Este disparo usa o modelo salvo da campanha e cria um anúncio para
-        revisão antes de qualquer publicação. Para mudar a mensagem, edite o
-        modelo da campanha.
-      </p>
-    </div>
+    <p class="text-xs text-muted-foreground">
+      O texto vem do modelo da campanha. Para mudá-lo, edite a campanha.
+    </p>
 
     <div v-if="needsProduct">
       <label
@@ -365,16 +330,15 @@ watch(
         />
         <div>
           <p class="text-sm font-semibold">
-            {{ formatCount(publicPublicationCount) }}
+            {{ formatCount(publicPostCount) }}
             {{
-              publicPublicationCount === 1
+              publicPostCount === 1
                 ? "postagem pública"
                 : "postagens públicas"
             }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            Este anúncio será preparado uma vez por plataforma para revisão. Não
-            há seleção de contatos e nenhuma mensagem direta será enviada.
+            Uma em cada plataforma. Não escolhe contatos.
           </p>
         </div>
       </div>
@@ -404,6 +368,13 @@ watch(
                 ? audienceRulesSummary(rule.audience_rules, audienceLabels)
                 : ""
             }}
+          </span>
+          <span
+            v-if="savedAudienceEmpty"
+            class="mt-1 block text-xs text-warning"
+          >
+            Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
+            edite a campanha para dar um público a ela.
           </span>
         </span>
       </label>
@@ -557,6 +528,10 @@ watch(
         </span>
       </label>
 
+      <p v-if="nothingChosen" class="text-xs text-muted-foreground">
+        Escolha pelo menos um grupo acima para ver quantas pessoas recebem.
+      </p>
+
       <!-- ⚠️ Só com duas ou mais regras escolhidas: cruzar uma regra com nada dá ela
            mesma, e oferecer o interruptor ali ensinaria uma diferença que não existe. -->
       <fieldset v-if="rulesChosen > 1" class="border-t border-border pt-3">
@@ -627,7 +602,7 @@ watch(
 
       <!-- As parcelas contam a história que o total sozinho esconde: com "todas", o total
            fica MENOR que qualquer parcela, e é aí que o recorte se explica sozinho. -->
-      <ul v-if="count && count.parts.length > 1" class="mt-2 space-y-0.5">
+      <ul v-if="count && showParts" class="mt-2 space-y-0.5">
         <li
           v-for="part in count.parts"
           :key="part.label"
@@ -654,11 +629,34 @@ watch(
         depois.
       </p>
 
+      <p v-if="zeroText" class="mt-2 text-xs text-warning">
+        {{ zeroText }}
+      </p>
+
+      <!-- Quem ficou de fora, e por quê. Sem isto, "1 favoritou" e "0 recebem" na mesma
+           tela parecem contradição — e a contradição parece bug. -->
+      <div v-if="exclusions.length" class="mt-2" data-audience-exclusions>
+        <p class="text-xs font-medium text-muted-foreground">Ficam de fora</p>
+        <ul class="mt-0.5 space-y-0.5">
+          <li
+            v-for="note in exclusions"
+            :key="note"
+            class="text-xs text-muted-foreground"
+          >
+            {{ note }}
+          </li>
+        </ul>
+        <p v-if="exclusionsHint" class="mt-1 text-xs text-muted-foreground">
+          {{ exclusionsHint }}
+        </p>
+      </div>
+
       <p
-        v-if="count && !count.empty_selection && count.total === 0"
-        class="mt-2 text-xs text-warning"
+        v-if="count && !count.can_approve"
+        class="mt-2 text-xs font-medium text-warning"
+        role="alert"
       >
-        Ninguém se encaixa neste público hoje. Nada será enviado.
+        {{ count.blocked_reason || "Não foi possível conferir todas as fontes do público. O disparo está bloqueado." }}
       </p>
       <UiButton
         v-if="countFailed"
@@ -681,8 +679,7 @@ watch(
       v-if="!publicOnly"
       class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se
-      estiver no público escolhido.
+      Sem consentimento de WhatsApp, fica de fora.
     </p>
 
     <p v-if="error" class="text-sm text-destructive" role="alert">
@@ -697,14 +694,10 @@ watch(
         <Icon name="lucide:send" class="size-4" />
         {{
           busy
-            ? publicOnly
-              ? "Preparando…"
-              : "Disparando…"
-            : publicOnly
-              ? "Preparar para revisão"
-              : countFailed
-                ? "Aguardando contagem"
-                : "Disparar agora"
+            ? "Preparando…"
+            : countFailed && !publicOnly
+              ? "Aguardando contagem"
+              : "Revisar anúncio"
         }}
       </UiButton>
     </div>

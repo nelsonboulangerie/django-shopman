@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const OPERATOR_PERM = "backstage.operate_purchase";
-const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 const { view, metrics } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const route = useRoute();
@@ -20,7 +20,7 @@ function applyShortcutView(value: unknown) {
 applyShortcutView(route.query.view);
 watch(() => route.query.view, applyShortcutView);
 
-useHead({ title: "Compras" });
+useOperatorWindowTitle("Compras");
 </script>
 
 <template>
@@ -29,7 +29,8 @@ useHead({ title: "Compras" });
     <OfflineBanner />
     <div v-if="canIdentify" class="sticky top-0 hidden h-screen shrink-0 print:hidden md:flex">
       <OperatorRail
-        app-icon="shopping-basket"
+        app-icon="package"
+        app-icon-src="/pwa/pwa-64x64.png?v=3"
         app-label="Compras"
         :central-url="hubUrl"
         :operator-name="operator?.name"
@@ -67,8 +68,11 @@ useHead({ title: "Compras" });
         <span>{{ item.label }}</span>
       </button>
     </nav>
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="as compras" @retry="refresh()" />
     <OperatorLogin
-      v-if="!canIdentify"
+      v-if="!canIdentify && !sessionUnavailable"
       title="Entre para operar Compras"
       description="Use uma conta autorizada a comprar e receber insumos."
     />

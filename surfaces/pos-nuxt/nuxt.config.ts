@@ -45,22 +45,33 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: true,
       kiosk: false,
+      // SÓ a tela de venda, e mesmo nela só com o balcão vazio: as razões de espera
+      // (`useOperatorReloadHold` em `pages/index.vue`) barram carrinho, comanda,
+      // pagamento e resultado na tela. `/session` fica de fora porque a contagem de
+      // fechamento é digitada e não está salva; `/tickets`, porque a seleção de fichas
+      // para impressão é rascunho.
+      //
+      // ⚠️ `/display` fica de fora pelo motivo mais forte de todos: `skipWaiting` vale
+      // para a ORIGEM inteira, e toda janela que viu o worker em espera recarrega
+      // junto (o vite-plugin-pwa registra `controlling` → reload em cada uma). A tela
+      // do cliente ninguém toca, então ela seria considerada ociosa SEMPRE — e quem
+      // recarregaria no meio da venda seria o PDV, não ela.
+      idleReloadPaths: ["/"],
       push: { surfaceRef: "pos", categories: ["order", "system"] },
       manifest: {
-        name: "Shopman PDV",
-        shortName: "PDV",
+        label: "PDV",
         description: "Ponto de venda da Nelson Boulangerie.",
         themeColor: "#FCF6F1",
         backgroundColor: "#FCF6F1",
         orientation: "any",
         icons: [
-          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/pwa/pwa-192x192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
         shortcuts: [
-          { name: "Venda", shortName: "Venda", url: "/", icon: "/pwa/pwa-192x192.png?v=2" },
-          { name: "Caixa", shortName: "Caixa", url: "/session", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Venda", shortName: "Venda", url: "/", icon: "/pwa/pwa-192x192.png?v=3" },
+          { name: "Caixa", shortName: "Caixa", url: "/session", icon: "/pwa/pwa-192x192.png?v=3" },
         ],
       },
     }),
@@ -121,7 +132,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman POS",
+      title: "PDV",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "robots", content: "noindex, nofollow" },

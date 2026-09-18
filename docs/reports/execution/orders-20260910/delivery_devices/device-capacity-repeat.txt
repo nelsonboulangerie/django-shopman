@@ -1,0 +1,3 @@
+Local readers ready; 500 rich orders and 10 physical device fixtures.
+Backend distributions recorded; starting browser read/context checks.
+Read and context assays completed. No mutation or real effects.

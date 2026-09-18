@@ -65,13 +65,7 @@ def runtime_profile(terminal) -> TerminalRuntimeProfile:
     hardware = dict(metadata.get("hardware") or {})
     printer = printer_geometry(dict(hardware.get("printer") or {}))
     components = tuple(
-        _cash_drawer_health(terminal)
-        if key == "cash_drawer"
-        else _component_health(
-            key,
-            dict(hardware.get(key) or {}),
-            problem=printer.problem if key == "printer" else "",
-        )
+        _terminal_component(terminal, key, dict(hardware.get(key) or {}), printer)
         for key in _COMPONENT_LABELS
     )
     return TerminalRuntimeProfile(
@@ -156,6 +150,11 @@ def _component_health(key: str, config: dict, *, problem: str = "") -> TerminalC
     pronto para uso. Declarado com adapter — inclusive um adapter real, que
     antes era tratado como suspeito e o simulado como saudável, exatamente ao
     contrário — vale ``ready``.
+
+    ⚠️ Vale para ``scanner``, ``payment_terminal`` e ``customer_display``, que
+    não têm caminho de entrega conhecido deste lado. Impressora e gaveta têm, e
+    respondem por ele (``_printer_health``, ``_cash_drawer_health``): para elas,
+    ``adapter`` como prova de prontidão era um rótulo que ninguém lia.
     """
     label = _COMPONENT_LABELS[key]
     if not config:
@@ -170,6 +169,63 @@ def _component_health(key: str, config: dict, *, problem: str = "") -> TerminalC
     if adapter:
         return TerminalComponentHealth(key=key, label=label, status="ready", message=adapter)
     return TerminalComponentHealth(key=key, label=label, status="warning", message="sem adapter")
+
+
+def _terminal_component(terminal, key: str, config: dict, geometry: PrinterGeometry):
+    """Despacha cada periférico para quem sabe responder por ele."""
+    if key == "cash_drawer":
+        return _cash_drawer_health(terminal)
+    if key == "printer":
+        return _printer_health(terminal, config, problem=geometry.problem)
+    return _component_health(key, config)
+
+
+def _printer_health(terminal, config: dict, *, problem: str = "") -> TerminalComponentHealth:
+    """Saúde da impressora — pela ponte que entrega o papel, não por um rótulo.
+
+    ⚠️ Antes esta linha era o ``_component_health`` genérico, e o que a acendia
+    verde era **qualquer texto não vazio** em ``printer.adapter``. Ninguém
+    consultava esse texto para decidir coisa alguma: o Admin gravava ``relay``,
+    o seed gravava ``driver``, e o mesmo terminal mudava de rótulo conforme quem
+    tinha salvado por último. Dois nomes, zero comportamento — e, pior, o badge
+    ficava verde num balcão cujo agente ainda não tinha token, que é exatamente
+    o estado em que o PDV recusa imprimir. Verde de um lado, recusa do outro.
+
+    Quem entrega o papel é o agente local do dispositivo
+    (``hardware.device_agent``): a impressão direta do PDV sai do navegador para
+    a loopback, e a fila auditável de etiquetas sai pelo relay do MESMO agente.
+    Não há segundo caminho. Logo a saúde da impressora é a saúde dessa ponte, e
+    o ``adapter`` da impressora deixou de ser escrito por qualquer lado.
+    """
+    label = _COMPONENT_LABELS["printer"]
+    if not config:
+        return TerminalComponentHealth(key="printer", label=label, status="absent", message="não instalado")
+    if config.get("enabled") is False:
+        return TerminalComponentHealth(key="printer", label=label, status="absent", message="desligado")
+    if problem:
+        return TerminalComponentHealth(key="printer", label=label, status="warning", message=problem)
+
+    from shopman.backstage.services.pos_hardware import DeviceAgentConfig
+
+    agent = DeviceAgentConfig.from_terminal(terminal)
+    if not agent.declared:
+        return TerminalComponentHealth(
+            key="printer",
+            label=label,
+            status="warning",
+            message="sem o agente local deste dispositivo",
+        )
+    if not agent.enabled:
+        return TerminalComponentHealth(
+            key="printer", label=label, status="warning", message="o agente deste dispositivo está desligado",
+        )
+    if agent.misconfigured_reason:
+        return TerminalComponentHealth(
+            key="printer", label=label, status="warning", message=agent.misconfigured_reason,
+        )
+    return TerminalComponentHealth(
+        key="printer", label=label, status="ready", message="entrega pelo agente do dispositivo",
+    )
 
 
 def _cash_drawer_health(terminal) -> TerminalComponentHealth:

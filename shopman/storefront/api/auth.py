@@ -16,7 +16,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.shop.projections import customer_context
 from shopman.shop.services import access as access_service
+from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
 from shopman.shop.services import storefront_links
 from shopman.storefront.constants import HAS_AUTH
@@ -43,6 +45,8 @@ SessionSerializer = inline_serializer(
         "customer_phone": serializers.CharField(allow_blank=True),
         "customer_email": serializers.CharField(allow_blank=True),
         "requires_welcome": serializers.BooleanField(),
+        "welcome_asks_name": serializers.BooleanField(),
+        "welcome_asks_marketing": serializers.BooleanField(),
         "welcome_suggested_name": serializers.CharField(allow_blank=True),
     },
 )
@@ -57,17 +61,27 @@ def _session_payload(customer) -> dict:
             "customer_phone": "",
             "customer_email": "",
             "requires_welcome": False,
+            "welcome_asks_name": False,
+            "welcome_asks_marketing": False,
             "welcome_suggested_name": "",
         }
 
     customer_name = getattr(customer, "name", "") or ""
+    # O gate de boas-vindas do login é SÓ o nome (vazio ou importado sujo):
+    # `requires_welcome` == `welcome_asks_name`. A pergunta de novidades (nunca
+    # respondida — ver `customer_context.marketing_prompt_pending`) sai em
+    # `welcome_asks_marketing` e a loja a faz por conta própria, num sheet na
+    # página de destino — nunca como passo de entrada.
+    asks_name = needs_confirmation(customer_name)
     return {
         "is_authenticated": True,
         "customer_ref": getattr(customer, "ref", "") or "",
         "customer_name": customer_name,
         "customer_phone": getattr(customer, "phone", "") or "",
         "customer_email": getattr(customer, "email", "") or "",
-        "requires_welcome": needs_confirmation(customer_name),
+        "requires_welcome": asks_name,
+        "welcome_asks_name": asks_name,
+        "welcome_asks_marketing": customer_context.marketing_prompt_pending(customer),
         "welcome_suggested_name": clean_display_name(customer_name),
     }
 
@@ -144,7 +158,7 @@ def _record_identity_strength(request, metadata, *, customer) -> None:
     try:
         if customer is not None:
             trusted = auth_service.device_is_trusted(request, customer_uuid=customer.uuid)
-    except Exception:
+    except Exception:  # silêncio-deliberado: falha fechado para a identidade FRACA, que só reduz o que aparece
         # Na dúvida, a identidade é a FRACA: reduzir o que aparece é degradação segura;
         # assumir confiança que não se verificou não é.
         logger.debug("access_link: device trust check degraded", exc_info=True)
@@ -152,6 +166,30 @@ def _record_identity_strength(request, metadata, *, customer) -> None:
     request.session[IDENTITY_SESSION_KEY] = (
         IDENTITY_DEVICE if trusted else IDENTITY_NUMBER
     )
+
+
+def _declare_adult(request, customer) -> None:
+    """Carimbar a declaração de maioridade feita ao entrar (toda porta de entrada).
+
+    A nota ao lado do botão da loja diz "Ao continuar, você confirma que é maior de
+    idade e aceita os Termos de uso". Quem passou por ela e autenticou — por código,
+    aparelho reconhecido, access link ou passkey — declarou; o carimbo em
+    ``Customer.metadata["adult_declaration"]`` é a evidência que o marketing direto
+    lê (``marketing_age.is_proved_adult``). Idempotente: a primeira fica.
+
+    A entrada NÃO pode falhar por causa do carimbo: sem ele a pessoa só fica fora
+    do marketing direto (fail-closed do lado do envio) e volta a ser carimbada no
+    próximo login. Por isso a falha vira aviso no log, com traceback, e a sessão
+    segue.
+    """
+    if customer is None:
+        return
+    try:
+        account_service.record_adult_declaration(
+            customer, ip_address=auth_service.client_ip(request)
+        )
+    except Exception:  # silêncio-deliberado: a sessão abre mesmo sem o carimbo; sem ele o marketing direto exclui a pessoa (fail-closed) e o próximo login carimba
+        logger.warning("auth.adult_declaration_failed customer=%s", getattr(customer, "ref", "?"), exc_info=True)
 
 
 def _access_link_redirect(metadata: dict | None) -> str:
@@ -281,8 +319,9 @@ class AccessLinkExchangeView(APIView):
         try:
             if result.customer:
                 customer = auth_service.customer_by_uuid(result.customer.uuid)
-        except Exception:
+        except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
             logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
+        _declare_adult(request, customer)
 
         payload = {
             "ok": True,
@@ -543,6 +582,7 @@ class DeviceCheckView(APIView):
         if not customer:
             return Response({"ok": True, "trusted": False, "phone": phone, **_session_payload(None)})
 
+        _declare_adult(request, customer)
         return Response({"ok": True, "trusted": True, "phone": phone, **_session_payload(customer)})
 
 
@@ -597,6 +637,7 @@ class VerifyCodeView(APIView):
         except Exception:
             logger.debug("auth.post degraded; using fallback", exc_info=True)
             customer = None
+        _declare_adult(request, customer)
 
         session = _session_payload(customer)
         session["customer_name"] = auth_service.confirmed_customer_name(auth_result) or session["customer_name"]
@@ -814,4 +855,5 @@ class PasskeyLoginView(APIView):
             return Response({"detail": str(err)}, status=400)
 
         request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
+        _declare_adult(request, customer)
         return Response({"ok": True, **_session_payload(customer)})

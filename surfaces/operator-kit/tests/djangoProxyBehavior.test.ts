@@ -161,4 +161,48 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
       "shopman_operator_sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
     );
   });
+
+  // O BFF chama o `api.` pela rede pública: sem o segredo, o Django grava o IP de
+  // saída do Nitro na trilha de acesso de TODO operador (mesma conta que gravou
+  // 147.182.186.185 para clientes da loja no alpha, 17/09).
+  it("apresenta o segredo do BFF ao Django junto do XFF recebido, quando configurado", async () => {
+    vi.stubGlobal("useRuntimeConfig", () => ({ djangoBaseUrl: DJANGO, djangoProxySecret: "s3cr3t" }));
+    const raw = vi.fn((url: string, options: RawCall["options"]) => {
+      calls.push({ url, options });
+      return Promise.resolve(upstream(200, {}, {}));
+    });
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event } = makeEvent({ "x-forwarded-for": "203.0.113.9, 10.244.0.1" });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/operator/login");
+
+    expect(calls[0]?.options.headers["x-forwarded-for"]).toBe("203.0.113.9, 10.244.0.1");
+    expect(calls[0]?.options.headers["x-shopman-proxy-secret"]).toBe("s3cr3t");
+  });
+
+  it("não repassa segredo que o navegador escreveu, nem inventa um sem config", async () => {
+    const raw = vi.fn((url: string, options: RawCall["options"]) => {
+      calls.push({ url, options });
+      return Promise.resolve(upstream(200, {}, {}));
+    });
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event } = makeEvent({
+      "x-shopman-proxy-secret": "chutado-pelo-cliente",
+      "x-forwarded-for": "6.6.6.6",
+    });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/operator/login");
+
+    expect(calls[0]?.options.headers["x-forwarded-for"]).toBe("6.6.6.6");
+    expect(calls[0]?.options.headers["x-shopman-proxy-secret"]).toBeUndefined();
+  });
+
+  it("declara o segredo na layer, só no servidor e desligado por padrão", async () => {
+    vi.stubGlobal("defineNuxtConfig", (config: unknown) => config);
+    const { default: layer } = await import("../nuxt.config");
+    const runtimeConfig = (layer as { runtimeConfig: Record<string, any> }).runtimeConfig;
+
+    expect(runtimeConfig.djangoProxySecret).toBe("");
+    expect(runtimeConfig.public).not.toHaveProperty("djangoProxySecret");
+  });
 });

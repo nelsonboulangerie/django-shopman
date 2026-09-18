@@ -1,0 +1,108 @@
+{
+  "observed_at": "2026-09-11T11:02:27.273580+00:00",
+  "app": "shopman-alpha",
+  "region": "nyc",
+  "deployment": {
+    "id": "ebfc151d-3bec-4a90-b2be-066983c2f369",
+    "phase": "ACTIVE",
+    "created_at": "2026-09-11T08:29:45Z"
+  },
+  "services": [
+    {
+      "name": "web",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-1gb",
+      "run_command": "daphne -b 0.0.0.0 -p 8000 config.asgi:application",
+      "http_port": 8000
+    },
+    {
+      "name": "storefront-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-1gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "pos-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "kds-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "orders-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "production-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "hub-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "marketing-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "bi-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    },
+    {
+      "name": "purchase-nuxt",
+      "instance_count": 1,
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "run_command": null,
+      "http_port": 3000
+    }
+  ],
+  "databases": [
+    {
+      "name": "postgres",
+      "engine": "PG",
+      "version": "16",
+      "production": true,
+      "cluster_name": "shopman-staging-postgres"
+    },
+    {
+      "name": "cache",
+      "engine": "VALKEY",
+      "version": "8",
+      "production": true,
+      "cluster_name": "shopman-staging-cache"
+    }
+  ],
+  "pool_config": [
+    {
+      "key": "DATABASE_CONN_MAX_AGE",
+      "value": "60"
+    },
+    {
+      "key": "DATABASE_DISABLE_SERVER_SIDE_CURSORS",
+      "value": "true"
+    }
+  ]
+}

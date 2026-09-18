@@ -62,7 +62,8 @@ import {
   receiptSaveOffers,
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
-import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { toast } from "vue-sonner";
 
 const props = defineProps<{
   salesMode?: "counter" | "order";
@@ -81,6 +82,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
@@ -140,6 +143,9 @@ const props = defineProps<{
   /** Janelas do dia escolhido, já anotadas com a prontidão do carrinho. */
   deliverySlots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** Ainda não há resposta sobre as janelas (a review está a caminho). */
+  /** Os slots canônicos da casa (rótulo real de `slot-09` quando a grade do
+   *  dia ainda não chegou). Opcional: a página passa, o teste pode omitir. */
+  canonicalDeliverySlots?: Array<{ ref: string; label: string }>;
   deliverySlotsPending: boolean;
   /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
   deliveryDateEffective: string;
@@ -220,7 +226,7 @@ const emit = defineEmits<{
   resolveCustomer: [done: (saved: boolean) => void];
   decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
-  decisionMerge: [];
+  decisionMerge: [candidate?: ServerConflictCandidate];
   /** LIBERAR o contato preso num cadastro desativado. */
   decisionRelease: [value: string];
   decisionPick: [ServerConflictCandidate];
@@ -229,6 +235,8 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   pickSavedAddress: [SavedAddressProjection];
 }>();
 
@@ -236,13 +244,10 @@ const emit = defineEmits<{
 // composable (líquido, com o último total de review retido) — nunca o bruto do
 // carrinho, que fazia o hero saltar durante o debounce da review.
 const interimTotalDisplay = computed(() => formatBRL(props.paymentTotalQ));
-// Nota fiscal é SECUNDÁRIA: mora no modal do Cliente (não é botãozão no grid) e só
-// aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal está configurado.
+// Nota fiscal é SECUNDÁRIA: mora na coluna "Nota e comprovante" (não é botãozão
+// no grid) e só aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal
+// está configurado.
 const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
-const receiptChannelOptions = computed(() => props.checkoutContract?.receipt_channels || [
-  { ref: "print", label: "Imprimir", description: "" },
-  { ref: "email", label: "E-mail", description: "" },
-]);
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
 const needsReview = computed(() => !props.review);
 const approvalBlocking = computed(() =>
@@ -336,7 +341,7 @@ const scheduleSheetOpen = ref(false);
 // O resumo do "quando" para o atalho dentro do Recebimento se explicar sozinho.
 const scheduleChipLabel = computed(() => scheduleLabel(
   props.deliveryDate,
-  windowLabel(props.deliverySlots, props.deliveryTimeSlot),
+  resolveWindowLabel(props.deliveryTimeSlot, [props.deliverySlots, props.canonicalDeliverySlots ?? []]),
   props.scheduleToday,
 ));
 const discountSheetOpen = ref(false);
@@ -714,16 +719,16 @@ const ctaLabel = computed(() => {
 const scheduleConflictReason = computed(
   () => selectedWindowConflict(props.deliverySlots, props.deliveryTimeSlot),
 );
-// Levar o foco ao campo que resolve. Por `aria-label` porque é o nome que o
-// campo já carrega para quem não enxerga — um `ref` a mais seria um segundo
-// nome para a mesma coisa, e o primeiro a envelhecer.
+// Levar o foco ao campo que resolve — pelo mecanismo de próximo foco do kit
+// (`reveal`: espera o DOM assentar, rola a coluna de trabalho até o campo e
+// foca). Sem fonte de fluxo de propósito: nesta tela o foco de teclado é todo
+// explícito (o shell captura dígitos e letras fora de input), então só o
+// `reveal` entra. Por `aria-label` porque é o nome que o campo já carrega para
+// quem não enxerga — um `ref` a mais seria um segundo nome para a mesma coisa,
+// e o primeiro a envelhecer.
+const { reveal } = useNextFocus();
 function focusByAriaLabel(label: string) {
-  if (!import.meta.client) return;
-  void nextTick(() => {
-    const field = document.querySelector<HTMLInputElement>(`[aria-label="${label}"]`);
-    field?.focus();
-    field?.scrollIntoView({ block: "center", behavior: "auto" });
-  });
+  reveal(() => document.querySelector<HTMLInputElement>(`[aria-label="${label}"]`), { align: "center" });
 }
 
 type CheckoutAction = { label: string; run: () => void };
@@ -733,13 +738,10 @@ function removePixAndFocusAlternative() {
     .filter((index) => index >= 0)
     .reverse();
   pixIndexes.forEach((index) => emit("removeTender", index));
-  void nextTick(() => {
-    const alternative = document.querySelector<HTMLElement>(
-      '[data-payment-method]:not([data-payment-method="pix"]):not(:disabled)',
-    );
-    alternative?.focus();
-    alternative?.scrollIntoView({ block: "center", behavior: "auto" });
-  });
+  reveal(
+    () => document.querySelector<HTMLElement>('[data-payment-method]:not([data-payment-method="pix"]):not(:disabled)'),
+    { align: "center" },
+  );
 }
 
 function returnToCart() {
@@ -982,7 +984,18 @@ const notices = computed<CheckoutNotice[]>(() => {
     //
     // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
     // SEFAZ. Prometer o instante seria a segunda mentira.
-    notes.push({ key: "print", icon: "lucide:printer", message: "Pedir papel já pede a nota — imprime sozinha assim que autorizar." });
+    //
+    // ⚠️ Mas só quando o CONTRATO diz que pedir papel pede a nota
+    // (`receipt_requests_emission`). Sem essa palavra do servidor, a bobina só
+    // sai quando outra regra emitir (CPF, cartão, Pix) — e prometer "imprime
+    // sozinha" num dinheiro sem CPF seria a mentira de sempre com outra frase.
+    notes.push({
+      key: "print",
+      icon: "lucide:printer",
+      message: props.checkoutContract?.receipt_requests_emission
+        ? "Pedir papel já pede a nota — imprime sozinha assim que autorizar."
+        : "A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).",
+    });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
   // e uma segunda caixa ao lado só ensina o olho a pular as duas.
@@ -1074,7 +1087,15 @@ defineExpose({
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
-    if (blockedForDelivery(ref) || blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
+    // A tecla da forma bloqueada calava: o operador apertava P, nada
+    // acontecia, e apertava de novo achando que a tecla quebrou. O dedo no
+    // botão já ouvia o motivo (`addTender`); a tecla ouve o mesmo.
+    if (blockedForDelivery(ref)) {
+      const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      return true;
+    }
+    if (blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
     emit("addTender", ref);
     return true;
   },
@@ -1237,25 +1258,37 @@ defineExpose({
                 aria-hidden="true"
               >F10</OperatorKbd>
             </button>
-            <template v-if="deliveryCollections.length > 1">
-              <button
-                v-for="collection in deliveryCollections"
-                :key="collection.ref"
-                type="button"
-                class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-                :class="paymentCollection === collection.ref ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
-                :aria-pressed="paymentCollection === collection.ref"
-                @click="$emit('update:paymentCollection', collection.ref)"
-              >
-                <Icon :name="collection.ref === 'terminal' || fulfillmentType === 'pickup' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
-                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
-              </button>
-            </template>
           </div>
         </section>
 
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ salesMode === "order" ? "Pagamento da encomenda" : "Forma de pagamento" }}</h3>
+          <!-- QUANDO COBRAR — a primeira pergunta da encomenda, SOB o título e
+               em duas palavras. Os botões moravam na fileira de ações, ao lado
+               de Desconto e Dividir, com rótulos longos que truncavam: não dava
+               para saber qual era qual. O escolhido é cheio, como o modo
+               Balcão/Encomendas. -->
+          <div
+            v-if="deliveryCollections.length > 1"
+            class="flex items-center gap-0.5 rounded-md border bg-muted/40 p-0.5"
+            role="group"
+            aria-label="Quando cobrar"
+          >
+            <button
+              v-for="collection in deliveryCollections"
+              :key="collection.ref"
+              type="button"
+              class="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 text-sm font-semibold transition"
+              :class="paymentCollection === collection.ref
+                ? 'bg-primary text-primary-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'"
+              :aria-pressed="paymentCollection === collection.ref"
+              @click="$emit('update:paymentCollection', collection.ref)"
+            >
+              <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : fulfillmentType === 'pickup' ? 'lucide:hand-coins' : 'lucide:bike'" class="size-4 shrink-0" />
+              <span class="truncate">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
+            </button>
+          </div>
           <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
           <p
             v-if="pixProviderTest && !hasPixProviderTestTender && (splitActive || hasNonPixTender)"
@@ -1889,9 +1922,11 @@ defineExpose({
   />
 
   <!-- Cliente & fiscal — shared full-screen picker (showFiscal rides the receipt) -->
+  <!-- O comprovante DESTA venda (impressa / e-mail / CPF na nota) mora na
+       coluna "Nota e comprovante" acima; o modal cuida do cadastro e dos
+       PADRÕES do cliente. Nada de comprovante viaja para ele. -->
   <PosCustomerModal
     v-model:open="customerSheetOpen"
-    :show-fiscal="supportsFiscalDocument"
     :customer-name="customerName"
     :customer-phone="customerPhone"
     :customer-tax-id="customerTaxId"
@@ -1901,32 +1936,26 @@ defineExpose({
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
+    :new-customer-prefs="newCustomerPrefs"
     :customer-decision="customerDecision"
     :customer-merge-busy="customerMergeBusy"
     :customer-release-busy="customerReleaseBusy"
-    :receipt-channels="receiptChannels"
-    :receipt-channel-options="receiptChannelOptions"
-    :receipt-email="receiptEmail"
-    :receipt-email-offer="receiptEmailOffer"
-    :save-receipt-contact="saveReceiptEmailChecked"
     @update:customer-name="$emit('update:customerName', $event)"
     @update:customer-phone="$emit('update:customerPhone', $event)"
     @update:customer-tax-id="$emit('update:customerTaxId', $event)"
     @update:customer-email="$emit('update:customerEmail', $event)"
-    @update:receipt-channels="$emit('update:receiptChannels', $event)"
-    @update:receipt-email="$emit('update:receiptEmail', $event)"
-    @update:save-receipt-contact="$emit('update:saveReceiptContact', $event)"
     @search="$emit('search', $event)"
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
     @resolve-customer="$emit('resolveCustomer', $event)"
     @decision-confirm="$emit('decisionConfirm', $event)"
     @decision-cancel="$emit('decisionCancel')"
-    @decision-merge="$emit('decisionMerge')"
+    @decision-merge="$emit('decisionMerge', $event)"
     @decision-release="$emit('decisionRelease', $event)"
     @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
+    @apply-preference="(key, value) => $emit('applyPreference', key, value)"
   />
 
   <!-- MODAL: MAQUININHA — o valor que o operador vai digitar no terminal.

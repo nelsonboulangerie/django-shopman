@@ -8,16 +8,19 @@ import {
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import { collectionJsonLd, jsonLdText } from '~/presentation/seo'
+import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
 const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 const router = useRouter()
+const session = useShopSession()
+const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
   credentials: 'include'
 })
+await siteSeoReady
 
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
@@ -295,16 +298,36 @@ onBeforeUnmount(() => {
   if (scrollRaf) window.cancelAnimationFrame(scrollRaf)
 })
 
+// Título e descrição escritos no Admin vencem. Sem eles, a frase padrão diz o
+// que é a casa, onde fica e as primeiras seções de verdade do cardápio — nunca
+// "42 itens publicados.", que não diz nada a quem busca.
+const menuPageSeo = computed(() => sitePageSeo(siteSeo.value, 'menu'))
+const menuTitle = computed(() => menuPageSeo.value.title || 'Cardápio')
+const menuDescription = computed(() => menuPageSeo.value.description || listingDescription({
+  subject: 'Cardápio',
+  brandName: session.shop.value?.brand_name || '',
+  tagline: session.shop.value?.tagline,
+  city: session.shop.value?.default_city,
+  names: sections.value
+    .filter(section => !section.is_dynamic && section.items.length)
+    .map(section => collectionDisplayLabel(section))
+}))
+const requestUrl = useRequestURL()
+const menuCanonical = computed(() => `${requestUrl.origin}/menu`)
+
 useSeoMeta({
-  title: 'Cardápio',
-  description: () => catalog.value?.has_items ? `${uniqueItems.value.length} itens publicados.` : 'Cardápio publicado.'
+  title: () => menuTitle.value,
+  description: () => menuDescription.value,
+  ogTitle: () => menuTitle.value,
+  ogDescription: () => menuDescription.value,
+  ogUrl: () => menuCanonical.value,
+  twitterTitle: () => menuTitle.value,
+  twitterDescription: () => menuDescription.value
 })
 // Canonical sem query → variantes de filtro (?filtro=/?secao=) não duplicam.
 useCanonical()
 
 // JSON-LD CollectionPage (ItemList) — a vitrine do cardápio para o Google.
-const requestUrl = useRequestURL()
-const menuCanonical = computed(() => `${requestUrl.origin}/menu`)
 useHead({
   script: () => catalog.value && uniqueItems.value.length
     ? [{

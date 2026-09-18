@@ -1,11 +1,10 @@
 <script setup lang="ts">
-// Ticket detail modal — opened from the minimal card. Holds the work: every item
-// (with modifications prominent), tap to check, and finalize. Checked items dim
-// (minimalist — no noisy strikethrough, per Pablo). Dark, distance-friendly.
+// Detalhe do ticket — aberto pelo `i` do card. Só leitura: canal, horário, cliente,
+// notas e itens completos. A ação (iniciar/finalizar) mora no cabeçalho do card, e
+// só lá — dois lugares para o mesmo gesto é um lugar a mais para tocar errado.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
-  itemProgress,
   lucideIcon,
   slaPercent,
   splitRef,
@@ -19,11 +18,7 @@ const props = defineProps<{
   open: boolean;
   ticket: KDSTicketProjection | null;
 }>();
-defineEmits<{
-  "update:open": [boolean];
-  checkItem: [index: number, checked: boolean];
-  done: [];
-}>();
+defineEmits<{ "update:open": [boolean] }>();
 
 const ref_ = computed(() =>
   props.ticket ? splitRef(props.ticket.order_ref) : { prefix: "", code: "" },
@@ -38,9 +33,6 @@ const fill = computed(() =>
     ? slaPercent(props.ticket.elapsed_seconds, props.ticket.target_seconds)
     : 0,
 );
-const progress = computed(() =>
-  props.ticket ? itemProgress(props.ticket.items) : { done: 0, total: 0 },
-);
 </script>
 
 <template>
@@ -53,8 +45,8 @@ const progress = computed(() =>
         >Pedido {{ ticket.order_ref }}</UiDialogTitle
       >
       <UiDialogDescription class="sr-only">
-        {{ ticket.customer_name || "Sem cliente" }} — {{ progress.done }} de
-        {{ progress.total }} itens prontos.
+        {{ ticket.customer_name || "Sem cliente" }} — {{ ticket.status_label }},
+        {{ ticket.items.length }} {{ ticket.items.length === 1 ? "item" : "itens" }}.
       </UiDialogDescription>
       <!-- header -->
       <div class="border-b">
@@ -146,96 +138,40 @@ const progress = computed(() =>
         </p>
       </div>
 
-      <!-- items (tap to check; mods prominent; checked = dim, no strikethrough) -->
+      <!-- itens: inteiros, observação em destaque -->
       <div class="min-h-0 flex-1 overflow-y-auto p-3">
         <div
           class="flex items-center justify-between px-1 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
         >
           <span>Itens</span>
-          <span class="tabular-nums"
-            >{{ progress.done }}/{{ progress.total }}</span
-          >
+          <span>{{ ticket.status_label }}</span>
         </div>
-        <ul class="flex flex-col">
-          <li v-for="(item, idx) in ticket.items" :key="idx">
-            <button
-              type="button"
-              class="flex w-full items-start justify-between gap-3 rounded-md p-3 text-left transition hover:bg-accent/50 active:scale-[0.99]"
-              @click="$emit('checkItem', idx, !item.checked)"
-            >
-              <span class="min-w-0 flex-1">
-                <span
-                  class="relative flex items-center gap-2 text-lg leading-snug transition-colors duration-200"
-                  :class="item.checked ? 'text-muted-foreground' : 'font-bold'"
-                >
-                  <span class="shrink-0 tabular-nums">{{ item.qty }}×</span>
-                  <span class="min-w-0 flex-1 truncate">{{ item.name }}</span>
-                  <span
-                    v-if="item.checked"
-                    aria-hidden="true"
-                    class="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-muted-foreground/50"
-                  />
-                </span>
-                <span
-                  v-if="item.notes"
-                  class="mt-1.5 flex"
-                  :class="item.checked ? 'opacity-50' : ''"
-                >
-                  <span
-                    class="inline-flex min-w-0 max-w-full items-center rounded border bg-muted px-2 py-0.5 text-sm font-medium text-muted-foreground"
-                  >
-                    <span class="truncate">{{ item.notes }}</span>
-                  </span>
-                </span>
-                <span
-                  v-if="item.stock_warning"
-                  class="mt-1.5 flex"
-                  :class="item.checked ? 'opacity-50' : ''"
-                >
-                  <span
-                    class="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded border bg-muted px-2 py-0.5 text-sm font-semibold text-foreground"
-                  >
-                    <Icon
-                      name="lucide:triangle-alert"
-                      class="size-3.5 shrink-0"
-                    />
-                    <span class="truncate">{{ item.stock_warning }}</span>
-                  </span>
-                </span>
-              </span>
-              <Icon
-                name="lucide:check"
-                class="size-6 shrink-0 transition-colors duration-200"
-                :class="
-                  item.checked ? 'text-foreground' : 'text-muted-foreground/30'
-                "
-              />
-            </button>
+        <ul class="flex flex-col divide-y divide-border/50">
+          <li
+            v-for="(item, idx) in ticket.items"
+            :key="idx"
+            class="flex items-start gap-3 p-3"
+          >
+            <span class="shrink-0 text-lg font-bold leading-snug tabular-nums">{{ item.qty }}×</span>
+            <div class="min-w-0 flex-1">
+              <p class="break-words text-lg font-bold leading-snug">{{ item.name }}</p>
+              <p
+                v-if="item.notes"
+                class="mt-1 flex items-start gap-1.5 text-base font-semibold leading-snug text-foreground/85"
+              >
+                <Icon name="lucide:corner-down-right" class="mt-1 size-4 shrink-0 opacity-60" />
+                <span class="min-w-0 whitespace-pre-wrap break-words">{{ item.notes }}</span>
+              </p>
+              <p
+                v-if="item.stock_warning"
+                class="mt-1 flex items-start gap-1.5 text-sm font-semibold leading-snug"
+              >
+                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
+                <span class="min-w-0 break-words">{{ item.stock_warning }}</span>
+              </p>
+            </div>
           </li>
         </ul>
-      </div>
-
-      <!-- finalize — neutro (preto no dark); tique verde é o acento ao ficar pronto -->
-      <div class="shrink-0 border-t p-4">
-        <button
-          type="button"
-          class="flex h-14 w-full items-center justify-center gap-2 rounded-md border text-base font-semibold transition active:scale-[0.99]"
-          :class="
-            ticket.all_checked
-              ? 'border-border bg-background text-foreground hover:bg-accent'
-              : 'border-border/60 text-muted-foreground hover:bg-accent hover:text-foreground'
-          "
-          @click="$emit('done')"
-        >
-          <Icon
-            name="lucide:check-check"
-            class="size-5"
-            :class="ticket.all_checked ? 'text-success' : ''"
-          />
-          {{
-            ticket.all_checked ? "Finalizar — tudo pronto" : "Finalizar pedido"
-          }}
-        </button>
       </div>
     </UiDialogContent>
   </UiDialog>

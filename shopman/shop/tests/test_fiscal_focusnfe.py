@@ -510,3 +510,22 @@ def test_invalid_delivery_address_values_are_not_guessed(field, value):
     assert not result.success
     assert result.error_code == "focus_nfe_invalid_payload"
     send.assert_not_called()
+
+
+def test_payment_code_conta_na_casa_e_credito_loja_e_link_fica_em_outros():
+    """tPag: conta na casa → 05 (crédito loja); link → 99 (crédito ou débito só a
+    Stripe sabe depois da captura). Códigos a confirmar com o contador (17/09/2026)."""
+    from shopman.shop.adapters.fiscal_focusnfe import _payment_code
+
+    assert _payment_code("account") == "05"
+    assert _payment_code("house_account") == "05"
+    # Cartão pela Stripe (loja `card` e `link`): o funding da cobrança decide.
+    assert _payment_code("link") == "99"
+    assert _payment_code("card") == "99"
+    assert _payment_code("link", "credit") == "03"
+    assert _payment_code("card", "debit") == "04"
+    assert _payment_code("card", "prepaid") == "99"
+    # O balcão já diz crédito/débito por conta própria; funding não interfere.
+    assert _payment_code("credit", "debit") == "03"
+    assert _payment_code("pix") == "17"
+    assert _payment_code("cash") == "01"

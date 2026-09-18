@@ -460,7 +460,7 @@ def _pre_send_outcome(
         return DeliveryState.SUPPRESSED.value, "global_optout"
 
     reasons = frozenset(member.reasons or [])
-    from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
+    from shopman.shop.services.marketing_age import is_known_minor, is_proved_adult
 
     is_alert_delivery = bool("alerts" in reasons and member.subscription_ref)
     if is_alert_delivery:
@@ -468,9 +468,10 @@ def _pre_send_outcome(
         # birthday is unknown, but it can never override a canonical minor DOB.
         if customer is not None and is_known_minor(customer.birthday):
             return DeliveryState.SUPPRESSED.value, "recipient_known_minor"
-    elif customer is None or not is_known_adult(customer.birthday):
-        # General direct marketing requires the canonical account fact. A
-        # legacy snapshot or a removed birthday must fail closed at claim time.
+    elif customer is None or not is_proved_adult(customer.birthday, customer.metadata):
+        # General direct marketing requires a canonical account proof (the login
+        # declaration or an adult birthday). A legacy snapshot or a removed
+        # proof must fail closed at claim time.
         return DeliveryState.SUPPRESSED.value, "recipient_age_not_verified"
 
     if member.subscription_ref:
@@ -484,6 +485,16 @@ def _pre_send_outcome(
     )
     if not has_consent:
         return DeliveryState.SUPPRESSED.value, "missing_consent"
+    if target.platform == "whatsapp":
+        from shopman.shop.services import manychat_marketing_safety
+
+        if manychat_marketing_safety.canary_excludes(customer_ref):
+            # Ensaio do WhatsApp: fora da lista não vira tentativa. O adapter
+            # recusaria de qualquer jeito; suprimir aqui dá o motivo certo ao ledger.
+            return (
+                DeliveryState.SUPPRESSED.value,
+                manychat_marketing_safety.CANARY_RECIPIENT_EXCLUDED_CODE,
+            )
 
     # Consent and identity are checked before the delivery window. A revoked or
     # inactive target is terminal now; deferring it until morning would retain

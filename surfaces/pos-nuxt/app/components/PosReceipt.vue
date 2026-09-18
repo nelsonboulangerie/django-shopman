@@ -9,7 +9,7 @@
 // this is the web prototype.
 import type { POSPaymentMethodProjection } from "~/types/pos";
 import type { PosReceiptSnapshot } from "~/presentation/receipt";
-import { receiptLines, receiptPayments } from "~/presentation/receipt";
+import { receiptLines, receiptPaymentPending, receiptPayments } from "~/presentation/receipt";
 
 const props = defineProps<{
   receipt: PosReceiptSnapshot;
@@ -19,6 +19,7 @@ const props = defineProps<{
 
 const lines = computed(() => receiptLines(props.receipt));
 const payments = computed(() => receiptPayments(props.receipt, props.paymentMethods));
+const paymentPending = computed(() => receiptPaymentPending(props.receipt));
 const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleString("pt-BR"));
 </script>
 
@@ -52,6 +53,9 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
     <div class="flex justify-between text-sm font-bold">
       <span>Total</span><span class="tabular-nums">{{ receipt.totalDisplay }}</span>
     </div>
+    <!-- Cobrança na entrega/retirada: o papel sai antes do dinheiro, e diz isso
+         como o servidor diz — sem a marca, é um comprovante. -->
+    <p v-if="paymentPending" class="my-1 text-center text-[11px] font-bold" data-payment-pending>*** PAGAMENTO PENDENTE ***</p>
     <div v-for="(payment, idx) in payments" :key="idx" class="flex justify-between text-[11px]">
       <span>{{ payment.label }}</span><span class="tabular-nums">{{ payment.amountDisplay }}</span>
     </div>
