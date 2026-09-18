@@ -368,7 +368,7 @@ test.describe("cartão de anúncio", () => {
     await page.getByLabel("Texto do anúncio").fill("Texto selado na decisão");
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Visualizar consequência" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     const dialog = page.getByRole("dialog").first();
     await dialog
       .getByRole("button", { name: "Ver a prévia em tamanho real" })
