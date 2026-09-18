@@ -528,6 +528,52 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
   });
 });
 
+describe("CampaignForm — as escolhas são peças do kit", () => {
+  // ⚠️ Os sete checkboxes e o rádio desta tela eram o controle nativo do browser com
+  // uma tinta do Tailwind por cima: desenho do sistema operacional no meio do desenho
+  // da casa, diferente em cada dispositivo, e sem o alvo de toque de 44 px que quem
+  // atende balcão precisa com uma mão só. Este teste prende a semântica que o
+  // primitivo garante — `role="checkbox"` com `aria-checked` — e prova que o valor
+  // marcado ainda chega ao payload.
+  it("marca o público por role=checkbox, e a marca chega ao envio", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    const birthday = wrapper
+      .findAll('[role="checkbox"]')
+      .find((box) => box.text().includes("Aniversariantes de hoje"))!;
+
+    expect(birthday.attributes("aria-checked")).toBe("false");
+    await birthday.trigger("click");
+    expect(birthday.attributes("aria-checked")).toBe("true");
+
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(
+      (payload.audience_rules as Record<string, unknown>).birthday_today,
+    ).toBe(true);
+  });
+
+  // ⚠️ A pílula de plataforma NÃO é um `UiCheckbox`: ela é um chip cuja caixa inteira
+  // acende e que ainda carrega o estado da plataforma. O primitivo que ela pede — um
+  // `UiToggleChip` — não existe no kit, e enfiar o quadrado com rótulo ao lado no
+  // lugar dela seria trocar a peça certa por uma parecida. Até lá, ela fica onde está.
+  it("deixa a pílula de plataforma fora da conversão, e ela continua marcando", async () => {
+    const wrapper = form(makeRule({ platforms: [] }));
+
+    const pill = wrapper.find('input[type="checkbox"].sr-only');
+    expect(pill.exists()).toBe(true);
+
+    await pill.setValue(true);
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.platforms).toContain("whatsapp");
+  });
+});
+
 describe("CampaignForm — a voz do gestor", () => {
   // ⚠️ A entidade é `Campaign` e a lista chama de "campanha"; o formulário fechava
   // com "Regra ativa", um terceiro nome para a mesma coisa.
