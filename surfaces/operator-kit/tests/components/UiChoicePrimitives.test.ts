@@ -6,6 +6,7 @@ import UiCheckbox from "../../app/components/UiCheckbox.vue";
 import UiRadio from "../../app/components/UiRadio.vue";
 import UiRadioGroup from "../../app/components/UiRadioGroup.vue";
 import UiSelect from "../../app/components/UiSelect.vue";
+import UiToggleChip from "../../app/components/UiToggleChip.vue";
 import type { ChoiceOption } from "../../app/types/choice";
 
 // Os três primitivos de escolha, testados NA FONTE.
@@ -422,5 +423,73 @@ describe("UiSelect — o que veio do MaterialPicker", () => {
     await nextTick();
 
     expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+  });
+});
+
+describe("UiToggleChip", () => {
+  // ⚠️ É o irmão do `UiCheckbox`, não um apelido dele. O checkbox desenha um quadrado
+  // com o rótulo ao lado; o chip é uma pílula cuja CAIXA INTEIRA acende. Onde a escolha
+  // é curta e cabem várias na linha — plataformas, etiquetas, segmentos — trocar um pelo
+  // outro é pôr a peça parecida no lugar da peça certa. Foi por isso que a conversão dos
+  // primitivos deixou essas telas de fora, com o vazio registrado em comentário.
+  it("é um checkbox por ARIA, com alvo de 44 px pelo token", async () => {
+    const wrapper = await mount(UiToggleChip, {
+      props: { modelValue: false, label: "Instagram" },
+    });
+
+    const control = wrapper.get('[role="checkbox"]');
+    expect(control.attributes("type")).toBe("button");
+    expect(control.attributes("aria-checked")).toBe("false");
+    expect(control.classes()).toContain("min-h-control");
+    expect(control.classes()).toContain("rounded-full");
+    expect(control.text()).toBe("Instagram");
+  });
+
+  it("marca e desmarca, e conta o estado pelo ARIA", async () => {
+    const wrapper = await mount(UiToggleChip, {
+      props: { modelValue: false, label: "Sem glúten" },
+    });
+
+    await wrapper.get('[role="checkbox"]').trigger("click");
+    expect(wrapper.emitted("update:modelValue")![0]).toEqual([true]);
+
+    await wrapper.setProps({ modelValue: true });
+    expect(wrapper.get('[role="checkbox"]').attributes("aria-checked")).toBe("true");
+    await wrapper.get('[role="checkbox"]').trigger("click");
+    expect(wrapper.emitted("update:modelValue")![1]).toEqual([false]);
+  });
+
+  // ⚠️ O que o separa do `UiFilterChip`, que tem a mesma silhueta: aquele é CHROME
+  // (filtra uma lista, acende em sólido), este é CONTROLE (carrega valor, acende em
+  // contorno + tint — o padrão único de seleção da escala de design).
+  it("acende em contorno e tint, nunca em sólido", async () => {
+    const wrapper = await mount(UiToggleChip, {
+      props: { modelValue: true, label: "Instagram" },
+    });
+
+    const classes = wrapper.get('[role="checkbox"]').classes();
+    expect(classes).toContain("border-primary");
+    expect(classes).toContain("bg-primary/10");
+    expect(classes).not.toContain("bg-primary");
+  });
+
+  it("desabilitado não emite nada", async () => {
+    const wrapper = await mount(UiToggleChip, {
+      props: { modelValue: false, label: "Google", disabled: true },
+    });
+
+    await wrapper.get('[role="checkbox"]').trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+
+  // A pílula de plataforma carrega ícone e o estado da plataforma ("· limitada") ao
+  // lado do nome; o slot existe para isso, e o rótulo simples continua sendo prop.
+  it("aceita conteúdo composto no lugar do rótulo simples", async () => {
+    const wrapper = await mount(UiToggleChip, {
+      props: { modelValue: true },
+      slots: { default: () => "WhatsApp · limitada" },
+    });
+
+    expect(wrapper.get('[role="checkbox"]').text()).toBe("WhatsApp · limitada");
   });
 });
