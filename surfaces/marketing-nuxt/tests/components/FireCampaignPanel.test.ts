@@ -129,8 +129,8 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("não deixa disparar sem escolher ninguém", async () => {
     const wrapper = panel();
-    const radios = wrapper.findAll('input[name="audience-mode"]');
-    await radios[1]!.setValue();
+    const radios = wrapper.findAll('[role="radio"]');
+    await radios[1]!.trigger("click");
 
     const submit = wrapper.find('button[type="submit"]');
     expect(submit.attributes("disabled")).toBeDefined();
@@ -138,7 +138,7 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("monta o público escolhido em vocabulário do backend", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
 
     // "Atacado" e "Em risco" — o gestor clica em frases, não em chaves.
     const chips = wrapper.findAll("button[aria-pressed]");
@@ -157,8 +157,8 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("traduz 'quem está sumindo' para o piso de risco que o resolvedor entende", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
-    await wrapper.findAll('input[type="checkbox"]')[0]!.setValue(true);
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
+    await wrapper.findAll('[role="checkbox"]')[0]!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
@@ -168,10 +168,10 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("aniversariantes e VIP-primeiro convivem no mesmo disparo", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
-    const boxes = wrapper.findAll('input[type="checkbox"]');
-    await boxes[1]!.setValue(true); // aniversariantes
-    await boxes[2]!.setValue(true); // VIP primeiro
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
+    const boxes = wrapper.findAll('[role="checkbox"]');
+    await boxes[1]!.trigger("click"); // aniversariantes
+    await boxes[2]!.trigger("click"); // VIP primeiro
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
@@ -185,7 +185,7 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("trocar de campanha zera a escolha anterior", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
 
@@ -326,7 +326,7 @@ describe("FireCampaignPanel — postagem pública", () => {
 describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
   it("mostra o tamanho do público enquanto se escolhe", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await settleCount(wrapper);
@@ -348,7 +348,7 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
       parts: [{ label: "Faixa de preço", count: 0 }],
     });
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
     await settleCount(wrapper);
 
@@ -489,9 +489,9 @@ describe("FireCampaignPanel — becos sem saída", () => {
     const wrapper = panel(makeRule({ audience_rules: {} }));
     await settleCount(wrapper);
 
-    const radios = wrapper.findAll('input[name="audience-mode"]');
-    expect((radios[0]!.element as HTMLInputElement).checked).toBe(false);
-    expect((radios[1]!.element as HTMLInputElement).checked).toBe(true);
+    const radios = wrapper.findAll('[role="radio"]');
+    expect(radios[0]!.attributes("aria-checked")).toBe("false");
+    expect(radios[1]!.attributes("aria-checked")).toBe("true");
     expect(wrapper.text()).toContain("Esta campanha não tem público salvo");
     expect(wrapper.text()).toContain("Escolha pelo menos um grupo acima");
   });
@@ -502,8 +502,8 @@ describe("FireCampaignPanel — becos sem saída", () => {
     );
     await settleCount(wrapper);
 
-    const radios = wrapper.findAll('input[name="audience-mode"]');
-    expect((radios[1]!.element as HTMLInputElement).checked).toBe(true);
+    const radios = wrapper.findAll('[role="radio"]');
+    expect(radios[1]!.attributes("aria-checked")).toBe("true");
   });
 
   it("com público salvo, nada disso aparece", async () => {
@@ -519,7 +519,7 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
   /** Duas regras escolhidas: é o mínimo para a combinação querer dizer algo. */
   async function twoRulesChosen() {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await chips.find((c) => c.text() === "Em risco")!.trigger("click");
@@ -528,7 +528,7 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
 
   it("não oferece a escolha com uma regra só, onde ela não significaria nada", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
 
     expect(wrapper.text()).not.toContain("Qualquer uma");
@@ -591,7 +591,7 @@ describe("FireCampaignPanel — etiquetas", () => {
   /** As opções só existem em "Escolher agora" — no modo salvo, quem manda é a campanha. */
   async function chooseNow() {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     return wrapper;
   }
 
@@ -602,7 +602,7 @@ describe("FireCampaignPanel — etiquetas", () => {
 
   it("manda os slugs escolhidos no vocabulário do backend", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
     await wrapper.find("form").trigger("submit");
@@ -619,7 +619,7 @@ describe("FireCampaignPanel — etiquetas", () => {
 
   it("etiqueta sozinha habilita o disparo só depois da contagem segura", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
 
@@ -635,7 +635,7 @@ describe("FireCampaignPanel — etiquetas", () => {
 
   it("etiqueta conta como regra na hora de somar ou cruzar", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
     expect(wrapper.text()).not.toContain("Qualquer uma");

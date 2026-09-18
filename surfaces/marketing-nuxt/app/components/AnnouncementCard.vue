@@ -891,23 +891,20 @@ function askToReject() {
           <p class="text-xs text-muted-foreground">
             {{ scheduleResolution.detail }}
           </p>
-          <div class="mt-1 flex flex-wrap gap-3 text-xs">
-            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
-            <label
+          <UiRadioGroup
+            v-model="publishFold"
+            label="Qual das duas ocorrências"
+            orientation="horizontal"
+            class="mt-1 text-xs"
+          >
+            <UiRadio
               v-for="(candidate, index) in scheduleResolution.candidates"
               :key="candidate.instant"
-              class="flex items-center gap-1.5"
-            >
-              <input
-                v-model="publishFold"
-                type="radio"
-                :value="index === 0 ? 'earlier' : 'later'"
-              />
-              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{
-                candidate.offset
-              }})
-            </label>
-          </div>
+              :value="index === 0 ? 'earlier' : 'later'"
+              variant="inline"
+              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
+            />
+          </UiRadioGroup>
         </fieldset>
         <p
           v-if="schedulePreview && scheduleResolution.ok"

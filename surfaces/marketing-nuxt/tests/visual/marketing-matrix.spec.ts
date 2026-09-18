@@ -468,7 +468,10 @@ test.describe("listas operacionais", () => {
   test("conflito de configuração mantém consequência visível", async ({ page }) => {
     await openScenario(page, "platforms-conflict", "/platforms", V1440);
     await page.getByRole("button", { name: /WhatsApp/ }).click();
-    await page.getByRole("button", { name: /Aviso de fornada — versão revisada/ }).click();
+    // O modelo aprovado virou UMA linha com lista (`UiSelect`): abre e escolhe,
+    // em vez de um cartão por modelo.
+    await page.getByRole("button", { name: /Modelo aprovado/ }).click();
+    await page.getByRole("option", { name: /Aviso de fornada — versão revisada/ }).click();
     const code = page.getByRole("group", {
       name: "Código de 6 dígitos do autenticador",
     });

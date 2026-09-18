@@ -161,6 +161,23 @@ function checkedAt(value: string): string {
   }).format(new Date(value));
 }
 
+// "Sem modelo" é a primeira opção da lista, não um cartão à parte: ela é uma
+// escolha como as outras, e separá-la só ensinava que não era.
+const templateOptions = computed(() => [
+  {
+    value: "",
+    label: "Sem modelo",
+    hint: "Texto livre — alcança só quem conversou nas últimas 24 horas.",
+  },
+  ...waTemplate.available.value.map((option) => ({
+    value: option.ns,
+    label: option.name,
+    // O `ns` não aparece na linha, mas a busca o considera: é por ele que a Meta
+    // chama o fluxo, e é ele que o gestor tem à mão quando o nome não bate.
+    keywords: option.ns,
+  })),
+]);
+
 const pendingFlowName = computed(() => {
   if (pendingFlow.value === "") return "Sem fluxo (janela de 24 horas)";
   return (
@@ -383,63 +400,21 @@ useHead({ title: "Plataformas" });
               </div>
 
               <div v-else class="mt-3 space-y-1.5">
-                <!-- Cartões de seleção preservam contexto e estado que um botão genérico esconderia. -->
-                <button
-                  type="button"
-                  class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-                  :class="
-                    waTemplate.current.value === ''
-                      ? 'border-primary'
-                      : 'border-border'
-                  "
-                  :disabled="
-                    savingTemplate ||
-                    !waTemplate.commandAvailable.value ||
-                    waTemplate.current.value === ''
-                  "
-                  @click="onChooseTemplate('')"
-                >
-                  <Icon
-                    name="lucide:circle-slash"
-                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  />
-                  <span>
-                    <span class="block text-sm font-medium">Sem modelo</span>
-                    <span class="block text-xs text-muted-foreground">
-                      Texto livre — alcança só quem conversou nas últimas 24
-                      horas.
-                    </span>
-                  </span>
-                </button>
-
-                <!-- Um único cartão v-for representa cada modelo remoto selecionável. -->
-                <button
-                  v-for="option in waTemplate.available.value"
-                  :key="option.ns"
-                  type="button"
-                  class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-                  :class="
-                    waTemplate.current.value === option.ns
-                      ? 'border-primary'
-                      : 'border-border'
-                  "
-                  :disabled="
-                    savingTemplate ||
-                    !waTemplate.commandAvailable.value ||
-                    waTemplate.current.value === option.ns
-                  "
-                  @click="onChooseTemplate(option.ns)"
-                >
-                  <Icon
-                    name="lucide:file-check-2"
-                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  />
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium">{{
-                      option.name
-                    }}</span>
-                  </span>
-                </button>
+                <!-- ⚠️ Era um cartão POR modelo. A conta do ManyChat não tem teto:
+                     com algumas dezenas de fluxos aprovados, escolher virava rolar
+                     a página inteira. Agora é UMA linha que diz o que está valendo,
+                     e a lista só abre quando alguém vai trocar — com busca, porque
+                     acima de doze opções ninguém varre com o olho. -->
+                <UiSelect
+                  :model-value="waTemplate.current.value"
+                  :options="templateOptions"
+                  label="Modelo aprovado"
+                  placeholder="Sem modelo"
+                  search-placeholder="Buscar modelo aprovado"
+                  empty-text="Nenhum modelo com esse nome"
+                  :disabled="savingTemplate || !waTemplate.commandAvailable.value"
+                  @update:model-value="onChooseTemplate(String($event))"
+                />
                 <p
                   v-if="waTemplate.available.value.length === 0"
                   class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"

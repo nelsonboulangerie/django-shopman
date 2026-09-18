@@ -51,15 +51,18 @@ async function toggleCategory(category: string): Promise<void> {
     <fieldset v-if="currentDevice" class="mt-5 border-t border-border pt-4">
       <legend class="text-sm font-semibold">O que chega aqui</legend>
       <div class="mt-3 grid gap-2 sm:grid-cols-2">
-        <label v-for="category in categories" :key="category.value" class="flex items-center gap-2 text-sm">
-          <input type="checkbox" :checked="checked(category.value)" @change="toggleCategory(category.value)">
-          <span>{{ category.label }}</span>
-        </label>
+        <UiCheckbox
+          v-for="category in categories"
+          :key="category.value"
+          :model-value="checked(category.value)"
+          :label="category.label"
+          @update:model-value="toggleCategory(category.value)"
+        />
       </div>
     </fieldset>
 
     <div v-if="devices.length" class="mt-5 border-t border-border pt-4">
-      <h3 class="text-sm font-semibold">Aparelhos ativos</h3>
+      <h3 class="text-sm font-semibold">Dispositivos ativos</h3>
       <ul class="mt-2 divide-y divide-border">
         <li v-for="device in devices" :key="device.id" class="flex items-center justify-between gap-3 py-2 text-sm">
           <span class="min-w-0">

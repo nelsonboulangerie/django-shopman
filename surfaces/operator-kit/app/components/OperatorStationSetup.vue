@@ -18,6 +18,16 @@ onMounted(async () => {
   if (terminals.value.length === 1) escolhido.value = terminals.value[0]!.ref;
 });
 
+// O `ref` do terminal vira a segunda linha da opção: dois balcões podem ter
+// rótulo parecido, e é o ref que desempata na hora de dizer qual máquina é esta.
+const terminalOptions = computed(() =>
+  terminals.value.map((terminal) => ({
+    value: terminal.ref,
+    label: terminal.label,
+    hint: terminal.ref,
+  })),
+);
+
 async function confirmar() {
   if (await provision(escolhido.value)) emit("done");
 }
@@ -41,24 +51,12 @@ async function confirmar() {
       </div>
 
       <div class="grid gap-2 text-left">
-        <label
-          v-for="terminal in terminals"
-          :key="terminal.ref"
-          class="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm has-[:checked]:border-primary"
-        >
-          <input
-            v-model="escolhido"
-            type="radio"
-            name="terminal"
-            :value="terminal.ref"
-            :disabled="busy"
-            class="size-4"
-          >
-          <span>
-            <span class="font-medium">{{ terminal.label }}</span>
-            <span class="block text-xs text-muted-foreground">{{ terminal.ref }}</span>
-          </span>
-        </label>
+        <UiRadioGroup
+          v-model="escolhido"
+          label="Qual balcão é este"
+          :disabled="busy"
+          :options="terminalOptions"
+        />
         <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
       </div>
 
