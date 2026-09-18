@@ -232,6 +232,7 @@ from .recipe_book import (
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
 from .tenant import OperatorTenantView
+from .timer_tags import ProductionTimerTagsView
 
 urlpatterns = [
     # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
@@ -293,6 +294,11 @@ urlpatterns = [
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
     path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),
+    path(
+        "production/timer-tags/",
+        ProductionTimerTagsView.as_view(),
+        name="api-backstage-production-timer-tags",
+    ),
     path("production/forecast/", ProductionForecastView.as_view(), name="api-backstage-production-forecast"),
     path(
         "production/mise-en-place/",
