@@ -451,9 +451,43 @@ Do `UiSelect`, três coisas que valem a leitura:
 O `UiNativeSelect` ao lado **continua sendo a peça certa** para lista curta e fixa: no
 celular ele abre a roda do sistema, que é ótima. O `UiSelect` é para lista longa.
 
+### `UiToggleChip` — escolha múltipla desenhada como pílula
+
+```html
+<UiToggleChip v-model="semGluten" label="Sem glúten" />
+
+<!-- com ícone e estado ao lado do nome, via slot -->
+<UiToggleChip
+  :model-value="platforms.includes('whatsapp')"
+  @update:model-value="togglePlatform('whatsapp')"
+>
+  <Icon name="lucide:message-circle" class="size-3.5" />
+  WhatsApp <span class="text-xs">· limitada</span>
+</UiToggleChip>
+```
+
+⚠️ **Não é apelido do `UiCheckbox` e não é o `UiFilterChip`.** As três se parecem e
+fazem trabalhos diferentes:
+
+| Peça | Ofício | Como acende |
+|---|---|---|
+| `UiCheckbox` | marcar item numa lista vertical | quadrado que enche de `primary` |
+| `UiToggleChip` | marcar item onde cabem vários na linha | contorno `primary` + tint |
+| `UiFilterChip` | **filtrar** uma lista (chrome, sem valor de formulário) | `bg-primary` sólido |
+
+O chip é `role="checkbox"` com `aria-checked`, como o `UiCheckbox` — escolher plataforma
+é marcar item, não apertar um botão que fica apertado. Um grupo de chips mora dentro de
+um `<fieldset>` com `<legend>` ou de um `role="group"` com nome.
+
+**Não há degrau denso, e é de propósito.** O alvo de 44 px (`min-h-control`) é o piso do
+kit, e o `h-9` de 36 px é justamente a dívida que a cópia do Marketing carregava —
+`kitOwnership.guardrails.test.ts` recusa altura literal em primitivo. Grade que não cabe
+a 44 px (sete dias da semana a 320 px) não vira exceção aqui: ou o grupo reflui, ou
+continua escrita à mão, com a razão à vista.
+
 `tests/kitOwnership.guardrails.test.ts` recusa que qualquer app volte a ter cópia
-própria de `Ui/Checkbox.vue`, `Ui/Radio.vue`, `Ui/RadioGroup.vue`, `Ui/Select.vue` ou um
-`MaterialPicker` — duas implementações vivas é como uma garantia se perde em silêncio.
+própria de `Ui/Checkbox.vue`, `Ui/Radio.vue`, `Ui/RadioGroup.vue`, `Ui/Select.vue`,
+`Ui/ToggleChip.vue` ou um `MaterialPicker` — duas implementações vivas é como uma garantia se perde em silêncio.
 `tests/guardrails.a11y.test.ts` varre as nove superfícies e recusa botão de ícone puro
 sem nome acessível (a peça canônica é o `UiIconButton`, que EXIGE `label`).
 

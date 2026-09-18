@@ -801,7 +801,10 @@ def _product_tags(product: Any) -> tuple[str, ...]:
 
 
 def _unit_weight_label(product: Any) -> str | None:
-    return f"~{product.unit_weight_g}g a unidade" if getattr(product, "unit_weight_g", None) else None
+    # Ao lado do preço, dois números sem conector admitem "R$ 18,00 POR 500 g".
+    # O rótulo diz de quem é o peso; o "~" fica, porque pão não pesa exato — e
+    # peso anunciado nunca mente para menos.
+    return f"peça de ~{product.unit_weight_g} g" if getattr(product, "unit_weight_g", None) else None
 
 
 def _search_terms(

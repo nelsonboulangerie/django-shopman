@@ -180,11 +180,11 @@ const momentTitle = computed(() => {
   return greetName.value ? `${base}, ${greetName.value}!` : `${base}!`
 })
 const momentMessage = computed(() => moment.value === 'recognized'
-  ? copyMessage(authCopy.value?.device_trust_redirecting, 'Dispositivo reconhecido. Entrando automaticamente…')
+  ? copyMessage(authCopy.value?.device_trust_redirecting, 'Aparelho reconhecido. Entrando automaticamente…')
   : copyMessage(authCopy.value?.auth_confirmed, 'Identidade confirmada')
 )
 const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSaved.value
-  ? copyMessage(authCopy.value?.device_trust_saved, 'Dispositivo salvo por 30 dias.')
+  ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo por 30 dias.')
   : ''
 )
 
