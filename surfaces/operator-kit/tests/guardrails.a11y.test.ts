@@ -32,11 +32,11 @@ const SURFACES = [
   "purchase-nuxt",
 ] as const;
 
-/**
- * DEFINIÇÃO de primitivo, não uso: quem monta a peça é que dá o nome, e exigir
- * `aria-label` aqui dentro obrigaria todo consumidor a receber o mesmo nome.
- */
-const PRIMITIVE_DEFINITIONS = ["pos-nuxt/app/components/Ui/Switch.vue"];
+// A lista de exceções saiu junto com o `Ui/Switch.vue` do PDV (promovido ao kit
+// como `UiSwitch`): ela era a única entrada, e era INERTE — a varredura só cobra
+// nome de botão que tem `<Icon>` dentro, e o interruptor nunca teve ícone. Quem
+// ficar sem nome por ser definição de primitivo já é atendido pela regra do
+// `<slot>` abaixo: o conteúdo (e o nome) vêm de quem monta.
 
 const NAMING_ATTRIBUTES = /aria-label|aria-labelledby|title=|\blabel=|:label\b/;
 
@@ -104,7 +104,6 @@ describe("superfícies de operador: botão de ícone puro tem nome", () => {
       const offenders: string[] = [];
       for (const file of vueFiles(resolve(surfacesDir, surface, "app"))) {
         const relative = file.slice(surfacesDir.length + 1);
-        if (PRIMITIVE_DEFINITIONS.includes(relative)) continue;
         for (const line of mutePoints(file)) offenders.push(`${relative}:${line}`);
       }
 

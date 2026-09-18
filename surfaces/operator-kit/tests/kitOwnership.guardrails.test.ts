@@ -49,8 +49,13 @@ const KIT_OWNED_TOOLBAR_PRIMITIVES = ["FilterChip", "IconButton", "SearchInput",
  * Compras como `MaterialPicker` — que foi promovido a `UiSelect`. Se um app
  * recriar a peça, a busca que ignora acento, o `mixed` do indeterminado e a
  * armadilha do `<label>` voltam a existir em duas versões, e uma delas erra.
+ *
+ * `Switch` entrou por último e pela porta oposta: ele EXISTIA (o do PDV, montado
+ * por 7 telas), e mais três telas tinham reescrito o mesmo trilho à mão — em três
+ * tamanhos, com duas cores de trilho desligado, e a do PDV num alvo de toque de
+ * 24 px. Não é hipótese de deriva: é a deriva medida.
  */
-const KIT_OWNED_CHOICE_PRIMITIVES = ["Checkbox", "Radio", "RadioGroup", "Select"] as const;
+const KIT_OWNED_CHOICE_PRIMITIVES = ["Checkbox", "Radio", "RadioGroup", "Select", "Switch"] as const;
 
 /** Nomes próprios que a promoção do `UiSelect` aposentou. */
 const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
@@ -110,6 +115,22 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
       ).toEqual([]);
     });
 
+    it(`${app} não reescreve o interruptor à mão`, () => {
+      const offenders: string[] = [];
+      for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
+        // `role="switch"` fora do kit é o trilho reescrito: foi assim que o
+        // Marketing e o Gestor de Pedidos ficaram com três tamanhos do MESMO
+        // controle, sem nenhum arquivo em comum para corrigir de uma vez.
+        if (/role="switch"/.test(readFileSync(file, "utf8"))) {
+          offenders.push(file.slice(surfacesDir.length + 1));
+        }
+      }
+      expect(
+        offenders,
+        `Interruptor escrito à mão (use <UiSwitch> do operator-kit):\n  ` + offenders.join("\n  "),
+      ).toEqual([]);
+    });
+
     it(`${app} não guarda o seletor com busca que virou UiSelect`, () => {
       const offenders = RETIRED_COMPONENTS.filter((name) =>
         existsSync(resolve(surfacesDir, app, "app/components", `${name}.vue`)),
@@ -135,7 +156,7 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
   });
 });
 
-describe("operator-kit: primitivas de barra respeitam o token de alvo de toque", () => {
+describe("operator-kit: os primitivos respeitam o token de alvo de toque", () => {
   // `--spacing-control: 2.75rem` (44 px) vive no operator-theme.css. O literal
   // equivalente (`size-11`/`h-11`) renderiza igual HOJE e some no dia em que o token
   // mudar; foi assim que a cópia do Marketing acabou com um chip de `h-9` (36 px).
@@ -146,7 +167,9 @@ describe("operator-kit: primitivas de barra respeitam o token de alvo de toque",
   const stripComments = (text: string): string =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "").replace(/<!--[\s\S]*?-->/g, "");
 
-  for (const name of KIT_OWNED_TOOLBAR_PRIMITIVES) {
+  // Barra e escolha juntos: o interruptor entrou com um alvo de 24 px vindo do PDV,
+  // e o que cobra os dois é a mesma régua.
+  for (const name of [...KIT_OWNED_TOOLBAR_PRIMITIVES, ...KIT_OWNED_CHOICE_PRIMITIVES]) {
     it(`Ui${name} usa *-control, nunca altura literal`, () => {
       const source = readFileSync(resolve(surfacesDir, "operator-kit/app/components", `Ui${name}.vue`), "utf8");
       expect(TOKENLESS.test(stripComments(source)), `Ui${name} voltou a cravar altura literal em vez do token`).toBe(false);
