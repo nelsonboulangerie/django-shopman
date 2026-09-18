@@ -127,11 +127,12 @@ describe("CampaignForm — natureza de cada saída", () => {
     const text = form(makeRule()).text();
 
     expect(text).toContain("Entregar por");
-    expect(text).toContain("uma postagem pública por plataforma");
-    expect(text).toContain("WhatsApp envia uma mensagem por pessoa elegível");
-    expect(text).toContain(
-      "Mensagens diretas do Instagram ainda não fazem parte deste app",
-    );
+    expect(text).toContain("publicam uma postagem por plataforma");
+    expect(text).toContain("WhatsApp envia uma mensagem por pessoa");
+    // ⚠️ A terceira frase ("Mensagens diretas do Instagram ainda não fazem parte deste
+    // app") saiu: dizer o que o sistema NÃO faz, no meio de um formulário, é nota de
+    // rodapé de engenheiro lida por quem só quer escolher onde o anúncio sai.
+    expect(text).not.toContain("ainda não fazem parte");
   });
 
   it("só pede público quando há mensagem direta por WhatsApp", () => {
@@ -140,11 +141,11 @@ describe("CampaignForm — natureza de cada saída", () => {
 
     expect(direct.text()).toContain("Público alvo");
     expect(direct.text()).not.toContain(
-      "Estas publicações vão para o público geral",
+      "Estas postagens vão para o público geral",
     );
     expect(publicOnly.text()).not.toContain("Público alvo");
     expect(publicOnly.text()).toContain(
-      "Estas publicações vão para o público geral",
+      "Estas postagens vão para o público geral",
     );
   });
 });
@@ -620,7 +621,7 @@ describe("CampaignForm — a voz do gestor", () => {
     expect(text).toContain(
       "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
     );
-    expect(text).toContain("A campanha pode ser salva assim mesmo.");
+    expect(text).toContain("A campanha pode ser salva");
     expect(text).not.toContain("Não foi possível verificar o transporte");
 
     await wrapper.find("form").trigger("submit");

@@ -349,6 +349,10 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
     await page.locator("main li").first().locator("button").nth(1).click();
     await expect(page.getByRole("dialog")).toContainText("Público alvo");
+    // ⚠️ Sem esperar a prévia fiel, o retrato pega "Atualizando todas as plataformas…"
+    // numa rodada e a imagem carregada na outra — a diferença empurra o formulário
+    // inteiro e o teste falha de forma intermitente. Os outros já esperavam; este não.
+    await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "campaign-form__long-rules", V390, "light", { fullPage: false });
   });
 
