@@ -32,6 +32,13 @@ from shopman.backstage.services.pos_hardware import (
     CashDrawerConfig,
     DeviceAgentConfig,
 )
+from shopman.backstage.station_trust import (
+    ATTENDED,
+    AUTONOMOUS,
+    autonomous_operator_for,
+    eligible_station_operators,
+    terminal_mode,
+)
 
 
 class TerminalForm(forms.ModelForm):
@@ -149,6 +156,47 @@ class TerminalForm(forms.ModelForm):
         choices=(("none", "Sem corte (adesiva)"), ("partial", "Corte parcial")),
         initial="none",
     )
+    station_mode = forms.ChoiceField(
+        label="Como esta estação se identifica",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        # Sem opção vazia, e de propósito: "atendida" É o default do servidor
+        # (`terminal_mode` devolve ATTENDED para qualquer coisa que não seja
+        # exatamente `autonomous`), então a primeira opção que o navegador marca
+        # sozinho é a mesma que o servidor já aplica. A armadilha que a gaveta
+        # tem — primeira opção marcada gravando um estado que ninguém escolheu —
+        # aqui não existe, porque o estado marcado é o estado real.
+        choices=(
+            (ATTENDED, "Atendida — pede PIN ou crachá (balcão, cozinha)"),
+            (AUTONOMOUS, "Autônoma — age sozinha, só na Produção (painel de parede)"),
+        ),
+        initial=ATTENDED,
+        help_text=(
+            "Autônoma é para o painel que fica na parede sem ninguém para digitar PIN. "
+            "Ela age em nome da conta escolhida abaixo, e <strong>somente na superfície "
+            "de Produção</strong>: o cookie deste dispositivo vale em todo o domínio, e o "
+            "servidor recusa a conta em qualquer outra tela."
+        ),
+    )
+    station_operator = forms.ChoiceField(
+        label="Conta em nome de quem a estação autônoma age",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        # ⚠️ Lista, nunca texto livre — e a lista é a MESMA pergunta que o
+        # servidor faz (`eligible_station_operators`). Um campo de texto aqui
+        # aceitaria a conta que `autonomous_operator_for` recusa (superusuária,
+        # inativa, fora da casa) e o gestor salvaria feliz uma estação que não
+        # age — sem nada escrito em tela dizendo por quê.
+        choices=(("", "— nenhuma —"),),
+        help_text=(
+            "Superusuário não aparece aqui e o servidor o recusa: "
+            "<code>is_superuser</code> curto-circuita toda checagem de permissão, "
+            "e um painel de parede com chave-mestra é o incidente de 20/08 com outro "
+            "nome. Conceda a esta conta só o que a Produção precisa "
+            "(<code>backstage.operate_production</code>), e desative a conta para "
+            "desligar o painel sem ir até ele."
+        ),
+    )
     print_target_ref = forms.ChoiceField(
         label="Para onde vão as etiquetas desta estação",
         required=False,
@@ -172,7 +220,9 @@ class TerminalForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._stale_print_target = ""
+        self._stale_station_operator = ""
         self._load_print_target_choices()
+        self._load_station_identity()
         if not (self.instance and self.instance.pk):
             return
         config = CashDrawerConfig.from_terminal(self.instance)
@@ -214,6 +264,36 @@ class TerminalForm(forms.ModelForm):
         station = metadata.get("station")
         return dict(station) if isinstance(station, dict) else {}
 
+    def _load_station_identity(self) -> None:
+        """Modo e conta da estação — a lista saindo da MESMA fonte do gate.
+
+        O ``initial`` do modo vem de ``terminal_mode``, não do JSON cru: um
+        ``mode`` escrito errado (``"autonoma"``, um typo de outro tempo) o
+        servidor já lê como atendida, e a tela tem de dizer a mesma coisa. Mostrar
+        o texto cru faria o gestor ler "autônoma" numa estação que pede PIN.
+        """
+        station = self._station_config()
+        current = str(station.get("operator") or "").strip()
+        elegiveis = eligible_station_operators()
+        choices = [("", "— nenhuma —")]
+        choices += [
+            (conta.username, f"{conta.get_full_name() or conta.username} ({conta.username})")
+            for conta in elegiveis
+        ]
+        if current and current not in {conta.username for conta in elegiveis}:
+            # ⚠️ O que está GRAVADO entra na lista mesmo recusado — mesma regra do
+            # destino da etiqueta. Sumir com ele faria a tela mostrar "nenhuma"
+            # enquanto o banco aponta para uma conta desativada, promovida a
+            # superusuária ou apagada, e o gestor procuraria o defeito na conta
+            # certa. O `clean` barra o salvamento até ele repontar.
+            self._stale_station_operator = current
+            choices.append((current, f"{current} — conta indisponível"))
+        self.fields["station_operator"].choices = choices
+        self.fields["station_operator"].initial = current
+        self.fields["station_mode"].initial = terminal_mode(
+            self.instance.ref if getattr(self.instance, "pk", None) else ""
+        )
+
     def _load_print_target_choices(self) -> None:
         from shopman.backstage.services.print_jobs import preparation_destinations
 
@@ -238,6 +318,24 @@ class TerminalForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        modo = (cleaned.get("station_mode") or ATTENDED).strip()
+        conta = (cleaned.get("station_operator") or "").strip()
+        # A conta só é cobrada quando ela IMPORTA. Cobrar numa estação atendida
+        # travaria o salvamento de um balcão por causa de um nome largado no JSON
+        # que ninguém usa — e o próprio `save` apaga esse nome logo abaixo.
+        if modo == AUTONOMOUS:
+            if not conta:
+                self.add_error(
+                    "station_operator",
+                    "Uma estação autônoma age em nome de uma conta. Sem ela o painel "
+                    "volta a pedir PIN — e não há ninguém na parede para digitar.",
+                )
+            elif conta == self._stale_station_operator:
+                self.add_error(
+                    "station_operator",
+                    "Esta conta não serve mais a uma estação autônoma (desativada, fora "
+                    "da equipe ou promovida a superusuário). Escolha outra.",
+                )
         target = (cleaned.get("print_target_ref") or "").strip()
         if target and target == self._stale_print_target:
             self.add_error(
@@ -332,12 +430,25 @@ class TerminalForm(forms.ModelForm):
             metadata["hardware"] = hardware
         else:
             metadata.pop("hardware", None)
+        # ⚠️ RELEITURA, não dict novo. O bloco `station` tem três chaves de dois
+        # donos — `mode`/`operator` (identidade) e `print_target_ref` (destino da
+        # etiqueta) — e escrever por cima apagaria a do outro em silêncio.
         station = self._station_config()
         target = (self.cleaned_data.get("print_target_ref") or "").strip()
         if target:
             station["print_target_ref"] = target
         else:
             station.pop("print_target_ref", None)
+        modo = (self.cleaned_data.get("station_mode") or ATTENDED).strip()
+        station["mode"] = modo
+        if modo == AUTONOMOUS:
+            station["operator"] = (self.cleaned_data.get("station_operator") or "").strip()
+        else:
+            # Voltar para atendida DESFAZ o vínculo, não o guarda para depois. Uma
+            # conta com poder permanente esquecida num aparelho físico é a arma
+            # carregada da gaveta: basta alguém reativar o modo — ou um typo — para
+            # ela voltar a agir sem que ninguém tenha escolhido essa conta hoje.
+            station.pop("operator", None)
         if station:
             metadata["station"] = station
         else:
@@ -359,7 +470,12 @@ class TerminalAdmin(_CashmanTerminalAdmin):
 
     form = TerminalForm
     list_display = ("ref", "label", "channel_ref", "health_display", "active_badge")
-    readonly_fields = ("health_display", "drawer_install_display", "print_destination_display")
+    readonly_fields = (
+        "health_display",
+        "drawer_install_display",
+        "print_destination_display",
+        "station_identity_display",
+    )
     fieldsets = (
         (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
         (
@@ -399,6 +515,18 @@ class TerminalAdmin(_CashmanTerminalAdmin):
             },
         ),
         (
+            "Identificação desta estação",
+            {
+                "fields": ("station_mode", "station_operator", "station_identity_display"),
+                "description": (
+                    "O painel de parede da Produção não tem ninguém para digitar PIN, "
+                    "então ele age em nome de uma conta. Vale SÓ para a Produção: o "
+                    "cookie deste dispositivo alcança o domínio inteiro, e é o servidor "
+                    "que recusa a conta nas demais telas — não a configuração daqui."
+                ),
+            },
+        ),
+        (
             "Destino das etiquetas desta estação",
             {
                 "fields": ("print_target_ref", "print_destination_display"),
@@ -420,6 +548,32 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         url = reverse("admin_console_pos_counter_agent", args=[obj.ref])
         return unfold_link(url, "Baixar o agente e ver como instalar", icon="download")
     drawer_install_display.short_description = "Instalação no balcão"
+
+    def station_identity_display(self, obj):
+        """Quem o SERVIDOR resolve para esta estação, agora.
+
+        Mesmo papel do destino da etiqueta logo abaixo: salvar e só descobrir na
+        parede que o painel continua pedindo PIN é o buraco de sempre. Aqui o
+        gestor lê a resposta do gate — a de ``autonomous_operator_for``, a mesma
+        que roda na requisição — ao lado dos campos que a decidem.
+        """
+        if obj is None or not obj.pk:
+            return "Salve o terminal primeiro."
+        if terminal_mode(obj.ref) != AUTONOMOUS:
+            return unfold_badge("atendida — pede identificação", "base")
+        conta = autonomous_operator_for(obj.ref)
+        if conta is None:
+            return format_html(
+                "{} {}",
+                unfold_badge("autônoma sem conta válida", "red"),
+                "O painel vai pedir PIN e não há quem digite. Escolha uma conta acima.",
+            )
+        return format_html(
+            "{} {}",
+            unfold_badge("autônoma", "green"),
+            f"age como {conta.get_full_name() or conta.username} ({conta.username}), só na Produção",
+        )
+    station_identity_display.short_description = "Identidade resolvida agora"
 
     def print_destination_display(self, obj):
         """A MESMA resposta que a estação vai receber na hora de imprimir.
