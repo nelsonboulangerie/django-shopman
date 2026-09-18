@@ -763,7 +763,7 @@ async function confirmClose() {
               </div>
             </section>
 
-            <!-- GAVETA: uma grade de tiles, a gramática da Central. Cada tile é
+            <!-- GAVETA: uma grade de tiles, a gramática do Shopman Apps. Cada tile é
                  um ato com nome, ícone e uma linha dizendo o que vai acontecer;
                  o formulário só aparece quando o operador escolhe.
 

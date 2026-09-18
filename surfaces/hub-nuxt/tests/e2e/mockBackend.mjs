@@ -1,4 +1,4 @@
-// Mock backend mínimo p/ os e2e da Central: devolve uma projection de hub autenticada
+// Mock backend mínimo p/ os e2e do Shopman Apps: devolve uma projection de hub autenticada
 // (com tiles) para `/backstage/hub/`, e `{}` no resto. Não simula permissões reais — os
 // tiles daqui são fixos, só para exercitar o launcher (grade, links, saudação, offline).
 // O login efetivo + filtragem por permissão rodam contra o Django real (reviewer local).

@@ -18,7 +18,7 @@ function pageHidden(): boolean {
  * O PDV trava pela ociosidade do APARELHO, não pela dele.
  *
  * Travar é `logout()` da sessão de operador, e essa sessão é UMA só para todos os
- * apps do domínio-pai (Gestor, KDS, Central, Produção…) no mesmo navegador. Medir
+ * apps do domínio-pai (Gestor, KDS, Shopman Apps, Produção…) no mesmo navegador. Medir
  * só o que acontece no PDV derrubava o Gestor em uso ao lado a cada minuto. A regra
  * (decisão do Pablo, 17/09/2026): trava só quando NENHUM app de operador foi tocado
  * por `auto_lock_seconds`. O "último toque" é o maior entre a atividade local e o

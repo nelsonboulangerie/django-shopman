@@ -1,6 +1,6 @@
 """Limites de capacidade dos apps de operação — ``Shop.defaults["operator_capacity"]``.
 
-Os apps Nuxt de operador (PDV, Cozinha, Pedidos, Produção, Central, Marketing, B.I.,
+Os apps Nuxt de operador (PDV, Cozinha, Pedidos, Produção, Shopman Apps, Marketing, B.I.,
 Compras) rodam em contêineres com memória e CPU contadas. Cada app lê o uso do
 PRÓPRIO contêiner (cgroup ou soma dos processos) e mostra no rail; estes limites dizem quando a leitura
 deixa de ser neutra e quando vira aviso para o gestor:

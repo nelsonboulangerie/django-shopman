@@ -1684,11 +1684,11 @@ SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
-# "Marketing" some da Central, sem link morto.
+# "Marketing" some do Shopman Apps, sem link morto.
 SHOPMAN_MARKETING_BASE_URL = (os.environ.get("SHOPMAN_MARKETING_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do B.I. (surfaces/bi-nuxt) — app Nuxt dedicado, publicado em
-# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some da Central,
+# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some do Shopman Apps,
 # sem link morto.
 SHOPMAN_BI_BASE_URL = (os.environ.get("SHOPMAN_BI_BASE_URL") or "").strip().rstrip("/")
 
@@ -1746,9 +1746,9 @@ SHOPMAN_ADMIN_HOST = (
     (os.environ.get("SHOPMAN_ADMIN_HOST", "")).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
 )
 
-# URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
+# URLs das superfícies para o Shopman Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
-# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
+# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha o Shopman Apps de graça, sem
 # env vars novas. Vazio ⇒ o tile some do launcher (nunca link morto); só em DEBUG o
 # launcher cai nos defaults de dev (127.0.0.1:PORT) de `projections/hub.py`. O tile Loja
 # abre a loja do cliente (storefront, mesma base dos links de cliente).

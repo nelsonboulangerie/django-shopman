@@ -25,7 +25,7 @@ async function toggleCategory(category: string): Promise<void> {
     <div class="flex items-start justify-between gap-4">
       <div>
         <h2 class="text-base font-semibold">Avisos neste dispositivo</h2>
-        <p class="mt-1 text-sm text-muted-foreground">Receba só alertas operacionais, mesmo com a Central fechada.</p>
+        <p class="mt-1 text-sm text-muted-foreground">Receba só alertas operacionais, mesmo com o Shopman Apps fechado.</p>
       </div>
       <span class="shrink-0 text-xs text-muted-foreground">{{ appVersion }}</span>
     </div>
@@ -44,7 +44,7 @@ async function toggleCategory(category: string): Promise<void> {
       {{ loading ? 'Ativando…' : 'Ativar avisos' }}
     </button>
     <p v-else-if="!supported" role="status" data-push-unavailable class="mt-4 text-sm text-muted-foreground">
-      Avisos em segundo plano ainda não estão disponíveis neste ambiente. No iPhone, use a Central instalada na Tela de Início.
+      Avisos em segundo plano ainda não estão disponíveis neste ambiente. No iPhone, use o Shopman Apps instalado na Tela de Início.
     </p>
     <p v-if="error" role="status" class="mt-2 text-sm text-destructive">{{ error }}</p>
 

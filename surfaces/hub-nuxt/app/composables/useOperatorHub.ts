@@ -1,7 +1,7 @@
 import type { HubResponse, HubTileProjection, OperatorHubProjection } from "~/types/hub";
 
 /**
- * Read-side da Central: um único fetch da projection do launcher (`{ hub }`) + as fatias
+ * Read-side do Shopman Apps: um único fetch da projection do launcher (`{ hub }`) + as fatias
  * que a tela consome (tiles + nome do operador). Espelha o padrão `usePosTerminal` — SSR
  * pronta (reload cai na tela certa); erro (401) sobe o gate de login na shell.
  */

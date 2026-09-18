@@ -249,7 +249,7 @@ urlpatterns = [
         MarketingVitalView.as_view(),
         name="api-backstage-marketing-vital",
     ),
-    # Central de Apps — launcher do operador (surfaces/hub-nuxt)
+    # Shopman Apps — launcher do operador (surfaces/hub-nuxt)
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),

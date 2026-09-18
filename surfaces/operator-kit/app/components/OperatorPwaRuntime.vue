@@ -30,7 +30,7 @@ useOrientationLock({ restore: enabled });
 useKioskMode({ enabled: enabled && config.kiosk === true, idleMs: 60_000 });
 
 // Sonda periódica + aplicação automática em momento seguro. `idleReloadPaths` vazio
-// (Central, Gestor, Compras, B.I., Marketing) mantém só o aviso ao operador.
+// (Shopman Apps, Gestor, Compras, B.I., Marketing) mantém só o aviso ao operador.
 const { reasons } = useOperatorReloadHold();
 const autoUpdate = usePwaAutoUpdate({
   enabled,

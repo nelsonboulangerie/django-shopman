@@ -182,7 +182,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 
 surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
-├── hub-nuxt/          Central de Apps do operador (:3001)                  → api./backstage
+├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
 ├── kds-nuxt/          cozinha (KDS, :3003)                                 → api./backstage
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
