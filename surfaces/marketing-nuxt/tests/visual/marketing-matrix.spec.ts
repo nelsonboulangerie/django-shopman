@@ -572,7 +572,7 @@ test.describe("disparo manual seguro", () => {
   ] as const) {
     test(`${state}`, async ({ page }) => {
       await openScenario(page, scenario, "/campaigns", viewport);
-      await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
+      await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.waitForTimeout(450);
       if (scenario === "fire-large") {
@@ -585,7 +585,7 @@ test.describe("disparo manual seguro", () => {
 
   test("contagem em andamento mantém o CTA bloqueado", async ({ page }) => {
     await openScenario(page, "fire-loading", "/campaigns", V390);
-    await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
+    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
     await page.waitForTimeout(400);
     await expect(page.getByText("Contando…")).toBeVisible();
     await expect(page.getByRole("dialog").locator('button[type="submit"]')).toBeDisabled();
@@ -595,7 +595,7 @@ test.describe("disparo manual seguro", () => {
 
   test("throttle explica a espera sem perder o painel", async ({ page }) => {
     await openScenario(page, "fire-throttled", "/campaigns", V768);
-    await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
+    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
     await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
@@ -605,7 +605,7 @@ test.describe("disparo manual seguro", () => {
 
   test("conflito atualiza a versão e mantém recuperação inline", async ({ page }) => {
     await openScenario(page, "fire-conflict", "/campaigns", V1024);
-    await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
+    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
     await expect(page.getByLabel("Definir público").getByRole("alert")).toContainText("mudou em outra sessão");
@@ -618,7 +618,7 @@ test.describe("disparo manual seguro", () => {
 
   test("aceite leva direto à revisão, dizendo que nada foi disparado", async ({ page }) => {
     await openScenario(page, "fire-accepted", "/campaigns", V1440);
-    await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
+    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
     // Sem senha e sem frase digitada: o servidor declara o disparo dispensado de
