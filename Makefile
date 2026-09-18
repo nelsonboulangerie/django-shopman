@@ -303,6 +303,20 @@ test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alph
 	$(PYTHON) scripts/check_workflow_budgets.py
 	$(PYTHON) -m pytest shopman/shop/tests/test_workflow_budget_gate.py -q
 
+# Gate do deploy que não esquece componente. O defeito de 17/09/2026: run
+# cancelado no meio da leva + detecção contra o commit ANTERIOR = imagem do PDV
+# não construída por run nenhum, com tudo verde.
+test-deploy-selection: ## Gate: a seleção de componentes do deploy não deixa ninguém para trás
+	@echo "── Seleção de componentes do Deploy Images ──"
+	$(PYTHON) -m pytest shopman/shop/tests/test_deploy_component_selection.py -q
+
+# ⚠️ NÃO é alvo de CI por si só (o job `drift` do Deploy Images é quem roda isto
+# no ar, com a credencial do workflow). Aqui serve de conferência de MÃO:
+# "o que está publicado é o que o main pede?". Exige DO_TOKEN.
+deploy-drift: ## Confere o registry contra o main — quem ficou para trás? (leitura)
+	@echo "── Componentes para trás no registry ──"
+	$(PYTHON) scripts/check_registry_drift.py
+
 # ⚠️ NÃO é alvo de CI: exige credencial da DigitalOcean, que a CI não tem (nem
 # deve ter). É conferência de MÃO, obrigatória antes de qualquer `apps update`.
 deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; roda ANTES de apps update)

@@ -67,6 +67,16 @@ jobs:
       - name: Teto do job cabe a espera do job
         run: .venv/bin/python scripts/check_workflow_budgets.py
 
+      # ⚠️ Mesmo espírito, defeito irmão: o Deploy Images detectava mudança
+      # contra o commit IMEDIATAMENTE anterior, assumindo que ele teve deploy.
+      # Em 17/09/2026 o run do meio foi cancelado no assento de espera da
+      # `concurrency` (0 jobs) e a imagem do PDV não foi construída por run
+      # nenhum — com tudo verde. A seleção agora mede contra o último deploy
+      # bem-sucedido, e estes testes reconstituem a leva de três merges para
+      # que o buraco não possa voltar sem ficar vermelho aqui.
+      - name: O deploy não esquece componente
+        run: .venv/bin/python -m pytest shopman/shop/tests/test_deploy_component_selection.py -q
+
       # A política ADR-015 arma pela EXISTÊNCIA da tag go-live-v1 — mas o
       # checkout do CI é raso e sem tags, então sem este fetch os checks
       # ficariam num "pré-go-live" eterno mesmo depois do go-live. Antes da

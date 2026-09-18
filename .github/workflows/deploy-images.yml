@@ -31,6 +31,20 @@ name: Deploy Images
         options: ["auto", "true", "false"]
         default: "auto"
 
+# ⚠️ `cancel-in-progress: false` protege o run EM ANDAMENTO — e só ele. O GitHub
+# guarda UM assento de espera por grupo: chegando um run novo enquanto outro já
+# aguarda, o que aguardava é CANCELADO, sem nunca ter rodado um job. Medido em
+# 17/09/2026 numa leva de três merges: o run do #814 nasceu 23:44:20Z e o do
+# #815 foi cancelado 23:44:21Z, com 0 jobs; o #814 então esperou até 23:48:37Z
+# porque o #816 só terminou 23:48:33Z — a serialização funcionava, o assento
+# único é que atropelava. Das 431 execuções deste workflow, 9 foram canceladas,
+# TODAS com zero jobs, todas pela fila de merge.
+#
+# O cancelamento em si não é o defeito a consertar: o commit do run morto entra
+# no `main` de qualquer jeito e o run seguinte pode cobri-lo — desde que meça
+# contra o último deploy que DEU CERTO, e não contra o commit anterior. É isso
+# que `scripts/deploy_components.py` faz. Serializar continua certo; presumir
+# que o run anterior publicou é que era a mentira.
 concurrency:
   group: deploy-images
   cancel-in-progress: false
@@ -52,134 +66,81 @@ jobs:
     name: O que mudou
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # Para PERGUNTAR qual foi o último deploy bem-sucedido. Sem isto o passo
+      # abaixo devolve base vazia e o workflow constrói TUDO — seguro, e caro.
+      actions: read
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any: ${{ steps.matrix.outputs.any }}
+      per_app: ${{ steps.matrix.outputs.per_app }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Detect changed paths
-        id: filter
-        uses: dorny/paths-filter@v4
         with:
-          filters: |
-            web:
-              - "packages/**"
-              - "shopman/**"
-              - "config/**"
-              - "tools/**"
-              - "manage.py"
-              - "pyproject.toml"
-              - "constraints.txt"
-              - "Dockerfile"
-            kit:
-              - "surfaces/operator-kit/**"
-              - "surfaces/Dockerfile.surface"
-            operator-group:
-              - "surfaces/operator-kit/**"
-              - "surfaces/operator-router/**"
-              - "surfaces/Dockerfile.operator-group"
-            storefront-nuxt:
-              - "surfaces/storefront-nuxt/**"
-              - "surfaces/Dockerfile.surface"
-            pos-nuxt:
-              - "surfaces/pos-nuxt/**"
-            kds-nuxt:
-              - "surfaces/kds-nuxt/**"
-            orders-nuxt:
-              - "surfaces/orders-nuxt/**"
-            production-nuxt:
-              - "surfaces/production-nuxt/**"
-            hub-nuxt:
-              - "surfaces/hub-nuxt/**"
-            marketing-nuxt:
-              - "surfaces/marketing-nuxt/**"
-            bi-nuxt:
-              - "surfaces/bi-nuxt/**"
-            purchase-nuxt:
-              - "surfaces/purchase-nuxt/**"
+          # ⚠️ Histórico INTEIRO, e não o `fetch-depth: 1` default. A base pode
+          # estar vários commits atrás quando um run do meio morreu, e comparar
+          # contra um sha que não está no clone não erra: mente.
+          fetch-depth: 0
 
+      # ⚠️ AQUI morava o defeito de 17/09/2026. O `dorny/paths-filter` comparava
+      # com `github.event.before` — o commit IMEDIATAMENTE anterior — assumindo
+      # que todo commit anterior teve deploy bem-sucedido. O run do #815 foi
+      # cancelado no assento de espera da `concurrency` (ver o comentário lá em
+      # cima) e o run seguinte comparou justamente com ELE: os 11 arquivos de
+      # `surfaces/pos-nuxt/**` daquele commit sumiram da conta, a imagem do PDV
+      # não foi construída por run nenhum, e tudo ficou verde.
+      #
+      # A base honesta é o último run de PUSH bem-sucedido que seja ancestral do
+      # topo. Se o do meio morreu, a base recua sozinha e a leva inteira volta
+      # para a conta.
+      #
+      # ⚠️ `event=push` não é detalhe. `workflow_dispatch` publica um subconjunto
+      # escolhido à mão — foi a remediação de 17/09, `components=pos-nuxt,
+      # operator-floor` — e tomá-lo por base declararia publicado tudo o que
+      # ninguém publicou. Um dispatch nunca vira base; no máximo faz o run
+      # seguinte reconstruir algo que já estava no ar, que é o lado barato.
+      - name: Contra quem medir (último deploy que deu certo)
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          candidatos=$(gh api \
+            "repos/${REPO}/actions/workflows/deploy-images.yml/runs" \
+            -X GET -f branch=main -f event=push -f status=success -f per_page=30 \
+            --jq ".workflow_runs[] | select(.id != ${RUN_ID}) | .head_sha" || true)
+          base=""
+          for sha in ${candidatos}; do
+            if git merge-base --is-ancestor "${sha}" "${GITHUB_SHA}" 2>/dev/null; then
+              base="${sha}"
+              break
+            fi
+          done
+          if [ -z "${base}" ]; then
+            echo "::warning::nenhum deploy de push bem-sucedido e ancestral do" \
+                 "topo foi encontrado — o passo seguinte constrói TUDO, porque" \
+                 "publicar demais custa minutos e publicar de menos deixou o" \
+                 "PDV fora do ar em 17/09/2026."
+          fi
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+          echo "base do deploy: ${base:-<nenhuma>} | topo: ${GITHUB_SHA}"
+
+      # A tabela de caminhos por componente mora no script, e é a MESMA que o
+      # confronto com o registry consulta lá embaixo. Duas cópias divergiriam no
+      # primeiro dia em que alguém acrescentasse uma surface.
       - name: Build matrix
         id: matrix
-        env:
-          DISPATCH_COMPONENTS: ${{ github.event.inputs.components }}
-          DISPATCH_PER_APP: ${{ github.event.inputs.per_app_images }}
-          FILTER_JSON: ${{ toJSON(steps.filter.outputs) }}
         run: |
-          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
-          import json, os, pathlib
-
-          GROUPS = {
-              name: [app["surface"] for app in group["apps"]]
-              for name, group in json.loads(
-                  pathlib.Path("surfaces/operator-router/groups.json").read_text()
-              ).items()
-          }
-          OPERATOR_SURFACES = [s for members in GROUPS.values() for s in members]
-          SURFACES = ["storefront-nuxt", *OPERATOR_SURFACES]
-          filters = json.loads(os.environ.get("FILTER_JSON") or "{}")
-          asked = (os.environ.get("DISPATCH_COMPONENTS") or "").strip()
-          per_app = (os.environ.get("DISPATCH_PER_APP") or "auto").strip()
-          if per_app == "auto":
-              per_app = os.environ.get("OPERATOR_PER_APP_IMAGES", "true")
-          per_app = per_app == "true"
-
-          if asked:
-              names = (
-                  ["web", *SURFACES, *GROUPS] if asked == "all"
-                  else [c.strip() for c in asked.split(",") if c.strip()]
-              )
-          else:
-              names = []
-              if filters.get("web") == "true":
-                  names.append("web")
-              # operator-kit é layer compartilhada: mudou, TODA surface de
-              # operador rebuilda (o storefront tem filtro próprio).
-              kit = filters.get("kit") == "true"
-              for surface in SURFACES:
-                  if kit or filters.get(surface) == "true":
-                      names.append(surface)
-              # Grupo rebuilda se mudou o kit, o roteador, a receita do grupo
-              # ou QUALQUER app dele.
-              group_infra = filters.get("operator-group") == "true"
-              for group, members in GROUPS.items():
-                  if group_infra or any(filters.get(m) == "true" for m in members):
-                      names.append(group)
-
-          if not per_app:
-              names = [n for n in names if n not in OPERATOR_SURFACES]
-
-          include = []
-          for name in dict.fromkeys(names):
-              if name == "web":
-                  include.append({
-                      "name": "web",
-                      "dockerfile": "Dockerfile",
-                      "surface": "",
-                      "group": "",
-                      "tag": "web",
-                  })
-              elif name in GROUPS:
-                  include.append({
-                      "name": name,
-                      "dockerfile": "surfaces/Dockerfile.operator-group",
-                      "surface": "",
-                      "group": name,
-                      "tag": name,
-                  })
-              else:
-                  include.append({
-                      "name": name,
-                      "dockerfile": "surfaces/Dockerfile.surface",
-                      "surface": name,
-                      "group": "",
-                      "tag": name.removesuffix("-nuxt"),
-                  })
-
-          print("matrix=" + json.dumps({"include": include}))
-          print("any=" + ("true" if include else "false"))
-          EOF
+          python3 scripts/deploy_components.py \
+            --head "${GITHUB_SHA}" \
+            --base "${{ steps.base.outputs.base }}" \
+            --components "${{ github.event.inputs.components }}" \
+            --per-app "${{ github.event.inputs.per_app_images }}" \
+            >> "$GITHUB_OUTPUT"
 
   build-push:
     name: ${{ matrix.name }}
@@ -323,3 +284,66 @@ jobs:
           name: published-components
           path: published.json
           retention-days: 7
+
+  drift:
+    name: Nada ficou para trás
+    # ⚠️ O irmão do conserto acima, e não uma segunda cópia dele. A base por
+    # último-deploy-bem-sucedido fecha a PORTA que se viu abrir (run cancelado no
+    # meio da leva). Este job fecha a CLASSE: pergunta ao registry qual commit
+    # está por trás de cada tag móvel — a mesma tag que o App Platform assina —
+    # e cobra que esse commit CONTENHA a última mudança daquele componente.
+    # Contenção, e não igualdade: republicar do topo (que foi a remediação de
+    # 17/09) carrega o mesmo código e é tão bom quanto.
+    #
+    # Run cancelado, run falho, dispatch com o componente errado, tag apagada à
+    # mão, push que o registry não guardou: tudo cai aqui do mesmo jeito, sem
+    # precisar ter sido previsto. Em 17/09/2026 a diferença entre este job e o
+    # silêncio foi o PDV passar a noite no ar com a versão anterior.
+    #
+    # Roda depois do build para conferir o registry JÁ com o que este run
+    # publicou. Se o build reprovou, o vermelho já existe e já tem causa
+    # nomeada — repetir a queixa aqui só empilharia ruído.
+    needs: [changes, build-push]
+    if: >-
+      always() && needs.changes.result == 'success' &&
+      needs.build-push.result != 'failure' &&
+      needs.build-push.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # O confronto pergunta "qual foi o último commit que tocou este
+          # componente" — pergunta que só o histórico inteiro responde.
+          fetch-depth: 0
+
+      - name: Confrontar o registry com o `main`
+        id: confronto
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          PER_APP: ${{ needs.changes.outputs.per_app }}
+        run: |
+          set +e
+          python3 scripts/check_registry_drift.py --ref "${GITHUB_SHA}"
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      # ⚠️ Duas saídas ruins, duas reações diferentes — e a diferença é
+      # deliberada. DIVERGÊNCIA é fato provado: há componente para trás, o
+      # ambiente vivo não é o que o `main` diz, e deixar o smoke pós-deploy rodar
+      # produziria um verde atestando a versão errada. Reprova.
+      #
+      # NÃO CONSEGUI PERGUNTAR (credencial, rede, resposta ilegível) é ausência
+      # de prova, não prova de ausência. Reprovar aí derrubaria o deploy — e com
+      # ele o smoke pós-deploy — por uma instabilidade da API da DigitalOcean.
+      # Fica como aviso, visível no run, sem sequestrar a esteira. A casa perdeu
+      # três dias de guarda pós-deploy em 09/2026 exatamente por um gate que
+      # morria por motivo alheio ao que ele guardava.
+      - name: Reprovar se houver componente para trás
+        if: steps.confronto.outputs.code == '1'
+        run: |
+          echo "::error::o registry não está servindo o que o \`main\` pede." \
+               "Os componentes e o comando de conserto saíram no passo acima."
+          exit 1
