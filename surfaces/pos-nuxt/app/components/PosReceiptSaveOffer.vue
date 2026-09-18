@@ -39,7 +39,7 @@
 
     <label
       v-if="offer.kind !== 'none'"
-      class="flex cursor-pointer items-start justify-between gap-3 rounded-md border border-dashed px-2.5 py-2"
+      class="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-dashed px-2.5 py-2"
     >
       <span class="grid min-w-0 gap-0.5">
         <span class="text-xs font-medium leading-tight">{{ offer.title }}</span>

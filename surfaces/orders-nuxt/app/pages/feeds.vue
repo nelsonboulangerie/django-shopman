@@ -140,18 +140,14 @@ useHead({ title: "Canais" });
               <p class="truncate font-medium text-foreground">{{ sc.name }}</p>
               <p class="text-xs text-muted-foreground">{{ sc.kind_label }}</p>
             </div>
-            <button
-              type="button" role="switch" :aria-checked="sc.is_active"
-              class="inline-flex size-control shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+            <UiSwitch
+              tone="success"
+              :model-value="sc.is_active"
               :disabled="isBusy(sc.ref) || !actionFor(sc, 'active')?.enabled"
               :aria-label="sc.is_active ? 'Pausar feed' : 'Ativar feed'"
               :title="sc.is_active ? 'Ativo — clique para pausar' : 'Pausado — clique para ativar'"
-              @click="toggleActive(sc)"
-            >
-              <span class="inline-flex h-5 w-9 items-center rounded-full transition-colors" :class="sc.is_active ? 'bg-success' : 'bg-muted-foreground/30'">
-                <span class="inline-block size-4 rounded-full bg-white shadow-sm transition-transform" :class="sc.is_active ? 'translate-x-4' : 'translate-x-0.5'"></span>
-              </span>
-            </button>
+              @update:model-value="toggleActive(sc)"
+            />
           </div>
 
           <!-- coleções exibidas -->

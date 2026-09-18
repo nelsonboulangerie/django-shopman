@@ -750,18 +750,15 @@ useHead({ title: "Catálogo" });
                 <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off) OU
                      linha "fora" (esgotado/etc.: mantém a POSIÇÃO ligada, mas dessatura p/ cinza).
                      Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
-                <button
-                  type="button" role="switch" :aria-checked="cell.is_sellable"
-                  class="inline-flex size-control shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+                <UiSwitch
+                  size="sm"
+                  :tone="rowStatuses[row.sku]?.off ? 'muted' : 'success'"
+                  :model-value="cell.is_sellable"
                   :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                   :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Ativar neste ${surfaceWord(cell)}`"
                   :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — ativar neste ${surfaceWord(cell)}`"
-                  @click="toggleCell(row, cell)"
-                >
-                  <span class="inline-flex h-4 w-7 items-center rounded-full transition-colors" :class="cell.is_sellable && !rowStatuses[row.sku]?.off ? 'bg-success' : 'bg-muted-foreground/30'">
-                    <span class="inline-block size-3 rounded-full bg-white shadow-sm transition-transform" :class="cell.is_sellable ? 'translate-x-3.5' : 'translate-x-0.5'"></span>
-                  </span>
-                </button>
+                  @update:model-value="toggleCell(row, cell)"
+                />
 
                 <span v-if="cell.pause_audit" class="max-w-40 text-xs text-muted-foreground">{{ cell.pause_audit }}</span>
 

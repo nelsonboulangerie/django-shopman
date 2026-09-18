@@ -21,6 +21,7 @@ coisa, ou a conversão muda o que o operador vê.
 | `marketing-nuxt/app/pages/platforms.vue` | **"Modelo aprovado": um cartão por modelo → `UiSelect` com busca** |
 | `purchase-nuxt/app/components/ReceiptLineSheet.vue` | `MaterialPicker` → `UiSelect` (o picker foi promovido ao kit e apagado) |
 | `pos-nuxt/app/components/PosRecentSales.vue` | botão de atualizar ganhou nome acessível |
+| `pos-nuxt/app/components/Ui/Switch.vue` → `operator-kit/app/components/UiSwitch.vue` | **o interruptor**: promovido ao kit, 10 consumidores migrados, a cópia do PDV apagada |
 
 ## Marketing — o que ficou
 
@@ -30,7 +31,6 @@ coisa, ou a conversão muda o que o operador vê.
 | `app/components/CampaignForm.vue:969` | pílula de plataforma com checkbox `sr-only` | decisão (ver abaixo) |
 | `app/components/CampaignForm.vue:1017,1029,1044,1175,1186,1250,1275` | 7 checkboxes de público e de publicação | mecânica — **PR de seguimento** |
 | `app/components/AnnouncementCard.vue:676` | pílula de plataforma com checkbox `sr-only` | **decisão** |
-| `app/pages/campaigns.vue:547` | liga/desliga da campanha (`role="switch"` à mão) | **decisão** — ver "O interruptor" |
 | `app/components/FireCampaignPanel.vue:299` · `app/pages/platforms.vue:526` | `UiNativeSelect` sobre o catálogo inteiro de produtos | mecânica quando a lista passa de 12 (`UiSelect` decide sozinho) |
 
 **A pílula de plataforma é decisão, não troca.** Ela é um `<label>` com um checkbox
@@ -50,17 +50,35 @@ A peça certa é um irmão do `UiFilterChip` que fale `aria-pressed`/`aria-check
 | **pos-nuxt** | 1 | 0 | 0 | `PosCustomerSearch` e `PosAddressAutocomplete` são comboboxes de BUSCA REMOTA — parentes do `UiSelect`, mas o que eles precisam é de um `UiCombobox` assíncrono. Não force o primitivo de lista local neles. |
 | **kds-nuxt** · **hub-nuxt** | 0 | 0 | 0 | nada a fazer |
 
-## O interruptor (`role="switch"`) — por que ele NÃO nasceu aqui
+## O interruptor (`role="switch"`) — FEITO
 
-Há 10 interruptores vivos, e nenhum no kit: 7 montam o `Ui/Switch.vue` do PDV (com 3
-suítes de teste presas ao contrato `role="switch"`), e 3 são cópias do mesmo
-trilho+botão escritas à mão (`marketing-nuxt/app/pages/campaigns.vue:547`,
-`orders-nuxt/app/pages/catalog.vue:754`, `orders-nuxt/app/pages/feeds.vue:144`).
+Eram 10 interruptores vivos e nenhum no kit: 7 montavam o `Ui/Switch.vue` do PDV, e 3
+eram o mesmo trilho+polegar reescrito à mão (Marketing e as duas telas do Gestor de
+Pedidos). O WP foi feito inteiro numa branch só, que é a única forma que não cria a
+duplicação que o `kitOwnership.guardrails` existe para impedir: o componente subiu
+para `operator-kit/app/components/UiSwitch.vue`, os 10 consumidores passaram a montá-lo
+e a cópia do PDV foi apagada.
 
-Promover é o certo — mas promover pela METADE (copiar para o kit e deixar a do PDV de
-pé) cria exatamente a duplicação que o `kitOwnership.guardrails` existe para impedir.
-O WP é um só: subir o `Ui/Switch.vue` do PDV para o kit, migrar os 10 consumidores e
-apagar a cópia, numa branch que possa rodar a suíte do PDV inteira.
+**O que a medição achou e a promoção resolveu** — as três cópias já tinham divergido:
+
+- **três tamanhos de trilho** (`h-6 w-11` no PDV, `h-5 w-9` no Marketing e nos feeds,
+  `h-4 w-7` na matriz do catálogo). Viraram duas variantes com motivo: `md` (padrão) e
+  `sm`, que existe por UMA tela — a matriz produto×superfície, com um interruptor por
+  célula.
+- **duas cores de trilho desligado** (`bg-input` no PDV, `bg-muted-foreground/30` nos
+  outros) → uma só.
+- **o alvo de toque do PDV era o próprio trilho: 24 px**, metade dos 44 px que a casa
+  exige. Quem já acertava era o Marketing (alvo de 44 px em volta de um trilho menor), e
+  foi a ideia dele que virou o primitivo — agora pelo token `--spacing-control`, não por
+  `size-11` que cada tela precisava lembrar de escrever.
+- o verde de "está no ar" do Gestor de Pedidos virou `tone="success"`, e o cinza da
+  linha que está fora por outro motivo (esgotada, pausada acima) virou `tone="muted"`:
+  a POSIÇÃO continua ligada e a cor não promete o que a tela não entrega.
+
+O guardrail agora cobra os dois lados: `Switch` entrou em `KIT_OWNED_CHOICE_PRIMITIVES`
+(nenhum app volta a ter um `Ui/Switch.vue`) e um teste novo recusa `role="switch"` em
+qualquer arquivo de app — que é como as três cópias à mão tinham entrado, sem nome de
+arquivo em comum para ninguém procurar.
 
 ## Convenções que a varredura confirmou
 
@@ -68,4 +86,10 @@ apagar a cópia, numa branch que possa rodar a suíte do PDV inteira.
   uma segunda vez aqui. O que existe pronto se promove; só o que não existe se escreve.
 - **Botão de ícone puro tem nome.** A varredura achou 4 botões mudos (2 no kit, 1 no
   PDV, 1 que era definição de primitivo e por isso é legítima).
-  `tests/guardrails.a11y.test.ts` agora cobra isso nas nove superfícies.
+  `tests/guardrails.a11y.test.ts` agora cobra isso nas nove superfícies. A exceção do
+  primitivo saiu junto com a promoção do interruptor: ela era a única, e era inerte —
+  a regra só cobra botão que tem `<Icon>` dentro, e o interruptor nunca teve ícone.
+- **Promoção é de uma vez só.** Copiar a peça para o kit e deixar a original de pé
+  produz o estado que o guardrail chama de dívida: duas implementações vivas, uma delas
+  destinada a divergir em silêncio. Se a branch não puder rodar a suíte de todos os
+  consumidores, ela não é a branch da promoção.
