@@ -149,10 +149,11 @@ describe("notification Actions", () => {
   });
 
   it("keeps lifecycle and disabled reasons explicit", () => {
-    expect(notificationStateLabel("seen")).toBe("Visto");
     expect(notificationStateLabel("resolved")).toBe("Resolvido");
-    // `acknowledged` nomeia quem marcou — é a única diferença real para `seen`.
-    expect(notificationStateLabel("acknowledged")).toBe("Você já viu");
+    // "Visto" é a palavra da casa para o gesto, a mesma dos timers da Produção.
+    expect(notificationStateLabel("acknowledged")).toBe("Visto");
+    // `seen` é o app registrando que mostrou: não é gesto de ninguém, não tem chip.
+    expect(notificationStateLabel("seen")).toBe("");
     expect(notificationReasonLabel("missing_capability")).toContain("acesso");
   });
 

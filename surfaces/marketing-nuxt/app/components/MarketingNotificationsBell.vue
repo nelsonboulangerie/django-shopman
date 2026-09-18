@@ -255,6 +255,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p
+                  v-if="notificationStateLabel(notification.lifecycle)"
                   class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                 >
                   {{ notificationStateLabel(notification.lifecycle) }}
@@ -299,7 +300,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
                 @click="acknowledge(notification)"
               >
                 {{
-                  acknowledging.has(notification.pk) ? "Marcando…" : "Já vi"
+                  acknowledging.has(notification.pk) ? "Marcando…" : "Visto"
                 }}
               </UiButton>
             </div>
