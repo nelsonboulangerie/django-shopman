@@ -272,6 +272,14 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   `shopman/backstage/tests/test_vocabulario_de_tela.py`, varredura por AST sobre 1.083
   arquivos. Esta regra não estava escrita em lugar nenhum até 17/09/2026, e foi por isso
   que 104 arquivos derivaram e o convite de instalação dos oito apps nasceu errado.
+- **Copy de UI: primeiro inequívoco, depois curto.** Omotenashi na linguagem é precisão
+  semântica e clareza inequívoca — não é coloquialidade, simploriedade nem brevidade a
+  qualquer custo. O teste é um só: *o leitor precisou completar sentido, escolher entre
+  duas leituras, ou lembrar de algo que a tela não mostra?* Curto vem depois, e só até
+  onde não custe exatidão. Os oito defeitos com nome (rótulo que mente · verbo genérico ·
+  frase incompleta · grandezas somadas · zero como código secreto · nota de rodapé do
+  engenheiro · jargão e colisão · prolixo), com antes/depois reais e a ordem da varredura,
+  em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
   - **HTMX**: toda comunicação com servidor (GET, POST, polling, swaps). Incluindo `hx-on::before-request`/`after-request` para estados visuais de loading atrelados a requests.
