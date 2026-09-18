@@ -796,9 +796,25 @@ function askToReject() {
             Agendado
           </button>
         </div>
-        <p v-if="scheduleRecommended" class="text-xs font-medium text-warning">
+        <!-- ⚠️ Os dois avisos moram aqui, colados na escolha de hora, porque é aqui
+             que o fato muda o que dá para escolher. Eles CONTAM o fato e dizem o que
+             está disponível; não mandam agendar — a decisão é do gestor. -->
+        <p
+          v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
+          class="text-xs font-medium text-sky-700 dark:text-sky-300"
+          role="status"
+        >
+          Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem
+          sai deste computador.
+        </p>
+        <p
+          v-else-if="scheduleRecommended"
+          class="text-xs font-medium text-warning"
+          role="status"
+        >
           O WhatsApp está em silêncio das 20:00 às 08:00 ({{ timezoneName }}).
-          Agendar entrega no próximo horário permitido.
+          Envio imediato fica indisponível até as 08:00. Em Agendado, o próximo
+          horário permitido já vem preenchido.
         </p>
       </div>
 
@@ -880,12 +896,20 @@ function askToReject() {
           }}
         </p>
       </div>
-    
+
       <!-- ⚠️ Recusar ANTES de Continuar, os dois da mesma largura: pedido do dono. E
            "Continuar" não promete o disparo, porque não dispara — leva à caixa onde o
            ato acontece e lá o botão se chama pelo nome (Enviar/Publicar/Disparar/
            Agendar). Um botão só, porque a decisão desta tela virou binária quando o
            "quando" saiu de botão e virou campo. -->
+      <p
+        v-if="expired"
+        class="w-full text-xs font-medium text-destructive"
+        role="alert"
+      >
+        O prazo terminou. Atualize os fatos antes de publicar.
+      </p>
+
       <div class="flex w-full gap-2 pt-1">
         <UiButton
           type="button"
@@ -912,6 +936,6 @@ function askToReject() {
           Continuar
         </UiButton>
       </div>
-</footer>
+    </footer>
   </article>
 </template>

@@ -301,9 +301,13 @@ describe("AnnouncementCard", () => {
     vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
     const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
 
+    // "Agendado" é o nome fixo da opção de envio — campo não muda de nome com a hora.
+    // O fato que este teste protege está no aviso: ele é do WhatsApp, e aqui não há
+    // WhatsApp, então não pode aparecer nem travar o envio imediato.
     expect(wrapper.get("[data-testid=delivery-scheduled]").text()).toBe(
-      "Agendar",
+      "Agendado",
     );
+    expect(wrapper.text()).not.toContain("está em silêncio");
     expect(
       (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement)
         .disabled,
@@ -340,12 +344,14 @@ describe("AnnouncementCard", () => {
   it("replaces a quiet-hours guess with the next permitted WhatsApp time", async () => {
     vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
     const wrapper = mountCard(makeAnnouncement({ platforms: ["whatsapp"] }));
-    const publishNow = wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Visualizar consequência"))!;
 
-    expect((publishNow.element as HTMLButtonElement).disabled).toBe(true);
-    expect(wrapper.text()).toContain("WhatsApp está em silêncio das 20:00 às 08:00");
+    expect(
+      (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(wrapper.text()).toContain(
+      "WhatsApp está em silêncio das 20:00 às 08:00",
+    );
 
     await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
 
@@ -364,9 +370,7 @@ describe("AnnouncementCard", () => {
       false,
       true,
     );
-    const publishNow = wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Visualizar consequência"))!;
+    const publishNow = wrapper.get("[data-testid=publish-now]");
 
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(false);
     expect(wrapper.text()).toContain("Ensaio local");
@@ -521,10 +525,7 @@ describe("AnnouncementCard", () => {
     ).toBe("Croissant acabou de sair do forno.");
     expect(wrapper.emitted("approve")).toBeFalsy();
 
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Visualizar consequência"))!
-      .trigger("click");
+    await wrapper.get("[data-testid=publish-now]").trigger("click");
     const [, edits] = wrapper.emitted("approve")![0] as [
       number,
       Record<string, unknown>,
