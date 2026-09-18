@@ -52,7 +52,15 @@ function revealActiveTab() {
     ?.querySelector<HTMLElement>('[data-active="true"]')
     ?.scrollIntoView({ inline: "nearest", block: "nearest" });
 }
-onMounted(revealActiveTab);
+onMounted(() => {
+  revealActiveTab();
+  // ⚠️ E DE NOVO quando a fonte da casa termina de carregar. Rolar "o mínimo
+  // necessário" depende da largura das abas, e a largura muda quando a fonte troca:
+  // rolado antes, o resultado ficava alguns pixels fora do lugar — e a matriz visual
+  // pegou essa diferença entre a máquina daqui e a da CI. Onde a posição depende de
+  // medida, medir de novo depois que a medida assenta.
+  document.fonts?.ready.then(revealActiveTab).catch(() => {});
+});
 watch(section, () => nextTick(revealActiveTab));
 </script>
 
