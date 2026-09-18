@@ -16,6 +16,7 @@ import {
   useMarketingDraftOwner,
 } from "~/composables/useMarketingDraft";
 import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
+import { splitByGrandeza } from "~/presentation/marketingCounters";
 
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
@@ -47,6 +48,30 @@ const {
   resumeDecision,
   cancelDecision,
 } = useCampaignBoard();
+
+/** Os três números que continuam somados, cada um com a linha que diz de quê.
+ *
+ *  Só somam porque são problemas a resolver: separar "1 pessoa sem confirmação" de
+ *  "1 postagem sem confirmação" em dois cartões esconderia o menor dos dois alarmes
+ *  atrás do outro. O que não pode é o total aparecer sem grandeza. */
+const acceptedUnconfirmed = computed(() =>
+  splitByGrandeza({
+    people: stats.value?.accepted_unconfirmed_people_today ?? 0,
+    posts: stats.value?.accepted_unconfirmed_posts_today ?? 0,
+  }),
+);
+const failedFinal = computed(() =>
+  splitByGrandeza({
+    people: stats.value?.failed_final_people_today ?? 0,
+    posts: stats.value?.failed_final_posts_today ?? 0,
+  }),
+);
+const unknownOpen = computed(() =>
+  splitByGrandeza({
+    people: stats.value?.unknown_people_open ?? 0,
+    posts: stats.value?.unknown_posts_open ?? 0,
+  }),
+);
 const { platforms, products } = useCampaigns();
 /** A imagem do anúncio que está na caixa de confirmação — a caixa mostra o que sai,
  *  e metade do que sai é a foto. */
@@ -274,10 +299,16 @@ useHead({ title: "Painel" });
       </div>
     </section>
 
-    <!-- Números do dia -->
+    <!-- Números do dia
+         ⚠️ Uma pessoa que recebe mensagem e um mural que recebe postagem são
+         grandezas diferentes, e somá-las produzia um número que o gestor lê de manhã
+         para decidir se disparou demais. Onde o número é bom, ele vai separado em dois
+         cartões; onde o número é um problema a resolver, ele fica junto e a linha de
+         baixo diz de quê — juntar dois alarmes em cartões distintos esconderia o
+         menor deles. -->
     <section
       v-if="stats"
-      class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5"
+      class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3"
       aria-label="Situação operacional"
     >
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
@@ -285,50 +316,53 @@ useHead({ title: "Painel" });
         <p class="text-xs text-muted-foreground">Aguardando decisão</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.confirmed_targets_today) }}</p>
-        <p class="text-xs text-muted-foreground">Entregas confirmadas hoje</p>
+        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.confirmed_people_today) }}</p>
+        <p class="text-xs text-muted-foreground">Pessoas que receberam hoje</p>
+      </div>
+      <div class="rounded-lg border border-border bg-card px-3 py-2.5">
+        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.confirmed_posts_today) }}</p>
+        <p class="text-xs text-muted-foreground">Postagens publicadas hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
         <p class="text-2xl font-bold tabular-nums">
-          {{ formatCount(stats.accepted_unconfirmed_targets_today) }}
+          {{ formatCount(acceptedUnconfirmed.total) }}
         </p>
-        <p class="text-xs text-muted-foreground">
-          Aceitas, ainda sem confirmação
-        </p>
+        <p class="text-xs text-muted-foreground">Sem confirmação ainda</p>
+        <p class="text-xs text-muted-foreground">{{ acceptedUnconfirmed.breakdown }}</p>
       </div>
       <div
         class="rounded-lg border px-3 py-2.5"
         :class="
-          stats.failed_final_targets_today > 0
+          failedFinal.total > 0
             ? 'border-destructive/40 bg-destructive/5'
             : 'border-border bg-card'
         "
       >
         <p
           class="text-2xl font-bold tabular-nums"
-          :class="
-            stats.failed_final_targets_today > 0 ? 'text-destructive' : ''
-          "
+          :class="failedFinal.total > 0 ? 'text-destructive' : ''"
         >
-          {{ formatCount(stats.failed_final_targets_today) }}
+          {{ formatCount(failedFinal.total) }}
         </p>
         <p class="text-xs text-muted-foreground">Falhas finais hoje</p>
+        <p class="text-xs text-muted-foreground">{{ failedFinal.breakdown }}</p>
       </div>
       <div
         class="rounded-lg border px-3 py-2.5"
         :class="
-          stats.unknown_targets_open > 0
+          unknownOpen.total > 0
             ? 'border-warning/40 bg-warning/5'
             : 'border-border bg-card'
         "
       >
         <p
           class="text-2xl font-bold tabular-nums"
-          :class="stats.unknown_targets_open > 0 ? 'text-warning' : ''"
+          :class="unknownOpen.total > 0 ? 'text-warning' : ''"
         >
-          {{ formatCount(stats.unknown_targets_open) }}
+          {{ formatCount(unknownOpen.total) }}
         </p>
         <p class="text-xs text-muted-foreground">Resultados incertos</p>
+        <p class="text-xs text-muted-foreground">{{ unknownOpen.breakdown }}</p>
       </div>
     </section>
 
