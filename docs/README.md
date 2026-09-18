@@ -116,6 +116,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Contrato da superfície Marketing](reference/marketing-surface-contract.md) | Ownership, rotas verificadas, plataformas, capabilities, flags, probes e estado de rollout |
 | [ManyChat Conversation Projection](reference/manychat-conversation-projection.md) | Contrato conversacional derivado de tracking, payment e channel policy canônicos |
 | [Remote Mutation Contract](reference/remote-mutation-contract.md) | Mutations remotas idempotentes sobre services canônicos |
+| [Omotenashi Copy](reference/omotenashi-copy.md) | Critérios da linguagem de UI: a definição, o teste de uma frase, os oito defeitos nomeados, as travas e a ordem da varredura |
 | [Filtro de Design de Superfícies](reference/design-surface-filter.md) | Checklist transversal para UI: tipografia, ícones, espaçamento, contraste, foco, responsividade e estados |
 
 ---

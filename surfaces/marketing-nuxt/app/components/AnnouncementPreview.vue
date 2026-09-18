@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Preview fiel: uma resposta batch usa um único snapshot factual para todos os canais.
 // Epoch + AbortController impedem que uma resposta antiga substitua o texto mais recente.
+import { scenesFromDraftArtifacts } from "~/presentation/simulatedPreview";
+
 const props = defineProps<{
   body: string;
   /** SKU da ocorrência real. Vazio usa somente a amostra do formulário. */
@@ -251,6 +253,23 @@ const factTime = computed(() => {
 const shortHash = computed(
   () => selected.value?.artifact_hash.slice(0, 8) || "",
 );
+
+/** ⚠️ Fonte do retrato grande NESTA tela: o RASCUNHO corrente, já resolvido pelo
+ *  servidor nesta mesma resposta. É o ponto — aqui o gestor está editando, e o que ele
+ *  precisa ver em tamanho real é o efeito da edição que está fazendo agora. A caixa de
+ *  confirmação faz o oposto, e por um motivo igualmente explícito: lá o retrato sai do
+ *  corpo congelado do comando.
+ *
+ *  Nenhuma chamada a mais: os artefatos já estão aqui. Abrir a prévia grande não pede
+ *  nada ao servidor. */
+const simulatedScenes = computed(() =>
+  preview.value
+    ? scenesFromDraftArtifacts({
+        previews: preview.value.previews,
+        platformLabels: props.platformLabels,
+      })
+    : [],
+);
 </script>
 
 <template>
@@ -270,6 +289,16 @@ const shortHash = computed(
         v-if="pending"
         name="lucide:loader-circle"
         class="size-3 animate-spin text-muted-foreground motion-reduce:animate-none"
+      />
+      <!-- O olho abre o mesmo conteúdo em tamanho real, no lugar onde a pessoa vai
+           ver. Aqui, enquanto ainda dá para mexer: descobrir um enquadramento ruim só
+           na hora do disparo custa voltar uma tela. -->
+      <!-- A margem negativa deixa o alvo de toque com os 44px inteiros sem engordar a
+           linha do cabeçalho: no menor mobile, cada 20px a mais empurra a decisão para
+           fora da dobra. -->
+      <AnnouncementSimulatedPreview
+        :scenes="simulatedScenes"
+        trigger-class="-my-3"
       />
       <span
         v-if="preview?.sample"

@@ -8,6 +8,7 @@ import {
   includesPublicPost,
 } from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
+import { scenesFromFrozenCommand } from "~/presentation/simulatedPreview";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
 const props = defineProps<{
@@ -18,6 +19,11 @@ const props = defineProps<{
   /** A imagem do anúncio que está sendo decidido, quando existe. O texto vem do
    *  próprio comando; a imagem não, porque o servidor congela o artefato por hash. */
   imageUrl?: string;
+  /** O conteúdo por plataforma do anúncio decidido. Pelo mesmo motivo da imagem: o
+   *  formato público (`story`, `feed`, `standard`) não é editável no card e não viaja
+   *  no corpo do comando, mas é ele que diz qual retrato a prévia em tamanho real
+   *  precisa mostrar. */
+  platformContent?: Record<string, Record<string, unknown>>;
 }>();
 
 const emit = defineEmits<{
@@ -112,6 +118,33 @@ const outgoing = computed(() => {
   return text || tags.length || props.imageUrl ? { text, tags } : null;
 });
 
+/** O mesmo conteúdo do resumo acima, agora em tamanho real e no lugar onde a pessoa vai
+ *  ver — o botão do olho abre por cima desta caixa.
+ *
+ *  ⚠️ Fonte do retrato AQUI: o corpo CONGELADO do comando, o mesmo do resumo. É o que o
+ *  servidor vai publicar. Ler do anúncio na tela retrataria uma edição posterior que não
+ *  foi selada, e essa é exatamente a diferença que esta caixa existe para não deixar
+ *  passar. Na tela de edição a fonte é o rascunho corrente, e lá isso é o certo.
+ *
+ *  ⚠️ Zero chamada ao servidor: tudo o que o retrato precisa já chegou. Quem só quer
+ *  confirmar não paga nada por esta prévia existir. */
+const simulatedScenes = computed(() =>
+  props.command?.action !== "approve" || !outgoing.value
+    ? []
+    : scenesFromFrozenCommand({
+        frozenBody: props.command?.body as Record<string, unknown> | undefined,
+        platforms: challengePlatforms.value,
+        platformLabels: Object.fromEntries(
+          challengePlatforms.value.map((platform) => [
+            platform,
+            platformResultLabel(platform),
+          ]),
+        ),
+        platformContent: props.platformContent,
+        imageUrl: props.imageUrl,
+      }),
+);
+
 /** Uma linha por destino, e cada linha diz a grandeza daquele destino: mensagem conta
  *  PESSOAS, postagem conta a si mesma.
  *
@@ -194,7 +227,7 @@ function submit() {
             <Icon name="lucide:image-off" class="size-5" />
             <span class="text-[10px] font-medium leading-none">Sem foto</span>
           </div>
-          <div class="min-w-0 text-sm">
+          <div class="min-w-0 flex-1 text-sm">
             <p v-if="outgoing.text" class="max-h-28 overflow-y-auto whitespace-pre-line">
               {{ outgoing.text }}
             </p>
@@ -202,6 +235,13 @@ function submit() {
               {{ outgoing.tags.join(" ") }}
             </p>
           </div>
+          <!-- O mesmo resumo, em tamanho real e no lugar onde a pessoa vai ver. A
+               miniatura continua respondendo "é este anúncio?" de relance; o olho
+               responde "o enquadramento está certo?" sem tirar ninguém daqui. -->
+          <AnnouncementSimulatedPreview
+            :scenes="simulatedScenes"
+            trigger-class="-my-1 shrink-0 self-start"
+          />
         </div>
 
         <ul class="space-y-0.5 text-sm font-medium" aria-label="Para quem vai">

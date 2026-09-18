@@ -89,7 +89,7 @@ function mountPreview(over: Record<string, unknown> = {}) {
       },
       ...over,
     },
-    global: { stubs: { Icon: true } },
+    global: { stubs: { AnnouncementSimulatedPreview: true, Icon: true } },
   });
 }
 

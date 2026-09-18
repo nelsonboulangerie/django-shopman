@@ -50,12 +50,21 @@ const {
 const { platforms, products } = useCampaigns();
 /** A imagem do anúncio que está na caixa de confirmação — a caixa mostra o que sai,
  *  e metade do que sai é a foto. */
-const decidingImageUrl = computed(() => {
-  const post = pendingPosts.value.find(
-    (item) => item.pk === pendingDecision.value?.announcementId,
-  );
-  return post ? outgoingImageUrl(post) : "";
-});
+const decidingPost = computed(
+  () =>
+    pendingPosts.value.find(
+      (item) => item.pk === pendingDecision.value?.announcementId,
+    ) || null,
+);
+const decidingImageUrl = computed(() =>
+  decidingPost.value ? outgoingImageUrl(decidingPost.value) : "",
+);
+/** O formato público (`story`, `feed`, `standard`) mora no conteúdo por plataforma do
+ *  anúncio, não no corpo editável do comando: ele não é editável no card, e é ele que
+ *  decide qual retrato a prévia em tamanho real precisa mostrar. */
+const decidingPlatformContent = computed(
+  () => decidingPost.value?.platform_content || {},
+);
 // Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
 const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
@@ -540,6 +549,7 @@ useHead({ title: "Painel" });
       :error="decisionError"
       :shop-timezone="shopTimezone"
       :image-url="decidingImageUrl"
+      :platform-content="decidingPlatformContent"
       @confirm="confirmServerDecision"
       @cancel="cancelDecision"
     />
