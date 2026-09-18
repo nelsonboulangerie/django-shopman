@@ -179,6 +179,12 @@ volumes, Spaces, snapshots, load balancers), que devolveram 403.
 - **O que muda:**
   1. Um workflow semanal apaga as tags imutáveis `<componente>-<sha>` além das **10 mais
      recentes por componente** e nunca toca as tags móveis (`web`, `pos`...).
+     - ⚠️ **Invariante nova, desde o job `drift` do `deploy-images.yml`:** a tag imutável
+       que a tag MÓVEL aponta não pode ser apagada nunca. É ela que permite dizer qual
+       commit está no ar — sem ela o confronto pós-deploy passa a responder "impossível
+       provar" para todo componente, e o guardrail vira ruído. Com N=10 isso é grátis (a
+       irmã da móvel é sempre o build mais recente); se N cair para 1, ou se a regra
+       passar a ser por DATA, confira isto antes de ligar.
   2. Depois dele roda `registry garbage-collection start --include-untagged-manifests`.
   3. O `deploy-images.yml` ganha uma nota apontando a retenção.
 - **Economia:**

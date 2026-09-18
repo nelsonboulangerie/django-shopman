@@ -24,6 +24,15 @@ A correlação é possível porque o Deploy Images publica DUAS tags por
 componente: a móvel (`pos`) e a imutável (`pos-<sha>`). As duas apontam para o
 mesmo manifest digest, então o digest da tag móvel revela qual sha está no ar.
 
+⚠️ **Isto é um pré-requisito para o E4 do WP-DO-ECONOMIA** (retenção de tags +
+garbage collection). A política proposta lá — guardar as 10 imutáveis mais
+recentes por componente e nunca tocar nas móveis — é compatível por construção,
+porque a irmã da tag móvel é sempre o build mais recente daquele componente. Mas
+uma GC que apagasse a imutável apontada pela móvel cegaria este confronto: ele
+passaria a dizer "impossível provar qual commit está no ar" para todo mundo. Se
+o N da retenção virar 1, ou se a regra passar a ser por data, confira esta
+invariante antes.
+
 ## Por que existir, se a decisão já foi consertada
 
 Porque a decisão fecha a porta que já se viu abrir, e esta fecha a classe. Um
