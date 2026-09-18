@@ -446,6 +446,22 @@ test.describe("listas operacionais", () => {
     await expectStableScreenshot(page, "campaign-form__validation", V768, "light", { fullPage: false });
   });
 
+  // ⚠️ Os sete checkboxes de público ficam ABAIXO da dobra do diálogo: os retratos que
+  // já existiam afirmavam "Avisar quem" pelo DOM e nunca mostraram um só deles. Sete
+  // controles trocados e nenhum olho em cima é como a deriva de desenho volta.
+  test("as escolhas de público são as peças do kit", async ({ page }) => {
+    await openScenario(page, "campaigns-dense", "/campaigns", V390);
+    await page.locator("main li").first().locator("button").nth(1).click();
+    // A prévia fiel chega DEPOIS e empurra o conteúdo; rolar antes dela assentar
+    // retrataria o topo do diálogo, que é o que este retrato não quer.
+    await waitForFaithfulPreview(page);
+    await page.getByRole("dialog").getByText("Avisar quem").scrollIntoViewIfNeeded();
+    await expect(
+      page.getByRole("checkbox", { name: "Quem favoritou o produto" }),
+    ).toBeInViewport();
+    await expectStableScreenshot(page, "campaign-form__audience-choices", V390, "light", { fullPage: false });
+  });
+
   test("edição completa em desktop", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V1280);
     await page.locator("main li").first().locator("button").nth(1).click();
