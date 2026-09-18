@@ -18,7 +18,7 @@ transformam o disparo de um toque numa escolha. Por isso o rótulo tem um gêmeo
 comparável (``normalized_label``) e uma unique parcial sobre as ativas: a
 criação pelo operador devolve a etiqueta existente em vez de criar a irmã, e o
 Admin recusa a duplicata na cara do gestor. Desativar libera o nome — o
-histórico não depende destas linhas, porque o timer vive no aparelho.
+histórico não depende destas linhas, porque o timer vive no dispositivo.
 """
 
 from __future__ import annotations

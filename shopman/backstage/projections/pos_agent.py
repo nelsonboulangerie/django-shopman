@@ -383,7 +383,7 @@ def _steps(
         AgentStep(
             title="Confirme com o olho",
             detail=(
-                "No PDV, antesala do caixa, botão “Testar gaveta”. Ele diz se a fila respondeu; "
+                "No PDV, antesala do caixa, botão “Abrir para testar”. Ele diz se a fila respondeu; "
                 "se a gaveta abriu, quem sabe é você. Se a fila responder e a gaveta não abrir, "
                 "o cabo dela na impressora é o primeiro lugar para olhar."
             ),

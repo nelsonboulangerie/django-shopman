@@ -255,9 +255,14 @@ export function sessionScreenState(
 // funções são puras para a página só desenhar.
 
 /**
- * Quantas coisas na antesala precisam de uma pessoa AGORA: devoluções em
- * dinheiro, pedidos de troco pendentes e contas na casa com saldo. É o número
- * do cabeçalho "Precisa de você" — e zero é o que decide se o bloco existe.
+ * SE o bloco "Precisa de você" existe — nunca o número que ele mostra.
+ *
+ * ⚠️ Esta soma junta três naturezas com três donos e três urgências: devolução
+ * em dinheiro (gaveta aberta, PIN de gerente), pedido de troco (alguém precisa
+ * trazer cédulas ao balcão) e conta na casa (saldo que pode esperar a semana
+ * inteira). Como crachá — "4 pendências" — ela decidia se o operador largava o
+ * balcão sem dizer para quê. Cada seção da tela carrega o próprio número; aqui
+ * só interessa se zero ou não.
  */
 export function attentionCount(input: {
   pendingCashRefunds: readonly unknown[];

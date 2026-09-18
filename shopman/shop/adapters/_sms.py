@@ -6,7 +6,7 @@ stays thin. Provider choice is swappable via DOORMAN['DELIVERY_SENDERS']['sms'].
 
 from __future__ import annotations
 
-#: O SMS de OTP chega num aparelho cheio de mensagens de remetente desconhecido,
+#: O SMS de OTP chega num dispositivo cheio de mensagens de remetente desconhecido,
 #: e o que estava aqui não dizia de onde vinha nem para quê: "482913 é o seu
 #: código de verificação" podia ser de qualquer serviço do mundo. Quem recebe sem
 #: reconhecer ou ignora (e não entra) ou desconfia (e reclama).

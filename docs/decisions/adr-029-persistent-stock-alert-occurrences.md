@@ -33,7 +33,7 @@ não oferecia pausa da autorização específica.
 - Pausa, cancelamento, opt-out global e disponibilidade são rechecados sob o mutex do
   canal imediatamente antes do adapter. Resultado incerto fica `indeterminate`, alerta o operador
   e não é reenviado sem reconciliação.
-- Cada aviso oferece controle no aparelho atual e por uma capacidade opaca, restrita à finalidade
+- Cada aviso oferece controle no dispositivo atual e por uma capacidade opaca, restrita à finalidade
   e revogável, enviada no fragmento de um link “Gerenciar este aviso”. A página remove o fragmento
   imediatamente, `GET` apenas consulta e `PATCH`/`DELETE` pausam, retomam ou cancelam. Cancelamento
   é irreversível; retomada vale apenas para ocorrências futuras. No web, novo opt-in exige a

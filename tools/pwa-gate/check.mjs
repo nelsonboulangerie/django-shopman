@@ -176,7 +176,7 @@ try {
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
   check(manifestResponse.headers.get('cache-control') === profile.manifestCache, `manifesto usa cache esperado (${profile.manifestCache})`)
-  // O manifesto do storefront é o MESMO para todo aparelho (#784): esconder o
+  // O manifesto do storefront é o MESMO para todo dispositivo (#784): esconder o
   // `maskable` do macOS deixava o ícone do Dock ~24% maior que os vizinhos.
   if (profile.storefront) check(!/user-agent/i.test(manifestResponse.headers.get('vary') || ''), 'manifesto não varia por dispositivo')
   const manifest = await manifestResponse.json()

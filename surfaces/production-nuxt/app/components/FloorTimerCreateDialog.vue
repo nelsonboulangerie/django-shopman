@@ -20,7 +20,7 @@ import type { TimerTagProjection } from "~/composables/useTimerTags";
 
 const open = defineModel<boolean>("open", { default: false });
 const props = defineProps<{
-  /** Sugestão de minutos: o último tempo que este aparelho disparou. */
+  /** Sugestão de minutos: o último tempo que este dispositivo disparou. */
   lastMinutes: number | null;
   tags: TimerTagProjection[];
   savingTag: boolean;

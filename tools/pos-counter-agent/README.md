@@ -6,7 +6,7 @@ gaveta e o papel que o servidor compôs (comprovante de movimento de caixa hoje,
 DANFE NFC-e depois — obrigação legal). Opcionalmente, a mesma instância busca
 por HTTPS trabalhos duráveis criados por tablets: o tablet nunca chama a
 loopback do PC nem recebe segredo do agente. Ele é a ponte com o hardware; a
-gaveta é um dos aparelhos que ele alcança, não o escopo dele.
+gaveta é um dos dispositivos que ele alcança, não o escopo dele.
 
 **Por que ele existe:** a gaveta não tem cabo próprio — ela pendura no RJ11 da
 impressora e abre quando a impressora recebe `ESC p m t1 t2`. O PDV roda no

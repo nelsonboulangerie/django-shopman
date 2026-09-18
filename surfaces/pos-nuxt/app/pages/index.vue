@@ -5,7 +5,7 @@ import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
+import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -279,8 +279,13 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 const screenTitle = computed(() => {
   // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
   // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
-  // abaixo — e é a barra que fica na periferia da visão do operador.
-  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : result.value.salesMode === "order" ? "Encomenda registrada" : "Venda concluída";
+  // abaixo — e é a barra que fica na periferia da visão do operador. Mesma
+  // razão para o Pix pendente: o dinheiro ainda não entrou.
+  if (result.value) {
+    if (paymentFailed(result.value.payment)) return "Cobrança não criada";
+    if (result.value.salesMode === "order") return "Encomenda registrada";
+    return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
+  }
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -908,6 +913,7 @@ onBeforeUnmount(() => {
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :scheduled="scheduleChipActive"
+          :has-fired-items="cart.items.some((item) => item.fired)"
           :customer-required="customerRequiredForSchedule"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"

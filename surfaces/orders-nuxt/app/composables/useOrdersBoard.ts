@@ -148,7 +148,7 @@ export function useOrdersBoard() {
   const totalCount = computed(() => queue.value?.total_count ?? 0);
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
   const preorders = computed<PreorderGroup[]>(() => (queue.value ? preorderGroups(queue.value) : []));
-  // Aparelhos na rua (maquininha): o quadro responde "onde está" sem abrir card.
+  // Maquininhas na rua: o quadro responde "onde está" sem abrir card.
   const equipmentAvailable = computed(() => queue.value?.equipment_available ?? []);
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
 

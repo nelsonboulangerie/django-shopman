@@ -15,19 +15,19 @@ function pageHidden(): boolean {
 }
 
 /**
- * O PDV trava pela ociosidade do APARELHO, não pela dele.
+ * O PDV trava pela ociosidade do DISPOSITIVO, não pela dele.
  *
  * Travar é `logout()` da sessão de operador, e essa sessão é UMA só para todos os
  * apps do domínio-pai (Gestor, KDS, Central, Produção…) no mesmo navegador. Medir
  * só o que acontece no PDV derrubava o Gestor em uso ao lado a cada minuto. A regra
  * (decisão do Pablo, 17/09/2026): trava só quando NENHUM app de operador foi tocado
  * por `auto_lock_seconds`. O "último toque" é o maior entre a atividade local e o
- * relógio do aparelho (`operator-kit/app/utils/deviceActivity.ts`), cookie no
+ * relógio do dispositivo (`operator-kit/app/utils/deviceActivity.ts`), cookie no
  * domínio-pai que todo app do kit alimenta — e que também coordena abas do PDV.
  *
  * Com o PDV fora da vista o cadeado não dispara (aba esquecida não derruba
  * ninguém); no instante em que ele volta à vista, antes de qualquer toque, a
- * ociosidade do aparelho é conferida e o cadeado desce se o prazo passou.
+ * ociosidade do dispositivo é conferida e o cadeado desce se o prazo passou.
  */
 export function usePosAutoLock(opts: {
   locked: Ref<boolean>;
@@ -57,7 +57,7 @@ export function usePosAutoLock(opts: {
   async function lockIfIdle() {
     if (opts.locked.value || opts.holdWhen?.() || pageHidden()) return;
     if (!isIdleBeyond(sharedActivity(), Date.now(), opts.autoLockSeconds() ?? 60)) return;
-    // Reancora o aparelho antes do POST: outra aba que adquirir a trava logo
+    // Reancora o dispositivo antes do POST: outra aba que adquirir a trava logo
     // depois não repete o logout enquanto a leitura da sessão é renovada.
     markActivity(true);
     await opts.lock();

@@ -12,7 +12,7 @@
 // 2. EM ANDAMENTO — os cards, na linguagem do KDS. Toque no corpo faz a única
 //    coisa que faz sentido no estado do card (ver presentation/timers.ts).
 //
-// A lista de etiquetas é do servidor; o timer continua sendo do aparelho. Rede
+// A lista de etiquetas é do servidor; o timer continua sendo do dispositivo. Rede
 // caída não apaga lembrete correndo, e a fileira em cache ainda dispara.
 import { filterTags, minutesLabel } from "~/presentation/timers";
 import type { TimerTagProjection } from "~/composables/useTimerTags";

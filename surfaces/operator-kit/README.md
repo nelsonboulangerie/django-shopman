@@ -48,8 +48,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
 | `app/components/OfflineBanner.vue` | `<OfflineBanner>` | aviso calmo de conexão (colocar no layout raiz) |
 | `app/plugins/errorReporter.client.ts` | — | captura erro não-tratado → telemetria (inerte em dev) |
-| `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do APARELHO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
-| `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do aparelho, não só a dele |
+| `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do DISPOSITIVO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
+| `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do dispositivo, não só a dele |
 | `app/types/operator.ts` | `OperatorCard`, `OperatorSession`, … | espelho TS da API operator/session\|eligible\|unlock\|lock |
 | `app/presentation/operatorLock.ts` | `isLocked`, `buildUnlockPayload`, … | transforms puros do lock (sem I/O) |
 | `app/composables/useOperatorLock.ts` | `useOperatorLock` | read/write do lock de operador (PIN/crachá) via proxy |
@@ -76,7 +76,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
-| `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por aparelho (Screen Orientation API): item "Travar giro" no `OperatorRail` só em aparelho de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
+| `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -174,7 +174,7 @@ os mesmos nomes.
 
 `<OperatorPwaInstallInvite>` diz `"Instale {artigo} {rótulo}"` e, embaixo, a frase
 `install` do próprio app ("Abra a fila de pedidos direto da tela inicial deste
-aparelho."). O caminho do iOS (Compartilhar → Adicionar à Tela de Início) é o mesmo em
+dispositivo."). O caminho do iOS (Compartilhar → Adicionar à Tela de Início) é o mesmo em
 todo app e fica no componente. Os oito diziam **"Instale Shopman"** — o componente lia
 `manifest.name`, chave que o manifesto resolvido não tem, e caía no nome da marca — com
 "Abra o caixa direto da tela inicial" embaixo, no B.I., na Cozinha e no Marketing.
@@ -373,8 +373,8 @@ do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por pass
 
 Até 18/09/2026 **todo** checkbox e **todo** rádio das nove superfícies era o controle
 nativo do browser com uma tinta do Tailwind por cima (`size-4 rounded border-border`,
-às vezes um `accent-color`): o desenho vinha do sistema operacional, mudava de aparelho
-para aparelho no meio do desenho da casa, e não tinha estado **indeterminado** — que é
+às vezes um `accent-color`): o desenho vinha do sistema operacional, mudava de dispositivo
+para dispositivo no meio do desenho da casa, e não tinha estado **indeterminado** — que é
 o que falta para um "marcar todos" honesto. O select com busca existia UMA vez,
 escondido no Compras como `MaterialPicker`.
 

@@ -107,7 +107,7 @@ def _audit_links(request) -> list[dict]:
         # contado e diferença, e oferecê-la a quem opera o caixa é oferecer o
         # gabarito da contagem cega. Quem decide é o ``ShiftAdmin``, e ele
         # pergunta a ``request.user`` — que com uma identidade só (D1-B) é a
-        # pessoa no balcão, não a conta do aparelho.
+        # pessoa no balcão, não a conta do dispositivo.
         _model_card(request, "Turnos de caixa", "point_of_sale", Shift),
         _model_card(request, "Fechamentos do dia", "event_available", DayClosing),
     ]

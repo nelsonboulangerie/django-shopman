@@ -136,7 +136,7 @@ describe("antesala — turno aberto, organização da tela", () => {
     expect(text).not.toContain("Valor contado");
   });
 
-  it("(b) com pendências: o bloco aparece com a contagem e os três grupos intactos", async () => {
+  it("(b) com pendências: o bloco aparece e CADA grupo carrega o seu número", async () => {
     cash.pendingChangeRequests.value = [
       { ref: "cr-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [], note: "", requested_by: "Ana", requested_at: "" },
     ];
@@ -151,10 +151,13 @@ describe("antesala — turno aberto, organização da tela", () => {
 
     expect(block.exists()).toBe(true);
     expect(block.text()).toContain("Precisa de você");
-    expect(block.text()).toContain("3");
-    expect(block.text()).toContain("Devoluções em dinheiro pendentes");
-    expect(block.text()).toContain("Pedidos de troco pendentes");
-    expect(block.text()).toContain("Contas na casa");
+    // ⚠️ SEM crachá único: devolução, pedido de troco e conta na casa são três
+    // naturezas com três urgências, e "3 pendências" decidia se o operador
+    // largava o balcão sem dizer para quê.
+    expect(block.text()).toContain("Devoluções em dinheiro pendentes · 1");
+    expect(block.text()).toContain("Pedidos de troco pendentes · 1");
+    expect(block.text()).toContain("Contas na casa · 1");
+    expect(block.text()).not.toContain("pendências");
     // As ações de cada pendência continuam onde estavam.
     expect(block.text()).toContain("Devolver");
     expect(block.text()).toContain("Atender");

@@ -1,7 +1,7 @@
 // Etiquetas de timer — a fileira de disparo de um toque da página /timers.
 //
 // A LISTA é do servidor (o gestor cura no Admin, e o que um padeiro cria vale
-// para os outros); o TIMER continua sendo do aparelho (useFloorTimers). São
+// para os outros); o TIMER continua sendo do dispositivo (useFloorTimers). São
 // dois assuntos e ficam em dois lugares: perder a rede não pode apagar um
 // lembrete que já está correndo, e a lista velha em cache ainda dispara.
 //

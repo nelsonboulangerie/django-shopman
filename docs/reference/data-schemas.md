@@ -227,7 +227,7 @@ for key in (
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
-| `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual aparelho foi levado, sem inferir históricos. Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
+| `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual dispositivo foi levado, sem inferir históricos. Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
 
 ### courier — detalhamento
 
@@ -375,7 +375,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
 | `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
 | `change_q` | `int` | measurement | POS (`shop/services/pos.py`) | POS (revisão), B.I. de troco | Troco devolvido, em centavos. Escrito junto com `tendered_q`. É a única fonte de troco do sistema: `HistoricalSale` (export externo) **não tem troco**, e por isso a previsão de necessidade de troco lê só pedido nativo |
-| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem confirmou dinheiro/cartão/misto da entrega. Somente a parcela cash gera `cod_settled` no `cashman`; cartão permanece no Payman. Devolução do aparelho é independente |
+| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem confirmou dinheiro/cartão/misto da entrega. Somente a parcela cash gera `cod_settled` no `cashman`; cartão permanece no Payman. Devolução do dispositivo é independente |
 | `change_for_q` | `int` | **canonical** | checkout da loja (`storefront/api/views.py`, `intents/checkout.py`) e PDV (`shop/services/pos.py`, soma das cédulas informadas no mesmo teclado de pagamento): dinheiro **na entrega** e o cliente disse com quanto paga | `operator_orders.change_out_suggested_q` (despacho: sugestão `change_for − parcela em dinheiro`, que vira `courier_out` no livro do caixa), projection do gestor (`change_for_q`/`change_label` no card), filipeta (`Troco para` e valor a levar, somente cobrança na entrega pendente) | Com quanto o cliente vai pagar a parcela em dinheiro na porta, em centavos; inclusive em pagamento misto. Era dado morto até o WP-9 do CASHMAN-PLAN: hoje o despacho pergunta quanto o entregador leva e o acerto quanto voltou |
 
 ### returns — detalhamento
@@ -1514,7 +1514,7 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 |-------|------|-------------|----------|-----------|
 | `default_fulfillment_type` | `str` | Admin | projection POS | `pickup` (default) ou `delivery`. Qualquer outro valor cai em `pickup`. |
 | `favorite_collection_refs` | `list[str]` | Admin | projection POS | Até 9 coleções fixadas na tela de venda. Aceita o alias legado `favorite_collections`. |
-| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO APARELHO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
+| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO DISPOSITIVO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
 | `station` | `dict` | Admin | `backstage/station_trust.py`, `services/print_jobs.py` | Que ESPÉCIE de estação é este dispositivo, em nome de quem ela age, e para onde vão as etiquetas que ela pede. Ver abaixo. |
@@ -1536,7 +1536,7 @@ dele, pelo gate de permissão do backstage. Ausente = **atendida**.
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
 | `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. **Escrito no Admin do terminal**, seção "Identificação desta estação". |
-| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. **Escrito no Admin**, numa lista fechada com as contas que `station_trust.eligible_station_operators()` aceita (ativa, `is_staff`, **nunca** superusuária) — a mesma pergunta que o gate faz, nunca texto livre. Conta que saiu do ar continua aparecendo marcada e barra o salvamento até o gestor repontar. Voltar o modo para `attended` APAGA a chave: conta com poder permanente esquecida num aparelho físico é arma carregada. |
+| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. **Escrito no Admin**, numa lista fechada com as contas que `station_trust.eligible_station_operators()` aceita (ativa, `is_staff`, **nunca** superusuária) — a mesma pergunta que o gate faz, nunca texto livre. Conta que saiu do ar continua aparecendo marcada e barra o salvamento até o gestor repontar. Voltar o modo para `attended` APAGA a chave: conta com poder permanente esquecida num dispositivo físico é arma carregada. |
 | `print_target_ref` | `str` | Terminal físico que recebe as etiquetas pedidas nesta estação. Ausente: o servidor usa a própria estação quando ela tem a capacidade ou deduz o único destino de preparação disponível. O tablet nunca recebe endereço ou segredo do agente. **Escrito no Admin do terminal** (seção "Destino das etiquetas desta estação"), numa lista fechada com os terminais que `print_jobs.preparation_destinations()` aceita — nunca texto livre, porque ref inventada viraria recusa só na hora de imprimir. Destino que saiu do ar continua aparecendo marcado e barra o salvamento até o gestor repontar. |
 
 **Atendida** é o balcão: tem gente na frente, e não faz nada sem PIN ou crachá.
@@ -1566,7 +1566,7 @@ PDV com o mesmo cookie leria "destravado" com o nome dele e a pessoa perderia a 
 O app do Produção aponta para lá por `runtimeConfig.public.operatorSessionPath`.
 
 ⚠️ **Não existe campo genérico de superfície, e não é esquecimento.** Cada superfície a mais é
-uma conta com poder permanente num aparelho físico: estender pede revisão de segurança própria,
+uma conta com poder permanente num dispositivo físico: estender pede revisão de segurança própria,
 com o dono, não uma constante a mais. KDS tem gente na frente (a decisão de 17/09 é trava por
 ociosidade + sessão deslizante, o caminho *atendido*); o PDV mexe em dinheiro.
 

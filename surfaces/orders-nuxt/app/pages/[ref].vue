@@ -145,7 +145,7 @@ const asksChangeBack = computed(() => Boolean(order.value?.change_back_pending))
 const dispatchAsksChange = computed(
   () => order.value?.status === "ready" && (order.value?.change_out_suggested_q ?? 0) > 0,
 );
-// ...ou o canal deixa levar aparelho (maquininha): o despacho oferece.
+// ...ou o canal deixa levar a maquininha: o despacho oferece.
 const dispatchAsks = computed(
   () => dispatchAsksChange.value || (order.value?.status === "ready" && (order.value?.equipment_options.length ?? 0) > 0),
 );

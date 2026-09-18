@@ -10,7 +10,7 @@ import FloorTimerCard from "../../app/components/FloorTimerCard.vue";
 import type { FloorTimerEntry } from "../../app/composables/useFloorTimers";
 
 // A página é dirigida por dois composables: a fileira de etiquetas (servidor) e
-// os timers (aparelho). Ambos são stubados com refs controláveis; o que se prova
+// os timers (dispositivo). Ambos são stubados com refs controláveis; o que se prova
 // é a UX pedida: UM toque na etiqueta dispara, "Novo timer" abre o caminho
 // livre, e os ativos aparecem como cards.
 const entries = ref<FloorTimerEntry[]>([]);
@@ -153,7 +153,7 @@ describe("Página /timers — os ativos como cards", () => {
     expect(page.text()).toContain("Estufa");
   });
 
-  it("o card repassa Visto, Encerrar e +5 para o mecanismo do aparelho", async () => {
+  it("o card repassa Visto, Encerrar e +5 para o mecanismo do dispositivo", async () => {
     entries.value = [entry({ key: "a", title: "Estufa", mode: "ringing" })];
     const page = await mountPage();
 

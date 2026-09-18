@@ -46,7 +46,7 @@ class TimerTagAdmin(ModelAdmin):
 
     # Apagar é permitido aqui, ao contrário dos outros catálogos da casa, e o
     # motivo é factual: nenhum fato guarda a ref de uma etiqueta. O timer vive
-    # no aparelho (localStorage) e nada no banco aponta para cá, então apagar
+    # no dispositivo (localStorage) e nada no banco aponta para cá, então apagar
     # não reescreve passado nenhum. Curar o entulho de um turno não deveria
     # custar uma lista de inativas crescendo para sempre.
 

@@ -8508,7 +8508,7 @@ class Command(BaseCommand):
 
         terminal = CashTerminal.default()
 
-        # O aparelho do balcão da Nelson: Epson TM-T20, USB, rolo de 80mm
+        # O dispositivo do balcão da Nelson: Epson TM-T20, USB, rolo de 80mm
         # (confirmado com o Pablo em 2026-08-12). Declarar a largura aqui é o que
         # faz o `@page` do recibo parar de depender do driver — a superfície
         # escreve `--pos-roll-width` a partir disto. 80mm é também o default do

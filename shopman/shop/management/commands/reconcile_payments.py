@@ -227,7 +227,7 @@ class Command(BaseCommand):
         A reconciliação contra webhook perdido existia em um lugar só: a
         leitura do acompanhamento, quando o cliente volta do Stripe. Enquanto
         for só ali, a verdade do sistema fica pendurada no navegador do
-        cliente — quem paga e fecha a aba, ou paga num aparelho e some, deixa
+        cliente — quem paga e fecha a aba, ou paga num dispositivo e some, deixa
         o pedido ACCEPTED com o avanço barrado por "Aguardando pagamento…", e
         do lado da loja não existe gesto nenhum capaz de destravar. O dinheiro
         está autorizado no gateway, o pão não sai, e ninguém sabe por quê.
@@ -243,7 +243,7 @@ class Command(BaseCommand):
         razão que a leitura da loja: o PIX já tem webhook, SSE e a checagem do
         vencimento. A sessão hospedada é o que leva o cliente para fora do site
         e volta sem sinal nenhum — e o link nem tem "volta": o cliente paga do
-        celular, num aparelho que nunca abriu o acompanhamento.
+        celular, num dispositivo que nunca abriu o acompanhamento.
         """
         from shopman.orderman.models import Order
 

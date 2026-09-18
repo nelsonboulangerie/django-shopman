@@ -196,7 +196,7 @@ test("Expedição abre a revisão de QC mantendo contexto", async ({ context, pa
   await context.addCookies([authed]);
   await page.goto("/expedite");
   await page
-    .getByRole("button", { name: "Confirmar conclusão da fornada de Pão francês" })
+    .getByRole("button", { name: "Finalizar a fornada de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("40 produzidos", { exact: false })).toBeVisible();

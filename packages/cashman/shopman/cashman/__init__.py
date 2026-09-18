@@ -11,7 +11,7 @@ Uso:
     cash.difference(shift)                                       # -10 (faltou dez centavos)
 
 Três modelos:
-    Terminal — o aparelho (config; não guarda dinheiro)
+    Terminal — o dispositivo (config; não guarda dinheiro)
     Shift    — a custódia (quem, qual gaveta, desde quando; sem coluna de dinheiro)
     Entry    — o livro (uma linha por acontecimento, amount_q assinado, imutável)
 
