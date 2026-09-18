@@ -20,7 +20,7 @@ const SESSION_AUTHED = {
 
 const INDEX = {
   instances: [
-    { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", pending_count: 0 },
+    { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: 0 },
   ],
 };
 

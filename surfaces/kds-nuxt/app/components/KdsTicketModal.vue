@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Detalhe do ticket — aberto pelo `i` do card. Só leitura: canal, horário, cliente,
-// notas e itens completos. A ação (iniciar/finalizar) mora no cabeçalho do card, e
-// só lá — dois lugares para o mesmo gesto é um lugar a mais para tocar errado.
+// Detalhe do pedido — aberto por um toque na área de leitura do card (a que mostra
+// identidade e itens; o `i` é a marca dela). Só leitura: canal, horário, cliente,
+// notas e itens completos. A ação (iniciar/finalizar) mora no BOTÃO do card, e só
+// lá — dois lugares para o mesmo gesto é um lugar a mais para tocar errado.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
