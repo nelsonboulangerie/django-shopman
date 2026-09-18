@@ -379,9 +379,7 @@ function submit() {
         v-else-if="imageSource === 'product' && instagramFormat === 'story'"
         class="mt-2 text-xs text-muted-foreground"
       >
-        O Story usará a foto do produto, que precisa estar em JPEG. Se o produto
-        estiver sem foto, a aprovação será bloqueada antes de qualquer
-        publicação.
+        Usa a foto do produto, em JPEG. Produto sem foto não dá para aprovar.
       </p>
     </div>
 
@@ -396,8 +394,7 @@ function submit() {
         class="sm:grid-flow-col sm:auto-cols-fr"
       />
       <p class="mt-2 text-xs text-muted-foreground">
-        O sistema nunca troca Stories por Feed sozinho. Facebook usa publicação
-        na página; Google usa atualização padrão do estabelecimento.
+        Facebook publica na página; Google, uma atualização do estabelecimento.
       </p>
     </fieldset>
 
@@ -428,8 +425,8 @@ function submit() {
           class="resize-y"
         />
         <p class="mt-1 text-xs text-muted-foreground">
-          Não inclua preço, validade, estoque, link ou dados pessoais: esses
-          fatos continuam sob controle do sistema.
+          Não escreva preço, validade, estoque nem link — o sistema põe os
+          atuais.
         </p>
       </div>
     </fieldset>

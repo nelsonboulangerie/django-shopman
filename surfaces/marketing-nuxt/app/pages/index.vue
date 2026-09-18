@@ -180,8 +180,7 @@ useHead({ title: "Painel" });
     >
       <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Guardamos exatamente o anúncio e as edições. Retome para o servidor
-        conferir tudo de novo antes de pedir sua confirmação.
+        Seu texto e sua escolha estão guardados. Retome para confirmar de novo.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
         <UiButton

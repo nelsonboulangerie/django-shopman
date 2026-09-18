@@ -7,10 +7,13 @@ import type {
 export type NotificationActionKind =
   "open_announcement" | "mark_notification_seen" | "acknowledge_notification";
 
+// "Assumido" era *acknowledge* traduzido, e o gestor não assume plantão nenhum:
+// ele diz que viu. O rótulo passa a nomear QUEM marcou, que é a única diferença
+// real entre este estado e `seen` — lá quem marcou foi o app, ao abrir o painel.
 const STATE_LABELS: Record<NotificationLifecycle, string> = {
   unseen: "Novo",
   seen: "Visto",
-  acknowledged: "Assumido",
+  acknowledged: "Você já viu",
   resolved: "Resolvido",
   expired: "Expirado",
 };
@@ -28,13 +31,6 @@ export function notificationStateLabel(state: NotificationLifecycle): string {
 
 export function notificationReasonLabel(reason: string): string {
   return REASON_LABELS[reason] ?? "Esta ação não está disponível agora.";
-}
-
-export function notificationOwnerLabel(role: string): string {
-  if (role === "product") return "Produto";
-  if (role === "ops") return "Operações";
-  if (role === "sre") return "SRE";
-  return "Responsável não definido";
 }
 
 /** Resolve somente Actions canônicas que pertencem ao alerta e ao source exatos. */

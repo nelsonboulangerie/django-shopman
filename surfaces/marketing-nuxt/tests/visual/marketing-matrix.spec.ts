@@ -391,7 +391,7 @@ test.describe("cartão de anúncio", () => {
 
   test("prévia de plataforma permanece ao lado da decisão", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V1280);
-    await expect(page.getByText("Prévia fiel")).toBeVisible();
+    await expect(page.getByText("Prévia", { exact: true })).toBeVisible();
     await expect(page.getByText(/Dados conferidos às/)).toBeVisible();
     await expectStableScreenshot(page, "announcement-card__platform-preview", V1280);
   });
