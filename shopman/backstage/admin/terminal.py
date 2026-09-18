@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin
+from django.utils.html import format_html
 from shopman.cashman.models import Terminal
 from shopman.utils import unfold_badge, unfold_link
 from unfold.widgets import (
@@ -148,12 +149,30 @@ class TerminalForm(forms.ModelForm):
         choices=(("none", "Sem corte (adesiva)"), ("partial", "Corte parcial")),
         initial="none",
     )
+    print_target_ref = forms.ChoiceField(
+        label="Para onde vão as etiquetas desta estação",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        # ⚠️ Lista, nunca texto livre. O servidor recusa um destino que não
+        # aceite preparação (`resolve_destination`), então um campo que aceita
+        # ref inventada só troca o beco visível por um silencioso. As opções
+        # saem da MESMA pergunta que o servidor faz na hora de imprimir.
+        choices=(("", "— a impressora desta estação, ou a única da loja —"),),
+        help_text=(
+            "Deixe no automático quando a estação imprime na própria impressora "
+            "ou quando a loja só tem uma de preparação. Com duas ou mais, sem "
+            "escolher aqui o servidor recusa o pedido — e não havia por onde escolher."
+        ),
+    )
+
     class Meta:
         model = Terminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._stale_print_target = ""
+        self._load_print_target_choices()
         if not (self.instance and self.instance.pk):
             return
         config = CashDrawerConfig.from_terminal(self.instance)
@@ -183,8 +202,49 @@ class TerminalForm(forms.ModelForm):
         self.fields["printer_label_height_mm"].initial = int(printer.get("label_height_mm") or 40)
         self.fields["printer_cut_mode"].initial = str(printer.get("label_cut_mode") or "none")
 
+    def _station_config(self) -> dict:
+        """O bloco ``station`` do terminal — de outro dono, e preservado inteiro.
+
+        ``mode`` e ``operator`` (totem autônomo) moram no mesmo dict e não têm
+        campo aqui. Escrever o destino sem reler isto apagaria em silêncio a
+        identidade de uma estação autônoma.
+        """
+        metadata = getattr(self.instance, "metadata", None)
+        metadata = metadata if isinstance(metadata, dict) else {}
+        station = metadata.get("station")
+        return dict(station) if isinstance(station, dict) else {}
+
+    def _load_print_target_choices(self) -> None:
+        from shopman.backstage.services.print_jobs import preparation_destinations
+
+        current = str(self._station_config().get("print_target_ref") or "").strip()
+        own_ref = self.instance.ref if getattr(self.instance, "pk", None) else ""
+        # A própria estação fica FORA da lista: quando ela tem impressora, o
+        # automático já resolve nela. Duas opções para a mesma coisa é uma a mais.
+        available = preparation_destinations(exclude_ref=own_ref)
+        choices = [("", "— a impressora desta estação, ou a única da loja —")]
+        choices += [
+            (ref, label if label == ref else f"{label} ({ref})") for ref, label in available
+        ]
+        if current and current not in {ref for ref, _ in available}:
+            # ⚠️ O que está GRAVADO entra na lista mesmo quebrado. Sumir com ele
+            # faria a tela mostrar "automático" enquanto o banco aponta para uma
+            # impressora que saiu do ar — estado exibido divergindo do real, que
+            # é o mesmo buraco da opção vazia do adapter da gaveta.
+            self._stale_print_target = current
+            choices.append((current, f"{current} — destino indisponível"))
+        self.fields["print_target_ref"].choices = choices
+        self.fields["print_target_ref"].initial = current
+
     def clean(self):
         cleaned = super().clean()
+        target = (cleaned.get("print_target_ref") or "").strip()
+        if target and target == self._stale_print_target:
+            self.add_error(
+                "print_target_ref",
+                "Este destino não aceita mais etiquetas de preparação (inativo ou sem "
+                "impressora). Escolha outro ou volte para o automático.",
+            )
         if cleaned.get("drawer_adapter") == ADAPTER_AGENT or cleaned.get("printer_enabled"):
             if not (cleaned.get("counter_agent_url") or "").strip():
                 self.add_error("counter_agent_url", "Informe o endereço do agente.")
@@ -243,14 +303,19 @@ class TerminalForm(forms.ModelForm):
         if self.cleaned_data.get("printer_enabled"):
             label_width = int(self.cleaned_data.get("printer_label_width_mm") or 60)
             label_height = int(self.cleaned_data.get("printer_label_height_mm") or 40)
-            # A fila/modelo/adaptador são fatos já aferidos na estação. Editar
-            # o tamanho da etiqueta não pode apagá-los — foi exatamente assim
-            # que uma impressora funcional do PDV voltava a parecer um relay
-            # ainda não pareado.
+            # A fila e o modelo são fatos já aferidos na estação. Editar o
+            # tamanho da etiqueta não pode apagá-los — foi exatamente assim que
+            # uma impressora funcional do PDV voltava a parecer um relay ainda
+            # não pareado. Por isso o `update` sobre o dict existente, que
+            # preserva toda chave que este form não conhece.
+            #
+            # ⚠️ `adapter` NÃO é escrito aqui. Ele era um rótulo que ninguém
+            # consultava — o Admin cunhava "relay", o seed cunhava "driver" — e
+            # quem responde se este terminal imprime é `hardware.device_agent`,
+            # escrito logo acima. Ver `pos_terminal._printer_health`.
             printer = dict(hardware.get("printer") or {})
             printer.update({
                 "enabled": True,
-                "adapter": str(printer.get("adapter") or "relay"),
                 "role": "preparation",
                 "roll_width_mm": int(self.cleaned_data.get("printer_roll_width_mm") or 80),
                 "columns": 48,
@@ -267,6 +332,16 @@ class TerminalForm(forms.ModelForm):
             metadata["hardware"] = hardware
         else:
             metadata.pop("hardware", None)
+        station = self._station_config()
+        target = (self.cleaned_data.get("print_target_ref") or "").strip()
+        if target:
+            station["print_target_ref"] = target
+        else:
+            station.pop("print_target_ref", None)
+        if station:
+            metadata["station"] = station
+        else:
+            metadata.pop("station", None)
         instance.metadata = metadata
         if commit:
             instance.save()
@@ -284,7 +359,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
 
     form = TerminalForm
     list_display = ("ref", "label", "channel_ref", "health_display", "active_badge")
-    readonly_fields = ("health_display", "drawer_install_display")
+    readonly_fields = ("health_display", "drawer_install_display", "print_destination_display")
     fieldsets = (
         (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
         (
@@ -323,6 +398,13 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                 "description": "A bobina do PDV e a etiqueta de preparação são perfis distintos. O servidor deriva automaticamente margens e colunas; o agente apenas entrega os bytes.",
             },
         ),
+        (
+            "Destino das etiquetas desta estação",
+            {
+                "fields": ("print_target_ref", "print_destination_display"),
+                "description": "Quem PEDE a etiqueta e quem IMPRIME podem ser dispositivos diferentes: o tablet da bancada pede, a impressora do balcão imprime. Quem escolhe é o gestor, aqui — o dispositivo nunca manda um endereço de impressora ao servidor.",
+            },
+        ),
     )
 
     def drawer_install_display(self, obj):
@@ -338,6 +420,33 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         url = reverse("admin_console_pos_counter_agent", args=[obj.ref])
         return unfold_link(url, "Baixar o agente e ver como instalar", icon="download")
     drawer_install_display.short_description = "Instalação no balcão"
+
+    def print_destination_display(self, obj):
+        """A MESMA resposta que a estação vai receber na hora de imprimir.
+
+        Salvar o destino e só descobrir no meio da produção se ele vale é o
+        buraco de sempre. Aqui o gestor lê a recusa do servidor — palavra por
+        palavra — ao lado do campo que a resolve.
+        """
+        if obj is None or not obj.pk:
+            return "Salve o terminal primeiro."
+        from shopman.backstage.services.print_jobs import (
+            preparation_destinations,
+            resolve_destination,
+        )
+
+        if not preparation_destinations():
+            # Loja sem nenhuma impressora de preparação não é defeito DESTA
+            # estação, e pintar vermelho aqui seria alarme aceso para sempre.
+            return unfold_badge("sem impressora de preparação na loja", "base")
+        destination = resolve_destination(station_ref=obj.ref)
+        detail = destination.problem or destination.label
+        return format_html(
+            "{} {}",
+            unfold_badge(destination.status_label, "green" if destination.available else "red"),
+            detail,
+        )
+    print_destination_display.short_description = "Destino resolvido agora"
 
     _HEALTH = {
         "ready": ("pronto", "green"),
