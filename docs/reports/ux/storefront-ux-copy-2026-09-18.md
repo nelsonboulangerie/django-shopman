@@ -445,16 +445,6 @@ com endereço. A **Parte E** diz o que examinei e considerei bom — é metade d
 
 ## B3. "Salvar este aparelho?" → "Dispositivo salvo por 30 dias."
 
-> ⛔ **CORRIGIDO EM 18/09/2026, no mesmo dia.** O diagnóstico abaixo está certo e é a
-> melhor evidência que a casa tem; **a palavra escolhida ficou desatualizada**. Horas
-> depois deste relatório o dono enunciou: *"Não usamos o termo aparelho em lugar algum.
-> Aparelho é dispositivo! Então só temos maquininha (a do cartão) e dispositivo (celular,
-> tablet, pc, etc)."* A frase é absoluta e alcança a loja. A substituição vigente é
-> **`dispositivo`**, aplicada em toda a superfície do cliente, e a isenção do Storefront
-> deixou de existir — é o que o PR da varredura de `aparelho` fez, com trava. Leia a
-> recomendação abaixo como o registro do que se sabia às 14h, não como instrução.
-
-
 - **Onde:** um gesto, dois substantivos, três segundos de distância. No registro:
   `DEVICE_TRUST_PROMPT` (`"Salvar este aparelho?"` / `"Use só em um aparelho seu. Por 30
   dias, você entra sem código."`) → `DEVICE_TRUST_CTA` (`"Salvar por 30 dias"`) →
@@ -1154,11 +1144,7 @@ nem nas chaves do registro que a loja consome. Os 12 casos de D5 que a régua me
 
 Três vezes. Nas três eu escolhi a loja, e nas três a escolha tem um motivo que não é gosto.
 
-**1. `aparelho` × `dispositivo` (B3).** ⛔ **Superado no mesmo dia** — ver o aviso na
-seção B3. A palavra vigente é `dispositivo` em toda superfície, Storefront incluído, e a
-consequência que esta seção assumia ("se um dia o dono mudar de ideia, a troca é mecânica
-e vale a superfície inteira de uma vez") foi exatamente o que aconteceu. O raciocínio
-abaixo fica como registro. O `CLAUDE.md` mandava dizer **dispositivo, nunca
+**1. `aparelho` × `dispositivo` (B3).** O `CLAUDE.md` manda dizer **dispositivo, nunca
 aparelho**, com uma trava de AST em Python — e isenta `shopman/storefront/` e
 `shopman/shop/omotenashi/` explicitamente, *"por concessão do dono"*. A régua repete a
 isenção na §4.1 e a §5.5 manda o `WP-COPY-VUE-SWEEP` isentar `surfaces/storefront-nuxt/`
