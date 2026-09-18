@@ -104,9 +104,12 @@ async function copyLink() {
         </p>
         <p v-else-if="proof.isLink" class="text-xs opacity-90">Link criado. Confirme o envio ou copie e mande manualmente.</p>
         <p v-else-if="proof.message && !(proof.isPix && proof.hasProof)" class="text-xs opacity-90">{{ proof.message }}</p>
-        <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
+        <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir.
+             ⚠️ A frase NÃO repete o título da tela ("Aguardando Pix"): duas
+             vezes a mesma coisa na mesma caixa é o operador parando de ler as
+             duas. Aqui vai o que ele faz agora e o que acontece sozinho. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
-          <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…
+          <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> O cliente lê o QR. A confirmação chega aqui sozinha.
         </p>
         <!-- Desistiu (expirado/cancelado): acusa honestamente, sem prometer o que não cumpre. -->
         <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-warning">

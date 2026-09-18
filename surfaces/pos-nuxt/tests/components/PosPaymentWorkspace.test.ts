@@ -91,7 +91,7 @@ function props(overrides: Record<string, unknown> = {}) {
 // Os quatro rótulos que o botão principal assume. "Tentar de novo" entrou quando
 // a revisão que falha deixou de girar para sempre e virou a própria saída.
 const cta = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
-  w.findAll("button").find((b) => /Validar|Autorizar|Atualizando|Tentar de novo/.test(b.text()));
+  w.findAll("button").find((b) => /Validar|Pedir autorização|Atualizando|Tentar de novo/.test(b.text()));
 
 // A FAIXA ÚNICA DE AVISOS, no topo da coluna do valor: o bloqueio primeiro (com
 // o toque que resolve), depois as consequências, depois as ressalvas da review.
@@ -244,7 +244,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
     expect(button.attributes("disabled")).toBeDefined();
   });
 
-  it("aprovação de gerente pendente → 'Autorizar e validar' NÃO finaliza direto", async () => {
+  it("aprovação de gerente pendente → 'Pedir autorização' NÃO finaliza direto", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         paymentCovered: true,
@@ -254,7 +254,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
       }),
     });
     const button = cta(wrapper)!;
-    expect(button.text()).toContain("Autorizar");
+    expect(button.text()).toContain("Pedir autorização");
     await button.trigger("click");
     expect(wrapper.emitted("submit")).toBeUndefined(); // abre o diálogo de autorização
   });
@@ -820,16 +820,20 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   });
 
   it("gerente exigido: o aviso explica, mas NÃO duplica o botão que autoriza", async () => {
-    // O caminho É o Validar, que neste estado se chama "Autorizar e validar".
-    // Um segundo botão faria o mesmo gesto — o mais delicado da tela — em dois
-    // lugares, e nenhum dos dois seria o óbvio.
+    // O caminho É o botão do rodapé, que neste estado se chama "Pedir
+    // autorização". Um segundo botão faria o mesmo gesto — o mais delicado da
+    // tela — em dois lugares, e nenhum dos dois seria o óbvio.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({ review: review({ requires_manager_approval: true }) }),
     });
     expect(avisos(wrapper).text()).toContain("Esta venda precisa de um gerente.");
     // a faixa não ganha um segundo botão de autorizar
     expect(avisos(wrapper).findAll("button")).toHaveLength(0);
-    expect(cta(wrapper)!.text()).toContain("Autorizar e validar");
+    // ⚠️ O botão ABRE o teclado do gerente: ele não autoriza nem valida, e não
+    // pode prometer nenhum dos dois. Só o último passo — o gerente digitando o
+    // PIN — diz o verbo do ato.
+    expect(cta(wrapper)!.text()).toContain("Pedir autorização");
+    expect(cta(wrapper)!.text()).not.toContain("Autorizar e validar");
   });
 
   it("sem pendência nenhuma, a faixa só carrega consequência", async () => {
