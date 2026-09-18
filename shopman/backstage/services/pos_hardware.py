@@ -216,7 +216,7 @@ class CashDrawerConfig:
                 # A tela precisa DIZER por que não dá, em vez de esconder o card
                 # e deixar o operador achando que o PDV está quebrado.
                 "reason": self._unavailable_reason(),
-                # Política da loja, não do aparelho: viaja nos dois ramos para o
+                # Política da loja, não do dispositivo: viaja nos dois ramos para o
                 # contrato não mudar de forma conforme o terminal. Sem sensor
                 # ninguém conta nada, e a tela já checa isso antes de olhar.
                 "idle_open_alert_minutes": idle_open_alert_minutes(),

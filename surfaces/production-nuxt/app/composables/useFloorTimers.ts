@@ -6,7 +6,7 @@
 // nem controlar o processo. Sem processo, sem etapa, sem obrigação — nome e SKU
 // são opcionais; nenhum timer bloqueia Continuar, QC ou qualquer fluxo.
 //
-// Local ao aparelho: quem armou, ouve. Sobrevive a reload e deploy pelo
+// Local ao dispositivo: quem armou, ouve. Sobrevive a reload e deploy pelo
 // localStorage. O relógio de idade do lote (started_at vs max_started_minutes)
 // segue como guardrail de esquecimento via alertas (sino), não por aqui.
 //

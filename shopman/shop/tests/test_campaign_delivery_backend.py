@@ -157,7 +157,7 @@ def test_waves_accumulate_and_the_status_follows_the_total():
 
 # ── O link leva a identidade de quem recebe ──────────────────────────
 #
-# ⚠️ Nasceu de um teste do dono no aparelho dele: fornada → "Eu quero" → sacola → e o
+# ⚠️ Nasceu de um teste do dono no dispositivo dele: fornada → "Eu quero" → sacola → e o
 # checkout PEDIU LOGIN. A pessoa estava dentro do WhatsApp, num número que nós escolhemos
 # porque sabemos de quem é. O link da campanha era o único link que a padaria mandava
 # anônimo.
@@ -302,7 +302,7 @@ def test_the_link_dies_with_the_announcement_window(capturing, link_customer):
 
 def test_an_announcement_without_a_window_still_gets_a_ceiling(capturing, link_customer):
     """Anúncio que não expira não ganha link eterno: a mensagem fica para sempre no
-    aparelho, e o crachá dentro dela não pode."""
+    dispositivo, e o crachá dentro dela não pode."""
     from datetime import timedelta
 
     from django.utils import timezone

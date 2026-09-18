@@ -4,7 +4,7 @@
 // Até aqui TODO checkbox das nove superfícies era o controle nativo do browser com
 // uma tinta do Tailwind por cima (`size-4 rounded border-border`, às vezes um
 // `accent-color`): desenho do sistema operacional, não da casa, diferente em cada
-// aparelho e sem estado INDETERMINADO — que é justamente o que falta para um
+// dispositivo e sem estado INDETERMINADO — que é justamente o que falta para um
 // "marcar todos" honesto (o do catálogo do Gestor de Pedidos mostra "vazio" quando
 // metade das linhas está marcada, e mente).
 //

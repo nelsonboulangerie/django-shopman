@@ -20,7 +20,7 @@ manual_qa_status: passed
 - [ ] Carrinho preserva quantidades e bloqueia item indisponivel com recuperacao clara.
 - [ ] Checkout anonimo redireciona para login com `next=/checkout`.
 - [ ] Login WhatsApp/SMS mostra estado de erro, rate limit e recuperacao.
-- [ ] Conta mostra Perfil, Pedidos, Enderecos, Preferencias e Aparelhos.
+- [ ] Conta mostra Perfil, Pedidos, Enderecos, Preferencias e Dispositivos.
 - [ ] Perfil salva nome/email/aniversario.
 - [ ] Exportar dados baixa JSON autenticado.
 - [ ] Excluir conta exige confirmacao explicita.

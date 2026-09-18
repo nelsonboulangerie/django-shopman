@@ -1,4 +1,4 @@
-// Relógio de atividade do APARELHO — "quando alguém tocou pela última vez em
+// Relógio de atividade do DISPOSITIVO — "quando alguém tocou pela última vez em
 // QUALQUER app de operador deste navegador".
 //
 // Por que existe: a trava do PDV é `logout()` da sessão de operador, e essa sessão
@@ -63,7 +63,7 @@ export function deviceActivityCookieDomain(hostname: string): string | null {
 }
 
 /**
- * O último instante registrado no aparelho, ou `null`.
+ * O último instante registrado no dispositivo, ou `null`.
  *
  * Pode haver dois cookies homônimos (o do domínio-pai e um host-only de antes);
  * vale o maior. Valor no FUTURO é ignorado: um relógio forjado ou adiantado não
@@ -87,7 +87,7 @@ export interface DeviceActivityClock {
   /** Último toque em qualquer app de operador deste navegador, ou `null`. */
   read(): number | null;
   /**
-   * Registra "alguém tocou agora". Sem `force`, não escreve se o aparelho já
+   * Registra "alguém tocou agora". Sem `force`, não escreve se o dispositivo já
    * registrou atividade há menos de `DEVICE_ACTIVITY_THROTTLE_MS` — o throttle
    * mora no próprio cookie, então vale entre abas e apps, não só nesta página.
    * Devolve se escreveu.

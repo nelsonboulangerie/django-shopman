@@ -496,7 +496,7 @@ urlpatterns = [
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
     path("orders/<str:ref>/cancellation-reasons/", OrderCancellationReasonsView.as_view(), name="api-backstage-order-cancellation-reasons"),
     path("orders/<str:ref>/settle-delivery-cash/", OrderSettleDeliveryCashView.as_view(), name="api-backstage-order-settle-delivery-cash"),
-    # A maquininha voltou com o entregador: fecha a custódia do aparelho no pedido.
+    # A maquininha voltou com o entregador: fecha a custódia dela no pedido.
     path("orders/<str:ref>/equipment-back/", OrderEquipmentBackView.as_view(), name="api-backstage-order-equipment-back"),
     path("orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"),
     path("orders/<str:ref>/resend-payment-link/", OrderResendPaymentLinkView.as_view(), name="api-backstage-order-resend-payment-link"),

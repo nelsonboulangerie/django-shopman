@@ -706,7 +706,11 @@ const ctaLabel = computed(() => {
   // própria saída. Girar para sempre é a tela mentindo sobre o que está fazendo.
   if (props.reviewFailed) return "Tentar de novo";
   if (needsReview.value) return "Atualizando…";
-  return needsAuth.value ? "Autorizar e validar" : "Validar";
+  // ⚠️ Este botão NÃO autoriza nem valida: ele abre o teclado do gerente
+  // (`onCta` → `managerAuthOpen = true`). Quem conclui é o gerente digitando o
+  // PIN, que é, corretamente, o último passo — e só o último passo diz o verbo
+  // do ato. Dizia "Autorizar e validar" e entregava uma terceira coisa.
+  return needsAuth.value ? "Pedir autorização" : "Validar";
 });
 // O QUE SEGURA O BOTÃO — na ordem em que o operador resolve, em três partes:
 // a frase (curta, é o que ele lê de longe), o porquê (miúdo, é o que ele DIZ ao
@@ -776,7 +780,11 @@ const ctaBlock = computed<{
   if (props.paymentTenders.some((t) => blockedForDelivery(t.method))) {
     return {
       message: "Esta forma exige pagamento antecipado.",
-      hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
+      // ⚠️ NÃO cite o rótulo do seletor aqui: no modo encomenda — que é onde
+      // este aviso aparece — ele se chama "No balcão", e a frase mandava
+      // procurar um "Receber no caixa" que não existe na tela. Descreve-se o
+      // efeito, que vale nos dois modos.
+      hint: "Troque a linha por dinheiro ou cartão na maquininha, ou cobre agora, antes de o pedido sair.",
     };
   }
   // A Efí de homologação não confirma valores maiores nem Pix misto. Vem cedo
@@ -906,9 +914,9 @@ const notices = computed<CheckoutNotice[]>(() => {
   const block = ctaBlock.value;
   if (block) notes.push({ key: "block", tone: "block", icon: "lucide:triangle-alert", ...block });
   else if (needsAuth.value) {
-    // Sem botão próprio de propósito: o caminho É o Validar, que neste estado se
-    // chama "Autorizar e validar". Um segundo botão fazendo o mesmo gesto
-    // duplicaria a ação mais delicada da tela — a que chama um gerente.
+    // Sem botão próprio de propósito: o caminho É o botão do rodapé, que neste
+    // estado se chama "Pedir autorização". Um segundo botão fazendo o mesmo
+    // gesto duplicaria a ação mais delicada da tela — a que chama um gerente.
     notes.push({
       key: "auth",
       tone: "block",
@@ -1308,7 +1316,7 @@ defineExpose({
                  seleção de fato mora.
 
                  Na entrega, as linhas são cobranças pendentes; a confirmação
-                 ocorre no acerto do Gestor, separada da devolução do aparelho. -->
+                 ocorre no acerto do Gestor, separada da devolução do dispositivo. -->
             <button
               v-for="method in injectableMethods"
               :key="method.ref"

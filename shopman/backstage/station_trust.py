@@ -75,7 +75,7 @@ AUTONOMOUS = "autonomous"
 #:
 #: **Por que só Produção, e por que NÃO existe aqui um campo genérico de
 #: superfície.** Cada superfície a mais é uma conta com poder permanente num
-#: aparelho físico, num prédio onde qualquer pessoa alcança o aparelho. O KDS
+#: dispositivo físico, num prédio onde qualquer pessoa alcança o dispositivo. O KDS
 #: tem gente na frente (a decisão de 17/09 foi trava por ociosidade + sessão de
 #: operador deslizante, que é o caminho ATENDIDO); o PDV mexe em dinheiro.
 #: Estender esta lista é revisão de segurança própria, com o dono, não uma
@@ -334,7 +334,7 @@ def provision(request, response, terminal_ref: str):
     presented_ids = {device.pk for _nome, device in bindings}
     if presented_ids:
         # O lock faz revogação + criação/retensão uma única troca observável no
-        # banco. O filtro pelos PKs apresentados é o limite de escopo do aparelho.
+        # banco. O filtro pelos PKs apresentados é o limite de escopo do dispositivo.
         locked = {
             device.pk: device
             for device in TrustedDevice.objects.select_for_update().filter(

@@ -182,7 +182,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
         </div>
       </div>
     </template>
-    <!-- Avisos do rail (ex.: "este aparelho não deixa travar o giro"). -->
+    <!-- Avisos do rail (ex.: "este dispositivo não deixa travar o giro"). -->
     <OperatorSonner />
     <OperatorPwaRuntime />
   </main>

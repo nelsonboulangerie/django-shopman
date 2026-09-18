@@ -1143,7 +1143,12 @@ def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str)
         # A tab that was fired to the kitchen and then cleared without a sale is
         # the canonical anti-fraud red flag.
         session.emit_event("tab_cleared", actor=operator_username, payload={
-            "items": discarded, "item_count": len(discarded), "was_fired": fired,
+            # `line_count` conta LINHAS, e por isso não se chama `item_count`:
+            # no PDV "item" é unidade (três croissants numa linha são três
+            # itens), e o `item_count` da POSTabProjection já conta assim.
+            # Mesmo nome para duas grandezas era a armadilha que a varredura de
+            # copy de 18/09 encontrou um andar acima, na tela.
+            "items": discarded, "line_count": len(discarded), "was_fired": fired,
         })
         cleared = session_service.abandon_session(session_key=session.session_key, channel_ref=channel_ref)
         if cleared and fired:

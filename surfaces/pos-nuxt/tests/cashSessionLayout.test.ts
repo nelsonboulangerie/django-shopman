@@ -6,7 +6,11 @@ import { attentionCount, endOfDayTiles, sessionActionTiles } from "~/presentatio
 // pedem uma pessoa agora, quais ações viram tile, e o que só aparece para quem
 // pode. As três são puras — a página só desenha.
 
-describe("attentionCount — o número do 'Precisa de você'", () => {
+// ⚠️ `attentionCount` decide SE o bloco "Precisa de você" existe — não é mais
+// crachá na tela. Somar devolução, pedido de troco e conta na casa num número
+// só dizia ao operador que havia quatro coisas sem dizer de que natureza, e era
+// por esse número que ele decidia se largava o balcão.
+describe("attentionCount — se o bloco 'Precisa de você' existe", () => {
   it("soma devoluções, pedidos de troco e contas na casa", () => {
     expect(attentionCount({
       pendingCashRefunds: [{}],
@@ -15,7 +19,7 @@ describe("attentionCount — o número do 'Precisa de você'", () => {
     })).toBe(6);
   });
 
-  it("zero quando não há nada — e zero é o que apaga o bloco", () => {
+  it("zero quando não há nada — e zero é o único uso dele na tela", () => {
     expect(attentionCount({ pendingCashRefunds: [], pendingChangeRequests: [], accountBalances: [] })).toBe(0);
   });
 });
