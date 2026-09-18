@@ -1078,7 +1078,7 @@ def _waitlist_message(
             ).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE",
-            "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
         ).replace("{when}", wait_display)
     if data.fulfillment_wait_kind == "preorder":
         return copy.message(
@@ -1153,7 +1153,7 @@ def _paid_fulfillment_wait_message(
     if wait_display:
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID",
-            "Pagamento confirmado. Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            "Pagamento confirmado. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
         ).replace("{when}", wait_display)
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE",

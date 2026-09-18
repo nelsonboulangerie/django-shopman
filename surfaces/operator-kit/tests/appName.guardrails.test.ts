@@ -46,7 +46,12 @@ describe.each(OPERATOR_APP_REFS)("nome instalado de %s", (app) => {
 
   it("o rótulo é só o app: sem a casa, sem marca e sem separador", () => {
     expect(identity.label).not.toMatch(HYPHEN_SEPARATOR);
-    expect(identity.label).not.toMatch(/Nelson|Shopman|·/i);
+    expect(identity.label).not.toMatch(/Nelson|·/i);
+    // O hub é a ÚNICA exceção à proibição da marca no rótulo, e é deliberada: ele não é
+    // um app DO Shopman, ele É o Shopman — a home de onde os outros oito saem, e
+    // "Shopman Apps" é o nome próprio dele. Os demais seguem proibidos de citar marca ou
+    // casa: foi assim que oito manifestos nasceram "Shopman <app>" (commit e08a4e495).
+    if (app !== "hub") expect(identity.label).not.toMatch(/Nelson|Shopman/i);
     expect(identity.label.trim()).toBe(identity.label);
     expect(identity.description).not.toMatch(/Nelson|Shopman/i);
   });
@@ -58,7 +63,7 @@ describe.each(OPERATOR_APP_REFS)("nome instalado de %s", (app) => {
       expect(source, `${app}: a identidade voltou para o nuxt.config`).not.toMatch(rewritten);
     }
     // `title` e `theme-color` do `<head>` também saem da capability: com os dois
-    // escritos, o do app perdia em silêncio e ninguém via a cor morta (a Central
+    // escritos, o do app perdia em silêncio e ninguém via a cor morta (o Shopman Apps
     // declarava `#fafafa` e servia `#7C3A40`).
     expect(source).not.toMatch(/\btitle:\s*["']/);
     expect(source).not.toMatch(/name:\s*["']theme-color["']/);

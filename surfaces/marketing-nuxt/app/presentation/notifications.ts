@@ -9,7 +9,7 @@ export type NotificationActionKind =
 
 // "Assumido" era *acknowledge* traduzido, e o gestor não assume plantão nenhum:
 // ele diz que viu. A palavra da casa para esse gesto é **Visto**, e ela já vive
-// nos timers da Produção (`FloorTimersPanel`, `AlertsBell`), no botão e no estado.
+// nos timers da Produção (`FloorTimerCard`, `AlertsBell`), no botão e no estado.
 //
 // `seen` fica SEM rótulo de propósito. Ele não é um gesto de ninguém: é o app
 // registrando que mostrou o alerta ao abrir o painel. Dar a ele a mesma palavra

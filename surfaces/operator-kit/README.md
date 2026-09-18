@@ -2,7 +2,7 @@
 
 Fundação comum das oito superfícies de operador: `pos-nuxt`, `orders-nuxt`,
 `kds-nuxt`, `production-nuxt`, `purchase-nuxt`, `marketing-nuxt`, `bi-nuxt` e a
-Central de Apps (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
+Shopman Apps (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
 do design system sem absorver regras específicas de cada domínio.
 
 **Última verificação dos consumidores:** 2026-09-10, contra os oito
@@ -118,7 +118,7 @@ Rótulo, descrição, símbolo, cor e frase de instalação de cada app de opera
 abre, se a tela fica acesa, o que ele recebe por push e quais atalhos o SO oferece.
 
 Estavam escritos em seis lugares (`nuxt.config`, `package.json`, `tools/pwa-gate`,
-`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — a Central com ícone ardósia e barra
+`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — o Shopman Apps com ícone ardósia e barra
 de título vinho, o Gestor com dois nomes, a Cozinha com três. Ver `PWA_ICONS.md` para a
 tabela e para a regra "a barra de título é a cor do ícone".
 
@@ -167,7 +167,7 @@ A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem c
 separador, `nuxt.config` sem rótulo/cor/ícone reescritos, título começando pelo `name`,
 nenhum título com hífen de separador, nenhum `document.title` cru, nenhum `app-label` nem
 caminho de ícone escrito à mão, e a barra de título na cor do ícone). Do lado do Django,
-`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles da Central com
+`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles do Shopman Apps com
 os mesmos nomes.
 
 ### Convite de instalação: o COMO é comum, o QUÊ é de cada app
@@ -212,13 +212,13 @@ destino. Sem `noopener`, abriria uma janela solta do navegador.
 E o manifesto de todo app de operador declara `launch_handler: { client_mode:
 "focus-existing" }`: chegar num app que **já está aberto** traz a janela dele para a
 frente e descarta o URL. `navigate-existing` recarregaria o PDV com venda na mão só
-porque alguém tocou no atalho da Central — a mesma regra do `useOperatorReloadHold`.
+porque alguém tocou no atalho do Shopman Apps — a mesma regra do `useOperatorReloadHold`.
 
-Os dois lados do caminho usam a mesma peça: o ícone da Central no `OperatorRail` de cada
-app, e os tiles da Central (`hub-nuxt`, `tileLinkAttrs`).
+Os dois lados do caminho usam a mesma peça: o ícone do Shopman Apps no `OperatorRail` de
+cada app, e os tiles do Shopman Apps (`hub-nuxt`, `tileLinkAttrs`).
 
 **O que foi recusado:** `scope_extensions` (declarar as origens irmãs como extensão do
-escopo) tira a tarja, mas pelo motivo errado — passaria a rodar a Central *dentro* da
+escopo) tira a tarja, mas pelo motivo errado — passaria a rodar o Shopman Apps *dentro* da
 janela do PDV, e o título e a cor continuariam sendo os do PDV. É exatamente o sintoma
 que se quer eliminar.
 
@@ -257,7 +257,7 @@ watchEffect(() => {
 Quem declara a rota segura é o app, em `definePwaCapability({ idleReloadPaths })`:
 `"*"` no KDS (nenhuma tela dele tem rascunho), `"/board"` na Produção (preserva os
 editores de receita), `"/"` no PDV (**só a raiz** — `/session` tem contagem digitada e
-`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Central,
+`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Shopman Apps,
 Gestor, Compras, B.I., Marketing) mantém só o aviso.
 
 ⚠️ **`skipWaiting` vale para a ORIGEM inteira.** Quem aplica não recarrega só a si: o
@@ -344,15 +344,28 @@ Contrato:
 - **O fim só conta ACIMA do obstáculo.** O observador encolhe a área pelo que flutua na
   base (`data-focus-obstruction`, o mesmo fato que o próximo foco lê). Sem isso a dica
   some com conteúdo ainda escondido atrás do card.
-- A dica flutua logo acima do obstáculo, com degradê por baixo: sem ele a pílula boia
-  sobre um texto qualquer e vira artefato.
-- Decorativa: `aria-hidden`, sem captura de clique. **O que a impede de se ler como
-  botão é a translucidez, não o tamanho**: fundo sólido com sombra vira chip clicável
-  em qualquer medida. Com o fundo a 33% e sem sombra, o que sobra é o chevron, e o
-  círculo só o separa do conteúdo — por isso ela pôde crescer de 28 para 48, encostando
-  no alvo de toque sem se ler como controle. Sobre o degradê ela rende pouco (fundo da mesma
-  cor); trabalha nas bordas e onde há contraste atrás, que é o caso do operador.
-- `prefers-reduced-motion`: a dica fica **parada**, não some.
+- **O degradê ENCOSTA no obstáculo; quem recua é o chevron.** A base da dica se apoia
+  no topo do que flutua, e a folga de `HINT_GAP` (12px) mora no recuo interno do
+  desenho. Enquanto ela morava no posicionamento, a lavagem parava 12px acima do card
+  e sobrava uma faixa de conteúdo cru entre os dois — a dica prometia dissolver e
+  largava o texto legível justo na borda. A pílula não se mexeu; só o degradê desceu.
+- **O chevron LEVA ATÉ O FIM.** Era decorativo e inerte; virou botão por decisão do
+  Pablo, porque já parecia tocável e não era — quem tentava não recebia nada, que é
+  pior do que não convidar. O destino é o próprio sentinela, alinhado pela borda de
+  baixo, e é o `scroll-margin-bottom` dele (igual ao obstáculo) que faz o fim parar
+  ACIMA do card em vez de atrás — o mesmo truque do `scroll-margin-top` do próximo
+  foco, do outro lado da tela.
+- **Só o chevron captura o toque.** A faixa teleportada cobre a largura inteira da
+  tela: `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
+  `aria-hidden` — ele é desenho.
+- **O que a impede de se ler como botão gordo é a translucidez, não o tamanho**: fundo
+  sólido com sombra vira chip pesado em qualquer medida. Com o fundo a 33% e sem
+  sombra, o que sobra é o chevron, e o círculo só o separa do conteúdo — por isso ela
+  pôde crescer de 28 para 48, que é o alvo de toque. Sobre o degradê ela rende pouco
+  (fundo da mesma cor); trabalha nas bordas e onde há contraste atrás, que é o caso do
+  operador.
+- `prefers-reduced-motion`: a dica fica **parada**, não some — e o toque salta para o
+  fim de uma vez, sem deslizar.
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
 tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como

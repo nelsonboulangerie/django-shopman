@@ -139,6 +139,10 @@ const deliveryDateHint = ref('')
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
 const pickupSwapOffer = ref(false)
+// Fora da área numa loja SEM retirada: `pickupSwapOffer` fica falso, o `v-else-if` da
+// cobertura também, e nenhuma linha era renderizada — o cliente atravessava o resto do
+// checkout e tomava o erro no commit. A recusa precisa de ramo próprio.
+const deliveryUncovered = ref(false)
 // ⚠️ Aparece numa combinação só: pontos + entrega em endereço NOVO, em sessão que conhece o
 // número e não as mãos (chegou por link de campanha). É a única rota que converteria o saldo
 // de alguém em pão entregue em outro lugar. Endereço salvo e balcão nunca passam por aqui.
@@ -516,8 +520,12 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
       label: 'Continuar',
       icon: 'lucide:arrow-right',
       loading: draftSyncing.value,
-      disabled: draftSyncing.value || !addressSelection.value,
-      reason: addressSelection.value ? '' : 'Escolha ou informe o endereço de entrega.',
+      disabled: draftSyncing.value || !addressSelection.value || deliveryUncovered.value,
+      reason: !addressSelection.value
+        ? 'Escolha ou informe o endereço de entrega.'
+        : deliveryUncovered.value
+          ? 'Ainda não entregamos nesse endereço.'
+          : '',
       run: continueFromAddress
     }
   }
@@ -690,6 +698,7 @@ watch(addressSelection, selection => {
   // grava o rascunho na sessão (o Core calcula a taxa) e refaz o total. A
   // oferta de retirada some até a checagem responder.
   pickupSwapOffer.value = false
+  deliveryUncovered.value = false
   identityConfirmOffer.value = false
   if (state.fulfillment_type === 'delivery' && selection?.structured?.route) {
     void applyDeliveryDraft()
@@ -734,11 +743,15 @@ function applyDeliveryDraft (): Promise<void> {
       if (isDelivery) {
         const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
         pickupSwapOffer.value = covered ? false : availableFulfillment.value.includes('pickup')
+        deliveryUncovered.value = !covered && !pickupSwapOffer.value
         if (covered) serverError.value = ''
       }
     } catch {
       // Falha no rascunho não bloqueia — o commit ainda valida a zona.
-      if (isDelivery) pickupSwapOffer.value = false
+      if (isDelivery) {
+        pickupSwapOffer.value = false
+        deliveryUncovered.value = false
+      }
     } finally {
       draftSyncCount -= 1
       if (isDelivery) deliverySyncCount -= 1
@@ -1147,7 +1160,10 @@ async function submitCheckout () {
     if (!failure.status || failure.status >= 500) {
       if (await recoverCheckout(attemptKey.value)) return
       confirmationUnknown.value = true
-      serverError.value = 'A confirmação ainda está em consulta. Mantenha esta tentativa.'
+      // "Mantenha esta tentativa" mandava o cliente cuidar do `attemptKey` — objeto que
+      // ele nunca viu e não pode manter nem largar, no pior instante do fluxo. O que ele
+      // precisa saber é o que aconteceu, o que NÃO aconteceu, e o que fazer.
+      serverError.value = 'Estamos conferindo com o sistema. Não envie de novo: se o pedido entrou, você seria cobrado duas vezes. Esta tela se resolve sozinha em instantes.'
       if (import.meta.client) useSonner.info(serverError.value)
       return
     }
@@ -1212,6 +1228,7 @@ async function submitCheckout () {
 function switchToPickup () {
   state.fulfillment_type = 'pickup'
   pickupSwapOffer.value = false
+  deliveryUncovered.value = false
   serverError.value = ''
   confirmOpen.value = false
   const errors = { ...fieldErrors.value }
@@ -1278,6 +1295,26 @@ useSeoMeta({
             </UiAlertDescription>
           </UiAlert>
 
+          <!-- Mesma recusa, loja sem retirada: não há "Mudar para retirada" a oferecer,
+               então a saída é outro endereço ou a gente. -->
+          <UiAlert v-else-if="deliveryUncovered" variant="warning" data-checkout-zone-uncovered>
+            <UiAlertTitle>Ainda não entregamos nesse endereço</UiAlertTitle>
+            <UiAlertDescription>
+              <p>Escolha outro endereço aqui em cima, ou fale com a gente no WhatsApp.</p>
+              <UiButton
+                v-if="checkout?.support_whatsapp_url"
+                :href="checkout.support_whatsapp_url"
+                target="_blank"
+                size="sm"
+                variant="outline"
+                icon="lucide:message-circle"
+                class="mt-2"
+              >
+                Falar no WhatsApp
+              </UiButton>
+            </UiAlertDescription>
+          </UiAlert>
+
           <UiAlert v-else-if="identityConfirmOffer" variant="warning" data-checkout-identity-confirm>
             <UiAlertTitle>Confirme que é você para usar seus pontos aqui</UiAlertTitle>
             <UiAlertDescription>
@@ -1301,9 +1338,10 @@ useSeoMeta({
           </UiAlert>
 
           <UiAlert v-else-if="serverError && !confirmOpen" :variant="confirmedTrackingUrl || confirmationUnknown ? 'warning' : 'destructive'">
-            <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Confirmação em consulta' : 'Confira os dados' }}</UiAlertTitle>
+            <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Não sabemos ainda se o pedido entrou' : 'Confira os dados' }}</UiAlertTitle>
             <UiAlertDescription>{{ serverError }}</UiAlertDescription>
             <UiButton v-if="confirmedTrackingUrl" :to="confirmedTrackingUrl">Acompanhar pedido</UiButton>
+            <UiButton v-else-if="confirmationUnknown" variant="outline" to="/conta/pedidos">Ver meus pedidos</UiButton>
           </UiAlert>
 
           <!-- ⚠️ FORA da cadeia de `v-else-if` acima: `v-else-if` exige irmão imediato, e pôr
@@ -1478,7 +1516,10 @@ useSeoMeta({
                 data-checkout-zone-ok
               >
                 <Icon name="lucide:circle-check" class="size-4 shrink-0" />
-                Entregamos no seu endereço<span v-if="cart.delivery_distance_display" class="font-normal shop-muted">&nbsp;· a {{ cart.delivery_distance_display }}</span>
+                <!-- A única pergunta de quem informa o endereço é quanto custa entregar,
+                     e esta linha só existe quando a taxa ACABOU de ser calculada. A
+                     distância é complemento; o número é a resposta. -->
+                Entregamos no seu endereço<span v-if="cart.delivery_fee_display" class="font-normal shop-muted">&nbsp;· taxa de {{ cart.delivery_fee_display }}</span><span v-if="cart.delivery_distance_display" class="font-normal shop-muted">&nbsp;· a {{ cart.delivery_distance_display }}</span>
               </p>
               <div v-if="freeDeliveryUpsell" class="mt-3" data-checkout-free-delivery>
                 <div class="mb-2 flex items-center justify-between gap-3 text-sm font-semibold">
@@ -1551,6 +1592,13 @@ useSeoMeta({
                           :max-date="checkoutMaxDate"
                           :disabled-dates="datepickerDisabledDates"
                         />
+                        <!-- O dia fechado é riscado, mudo e com `pointer-events: none`:
+                             o cliente toca três vezes no sábado, nada acontece, e conclui
+                             que o calendário travou. A legenda diz o que o risco quer
+                             dizer e qual é o gesto. -->
+                        <p class="border-t px-3 py-2 shop-meta text-muted-foreground" data-checkout-date-legend>
+                          Dias riscados: a loja não abre. Escolha outro dia.
+                        </p>
                       </UiPopoverContent>
                     </UiPopover>
                   </UiRadioGroup>
@@ -1580,6 +1628,13 @@ useSeoMeta({
                             <span :class="!slot.enabled ? 'line-through' : ''">{{ slot.label }}</span>
                             <UiBadge v-if="slot.is_earliest && slot.enabled" variant="secondary">Mais cedo</UiBadge>
                           </UiFieldTitle>
+                          <!-- O motivo existe e era entregue SÓ ao leitor de tela: quem
+                               enxerga via um horário riscado sem saber se lotou, se
+                               passou ou se o turno não existe — e a diferença decide
+                               entre mudar de horário e mudar de dia. -->
+                          <UiFieldDescription v-if="!slot.enabled">
+                            {{ slot.reason || 'Esgotado para este horário.' }}
+                          </UiFieldDescription>
                         </UiFieldContent>
                       </UiField>
                     </UiFieldLabel>
@@ -1687,7 +1742,7 @@ useSeoMeta({
                 <UiField orientation="horizontal">
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>Usar pontos de fidelidade</UiFieldTitle>
-                    <UiFieldDescription>{{ checkout.copy.loyalty_savings_prefix || 'Economize até' }} {{ checkout.loyalty_value_display }}</UiFieldDescription>
+                    <UiFieldDescription>{{ checkout.copy.loyalty_savings_prefix || 'Seus pontos cobrem até' }} {{ checkout.loyalty_value_display }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-loyalty" v-model="useLoyalty" />
                 </UiField>
@@ -1794,14 +1849,18 @@ useSeoMeta({
                 </div>
               </UiFieldLabel>
 
-              <!-- "Salvar para a próxima vez": pré-marcado (omotenashi — default na
-                   hospitalidade, controle preservado). O endereço novo salva sempre;
-                   desmarcar só evita gravar fulfillment/pagamento/horário como padrão. -->
+              <!-- Pré-marcado (omotenashi — default na hospitalidade, controle
+                   preservado). O interruptor governa os PADRÕES: qual endereço vem
+                   escolhido, a forma de pagamento e o horário. O endereço novo entra na
+                   agenda do cliente de qualquer jeito, e tem que entrar — ninguém
+                   redigita CEP a cada pedido. O título antigo ("Salvar para a próxima
+                   vez"), logo abaixo do campo de endereço, se lia como "salvar este
+                   endereço"; o novo diz o que o interruptor de fato cobre. -->
               <UiFieldLabel for="checkout-save-default" class="bg-card has-data-[state=checked]:bg-card" data-checkout-save-default>
                 <UiField orientation="horizontal">
                   <UiFieldContent class="gap-1">
-                    <UiFieldTitle>Salvar para a próxima vez</UiFieldTitle>
-                    <UiFieldDescription>Guardamos suas escolhas para agilizar seu próximo pedido.</UiFieldDescription>
+                    <UiFieldTitle>Lembrar destas escolhas</UiFieldTitle>
+                    <UiFieldDescription>Endereço, pagamento e horário.</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-save-default" v-model="state.save_as_default" />
                 </UiField>
@@ -1884,9 +1943,10 @@ useSeoMeta({
                  mínimo (Total + 1 ação) e sempre visível — nada vaza da tela. -->
             <div class="px-4 py-4">
               <UiAlert v-if="serverError" :variant="confirmedTrackingUrl || confirmationUnknown ? 'warning' : 'destructive'" class="mb-4">
-                <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Confirmação em consulta' : 'Confira os dados' }}</UiAlertTitle>
+                <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Não sabemos ainda se o pedido entrou' : 'Confira os dados' }}</UiAlertTitle>
                 <UiAlertDescription>{{ serverError }}</UiAlertDescription>
             <UiButton v-if="confirmedTrackingUrl" :to="confirmedTrackingUrl">Acompanhar pedido</UiButton>
+            <UiButton v-else-if="confirmationUnknown" variant="outline" to="/conta/pedidos">Ver meus pedidos</UiButton>
               </UiAlert>
 
               <!-- O quê: itens em linha única (qty + nome). Os valores vivem no resumo. -->

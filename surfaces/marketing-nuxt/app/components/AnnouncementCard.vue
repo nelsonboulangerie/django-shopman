@@ -30,7 +30,10 @@ import {
   platformsSummary,
   vipSummary,
 } from "~/presentation/campaign";
-import { includesDirectMessage } from "~/presentation/marketingDelivery";
+import {
+  includesDirectMessage,
+  outgoingImageUrl,
+} from "~/presentation/marketingDelivery";
 import {
   platformReadinessNote,
   readinessByPlatform,
@@ -242,6 +245,10 @@ const DRAFT_LABELS = {
 };
 
 /** Nome do produto quando o catálogo o deu; o SKU só como último recurso. */
+/** A foto que realmente vai com o anúncio. Ver o aviso no template: o campo do topo
+ *  quase sempre está vazio, e a imagem mora no conteúdo por plataforma. */
+const outgoingImage = computed(() => outgoingImageUrl(props.announcement));
+
 const productLabel = computed(() => {
   const sku = props.announcement.sku;
   if (!sku) return "";
@@ -460,20 +467,35 @@ function askToReject() {
       @discard="draft.discard()"
     />
 
-    <div class="flex flex-col gap-4 p-4 sm:flex-row">
-      <!-- Foto do produto: o announcement é visual antes de ser texto -->
-      <div class="shrink-0">
+    <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
+      <!-- Foto do produto: o anúncio é visual antes de ser texto.
+           ⚠️ A foto NÃO mora em `announcement.image_url` — esse campo é o óbvio e quase
+           sempre está vazio. A imagem de verdade está no conteúdo POR PLATAFORMA
+           (`platform_content.instagram.image_url`), porque cada mural tem o seu
+           formato. Lendo só o campo do topo, o cartão mostrava o quadrado vazio em
+           anúncio que TEM foto — e o gestor aprovava achando que ia sair sem imagem.
+           `outgoingImageUrl()` é a mesma função que a caixa de confirmação usa; a
+           armadilha já estava documentada lá e o cartão tinha caído nela.
+           Largura cheia no celular; no desktop volta ao quadrado.
+           ⚠️ O alinhamento com os campos ao lado sai do RÓTULO, não de margem
+           calculada: a foto ganhou o dela, no mesmo estilo de "Texto do anúncio", e aí
+           as duas colunas começam na mesma linha de base sozinhas. Antes o quadrado
+           nascia colado no topo do cartão e os campos nasciam abaixo dos rótulos
+           deles — desencontro de uma linha, que não se conserta com número mágico. -->
+      <div class="w-full shrink-0 sm:w-32">
+        <p class="mb-1 block text-xs font-medium text-muted-foreground">Foto</p>
         <img
-          v-if="announcement.image_url"
-          :src="announcement.image_url"
+          v-if="outgoingImage"
+          :src="outgoingImage"
           :alt="`Foto de ${productLabel || 'produto'}`"
-          class="size-32 rounded-lg border border-border object-cover"
+          class="h-40 w-full rounded-lg border border-border object-cover sm:size-32"
         />
         <div
           v-else
-          class="grid size-32 place-items-center rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground"
+          class="grid h-40 w-full place-content-center justify-items-center gap-1 rounded-lg border border-dashed border-border bg-muted/40 text-xs text-muted-foreground sm:size-32"
         >
           <Icon name="lucide:image-off" class="size-6" />
+          Sem foto
         </div>
       </div>
 
@@ -646,7 +668,7 @@ function askToReject() {
         <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
         <fieldset>
           <legend class="mb-1 text-xs font-medium text-muted-foreground">
-            Sai por
+            Disparado via
           </legend>
           <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
                Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
@@ -752,8 +774,8 @@ function askToReject() {
     >
       <div class="w-full">
         <p class="text-xs text-muted-foreground">
-          O texto que você conferir na próxima tela é o que sai — agora ou na
-          hora que você marcar.
+          O texto que você conferir na próxima tela é o que será disparado —
+          agora ou na hora que você marcar.
         </p>
       </div>
 
@@ -763,10 +785,13 @@ function askToReject() {
            virando campo, a decisão desta tela fica binária de verdade: segue ou não
            segue. Quem agenda é o botão final da caixa, onde o ato acontece. -->
       <div class="w-full space-y-1.5">
-        <span class="text-xs font-medium text-muted-foreground">Envio</span>
+        <!-- ⚠️ "Envio" era o nome de metade dos casos: este cartão pode carregar
+             WhatsApp e mural ao mesmo tempo, e mural não se envia, se publica. O
+             genérico da casa cobre os dois. -->
+        <span class="text-xs font-medium text-muted-foreground">Disparo</span>
         <div
           role="group"
-          aria-label="Envio"
+          aria-label="Disparo"
           class="flex gap-1 rounded-lg bg-muted p-1"
         >
           <button
@@ -807,7 +832,7 @@ function askToReject() {
           role="status"
         >
           Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem
-          sai deste computador.
+          é enviada deste computador.
         </p>
         <p
           v-else-if="scheduleRecommended"
@@ -826,7 +851,7 @@ function askToReject() {
           <label
             :for="`when-${announcement.pk}`"
             class="text-xs font-medium text-muted-foreground"
-            >Sair em</label
+            >Disparar em</label
           >
           <UiInput
             :id="`when-${announcement.pk}`"

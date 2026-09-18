@@ -5,15 +5,23 @@
 // principal em neutro INVERTIDO (despachar/entregar). Densidade-aware.
 import type { KDSExpeditionCardProjection } from "~/types/kds";
 import type { KDSDensity } from "~/components/KdsTicketCard.vue";
-import { lucideIcon, splitRef } from "~/presentation/board";
+import { lucideIcon, shortDateLabel, splitRef } from "~/presentation/board";
 
 const props = withDefaults(
-  defineProps<{ card: KDSExpeditionCardProjection; density?: KDSDensity }>(),
-  { density: "cozy" },
+  defineProps<{
+    card: KDSExpeditionCardProjection;
+    density?: KDSDensity;
+    /** Data de serviço do quadro (ISO) — a prévia precisa DIZER a data. */
+    serviceDate?: string;
+  }>(),
+  { density: "cozy", serviceDate: "" },
 );
 defineEmits<{ action: [action: "dispatch" | "complete"] }>();
 
 const ref_ = computed(() => splitRef(props.card.order_ref));
+const scheduledDate = computed(() =>
+  props.serviceDate ? shortDateLabel(props.serviceDate) : "",
+);
 // Bloqueio do servidor (payment_gate), já resolvido na projection: quando há
 // rótulo, a ação de saída NÃO é oferecida.
 const blocked = computed(() => Boolean(props.card.advance_block_label));
@@ -86,7 +94,7 @@ const d = computed(
           :name="`lucide:${lucideIcon(card.fulfillment_icon)}`"
           class="size-4 shrink-0"
         />
-        {{ card.is_delivery ? "Despacho" : "Balcão" }}
+        {{ card.is_delivery ? "Entrega" : "Retirada" }}
       </span>
     </div>
 
@@ -155,7 +163,7 @@ const d = computed(
         :class="d.fin"
       >
         <Icon name="lucide:calendar-clock" class="size-4 shrink-0" />
-        Prévia · libera na data
+        Prévia{{ scheduledDate ? ` · começa em ${scheduledDate}` : "" }}
       </button>
     </div>
     <div v-else-if="blocked" class="mt-auto" data-testid="expedition-blocked">

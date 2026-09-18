@@ -894,6 +894,7 @@ class Command(BaseCommand):
         self._seed_display_channels()
         self._assert_storefront_products_orderable()
         self._seed_kds()
+        self._seed_timer_tags()
 
         # ── Fase dinâmica: diverge por perfil ──────────────────────────────
         # Base estática acima é idêntica nos dois perfis. Só pedidos, produção
@@ -7969,6 +7970,46 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────
     # KDS (Kitchen Display System)
     # ────────────────────────────────────────────────────────────────
+
+    def _seed_timer_tags(self) -> None:
+        """A fileira de disparo de um toque da página /timers do Produção.
+
+        ⚠️ As QUATRO durações abaixo são CHUTE plausível de padaria, não medição
+        desta casa: o Pablo nomeou as etiquetas, não os tempos. Ficam aqui para
+        a tela nascer útil em vez de vazia, e são editáveis no Admin
+        (Configuração → Produção e estoque → Etiquetas de timer) — o primeiro
+        turno que cronometrar a estufa de verdade corrige o número em 10s.
+
+        Referência do chute, para quem for corrigir:
+        · Estufa   — fermentação final de peça modelada a ~28 °C: 60–90 min.
+        · Descanso — repouso de bancada depois de dividir/pré-modelar: 15–30 min.
+        · Freezer  — firmar massa laminada entre voltas: 20–30 min.
+        · Pausa-café — não é processo, é gente; 15 min é convenção da casa.
+
+        Idempotente pelo ``ref``: reeditar o rótulo ou o tempo no Admin
+        sobrevive? Não — o seed é dono destes quatro refs e os reescreve. O que
+        o operador criou no fournil (``origin=operator``) nunca é tocado aqui.
+        """
+        from shopman.backstage.models import TimerTag, TimerTagOrigin
+
+        catalog = [
+            ("estufa", "Estufa", 60, 10),
+            ("descanso", "Descanso", 20, 20),
+            ("freezer", "Freezer", 20, 30),
+            ("pausa-cafe", "Pausa-café", 15, 40),
+        ]
+        for ref, label, minutes, position in catalog:
+            TimerTag.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label,
+                    "minutes": minutes,
+                    "position": position,
+                    "origin": TimerTagOrigin.ADMIN,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write("  ⏱️  Etiquetas de timer: 4 disparos de um toque")
 
     def _seed_kds(self):
         self.stdout.write("  🖥️  KDS...")

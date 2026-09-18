@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 
-// Read-window da Central: deriva tiles/operatorName da projection. Mockamos useFetch.
+// Read-window do Shopman Apps: deriva tiles/operatorName da projection. Mockamos useFetch.
 const { fetchResult } = vi.hoisted(() => ({ fetchResult: { value: null as unknown } }));
 
 mockNuxtImport("useFetch", () => () => fetchResult.value);

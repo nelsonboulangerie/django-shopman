@@ -95,7 +95,11 @@ const SCENE_TABS = {
 
 async function waitForFaithfulPreview(page: Page) {
   await expect(
-    page.getByText("Exemplo com Pão artesanal").first(),
+    // ⚠️ Espera o RÓTULO da procedência, não o nome do produto: o nome aparece no
+    // corpo do anúncio antes de a prévia chegar, e esperar por ele deixaria o retrato
+    // passar com a prévia ainda em "Atualizando…". "Exemplo com:" só existe no rodapé
+    // da prévia, e só depois que ela responde.
+    page.getByText("Exemplo com:").first(),
   ).toBeVisible();
 }
 
@@ -213,11 +217,11 @@ test.describe("painel", () => {
         await waitForFaithfulPreview(page);
       if (scenario === "board-pending") {
         await expect(
-          page.getByRole("group", { name: "Sai por" }),
+          page.getByRole("group", { name: "Disparado via" }),
         ).toBeVisible();
         // O "quando" é campo (Imediato | Agendado) e a decisão é binária: o botão que
         // leva à caixa se chama "Continuar", porque daqui nada dispara.
-        await expect(page.getByRole("group", { name: "Envio" })).toBeVisible();
+        await expect(page.getByRole("group", { name: "Disparo" })).toBeVisible();
         await expect(
           page.getByRole("button", { name: "Continuar", exact: true }),
         ).toBeVisible();
@@ -227,7 +231,7 @@ test.describe("painel", () => {
         // O rodapé mandava "Aprovar" num card sem botão "Aprovar"; agora ele descreve
         // o que a PRÓXIMA tela mostra, que é o que o "Continuar" abre.
         await expect(
-          page.getByText("é o que sai — agora ou na hora que você marcar", {
+          page.getByText("é o que será disparado — agora ou na hora que você marcar", {
             exact: false,
           }),
         ).toBeVisible();
@@ -601,7 +605,15 @@ test.describe("disparo manual seguro", () => {
       if (scenario === "fire-large") {
         await expect(page.getByRole("dialog").getByText("1.999", { exact: true })).toBeVisible();
       }
-      await page.getByRole("dialog").locator('button[type="submit"]').scrollIntoViewIfNeeded();
+      // ⚠️ A contagem chega depois e MUDA A ALTURA do painel. Rolar antes dela assentar
+      // deixa o retrato numa posição que ninguém decidiu — e `scrollIntoViewIfNeeded`
+      // rola o mínimo, então o offset final depende de quando a altura parou de mexer.
+      await expect(page.getByText("Contando…")).toHaveCount(0);
+      // Rolagem CRAVADA no fim, em vez de "o mínimo necessário": o que este retrato
+      // quer provar é o CTA e o texto acima dele, e o fim do painel é um lugar só.
+      await page
+        .getByRole("dialog")
+        .evaluate((element) => element.scrollTo(0, element.scrollHeight));
       await expectStableScreenshot(page, `fire-campaign__${state}`, viewport, "light", { fullPage: false });
     });
   }
@@ -637,6 +649,24 @@ test.describe("disparo manual seguro", () => {
     // velocidade da máquina, não pela tela.
     await expect(page.getByText("Contando…")).toHaveCount(0);
     await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
+  });
+
+  // ⚠️ O seletor de produto NÃO tinha retrato nenhum: ele só aparece quando o modelo
+  // depende do catálogo, e nenhum cenário do harness declarava isso. Sete meses de
+  // matriz verde e o controle que o dono reclamou nunca esteve numa imagem.
+  test("o produto da ocorrência se escolhe com busca, não rolando a lista", async ({
+    page,
+  }) => {
+    await openScenario(page, "fire-product", "/campaigns", V390);
+    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+    await expect(page.getByText("Produto desta ocorrência")).toBeVisible();
+    await page.getByRole("button", { name: "Escolha o produto" }).click();
+    // Acima de doze opções o primitivo abre a busca — é o que separa escolher de rolar.
+    await expect(page.getByPlaceholder("Buscar produto")).toBeVisible();
+    // "artesanal 1" casa com o 01 e com o 10 ao 14 — seis de catorze.
+    await page.getByPlaceholder("Buscar produto").fill("artesanal 1");
+    await expect(page.getByRole("option")).toHaveCount(6);
+    await expectStableScreenshot(page, "fire-campaign__product-search", V390, "light", { fullPage: false });
   });
 
   test("aceite leva direto à revisão, dizendo que nada foi disparado", async ({ page }) => {

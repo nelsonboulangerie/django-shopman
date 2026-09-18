@@ -100,7 +100,7 @@ describe("auto-lock coordenado entre abas PDV", () => {
 // Travar é `logout()` da sessão COMPARTILHADA por todos os apps de operador em
 // `.boulangerie.com.br`. Uma aba do PDV esquecida em segundo plano (ou o PWA
 // minimizado) media ociosidade só pelo que acontece NELA e derrubava o Gestor,
-// o KDS e a Central em uso ativo no mesmo navegador, a cada 60 s.
+// o KDS e o Shopman Apps em uso ativo no mesmo navegador, a cada 60 s.
 describe("auto-lock com o PDV fora da vista", () => {
   function hide() { page.visibilityState = "hidden"; pageListeners.visibilitychange?.forEach((fn) => fn()); }
   function show() { page.visibilityState = "visible"; pageListeners.visibilitychange?.forEach((fn) => fn()); }

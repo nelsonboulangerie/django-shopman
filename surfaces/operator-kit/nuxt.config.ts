@@ -1,6 +1,6 @@
 // Nuxt layer compartilhado das superfícies de operador.
 //
-// Os apps (pos/orders/kds/production-nuxt + Central de Apps) fazem
+// Os apps (pos/orders/kds/production-nuxt + Shopman Apps) fazem
 // `extends: ['../operator-kit']` no seu nuxt.config. Este layer contribui:
 //   - app/components  → auto-importados (ex.: OfflineBanner)
 //   - app/composables → auto-importados (ex.: useConnectivity)
@@ -32,16 +32,16 @@ export default defineNuxtConfig({
     // Vazio = a identidade do app (`operatorPwa.app`), certo com um app por contêiner.
     operatorServiceName: "",
     public: {
-      // URL da Central de Apps (launcher) — o ícone do app no topo do OperatorRail leva
+      // URL do Shopman Apps (a home) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.
       operatorHubUrl: process.env.NUXT_PUBLIC_OPERATOR_HUB_URL || "http://127.0.0.1:3001/",
       // Estado inicial do rail (só quando não há cookie ainda). Padrão compacto; a própria
-      // Central sobrescreve pra "collapsed" (é a casa, não precisa do rail aberto).
+      // home sobrescreve pra "collapsed" (é a casa, não precisa do rail aberto).
       railDefaultState: process.env.NUXT_PUBLIC_RAIL_DEFAULT_STATE || "compact",
       // URL do Gestor de Pedidos (orders-nuxt) — links cross-app "abrir no gestor"
       // apontam pra cá. Dev: orders-nuxt em :3004; prod: gestor.<zona> via env.
       ordersUrl: process.env.NUXT_PUBLIC_ORDERS_URL || "http://127.0.0.1:3004/",
-      // URL do PDV — usada pela Central para o atalho instalável same-origin que
+      // URL do PDV — usada pelo Shopman Apps para o atalho instalável same-origin que
       // então redireciona ao app dedicado. O destino continua dado de deploy.
       posUrl: process.env.NUXT_PUBLIC_POS_URL || "http://127.0.0.1:3002/",
       // URL do Produção (production-nuxt) — links cross-app "resolver na produção"

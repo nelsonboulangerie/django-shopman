@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-// Banner de conexão (kit) — global, aparece em qualquer estado da Central.
-test.describe("Central — banner de conexão", () => {
+// Banner de conexão (kit) — global, aparece em qualquer estado do Shopman Apps.
+test.describe("Shopman Apps — banner de conexão", () => {
   test("aparece ao cair a rede e some ao voltar", async ({ page, context }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /Olá, Ana/i })).toBeVisible();

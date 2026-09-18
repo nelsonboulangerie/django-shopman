@@ -1,13 +1,14 @@
 <script setup lang="ts">
-// Central de Apps — o launcher pós-login. Lê a projection do hub (tiles já filtrados
-// por permissão) e a apresenta como uma grade de ícones fortes. Sem CRUD: cada tile
-// abre a superfície dedicada (ou deep-linka pro Unfold, no caso da Loja). Herda do kit
-// o OfflineBanner, o re-gate de 401 (useOperatorSession) e httpErrorMessage.
+// Shopman Apps — a home do Shopman e o launcher pós-login. Lê a projection do hub
+// (tiles já filtrados por permissão) e a apresenta como uma grade de ícones fortes.
+// Sem CRUD: cada tile abre a superfície dedicada (ou deep-linka pro Unfold, no caso da
+// Loja). Herda do kit o OfflineBanner, o re-gate de 401 (useOperatorSession) e
+// httpErrorMessage.
 import type { HubFailure } from "~/presentation/hub";
 import type { HubTileProjection } from "~/types/hub";
-import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
+import { HUB_NAME, hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
 
-// Como cada tile abre depende de a Central estar instalada (janela própria por app)
+// Como cada tile abre depende de o Shopman Apps estar instalado (janela própria por app)
 // ou ser uma aba comum. A leitura é reativa: instalar com a tela aberta já muda o link.
 const { installed } = useOperatorAppLink();
 const linkContext = computed(() => ({
@@ -17,6 +18,10 @@ const linkContext = computed(() => ({
 
 const apiPath = useApiPath();
 useOperatorWindowTitle();
+
+// Versão publicada deste build (`NUXT_PUBLIC_APP_VERSION`/`SOURCE_VERSION`; "local" na
+// máquina de quem desenvolve). É o que o operador lê para o suporte ao relatar algo.
+const appVersion = String(useRuntimeConfig().public.appVersion || "local");
 
 const { tiles, operatorName, error, refresh } = await useOperatorHub();
 
@@ -63,7 +68,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
       v-if="needsLogin"
       mode="page"
       :login-url="apiPath('/api/v1/backstage/operator/login/')"
-      :title="sessionExpired ? 'Sua sessão expirou' : 'Central de Apps'"
+      :title="sessionExpired ? 'Sua sessão expirou' : HUB_NAME"
       :description="
         sessionExpired
           ? 'Entre de novo para continuar.'
@@ -72,7 +77,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
     />
 
     <!-- Falha que NÃO se resolve com senha: estação travada, sem permissão, ou a
-         Central fora do ar. Cada uma tem a sua saída — e "tentar de novo" só aparece
+         home fora do ar. Cada uma tem a sua saída — e "tentar de novo" só aparece
          onde tentar de novo faz sentido. -->
     <div v-else-if="hasBlockingFailure" class="grid min-h-dvh place-items-center p-4">
       <div class="grid w-full max-w-sm gap-4 text-center">
@@ -100,19 +105,19 @@ function tileImageSrc(tile: HubTileProjection): string | null {
     <!-- Launcher -->
     <template v-else>
       <div class="flex min-h-dvh">
-        <!-- Rail canônico (kit). A Central é o launcher: sem botão "Central" (é a casa) e
+        <!-- Rail canônico (kit). Esta é a home: sem o atalho de volta (já estamos nela) e
              sem travar-operador. Só identidade + tema — a mesma espinha das outras. -->
         <div class="sticky top-0 flex h-dvh shrink-0">
           <OperatorRail />
         </div>
 
         <div class="flex min-w-0 flex-1 flex-col">
-          <!-- Cabeçalho: controle do rail + a saudação (identidade da Central). -->
+          <!-- Cabeçalho: controle do rail + a saudação (identidade da home). -->
           <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-3">
             <RailToggle />
             <div class="min-w-0">
               <h1 class="truncate text-base font-semibold leading-tight">{{ hubGreeting(operatorName) }}</h1>
-              <p class="text-xs text-muted-foreground">Central de Apps</p>
+              <p class="text-xs text-muted-foreground">{{ HUB_NAME }}</p>
             </div>
           </header>
 
@@ -133,7 +138,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
               :href="tile.url"
               :target="tileLinkAttrs(tile, linkContext).target"
               :rel="tileLinkAttrs(tile, linkContext).rel"
-              class="flex min-h-28 flex-col gap-2 rounded-md border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              class="flex h-38 flex-col gap-2 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
                    Lucide de fallback, senão vira moldura nos cantos do ícone. -->
@@ -152,14 +157,27 @@ function tileImageSrc(tile: HubTileProjection): string | null {
                 >
                 <Icon v-else :name="tileIcon(tile.icon)" class="size-6" />
               </span>
-              <span class="mt-auto">
-                <span class="block text-sm font-semibold leading-tight">{{ tile.label }}</span>
-                <span class="block text-xs text-muted-foreground">{{ tile.description }}</span>
+              <!-- Altura FIXA e conteúdo no topo: no celular a grade tem duas colunas
+                   estreitas, e cada tile parava numa altura diferente conforme o nome e a
+                   frase quebrassem em uma ou duas linhas — a grade ficava serrilhada e o
+                   olho perdia a coluna. O teto é duas linhas para cada um; o que passa
+                   disso é cortado com reticências pelo `line-clamp`, e o `h-38` reserva o
+                   pior caso, de modo que nenhum tile encolhe quando o texto é curto. -->
+              <span class="grid min-w-0">
+                <span data-tile-title class="line-clamp-2 text-sm font-semibold leading-tight">{{ tile.label }}</span>
+                <span data-tile-description class="line-clamp-2 text-xs text-muted-foreground">{{ tile.description }}</span>
               </span>
             </a>
           </li>
           </ul>
           <OperatorPushSettings />
+
+          <!-- Carimbo da versão publicada. Ele morava colado no título dos avisos e se
+               lia como se fosse propriedade do aviso ("local"); é a versão do build que
+               está no ar, e é assim que ele se apresenta agora. -->
+          <p class="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
+            Versão do {{ HUB_NAME }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
+          </p>
           </section>
         </div>
       </div>

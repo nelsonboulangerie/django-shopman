@@ -21,7 +21,7 @@ beforeEach(() => {
     // com o vue-test-utils puro, então ele entra como os demais globais.
     useOperatorWindowTitle: vi.fn(() => ({ appName: "Marketing" })),
     useRuntimeConfig: () => ({ public: { operatorHubUrl: "/apps/" } }),
-    // Implementação REAL do kit: é ela que decide se o "Voltar à Central" sai da
+    // Implementação REAL do kit: é ela que decide se o "Voltar ao Shopman Apps" sai da
     // janela (app instalado) ou fica nela (aba). Mocká-la esconderia justamente o
     // que importa aqui.
     useOperatorAppLink,

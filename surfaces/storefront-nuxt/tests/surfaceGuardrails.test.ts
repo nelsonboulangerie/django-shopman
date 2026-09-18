@@ -520,7 +520,11 @@ describe('surface UX guardrails', () => {
     expect(substituteSheet).toContain('<BottomSheet')
     expect(substituteSheet).toContain('addSubstitute')
     expect(substituteSheet).toContain('acceptAvailableQty')
-    expect(substituteSheet).toContain('retryLastMutation')
+    // Beco fechado (sem saldo, sem substituto, sem aviso): o "Tentar de novo" refazia a
+    // mutação que acabara de falhar pelo mesmo motivo — placa apontando para a parede.
+    // A saída é o cardápio de hoje.
+    expect(substituteSheet).not.toContain('retryLastMutation')
+    expect(substituteSheet).toContain('Ver o cardápio de hoje')
     expect(substituteSheet).toContain('dismissCartIssue')
     expect(substituteSheet).toContain('Agora não')
     expect(cartPage).not.toContain(':disabled="cart.is_empty || cart.has_unavailable_items"')
@@ -761,7 +765,11 @@ describe('surface UX guardrails', () => {
     expect(surfaceVueFiles).not.toContain('app/components/PasskeyInviteCard.vue')
     expect(checkout).not.toContain('PasskeyInviteCard')
     expect(account).not.toContain('PasskeyInviteCard')
-    expect(security).toContain('Entrar com uma chave deste aparelho')
+    // A ENTRADA pela chave ainda não existe (`usePasskey().signIn()` não é chamado em
+    // lugar nenhum, e /entrar só oferece WhatsApp e SMS). Enquanto a porta não nascer, a
+    // tela guarda a chave e não promete entrar com ela.
+    expect(security).toContain('Guardar uma chave deste aparelho')
+    expect(security).not.toContain('Entrar com uma chave deste aparelho')
     expect(security).toContain('lucide:key-round')
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })
@@ -964,7 +972,10 @@ describe('surface UX guardrails', () => {
     expect(favorites).toContain('visibleItems')
     expect(favorites).toContain('(item.dietary_warnings || []).length === 0')
     expect(product).toContain('unavailableReason')
-    expect(product).toContain(':add-label="product.can_add_to_cart ?')
+    // Nem comprar nem avisar: o rótulo "Indisponível" era um botão morto, e a palavra já
+    // está na etiqueta da foto. No lugar dele, uma saída de verdade.
+    expect(product).toContain('deadEnd')
+    expect(product).toContain('Ver itens parecidos')
   })
 
   it('keeps account logic in the pure presentation layer and guards every sub-page', () => {
@@ -1542,7 +1553,10 @@ describe('customer surface never names the reason behind unavailability', () => 
 
     expect(pdp).not.toContain('unavailableCtaLabel')
     expect(pdp).not.toContain('is_paused')
-    expect((pdp.match(/'Adicionar' : 'Indisponível'/g) || [])).toHaveLength(2)
+    // O estado é dito UMA vez, na etiqueta sobre a foto: o botão morto com a mesma
+    // palavra saiu, e no lugar dele entrou o caminho para itens parecidos.
+    expect((pdp.match(/'Adicionar' : 'Indisponível'/g) || [])).toHaveLength(0)
+    expect((pdp.match(/Ver itens parecidos/g) || [])).toHaveLength(2)
   })
 
   it('does not branch the shortage sheet on the pause flag', () => {
