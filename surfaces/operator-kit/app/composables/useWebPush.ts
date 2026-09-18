@@ -29,7 +29,7 @@ function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
 
 function defaultDeviceLabel(): string {
   if (!import.meta.client) return "Este dispositivo";
-  const platform = navigator.userAgentData?.platform || navigator.platform || "Aparelho";
+  const platform = navigator.userAgentData?.platform || navigator.platform || "Dispositivo";
   return `${platform} · ${new Date().toLocaleDateString("pt-BR")}`.slice(0, 120);
 }
 
@@ -55,6 +55,21 @@ export function useWebPush() {
     && "PushManager" in window
     && "Notification" in window,
   ));
+  /**
+   * POR QUE os avisos não podem ser ligados aqui.
+   *
+   * `supported` é um booleano só, e cobria duas situações que pedem gestos opostos: a
+   * instalação não ter a chave de envio (quem resolve é quem cuida do sistema) e o
+   * navegador não entregar aviso com o app fechado (quem resolve é o operador, instalando
+   * o app). Uma frase para as duas obrigava o operador a adivinhar qual era a dele.
+   *
+   * No servidor devolve "" de propósito: a pergunta "este navegador entrega aviso?" só
+   * tem resposta no navegador, e chutar ali é justamente o defeito que estamos tirando.
+   */
+  const unavailableReason = computed<"" | "deploy" | "browser">(() => {
+    if (!import.meta.client || supported.value) return "";
+    return config && vapidPublicKey ? "browser" : "deploy";
+  });
   const currentDevice = computed(() => devices.value.find(device => device.endpoint === currentEndpoint.value) || null);
   const active = computed(() => permission.value === "granted" && currentDevice.value !== null);
 
@@ -157,5 +172,5 @@ export function useWebPush() {
   }
 
   onMounted(() => void syncExisting());
-  return { supported, active, permission, loading, error, devices, categories, currentDevice, refresh, activate, updateCategories, removeDevice };
+  return { supported, unavailableReason, active, permission, loading, error, devices, categories, currentDevice, refresh, activate, updateCategories, removeDevice };
 }

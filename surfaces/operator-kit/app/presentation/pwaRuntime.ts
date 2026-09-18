@@ -29,7 +29,7 @@ export function idleReloadPathAllowed(allowedPaths: readonly string[], path: str
 
 /**
  * Sondar agora? Vale para os gatilhos OPORTUNISTAS — voltar à vista, ganhar foco —,
- * que chegam em rajada quando o aparelho acorda e precisam de um piso entre si. A
+ * que chegam em rajada quando o dispositivo acorda e precisam de um piso entre si. A
  * sonda do intervalo de 30 min e a da volta da rede não passam por aqui: a primeira
  * já é rara, e as duas devem acontecer justamente com a janela em segundo plano, que
  * é o estado do PDV instalado no desktop do dono.
@@ -43,7 +43,7 @@ export function shouldCheckForUpdate(options: {
 }): boolean {
   if (!options.online || !options.visible) return false;
   const floor = options.floorMs ?? PWA_UPDATE_CHECK_FLOOR_MS;
-  // Relógio para trás (aparelho de balcão com hora ajustada) não pode congelar a sonda.
+  // Relógio para trás (dispositivo de balcão com hora ajustada) não pode congelar a sonda.
   if (options.now < options.lastCheckAt) return true;
   return options.now - options.lastCheckAt >= floor;
 }

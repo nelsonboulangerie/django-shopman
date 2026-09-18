@@ -581,7 +581,16 @@ async function confirmClose() {
                   <span class="font-medium tabular-nums">{{ openedAtDisplay }}</span>
                 </div>
                 <div class="flex flex-col">
-                  <span class="text-xs text-muted-foreground">Vendas hoje</span>
+                  <!-- ⚠️ `shift.count` conta o DIA INTEIRO do canal PDV: os
+                       dois balcões, os turnos já fechados e o que o colega
+                       vendeu antes de você assumir. Ao lado de "Aberto em",
+                       num cartão intitulado pelo turno, ele se lia como a
+                       contagem deste turno — e numa loja de duas gavetas o
+                       operador nunca fechava com ela. O par honesto seria
+                       "Vendas neste turno" pelo `sales_count` da leitura X;
+                       enquanto ele não sobe até aqui, o rótulo diz de quem é
+                       o número. -->
+                  <span class="text-xs text-muted-foreground">Vendas hoje na loja</span>
                   <span class="font-medium tabular-nums">{{ salesCount }}</span>
                 </div>
               </div>
@@ -606,9 +615,15 @@ async function confirmClose() {
               <div class="flex items-center gap-2">
                 <Icon name="lucide:bell-ring" class="size-4 text-warning" />
                 <h2 id="needs-you-title" class="text-base font-semibold">Precisa de você</h2>
-                <span class="ml-auto rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-warning">
-                  {{ attention }}<span class="sr-only"> {{ attention === 1 ? "pendência" : "pendências" }}</span>
-                </span>
+                <!-- ⚠️ SEM crachá com um número só. Ele somava devolução em
+                     dinheiro (gaveta aberta, cliente reclamando, PIN de
+                     gerente), pedido de troco (alguém tem que trazer cédulas
+                     até o balcão) e conta na casa (saldo que pode esperar a
+                     semana inteira). "4 pendências" podia ser quatro
+                     devoluções ou quatro fiados, e o operador decidia se
+                     largava o balcão por esse número. Cada seção abaixo
+                     carrega o seu, e a contagem total só decide se este
+                     bloco existe. -->
               </div>
 
               <!-- Cancelar não é devolver. O gestor cancela de noite e ninguém abriu
@@ -617,7 +632,7 @@ async function confirmClose() {
               <div v-if="pendingCashRefunds.length" class="grid gap-2">
                 <div class="flex items-center gap-2">
                   <Icon name="lucide:rotate-ccw" class="size-4 text-muted-foreground" />
-                  <h3 class="text-sm font-semibold">Devoluções em dinheiro pendentes</h3>
+                  <h3 class="text-sm font-semibold">Devoluções em dinheiro pendentes <span class="tabular-nums text-muted-foreground">· {{ pendingCashRefunds.length }}</span></h3>
                 </div>
                 <ul class="grid gap-2" aria-label="Devoluções em dinheiro pendentes">
                   <li
@@ -648,7 +663,7 @@ async function confirmClose() {
               <div v-if="pendingChangeRequests.length" class="grid gap-2">
                 <div class="flex items-center gap-2">
                   <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
-                  <h3 class="text-sm font-semibold">Pedidos de troco pendentes</h3>
+                  <h3 class="text-sm font-semibold">Pedidos de troco pendentes <span class="tabular-nums text-muted-foreground">· {{ pendingChangeRequests.length }}</span></h3>
                 </div>
                 <ul class="grid gap-2" aria-label="Pedidos de troco pendentes">
                   <li
@@ -704,7 +719,7 @@ async function confirmClose() {
               <div v-if="accountBalances.length" class="grid gap-2" data-house-accounts>
                 <div class="flex items-center gap-2">
                   <Icon name="lucide:book-user" class="size-4 text-muted-foreground" />
-                  <h3 class="text-sm font-semibold">Contas na casa</h3>
+                  <h3 class="text-sm font-semibold">Contas na casa <span class="tabular-nums text-muted-foreground">· {{ accountBalances.length }}</span></h3>
                 </div>
                 <ul class="grid gap-2" aria-label="Contas na casa com saldo em aberto">
                   <li
@@ -716,7 +731,14 @@ async function confirmClose() {
                       <span class="text-sm font-medium">{{ account.customer_name }}</span>
                       <span class="text-sm tabular-nums">{{ account.balance_display }}</span>
                       <span class="text-xs text-muted-foreground">
-                        {{ account.intents }} {{ account.intents === 1 ? "venda" : "vendas" }} em aberto
+                        <!-- ⚠️ `account.intents` conta PaymentIntent, não
+                             pedido: uma venda paga metade em dinheiro e metade
+                             em conta gera um; duas idas à padaria podem virar
+                             três. O relatório de caixa já separa "Vendas"
+                             (order_ref distintos) de "Pagamentos" (intents) —
+                             a palavra certa para este número já existia no
+                             app, e não era esta. -->
+                        {{ account.intents }} {{ account.intents === 1 ? "cobrança" : "cobranças" }} em aberto
                       </span>
                     </div>
                     <template v-if="settleCustomerRef === account.customer_ref">
@@ -763,7 +785,7 @@ async function confirmClose() {
               </div>
             </section>
 
-            <!-- GAVETA: uma grade de tiles, a gramática da Central. Cada tile é
+            <!-- GAVETA: uma grade de tiles, a gramática do Shopman Apps. Cada tile é
                  um ato com nome, ícone e uma linha dizendo o que vai acontecer;
                  o formulário só aparece quando o operador escolhe.
 
@@ -1058,10 +1080,18 @@ async function confirmClose() {
                   </UiButton>
                 </div>
                 <div class="mt-1 grid gap-2 border-t pt-3">
+                  <!-- ⚠️ A sonda ABRE a gaveta e registra a abertura no turno
+                       (`drawer_open`, motivo "Teste de gaveta"), como qualquer
+                       abertura sem venda. "Testar" prometia gesto sem
+                       consequência, e quem testava três vezes deixava três
+                       aberturas no relatório do dia sem saber. -->
                   <UiButton variant="ghost" size="sm" :disabled="busy || drawerProbing" :loading="drawerProbing" @click="testDrawer">
                     <Icon name="lucide:stethoscope" class="size-4" />
-                    Testar gaveta
+                    Abrir para testar
                   </UiButton>
+                  <p class="text-xs text-muted-foreground">
+                    Abre a gaveta e fica registrado no turno, como qualquer abertura sem venda.
+                  </p>
                   <p v-if="drawerProbeResult" class="text-xs" :class="drawerProbeResult.ok ? 'text-muted-foreground' : 'text-destructive'">
                     <template v-if="drawerProbeResult.ok">
                       {{ drawerProbeResult.message }} A gaveta abriu? Se não abriu, confira o cabo dela na impressora.
@@ -1126,8 +1156,13 @@ async function confirmClose() {
                 <div v-if="!confirmingClose">
                   <!-- Só arma com um valor legível — vazio virava "0" calado, e o
                        turno fechava com uma contagem que ninguém fez. -->
+                  <!-- ⚠️ Este botão NÃO fecha: ele arma a confirmação. O
+                       tile lá fora já se chama "Fechar caixa" (porta com nome
+                       do destino); repetir o verbo do ato aqui ensinava a
+                       apertar no automático, e quem encerrava o turno dizia a
+                       palavra mais vaga da sequência ("Confirmar"). -->
                   <UiButton variant="destructive" class="w-full" :disabled="busy || !canClose" @click="confirmingClose = true">
-                    Fechar caixa
+                    Conferir e fechar
                   </UiButton>
                 </div>
                 <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
@@ -1138,8 +1173,9 @@ async function confirmClose() {
                   </p>
                   <div class="grid grid-cols-2 gap-2">
                     <UiButton variant="outline" :disabled="busy" @click="confirmingClose = false">Cancelar</UiButton>
+                    <!-- O degrau que PRATICA o ato é o único que o diz. -->
                     <UiButton variant="destructive" :disabled="busy" :loading="busy" @click="confirmClose">
-                      Confirmar
+                      Fechar o caixa
                     </UiButton>
                   </div>
                 </div>

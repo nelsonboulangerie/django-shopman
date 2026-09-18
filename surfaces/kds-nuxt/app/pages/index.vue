@@ -24,7 +24,7 @@ function typeIcon(type: string): string {
         <p
           class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
         >
-          Kitchen Display
+          Cozinha
         </p>
         <h1 class="text-3xl font-bold">Escolha uma estação</h1>
       </div>
@@ -59,13 +59,11 @@ function typeIcon(type: string): string {
             }}</span>
           </span>
           <span
-            v-if="inst.pending_count"
+            v-if="inst.active_count"
             class="inline-flex shrink-0 items-baseline gap-1 rounded-full bg-muted px-3 py-1 text-sm font-bold tabular-nums"
           >
-            {{ inst.pending_count }}
-            <span class="text-xs font-medium text-muted-foreground"
-              >na fila</span
-            >
+            {{ inst.active_count }}
+            <span class="text-xs font-medium text-muted-foreground">ativos</span>
           </span>
           <Icon
             name="lucide:chevron-right"

@@ -605,7 +605,15 @@ test.describe("disparo manual seguro", () => {
       if (scenario === "fire-large") {
         await expect(page.getByRole("dialog").getByText("1.999", { exact: true })).toBeVisible();
       }
-      await page.getByRole("dialog").locator('button[type="submit"]').scrollIntoViewIfNeeded();
+      // ⚠️ A contagem chega depois e MUDA A ALTURA do painel. Rolar antes dela assentar
+      // deixa o retrato numa posição que ninguém decidiu — e `scrollIntoViewIfNeeded`
+      // rola o mínimo, então o offset final depende de quando a altura parou de mexer.
+      await expect(page.getByText("Contando…")).toHaveCount(0);
+      // Rolagem CRAVADA no fim, em vez de "o mínimo necessário": o que este retrato
+      // quer provar é o CTA e o texto acima dele, e o fim do painel é um lugar só.
+      await page
+        .getByRole("dialog")
+        .evaluate((element) => element.scrollTo(0, element.scrollHeight));
       await expectStableScreenshot(page, `fire-campaign__${state}`, viewport, "light", { fullPage: false });
     });
   }

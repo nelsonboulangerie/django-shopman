@@ -361,7 +361,7 @@ def advance_order(
 
     with transaction.atomic():
         if taken:
-            # Custódia do aparelho (maquininha): o despacho registra o que saiu;
+            # Custódia da maquininha: o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
             # dinheiro, então não vai ao livro do caixa.
             data = dict(order.data or {})
@@ -426,7 +426,7 @@ class CourierChange:
         return self.out_q > 0 and self.back_q is None
 
 
-# ── Aparelho que sai com o entregador (maquininha) ─────────────────────────
+# ── Maquininha que sai com o entregador ───────────────────────────────────
 
 
 def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:

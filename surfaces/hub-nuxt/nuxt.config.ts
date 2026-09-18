@@ -3,7 +3,7 @@ import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
-  // Central de Apps: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
+  // Shopman Apps: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
   // É o launcher pós-login — não hospeda CRUD; deep-linka pro Unfold quando preciso.
   extends: ["../operator-kit"],
 
@@ -19,7 +19,7 @@ export default defineNuxtConfig({
       // e o bundle serve o fallback 127.0.0.1 — links quebrados no ar, 28/08.
       djangoBaseUrl:
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
-      // A Central é a casa: o rail começa colapsado (o operador abre se quiser).
+      // O Shopman Apps é a casa: o rail começa colapsado (o operador abre se quiser).
       railDefaultState: "collapsed",
     },
   },
@@ -68,7 +68,7 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
-    // LIGHT-first — a Central é a casa dos apps de escritório e balcão, todos claros;
+    // LIGHT-first — o Shopman Apps é a casa dos apps de escritório e balcão, todos claros;
     // só a Cozinha é escura. Sem a declaração ela seguia o tema do SISTEMA e abria de
     // um jeito no Mac e de outro no tablet. O escuro segue no toggle do rail.
     preference: "light",

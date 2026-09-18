@@ -22,7 +22,7 @@ const OPERATOR_APPS = [
 ] as const;
 
 /** Href que sai da própria origem: a URL de outro app de operador. */
-const CROSS_APP_HREF = /:href="(hubUrl|centralUrl|tile\.url)"/;
+const CROSS_APP_HREF = /:href="(hubUrl|tile\.url)"/;
 
 function vueFiles(dir: string): string[] {
   const out: string[] = [];
@@ -65,13 +65,13 @@ describe("link para outro app de operador", () => {
     expect(offenders, "use useOperatorAppLink().attrsFor(href) e ligue :target/:rel").toEqual([]);
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
-    // Hoje são os tiles da Central e o "Voltar à Central" da tela sem acesso do Marketing.
+    // Hoje são os tiles do Shopman Apps e o "Voltar ao Shopman Apps" da tela sem acesso do Marketing.
     expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(2);
   });
 
   it("o próprio rail do kit — a origem do padrão — está em dia", () => {
     const rail = readFileSync(join(surfacesDir, "operator-kit", "app", "components", "OperatorRail.vue"), "utf8");
     expect(rail).toContain("useOperatorAppLink()");
-    expect(rail).toContain(":target=\"centralUrl ? centralLink.target : undefined\"");
+    expect(rail).toContain(":target=\"hubUrl ? hubLink.target : undefined\"");
   });
 });

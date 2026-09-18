@@ -1,4 +1,4 @@
-// Contrato da Central de Apps — espelha `OperatorHubProjection` do Django
+// Contrato do Shopman Apps — espelha `OperatorHubProjection` do Django
 // (shopman/backstage/projections/hub.py). Os tiles já vêm FILTRADOS por permissão:
 // se está na lista, o operador pode abrir.
 

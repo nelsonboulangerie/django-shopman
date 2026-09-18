@@ -151,7 +151,7 @@ def _equipment_return(client, ref):
 
 
 def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, operator):
-    """Custódia do aparelho, não de dinheiro: mora no pedido (``data.dispatch``),
+    """Custódia da maquininha, não de dinheiro: mora no pedido (``data.dispatch``),
     o canal diz o que pode sair, o quadro diz onde está, e o acerto (ou o botão)
     marca a volta."""
     from shopman.backstage.models import DeliveryDevice
@@ -173,7 +173,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     assert [o["ref"] for o in card["equipment_options"]] == [device_ref]
     assert (card["equipment_out"], card["equipment_back_pending"]) == ([], False)
 
-    # Aparelho que o canal não prevê: recusado.
+    # Equipamento que o canal não prevê: recusado.
     response = client.post(
         reverse("api-backstage-order-advance", args=["DLV-M2"]),
         advance_payload(client, "DLV-M2", **{"equipment": ["drone"]}), content_type="application/json",
@@ -196,7 +196,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     assert order.data["dispatch"]["equipment"] == ["card_machine"]
     assert order.data["dispatch"]["equipment_out_by"] == "marina"
 
-    # O acerto devolve troco E aparelho no mesmo gesto.
+    # O acerto devolve troco E maquininha no mesmo gesto.
     response = client.post(
         reverse("api-backstage-order-settle-delivery-cash", args=["DLV-M1"]),
         context_payload(client, "DLV-M1", "settle-delivery-cash", change_back="0", equipment_back=True), content_type="application/json",

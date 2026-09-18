@@ -55,13 +55,13 @@ _CACHE_KEY = "shopman:operator_capacity:{service}"
 
 #: Nome que o gestor reconhece. Serviço fora da lista aparece pelo próprio nome.
 SERVICE_LABELS: dict[str, str] = {
-    "operator-floor": "Apps do chão de loja (PDV, Cozinha, Pedidos, Produção, Central)",
+    "operator-floor": "Apps do chão de loja (PDV, Cozinha, Pedidos, Produção, Shopman Apps)",
     "operator-office": "Apps do escritório (Marketing, B.I., Compras)",
     "pos": "PDV",
     "kds": "Cozinha",
     "orders": "Pedidos",
     "production": "Produção",
-    "hub": "Central de Apps",
+    "hub": "Shopman Apps",
     "marketing": "Marketing",
     "bi": "B.I.",
     "purchase": "Compras",

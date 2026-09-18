@@ -1631,7 +1631,7 @@ class OrderDetailView(OperationalObservationMixin, APIView):
         # A reconciliação contra webhook perdido nasceu só no acompanhamento do
         # cliente, e isso deixou a verdade do Gestor pendurada no navegador de
         # outra pessoa: cliente que paga e fecha a aba (ou paga em outro
-        # aparelho) some do circuito, e o card fica em "Aguardando pagamento…"
+        # dispositivo) some do circuito, e o card fica em "Aguardando pagamento…"
         # sem que exista, na loja, um gesto capaz de resolver. O worker resgata
         # em minutos; abrir o pedido resolve agora.
         #

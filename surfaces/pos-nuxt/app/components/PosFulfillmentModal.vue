@@ -234,7 +234,13 @@ function onAddressSelected(address: StructuredAddressProjection) {
         </label>
       </div>
       <UiDialogFooter>
-        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ !fulfillmentConfirmed ? "Escolha o recebimento" : fulfillmentType === "delivery" ? "Concluir entrega" : "Concluir retirada" }}</UiButton>
+        <!-- ⚠️ O rodapé confirma a ESCOLHA, não o desfecho: aqui só se decide
+             COMO o pedido será recebido, antes de qualquer coisa acontecer.
+             "Concluir entrega" é ato real desta casa (é o que o Gestor de
+             Pedidos faz quando o pedido chegou na mão de alguém), e numa
+             encomenda para sábado o rótulo afirmava que a entrega tinha
+             terminado no instante em que foi combinada. -->
+        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ !fulfillmentConfirmed ? "Escolha o recebimento" : fulfillmentType === "delivery" ? "Entrega neste endereço" : "Retirada no balcão" }}</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

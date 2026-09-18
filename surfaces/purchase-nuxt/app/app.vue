@@ -29,7 +29,7 @@ useOperatorWindowTitle();
     <OfflineBanner />
     <div v-if="canIdentify" class="sticky top-0 hidden h-screen shrink-0 print:hidden md:flex">
       <OperatorRail
-        :central-url="hubUrl"
+        :hub-url="hubUrl"
         :operator-name="operator?.name"
         @lock="lock"
       >

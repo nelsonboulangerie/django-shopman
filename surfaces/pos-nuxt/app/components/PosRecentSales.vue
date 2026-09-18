@@ -367,7 +367,10 @@ function fiscalChipClass(status: string): string {
                 @click="openEmailPrompt(sale)"
               >
                 <Icon name="lucide:mail" class="size-3.5" />
-                {{ sale.email_sent ? "Reenviar e-mail" : "Enviar e-mail" }}
+                <!-- ⚠️ Este botão só ABRE o campo de e-mail. Quem envia é o
+                     "Enviar" que aparece ali dentro — dizia "Enviar e-mail" e
+                     não enviava nada. -->
+                {{ sale.email_sent ? "E-mail da nota (já enviada)" : "E-mail da nota" }}
               </UiButton>
               <UiButton
                 v-if="sale.can_requeue_fiscal"

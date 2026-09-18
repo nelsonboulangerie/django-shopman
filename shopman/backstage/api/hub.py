@@ -1,4 +1,4 @@
-"""Central de Apps — endpoint do launcher do operador.
+"""Shopman Apps — endpoint do launcher do operador.
 
 `GET /api/v1/backstage/hub/` → a grade de tiles permission-aware que o app
 `surfaces/hub-nuxt/` consome. Qualquer operador (staff autenticado) acessa; os tiles

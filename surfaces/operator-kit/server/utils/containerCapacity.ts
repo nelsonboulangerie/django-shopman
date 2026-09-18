@@ -2,7 +2,7 @@
 //
 // Por que o contêiner e não o `process.memoryUsage()`: o que engasga é o serviço
 // inteiro, não este processo. Com a junção dos apps em dois serviços, vários
-// processos Nitro (PDV, Cozinha, Pedidos, Produção, Central) e o roteador
+// processos Nitro (PDV, Cozinha, Pedidos, Produção, Shopman Apps) e o roteador
 // dividem o MESMO contêiner e o mesmo limite.
 //
 // Três réguas, tentadas nesta ordem, e a leitura diz qual valeu (`source`):

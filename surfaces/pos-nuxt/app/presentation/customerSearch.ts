@@ -110,9 +110,15 @@ export function enterAction(input: {
  *  mesma coisa. Sai daqui para que a tecla e o botão nunca divirjam: o `<kbd>`
  *  fica de affordance ao lado do rótulo, em vez de a frase explicar a tecla. */
 export function enterActionLabel(action: CustomerSearchEnterAction): string {
-  if (action.type === "resolve_cpf") return "Cadastrar cliente novo com este CPF";
-  if (action.type === "transfer") return `Cadastrar cliente novo com o ${action.value}`;
-  if (action.type === "create_name_only") return `Cadastrar «${action.name}» só com o nome`;
+  // ⚠️ NENHUM destes três cadastra. Eles levam o que foi digitado para o
+  // formulário e movem o foco; quem faz o POST é o "Cadastrar cliente" do
+  // rodapé, o único lugar do modal que pode dizer "cadastrar" como ato. Dito
+  // "Cadastrar cliente novo com este CPF", o operador via o CPF aparecer no
+  // formulário, concluía que tinha cadastrado, fechava o modal — e nada era
+  // salvo. O rótulo diz o gesto que ele faz: preencher.
+  if (action.type === "resolve_cpf") return "Usar este CPF no cadastro novo";
+  if (action.type === "transfer") return `Usar o ${action.value} no cadastro novo`;
+  if (action.type === "create_name_only") return `Começar um cadastro com «${action.name}»`;
   return "";
 }
 

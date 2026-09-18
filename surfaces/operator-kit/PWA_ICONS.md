@@ -13,7 +13,7 @@ Os ícones instaláveis usam fundo de cor, símbolo centralizado e desenho creme
 o convite de instalação e o gate `tools/pwa-gate/check.mjs`. **Esta tabela é o
 espelho legível do arquivo, não a fonte** — mude o JSON e rode `npm run pwa:assets`.
 
-Antes, os mesmos três dados estavam escritos em seis lugares, e derivaram: a Central
+Antes, os mesmos três dados estavam escritos em seis lugares, e derivaram: o Shopman Apps
 tinha ícone ardósia (`#34373B`) e barra de título vinho (`#7C3A40`); cinco apps tinham
 barra branca; o Gestor se chamava "Gestor" na janela e "Gestor de Pedidos" no
 launcher; a Cozinha era "Cozinha" no rail e "KDS" no título.
@@ -21,7 +21,7 @@ launcher; a Cozinha era "Cozinha" no rail e "KDS" no título.
 | Superfície | Chave | Símbolo | Cor (ícone **e** barra de título) |
 | --- | --- | --- | --- |
 | Storefront | — (fora do kit) | `lucide:store` | `#6D1F32` |
-| Central | `hub` | `lucide:layout-grid` | `#34373B` |
+| Shopman Apps | `hub` | `lucide:layout-grid` | `#34373B` |
 | PDV | `pos` | `lucide:shopping-basket` | `#A95032` |
 | Cozinha | `kds` | `lucide:chef-hat` | `#2E7168` |
 | Gestor de pedidos | `orders` | `lucide:square-kanban` | `#8B2F4D` |
@@ -44,7 +44,7 @@ janelas iguais. O `background_color` é outra coisa — a tela de abertura — e
 
 O app instalado se chama `"<casa> · <rótulo>"` (a casa é `Shop.short_name`, lida do
 Django em runtime). O rótulo da tabela acima é o MESMO na barra de título, no
-`short_name`, no rail, no gate de login, no tile da Central
+`short_name`, no rail, no gate de login, no tile do Shopman Apps
 (`shopman/backstage/projections/hub.py`) e no menu do Admin. Quem impede os dois lados
 de divergirem é `shopman/backstage/tests/test_hub_projection_identity.py` — o Django
 não lê o JSON em runtime, porque o deploy do backend não empacota `surfaces/`.
@@ -88,7 +88,7 @@ com a arte atual fazia o app aparecer ~24% maior (512/412) que os vizinhos.
 PDV, e `pwaManifest*.test.ts` exigem o `maskable` também para o Mac.
 
 Como o PNG `any` tem cantos transparentes, quem o exibe dentro de um quadrado
-(rail, tile da Central) só pinta o fundo quando mostra o Lucide de fallback — senão
+(rail, tile do Shopman Apps) só pinta o fundo quando mostra o Lucide de fallback — senão
 o fundo vira uma moldura clara nos quatro cantos.
 
 ## Favicon da aba
@@ -129,7 +129,7 @@ identidade. Era o caminho `?v=` que envelhecia num app só.
 | Lugar | Fonte | Fallback |
 | --- | --- | --- |
 | Manifesto / launcher do SO | `operatorAppIcons()` (`appIdentity.ts`); Storefront: `?v=6` em `server/utils/pwaManifest.ts` e `nuxt.config.ts` | — |
-| Central de Apps (tile) | `<origem do tile>` + `operatorShortcutIconSrc()` (`tileIconUrl`, hub-nuxt) | Lucide de `fallbackIcon`, vindo do Django (`backstage/projections/hub.py`) |
+| Shopman Apps (tile) | `<origem do tile>` + `operatorShortcutIconSrc()` (`tileIconUrl`, hub-nuxt) | Lucide de `fallbackIcon`, vindo do Django (`backstage/projections/hub.py`) |
 | Rail de cada app (quadrado de identidade) | `identity.iconSrc` no `<OperatorRail>` (sem prop) | Lucide de `identity.fallbackIcon` |
 | Gate de login | `identity.iconSrc` no `<OperatorLogin>` (sem prop) | Lucide de `identity.fallbackIcon` |
 | Convite de instalação | título `"Instale {artigo} {rótulo}"` + a frase `install` do app | — |
@@ -141,4 +141,4 @@ apagar os demais. Por isso os nomes Lucide de fallback seguem a tabela acima.
 `@iconify-json/lucide`; o fallback fica em `lucide:croissant`.
 
 Os PNGs de `/pwa/` saem pelo handler estático do Nitro, sem `Cross-Origin-Resource-Policy`;
-é isso que permite à Central embutir o ícone de outra origem (`pdv.`, `kds.`…).
+é isso que permite ao Shopman Apps embutir o ícone de outra origem (`pdv.`, `kds.`…).

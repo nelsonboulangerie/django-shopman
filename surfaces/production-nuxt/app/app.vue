@@ -51,7 +51,7 @@ async function goToRecipes() {
         class="sticky top-0 flex h-screen shrink-0 print:hidden"
       >
         <OperatorRail
-          :central-url="hubUrl"
+          :hub-url="hubUrl"
           :operator-name="operator?.name"
           @lock="lock"
         >

@@ -81,30 +81,37 @@ projeção pública de Loja; nome, nome curto, descrição e cores não devem se
 duplicados em componentes. Se o Django estiver indisponível, o builder usa o
 fallback da Nelson gravado em `server/utils/pwaManifest.ts`.
 
-O ícone instalável usa o pictograma `store` do Lucide centralizado no campo
-bordeaux `#6D1F32`, com desenho creme `#FCF7EE`. Os SVGs de marca continuam
-como fonte do favicon, do logotipo e dos splash screens. Para regenerar favicon,
+O ícone instalável é o selo da marca: monograma marrom `#aa6a2b` sobre o disco
+amarelo `#ffcd40`. Ele tem duas versões oficiais em `brand/`, e o formato do
+ícone decide qual entra — `nelson-mark.svg`, com fundo transparente fora do
+círculo, onde há alfa (`purpose: any`, favicon, `monochrome`); e
+`nelson-mark-bg.svg`, quadrado amarelo em degradê de ponta a ponta, onde o
+formato exige opacidade (`maskable` e `apple-touch-icon`). Os mesmos SVGs são a
+fonte do favicon, do logotipo e dos splash screens. Para regenerar favicon,
 ícones, maskable, monochrome, apple-touch-icon e todos os splash screens iOS:
 
 ```bash
 npm run pwa:assets
 ```
 
-Revise visualmente `public/pwa/maskable-512x512.png` depois de qualquer troca do
-pictograma: todo o símbolo precisa continuar dentro da zona segura central. A
-saída é versionada; o comando deve ser executado e o diff conferido antes do
-commit.
+Revise visualmente `public/pwa/maskable-512x512.png` depois de qualquer troca da
+arte. A saída é versionada; o comando deve ser executado e o diff conferido antes
+do commit. O anel externo do selo chega a 0,452 do lado no `maskable`, fora do
+círculo de 40% que um launcher Android pode recortar — é propriedade da arte de
+fundo, e o que fica sob risco de corte é a borda fina do anel, nunca o monograma.
+Encolher isso é decisão de arte, não do gerador.
 
-Os ícones `any` usam fundo bordeaux em retângulo arredondado e o símbolo
-centralizado, com a mesma forma da família de operador. O manifesto é o mesmo para
-todo navegador e sempre publica o `maskable`: o Chrome no macOS monta o ícone do Dock
-a partir dele, recortado na grade do macOS; sem ele, usava o `any` de ponta a ponta e
-o app ficava ~24% maior que os vizinhos (ver `operator-kit/PWA_ICONS.md`). A resposta
-usa `private, no-store`, porque nome e cores vêm da loja. O link versionado do
-manifesto evita reutilizar a resposta anterior; `id`, `scope` e `start_url` não mudam.
-O ícone Apple usa a mesma composição; o adaptativo Android reduz o símbolo para
-preservar a zona segura contra recortes do launcher. Ícones já instalados
-precisam receber a atualização do navegador; validar também uma instalação nova.
+Os ícones `any` são o selo solto, com canto transparente: desktop (Windows, macOS,
+Linux) mostra o `any` sem máscara, e a marca da loja é redonda por desenho — não o
+retângulo arredondado da família de operador. O manifesto é o mesmo para todo
+navegador e sempre publica o `maskable`: o Chrome no macOS monta o ícone do Dock a
+partir dele, recortado na grade do macOS; sem ele, usava o `any` de ponta a ponta e
+o app ficava ~24% maior que os vizinhos (ver `operator-kit/PWA_ICONS.md`). Por isso
+`maskable` e `apple-touch-icon` seguem quadrados opacos, com a mesma forma da
+família de operador. A resposta usa `private, no-store`, porque nome e cores vêm da
+loja. O link versionado do manifesto evita reutilizar a resposta anterior; `id`,
+`scope` e `start_url` não mudam. Ícones já instalados precisam receber a
+atualização do navegador; validar também uma instalação nova.
 
 O gate completo da fase parte da raiz do repositório:
 

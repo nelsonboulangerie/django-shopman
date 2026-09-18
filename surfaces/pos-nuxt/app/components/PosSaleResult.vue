@@ -20,6 +20,7 @@ import {
   type PixPollStatus,
   type PosSaleResultSnapshot,
   saleResultTitle,
+  saleResultTone,
 } from "~/presentation/saleResult";
 
 const props = defineProps<{
@@ -49,8 +50,10 @@ const emit = defineEmits<{
 const readback = computed(() => orderReadback(props.result));
 const title = computed(() => props.result.salesMode === "order"
   ? paymentFailed(props.result.payment) ? "Encomenda registrada, cobrança não criada" : "Encomenda registrada"
-  : saleResultTitle(props.result.receipt.customerName, props.result.payment));
+  : saleResultTitle(props.result.receipt.customerName, props.result.payment, props.pixStatus));
 const chargeFailed = computed(() => paymentFailed(props.result.payment));
+// O selo tem TRÊS estados, e só um deles é verde (ver `saleResultTone`).
+const tone = computed(() => saleResultTone(props.result.payment, props.pixStatus));
 const changeDisplay = computed(() => toChangeDisplay(props.result.changeQ));
 // COBRANÇA NA ENTREGA/RETIRADA: o troco ainda não saiu da gaveta — é o que o
 // entregador vai separar. Linha discreta, sem herói e sem segurar a tela.
@@ -112,17 +115,24 @@ function onNewSale() {
     @pointerdown.capture="cancelCountdown"
   >
     <!-- Confirmação + identidade do pedido. ⚠️ O selo verde é uma AFIRMAÇÃO
-         sobre o dinheiro: só aparece quando houve cobrança. Com o gateway
+         sobre o dinheiro: só aparece quando a cobrança ENTROU. Com o gateway
          recusando, o mesmo check dizia "concluída" numa venda que ninguém
-         cobrou. -->
+         cobrou; com o Pix pendente, dizia o mesmo sobre dinheiro que ainda não
+         tinha chegado. Agora são três estados, e dois deles não são verdes. -->
     <div class="grid justify-items-center gap-2">
       <div
         class="grid size-12 place-items-center rounded-full border"
-        :class="chargeFailed
+        :class="tone === 'failed'
           ? 'border-destructive/40 bg-destructive/10 text-destructive'
-          : 'border-success/40 bg-success/10 text-success'"
+          : tone === 'awaiting'
+            ? 'border-info/40 bg-info/10 text-info'
+            : 'border-success/40 bg-success/10 text-success'"
       >
-        <Icon :name="chargeFailed ? 'lucide:alert-triangle' : 'lucide:check'" class="size-6" />
+        <Icon
+          :name="tone === 'failed' ? 'lucide:alert-triangle' : tone === 'awaiting' ? 'lucide:clock' : 'lucide:check'"
+          class="size-6"
+          :class="tone === 'awaiting' ? 'motion-safe:animate-pulse' : ''"
+        />
       </div>
       <h2 class="text-3xl font-semibold tracking-tight">{{ title }}</h2>
       <p class="text-sm text-muted-foreground">

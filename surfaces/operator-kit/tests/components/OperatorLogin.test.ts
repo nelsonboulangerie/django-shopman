@@ -134,7 +134,7 @@ describe("OperatorLogin", () => {
     );
   });
 
-  // Identidade do app no gate: o PNG da família PWA (o mesmo do rail e da Central),
+  // Identidade do app no gate: o PNG da família PWA (o mesmo do rail e do Shopman Apps),
   // com fallback para o Lucide se a prop faltar ou a imagem falhar.
   it("com iconSrc mostra o PNG do app; a imagem que falha cai no Lucide", async () => {
     const wrapper = await mountLogin({

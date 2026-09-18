@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Central — Web Push", () => {
+test.describe("Shopman Apps — Web Push", () => {
   test("o clique da notificação abre a action_url assinada pelo servidor", async ({ page }) => {
     await page.goto("/");
 

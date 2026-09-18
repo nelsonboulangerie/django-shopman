@@ -30,7 +30,7 @@
    POS receipt print (spec §D3 — kiosk window.print)
 
    GEOMETRIA DO ROLO — dono único da largura impressa, e o ponto de configuração.
-   O default é o aparelho da Nelson: Epson TM-T20, rolo de 80mm (confirmado com o
+   O default é o dispositivo da Nelson: Epson TM-T20, rolo de 80mm (confirmado com o
    Pablo em 2026-08-12). A margem horizontal não é gosto: a TM-T20 imprime 576
    dots a 203dpi = ~72mm, ou seja 4mm de cada lado são papel que o cabeçote não
    alcança. Pedir mais largura que isso não ganha espaço — só joga a coluna da
@@ -56,7 +56,7 @@
       tests/receiptPrint.test.ts.
 
    Corte e avanço do papel no fim do recibo são configuração do driver, a
-   confirmar no aparelho.
+   confirmar no dispositivo.
    ─────────────────────────────────────────────────────────────────────────── */
 :root {
   --pos-roll-width: 80mm;
