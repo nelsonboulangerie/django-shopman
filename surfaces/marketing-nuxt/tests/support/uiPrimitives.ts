@@ -9,6 +9,7 @@ import UiCheckbox from "../../../operator-kit/app/components/UiCheckbox.vue";
 import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
 import UiSelect from "../../../operator-kit/app/components/UiSelect.vue";
+import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
 
 function invoke(listener: unknown, event: Event) {
   if (Array.isArray(listener)) {
@@ -95,5 +96,6 @@ config.global.components = {
   UiRadio,
   UiRadioGroup,
   UiSelect,
+  UiSwitch,
   UiTextarea,
 };
