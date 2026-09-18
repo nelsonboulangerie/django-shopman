@@ -344,15 +344,28 @@ Contrato:
 - **O fim só conta ACIMA do obstáculo.** O observador encolhe a área pelo que flutua na
   base (`data-focus-obstruction`, o mesmo fato que o próximo foco lê). Sem isso a dica
   some com conteúdo ainda escondido atrás do card.
-- A dica flutua logo acima do obstáculo, com degradê por baixo: sem ele a pílula boia
-  sobre um texto qualquer e vira artefato.
-- Decorativa: `aria-hidden`, sem captura de clique. **O que a impede de se ler como
-  botão é a translucidez, não o tamanho**: fundo sólido com sombra vira chip clicável
-  em qualquer medida. Com o fundo a 33% e sem sombra, o que sobra é o chevron, e o
-  círculo só o separa do conteúdo — por isso ela pôde crescer de 28 para 48, encostando
-  no alvo de toque sem se ler como controle. Sobre o degradê ela rende pouco (fundo da mesma
-  cor); trabalha nas bordas e onde há contraste atrás, que é o caso do operador.
-- `prefers-reduced-motion`: a dica fica **parada**, não some.
+- **O degradê ENCOSTA no obstáculo; quem recua é o chevron.** A base da dica se apoia
+  no topo do que flutua, e a folga de `HINT_GAP` (12px) mora no recuo interno do
+  desenho. Enquanto ela morava no posicionamento, a lavagem parava 12px acima do card
+  e sobrava uma faixa de conteúdo cru entre os dois — a dica prometia dissolver e
+  largava o texto legível justo na borda. A pílula não se mexeu; só o degradê desceu.
+- **O chevron LEVA ATÉ O FIM.** Era decorativo e inerte; virou botão por decisão do
+  Pablo, porque já parecia tocável e não era — quem tentava não recebia nada, que é
+  pior do que não convidar. O destino é o próprio sentinela, alinhado pela borda de
+  baixo, e é o `scroll-margin-bottom` dele (igual ao obstáculo) que faz o fim parar
+  ACIMA do card em vez de atrás — o mesmo truque do `scroll-margin-top` do próximo
+  foco, do outro lado da tela.
+- **Só o chevron captura o toque.** A faixa teleportada cobre a largura inteira da
+  tela: `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
+  `aria-hidden` — ele é desenho.
+- **O que a impede de se ler como botão gordo é a translucidez, não o tamanho**: fundo
+  sólido com sombra vira chip pesado em qualquer medida. Com o fundo a 33% e sem
+  sombra, o que sobra é o chevron, e o círculo só o separa do conteúdo — por isso ela
+  pôde crescer de 28 para 48, que é o alvo de toque. Sobre o degradê ela rende pouco
+  (fundo da mesma cor); trabalha nas bordas e onde há contraste atrás, que é o caso do
+  operador.
+- `prefers-reduced-motion`: a dica fica **parada**, não some — e o toque salta para o
+  fim de uma vez, sem deslizar.
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
 tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como
