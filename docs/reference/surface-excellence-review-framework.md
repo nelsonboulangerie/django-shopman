@@ -212,7 +212,9 @@ Perguntas:
 
 Perguntas:
 
-- Textos são curtos, inequívocos e próximos da linguagem operacional?
+- Textos são inequívocos e curtos, **nessa ordem**, e próximos da linguagem operacional?
+  (a régua está em [`omotenashi-copy.md`](omotenashi-copy.md): primeiro inequívoco, depois
+  curto — e curto só até onde não custe exatidão)
 - A tela evita explicar o óbvio e destaca exceções reais?
 - Números, moedas, status e ações têm formato consistente?
 
