@@ -232,7 +232,8 @@ function close() {
   editingPk.value = null;
 }
 
-/** Disparar agora: a campanha manual, sem esperar evento da padaria. */
+/** Abre "Definir público" — a campanha manual, sem esperar evento da padaria. Daqui
+ *  nada é disparado: o painel cria um anúncio e leva à revisão. */
 function openFire(rule: Campaign) {
   cancelFireCommand();
   fireError.value = "";
@@ -616,14 +617,19 @@ useHead({ title: "Campanhas" });
           >
             Automática
           </span>
-          <!-- Disparar não espera o evento: fica ao lado da campanha, mas só ativo
-               quando ela está ligada — disparar campanha desligada é engano. -->
+          <!-- ⚠️ Este botão NÃO dispara: ele abre "Definir público", e é o painel que
+               cria um anúncio para a revisão. Por isso o rótulo visível e o nome
+               acessível falam em PREPARAR — a mesma palavra que a razão do botão
+               desabilitado já usava, dois centímetros abaixo.
+               E o rótulo é o mesmo nos dois estados: rótulo que vira adjetivo descreve
+               o botão em vez do que ele faz, e manda o gestor procurar na linha o que
+               está indisponível. Quem explica o bloqueio é a frase de baixo. -->
           <UiButton
             type="button"
             :disabled="!fireAction(rule)?.enabled"
             :aria-label="
               fireAction(rule)?.enabled
-                ? `Disparar a campanha ${rule.name} agora`
+                ? `Preparar o disparo da campanha ${rule.name}`
                 : `${fireState(rule).reason} Campanha ${rule.name}`
             "
             variant="outline"
@@ -631,7 +637,7 @@ useHead({ title: "Campanhas" });
             @click="openFire(rule)"
           >
             <Icon name="lucide:send" class="size-3.5" />
-            {{ fireAction(rule)?.enabled ? "Disparar" : "Indisponível" }}
+            Preparar disparo
           </UiButton>
           <Icon
             name="lucide:chevron-right"

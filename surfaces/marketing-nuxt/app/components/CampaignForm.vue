@@ -817,23 +817,20 @@ function submit() {
           <p class="text-xs text-muted-foreground">
             {{ onceResolution.detail }}
           </p>
-          <div class="mt-1 flex flex-wrap gap-3 text-xs">
-            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
-            <label
+          <UiRadioGroup
+            v-model="onceFold"
+            label="Qual das duas ocorrências"
+            orientation="horizontal"
+            class="mt-1 text-xs"
+          >
+            <UiRadio
               v-for="(candidate, index) in onceResolution.candidates"
               :key="candidate.instant"
-              class="flex items-center gap-1.5"
-            >
-              <input
-                v-model="onceFold"
-                type="radio"
-                :value="index === 0 ? 'earlier' : 'later'"
-              />
-              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{
-                candidate.offset
-              }})
-            </label>
-          </div>
+              :value="index === 0 ? 'earlier' : 'later'"
+              variant="inline"
+              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
+            />
+          </UiRadioGroup>
         </fieldset>
         <p
           v-if="
@@ -950,9 +947,17 @@ function submit() {
         Entregar por
       </legend>
       <div class="flex flex-wrap gap-1.5">
-        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos.
-             ⚠️ A pílula já conta o estado da plataforma ("não publica", "não verificada"):
-             antes, as quatro apareciam iguais e a recusa só vinha depois de aprovar. -->
+        <!-- ⚠️ Isto NÃO vira `UiCheckbox`, e a diferença não é de gosto: o primitivo
+             desenha um quadrado com rótulo ao lado, e o que está aqui é uma pílula —
+             a caixa inteira acende, e ela ainda carrega o estado da plataforma
+             ("não publica", "não verificada"). A peça que falta no kit é um
+             `UiToggleChip` (escolha múltipla desenhada como chip), que hoje não
+             existe; enquanto não existir, a semântica vem do checkbox `sr-only` e o
+             alvo vem da pílula. Os chips de etiqueta e de segmento mais abaixo são o
+             mesmo caso, escritos com `aria-pressed` em vez de checkbox — três cópias
+             do mesmo vazio, e o motivo de o primitivo valer a pena.
+             ⚠️ A pílula conta o estado ANTES do clique: as quatro apareciam iguais e
+             a recusa só vinha depois de aprovar. -->
         <label
           v-for="option in platformOptions"
           :key="option.value"
@@ -1010,65 +1015,48 @@ function submit() {
         Avisar quem
       </legend>
       <div class="space-y-2.5">
-        <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="favorites"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          Quem favoritou o produto
-        </label>
+        <UiCheckbox v-model="favorites" label="Quem favoritou o produto" />
         <!-- ⚠️ O rótulo dizia "me avise quando sair do forno" e a regra pega TODA a
              fila de avisos do produto — inclusive quem espera reposição de um item de
              prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
              o gestor não tem como (nem por que) separar os dois aqui. -->
-        <label class="flex items-start gap-2 text-sm">
-          <input
-            v-model="alerts"
-            type="checkbox"
-            class="mt-0.5 size-4 rounded border-border"
-          />
-          <span>
-            Quem pediu "me avise" deste produto
-            <span class="block text-xs text-muted-foreground">
-              A fila do sino da loja: fornada para pão, reposição para o resto.
-            </span>
-          </span>
-        </label>
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label class="flex items-center gap-2">
+        <UiCheckbox
+          v-model="alerts"
+          label="Quem pediu &quot;me avise&quot; deste produto"
+          description="A fila do sino da loja: fornada para pão, reposição para o resto."
+        />
+        <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
+             soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de
+             baixo e o campo ficava sem dizer de quê era o número. Quebrar é esperado
+             num celular; quebrar ENTRE o número e a unidade é o defeito. -->
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UiCheckbox v-model="boughtOn" label="Quem comprou nos últimos" />
+          <span class="inline-flex items-center gap-2">
             <input
-              v-model="boughtOn"
-              type="checkbox"
-              class="size-4 rounded border-border"
+              v-model.number="boughtDays"
+              type="number"
+              min="1"
+              max="365"
+              :disabled="!boughtOn"
+              aria-label="Dias de recompra"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
             />
-            Quem comprou nos últimos
-          </label>
-          <input
-            v-model.number="boughtDays"
-            type="number"
-            min="1"
-            max="365"
-            :disabled="!boughtOn"
-            aria-label="Dias de recompra"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
-          />
-          <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
+            <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
+          </span>
         </div>
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <label for="rule-vip">VIPs recebem</label>
-          <input
-            id="rule-vip"
-            v-model.number="vipFirstMinutes"
-            type="number"
-            min="0"
-            max="120"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-          />
-          <span>minutos antes</span>
+          <span class="inline-flex items-center gap-2">
+            <input
+              id="rule-vip"
+              v-model.number="vipFirstMinutes"
+              type="number"
+              min="0"
+              max="120"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span>minutos antes</span>
+          </span>
           <span class="text-xs text-muted-foreground"
             >(0 = todo mundo junto)</span
           >
@@ -1169,25 +1157,15 @@ function submit() {
           </div>
         </fieldset>
 
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="birthdayToday"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          Aniversariantes de hoje
-        </label>
+        <UiCheckbox v-model="birthdayToday" label="Aniversariantes de hoje" />
 
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label class="flex items-center gap-2">
-            <input
-              v-model="churnRiskOn"
-              type="checkbox"
-              class="size-4 rounded border-border"
-            />
-            Risco de não voltar a partir de
-          </label>
+        <!-- Este número não tem unidade (é uma fração de 0 a 1), então não há par
+             para manter junto: quebrar aqui não deixa nada órfão. -->
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UiCheckbox
+            v-model="churnRiskOn"
+            label="Risco de não voltar a partir de"
+          />
           <input
             v-model.number="churnRiskMin"
             type="number"
@@ -1200,20 +1178,21 @@ function submit() {
           />
         </div>
 
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <label for="rule-preferred-window"
             >Respeitar horário preferido em uma janela de</label
           >
-          <input
-            id="rule-preferred-window"
-            v-model.number="preferredHourWindowHours"
-            type="number"
-            min="0"
-            max="12"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-          />
-          <span>horas</span>
+          <span class="inline-flex items-center gap-2">
+            <input
+              id="rule-preferred-window"
+              v-model.number="preferredHourWindowHours"
+              type="number"
+              min="0"
+              max="12"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span>horas</span>
+          </span>
           <span class="text-xs text-muted-foreground"
             >(0 = não segmentar por horário)</span
           >
@@ -1242,41 +1221,31 @@ function submit() {
       contatos só é usada quando o WhatsApp está selecionado.
     </p>
 
-    <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
     <div class="space-y-2.5">
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="requiresApproval"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        Revisar antes de publicar
-      </label>
+      <UiCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
+      <!-- ⚠️ "sai sozinho" não dizia o ato, e o ato depende do destino: mensagem se
+           envia, postagem se publica, e o genérico dos dois é disparar. Aqui a
+           campanha pode ter os dois, então o genérico é o verbo honesto. -->
       <p v-if="!requiresApproval" class="pl-6 text-xs text-warning">
-        Sem revisão, o anúncio sai sozinho assim que o evento acontecer.
+        Sem revisão, o anúncio é disparado assim que o evento acontecer, sem
+        passar por você.
       </p>
-      <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-      <div class="flex flex-wrap items-center gap-2 text-sm">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <label for="rule-expiry">O anúncio aguarda revisão por</label>
-        <input
-          id="rule-expiry"
-          v-model.number="expiresAfterMinutes"
-          type="number"
-          min="0"
-          max="1440"
-          class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-        />
-        <span>minutos</span>
+        <span class="inline-flex items-center gap-2">
+          <input
+            id="rule-expiry"
+            v-model.number="expiresAfterMinutes"
+            type="number"
+            min="0"
+            max="1440"
+            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+          />
+          <span>minutos</span>
+        </span>
         <span class="text-xs text-muted-foreground">(0 = sem prazo)</span>
       </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="isActive"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        Campanha ligada
-      </label>
+      <UiCheckbox v-model="isActive" label="Campanha ligada" />
     </div>
 
     <div class="flex items-center gap-2 pt-1">
