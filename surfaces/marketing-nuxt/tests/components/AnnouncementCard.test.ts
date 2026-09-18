@@ -176,7 +176,7 @@ describe("AnnouncementCard", () => {
       "WhatsApp · limitada",
     );
     expect(text).toContain(
-      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
     );
     expect(text).not.toContain("um por vez");
 
@@ -274,7 +274,12 @@ describe("AnnouncementCard", () => {
   it("fora do silêncio, o envio abre em Imediato e nada recomenda esperar", () => {
     const wrapper = mountCard(makeAnnouncement());
 
-    expect(wrapper.text()).toContain("Aprovar sela esta versão");
+    // ⚠️ O rodapé mandava "Aprovar" num card que não tem botão "Aprovar" — e "selar" é
+    // palavra de ADR, não de padaria. Ele descreve o que a próxima tela mostra.
+    expect(wrapper.text()).toContain(
+      "O texto que você conferir na próxima tela é o que sai",
+    );
+    expect(wrapper.text()).not.toMatch(/\bAprovar\b|\bsela\b/);
     expect(wrapper.get("[data-testid=delivery-now]").attributes("aria-pressed")).toBe("true");
     expect(
       wrapper.get("[data-testid=delivery-scheduled]").attributes("aria-pressed"),
