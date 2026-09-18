@@ -668,7 +668,7 @@ function askToReject() {
         <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
         <fieldset>
           <legend class="mb-1 text-xs font-medium text-muted-foreground">
-            Disparado por
+            Disparado via
           </legend>
           <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
                Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas

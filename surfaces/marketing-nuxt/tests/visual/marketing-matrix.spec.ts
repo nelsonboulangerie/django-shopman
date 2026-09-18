@@ -217,7 +217,7 @@ test.describe("painel", () => {
         await waitForFaithfulPreview(page);
       if (scenario === "board-pending") {
         await expect(
-          page.getByRole("group", { name: "Disparado por" }),
+          page.getByRole("group", { name: "Disparado via" }),
         ).toBeVisible();
         // O "quando" é campo (Imediato | Agendado) e a decisão é binária: o botão que
         // leva à caixa se chama "Continuar", porque daqui nada dispara.
