@@ -6,6 +6,7 @@
 > isto é um WP de exploração com fases, não o plano de um domínio.
 
 **Status:** exploração · nada implementado · nenhuma linha de produto muda neste PR
+**Decisões do dono:** as cinco de 18/09/2026 estão tomadas e refletidas — ver §10.
 **Data:** 18/09/2026
 **Medições:** feitas no `HEAD` `6eac85499` (origin/main de 18/09/2026). Número aqui é
 número medido; quando envelhecer, remeça — não deduza.
@@ -29,6 +30,11 @@ E a mais madura das cinco é **a que ninguém lista**: o menuboard do Django, qu
 única com modelo de confiança de dispositivo, SSE travado, pintura no servidor que
 falha aberta e rotação configurável por operador. Ela não é candidata a entrar na
 seção; ela é a **implementação de referência** que as outras três deveriam imitar.
+
+**As cinco decisões do dono já estão tomadas** (18/09) e incorporadas: a seção se chama
+**"Telas"**; **nenhum 301** — zero resíduo, sem legado; o **letreiro ganha SSE** e sobe de
+prioridade; a tabela nova é **`Screen`, em `shopman/shop/models/`**; e a confiança de
+dispositivo de tela é **eterna**, o que move o peso para a revogação (§10).
 
 As três respostas, em uma linha cada:
 
@@ -340,7 +346,8 @@ apenas o estende.
 | **`board`** | **Sufixo de read-model no backend**, e nada mais. Sai por inteiro do vocabulário de superfície. | É a maioria dos usos (6+ nomes de projection/view) e é palavra de *backend*, não de tela. Cortar aqui é o corte mais barato: **nenhum rename de backend**. |
 | **painel** | **Dashboard** — a aba inicial de um app de operador. Nunca parede. | Marketing e Compras já o usam assim; só a Produção diverge, e o rail dela **já diz "Letreiro"**. A casa já convergiu; a documentação é que ficou para trás. |
 | **letreiro** | **A tela de fornadas**, o Solari. | Já é o rótulo vivo no rail da Produção. O `CLAUDE.md` e o `docs/status.md` ainda dizem "kiosk Solari" — `Solari` é **estilo de renderização**, não nome de superfície. |
-| **`display`** | **Política comercial** (`commerce_policy=display`) e **confiança de dispositivo** (`subject_type="display"`). Nunca rota, nunca nome de tela. | A ADR-018 já o consagrou como gênero. Rota é espécie. |
+| **`display`** | **Política comercial** (`commerce_policy=display`) e **confiança de dispositivo** (`subject_type="display"`). Nunca rota, nunca nome de tela. | A ADR-018 já o consagrou como gênero. Rota é espécie. Nos dois lugares do Core ele é **atributo**, não coisa — ver §10.2. |
+| **`Screen`** | **A coisa**: o painel físico pareado, na parede. É a tabela da §9.5. | Não colide com `display`: `display` é papel, `Screen` é objeto. *Um `Screen` é um dispositivo confiável de sujeito `display`, ligado a um `Channel` com `commerce_policy=display`.* Há camada, não colisão (§10.2). |
 | **`menuboard`** | **Exceção nomeada e mantida.** A rota do cardápio na parede. | É palavra do ramo, é rota estabelecida, e o §10 manda a rota nomear o artefato. Contém "board" e sobrevive **porque é um nome próprio**, não o substantivo `board`. |
 | **kiosk** | **Modo de interação**: tela cheia, sem senha, sem chrome. | Não é a categoria (isso é `screen`) e não é a estação que age (isso é `station`/`Terminal`). |
 | **feed** | **Saída para robô** — o XML que Google e Meta buscam. Nunca uma TV. | Fecha a colisão gênero/espécie: o gênero passa a ser *canal de exibição*; as espécies são `menuboard` e `feed`. |
@@ -362,8 +369,10 @@ Este WP **não renomeia nada**. A tabela é a proposta que a Fase 2 executa.
 | docstring de `views/menuboard.py:2`: *"a superfície DISPLAY **pública**"* | "superfície interna" | **está errada hoje** — o parágrafo seguinte já diz "interna" |
 | docstring de `menuboard_access.py`: *"No dia em que o renderizador passar a ler esse ponteiro"* | prosa de fato consumado | **está errada hoje** — `prices_from` já é lido (`test_board_shows_the_price_of_the_channel_it_points_at` passa) |
 
-⚠️ **Dois renames de rota tocam bookmark de TV na parede** (`/board`, `/display`). É
-decisão do dono — §9, item 3.
+⛔ **Zero resíduo, decidido.** A versão anterior ressalvava que `/board` e `/display`
+tocam bookmark de TV na parede e recomendava 301. **O dono revogou** (§10, decisão 2):
+*"o sistema é novo e não devemos legado a nada ainda"*. A rota antiga some — sem alias,
+sem redirect, sem passo de compatibilidade.
 
 ### 5.4 A regra de URL que não estava escrita
 
@@ -709,11 +718,13 @@ TV recebe 403 e **volta ao estado não pareado** — mostrando um código novo. 
 **não escurece a parede**; devolve a tela ao estado "esperando que me digam o que
 mostrar". É o comportamento certo, e cai de graça do desenho.
 
-**A TV que dorme 30 dias.** ⚠️ `DEVICE_TRUST_TTL_DAYS = 30`, e `check()` **não renova** —
-não há janela deslizante. Uma TV pareada hoje **cai em 30 dias** e alguém sobe na escada.
-É gap real e medido. Conserto: renovação deslizante no `check` para o sujeito `display`
-(o `last_used_at` já existe), ou TTL próprio do sujeito. Item da Fase 3, e **não é
-opcional** — sem ele o pareamento promete o que não cumpre.
+**A TV que dormiria em 30 dias — resolvido por decisão.** ⚠️ O gap é real e medido:
+`DEVICE_TRUST_TTL_DAYS = 30` e `check()` **não renova**, então uma TV pareada cairia em
+30 dias e alguém subiria na escada. A versão anterior deste WP propunha janela
+deslizante. **O dono decidiu melhor** (§10, decisão 7): *"Device Trust pode ser eterno."*
+Para o sujeito `display`, a confiança **não expira** — TTL por sujeito, não global
+(`customer` e `station` seguem em 30 dias). O que a eternidade cobra em troca — revogação
+encontrável na seção Telas, e rastro — está na §10.3, e **não é opcional**.
 
 ### 9.5 O preço honesto: uma tabela nova
 
@@ -774,56 +785,200 @@ caminho.
 
 ---
 
-## 10. As decisões que são do dono
+## 10. As decisões do dono — tomadas em 18/09/2026
 
-Publicadas aqui com a recomendação ao lado, como manda a casa.
+Estavam publicadas aqui como recomendação. **Ele decidiu as cinco.** Ficam registradas
+como decisão, com a consequência de cada uma no plano.
 
-**1. O endereço único das telas — e ele virou a decisão mais concreta da lista.**
-Com o pareamento (§9), toda TV da casa passa a digitar **um só endereço, uma vez na
-vida**. O candidato mais curto já é domínio seu: **`boulangerie.com.br/tv`** — 21
-caracteres, contra 46 da URL de menuboard de hoje. O apex nu hoje só faz 301 para
-`www.nelsonboulangerie.com.br`, então é **regra de ingress**, não domínio novo.
-→ **Recomendação: `boulangerie.com.br/tv`.** Empata em tamanho com `tv.boulangerie.com.br`
-e evita subdomínio, certificado e registro novos. **A execução é sua** — ponteiro de
-domínio não se decide no código.
-→ **Recusado explicitamente: encurtador de URL** (§9.2). Ele não resolve trocar o que a
-TV mostra, é dono a mais que quebra em silêncio numa parede que ninguém olha, e como
-redirect não encurta nada de verdade — só embrulha.
+**1. A seção se chama "Telas".** Sem qualificador — não "Telas de parede", não "Telas e
+painéis". A palavra sozinha. ✅ **Decidido.** Consequência: é o rótulo da seção no Hub
+(§7.3) e o nome da categoria em toda a casa (§5.2). O título deste WP mantém "de parede"
+por ser nome de arquivo, não rótulo de tela.
 
-**1b. Enquanto o `/tv` não existir**, o pareamento funciona em qualquer host atual (o
-endereço só precisa ser fixo). A URL curta é conforto, não pré-requisito — **a Fase 3
-não fica bloqueada nesta decisão.**
+**2. ⛔ NENHUM 301. A recomendação anterior está REVOGADA.**
+> *"o sistema é novo e não devemos legado a nada ainda!!!"* — o dono, 18/09/2026
 
-**2. `SHOPMAN_MENUBOARD_PUBLIC` continua `false`.** Recomendação: **sim, continua**, e a
-Fase 0 acrescenta um teste que prende o default fechado. A razão é jurídica, não de
-higiene (§2.2).
+A versão anterior recomendava 301 em `/board` e `/display` citando o precedente de kiosk
+do PR #68. **Não vale aqui, e o argumento de bookmark está descartado.** A regra
+pré-go-live do `CLAUDE.md` é zerar o nome antigo — variáveis, strings, comentários,
+docstrings —, e ela vale inteira. As rotas antigas **somem**; nenhum alias, nenhum
+redirect, nenhum passo de compatibilidade. Uma TV com bookmark velho se resolve digitando
+o endereço novo uma vez, e depois do pareamento (§9) ela nem tem mais bookmark de
+conteúdo: tem `/tv`. ✅ **Decidido.**
 
-**3. Renomear `/board` e `/display` mexe em bookmark de TV na parede.** A regra
-pré-go-live é zerar o nome antigo, sem alias. Mas uma TV com bookmark quebrado é uma
-parede preta que ninguém sabe consertar.
-→ **Recomendação: 301, como a casa já fez no PR #68** para as rotas de kiosk
-(`/painel` → `/board` já é exatamente isso). É a exceção que a própria casa já abriu
-para kiosk, e ela se justifica pelo mesmo motivo. **Precisa da sua palavra** porque
-contraria a regra de zero resíduo.
+**3. O endereço único: `boulangerie.com.br/tv`.** Regra de ingress, não domínio novo —
+o apex nu hoje só faz 301 para `www.nelsonboulangerie.com.br`. 21 caracteres contra 46 da
+URL de menuboard de hoje. **Encurtador de URL recusado** (§9.2). A execução do ponteiro é
+dele; o pareamento não fica bloqueado nisso — funciona em qualquer host fixo, e a URL
+curta é conforto.
 
-**4. Escopo da Fase 4 (o letreiro ganhar SSE).** É melhoria real (a ADR-016 o nomeia
-candidato), mas é trabalho de produto, não de reorganização conceitual.
-→ **Recomendação: fica na Fase 4, depois do go-live**, salvo se você quiser antes.
+**4. `SHOPMAN_MENUBOARD_PUBLIC` continua `false`**, com teste que prenda o default
+fechado (Fase 0). A razão é jurídica, não higiene (§2.2). ✅ **Decidido.**
 
-**5. A tabela `Screen` (§9.5).** É a única tabela nova do WP, e ela só existe porque
-você pediu pareamento. Sem pareamento, as telas continuam sendo URL fixa por conteúdo e
-nenhuma tabela nasce.
-→ **Recomendação: aceitar.** É registro de dispositivo, com a forma já consagrada do
-`Terminal` do `cashman`, e sem ela o pareamento não cumpre a promessa de trocar o
-conteúdo sem subir na escada. **Precisa da sua palavra** porque migração em `shop` é
-decisão de escopo, não mecânica de repositório.
+**5. O letreiro ganha SSE — ele quer.** Deixou de ser "melhoria pós-go-live" e virou
+requisito. ✅ **Decidido.** A §11 reposiciona, e a §10.1 diz o que isso passa a exigir.
+
+**6. A tabela nova está aprovada, e chama-se `Screen`, em `shopman/shop/models/`.**
+✅ **Decidido.** A §9.5 já justificava a tabela; a §10.2 responde as duas perguntas dele
+— *onde* ela mora e *`Screen` ou `Display`* — e fecha o de-para inteiro, porque ele foi
+explícito sobre a hora:
+> *"Sei que precisamos arrumar essa zona que ficou de nomenclaturas... A hora é agora."*
+
+**7. Confiança de dispositivo para tela é ETERNA.**
+> *"Device Trust pode ser eterno."* — o dono, 18/09/2026
+
+✅ **Decidido**, e resolve o `DEVICE_TRUST_TTL_DAYS = 30` sem janela deslizante que a §9.4
+achou. A §10.3 escreve o que isso cobra em troca, porque confiança que não morre sozinha
+muda o desenho da revogação.
+
+---
+
+### 10.1 O que o SSE do letreiro passa a exigir, agora que não é opcional
+
+Hoje o letreiro é o único dos quatro sem push: poll adaptativo de 30 s
+(`useProductionForecast`). A ADR-016 já o nomeia candidato. Virando requisito, ele cobra
+quatro coisas, e a terceira é a que costuma ser esquecida:
+
+1. **Canal nomeado + permissão explícita** no `ShopmanChannelManager`, autorizada *up
+   front* na view (Http404 para não-autorizado, para o `EventSource` falhar de vez e cair
+   no fallback) — ADR-016 §3.
+2. **Rota BFF de uma linha** no `production-nuxt`, sobre o `proxyEventStream` que o
+   `operator-kit` já fornece. Transporte existente; nada novo.
+3. ⚠️ **A trava do canal, no modelo do `_gated_eventstream` do menuboard.** O comentário
+   de lá chama a falta dela de *"o vazamento mais sério das quatro rotas"*: sem trava,
+   quem chamar assina o ritmo operacional da loja. O letreiro publica **o que sai do
+   forno e a que horas** — é a mesma classe de informação. A trava não é opcional porque
+   a tela é de parede.
+4. **O poll continua**, em cadência calma (ADR-016 §2). SSE é camada de push sobre o
+   fetch canônico, nunca a fonte da verdade — no evento, refaz o fetch.
+
+**De quem depende:** de ninguém fora da casa. É trabalho de backend (canal + permissão) e
+de superfície (BFF + `EventSource`), ambos com molde pronto. **Sobe da Fase 4 para a
+Fase 3**, junto do pareamento, porque os dois tocam a mesma tela não-pareada: ela precisa
+saber que foi pareada sem recarregar, e o transporte é o mesmo.
+
+---
+
+### 10.2 `Screen` ou `Display`, e onde ela mora — as duas perguntas dele
+
+#### `Screen` é o nome. E a razão não é que "display está ocupado".
+
+A razão é melhor: **os dois nomes descrevem coisas de naturezas diferentes, e mantê-los
+separados torna o sistema mais legível, não menos.**
+
+`display` já é **papel/atributo** em dois lugares do Core, e em nenhum deles é uma coisa:
+
+| Onde | O que é | Natureza |
+|---|---|---|
+| `Channel.CommercePolicy.DISPLAY` (`shop/models/channel.py:37`) | *"somente exibição"* — até onde a interação comercial vai naquele canal | **política** |
+| `TrustedDevice.SubjectType.DISPLAY` (`doorman/.../device_trust.py:70`) | de quê aquele navegador é confiável | **tipo de sujeito** |
+
+`Screen` nomeia a **coisa**: o painel físico, pareado, pendurado na parede, que mostra
+alguma coisa. A composição fica legível numa frase:
+
+> Um **`Screen`** é um dispositivo confiável de sujeito **`display`**, ligado a um
+> **`Channel`** com `commerce_policy=display`.
+
+**Não há colisão — há camada.** Cada palavra responde uma pergunta diferente: *o que é
+isto* (`Screen`), *de que ele é confiável* (`display`), *até onde aquele canal vai*
+(`display`). Renomear `display` para `screen` nos dois lugares do Core seria o erro
+oposto: apagaria a distinção entre política e coisa, e exigiria migração em pacote Core
+para piorar a semântica.
+
+✅ Verificado: **`class Screen` não existe** em lugar nenhum do repositório. O nome está
+livre.
+
+#### Ela mora em `shopman/shop/models/`. E o `doorman` foi descartado com razão de código.
+
+A pergunta era legítima: se o pareamento é identidade, por que não no `doorman`?
+**Porque o `doorman` deliberadamente não conhece ninguém**, e isso está escrito no
+próprio model:
+
+> `subject_id = models.CharField(...)` — *"Sujeito tipado (**sem FK** — mesmo padrão de
+> desacoplamento de sempre)"*, e o sujeito é textual *"porque cliente é identificado por
+> UUID, display por `ref` de canal"*.
+
+O `TrustedDevice` guarda `ref` de `cashman.Terminal` e `ref` de `shop.Channel` **sem
+importar nenhum dos dois**. É o mesmo desacoplamento que faz `Terminal` morar no
+`cashman`, e não no `doorman`, mesmo sendo o sujeito `station`.
+
+`Screen` aponta para um `Channel` (o que ela mostra) **e** é sujeito de confiança de
+dispositivo. Pôr isso no `doorman` obrigaria um pacote de autenticação a conhecer o
+catálogo — quebrando a regra de dependência da casa (cores não se importam entre si).
+**Só o `shop` pode costurar os dois**, porque é o orquestrador e já é dono do `Channel` e
+do menuboard.
+
+**Precedente de forma**, copiado de propósito — `cashman.Terminal`, *"o dispositivo onde
+a gaveta está"*: `ref`, `label`, `channel_ref`, `location_ref`, `is_active`, `metadata`.
+"Dispositivo físico aponta para um `Channel` por ref" **já é padrão aceito**; `Screen`
+não inventa nada, só o aplica na parede.
+
+#### O de-para fechado — cada palavra com um dono
+
+A §5.2 e a §5.3 já traziam o grosso. Isto fecha o que faltava, no Core:
+
+| Hoje | Passa a ser | Natureza da mudança |
+|---|---|---|
+| `SubjectType.DISPLAY = "display", _("quadro")` | `_("tela")` — **o valor gravado `"display"` NÃO muda** | rótulo pt-BR |
+| docstrings de `device_trust.py` que dizem *"um quadro de menu na parede"*, *"cliente, quadro ou estação"* | "tela" | prosa |
+| `help_text` do `subject_id`: *"ou ref do canal de exibição"* | *"ou ref da tela"* — ⚠️ **muda de fato** com o pareamento (§9.5): o sujeito passa a ser a tela, não o conteúdo | semântica |
+| `Channel.CommercePolicy.DISPLAY` | **inalterado** | — |
+| `board` como palavra de superfície | sai; fica só como sufixo de read-model no backend | §5.2 |
+
+⚠️ **Sobre a migração do rótulo.** Trocar o label de um `TextChoices` gera `AlterField`.
+Dois cuidados que a casa já pagou para aprender:
+
+- **Regerar, não editar.** A migração `0004_trusted_device_station.py:28` carrega o par
+  `("display", "quadro")`. **Não se edita** — gera-se uma nova. Editar uma migração
+  aplicada e renumerar não basta quando o que muda são `choices`: a última `AlterField`
+  apaga o que a outra registrou.
+- **Precedente existe:** `0003_rotulos_em_portugues.py` é exatamente esta classe de
+  mudança — só rótulo, nenhuma coluna, nenhum dado. A nova migração se parece com ela.
+
+---
+
+### 10.3 O que a confiança eterna cobra em troca
+
+A decisão resolve o gap de 30 dias da forma mais simples possível: **para o sujeito
+`display`, a confiança não expira.** Sem janela deslizante, sem renovação no `check`,
+sem TV que escurece sozinha num domingo.
+
+Mas ela **transfere o peso inteiro para a revogação**, e isso é a parte do desenho que
+passa a ser obrigatória:
+
+> Se a confiança não morre sozinha, **revogar é o único caminho** — e o que é único
+> caminho tem que existir, ser encontrável e deixar rastro.
+
+Três exigências, e nenhuma é opcional:
+
+1. **A revogação tem que existir e ser encontrável na seção Telas** — não só no Admin,
+   enterrada numa lista de dispositivos confiáveis. A pessoa que precisa despareá-la é a
+   que está olhando a lista de telas: *"esta TV foi trocada"*, *"esta sumiu"*. A seção
+   Telas é o lugar natural, e o §7.3 já a desenha como painel de controle, não gaveta de
+   links. `TrustedDevice.revoke()` e `revoke_all_for(type, id)` já existem — falta a
+   porta.
+2. **Tem que deixar rastro.** `label`, `ip_address`, `last_used_at` já existem no model e
+   hoje quase ninguém os lê. Com confiança eterna eles viram a **única** forma de
+   responder "esta tela ainda é a que eu pendurei?". A seção Telas mostra, por tela:
+   quando foi pareada, quando foi vista pela última vez, e de onde. **Tela que parou de
+   buscar é o sinal de que algo aconteceu com o aparelho** — e é exatamente o que a §7.3
+   pedia para a seção não ser decorativa.
+3. **O risco a nomear, porque confiança eterna o cria:** uma TV **roubada ou trocada**
+   continua válida para sempre se ninguém souber onde despareá-la. Esse é o preço da
+   decisão, e ele é aceitável **desde que** 1 e 2 existam. Se a seção Telas sair sem a
+   revogação visível, a eternidade vira dívida silenciosa — o oposto do que este WP
+   existe para evitar.
+
+⚠️ **Escopo da eternidade:** vale **só** para `subject_type="display"`. `customer` e
+`station` mantêm os 30 dias — são pessoas e balcões, não paredes, e o argumento ("ninguém
+está lá para reautorizar") não se aplica a eles. A implementação é TTL por sujeito, não
+`DEVICE_TRUST_TTL_DAYS = 0` global.
 
 ---
 
 ## 11. Fases, e o que é pré-requisito de quê
 
-Nenhuma fase depende de decisão sua para **começar**; as marcadas ⚠️ dependem para
-**fechar**.
+As cinco decisões do dono (§10) estão tomadas. **Nenhuma fase espera palavra dele.**
 
 ### Fase 0 — a verdade escrita (nenhum código de produto)
 
@@ -836,7 +991,7 @@ regra citável.
 2. ADR-018 de **"Proposto" → "Aceito"**, com a evidência do código no ar.
 3. Promover ao `CLAUDE.md` a **regra de URL por superfície** (§5.4) e a **regra de voz
    pelo leitor** (§6.1).
-4. Entrada de **tela** no `docs/reference/glossary.md`, com o de-para da §5.3.
+4. Entrada de **tela** no `docs/reference/glossary.md`, com o de-para da §5.3 e da §10.2.
 5. Corrigir `"kiosk Solari"` → `"letreiro de fornadas"` no `CLAUDE.md` e no
    `docs/status.md`.
 6. Teste que prende `SHOPMAN_MENUBOARD_PUBLIC=false` como default.
@@ -849,50 +1004,72 @@ regra citável.
 
 ### Fase 1 — o envelope (depende de: Fase 0)
 
-7. Capability `screen` por rota no `operator-kit` (§6.2, metade B), **opt-in**, com
+8. Capability `screen` por rota no `operator-kit` (§6.2, metade B), **opt-in**, com
    `definePageMeta`. Generaliza `operatorActivity: false`.
-8. Adotar nas quatro telas, **uma por PR**. `/pickup` primeiro: é a que hoje depende de
+9. Adotar nas quatro telas, **uma por PR**. `/pickup` primeiro: é a que hoje depende de
    exceção no shell, que é o padrão mais frágil dos três (§1.6).
-9. Descer `kiosk`/`wakeLock` de `kds-nuxt` e `production-nuxt` do app para a rota.
-   ⚠️ **Aperta, não afrouxa** — as telas de estação do KDS param de herdar envelope de
-   parede.
-10. Trava de varredura do envelope, no modelo do `test_vocabulario_de_tela.py`
+10. Descer `kiosk`/`wakeLock` de `kds-nuxt` e `production-nuxt` do app para a rota.
+    ⚠️ **Aperta, não afrouxa** — as telas de estação do KDS param de herdar envelope de
+    parede.
+11. Trava de varredura do envelope, no modelo do `test_vocabulario_de_tela.py`
     (varre STRING/AST, tem auto-teste de que a varredura leu algo): toda rota declarada
     `screen` tem que passar nos cinco invariantes da §2.1.
 
-### Fase 2 — a nomenclatura (depende de: Fase 0; ⚠️ item 3 do dono)
+### Fase 2 — a nomenclatura (depende de: Fase 0)
 
-11. De-para da §5.3, zero resíduo, **exceto** as duas rotas do item 3 da §9.
-12. Trocar o critério de isenção da trava de vocabulário: de **diretório** para **leitor
+⛔ **Zero resíduo, sem exceção.** A rota antiga some; nenhum 301, nenhum alias, nenhum
+passo de compatibilidade (§10, decisão 2).
+
+12. De-para da §5.3 — inclusive `/board` → `/marquee` e `/display` → `/customer`, que na
+    versão anterior deste WP tinham ressalva de bookmark e **não têm mais**.
+12b. ⚠️ **Consequência que o inventário revela e a decisão 2 alcança:** já existem hoje
+    aliases 301 de kiosk do PR #68 — `/cliente` e `/retirada` → `/pickup`, `/painel` →
+    `/board`. Pela mesma regra ("não devemos legado a nada ainda"), eles **também são
+    resíduo** e saem junto. Registrado aqui porque não estava no pedido original: é
+    consequência da decisão, não escopo novo inventado.
+13. De-para do Core da §10.2: `SubjectType.DISPLAY` com rótulo `_("tela")` (**valor
+    `"display"` inalterado**), docstrings e `help_text` do `device_trust.py`.
+    ⚠️ **Migração nova, nunca editar a `0004`** — o precedente de forma é a
+    `0003_rotulos_em_portugues.py`.
+14. Trocar o critério de isenção da trava de vocabulário: de **diretório** para **leitor
     declarado** (§6.1) — é o que traz `/pickup` e o menuboard para a isenção de voz de
     cliente, onde eles sempre pertenceram.
-13. Separar `"Feeds e telas"` em dois blocos em `/feeds` (§7.2).
+15. Separar `"Feeds e telas"` em dois blocos em `/feeds` (§7.2).
 
-### Fase 3 — o pareamento e a seção no Hub (depende de: Fases 1 e 2; ⚠️ item 5 do dono)
+### Fase 3 — pareamento, SSE e a seção Telas (depende de: Fases 1 e 2)
 
 Depende das duas porque um tile que abre uma tela sem envelope e com nome errado publica
-o defeito em vez de escondê-lo.
+o defeito em vez de escondê-lo. **O SSE do letreiro subiu da Fase 4 para cá** (§10,
+decisão 5): ele e o pareamento tocam a mesma tela não-pareada, que precisa saber que foi
+pareada **sem recarregar**, e o transporte é o mesmo.
 
-14. Tabela `Screen` (§9.5), na forma do `Terminal` do `cashman`.
-15. Rota `/tv`: **estado não pareado** (o código enorme, §9.4) e, pareada, o conteúdo.
+16. Tabela **`Screen`** em `shopman/shop/models/`, na forma do `Terminal` do `cashman`
+    (§9.5, §10.2).
+17. Rota `/tv`: **estado não pareado** (o código enorme, §9.4) e, pareada, o conteúdo.
     O estado não pareado é o primeiro que alguém vê e **não existe hoje** — vale desenho,
     não improviso.
-16. Pareamento: código curto na mecânica do `link_state`, TTL de minutos, **com
+18. Pareamento: código curto na mecânica do `link_state`, TTL de minutos, **com
     `Gates.rate_limit` e contagem de tentativas** (§9.4 — o `link_state` não tem, e este
     código precisa). Resgate no Hub sob a mesma permissão da porta da tela.
-17. Campo `section` no `HubTileProjection`, nas duas pontas do contrato, com o
-    cruzamento de identidade que a CI já exige; seção Telas listando `Screen`, com
-    **qual TV mostra o quê e qual parou de buscar** — não uma gaveta de links.
-18. Generalizar `subject_type="display"` de "menuboard" para qualquer tela (§6.2,
+19. Generalizar `subject_type="display"` de "menuboard" para qualquer tela (§6.2,
     metade A), com `subject_id` = ref da **tela**, não do conteúdo.
-19. ⚠️ **Renovação deslizante do `TrustedDevice` para o sujeito `display`** — sem isso a
-    parede cai em 30 dias (§9.4). Não é opcional.
+20. ⚠️ **TTL eterno para o sujeito `display`** (§10, decisão 7) — TTL **por sujeito**,
+    não `DEVICE_TRUST_TTL_DAYS = 0` global: `customer` e `station` seguem em 30 dias.
+    Substitui a renovação deslizante que a versão anterior deste WP propunha.
+21. ⚠️ **A revogação visível na seção Telas, e o rastro** (§10.3) — é o que paga a
+    eternidade. Por tela: quando foi pareada, quando foi vista pela última vez, de onde,
+    e o botão de desparear. **Sem isto, a Fase 3 não fecha**: confiança eterna sem
+    revogação encontrável é dívida silenciosa.
+22. Campo `section` no `HubTileProjection`, nas duas pontas do contrato, com o
+    cruzamento de identidade que a CI já exige. Seção **"Telas"** (§10, decisão 1)
+    listando `Screen` — qual TV mostra o quê, qual está viva, qual parou de buscar.
+23. **Letreiro ganha SSE** pela ADR-016 (§10.1): canal nomeado + permissão *up front*,
+    rota BFF sobre `proxyEventStream`, ⚠️ **trava do canal** no modelo do
+    `_gated_eventstream`, e poll calmo mantido como rede.
 
 ### Fase 4 — depois do go-live
 
-20. Letreiro ganha SSE pela ADR-016 (⚠️ item 4 do dono), com a trava do canal no modelo
-    do `_gated_eventstream`.
-21. QR ao lado do código, escaneado pelo **celular do operador** (§9.7). Atalho, nunca o
+24. QR ao lado do código, escaneado pelo **celular do operador** (§9.7). Atalho, nunca o
     único caminho.
 
 ---
