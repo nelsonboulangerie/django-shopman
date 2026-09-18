@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { PendingMarketingDecision } from "~/composables/useMarketingDecisionCommand";
 import type { PendingCampaignFireCommand } from "~/composables/useCampaignFireCommand";
-import { formatCount } from "~/presentation/campaign";
 import {
   deliveryActionLabel,
   includesDirectMessage,
   includesPublicPost,
+  reachLines,
 } from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
 import { scenesFromFrozenCommand } from "~/presentation/simulatedPreview";
@@ -75,9 +75,6 @@ const title = computed(() => {
 
 const isFire = computed(() => props.command?.action === "fire");
 const challengePlatforms = computed(() => challenge.value?.platforms ?? []);
-const publicPlatforms = computed(() =>
-  challengePlatforms.value.filter((platform) => platform !== "whatsapp"),
-);
 const includesDirectMessages = computed(() =>
   includesDirectMessage(challengePlatforms.value),
 );
@@ -145,26 +142,15 @@ const simulatedScenes = computed(() =>
       }),
 );
 
-/** Uma linha por destino, e cada linha diz a grandeza daquele destino: mensagem conta
- *  PESSOAS, postagem conta a si mesma.
- *
- *  ⚠️ As plataformas de mural não se juntam numa linha só. "Instagram, Facebook · 1
- *  postagem em cada" obriga o leitor a distribuir o "1" entre as duas, e com uma
- *  plataforma sozinha o "em cada" fica sem complemento e não quer dizer nada. Uma
- *  linha por plataforma diz o mesmo sem pedir interpretação. */
-const reachLines = computed(() => {
-  const lines: string[] = [];
-  if (includesDirectMessages.value) {
-    const count = challenge.value?.audience_count ?? 0;
-    lines.push(
-      `WhatsApp · ${formatCount(count)} ${count === 1 ? "pessoa" : "pessoas"}`,
-    );
-  }
-  for (const platform of publicPlatforms.value) {
-    lines.push(`${platformResultLabel(platform)} · 1 postagem`);
-  }
-  return lines;
-});
+/** Uma linha por destino, cada uma na sua grandeza. A regra mora em
+ *  `presentation/marketingDelivery`, porque o diálogo de recuperação precisa da mesma
+ *  — e era lá que ela faltava. */
+const reach = computed(() =>
+  reachLines({
+    platforms: challengePlatforms.value,
+    audienceCount: challenge.value?.audience_count ?? 0,
+  }),
+);
 
 /** Postagem sem foto é um fato que só aparece depois de publicada, quando já não tem
  *  conserto. Se o disparo tem mural e não tem imagem, a caixa diz isso ANTES. */
@@ -262,8 +248,8 @@ function submit() {
         </div>
 
         <ul class="space-y-0.5 text-sm font-medium" aria-label="Para quem vai">
-          <li v-for="line in reachLines" :key="line">{{ line }}</li>
-          <li v-if="!reachLines.length" class="text-muted-foreground">
+          <li v-for="line in reach" :key="line">{{ line }}</li>
+          <li v-if="!reach.length" class="text-muted-foreground">
             Nenhuma plataforma
           </li>
         </ul>
@@ -284,10 +270,15 @@ function submit() {
           class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
           role="alert"
         >
-          <p class="font-semibold">Este volume exige duas pessoas.</p>
+          <!-- ⚠️ `dual_control` deixa o confirmar morto PARA SEMPRE nesta caixa. O
+               texto antigo explicava o desenho do gate e não dizia o gesto — botão
+               apagado com frase que não resolve é o mesmo que botão apagado sem frase.
+               Esta termina no que fazer, e é a MESMA do painel de resultado, que tinha
+               uma segunda redação para o mesmo estado. -->
+          <p class="font-semibold">Este disparo precisa de duas pessoas.</p>
           <p class="mt-1 text-muted-foreground">
-            A confirmação independente continua obrigatória; esta sessão não
-            substitui o segundo controle.
+            Você já fez a sua parte. Peça a outra pessoa com acesso ao Marketing
+            para abrir este mesmo anúncio e confirmar. Nada é disparado até lá.
           </p>
         </div>
 
@@ -371,7 +362,16 @@ function submit() {
         >
           {{ isFire ? "Voltar sem criar" : "Voltar sem confirmar" }}
         </UiButton>
-        <UiButton type="button" :disabled="!ready" @click="submit">
+        <!-- Com duplo controle o confirmar nunca liga; no lugar dele vai o gesto que
+             existe, que é fechar a caixa. -->
+        <UiButton
+          v-if="challenge?.dual_control"
+          type="button"
+          @click="emit('cancel')"
+        >
+          Entendi
+        </UiButton>
+        <UiButton v-else type="button" :disabled="!ready" @click="submit">
           {{ confirmLabel }}
         </UiButton>
       </UiDialogFooter>

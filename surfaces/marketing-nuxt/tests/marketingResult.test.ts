@@ -6,6 +6,7 @@ import {
   deliveryStatePresentation,
   marketingLoadError,
   platformDeliveryLabel,
+  platformFanoutSummary,
   platformSwitchedOff,
   platformSwitchedOffNote,
   recoveryActionExplanation,
@@ -156,5 +157,38 @@ describe("Marketing result presentation", () => {
       title: "Não foi possível carregar o resultado",
       canRetry: true,
     });
+  });
+});
+
+describe("quanto já está preparado, na grandeza da plataforma", () => {
+  // ⚠️ A fração só quer dizer alguma coisa quando o denominador é GENTE. No mural ela
+  // lia sempre "1/1 destinos preparados" e mandava o gestor procurar o sentido de
+  // "destino" num lugar onde só existe um mural — enquanto no WhatsApp, na linha de
+  // cima, o mesmo "destino" era uma pessoa.
+  it("no WhatsApp conta pessoas na lista", () => {
+    expect(
+      platformFanoutSummary({
+        platform_ref: "whatsapp",
+        fanout_materialized: 37,
+        fanout_expected: 40,
+      }),
+    ).toBe("37 de 40 pessoas na lista");
+  });
+
+  it("no mural diz a postagem, sem fração", () => {
+    expect(
+      platformFanoutSummary({
+        platform_ref: "instagram",
+        fanout_materialized: 1,
+        fanout_expected: 1,
+      }),
+    ).toBe("postagem preparada");
+    expect(
+      platformFanoutSummary({
+        platform_ref: "instagram",
+        fanout_materialized: 0,
+        fanout_expected: 1,
+      }),
+    ).toBe("postagem ainda não preparada");
   });
 });

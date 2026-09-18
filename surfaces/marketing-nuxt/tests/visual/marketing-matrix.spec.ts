@@ -208,7 +208,7 @@ test.describe("painel", () => {
         await waitForFaithfulPreview(page);
       if (scenario === "board-pending") {
         await expect(
-          page.getByRole("group", { name: "Entregar por" }),
+          page.getByRole("group", { name: "Sai por" }),
         ).toBeVisible();
         // O "quando" é campo (Imediato | Agendado) e a decisão é binária: o botão que
         // leva à caixa se chama "Continuar", porque daqui nada dispara.
@@ -219,8 +219,10 @@ test.describe("painel", () => {
         await expect(
           page.getByRole("button", { name: "Recusar", exact: true }),
         ).toBeVisible();
+        // O rodapé mandava "Aprovar" num card sem botão "Aprovar"; agora ele descreve
+        // o que a PRÓXIMA tela mostra, que é o que o "Continuar" abre.
         await expect(
-          page.getByText("Agora, ou na hora que você marcar", {
+          page.getByText("é o que sai — agora ou na hora que você marcar", {
             exact: false,
           }),
         ).toBeVisible();
@@ -389,7 +391,7 @@ test.describe("cartão de anúncio", () => {
 
   test("prévia de plataforma permanece ao lado da decisão", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V1280);
-    await expect(page.getByText("Prévia fiel")).toBeVisible();
+    await expect(page.getByText("Prévia", { exact: true })).toBeVisible();
     await expect(page.getByText(/Dados conferidos às/)).toBeVisible();
     await expectStableScreenshot(page, "announcement-card__platform-preview", V1280);
   });

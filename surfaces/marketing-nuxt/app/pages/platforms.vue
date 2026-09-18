@@ -101,11 +101,16 @@ function kindLabel(kind: string): string {
     : "Uma postagem pública na plataforma; não envia mensagem direta.";
 }
 
-/** Bloqueio, limitação e saúde não podem parecer iguais. */
+/** Bloqueio, limitação e saúde não podem parecer iguais.
+ *
+ * ⚠️ Recebe `kind` porque o WhatsApp ENVIA mensagem e não publica nada: o carimbo do
+ * mural, colado nele, fazia o gestor ler "WhatsApp · Não publica" e concluir que o
+ * problema era de postagem, quando o que está parado são as MENSAGENS — a plataforma
+ * cuja falha custa dinheiro e cuja mensagem não se apaga. */
 function tone(
   platform: Pick<
     Platform,
-    "state" | "source_status" | "canary_recipients" | "reason_code"
+    "state" | "source_status" | "canary_recipients" | "reason_code" | "kind"
   >,
 ) {
   if (platform.source_status === "simulated")
@@ -126,7 +131,7 @@ function tone(
     return {
       chip: "bg-destructive/10 text-destructive",
       icon: "lucide:circle-slash",
-      label: "Não publica",
+      label: platform.kind === "direct_message" ? "Não envia" : "Não publica",
     };
   if (platform.state === "unknown")
     return {
@@ -465,7 +470,7 @@ useHead({ title: "Plataformas" });
                   Teste externo bloqueado com segurança
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  Nenhum aparelho de teste verificado foi configurado. Peça ao
+                  Nenhum dispositivo de teste verificado foi configurado. Peça ao
                   responsável pelas plataformas; não é necessário copiar ou
                   informar um telefone aqui.
                 </p>

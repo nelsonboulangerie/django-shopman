@@ -541,11 +541,6 @@ function askToReject() {
                   Usar muda só este rascunho. Nada é publicado.
                 </p>
               </div>
-              <span
-                class="rounded-full bg-background px-2 py-1 text-[11px] text-muted-foreground"
-              >
-                Política {{ suggestion.policy_version }}
-              </span>
             </div>
             <div class="grid gap-2 sm:grid-cols-2">
               <div class="rounded-md border border-border bg-background p-2">
@@ -576,7 +571,7 @@ function askToReject() {
               </div>
             </div>
             <div v-if="suggestion.facts.length" class="text-xs">
-              <p class="font-semibold">Fatos canônicos usados</p>
+              <p class="font-semibold">Dados usados</p>
               <ul class="mt-1 flex flex-wrap gap-1.5">
                 <li
                   v-for="fact in suggestion.facts"
@@ -651,7 +646,7 @@ function askToReject() {
         <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
         <fieldset>
           <legend class="mb-1 text-xs font-medium text-muted-foreground">
-            Entregar por
+            Sai por
           </legend>
           <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
                Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
@@ -757,7 +752,8 @@ function askToReject() {
     >
       <div class="w-full">
         <p class="text-xs text-muted-foreground">
-          Aprovar sela esta versão. Agora, ou na hora que você marcar.
+          O texto que você conferir na próxima tela é o que sai — agora ou na
+          hora que você marcar.
         </p>
       </div>
 
@@ -830,7 +826,7 @@ function askToReject() {
           <label
             :for="`when-${announcement.pk}`"
             class="text-xs font-medium text-muted-foreground"
-            >Entregar em</label
+            >Sair em</label
           >
           <UiInput
             :id="`when-${announcement.pk}`"
@@ -860,7 +856,7 @@ function askToReject() {
             class="ml-1"
             @click="useNextAllowedTime"
           >
-            Usar 08:00
+            Usar o próximo horário permitido
           </UiButton>
         </p>
         <fieldset
@@ -913,7 +909,10 @@ function askToReject() {
         class="w-full text-xs font-medium text-destructive"
         role="alert"
       >
-        O prazo terminou. Atualize os fatos antes de publicar.
+        O prazo deste anúncio venceu — preço e estoque já podem ter mudado.
+        <NuxtLink to="/campaigns" class="font-semibold underline">
+          Prepare um disparo novo em Campanhas.
+        </NuxtLink>
       </p>
 
       <div class="flex w-full gap-2 pt-1">

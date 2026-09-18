@@ -24,6 +24,9 @@ uma lista de tarefas que ninguém sabe justificar.
 - [`docs/reports/ux/marketing-ux-adversarial-2026-09-18.md`](../reports/ux/marketing-ux-adversarial-2026-09-18.md)
   — 38 achados no app de Marketing, cada um com a substituição já escrita. É a matéria-prima
   deste documento; a §3 destila, não repete.
+- [`docs/reports/ux/pos-ux-copy-2026-09-18.md`](../reports/ux/pos-ux-copy-2026-09-18.md)
+  — a **Onda 1 aplicada ao PDV** (§6.3, ordem 1): 34 achados, 10 de D1 e 4 de D4. É o
+  primeiro uso desta régua como régua, e não como destilação.
 - [`CLAUDE.md`](../../CLAUDE.md) — as regras de vocabulário da casa. A §4 aponta, não duplica.
 - [`docs/reference/marketing-surface-contract.md`](marketing-surface-contract.md) — o
   vocabulário fechado que serve de modelo aos outros domínios.

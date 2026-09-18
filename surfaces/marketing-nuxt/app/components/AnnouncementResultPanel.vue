@@ -12,12 +12,14 @@ import {
   isRecoveryAction,
 } from "~/composables/useMarketingRecovery";
 import { formatCount } from "~/presentation/campaign";
+import { reachLines } from "~/presentation/marketingDelivery";
 import {
   acceptedAwaitingConfirmationNote,
   approvalCanaryNote,
   commandReceiptPresentation,
   deliveryCountItems,
   deliveryStatePresentation,
+  platformFanoutSummary,
   platformResultLabel,
   platformSwitchedOff,
   platformSwitchedOffNote,
@@ -220,6 +222,15 @@ const recoveryDialogPresentation = computed(() => {
     confirmLabel: "Confirmar ação",
   };
 });
+
+/** O alcance do reenvio, na grandeza de cada destino — a mesma regra da caixa de
+ *  confirmação, que é a peça que acertou primeiro. */
+const recoveryReach = computed(() =>
+  reachLines({
+    platforms: challenge.value?.platforms ?? [],
+    audienceCount: challenge.value?.audience_count ?? 0,
+  }),
+);
 
 const confirmationReady = computed(() => {
   const current = challenge.value;
@@ -544,11 +555,11 @@ function closeDialog(open: boolean) {
             <h3 class="font-semibold">
               {{ platformResultLabel(platform.platform_ref) }}
             </h3>
+            <!-- ⚠️ A fração só quer dizer alguma coisa quando o denominador é gente.
+                 No mural ela era sempre "1/1 destinos preparados", e mandava o gestor
+                 procurar o sentido de "destino" onde só há um mural. -->
             <span class="text-xs text-muted-foreground">
-              {{ formatCount(platform.fanout_materialized) }}/{{
-                formatCount(platform.fanout_expected)
-              }}
-              destinos preparados
+              {{ platformFanoutSummary(platform) }}
             </span>
           </div>
           <ul class="mt-2 flex flex-wrap gap-1.5">
@@ -683,29 +694,21 @@ function closeDialog(open: boolean) {
             </div>
           </div>
 
+          <!-- ⚠️ Este é o diálogo onde o gestor autoriza REENVIO, e era o que ainda
+               chamava postagem de "destino": um número só, e "37 destinos" tanto podia
+               ser 37 pessoas quanto um mural repetido 37 vezes. A caixa de confirmação
+               irmã já contava certo; a mesma regra agora mora na camada de apresentação
+               e as duas leem dela. -->
           <dl
-            class="grid grid-cols-2 divide-x divide-border rounded-md border border-border bg-muted/40 py-3 text-center"
+            class="rounded-md border border-border bg-muted/40 px-3 py-3 text-center"
           >
-            <div class="px-3">
-              <dt class="text-xs text-muted-foreground">Destinos elegíveis</dt>
-              <dd class="mt-1">
-                <strong class="text-xl tabular-nums">
-                  {{ formatCount(challenge.audience_count) }}
-                </strong>
-                <span class="ml-1 text-sm">
-                  {{ challenge.audience_count === 1 ? "destino" : "destinos" }}
-                </span>
-              </dd>
-            </div>
-            <div class="px-3">
-              <dt class="text-xs text-muted-foreground">Plataformas afetadas</dt>
-              <dd class="mt-1 text-sm font-semibold">
-                {{
-                  challenge.platforms.map(platformResultLabel).join(", ") ||
-                  "Nenhuma"
-                }}
-              </dd>
-            </div>
+            <dt class="text-xs text-muted-foreground">O que isto alcança</dt>
+            <dd class="mt-1 space-y-0.5 text-sm font-semibold">
+              <p v-for="line in recoveryReach" :key="line">{{ line }}</p>
+              <p v-if="!recoveryReach.length" class="text-muted-foreground">
+                Nenhuma plataforma
+              </p>
+            </dd>
           </dl>
 
           <div
@@ -713,12 +716,15 @@ function closeDialog(open: boolean) {
             class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
             role="alert"
           >
-            <p class="font-semibold">
-              Duas pessoas são obrigatórias para este volume.
-            </p>
+            <!-- ⚠️ `dual_control` deixa o botão de confirmar morto PARA SEMPRE nesta
+                 caixa. O texto antigo explicava o desenho do gate e não dizia o gesto:
+                 botão apagado com frase que não resolve é o mesmo que botão apagado sem
+                 frase. Esta termina no que fazer. -->
+            <p class="font-semibold">Este disparo precisa de duas pessoas.</p>
             <p class="mt-1 text-muted-foreground">
-              O comando não será executado nesta sessão sem a confirmação
-              independente prevista pelo gate de segurança.
+              Você já fez a sua parte. Peça a outra pessoa com acesso ao
+              Marketing para abrir este mesmo anúncio e confirmar. Nada é
+              disparado até lá.
             </p>
           </div>
 
@@ -810,8 +816,18 @@ function closeDialog(open: boolean) {
           >
             {{ pending ? "Conferindo…" : "Conferir cancelamento" }}
           </UiButton>
+          <!-- Com duplo controle o confirmar nunca liga, então no lugar dele vai o
+               gesto que existe: fechar a caixa. -->
           <UiButton
-            v-if="challenge"
+            v-if="challenge && challenge.dual_control"
+            type="button"
+            class="w-full"
+            @click="closeDialog(false)"
+          >
+            Entendi
+          </UiButton>
+          <UiButton
+            v-else-if="challenge"
             type="button"
             class="w-full"
             :disabled="!confirmationReady"

@@ -421,6 +421,28 @@ function errorStatus(error: unknown): number {
 /** WhatsApp é mensagem direta; o resto do catálogo é postagem pública. */
 const DIRECT_MESSAGE_PLATFORM = "whatsapp";
 
+/** Quanto do disparo já está preparado, na grandeza da plataforma.
+ *
+ * ⚠️ A fração só quer dizer alguma coisa quando o denominador é GENTE. No mural ela
+ * era sempre "1/1 destinos preparados" — e mandava o gestor procurar o sentido de
+ * "destino" num lugar onde só existe um mural. No WhatsApp ela lia "37/40", e o 40 é
+ * gente: a mesma palavra, dois mundos, um ao lado do outro na mesma lista.
+ */
+export function platformFanoutSummary(platform: {
+  platform_ref: string;
+  fanout_materialized: number;
+  fanout_expected: number;
+}): string {
+  const done = Math.max(0, Math.trunc(platform.fanout_materialized || 0));
+  const total = Math.max(0, Math.trunc(platform.fanout_expected || 0));
+  if (platform.platform_ref !== DIRECT_MESSAGE_PLATFORM) {
+    return done > 0 ? "postagem preparada" : "postagem ainda não preparada";
+  }
+  return `${formatCount(done)} de ${formatCount(total)} ${
+    total === 1 ? "pessoa na lista" : "pessoas na lista"
+  }`;
+}
+
 /**
  * A linha que explica por que o gestor caiu direto na revisão.
  *

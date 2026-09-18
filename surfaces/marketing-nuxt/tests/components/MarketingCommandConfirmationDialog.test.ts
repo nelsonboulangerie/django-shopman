@@ -342,6 +342,64 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect(wrapper.text()).toContain("WhatsApp · 12 pessoas");
     expect(wrapper.text()).toContain("Instagram · 1 postagem");
   });
+  // ⚠️ `dual_control` deixa o confirmar morto PARA SEMPRE nesta caixa. O texto antigo
+  // explicava o desenho do gate — "a confirmação independente continua obrigatória;
+  // esta sessão não substitui o segundo controle" — e deixava o gestor com um botão
+  // apagado e nenhuma frase que resolvesse. Botão morto sem saída é defeito desta casa.
+  it("com duas pessoas obrigatórias, diz o gesto e troca o botão morto por uma saída", () => {
+    const wrapper = mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          announcementId: 42,
+          action: "approve",
+          body: { base_version: 3, publish_mode: "now" },
+          href: "/api/v1/backstage/marketing/announcements/42/approve/",
+          ownerRef: "operator:1",
+          idempotencyKey: "key",
+          challenge: {
+            token: "token",
+            ref: "challenge",
+            expires_at: "2026-09-09T21:00:00-03:00",
+            mode: "typed",
+            step_up: "none",
+            dual_control: true,
+            typed_phrase: "",
+            consequence: "publishes_now_to_eligible_audience",
+            resource_ref: "announcement:42",
+            base_version: 3,
+            audience_count: 4000,
+            platforms: ["whatsapp"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: {
+          AnnouncementSimulatedPreview: SimulatedPreviewStub,
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Este disparo precisa de duas pessoas.");
+    expect(wrapper.text()).toContain(
+      "Peça a outra pessoa com acesso ao Marketing para abrir este mesmo anúncio e confirmar.",
+    );
+    // A explicação do gate sai: ela não terminava em gesto nenhum.
+    expect(wrapper.text()).not.toMatch(/segundo controle|volume exige/);
+
+    const buttons = wrapper.findAll("button");
+    expect(buttons.map((button) => button.text())).toContain("Entendi");
+    // E o botão que nunca ligaria não fica na tela para ser tentado.
+    expect(buttons.map((button) => button.text())).not.toContain("Enviar agora");
+  });
+
   it("a prévia em tamanho real sai do corpo CONGELADO, e o formato vem do anúncio", () => {
     // ⚠️ A diferença que este teste guarda: na caixa de confirmação o retrato grande NÃO
     // pode sair do anúncio na tela. O que o servidor vai publicar é o corpo selado no

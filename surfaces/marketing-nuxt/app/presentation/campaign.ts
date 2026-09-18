@@ -14,7 +14,7 @@ import type {
 /** Rótulos das origens de audiência, na ordem em que a frase os lê. */
 const AUDIENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["favorites_count", "favoritos"],
-  ["bought_count", "recompra"],
+  ["bought_count", "recompraram"],
   ["alerts_count", "alertas"],
 ];
 
@@ -28,10 +28,10 @@ export function formatCount(value: number): string {
 }
 
 /**
- * "12 favoritos, 28 recompra, 3 alertas = 43 clientes".
+ * "12 favoritos, 28 recompraram, 3 alertas = 43 clientes".
  *
  * O total vem do backend (já deduplicado por telefone), NÃO da soma das partes:
- * quem favoritou e também recompra é uma pessoa só, e somar mentiria pra cima.
+ * quem favoritou e também recomprou é uma pessoa só, e somar mentiria pra cima.
  */
 export function audienceSummary(
   audience: Record<string, unknown> | undefined,
@@ -125,7 +125,15 @@ export function exclusionNotes(
   const unknown = Object.keys(counts)
     .filter((key) => (counts[key] ?? 0) > 0 && !EXCLUSION_LABELS.some(([k]) => k === key))
     .sort()
-    .map((key) => sentence(counts[key] ?? 0, `fora por "${key}"`));
+    // A chave crua é inglês do backend e não diz nada ao gestor. Ela fica — é o
+    // escape que permite descobrir um motivo novo —, mas com a frase que diz o
+    // que ela é e o que fazer com ela.
+    .map((key) =>
+      sentence(
+        counts[key] ?? 0,
+        `fora por um motivo novo (${key}) — avise quem cuida do sistema`,
+      ),
+    );
   return [...known, ...unknown];
 }
 

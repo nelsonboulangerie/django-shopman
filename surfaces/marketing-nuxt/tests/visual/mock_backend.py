@@ -614,7 +614,7 @@ class Handler(BaseHTTPRequestHandler):
                     {"ns": "visual_flow", "name": "Aviso de fornada"},
                     {"ns": "visual_flow_v2", "name": "Aviso de fornada — versão revisada"},
                 ],
-                "test_targets": [{"ref": "device:visual", "label": "Aparelho verificado de teste"}],
+                "test_targets": [{"ref": "device:visual", "label": "Dispositivo verificado de teste"}],
                 "can_send_test": True,
                 "can_list": True,
                 "command_available": True,

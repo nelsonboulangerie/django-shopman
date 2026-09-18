@@ -44,7 +44,7 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(note.tone).toBe("blocked");
     expect(note.badge).toBe("não publica");
     expect(note.text).toBe(
-      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
     );
     expect(readinessPillClass("blocked")).toContain("destructive");
   });
@@ -63,7 +63,7 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(note.tone).toBe("blocked");
     expect(note.badge).toBe("desligada");
     expect(note.text).toBe(
-      "Instagram: A publicação nesta plataforma está desligada neste ambiente. O que for aprovado para ela fica na fila, sem envio, até ela ser ligada.",
+      "Instagram: A publicação nesta plataforma está desligada neste ambiente. O que for aprovado para ela fica na fila até ela ser ligada.",
     );
     expect(note.text).not.toMatch(/resolver|integração|credencial|adapt/i);
   });
@@ -80,7 +80,12 @@ describe("prontidão de plataforma antes do clique", () => {
     );
 
     expect(note.badge).toBe("não verificada");
-    expect(note.text).toContain("Não vai publicar por aqui até a verificação passar.");
+    // ⚠️ É o WhatsApp: o que fica parado são as MENSAGENS. O verbo do mural, colado
+    // aqui, fazia o gestor concluir que o problema era de postagem.
+    expect(note.text).toContain(
+      "Nenhuma mensagem é enviada por aqui até a verificação passar.",
+    );
+    expect(note.text).not.toMatch(/publicar|publicado/i);
   });
 
   it("limitada ainda publica: mostra a limitação, sem prometer bloqueio", () => {
@@ -134,7 +139,13 @@ describe("prontidão de plataforma antes do clique", () => {
       "WhatsApp",
     );
 
-    expect(note.badge).toBe("não publica");
+    // O WhatsApp ENVIA mensagem; ele não publica nada. É a plataforma cuja falha custa
+    // dinheiro e cuja mensagem não se apaga — a que menos pode ser descrita com o
+    // verbo da outra.
+    expect(note.badge).toBe("não envia");
+    expect(note.text).toContain(
+      "Nenhuma mensagem é enviada por aqui até resolver.",
+    );
   });
 
   it("simulação local é dita como simulação, não como defeito", () => {

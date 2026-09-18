@@ -5,9 +5,11 @@
 // o estado e o motivo (`/marketing/platforms/`, `delivery_readiness.py`); esta camada
 // só traduz isso em pílula pintada e frase visível junto da escolha.
 //
-// ⚠️ Prontidão é pré-condição de PUBLICAR, não de configurar: salvar a campanha
-// continua livre. O que a tela promete é "não vai publicar ali até resolver".
+// ⚠️ Prontidão é pré-condição de DISPARAR, não de configurar: salvar a campanha
+// continua livre. O que a tela promete é que, até resolver, nada é publicado nem
+// enviado por ali — e o verbo depende do destino, porque o WhatsApp manda mensagem.
 import type { Platform } from "~/composables/usePlatforms";
+import { includesDirectMessage } from "~/presentation/marketingDelivery";
 
 export type PlatformReadiness = Pick<
   Platform,
@@ -25,7 +27,7 @@ export type ReadinessTone = "ready" | "limited" | "blocked" | "unknown";
 
 export interface PlatformReadinessNote {
   tone: ReadinessTone;
-  /** Palavra curta para a pílula: "não publica", "não verificada", "limitada". */
+  /** Palavra curta para a pílula: "não envia"/"não publica", "não verificada", "limitada". */
   badge: string;
   /** Frase completa para baixo da escolha. Vazia quando pronta. */
   text: string;
@@ -71,32 +73,49 @@ export function platformReadinessNote(
       text: `${label}: ${item.reason || "simulação local ativa"}`,
     };
   }
+  // ⚠️ O WhatsApp ENVIA mensagem; ele não publica nada. Sem distinguir, o carimbo do
+  // mural caía nele e o gestor lia "WhatsApp: não publica" concluindo que o problema
+  // era de postagem — quando o que está parado são as mensagens, na única plataforma
+  // cuja falha custa dinheiro e cuja mensagem não se apaga.
+  const message = includesDirectMessage([item.platform]);
   if (tone === "blocked" && item.reason_code === "platform_switched_off") {
     // Desligada de propósito: "até resolver" diria que há algo quebrado.
     return {
       tone,
       badge: "desligada",
-      text: `${label}: ${item.reason} O que for aprovado para ela fica na fila, sem envio, até ela ser ligada.`,
+      text: `${label}: ${item.reason} O que for aprovado para ela fica na fila até ela ser ligada.`,
     };
   }
   if (tone === "blocked") {
     return {
       tone,
-      badge: "não publica",
-      text: `${label}: ${item.reason || "a plataforma não está pronta."} Não vai publicar por aqui até resolver.`,
+      badge: message ? "não envia" : "não publica",
+      text: `${label}: ${item.reason || "a plataforma não está pronta."} ${
+        message
+          ? "Nenhuma mensagem é enviada por aqui até resolver."
+          : "Nada é publicado por aqui até resolver."
+      }`,
     };
   }
   if (tone === "unknown") {
     return {
       tone,
       badge: "não verificada",
-      text: `${label}: ${item.reason || "não foi possível verificar a plataforma."} Não vai publicar por aqui até a verificação passar.`,
+      text: `${label}: ${item.reason || "não foi possível verificar a plataforma."} ${
+        message
+          ? "Nenhuma mensagem é enviada por aqui até a verificação passar."
+          : "Nada é publicado por aqui até a verificação passar."
+      }`,
     };
   }
   return {
     tone: "limited",
     badge: "limitada",
-    text: `${label}: ${item.limitation || item.reason || "publica com limite."}`,
+    text: `${label}: ${
+      item.limitation ||
+      item.reason ||
+      (message ? "envia com limite." : "publica com limite.")
+    }`,
   };
 }
 
