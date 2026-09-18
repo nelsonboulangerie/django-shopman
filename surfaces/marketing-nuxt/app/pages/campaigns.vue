@@ -701,7 +701,7 @@ useHead({ title: "Campanhas" });
       <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
            rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{
             editing ? "Editar campanha" : "Nova campanha"
           }}</UiSheetTitle>
@@ -742,7 +742,7 @@ useHead({ title: "Campanhas" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>Definir público</UiSheetTitle>
           <UiSheetDescription>
             {{ firing?.name }} — escolha o público. O texto vem do modelo e o

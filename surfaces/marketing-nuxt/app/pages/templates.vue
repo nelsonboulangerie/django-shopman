@@ -202,7 +202,7 @@ useHead({ title: "Modelos" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{
             editing ? "Editar modelo" : "Novo modelo"
           }}</UiSheetTitle>
