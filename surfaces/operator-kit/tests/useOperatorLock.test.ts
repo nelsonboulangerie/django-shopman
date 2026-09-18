@@ -83,6 +83,31 @@ describe("useOperatorLock — session derivations", () => {
     expect(unavailable.sessionUnavailable.value).toBe(true);
     expect(unavailable.sessionState.value).toBe("anonymous");
   });
+
+  // A antessala do app é config, e a razão é de SEGURANÇA. Uma estação autônoma
+  // (painel de parede da Produção) só tem a conta dela resolvida sob
+  // `/api/v1/backstage/production/`: o cookie de estação vale no domínio inteiro,
+  // e esse corte é o que impede a conta do painel de virar operador no PDV da aba
+  // ao lado. A Produção aponta esta chave para a antessala dela.
+  it("a antessala vem do runtime config — a Produção tem a sua", () => {
+    env.runtimeConfig.public = {
+      ...(env.runtimeConfig.public as object),
+      operatorSessionPath: "/api/v1/backstage/production/session/",
+    };
+    useOperatorLock(PERM);
+    expect(env.useFetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/session/",
+      expect.objectContaining({ query: { perm: PERM } }),
+    );
+  });
+
+  it("sem config, a antessala é a COMPARTILHADA — o default é o app atendido", () => {
+    useOperatorLock(PERM);
+    expect(env.useFetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/operator/session/",
+      expect.anything(),
+    );
+  });
 });
 
 // O cadeado do SERVIDOR tem a palavra final. A sessão do cliente só é relida em

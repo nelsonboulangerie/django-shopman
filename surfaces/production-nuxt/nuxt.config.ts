@@ -18,6 +18,20 @@ export default defineNuxtConfig({
     djangoBaseUrl,
     operatorSecurityHeaders: true,
     operatorUpstreamFailFast: true,
+    public: {
+      // A antessala da PRODUÇÃO, não a compartilhada — e isto é metade de uma
+      // trava de servidor, não organização de rota.
+      //
+      // Uma estação autônoma (o painel de parede, sem ninguém para digitar PIN)
+      // só tem a conta dela resolvida sob `/api/v1/backstage/production/`. O
+      // cookie de estação é nomeado por terminal, mas vale em
+      // `.boulangerie.com.br` inteiro: o mesmo aparelho, aberto no PDV, leva a
+      // confiança junto. A antessala compartilhada fica de fora do corte de
+      // propósito — se ela resolvesse o painel, o balcão com o mesmo cookie
+      // leria "destravado" com o nome dele e a pessoa perderia a tela de PIN.
+      // Ver `shopman/backstage/station_trust.PRODUCTION_API_PREFIX`.
+      operatorSessionPath: "/api/v1/backstage/production/session/",
+    },
   },
 
   // 301 das rotas pt-br antigas → inglês (vocabulário das lentes da grade: plan/

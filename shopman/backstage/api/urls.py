@@ -278,6 +278,18 @@ urlpatterns = [
     path("operator/station/", StationProvisionView.as_view(), name="api-backstage-operator-station"),
     # Capacidade do contêiner dos apps de operação (BFF operator-kit → /health/capacity)
     path("operator/capacity/", OperatorCapacityView.as_view(), name="api-backstage-operator-capacity"),
+    # A antessala da Produção — a MESMA view de `operator/session/`, montada sob o
+    # prefixo da Produção.
+    #
+    # Não é duplicação: é o que torna o prefixo de rota um discriminador COMPLETO.
+    # A trava da estação autônoma (`station_trust.is_production_surface`) só
+    # resolve a conta do totem sob `/api/v1/backstage/production/`, e a antessala
+    # é a primeira coisa que o kiosk pergunta ("estou travado?"). Deixá-la no
+    # caminho compartilhado forçaria uma de duas saídas ruins: ou o totem se
+    # resolve num caminho que o PDV também usa — e aí o balcão com o mesmo cookie
+    # lê `locked: false` com o nome do totem e a pessoa perde a tela de PIN — ou o
+    # kiosk lê `locked: true` para sempre e a chave do Admin não liga nada.
+    path("production/session/", OperatorSessionView.as_view(), name="api-backstage-production-session"),
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
     path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),

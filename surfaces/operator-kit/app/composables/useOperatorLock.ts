@@ -25,9 +25,22 @@ import { useOperatorSession } from "./useOperatorSession";
 import { useStationLock } from "./useStationLock";
 
 export function useOperatorLock(perm: string) {
+  // A antessala vem do runtime config, não de um literal, e a razão é de
+  // segurança. Numa estação AUTÔNOMA (painel de parede da Produção) não há quem
+  // digite PIN: o servidor resolve a conta declarada no terminal — mas SÓ sob
+  // `/api/v1/backstage/production/`, porque o cookie de estação vale em todo o
+  // domínio e sem esse corte a conta do painel viraria operador no PDV da aba ao
+  // lado. A Produção aponta esta chave para a antessala dela; os demais apps,
+  // atendidos, seguem na compartilhada. Uma chave por app = todo `useOperatorLock`
+  // do mesmo app concorda, sem cada chamada ter de lembrar.
+  const sessionPath =
+    (useRuntimeConfig().public.operatorSessionPath as string) ||
+    "/api/v1/backstage/operator/session/";
   const { data, refresh, status, error } = useFetch<OperatorSession>(
-    "/api/v1/backstage/operator/session/",
+    sessionPath,
     {
+      // A chave continua sendo `operator-session` (e não o caminho): é por ela
+      // que `operatorSessionOnError` manda releitura via `refreshNuxtData`.
       key: "operator-session",
       server: true,
       query: { perm },
