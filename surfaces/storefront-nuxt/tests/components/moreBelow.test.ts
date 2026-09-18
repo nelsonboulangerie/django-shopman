@@ -101,12 +101,26 @@ describe('MoreBelow — a dica de que ainda há conteúdo', () => {
     wrapper.unmount()
   })
 
-  it('flutua acima do que ocupa a base da tela', async () => {
+  // ⚠️ O DEGRADÊ ENCOSTA NO CARD. Enquanto a dica flutuava 12px acima do
+  // obstáculo (o antigo `109px` para um card de 97), sobrava uma faixa de
+  // conteúdo cru entre a lavagem e o card suspenso — visível e feia no checkout.
+  // A folga não sumiu: virou recuo interno do chevron, então a pílula segue
+  // exatamente onde estava e só o degradê desceu.
+  it('apoia a base no topo do que ocupa a base da tela', async () => {
     const wrapper = await montar(97)
     sentinelaEm(window.innerHeight + 85)
     await nextTick()
-    // 97 do card + a folga da regra pura.
-    expect(dica()?.style.bottom).toBe('109px')
+    expect(dica()?.style.bottom).toBe('97px')
+    wrapper.unmount()
+  })
+
+  // O sentinela é o destino do toque, e a margem de rolagem pela borda de baixo
+  // é o que faz o fim parar ACIMA do card, em vez de atrás dele.
+  it('o fim do conteúdo para acima do que flutua, não atrás', async () => {
+    const wrapper = await montar(97)
+    await nextTick()
+    const sentinela = document.querySelector('[data-more-below-sentinel]') as HTMLElement
+    expect(sentinela.style.scrollMarginBottom).toBe('97px')
     wrapper.unmount()
   })
 
@@ -120,13 +134,48 @@ describe('MoreBelow — a dica de que ainda há conteúdo', () => {
     wrapper.unmount()
   })
 
-  // Decorativa: nunca rouba clique nem entra na árvore de acessibilidade.
-  it('não captura toque e fica fora do leitor de tela', async () => {
+  // ⚠️ SÓ O CHEVRON CAPTURA O TOQUE. A faixa teleportada cobre a largura inteira
+  // da tela; se ela capturasse, engoliria o toque em tudo que estivesse atrás.
+  // O degradê continua inerte e fora do leitor de tela — ele é desenho.
+  it('o toque é do chevron, não da faixa', async () => {
     const wrapper = await montar()
     sentinelaEm(window.innerHeight + 85)
     await nextTick()
-    expect(dica()?.getAttribute('aria-hidden')).toBe('true')
     expect(dica()?.className).toContain('pointer-events-none')
+    expect(dica()?.getAttribute('aria-hidden')).toBeNull()
+    const chevron = document.querySelector('[data-more-below-jump]') as HTMLElement
+    expect(chevron.tagName).toBe('BUTTON')
+    expect(chevron.className).toContain('pointer-events-auto')
+    expect(chevron.getAttribute('aria-label')).toBe('Ir para o fim do conteúdo')
+    wrapper.unmount()
+  })
+
+  // O pedido é literal: clicar leva até o fim do conteúdo.
+  it('clicar no chevron leva até o fim do conteúdo', async () => {
+    const wrapper = await montar(97)
+    sentinelaEm(window.innerHeight + 85)
+    await nextTick()
+    const sentinela = document.querySelector('[data-more-below-sentinel]') as HTMLElement
+    const levar = vi.fn()
+    sentinela.scrollIntoView = levar
+    ;(document.querySelector('[data-more-below-jump]') as HTMLElement).click()
+    expect(levar).toHaveBeenCalledWith({ block: 'end', behavior: 'smooth' })
+    wrapper.unmount()
+  })
+
+  // Quem pediu menos movimento chega ao fim do mesmo jeito, sem o deslize.
+  it('com menos movimento, o salto é de uma vez', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true, media: query, addEventListener: () => {}, removeEventListener: () => {}
+    }))
+    const wrapper = await montar()
+    sentinelaEm(window.innerHeight + 85)
+    await nextTick()
+    const sentinela = document.querySelector('[data-more-below-sentinel]') as HTMLElement
+    const levar = vi.fn()
+    sentinela.scrollIntoView = levar
+    ;(document.querySelector('[data-more-below-jump]') as HTMLElement).click()
+    expect(levar).toHaveBeenCalledWith({ block: 'end', behavior: 'auto' })
     wrapper.unmount()
   })
 })
