@@ -9,6 +9,18 @@
 // items + the selected set.
 import type { POSCartItem } from "~/types/pos";
 
+/**
+ * ITENS, não linhas — a grandeza que o PDV inteiro fala.
+ *
+ * Três croissants numa linha e um café noutra são QUATRO itens. A cozinha
+ * (`kitchen.ts`), o resumo do pagamento, o quadro de comandas e a tela virada
+ * para o cliente já contam assim; o carrinho contava linha, e o operador
+ * conferia em voz alta pelo número errado com o cliente lendo o certo.
+ */
+export function countUnits(items: readonly POSCartItem[]): number {
+  return items.reduce((sum, item) => sum + (item.qty || 0), 0);
+}
+
 /** As linhas escolhidas, na ordem da comanda. */
 export function selectedItems(items: POSCartItem[], selected: ReadonlySet<string>): POSCartItem[] {
   return items.filter((item) => selected.has(item.line_id));
@@ -29,7 +41,13 @@ export function unfirableLineIds(items: POSCartItem[], selected: ReadonlySet<str
 }
 
 export interface SelectionView {
+  /** Quantas LINHAS estão marcadas. Grandeza interna — decide se a barra de
+   *  lote existe e quantos `line_id`s viajam. ⚠️ NUNCA vai para a tela como
+   *  "itens": três croissants numa linha são três itens, e o resto do app
+   *  (cozinha, pagamento, quadro de comandas, tela do cliente) já conta assim. */
   count: number;
+  /** Quantos ITENS estão marcados — Σ qty. É o número que a tela mostra. */
+  units: number;
   lineIds: string[];
   firableLineIds: string[];
   unfirableLineIds: string[];
@@ -44,6 +62,7 @@ export function selectionView(items: POSCartItem[], selected: ReadonlySet<string
   const unfire = unfirableLineIds(items, selected);
   return {
     count: chosen.length,
+    units: countUnits(chosen),
     lineIds: chosen.map((item) => item.line_id),
     firableLineIds: fire,
     unfirableLineIds: unfire,

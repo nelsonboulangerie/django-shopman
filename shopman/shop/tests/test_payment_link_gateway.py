@@ -205,7 +205,7 @@ class LinkWebhookCapturesAuthorizedTests(TestCase):
 class LinkReconciliationTests(TestCase):
     """Defeito 3: a rede contra webhook perdido alcança o pedido de link.
 
-    O link nem tem "volta" à tela: o cliente paga do celular, num aparelho que
+    O link nem tem "volta" à tela: o cliente paga do celular, num dispositivo que
     nunca abriu o acompanhamento. Se o webhook se perde, o worker é a ÚNICA
     porta — e ela filtrava ``method="card"``.
     """

@@ -182,7 +182,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 
 surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
-├── hub-nuxt/          Central de Apps do operador (:3001)                  → api./backstage
+├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
 ├── kds-nuxt/          cozinha (KDS, :3003)                                 → api./backstage
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
@@ -262,16 +262,28 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
   - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
-- **"dispositivo", nunca "aparelho".** O objeto que o operador segura — tablet, celular,
-  terminal, o que recebe aviso e guarda confiança — se chama **dispositivo** em toda
-  superfície de operador e em todo texto de tela do Admin. ⚠️ Duas ressalvas que são
-  regra, não exceção: a **maquininha de cartão tem nome próprio** (o entregador leva uma
-  *maquininha*, não um dispositivo) e o **Storefront fica de fora** por concessão
-  explícita do dono — é superfície de cliente final, com voz própria. A regra vale para
-  STRING (o que chega a alguém), não para comentário e docstring. Trava:
-  `shopman/backstage/tests/test_vocabulario_de_tela.py`, varredura por AST sobre 1.083
-  arquivos. Esta regra não estava escrita em lugar nenhum até 17/09/2026, e foi por isso
-  que 104 arquivos derivaram e o convite de instalação dos oito apps nasceu errado.
+- **Só existem duas palavras: "dispositivo" e "maquininha". "Aparelho" não é nenhuma
+  delas.** O objeto que o operador segura — tablet, celular, PC, terminal, o que recebe
+  aviso e guarda confiança — se chama **dispositivo**; o que o entregador leva para
+  receber cartão é a **maquininha**, que tem nome próprio e não é um dispositivo.
+  ⚠️ **A regra é da palavra, não do canal**: desde 18/09/2026 vale para string, template,
+  comentário, docstring e nome de teste — o dono disse "não usamos o termo aparelho", e
+  isso inclui o que só o programador lê. ⚠️ **O Storefront fica de fora, e é decisão
+  escrita, não herança**: a loja diz *aparelho* ao cliente, autorizado pelo dono e
+  reafirmado por ele na mesma conversa ("pode manter assim só lá: aparelho") — superfície
+  de cliente final tem voz própria, e quem escreve para o cliente não herda o vocabulário
+  de quem escreve para o balcão. A exenção é da superfície inteira: meia superfície com
+  duas palavras é pior que qualquer uma das duas. Trocar mecanicamente também não serve:
+  onde o objeto é a maquininha, a palavra é *maquininha* — leia a linha e escolha. Duas
+  travas, uma por metade do sistema:
+  `shopman/backstage/tests/test_vocabulario_de_tela.py` (1.951 `.py` de `shopman`,
+  `packages` e `config`; fora dela, migração porque é história, e a voz da loja
+  — `shopman/storefront/`, `shop/omotenashi/`) e
+  `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts` (1.073 arquivos dos oito
+  apps de operador + a layer + o router). Esta regra não estava escrita em lugar nenhum
+  até 17/09/2026, e foi por isso que 104 arquivos derivaram e o convite de instalação dos
+  oito apps nasceu errado; a varredura manual que a consertou deixou para trás justamente
+  uma string de tela, no arquivo que ela mesma editou — daí as travas.
 - **Copy de UI: primeiro inequívoco, depois curto.** Omotenashi na linguagem é precisão
   semântica e clareza inequívoca — não é coloquialidade, simploriedade nem brevidade a
   qualquer custo. O teste é um só: *o leitor precisou completar sentido, escolher entre

@@ -26,6 +26,7 @@ fica em [`_quarantine/`](_quarantine/).
 | Plano | Estado |
 |-------|--------|
 | [`WP-LOCK-01-estacao-travada-nao-e-sessao-encerrada.md`](WP-LOCK-01-estacao-travada-nao-e-sessao-encerrada.md) | Aprovado pelo dono como WP próprio (17/09), não iniciado. Travar o PDV é `logout()` e a sessão é uma para toda a zona: travar o balcão derruba o Gestor no mesmo navegador. #769/#775/#804 mitigaram sintomas; a causa segue. |
+| [`WP-TELAS-DE-PAREDE.md`](WP-TELAS-DE-PAREDE.md) | Exploração (18/09), nada implementado — **as 5 decisões do dono já estão tomadas**. Inventário achou **5** superfícies passivas; a mais madura (menuboard) não estava na lista. Telas **não** tem domínio próprio (ADR-018): é capability de rota + seção do Hub + sujeito `display` de device trust. Pareamento por código vence encurtador; `TrustedDevice.DISPLAY` já existe. Decidido: seção "Telas" · **zero 301, nenhum legado** · letreiro ganha SSE (sobe p/ Fase 3) · tabela `Screen` em `shop/models/` · device trust de tela **eterno**, com revogação visível como contrapartida. 4 fases, nenhuma bloqueada. |
 | [`FISCALMAN-PLAN.md`](FISCALMAN-PLAN.md) | S0–S4 concluídos e verdes; resta S5 (NF-e mod. 55/resale) + contador valida NCM/CSC/IBPT. |
 | [`BUYMAN-PROCUREMENT-PLAN.md`](BUYMAN-PROCUREMENT-PLAN.md) | Fase 1 concluída e deployada (INVENTORY_BACKEND ligado, WP-B5b); Fases 2–4 pós-go-live. |
 | [`IFOOD-DIRECT-INTEGRATION-PLAN.md`](IFOOD-DIRECT-INTEGRATION-PLAN.md) | Integração direta (polling) em staging; homologação de produção pendente. |

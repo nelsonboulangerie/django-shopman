@@ -10,7 +10,7 @@
 // Mesma gramática do gatilho de saúde do terminal do PDV (`RailItem`: tokens
 // `rail-foreground`, altura, rótulo no estado estendido). O popover é o primitivo
 // do reka-ui — o mesmo que o `UiPopover` dos apps embrulha — porque a layer é
-// montada também em apps sem o `UiPopover` (Central, B.I., Compras).
+// montada também em apps sem o `UiPopover` (Shopman Apps, B.I., Compras).
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
 import { useNow } from "@vueuse/core";
 import {

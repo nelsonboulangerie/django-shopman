@@ -9,7 +9,7 @@ vi.mock("vue", async (original) => ({
   onBeforeUnmount: (fn: () => void) => lifecycle.cleanup.push(fn),
 }));
 let listeners: Record<string, Array<() => void>>;
-// Pote de cookies do navegador: o relógio do aparelho que TODO app de operador
+// Pote de cookies do navegador: o relógio do dispositivo que TODO app de operador
 // alimenta (operator-kit/app/utils/deviceActivity.ts). Aqui é host-only (sem
 // `location`), o mesmo pote que as abas e as portas do mesmo host compartilham.
 let jar: Map<string, string>;
@@ -100,7 +100,7 @@ describe("auto-lock coordenado entre abas PDV", () => {
 // Travar é `logout()` da sessão COMPARTILHADA por todos os apps de operador em
 // `.boulangerie.com.br`. Uma aba do PDV esquecida em segundo plano (ou o PWA
 // minimizado) media ociosidade só pelo que acontece NELA e derrubava o Gestor,
-// o KDS e a Central em uso ativo no mesmo navegador, a cada 60 s.
+// o KDS e o Shopman Apps em uso ativo no mesmo navegador, a cada 60 s.
 describe("auto-lock com o PDV fora da vista", () => {
   function hide() { page.visibilityState = "hidden"; pageListeners.visibilitychange?.forEach((fn) => fn()); }
   function show() { page.visibilityState = "visible"; pageListeners.visibilitychange?.forEach((fn) => fn()); }
@@ -131,10 +131,10 @@ describe("auto-lock com o PDV fora da vista", () => {
   });
 });
 
-// A decisão do Pablo (17/09/2026): a trava é pela ociosidade do APARELHO. PDV e
+// A decisão do Pablo (17/09/2026): a trava é pela ociosidade do DISPOSITIVO. PDV e
 // Gestor lado a lado, operador trabalhando no Gestor → o PDV não pode travar,
 // porque travar derruba a sessão do Gestor junto.
-describe("auto-lock pela ociosidade do aparelho", () => {
+describe("auto-lock pela ociosidade do dispositivo", () => {
   /** Outro app de operador (Gestor, KDS…) registrou um toque no relógio. */
   function touchInOtherApp() { jar.set("shopman_operator_activity", String(Date.now())); }
 
@@ -147,7 +147,7 @@ describe("auto-lock pela ociosidade do aparelho", () => {
     expect(lock).not.toHaveBeenCalled();
   });
 
-  it("aparelho inteiro ocioso trava no prazo contado do último toque em qualquer app", async () => {
+  it("dispositivo inteiro ocioso trava no prazo contado do último toque em qualquer app", async () => {
     const lock = tab();
     await vi.advanceTimersByTimeAsync(40_000);
     touchInOtherApp();
@@ -170,7 +170,7 @@ describe("auto-lock pela ociosidade do aparelho", () => {
     expect(lock).not.toHaveBeenCalled();
   });
 
-  it("oculto continua não travando mesmo com o aparelho ocioso", async () => {
+  it("oculto continua não travando mesmo com o dispositivo ocioso", async () => {
     const lock = tab();
     page.visibilityState = "hidden";
     await vi.advanceTimersByTimeAsync(10 * 60_000);
@@ -184,7 +184,7 @@ describe("auto-lock pela ociosidade do aparelho", () => {
     expect(lock).toHaveBeenCalledTimes(1);
   });
 
-  it("travar re-ancora o relógio do aparelho", async () => {
+  it("travar re-ancora o relógio do dispositivo", async () => {
     const lock = tab();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(lock).toHaveBeenCalledTimes(1);

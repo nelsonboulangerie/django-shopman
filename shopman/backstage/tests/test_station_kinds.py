@@ -259,7 +259,7 @@ def _token(terminal_ref: str) -> str:
 
 
 def test_o_cookie_do_totem_NAO_vira_operador_no_PDV(client):
-    """O caso que a trava existe para impedir: o mesmo aparelho, na aba do PDV.
+    """O caso que a trava existe para impedir: o mesmo dispositivo, na aba do PDV.
 
     A conta deste teste TEM `cashman.operate_pos`. É o pior caso de propósito:
     sem a trava de superfície o balcão abriria inteiro, sem PIN e sem ninguém.
@@ -346,7 +346,7 @@ def test_a_antessala_COMPARTILHADA_reporta_o_totem_como_travado(client):
     assert sessao["locked"] is True
     assert sessao["operator"] is None
     # A estação continua RECONHECIDA: o balcão sabe de que terminal é, e por isso
-    # tem como pedir PIN. Perder isso trancaria o aparelho para a pessoa também.
+    # tem como pedir PIN. Perder isso trancaria o dispositivo para a pessoa também.
     assert sessao["station"] == "totem-1"
 
 

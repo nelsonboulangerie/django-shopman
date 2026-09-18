@@ -5,7 +5,7 @@ import table from "./app-identity.json";
  *
  * Rótulo, símbolo e cor de um app estavam escritos em seis lugares (nuxt.config,
  * package.json, tools/pwa-gate, app.vue duas vezes, PWA_ICONS.md) e o inevitável
- * aconteceu: a Central tinha ícone cinza-ardósia e barra de título vinho, o Gestor se
+ * aconteceu: o Shopman Apps tinha ícone cinza-ardósia e barra de título vinho, o Gestor se
  * chamava "Gestor" na janela e "Gestor de Pedidos" no launcher, a Cozinha era "KDS" no
  * título e "Cozinha" no rail. Agora tudo sai daqui.
  *
@@ -34,7 +34,7 @@ export interface OperatorAppIdentity {
   /** Símbolo Iconify do ícone gerado (`<coleção>:<nome>`) — ver PWA_ICONS.md. */
   symbol: string;
   /**
-   * Nome Lucide que o rail e o tile da Central mostram quando o PNG não carrega.
+   * Nome Lucide que o rail e o tile do Shopman Apps mostram quando o PNG não carrega.
    * Igual ao `symbol` sem o prefixo, exceto na Produção: o `tabler:baguette` do PNG
    * não existe no Lucide e o fallback fica em `croissant`.
    */
@@ -42,7 +42,7 @@ export interface OperatorAppIdentity {
   /** Cor de fundo do ícone = cor da barra de título do app instalado. */
   color: string;
   /**
-   * Artigo definido do rótulo ("o PDV", "a Central", "as Compras"). Existe para que o
+   * Artigo definido do rótulo ("o PDV", "o Shopman Apps", "as Compras"). Existe para que o
    * verbo fique no componente e a gramática no app: "Instale {artigo} {rótulo}".
    */
   article: string;

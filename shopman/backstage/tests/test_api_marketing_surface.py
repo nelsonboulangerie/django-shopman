@@ -2054,7 +2054,7 @@ def test_lane(settings, monkeypatch):
     recipient = "4605528796186498"
     settings.SHOPMAN_MARKETING_TEST_TARGETS = {
         "owner-sandbox": {
-            "label": "Aparelho verificado",
+            "label": "Dispositivo verificado",
             "recipient": recipient,
             "backend": "manychat",
             "sandbox": True,
@@ -2175,7 +2175,7 @@ class TestWhatsAppTestSend:
 
         assert response.json()["test_targets"] == [{
             "ref": "owner-sandbox",
-            "label": "Aparelho verificado",
+            "label": "Dispositivo verificado",
             "backend": "manychat",
         }]
         assert recipient not in response.content.decode()

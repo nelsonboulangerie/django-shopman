@@ -37,11 +37,11 @@ useOperatorWindowTitle();
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
     <OfflineBanner />
-    <!-- Rail de operador canônico (kit): funções comuns (Central, operador, tema). Fica
+    <!-- Rail de operador canônico (kit): funções comuns (Shopman Apps, operador, tema). Fica
          fixo enquanto o conteúdo rola. Colapsado → não renderiza (some de verdade). -->
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
-        :central-url="hubUrl"
+        :hub-url="hubUrl"
         :operator-name="operator?.name"
         @lock="lock"
       />

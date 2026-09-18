@@ -64,6 +64,15 @@ describe("PosCartPanel — render", () => {
     expect(text).toContain("11,00");
   });
 
+  it("o cabeçalho conta ITENS (unidades), não linhas", async () => {
+    // ⚠️ Um pão e dois cafés são TRÊS itens. O cabeçalho contava linha ("2
+    // itens") enquanto o resumo do pagamento, o quadro de comandas e a tela
+    // virada para o cliente — que o cliente está lendo, ao lado — diziam três.
+    // Quem conferia em voz alta conferia pelo número errado.
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    expect(wrapper.find("h3").text()).toBe("3 itens");
+  });
+
   it("com comanda obrigatória e sem comanda aberta, mostra o gate 'Abra uma comanda'", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ requiresTab: true, hasOpenTab: false, items: [] }),

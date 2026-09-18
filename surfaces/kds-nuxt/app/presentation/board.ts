@@ -30,16 +30,18 @@ export function toneBar(tone: KDSTone): string {
 }
 
 /** Superfície do card "PRÓXIMO" pintada ton sur ton no seu próprio tom do semáforo:
- *  fundo sóbrio + borda/ring no mesmo tom (a barra inferior viva continua como é).
+ *  fundo sóbrio + borda no mesmo tom (a barra inferior viva continua como é).
  *  Não cria um significado de cor competindo — amplifica o que já existe ("é o
  *  próximo E está atrasado"). É o único card pintado da grade (os demais ficam
- *  neutros), então ele se destaca sem precisar de uma posição/tamanho especial. No
- *  prazo não tem cor de urgência → spotlight neutro elevado. Texto claro por cima. */
+ *  neutros), então ele se destaca sem precisar de uma posição/tamanho especial.
+ *
+ *  ⚠️ Sem `ring`: o canon do kit (operator-base.css, "SELEÇÃO / ATIVO") reserva o
+ *  ring ao FOCO DE TECLADO e pede borda + tint levíssimo para destacar. No prazo
+ *  não tem cor de urgência → o par canônico `border-primary` + `bg-primary/5`. */
 export function toneNextSurface(tone: KDSTone): string {
-  if (tone === "late") return "bg-red-500/20 border-red-500/55 ring-red-500/45";
-  if (tone === "warning")
-    return "bg-amber-500/20 border-amber-500/55 ring-amber-500/45";
-  return "bg-accent border-foreground/20 ring-foreground/20";
+  if (tone === "late") return "bg-red-500/15 border-red-500/60";
+  if (tone === "warning") return "bg-amber-500/15 border-amber-500/60";
+  return "bg-primary/5 border-primary";
 }
 
 /** Tonal chip classes for the live timer (border+tint+text), shared by card+modal. */
@@ -97,36 +99,79 @@ export function allDayCounts(
     .sort((a, b) => b.qty - a.qty);
 }
 
-// ── O toque da cozinha ──────────────────────────────────────────────────────
-// O card não tem botão de ação: o CABEÇALHO inteiro é o alvo. Um toque põe o
-// ticket em preparo; o seguinte finaliza. O preparo é estado do TICKET (o
-// servidor guarda e todos os tablets veem), nunca do item.
+// ── Os dois gestos da cozinha ───────────────────────────────────────────────
+// O card tem UM botão, e o botão diz o ato pelo nome: "Iniciar preparo" e
+// depois "Finalizar preparo". A área grande do card (cabeçalho + itens) faz o
+// que é SEGURO — abre o detalhe. O ato que sai da cozinha exige o botão
+// rotulado. O preparo é estado do TICKET (o servidor guarda e todos os tablets
+// veem), nunca do item.
 
-/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de finalizar. Um
- *  toque duplo (ou o dedo que quica na tela molhada) não pode iniciar e
- *  finalizar o mesmo pedido em 300 ms. */
+/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de finalizar. O
+ *  botão fica no MESMO lugar nos dois estados, então um toque duplo (ou o dedo
+ *  que quica na tela molhada) iniciaria e finalizaria o mesmo pedido em 300 ms.
+ *  Durante o intervalo o rótulo já é "Finalizar preparo" — o que muda é só ele
+ *  não aceitar o toque, e isso não pisca rótulo na cara de ninguém. */
 export const KDS_ARM_DELAY_MS = 900;
 
 /** Janela de "Desfazer" do finalizar. Finalizar tem efeito fora da cozinha
  *  (o pedido vira PRONTO e o cliente é avisado), e o "Reabrir" não desavisa
- *  ninguém — então o POST só sai quando a janela fecha. */
+ *  ninguém — então o POST só sai quando a janela fecha. Durante a janela o card
+ *  FICA NO LUGAR, apagado, com o Desfazer no mesmo ponto onde o dedo acabou de
+ *  tocar: um aviso no topo da tela não se alcança com a mão ocupada. */
 export const KDS_UNDO_WINDOW_MS = 5000;
 
-export type KDSTicketTap = "start" | "finish" | "blocked" | "none";
+export type KDSTicketActionKind = "start" | "finish" | "blocked" | "undo" | "none";
 
-/** O que um toque no cabeçalho faz, dado o estado do ticket. `blocked` = há
- *  item cancelado deste pedido esperando "Ciente": o servidor recusaria o
- *  finalizar, então a tela recusa antes, dizendo por quê. Iniciar nunca é
- *  bloqueado — começar o que sobrou é seguro. */
-export function ticketTapAction(
+export interface KDSTicketAction {
+  kind: KDSTicketActionKind;
+  /** O rótulo do botão — o ATO, não o estado. Vazio quando não há botão. */
+  label: string;
+  icon: string;
+  /** `false` = o botão aparece mas ainda não aceita o toque (janela anti-quique). */
+  enabled: boolean;
+}
+
+const NO_ACTION: KDSTicketAction = { kind: "none", label: "", icon: "", enabled: false };
+
+/** O que o botão do card oferece, dado o estado do ticket.
+ *
+ *  - `undo`  — finalizado há menos de 5 s; o POST ainda não saiu.
+ *  - `blocked` — há item cancelado deste pedido esperando confirmação: o servidor
+ *    recusaria o finalizar, então a tela recusa antes e diz PARA ONDE ir. Iniciar
+ *    nunca é bloqueado — começar o que sobrou é seguro.
+ *  - agendado não tem botão: é prévia, e prévia não age. */
+export function ticketAction(
   ticket: Pick<KDSTicketProjection, "status" | "is_scheduled">,
-  state: { armed: boolean; blocked: boolean },
-): KDSTicketTap {
-  if (ticket.is_scheduled) return "none";
-  if (ticket.status === "pending") return "start";
-  if (ticket.status !== "in_progress") return "none";
-  if (state.blocked) return "blocked";
-  return state.armed ? "finish" : "none";
+  state: { armed: boolean; blocked: boolean; finishing?: boolean },
+): KDSTicketAction {
+  if (state.finishing)
+    return { kind: "undo", label: "Desfazer", icon: "lucide:undo-2", enabled: true };
+  if (ticket.is_scheduled) return NO_ACTION;
+  if (ticket.status === "pending")
+    return { kind: "start", label: "Iniciar preparo", icon: "lucide:play", enabled: true };
+  if (ticket.status !== "in_progress") return NO_ACTION;
+  if (state.blocked)
+    return {
+      kind: "blocked",
+      label: "Item cancelado — veja o cartão vermelho",
+      icon: "lucide:ban",
+      enabled: true,
+    };
+  return {
+    kind: "finish",
+    label: "Finalizar preparo",
+    icon: "lucide:check",
+    enabled: state.armed,
+  };
+}
+
+/** Dia/mês de uma data ISO ("2026-09-19" → "19/09"). O card agendado precisa
+ *  DIZER a data: "libera na data" obriga o operador a lembrar do seletor que
+ *  está no topo do cabeçalho, longe do card e de um minuto atrás. Fatiar a
+ *  string (em vez de `new Date`) evita o fuso virar a data um dia. */
+export function shortDateLabel(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return month && day ? `${day}/${month}` : iso;
 }
 
 /** Pedidos com item cancelado ainda sem "Ciente" nesta estação. O servidor
@@ -170,35 +215,55 @@ export interface KDSBoardView {
   allDay: KDSAllDayCount[];
   counts: Record<string, number>;
   total: number;
-  /** Pedidos com cancelado sem "Ciente" — finalizar espera. */
+  /** Pedidos com cancelado sem confirmação — finalizar espera. */
   blockedRefs: Set<string>;
   /** Tickets que são adicional de um pedido já visto nesta estação. */
   additionPks: Set<number>;
+  /** Finalizados com a janela de "Desfazer" aberta: continuam na grade, apagados. */
+  finishingPks: Set<number>;
+  /** O ticket que a estação deve pegar agora (o 1º da ordem de urgência que
+   *  ainda é trabalho). Nunca um agendado nem um que está saindo. */
+  nextPk: number | null;
   serviceDate: string;
   serviceDateDisplay: string;
   today: string;
   availableDates: string[];
 }
 
-/** `hidden`: tickets finalizados cuja janela de "Desfazer" ainda está aberta —
- *  já saíram da grade para a cozinha, mas o servidor ainda os tem abertos. Os
- *  contadores de preparo são recontados sobre o que a tela mostra, para que o
- *  toque otimista (iniciar/finalizar) mude o cabeçalho junto com o card. */
+/** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é
+ *  trabalho de verdade. Agendado é prévia e não se pega; expedição não tem
+ *  "próximo" (a ordem ali é a da projection). */
+export function nextTicketPk(
+  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
+  isExpedition: boolean,
+): number | null {
+  if (isExpedition) return null;
+  const first = cards.find((card) => !isExpeditionCard(card) && !card.is_scheduled);
+  return first ? first.pk : null;
+}
+
+/** `finishingPks`: tickets finalizados cuja janela de "Desfazer" ainda está
+ *  aberta. Eles CONTINUAM na grade, no mesmo lugar, apagados e carregando o
+ *  botão de desfazer — sumir e oferecer o desfazer num aviso lá no topo da tela
+ *  era pedir que a cozinha atravessasse a tela com a mão ocupada. O que eles
+ *  deixam de ser é TRABALHO: saem dos contadores, saem do "a fazer" e nunca são
+ *  o próximo. Os contadores de preparo são recontados sobre o que a tela mostra,
+ *  para que o toque otimista mude o cabeçalho junto com o card. */
 export function boardView(
   board: KDSBoardProjection,
-  hidden: ReadonlySet<number> = new Set(),
+  finishingPks: ReadonlySet<number> = new Set(),
 ): KDSBoardView {
-  const visible = board.tickets.filter((card) => !hidden.has(card.pk));
-  const cards = sortByUrgency(visible);
+  const cards = sortByUrgency([...board.tickets]);
+  const working = cards.filter((card) => !finishingPks.has(card.pk));
   const recentDone = [...(board.recent_done ?? [])];
   const counts = { ...(board.counts || {}) };
   if (!board.is_expedition) {
-    const tickets = cards as KDSTicketProjection[];
+    const tickets = working as KDSTicketProjection[];
     counts.pending = tickets.filter((t) => t.status === "pending").length;
     counts.in_progress = tickets.filter((t) => t.status === "in_progress").length;
     counts.total = tickets.length;
-  } else if (hidden.size) {
-    counts.total = cards.length;
+  } else if (finishingPks.size) {
+    counts.total = working.length;
   }
   return {
     instanceRef: board.instance_ref,
@@ -207,11 +272,13 @@ export function boardView(
     cards,
     cancelled: [...board.cancelled_tickets],
     recentDone,
-    allDay: allDayCounts(cards),
+    allDay: allDayCounts(working),
     counts,
-    total: counts.total ?? cards.length,
+    total: counts.total ?? working.length,
     blockedRefs: blockedOrderRefs(board.cancelled_tickets),
     additionPks: additionTicketPks(cards, recentDone),
+    finishingPks: new Set(finishingPks),
+    nextPk: nextTicketPk(working, board.is_expedition),
     serviceDate: board.service_date,
     serviceDateDisplay: board.service_date_display,
     today: board.today,

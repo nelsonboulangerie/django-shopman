@@ -66,24 +66,24 @@ describe("OperatorRail — identidade do app", () => {
     expect(square.getComponent({ name: "Icon" }).attributes("name")).toBe("lucide:shopping-basket");
   });
 
-  it("com centralUrl a imagem some no hover como o Lucide (vira a seta de voltar)", async () => {
-    const wrapper = await mountRail({ appIconSrc: ICON_SRC, centralUrl: "http://central/" });
+  it("com hubUrl a imagem some no hover como o Lucide (vira a seta de voltar)", async () => {
+    const wrapper = await mountRail({ appIconSrc: ICON_SRC, hubUrl: "http://central/" });
     const square = identitySquare(wrapper);
 
     expect(square.get("img").classes()).toContain("group-hover:hidden");
-    // A seta "voltar à Central" continua ali, escondida até o hover/foco.
+    // A seta "voltar ao Shopman Apps" continua ali, escondida até o hover/foco.
     const arrow = square.findAllComponents({ name: "Icon" }).find((c) => c.attributes("name") === "lucide:arrow-left");
     expect(arrow?.exists()).toBe(true);
     expect(wrapper.get("aside > a").attributes("href")).toBe("http://central/");
   });
 
-  it("na própria Central (sem centralUrl) a imagem é identidade pura, sem hover", async () => {
+  it("na própria home (sem hubUrl) a imagem é identidade pura, sem hover", async () => {
     const wrapper = await mountRail({ appIconSrc: ICON_SRC });
     expect(identitySquare(wrapper).get("img").classes()).not.toContain("group-hover:hidden");
   });
 
   it("o PNG tem os cantos transparentes: o fundo do quadrado só aparece sem imagem ou no hover", async () => {
-    const withImage = identitySquare(await mountRail({ appIconSrc: ICON_SRC, centralUrl: "http://central/" }));
+    const withImage = identitySquare(await mountRail({ appIconSrc: ICON_SRC, hubUrl: "http://central/" }));
     expect(withImage.classes()).not.toContain("bg-rail-foreground/15");
     expect(withImage.classes()).toContain("group-hover:bg-rail-foreground/25");
 

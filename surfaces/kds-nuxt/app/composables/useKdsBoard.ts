@@ -9,7 +9,6 @@ import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "
 import {
   boardView,
   KDS_UNDO_WINDOW_MS,
-  splitRef,
   type KDSBoardView,
 } from "~/presentation/board";
 import type { Ref } from "vue";
@@ -94,9 +93,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   });
 
   const board = computed<KDSBoardProjection | null>(() => data.value?.board ?? null);
-  // Finalizados dentro da janela de "Desfazer": já saíram da grade, o servidor
-  // ainda os tem abertos. A view os esconde, então o poll e o SSE não os trazem
-  // de volta enquanto a janela está aberta.
+  // Finalizados dentro da janela de "Desfazer": o servidor ainda os tem abertos,
+  // e a grade também — apagados, no mesmo lugar, com o "Desfazer" ali. A view os
+  // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
+  // trabalho enquanto a janela está aberta.
   const finishing = ref<Set<number>>(new Set());
   const view = computed<KDSBoardView | null>(() =>
     board.value ? boardView(board.value, finishing.value) : null,
@@ -317,9 +317,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       });
   }
 
-  // Segundo toque: finalizar — com janela de "Desfazer". O card sai da grade na
-  // hora; o POST só sai quando a janela fecha (ou o tablet dorme). Assim um toque
-  // errado não vira "pedido pronto" avisado ao cliente.
+  // Segundo toque: finalizar — com janela de "Desfazer". O POST só sai quando a
+  // janela fecha (ou o tablet dorme), então um toque errado não vira "pedido
+  // pronto" avisado ao cliente. O aviso e o desfazer vivem NO CARD, que fica no
+  // lugar por 5 s: um toast no topo da tela não se alcança com a mão ocupada.
   const finishTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   function releaseFinish(pk: number) {
@@ -364,10 +365,6 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (!t || t.is_scheduled) return;
     finishing.value = new Set(finishing.value).add(pk);
     finishTimers.set(pk, setTimeout(() => commitFinish(pk), KDS_UNDO_WINDOW_MS));
-    useSonner.success(`Pedido ${splitRef(t.order_ref).code} finalizado`, {
-      duration: KDS_UNDO_WINDOW_MS,
-      action: { label: "Desfazer", onClick: () => undoFinish(pk) },
-    });
   };
   const expedite = (pk: number, action: "dispatch" | "complete") => {
     if (readOnly.value) return;

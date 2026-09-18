@@ -665,7 +665,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             }"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"
-            :aria-label="`Confirmar conclusão da fornada de ${order.recipe_name}`"
+            :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
             <span class="text-xl font-semibold leading-none tabular-nums"
@@ -674,7 +674,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             <span
               class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground"
               >{{
-                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Confirmar"
+                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
               }}</span
             >
           </button>
