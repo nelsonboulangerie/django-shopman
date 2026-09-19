@@ -12,6 +12,7 @@ import logging
 from shopman.shop import directives
 from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
+from shopman.shop.services.order_helpers import is_test_order
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,15 @@ def emit(order) -> None:
 
     ASYNC — retry-safe.
     """
+    # Pedido de teste de marketplace: nota fiscal é documento da Receita sobre
+    # uma venda que não existiu. Hoje a emissão não dispara por acidente
+    # (``method="external"`` derruba os resolvers), mas o payload de teste traz
+    # CPF e o operador tem o botão "enviar nota" — o gate fica aqui, no único
+    # caminho por onde a emissão nasce, e não na sorte da configuração.
+    if is_test_order(order):
+        logger.info("fiscal.emit: pedido de teste order=%s — emissão suprimida", order.ref)
+        return
+
     if not fiscal_pool.get_backend():
         return
 

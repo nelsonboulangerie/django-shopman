@@ -282,6 +282,19 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     </p>
 
     <template v-if="order">
+      <!-- Homologação do iFood contra o ambiente VIVO: o pedido de teste avança
+           como qualquer outro, e o detalhe é onde o operador decide o que fazer
+           com ele. O aviso abre a tela, acima do resumo. -->
+      <p
+        v-if="order.test_order_notice"
+        class="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 p-3 text-sm font-medium"
+        role="status"
+        data-test-order-notice
+      >
+        <Icon name="lucide:flask-conical" class="mt-0.5 size-4 shrink-0" />
+        <span>{{ order.test_order_notice }}</span>
+      </p>
+
       <!-- summary -->
       <section class="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <div class="flex flex-wrap items-center gap-2">

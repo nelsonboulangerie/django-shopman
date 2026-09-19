@@ -61,6 +61,18 @@ const d = computed(
     class="flex w-full flex-col gap-3 overflow-hidden rounded-md border bg-card shadow-sm"
     :class="[d.inset, d.padT, d.padB]"
   >
+    <!-- Pedido de teste da homologação do iFood: a Expedição é o card do PEDIDO,
+         não do ticket, então ele chega aqui mesmo sem passar pela cozinha — e é
+         aqui que alguém entregaria a sacola. O aviso vem antes do código. -->
+    <p
+      v-if="card.test_order_label"
+      class="flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/20 px-2 py-1.5 text-sm font-bold uppercase tracking-wide"
+      data-kds-test-order
+    >
+      <Icon name="lucide:flask-conical" class="size-4 shrink-0" />
+      {{ card.test_order_label }} · não entregar
+    </p>
+
     <!-- identidade: código herói + badge neutro de despacho/balcão -->
     <div class="flex items-start justify-between gap-2.5">
       <div class="min-w-0">

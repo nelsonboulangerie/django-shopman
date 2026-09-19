@@ -26,6 +26,49 @@ def get_fulfillment_type(order) -> str:
     )
 
 
+def is_test_order(order) -> bool:
+    """O pedido é um pedido de TESTE de marketplace: visível e operável, inerte.
+
+    A homologação do iFood é feita contra o ambiente VIVO: o Developer Portal
+    gera pedidos que entram pelo polling como qualquer outro, e o iFood valida
+    as transições do lado DELES (nossos callbacks). Por isso o pedido precisa
+    aparecer no Gestor e ser aceito, despachado e concluído normalmente — o que
+    ele não pode é tocar no físico e no financeiro da casa: estoque, cozinha,
+    nota fiscal, aviso ao cliente e fidelidade ficam de fora.
+
+    A marca já nasce na ingestão (``ifood_ingest`` grava
+    ``data["ifood"]["is_test"]`` a partir do ``isTest`` do payload). Esta função
+    é o ÚNICO lugar onde ela é lida: cada supressão pergunta aqui, e outra
+    origem de teste, quando existir, ganha seu ramo nesta função e em mais
+    lugar nenhum.
+
+    Só o booleano ``True`` conta. Qualquer outro valor (ausente, ``None``, a
+    string ``"false"``) significa pedido real — na dúvida, o pedido é de
+    verdade e a casa trabalha.
+    """
+    data = getattr(order, "data", None) or {}
+    ifood = data.get("ifood")
+    if isinstance(ifood, dict) and ifood.get("is_test") is True:
+        return True
+    return False
+
+
+def exclude_test_orders(queryset):
+    """Tira os pedidos de teste de um queryset de ``Order``.
+
+    Gêmea de :func:`is_test_order` no banco, para leitores financeiros (B.I.).
+    A negação de JSON tem semântica de três valores no SQLite e no PostgreSQL:
+    um ``exclude`` simples também derrubaria a linha em que a chave não existe
+    — isto é, todo pedido que não veio do iFood. O ramo nulo é escrito à mão
+    para que só a marca exata desapareça.
+    """
+    from django.db.models import Q
+
+    return queryset.filter(
+        Q(data__ifood__is_test__isnull=True) | ~Q(data__ifood__is_test=True),
+    )
+
+
 def delivery_eta_minutes(shop, order_data: dict) -> float:
     """Minutos estimados de entrega a partir da SAÍDA.
 
