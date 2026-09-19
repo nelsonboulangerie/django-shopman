@@ -33,6 +33,7 @@ import {
   triageCards,
   zonesView,
   confirmationRemainingLabel,
+  deadlineTone,
   realtimeIndicator,
 } from "../app/presentation/board";
 import type { OrderCardProjection, TwoZoneQueueProjection } from "../app/types/orders";
@@ -103,6 +104,38 @@ describe("statusTone", () => {
   it("toneBadge returns a class string per tone", () => {
     expect(toneBadge("danger")).toContain("red");
     expect(toneBadge("neutral")).toContain("muted");
+  });
+});
+
+describe("deadlineTone", () => {
+  // O tom vem do que FALTA, não do que passou: um pedido de 7 minutos com 10 de
+  // prazo está tranquilo, e um de 7 com 8 está para vencer. Foi essa conta que
+  // ninguém fez na homologação de 19/09, seis vezes seguidas.
+  const now = Date.parse("2026-09-19T18:50:00Z");
+  const em = (seconds: number) => new Date(now + seconds * 1000).toISOString();
+
+  it("fica vermelho no último minuto", () => {
+    expect(deadlineTone(em(60), now)).toBe("late");
+    expect(deadlineTone(em(5), now)).toBe("late");
+  });
+
+  it("avisa em âmbar nos três minutos finais", () => {
+    expect(deadlineTone(em(61), now)).toBe("warning");
+    expect(deadlineTone(em(180), now)).toBe("warning");
+  });
+
+  it("fica calmo com folga", () => {
+    expect(deadlineTone(em(181), now)).toBe("ok");
+    expect(deadlineTone(em(3600), now)).toBe("ok");
+  });
+
+  it("prazo vencido é o mais urgente que existe, não some", () => {
+    expect(deadlineTone(em(-30), now)).toBe("late");
+  });
+
+  it("sem prazo ou com data ilegível não pinta alarme", () => {
+    expect(deadlineTone("", now)).toBe("muted");
+    expect(deadlineTone("amanhã cedo", now)).toBe("muted");
   });
 });
 

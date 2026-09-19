@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
 from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -167,9 +168,24 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         if delivery_date is not None:
             order_data["delivery_date"] = delivery_date.isoformat()
 
+    # Prazo do marketplace, gravado no pedido em vez de recalculado: é fato da
+    # ingestão (quando ELE nasceu lá, com o SLA que valia então), não config de hoje.
+    confirm_by = _external_confirm_deadline(channel_ref, payload.get("created_at"))
+    if confirm_by:
+        order_data["ifood"]["confirm_by"] = confirm_by
+
+    # O pedido já tem um número no iFood, e é esse que o cliente, o portal e o suporte
+    # falam. Adotá-lo como sufixo do ref (IFOOD-260919-4994) evita a tradução que o
+    # operador tinha de fazer de cabeça; ocupado ou ausente, cai no sorteio de sempre.
+    display_id = str(payload.get("display_id") or "").strip()
+    ref = generate_order_ref(channel_ref=channel_ref, preferred_suffix=display_id)
+    order_data["ifood"]["ref_from_display_id"] = bool(
+        display_id and ref.endswith(f"-{display_id.upper()}")
+    )
+
     with transaction.atomic():
         order = Order.objects.create(
-            ref=generate_order_ref(channel_ref=channel_ref),
+            ref=ref,
             channel_ref=channel_ref,
             session_key=session_key_for_order(payload.get("merchant_id", ""), order_code),
             external_ref=order_code,
@@ -222,6 +238,30 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
 
 
 # ── helpers ───────────────────────────────────────────────────────────
+
+
+def _external_confirm_deadline(channel_ref: str, created_at) -> str:
+    """Quando o MARKETPLACE cancela o pedido se ninguém confirmar (ISO), ou "".
+
+    Lido do canal (``confirmation.external_sla_minutes``) e contado a partir do
+    ``createdAt`` do iFood, não da nossa ingestão: o relógio deles já estava correndo
+    antes de o evento chegar no polling.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        minutes = int(ChannelConfig.for_channel(channel_ref).confirmation.external_sla_minutes or 0)
+    except Exception:  # canal ausente ou config inválida não impede ingerir o pedido
+        logger.warning("ifood_ingest: SLA externo indisponível para %s — card fica sem contagem", channel_ref)
+        return ""
+    if minutes <= 0 or not created_at:
+        return ""
+    placed = parse_datetime(str(created_at))
+    if placed is None:
+        return ""
+    return (placed + timedelta(minutes=minutes)).isoformat()
 
 
 def payment_status_from_payload(payments: dict, total_q: int) -> str:

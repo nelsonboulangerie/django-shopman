@@ -311,6 +311,7 @@ export interface OrderCardProjection {
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  channel_display_id: string;
   courier_status: string;
   courier_status_label: string;
   is_preorder: boolean;

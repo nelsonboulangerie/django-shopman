@@ -208,6 +208,11 @@ class OrderCardProjection:
     # countdown para o cliente não ficar no escuro sobre o prazo.
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""  # "confirm" | "cancel" — ação do directive ao vencer
+    # Número que o CANAL deu ao pedido (``displayId`` do iFood). Desde que o ref
+    # adota esse número (``IFOOD-260919-4994``), o card já o mostra em destaque e
+    # este campo fica VAZIO — ele só se preenche quando o ref divergiu: colisão no
+    # dia, ou pedido criado antes dessa mudança. Aí o card exibe, e a busca acha.
+    channel_display_id: str = ""
     # Corrida externa (Machine): letra crua + label p/ badge no board. Vazios
     # quando não há corrida registrada no pedido.
     courier_status: str = ""
@@ -1155,6 +1160,26 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 # ── Internals ──────────────────────────────────────────────────────────
 
 
+def _channel_display_id(order) -> str:
+    """O número do canal, SÓ quando o ref não o carrega — senão seria dizer duas vezes."""
+    display_id = str(((order.data or {}).get("ifood") or {}).get("display_id") or "").strip()
+    if not display_id:
+        return ""
+    return "" if str(order.ref or "").upper().endswith(f"-{display_id.upper()}") else display_id
+
+
+def _external_deadline(order) -> tuple[str, str] | None:
+    """Prazo do marketplace (ISO, ação) enquanto o pedido ainda espera confirmação.
+
+    Gravado na ingestão em ``data.ifood.confirm_by``. Vencido, quem cancela é o
+    marketplace — daí a ação ser ``cancel``, igual ao timer de ``auto_cancel``.
+    """
+    if order.status != "new":
+        return None
+    confirm_by = str(((order.data or {}).get("ifood") or {}).get("confirm_by") or "").strip()
+    return (confirm_by, "cancel") if confirm_by else None
+
+
 def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
     """{order_ref: (expires_at_iso, action)} dos timers de confirmação pendentes.
 
@@ -1362,8 +1387,11 @@ def _build_card(
         gift_has_recipient=bool((recipient or {}).get("name")),
         assigned_operator=str((order.data.get("assignment") or {}).get("operator_name") or ""),
         awaiting_work_orders=_awaiting_work_orders(order),
-        confirmation_deadline_iso=deadline[0] if deadline else "",
-        confirmation_action=deadline[1] if deadline else "",
+        # Directive agendada (canais da casa) ou prazo do marketplace (iFood): o card
+        # conta um prazo só, porque para quem opera a pergunta é uma só — quanto falta.
+        confirmation_deadline_iso=(deadline or _external_deadline(order) or ("", ""))[0],
+        confirmation_action=(deadline or _external_deadline(order) or ("", ""))[1],
+        channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
         courier_status_label=COURIER_STATUS_LABELS.get(_card_courier_status(order), ""),
         is_preorder=is_preorder,
