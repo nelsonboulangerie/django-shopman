@@ -47,6 +47,21 @@ custou o PDV fora do ar com tudo verde; o que não se mede volta.
 seria uma linha nomeando `pos-nuxt` e `operator-floor` com o comando que os
 republica. Barulho no lugar de silêncio verde.
 
+## A guarda declara a MEDIDA, não só a conclusão
+
+Até 18/09/2026 esta guarda dizia qual commit ela INFERIU e escondia de onde
+inferiu. Quando ficou vermelha três corridas seguidas acusando um componente
+para trás, não havia como decidir, sem credencial, se a listagem tinha servido
+estado anterior ao push, se duas imutáveis dividiam o digest, ou se
+`digest_por_tag` estava colapsando a mesma tag vinda em duas páginas.
+
+Então toda linha de erro carrega agora: o **digest** que foi lido na tag móvel,
+**quantas entradas da listagem** trazem aquele nome de tag (mais de uma = a
+listagem repetiu a tag, e o dicionário colapsou), e **quantas imutáveis dividem
+esse digest** (mais de uma = dois commits publicaram a MESMA imagem). É o mesmo
+movimento do `#573`, quando o Deploy Images passou a DECLARAR o que publicou: o
+conserto não foi adivinhar melhor, foi obrigar o passo a dizer o que viu.
+
 Uso:
 
     DO_TOKEN=... python scripts/check_registry_drift.py
@@ -68,6 +83,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -98,7 +114,16 @@ class NaoDeuParaPerguntar(RuntimeError):
 
 
 def fetch_tags(registry: str, repository: str, token: str) -> list[dict]:
+    """Todas as tags do repositório — e diz em QUANTAS páginas elas vieram.
+
+    A contagem não é enfeite. `read_published` colapsa nome de tag repetido, e
+    uma listagem que muda no meio da paginação pode devolver a MESMA tag em duas
+    páginas com digests diferentes. Se tudo couber numa página só, esse
+    mecanismo está descartado sem ninguém precisar discuti-lo — e ninguém tinha
+    contado as tags até 18/09/2026.
+    """
     tags: list[dict] = []
+    paginas = 0
     url = f"{API}/registry/{registry}/repositories/{repository}/tags?per_page=200"
     while url:
         request = urllib.request.Request(
@@ -111,27 +136,110 @@ def fetch_tags(registry: str, repository: str, token: str) -> list[dict]:
             raise NaoDeuParaPerguntar(f"GET {url}: {exc}") from exc
         if "tags" not in payload:
             raise NaoDeuParaPerguntar(f"resposta sem `tags`: {sorted(payload)}")
+        paginas += 1
         tags.extend(payload["tags"])
         url = ((payload.get("links") or {}).get("pages") or {}).get("next") or ""
+    print(
+        f"::notice::registry: {len(tags)} tags lidas em {paginas} página(s)",
+        file=sys.stderr,
+    )
     return tags
 
 
-def published_sha(tags: list[dict], moving_tag: str) -> tuple[str | None, str]:
-    """(sha publicado, motivo quando não dá para saber)."""
-    digest_por_tag = {t["tag"]: t.get("manifest_digest") for t in tags if t.get("tag")}
-    digest = digest_por_tag.get(moving_tag)
-    if not digest:
-        return None, f"a tag `{moving_tag}` não existe no registry"
+class Leitura(NamedTuple):
+    """O que a listagem disse sobre uma tag móvel — a MEDIDA, não só a conclusão.
 
-    for tag, outro_digest in digest_por_tag.items():
-        match = IMMUTABLE.match(tag)
-        if match and match["tag"] == moving_tag and outro_digest == digest:
-            return match["sha"], ""
-    return None, (
-        f"a tag `{moving_tag}` aponta para {digest}, e nenhuma tag "
-        f"`{moving_tag}-<sha>` aponta para o mesmo digest — impossível provar "
-        "qual commit está no ar"
+    `shas` vazio = não deu para provar, e `motivo` diz por quê. Mais de um sha =
+    várias imutáveis dividem o mesmo digest, isto é, dois commits publicaram a
+    MESMA imagem, byte a byte. Aí a resposta honesta é o conjunto: escolher a
+    primeira da ordem do dicionário seria inventar um desempate que a listagem
+    não autoriza.
+    """
+
+    shas: tuple[str, ...]
+    digest: str
+    #: Os digests de TODAS as entradas da listagem com aquele nome de tag. Mais
+    #: de uma entrada significa que a listagem repetiu a tag — o sintoma de
+    #: paginar uma lista que um push está mutando.
+    entradas: tuple[str, ...]
+    motivo: str
+
+    def medida(self) -> str:
+        """De onde a conclusão saiu. É isto que faz o próximo vermelho se explicar."""
+        partes = [f"digest lido na tag móvel: {_curto(self.digest) or '(nenhum)'}"]
+        if len(self.entradas) != 1:
+            digests = ", ".join(_curto(d) for d in self.entradas) or "nenhum"
+            partes.append(
+                f"{len(self.entradas)} entradas da listagem carregam esse NOME "
+                f"de tag ({digests})"
+            )
+        imutaveis = ", ".join(s[:9] for s in self.shas) or "nenhuma"
+        partes.append(
+            f"{len(self.shas)} tag(s) imutável(is) dividem esse digest: {imutaveis}"
+        )
+        return "; ".join(partes)
+
+
+def _curto(digest: str) -> str:
+    """`sha256:` + 12 hex, que é o que os logs de build imprimem."""
+    return digest[:19] + "…" if len(digest) > 19 else digest
+
+
+def read_published(tags: list[dict], moving_tag: str) -> Leitura:
+    """Quais commits podem estar por trás da tag móvel — com a medida junto.
+
+    ⚠️ Não escolhe em silêncio. Quando duas imutáveis dividem o digest, as duas
+    voltam: a imagem é a mesma, então qualquer uma delas descreve fielmente o
+    que está no ar, e quem decide é o confronto, que sabe o que perguntar.
+
+    ⚠️ O digest da tag móvel continua saindo por ÚLTIMA-ESCRITA-VENCE, o mesmo
+    critério do dicionário que estava aqui antes. É de propósito: instrumentar
+    é medir o comportamento de hoje, não trocá-lo por outro antes de saber qual
+    dos mecanismos está em jogo. `entradas` é o que denuncia o colapso.
+    """
+    entradas = tuple(
+        t.get("manifest_digest") or "" for t in tags if t.get("tag") == moving_tag
     )
+    digest = ""
+    for valor in entradas:
+        digest = valor or digest
+    if not digest:
+        return Leitura(
+            (), "", entradas, f"a tag `{moving_tag}` não existe no registry"
+        )
+
+    shas: list[str] = []
+    for t in tags:
+        if t.get("manifest_digest") != digest:
+            continue
+        match = IMMUTABLE.match(t.get("tag") or "")
+        if match and match["tag"] == moving_tag and match["sha"] not in shas:
+            shas.append(match["sha"])
+    if not shas:
+        return Leitura(
+            (),
+            digest,
+            entradas,
+            f"a tag `{moving_tag}` aponta para {digest}, e nenhuma tag "
+            f"`{moving_tag}-<sha>` aponta para o mesmo digest — impossível provar "
+            "qual commit está no ar",
+        )
+    return Leitura(tuple(shas), digest, entradas, "")
+
+
+def _divergencia(esperado: str, publicado: str, ref: str, repo: Path) -> str:
+    """A queixa contra UM candidato, ou "" se ele honra a invariante."""
+    if not is_ancestor(esperado, publicado, repo):
+        return (
+            f"publicado {publicado[:9]}, que NÃO contém {esperado[:9]} — a "
+            "última mudança deste componente não está no ar"
+        )
+    if not is_ancestor(publicado, ref, repo):
+        return (
+            f"publicado {publicado[:9]}, que não é ancestral do topo — o "
+            "ambiente vivo está servindo algo que não veio do `main`"
+        )
+    return ""
 
 
 def audit(
@@ -141,13 +249,20 @@ def audit(
     per_app: bool,
     repo: Path,
     groups: dict[str, list[str]],
-) -> list[str]:
-    """Devolve as linhas de divergência. Lista vazia = o vivo bate com o `main`."""
+) -> tuple[list[str], list[str]]:
+    """Devolve (divergências, notas). Divergências vazias = o vivo bate com o `main`.
+
+    As notas existem para o caso que passa mas merece ser visto: várias
+    imutáveis dividindo um digest é dois commits publicando a MESMA imagem, e
+    isso é desperdício de build e de registry mesmo quando a invariante está
+    honrada.
+    """
     paths = component_paths(groups)
     operator_surfaces = [s for members in groups.values() for s in members]
     tag_de = {c["name"]: c["tag"] for c in build_matrix(list(paths), groups)}
 
     problemas: list[str] = []
+    notas: list[str] = []
     for name, patterns in paths.items():
         # ⚠️ Com OPERATOR_PER_APP_IMAGES desligado, as imagens por app param de
         # ser publicadas de propósito (rede de rollback da ADR-030 vencida).
@@ -157,22 +272,27 @@ def audit(
         esperado = last_commit_touching(patterns, ref, repo)
         if esperado is None:
             continue  # nada no histórico tocou esse componente; nada a cobrar
-        publicado, motivo = published_sha(tags, tag_de[name])
-        if publicado is None:
-            problemas.append(f"{name}: {motivo} (o `main` pede {esperado[:9]})")
-        elif not is_ancestor(esperado, publicado, repo):
+        leitura = read_published(tags, tag_de[name])
+        if not leitura.shas:
             problemas.append(
-                f"{name}: publicado {publicado[:9]}, que NÃO contém "
-                f"{esperado[:9]} — a última mudança deste componente não está "
-                "no ar"
+                f"{name}: {leitura.motivo} (o `main` pede {esperado[:9]}) "
+                f"[{leitura.medida()}]"
             )
-        elif not is_ancestor(publicado, ref, repo):
-            problemas.append(
-                f"{name}: publicado {publicado[:9]}, que não é ancestral do "
-                f"topo — o ambiente vivo está servindo algo que não veio do "
-                "`main`"
+            continue
+        queixas = [_divergencia(esperado, sha, ref, repo) for sha in leitura.shas]
+        if len(leitura.shas) > 1:
+            notas.append(
+                f"{name}: {len(leitura.shas)} commits publicaram a MESMA imagem "
+                f"({', '.join(s[:9] for s in leitura.shas)} → "
+                f"{_curto(leitura.digest)}) — build e publicação repetidos"
             )
-    return problemas
+        if not all(queixas):
+            # A imagem é idêntica nos candidatos: se ALGUM deles honra a
+            # invariante, o que está no ar a honra. Não é escolher o mais
+            # conveniente, é reconhecer que os bytes são os mesmos.
+            continue
+        problemas.append(f"{name}: {queixas[0]} [{leitura.medida()}]")
+    return problemas, notas
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -203,13 +323,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"::warning::não deu para perguntar ao registry: {exc}", file=sys.stderr)
         return 2
 
-    problemas = audit(
+    problemas, notas = audit(
         tags,
         ref=args.ref,
         per_app=args.per_app == "true",
         repo=Path(args.repo),
         groups=load_groups(Path(args.groups_json)),
     )
+    for nota in notas:
+        print(f"::notice::{nota}", file=sys.stderr)
     if not problemas:
         print("registry bate com o `main`: nenhum componente ficou para trás.")
         return 0

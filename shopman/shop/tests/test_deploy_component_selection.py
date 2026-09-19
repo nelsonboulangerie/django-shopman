@@ -23,11 +23,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from check_registry_drift import audit, published_sha  # noqa: E402
+from check_registry_drift import audit, read_published  # noqa: E402
 from deploy_components import (  # noqa: E402
     build_matrix,
     component_paths,
     decide,
+    last_commit_touching,
     load_groups,
 )
 
@@ -176,6 +177,62 @@ def test_arquivo_solto_da_raiz_e_literal_nao_prefixo(repo: Path):
     assert nomes(head=topo, base=base, per_app=True, repo=repo) == []
 
 
+def test_baseline_visual_mexida_nao_publica_imagem_nenhuma(repo: Path):
+    """O `#863` de 18/09/2026: 6 PNG de baseline sujavam o grupo inteiro.
+
+    O estágio final do `Dockerfile.operator-group` copia só o `.output` de cada
+    app. A imagem que saía daí era byte a byte idêntica à anterior — build,
+    push e rollout na DigitalOcean para publicar exatamente o mesmo manifest.
+    """
+    base = commit(repo, ["README.md"], "base")
+    topo = commit(
+        repo,
+        [
+            "surfaces/marketing-nuxt/tests/visual/baselines/notifications.png",
+            "surfaces/marketing-nuxt/tests/components/AppSessionGate.test.ts",
+        ],
+        "só baseline e teste",
+    )
+    assert nomes(head=topo, base=base, per_app=True, repo=repo) == []
+
+
+def test_teste_no_mesmo_push_que_codigo_ainda_publica(repo: Path):
+    """A exclusão é do arquivo, não do push. Errar para cá seria 17/09 de novo."""
+    base = commit(repo, ["README.md"], "base")
+    topo = commit(
+        repo,
+        [
+            "surfaces/marketing-nuxt/tests/x.test.ts",
+            "surfaces/marketing-nuxt/app/x.vue",
+        ],
+        "conserto com teste junto",
+    )
+    assert set(nomes(head=topo, base=base, per_app=True, repo=repo)) == {
+        "marketing-nuxt",
+        "operator-office",
+    }
+
+
+def test_teste_do_kit_nao_arrasta_as_nove_surfaces(repo: Path):
+    """Mexer no teste da layer compartilhada custava NOVE builds e nove pushes."""
+    base = commit(repo, ["README.md"], "base")
+    topo = commit(repo, ["surfaces/operator-kit/tests/useX.test.ts"], "teste do kit")
+    assert nomes(head=topo, base=base, per_app=True, repo=repo) == []
+
+
+def test_o_esperado_do_confronto_ignora_commit_que_so_mexeu_em_teste(repo: Path):
+    """As duas pontas usam a MESMA tabela, ou o confronto cobra o impossível.
+
+    Se a decisão parasse de publicar por causa de teste mas o confronto seguisse
+    esperando o commit do teste, a guarda ficaria vermelha para sempre pedindo
+    uma imagem que, por construção, ninguém vai construir.
+    """
+    codigo = commit(repo, ["surfaces/marketing-nuxt/app/x.vue"], "código")
+    commit(repo, ["surfaces/marketing-nuxt/tests/x.test.ts"], "só teste")
+    patterns = component_paths(GROUPS)["operator-office"]
+    assert last_commit_touching(patterns, "HEAD", repo) == codigo
+
+
 def test_as_tags_do_matrix_sao_as_que_o_app_platform_assina(repo: Path):
     tags = {c["name"]: c["tag"] for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     assert tags["web"] == "web"
@@ -200,14 +257,97 @@ def tags_do_registry(por_componente: dict[str, str]) -> list[dict]:
 
 def test_a_tag_movel_revela_o_commit_publicado():
     sha = "a" * 40
-    assert published_sha(tags_do_registry({"pos": sha}), "pos") == (sha, "")
+    leitura = read_published(tags_do_registry({"pos": sha}), "pos")
+    assert leitura.shas == (sha,)
+    assert leitura.motivo == ""
 
 
 def test_tag_movel_sem_irma_imutavel_nao_da_para_provar():
     tags = [{"tag": "pos", "manifest_digest": "sha256:orfao"}]
-    publicado, motivo = published_sha(tags, "pos")
-    assert publicado is None
-    assert "impossível provar" in motivo
+    leitura = read_published(tags, "pos")
+    assert leitura.shas == ()
+    assert "impossível provar" in leitura.motivo
+
+
+def test_a_queixa_declara_o_digest_lido_e_quantas_imutaveis_o_dividem(repo: Path):
+    """A guarda era a última peça da cadeia que INFERIA sem mostrar a medida.
+
+    Em 18/09/2026 ela ficou vermelha três corridas seguidas dizendo qual commit
+    tinha inferido — e não dava para decidir, sem credencial, se a listagem
+    servira estado anterior ao push, se duas imutáveis dividiam o digest, ou se
+    o dicionário colapsara a mesma tag vinda em duas páginas. A linha de erro
+    agora carrega de onde a conclusão saiu.
+    """
+    antigo = commit(repo, ["surfaces/pos-nuxt/x.ts"], "antes do conserto")
+    commit(repo, ["surfaces/pos-nuxt/x.ts"], "o conserto")
+    tags = tags_do_registry(
+        {c["tag"]: antigo for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
+    )
+    problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    queixa = next(p for p in problemas if p.startswith("pos-nuxt:"))
+    assert "digest lido na tag móvel: sha256:pos-" in queixa
+    assert "1 tag(s) imutável(is) dividem esse digest" in queixa
+    assert antigo[:9] in queixa
+
+
+def test_dois_commits_na_mesma_imagem_voltam_os_DOIS_e_nao_o_primeiro_do_dict():
+    """Escolher a primeira da ordem do dicionário é inventar um desempate.
+
+    Dois commits publicaram a MESMA imagem, byte a byte (o `.output/` não mudou
+    porque só mudou teste, que não entra na imagem). Aí a listagem não autoriza
+    dizer qual dos dois está no ar — os dois estão, e a resposta é o conjunto.
+    """
+    velho, novo = "a" * 40, "b" * 40
+    digest = "sha256:mesma-imagem"
+    tags = [
+        {"tag": f"pos-{velho}", "manifest_digest": digest},
+        {"tag": f"pos-{novo}", "manifest_digest": digest},
+        {"tag": "pos", "manifest_digest": digest},
+    ]
+    leitura = read_published(tags, "pos")
+    assert leitura.shas == (velho, novo)
+    assert "2 tag(s) imutável(is) dividem esse digest" in leitura.medida()
+
+
+def test_imagem_identica_em_dois_commits_nao_fica_vermelha_e_vira_nota(repo: Path):
+    """Se os BYTES são os mesmos, o que está no ar contém o conserto — e ponto.
+
+    O que sobra é desperdício, não divergência: dois builds e duas publicações
+    para a mesma imagem. Isso vira nota, que é onde se enxerga o custo na DO.
+    """
+    antigo = commit(repo, ["surfaces/pos-nuxt/x.ts"], "antes")
+    atual = commit(repo, ["surfaces/pos-nuxt/x.ts"], "o conserto")
+    tags = tags_do_registry(
+        {c["tag"]: atual for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
+    )
+    # A irmã ANTIGA dividindo o mesmo digest, e listada ANTES da nova: se a
+    # guarda pegasse "a primeira", ficaria vermelha sem motivo.
+    digest = next(t["manifest_digest"] for t in tags if t["tag"] == "pos")
+    tags.insert(0, {"tag": f"pos-{antigo}", "manifest_digest": digest})
+
+    problemas, notas = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    assert problemas == []
+    assert any(n.startswith("pos-nuxt:") and "MESMA imagem" in n for n in notas)
+
+
+def test_tag_repetida_na_listagem_aparece_na_medida():
+    """O sintoma de paginar uma lista que um push está mutando.
+
+    A mesma tag móvel volta em duas páginas com digests diferentes, e o colapso
+    por última-escrita-vence pode deixar a entrada ANTIGA escrever por último.
+    A medida denuncia; sem ela, o vermelho seria indistinguível de uma listagem
+    que serviu estado anterior ao push.
+    """
+    sha = "a" * 40
+    tags = [
+        {"tag": "pos", "manifest_digest": "sha256:novo"},
+        {"tag": f"pos-{sha}", "manifest_digest": "sha256:velho"},
+        {"tag": "pos", "manifest_digest": "sha256:velho"},
+    ]
+    leitura = read_published(tags, "pos")
+    assert leitura.digest == "sha256:velho"  # última-escrita-vence, como antes
+    assert "2 entradas da listagem carregam esse NOME de tag" in leitura.medida()
+    assert "sha256:novo" in leitura.medida()
 
 
 def test_o_confronto_nomeia_o_componente_que_ficou_para_tras(repo: Path):
@@ -218,7 +358,7 @@ def test_o_confronto_nomeia_o_componente_que_ficou_para_tras(repo: Path):
         {c["tag"]: atual for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
         | {"pos": antigo}
     )
-    problemas = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
     assert len(problemas) == 1
     assert problemas[0].startswith("pos-nuxt:")
     assert antigo[:9] in problemas[0] and atual[:9] in problemas[0]
@@ -237,7 +377,7 @@ def test_republicar_do_topo_e_valido_e_nao_pode_ficar_vermelho(repo: Path):
     tags = tags_do_registry(
         {c["tag"]: topo for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     )
-    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS) == []
+    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] == []
 
 
 def test_publicado_fora_do_main_e_denunciado(repo: Path):
@@ -249,7 +389,7 @@ def test_publicado_fora_do_main_e_denunciado(repo: Path):
     tags = tags_do_registry(
         {c["tag"]: forasteiro for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     )
-    problemas = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
     assert any("não é ancestral do topo" in p for p in problemas)
 
 
@@ -258,21 +398,21 @@ def test_o_confronto_cala_quando_o_vivo_bate_com_o_main(repo: Path):
     tags = tags_do_registry(
         {c["tag"]: atual for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     )
-    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS) == []
+    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] == []
 
 
 def test_componente_ausente_do_registry_e_denunciado(repo: Path):
     commit(repo, ["surfaces/pos-nuxt/x.ts"], "primeira publicação")
     assert any(
         "não existe no registry" in p
-        for p in audit([], ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+        for p in audit([], ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0]
     )
 
 
 def test_componente_que_a_historia_nunca_tocou_nao_e_cobrado(repo: Path):
     """Cobrar tag de componente sem nenhum commit seria vermelho por nada."""
     commit(repo, ["shopman/a.py"], "só o web existe")
-    problemas = audit(
+    problemas, _ = audit(
         tags_do_registry({"web": git(repo, "rev-parse", "HEAD")}),
         ref="HEAD",
         per_app=True,
@@ -287,8 +427,8 @@ def test_per_app_desligado_nao_cobra_tag_por_app(repo: Path):
     commit(repo, ["surfaces/pos-nuxt/x.ts"], "pdv")
     atual = git(repo, "rev-parse", "HEAD")
     tags = tags_do_registry({"operator-floor": atual})
-    assert audit(tags, ref="HEAD", per_app=False, repo=repo, groups=GROUPS) == []
-    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS) != []
+    assert audit(tags, ref="HEAD", per_app=False, repo=repo, groups=GROUPS)[0] == []
+    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] != []
 
 
 # ---------------------------------------------------------------------------
