@@ -4,6 +4,7 @@ Orderman IDs — Geração de identificadores únicos.
 
 from __future__ import annotations
 
+import re
 import secrets
 import string
 from datetime import date, datetime
@@ -26,6 +27,16 @@ def _generate_id(prefix: str, length: int = 8) -> str:
 # regenera; ver services/commit.py).
 _ORDER_REF_MAX_TRIES = 30
 
+# Sufixo que o marketplace já deu ao pedido (o ``displayId`` do iFood). Só entra no ref
+# se for curto e alfanumérico: o ref é lido em voz alta, digitado na busca e impresso.
+_PREFERRED_SUFFIX_RE = re.compile(r"\A[A-Z0-9]{2,8}\Z")
+
+
+def sanitize_preferred_suffix(value: object) -> str:
+    """O sufixo do canal, pronto para virar ref — ou vazio quando não serve."""
+    candidate = str(value or "").strip().upper()
+    return candidate if _PREFERRED_SUFFIX_RE.match(candidate) else ""
+
 
 def _order_ref_candidate(channel_ref: str, business_day: date) -> str:
     """Um candidato a ref (via refs lib; fallback local se indisponível)."""
@@ -42,11 +53,23 @@ def _order_ref_candidate(channel_ref: str, business_day: date) -> str:
         return f"{channel_ref}-{date_part}-{letter}{secrets.randbelow(100):02d}"
 
 
-def generate_order_ref(channel_ref: str = "ORD", business_date: date | datetime | str | None = None) -> str:
+def generate_order_ref(
+    channel_ref: str = "ORD",
+    business_date: date | datetime | str | None = None,
+    preferred_suffix: str = "",
+) -> str:
     """Gera um ref de pedido único: {CHANNEL_REF}-{YYMMDD}-{L##} (ex. WEB-260421-A17).
 
     Código ALEATÓRIO (curto, memorável, não revela volume). Sorteia de novo enquanto o
     ref colidir com um já existente; o índice único no INSERT é a guarda final.
+
+    ``preferred_suffix`` é o número que o CANAL já deu ao pedido — o ``displayId`` do
+    iFood. Quando o canal já batizou o pedido, o cliente, o portal e o suporte falam
+    esse número, e um ref sorteado obriga o operador a traduzir. Então adotamos o do
+    canal (``IFOOD-260919-4994``) e só sorteamos quando ele está ocupado ou não veio.
+    A aleatoriedade existe para não revelar NOSSO volume; um número do iFood revela o
+    deles, então a intenção original fica de pé. Quem chama sem o argumento — todo o
+    fluxo da casa, via ``services/commit.py`` — não muda em nada.
     """
     channel_ref = channel_ref.upper()
     if business_date is None:
@@ -59,6 +82,14 @@ def generate_order_ref(channel_ref: str = "ORD", business_date: date | datetime 
         business_day = business_date
 
     from shopman.orderman.models import Order
+
+    wanted = sanitize_preferred_suffix(preferred_suffix)
+    if wanted:
+        candidate = f"{channel_ref}-{business_day.strftime('%y%m%d')}-{wanted}"
+        if not Order.objects.filter(ref=candidate).exists():
+            return candidate
+        # Ocupado: o número do canal não se sorteia de novo, então caímos na regra de
+        # sempre. O ``displayId`` continua guardado e buscável pelo card.
 
     candidate = _order_ref_candidate(channel_ref, business_day)
     for _ in range(_ORDER_REF_MAX_TRIES):
