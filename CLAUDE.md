@@ -34,6 +34,15 @@ barrar, a saída é entrar no worktree, **nunca contornar**.
 - **`git add` no principal só aceita ARQUIVO nomeado.** `git add -A`, `git add .`,
   `git add -u` e `git add <diretório>` varrem arquivo de outra frente para dentro do seu
   commit, sem aviso. Aconteceu em 12/08 e 19/08. Use `git add caminho/arquivo.py`.
+- **O diretório de scratchpad é do worktree PAI, não da sua sessão.** Todo agente
+  que nasce sob a mesma worktree divide o mesmo scratchpad, e `pr.md`, `msg.txt`,
+  `probe.py` são nomes que qualquer um escolhe. Medido em 19/09/2026: duas frentes
+  do iFood escreveram `pr.md` no mesmo caminho; a segunda só não publicou o texto
+  da primeira na PR errada porque releu o arquivo antes de rodar
+  `gh pr edit --body-file`. Use **nome único por frente**
+  (`pr888-nota-conformidade.md`, não `pr.md`) e **releia antes de publicar** —
+  arquivo de scratchpad tem a mesma confiabilidade de um arquivo em `/tmp` numa
+  máquina com outras pessoas.
 - **`git stash` é do repositório, não da sua worktree.** A sessão irmã dá `pop` na sua
   entrada e o trabalho some. Use `git diff > /tmp/meu-wip.patch` ou um branch de rascunho.
 - **Numeração de migração colide em silêncio.** Duas branches criam `0002` no mesmo app e
