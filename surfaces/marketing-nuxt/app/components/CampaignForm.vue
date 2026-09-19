@@ -865,27 +865,24 @@ function submit() {
 
         <div>
           <p class="mb-1 text-xs font-medium text-muted-foreground">Nos dias</p>
-          <div class="flex flex-wrap gap-1.5">
-            <!-- ⚠️ Estes NÃO viram `UiToggleChip`, e o motivo é medido: o primitivo tem
-                 alvo de toque de 44px pelo token, e sete dias a 44px não cabem numa
-                 tela de 320. O kit recusa degrau denso em primitivo de propósito — 36px
-                 foi a dívida que a cópia antiga carregava. Ou esta grade reflui para
-                 caber, ou continua aqui, à mão, com a razão à vista. -->
-            <button
+          <!-- ⚠️ A grade REFLUI para caber, em vez de o chip encolher. Sete dias lado a
+               lado a 44px não cabem numa tela de 320 (7×44 + 6 de folga passa dos 232px
+               que sobram ao lado do rail), e a saída fácil seria um degrau denso de
+               36px — que é exatamente a dívida que a cópia antiga do kit carregava. Em
+               quatro colunas cabem: 4×44 + 3×6 = 194px. Acima do `sm`, os sete voltam
+               para a mesma linha.
+               `grid` em vez de `flex-wrap` porque as colunas iguais mantêm o alvo de
+               toque previsível: a mão procura posição, não largura de palavra. -->
+          <div class="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
+            <UiToggleChip
               v-for="(label, day) in WEEKDAY_LABELS"
               :key="label"
-              type="button"
-              :aria-pressed="weekdays.includes(day)"
-              class="rounded-md border px-2.5 py-1 text-xs font-medium capitalize transition"
-              :class="
-                weekdays.includes(day)
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleWeekday(day)"
+              :model-value="weekdays.includes(day)"
+              class="capitalize"
+              @update:model-value="toggleWeekday(day)"
             >
               {{ label }}
-            </button>
+            </UiToggleChip>
           </div>
           <p class="mt-1 text-xs text-muted-foreground">
             Nenhum dia marcado quer dizer todos os dias.
@@ -948,7 +945,7 @@ function submit() {
 
     <fieldset>
       <legend class="mb-1 text-xs font-medium text-muted-foreground">
-        Entregar por
+        Disparado via
       </legend>
       <!-- ⚠️ `UiToggleChip` do kit, e não `UiCheckbox`: o checkbox desenha um quadrado
            com rótulo ao lado, e o que está aqui é uma pílula cuja caixa inteira acende.
