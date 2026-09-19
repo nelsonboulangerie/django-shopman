@@ -57,15 +57,20 @@ def _focus_settings():
 
 
 def ingest_ifood(*, delivered_by="IFOOD", order_type="DELIVERY", subtotal=3000,
-                 delivery_fee=799, additional_fees=150, benefits=0):
-    """Pedido iFood real: um item de R$ 30,00 mais o que a plataforma cobrou."""
+                 delivery_fee=799, additional_fees=150, benefits=0, sem_documento=False):
+    """Pedido iFood real: um item de R$ 30,00 mais o que a plataforma cobrou.
+
+    ``sem_documento`` é o caso COMUM na vida real, não a exceção: o iFood só
+    repassa ``customer.documentNumber`` quando o cliente pede a nota.
+    """
     Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood"})
     order_amount = subtotal + delivery_fee + additional_fees - benefits
+    documento = {} if sem_documento else {"documentNumber": "52998224725", "documentType": "CPF"}
     payload = ifood_orders.map_order({
-        "id": f"ifood-{delivered_by}-{order_type}-{additional_fees}",
+        "id": f"ifood-{delivered_by}-{order_type}-{additional_fees}-{int(sem_documento)}",
         "orderType": order_type,
         "merchant": {"id": "merchant"},
-        "customer": {"name": "Cliente iFood", "documentNumber": "52998224725", "documentType": "CPF"},
+        "customer": {"name": "Cliente iFood", **documento},
         # Na retirada o iFood não manda endereço nenhum — só a entrega tem.
         "delivery": {
             "deliveredBy": delivered_by,
@@ -263,9 +268,8 @@ def test_the_intermediary_group_is_mapped_to_the_focus_field_names_flat_at_the_r
     assert captured["payload"]["indicador_intermediario"] == "1"
     assert captured["payload"]["cnpj_intermediario"] == IFOOD_CNPJ
     assert captured["payload"]["id_intermediario"] == "MERCHANT-42"
-    # O grupo só pode ser informado em operação NÃO presencial: a retirada de um
-    # pedido feito no app não é balcão, é indPres=2.
-    assert captured["payload"]["presenca_comprador"] == "2"
+    # ⚠️ O grupo NÃO mexe no indPres. Ver test_nfce_only_accepts_indpres_1_or_4.
+    assert captured["payload"]["presenca_comprador"] == "1"
 
 
 @override_settings(SHOPMAN_FOCUS_NFE=_focus_settings())
@@ -326,6 +330,150 @@ def test_an_intermediated_sale_without_the_group_screams_instead_of_emitting_in_
     alert.assert_called_once()
     assert alert.call_args.kwargs["type"] == "fiscal_intermediary_not_declared"
     assert "idCadIntTran" in alert.call_args.kwargs["message"]
+
+
+# ── 3b. O indPres da NFC-e, travado por tipo de operação ──────────────────
+#
+# Esta seção existe por causa de um defeito MEU, pego em revisão antes do
+# merge. Eu li na referência de campos da Focus que o grupo do intermediador
+# "apenas pode ser informado se a operação for não-presencial (2, 3, 4 ou 9)",
+# concluí que pedido de app não é balcão, e troquei o indPres de 1 para 2 na
+# venda intermediada sem entrega.
+#
+# Está errado, e erra de um jeito que não aparece. Duas coisas que eu tinha
+# trocado, verificadas depois na fonte (NT baixada do Portal da NF-e e MOC
+# Online da SEFAZ-PR, não em blog):
+#
+# 1. A página de campos da Focus é COMPARTILHADA entre NF-e (modelo 55) e
+#    NFC-e (modelo 65), e aquela régua é a do 55. Na NFC-e vale a B25b-20 →
+#    Rejeição 717, que recusa todo indPres fora de {1, 4, 5}. O `2` é recusado
+#    em TODAS as versões da regra — quebraria justamente a retirada, que é o
+#    caso que hoje funciona.
+# 2. A regra que eu supus ("o grupo exige operação não presencial") NÃO EXISTE.
+#    A NT 2020.006 v1.31 diz o oposto na letra, e a B25c-20 só proíbe o
+#    intermediador quando indPres está fora de {1,2,3,4,9} — o que na NFC-e
+#    recorta apenas o 5.
+#
+# E não aparecia porque o defeito era LATENTE: com o `id_cad_int_tran` vazio
+# (o default embarcado) o grupo não sai e o indPres fica em 1. Ele só
+# detonaria no dia em que o dono respondesse a pergunta 1 e ligasse o grupo.
+# Daí estes testes travarem o VALOR por tipo de operação, e não o caminho.
+
+
+@pytest.mark.parametrize("indpres", ["0", "2", "3", "9"])
+def test_nfce_refuses_an_indpres_outside_1_4_and_5_before_the_http_call(indpres):
+    """B25b-20 / Rejeição 717. Recusar aqui é nominal; recusar na SEFAZ é nota morta."""
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    config = {**_focus_settings(), "presenca_comprador_nfce": indpres}
+    with override_settings(SHOPMAN_FOCUS_NFE=config), \
+            patch("shopman.shop.adapters.fiscal_focusnfe._request") as request:
+        result = FocusNFeBackend().emit(
+            reference=f"ORD-INDPRES-{indpres}",
+            items=[{"sku": "PAO-001", "name": "Pão", "qty": "1", "unit": "un",
+                    "unit_price_q": 3000, "total_q": 3000, "fiscal": FISCAL_OWN_PRODUCTION}],
+            customer={}, payment={"method": "cash", "amount_q": 3000},
+        )
+
+    request.assert_not_called()
+    assert result.success is False
+    assert result.error_code == "focus_nfe_invalid_payload"
+    assert "B25b-20" in result.error_message
+
+
+def test_indpres_5_is_accepted_by_the_nfce_but_forbids_declaring_an_intermediary():
+    """B25b-20 admite o 5 desde a NT 2025.002-RTC v1.51; a B25c-20 o proíbe com intermediador.
+
+    O MOC 7.00 em PDF ainda traz a régua antiga (``<>1 e 4``) — programar por
+    ele recusaria uma nota que a SEFAZ aceita.
+    """
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    config = {**_focus_settings(), "presenca_comprador_nfce": "5"}
+    item = {"sku": "PAO-001", "name": "Pão", "qty": "1", "unit": "un",
+            "unit_price_q": 3000, "total_q": 3000, "fiscal": FISCAL_OWN_PRODUCTION}
+    pagamento = {"method": "cash", "amount_q": 3000}
+
+    with override_settings(SHOPMAN_FOCUS_NFE=config), \
+            patch("shopman.shop.adapters.fiscal_focusnfe._request",
+                  return_value={"status": "autorizado", "chave_nfe": "K" * 44}):
+        sem_intermediador = FocusNFeBackend().emit(
+            reference="ORD-INDPRES-5-OK", items=[item], customer={}, payment=pagamento,
+        )
+
+    assert sem_intermediador.success is True
+
+    with override_settings(SHOPMAN_FOCUS_NFE=config), \
+            patch("shopman.shop.adapters.fiscal_focusnfe._request") as request:
+        com_intermediador = FocusNFeBackend().emit(
+            reference="ORD-INDPRES-5-NAO", items=[item], customer={}, payment=pagamento,
+            intermediary={"cnpj": IFOOD_CNPJ, "id_cad_int_tran": "MERCHANT-42"},
+        )
+
+    request.assert_not_called()
+    assert com_intermediador.success is False
+    assert "B25c-20" in com_intermediador.error_message
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
+@pytest.mark.parametrize(("order_type", "esperado"), [("TAKEOUT", "1"), ("DELIVERY", "4")])
+def test_the_marketplace_sale_keeps_the_indpres_of_its_operation_type(order_type, esperado):
+    """Retirada é 1 mesmo vindo do app; entrega é 4. O intermediador não muda isso."""
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    order = ingest_ifood(order_type=order_type, delivery_fee=0 if order_type == "TAKEOUT" else 799)
+    emission = fiscal.build_emission_payload(order)
+    for item in emission["items"]:
+        item["fiscal"] = FISCAL_OWN_PRODUCTION
+
+    captured = {}
+
+    def fake_request(method, path, payload_, config):
+        captured.update(payload=payload_)
+        return {"status": "autorizado", "chave_nfe": "K" * 44}
+
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request", side_effect=fake_request):
+        result = FocusNFeBackend().emit(
+            reference=order.ref, items=emission["items"], customer=emission["customer"],
+            payment=emission["payment"], delivery=emission["delivery"],
+            intermediary=emission["intermediary"],
+        )
+
+    assert result.success is True
+    assert captured["payload"]["presenca_comprador"] == esperado
+    assert captured["payload"]["indicador_intermediario"] == "1"
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
+def test_an_ifood_delivery_without_a_tax_id_refuses_legibly_instead_of_emitting_wrong():
+    """indPres=4 exige destinatário identificado (E01-20 → Rejeição 787).
+
+    O iFood só repassa o documento quando o cliente pede a nota, então **a
+    maioria** dos pedidos de entrega chega sem CPF. Não há saída inventável
+    aqui: destinatário fictício é fraude e emitir sem ele é rejeição. A recusa
+    tem que ser legível e chegar a gente — é pergunta aberta para o contador,
+    registrada no corpo do PR.
+    """
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    order = ingest_ifood(order_type="DELIVERY", sem_documento=True)
+    emission = fiscal.build_emission_payload(order)
+    for item in emission["items"]:
+        item["fiscal"] = FISCAL_OWN_PRODUCTION
+
+    assert emission["customer"].get("tax_id") is None
+
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request") as request:
+        result = FocusNFeBackend().emit(
+            reference=order.ref, items=emission["items"], customer=emission["customer"],
+            payment=emission["payment"], delivery=emission["delivery"],
+            intermediary=emission["intermediary"],
+        )
+
+    request.assert_not_called()
+    assert result.success is False
+    assert result.error_code == "focus_nfe_invalid_payload"
+    assert "CPF/CNPJ solicitado para a nota" in result.error_message
 
 
 # ── 4. A incoerência do desconto negativo ─────────────────────────────────

@@ -314,15 +314,11 @@ def _build_nfce_payload(
     if discount_q > 0:
         payload["valor_desconto"] = _money_q(discount_q)
         _apportion_over_items(mapped_items, discount_q, field="valor_desconto")
+    # Só o grupo. O indPres NÃO se mexe aqui — ver NFCE_INDPRES e
+    # INTERMEDIARY_INDPRES: marketplace com retirada continua indPres=1.
     if intermediary:
         payload.update(_intermediary_fields(intermediary))
-        if payload["presenca_comprador"] == "1":
-            # O grupo do intermediador só pode ser informado em operação NÃO
-            # presencial — a Focus documenta indPres ∈ {2,3,4,9} para ele. E
-            # venda por plataforma de terceiro nunca é presencial: quem não
-            # recebe em casa retirou no balcão o que pediu pelo app, e isso é
-            # indPres=2 (não presencial, pela Internet), não o balcão (1).
-            payload["presenca_comprador"] = "2"
+    _assert_nfce_indpres(payload["presenca_comprador"], intermediary=bool(intermediary))
     if config.get("serie_nfce"):
         payload["serie"] = str(config["serie_nfce"])
     if additional_info:
@@ -332,6 +328,67 @@ def _build_nfce_payload(
         payload.get("informacoes_adicionais_contribuinte") or f"Pedido {reference}"
     )
     return payload
+
+
+#: Os ``indPres`` que a NFC-e (modelo 65) aceita.
+#:
+#: Regra de validação **B25b-20**, modelo 65 → **Rejeição 717**: recusa todo
+#: ``indPres`` fora de **1, 4 e 5**.
+#:
+#: ⚠️ O MOC 7.00 Anexo I (nov/2020), que o CONFAZ ainda publica em PDF, traz a
+#: versão ANTIGA desta regra (``indPres<>1 e 4``). O ``5`` entrou pela
+#: NT 2025.002-RTC v1.51 (jul/2026; produção desde 03/08/2026), e quem está
+#: vivo é o MOC Online da SEFAZ-PR, "atualizado até a NT 2026.002 v1.10a".
+#: Em TODAS as versões, porém, o ``2`` é recusado — que é o que importa aqui.
+#:
+#: ⚠️ É tentador raciocinar que "pedido feito no app não é balcão, logo é
+#: operação não presencial (2 = pela Internet)". A SEFAZ recusa a nota inteira
+#: por isso: a retirada de um pedido do iFood é ``indPres=1``.
+NFCE_INDPRES = frozenset({"1", "4", "5"})
+
+#: Os ``indPres`` com os quais o intermediador PODE ser declarado.
+#:
+#: Regra **B25c-20** (modelo 55/65) → **Rejeição 435**: ``indIntermed=1`` é
+#: proibido quando ``indPres`` está fora de {1, 2, 3, 4, 9}. Cruzando com a
+#: B25b-20, o que isso recorta na NFC-e é exatamente o ``5``.
+#:
+#: ⚠️ **Não existe a regra inversa.** A referência de campos da Focus sugere
+#: que o grupo "apenas pode ser informado se a operação for não-presencial
+#: (2, 3, 4 ou 9)" — mas aquela página é compartilhada com a NF-e modelo 55, e
+#: nenhuma regra numerada exige isso. A NT 2020.006 v1.31 diz o contrário na
+#: letra: *"Se em alguma operação presencial (indPres=1) houver intermediador,
+#: deve a empresa preencher indIntermed=1 e as informações do intermediador,
+#: por força da legislação tributária"*. E o Ajuste SINIEF 22/20 fala em
+#: transação *"realizada em ambiente virtual ou presencial"*.
+#:
+#: (A regra irmã, **B25c-10** → Rejeição 434, torna ``indIntermed`` obrigatório
+#: em toda NF-e/NFC-e de saída com finalidade normal desde 04/04/2022. A casa
+#: atende isso sem escrever nada: a Focus documenta ``0`` — operação sem
+#: intermediador — como valor default do campo.)
+INTERMEDIARY_INDPRES = frozenset({"1", "2", "3", "4", "9"})
+
+
+def _assert_nfce_indpres(value: str, *, intermediary: bool) -> None:
+    """Recusa aqui, nominalmente, o que a SEFAZ recusaria lá com 717 ou 435.
+
+    Cobre também ``FOCUS_NFE_NFCE_PRESENCA_COMPRADOR`` mal configurado no
+    deployment: o valor é env, e env errada viraria nota recusada em produção
+    com uma mensagem que não diz de onde veio.
+    """
+    value = str(value)
+    if value not in NFCE_INDPRES:
+        raise FocusNFePayloadError(
+            f"presenca_comprador={value} não vale em NFC-e (modelo 65): a regra "
+            "B25b-20 aceita 1 (presencial), 4 (não presencial com entrega) ou 5 "
+            "(presencial fora do estabelecimento), e rejeita o resto com 717. "
+            "Confira FOCUS_NFE_NFCE_PRESENCA_COMPRADOR."
+        )
+    if intermediary and value not in INTERMEDIARY_INDPRES:
+        raise FocusNFePayloadError(
+            f"presenca_comprador={value} proíbe declarar o intermediador da venda "
+            "(regra B25c-20, rejeição 435). Venda por plataforma de terceiro não "
+            "pode ser emitida como operação presencial fora do estabelecimento."
+        )
 
 
 def _intermediary_fields(intermediary: dict) -> dict:

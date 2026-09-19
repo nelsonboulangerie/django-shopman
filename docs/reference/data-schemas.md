@@ -721,6 +721,15 @@ preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
 inclusive frete zero; `null` indica retirada. Dado insuficiente impede emitir,
 sem substituir por operação presencial ou retirar o frete dos valores.
 
+⚠️ **Fonte da verdade das regras de NFC-e: NT + XSD, nunca o MOC 7.00 em PDF.**
+O PDF que o CONFAZ publica (Anexo I, nov/2020) é o último MOC consolidado e
+está defasado em pelo menos três pontos que tocam este payload: traz a B25b-20
+antiga (`indPres<>1 e 4`, sem o `5` que a NT 2025.002-RTC v1.51 acrescentou),
+marca as regras YB só para o modelo 55 (a NT 2020.006 **v1.10** as estendeu ao
+65) e dá `idCadIntTran` com tamanho `60` quando o XSD vigente exige `2-60`.
+Quem programar pelo PDF erra nos três. O que está vivo é o **MOC Online** da
+SEFAZ-PR e as Notas Técnicas do Portal da NF-e.
+
 `intermediary={"cnpj", "id_cad_int_tran"}` identifica o intermediador da
 transação quando a venda veio de plataforma de terceiro (Ajuste SINIEF 22/20).
 A chave **não existe** na venda direta da casa, e também não existe quando o
