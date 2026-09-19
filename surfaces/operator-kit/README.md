@@ -482,8 +482,33 @@ um `<fieldset>` com `<legend>` ou de um `role="group"` com nome.
 **Não há degrau denso, e é de propósito.** O alvo de 44 px (`min-h-control`) é o piso do
 kit, e o `h-9` de 36 px é justamente a dívida que a cópia do Marketing carregava —
 `kitOwnership.guardrails.test.ts` recusa altura literal em primitivo. Grade que não cabe
-a 44 px (sete dias da semana a 320 px) não vira exceção aqui: ou o grupo reflui, ou
-continua escrita à mão, com a razão à vista.
+a 44 px não vira exceção aqui: ela **reflui**. Os sete dias da semana do Marketing eram o
+caso difícil e viraram quatro colunas no celular, sete a partir do `sm`.
+
+### ⚠️ `aria-pressed` não é sinal de chip — e quase nunca é
+
+Ao procurar consumidores para este primitivo, varri as 30 ocorrências de `aria-pressed`
+nas superfícies de operador esperando encontrar chips escritos à mão. **Nenhuma era.** O
+que existe, medido:
+
+- **~17 são escolha EXCLUSIVA** vestida de `aria-pressed` — modo do numpad, tipo de
+  entrega, modo de venda, coleção de pagamento, data (hoje/amanhã), paginação, filtro de
+  tipo, aba de modo. São controles segmentados: o leitor de tela diz *"pressionado"* onde
+  a pessoa está **escolhendo um entre N**. Pedem um `UiSegmentedControl` ou um
+  `UiRadioGroup` com variante inline — nenhum dos dois existe hoje, e o conserto atravessa
+  três apps. **É WP próprio, não conversão de passagem.**
+- **~6 são seleção de LINHA ou CARTÃO** (comanda em lote, pedidos): o alvo é a linha
+  inteira, não uma pílula. Alguns pedem `UiCheckbox`; chip não serve.
+- **2 são botão booleano solto** (desconto ligado, dividir conta ativo): não estão num
+  grupo de escolha.
+- **1 parecia chip e não é**: as cédulas e moedas do troco no PDV. A forma É a informação
+  — cédula retangular, moeda redonda — e o marcado é um **anel**, não um tom, "porque sob
+  a luz do balcão dois tons da mesma cor viram um só". Converter apagaria três decisões
+  deliberadas.
+
+Moral: `aria-pressed` num `<button>` é o que se escreve quando não há primitivo, seja
+qual for o gesto. **Contar ocorrências superestima o trabalho**; ler uma a uma é o que
+diz o que existe.
 
 `tests/kitOwnership.guardrails.test.ts` recusa que qualquer app volte a ter cópia
 própria de `Ui/Checkbox.vue`, `Ui/Radio.vue`, `Ui/RadioGroup.vue`, `Ui/Select.vue`,
