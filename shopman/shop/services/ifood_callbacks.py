@@ -11,8 +11,8 @@ exist; a fake id returns ``404 OrderNotFound``):
 Internal ``Order.Status`` → iFood action:
 
     CONFIRMED  → confirm
-    READY      → readyToPickup (pickup or iFood delivery)
-    DISPATCHED → dispatch (merchant delivery only)
+    READY      → readyToPickup (todo pedido: TAKEOUT, DINE_IN e DELIVERY)
+    DISPATCHED → dispatch (entrega da loja — só ``deliveredBy: MERCHANT``)
     CANCELLED  → requestCancellation
 
 ``requestCancellation`` requires a valid ``cancellationCode`` and ``reason``.
@@ -86,23 +86,34 @@ def action_for_status(
     fulfillment_type: str | None = None,
     delivered_by: str = "",
 ) -> str | None:
-    """Map status; supplying fulfillment applies the official Order workflow.
+    """Map status; only ``dispatch`` depende de quem faz a entrega.
 
-    The context-free form remains a pure capability lookup for existing callers.
-    Actual sends always provide context, and missing delivery ownership is never
-    interpreted as MERCHANT. Canonical pickup includes TAKEOUT and DINE_IN.
-    https://developer.ifood.com.br/pt-BR/docs/guides/modules/order/workflow/
+    Workflow oficial do módulo Order
+    (https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/workflow):
+
+    - ``readyToPickup`` é "obrigatório para pedidos TAKEOUT, DINE_IN e DELIVERY"
+      — ou seja, para **todo** tipo de pedido, inclusive DELIVERY com entrega
+      própria: "Para pedidos com entrega própria, notifique o pedido pronto via
+      ``/readyToPickup`` **antes** de despachar via ``/dispatch``". Avisar que a
+      comida ficou pronta não afirma nada sobre quem leva, então o dono da
+      entrega não entra nesta decisão — nem quando vem vazio. Deixar de avisar
+      é que é desvio: foi o defeito medido ao vivo em 19/09/2026 (pedido
+      ``IFOOD-260919-Q38``, ``deliveredBy: MERCHANT``), onde o "pronto" do
+      operador não gerou chamada nenhuma.
+    - ``dispatch`` é o espelho e continua restrito: só a loja despacha, e só
+      quando ela é a dona da entrega. Dono ausente **nunca** é lido como
+      MERCHANT — despachar no lugar do entregador do iFood afirmaria uma
+      entrega que não existe.
+
+    A forma sem contexto (``fulfillment_type is None``) segue sendo consulta
+    pura de capacidade para quem só quer saber se o status tem ação.
     """
     status = str(status or "").lower()
     action = STATUS_ACTION.get(status)
-    if fulfillment_type is None or status not in {"ready", "dispatched"}:
+    if status != "dispatched" or fulfillment_type is None:
         return action
     fulfillment = str(fulfillment_type or "").lower()
     owner = str(delivered_by or "").upper()
-    if status == "ready":
-        return action if fulfillment in {"pickup", "takeout", "dine_in"} or (
-            fulfillment == "delivery" and owner == "IFOOD"
-        ) else None
     return action if fulfillment == "delivery" and owner == "MERCHANT" else None
 
 

@@ -10,23 +10,37 @@ from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler, on_or
 from shopman.shop.services import ifood_callbacks, ifood_events
 
 
+# A razão de cada linha, para que ninguém "simplifique" a regra de novo. O
+# fundamento é o workflow oficial do módulo Order:
+# https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/workflow
+#
+#   readyToPickup — "Obrigatório para pedidos TAKEOUT, DINE_IN e DELIVERY";
+#   "Para pedidos com entrega própria, notifique o pedido pronto via
+#   /readyToPickup ANTES de despachar via /dispatch". Todo tipo de pedido
+#   avisa; o dono da entrega não entra na decisão.
+#
+#   dispatch — só a loja despacha, e só quando ela é a dona da entrega
+#   (deliveredBy: MERCHANT). Na entrega do iFood quem leva é o entregador
+#   deles. Dono ausente nunca é lido como MERCHANT.
 @pytest.mark.parametrize(("status", "fulfillment", "owner", "expected"), [
-    ("ready", "pickup", "", "readyToPickup"),
-    ("ready", "TAKEOUT", "", "readyToPickup"),
-    ("ready", "DINE_IN", "", "readyToPickup"),
-    ("ready", "delivery", "IFOOD", "readyToPickup"),
-    ("ready", "delivery", "MERCHANT", None),
-    ("ready", "delivery", "", None),
-    ("ready", "delivery", "UNKNOWN", None),
-    ("ready", "", "MERCHANT", None),
-    ("dispatched", "delivery", "MERCHANT", "dispatch"),
-    ("dispatched", "delivery", "IFOOD", None),
-    ("dispatched", "delivery", "", None),
-    ("dispatched", "delivery", "UNKNOWN", None),
-    ("dispatched", "pickup", "MERCHANT", None),
-    ("dispatched", "DINE_IN", "MERCHANT", None),
-    ("dispatched", "", "MERCHANT", None),
-    ("accepted", "", "", "confirm"),
+    # ready: obrigatório em TAKEOUT, DINE_IN e DELIVERY — sempre avisa.
+    ("ready", "pickup", "", "readyToPickup"),          # retirada no balcão
+    ("ready", "TAKEOUT", "", "readyToPickup"),         # TAKEOUT: obrigatório
+    ("ready", "DINE_IN", "", "readyToPickup"),         # DINE_IN: obrigatório
+    ("ready", "delivery", "IFOOD", "readyToPickup"),   # chama o entregador do iFood
+    ("ready", "delivery", "MERCHANT", "readyToPickup"),  # entrega própria: avisa ANTES do dispatch
+    ("ready", "delivery", "", "readyToPickup"),        # dono desconhecido: "pronto" não afirma quem leva
+    ("ready", "delivery", "UNKNOWN", "readyToPickup"),  # idem — a dúvida é sobre a entrega, não sobre a comida
+    ("ready", "", "MERCHANT", "readyToPickup"),        # tipo ausente: não há tipo em que o aviso não valha
+    # dispatched: espelho estrito — só entrega DA LOJA.
+    ("dispatched", "delivery", "MERCHANT", "dispatch"),  # a loja levou
+    ("dispatched", "delivery", "IFOOD", None),         # quem leva é o entregador deles
+    ("dispatched", "delivery", "", None),               # ausência de dono nunca é MERCHANT
+    ("dispatched", "delivery", "UNKNOWN", None),        # dono desconhecido idem
+    ("dispatched", "pickup", "MERCHANT", None),         # retirada não se despacha
+    ("dispatched", "DINE_IN", "MERCHANT", None),        # consumo no local não se despacha
+    ("dispatched", "", "MERCHANT", None),               # tipo ausente não autoriza despacho
+    ("accepted", "", "", "confirm"),                    # confirm independe de logística
 ])
 def test_send_follows_fulfillment_and_explicit_delivery_owner(status, fulfillment, owner, expected):
     with patch.object(ifood_callbacks, "send_action") as send:
@@ -40,17 +54,25 @@ def test_send_follows_fulfillment_and_explicit_delivery_owner(status, fulfillmen
         send.assert_not_called()
 
 
-@pytest.mark.parametrize("status", ["ready", "dispatched"])
-def test_bare_status_does_not_send_logistics_without_context(status):
+def test_bare_status_does_not_dispatch_without_context():
+    """Sem contexto não se despacha: dispatch depende de a loja ser a dona da entrega."""
     with patch.object(ifood_callbacks, "send_action") as send:
-        assert ifood_callbacks.send_for_status("ifood-order", status) is False
+        assert ifood_callbacks.send_for_status("ifood-order", "dispatched") is False
     send.assert_not_called()
+
+
+def test_bare_ready_still_notifies_because_every_order_type_requires_it():
+    """O aviso de pronto não depende de contexto — é obrigatório em TAKEOUT, DINE_IN e DELIVERY."""
+    with patch.object(ifood_callbacks, "send_action") as send:
+        assert ifood_callbacks.send_for_status("ifood-order", "ready") is True
+    send.assert_called_once_with("ifood-order", "readyToPickup")
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(("status", "owner", "expected"), [
     ("ready", "IFOOD", "readyToPickup"),
-    ("ready", "MERCHANT", None),
+    ("ready", "MERCHANT", "readyToPickup"),  # entrega própria também avisa pronto
+    ("ready", "", "readyToPickup"),
     ("dispatched", "MERCHANT", "dispatch"),
     ("dispatched", "IFOOD", None),
     ("dispatched", "", None),
@@ -119,7 +141,10 @@ def test_remote_actor_does_not_enqueue_echo(status, actor):
 @pytest.mark.parametrize(("status", "fulfillment", "owner", "queued"), [
     ("ready", "pickup", "", True),
     ("ready", "delivery", "IFOOD", True),
-    ("ready", "delivery", "MERCHANT", False),
+    # O defeito medido ao vivo em 19/09/2026 (IFOOD-260919-Q38, deliveredBy:
+    # MERCHANT): o "pronto" do operador não gerava directive nenhuma.
+    ("ready", "delivery", "MERCHANT", True),
+    ("ready", "delivery", "", True),
     ("dispatched", "delivery", "MERCHANT", True),
     ("dispatched", "delivery", "IFOOD", False),
     ("dispatched", "delivery", "", False),
