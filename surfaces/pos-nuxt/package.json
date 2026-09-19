@@ -42,7 +42,7 @@
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.132",
     "@nuxt/eslint": "^1.17.0",
-    "@nuxt/test-utils": "^4.1.0",
+    "@nuxt/test-utils": "^4.3.2",
     "@playwright/test": "^1.63.0",
     "@vue/test-utils": "^2.5.0",
     "eslint": "^10.10.0",
