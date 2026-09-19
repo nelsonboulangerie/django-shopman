@@ -303,7 +303,7 @@ const dispatchDraft = computed(() => {
   return (dispatchRef.value ? cashDrafts.dispatches.value[dispatchRef.value] : null) ?? initial;
 });
 const dispatchAmount = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
-// Aparelhos marcados para sair com o entregador (refs do canal, ex. card_machine).
+// Equipamento marcado para sair com o entregador (refs do canal, ex. card_machine — hoje, a maquininha).
 const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
 const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
 const dispatchAsksChangeNow = computed(() => Boolean(dispatchCard.value && dispatchAsksChange(dispatchCard.value)));
@@ -376,7 +376,7 @@ function printQueue() {
       <p class="text-sm" data-equipment-available>
         Maquininhas disponíveis: {{ equipmentAvailable.length }}<template v-if="equipmentAvailable.length"> · {{ equipmentAvailable.map(item => item.label).join(', ') }}</template>
         · Em trânsito: {{ equipmentOut.filter(item => item.identified).length }}
-        <template v-if="equipmentOut.some(item => !item.identified)"> · Registros antigos sem aparelho identificado: {{ equipmentOut.filter(item => !item.identified).length }}</template>
+        <template v-if="equipmentOut.some(item => !item.identified)"> · Registros antigos sem maquininha identificada: {{ equipmentOut.filter(item => !item.identified).length }}</template>
       </p>
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
@@ -827,7 +827,7 @@ function printQueue() {
             aria-label="Troco que o entregador leva"
           />
         </label>
-        <!-- aparelho que o canal deixa levar (maquininha): custódia no pedido -->
+        <!-- maquininha que o canal deixa levar: custódia no pedido -->
         <div v-if="dispatchCard?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
           <label
             v-for="opt in dispatchCard.equipment_options"

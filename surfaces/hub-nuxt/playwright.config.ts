@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// E2E da Central (backend-independente). Mock backend serve uma projection de hub com
+// E2E do Shopman Apps (backend-independente). Mock backend serve uma projection de hub com
 // tiles → o app renderiza o launcher; + banner offline. Build com baseURL '/' (produção
 // usa '/central/'). Fluxo com Django real (login efetivo, permissões) = reviewer local.
 export default defineConfig({

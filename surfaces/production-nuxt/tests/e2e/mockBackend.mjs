@@ -220,7 +220,19 @@ const server = createServer((req, res) => {
   if (/\/storefront\//.test(url)) return json(res, 404, { detail: "Storefront fora do Produção." });
 
   // Sessão do dispositivo: 403 = device não autenticado → o gate de login aparece.
-  if (/\/operator\/session\/?(\?|$)/.test(url)) {
+  //
+  // ⚠️ São DUAS antessalas, e a diferença é trava de servidor, não arrumação de
+  // rota. Desde a #827 a Produção pergunta em `/production/session/`: a conta de
+  // uma estação AUTÔNOMA (painel de parede, sem ninguém para digitar PIN) só é
+  // resolvida sob o prefixo da Produção, porque o cookie de estação vale no
+  // domínio inteiro e esse corte é o que impede a conta do painel de virar
+  // operador no PDV da aba ao lado. A compartilhada segue valendo para os apps
+  // atendidos.
+  //
+  // O dublê precisa responder às DUAS. Conhecendo só a compartilhada, a pergunta
+  // da Produção atravessava este bloco e caía no 403 genérico de estação travada
+  // logo abaixo: a tela lia "erro", não "travado", e a tela de PIN nunca subia.
+  if (/\/(operator|production)\/session\/?(\?|$)/.test(url)) {
     if (authed) return json(res, 200, SESSION_AUTHED);
     if (locked) return json(res, 200, SESSION_LOCKED);
     return json(res, 403, { detail: "Autenticação necessária." });

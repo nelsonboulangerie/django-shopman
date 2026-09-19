@@ -31,7 +31,7 @@ import {
   sanitizeQtyInput,
 } from "~/presentation/closing";
 
-useHead({ title: "Fechamento do dia · PDV" });
+useHead({ title: "Fechamento do dia" });
 
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();

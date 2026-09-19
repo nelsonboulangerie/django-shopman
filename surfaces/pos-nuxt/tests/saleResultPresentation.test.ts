@@ -7,9 +7,15 @@ import {
   AUTO_ADVANCE_SECONDS,
   autoAdvanceSeconds,
   changeDisplay,
+  courierChangeLine,
+  danfeOffer,
   enterAdvances,
+  fiscalStateLabel,
+  orderReadback,
   pixAwaiting,
+  resolveFiscalState,
   saleResultTitle,
+  saleResultTone,
 } from "~/presentation/saleResult";
 import { formatBRL } from "~/utils/posIntent";
 
@@ -49,6 +55,34 @@ describe("saleResultTitle — o obrigado é nominal quando há cliente", () => {
   it("sem cliente, a confirmação seca", () => {
     expect(saleResultTitle("")).toBe("Venda concluída");
     expect(saleResultTitle("   ")).toBe("Venda concluída");
+  });
+});
+
+describe("PIX pendente NÃO veste cara de venda concluída", () => {
+  // ⚠️ O defeito: `paymentFailed` só era verdadeiro com "error"/"unavailable",
+  // e o Pix PENDENTE — QR na tela, polling vivo, dinheiro nenhum na conta —
+  // passava por sucesso: check verde, "Venda concluída" em corpo 3xl e o nome
+  // do cliente no vocativo, enquanto o CTA da mesma tela já dizia "Nova venda
+  // mesmo assim". O operador entregava o pão e ia atender o próximo.
+  it("com o polling vivo, o título espera — e não agradece", () => {
+    expect(saleResultTitle("Maria da Silva", pixProof(), "polling")).toBe("Aguardando Pix");
+    expect(saleResultTitle("", pixProof(), "polling")).toBe("Aguardando Pix");
+  });
+
+  it("confirmado, a MESMA tela assenta e o obrigado nominal entra", () => {
+    expect(saleResultTitle("Maria da Silva", pixProof(), "paid")).toBe("Venda concluída. Obrigado, Maria!");
+  });
+
+  it("o selo verde é afirmação sobre o dinheiro: três estados, um verde só", () => {
+    expect(saleResultTone(pixProof(), "polling")).toBe("awaiting");
+    expect(saleResultTone(pixProof(), "paid")).toBe("settled");
+    expect(saleResultTone(null, "idle")).toBe("settled");
+    expect(saleResultTone({ ...pixProof(), status: "error" }, "idle")).toBe("failed");
+  });
+
+  it("cartão com prova não espera Pix nenhum", () => {
+    expect(saleResultTone(cardProof(), "polling")).toBe("settled");
+    expect(saleResultTitle("Ana", cardProof(), "polling")).toBe("Venda concluída. Obrigado, Ana!");
   });
 });
 
@@ -157,5 +191,74 @@ describe("cobrança que falhou não veste cara de venda concluída", () => {
   it("o título diz o que aconteceu, e não agradece", () => {
     expect(saleResultTitle("Ana Maria", falhou)).toBe("Venda registrada, cobrança não criada");
     expect(saleResultTitle("Ana Maria", null)).toBe("Venda concluída. Obrigado, Ana!");
+  });
+});
+
+describe("orderReadback — a leitura de volta da encomenda", () => {
+  it("balcão não lê nada de volta: o pedido já foi entregue na mão", () => {
+    expect(orderReadback({ salesMode: "counter", fulfillmentLabel: "Retirada", scheduleLabel: "Hoje" })).toBeNull();
+    expect(orderReadback({ salesMode: undefined, fulfillmentLabel: "Retirada" })).toBeNull();
+  });
+
+  it("encomenda devolve como e quando, aparados", () => {
+    expect(orderReadback({ salesMode: "order", fulfillmentLabel: " Entrega · Centro ", scheduleLabel: "sáb, 20/09, 10:00 às 10:30" }))
+      .toEqual({ fulfillment: "Entrega · Centro", schedule: "sáb, 20/09, 10:00 às 10:30" });
+  });
+
+  it("encomenda sem nenhum dos dois não inventa bloco vazio", () => {
+    expect(orderReadback({ salesMode: "order", fulfillmentLabel: "", scheduleLabel: "  " })).toBeNull();
+  });
+});
+
+describe("enterAdvances — a encomenda não é dispensada por hábito", () => {
+  it("no modo encomenda, Enter NÃO avança (a tela é a leitura de volta ao cliente)", () => {
+    expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle", salesMode: "order" })).toBe(false);
+  });
+  it("no balcão, o mesmo estado avança", () => {
+    expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle", salesMode: "counter" })).toBe(true);
+    expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle" })).toBe(true);
+  });
+});
+
+describe("courierChangeLine — o troco que sai com o entregador é linha, não herói", () => {
+  it("formata quando há troco a separar", () => {
+    expect(courierChangeLine(5800)).toBe(`Troco a separar: ${formatBRL(5800)}`);
+  });
+  it("vazio sem troco, zero ou ausente", () => {
+    expect(courierChangeLine(0)).toBe("");
+    expect(courierChangeLine(undefined)).toBe("");
+  });
+});
+
+describe("resolveFiscalState — o estado do close, ou a derivação da previsão", () => {
+  it("o `fiscal_state` do servidor vence a previsão", () => {
+    expect(resolveFiscalState({ fiscal_state: "awaiting_payment", fiscal_expected: true })).toBe("awaiting_payment");
+    expect(resolveFiscalState({ fiscal_state: "failed", fiscal_expected: false })).toBe("failed");
+  });
+  it("sem `fiscal_state`: esperada = na fila; não esperada = sem nota", () => {
+    expect(resolveFiscalState({ fiscal_expected: true })).toBe("queued");
+    expect(resolveFiscalState({ fiscal_expected: false })).toBe("not_expected");
+    expect(resolveFiscalState({})).toBe("not_expected");
+  });
+});
+
+describe("danfeOffer — a DANFE por existência da nota, não por previsão", () => {
+  it("só `authorized` ganha o botão vivo", () => {
+    expect(danfeOffer("authorized")).toEqual({ kind: "print", label: "Imprimir DANFE" });
+  });
+  it("na fila: botão desabilitado com a espera nomeada", () => {
+    expect(danfeOffer("queued")).toEqual({ kind: "queued", label: "NFC-e na fila…" });
+  });
+  it("aguardando pagamento e falha dizem o próximo passo; sem nota, nada", () => {
+    expect(danfeOffer("awaiting_payment")).toEqual({ kind: "awaiting_payment", label: "NFC-e sai quando o pagamento confirmar" });
+    expect(danfeOffer("failed")).toEqual({ kind: "failed", label: "NFC-e falhou — veja Últimas vendas" });
+    expect(danfeOffer("not_expected")).toBeNull();
+  });
+  it("o chip das Últimas vendas fala os mesmos estados", () => {
+    expect(fiscalStateLabel("authorized")).toBe("NFC-e autorizada");
+    expect(fiscalStateLabel("queued")).toBe("NFC-e na fila");
+    expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e aguarda o pagamento");
+    expect(fiscalStateLabel("failed")).toBe("NFC-e falhou");
+    expect(fiscalStateLabel("not_expected")).toBe("Sem NFC-e");
   });
 });

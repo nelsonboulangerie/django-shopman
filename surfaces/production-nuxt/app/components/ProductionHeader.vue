@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Cabeçalho de seção do Produção — mora no topo do CONTEÚDO (não é o rail). Segura o
 // controle do rail (kit) + a nav das visões de produção (Planejamento/Preparação/
-// Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Central,
+// Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Shopman Apps,
 // operador/travar, tema) vivem no OperatorRail à esquerda — o rail as concentra e economiza
 // a horizontal. Touch-first e light-first, como o Gestor.
 import {
@@ -24,6 +24,21 @@ const query = defineModel<string>("query", { default: "" });
 const route = useRoute();
 const searchInput = ref<{ inputRef: HTMLInputElement | null } | null>(null);
 const shortcutsHelpOpen = ref(false);
+
+// Timers da bancada: ferramenta de primeira classe, em toda tela. O botão LEVA
+// à página /timers — o diálogo morreu em 18/09/2026 porque o gesto de toda hora
+// não cabia num modal: no fournil o timer é coisa que fica à vista, não que se
+// abre e fecha. O contador vem do localStorage — o servidor não o conhece —,
+// então o primeiro render do cliente precisa BATER com o SSR (0) e só depois de
+// montar mostrar o real.
+const floorTimers = useFloorTimers();
+const hydrated = ref(false);
+const timersCount = computed(() =>
+  hydrated.value ? floorTimers.activeCount.value : 0,
+);
+const timersRinging = computed(() =>
+  hydrated.value ? floorTimers.ringingCount.value : 0,
+);
 
 const SHORTCUT_ROUTES = {
   plan: "/plan",
@@ -56,7 +71,10 @@ function onGlobalKeydown(event: KeyboardEvent) {
   navigateTo(SHORTCUT_ROUTES[shortcut]);
 }
 
-onMounted(() => window.addEventListener("keydown", onGlobalKeydown));
+onMounted(() => {
+  hydrated.value = true;
+  window.addEventListener("keydown", onGlobalKeydown);
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
 // As abas são SÓ o fluxo do dia do operador: decide → separa/pesa → produz →
@@ -205,6 +223,37 @@ function isActive(to: string): boolean {
           aria-hidden="true"
           >/</OperatorKbd>
       </div>
+      <!-- Timers: contador de ativos; pulsa quando algum toca. LEVA à página,
+           não abre diálogo. Nunca bloqueia nada. -->
+      <NuxtLink
+        to="/timers"
+        class="relative inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition"
+        :class="[
+          timersRinging ? 'border-destructive text-destructive' : '',
+          isActive('/timers')
+            ? 'bg-primary text-primary-foreground'
+            : 'hover:bg-accent hover:text-foreground',
+        ]"
+        :aria-label="`Timers (${timersCount} ativos)`"
+        title="Timers da bancada"
+      >
+        <Icon
+          name="lucide:alarm-clock"
+          class="size-4"
+          :class="timersRinging ? 'animate-pulse motion-reduce:animate-none' : ''"
+        />
+        <span class="hidden xl:inline">Timers</span>
+        <span
+          v-if="timersCount"
+          class="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-xs font-bold tabular-nums"
+          :class="
+            timersRinging
+              ? 'bg-destructive text-destructive-foreground'
+              : 'bg-primary text-primary-foreground'
+          "
+          >{{ timersCount }}</span
+        >
+      </NuxtLink>
       <AlertsBell />
       <UiButton
         type="button"
@@ -226,7 +275,7 @@ function isActive(to: string): boolean {
         type="button"
         variant="outline"
         size="sm"
-        class="min-h-11"
+        class="hidden min-h-11 sm:inline-flex"
         aria-label="Ver atalhos do teclado"
         aria-keyshortcuts="?"
         title="Atalhos do teclado · ?"

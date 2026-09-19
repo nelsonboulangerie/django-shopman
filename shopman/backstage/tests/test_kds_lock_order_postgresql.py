@@ -21,7 +21,7 @@ pytestmark = [pytest.mark.django_db(transaction=True), requires_postgres]
 @pytest.mark.parametrize(
     ("status", "command", "expected"),
     [
-        ("pending", "check", False),
+        ("pending", "start", False),
         ("pending", "complete", False),
         ("pending", "ack", True),
     ],
@@ -48,7 +48,6 @@ def test_pos_cancel_and_kds_writer_share_source_then_ticket_order(
             "sku": "PAO",
             "name": "Pão",
             "qty": 1,
-            "checked": False,
         }],
     )
 
@@ -70,10 +69,8 @@ def test_pos_cancel_and_kds_writer_share_source_then_ticket_order(
                 cursor.execute("SET lock_timeout = '5s'")
             current = KDSTicket.objects.get(pk=ticket.pk)
             worker_started.set()
-            if command == "check":
-                return kds.set_ticket_item_checked(
-                    current, index=0, checked=True, actor="kds:test"
-                )
+            if command == "start":
+                return kds.start_ticket(current, actor="kds:test")
             if command == "complete":
                 return kds.complete_ticket(current, actor="kds:test")
             return kds.acknowledge_ticket(current, actor="kds:test")

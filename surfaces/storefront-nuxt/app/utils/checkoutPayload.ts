@@ -22,8 +22,9 @@ export interface CheckoutFormState {
   recipient_phone: string
   gift_message: string
   gift_hide_values: boolean
-  // "Salvar para a próxima vez": pré-marcado (opt-out). O endereço novo salva
-  // sempre; este toggle controla só os defaults (fulfillment/pagamento/horário).
+  // "Lembrar destas escolhas": pré-marcado (opt-out). O endereço novo entra na
+  // agenda do cliente sempre; este toggle controla só os padrões (qual endereço
+  // vem escolhido, forma de pagamento, horário).
   save_as_default: boolean
 }
 

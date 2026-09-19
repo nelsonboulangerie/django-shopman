@@ -141,6 +141,7 @@ const shownError = computed(() => localError.value || props.error || "");
       </button>
       <button
         type="button"
+        aria-label="Apagar o último dígito"
         class="rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
         @click="backspace"
       >
@@ -156,6 +157,7 @@ const shownError = computed(() => localError.value || props.error || "");
       <button
         type="button"
         :disabled="!canAdvance || busy"
+        :aria-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
         class="rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         @click="advance"
       >

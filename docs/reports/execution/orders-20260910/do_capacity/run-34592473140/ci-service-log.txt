@@ -1,0 +1,567 @@
+Sep 11 11:10:12 runnervmlun5p systemd[1]: Started orders-capacity-backend.service - /home/runner/work/django-shopman/django-shopman/.venv/bin/python /home/runner/work/django-shopman/django-shopman/docs/reports/execution/orders-20260910/process_read_lab/serve.py 8016.
+Sep 11 11:10:13 runnervmlun5p python[5618]: DEBUG 2026-09-11 08:10:13,478 shopman.shop.notifications Notification backend registered: email
+Sep 11 11:10:13 runnervmlun5p python[5618]: DEBUG 2026-09-11 08:10:13,478 shopman.shop.notifications Notification backend registered: manychat
+Sep 11 11:10:13 runnervmlun5p python[5618]: DEBUG 2026-09-11 08:10:13,479 shopman.shop.notifications Notification backend registered: console
+Sep 11 11:10:13 runnervmlun5p python[5618]: DEBUG 2026-09-11 08:10:13,479 shopman.shop.notifications Notification backend registered: sms
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,497 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,497 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,498 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,498 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,505 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,505 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,505 shopman.shop.apps ShopmanConfig: handlers registered.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,506 shopman.shop.apps ShopmanConfig: rules engine wired.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,506 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,506 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,507 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,507 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,507 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,507 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,513 shopman.shop.apps ShopmanConfig: backup resources registered.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,513 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,560 daphne.cli Starting server at tcp:port=8016:interface=127.0.0.1
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,560 daphne.server HTTP/2 support not enabled (install the http2 and tls Twisted extras)
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,560 daphne.server Configuring endpoint tcp:port=8016:interface=127.0.0.1
+Sep 11 11:10:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:13,561 daphne.server Listening on TCP address 127.0.0.1:8016
+Sep 11 11:10:14 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:14,662 shopman.operational operator.request.started
+Sep 11 11:10:14 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:14,877 shopman.operational operator.request.finished
+Sep 11 11:10:14 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:14,924 shopman.operational operator.request.started
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,075 shopman.operational operator.request.finished
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,116 shopman.operational operator.request.started
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,267 shopman.operational operator.request.finished
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,305 shopman.operational operator.request.started
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,454 shopman.operational operator.request.finished
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,493 shopman.operational operator.request.started
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,708 shopman.operational operator.request.finished
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,747 shopman.operational operator.request.started
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,894 shopman.operational operator.request.finished
+Sep 11 11:10:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:15,933 shopman.operational operator.request.started
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,082 shopman.operational operator.request.finished
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,120 shopman.operational operator.request.started
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,324 shopman.operational operator.request.finished
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,363 shopman.operational operator.request.started
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,510 shopman.operational operator.request.finished
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,550 shopman.operational operator.request.started
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,699 shopman.operational operator.request.finished
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,738 shopman.operational operator.request.started
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,954 shopman.operational operator.request.finished
+Sep 11 11:10:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:16,994 shopman.operational operator.request.started
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,144 shopman.operational operator.request.finished
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,182 shopman.operational operator.request.started
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,329 shopman.operational operator.request.finished
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,368 shopman.operational operator.request.started
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,595 shopman.operational operator.request.finished
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,636 shopman.operational operator.request.started
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,785 shopman.operational operator.request.finished
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,824 shopman.operational operator.request.started
+Sep 11 11:10:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:17,970 shopman.operational operator.request.finished
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,009 shopman.operational operator.request.started
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,223 shopman.operational operator.request.finished
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,262 shopman.operational operator.request.started
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,412 shopman.operational operator.request.finished
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,450 shopman.operational operator.request.started
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,599 shopman.operational operator.request.finished
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,637 shopman.operational operator.request.started
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,857 shopman.operational operator.request.finished
+Sep 11 11:10:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:18,900 shopman.operational operator.request.started
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,049 shopman.operational operator.request.finished
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,088 shopman.operational operator.request.started
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,237 shopman.operational operator.request.finished
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,275 shopman.operational operator.request.started
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,424 shopman.operational operator.request.finished
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,462 shopman.operational operator.request.started
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,679 shopman.operational operator.request.finished
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,718 shopman.operational operator.request.started
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,865 shopman.operational operator.request.finished
+Sep 11 11:10:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:19,903 shopman.operational operator.request.started
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,051 shopman.operational operator.request.finished
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,088 shopman.operational operator.request.started
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,299 shopman.operational operator.request.finished
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,336 shopman.operational operator.request.started
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,483 shopman.operational operator.request.finished
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,522 shopman.operational operator.request.started
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,670 shopman.operational operator.request.finished
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,708 shopman.operational operator.request.started
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,916 shopman.operational operator.request.finished
+Sep 11 11:10:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:20,954 shopman.operational operator.request.started
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,102 shopman.operational operator.request.finished
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,139 shopman.operational operator.request.started
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,286 shopman.operational operator.request.finished
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,323 shopman.operational operator.request.started
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,532 shopman.operational operator.request.finished
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,569 shopman.operational operator.request.started
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,718 shopman.operational operator.request.finished
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,755 shopman.operational operator.request.started
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,902 shopman.operational operator.request.finished
+Sep 11 11:10:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:21,939 shopman.operational operator.request.started
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,151 shopman.operational operator.request.finished
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,188 shopman.operational operator.request.started
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,336 shopman.operational operator.request.finished
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,374 shopman.operational operator.request.started
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,527 shopman.operational operator.request.finished
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,572 shopman.operational operator.request.started
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,782 shopman.operational operator.request.finished
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,819 shopman.operational operator.request.started
+Sep 11 11:10:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:22,967 shopman.operational operator.request.finished
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,005 shopman.operational operator.request.started
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,153 shopman.operational operator.request.finished
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,191 shopman.operational operator.request.started
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,399 shopman.operational operator.request.finished
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,438 shopman.operational operator.request.started
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,586 shopman.operational operator.request.finished
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,623 shopman.operational operator.request.started
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,773 shopman.operational operator.request.finished
+Sep 11 11:10:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:23,810 shopman.operational operator.request.started
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,024 shopman.operational operator.request.finished
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,061 shopman.operational operator.request.started
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,209 shopman.operational operator.request.finished
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,246 shopman.operational operator.request.started
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,393 shopman.operational operator.request.finished
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,430 shopman.operational operator.request.started
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,576 shopman.operational operator.request.finished
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,613 shopman.operational operator.request.started
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,823 shopman.operational operator.request.finished
+Sep 11 11:10:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:24,860 shopman.operational operator.request.started
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,010 shopman.operational operator.request.finished
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,049 shopman.operational operator.request.started
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,197 shopman.operational operator.request.finished
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,237 shopman.operational operator.request.started
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,459 shopman.operational operator.request.finished
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,498 shopman.operational operator.request.started
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,649 shopman.operational operator.request.finished
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,686 shopman.operational operator.request.started
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,837 shopman.operational operator.request.finished
+Sep 11 11:10:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:25,877 shopman.operational operator.request.started
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,095 shopman.operational operator.request.finished
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,134 shopman.operational operator.request.started
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,283 shopman.operational operator.request.finished
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,322 shopman.operational operator.request.started
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,470 shopman.operational operator.request.finished
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,508 shopman.operational operator.request.started
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,727 shopman.operational operator.request.finished
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,766 shopman.operational operator.request.started
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,914 shopman.operational operator.request.finished
+Sep 11 11:10:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:26,952 shopman.operational operator.request.started
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,099 shopman.operational operator.request.finished
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,135 shopman.operational operator.request.started
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,352 shopman.operational operator.request.finished
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,396 shopman.operational operator.request.started
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,396 shopman.operational operator.request.started
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,731 shopman.operational operator.request.finished
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,741 shopman.operational operator.request.finished
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,800 shopman.operational operator.request.started
+Sep 11 11:10:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:27,902 shopman.operational operator.request.started
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,078 shopman.operational operator.request.finished
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,176 shopman.operational operator.request.finished
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,219 shopman.operational operator.request.started
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,269 shopman.operational operator.request.started
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,474 shopman.operational operator.request.finished
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,591 shopman.operational operator.request.finished
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,609 shopman.operational operator.request.started
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,644 shopman.operational operator.request.started
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,836 shopman.operational operator.request.finished
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,926 shopman.operational operator.request.finished
+Sep 11 11:10:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:28,963 shopman.operational operator.request.started
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,063 shopman.operational operator.request.started
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,228 shopman.operational operator.request.finished
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,336 shopman.operational operator.request.finished
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,358 shopman.operational operator.request.started
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,396 shopman.operational operator.request.started
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,622 shopman.operational operator.request.finished
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,740 shopman.operational operator.request.finished
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,759 shopman.operational operator.request.started
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,811 shopman.operational operator.request.started
+Sep 11 11:10:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:29,957 shopman.operational operator.request.finished
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,073 shopman.operational operator.request.finished
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,092 shopman.operational operator.request.started
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,200 shopman.operational operator.request.started
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,371 shopman.operational operator.request.finished
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,477 shopman.operational operator.request.finished
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,500 shopman.operational operator.request.started
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,551 shopman.operational operator.request.started
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,749 shopman.operational operator.request.finished
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,870 shopman.operational operator.request.finished
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,887 shopman.operational operator.request.started
+Sep 11 11:10:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:30,947 shopman.operational operator.request.started
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,092 shopman.operational operator.request.finished
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,214 shopman.operational operator.request.finished
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,231 shopman.operational operator.request.started
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,337 shopman.operational operator.request.started
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,508 shopman.operational operator.request.finished
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,611 shopman.operational operator.request.finished
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,652 shopman.operational operator.request.started
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,687 shopman.operational operator.request.started
+Sep 11 11:10:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:31,918 shopman.operational operator.request.finished
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,021 shopman.operational operator.request.finished
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,059 shopman.operational operator.request.started
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,110 shopman.operational operator.request.started
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,252 shopman.operational operator.request.finished
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,378 shopman.operational operator.request.finished
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,396 shopman.operational operator.request.started
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,507 shopman.operational operator.request.started
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,686 shopman.operational operator.request.finished
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,792 shopman.operational operator.request.finished
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,832 shopman.operational operator.request.started
+Sep 11 11:10:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:32,886 shopman.operational operator.request.started
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,099 shopman.operational operator.request.finished
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,215 shopman.operational operator.request.finished
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,233 shopman.operational operator.request.started
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,290 shopman.operational operator.request.started
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,433 shopman.operational operator.request.finished
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,552 shopman.operational operator.request.finished
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,566 shopman.operational operator.request.started
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,682 shopman.operational operator.request.started
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,837 shopman.operational operator.request.finished
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,977 shopman.operational operator.request.finished
+Sep 11 11:10:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:33,994 shopman.operational operator.request.started
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,052 shopman.operational operator.request.started
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,258 shopman.operational operator.request.finished
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,376 shopman.operational operator.request.finished
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,390 shopman.operational operator.request.started
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,433 shopman.operational operator.request.started
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,596 shopman.operational operator.request.finished
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,713 shopman.operational operator.request.finished
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,732 shopman.operational operator.request.started
+Sep 11 11:10:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:34,790 shopman.operational operator.request.started
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,003 shopman.operational operator.request.finished
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,126 shopman.operational operator.request.finished
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,144 shopman.operational operator.request.started
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,196 shopman.operational operator.request.started
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,398 shopman.operational operator.request.finished
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,514 shopman.operational operator.request.finished
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,533 shopman.operational operator.request.started
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,590 shopman.operational operator.request.started
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,729 shopman.operational operator.request.finished
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,852 shopman.operational operator.request.finished
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,868 shopman.operational operator.request.started
+Sep 11 11:10:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:35,971 shopman.operational operator.request.started
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,132 shopman.operational operator.request.finished
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,248 shopman.operational operator.request.finished
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,267 shopman.operational operator.request.started
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,324 shopman.operational operator.request.started
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,515 shopman.operational operator.request.finished
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,656 shopman.operational operator.request.finished
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,672 shopman.operational operator.request.started
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,735 shopman.operational operator.request.started
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,875 shopman.operational operator.request.finished
+Sep 11 11:10:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:36,998 shopman.operational operator.request.finished
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,012 shopman.operational operator.request.started
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,120 shopman.operational operator.request.started
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,284 shopman.operational operator.request.finished
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,392 shopman.operational operator.request.finished
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,415 shopman.operational operator.request.started
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,468 shopman.operational operator.request.started
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,684 shopman.operational operator.request.finished
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,813 shopman.operational operator.request.finished
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,831 shopman.operational operator.request.started
+Sep 11 11:10:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:37,866 shopman.operational operator.request.started
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,070 shopman.operational operator.request.finished
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,144 shopman.operational operator.request.finished
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,182 shopman.operational operator.request.started
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,218 shopman.operational operator.request.started
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,455 shopman.operational operator.request.finished
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,561 shopman.operational operator.request.finished
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,597 shopman.operational operator.request.started
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,634 shopman.operational operator.request.started
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,860 shopman.operational operator.request.finished
+Sep 11 11:10:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:38,976 shopman.operational operator.request.finished
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,030 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,042 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,050 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,055 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,069 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,071 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,072 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,076 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,077 shopman.operational operator.request.started
+Sep 11 11:10:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:39,090 shopman.operational operator.request.started
+Sep 11 11:10:40 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:40,098 shopman.operational operator.request.finished
+Sep 11 11:10:40 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:40,165 shopman.operational operator.request.started
+Sep 11 11:10:40 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:40,739 shopman.operational operator.request.finished
+Sep 11 11:10:40 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:40,876 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,282 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,315 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,361 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,385 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,417 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,440 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,488 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,539 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,597 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,703 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,854 shopman.operational operator.request.finished
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,904 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,911 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,948 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,949 shopman.operational operator.request.started
+Sep 11 11:10:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:41,950 shopman.operational operator.request.started
+Sep 11 11:10:42 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:42,027 shopman.operational operator.request.started
+Sep 11 11:10:42 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:42,140 shopman.operational operator.request.started
+Sep 11 11:10:42 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:42,995 shopman.operational operator.request.finished
+Sep 11 11:10:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:43,062 shopman.operational operator.request.started
+Sep 11 11:10:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:43,706 shopman.operational operator.request.finished
+Sep 11 11:10:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:43,771 shopman.operational operator.request.started
+Sep 11 11:10:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:43,894 shopman.operational operator.request.finished
+Sep 11 11:10:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:43,938 shopman.operational operator.request.finished
+Sep 11 11:10:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:43,951 shopman.operational operator.request.finished
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,019 shopman.operational operator.request.finished
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,039 shopman.operational operator.request.finished
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,057 shopman.operational operator.request.finished
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,228 shopman.operational operator.request.finished
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,247 shopman.operational operator.request.finished
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,297 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,394 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,400 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,547 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,553 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,561 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,570 shopman.operational operator.request.started
+Sep 11 11:10:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:44,574 shopman.operational operator.request.started
+Sep 11 11:10:45 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:45,320 shopman.operational operator.request.finished
+Sep 11 11:10:45 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:45,382 shopman.operational operator.request.started
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,020 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,084 shopman.operational operator.request.started
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,350 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,408 shopman.operational operator.request.started
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,450 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,488 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,597 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,644 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,644 shopman.operational operator.request.started
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,783 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,816 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,822 shopman.operational operator.request.finished
+Sep 11 11:10:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:46,837 shopman.operational operator.request.started
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,011 shopman.operational operator.request.started
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,092 shopman.operational operator.request.started
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,136 shopman.operational operator.request.started
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,142 shopman.operational operator.request.started
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,144 shopman.operational operator.request.started
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,773 shopman.operational operator.request.finished
+Sep 11 11:10:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:47,844 shopman.operational operator.request.started
+Sep 11 11:10:48 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:48,361 shopman.operational operator.request.finished
+Sep 11 11:10:48 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:48,426 shopman.operational operator.request.started
+Sep 11 11:10:48 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:48,798 shopman.operational operator.request.finished
+Sep 11 11:10:48 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:48,857 shopman.operational operator.request.started
+Sep 11 11:10:48 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:48,987 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,059 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,102 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,126 shopman.operational operator.request.started
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,195 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,249 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,256 shopman.operational operator.request.started
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,298 shopman.operational operator.request.started
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,348 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,480 shopman.operational operator.request.finished
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,611 shopman.operational operator.request.started
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,631 shopman.operational operator.request.started
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,720 shopman.operational operator.request.started
+Sep 11 11:10:49 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:49,731 shopman.operational operator.request.started
+Sep 11 11:10:50 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:50,265 shopman.operational operator.request.finished
+Sep 11 11:10:50 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:50,333 shopman.operational operator.request.started
+Sep 11 11:10:50 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:50,840 shopman.operational operator.request.finished
+Sep 11 11:10:50 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:50,904 shopman.operational operator.request.started
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,280 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,339 shopman.operational operator.request.started
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,468 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,533 shopman.operational operator.request.started
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,596 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,648 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,719 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,764 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,813 shopman.operational operator.request.finished
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,813 shopman.operational operator.request.started
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,814 shopman.operational operator.request.started
+Sep 11 11:10:51 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:51,861 shopman.operational operator.request.finished
+Sep 11 11:10:52 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:52,081 shopman.operational operator.request.started
+Sep 11 11:10:52 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:52,142 shopman.operational operator.request.started
+Sep 11 11:10:52 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:52,177 shopman.operational operator.request.started
+Sep 11 11:10:52 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:52,584 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,089 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,276 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,382 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,444 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,490 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,533 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,592 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:53,594 shopman.operational operator.request.finished
+Sep 11 11:10:53 runnervmlun5p systemd[1]: Started orders-capacity-nitro.service - /opt/hostedtoolcache/node/22.23.2/x64/bin/node /home/runner/work/django-shopman/django-shopman/surfaces/orders-nuxt/.output/server/index.mjs.
+Sep 11 11:10:53 runnervmlun5p node[6518]: Listening on http://127.0.0.1:3005
+Sep 11 11:10:57 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:57,092 shopman.operational operator.request.started
+Sep 11 11:10:57 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:57,207 django_eventstream.views added listener 140478229913120
+Sep 11 11:10:57 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:57,209 django_eventstream.views added listener 140478196381648
+Sep 11 11:10:57 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:57,359 shopman.operational operator.request.finished
+Sep 11 11:10:58 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:58,099 django_eventstream.views added listener 140478094556096
+Sep 11 11:10:58 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:58,171 shopman.operational operator.request.started
+Sep 11 11:10:58 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:58,513 shopman.operational operator.request.finished
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,109 shopman.operational operator.request.started
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,144 shopman.operational operator.request.finished
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,167 django_eventstream.views added listener 140478188269408
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,190 shopman.operational operator.request.started
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,210 shopman.operational operator.request.finished
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,248 shopman.operational operator.request.started
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,307 django_eventstream.views added listener 140478182286032
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,323 django_eventstream.views added listener 140478182287040
+Sep 11 11:10:59 runnervmlun5p python[5618]: INFO 2026-09-11 08:10:59,480 shopman.operational operator.request.finished
+Sep 11 11:11:00 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:00,200 django_eventstream.views added listener 140478240193232
+Sep 11 11:11:00 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:00,269 shopman.operational operator.request.started
+Sep 11 11:11:00 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:00,586 shopman.operational operator.request.finished
+Sep 11 11:11:00 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:00,913 shopman.operational operator.request.started
+Sep 11 11:11:01 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:01,008 django_eventstream.views added listener 140478179995728
+Sep 11 11:11:01 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:01,019 django_eventstream.views added listener 140478242205008
+Sep 11 11:11:01 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:01,145 shopman.operational operator.request.finished
+Sep 11 11:11:01 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:01,853 django_eventstream.views added listener 140478239787872
+Sep 11 11:11:01 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:01,933 shopman.operational operator.request.started
+Sep 11 11:11:02 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:02,180 shopman.operational operator.request.finished
+Sep 11 11:11:02 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:02,882 shopman.operational operator.request.started
+Sep 11 11:11:02 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:02,908 shopman.operational operator.request.finished
+Sep 11 11:11:02 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:02,925 django_eventstream.views added listener 140478228467776
+Sep 11 11:11:02 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:02,952 shopman.operational operator.request.started
+Sep 11 11:11:03 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:03,000 shopman.operational operator.request.started
+Sep 11 11:11:03 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:03,036 django_eventstream.views added listener 140478200780544
+Sep 11 11:11:03 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:03,041 django_eventstream.views added listener 140478238514192
+Sep 11 11:11:03 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:03,081 shopman.operational operator.request.finished
+Sep 11 11:11:03 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:03,300 shopman.operational operator.request.finished
+Sep 11 11:11:04 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:04,012 django_eventstream.views added listener 140478243418432
+Sep 11 11:11:04 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:04,083 shopman.operational operator.request.started
+Sep 11 11:11:04 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:04,300 shopman.operational operator.request.finished
+Sep 11 11:11:04 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:04,825 shopman.operational operator.request.started
+Sep 11 11:11:04 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:04,918 django_eventstream.views added listener 140478242757312
+Sep 11 11:11:04 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:04,925 django_eventstream.views added listener 140478179987760
+Sep 11 11:11:05 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:05,029 shopman.operational operator.request.finished
+Sep 11 11:11:06 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:06,010 django_eventstream.views added listener 140478095539760
+Sep 11 11:11:06 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:06,071 shopman.operational operator.request.started
+Sep 11 11:11:06 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:06,411 shopman.operational operator.request.finished
+Sep 11 11:11:07 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:07,054 shopman.operational operator.request.started
+Sep 11 11:11:07 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:07,163 django_eventstream.views added listener 140478242766480
+Sep 11 11:11:07 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:07,172 django_eventstream.views added listener 140478242758368
+Sep 11 11:11:07 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:07,282 shopman.operational operator.request.finished
+Sep 11 11:11:08 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:08,283 django_eventstream.views added listener 140478086788928
+Sep 11 11:11:08 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:08,343 shopman.operational operator.request.started
+Sep 11 11:11:08 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:08,554 shopman.operational operator.request.finished
+Sep 11 11:11:09 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:09,237 shopman.operational operator.request.started
+Sep 11 11:11:09 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:09,336 django_eventstream.views added listener 140478092739456
+Sep 11 11:11:09 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:09,339 django_eventstream.views added listener 140478230253296
+Sep 11 11:11:09 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:09,529 shopman.operational operator.request.finished
+Sep 11 11:11:10 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:10,528 django_eventstream.views added listener 140478188351280
+Sep 11 11:11:10 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:10,625 shopman.operational operator.request.started
+Sep 11 11:11:10 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:10,847 shopman.operational operator.request.finished
+Sep 11 11:11:11 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:11,394 shopman.operational operator.request.started
+Sep 11 11:11:11 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:11,507 django_eventstream.views added listener 140478243419968
+Sep 11 11:11:11 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:11,509 django_eventstream.views added listener 140478243412576
+Sep 11 11:11:11 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:11,616 shopman.operational operator.request.finished
+Sep 11 11:11:12 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:12,582 django_eventstream.views added listener 140478195794432
+Sep 11 11:11:12 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:12,641 shopman.operational operator.request.started
+Sep 11 11:11:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:13,000 shopman.operational operator.request.finished
+Sep 11 11:11:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:13,593 shopman.operational operator.request.started
+Sep 11 11:11:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:13,694 django_eventstream.views added listener 140478095542896
+Sep 11 11:11:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:13,696 django_eventstream.views added listener 140478095544912
+Sep 11 11:11:13 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:13,817 shopman.operational operator.request.finished
+Sep 11 11:11:14 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:14,802 django_eventstream.views added listener 140478200217728
+Sep 11 11:11:14 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:14,882 shopman.operational operator.request.started
+Sep 11 11:11:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:15,152 shopman.operational operator.request.finished
+Sep 11 11:11:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:15,896 shopman.operational operator.request.started
+Sep 11 11:11:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:15,984 django_eventstream.views added listener 140477923959216
+Sep 11 11:11:15 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:15,993 django_eventstream.views added listener 140478095384912
+Sep 11 11:11:16 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:16,221 shopman.operational operator.request.finished
+Sep 11 11:11:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:17,301 django_eventstream.views added listener 140478196034656
+Sep 11 11:11:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:17,364 shopman.operational operator.request.started
+Sep 11 11:11:17 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:17,545 shopman.operational operator.request.finished
+Sep 11 11:11:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:18,302 shopman.operational operator.request.started
+Sep 11 11:11:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:18,431 django_eventstream.views added listener 140478190437152
+Sep 11 11:11:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:18,440 django_eventstream.views added listener 140478190450880
+Sep 11 11:11:18 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:18,551 shopman.operational operator.request.finished
+Sep 11 11:11:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:19,614 django_eventstream.views added listener 140478236799728
+Sep 11 11:11:19 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:19,683 shopman.operational operator.request.started
+Sep 11 11:11:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:20,028 shopman.operational operator.request.finished
+Sep 11 11:11:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:20,528 shopman.operational operator.request.started
+Sep 11 11:11:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:20,617 django_eventstream.views added listener 140478094980064
+Sep 11 11:11:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:20,618 django_eventstream.views added listener 140478189735808
+Sep 11 11:11:20 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:20,727 shopman.operational operator.request.finished
+Sep 11 11:11:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:21,693 django_eventstream.views added listener 140477926683664
+Sep 11 11:11:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:21,759 shopman.operational operator.request.started
+Sep 11 11:11:21 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:21,975 shopman.operational operator.request.finished
+Sep 11 11:11:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:22,635 shopman.operational operator.request.started
+Sep 11 11:11:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:22,736 django_eventstream.views added listener 140478191207680
+Sep 11 11:11:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:22,739 django_eventstream.views added listener 140478191212816
+Sep 11 11:11:22 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:22,929 shopman.operational operator.request.finished
+Sep 11 11:11:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:23,955 django_eventstream.views added listener 140478238507712
+Sep 11 11:11:23 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:23,979 shopman.operational operator.request.started
+Sep 11 11:11:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:24,159 shopman.operational operator.request.finished
+Sep 11 11:11:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:24,822 shopman.operational operator.request.started
+Sep 11 11:11:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:24,930 django_eventstream.views added listener 140477922247984
+Sep 11 11:11:24 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:24,936 django_eventstream.views added listener 140477922257104
+Sep 11 11:11:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:25,038 shopman.operational operator.request.finished
+Sep 11 11:11:25 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:25,989 django_eventstream.views added listener 140478085469520
+Sep 11 11:11:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:26,053 shopman.operational operator.request.started
+Sep 11 11:11:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:26,317 shopman.operational operator.request.finished
+Sep 11 11:11:26 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:26,908 shopman.operational operator.request.started
+Sep 11 11:11:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:27,014 django_eventstream.views added listener 140478188237840
+Sep 11 11:11:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:27,024 django_eventstream.views added listener 140478188239376
+Sep 11 11:11:27 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:27,132 shopman.operational operator.request.finished
+Sep 11 11:11:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:28,088 django_eventstream.views added listener 140478191214496
+Sep 11 11:11:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:28,148 shopman.operational operator.request.started
+Sep 11 11:11:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:28,320 shopman.operational operator.request.finished
+Sep 11 11:11:28 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:28,985 shopman.operational operator.request.started
+Sep 11 11:11:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:29,048 django_eventstream.views added listener 140478239590496
+Sep 11 11:11:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:29,081 django_eventstream.views added listener 140478088802384
+Sep 11 11:11:29 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:29,272 shopman.operational operator.request.finished
+Sep 11 11:11:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:30,232 django_eventstream.views added listener 140478200583216
+Sep 11 11:11:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:30,293 shopman.operational operator.request.started
+Sep 11 11:11:30 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:30,515 shopman.operational operator.request.finished
+Sep 11 11:11:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:31,195 shopman.operational operator.request.started
+Sep 11 11:11:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:31,287 django_eventstream.views added listener 140478239594000
+Sep 11 11:11:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:31,287 django_eventstream.views added listener 140478239597936
+Sep 11 11:11:31 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:31,396 shopman.operational operator.request.finished
+Sep 11 11:11:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:32,371 django_eventstream.views added listener 140478181232080
+Sep 11 11:11:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:32,479 shopman.operational operator.request.started
+Sep 11 11:11:32 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:32,806 shopman.operational operator.request.finished
+Sep 11 11:11:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:33,261 shopman.operational operator.request.started
+Sep 11 11:11:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:33,361 django_eventstream.views added listener 140478229910336
+Sep 11 11:11:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:33,362 django_eventstream.views added listener 140478229913024
+Sep 11 11:11:33 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:33,491 shopman.operational operator.request.finished
+Sep 11 11:11:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:34,438 django_eventstream.views added listener 140478084663968
+Sep 11 11:11:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:34,492 shopman.operational operator.request.started
+Sep 11 11:11:34 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:34,713 shopman.operational operator.request.finished
+Sep 11 11:11:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:35,369 shopman.operational operator.request.started
+Sep 11 11:11:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:35,467 django_eventstream.views added listener 140478084877776
+Sep 11 11:11:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:35,480 django_eventstream.views added listener 140478242760864
+Sep 11 11:11:35 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:35,660 shopman.operational operator.request.finished
+Sep 11 11:11:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:36,650 django_eventstream.views added listener 140478088798928
+Sep 11 11:11:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:36,759 shopman.operational operator.request.started
+Sep 11 11:11:36 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:36,937 shopman.operational operator.request.finished
+Sep 11 11:11:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:37,564 shopman.operational operator.request.started
+Sep 11 11:11:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:37,667 django_eventstream.views added listener 140477923953312
+Sep 11 11:11:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:37,670 django_eventstream.views added listener 140478236795840
+Sep 11 11:11:37 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:37,788 shopman.operational operator.request.finished
+Sep 11 11:11:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:38,808 django_eventstream.views added listener 140478191865968
+Sep 11 11:11:38 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:38,884 shopman.operational operator.request.started
+Sep 11 11:11:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:39,151 shopman.operational operator.request.finished
+Sep 11 11:11:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:39,724 shopman.operational operator.request.started
+Sep 11 11:11:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:39,825 django_eventstream.views added listener 140478188226896
+Sep 11 11:11:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:39,839 django_eventstream.views added listener 140478190438016
+Sep 11 11:11:39 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:39,949 shopman.operational operator.request.finished
+Sep 11 11:11:40 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:40,904 django_eventstream.views added listener 140478181233088
+Sep 11 11:11:40 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:40,968 shopman.operational operator.request.started
+Sep 11 11:11:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:41,149 shopman.operational operator.request.finished
+Sep 11 11:11:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:41,810 shopman.operational operator.request.started
+Sep 11 11:11:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:41,918 django_eventstream.views added listener 140478179996208
+Sep 11 11:11:41 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:41,922 django_eventstream.views added listener 140478179992896
+Sep 11 11:11:42 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:42,118 shopman.operational operator.request.finished
+Sep 11 11:11:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:43,097 django_eventstream.views added listener 140478180990400
+Sep 11 11:11:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:43,200 shopman.operational operator.request.started
+Sep 11 11:11:43 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:43,383 shopman.operational operator.request.finished
+Sep 11 11:11:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:44,015 shopman.operational operator.request.started
+Sep 11 11:11:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:44,114 django_eventstream.views added listener 140478242209568
+Sep 11 11:11:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:44,117 django_eventstream.views added listener 140478229702912
+Sep 11 11:11:44 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:44,232 shopman.operational operator.request.finished
+Sep 11 11:11:45 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:45,203 django_eventstream.views added listener 140478181325328
+Sep 11 11:11:45 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:45,270 shopman.operational operator.request.started
+Sep 11 11:11:45 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:45,587 shopman.operational operator.request.finished
+Sep 11 11:11:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:46,211 shopman.operational operator.request.started
+Sep 11 11:11:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:46,297 django_eventstream.views added listener 140478188260048
+Sep 11 11:11:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:46,300 django_eventstream.views added listener 140478188270992
+Sep 11 11:11:46 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:46,420 shopman.operational operator.request.finished
+Sep 11 11:11:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:47,362 django_eventstream.views added listener 140478196241840
+Sep 11 11:11:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:47,420 shopman.operational operator.request.started
+Sep 11 11:11:47 runnervmlun5p python[5618]: INFO 2026-09-11 08:11:47,640 shopman.operational operator.request.finished

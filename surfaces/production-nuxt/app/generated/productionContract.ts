@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "advance_step" | "finish" | "review_qc" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
+  kind: "plan" | "start" | "finish" | "review_qc" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -218,7 +218,6 @@ export interface ProductionSurfaceAccess {
   can_view_plan: boolean;
   can_edit_plan: boolean;
   can_start: boolean;
-  can_advance_step: boolean;
   can_close_qc: boolean;
   can_correct_qc: boolean;
   can_quick_finish: boolean;
@@ -273,14 +272,6 @@ export interface ProductionKDSCardProjection {
   target_seconds: number;
   timer_status_code: string;
   timer_tone: string;
-  current_step: string;
-  current_step_index: number | null;
-  total_steps: number;
-  current_step_name: string;
-  step_progress_pct: number;
-  next_step_name: string;
-  time_remaining_min: number | null;
-  can_advance_step: boolean;
   can_finish: boolean;
   order_refs: string[];
 }
@@ -678,14 +669,6 @@ export interface ProductionWorkOrderMutationSuccess {
   current: ProductionMutationCurrent | null;
 }
 
-/** ProductionAdvanceStepMutationSuccess(ok: 'bool', wo_id: 'int', step_index: 'int', current: 'ProductionMutationCurrent | None') */
-export interface ProductionAdvanceStepMutationSuccess {
-  ok: boolean;
-  wo_id: number;
-  step_index: number;
-  current: ProductionMutationCurrent | null;
-}
-
 /** ProductionVoidMutationSuccess(ok: 'bool', wo_ref: 'str', current: 'ProductionMutationCurrent | None') */
 export interface ProductionVoidMutationSuccess {
   ok: boolean;
@@ -938,17 +921,6 @@ export interface ProductionQualityCorrectionMutationRequest {
   reason: string;
 }
 
-export interface ProductionAdvanceStepMutationRequest {
-  idempotency_key: string;
-  projection_generated_at: string;
-  source_revision: string;
-  fresh_until: string;
-  contract_version: number;
-  action_ref: string;
-  action_proof: string;
-  expected_rev: number;
-}
-
 export interface ProductionQuickFinishMutationRequest {
   idempotency_key: string;
   projection_generated_at: string;
@@ -1056,10 +1028,6 @@ export function reviewProductionQuality(workOrderId: number, body: ProductionQua
 
 export function correctProductionQuality(workOrderId: number, body: ProductionQualityCorrectionMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
   return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/quality-correction/`, body);
-}
-
-export function advanceProductionWorkOrderStep(workOrderId: number, body: ProductionAdvanceStepMutationRequest): Promise<ProductionAdvanceStepMutationSuccess> {
-  return postProductionMutation<ProductionAdvanceStepMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/advance-step/`, body);
 }
 
 export function quickFinishProduction(body: ProductionQuickFinishMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {

@@ -12,7 +12,7 @@ import type { AnnouncementTemplate } from "~/types/campaign";
 export function useAnnouncementTemplates() {
   const { data, refresh, pending, error } = useFetch<{ templates: AnnouncementTemplate[] }>(
     "/api/v1/backstage/marketing/templates/",
-    { key: "marketing-templates", onResponseError: operatorSessionOnError },
+    { key: "marketing-templates", onResponseError: marketingSessionOnError },
   );
 
   const templates = computed(() => data.value?.templates ?? []);

@@ -1,4 +1,4 @@
-"""Central de Apps — contrato do launcher (GET /api/v1/backstage/hub/).
+"""Shopman Apps — contrato do launcher (GET /api/v1/backstage/hub/).
 
 O endpoint é staff-gated (IsBackstageOperator); os tiles são filtrados por permissão
 DENTRO da projection — operador sem apps recebe grade vazia (não 403). Ícone forte por
@@ -69,13 +69,13 @@ def test_hub_superuser_sees_all_tiles(client, db):
 
     by_ref = {tile["ref"]: tile for tile in hub["tiles"]}
     # Ícone forte por app (DS §6).
-    assert by_ref["pos"]["icon"] == "banknote"
+    assert by_ref["pos"]["icon"] == "shopping-basket"
     assert by_ref["kds"]["icon"] == "chef-hat"
-    assert by_ref["gestor"]["icon"] == "clipboard-list"
+    assert by_ref["gestor"]["icon"] == "square-kanban"
     assert by_ref["production"]["icon"] == "croissant"
-    assert by_ref["purchase"]["icon"] == "package-check"
+    assert by_ref["purchase"]["icon"] == "package"
     assert by_ref["marketing"]["icon"] == "megaphone"
-    assert by_ref["bi"]["icon"] == "chart-line"
+    assert by_ref["bi"]["icon"] == "chart-no-axes-combined"
     assert by_ref["bi"]["label"] == "B.I."
     # Nome público sem jargão interno: a superfície "production" é Produção e a
     # A ref da superfície é "marketing" (a seção), não "campaign" (a entidade dentro dela).
@@ -141,7 +141,7 @@ def test_hub_debug_falls_back_to_dev_urls(client, db):
     assert by_ref["loja"]["url"] == "http://127.0.0.1:3000/"
 
 
-# ── O tile que a Central não mostrava ────────────────────────────────────────
+# ── O tile que o Shopman Apps não mostrava ────────────────────────────────────────
 
 
 def _perm(app_label: str, codename: str) -> Permission:
@@ -153,7 +153,7 @@ def _perm(app_label: str, codename: str) -> Permission:
 def test_quem_opera_a_producao_ve_o_tile_da_producao(client, db):
     """O tile tem de perguntar a MESMA coisa que o app pergunta na porta.
 
-    O gerente concede `operate_production` a um padeiro novo. Ele abre a Central e
+    O gerente concede `operate_production` a um padeiro novo. Ele abre o Shopman Apps e
     a grade vinha VAZIA — "nenhum app liberado, fale com o gerente" — enquanto
     `prod.boulangerie.com.br` abria normalmente. O tile perguntava por
     `shop.manage_production` ou por permissão de coluna fina do console Admin, e o
@@ -166,7 +166,7 @@ def test_quem_opera_a_producao_ve_o_tile_da_producao(client, db):
     corpo = client.get(reverse("api-backstage-hub")).json()
     refs = {tile["ref"] for tile in corpo["hub"]["tiles"]}
 
-    assert "production" in refs, "quem opera a produção continua vendo a Central vazia"
+    assert "production" in refs, "quem opera a produção continua vendo o Shopman Apps vazio"
 
 
 @pytest.mark.django_db
@@ -184,4 +184,4 @@ def test_quem_so_LE_o_planejamento_nao_ve_o_tile(client, db):
     corpo = client.get(reverse("api-backstage-hub")).json()
     refs = {tile["ref"] for tile in corpo["hub"]["tiles"]}
 
-    assert "production" not in refs, "a Central oferecia um tile que responde 403"
+    assert "production" not in refs, "o Shopman Apps oferecia um tile que responde 403"

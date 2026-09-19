@@ -117,6 +117,27 @@ def _terminal_label(terminal) -> str:
     return "Este dispositivo" if terminal is None else str(terminal.label or terminal.ref)
 
 
+def preparation_destinations(*, exclude_ref: str = "") -> list[tuple[str, str]]:
+    """Terminais ativos que HOJE aceitam etiqueta de preparação, em ``(ref, rótulo)``.
+
+    A pergunta é a MESMA que ``resolve_destination`` faz para aceitar ou recusar
+    um destino (``PrinterConfig.accepts_preparation``). Ter as duas listas
+    saindo daqui é o que impede o Admin de oferecer um destino que o servidor
+    depois recusa — o beco de antes era exatamente esse, só que sem lista
+    nenhuma: ``print_target_ref`` era documentado e não tinha por onde ser
+    escrito.
+    """
+    from shopman.cashman.models import Terminal
+
+    destinations = []
+    for terminal in Terminal.objects.filter(is_active=True).order_by("ref"):
+        if exclude_ref and terminal.ref == exclude_ref:
+            continue
+        if PrinterConfig.from_terminal(terminal).accepts_preparation:
+            destinations.append((terminal.ref, _terminal_label(terminal)))
+    return destinations
+
+
 def resolve_destination(*, station_ref: str = "") -> PrintDestination:
     """Resolve the printer server-side; never accept a target from the tablet."""
     from shopman.cashman.models import Terminal
@@ -157,7 +178,11 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
             "",
             "Escolha a impressora da estação",
             False,
-            "Há mais de uma impressora de preparação e a estação não define print_target_ref.",
+            # ⚠️ A frase fala com quem está de mão na massa, não com quem lê o
+            # JSON: `print_target_ref` era o nome da chave, e mandava o padeiro
+            # procurar um campo que, até agora, não existia em tela nenhuma.
+            "Há mais de uma impressora de preparação e esta estação não tem destino "
+            "escolhido. Escolha em Terminais do PDV, no gestor.",
         )
     if invalid:
         terminal, problem = invalid[0]

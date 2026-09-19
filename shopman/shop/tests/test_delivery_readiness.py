@@ -22,6 +22,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.services import delivery_readiness as dr
+from shopman.shop.services.marketing_delivery_runtime import PLATFORM_SWITCHES
 
 pytestmark = pytest.mark.django_db
 
@@ -30,6 +31,10 @@ pytestmark = pytest.mark.django_db
 def enabled_delivery_pipeline(settings):
     settings.SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = True
     settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
+    # Nenhuma plataforma desligada pela flag: cada teste decide o adapter
+    # substituindo `delivery_provider`. O caso "desligada" tem teste próprio.
+    for switch in PLATFORM_SWITCHES.values():
+        setattr(settings, switch, True)
 
 
 @pytest.fixture
@@ -154,7 +159,78 @@ def test_publication_without_an_adapter_is_blocked(no_transport):
     for platform in ("instagram", "facebook", "google_business"):
         (state,) = dr.readiness_for([platform])
         assert state.ready is False, platform
-        assert "integração" in state.reason
+        assert state.reason_code == "publication_adapter_missing", platform
+        assert "erro de configuração" in state.reason
+        assert "não está desligada" in state.reason
+
+
+# ── Desligada pela flag ≠ adapter ausente ────────────────────────────────────
+#
+# Os adapters de Instagram, Facebook, Google e WhatsApp existem; a flag de cada
+# plataforma decide se ele é registrado neste ambiente. O dono leu "não há
+# integração configurada" numa plataforma que só estava desligada e entendeu que
+# faltava o adapter. Desligada é escolha de quem opera; sem adapter é defeito.
+
+
+@pytest.mark.parametrize(
+    ("platform", "kind"),
+    [
+        ("instagram", dr.PUBLICATION),
+        ("facebook", dr.PUBLICATION),
+        ("google_business", dr.PUBLICATION),
+        ("whatsapp", dr.DIRECT_MESSAGE),
+    ],
+)
+def test_platform_switched_off_says_so_and_never_asks_for_the_adapter(
+    settings, monkeypatch, platform, kind
+):
+    switch = PLATFORM_SWITCHES[platform]
+    setattr(settings, switch, False)
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {}
+    asked = []
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: asked.append(platform),
+    )
+
+    (state,) = dr.readiness_for([platform])
+
+    # Não pedir o adapter é o que mantém o `get_adapter` calado aqui.
+    assert asked == []
+    assert state.kind == kind
+    assert state.state == "blocked"
+    assert state.reason_code == "platform_switched_off"
+    assert "desligad" in state.reason
+    assert switch in state.action
+    for wrong in ("integração", "credencia", "adapter", "erro"):
+        assert wrong not in state.reason.lower(), wrong
+
+
+def test_switched_off_platform_is_told_even_with_the_whole_pipeline_paused(settings):
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+    settings.SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {}
+
+    (state,) = dr.readiness_for(["instagram"])
+
+    assert state.reason_code == "platform_switched_off"
+
+
+def test_registered_adapter_wins_over_a_switched_off_flag(settings, monkeypatch):
+    """O perfil de ensaio local registra o simulador com as flags desligadas."""
+    settings.SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = False
+    settings.SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {
+        "instagram": "shopman.shop.adapters.marketing_delivery_instagram"
+    }
+    provider = type("A", (), {"is_available": staticmethod(lambda: True)})()
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: provider,
+    )
+
+    (state,) = dr.readiness_for(["instagram"])
+
+    assert state.state == "ready"
 
 
 def test_publication_does_not_inherit_whatsapp_rules(with_transport, monkeypatch):
@@ -207,6 +283,7 @@ def test_direct_message_without_durable_provider_is_blocked(monkeypatch):
     assert state.state == "blocked"
     assert state.reason_code == "whatsapp_durable_provider_missing"
     assert "fila segura" in state.reason
+    assert "erro de configuração" in state.reason
 
 
 def test_direct_message_transport_probe_failure_is_unknown(monkeypatch):
@@ -274,7 +351,7 @@ def test_active_flow_without_concurrency_evidence_is_blocked(
 
     assert state.state == "blocked"
     assert state.reason_code == "manychat_custom_fields_unverified"
-    assert "sandbox" in state.action
+    assert "ensaio" in state.action
 
 
 def test_direct_message_with_missing_active_flow_is_blocked(with_transport, monkeypatch):

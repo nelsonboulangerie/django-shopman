@@ -152,11 +152,11 @@ def registration_options(request, *, customer_id, display_name: str, user_name: 
             # `required` é o que faz a credencial ser DESCOBERÍVEL: o navegador a oferece sem
             # a pessoa digitar telefone nenhum.
             resident_key=ResidentKeyRequirement.REQUIRED,
-            # Exigir verificação de usuário = confirmação local do aparelho, não só presença.
-            # Sem isto, um aparelho destravado na mão de outra pessoa entraria.
+            # Exigir verificação de usuário = confirmação local do dispositivo, não só presença.
+            # Sem isto, um dispositivo destravado na mão de outra pessoa entraria.
             user_verification=UserVerificationRequirement.REQUIRED,
         ),
-        # Impede cadastrar DUAS credenciais do mesmo aparelho: o navegador vê que já existe e
+        # Impede cadastrar DUAS credenciais do mesmo dispositivo: o navegador vê que já existe e
         # avisa, em vez de criar uma segunda que a pessoa não sabe distinguir na lista.
         exclude_credentials=[
             _descriptor(credential_id) for credential_id in ja_tem

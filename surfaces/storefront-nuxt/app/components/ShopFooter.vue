@@ -42,6 +42,9 @@ const year = new Date().getFullYear()
         <NuxtLink to="/conta" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
           Conta e pedidos
         </NuxtLink>
+        <NuxtLink to="/faq" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
+          Perguntas frequentes
+        </NuxtLink>
         <!-- A loja coleta nome, telefone e endereço e não tinha onde dizer o que faz com
              eles: a varredura de 20/08 não achou "Privacidade", "Termos", "LGPD" nem
              "CNPJ" em lugar nenhum do site. É exigência do art. 9º da LGPD e do Decreto

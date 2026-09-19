@@ -17,6 +17,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from shopman.shop.marketing_policy import resolve_marketing_policy
 from shopman.shop.models import (
     Announcement,
     AnnouncementStatus,
@@ -44,7 +45,6 @@ PUBLISH_NOW = "now"
 PUBLISH_SCHEDULED = "scheduled"
 PUBLISH_MODES = frozenset({PUBLISH_NOW, PUBLISH_SCHEDULED})
 APPROVAL_RECORD_RETENTION = timedelta(days=365 * 5)
-MIN_GENERAL_COHORT = 10
 MAX_ARTIFACT_BYTES = 64 * 1024
 _PLATFORMS = frozenset(marketing_capabilities.platform_refs())
 _PLATFORM_LABELS = marketing_capabilities.platform_labels()
@@ -218,16 +218,35 @@ def approve_command(
                 detail="Não foi possível conferir toda a audiência.",
                 outcome={"degraded_source_count": len(resolution.degraded_sources)},
             )
-        if "whatsapp" in safe_platforms and resolution.total < MIN_GENERAL_COHORT:
+        # O mínimo impede que uma campanha "geral" vire mensagem mirada em uma ou duas
+        # pessoas escolhidas a dedo. O número é política da loja, editável no Admin
+        # (`Shop.defaults["marketing"]["whatsapp_minimum_audience"]`, padrão 1 — ver
+        # `marketing_policy`), e é lido aqui, na hora da aprovação: o que o gestor
+        # configurou é o que decide. No ensaio (`SHOPMAN_MARKETING_WHATSAPP_MODE=canary`)
+        # ele não se aplica: quem recebe já é a lista de canário que a operação controla
+        # por env, e o claim e o adapter suprimem todo o resto — o público não mira
+        # ninguém que a operação não tenha escolhido. `blocked` e `open` seguem iguais.
+        whatsapp_canary = "whatsapp" in safe_platforms and _whatsapp_canary_mode()
+        minimum_audience = (
+            resolve_marketing_policy().whatsapp_minimum_audience
+            if "whatsapp" in safe_platforms
+            else None
+        )
+        if (
+            minimum_audience is not None
+            and not whatsapp_canary
+            and resolution.total < minimum_audience
+        ):
+            people = "pessoa elegível" if minimum_audience == 1 else "pessoas elegíveis"
             raise RejectCommand(
                 code="audience_below_minimum",
                 detail=(
-                    f"Campanha geral por WhatsApp exige ao menos {MIN_GENERAL_COHORT} "
-                    "pessoas elegíveis. Use o teste sandbox ou ajuste o público."
+                    f"Campanha geral por WhatsApp exige ao menos {minimum_audience} "
+                    f"{people}. Use o teste sandbox ou ajuste o público."
                 ),
                 outcome={
                     "eligible_count": resolution.total,
-                    "minimum_count": MIN_GENERAL_COHORT,
+                    "minimum_count": minimum_audience,
                 },
             )
 
@@ -426,6 +445,11 @@ def approve_command(
                 "publish_timezone": effective_timezone,
             }
             | (
+                {"canary": True, "minimum_count": minimum_audience}
+                if whatsapp_canary
+                else {}
+            )
+            | (
                 {
                     "facts_as_of": facts.as_of.isoformat(),
                     "facts_hash": facts.source_hash,
@@ -462,7 +486,11 @@ def approve_command(
             "effective_at": available_at.isoformat(),
             "snapshot_ref": str(snapshot.ref),
             "status": announcement.status,
-        }
+        } | (
+            {"canary": True, "minimum_count": minimum_audience}
+            if whatsapp_canary
+            else {}
+        )
 
     execution = execute_announcement_command(
         kind=MarketingCommandReceipt.Kind.APPROVE,
@@ -475,6 +503,17 @@ def approve_command(
         request_id=request_id,
     )
     return _result(execution)
+
+
+def _whatsapp_canary_mode() -> bool:
+    """O WhatsApp de Marketing está em ensaio? Lido do modo, não da prontidão.
+
+    Modo ``canary`` mal configurado (sem lista, sem Redis) cai no mínimo liberado aqui e
+    é recusado logo adiante por ``require_safe_delivery`` com o motivo certo.
+    """
+    from shopman.shop.services import manychat_marketing_safety
+
+    return manychat_marketing_safety.whatsapp_mode() == manychat_marketing_safety.MODE_CANARY
 
 
 def canonical_artifact_bytes(payload: Mapping[str, Any]) -> bytes:

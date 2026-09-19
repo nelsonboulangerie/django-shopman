@@ -194,12 +194,18 @@ def test_board_uses_ledger_counters_and_keeps_accepted_distinct_from_confirmed()
         if item["ref"] == f"announcement:{outbox.announcement_id}"
     )
 
+    # ⚠️ `_graph` monta tudo no WhatsApp: são quatro PESSOAS, e nenhuma postagem. É
+    # essa separação que o Painel precisa para não chamar mural de gente.
     assert counters == {
         "pending_decision_count": 1,
-        "accepted_unconfirmed_targets_today": 1,
-        "confirmed_targets_today": 1,
-        "failed_final_targets_today": 1,
-        "unknown_targets_open": 1,
+        "confirmed_people_today": 1,
+        "confirmed_posts_today": 0,
+        "accepted_unconfirmed_people_today": 1,
+        "accepted_unconfirmed_posts_today": 0,
+        "failed_final_people_today": 1,
+        "failed_final_posts_today": 0,
+        "unknown_people_open": 1,
+        "unknown_posts_open": 0,
     }
     assert delivery["counts"]["accepted"] == 1
     assert delivery["counts"]["confirmed"] == 1
@@ -209,6 +215,36 @@ def test_board_uses_ledger_counters_and_keeps_accepted_distinct_from_confirmed()
 
 
 @override_settings(TIME_ZONE="America/Sao_Paulo")
+def test_board_counters_never_add_people_to_public_posts():
+    """O defeito A1: um alvo de WhatsApp é uma PESSOA, um de mural é uma POSTAGEM.
+
+    Somados, "13 entregas confirmadas hoje" tanto podia ser treze pessoas quanto nove
+    pessoas e quatro murais — e é o primeiro número que o gestor lê de manhã, o que ele
+    usa para decidir se disparou demais.
+    """
+    direct, members = _graph(
+        suffix="grandeza-direct",
+        target_keys=("pessoa-a", "pessoa-b"),
+    )
+    fanout_in_chunks(direct.ref, member_ids=[member.pk for member in members])
+    public, _ = _graph(
+        platform="instagram",
+        suffix="grandeza-public",
+        target_keys=(),
+    )
+    fanout_in_chunks(public.ref)
+
+    now = timezone.now()
+    DeliveryTarget.objects.update(state=DeliveryTarget.State.CONFIRMED, settled_at=now)
+
+    counters = projection_data(build_board(now=now))["data"]["counters"]
+
+    assert counters["confirmed_people_today"] == 2
+    assert counters["confirmed_posts_today"] == 1
+    # E o que não pode voltar a existir: um único número somando as duas grandezas.
+    assert "confirmed_targets_today" not in counters
+
+
 def test_board_daily_counters_always_use_the_canonical_shop_day():
     before_midnight, before_members = _graph(
         suffix="counter-before-shop-midnight",
@@ -240,7 +276,7 @@ def test_board_daily_counters_always_use_the_canonical_shop_day():
             build_board(now=datetime(2026, 9, 10, 12, tzinfo=UTC))
         )
 
-    assert payload["data"]["counters"]["confirmed_targets_today"] == 1
+    assert payload["data"]["counters"]["confirmed_people_today"] == 1
 
 
 def test_board_query_budget_does_not_grow_with_announcement_count(

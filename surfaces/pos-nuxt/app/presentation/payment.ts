@@ -267,7 +267,11 @@ export function collectionsForFulfillment(
   );
 }
 
-/** Explica quando o pedido será cobrado sem criar outra modalidade financeira. */
+/**
+ * A CONSEQUÊNCIA da escolha "quando cobrar", em uma frase que o operador repete
+ * ao cliente. O texto anterior explicava o MECANISMO (provedor, confirmação,
+ * filipeta) e o dono não entendeu o que ele queria dizer.
+ */
 export function orderPaymentGuidance(options: {
   salesMode?: "counter" | "order";
   fulfillmentType: "pickup" | "delivery";
@@ -276,26 +280,24 @@ export function orderPaymentGuidance(options: {
 }): string {
   if (options.salesMode !== "order") return "";
   if (options.collection === "on_delivery") {
-    const handoff = options.fulfillmentType === "pickup" ? "retirada" : "entrega";
-    return `Combine a forma e o valor a cobrar na ${handoff}. O pedido fica com pagamento pendente até o recebimento ser registrado no Gestor.`;
+    return options.fulfillmentType === "pickup"
+      ? "Sem cobrança agora: recebe no balcão quando o cliente buscar."
+      : "Sem cobrança agora: o entregador recebe e o Gestor registra.";
   }
   if (options.methods.some((method) => ["pix", "card", "link"].includes(method))) {
-    return "A cobrança será gerada ao registrar a encomenda. O pagamento fica pendente até a confirmação do provedor de pagamento; a filipeta acompanha o pedido.";
+    return "Cobra agora. Pix e link ficam pendentes até o provedor confirmar.";
   }
-  if (options.fulfillmentType === "pickup") {
-    return "Dinheiro e maquininha registram recebimento agora. Para aguardar pagamento, escolha Pix ou link disponível e cobre antes da retirada.";
-  }
-  return "Receba antes da entrega: dinheiro e maquininha são confirmados agora; Pix ou link aguardam confirmação do provedor de pagamento.";
+  return "Cobra agora, no balcão.";
 }
 
+/** "No balcão" · "Na retirada" · "Na entrega" — cabe no botão e diz QUANDO. */
 export function paymentCollectionLabel(
   collection: POSPaymentCollectionProjection,
   salesMode?: "counter" | "order",
   fulfillmentType: "pickup" | "delivery" = "delivery",
 ): string {
-  if (collection.ref !== "on_delivery") return salesMode === "order" ? "Pagamento antecipado" : collection.label;
-  if (salesMode !== "order") return fulfillmentType === "pickup" ? "Pagamento na retirada" : "Receber na entrega";
-  return fulfillmentType === "pickup" ? "Pagamento na retirada" : "Cobrar na entrega";
+  if (collection.ref !== "on_delivery") return salesMode === "order" ? "No balcão" : collection.label;
+  return fulfillmentType === "pickup" ? "Na retirada" : "Na entrega";
 }
 
 export type PaymentProofTone = "info" | "warning" | "success" | "danger" | "neutral";

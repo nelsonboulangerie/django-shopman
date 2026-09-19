@@ -341,7 +341,7 @@ async function toggleScannerTorch() {
     scannerTorchOn.value = next;
   } catch {
     scannerCanTorch.value = false;
-    scannerError.value = "Lanterna indisponível neste aparelho. Use boa luz e mantenha o código inteiro no quadro.";
+    scannerError.value = "Lanterna indisponível neste dispositivo. Use boa luz e mantenha o código inteiro no quadro.";
   }
 }
 

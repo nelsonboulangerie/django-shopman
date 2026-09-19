@@ -74,8 +74,11 @@ function productRoute (sku: string) {
       <div class="shop-stack-tight px-1 pt-3">
         <div class="min-w-0">
           <h3 class="shop-item-title line-clamp-2">{{ item.name }}</h3>
+          <!-- Sem descrição, o nome da seção aparecia com a tipografia da descrição e o
+               cliente lia "Rústicos" como o que o produto É. O espaço já está reservado
+               pelo `min-h`, então a linha pode ficar vazia. -->
           <p class="mt-1 line-clamp-2 shop-meta sm:min-h-10">
-            {{ item.short_description || sectionLabel }}
+            {{ item.short_description || (sectionLabel ? `Em ${sectionLabel}` : '') }}
           </p>
           <DietaryWarningBadges :warnings="item.dietary_warnings" class="mt-2" />
         </div>
@@ -90,8 +93,8 @@ function productRoute (sku: string) {
 
         <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
           <div class="min-w-0 flex-1">
-            <p v-if="item.original_price_display" class="shop-meta line-through">
-              {{ item.original_price_display }}
+            <p v-if="item.original_price_display" class="shop-meta">
+              antes <span class="line-through">{{ item.original_price_display }}</span>
             </p>
             <p class="shop-price">{{ item.price_display }}</p>
             <p v-if="item.unit_weight_label" class="shop-meta">

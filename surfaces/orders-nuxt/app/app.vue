@@ -14,7 +14,7 @@ function protectSessionExit(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", protectSessionExit));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", protectSessionExit));
-const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 // Keep drafts through a lock/re-identification by the same person. A different
 // identified person receives a new page instance and their own read-cache keys.
@@ -29,7 +29,7 @@ async function restoreAuthenticatedWorkspace() {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Gestor de Pedidos" });
+useOperatorWindowTitle();
 </script>
 
 <template>
@@ -37,13 +37,11 @@ useHead({ title: "Gestor de Pedidos" });
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
     <OfflineBanner />
-    <!-- Rail de operador canônico (kit): funções comuns (Central, operador, tema). Fica
+    <!-- Rail de operador canônico (kit): funções comuns (Shopman Apps, operador, tema). Fica
          fixo enquanto o conteúdo rola. Colapsado → não renderiza (some de verdade). -->
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
-        app-icon="clipboard-list"
-        app-label="Gestor"
-        :central-url="hubUrl"
+        :hub-url="hubUrl"
         :operator-name="operator?.name"
         @lock="lock"
       />
@@ -55,7 +53,10 @@ useHead({ title: "Gestor de Pedidos" });
         <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
       </div>
     </div>
-    <OperatorLogin v-if="!canIdentify" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="os pedidos" @retry="refresh()" />
+    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />

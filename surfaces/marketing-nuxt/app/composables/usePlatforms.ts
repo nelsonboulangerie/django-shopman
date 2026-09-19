@@ -22,13 +22,15 @@ export type Platform = {
   reason: string;
   action: string;
   limitation: string;
+  /** Ensaio do WhatsApp: quantos contatos recebem (nunca quais). Ausente fora do ensaio. */
+  canary_recipients?: number | null;
   in_use: boolean;
 };
 
 export function usePlatforms() {
   const { data, refresh, pending, error } = useFetch<{ platforms: Platform[] }>(
     "/api/v1/backstage/marketing/platforms/",
-    { key: "marketing-platforms", onResponseError: operatorSessionOnError },
+    { key: "marketing-platforms", onResponseError: marketingSessionOnError },
   );
 
   const platforms = computed(() => data.value?.platforms ?? []);

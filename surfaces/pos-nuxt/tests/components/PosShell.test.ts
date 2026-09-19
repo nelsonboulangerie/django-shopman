@@ -31,6 +31,10 @@ mockNuxtImport("useOperatorLock", () => () => {
   return {
     locked: ref(false),
     canIdentify: ref(false),
+    // `sessionUnavailable` false = a antessala RESPONDEU (403), não é falha de
+    // rede. É o que distingue "não é estação" de "não consegui perguntar".
+    sessionUnavailable: ref(false),
+    refresh: vi.fn(),
     stationRef: ref(""),
     mustChange: ref(false),
     lock: vi.fn(),

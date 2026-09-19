@@ -8,16 +8,19 @@ import {
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import { collectionJsonLd, jsonLdText } from '~/presentation/seo'
+import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
 const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 const router = useRouter()
+const session = useShopSession()
+const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
   credentials: 'include'
 })
+await siteSeoReady
 
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
@@ -171,6 +174,38 @@ function selectSection (value: string | number | undefined) {
   })
 }
 
+// O /menu não tem campo de texto — a busca é overlay. O vazio daqui é SEMPRE filtro
+// (pílulas ou a chave de preferências), então ele não pode pedir "outro termo" nem
+// dizer "nada por aqui": o cardápio tem itens, o filtro é que não casou. E o controle
+// que resolve é nomeado, com o botão dentro do próprio vazio.
+// Desligado, "o que você marcou" não diz onde foi marcado — e a tela não mostra a lista.
+// Ligado com zero, "0 itens ocultos" fazia o controle parecer quebrado no instante em
+// que ele está funcionando.
+const dietaryFilterHint = computed(() => {
+  if (!dietaryFilterOn.value) return 'Esconder itens que conflitam com suas restrições. Ver quais em Conta › Preferências.'
+  if (!hiddenByDietaryCount.value) return 'Nenhum item do cardápio conflita com suas restrições.'
+  return hiddenByDietaryCount.value === 1
+    ? '1 item escondido por conflitar com suas restrições.'
+    : `${hiddenByDietaryCount.value} itens escondidos por conflitarem com suas restrições.`
+})
+
+const menuFilterEmptyCopy = computed(() => (
+  dietaryFilterOn.value && !hasAppliedFilters.value
+    ? {
+        title: 'Nenhum item compatível nesta seção',
+        message: 'Todos os itens desta seção conflitam com suas preferências. Desligue o filtro para vê-los.'
+      }
+    : {
+        title: 'Nenhum item com esses filtros',
+        message: 'Limpe os filtros para ver o cardápio inteiro.'
+      }
+))
+
+function clearAllMenuFilters () {
+  dietaryFilterOn.value = false
+  clearMenuFilters()
+}
+
 function clearMenuFilters () {
   appliedFilterKeys.value = []
   activeSection.value = 'all'
@@ -295,16 +330,36 @@ onBeforeUnmount(() => {
   if (scrollRaf) window.cancelAnimationFrame(scrollRaf)
 })
 
+// Título e descrição escritos no Admin vencem. Sem eles, a frase padrão diz o
+// que é a casa, onde fica e as primeiras seções de verdade do cardápio — nunca
+// "42 itens publicados.", que não diz nada a quem busca.
+const menuPageSeo = computed(() => sitePageSeo(siteSeo.value, 'menu'))
+const menuTitle = computed(() => menuPageSeo.value.title || 'Cardápio')
+const menuDescription = computed(() => menuPageSeo.value.description || listingDescription({
+  subject: 'Cardápio',
+  brandName: session.shop.value?.brand_name || '',
+  tagline: session.shop.value?.tagline,
+  city: session.shop.value?.default_city,
+  names: sections.value
+    .filter(section => !section.is_dynamic && section.items.length)
+    .map(section => collectionDisplayLabel(section))
+}))
+const requestUrl = useRequestURL()
+const menuCanonical = computed(() => `${requestUrl.origin}/menu`)
+
 useSeoMeta({
-  title: 'Cardápio',
-  description: () => catalog.value?.has_items ? `${uniqueItems.value.length} itens publicados.` : 'Cardápio publicado.'
+  title: () => menuTitle.value,
+  description: () => menuDescription.value,
+  ogTitle: () => menuTitle.value,
+  ogDescription: () => menuDescription.value,
+  ogUrl: () => menuCanonical.value,
+  twitterTitle: () => menuTitle.value,
+  twitterDescription: () => menuDescription.value
 })
 // Canonical sem query → variantes de filtro (?filtro=/?secao=) não duplicam.
 useCanonical()
 
 // JSON-LD CollectionPage (ItemList) — a vitrine do cardápio para o Google.
-const requestUrl = useRequestURL()
-const menuCanonical = computed(() => `${requestUrl.origin}/menu`)
 useHead({
   script: () => catalog.value && uniqueItems.value.length
     ? [{
@@ -435,11 +490,7 @@ useHead({
             >
               <div class="min-w-0">
                 <p class="shop-body font-semibold">Só compatível com minhas preferências</p>
-                <p class="shop-meta">
-                  {{ dietaryFilterOn
-                    ? `${hiddenByDietaryCount} ${hiddenByDietaryCount === 1 ? 'item oculto' : 'itens ocultos'} pelas suas preferências`
-                    : 'Esconder itens que conflitam com o que você marcou.' }}
-                </p>
+                <p class="shop-meta">{{ dietaryFilterHint }}</p>
               </div>
               <UiSwitch v-model="dietaryFilterOn" aria-label="Só compatível com minhas preferências" />
             </div>
@@ -493,11 +544,11 @@ useHead({
                 <Icon name="lucide:search-x" />
               </UiEmptyMedia>
               <UiEmptyHeader>
-                <UiEmptyTitle>{{ catalog.search_empty_state?.title || 'Nada por aqui' }}</UiEmptyTitle>
-                <UiEmptyDescription>{{ catalog.search_empty_state?.message || 'Não encontramos esse item. Tente outro termo ou veja o cardápio completo.' }}</UiEmptyDescription>
+                <UiEmptyTitle>{{ menuFilterEmptyCopy.title }}</UiEmptyTitle>
+                <UiEmptyDescription>{{ menuFilterEmptyCopy.message }}</UiEmptyDescription>
               </UiEmptyHeader>
-              <div v-if="catalog.search_empty_state?.cta_href && catalog.search_empty_state?.cta_label" class="flex justify-center">
-                <UiButton :to="catalog.search_empty_state.cta_href" variant="outline">{{ catalog.search_empty_state.cta_label }}</UiButton>
+              <div class="flex justify-center">
+                <UiButton variant="outline" data-menu-empty-clear @click="clearAllMenuFilters">Limpar filtros</UiButton>
               </div>
             </UiEmpty>
           </section>

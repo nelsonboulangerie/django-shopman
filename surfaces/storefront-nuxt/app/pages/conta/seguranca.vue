@@ -18,6 +18,8 @@ const privacyIssue = ref('')
 const deleteAccountOpen = ref(false)
 const deleteAccountAcknowledged = ref(false)
 const deleteAccountPending = ref(false)
+const deleteAccountIdempotencyKey = ref('')
+const deleteIntentStorageKey = 'shopman.account-deletion-intent.v1'
 const deviceIssue = ref('')
 const revokeDeviceOpen = ref(false)
 const revokeDeviceMode = ref<RevokeDeviceMode>('one')
@@ -32,6 +34,7 @@ const stepUpSendPending = ref(false)
 const stepUpSent = ref(false)
 const stepUpIssue = ref('')
 let pendingStepUpAction: null | (() => void | Promise<void>) = null
+let pendingStepUpPurpose: 'export' | 'delete' = 'export'
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
@@ -40,10 +43,13 @@ const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices 
 })
 
 const accountDevices = computed(() => devicesResponse.value?.devices || [])
+// Campo opcional mantém compatibilidade com o backend anterior durante rolling
+// deploy. Assim que o backend novo responde, falhamos fechados sem iniciar OTP.
+const privacyRequestsAvailable = computed(() => devicesResponse.value?.privacy_requests_available !== false)
 
 // ── Acesso rápido (passkey) ─────────────────────────────────────────
 //
-// Fica ACIMA dos dispositivos confiáveis porque é a credencial mais forte que a pessoa tem: o
+// Fica ACIMA dos aparelhos confiáveis porque é a credencial mais forte que a pessoa tem: o
 // aparelho confiável dispensa o código, a passkey dispensa a espera. O cadastro é opt-in nesta
 // página porque capacidade do aparelho é contexto, não promessa no checkout.
 type PasskeyRow = {
@@ -84,7 +90,7 @@ onMounted(async () => {
   if (!passkeyBlocked.value && !passkeyReady.value) {
     // Navegador e endereço servem, mas o aparelho não oferece um autenticador local rápido.
     // Dizer isso é melhor que sumir: a pessoa entende que o recurso existe e não é para ali.
-    passkeyBlocked.value = 'Este aparelho não oferece acesso rápido pela chave do próprio dispositivo.'
+    passkeyBlocked.value = 'Este aparelho não guarda chave de acesso rápido.'
   }
   await loadPasskeys()
 })
@@ -108,17 +114,17 @@ async function removePasskey (row: PasskeyRow) {
 // Copy da tela vem do registro omotenashi (configurável no Admin). Fallback só cobre
 // o intervalo de carregamento.
 const devicesCopy = computed(() => devicesResponse.value?.copy || {
-  page_message: 'Controle os dispositivos confiáveis e seus dados pessoais.',
-  empty_title: 'Nenhum dispositivo confiável',
-  empty_message: 'Quando você optar por confiar neste dispositivo no login, ele aparecerá aqui.',
-  current_badge: 'Este dispositivo',
+  page_message: 'Controle os aparelhos confiáveis e seus dados pessoais.',
+  empty_title: 'Nenhum aparelho confiável',
+  empty_message: 'Quando você optar por confiar neste aparelho no login, ele aparecerá aqui.',
+  current_badge: 'Este aparelho',
   registered_prefix: 'Registrado em',
   revoke_cta: 'Remover',
-  revoke_all_cta: 'Remover todos os dispositivos',
-  revoke_confirm: 'Remover este dispositivo?',
-  revoke_all_confirm: 'Remover todos os dispositivos?',
-  unknown_label: 'Dispositivo desconhecido',
-  delete_warning: 'Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo.'
+  revoke_all_cta: 'Remover todos os aparelhos',
+  revoke_confirm: 'Remover este aparelho?',
+  revoke_all_confirm: 'Remover todos os aparelhos?',
+  unknown_label: 'Aparelho desconhecido',
+  delete_warning: 'Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste aparelho.'
 })
 
 async function exportData () {
@@ -135,7 +141,18 @@ async function exportData () {
 function askDeleteAccount () {
   privacyIssue.value = ''
   deleteAccountAcknowledged.value = false
+  if (import.meta.client && !deleteAccountIdempotencyKey.value) {
+    deleteAccountIdempotencyKey.value = sessionStorage.getItem(deleteIntentStorageKey) || crypto.randomUUID()
+    sessionStorage.setItem(deleteIntentStorageKey, deleteAccountIdempotencyKey.value)
+  }
   deleteAccountOpen.value = true
+}
+
+function cancelDeleteAccount () {
+  deleteAccountOpen.value = false
+  deleteAccountAcknowledged.value = false
+  deleteAccountIdempotencyKey.value = ''
+  if (import.meta.client) sessionStorage.removeItem(deleteIntentStorageKey)
 }
 
 async function deleteAccount () {
@@ -145,15 +162,21 @@ async function deleteAccount () {
   try {
     await $fetch(apiPath('/api/v1/account/delete/'), {
       method: 'POST',
-      headers: await csrfHeaders(),
+      headers: {
+        ...await csrfHeaders(),
+        'Idempotency-Key': deleteAccountIdempotencyKey.value
+      },
       credentials: 'include',
       body: { acknowledged: true }
     })
+    if (import.meta.client) sessionStorage.removeItem(deleteIntentStorageKey)
+    deleteAccountIdempotencyKey.value = ''
     session.reset()
     deleteAccountOpen.value = false
     await navigateTo('/')
   } catch (e) {
     privacyIssue.value = errorDetail(e, 'Não foi possível excluir a conta agora.')
+    deleteAccountOpen.value = true
   } finally {
     deleteAccountPending.value = false
   }
@@ -194,18 +217,19 @@ async function confirmRevokeDevice () {
     await refreshDevices()
     revokeDeviceOpen.value = false
     if (import.meta.client) {
-      useSonner.success(revokeDeviceMode.value === 'all' ? 'Dispositivos removidos.' : 'Dispositivo removido.')
+      useSonner.success(revokeDeviceMode.value === 'all' ? 'Aparelhos removidos.' : 'Aparelho removido.')
     }
   } catch (e) {
-    deviceIssue.value = errorDetail(e, 'Não foi possível remover o dispositivo agora.')
+    deviceIssue.value = errorDetail(e, 'Não foi possível remover o aparelho agora.')
     if (import.meta.client) useSonner.error(deviceIssue.value)
   } finally {
     revokeDevicePending.value = false
   }
 }
 
-async function requireStepUp (action: () => void | Promise<void>) {
+async function requireStepUp (purpose: 'export' | 'delete', action: () => void | Promise<void>) {
   pendingStepUpAction = action
+  pendingStepUpPurpose = purpose
   stepUpCode.value = []
   stepUpIssue.value = ''
   stepUpSent.value = false
@@ -241,7 +265,7 @@ async function confirmStepUp () {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: { code: stepUpCodeStr.value }
+      body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }
     })
     stepUpOpen.value = false
     const action = pendingStepUpAction
@@ -346,13 +370,19 @@ async function confirmPhoneChange () {
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
 function startExport () {
   privacyIssue.value = ''
-  void requireStepUp(exportData)
+  if (!privacyRequestsAvailable.value) return
+  void requireStepUp('export', exportData)
 }
 
 // Excluir conta: fecha o diálogo de ack e exige step-up antes de anonimizar.
 function confirmDeleteAccount () {
+  if (!privacyRequestsAvailable.value) return
   deleteAccountOpen.value = false
-  void requireStepUp(deleteAccount)
+  if (privacyIssue.value && deleteAccountIdempotencyKey.value) {
+    void deleteAccount()
+    return
+  }
+  void requireStepUp('delete', deleteAccount)
 }
 
 useSeoMeta({ title: 'Segurança e dados' })
@@ -404,8 +434,13 @@ useSeoMeta({ title: 'Segurança e dados' })
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="shop-heading">Acesso rápido</h2>
+            <!-- ⚠️ A entrada pela chave ainda NÃO existe: `usePasskey().signIn()` está
+                 escrito e exportado, e não é chamado em lugar nenhum — `/entrar` só
+                 oferece WhatsApp e SMS. Enquanto a porta não nascer, esta seção guarda a
+                 chave e não promete entrada com ela. Ligar a entrada é outra frente; no
+                 dia em que ela existir, a promessa volta junto com o botão. -->
             <p class="shop-muted">
-              Entrar com uma chave deste aparelho, sem código e sem esperar mensagem.
+              Guardar uma chave deste aparelho para entrar sem código.
             </p>
           </div>
           <UiButton
@@ -462,8 +497,8 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiEmptyHeader>
             <UiEmptyTitle>Você ainda não ativou</UiEmptyTitle>
             <UiEmptyDescription>
-              Ativando, na próxima visita você entra num toque — e continua podendo entrar pelo
-              WhatsApp quando quiser.
+              Ativando, esta loja passa a reconhecer a chave deste aparelho. Você continua
+              entrando pelo WhatsApp quando quiser.
             </UiEmptyDescription>
           </UiEmptyHeader>
         </UiEmpty>
@@ -494,9 +529,9 @@ useSeoMeta({ title: 'Segurança e dados' })
       <section class="space-y-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 class="shop-heading">Dispositivos confiáveis</h2>
+            <h2 class="shop-heading">Aparelhos confiáveis</h2>
             <p class="shop-muted">
-              {{ devicesPending ? 'Carregando…' : formatCount(accountDevices.length, 'dispositivo autorizado', 'dispositivos autorizados') }}
+              {{ devicesPending ? 'Carregando…' : formatCount(accountDevices.length, 'aparelho autorizado', 'aparelhos autorizados') }}
             </p>
           </div>
           <UiButton v-if="accountDevices.length > 1" variant="outline" size="sm" icon="lucide:shield-x" @click="askRevokeAllDevices">
@@ -554,11 +589,15 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiAlertTitle>Privacidade</UiAlertTitle>
           <UiAlertDescription>{{ privacyIssue }}</UiAlertDescription>
         </UiAlert>
+        <UiAlert v-if="!privacyRequestsAvailable">
+          <UiAlertTitle>Solicitações temporariamente indisponíveis</UiAlertTitle>
+          <UiAlertDescription>Não é possível exportar seus dados ou excluir sua conta agora. Tente novamente mais tarde.</UiAlertDescription>
+        </UiAlert>
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <UiButton variant="outline" class="justify-start" icon="lucide:download" :loading="exportPending" @click="startExport">
+          <UiButton variant="outline" class="justify-start" icon="lucide:download" :loading="exportPending" :disabled="!privacyRequestsAvailable" @click="startExport">
             Exportar meus dados
           </UiButton>
-          <UiButton variant="destructive" class="justify-start" icon="lucide:user-x" @click="askDeleteAccount">
+          <UiButton variant="destructive" class="justify-start" icon="lucide:user-x" :disabled="!privacyRequestsAvailable" @click="askDeleteAccount">
             Excluir minha conta
           </UiButton>
         </div>
@@ -584,7 +623,7 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiCheckbox id="delete-account-ack" v-model="deleteAccountAcknowledged" />
           </UiField>
           <UiAlertDialogFooter>
-            <UiAlertDialogCancel :disabled="deleteAccountPending">Voltar</UiAlertDialogCancel>
+            <UiAlertDialogCancel :disabled="deleteAccountPending" @click="cancelDeleteAccount">Voltar</UiAlertDialogCancel>
             <UiAlertDialogAction variant="destructive" :disabled="!deleteAccountAcknowledged || deleteAccountPending" @click="confirmDeleteAccount">
               Continuar
             </UiAlertDialogAction>
@@ -601,7 +640,7 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiAlertDialogDescription>
               {{ revokeDeviceMode === 'all'
                 ? 'Você precisará confirmar o telefone novamente nos próximos acessos.'
-                : `Você precisará confirmar o telefone novamente neste dispositivo: ${revokeDeviceCandidate?.label || devicesCopy.unknown_label}.` }}
+                : `Você precisará confirmar o telefone novamente neste aparelho: ${revokeDeviceCandidate?.label || devicesCopy.unknown_label}.` }}
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>

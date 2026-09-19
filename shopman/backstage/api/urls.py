@@ -48,8 +48,8 @@ from .kds import (
     KDSIndexView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
-    KDSTicketItemView,
     KDSTicketRecallView,
+    KDSTicketStartView,
 )
 from .marketing import (
     AnnouncementApproveView,
@@ -179,7 +179,6 @@ from .operations import (
     ProductionReportsView,
     ProductionWeighingView,
     StationProvisionView,
-    WorkOrderAdvanceStepView,
     WorkOrderFinishView,
     WorkOrderOvenArmView,
     WorkOrderOvenConcludeView,
@@ -190,6 +189,7 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .operator_capacity import OperatorCapacityView
 from .print_jobs import (
     PrintAgentAckView,
     PrintAgentClaimView,
@@ -230,25 +230,33 @@ from .recipe_book import (
     RecipeVersionView,
 )
 from .sign_ins import SignInListView
-from .telemetry import ClientErrorView, MarketingVitalView
+from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
+from .tenant import OperatorTenantView
+from .timer_tags import ProductionTimerTagsView
 
 urlpatterns = [
     # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
     path("backup/export/", BackupExportView.as_view(), name="api-backstage-backup-export"),
     # Telemetria — erro de cliente das superfícies de operador (operator-kit)
     path("client-error/", ClientErrorView.as_view(), name="api-backstage-client-error"),
+    # Telemetria — troca de versão do app instalado (PWA), relatada no boot seguinte
+    path(
+        "client-pwa-update/",
+        ClientPwaUpdateView.as_view(),
+        name="api-backstage-client-pwa-update",
+    ),
     path(
         "marketing/telemetry/vital/",
         MarketingVitalView.as_view(),
         name="api-backstage-marketing-vital",
     ),
-    # Central de Apps — launcher do operador (surfaces/hub-nuxt)
+    # Shopman Apps — launcher do operador (surfaces/hub-nuxt)
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
-    path("kds/tickets/<int:ticket_pk>/items/", KDSTicketItemView.as_view(), name="api-backstage-kds-ticket-item"),
+    path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
     path("kds/tickets/<int:ticket_pk>/acknowledge/", KDSTicketAcknowledgeView.as_view(), name="api-backstage-kds-ticket-acknowledge"),
@@ -258,6 +266,8 @@ urlpatterns = [
     # Operador (PIN/crachá) — genérico, compartilhado por todas as surfaces (inclui POS)
     path("operator/login/", OperatorLoginView.as_view(), name="api-backstage-operator-login"),
     path("operator/session/", OperatorSessionView.as_view(), name="api-backstage-operator-session"),
+    # Nome da casa ("Nelson") para o nome dos PWAs de operador — público, sem sessão
+    path("operator/tenant/", OperatorTenantView.as_view(), name="api-backstage-operator-tenant"),
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
@@ -267,9 +277,28 @@ urlpatterns = [
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
     # Provisionamento da ESTAÇÃO: uma vez por dispositivo, por quem gere operadores.
     path("operator/station/", StationProvisionView.as_view(), name="api-backstage-operator-station"),
+    # Capacidade do contêiner dos apps de operação (BFF operator-kit → /health/capacity)
+    path("operator/capacity/", OperatorCapacityView.as_view(), name="api-backstage-operator-capacity"),
+    # A antessala da Produção — a MESMA view de `operator/session/`, montada sob o
+    # prefixo da Produção.
+    #
+    # Não é duplicação: é o que torna o prefixo de rota um discriminador COMPLETO.
+    # A trava da estação autônoma (`station_trust.is_production_surface`) só
+    # resolve a conta do totem sob `/api/v1/backstage/production/`, e a antessala
+    # é a primeira coisa que o kiosk pergunta ("estou travado?"). Deixá-la no
+    # caminho compartilhado forçaria uma de duas saídas ruins: ou o totem se
+    # resolve num caminho que o PDV também usa — e aí o balcão com o mesmo cookie
+    # lê `locked: false` com o nome do totem e a pessoa perde a tela de PIN — ou o
+    # kiosk lê `locked: true` para sempre e a chave do Admin não liga nada.
+    path("production/session/", OperatorSessionView.as_view(), name="api-backstage-production-session"),
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
     path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),
+    path(
+        "production/timer-tags/",
+        ProductionTimerTagsView.as_view(),
+        name="api-backstage-production-timer-tags",
+    ),
     path("production/forecast/", ProductionForecastView.as_view(), name="api-backstage-production-forecast"),
     path(
         "production/mise-en-place/",
@@ -473,7 +502,7 @@ urlpatterns = [
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
     path("orders/<str:ref>/cancellation-reasons/", OrderCancellationReasonsView.as_view(), name="api-backstage-order-cancellation-reasons"),
     path("orders/<str:ref>/settle-delivery-cash/", OrderSettleDeliveryCashView.as_view(), name="api-backstage-order-settle-delivery-cash"),
-    # A maquininha voltou com o entregador: fecha a custódia do aparelho no pedido.
+    # A maquininha voltou com o entregador: fecha a custódia dela no pedido.
     path("orders/<str:ref>/equipment-back/", OrderEquipmentBackView.as_view(), name="api-backstage-order-equipment-back"),
     path("orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"),
     path("orders/<str:ref>/resend-payment-link/", OrderResendPaymentLinkView.as_view(), name="api-backstage-order-resend-payment-link"),
@@ -576,7 +605,6 @@ urlpatterns = [
         WorkOrderQualityCorrectionView.as_view(),
         name="api-backstage-wo-quality-correction",
     ),
-    path("production/<int:wo_id>/advance-step/", WorkOrderAdvanceStepView.as_view(), name="api-backstage-wo-advance"),
     path("production/quick-finish/", WorkOrderQuickFinishView.as_view(), name="api-backstage-wo-quick-finish"),
     path("production/<int:wo_id>/void/", WorkOrderVoidView.as_view(), name="api-backstage-wo-void"),
     # Forno — o timer do kiosk declara; o servidor carimba (ADR-021 §4)

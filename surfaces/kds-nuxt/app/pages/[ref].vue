@@ -8,7 +8,7 @@ import type {
   KDSExpeditionCardProjection,
   KDSTicketProjection,
 } from "~/types/kds";
-import { isExpeditionCard, splitRef } from "~/presentation/board";
+import { isExpeditionCard, shortDateLabel, splitRef } from "~/presentation/board";
 import type { KDSDensity } from "~/components/KdsTicketCard.vue";
 
 const route = useRoute();
@@ -31,8 +31,9 @@ const {
   toggleSound,
   activateAttentionSound,
   acknowledgeAttention,
-  checkItem,
+  start,
   finalize,
+  undoFinish,
   expedite,
   recall,
   acknowledge,
@@ -45,6 +46,17 @@ function handleSoundAction() {
   }
   toggleSound();
 }
+
+// A4 — o estado vazio prometia "a gente avisa quando o próximo chegar", e o aviso
+// é o SOM: com ele desligado ou bloqueado pelo autoplay, o card entra em silêncio
+// numa tela que acabou de convidar a cozinha a não olhar. A frase passa a dizer o
+// que de fato vai acontecer.
+const soundAnnounces = computed(() => soundOn.value && !soundBlocked.value);
+const emptyTodayLine = computed(() =>
+  soundAnnounces.value
+    ? "Nenhum pedido na fila agora. O próximo avisa com som."
+    : "Nenhum pedido na fila agora. O som está desligado — o próximo pedido aparece aqui sem avisar.",
+);
 
 function serviceDateLabel(value: string): string {
   if (!view.value) return value;
@@ -118,6 +130,9 @@ const DENSITIES: {
   { key: "roomy", label: "Ampla", icon: "lucide:square", min: 390 },
 ];
 const density = ref<KDSDensity>("cozy");
+const densityOption = computed(
+  () => DENSITIES.find((d) => d.key === density.value) ?? DENSITIES[1]!,
+);
 const gridStyle = computed(() => {
   const min = DENSITIES.find((d) => d.key === density.value)?.min ?? 300;
   return {
@@ -172,10 +187,14 @@ const openTicket = computed<KDSTicketProjection | null>(() => {
 function setModalOpen(value: boolean) {
   if (!value) openTicketPk.value = null;
 }
-function finalizeFromModal(pk: number) {
-  if (readOnly.value) return;
-  finalize(pk); // otimista — fecha o modal na hora
-  openTicketPk.value = null;
+
+// Toque num pedido travado por item cancelado: o card já diz o que fazer; o aviso
+// repete PARA ONDE ir. O gesto se chama "Recebi o cancelamento" — "Ciente" nomeava
+// dois atos diferentes nesta mesma tela.
+function warnBlocked() {
+  useSonner.error(
+    "Este pedido tem item cancelado. Confirme o cancelamento no cartão vermelho para poder finalizar.",
+  );
 }
 
 // Narrow the union for the template.
@@ -225,17 +244,17 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
            trabalho vivo (mais hoje). -->
       <label v-if="view" class="flex items-center gap-2 text-sm">
         <Icon name="lucide:calendar-days" class="size-4 text-muted-foreground" />
-        <span class="sr-only">Data operacional do KDS</span>
-        <select
+        <span class="sr-only">Data operacional da estação</span>
+        <UiNativeSelect
           :value="view.serviceDate"
-          class="h-9 rounded-md border bg-background px-2.5 font-semibold outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Data operacional do KDS"
+          class="font-semibold"
+          aria-label="Data operacional da estação"
           @change="onServiceDateChange"
         >
           <option v-for="date in view.availableDates" :key="date" :value="date">
             {{ serviceDateLabel(date) }}
           </option>
-        </select>
+        </UiNativeSelect>
       </label>
 
       <!-- contadores: neutros e padronizados (cor reservada à urgência dos cards) -->
@@ -256,47 +275,19 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
 
       <!-- controles -->
       <div class="flex items-center gap-1.5">
-        <div class="relative">
-          <Icon
-            name="lucide:search"
-            class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            v-model="query"
-            type="search"
-            inputmode="search"
-            placeholder="Buscar pedido…"
-            class="h-9 w-36 rounded-md border bg-background pl-8 pr-7 text-sm outline-none transition focus:w-48 focus:ring-1 focus:ring-ring sm:w-44"
-            aria-label="Buscar pedido por código, cliente ou item"
-          />
-          <button
-            v-if="query"
-            type="button"
-            class="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground transition hover:text-foreground"
-            aria-label="Limpar busca"
-            @click="query = ''"
-          >
-            <Icon name="lucide:x" class="size-3.5" />
-          </button>
-        </div>
-        <button
-          type="button"
-          class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          :aria-label="`Densidade: ${density}`"
-          title="Densidade da grade"
+        <UiSearchInput
+          v-model="query"
+          placeholder="Buscar pedido…"
+          aria-label="Buscar pedido por código, cliente ou item"
+        />
+        <UiIconButton
+          :icon="densityOption.icon"
+          :label="`Densidade da grade: ${densityOption.label}. Tocar troca para a próxima.`"
           @click="cycleDensity"
-        >
-          <Icon
-            :name="
-              DENSITIES.find((d) => d.key === density)?.icon ||
-              'lucide:layout-grid'
-            "
-            class="size-4"
-          />
-        </button>
+        />
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
+          class="relative grid size-control place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
           :class="
             soundOn && soundBlocked
               ? 'border-warning/50 text-amber-600 dark:text-amber-400'
@@ -329,17 +320,17 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <button
           v-if="attentionPending"
           type="button"
-          class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
-          aria-label="Reconhecer aviso de ticket novo"
+          class="inline-flex h-control items-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition hover:bg-accent"
+          aria-label="Silenciar o aviso de pedido novo"
           @click="acknowledgeAttention"
         >
           <Icon name="lucide:check" class="size-4" />
-          Ciente
+          Visto
         </button>
         <button
           v-if="view && !view.isExpedition && !readOnly && view.recentDone.length"
           type="button"
-          class="relative grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          class="relative grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
           aria-label="Concluídos recentes — reabrir"
           title="Concluídos recentes"
           @click="recallOpen = true"
@@ -352,7 +343,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         </button>
         <NuxtLink
           to="/pickup"
-          class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          class="grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
           aria-label="Tela do cliente"
           title="Tela do cliente"
         >
@@ -393,7 +384,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         v-if="error && !view"
         class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-300"
       >
-        Falha ao carregar o board. Reconectando…
+        Não deu para carregar os pedidos desta estação. Tentando de novo.
       </p>
       <p
         v-else-if="error && view"
@@ -441,12 +432,12 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
             <button
               type="button"
               :disabled="readOnly"
-              class="flex shrink-0 items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/15 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Dar baixa no cancelado"
+              class="flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-destructive/40 px-3 text-sm font-semibold text-destructive transition hover:bg-destructive/15 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              :aria-label="`Confirmar que a cozinha viu o cancelamento do pedido ${splitRef(t.order_ref).code}`"
               @click="!readOnly && acknowledge(t.pk)"
             >
               <Icon name="lucide:check" class="size-4" />
-              Ciente
+              Recebi o cancelamento
             </button>
           </article>
         </TransitionGroup>
@@ -467,10 +458,19 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           <p class="max-w-sm text-base text-muted-foreground">
             {{
               view.serviceDate === view.today
-                ? "Nenhum pedido na fila agora. Aproveite para respirar — a gente avisa quando o próximo chegar."
+                ? emptyTodayLine
                 : `Nenhum item desta estação para ${view.serviceDateDisplay.toLowerCase()}.`
             }}
           </p>
+          <button
+            v-if="view.serviceDate === view.today && !soundAnnounces"
+            type="button"
+            class="inline-flex h-11 items-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition hover:bg-accent"
+            @click="handleSoundAction"
+          >
+            <Icon name="lucide:volume-2" class="size-4" />
+            Ligar o som
+          </button>
         </div>
 
         <!-- busca sem resultado -->
@@ -506,30 +506,39 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
             {{
               view.serviceDate === view.today
                 ? "Mais urgente primeiro — o destacado é o próximo"
-                : `Prévia de ${view.serviceDateDisplay.toLowerCase()} — sem ações e sem som`
+                : `${view.serviceDateDisplay}, ${shortDateLabel(view.serviceDate)} — só para consultar. Nada aqui pode ser iniciado ou finalizado hoje.`
             }}
           </p>
+          <!-- Sem items-start: a grade estica os cards de uma mesma linha até o mais
+               alto — nada é cortado e as linhas continuam alinhadas. -->
           <TransitionGroup
             tag="div"
             name="kds-card"
-            class="grid items-start gap-3"
+            class="grid gap-3"
             :style="gridStyle"
           >
-            <div v-for="(card, idx) in filteredCards" :key="card.pk">
+            <div v-for="card in filteredCards" :key="card.pk" class="flex">
               <KdsExpeditionCard
                 v-if="view.isExpedition"
                 :card="asExpedition(card)"
                 :density="density"
+                :service-date="view.serviceDate"
                 @action="(action) => !readOnly && expedite(card.pk, action)"
               />
               <KdsTicketCard
                 v-else
                 :ticket="asTicket(card)"
                 :density="density"
-                :next="!query && !view.isExpedition && view.serviceDate === view.today && idx === 0"
-                @open="!readOnly && !asTicket(card).is_scheduled && (openTicketPk = card.pk)"
-                @check="(i, checked) => !readOnly && !asTicket(card).is_scheduled && checkItem(card.pk, i, checked)"
-                @done="!readOnly && !asTicket(card).is_scheduled && finalize(card.pk)"
+                :next="!query && !view.isExpedition && view.serviceDate === view.today && card.pk === view.nextPk"
+                :blocked="view.blockedRefs.has(card.order_ref)"
+                :addition="view.additionPks.has(card.pk)"
+                :finishing="view.finishingPks.has(card.pk)"
+                :service-date="view.serviceDate"
+                @open="openTicketPk = card.pk"
+                @start="!readOnly && start(card.pk)"
+                @finish="!readOnly && finalize(card.pk)"
+                @undo="undoFinish(card.pk)"
+                @blocked="warnBlocked"
               />
             </div>
           </TransitionGroup>
@@ -542,10 +551,6 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       :open="openTicket != null"
       :ticket="openTicket"
       @update:open="setModalOpen"
-      @check-item="
-        (idx, checked) => !readOnly && openTicket && checkItem(openTicket.pk, idx, checked)
-      "
-      @done="!readOnly && openTicket && finalizeFromModal(openTicket.pk)"
     />
 
     <!-- recall: concluídos recentes (desfazer finalização) -->

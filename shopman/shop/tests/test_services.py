@@ -1932,7 +1932,7 @@ class TestKDSService:
         ticket = KDSTicket.objects.create(
             session_key=order.session_key,
             kds_instance=inst,
-            items=[{"sku": "SKU-1", "name": "Item", "qty": 1, "checked": False}],
+            items=[{"sku": "SKU-1", "name": "Item", "qty": 1}],
             status="pending",
         )
 

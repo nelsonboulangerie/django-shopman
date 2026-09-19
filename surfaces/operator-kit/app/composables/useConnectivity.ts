@@ -14,7 +14,7 @@ type ReconnectHandler = () => void | Promise<void>;
 export function useConnectivity() {
   const online = useOnline();
   const handlers = new Set<ReconnectHandler>();
-  let wasOffline = ref(false);
+  const wasOffline = ref(false);
 
   const runHandlers = () => {
     for (const handler of handlers) {

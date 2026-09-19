@@ -19,7 +19,7 @@ from django.test import TestCase
 from shopman.storefront.intents.checkout import _validate_slot
 
 FAKE_SLOTS = [
-    {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
     {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
     {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
 ]

@@ -28,6 +28,25 @@ VISUAL_STORY_IMAGE = (
     "c120-300 280-300 400 0-90 150-310 150-400 0Z' fill='%239a582d'/%3E%3C/svg%3E"
 )
 
+# A peça 1:1 do mural e a 16:9 do Google: o retrato em tamanho real existe para mostrar
+# o ENQUADRAMENTO, e enquadramento só aparece quando a proporção da peça é a de verdade.
+VISUAL_SQUARE_IMAGE = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+    "viewBox='0 0 1080 1080'%3E%3Cdefs%3E%3ClinearGradient id='s' x2='0' y2='1'"
+    "%3E%3Cstop stop-color='%23e3b878'/%3E%3Cstop offset='1' stop-color='%236b3a22'/%3E"
+    "%3C/linearGradient%3E%3C/defs%3E%3Crect width='1080' height='1080' fill='url(%23s)'/"
+    "%3E%3Ccircle cx='540' cy='540' r='300' fill='%23f4d7a3'/%3E%3Cpath d='M300 600"
+    "c130-320 310-320 440 0-100 160-340 160-440 0Z' fill='%239a582d'/%3E%3C/svg%3E"
+)
+VISUAL_WIDE_IMAGE = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+    "viewBox='0 0 1200 675'%3E%3Cdefs%3E%3ClinearGradient id='w' x2='0' y2='1'"
+    "%3E%3Cstop stop-color='%23d8ab6f'/%3E%3Cstop offset='1' stop-color='%23643520'/%3E"
+    "%3C/linearGradient%3E%3C/defs%3E%3Crect width='1200' height='675' fill='url(%23w)'/"
+    "%3E%3Ccircle cx='600' cy='330' r='190' fill='%23f4d7a3'/%3E%3Cpath d='M440 370"
+    "c80-200 240-200 320 0-60 100-260 100-320 0Z' fill='%239a582d'/%3E%3C/svg%3E"
+)
+
 
 def action(
     resource: str,
@@ -94,7 +113,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
     }
 
 
-def template(pk: int = 1, *, dependency: bool = False) -> dict:
+def template(pk: int = 1, *, dependency: bool = False, requires_product: bool = False) -> dict:
     return {
         "pk": pk,
         "name": "Novidades da padaria" if pk == 1 else f"Modelo sazonal {pk}",
@@ -116,6 +135,7 @@ def template(pk: int = 1, *, dependency: bool = False) -> dict:
         "is_active": True,
         "updated_at": "2026-09-10T09:40:00-03:00",
         "used_by_campaigns": ["Fornada artesanal 01", "Volta do pão integral"] if dependency else [],
+        "requires_product": requires_product,
     }
 
 
@@ -163,6 +183,29 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "rejected_reason": "A informação da fornada mudou." if status == "rejected" else "",
         "ai_suggestion_enabled": False,
     }
+
+
+def all_formats_announcement() -> dict:
+    """Um anúncio que sai nos quatro retratos ao mesmo tempo: Story, Feed, Atualização
+    do Google e mensagem de WhatsApp. É o cenário que prova a prévia em tamanho real."""
+    post = legacy_announcement()
+    post["platforms"] = ["instagram", "facebook", "google_business", "whatsapp"]
+    post["platform_content"] = {
+        "instagram": {
+            "publication_format": "story",
+            "image_url": VISUAL_STORY_IMAGE,
+        },
+        "facebook": {
+            "publication_format": "feed",
+            "image_url": VISUAL_SQUARE_IMAGE,
+        },
+        "google_business": {
+            "publication_format": "standard",
+            "image_url": VISUAL_WIDE_IMAGE,
+        },
+        "whatsapp": {"image_url": VISUAL_SQUARE_IMAGE},
+    }
+    return post
 
 
 def counts(**overrides: int) -> dict:
@@ -450,7 +493,10 @@ class Handler(BaseHTTPRequestHandler):
             if scenario == "login-expired":
                 self._send(401, {"detail": "Sua sessão terminou."})
                 return
-            pending = [] if scenario in {"board-empty", "board-normal"} else [legacy_announcement()]
+            if scenario == "board-all-formats":
+                pending = [all_formats_announcement()]
+            else:
+                pending = [] if scenario in {"board-empty", "board-normal"} else [legacy_announcement()]
             recent = [legacy_announcement(40, status="settled")] if scenario == "board-normal" else []
             reach_limits = []
             if scenario == "board-degraded":
@@ -483,10 +529,16 @@ class Handler(BaseHTTPRequestHandler):
                 "recent": recent,
                 "counters": {
                     "pending_decision_count": len(pending),
-                    "accepted_unconfirmed_targets_today": 1,
-                    "confirmed_targets_today": 13,
-                    "failed_final_targets_today": 0,
-                    "unknown_targets_open": 0,
+                    # Nove pessoas e quatro murais: o retrato existe para provar que o
+                    # Painel não volta a apresentar isso como "13 entregas".
+                    "confirmed_people_today": 9,
+                    "confirmed_posts_today": 4,
+                    "accepted_unconfirmed_people_today": 1,
+                    "accepted_unconfirmed_posts_today": 0,
+                    "failed_final_people_today": 0,
+                    "failed_final_posts_today": 0,
+                    "unknown_people_open": 0,
+                    "unknown_posts_open": 0,
                 },
             }, freshness=fresh))
             return
@@ -520,9 +572,25 @@ class Handler(BaseHTTPRequestHandler):
                     {"value": "production_finished", "label": "Fornada concluída"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
-                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}, {"value": "whatsapp", "label": "WhatsApp"}],
-                "templates": [template()],
+                # Google entra só no cenário dos quatro retratos: acrescentá-lo em todos
+                # mexeria numa pílula a mais em cada baseline que já existe.
+                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
+                + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
+                + [{"value": "whatsapp", "label": "WhatsApp"}],
+                "templates": [template(requires_product=scenario == "fire-product")],
                 "variables": ["product_name", "link"],
+                # ⚠️ Catálogo LONGO de propósito neste cenário: o `UiSelect` só abre o
+                # campo de busca acima de doze opções, e é justamente a busca que o
+                # retrato existe para provar. Com a lista curta de sempre ele degradaria
+                # para lista simples e o retrato não mostraria nada de novo.
+                "products": (
+                    [
+                        {"value": f"PAO-{index:03d}", "label": f"Pão artesanal {index:02d}"}
+                        for index in range(1, 15)
+                    ]
+                    if scenario == "fire-product"
+                    else [{"value": "PAO-001", "label": "Pão artesanal"}]
+                ),
                 "price_tiers": [{"value": "varejo", "label": "Varejo"}],
                 "tags": [{"value": "clientes-da-casa", "label": "clientes da casa (1.999)"}],
                 "rfm_segments": [{"value": "champion", "label": "Campeões"}],
@@ -559,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                     {"ns": "visual_flow", "name": "Aviso de fornada"},
                     {"ns": "visual_flow_v2", "name": "Aviso de fornada — versão revisada"},
                 ],
-                "test_targets": [{"ref": "device:visual", "label": "Aparelho verificado de teste"}],
+                "test_targets": [{"ref": "device:visual", "label": "Dispositivo verificado de teste"}],
                 "can_send_test": True,
                 "can_list": True,
                 "command_available": True,
@@ -690,6 +758,12 @@ class Handler(BaseHTTPRequestHandler):
                 "parts": [{"label": "Clientes da casa", "count": total}],
                 "vip_count": 0,
                 "empty_selection": False,
+                "alerts_pending": -1,
+                "alerts_notified": -1,
+                "excluded_by_reason": {},
+                "can_approve": True,
+                "blocked_reason": "",
+                "degraded_sources": [],
             })
             return
         if path == "/api/v1/backstage/marketing/preview/":
@@ -765,6 +839,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not body.get("confirmation_token"):
                 count = 1_999 if scenario == "fire-large" else 48
+                # Disparar não publica e não envia: o servidor emite o token para
+                # congelar versão, permissão e público, e declara `none` — nenhuma
+                # cerimônia humana. O navegador consome o token na sequência, sem
+                # abrir caixa. Ver ADR-031.
                 self._send(428, {
                     "code": "confirmation_required",
                     "detail": "Confirme o público antes de criar o anúncio.",
@@ -772,10 +850,10 @@ class Handler(BaseHTTPRequestHandler):
                         "token": "visual-fire-confirmation-token",
                         "ref": "visual-fire-confirmation-ref",
                         "expires_at": "2026-09-10T10:35:00-03:00",
-                        "mode": "typed",
-                        "step_up": "password",
+                        "mode": "none",
+                        "step_up": "none",
                         "dual_control": False,
-                        "typed_phrase": f"PUBLICAR {count}",
+                        "typed_phrase": "",
                         "consequence": "creates_review_announcement",
                         "resource_ref": "campaign:1",
                         "base_version": 1,
@@ -830,7 +908,7 @@ class Handler(BaseHTTPRequestHandler):
                     "step_up": "none",
                     "dual_control": False,
                     "typed_phrase": "",
-                    "consequence": "Entregar agora para 12 pessoas elegíveis.",
+                    "consequence": "Disparar agora para 12 pessoas elegíveis.",
                     "resource_ref": "announcement:41",
                     "base_version": 3,
                     "audience_count": 12,

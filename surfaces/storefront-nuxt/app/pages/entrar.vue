@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
 
@@ -51,6 +51,9 @@ const debugOtpCode = ref('')
 const debugOtpExpiresAt = ref('')
 const showDebugOtp = ref(true)
 const verified = ref(false)
+// O gate de boas-vindas é SÓ o nome (`welcome_asks_name`). O convite de
+// novidades não é passo do login: sobe como sheet na página de destino
+// (MarketingPromptSheet), sem bloquear nada.
 const welcomeNeeded = ref(false)
 const welcomeName = ref('')
 const lastSentAtMs = ref<number | null>(null)
@@ -62,9 +65,6 @@ const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
 const trustSaved = ref(false)
 const nowMs = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
-const phoneForm = ref<HTMLFormElement | null>(null)
-const codeForm = ref<HTMLFormElement | null>(null)
-const welcomeForm = ref<HTMLFormElement | null>(null)
 
 const { data: loginHome } = useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include',
@@ -94,6 +94,12 @@ const step = computed(() => authStep({
   verified: verified.value,
   requiresWelcome: welcomeNeeded.value
 }))
+// Próximo foco: o passo É o foco da página. O bloco do passo (título + campos)
+// se marca com `data-focus-target`; a cada troca de passo, o mecanismo leva o
+// bloco à linha de foco e entrega o foco ao primeiro campo (`data-focus-control`)
+// sem rolar — no celular o teclado abre com o título no lugar, não empurrado
+// para fora da tela.
+const { reveal } = useNextFocus(step)
 const code = computed(() => codeDigits.value.join('').slice(0, 6))
 const canVerifyCode = computed(() => code.value.length === 6 && !pending.value)
 const authCopy = computed(() => loginHome.value?.home.auth_copy || null)
@@ -120,7 +126,7 @@ const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Vamos entrar?')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
-  return copyTitle(authCopy.value?.name_heading, 'Como quer ser chamado?')
+  return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
 })
 const stepDescription = computed(() => {
   if (step.value === 'phone') {
@@ -174,11 +180,11 @@ const momentTitle = computed(() => {
   return greetName.value ? `${base}, ${greetName.value}!` : `${base}!`
 })
 const momentMessage = computed(() => moment.value === 'recognized'
-  ? copyMessage(authCopy.value?.device_trust_redirecting, 'Dispositivo reconhecido. Entrando automaticamente…')
+  ? copyMessage(authCopy.value?.device_trust_redirecting, 'Aparelho reconhecido. Entrando automaticamente…')
   : copyMessage(authCopy.value?.auth_confirmed, 'Identidade confirmada')
 )
 const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSaved.value
-  ? copyMessage(authCopy.value?.device_trust_saved, 'Dispositivo salvo por 30 dias.')
+  ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo por 30 dias.')
   : ''
 )
 
@@ -187,6 +193,11 @@ onMounted(async () => {
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client) void waStart(nextUrl.value)
+  // Passo do nome aberto já no setup (access link): não houve troca de passo, e
+  // na montagem o mecanismo só se move se o bloco estiver fora da vista. Mas
+  // quem chega aqui ENTROU num passo cuja próxima ação é digitar o nome — o
+  // campo recebe o foco como em qualquer outra troca.
+  if (step.value === 'welcome') reveal('welcome')
   // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
   // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
   // antes de mostrar o passo de telefone a quem já entrou.
@@ -211,14 +222,6 @@ onBeforeUnmount(() => {
 // Confirmação automática ao completar os 6 dígitos (o copy do servidor promete).
 watch(code, value => {
   if (value.length === 6 && step.value === 'code' && !pending.value) verifyCode()
-})
-
-// A cada troca de passo, o foco segue para o primeiro campo do passo novo
-// (leitor de tela anuncia o contexto certo; teclado já abre no lugar certo).
-watch(step, async next => {
-  await nextTick()
-  const container = next === 'code' ? codeForm.value : next === 'welcome' ? welcomeForm.value : phoneForm.value
-  container?.querySelector('input')?.focus()
 })
 
 function copyTitle (entry: CopyEntryProjection | null | undefined, fallback: string) {
@@ -414,7 +417,7 @@ async function verifyCode () {
 
 async function submitWelcome () {
   const name = welcomeNameValue(welcomeName.value)
-  if (!name || pending.value) return
+  if (pending.value || !name) return
   pending.value = true
   error.value = null
   try {
@@ -433,7 +436,9 @@ async function submitWelcome () {
   }
 }
 
+// "Deixar para depois": o nome fica para outra hora; o gate não prende ninguém.
 async function skipWelcome () {
+  session.setIdentity({ requiresWelcome: false })
   await navigateTo(nextUrl.value)
 }
 
@@ -453,7 +458,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section">
+  <main class="shop-section shop-bottom-safe">
     <div class="shop-container">
       <div class="mx-auto max-w-md shop-stack-block">
         <div v-if="moment !== 'none'" class="py-10 text-center" data-login-moment>
@@ -470,6 +475,12 @@ useSeoMeta({
         </div>
 
         <template v-else>
+        <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
+             campos. A página de entrada é UM bloco por passo, e ele começa no
+             topo: `scroll-mt-40` (10rem) cobre o chrome expandido (6.25rem) mais
+             o respiro da seção, então a linha de foco deste bloco é o topo da
+             página — o passo novo começa ali, com o cabeçalho aberto. -->
+        <section :data-focus-target="step" class="shop-stack-block scroll-mt-40 outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>
@@ -502,21 +513,38 @@ useSeoMeta({
             @used="() => waStart(nextUrl)"
           />
 
-          <!-- Alternativa: usar OUTRO número = via SMS (o único caminho que mira um número
-               digitado; pelo WhatsApp a conta é sempre a de quem envia a mensagem). -->
-          <UiButton
-            v-if="!revealPhone"
-            type="button"
-            variant="ghost"
-            size="sm"
-            class="w-full justify-center text-muted-foreground hover:text-foreground"
-            icon="lucide:smartphone"
-            @click="revealPhone = true"
-          >
-            Não consigo usar WhatsApp
-          </UiButton>
+          <!-- A ALTERNATIVA DE VERDADE, e é aqui que o "ou" pertence. O caminho
+               por SMS é o único que mira um número DIGITADO (pelo WhatsApp a
+               conta é sempre a de quem envia a mensagem) — ele é irmão do
+               principal, e o envio manual não é: aquele é o mesmo caminho,
+               feito à mão, e por isso mora dentro do cartão do WhatsApp.
 
-          <form v-else ref="phoneForm" class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
+               Dizia "Não consigo usar WhatsApp": pedia que a pessoa declarasse
+               uma INCAPACIDADE para receber uma opção, e não dizia SMS em
+               lugar nenhum — a palavra só aparecia depois do clique. Agora
+               nomeia o que entrega. Contorno em vez de sólido mantém a
+               hierarquia (um único sólido na tela); `size="lg"` igual ao
+               principal diz que é um caminho de verdade, não um sussurro. -->
+          <template v-if="!revealPhone">
+            <div class="flex items-center gap-3" aria-hidden="true" data-login-or>
+              <span class="h-px flex-1 bg-border" />
+              <span class="shop-meta uppercase tracking-widest">ou</span>
+              <span class="h-px flex-1 bg-border" />
+            </div>
+            <UiButton
+              type="button"
+              variant="outline"
+              size="lg"
+              class="w-full justify-center"
+              icon="lucide:smartphone"
+              data-login-sms-door
+              @click="revealPhone = true"
+            >
+              Receber código por SMS
+            </UiButton>
+          </template>
+
+          <form v-else class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
             <UiField>
               <div class="flex items-center justify-between gap-3">
                 <UiFieldLabel for="login-phone">Telefone</UiFieldLabel>
@@ -544,6 +572,7 @@ useSeoMeta({
                   :autocomplete="phoneAutocomplete"
                   :placeholder="phonePlaceholder"
                   :maxlength="phoneRegion === 'INTL' ? 24 : 16"
+                  data-focus-control
                   @input="syncPhoneFromInput"
                 />
               </UiInputGroup>
@@ -552,7 +581,13 @@ useSeoMeta({
 
             <div class="grid gap-3">
               <UiButton type="submit" size="lg" :loading="pending" icon="lucide:smartphone" class="w-full justify-center">
-                {{ copyTitle(authCopy?.phone_cta_sms, 'Receber código por SMS') }}
+                <!-- O fallback local dizia "Receber código por SMS" e o default do
+                     servidor diz "Receber por SMS": dois textos para o mesmo botão,
+                     e quem via cada um dependia de a home ter carregado. Agora o
+                     fallback é igual ao servidor — e, de quebra, deixa de repetir
+                     o rótulo da PORTA do SMS, que é quem promete o canal. Aqui a
+                     pergunta já é outra: enviar para ESTE número. -->
+                {{ copyTitle(authCopy?.phone_cta_sms, 'Receber por SMS') }}
               </UiButton>
               <UiButton
                 type="button"
@@ -568,7 +603,7 @@ useSeoMeta({
           </form>
         </div>
 
-        <form v-else-if="step === 'code'" ref="codeForm" class="shop-stack-block" @submit.prevent="verifyCode">
+        <form v-else-if="step === 'code'" class="shop-stack-block" @submit.prevent="verifyCode">
           <p class="shop-body">
             {{ codeSentLine }}
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
@@ -672,7 +707,9 @@ useSeoMeta({
           </UiButton>
         </form>
 
-        <form v-else ref="welcomeForm" class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
+        <!-- Boas-vindas = SÓ o nome. O convite de novidades não mora aqui: sobe
+             como sheet na página de destino (MarketingPromptSheet). -->
+        <form v-else class="shop-stack-block" data-login-welcome @submit.prevent="submitWelcome">
           <UiField class="rounded-lg border bg-card p-4">
             <UiFieldLabel for="welcome-name">Nome</UiFieldLabel>
             <UiInput
@@ -681,6 +718,7 @@ useSeoMeta({
               name="welcome-name"
               autocomplete="given-name"
               placeholder="Primeiro nome ou apelido"
+              data-focus-control
             />
           </UiField>
 
@@ -693,9 +731,17 @@ useSeoMeta({
             </UiButton>
           </div>
         </form>
+        </section>
 
         <p v-if="step !== 'welcome'" class="shop-meta">
           {{ copyMessage(authCopy?.terms_note, 'Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.') }}
+        </p>
+        <!-- A declaração de maioridade + Termos, em TODO passo de entrada (telefone,
+             código, aparelho reconhecido). Frase FIXA, fora da copy configurável:
+             a autenticação carimba o cadastro, e a versão carimbada representa
+             exatamente esta frase. -->
+        <p v-if="step !== 'welcome'" class="shop-meta" data-login-adult-declaration>
+          {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
         </p>
 
         <div v-if="supportUrl" class="-mx-4 border-t px-4 pt-4 sm:mx-0 sm:px-0" data-login-support>
@@ -712,6 +758,12 @@ useSeoMeta({
             Falar com a loja
           </UiButton>
         </div>
+
+        <!-- Tem mais abaixo. Medido em 375x667: a porta do SMS nasce em 597
+             numa tela cuja navegação começa em 602 — quem não rolar não a vê,
+             e ela é a alternativa de verdade. Rolar um dedo resolve; não saber
+             que há o que rolar, não. -->
+        <MoreBelow />
         </template>
       </div>
     </div>

@@ -227,7 +227,7 @@ for key in (
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
-| `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual aparelho foi levado, sem inferir históricos. Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
+| `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual dispositivo foi levado, sem inferir históricos. Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
 
 ### courier — detalhamento
 
@@ -365,6 +365,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `paid_amount_q` | `int` | audit | `confirm_pix` | `confirm_pix` (suficiência do recebido) | Total recebido em Pix para o pedido = soma de `pix_receipts`. **Não é prova de pagamento**: quem diz se a venda está paga é o Payman |
 | `captured_at` | `string` | audit + idempotency | `confirm_pix` / `payment.capture()` / POS | `confirm_pix` (guard de re-dispatch do `on_paid`) | ISO datetime da captura SUFICIENTE (só gravado quando o valor capturado cobre `total_q`; pagamento parcial não grava) |
 | `transaction_id` | `string` | audit | `payment.capture()` | — | Transaction ID do adapter pós-capture |
+| `card_funding` | `string` | fiscal | `payment.capture()` (adapter Stripe, `latest_charge.payment_method_details.card.funding`) | emissão de NFC-e (`fiscal_focusnfe._payment_code`) | `credit` \| `debit` \| `prepaid` \| `unknown` — como o cliente pagou o cartão no Checkout da Stripe (loja e link). Decide o tPag 03/04; ausente → 99 outros |
 | `gateway_checked_at` | `string` | throttle | `payment.reconcile_with_gateway_if_due()` | o próprio (janela mínima entre perguntas) | ISO datetime da última pergunta ao gateway pelo estado deste pagamento. Existe para o acompanhamento poder reconciliar em toda leitura sem transformar cada refresh do cliente numa chamada ao provedor (`GATEWAY_RECHECK_SECONDS`). **Não é status**: quem diz se a venda está paga é o Payman |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
@@ -374,7 +375,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
 | `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
 | `change_q` | `int` | measurement | POS (`shop/services/pos.py`) | POS (revisão), B.I. de troco | Troco devolvido, em centavos. Escrito junto com `tendered_q`. É a única fonte de troco do sistema: `HistoricalSale` (export externo) **não tem troco**, e por isso a previsão de necessidade de troco lê só pedido nativo |
-| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem confirmou dinheiro/cartão/misto da entrega. Somente a parcela cash gera `cod_settled` no `cashman`; cartão permanece no Payman. Devolução do aparelho é independente |
+| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem confirmou dinheiro/cartão/misto da entrega. Somente a parcela cash gera `cod_settled` no `cashman`; cartão permanece no Payman. Devolução do dispositivo é independente |
 | `change_for_q` | `int` | **canonical** | checkout da loja (`storefront/api/views.py`, `intents/checkout.py`) e PDV (`shop/services/pos.py`, soma das cédulas informadas no mesmo teclado de pagamento): dinheiro **na entrega** e o cliente disse com quanto paga | `operator_orders.change_out_suggested_q` (despacho: sugestão `change_for − parcela em dinheiro`, que vira `courier_out` no livro do caixa), projection do gestor (`change_for_q`/`change_label` no card), filipeta (`Troco para` e valor a levar, somente cobrança na entrega pendente) | Com quanto o cliente vai pagar a parcela em dinheiro na porta, em centavos; inclusive em pagamento misto. Era dado morto até o WP-9 do CASHMAN-PLAN: hoje o despacho pergunta quanto o entregador leva e o acerto quanto voltou |
 
 ### returns — detalhamento
@@ -857,6 +858,29 @@ campanha, então a relâmpago de amanhã também sai.
 em dobro chega ao cliente e não tem desfazer. Anúncio de evento fica com a chave vazia de
 propósito — duas fornadas do mesmo pão são dois anúncios legítimos.
 
+#### `announcement.notify` (onda legada, sem `outbox_ref`)
+
+Uma onda de WhatsApp de um anúncio. Payload com `outbox_ref` segue o ledger durável;
+sem ele, `AnnouncementNotifyHandler` resolve a audiência na hora e envia por pessoa.
+
+Dedupe: `announcement:{id}:wa:{wave}`; reenvio de ocupados:
+`announcement:{id}:wa:{wave}:busy:{directive_pk}`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `announcement_id` | `int` | campaign_service._queue_notify | AnnouncementNotifyHandler |
+| `wave` | `string` | campaign_service._queue_notify | AnnouncementNotifyHandler |
+| `wave_keys` | `list[string]` | campaign_service._queue_notify | audience.select_wave |
+| `sku` | `string` | campaign_service._queue_notify | (evidência) |
+| `waves_expected` | `int` | campaign_service._queue_notify | _record_wave |
+| `only_customer_refs` | `list[string]` | handlers.campaign._requeue_busy_recipients | AnnouncementNotifyHandler |
+
+`only_customer_refs` existe só na directive de reenvio: são os `customer_ref` que o
+ManyChat devolveu como `subscriber_busy` (outra mensagem com flow assentando). A
+directive nasce com `available_at` depois da janela
+`SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
+telefone, e quem já recebeu não recebe de novo.
+
 ---
 
 ## Channel.config
@@ -1109,6 +1133,32 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 |-------|------|----------|-----------|
 | `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (a exceção de preço alterado segue exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 
+### Marketing — `Shop.defaults["marketing"]`
+
+Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketing_policy.py`
+(`MarketingPolicy`).
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `marketing.whatsapp_minimum_audience` | `int` (≥ 1) | `resolve_marketing_policy` → `approve_command` (`shop/services/marketing_approval.py`) | Mínimo de pessoas elegíveis para aprovar campanha **geral** por WhatsApp (impede mirar uma pessoa). **Ausente = 1** (decisão do dono, 2026-09-17). Não vale no modo `canary`. Editado na página "Integrações" do ShopAdmin; em branco remove a chave. Valor gravado fora do contrato (0, negativo, texto, booleano) cai no padrão com `logger.warning`. |
+
+### Capacidade dos apps de operação — `Shop.defaults["operator_capacity"]`
+
+Limites do indicador de capacidade dos apps Nuxt de operador e do alerta
+`operator_capacity_critical`. Source-of-truth tipado em
+`shopman/shop/operator_capacity_policy.py` (`OperatorCapacityPolicy`); a regra mora em
+`shopman/shop/services/operator_capacity.py`.
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `operator_capacity.attention_percent` | `int` (1–100) | `resolve_operator_capacity_policy` → `OperatorCapacityView` → rail dos apps | Uso (maior entre memória% e CPU% do contêiner) a partir do qual o indicador fica âmbar. Não gera aviso. **Ausente = 75.** |
+| `operator_capacity.critical_percent` | `int` (1–100, > atenção) | idem + `evaluate_sample` | A partir deste uso o indicador fica vermelho; acima por `sustain_minutes` nasce `OperatorAlert` crítico (dedupe por serviço). **Ausente = 90.** |
+| `operator_capacity.sustain_minutes` | `int` (1–60) | `evaluate_sample` | Minutos acima do crítico antes do alerta; e abaixo da atenção antes de o sistema resolvê-lo. **Ausente = 5.** |
+
+Editado na página "Integrações" do ShopAdmin (seção "Capacidade dos apps de operação"); em
+branco remove a chave. Par invertido (atenção ≥ crítico) ou valor fora da faixa gravado por
+edição crua do JSON cai no padrão com `logger.warning`.
+
 ### Alertas de estoque — `Shop.defaults["stock_alerts"]`
 
 | Chave | Tipo | Lido por | Descrição |
@@ -1194,6 +1244,8 @@ proprios, nao aqui.
 | `qa_notes` | `list[string]` | seed | QA/auditoria | Observacoes de teste para simular baixa atencao, recuperacao e suporte |
 | `house_account` | `bool` | **Admin** (checkbox "Conta na casa" no form do cliente, `guestman/contrib/admin_unfold`) | `shop/services/house_account.is_eligible` (porteiro da venda "em conta" no PDV), projection do PDV (`customer lookup.house_account`) | O cliente pode comprar em conta e acertar por período (WP-10 do CASHMAN-PLAN). Desligado por padrão; não se divulga. Ausente = `false` |
 | `fiscal_prefs` | `dict` | `shop/services/pos._remember_fiscal_prefs` (quando cliente identificado OPTA na venda) | POS lookup projection (`fiscal_prefs`) → pré-marca o checkout | `{cpf_na_nota: bool, email_receipt: bool}` — o cliente optou uma vez, a próxima venda vem pré-marcada (editável). Só grava opt-IN; desmarcar numa venda não apaga ("hoje não" ≠ "nunca mais"). Esquecer é gesto de cadastro (Admin) |
+| `marketing_prompt_answered_at` | `string` (ISO 8601 com fuso) | `shop/services/account.answer_marketing_prompt` (via `POST /api/v1/account/marketing-prompt/`, o sheet de novidades da loja) | `projections/customer_context.marketing_prompt_pending` → `welcome_asks_marketing` no payload de sessão (`/api/v1/auth/session/`) e `omotenashi.marketing_prompt_pending` na home | A pergunta "avisos pelo WhatsApp?" foi feita e respondida UMA vez, num bottom sheet na página em que a pessoa cai depois de entrar (não é passo do login). Carimbo só; a resposta "sim" (ligar a chave) vira `CommunicationConsent` whatsapp `opted_in` (só nesse canal). Fechar o sheet sem ligar grava SÓ o carimbo — **nunca** `opted_out`, porque opt-out gravado cala até o recado do próprio pedido naquele canal (`services/notification.py`). Uma linha de consentimento whatsapp (qualquer status) também conta como "respondido". Idempotente: o primeiro carimbo fica |
+| `adult_declaration` | `dict` | `shop/services/account.record_adult_declaration` (toda autenticação bem-sucedida do storefront — `verify-code`, `device-check`, `auth/access`, `passkey/login` — via `storefront/api/auth._declare_adult`) | `shop/services/marketing_age.declares_adult`/`is_proved_adult` → resolvedor de audiência, materialização do snapshot, claim do worker e boundary do provider do Marketing (`age_not_declared`/`recipient_age_not_verified` quando falta) | `{at: ISO 8601 com fuso, terms_version: "login-terms-pt-BR-v1", source: "storefront_login", ip_address?: string}` — `ip_address` vem de `auth.client_ip`; carimbo feito pela loja antes de o `SHOPMAN_BFF_PROXY_SECRET` estar no ambiente guarda o IP de SAÍDA do BFF (no alpha, `147.182.186.185`), não o do cliente, e não é reescrito — a pessoa leu "Ao continuar, você confirma que é maior de idade e aceita os Termos de uso." e entrou. É a prova de maioridade para marketing direto (a loja NÃO pede data de nascimento); `Customer.birthday` que prova menor vence a declaração. Idempotente: a PRIMEIRA fica; já carimbado, o login não toca o banco. Só vale sob versão listada em `marketing_age.ADULT_DECLARING_TERMS_VERSIONS` — mudou a frase da entrada, sobe a versão nos dois lados |
 
 ---
 
@@ -1305,7 +1357,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
 | `committed_order_refs` | `list[string]` | `shop.handlers.production_order_sync` | Backstage produção/pedidos projections | Pedidos que comprometem quantidade do SKU produzido por esta WorkOrder. Espelho operacional de `Order.data.awaiting_wo_refs`; a métrica de produção é a soma de itens, não a contagem de pedidos. |
-| `steps_progress` | `int` | Backstage produção (futuro botão manual) | `build_production_kds` | Override manual do passo atual no KDS de produção, 1-based. |
+| `steps_progress` | `int` | Ninguém no backstage (o escritor `CraftExecution.advance_step` segue no Core, sem chamador de superfície desde a decisão de 16/09/2026: a aba Produção tem uma ação só, Continuar) | Ninguém | Ponteiro manual de passo, 1-based. Legado em ordens antigas; não é lido por projection. |
 | ~~`quality`~~ | — | **REMOVIDA (ADR-017, 2026-08-13)** | — | A qualidade da fornada não é mais armazenada: é DERIVADA das linhas de OUTPUT (`WorkOrderItem.quality_grade_ref`, colunas reais, não meta). Consumidores usam `shop.services.quality.derived_quality/output_partition`. Hierarquia = `QualityGrade.rank` (catálogo). A migração `shop/0014` traduziu os dados antigos (pt→en). |
 | ~~`batch_ref`/`batch_quantity`/`expiry_date`~~ | — | **REMOVIDAS (ADR-017 §5, 2026-08-13)** | — | O lote sai da LINHA de OUTPUT (`WorkOrderItem.batch_ref`), um `Batch` por linha — a fórmula no meta só admitia um lote por ordem. Validade vive em `Batch.expiry_date`; grupo com desconto congela `Batch.nonconformity_percent`/`_reason`. |
 | `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`). Só quando `source_ref="formula:suggestion"`. |
@@ -1462,10 +1514,10 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 |-------|------|-------------|----------|-----------|
 | `default_fulfillment_type` | `str` | Admin | projection POS | `pickup` (default) ou `delivery`. Qualquer outro valor cai em `pickup`. |
 | `favorite_collection_refs` | `list[str]` | Admin | projection POS | Até 9 coleções fixadas na tela de venda. Aceita o alias legado `favorite_collections`. |
-| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade até o cadeado do operador. Default 60. |
+| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO DISPOSITIVO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
-| `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este dispositivo. Ver abaixo. |
+| `station` | `dict` | Admin | `backstage/station_trust.py`, `services/print_jobs.py` | Que ESPÉCIE de estação é este dispositivo, em nome de quem ela age, e para onde vão as etiquetas que ela pede. Ver abaixo. |
 
 ⚠️ **Nada disto é dado de seed, e o `seed --flush` não custa nenhum.** O flush precisa apagar
 `Terminal` (o turno pendura ali por FK), então ele fotografa a config por `ref` e
@@ -1483,9 +1535,9 @@ dele, pelo gate de permissão do backstage. Ausente = **atendida**.
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. |
-| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. |
-| `print_target_ref` | `str` | Terminal físico que recebe as etiquetas pedidas nesta estação. Ausente: o servidor usa a própria estação quando ela tem a capacidade ou deduz o único destino de preparação disponível. O tablet nunca recebe endereço ou segredo do agente. |
+| `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. **Escrito no Admin do terminal**, seção "Identificação desta estação". |
+| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. **Escrito no Admin**, numa lista fechada com as contas que `station_trust.eligible_station_operators()` aceita (ativa, `is_staff`, **nunca** superusuária) — a mesma pergunta que o gate faz, nunca texto livre. Conta que saiu do ar continua aparecendo marcada e barra o salvamento até o gestor repontar. Voltar o modo para `attended` APAGA a chave: conta com poder permanente esquecida num dispositivo físico é arma carregada. |
+| `print_target_ref` | `str` | Terminal físico que recebe as etiquetas pedidas nesta estação. Ausente: o servidor usa a própria estação quando ela tem a capacidade ou deduz o único destino de preparação disponível. O tablet nunca recebe endereço ou segredo do agente. **Escrito no Admin do terminal** (seção "Destino das etiquetas desta estação"), numa lista fechada com os terminais que `print_jobs.preparation_destinations()` aceita — nunca texto livre, porque ref inventada viraria recusa só na hora de imprimir. Destino que saiu do ar continua aparecendo marcado e barra o salvamento até o gestor repontar. |
 
 **Atendida** é o balcão: tem gente na frente, e não faz nada sem PIN ou crachá.
 **Autônoma** é o totem: não há quem digite PIN, então ele age em nome próprio, com uma conta
@@ -1498,6 +1550,26 @@ E conta **superusuária é recusada com log de erro**: `is_superuser` curto-circ
 então um totem assim ignoraria qualquer conjunto mínimo — que é literalmente o buraco que a
 D1 Parte B fechou, só que com um dispositivo no lugar do `admin`.
 
+⛔ **A estação autônoma só age na superfície de PRODUÇÃO**, e isso é controle de segurança,
+não escopo de produto. O cookie de confiança é nomeado por terminal, mas o domínio dele é
+`.boulangerie.com.br` inteiro (`SHOPMAN_OPERATOR_COOKIE_DOMAIN`): o mesmo painel de parede,
+aberto em `pdv.boulangerie.com.br`, leva a confiança junto. Sem o corte, a conta do painel
+viraria operador no balcão — a forma exata do buraco de 20/08. O discriminador é o **prefixo
+de rota** (`station_trust.PRODUCTION_API_PREFIX`, `/api/v1/backstage/production/`): a mesma
+string que o roteador do Django usou para escolher a view, e a única que o cliente não pode
+afirmar sobre si (Host, Referer e cabeçalho de BFF são todos do cliente). Superfície não
+reconhecida = atendida = pede PIN.
+
+Por isso a antessala do painel mora em `production/session/` (`api-backstage-production-session`),
+e não na compartilhada `operator/session/`: se a compartilhada resolvesse a conta do painel, o
+PDV com o mesmo cookie leria "destravado" com o nome dele e a pessoa perderia a tela de PIN.
+O app do Produção aponta para lá por `runtimeConfig.public.operatorSessionPath`.
+
+⚠️ **Não existe campo genérico de superfície, e não é esquecimento.** Cada superfície a mais é
+uma conta com poder permanente num dispositivo físico: estender pede revisão de segurança própria,
+com o dono, não uma constante a mais. KDS tem gente na frente (a decisão de 17/09 é trava por
+ociosidade + sessão deslizante, o caminho *atendido*); o PDV mexe em dinheiro.
+
 ### hardware — periféricos declarados
 
 Um dict por periférico: `printer`, `cash_drawer`, `scanner`, `payment_terminal`, `customer_display`.
@@ -1509,8 +1581,8 @@ alerta que ninguém lê.
 | Chave | Tipo | Aplica a | Descrição |
 |-------|------|----------|-----------|
 | `enabled` | `bool` | todos | `false` → `absent` ("desligado"). Ausente = ligado. |
-| `adapter` | `str` | todos | Nome do adapter. Presente → `ready`; declarado sem adapter → `warning`. |
-| `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde. |
+| `adapter` | `str` | `scanner`, `payment_terminal`, `customer_display` | Nome do adapter. Presente → `ready`; declarado sem adapter → `warning`. ⚠️ **A `cash_drawer` tem vocabulário fechado próprio** (`manual`/`agent`, em `pos_hardware.CASH_DRAWER_ADAPTERS`) e responde pelo `_cash_drawer_health`. A `printer` **não usa mais esta chave**: era texto livre, ninguém a lia para decidir nada, e quem responde por ela é o `device_agent` (ver abaixo). Valor antigo no JSON sobrevive e é ignorado. |
+| `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde, ninguém lê, e nem o Admin nem o `seed` escrevem — só sobrevive onde já existia. |
 | `roll_width_mm` | `int` | `printer` | Largura do rolo em mm (40–120). É o que a loja sabe: o papel que ela compra. Vira `--pos-roll-width` no print CSS do PDV via projection. Ausente → o default do CSS (80mm) manda. |
 | `print_width_mm` | `int` | `printer` | Largura que o cabeçote alcança, em mm. **Só é necessária para rolo fora dos dois padrões** (80mm→72mm, 58mm→48mm), porque a área imprimível não é proporcional à largura do papel e chutar imprime fora do alcance. |
 | `columns` | `int` | `printer` | Colunas ESC/POS aferidas para o recibo do PDV. O perfil de etiqueta deriva suas próprias colunas da área útil; não reutiliza este número. |
@@ -1530,6 +1602,14 @@ segunda configuração divergente no Admin.
 de etiqueta fora da faixa, ou área útil maior que a mídia, vira indisponibilidade
 com o motivo. Config ignorada em silêncio é pior que config ausente: a loja
 acha que configurou.
+
+⚠️ **A saúde da `printer` sai do `device_agent`, não de um rótulo.** Declarada e
+ligada, com geometria válida, ela ainda depende da ponte local do dispositivo
+para existir: `warning` enquanto o agente não estiver declarado, ligado e com
+token; `ready` quando estiver
+(`shopman/backstage/services/pos_terminal.py::_printer_health`). Era um texto
+livre em `adapter` que acendia o verde, e ele ficava verde num balcão em que o
+PDV recusava imprimir.
 
 A margem é derivada, nunca declarada: `ceil((roll_width_mm - print_width_mm) / 2)`. Um rolo de 80mm
 dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segundo botão para alguém errar.
@@ -1551,6 +1631,13 @@ não entra por acidente. O processo continua escutando apenas na loopback e
 exigindo token. Configurações antigas que ainda
 guardam URL/token em `hardware.cash_drawer` são lidas como compatibilidade e
 migram ao próximo salvamento no Admin.
+
+**Impressora e gaveta são capacidades INDEPENDENTES, e a projeção do PDV as
+entrega separadas.** `POSProjection.device_agent` (`{can_print, reason,
+agent_url, token}`) responde pela bobina; `POSProjection.cash_drawer`
+(`{can_kick, …}`) responde pela gaveta. Pendurar impressão no `can_kick` deixa
+mudo o balcão que tem impressora e abre a gaveta com a chave — combinação que o
+próprio Admin produz.
 
 ---
 
@@ -1788,6 +1875,14 @@ achado a linha**, e por isso não vira coluna.
 no banco a resposta de ontem para uma pergunta que o gerente pode mudar hoje. O
 que se filtra — método, estação, resultado — é fato, não julgamento.
 
+A coluna `ip_address` vem de `shop/services/auth.client_ip` (rightmost
+`DOORMAN_TRUSTED_PROXY_DEPTH`, um salto a mais quando o BFF apresenta o
+`SHOPMAN_BFF_PROXY_SECRET`); valor que não é IP grava `NULL`. **Linhas antigas não
+são reescritas:** até 17/09/2026 a trilha lia a ponta ESQUERDA do X-Forwarded-For,
+escrita por quem chama (forjável), e depois disso, enquanto o segredo não estiver
+nos componentes de operador, acesso feito pelos apps Nuxt grava o IP de saída do
+Nitro.
+
 Chaves ausentes quando vazias — a ausência diz "não havia", e uma chave com `""`
 fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).
 
@@ -1929,6 +2024,13 @@ exact `receipt_only` choice (`owner_ref: ""`) or an explicit legacy save opt-in.
 A missing request ID never bypasses this decision. Hidden email remains ignored.
 
 `POST /api/v1/backstage/pos/customer/resolve/` accepts optional
+`fiscal_prefs: {cpf_na_nota?: bool, email_receipt?: bool}` — the customer's
+DEFAULTS toggled in the POS customer modal before the record exists; they are
+written to `Customer.metadata.fiscal_prefs` by the same writer as the profile
+endpoint (`_merge_fiscal_prefs`, partial, after the passive `_remember_fiscal_prefs`).
+A non-object value is refused with 400 `{detail, field: "fiscal_prefs"}`.
+
+It also accepts optional
 `receipt_identity_action`: `{action: "create" | "save", client_request_id,
 customer_ref, target_ref, fields: [{field: "tax_id" | "email", value, owner_ref}],
 tax_id_overwrite_confirmed?: boolean, tax_id_before?: string}`.

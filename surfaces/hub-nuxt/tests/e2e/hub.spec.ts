@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-// Launcher autenticado (mock devolve tiles): a Central renderiza a grade de apps.
-test.describe("Central — launcher", () => {
+// Launcher autenticado (mock devolve tiles): o Shopman Apps renderiza a grade de apps.
+test.describe("Shopman Apps — launcher", () => {
   test("renderiza a saudação e os tiles das superfícies liberadas", async ({ page }) => {
     await page.goto("/");
 

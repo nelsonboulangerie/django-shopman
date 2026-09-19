@@ -19,6 +19,10 @@ beforeEach(() => {
     onMounted,
     ref,
     refreshNuxtData,
+    // O gate herda a identidade do app (ícone e PNG) do `runtimeConfig`, como o rail.
+    // Este harness monta o SFC sem o runtime Nuxt, então injeta o composable; sem
+    // identidade o componente cai no cadeado genérico, que é o caso testado aqui.
+    useRuntimeConfig: () => ({ public: {} }),
     useOperatorSession: () => ({ reset }),
   });
 });

@@ -8,7 +8,7 @@
 // O menuboard paralelo foi aposentado: a TV canônica pertence ao Django, por ref e
 // credencial. D4 definirá refs/cutover; este app não adivinha um destino.
 const OPERATOR_PERM = "backstage.operate_production";
-const { canIdentify, locked, mustChange, operator, lock } =
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 const { allowed: reportsAllowed } = useReportsAccess();
 const { canView: recipesAllowed } = useRecipeBookAccess();
@@ -18,7 +18,7 @@ const isKiosk = computed(() => route.path.startsWith("/board"));
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Produção" });
+useOperatorWindowTitle();
 
 async function goToHome() {
   await navigateTo("/");
@@ -51,9 +51,7 @@ async function goToRecipes() {
         class="sticky top-0 flex h-screen shrink-0 print:hidden"
       >
         <OperatorRail
-          app-icon="croissant"
-          app-label="Produção"
-          :central-url="hubUrl"
+          :hub-url="hubUrl"
           :operator-name="operator?.name"
           @lock="lock"
         >
@@ -96,7 +94,10 @@ async function goToRecipes() {
         <NuxtPage />
       </div>
     </div>
-    <OperatorLogin v-if="!canIdentify" />
+    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+         alpha subia a tela de senha com a sessão viva. -->
+    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="a produção" @retry="refresh()" />
+    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />

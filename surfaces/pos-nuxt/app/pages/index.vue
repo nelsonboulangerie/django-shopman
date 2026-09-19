@@ -4,21 +4,20 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
-import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
+import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
 // (app.vue); a sessão de caixa (abrir/fechar/movimentos) vive na antesala
 // (`/session`) — sem turno aberto, esta página manda o operador pra lá.
-useHead({ title: "PDV" });
 
 // Mantém a divisória do carrinho alinhada ao contexto, inclusive quando as pills quebram linha.
 const contextHeader = ref<HTMLElement | null>(null);
 const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined, { box: "border-box" });
 
-const apiPath = usePosApiPath();
+const apiPath = useApiPath();
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
 // The Django admin (login) lives on its own operator host (api.<zona>), a different
@@ -49,9 +48,18 @@ async function goToCashSession() {
   await navigateTo("/session");
 }
 
-// Filipetas do pedido remoto: o lote da semana para o painel físico da padaria.
+// Fichas de pedido: o lote da semana para o painel físico da padaria.
 async function goToOrderTickets() {
   await navigateTo("/tickets");
+}
+
+// Tela do cliente: segunda janela desta máquina, para arrastar ao monitor virado ao
+// cliente. A abertura (e a sonda de versão que vai junto) mora no composable.
+const customerDisplayWindow = useCustomerDisplayWindow();
+function openCustomerDisplay() {
+  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
+    description: "Permita pop-ups para este site e tente novamente.",
+  });
 }
 
 // Write-side of the open sale: cart draft + every session command.
@@ -115,6 +123,8 @@ const {
   deliveryDistanceKm,
   deliverySlots,
   deliverySlotsPending,
+  canonicalDeliverySlots,
+  deliveryWindowLabel,
   deliveryDateEffective,
   scheduleToday,
   scheduleAvailableDates,
@@ -166,6 +176,8 @@ const {
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
+  pendingCustomerPrefs,
+  applyCustomerPreference,
   searchCustomers,
   selectCustomerResult,
   clearCustomer,
@@ -176,6 +188,7 @@ const {
   reviewFailed,
   submitSale,
   dismissResult,
+  markFiscalState,
   resendingLink,
   sendPaymentNotice,
   onExternalSaleCancelled,
@@ -236,6 +249,26 @@ onBeforeUnmount(() => {
   paymentHold.value = false;
 });
 
+// RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que
+// travar a tela: o auto-lock só adia por pagamento em curso, mas um reload apaga
+// qualquer rascunho. O PDV declara aqui, pelo nome, tudo que ele tem na mão — e o
+// `usePwaAutoUpdate` do kit não aplica nada enquanto uma dessas razões estiver de
+// pé. Balcão vazio (carrinho limpo, sem comanda, sem resultado na tela) é o único
+// momento em que a troca é invisível para quem opera.
+const { hold: holdReload } = useOperatorReloadHold();
+watchEffect(() => {
+  holdReload("sale_open", cart.items.length > 0 || unsaved.value);
+  holdReload("tab_open", Boolean(cart.tabRef));
+  holdReload("payment_open", checkoutMode.value || pixStatus.value === "polling");
+  holdReload("sale_result", Boolean(result.value));
+  holdReload("writing", busy.value || saving.value || firing.value || cancellingSale.value);
+});
+onBeforeUnmount(() => {
+  for (const reason of ["sale_open", "tab_open", "payment_open", "sale_result", "writing"]) {
+    holdReload(reason, false);
+  }
+});
+
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
 // Projection's Actions (label + enabled), never invented in the screen.
 const fireAction = computed(() => resolveAffordance(actions.value, "fire_tab"));
@@ -246,8 +279,13 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 const screenTitle = computed(() => {
   // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
   // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
-  // abaixo — e é a barra que fica na periferia da visão do operador.
-  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : result.value.salesMode === "order" ? "Encomenda registrada" : "Venda concluída";
+  // abaixo — e é a barra que fica na periferia da visão do operador. Mesma
+  // razão para o Pix pendente: o dinheiro ainda não entrou.
+  if (result.value) {
+    if (paymentFailed(result.value.payment)) return "Cobrança não criada";
+    if (result.value.salesMode === "order") return "Encomenda registrada";
+    return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
+  }
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -278,7 +316,7 @@ async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos" | "da
 // fallback silencioso fazia o operador achar que a bobina imprimiu.
 async function printReceipt() {
   if (!import.meta.client || !result.value) return;
-  if (agent.canKick.value) {
+  if (agent.canPrint.value) {
     printingReceipt.value = true;
     try {
       const receipt = await fetchPrintable(result.value.orderRef, "receipt-escpos");
@@ -326,6 +364,9 @@ async function autoPrintDanfe(orderRef: string, tries = 0) {
   // estiver. Só paramos se a página inteira sair.
   try {
     const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    // O 409 virou 200: a nota EXISTE. A tela de resultado promove "NFC-e na
+    // fila…" para "Imprimir DANFE" — por existência, não por previsão.
+    markFiscalState(orderRef, "authorized");
     const outcome = await agent.print(danfe.payload_b64, danfe.title);
     if (outcome.status === "printed") {
       toast.success("DANFE impressa.");
@@ -345,11 +386,24 @@ async function autoPrintDanfe(orderRef: string, tries = 0) {
 // A venda fechou pedindo papel: começa a esperar a nota. Sem nota esperada
 // (dinheiro sem CPF, por exemplo) não há o que imprimir — e prometer papel ali
 // seria mentir duas vezes.
-watch(result, (snapshot) => {
-  stopAutoPrint();
-  if (!snapshot?.wantsPrintedInvoice || !snapshot.fiscalExpected) return;
-  autoPrintDanfe(snapshot.orderRef);
-});
+//
+// A espera começa quando a nota está NA FILA. Aguardando o Pix (`awaiting_
+// payment`) ela nem foi pedida — insistir no 409 durante toda a espera do Pix
+// esgotava as 30 tentativas e desistia com "a nota demorou", mentindo. Quando
+// o polling do Pix confirma, o estado vira `queued` e a espera começa aqui.
+// A promoção para `authorized` (o próprio auto-print) NÃO reinicia a espera.
+watch(
+  () => [result.value?.orderRef, result.value?.fiscalState] as const,
+  ([orderRef, fiscalState], previous) => {
+    const [previousRef, previousState] = previous ?? [undefined, undefined];
+    if (orderRef !== previousRef) stopAutoPrint();
+    if (!orderRef || !result.value?.wantsPrintedInvoice) return;
+    if (fiscalState !== "queued") return;
+    if (orderRef === previousRef && previousState === "queued") return;
+    stopAutoPrint();
+    autoPrintDanfe(orderRef);
+  },
+);
 onBeforeUnmount(stopAutoPrint);
 
 async function printDanfe() {
@@ -358,6 +412,7 @@ async function printDanfe() {
   printingDanfe.value = true;
   try {
     const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    markFiscalState(orderRef, "authorized");
     const outcome = await agent.print(danfe.payload_b64, danfe.title);
     if (outcome.status === "printed") {
       toast.success("DANFE na impressora.");
@@ -482,7 +537,7 @@ function openScheduleHere() {
 // parecer que falta preencher alguma coisa.
 const scheduleChipLabel = computed(() => scheduleLabel(
   cart.deliveryDate,
-  windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
+  deliveryWindowLabel.value,
   scheduleToday.value,
 ));
 const scheduleChipActive = computed(() => Boolean(cart.deliveryDate || cart.deliveryTimeSlot));
@@ -584,7 +639,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
     }
     if (
       event.key === "Enter" && !isEditing
-      && enterAdvances({ changeQ: result.value.changeQ, payment: result.value.payment, pixStatus: pixStatus.value })
+      && enterAdvances({ changeQ: result.value.changeQ, payment: result.value.payment, pixStatus: pixStatus.value, salesMode: result.value.salesMode })
     ) {
       event.preventDefault();
       startNextSale();
@@ -796,6 +851,7 @@ onBeforeUnmount(() => {
       @board="goToTabs"
       @cash="goToCashSession"
       @tickets="goToOrderTickets"
+      @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
     />
@@ -848,6 +904,7 @@ onBeforeUnmount(() => {
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :new-customer-prefs="pendingCustomerPrefs"
           :customer-decision="customerDecision"
           :customer-merge-busy="customerMergeBusy"
           :customer-release-busy="customerReleaseBusy"
@@ -856,6 +913,7 @@ onBeforeUnmount(() => {
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :scheduled="scheduleChipActive"
+          :has-fired-items="cart.items.some((item) => item.fired)"
           :customer-required="customerRequiredForSchedule"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
@@ -875,6 +933,7 @@ onBeforeUnmount(() => {
           @search="searchCustomers"
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
+          @apply-preference="applyCustomerPreference"
           @repeat-customer-last-order="repeatCustomerLastOrder"
           @open-fulfillment="openFulfillmentHere"
           @open-schedule="openScheduleHere"
@@ -936,10 +995,6 @@ onBeforeUnmount(() => {
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
       <div v-if="result" class="h-full md:overflow-y-auto">
-        <div v-if="result.salesMode === 'order'" class="mx-auto mb-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-          <div><h2 class="font-semibold">Filipeta do pedido</h2><p class="text-sm text-muted-foreground">Imprima a filipeta para acompanhar o preparo e o recebimento, inclusive com pagamento pendente.</p></div>
-          <UiButton :disabled="Boolean(printingOrderRef)" @click="printOrderTicket(result.orderRef)"><Icon name="lucide:printer" class="mr-2 size-4" />{{ printingOrderRef ? 'Imprimindo…' : 'Imprimir filipeta' }}</UiButton>
-        </div>
         <PosSaleResult
           :result="result"
           :pix-status="pixStatus"
@@ -948,7 +1003,9 @@ onBeforeUnmount(() => {
           :printing-receipt="printingReceipt"
           :printing-danfe="printingDanfe"
           :resending-link="resendingLink"
+          :printing-ticket="Boolean(printingOrderRef)"
           @new-sale="startNextSale"
+          @print-ticket="printOrderTicket(result.orderRef)"
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
@@ -989,6 +1046,7 @@ onBeforeUnmount(() => {
         :delivery-fee-source="deliveryFeeSource"
         :delivery-distance-km="deliveryDistanceKm"
         :delivery-slots="deliverySlots"
+        :canonical-delivery-slots="canonicalDeliverySlots"
         :delivery-slots-pending="deliverySlotsPending"
         :delivery-date-effective="deliveryDateEffective"
         v-model:change-for-input="cart.changeForInput"
@@ -1023,6 +1081,7 @@ onBeforeUnmount(() => {
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
         :customer-resolved-new="customerResolvedNew"
+        :new-customer-prefs="pendingCustomerPrefs"
         :customer-decision="customerDecision"
         :customer-merge-busy="customerMergeBusy"
         :customer-release-busy="customerReleaseBusy"
@@ -1062,6 +1121,7 @@ onBeforeUnmount(() => {
         @select-result="selectCustomerResult"
         @clear-customer="clearCustomer"
         @apply-customer-favorite="applyCustomerFavorite"
+        @apply-preference="applyCustomerPreference"
         @repeat-customer-last-order="repeatCustomerLastOrder"
         @pick-saved-address="applySavedAddress"
       />
@@ -1235,8 +1295,8 @@ onBeforeUnmount(() => {
           <UiDialogTitle>Você conferiu pedido e pagamento?</UiDialogTitle>
           <UiDialogDescription>Verifique primeiro em Últimas vendas ou no Gestor. Liberar sem conferir pode repetir uma cobrança cujo resultado não chegou a esta tela.</UiDialogDescription>
         </UiDialogHeader>
-        <label class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm">
-          <UiSwitch v-model="uncertainCloseReviewed" class="mt-0.5" />
+        <label class="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm">
+          <UiSwitch v-model="uncertainCloseReviewed" />
           <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
         </label>
         <UiDialogFooter class="gap-2">

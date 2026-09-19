@@ -32,7 +32,9 @@ export function makeProjection(overrides: Partial<POSProjection> = {}): POSProje
         payment_method_refs: ["cash", "pix", "card"],
       },
     ],
-    checkout: { intent_version: 1, capabilities: {} } as POSProjection["checkout"],
+    // A loja do harness OFERECE o bloco de nota (como a Nelson): os testes de
+    // padrões do cliente dependem dele. O caso desligado é provado à parte.
+    checkout: { intent_version: 1, capabilities: { supports_fiscal_document: true } } as POSProjection["checkout"],
     actions: [],
     has_open_cash_session: true,
     cash_runtime: {} as POSProjection["cash_runtime"],

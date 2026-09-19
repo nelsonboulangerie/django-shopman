@@ -9,7 +9,7 @@ class CraftsmanStockmanConfig(AppConfig):
 
     name = "shopman.craftsman.contrib.stockman"
     label = "craftsman_stockman"
-    verbose_name = _("Integração Stockman")
+    verbose_name = _("Integração com o estoque")
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):

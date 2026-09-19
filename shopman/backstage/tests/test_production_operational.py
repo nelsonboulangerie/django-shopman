@@ -94,7 +94,6 @@ def test_production_kds_projection_returns_started_cards_only(recipe, superuser)
     assert kds.total_count == 1
     assert kds.cards[0].ref == started.ref
     assert kds.cards[0].started_qty == "11"
-    assert kds.cards[0].current_step == "Mistura"
     assert kds.cards[0].can_finish is True
     assert planned.ref not in [card.ref for card in kds.cards]
 

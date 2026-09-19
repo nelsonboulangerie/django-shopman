@@ -16,6 +16,7 @@ import {
   kitchenLineState,
 } from "~/presentation/kitchen";
 import {
+  countUnits,
   pruneSelection,
   selectionView,
   toggleSelected,
@@ -74,6 +75,10 @@ const emit = defineEmits<{
 // acts on all chosen.
 const selected = ref<Set<string>>(new Set());
 const selection = computed(() => selectionView(props.items, selected.value));
+// O cabeçalho da comanda conta ITENS, não linhas — a mesma grandeza da cozinha,
+// do resumo do pagamento, do quadro de comandas e da tela virada para o
+// cliente. Era o último lugar do app que ainda falava linha, e o mais lido.
+const cartUnits = computed(() => countUnits(props.items));
 const selectMode = computed(() => selection.value.count > 0);
 function isSelected(lineId: string) {
   return selected.value.has(lineId);
@@ -133,7 +138,7 @@ function batchRemove() {
   const hasFired = lineIds.some(
     (lineId) => props.items.find((item) => item.line_id === lineId)?.fired,
   );
-  confirmAction.value = { kind: "batch", lineIds, hasFired };
+  confirmAction.value = { kind: "batch", lineIds, units: selection.value.units, hasFired };
 }
 
 // Kitchen handoff (spec §2.5): the fire bar and per-line state are shaped from
@@ -326,16 +331,17 @@ function saveNote() {
 // pedido do cliente custa a venda.
 const confirmAction = ref<
   | { kind: "line"; lineId: string; name: string; fired: boolean }
-  | { kind: "batch"; lineIds: string[]; hasFired: boolean }
+  | { kind: "batch"; lineIds: string[]; units: number; hasFired: boolean }
   | null
 >(null);
 const confirmTitle = computed(() => {
   const action = confirmAction.value;
   if (!action) return "";
   if (action.kind === "batch") {
-    return action.lineIds.length === 1
+    // ITENS, não linhas: o que sai do pedido são os três croissants, não "1".
+    return action.units === 1
       ? "Remover o item selecionado?"
-      : `Remover ${action.lineIds.length} itens selecionados?`;
+      : `Remover ${action.units} itens selecionados?`;
   }
   // Item já na cozinha é outra conversa: sair da tela não o tira do fogão.
   return action.fired
@@ -343,8 +349,7 @@ const confirmTitle = computed(() => {
     : `Remover ${action.name}?`;
 });
 const confirmCta = computed(() =>
-  confirmAction.value?.kind === "batch" &&
-  confirmAction.value.lineIds.length > 1
+  confirmAction.value?.kind === "batch" && confirmAction.value.units > 1
     ? "Remover itens"
     : "Remover item",
 );
@@ -727,7 +732,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       class="flex min-h-[var(--pos-context-header-height,53px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
     >
       <div class="flex items-center gap-2">
-        <h3 class="whitespace-nowrap text-base font-semibold">{{ items.length }} {{ items.length === 1 ? "item" : "itens" }}</h3>
+        <h3 class="whitespace-nowrap text-base font-semibold">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
       </div>
       <!-- Pílula proposital: ação contextual, como Retirada e Para hoje. -->
       <button
@@ -977,9 +982,9 @@ defineExpose({ focusItem, onDigit, onBackspace });
     <div v-if="selectMode" class="shrink-0 border-t bg-primary/5 p-3">
       <div class="mb-2 flex items-center justify-between">
         <span class="text-sm font-semibold"
-          >{{ selection.count }}
+          >{{ selection.units }}
           {{
-            selection.count === 1 ? "item selecionado" : "itens selecionados"
+            selection.units === 1 ? "item selecionado" : "itens selecionados"
           }}</span
         ><button
           class="min-h-9 px-2 text-xs text-muted-foreground"
@@ -1082,7 +1087,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         <p class="mb-1 text-xs text-muted-foreground">
           {{
             selectMode
-              ? `Desconto em ${selection.count} itens`
+              ? `Desconto em ${selection.units} itens`
               : numpadMode === "disc_brl"
                 ? "Desconto por unidade"
                 : "Desconto percentual"

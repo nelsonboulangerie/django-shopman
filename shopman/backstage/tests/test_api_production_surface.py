@@ -2,7 +2,7 @@
 
 Covers the REST surface that the dedicated production-nuxt app
 (``prod.``) consumes: the floor + planning board reads, every write action
-(plan/start/finish/advance-step/quick-finish/void), effective capabilities,
+(plan/start/finish/quick-finish/void), effective capabilities,
 and the structured shortage envelopes that drive the material/order shortage
 modals.
 
@@ -145,7 +145,6 @@ def test_every_mutation_endpoint_enforces_the_floor_gate(client, recipe):
         reverse("api-backstage-wo-plan"),
         reverse("api-backstage-wo-start", args=[wo.pk]),
         reverse("api-backstage-wo-finish", args=[wo.pk]),
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
         reverse("api-backstage-wo-quick-finish"),
         reverse("api-backstage-wo-void", args=[wo.pk]),
     ]
@@ -784,10 +783,6 @@ def test_non_shortage_mutations_reject_override_proof_as_an_unknown_field(
             {"quantity": "10", "expected_rev": planned.rev},
         ),
         (
-            reverse("api-backstage-wo-advance", args=[started.pk]),
-            {"expected_rev": started.rev},
-        ),
-        (
             reverse("api-backstage-wo-void", args=[planned.pk]),
             {"reason": "teste", "expected_rev": planned.rev},
         ),
@@ -1141,8 +1136,9 @@ def test_projection_proof_is_bound_to_user_surface_and_date(
 
     client.force_login(production_operator)
     wrong_surface = client.post(
-        reverse("api-backstage-wo-advance", args=[work_order.pk]),
+        reverse("api-backstage-wo-oven-arm", args=[work_order.pk]),
         data={
+            "planned_seconds": 600,
             "expected_rev": work_order.rev,
             "idempotency_key": "cross-surface-proof",
             **metadata,
@@ -1221,20 +1217,6 @@ def test_authentic_kds_to_qc_projection_actions_complete_exactly_once(
     )
     client.force_login(production_operator)
 
-    kds = client.get(reverse("api-backstage-production-kds")).json()["kds"]
-    advance = next(action for action in kds["actions"] if action["ref"] == f"advance_step:{work_order.pk}")
-    advanced = client.post(
-        advance["href"],
-        _projected_body(
-            kds,
-            advance,
-            expected_rev=advance["expected_rev"],
-            idempotency_key="authentic-advance",
-        ),
-        content_type="application/json",
-    )
-    assert advanced.status_code == 200
-
     qc = client.get(reverse("api-backstage-production-qc")).json()["qc"]
     arm = next(action for action in qc["actions"] if action["ref"] == f"oven_arm:{work_order.pk}")
     armed = client.post(
@@ -1283,7 +1265,6 @@ def test_authentic_kds_to_qc_projection_actions_complete_exactly_once(
     work_order.refresh_from_db()
     assert work_order.status == WorkOrder.Status.FINISHED
     for kind in (
-        WorkOrderEvent.Kind.STEP_ADVANCED,
         WorkOrderEvent.Kind.OVEN_ARMED,
         WorkOrderEvent.Kind.OVEN_CONCLUDED,
         WorkOrderEvent.Kind.FINISHED,
@@ -1759,21 +1740,22 @@ def test_domain_validation_error_uses_the_closed_error_envelope(
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     client.force_login(production_operator)
 
-    def invalid_step(**kwargs):
+    def invalid_start(**kwargs):
         from shopman.backstage.services.exceptions import ProductionError
 
-        raise ProductionError("Receita sem passos configurados.")
+        raise ProductionError("Quantidade iniciada inválida.")
 
     monkeypatch.setattr(
-        "shopman.backstage.api.operations.production_service.apply_advance_step",
-        invalid_step,
+        "shopman.backstage.api.operations.production_service.apply_start",
+        invalid_start,
     )
     response = production_mutation_post(
         client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
+        reverse("api-backstage-wo-start", args=[wo.pk]),
         data={
+            "quantity": "10",
             "expected_rev": wo.rev,
-            "idempotency_key": "invalid-step-contract",
+            "idempotency_key": "invalid-start-contract",
         },
         content_type="application/json",
     )
@@ -1785,7 +1767,7 @@ def test_domain_validation_error_uses_the_closed_error_envelope(
             {
                 "field": "non_field_errors",
                 "code": "invalid",
-                "message": "Receita sem passos configurados.",
+                "message": "Quantidade iniciada inválida.",
             }
         ],
     }
@@ -1828,95 +1810,6 @@ def test_start_retry_with_same_attempt_is_exactly_once(
         ).count()
         == 1
     )
-
-
-@pytest.mark.django_db
-def test_advance_step_increments_pointer(client, recipe, production_operator):
-    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
-    craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
-    client.force_login(production_operator)
-    response = production_mutation_post(
-        client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
-        data={"expected_rev": wo.rev, "idempotency_key": "advance-wo"},
-        content_type="application/json",
-    )
-    assert response.status_code == 200
-    assert response.json()["step_index"] == 1
-
-
-@pytest.mark.django_db
-def test_advance_step_retry_is_append_only_and_exactly_once(
-    client,
-    recipe,
-    production_operator,
-):
-    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
-    craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
-    payload = {"expected_rev": wo.rev, "idempotency_key": "advance-retry"}
-    client.force_login(production_operator)
-
-    first = production_mutation_post(
-        client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
-        data=payload,
-        content_type="application/json",
-    )
-    second = production_mutation_post(
-        client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
-        data=payload,
-        content_type="application/json",
-    )
-
-    assert first.status_code == second.status_code == 200
-    assert first.json()["step_index"] == second.json()["step_index"] == 1
-    wo.refresh_from_db()
-    assert wo.rev == 2
-    events = WorkOrderEvent.objects.filter(
-        work_order=wo,
-        kind=WorkOrderEvent.Kind.STEP_ADVANCED,
-    )
-    assert events.count() == 1
-    assert events.get().payload["step_index"] == 1
-
-
-@pytest.mark.django_db
-def test_advance_step_replay_keeps_original_result_after_later_advance(
-    client,
-    recipe,
-    production_operator,
-):
-    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
-    craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
-    first_payload = {"expected_rev": wo.rev, "idempotency_key": "advance-a"}
-    client.force_login(production_operator)
-
-    first = production_mutation_post(
-        client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
-        data=first_payload,
-        content_type="application/json",
-    )
-    wo.refresh_from_db()
-    second = production_mutation_post(
-        client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
-        data={"expected_rev": wo.rev, "idempotency_key": "advance-b"},
-        content_type="application/json",
-    )
-    replay = production_mutation_post(
-        client,
-        reverse("api-backstage-wo-advance", args=[wo.pk]),
-        data=first_payload,
-        content_type="application/json",
-    )
-
-    assert first.json()["step_index"] == 1
-    assert second.json()["step_index"] == 2
-    assert replay.status_code == 200
-    assert replay.json()["step_index"] == 1
-    assert replay.json()["current"]["rev"] == second.json()["current"]["rev"]
 
 
 @pytest.mark.django_db
@@ -2160,10 +2053,6 @@ def test_missing_work_order_is_typed_not_found_for_every_action(
                 "expected_rev": 0,
                 "idempotency_key": "missing-finish",
             },
-        ),
-        (
-            "api-backstage-wo-advance",
-            {"expected_rev": 0, "idempotency_key": "missing-advance"},
         ),
         (
             "api-backstage-wo-void",

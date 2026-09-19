@@ -66,6 +66,11 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.management.commands.apply_search_presence import (
+    BRAND_PROFILES,
+    SEARCH_FIELDS,
+    apply_search_presence,
+)
 from shopman.backstage.models import (
     DayClosing,
     DayContext,
@@ -889,6 +894,7 @@ class Command(BaseCommand):
         self._seed_display_channels()
         self._assert_storefront_products_orderable()
         self._seed_kds()
+        self._seed_timer_tags()
 
         # ── Fase dinâmica: diverge por perfil ──────────────────────────────
         # Base estática acima é idêntica nos dois perfis. Só pedidos, produção
@@ -1255,8 +1261,11 @@ class Command(BaseCommand):
                 "postal_code": "86050-270",
                 "country": "Brasil",
                 "country_code": "BR",
-                "latitude": -23.3045,
-                "longitude": -51.1628,
+                # As coordenadas da ficha no Google Maps (o link "como chegar" da
+                # landing antiga). As de antes caíam 3,4 km ao norte, numa distribuidora
+                # do Centro: mapa, coleta do motoboy e frete por distância partiam de lá.
+                "latitude": -23.3348384,
+                "longitude": -51.1673157,
                 "phone": "554333231997",
                 "email": "nelson@boulangerie.com.br",
                 "default_ddd": "43",
@@ -1268,11 +1277,14 @@ class Command(BaseCommand):
                 # o perfil oficial da Nelson. Link errado é pior que link
                 # nenhum: com a lista vazia o rodapé não desenha a seção
                 # (`v-if="socialLinks.length"`) e o `sameAs` some.
-                # O dono acrescenta os perfis reais no Admin (Loja → Redes
-                # sociais), que é um ArrayWidget feito para isso.
+                # Os perfis reais (os que a landing antiga declarava) e os textos
+                # de busca vêm da MESMA fonte que leva a presença de busca a um
+                # banco já semeado, sem reseed: `apply_search_presence`.
                 "social_links": [
                     "https://wa.me/554333231997",
+                    *BRAND_PROFILES,
                 ],
+                **SEARCH_FIELDS,
                 "cancellation_presets": [
                     "Item indisponível no momento",
                     "Sem um dos ingredientes hoje",
@@ -1346,6 +1358,8 @@ class Command(BaseCommand):
             },
         )
         self.stdout.write("  ✅ Shop criado" if created else "  ✅ Shop atualizado")
+        apply_search_presence(Shop.objects.get(pk=1), overwrite=True)
+        self.stdout.write("  ✅ Perguntas frequentes iniciais")
 
     # ────────────────────────────────────────────────────────────────
     # Delivery Zones
@@ -1734,12 +1748,13 @@ class Command(BaseCommand):
         # servidos pela própria loja — deploy atômico com o app, nenhum serviço
         # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
         #
-        # Ponteiro de domínio NÃO mora no código (lição cobrada em 01/09: o host
-        # estava fixo em menu.*, o corte de domínios moveu menu.* para a loja, e
-        # toda foto de produto virou 404). O host é env com default na loja viva.
+        # Ponteiro de domínio NÃO mora no código, e a foto não mora no host de um
+        # site: quebrou em 01/09 (menu.* virou a loja) e em 17/09 (a loja virou
+        # www. e menu.* voltou ao cardápio antigo). O host `img.` só serve foto e
+        # não muda de papel; o ingress o reescreve para `/img/` do storefront.
         image_base = os.environ.get(
             "SHOPMAN_PRODUCT_IMAGE_BASE",
-            "https://menu.nelsonboulangerie.com.br/img/products",
+            "https://img.nelsonboulangerie.com.br/products",
         ).rstrip("/")
         IMG = image_base
         UNSPLASH = "https://images.unsplash.com"
@@ -7956,6 +7971,46 @@ class Command(BaseCommand):
     # KDS (Kitchen Display System)
     # ────────────────────────────────────────────────────────────────
 
+    def _seed_timer_tags(self) -> None:
+        """A fileira de disparo de um toque da página /timers do Produção.
+
+        ⚠️ As QUATRO durações abaixo são CHUTE plausível de padaria, não medição
+        desta casa: o Pablo nomeou as etiquetas, não os tempos. Ficam aqui para
+        a tela nascer útil em vez de vazia, e são editáveis no Admin
+        (Configuração → Produção e estoque → Etiquetas de timer) — o primeiro
+        turno que cronometrar a estufa de verdade corrige o número em 10s.
+
+        Referência do chute, para quem for corrigir:
+        · Estufa   — fermentação final de peça modelada a ~28 °C: 60–90 min.
+        · Descanso — repouso de bancada depois de dividir/pré-modelar: 15–30 min.
+        · Freezer  — firmar massa laminada entre voltas: 20–30 min.
+        · Pausa-café — não é processo, é gente; 15 min é convenção da casa.
+
+        Idempotente pelo ``ref``: reeditar o rótulo ou o tempo no Admin
+        sobrevive? Não — o seed é dono destes quatro refs e os reescreve. O que
+        o operador criou no fournil (``origin=operator``) nunca é tocado aqui.
+        """
+        from shopman.backstage.models import TimerTag, TimerTagOrigin
+
+        catalog = [
+            ("estufa", "Estufa", 60, 10),
+            ("descanso", "Descanso", 20, 20),
+            ("freezer", "Freezer", 20, 30),
+            ("pausa-cafe", "Pausa-café", 15, 40),
+        ]
+        for ref, label, minutes, position in catalog:
+            TimerTag.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label,
+                    "minutes": minutes,
+                    "position": position,
+                    "origin": TimerTagOrigin.ADMIN,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write("  ⏱️  Etiquetas de timer: 4 disparos de um toque")
+
     def _seed_kds(self):
         self.stdout.write("  🖥️  KDS...")
 
@@ -8453,7 +8508,7 @@ class Command(BaseCommand):
 
         terminal = CashTerminal.default()
 
-        # O aparelho do balcão da Nelson: Epson TM-T20, USB, rolo de 80mm
+        # O dispositivo do balcão da Nelson: Epson TM-T20, USB, rolo de 80mm
         # (confirmado com o Pablo em 2026-08-12). Declarar a largura aqui é o que
         # faz o `@page` do recibo parar de depender do driver — a superfície
         # escreve `--pos-roll-width` a partir disto. 80mm é também o default do
@@ -8463,11 +8518,13 @@ class Command(BaseCommand):
         # A geometria e o papel operacional fazem parte do cenário canônico de
         # impressão. Preenchemos somente lacunas: `seed` sem `--flush` também é
         # usado para refrescar datas em ambientes vivos e jamais pode apagar a
-        # configuração aferida no Admin (adapter/modelo/rolo/corte).
+        # configuração aferida no Admin (rolo, corte, geometria da etiqueta).
         printer = dict(hardware.get("printer") or {})
         printer.setdefault("enabled", True)
-        printer.setdefault("adapter", "driver")
-        printer.setdefault("model", "epson-tm-t20")
+        # ⚠️ `adapter` e `model` não são semeados. Eram rótulos sem leitor: o
+        # seed cunhava "driver", o Admin cunhava "relay", e o mesmo terminal
+        # mudava de texto na saúde conforme quem tinha salvado por último. Quem
+        # responde se este terminal imprime é `hardware.device_agent`.
         printer.setdefault("roll_width_mm", 80)
         printer.setdefault("columns", 48)
         printer.setdefault("cut_mode", "partial")

@@ -1,4 +1,4 @@
-"""OperatorHubProjection — a Central de Apps (launcher pós-login).
+"""OperatorHubProjection — o Shopman Apps (launcher pós-login, e a home do Shopman).
 
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
 (PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
@@ -78,17 +78,31 @@ class _AppSpec:
 
 # Registro declarativo das superfícies (ordem = ordem de exibição). Ícone forte por
 # app conforme o design system canônico (DS §6).
+#
+# ⚠️ O `label` e o `icon` de cada app têm de bater com
+# `surfaces/operator-kit/app-identity.json`, a identidade que as próprias superfícies
+# publicam (manifesto, barra de título, rail). Um app com dois nomes é o que o dono viu:
+# o tile dizia "Gestor de Pedidos", a janela dizia "Gestor". O Python não lê o JSON em
+# runtime (o deploy do Django não empacota `surfaces/`); quem compara os dois lados é
+# `shopman/backstage/tests/test_hub_projection_identity.py`, que falha no CI se
+# divergirem. A Loja fica de fora: é superfície de cliente, com marca própria.
+#
+# O nome Lucide é o FALLBACK do tile:
+# o Shopman Apps mostra o PNG da família PWA (`surfaces/operator-kit/PWA_ICONS.md`) e só
+# cai no Lucide quando a imagem não carrega — por isso os nomes seguem a família
+# (Produção usa `tabler:baguette` no PNG; o fallback fica em `croissant`, único
+# símbolo próximo que existe no Lucide).
 _REGISTRY: tuple[_AppSpec, ...] = (
-    _AppSpec("pos", "PDV", "Vender no balcão", "banknote", "launch", can_operate_pos),
+    _AppSpec("pos", "PDV", "Vender no balcão", "shopping-basket", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
-    _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "clipboard-list", "launch", can_manage_orders),
+    _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_manage_orders),
     # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
     # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`
     # exige `shop.manage_production` ou alguma permissão de COLUNA FINA do console
     # Admin — nenhuma das duas é o gate do app.
     #
     # Errava nos dois sentidos. O gerente concede `operate_production` a um padeiro
-    # novo; ele abre a Central e a grade vem VAZIA, dizendo "nenhum app liberado —
+    # novo; ele abre o Shopman Apps e a grade vem VAZIA, dizendo "nenhum app liberado —
     # fale com o gerente" — enquanto `prod.boulangerie.com.br` abre normalmente. E
     # quem tem só `view_production_planned` VIA o tile e levava 403 ao clicar.
     #
@@ -96,9 +110,9 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     # qualquer grant customizado cai nele na hora — que é o caso normal quando entra
     # gente nova.
     _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_operate_production),
-    _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package-check", "launch", can_operate_purchase),
+    _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package", "launch", can_operate_purchase),
     _AppSpec("marketing", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_campaigns),
-    _AppSpec("bi", "B.I.", "Números da operação", "chart-line", "launch", can_view_bi),
+    _AppSpec("bi", "B.I.", "Números da operação", "chart-no-axes-combined", "launch", can_view_bi),
     _AppSpec("loja", "Loja online", "Abrir a loja do cliente", "store", "external", is_superuser),
 )
 

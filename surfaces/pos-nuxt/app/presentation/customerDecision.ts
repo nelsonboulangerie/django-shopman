@@ -23,6 +23,15 @@ export interface CustomerDecisionParty {
   name: string;
   /** O valor do campo em disputa NESTE cadastro (telefone, e-mail ou documento). */
   value: string;
+  /**
+   * Este lado não é uma pessoa — é um dado guardado sozinho.
+   *
+   * Quem diz é o servidor (`owner_unnamed`), pela mesma régua com que ele
+   * decide se pode escrever um nome por cima. A tela não deduz de `name`
+   * vazio: o rótulo de espera "Cliente 0011" tem nome no campo e nenhum rosto
+   * atrás, e tratá-lo como gente é o erro que esta bandeira existe para evitar.
+   */
+  unnamed?: boolean;
 }
 
 //   3. `inactive_owner` — o valor digitado está preso num cadastro DESATIVADO.
@@ -38,6 +47,20 @@ export interface CustomerDecisionParty {
 //      UM campo culpado para nomear, e antes disso a recusa caía num toast que
 //      sumia. O payload rico já vinha do servidor: a tela mostra a lista.
 //
+//   5. `orphan_value` — o dono do valor digitado NÃO É NINGUÉM: um cadastro só
+//      com o dado, sem nome. Ele existe necessariamente — nasce toda vez que
+//      alguém pede a nota no balcão e o CPF não é de conhecido — e reencontrar
+//      o dono é rotina, não exceção.
+//
+//      Aqui a pergunta do `contact_conflict` não cabe. "Atender o outro" é
+//      atender ninguém: troca o dono do pedido por uma ficha sem rosto e perde
+//      quem está na comanda. E "manter quem está" devolve o operador ao começo
+//      com o valor recusado ainda no campo — foi o beco que ele encontrou, um
+//      par de botões em que nenhum dos dois resolve.
+//
+//      Só existe UM cliente e um dado solto para entregar a ele. Então só há
+//      uma pergunta, e ela é de sim ou não.
+//
 // E a terceira saída, que vale para o conflito de contato: os dois cadastros
 // são a MESMA pessoa. Nem atender o outro, nem manter quem está — unificar.
 
@@ -47,6 +70,7 @@ export type CustomerDecisionKind =
   | "contact_conflict"
   | "contact_change"
   | "inactive_owner"
+  | "orphan_value"
   | "candidate_list";
 export type CustomerDecisionField = "phone" | "email" | "tax_id";
 
@@ -235,7 +259,7 @@ function releaseAction(label: string, ownerName: string): CustomerDecisionAction
 }
 
 /** Primeiro nome — no balcão ninguém fala o nome inteiro. */
-function firstName(name: string): string {
+export function firstName(name: string): string {
   return (name || "").trim().split(/\s+/)[0] || "";
 }
 
@@ -275,6 +299,25 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   }
 
   if (decision.kind === "existing_customer") {
+    // Sem ninguém na comanda e o dono SEM ROSTO: usar a ficha é o certo (é ela
+    // que tem o dado), mas nomeá-la "o cliente encontrado" promete uma pessoa
+    // que não está lá. Aqui ela é o que é — um registro à espera de nome — e o
+    // gesto é continuar nele, não escolher entre duas pessoas.
+    if (other?.unnamed) {
+      return {
+        title: `Este ${label} já está guardado, sem nome`,
+        body: `${decision.typed} já foi usado aqui e ficou sozinho, sem cadastro de ninguém. `
+          + "Seguir nele aproveita o que já existe; o nome que você digitar entra nesse cadastro.",
+        confirmLabel: "Seguir neste cadastro",
+        confirmIcon: "lucide:user-round-check",
+        cancelLabel: `Corrigir ${label}`,
+        cancelIcon: "lucide:pencil-line",
+        merge: null,
+        release: null,
+        ...SEM_ATRITO,
+      };
+    }
+
     const ownerName = other?.name?.trim() || "o cliente encontrado";
     return {
       title: `Este ${label} já está cadastrado`,
@@ -336,6 +379,38 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       // A terceira saída só existe quando os dois lados são cadastros VIVOS:
       // o `MergeService` recusa unificar com qualquer um deles desativado.
       merge: MERGE_ACTION,
+      release: null,
+      ...SEM_ATRITO,
+    };
+  }
+
+  // O dado solto reencontrou o dono. UMA pergunta, de sim ou não.
+  //
+  // Nada de "unificar cadastros" aqui: o operador não está administrando
+  // cadastro, está dizendo de quem é um CPF. O gesto por baixo é o merge — o
+  // mesmo — e é o botão principal porque é o único caminho para a frente. O
+  // "não" tira o valor do campo, que é o que faltava para a tela sair do lugar.
+  //
+  // ⚠️ Um toque, sem segunda palavra, e isso é decisão. A reconfirmação existe
+  // onde o gesto troca a identidade da venda; aqui ela não troca nada — o
+  // cliente da comanda continua o mesmo, e o que muda é um cadastro sem dono
+  // ganhar dono. Atrito no caminho frequente ensina a clicar no reflexo, e o
+  // desfazer de 24h (com prazo dito no aviso que sai depois) é a rede.
+  if (decision.kind === "orphan_value") {
+    const name = firstName(currentName) || currentName;
+    const isTaxId = decision.field === "tax_id";
+    return {
+      title: `Este ${label} está guardado sem nome`,
+      body: `${decision.typed || `O ${label} digitado`} já foi usado aqui e ficou sozinho, sem cadastro de ninguém. `
+        + `Na comanda está ${currentName}.`,
+      confirmLabel: "",
+      confirmIcon: "",
+      cancelLabel: `Não, não é ${isTaxId ? "o CPF" : `o ${label}`} de ${name}`,
+      cancelIcon: "lucide:undo-2",
+      merge: {
+        label: `Sim, é de ${name}`,
+        icon: "lucide:user-round-check",
+      },
       release: null,
       ...SEM_ATRITO,
     };
@@ -413,6 +488,14 @@ export interface ServerConflictCandidate {
   is_current: boolean;
   /** O dono é um cadastro DESATIVADO — invisível na busca do operador. */
   owner_inactive?: boolean;
+  /**
+   * O dono não é uma pessoa: é um cadastro só com o dado, sem nome.
+   *
+   * Vem do servidor pela mesma régua com que ele decide se pode escrever um
+   * nome por cima (`_should_refresh_name`). Cobre o cadastro sem nome nenhum e
+   * o rótulo de espera "Cliente 0011" — que engana quem olhar só o `name`.
+   */
+  owner_unnamed?: boolean;
 }
 
 /** O valor do campo em disputa NESTE candidato — o que a liberação solta. */
@@ -426,7 +509,12 @@ export function candidateValue(
 }
 
 function party(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): CustomerDecisionParty {
-  return { ref: candidate.ref, name: candidate.name, value: candidateValue(candidate, field) };
+  return {
+    ref: candidate.ref,
+    name: candidate.name,
+    value: candidateValue(candidate, field),
+    unnamed: candidate.owner_unnamed,
+  };
 }
 
 /** Como o candidato se apresenta na LISTA: o que dele bateu com o digitado. */
@@ -471,6 +559,23 @@ export function conflictDecision(input: {
       field,
       typed: (input.typed || candidateValue(other, field) || "").trim(),
       current: current ? party(current, field) : null,
+      other: party(other, field),
+      candidates,
+      fromReceipt,
+    };
+  }
+
+  // Dono SEM ROSTO, com cliente na comanda: o dado está solto e acabou de achar
+  // dono. Vem ANTES do `contact_conflict` porque a pergunta dele ("qual dos
+  // dois você atende?") não tem sentido quando um dos dois não é ninguém — e
+  // depois do `inactive_owner` porque unificar com um lado desativado o Core
+  // recusa, e ali a saída é outra (soltar o contato).
+  if (field && current && other?.owner_unnamed && intruders.length === 1) {
+    return {
+      kind: "orphan_value",
+      field,
+      typed: (input.typed || candidateValue(other, field) || "").trim(),
+      current: party(current, field),
       other: party(other, field),
       candidates,
       fromReceipt,

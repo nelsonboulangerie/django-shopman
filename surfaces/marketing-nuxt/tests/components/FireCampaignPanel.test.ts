@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import type { VueWrapper } from "@vue/test-utils";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAudienceCount } from "~/composables/useAudienceCount";
@@ -22,6 +23,10 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
     empty_selection: false,
     alerts_pending: -1,
     alerts_notified: -1,
+    excluded_by_reason: {},
+    can_approve: true,
+    blocked_reason: "",
+    degraded_sources: [],
     ...over,
   };
 }
@@ -66,6 +71,24 @@ async function settleCount(wrapper: {
   await wrapper.vm.$nextTick();
 }
 
+/** Escolhe o produto pelo `UiSelect` do kit — abre e clica na opção, como a mão faz.
+ *
+ * ⚠️ O primitivo entra de VERDADE no harness (`tests/support/uiPrimitives.ts`), então o
+ * teste dirige o contrato real: `aria-haspopup="listbox"` no gatilho e `role="option"`
+ * na lista. Era um `<select>` do sistema e o teste dava `setValue`; o catálogo da
+ * padaria passa de doze itens, e acima disso ninguém varre a lista com o olho. */
+async function chooseProduct(
+  wrapper: VueWrapper,
+  label: string,
+): Promise<void> {
+  await wrapper.get('[aria-haspopup="listbox"]').trigger("click");
+  const option = wrapper
+    .findAll('[role="option"]')
+    .find((item) => item.text().includes(label));
+  if (!option) throw new Error(`Produto "${label}" não está na lista.`);
+  await option.trigger("click");
+}
+
 const TIERS = [
   { value: "varejo", label: "Varejo" },
   { value: "atacado", label: "Atacado" },
@@ -98,9 +121,12 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
   } as Campaign;
 }
 
-function panel(rule: Campaign | null = makeRule()) {
+function panel(
+  rule: Campaign | null = makeRule(),
+  extra: { products?: typeof PRODUCTS } = {},
+) {
   return mount(FireCampaignPanel, {
-    props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS },
+    props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS, ...extra },
     global: {
       components: { UiNativeSelect: UiNativeSelectStub },
       stubs: { Icon: true },
@@ -122,8 +148,8 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("não deixa disparar sem escolher ninguém", async () => {
     const wrapper = panel();
-    const radios = wrapper.findAll('input[name="audience-mode"]');
-    await radios[1]!.setValue();
+    const radios = wrapper.findAll('[role="radio"]');
+    await radios[1]!.trigger("click");
 
     const submit = wrapper.find('button[type="submit"]');
     expect(submit.attributes("disabled")).toBeDefined();
@@ -131,7 +157,7 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("monta o público escolhido em vocabulário do backend", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
 
     // "Atacado" e "Em risco" — o gestor clica em frases, não em chaves.
     const chips = wrapper.findAll("button[aria-pressed]");
@@ -150,8 +176,8 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("traduz 'quem está sumindo' para o piso de risco que o resolvedor entende", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
-    await wrapper.findAll('input[type="checkbox"]')[0]!.setValue(true);
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
+    await wrapper.findAll('[role="checkbox"]')[0]!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
@@ -161,10 +187,10 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("aniversariantes e VIP-primeiro convivem no mesmo disparo", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
-    const boxes = wrapper.findAll('input[type="checkbox"]');
-    await boxes[1]!.setValue(true); // aniversariantes
-    await boxes[2]!.setValue(true); // VIP primeiro
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
+    const boxes = wrapper.findAll('[role="checkbox"]');
+    await boxes[1]!.trigger("click"); // aniversariantes
+    await boxes[2]!.trigger("click"); // VIP primeiro
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
@@ -178,7 +204,7 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("trocar de campanha zera a escolha anterior", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
 
@@ -204,9 +230,11 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
   it("não oferece corpo livre capaz de contornar a revisão", () => {
     const wrapper = panel();
 
+    // A trava é a AUSÊNCIA de campo de texto, não a frase que explica isso: sem
+    // campo, não há caminho para contornar a revisão, diga a tela o que disser.
     expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.text()).toContain("Texto protegido pelo fluxo de revisão");
-    expect(wrapper.text()).toContain("cria um anúncio para revisão");
+    expect(wrapper.find("input[type=text]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("O texto vem do modelo da campanha");
   });
 
   it("pede o produto antes da senha quando o modelo depende do catálogo", async () => {
@@ -233,7 +261,7 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
       wrapper.find('button[type="submit"]').attributes("disabled"),
     ).toBeDefined();
 
-    await wrapper.get("#fire-product").setValue("MDL");
+    await chooseProduct(wrapper, "Madeleine (MDL)");
     expect(
       wrapper.find('button[type="submit"]').attributes("disabled"),
     ).toBeDefined();
@@ -249,42 +277,22 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
     ]);
   });
 
-  it("mantém o comprovante e o próximo passo no painel", () => {
+  // O painel não tem mais tela de sucesso: o disparo bem-sucedido leva o gestor à
+  // revisão, e uma escala que só oferecia "Revisar anúncio agora" não pode voltar.
+  it("não guarda tela de sucesso nem link para a revisão", () => {
     const wrapper = mount(FireCampaignPanel, {
       props: {
         rule: makeRule(),
         priceTiers: TIERS,
         tags: TAGS,
         rfmSegments: SEGMENTS,
-        result: {
-          ok: true,
-          replayed: false,
-          receipt: {
-            ref: "fire-receipt-local",
-            kind: "fire",
-            state: "completed",
-            base_version: 1,
-            resulting_version: 2,
-            resource_ref: "campaign:3",
-            outcome: { audience_count: 2 },
-            created_at: "2026-09-10T10:00:00-03:00",
-            completed_at: "2026-09-10T10:00:01-03:00",
-          },
-          announcement: { pk: 77 },
-        } as never,
       },
       global: { stubs: { Icon: true, NuxtLink: true } },
     });
 
-    expect(wrapper.text()).toContain("Anúncio criado para revisão");
-    expect(wrapper.text()).toContain(
-      "Nenhuma publicação ou mensagem foi enviada",
-    );
-    expect(wrapper.text()).toContain("fire-receipt-local");
-    expect(wrapper.find("nuxt-link-stub").attributes("to")).toBe(
-      "/announcements/77#review",
-    );
-    expect(wrapper.find("form").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Anúncio criado para revisão");
+    expect(wrapper.text()).not.toContain("Revisar anúncio agora");
+    expect(wrapper.find("form").exists()).toBe(true);
   });
 });
 
@@ -300,12 +308,13 @@ describe("FireCampaignPanel — postagem pública", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain("1 postagem pública");
-    expect(wrapper.text()).toContain("Não há seleção de contatos");
+    expect(wrapper.text()).toContain("Uma postagem por plataforma");
+    expect(wrapper.text()).toContain("Não seleciona contatos");
     expect(wrapper.text()).not.toContain("Para quem");
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();
     const submit = wrapper.find('button[type="submit"]');
-    expect(submit.text()).toContain("Preparar para revisão");
+    expect(submit.text()).toContain("Revisar anúncio");
     expect(submit.attributes("disabled")).toBeUndefined();
 
     await wrapper.find("form").trigger("submit");
@@ -315,7 +324,10 @@ describe("FireCampaignPanel — postagem pública", () => {
   });
 
   it("mantém audiência zero bloqueada quando há também WhatsApp", async () => {
-    counted = fakeCount({ total: 0 });
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Faixa de preço", count: 0 }],
+    });
     const wrapper = panel(makeRule({ platforms: ["instagram", "whatsapp"] }));
     await settleCount(wrapper);
 
@@ -334,7 +346,7 @@ describe("FireCampaignPanel — postagem pública", () => {
 describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
   it("mostra o tamanho do público enquanto se escolhe", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await settleCount(wrapper);
@@ -351,9 +363,12 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
   });
 
   it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {
-    counted = fakeCount({ total: 0 });
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Faixa de preço", count: 0 }],
+    });
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
     await settleCount(wrapper);
 
@@ -373,7 +388,10 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     expect(
       wrapper.find('button[type="submit"]').attributes("disabled"),
     ).toBeDefined();
-    expect(wrapper.text()).toContain("Contar novamente");
+    // ⚠️ Dois rótulos no app inteiro, não nove: "Tentar de novo" recarrega o que
+    // falhou, "Atualizar" busca o estado novo do que já carregou. Aqui a contagem
+    // FALHOU (`countFailed`), então é o primeiro.
+    expect(wrapper.text()).toContain("Tentar de novo");
 
     Object.assign(globalThis, {
       $fetch: vi.fn(
@@ -389,11 +407,142 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
   });
 });
 
+describe("FireCampaignPanel — o zero diz qual zero é", () => {
+  // ⚠️ O caso da Baguete Gergelim: o gestor favoritou o produto pelo celular, a campanha
+  // "quem favoritou" contou 0 e a tela disse "ninguém se encaixa". A regra tinha achado
+  // 1 pessoa; o envio a barrou por falta de confirmação de maioridade e de consentimento.
+  it("mostra quem a regra achou e por que não recebe, mesmo com uma regra só", async () => {
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Favoritaram o produto", count: 1 }],
+      excluded_by_reason: { age_not_declared: 1 },
+    });
+    const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
+      products: PRODUCTS,
+    });
+    await chooseProduct(wrapper, "Madeleine (MDL)");
+    await settleCount(wrapper);
+
+    const text = wrapper.text();
+    expect(text).toContain("As regras acharam 1 pessoa, mas ela não pode receber");
+    expect(text).toContain("Favoritaram o produto");
+    expect(text).toContain("Ficam de fora");
+    expect(text).toContain("1 pessoa sem confirmação de maioridade");
+    expect(text).toContain("ele confirma ao entrar na loja de novo");
+    expect(text).not.toContain("Ninguém se encaixa neste público hoje");
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
+  });
+
+  it("lista cada motivo quando há mais de um", async () => {
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Favoritaram o produto", count: 2 }],
+      excluded_by_reason: { age_not_declared: 1, missing_consent: 1 },
+    });
+    const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
+      products: PRODUCTS,
+    });
+    await chooseProduct(wrapper, "Madeleine (MDL)");
+    await settleCount(wrapper);
+
+    const items = wrapper
+      .findAll("[data-audience-exclusions] li")
+      .map((li) => li.text());
+    expect(items).toEqual([
+      "1 pessoa sem confirmação de maioridade (feita ao entrar na loja)",
+      "1 pessoa sem consentimento para receber no WhatsApp",
+    ]);
+    expect(wrapper.text()).toContain("As regras acharam 2 pessoas, mas nenhuma pode receber");
+  });
+
+  it("continua dizendo 'ninguém se encaixa' quando a regra não achou ninguém", async () => {
+    counted = fakeCount({
+      total: 0,
+      parts: [{ label: "Favoritaram o produto", count: 0 }],
+    });
+    const wrapper = panel(makeRule({ audience_rules: { favorites: true } }), {
+      products: PRODUCTS,
+    });
+    await chooseProduct(wrapper, "Madeleine (MDL)");
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");
+    expect(wrapper.find("[data-audience-exclusions]").exists()).toBe(false);
+  });
+
+  it("mostra quem ficou de fora também quando alguém recebe", async () => {
+    counted = fakeCount({
+      total: 3,
+      parts: [{ label: "Etiquetas", count: 5 }],
+      excluded_by_reason: { missing_consent: 2 },
+    });
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("3");
+    expect(wrapper.text()).toContain("pessoas recebem");
+    expect(wrapper.text()).toContain("2 pessoas sem consentimento para receber no WhatsApp");
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeUndefined();
+  });
+
+  it("bloqueia o disparo quando o servidor diz que o número está incompleto", async () => {
+    counted = fakeCount({
+      total: 7,
+      can_approve: false,
+      blocked_reason:
+        "Não foi possível conferir todas as fontes da audiência. Aguarde a recuperação.",
+      degraded_sources: ["favorites"],
+    });
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Não foi possível conferir todas as fontes da audiência");
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
+  });
+});
+
+describe("FireCampaignPanel — becos sem saída", () => {
+  it("campanha sem público salvo abre em 'Escolher agora' e diz por quê", async () => {
+    const wrapper = panel(makeRule({ audience_rules: {} }));
+    await settleCount(wrapper);
+
+    const radios = wrapper.findAll('[role="radio"]');
+    expect(radios[0]!.attributes("aria-checked")).toBe("false");
+    expect(radios[1]!.attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("Esta campanha não tem público salvo");
+    expect(wrapper.text()).toContain("Escolha pelo menos um grupo acima");
+  });
+
+  it("só 'VIP primeiro' salvo não é público: continua abrindo em 'Escolher agora'", async () => {
+    const wrapper = panel(
+      makeRule({ audience_rules: { vip_first_minutes: 15 } }),
+    );
+    await settleCount(wrapper);
+
+    const radios = wrapper.findAll('[role="radio"]');
+    expect(radios[1]!.attributes("aria-checked")).toBe("true");
+  });
+
+  it("com público salvo, nada disso aparece", async () => {
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).not.toContain("Esta campanha não tem público salvo");
+    expect(wrapper.text()).not.toContain("Escolha pelo menos um grupo acima");
+  });
+});
+
 describe("FireCampaignPanel — somar ou cruzar as regras", () => {
   /** Duas regras escolhidas: é o mínimo para a combinação querer dizer algo. */
   async function twoRulesChosen() {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await chips.find((c) => c.text() === "Em risco")!.trigger("click");
@@ -402,7 +551,7 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
 
   it("não oferece a escolha com uma regra só, onde ela não significaria nada", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
 
     expect(wrapper.text()).not.toContain("Qualquer uma");
@@ -465,7 +614,7 @@ describe("FireCampaignPanel — etiquetas", () => {
   /** As opções só existem em "Escolher agora" — no modo salvo, quem manda é a campanha. */
   async function chooseNow() {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     return wrapper;
   }
 
@@ -476,7 +625,7 @@ describe("FireCampaignPanel — etiquetas", () => {
 
   it("manda os slugs escolhidos no vocabulário do backend", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
     await wrapper.find("form").trigger("submit");
@@ -493,7 +642,7 @@ describe("FireCampaignPanel — etiquetas", () => {
 
   it("etiqueta sozinha habilita o disparo só depois da contagem segura", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
 
@@ -509,7 +658,7 @@ describe("FireCampaignPanel — etiquetas", () => {
 
   it("etiqueta conta como regra na hora de somar ou cruzar", async () => {
     const wrapper = panel();
-    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
     expect(wrapper.text()).not.toContain("Qualquer uma");

@@ -11,6 +11,17 @@ import type {
   AnnouncementTemplate,
 } from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import {
+  audienceRulesSummary,
+  choiceLabels,
+  platformsSummary,
+} from "~/presentation/campaign";
+import {
+  platformReadinessNote,
+  readinessByPlatform,
+  readinessPillClass,
+} from "~/presentation/platformReadiness";
+import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
   resolveScheduleInput,
@@ -30,6 +41,9 @@ const props = defineProps<{
   /** Rótulos de plataforma e template do WhatsApp: a prévia precisa dos dois para não
    *  prometer o que o envio não faz. */
   platformLabels: Record<string, string>;
+  /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto.
+   *  Pinta a pílula e explica, ANTES do clique, onde a campanha não vai sair. */
+  platformReadiness?: PlatformReadiness[];
   whatsappTemplate?: string;
   busy?: boolean;
   draftOwner?: string;
@@ -107,10 +121,96 @@ const DRAFT_LABELS = {
   requires_approval: "Revisão antes de publicar",
   expires_after_minutes: "Prazo de revisão",
   promotion_ref: "Oferta",
-  is_active: "Regra ativa",
+  is_active: "Campanha ligada",
   schedule: "Agendamento",
   audience_rules: "Público",
 };
+
+// ⚠️ A tela imprimia a CHAVE do JSON ("collections, skus", "bought_skus") quando
+// avisava que um filtro salvo seria preservado. Chave é contrato com o servidor,
+// não vocabulário do gestor: aqui vira rótulo; chave que o formulário não conhece
+// vira contagem, nunca texto em inglês.
+const TRIGGER_FILTER_LABELS: Record<string, string> = {
+  collections: "coleções",
+  skus: "produtos",
+  quality_min: "qualidade mínima da fornada",
+  quality_min_share: "parcela mínima na qualidade",
+  max_remaining: "estoque máximo restante",
+};
+const PRESERVED_AUDIENCE_LABELS: Record<string, string> = {
+  bought_skus: "produtos comprados",
+  bought_collections: "coleções compradas",
+};
+
+/** "coleções, produtos" — ou "coleções e mais 1 critério" quando a chave é nova. */
+function preservedSummary(
+  keys: string[],
+  labels: Record<string, string>,
+): string {
+  const named = keys.flatMap((key) => (labels[key] ? [labels[key]] : []));
+  const unknown = keys.length - named.length;
+  const rest = unknown
+    ? `${unknown} ${unknown === 1 ? "critério" : "critérios"}`
+    : "";
+  if (!named.length) return rest;
+  return rest ? `${named.join(", ")} e mais ${rest}` : named.join(", ");
+}
+
+const audienceLabels = computed(() => ({
+  priceTiers: choiceLabels(props.priceTiers ?? []),
+  tags: choiceLabels(props.tags ?? []),
+  segments: choiceLabels(props.rfmSegments ?? []),
+}));
+
+/** Frase de um agendamento salvo, para o aviso de conflito do rascunho. */
+function scheduleDraftSummary(schedule: Record<string, unknown>): string {
+  if (schedule.type === "once" && typeof schedule.at === "string") {
+    return scheduleSummary(schedule.at, timezoneName.value) || "uma vez";
+  }
+  const windows = Array.isArray(schedule.windows)
+    ? schedule.windows
+        .filter(Array.isArray)
+        .map((window) => String(window[0]))
+        .join(", ")
+    : "";
+  const days = Array.isArray(schedule.weekdays)
+    ? schedule.weekdays
+        .map((day) => WEEKDAY_LABELS[Number(day)])
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  if (!windows) return "sem horário definido";
+  return days ? `${days} às ${windows}` : `todo dia às ${windows}`;
+}
+
+// Prontidão por plataforma: a pílula ganha cor e palavra, e a escolhida que não
+// publica ganha a frase completa embaixo — antes do clique, não depois de aprovar.
+const readinessMap = computed(() =>
+  readinessByPlatform(props.platformReadiness),
+);
+function readinessNote(option: Choice) {
+  return platformReadinessNote(readinessMap.value[option.value], option.label);
+}
+const selectedReadinessNotes = computed(() =>
+  props.platformOptions
+    .filter((option) => platforms.value.includes(option.value))
+    .map((option) => ({ platform: option.value, ...readinessNote(option) }))
+    .filter((note) => note.tone !== "ready"),
+);
+
+/** O aviso de conflito pede uma frase, não JSON: o formulário é quem sabe ler o campo. */
+function describeDraftValue(field: string, value: unknown): string | undefined {
+  if (field === "platforms" && Array.isArray(value)) {
+    return platformsSummary(value.map(String), props.platformLabels);
+  }
+  if (field === "audience_rules" && value && typeof value === "object") {
+    return audienceRulesSummary(value as AudienceRules, audienceLabels.value);
+  }
+  if (field === "schedule" && value && typeof value === "object") {
+    return scheduleDraftSummary(value as Record<string, unknown>);
+  }
+  return undefined;
+}
 
 function cloneRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -545,6 +645,7 @@ function submit() {
       :saved-at="draft.savedAt.value"
       :conflicts="draft.conflicts.value"
       :labels="DRAFT_LABELS"
+      :describe="describeDraftValue"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
       @discard="draft.discard()"
@@ -716,23 +817,20 @@ function submit() {
           <p class="text-xs text-muted-foreground">
             {{ onceResolution.detail }}
           </p>
-          <div class="mt-1 flex flex-wrap gap-3 text-xs">
-            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
-            <label
+          <UiRadioGroup
+            v-model="onceFold"
+            label="Qual das duas ocorrências"
+            orientation="horizontal"
+            class="mt-1 text-xs"
+          >
+            <UiRadio
               v-for="(candidate, index) in onceResolution.candidates"
               :key="candidate.instant"
-              class="flex items-center gap-1.5"
-            >
-              <input
-                v-model="onceFold"
-                type="radio"
-                :value="index === 0 ? 'earlier' : 'later'"
-              />
-              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{
-                candidate.offset
-              }})
-            </label>
-          </div>
+              :value="index === 0 ? 'earlier' : 'later'"
+              variant="inline"
+              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
+            />
+          </UiRadioGroup>
         </fieldset>
         <p
           v-if="
@@ -768,7 +866,11 @@ function submit() {
         <div>
           <p class="mb-1 text-xs font-medium text-muted-foreground">Nos dias</p>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Botões de dia permanecem nativos para expor o estado múltiplo com aria-pressed. -->
+            <!-- ⚠️ Estes NÃO viram `UiToggleChip`, e o motivo é medido: o primitivo tem
+                 alvo de toque de 44px pelo token, e sete dias a 44px não cabem numa
+                 tela de 320. O kit recusa degrau denso em primitivo de propósito — 36px
+                 foi a dívida que a cópia antiga carregava. Ou esta grade reflui para
+                 caber, ou continua aqui, à mão, com a razão à vista. -->
             <button
               v-for="(label, day) in WEEKDAY_LABELS"
               :key="label"
@@ -839,36 +941,58 @@ function submit() {
       v-if="!schedules && preservedTriggerFilterKeys.length"
       class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Os filtros do evento ({{ preservedTriggerFilterKeys.join(", ") }}) serão
-      preservados.
+      Os filtros do evento já salvos ({{
+        preservedSummary(preservedTriggerFilterKeys, TRIGGER_FILTER_LABELS)
+      }}) continuam valendo.
     </p>
 
     <fieldset>
       <legend class="mb-1 text-xs font-medium text-muted-foreground">
         Entregar por
       </legend>
-      <div class="flex flex-wrap gap-1.5">
-        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos. -->
-        <label
+      <!-- ⚠️ `UiToggleChip` do kit, e não `UiCheckbox`: o checkbox desenha um quadrado
+           com rótulo ao lado, e o que está aqui é uma pílula cuja caixa inteira acende.
+           O vazio que esta tela registrava em comentário agora tem peça.
+           ⚠️ A pílula conta o estado da plataforma ANTES do clique: as quatro
+           apareciam iguais e a recusa só vinha depois de aprovar. -->
+      <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
+           Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
+           numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
+           não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
+           tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
+           de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
+      <div class="grid gap-1.5 sm:flex sm:flex-wrap">
+        <UiToggleChip
           v-for="option in platformOptions"
           :key="option.value"
-          class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-          :class="
-            platforms.includes(option.value)
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:bg-muted'
-          "
+          :model-value="platforms.includes(option.value)"
+          :class="readinessPillClass(readinessNote(option).tone)"
+          :data-readiness="readinessNote(option).tone"
+          @update:model-value="togglePlatform(option.value)"
         >
-          <input
-            type="checkbox"
-            class="sr-only"
-            :aria-label="option.label"
-            :checked="platforms.includes(option.value)"
-            @change="togglePlatform(option.value)"
-          />
           {{ option.label }}
-        </label>
+          <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
+        </UiToggleChip>
       </div>
+      <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
+           mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
+      <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
+        <li
+          v-for="note in selectedReadinessNotes"
+          :key="note.platform"
+          class="text-xs"
+          :class="note.tone === 'blocked' ? 'text-destructive' : 'text-warning'"
+          role="status"
+        >
+          {{ note.text }}
+          <template v-if="note.tone !== 'limited'">
+            A campanha pode ser salva assim mesmo.
+            <NuxtLink to="/platforms" class="font-semibold underline">
+              Ver em Plataformas
+            </NuxtLink>
+          </template>
+        </li>
+      </ul>
       <p class="mt-1.5 text-xs text-muted-foreground">
         Instagram, Facebook e Google criam uma postagem pública por plataforma.
         WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
@@ -884,65 +1008,48 @@ function submit() {
         Avisar quem
       </legend>
       <div class="space-y-2.5">
-        <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="favorites"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          Quem favoritou o produto
-        </label>
+        <UiCheckbox v-model="favorites" label="Quem favoritou o produto" />
         <!-- ⚠️ O rótulo dizia "me avise quando sair do forno" e a regra pega TODA a
              fila de avisos do produto — inclusive quem espera reposição de um item de
              prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
              o gestor não tem como (nem por que) separar os dois aqui. -->
-        <label class="flex items-start gap-2 text-sm">
-          <input
-            v-model="alerts"
-            type="checkbox"
-            class="mt-0.5 size-4 rounded border-border"
-          />
-          <span>
-            Quem pediu "me avise" deste produto
-            <span class="block text-xs text-muted-foreground">
-              A fila do sino da loja: fornada para pão, reposição para o resto.
-            </span>
-          </span>
-        </label>
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label class="flex items-center gap-2">
+        <UiCheckbox
+          v-model="alerts"
+          label="Quem pediu &quot;me avise&quot; deste produto"
+          description="A fila do sino da loja: fornada para pão, reposição para o resto."
+        />
+        <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
+             soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de
+             baixo e o campo ficava sem dizer de quê era o número. Quebrar é esperado
+             num celular; quebrar ENTRE o número e a unidade é o defeito. -->
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UiCheckbox v-model="boughtOn" label="Quem comprou nos últimos" />
+          <span class="inline-flex items-center gap-2">
             <input
-              v-model="boughtOn"
-              type="checkbox"
-              class="size-4 rounded border-border"
+              v-model.number="boughtDays"
+              type="number"
+              min="1"
+              max="365"
+              :disabled="!boughtOn"
+              aria-label="Dias de recompra"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
             />
-            Quem comprou nos últimos
-          </label>
-          <input
-            v-model.number="boughtDays"
-            type="number"
-            min="1"
-            max="365"
-            :disabled="!boughtOn"
-            aria-label="Dias de recompra"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
-          />
-          <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
+            <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
+          </span>
         </div>
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <label for="rule-vip">VIPs recebem</label>
-          <input
-            id="rule-vip"
-            v-model.number="vipFirstMinutes"
-            type="number"
-            min="0"
-            max="120"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-          />
-          <span>minutos antes</span>
+          <span class="inline-flex items-center gap-2">
+            <input
+              id="rule-vip"
+              v-model.number="vipFirstMinutes"
+              type="number"
+              min="0"
+              max="120"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span>minutos antes</span>
+          </span>
           <span class="text-xs text-muted-foreground"
             >(0 = todo mundo junto)</span
           >
@@ -971,23 +1078,19 @@ function submit() {
           >
             Etiquetas
           </legend>
+          <!-- ⚠️ Estes três grupos acendiam em `bg-primary` SÓLIDO, escrito à mão em
+               cada um. Sólido é do botão primário; o padrão único de seleção da casa é
+               contorno + tint levíssimo, e é o que o primitivo traz. Eram a mesma peça
+               copiada três vezes, com o alvo de toque em literal e sem ARIA de escolha. -->
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="tag in tags"
               :key="tag.value"
-              type="button"
-              :aria-pressed="selectedTags.includes(tag.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedTags.includes(tag.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedTags, tag.value)"
+              :model-value="selectedTags.includes(tag.value)"
+              @update:model-value="toggleChoice(selectedTags, tag.value)"
             >
               {{ tag.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
@@ -998,22 +1101,14 @@ function submit() {
             Faixa de preço
           </legend>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="tier in priceTiers"
               :key="tier.value"
-              type="button"
-              :aria-pressed="selectedPriceTiers.includes(tier.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedPriceTiers.includes(tier.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedPriceTiers, tier.value)"
+              :model-value="selectedPriceTiers.includes(tier.value)"
+              @update:model-value="toggleChoice(selectedPriceTiers, tier.value)"
             >
               {{ tier.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
@@ -1024,44 +1119,26 @@ function submit() {
             Comportamento de compra
           </legend>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="segment in rfmSegments"
               :key="segment.value"
-              type="button"
-              :aria-pressed="selectedRfmSegments.includes(segment.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedRfmSegments.includes(segment.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedRfmSegments, segment.value)"
+              :model-value="selectedRfmSegments.includes(segment.value)"
+              @update:model-value="toggleChoice(selectedRfmSegments, segment.value)"
             >
               {{ segment.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="birthdayToday"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          Aniversariantes de hoje
-        </label>
+        <UiCheckbox v-model="birthdayToday" label="Aniversariantes de hoje" />
 
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label class="flex items-center gap-2">
-            <input
-              v-model="churnRiskOn"
-              type="checkbox"
-              class="size-4 rounded border-border"
-            />
-            Risco de não voltar a partir de
-          </label>
+        <!-- Este número não tem unidade (é uma fração de 0 a 1), então não há par
+             para manter junto: quebrar aqui não deixa nada órfão. -->
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UiCheckbox
+            v-model="churnRiskOn"
+            label="Risco de não voltar a partir de"
+          />
           <input
             v-model.number="churnRiskMin"
             type="number"
@@ -1074,20 +1151,21 @@ function submit() {
           />
         </div>
 
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <label for="rule-preferred-window"
             >Respeitar horário preferido em uma janela de</label
           >
-          <input
-            id="rule-preferred-window"
-            v-model.number="preferredHourWindowHours"
-            type="number"
-            min="0"
-            max="12"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-          />
-          <span>horas</span>
+          <span class="inline-flex items-center gap-2">
+            <input
+              id="rule-preferred-window"
+              v-model.number="preferredHourWindowHours"
+              type="number"
+              min="0"
+              max="12"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span>horas</span>
+          </span>
           <span class="text-xs text-muted-foreground"
             >(0 = não segmentar por horário)</span
           >
@@ -1097,8 +1175,9 @@ function submit() {
           v-if="preservedAudienceKeys.length"
           class="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground"
         >
-          Filtros protegidos ({{ preservedAudienceKeys.join(", ") }}) serão
-          preservados sem alteração.
+          Filtros de público já salvos ({{
+            preservedSummary(preservedAudienceKeys, PRESERVED_AUDIENCE_LABELS)
+          }}) continuam valendo, sem alteração.
         </p>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">
@@ -1115,41 +1194,31 @@ function submit() {
       contatos só é usada quando o WhatsApp está selecionado.
     </p>
 
-    <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
     <div class="space-y-2.5">
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="requiresApproval"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        Revisar antes de publicar
-      </label>
+      <UiCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
+      <!-- ⚠️ "sai sozinho" não dizia o ato, e o ato depende do destino: mensagem se
+           envia, postagem se publica, e o genérico dos dois é disparar. Aqui a
+           campanha pode ter os dois, então o genérico é o verbo honesto. -->
       <p v-if="!requiresApproval" class="pl-6 text-xs text-warning">
-        Sem revisão, o anúncio sai sozinho assim que o evento acontecer.
+        Sem revisão, o anúncio é disparado assim que o evento acontecer, sem
+        passar por você.
       </p>
-      <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-      <div class="flex flex-wrap items-center gap-2 text-sm">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <label for="rule-expiry">O anúncio aguarda revisão por</label>
-        <input
-          id="rule-expiry"
-          v-model.number="expiresAfterMinutes"
-          type="number"
-          min="0"
-          max="1440"
-          class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-        />
-        <span>minutos</span>
+        <span class="inline-flex items-center gap-2">
+          <input
+            id="rule-expiry"
+            v-model.number="expiresAfterMinutes"
+            type="number"
+            min="0"
+            max="1440"
+            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+          />
+          <span>minutos</span>
+        </span>
         <span class="text-xs text-muted-foreground">(0 = sem prazo)</span>
       </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="isActive"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        Regra ativa
-      </label>
+      <UiCheckbox v-model="isActive" label="Campanha ligada" />
     </div>
 
     <div class="flex items-center gap-2 pt-1">

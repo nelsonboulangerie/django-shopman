@@ -41,7 +41,7 @@ const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
 
-useHead({ title: "Expedição · Produção" });
+useHead({ title: "Expedição" });
 
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
 watch(
@@ -288,8 +288,10 @@ function cardAnchor(order: QCOrderCardProjection): string {
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
 // A ferramenta ATIVA do forneiro para conferir/retirar — a ação de toda hora
 // no rush: arma na enfornada, estende e marca Visto quando toca. Não confundir
-// com o relógio de idade do lote (alertas), nem com concluir a fornada.
-const oven = useOvenTimers();
+// com o relógio de idade do lote (alertas), nem com concluir a fornada. É o
+// mesmo mecanismo dos timers avulsos do cabeçalho (useFloorTimers): o forno
+// só acrescenta o FATO declarado ao servidor.
+const oven = useFloorTimers();
 const quickFinishAvailable = computed(
   () =>
     !isCustomDate.value &&
@@ -372,7 +374,11 @@ async function startOven() {
     return;
   const recorded = await ovenFacts.armed(order.pk, order.rev, minutes);
   if (!recorded) return;
-  oven.arm(ovenKey(order), minutes);
+  oven.arm(ovenKey(order), minutes, {
+    kind: "oven",
+    label: order.recipe_name,
+    sku: order.output_sku,
+  });
   ovenOrder.value = null;
 }
 function markOvenSeen() {
@@ -659,7 +665,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             }"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"
-            :aria-label="`Confirmar conclusão da fornada de ${order.recipe_name}`"
+            :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
             <span class="text-xl font-semibold leading-none tabular-nums"
@@ -668,7 +674,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             <span
               class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground"
               >{{
-                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Confirmar"
+                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
               }}</span
             >
           </button>
@@ -807,7 +813,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           <UiDialogTitle
             >Timer do forno · {{ ovenOrder?.recipe_name }}</UiDialogTitle
           >
-          <UiDialogDescription>Toca neste aparelho.</UiDialogDescription>
+          <UiDialogDescription>Toca neste dispositivo.</UiDialogDescription>
         </UiDialogHeader>
 
         <p

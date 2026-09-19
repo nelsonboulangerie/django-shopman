@@ -1,6 +1,6 @@
 """O link do disparo leva a identidade de quem vai receber.
 
-⚠️ Nasceu de um teste do dono no aparelho dele: mensagem de fornada → botão "Eu quero" →
+⚠️ Nasceu de um teste do dono no dispositivo dele: mensagem de fornada → botão "Eu quero" →
 cardápio → sacola → e o checkout **pediu login**. A pessoa estava dentro do WhatsApp, num
 número que nós escolhemos porque sabemos de quem é — e o link jogava essa identidade fora.
 
@@ -27,7 +27,7 @@ Três decisões que este módulo carrega:
 3. **A cerca não é a `audience`.** Ela existe no model mas ninguém a aplica hoje —
    `exchange_token` nunca passa `required_audience` (`storefront/api/auth.py`). Marcamos
    `WEB_CHECKOUT` como intenção declarada, e quem decide o que a sessão pode fazer é a
-   FORÇA da identidade (aparelho conhecido vs. só o número), não este campo.
+   FORÇA da identidade (dispositivo conhecido vs. só o número), não este campo.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 #: Teto do prazo de um link de campanha, quando o anúncio não declara janela. Uma mensagem
-#: de WhatsApp fica no aparelho para sempre; o crachá dentro dela, não.
+#: de WhatsApp fica no dispositivo para sempre; o crachá dentro dela, não.
 MAX_HOURS = 24
 
 

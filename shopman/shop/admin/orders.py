@@ -17,7 +17,10 @@ from django.template.loader import render_to_string
 from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
 from shopman.orderman.admin import OrderAdmin as _OrdermanOrderAdmin
+from shopman.orderman.admin import display
 from shopman.orderman.models import Order
+
+from shopman.shop.services.fulfillment_window import window_label
 
 
 def _format_brl(amount_q: int) -> str:
@@ -42,7 +45,9 @@ def _order_data_rows(data: dict):
 
     add("Endereço", data.get("delivery_address"))
     date = data.get("delivery_date") or ""
-    slot = data.get("delivery_time_slot") or ""
+    # O ref da janela ("slot-09") nunca vira texto de tela: quem resolve as duas
+    # grades (canônica e meia hora) é ``fulfillment_window.window_label``.
+    slot = window_label(data.get("delivery_time_slot"))
     add("Entrega em", " ".join(p for p in (date, f"({slot})" if slot else "") if p))
     if data.get("is_preorder"):
         add("Encomenda", "Sim")
@@ -78,6 +83,28 @@ class OrderAdmin(_OrdermanOrderAdmin):
         (_("Resumo"), {"fields": ("order_data_display",), "classes": ("tab",)}),
         (_("Pagamentos"), {"fields": ("payment_info",), "classes": ("tab",)}),
     )
+
+    @display(description=_("entrega"))
+    def delivery_date_display(self, obj: Order) -> str:
+        """A coluna "entrega" do changelist com a janela em PORTUGUÊS.
+
+        O orderman (Core) não conhece os slots da casa — ``Shop.defaults`` mora
+        no shop, e Core nunca importa shop — então lá o ref sai cru
+        ("2026-09-16 (slot-09)"). O admin registrado é ESTE; a resolução das
+        duas grades acontece aqui, com o mesmo ``window_label`` da ficha, do
+        acompanhamento e do WhatsApp.
+        """
+        data = obj.data or {}
+        delivery_date = data.get("delivery_date")
+        if not delivery_date:
+            return "-"
+        label = str(delivery_date)
+        janela = window_label(data.get("delivery_time_slot"))
+        if janela:
+            label += f" ({janela})"
+        if data.get("is_preorder", False):
+            return format_html('<span class="font-semibold text-amber-700 dark:text-amber-400">{}</span>', label)
+        return label
 
     @admin.display(description=_("Resumo do pedido"))
     def order_data_display(self, obj):

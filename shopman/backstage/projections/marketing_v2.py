@@ -35,6 +35,10 @@ from shopman.shop.services.marketing_delivery_aggregate import (
 )
 from shopman.shop.services.marketing_time import configured_timezone_name
 
+# As duas grandezas do ledger, nomeadas onde os números do Painel se separam.
+DIRECT_MESSAGE_KIND = "direct_message"
+PUBLICATION_KIND = "publication"
+
 CONTRACT = "marketing.v2"
 RECENT_WINDOW = timedelta(hours=24)
 
@@ -122,6 +126,7 @@ _AUDIENCE_COUNT_FIELDS = (
 _TARGET_STATES = tuple(value for value, _label in DeliveryTarget.State.choices)
 _SAFE_RECEIPT_OUTCOME_FIELDS = frozenset({
     "audience_count",
+    "canary",
     "cancelled_count",
     "effective_at",
     "eligible_count",
@@ -295,13 +300,35 @@ class AnnouncementProjectionV2:
     delivery: DeliveryAggregateProjectionV2
 
 
+# Os números do topo do Painel, separados por GRANDEZA.
+#
+# ⚠️ Um `DeliveryTarget` de WhatsApp é uma PESSOA; um de Instagram, Facebook ou Google é
+# uma POSTAGEM. Somar os dois num número só produzia "12 entregas confirmadas hoje" que
+# podia ser 12 pessoas, ou 9 pessoas e 3 murais — e é o primeiro número que o gestor lê
+# de manhã, o que ele usa para decidir se disparou demais. O contrato da superfície
+# proíbe exatamente essa mistura.
+#
+# A separação vem de `delivery_kind`, que o próprio ledger grava a partir de
+# `marketing_capabilities.platform_kind()`. Linha com `delivery_kind` vazio (anterior à
+# migração 0053, de plataforma que o catálogo não conhece) não entra em nenhuma das
+# duas: aqui nenhum número é apresentado como total de nada, então deixar de fora não
+# desmente promessa alguma — enquanto chutar a grandeza dela chamaria uma pessoa de
+# postagem.
+#
+# ⚠️ Comentário, não docstring: nenhuma classe deste módulo tem docstring, e por bom
+# motivo — o gerador do contrato publica a docstring como `description` no JSON Schema e
+# no cliente TypeScript. Explicação da casa não é contrato.
 @dataclass(frozen=True, slots=True)
 class OperationalCountersProjectionV2:
     pending_decision_count: int
-    accepted_unconfirmed_targets_today: int
-    confirmed_targets_today: int
-    failed_final_targets_today: int
-    unknown_targets_open: int
+    confirmed_people_today: int
+    confirmed_posts_today: int
+    accepted_unconfirmed_people_today: int
+    accepted_unconfirmed_posts_today: int
+    failed_final_people_today: int
+    failed_final_posts_today: int
+    unknown_people_open: int
+    unknown_posts_open: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -579,7 +606,7 @@ def _safe_receipt_outcome(value: object) -> dict[str, Any]:
         if key in count_fields:
             if isinstance(item, int) and not isinstance(item, bool) and item >= 0:
                 safe[key] = item
-        elif key == "retryable":
+        elif key in {"retryable", "canary"}:
             if isinstance(item, bool):
                 safe[key] = item
         elif key == "platforms":
@@ -948,39 +975,50 @@ def _operational_counters(
         time.min,
         tzinfo=shop_zone,
     )
+
+    def settled_today(state: str, kind: str) -> Count:
+        return Count(
+            "pk",
+            filter=Q(
+                state=state,
+                delivery_kind=kind,
+                settled_at__gte=day_start,
+                settled_at__lt=next_day,
+            ),
+        )
+
     values = DeliveryTarget.objects.aggregate(
-        accepted_today=Count(
+        accepted_people_today=settled_today(DeliveryTarget.State.ACCEPTED, DIRECT_MESSAGE_KIND),
+        accepted_posts_today=settled_today(DeliveryTarget.State.ACCEPTED, PUBLICATION_KIND),
+        confirmed_people_today=settled_today(DeliveryTarget.State.CONFIRMED, DIRECT_MESSAGE_KIND),
+        confirmed_posts_today=settled_today(DeliveryTarget.State.CONFIRMED, PUBLICATION_KIND),
+        failed_people_today=settled_today(DeliveryTarget.State.FAILED_FINAL, DIRECT_MESSAGE_KIND),
+        failed_posts_today=settled_today(DeliveryTarget.State.FAILED_FINAL, PUBLICATION_KIND),
+        unknown_people_open=Count(
             "pk",
             filter=Q(
-                state=DeliveryTarget.State.ACCEPTED,
-                settled_at__gte=day_start,
-                settled_at__lt=next_day,
+                state=DeliveryTarget.State.UNKNOWN,
+                delivery_kind=DIRECT_MESSAGE_KIND,
             ),
         ),
-        confirmed_today=Count(
+        unknown_posts_open=Count(
             "pk",
             filter=Q(
-                state=DeliveryTarget.State.CONFIRMED,
-                settled_at__gte=day_start,
-                settled_at__lt=next_day,
+                state=DeliveryTarget.State.UNKNOWN,
+                delivery_kind=PUBLICATION_KIND,
             ),
         ),
-        failed_final_today=Count(
-            "pk",
-            filter=Q(
-                state=DeliveryTarget.State.FAILED_FINAL,
-                settled_at__gte=day_start,
-                settled_at__lt=next_day,
-            ),
-        ),
-        unknown_open=Count("pk", filter=Q(state=DeliveryTarget.State.UNKNOWN)),
     )
     return OperationalCountersProjectionV2(
         pending_decision_count=pending_count,
-        accepted_unconfirmed_targets_today=values["accepted_today"],
-        confirmed_targets_today=values["confirmed_today"],
-        failed_final_targets_today=values["failed_final_today"],
-        unknown_targets_open=values["unknown_open"],
+        confirmed_people_today=values["confirmed_people_today"],
+        confirmed_posts_today=values["confirmed_posts_today"],
+        accepted_unconfirmed_people_today=values["accepted_people_today"],
+        accepted_unconfirmed_posts_today=values["accepted_posts_today"],
+        failed_final_people_today=values["failed_people_today"],
+        failed_final_posts_today=values["failed_posts_today"],
+        unknown_people_open=values["unknown_people_open"],
+        unknown_posts_open=values["unknown_posts_open"],
     )
 
 

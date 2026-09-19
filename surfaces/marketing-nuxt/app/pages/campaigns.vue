@@ -10,6 +10,11 @@ import {
   formatCount,
   platformsSummary,
 } from "~/presentation/campaign";
+import {
+  fireActionFor,
+  fireAvailability,
+  fireDispatchRoute,
+} from "~/presentation/campaignFire";
 import type {
   Campaign,
   ChosenAudience,
@@ -20,6 +25,7 @@ import {
   useMarketingDraftOwner,
 } from "~/composables/useMarketingDraft";
 import { marketingThrottleMessage } from "~/utils/marketingRetry";
+import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
 
 const {
   rules,
@@ -50,6 +56,9 @@ const {
 // A prévia precisa saber se há template aprovado: com ele, o texto que sai no WhatsApp é o
 // da Meta, e prometer o do modelo seria mentira.
 const waTemplate = useWhatsAppTemplate();
+// Prontidão por plataforma: a pílula do formulário conta ANTES do clique onde a
+// campanha não vai sair. Salvar continua livre — a pré-condição é de publicar.
+const { platforms: platformReadiness } = usePlatforms();
 onMounted(() => {
   waTemplate.load();
 });
@@ -76,7 +85,6 @@ const editing = computed<Campaign | null>(() =>
     : rules.value.find((rule) => rule.pk === editingPk.value) ?? null,
 );
 const firing = ref<Campaign | null>(null);
-const fireResult = ref<MarketingCommandResponse | null>(null);
 const fireError = ref("");
 const busy = ref(false);
 const draftOwner = useMarketingDraftOwner();
@@ -201,25 +209,12 @@ onBeforeUnmount(() => {
 const panelOpen = computed(() => creating.value || editing.value !== null);
 
 function fireAction(rule: Campaign) {
-  return actions.value.find(
-    (action) =>
-      action.resource_ref === `campaign:${rule.pk}` &&
-      action.kind === "fire_campaign",
-  );
+  return fireActionFor(rule, actions.value);
 }
 
-function fireUnavailableReason(rule: Campaign): string {
-  const action = fireAction(rule);
-  if (!rule.is_active || action?.reason === "campaign_inactive") {
-    return "Ligue a campanha antes de preparar um disparo.";
-  }
-  if (!action || action.reason === "command_not_available") {
-    return "O disparo direto está indisponível até concluir a atualização de segurança.";
-  }
-  if (action.reason === "missing_capability") {
-    return "Seu perfil não autoriza disparos manuais.";
-  }
-  return "O disparo manual não está disponível agora.";
+/** Liberado ou não, e a frase do porquê — a linha mostra a frase por extenso. */
+function fireState(rule: Campaign) {
+  return fireAvailability(rule, actions.value);
 }
 
 function openNew() {
@@ -237,17 +232,16 @@ function close() {
   editingPk.value = null;
 }
 
-/** Disparar agora: a campanha manual, sem esperar evento da padaria. */
+/** Abre "Definir público" — a campanha manual, sem esperar evento da padaria. Daqui
+ *  nada é disparado: o painel cria um anúncio e leva à revisão. */
 function openFire(rule: Campaign) {
   cancelFireCommand();
-  fireResult.value = null;
   fireError.value = "";
   firing.value = rule;
 }
 
 function closeFire() {
   cancelFireCommand();
-  fireResult.value = null;
   fireError.value = "";
   firing.value = null;
 }
@@ -281,10 +275,21 @@ async function recordFireFailure(error: unknown) {
   );
 }
 
+/**
+ * O disparo deu certo — a tela vai para onde o gestor já queria ir.
+ *
+ * O painel de sucesso era uma escala que não decidia nada: quem acabou de pedir o
+ * disparo só podia tocar "Revisar anúncio agora" para chegar à revisão. Agora a
+ * navegação é a resposta, e o comprovante viaja junto (`preserveMarketingReceipt`)
+ * para que a revisão mostre a prova do disparo que acabou de acontecer.
+ */
 async function showFireResult(response: MarketingCommandResponse) {
-  fireResult.value = response;
   fireError.value = "";
+  const announcementId = response.announcement.pk;
+  preserveMarketingReceipt(announcementId, response.receipt);
+  closeFire();
   await refresh();
+  await navigateTo(fireDispatchRoute(response));
 }
 
 async function onFire(request: {
@@ -350,7 +355,7 @@ async function onSubmit(payload: Record<string, unknown>) {
   }
 }
 
-useHead({ title: "Campanhas · Marketing" });
+useHead({ title: "Campanhas" });
 </script>
 
 <template>
@@ -502,7 +507,7 @@ useHead({ title: "Campanhas · Marketing" });
           class="mt-2"
           @click="refresh()"
         >
-          Tentar atualizar
+          Atualizar
         </UiButton>
       </div>
 
@@ -535,28 +540,16 @@ useHead({ title: "Campanhas · Marketing" });
       <li
         v-for="rule in pageRules"
         :key="rule.pk"
-        class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:gap-3"
+        class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
       >
-        <!-- Liga/desliga permanece nativo porque expõe role=switch e estado aria-checked. -->
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="rule.is_active"
+        <!-- Liga/desliga é o <UiSwitch> do kit: mesmo role=switch e mesmo
+             aria-checked que esta página escrevia à mão, e agora o alvo de 44 px
+             vem do token, não de um `size-11` que esta tela precisava lembrar. -->
+        <UiSwitch
+          :model-value="rule.is_active"
           :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
-          class="-ml-2 grid size-11 shrink-0 place-items-center rounded-md"
-          @click="toggle(rule)"
-        >
-          <span
-            aria-hidden="true"
-            class="flex h-5 w-9 items-center rounded-full transition-colors"
-            :class="rule.is_active ? 'bg-primary' : 'bg-muted-foreground/30'"
-          >
-            <span
-              class="size-4 rounded-full bg-white shadow transition-transform"
-              :class="rule.is_active ? 'translate-x-4' : 'translate-x-0.5'"
-            ></span>
-          </span>
-        </button>
+          @update:model-value="toggle(rule)"
+        />
 
         <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
         <button
@@ -584,7 +577,7 @@ useHead({ title: "Campanhas · Marketing" });
             class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
           >
             <span class="text-muted-foreground">
-              Saiu {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
+              Disparou {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
               {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
             </span>
             <span v-if="rule.failed_count" class="text-destructive">
@@ -624,31 +617,42 @@ useHead({ title: "Campanhas · Marketing" });
           >
             Automática
           </span>
-          <!-- Disparar não espera o evento: fica ao lado da campanha, mas só ativo
-               quando ela está ligada — disparar campanha desligada é engano. -->
+          <!-- ⚠️ Este botão NÃO dispara: ele abre "Definir público", e é o painel que
+               cria um anúncio para a revisão. Por isso o rótulo visível e o nome
+               acessível falam em PREPARAR — a mesma palavra que a razão do botão
+               desabilitado já usava, dois centímetros abaixo.
+               E o rótulo é o mesmo nos dois estados: rótulo que vira adjetivo descreve
+               o botão em vez do que ele faz, e manda o gestor procurar na linha o que
+               está indisponível. Quem explica o bloqueio é a frase de baixo. -->
           <UiButton
             type="button"
             :disabled="!fireAction(rule)?.enabled"
             :aria-label="
               fireAction(rule)?.enabled
-                ? `Disparar a campanha ${rule.name} agora`
-                : `${fireUnavailableReason(rule)} Campanha ${rule.name}`
-            "
-            :title="
-              fireAction(rule)?.enabled ? '' : fireUnavailableReason(rule)
+                ? `Preparar o disparo da campanha ${rule.name}`
+                : `${fireState(rule).reason} Campanha ${rule.name}`
             "
             variant="outline"
             size="xs"
             @click="openFire(rule)"
           >
             <Icon name="lucide:send" class="size-3.5" />
-            {{ fireAction(rule)?.enabled ? "Disparar" : "Indisponível" }}
+            Preparar disparo
           </UiButton>
           <Icon
             name="lucide:chevron-right"
             class="size-4 text-muted-foreground"
           />
         </div>
+        <!-- ⚠️ A razão morava só no `title` do botão desabilitado, e o Firefox não
+             mostra tooltip em botão desabilitado: "Indisponível" ficava sem porquê.
+             Botão morto sem frase é defeito — a frase vai por extenso, sob a linha. -->
+        <p
+          v-if="!fireState(rule).enabled"
+          class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
+        >
+          {{ fireState(rule).reason }}
+        </p>
       </li>
       </ul>
 
@@ -697,7 +701,7 @@ useHead({ title: "Campanhas · Marketing" });
       <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
            rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{
             editing ? "Editar campanha" : "Nova campanha"
           }}</UiSheetTitle>
@@ -716,6 +720,7 @@ useHead({ title: "Campanhas · Marketing" });
             :tags="tags"
             :rfm-segments="rfmSegments"
             :platform-labels="platformLabels"
+            :platform-readiness="platformReadiness"
             :whatsapp-template="waTemplate.current.value"
             :busy="busy"
             :draft-owner="draftOwner"
@@ -737,8 +742,8 @@ useHead({ title: "Campanhas · Marketing" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>Disparar agora</UiSheetTitle>
+        <UiSheetHeader class="border-b border-border pr-14">
+          <UiSheetTitle>Definir público</UiSheetTitle>
           <UiSheetDescription>
             {{ firing?.name }} — escolha o público. O texto vem do modelo e o
             anúncio nasce para revisão.
@@ -754,7 +759,6 @@ useHead({ title: "Campanhas · Marketing" });
             :product-required="firingTemplateRequiresProduct"
             :busy="busy"
             :error="fireError"
-            :result="fireResult"
             @submit="onFire"
             @cancel="closeFire"
           />

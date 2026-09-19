@@ -7,6 +7,13 @@
 //   · expedite (Expedição):    PRODUZIDO  | CONCLUÍDO  — fechamento no QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
+// Na Produção a ação é UMA só — "Confirmar" (o mesmo verbo do Planejamento)
+// diz quanto segue para a Expedição, já preenchido com o planejado (decisão
+// Pablo 2026-09-16); o número fica na coluna Planejado, não no botão. A
+// diferença para o planejado é rendimento da massa, não perda: fica nos dois
+// números da ordem, sem pedir motivo — motivo se pede na Expedição, onde há
+// produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
+// estados: fermentação e afins são ferramenta (timer), nunca fluxo.
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
@@ -14,7 +21,6 @@ import { nextTick } from "vue";
 
 import {
   boardDisplay,
-  elapsedLabel,
   fullDateLabel,
   isoForOffset,
   isStale,
@@ -22,12 +28,9 @@ import {
   rowCommitments,
   rowCommittedUnits,
   rowLabel,
-  timerChip,
-  timerTone,
   weekdayLabel,
 } from "~/presentation/production";
 import type {
-  ProductionKDSCardProjection,
   ProductionMatrixRowProjection,
   ProductionShortageError,
   ProductionSuggestionProjection,
@@ -239,12 +242,19 @@ const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
     ) ?? null,
 );
 
-const startedCard = computed<ProductionKDSCardProjection | null>(() => {
-  if (!selectedStartedOrder.value) return null;
-  return (
-    kds.cards.value.find((c) => c.pk === selectedStartedOrder.value?.pk) ?? null
-  );
+// Diferente do planejado? A tela diz, mas não pergunta: rendimento da massa
+// é número, e os dois números ficam na ordem.
+function qtyNumber(value: string): number {
+  return parseFloat(value.replace(",", ".")) || 0;
+}
+const startDiverges = computed(() => {
+  const wo = selectedStartOrder.value;
+  if (!wo) return false;
+  return qtyNumber(startQty.value) !== qtyNumber(wo.planned_qty);
 });
+const startReady = computed(
+  () => !!selectedStartOrder.value && qtyNumber(startQty.value) > 0,
+);
 
 // Stepper touch: quantidade sempre editável com +/− generosos.
 // (Recebe o NOME do campo — no template o Vue desembrulha refs, então passar
@@ -386,7 +396,7 @@ async function confirmStart() {
   if (startSubmitting.value) return;
   const row = startRow.value;
   const wo = selectedStartOrder.value;
-  if (!row || !wo || !startQty.value.trim()) return;
+  if (!row || !wo || !startReady.value) return;
   startSubmitting.value = true;
   try {
     const res = await start(
@@ -408,13 +418,14 @@ async function confirmStart() {
   }
 }
 
-// Inicia o próximo lote PLANEJADO sem sair do fluxo — antes, com um lote em
-// processo, qualquer toque caía no diálogo de gestão e não havia como largar o
-// próximo até concluir o primeiro.
-function startNextBatch() {
-  const row = startedRow.value;
-  startedRow.value = null;
-  if (row) openStart(row);
+// O lote já produzido abre só para conferência e estorno — nada de gerir
+// etapa por aqui (a decisão de 16/09 tirou a máquina de estados da bancada).
+function openProduced(row: ProductionMatrixRowProjection) {
+  startedRow.value = row;
+  selectedStartedPk.value =
+    row.started_orders.length === 1 ? row.started_orders[0]!.pk : null;
+  voidConfirming.value = false;
+  kds.refresh();
 }
 
 async function confirmVoid() {
@@ -435,24 +446,10 @@ async function confirmVoid() {
   }
 }
 
-async function advanceStep() {
-  const card = startedCard.value;
-  if (!card) return;
-  await kds.advanceStep(card.pk, card.rev);
-  refresh();
-}
-
 function onAction(row: ProductionMatrixRowProjection) {
   if (props.stage === "plan") return openPlan(row);
-  if (row.started_orders.length) {
-    startedRow.value = row;
-    selectedStartedPk.value =
-      row.started_orders.length === 1 ? row.started_orders[0]!.pk : null;
-    voidConfirming.value = false;
-    kds.refresh();
-    return;
-  }
-  return openStart(row);
+  if (row.planned_orders.length) return openStart(row);
+  if (row.started_orders.length) return openProduced(row);
 }
 
 function rowValue(row: ProductionMatrixRowProjection, key: string): string {
@@ -527,7 +524,7 @@ const dayProgress = computed(() => {
 const headerCount = computed(() => {
   if (props.stage === "plan")
     return { count: counts.value?.planned ?? 0, label: "planejados" };
-  return { count: counts.value?.started ?? 0, label: "em processo" };
+  return { count: counts.value?.started ?? 0, label: "produzidos" };
 });
 </script>
 
@@ -752,9 +749,43 @@ const headerCount = computed(() => {
 
                 <!-- Coluna de AÇÃO (verbo no cabeçalho; valor atual + gesto) -->
                 <td v-if="lens.action.visible" class="px-3 py-1.5 text-right">
+                  <!-- Produção: o produzido fica à vista (abre conferência/estorno) e a
+                       única ação é Confirmar sobre o que ainda está planejado. -->
+                  <span
+                    v-if="stage === 'produce' && actionEnabled(row)"
+                    class="inline-flex flex-wrap items-center justify-end gap-1.5"
+                  >
+                    <button
+                      v-if="row.started_qty !== '0'"
+                      type="button"
+                      :class="[CELL_ACTION, 'text-foreground']"
+                      :disabled="isBusy(row.output_sku)"
+                      :aria-label="`Produzido ${row.started_qty} de ${rowLabel(row)}`"
+                      @click="openProduced(row)"
+                    >
+                      {{ row.started_qty }}
+                      <Icon name="lucide:check" class="size-3.5 opacity-60" />
+                    </button>
+                    <button
+                      v-if="row.planned_orders.length"
+                      type="button"
+                      :class="[CELL_ACTION, 'text-foreground']"
+                      :disabled="isBusy(row.output_sku)"
+                      :aria-label="`Confirmar ${rowLabel(row)}`"
+                      @click="openStart(row)"
+                    >
+                      <span class="whitespace-nowrap text-sm font-medium">{{
+                        ACTION_VERB[stage]
+                      }}</span>
+                      <Icon
+                        name="lucide:chevron-right"
+                        class="size-3.5 opacity-60"
+                      />
+                    </button>
+                  </span>
                   <!-- A célula acionável preserva alinhamento e alvo de toque do quadro produtivo. -->
                   <button
-                    v-if="actionEnabled(row)"
+                    v-else-if="actionEnabled(row)"
                     type="button"
                     :class="[
                       CELL_ACTION,
@@ -877,7 +908,7 @@ const headerCount = computed(() => {
           class="text-sm text-muted-foreground"
         >
           Soma ao dia<template v-if="planRow?.started_qty !== '0'">
-            · {{ planRow?.started_qty }} em processo</template
+            · {{ planRow?.started_qty }} produzidas</template
           ><template v-if="planRow?.finished_qty !== '0'">
             · {{ planRow?.finished_qty }} concluídas</template
           >.
@@ -948,7 +979,7 @@ const headerCount = computed(() => {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- confirmar a quantidade produzida (evento interno: start) -->
+    <!-- Confirmar: quanto foi produzido segue para a Expedição (evento interno: start) -->
     <UiDialog
       :open="startRow != null"
       @update:open="
@@ -963,12 +994,12 @@ const headerCount = computed(() => {
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
           <UiDialogTitle>
-            Confirmar quantidade produzida ·
+            Quanto foi produzido? ·
             {{ startRow ? rowLabel(startRow) : "" }}
           </UiDialogTitle>
           <UiDialogDescription
-            >{{ startRow?.output_sku }} · informe quantas unidades produzidas
-            seguem para a Expedição.</UiDialogDescription
+            >{{ startRow?.output_sku }} · esta quantidade segue para a
+            Expedição.</UiDialogDescription
           >
         </UiDialogHeader>
         <div
@@ -980,7 +1011,7 @@ const headerCount = computed(() => {
           class="grid gap-2"
         >
           <p class="text-sm text-muted-foreground">
-            Selecione a fornada exata que deseja confirmar como produzida.
+            Selecione a fornada que vai confirmar.
           </p>
           <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
@@ -997,8 +1028,8 @@ const headerCount = computed(() => {
           </button>
         </div>
         <p v-if="selectedStartOrder" class="text-sm text-muted-foreground">
-          Fornada #{{ selectedStartOrder.ref }} · revisão
-          {{ selectedStartOrder.rev }}
+          Fornada #{{ selectedStartOrder.ref }} · planejado
+          {{ selectedStartOrder.planned_qty }}
         </p>
         <div v-if="selectedStartOrder" class="flex items-center gap-2">
           <!-- Stepper de 48px cerca o número central para operação rápida no tablet. -->
@@ -1028,6 +1059,13 @@ const headerCount = computed(() => {
             +
           </button>
         </div>
+        <!-- Divergiu do planejado? A tela avisa e segue: é rendimento, não perda. -->
+        <p
+          v-if="selectedStartOrder && startDiverges"
+          class="text-sm text-muted-foreground"
+        >
+          Diferente do planejado ({{ selectedStartOrder.planned_qty }}).
+        </p>
         <UiDialogFooter>
           <UiButton
             type="button"
@@ -1038,9 +1076,7 @@ const headerCount = computed(() => {
           </UiButton>
           <UiButton
             type="button"
-            :disabled="
-              startSubmitting || !startQty.trim() || !selectedStartOrder
-            "
+            :disabled="startSubmitting || !startReady"
             aria-keyshortcuts="Enter"
             @click="confirmStart()"
           >
@@ -1050,7 +1086,7 @@ const headerCount = computed(() => {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- lote em processo (gerir: etapa, timer, estornar) -->
+    <!-- lote produzido: conferência e estorno — sem etapas, sem gestão -->
     <UiDialog
       :open="startedRow != null"
       @update:open="
@@ -1066,15 +1102,16 @@ const headerCount = computed(() => {
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle
-            >{{ startedRow ? rowLabel(startedRow) : "" }} em
-            processo</UiDialogTitle
+            >Produzido ·
+            {{ startedRow ? rowLabel(startedRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription>
             <template v-if="selectedStartedOrder">
               #{{ selectedStartedOrder.ref }} · {{ startedRow?.output_sku }} ·
-              {{ selectedStartedOrder.started_qty }} un. em processo
+              {{ selectedStartedOrder.started_qty }} un. seguem para a
+              Expedição
             </template>
-            <template v-else>Selecione a fornada que deseja gerir.</template>
+            <template v-else>Selecione a fornada.</template>
           </UiDialogDescription>
         </UiDialogHeader>
 
@@ -1101,65 +1138,13 @@ const headerCount = computed(() => {
           </button>
         </div>
 
-        <div v-if="startedCard" class="flex flex-col gap-2">
-          <div class="flex items-center justify-between gap-2 text-sm">
-            <span class="truncate font-medium">
-              <template
-                v-if="
-                  startedCard.total_steps > 0 && startedCard.current_step_index
-                "
-              >
-                {{ startedCard.current_step_index }}/{{
-                  startedCard.total_steps
-                }}
-                ·
-                {{ startedCard.current_step_name || startedCard.current_step }}
-              </template>
-              <template v-else>{{
-                startedCard.current_step || "Em processo"
-              }}</template>
-            </span>
-            <span
-              class="shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
-              :class="timerChip(timerTone(startedCard.timer_status_code))"
-            >
-              {{ elapsedLabel(startedCard.elapsed_seconds) }}
-            </span>
-          </div>
-          <UiButton
-            v-if="startedCard.next_step_name"
-            type="button"
-            variant="outline"
-            @click="advanceStep()"
-          >
-            <Icon name="lucide:arrow-right" class="size-4" /> Avançar para
-            {{ startedCard.next_step_name }}
-          </UiButton>
-        </div>
-
-        <UiButton
-          v-if="startedRow && startedRow.planned_orders.length"
-          type="button"
-          class="border-dashed"
-          variant="outline"
-          @click="startNextBatch()"
-        >
-          <Icon name="lucide:plus" class="size-4" /> Confirmar próximo lote
-          <template v-if="startedRow.planned_orders.length === 1">
-            ({{ startedRow.planned_orders[0]?.planned_qty }} un.)
-          </template>
-          <template v-else>
-            ({{ startedRow.planned_orders.length }} fornadas)
-          </template>
-        </UiButton>
-
         <div v-if="voidConfirming" class="flex flex-col gap-2">
           <p
             class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-sm text-warning"
           >
             <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
             <span
-              >A ordem sai do processo e o vínculo com pedidos é desfeito.</span
+              >A fornada volta atrás e o vínculo com pedidos é desfeito.</span
             >
           </p>
           <UiTextarea
@@ -1199,12 +1184,6 @@ const headerCount = computed(() => {
             "
           >
             Fechar
-          </UiButton>
-          <UiButton
-            to="/expedite"
-            variant="outline"
-          >
-            Expedição →
           </UiButton>
         </UiDialogFooter>
       </UiDialogContent>

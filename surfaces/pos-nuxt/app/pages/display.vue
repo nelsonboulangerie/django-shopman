@@ -12,7 +12,12 @@
 // sem nenhum composable de operador; nada aqui busca dado no servidor.
 import type { CustomerDisplayPhase } from "~/types/customerDisplay";
 
-useHead({ title: "Tela do cliente · PDV" });
+// Toque nesta janela é de quem COMPRA, não de operador presente: não alimenta o
+// relógio de atividade do dispositivo (plugin do operator-kit) e, portanto, não
+// segura a trava do caixa.
+definePageMeta({ operatorActivity: false });
+
+useHead({ title: "Tela do cliente" });
 
 const { snapshot } = useCustomerDisplayConsumer();
 

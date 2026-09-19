@@ -29,19 +29,6 @@ export default defineNuxtConfig({
       wakeLock: true,
       kiosk: true,
       idleReloadPaths: ["*"],
-      manifest: {
-        name: "Shopman KDS",
-        shortName: "KDS",
-        description: "Painel de preparo e expedição da cozinha.",
-        themeColor: "#0A0A0A",
-        backgroundColor: "#0A0A0A",
-        orientation: "landscape",
-        icons: [
-          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-      },
     }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
@@ -105,10 +92,11 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman KDS",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#0a0a0a" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

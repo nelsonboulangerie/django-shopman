@@ -1,5 +1,5 @@
 export function usePosAction() {
-  const apiPath = usePosApiPath();
+  const apiPath = useApiPath();
   // Re-gate global em 401: toda mutação passa por aqui, então uma sessão de
   // dispositivo expirada é detectada num único ponto e sobe a tela de login
   // (em vez de o operador seguir batendo numa sessão morta).

@@ -14,10 +14,16 @@ import csv
 from django import forms
 from django.apps import apps
 from django.contrib import admin, messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+from shopman.guestman.admin_privacy import (
+    CustomerOwnedPrivacyFenceAdminMixin,
+    CustomerPrivacyFenceAdminMixin,
+    PrivacyReadOnlyAdminMixin,
+)
 from shopman.guestman.models import (
     ContactPoint,
     Customer,
@@ -37,7 +43,7 @@ from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWid
 for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
     try:
         admin.site.unregister(model)
-    except admin.sites.NotRegistered:
+    except admin.sites.NotRegistered:  # silêncio-deliberado: o contrib pode não ter registrado o modelo
         pass
 
 
@@ -284,7 +290,7 @@ class CustomerForm(forms.ModelForm):
 
 
 @admin.register(Customer)
-class CustomerAdmin(BaseModelAdmin):
+class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
     form = CustomerForm
     # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
     # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
@@ -426,7 +432,7 @@ class CustomerAdmin(BaseModelAdmin):
                 _rfm_segment=Subquery(insight_qs.values("rfm_segment")[:1]),
                 _churn_risk=Subquery(insight_qs.values("churn_risk")[:1]),
             )
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: insights é um contrib opcional
             pass
         return qs
 
@@ -487,13 +493,28 @@ class CustomerAdmin(BaseModelAdmin):
 
                 # `resolve` casa por SLUG: "sem glúten" reusa a etiqueta "sem gluten" em vez
                 # de criar uma segunda com o mesmo sentido (ver `models/tag.py`).
-                tags = CustomerTag.resolve(form.cleaned_data["tags"])
                 removing = form.cleaned_data["mode"] == "remove"
-                for customer in queryset:
-                    if removing:
-                        customer.tags.remove(*tags)
-                    else:
-                        customer.tags.add(*tags)
+                selected_pks = tuple(queryset.values_list("pk", flat=True))
+                with transaction.atomic():
+                    # A seleção do Admin é apenas uma pista: entre a changelist e
+                    # a confirmação, uma exclusão pode ter anonimizado o cadastro.
+                    # Trave e revalide todos os titulares antes de tocar a tabela
+                    # de vínculos do taggit, sempre na ordem Customer -> filho.
+                    customers = list(
+                        Customer.objects.select_for_update()
+                        .filter(pk__in=selected_pks, is_active=True)
+                        .order_by("pk")
+                    )
+                    tags = (
+                        CustomerTag.resolve(form.cleaned_data["tags"])
+                        if customers
+                        else []
+                    )
+                    for customer in customers:
+                        if removing:
+                            customer.tags.remove(*tags)
+                        else:
+                            customer.tags.add(*tags)
 
                 names = ", ".join(tag.name for tag in tags)
                 self.message_user(
@@ -502,7 +523,7 @@ class CustomerAdmin(BaseModelAdmin):
                         _("Etiquetas retiradas de {count} cliente(s): {tags}.")
                         if removing
                         else _("{count} cliente(s) etiquetado(s) com: {tags}.")
-                    ).format(count=queryset.count(), tags=names),
+                    ).format(count=len(customers), tags=names),
                 )
                 return None
             self.message_user(
@@ -582,7 +603,7 @@ class CustomerAdmin(BaseModelAdmin):
 
 
 @admin.register(CustomerAddress)
-class CustomerAddressAdmin(BaseModelAdmin):
+class CustomerAddressAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
     list_display = [
         "customer",
         "label_badge",
@@ -619,7 +640,7 @@ class CustomerAddressAdmin(BaseModelAdmin):
 
 
 @admin.register(ContactPoint)
-class ContactPointAdmin(BaseModelAdmin):
+class ContactPointAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
     list_display = [
         "value_masked",
         "type",
@@ -665,7 +686,7 @@ class ContactPointAdmin(BaseModelAdmin):
 
 
 @admin.register(ExternalIdentity)
-class ExternalIdentityAdmin(BaseModelAdmin):
+class ExternalIdentityAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
     list_display = [
         "provider",
         "provider_uid_short",
@@ -717,7 +738,7 @@ if LoyaltyAccount is not None:
     for _model in (LoyaltyAccount, LoyaltyTransaction):
         try:
             admin.site.unregister(_model)
-        except admin.sites.NotRegistered:
+        except admin.sites.NotRegistered:  # silêncio-deliberado: loyalty pode não ter admin registrado
             pass
 
     _TIER_COLORS = {
@@ -746,7 +767,7 @@ if LoyaltyAccount is not None:
             return False
 
     @admin.register(LoyaltyAccount)
-    class LoyaltyAccountAdmin(BaseModelAdmin):
+    class LoyaltyAccountAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
         list_display = [
             "customer_link",
             "points_balance",
@@ -783,7 +804,7 @@ if LoyaltyAccount is not None:
             return obj.is_active
 
     @admin.register(LoyaltyTransaction)
-    class LoyaltyTransactionAdmin(BaseModelAdmin):
+    class LoyaltyTransactionAdmin(PrivacyReadOnlyAdminMixin, BaseModelAdmin):
         list_display = [
             "created_at",
             "customer_ref",

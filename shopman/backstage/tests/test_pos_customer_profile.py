@@ -74,6 +74,24 @@ class POSCustomerProfileTests(TestCase):
         self.customer.refresh_from_db()
         self.assertTrue(self.customer.metadata["fiscal_prefs"]["cpf_na_nota"])
 
+    def test_profile_refuses_inactive_customer_without_recreating_personal_data(self) -> None:
+        Customer.objects.filter(pk=self.customer.pk).update(
+            is_active=False,
+            notes="",
+            metadata={},
+        )
+
+        response = self._post({
+            "notes": "não pode voltar",
+            "dietary_restrictions": "não pode voltar",
+        })
+
+        self.assertEqual(response.status_code, 404)
+        self.customer.refresh_from_db()
+        self.assertFalse(self.customer.is_active)
+        self.assertEqual(self.customer.notes, "")
+        self.assertEqual(self.customer.metadata, {})
+
     def test_birthday_today_with_promo_surfaces_the_label(self) -> None:
         today = timezone.localdate()
         self.customer.birthday = date(1990, today.month, today.day)

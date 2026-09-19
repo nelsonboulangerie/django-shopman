@@ -212,6 +212,14 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
         description: "Se o agente da estação caiu, reinicie-o (e reinicie sempre depois de mudar a configuração do terminal).",
         action: { label: "Tentar de novo", onClick: () => void printMovementReceipt(entryId, opts) },
       });
+    } else if (outcome.status === "skipped") {
+      // `skipped` era a falha MUDA desta tela: a sangria entrava no livro, o
+      // papel não saía e ninguém ficava sabendo — o operador ia procurar o
+      // comprovante na bobina. Não tem "Tentar de novo" porque repetir não
+      // resolve configuração ausente; tem o que FALTA e onde se resolve.
+      toast.warning(`O comprovante não saiu: ${outcome.detail}`, {
+        description: "O movimento está registrado no livro-caixa. Configure a impressora em Terminais do PDV, no gestor.",
+      });
     } else if (opts.reprint) {
       toast.success("Segunda via enviada para a impressora.");
     }
@@ -374,6 +382,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
     canOpenDrawer: drawer.canKick,
     drawerUnavailableReason: drawer.unavailableReason,
+    // IMPRESSORA, capacidade à parte: o comprovante de sangria/suprimento sai
+    // onde há bobina, mesmo que a gaveta deste balcão abra com a chave.
+    canPrintReceipt: drawer.canPrint,
     drawerProbing: drawer.probing,
     openDrawerWithoutSale,
     probeDrawer: drawer.probe,

@@ -162,8 +162,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CHECKOUT_WHEN_REQUIRED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Escolha data e horário para seguir.")},
     },
+    # "Economize até R$ 12,00" não dizia por que "até": o valor é o SALDO, e o desconto
+    # para no total do pedido. Dizer de quem é o teto responde a pergunta sem o cliente
+    # precisar ligar a chave para descobrir.
     "CHECKOUT_LOYALTY_SAVINGS_PREFIX": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Economize até")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Seus pontos cobrem até")},
     },
     "CHECKOUT_CONFIRM_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar pedido")},
@@ -277,7 +280,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="último pedido")},
     },
     "HOME_HERO_REORDER_SUBTITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Com um toque, seu favorito volta à sacola.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Os itens do seu último pedido voltam para a sacola.")},
     },
     "HOME_HERO_HANDMADE_SUBTITLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Do forno para a sua mesa.")},
@@ -792,10 +795,18 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},
     },
+    # O ramo com data só é escolhido PORQUE a data existe — e a frase antiga a
+    # descartava: quem pagou sabia menos do que quem só olhou a sacola, onde a loja já
+    # tinha dito "Previsto para {date}". A gêmea `_NO_DATE` fica sem `{when}` de
+    # propósito: ali a frase é verdadeira.
+    # ⚠️ O COPY-WAITLIST-001 (storefront-surface-parity-contract) proíbe transformar a
+    # data do lote em disponibilidade, e a varredura bloqueia a expressão que faz isso:
+    # o hold planejado não está materializado. Por isso a frase mantém "fila de espera"
+    # como termo canônico e a data entra como PREVISÃO, não como promessa.
     "TRACKING_PROMISE_WAITLIST_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
             ),
         },
     },
@@ -810,8 +821,8 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
-                    "Pagamento confirmado. Sua reserva está na fila de espera. "
-                    "Avisamos quando estiver pronto."
+                    "Pagamento confirmado. Sua reserva está na fila de espera da fornada "
+                    "prevista para {when}. Avisamos quando sair."
                 ),
             ),
         },
@@ -1197,7 +1208,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Você pode colar o código. Ao completar, a confirmação é automática.")},
     },
     "LOGIN_NAME_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Como quer ser chamado?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Como podemos te chamar?")},
     },
     "LOGIN_NAME_SUBTITLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pode ser só o primeiro nome ou um apelido.")},
@@ -1209,7 +1220,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Bem-vindo de volta", message="Tudo pronto. Levando você para a loja…")},
     },
     "DEVICE_TRUST_REDIRECTING": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Dispositivo reconhecido. Entrando automaticamente…")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Aparelho reconhecido. Entrando automaticamente…")},
     },
     "DEVICE_TRUST_PROMPT": {
         WILDCARD: {WILDCARD: CopyEntry(title="Salvar este aparelho?", message="Use só em um aparelho seu. Por 30 dias, você entra sem código.")},
@@ -1221,7 +1232,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Agora não")},
     },
     "DEVICE_TRUST_SAVED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Dispositivo salvo por 30 dias.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Aparelho salvo por 30 dias.")},
     },
 
     # ── History / account empty states ────────────────────────────
@@ -1273,23 +1284,23 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Minha Conta")},
     },
     "ACCOUNT_TRUSTED_DEVICES_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Controle os dispositivos confiáveis e seus dados pessoais.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Controle os aparelhos confiáveis e seus dados pessoais.")},
     },
     "ACCOUNT_DELETE_WARNING": {
         # A frase é o que o sistema faz desde a correção do LOTE 6: a exclusão
         # alcança o PEDIDO (handle_ref, data e snapshot), não só o cadastro.
         # "Anonimizados conforme a LGPD" era vago o bastante para esconder que
         # o telefone ficava nos 29 pedidos do titular; a frase agora nomeia o que sai.
-        WILDCARD: {WILDCARD: CopyEntry(message="Esta ação é irreversível. Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Esta ação é irreversível. Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste aparelho.")},
     },
     "DEVICE_LIST_EMPTY": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Nenhum dispositivo confiável", message="Quando você optar por confiar neste dispositivo no login, ele aparecerá aqui.")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Nenhum aparelho confiável", message="Quando você optar por confiar neste aparelho no login, ele aparecerá aqui.")},
     },
     "DEVICE_LIST_UNKNOWN": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Dispositivo desconhecido")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Aparelho desconhecido")},
     },
     "DEVICE_LIST_CURRENT": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Este dispositivo")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Este aparelho")},
     },
     "DEVICE_LIST_REGISTERED_PREFIX": {
         WILDCARD: {WILDCARD: CopyEntry(message="Registrado em")},
@@ -1298,13 +1309,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Remover")},
     },
     "DEVICE_REVOKE_CONFIRM": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Remover este dispositivo?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Remover este aparelho?")},
     },
     "DEVICE_REVOKE_ALL_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Remover todos os dispositivos")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Remover todos os aparelhos")},
     },
     "DEVICE_REVOKE_ALL_CONFIRM": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Remover todos os dispositivos?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Remover todos os aparelhos?")},
     },
     # Labels dos campos editáveis do Perfil — religados em perfil.vue via
     # ProfileView._profile_copy(). Nome dividido (given/family) é a decisão de UX

@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import {
   notificationAction,
-  notificationOwnerLabel,
   notificationReasonLabel,
   notificationStateLabel,
 } from "~/presentation/notifications";
 import type { MarketingNotification } from "~/types/notifications";
-import { expirySummary, scheduleSummary } from "~/utils/marketingSchedule";
+import { expirySummary } from "~/utils/marketingSchedule";
 
 const {
   notifications,
@@ -19,7 +18,6 @@ const {
   error,
   mutationError,
   acknowledging,
-  markingSeen,
   refresh,
   markVisible,
   acknowledge,
@@ -107,15 +105,10 @@ function deadline(notification: MarketingNotification): string {
     : "Sem prazo automático";
 }
 
-function escalation(notification: MarketingNotification): string {
-  if (!notification.escalation.role) return "";
-  const owner = notificationOwnerLabel(notification.escalation.role);
-  const when = notification.escalation.at
-    ? scheduleSummary(notification.escalation.at, shopTimezone.value)
-    : "se continuar pendente";
-  const timezone = notification.escalation.at ? ` (${shopTimezone.value})` : "";
-  return `Escala para ${owner} ${when}${timezone}`;
-}
+// A linha de escalada dizia "Escala para SRE em 14:00". A padaria não tem SRE,
+// não tem time de Produto e não tem plantão: era vocabulário de página de status
+// de SaaS numa operação de uma pessoa. O que importa ao gestor é o prazo, e ele
+// já está logo acima, em `deadline()`.
 
 onBeforeUnmount(() => setBackgroundInert(false));
 </script>
@@ -236,7 +229,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
             class="mt-1"
             @click="refresh"
           >
-            Tentar novamente
+            Tentar de novo
           </UiButton>
         </div>
 
@@ -262,10 +255,10 @@ onBeforeUnmount(() => setBackgroundInert(false));
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p
+                  v-if="notificationStateLabel(notification.lifecycle)"
                   class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                 >
-                  {{ notificationStateLabel(notification.lifecycle) }} ·
-                  {{ notificationOwnerLabel(notification.owner.role) }}
+                  {{ notificationStateLabel(notification.lifecycle) }}
                 </p>
                 <h3 class="mt-1 break-words text-sm font-bold">
                   {{ notification.title }}
@@ -285,17 +278,8 @@ onBeforeUnmount(() => setBackgroundInert(false));
               {{ deadline(notification) }}
             </p>
             <p class="mt-0.5 text-xs text-muted-foreground">
-              Criado {{ notification.created_at_display }} · origem v{{
-                notification.source.version
-              }}
+              Criado {{ notification.created_at_display }}
             </p>
-            <p
-              v-if="escalation(notification)"
-              class="mt-0.5 text-xs text-muted-foreground"
-            >
-              {{ escalation(notification) }}
-            </p>
-
             <div class="mt-3 flex flex-wrap gap-2">
               <UiButton
                 type="button"
@@ -316,7 +300,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
                 @click="acknowledge(notification)"
               >
                 {{
-                  acknowledging.has(notification.pk) ? "Assumindo…" : "Assumir"
+                  acknowledging.has(notification.pk) ? "Marcando…" : "Visto"
                 }}
               </UiButton>
             </div>
@@ -337,13 +321,6 @@ onBeforeUnmount(() => setBackgroundInert(false));
         </p>
       </div>
 
-      <p
-        v-if="markingSeen"
-        class="border-t border-border px-4 py-2 text-xs text-muted-foreground"
-        aria-live="polite"
-      >
-        Registrando os alertas que ficaram visíveis…
-      </p>
       </section>
     </Teleport>
   </div>

@@ -1,5 +1,4 @@
 import {
-  getRequestHeader,
   setResponseHeaders,
   type H3Event
 } from 'h3'
@@ -26,10 +25,10 @@ async function publicShop (event: H3Event): Promise<PwaShopSource> {
 
 export default defineEventHandler(async (event) => {
   setResponseHeaders(event, {
-    vary: 'User-Agent',
-    // Shared CDNs may ignore Vary: User-Agent; never share this variant.
+    // Nome, cores e descrição vêm da loja no Django: o navegador relê a cada visita,
+    // e é essa releitura que leva a troca de ícone a um app já instalado.
     'cache-control': 'private, no-store',
     'content-type': 'application/manifest+json; charset=utf-8'
   })
-  return buildStorefrontManifest(await publicShop(event), getRequestHeader(event, 'user-agent'))
+  return buildStorefrontManifest(await publicShop(event))
 })

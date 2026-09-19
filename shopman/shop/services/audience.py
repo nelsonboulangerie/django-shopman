@@ -17,10 +17,12 @@ Três invariantes:
    (``ConsentService``), nunca por model interno de contrib.
 2. **Um destinatário por telefone.** As três regras se sobrepõem muito; o
    telefone normalizado é a chave de dedupe, então ninguém recebe em dobro.
-3. **Sem prova de maioridade não há marketing direto.** Cadastro com data que
-   comprove 18+ ou aceite específico do “Avise-me” é obrigatório. Idade
-   desconhecida e menor conhecido falham fechados; consentimento de canal
-   sozinho não substitui a prova de maioridade.
+3. **Sem prova de maioridade não há marketing direto.** Vale a declaração
+   feita ao ENTRAR na loja (``Customer.metadata.adult_declaration``, carimbada
+   em toda autenticação), a data de nascimento que comprove 18+ ou o aceite
+   específico do “Avise-me”. Sem nenhuma delas falha fechado; data que prova
+   menor vence qualquer declaração; consentimento de canal sozinho não
+   substitui a prova de maioridade.
 4. **VIP primeiro é vantagem, não exclusão.** O atraso do grupo geral é uma
    janela de privilégio, e todo mundo acaba recebendo.
 
@@ -45,7 +47,7 @@ from django.conf import settings
 from django.utils import timezone
 from shopman.utils.phone import normalize_phone
 
-from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
+from shopman.shop.services.marketing_age import is_known_minor, is_proved_adult
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +98,43 @@ RULE_KEYS = frozenset({
 # Existing server-side rows retain them during a patch, but the CRUD API cannot
 # create or replace that private selector.
 PUBLIC_RULE_KEYS = RULE_KEYS - {"customer_refs"}
+#: Regras que o resolvedor lê com ``int()``. Valor que não converte ("sete") derrubava
+#: contagem, disparo, aprovação e o anúncio do evento com ``ValueError`` cru — e a
+#: regra já estava SALVA, então todo caminho estourava até alguém editar a campanha.
+#: A porta de entrada (CRUD) recusa antes de salvar; o resolvedor recusa de novo,
+#: gritando no dialeto do contrato, porque linha antiga ou escrita por fora existe.
+INTEGER_RULE_KEYS = ("bought_within_days", "vip_first_minutes", "preferred_hour_window_hours")
 AUDIENCE_POLICY_VERSION = "marketing-audience-v1"
 AUDIENCE_PREVIEW_TTL = timedelta(minutes=15)
+
+
+def invalid_integer_rules(rules: dict | None) -> list[str]:
+    """Chaves de ``INTEGER_RULE_KEYS`` cujo valor ``int()`` não converte.
+
+    Mesma régua que o resolvedor sempre aplicou (``int(valor or 0)``): ausente,
+    ``None``, vazio e zero valem 0; inteiro, float e string numérica convertem.
+    Só o que estourava vira recusa — regra válida continua com a mesma semântica.
+    """
+    rules = rules if isinstance(rules, dict) else {}
+    invalid: list[str] = []
+    for key in INTEGER_RULE_KEYS:
+        try:
+            int(rules.get(key) or 0)
+        except (TypeError, ValueError):
+            invalid.append(key)
+    return invalid
+
+
+def _require_integer_rules(rules: dict) -> None:
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+
+    invalid = invalid_integer_rules(rules)
+    if invalid:
+        raise MarketingContractError(
+            code="invalid_audience_rules",
+            detail="O público tem um valor que não é número inteiro.",
+            field_errors={"audience_rules": tuple(invalid)},
+        )
 
 
 class AudienceSourceUnavailable(RuntimeError):
@@ -128,7 +165,8 @@ class Recipient:
     is_vip: bool = False
     #: Data conhecida prova idade inferior a 18 anos. Nunca sai no summary/browser.
     is_known_minor: bool = False
-    #: Prova de 18+: data de nascimento adulta ou declaração específica do alerta.
+    #: Prova de maioridade: declaração feita ao entrar na loja, data de
+    #: nascimento adulta ou declaração específica do alerta.
     has_adult_declaration: bool = False
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
     #: ``None`` para quem ainda não tem padrão — esse recebe na hora.
@@ -291,9 +329,15 @@ def resolve(
     Returns:
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
         consentimento. Audiência vazia é resposta normal, não erro.
+
+    Raises:
+        MarketingContractError: ``invalid_audience_rules`` quando uma regra inteira
+        (``INTEGER_RULE_KEYS``) guarda valor que não converte. Regra salva quebrada
+        é defeito de configuração, não audiência vazia — e nunca ``ValueError`` cru.
     """
     started_at = time.perf_counter()
     rules = rules or {}
+    _require_integer_rules(rules)
     calculated_at = now or timezone.now()
     by_phone: dict[str, Recipient] = {}
     counts: dict[str, int] = {}
@@ -587,7 +631,10 @@ def _pending_alerts(sku: str) -> list[Recipient]:
                 first_name=profile.get("first_name", ""),
                 is_vip=bool(profile.get("is_vip", False)),
                 is_known_minor=bool(profile.get("is_known_minor", False)),
-                has_adult_declaration=adult_declared,
+                # A assinatura prova por si; a declaração do login do cliente
+                # conhecido também vale, e cobre linha antiga sem o aceite.
+                has_adult_declaration=adult_declared
+                or bool(profile.get("has_adult_declaration", False)),
                 preferred_hour=profile.get("preferred_hour"),
                 source_subscription_ref=source_subscription_ref,
             )
@@ -660,6 +707,7 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                 "customer__first_name",
                 "customer__phone",
                 "customer__birthday",
+                "customer__metadata",
             )
         )
         if (
@@ -687,8 +735,9 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                     first_name=(getattr(customer, "first_name", "") or "").strip(),
                     is_vip=bool(getattr(insight, "is_vip", False)),
                     is_known_minor=is_known_minor(getattr(customer, "birthday", None)),
-                    has_adult_declaration=is_known_adult(
-                        getattr(customer, "birthday", None)
+                    has_adult_declaration=is_proved_adult(
+                        getattr(customer, "birthday", None),
+                        getattr(customer, "metadata", None),
                     ),
                     preferred_hour=getattr(insight, "preferred_hour", None),
                 )
@@ -994,6 +1043,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                     "uuid",
                     "first_name",
                     "birthday",
+                    "metadata",
                     "insight__rfm_segment",
                     "insight__preferred_hour",
                     "loyalty_account__tier",
@@ -1005,6 +1055,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                 customer_uuid,
                 first_name,
                 birthday,
+                metadata,
                 rfm_segment,
                 preferred_hour,
                 loyalty_tier,
@@ -1014,7 +1065,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                     "customer_uuid": str(customer_uuid or ""),
                     "first_name": (first_name or "").strip(),
                     "is_known_minor": is_known_minor(birthday),
-                    "has_adult_declaration": is_known_adult(birthday),
+                    "has_adult_declaration": is_proved_adult(birthday, metadata),
                     "is_vip": bool(
                         rfm_segment in VIP_RFM_SEGMENTS
                         or loyalty_tier in VIP_LOYALTY_TIERS
@@ -1036,6 +1087,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
         "uuid",
         "first_name",
         "birthday",
+        "metadata",
         "insight__rfm_segment",
         "insight__preferred_hour",
         "loyalty_account__tier",
@@ -1047,6 +1099,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
         customer_uuid,
         first_name,
         birthday,
+        metadata,
         rfm_segment,
         preferred_hour,
         loyalty_tier,
@@ -1066,7 +1119,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
                     or loyalty_tier in VIP_LOYALTY_TIERS
                 ),
                 is_known_minor=is_known_minor(birthday),
-                has_adult_declaration=is_known_adult(birthday),
+                has_adult_declaration=is_proved_adult(birthday, metadata),
                 preferred_hour=preferred_hour,
             )
         )
@@ -1076,7 +1129,12 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
 def _exclude_without_adult_declaration(
     recipients,
 ) -> tuple[list[Recipient], dict[str, int]]:
-    """Fail closed unless 18+ is proved, retaining non-PII reason counts."""
+    """Fail closed unless adulthood is proved, retaining non-PII reason counts.
+
+    ``age_not_declared`` = nem declaração no login, nem data adulta, nem aceite
+    do alerta. A tela do Marketing lê a chave; o cliente resolve entrando na
+    loja de novo (a entrada carimba).
+    """
 
     eligible: list[Recipient] = []
     excluded: dict[str, int] = {}
@@ -1095,41 +1153,6 @@ def _batches(values: list[str], size: int):
 
     for offset in range(0, len(values), size):
         yield values[offset : offset + size]
-
-
-def _profile(customer_ref: str, *, customer=None) -> tuple[bool, int | None]:
-    """``(is_vip, preferred_hour)`` de um cliente, numa passada só.
-
-    As duas respostas saem do mesmo ``CustomerInsight``, então lê-las juntas
-    evita repetir a consulta para cada destinatário.
-    """
-    if not customer_ref:
-        return False, None
-    try:
-        if customer is None:
-            from shopman.guestman.models import Customer
-
-            customer = Customer.objects.filter(ref=customer_ref).first()
-        if customer is None:
-            return False, None
-
-        insight = getattr(customer, "insight", None)
-        preferred_hour = getattr(insight, "preferred_hour", None) if insight else None
-
-        if insight is not None and insight.rfm_segment in VIP_RFM_SEGMENTS:
-            return True, preferred_hour
-
-        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
-
-        tier = (
-            LoyaltyAccount.objects.filter(customer=customer)
-            .values_list("tier", flat=True)
-            .first()
-        )
-        return tier in VIP_LOYALTY_TIERS, preferred_hour
-    except Exception:
-        logger.debug("audience.profile_failed ref=%s", customer_ref, exc_info=True)
-        return False, None
 
 
 def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:

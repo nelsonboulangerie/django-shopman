@@ -12,6 +12,7 @@ Referências:
 - [`docs/reference/surface-excellence-review-framework.md`](surface-excellence-review-framework.md) — régua combinada para contrato backend, omotenashi e design
 - [`shopman/shop/omotenashi/context.py`](../../shopman/shop/omotenashi/context.py) — OmotenashiContext (moment + audience)
 - [`shopman/shop/omotenashi/copy.py`](../../shopman/shop/omotenashi/copy.py) — CopyEntry registry + resolver
+- [`docs/reference/omotenashi-copy.md`](omotenashi-copy.md) — os critérios da linguagem de UI; é por eles que o critério "Copy objetiva" da dimensão E é julgado
 
 ---
 

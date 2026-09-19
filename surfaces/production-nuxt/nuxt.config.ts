@@ -18,6 +18,20 @@ export default defineNuxtConfig({
     djangoBaseUrl,
     operatorSecurityHeaders: true,
     operatorUpstreamFailFast: true,
+    public: {
+      // A antessala da PRODUÇÃO, não a compartilhada — e isto é metade de uma
+      // trava de servidor, não organização de rota.
+      //
+      // Uma estação autônoma (o painel de parede, sem ninguém para digitar PIN)
+      // só tem a conta dela resolvida sob `/api/v1/backstage/production/`. O
+      // cookie de estação é nomeado por terminal, mas vale em
+      // `.boulangerie.com.br` inteiro: o mesmo dispositivo, aberto no PDV, leva a
+      // confiança junto. A antessala compartilhada fica de fora do corte de
+      // propósito — se ela resolvesse o painel, o balcão com o mesmo cookie
+      // leria "destravado" com o nome dele e a pessoa perderia a tela de PIN.
+      // Ver `shopman/backstage/station_trust.PRODUCTION_API_PREFIX`.
+      operatorSessionPath: "/api/v1/backstage/production/session/",
+    },
   },
 
   // 301 das rotas pt-br antigas → inglês (vocabulário das lentes da grade: plan/
@@ -37,23 +51,10 @@ export default defineNuxtConfig({
       kiosk: true,
       idleReloadPaths: ["/board"],
       push: { surfaceRef: "production", categories: ["production", "system"] },
-      manifest: {
-        name: "Shopman Produção",
-        shortName: "Produção",
-        description: "Planejamento, preparo e fornadas.",
-        themeColor: "#FFFFFF",
-        backgroundColor: "#FAFAF9",
-        orientation: "landscape",
-        icons: [
-          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Plano", shortName: "Plano", url: "/plan", icon: "/pwa/pwa-192x192.png" },
-          { name: "Fornadas", shortName: "Fornadas", url: "/board", icon: "/pwa/pwa-192x192.png" },
-        ],
-      },
+      shortcuts: [
+        { name: "Plano", shortName: "Plano", url: "/plan" },
+        { name: "Fornadas", shortName: "Fornadas", url: "/board" },
+      ],
     }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
@@ -128,13 +129,14 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Produção",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         {
           name: "viewport",
           content: "width=device-width, initial-scale=1, viewport-fit=cover",
         },
-        { name: "theme-color", content: "#ffffff" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

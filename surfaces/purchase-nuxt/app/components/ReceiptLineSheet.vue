@@ -24,9 +24,9 @@ import { FLASH_RING } from "~/utils/receiptFocus";
  * Conferir é o gesto que FECHA a gaveta: o item se resolve e a lista atrás
  * muda de cor sozinha. É o retorno do gesto, no lugar onde o olho já está.
  *
- * ⚠️ O `MaterialPicker` daqui de dentro tem véu próprio (`fixed inset-0`) e
- * engole o `Esc` (`stopPropagation`), de propósito: sem isso o `Esc` que fecha
- * a lista de insumos atravessaria e fecharia a gaveta inteira junto.
+ * ⚠️ O `UiSelect` daqui de dentro tem véu próprio (`fixed inset-0`) e engole o
+ * `Esc` (`stopPropagation`), de propósito: sem isso o `Esc` que fecha a lista de
+ * insumos atravessaria e fecharia a gaveta inteira junto.
  */
 const props = defineProps<{
   open: boolean;
@@ -54,6 +54,18 @@ const emit = defineEmits<{
   check: [checked: boolean];
   remove: [];
 }>();
+
+// O insumo vira opção genérica do `UiSelect`: o SKU e a unidade seguem
+// pesquisáveis (é o que o operador lê na etiqueta quando o nome não bate), e a
+// categoria entra só na busca, porque na linha ela não caberia.
+const materialOptions = computed(() =>
+  props.materials.map((material) => ({
+    value: material.sku,
+    label: material.name,
+    hint: `${material.sku} · conta em ${material.unit}`,
+    keywords: material.category,
+  })),
+);
 
 const label = computed(() => (props.preview ? receiptLineLabel(props.preview) : ""));
 const status = computed(() => (props.preview ? receiptLineStatus(props.preview) : "ready"));
@@ -160,17 +172,21 @@ function onCheck(checked: boolean) {
         >
           <!-- O rótulo é um `<span>`, NÃO um `<label>`: um `<label>` sem `for`
                adota o primeiro controle rotulável de dentro (o botão que abre o
-               MaterialPicker) e reencaminha para ele os cliques que caem em
+               UiSelect) e reencaminha para ele os cliques que caem em
                parte não interativa — inclusive o véu de fechar do próprio
                picker. Escolher o insumo fechava e reabria a lista no mesmo
-               clique. O nome acessível vai por `labelledBy`. -->
+               clique. O nome acessível vai por `labelledBy`. A armadilha
+               continua valendo: ela mora no docstring do `UiSelect`. -->
           <div>
             <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Insumo</span>
-            <MaterialPicker
+            <UiSelect
               class="mt-1"
-              :materials="materials"
+              :options="materialOptions"
               :model-value="preview.line.materialSku"
               :labelled-by="`receipt-material-${preview.line.id}`"
+              placeholder="Escolher insumo"
+              search-placeholder="Buscar insumo"
+              :empty-text="`Nenhum insumo com esse nome.`"
               @update:model-value="emit('selectMaterial', $event)"
             />
           </div>

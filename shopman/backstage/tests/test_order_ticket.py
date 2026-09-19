@@ -162,7 +162,7 @@ def test_a_ENCOMENDA_imprime_o_rotulo_do_slot_e_NUNCA_o_ref(shop):
 
     papel = _texto(order_ticket(order))
 
-    assert "A PARTIR DAS 09H" in papel
+    assert "A PARTIR DAS 9H" in papel
     assert "slot-09" not in papel.lower()
 
 
@@ -581,3 +581,13 @@ def test_delivery_ticket_without_change_amount_requests_confirmation(shop):
     paper = _texto(order_ticket(order))
     assert "Troco: não informado; confirmar com cliente" in paper
     assert "Levar de troco" not in paper
+
+
+def test_o_papel_se_chama_ficha_do_pedido_e_nunca_comprovante(shop):
+    """O papel que diz no rodapé que não comprova pagamento não pode se
+    apresentar como "comprovante" no topo."""
+    order = _order("ORD-FICHA")
+    linhas = _linhas(order_ticket(order))
+
+    assert "Ficha do pedido" in [linha.strip() for linha in linhas]
+    assert not any("Comprovante de pedido" in linha for linha in linhas)

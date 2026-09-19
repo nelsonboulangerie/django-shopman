@@ -892,11 +892,21 @@ def send_test(
         }
         if target.backend == "manychat":
             test_context = sandbox_probe_context(test_context)
-        accepted = bool(transport.send(
+        raw_result = transport.send(
             recipient=target.recipient,
             template="announcement_published",
             context=test_context,
-        ))
+        )
+        # ⚠️ `bool(dict)` é True: o adiamento do ManyChat ({"success": False, ...})
+        # virava "aceito" aqui. Dict fala pela chave `success`, nunca pela verdade dele.
+        accepted = (
+            raw_result.get("success") is True
+            if isinstance(raw_result, dict)
+            else bool(raw_result)
+        )
+        deferred_code = (
+            str(raw_result.get("error") or "") if isinstance(raw_result, dict) else ""
+        )
     except Exception as exc:  # outcome pós-boundary é desconhecido; nunca retry automático
         receipt.state = MarketingTestReceipt.State.UNKNOWN
         receipt.failure_code = "provider_outcome_unknown"
@@ -906,6 +916,20 @@ def send_test(
             type(exc).__name__,
         )
     else:
+        from shopman.shop.services.manychat_marketing_safety import is_flow_deferral
+
+        if not accepted and is_flow_deferral(deferred_code):
+            # Nada foi escrito: o contato de teste ainda tem uma mensagem com flow
+            # assentando. Não é recusa do provedor, é "espere a janela".
+            receipt.state = MarketingTestReceipt.State.DENIED
+            receipt.failure_code = deferred_code
+            receipt.finished_at = timezone.now()
+            receipt.save(update_fields=["state", "failure_code", "finished_at"])
+            raise MarketingTestUnavailable(
+                "Este contato recebeu uma mensagem com flow há pouco. Aguarde uns "
+                "minutos e tente de novo. Nenhuma mensagem saiu.",
+                receipt_ref=str(receipt.ref),
+            )
         receipt.state = (
             MarketingTestReceipt.State.ACCEPTED_UNCONFIRMED
             if accepted
@@ -974,7 +998,7 @@ def preview(
     """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
 
     Variável desconhecida bloqueia a prévia e aponta o campo antes de o conteúdo chegar à
-    aprovação. O operador corrige no mesmo contexto, sem descobrir o erro no aparelho.
+    aprovação. O operador corrige no mesmo contexto, sem descobrir o erro no dispositivo.
 
     ⚠️ **Mesmo resolvedor do envio, de propósito.** Se a prévia tivesse a própria montagem,
     ela concordaria com o envio hoje e divergiria no primeiro ajuste — e uma prévia que mente
@@ -1102,7 +1126,7 @@ def preview_platforms(
         "sample": not bool((sku or "").strip()),
         "product_name": variables["product_name"],
         # Os campos discretos que o template aprovado recebe. O operador vê os valores
-        # usados sem precisar conferir o aparelho ou memorizar o contexto do evento.
+        # usados sem precisar conferir o dispositivo ou memorizar o contexto do evento.
         "fields": {
             key: variables[key]
             for key in (

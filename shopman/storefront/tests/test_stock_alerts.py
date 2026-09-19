@@ -172,9 +172,7 @@ def test_subscribe_requires_a_contact():
 def test_subscribe_requires_an_adult_declaration():
     assert stock_alerts.subscribe("SKU-ADULT-OMITTED", phone=PHONE) is None
     assert stock_alerts.subscribe("SKU-ADULT", phone=PHONE, adult_declared=False) is None
-    assert not StockAlertSubscription.objects.filter(
-        sku__in=("SKU-ADULT-OMITTED", "SKU-ADULT")
-    ).exists()
+    assert not StockAlertSubscription.objects.filter(sku__in=("SKU-ADULT-OMITTED", "SKU-ADULT")).exists()
 
 
 def test_subscribe_known_minor_cannot_override_birthday_with_declaration():
@@ -195,6 +193,25 @@ def test_subscribe_known_minor_cannot_override_birthday_with_declaration():
     assert outcome.subscription is None
     assert outcome.created is False
     assert not StockAlertSubscription.objects.filter(sku="SKU-KNOWN-MINOR").exists()
+
+
+def test_subscribe_does_not_recreate_contact_for_inactive_customer() -> None:
+    customer = Customer.objects.create(
+        ref="CUS-DELETED-STOCK-ALERT",
+        first_name="Ana",
+        phone=PHONE,
+        is_active=False,
+    )
+
+    outcome = stock_alerts.subscribe_with_outcome(
+        "SKU-DELETED-CUSTOMER",
+        customer=customer,
+        adult_declared=True,
+    )
+
+    assert outcome.subscription is None
+    assert outcome.created is False
+    assert not StockAlertSubscription.objects.filter(sku="SKU-DELETED-CUSTOMER").exists()
 
 
 def test_subscribe_race_with_ineligible_old_writer_fails_closed_without_500():
@@ -299,9 +316,7 @@ def test_known_minor_cannot_resume_existing_alert():
         sku=sub.sku,
         customer=customer,
     )
-    Customer.objects.filter(pk=customer.pk).update(
-        birthday=today.replace(year=today.year - 17)
-    )
+    Customer.objects.filter(pk=customer.pk).update(birthday=today.replace(year=today.year - 17))
 
     resumed = stock_alerts.set_paused(
         sub.ref,
@@ -1173,8 +1188,11 @@ def test_move_receiver_skips_synthetic_refresh_and_future_planning(kind):
     from shopman.storefront import handlers
 
     # Compute tomorrow at execution: collection can happen before local midnight.
-    move = (_move("SKU-SYNTHETIC", metadata={"suppress_notifications": True}) if kind == "synthetic"
-            else _move("SKU-FUTURE", target_date=timezone.localdate() + timedelta(days=1)))
+    move = (
+        _move("SKU-SYNTHETIC", metadata={"suppress_notifications": True})
+        if kind == "synthetic"
+        else _move("SKU-FUTURE", target_date=timezone.localdate() + timedelta(days=1))
+    )
 
     stock_alerts.subscribe(move.quant.sku, phone=PHONE, adult_declared=True)
     with (
@@ -1593,9 +1611,7 @@ def test_known_minor_birthday_added_after_queue_suppresses_before_provider_call(
     sub = stock_alerts.subscribe("SKU-LATE-KNOWN-MINOR", customer=customer, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-known-minor") == 1
-    Customer.objects.filter(pk=customer.pk).update(
-        birthday=today.replace(year=today.year - 17)
-    )
+    Customer.objects.filter(pk=customer.pk).update(birthday=today.replace(year=today.year - 17))
 
     with patch("shopman.shop.notifications.notify") as notify:
         _deliver_queued()
@@ -1971,13 +1987,19 @@ def test_capability_never_appears_in_application_logs(client, caplog, settings, 
     altered[-1] ^= 1
     altered_token = urlsafe_b64encode(altered).decode("ascii")
 
-    assert client.get(
-        "/api/v1/stock-alert/manage/",
-        HTTP_X_STOCK_ALERT_CAPABILITY=token,
-    ).status_code == 200
-    assert client.get(
-        "/api/v1/stock-alert/manage/",
-        HTTP_X_STOCK_ALERT_CAPABILITY=altered_token,
-    ).status_code == 404
+    assert (
+        client.get(
+            "/api/v1/stock-alert/manage/",
+            HTTP_X_STOCK_ALERT_CAPABILITY=token,
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            "/api/v1/stock-alert/manage/",
+            HTTP_X_STOCK_ALERT_CAPABILITY=altered_token,
+        ).status_code
+        == 404
+    )
 
     assert token not in caplog.text

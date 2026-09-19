@@ -55,7 +55,7 @@ class CustomerPreference(models.Model):
         max_digits=3,
         decimal_places=2,
         default=Decimal("1.00"),
-        help_text=_("0.00 a 1.00 - confiança na preferência inferida"),
+        help_text=_("0.00 a 1.00 · confiança na preferência inferida"),
     )
 
     # Context

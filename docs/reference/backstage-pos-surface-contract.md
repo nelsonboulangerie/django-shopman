@@ -68,6 +68,10 @@ must match the canonical table above.
 - `terminal_ref`, `terminal_label`, `terminal_default_fulfillment_type`,
   `terminal_health_status`, `terminal_components`.
 - `favorite_collection_refs`, delivery minimum and fiscal readiness.
+- `delivery_today` and `delivery_slots_today[]` (`ref`, `label`): today's
+  half-hour grid; `delivery_slots_canonical[]` (`ref`, `label`, `starts_at`):
+  the house's pre-order slots (`Shop.defaults["pickup_slots"]`), so a `slot-09`
+  saved on an order whose date became today still resolves on the surface.
 
 `shift` contains current-day counts and display totals. It is read-only summary,
 not a cash closing calculation.
@@ -217,6 +221,18 @@ attests what happened, and there is no QR nor link to render.
 The surface may render these artifacts but must not treat them as payment
 capture. Gateway/webhook/Payman status remains authoritative.
 
+`close_sale` response also carries the fiscal position of the sale:
+
+- `fiscal_expected` (bool, kept for compatibility): the emission rule says a
+  NFC-e will exist for this sale.
+- `fiscal_state`: one of `not_expected` | `queued` | `awaiting_payment` |
+  `authorized` | `failed` (`shopman.shop.services.fiscal.fiscal_state`). The
+  note is born at three points — sale close for tenders that need no capture,
+  payment capture for `pix`/`link`, order completion as the safety net — so the
+  surface must read the state, never guess the point. The same field is
+  published per sale in `GET /api/v1/backstage/pos/recent-sales/` and as
+  `fiscal_state` on every order card of the orders queue.
+
 ## Capabilities
 
 `pos.checkout.capabilities` is the public capability object. Expected keys:
@@ -234,6 +250,7 @@ capture. Gateway/webhook/Payman status remains authoritative.
 | `supports_delivery_address_autocomplete` | address autocomplete may be enabled. |
 | `provider_readiness` | non-secret readiness rows for Focus NFe, Efí PIX and Stripe card. |
 | `fiscal_document` | fiscal runtime status: `ready`, `warning`, `error`. |
+| `receipt_requests_emission` | asking for the receipt (paper/e-mail) emits the NFC-e — true only when the deployment's `SHOPMAN_FISCAL_EMISSION_RESOLVER` carries `on_requested_receipt` (or `always`). Gates the "prints itself once authorized" copy. |
 | `delivery_minimum_q` | display/validation hint; backend remains authority. |
 | `requires_manager_approval_above_q` | threshold for approval credentials. |
 | `address_autocomplete` | provider/key/fields/bias/reverse action metadata. |

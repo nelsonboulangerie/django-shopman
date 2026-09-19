@@ -120,6 +120,25 @@ class VerificationCode(models.Model):
     )
     created_at = models.DateTimeField(_("criado em"), auto_now_add=True)
     expires_at = models.DateTimeField(_("expira em"), default=default_code_expiry)
+    delivery_started_at = models.DateTimeField(
+        _("entrega iniciada em"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Cerca durável: enquanto PENDING e preenchido, a entrega externa pode estar em curso."
+        ),
+    )
+    delivery_reconciled_at = models.DateTimeField(
+        _("entrega reconciliada em"),
+        null=True,
+        blank=True,
+    )
+    delivery_evidence_ref = models.CharField(
+        _("referência da evidência da entrega"),
+        max_length=120,
+        blank=True,
+        help_text=_("Identificador operacional sem telefone, e-mail ou conteúdo da mensagem."),
+    )
     sent_at = models.DateTimeField(_("enviado em"), null=True, blank=True)
     verified_at = models.DateTimeField(_("verificado em"), null=True, blank=True)
 
@@ -166,7 +185,9 @@ class VerificationCode(models.Model):
     def is_valid(self) -> bool:
         """Check if code is valid for verification."""
         return (
-            self.status in [self.Status.PENDING, self.Status.SENT]
+            # PENDING is a durable delivery intent.  It becomes verifiable only
+            # after the provider returns and phase C records SENT.
+            self.status == self.Status.SENT
             and not self.is_expired
             and self.attempts < self.max_attempts
         )

@@ -36,6 +36,36 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/shop/tests/test_concurrent_finish_does_not_double_credit.py",
     "shopman/storefront/tests/test_concurrent_checkout.py",
     "shopman/storefront/tests/test_operational_postgres.py",
+    # Exclusão de conta compartilha a trava canônica do Customer com novos
+    # pedidos, inscrições e mensagens; as três corridas exigem conexões reais.
+    "shopman/storefront/tests/test_account_privacy_postgres.py",
+    # Session anonimizada é um selo irreversível: writers atrasados esperam
+    # a trava e não podem restaurar handle, customer/data ou meta pessoal.
+    "shopman/shop/tests/test_session_privacy_fence_postgres.py",
+    # Eventos operacionais continuam depois da retenção do pedido, mas um
+    # writer stale não pode recolocar note/reason após a anonimização.
+    "shopman/shop/tests/test_order_event_privacy_fence_postgres.py",
+    # Login OTP resolves by contact before waiting for the canonical Customer
+    # row.  This proof ensures a contact change that wins that lock prevents
+    # both delivery and verification against the stale phone/email owner.
+    "packages/doorman/shopman/doorman/tests/test_verification_ownership_postgres.py",
+    # The export must finish one coherent snapshot while holding the same
+    # canonical Customer fence used by deletion; neither mixed artifacts nor a
+    # completed receipt for a preempted export are acceptable.
+    "shopman/storefront/tests/test_account_export_postgres.py",
+    # O perfil e o persist composto do PDV gravam metadata, contatos,
+    # identificadores e enderecos; a exclusao precisa vencer sem que esses
+    # filhos pessoais sejam recriados por uma instancia stale.
+    "shopman/shop/tests/test_pos_privacy_postgres.py",
+    # Identity binding writes phone/name/customer_ref back to a conversation.
+    # These races prove deletion cannot be followed by stale PII recreation.
+    "shopman/storefront/tests/test_concierge_privacy_postgres.py",
+    # ManyChat can attach identifiers and contact data while account deletion
+    # runs. The shared Customer fence decides the winner without recreating PII.
+    "packages/guestman/shopman/guestman/tests/test_manychat_privacy_postgres.py",
+    # Public Guestman child writers share the Customer-first privacy fence;
+    # loyalty additionally proves it never takes LoyaltyAccount first.
+    "packages/guestman/shopman/guestman/tests/test_privacy_mutation_fences_postgres.py",
     # Provas do concierge dependem de locks, conexões independentes e migrações
     # reais; skips do lote SQLite precisam executar neste gate estrito.
     "shopman/storefront/tests/test_concierge_authority.py",

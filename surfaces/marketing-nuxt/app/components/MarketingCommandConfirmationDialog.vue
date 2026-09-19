@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import type { PendingMarketingDecision } from "~/composables/useMarketingDecisionCommand";
 import type { PendingCampaignFireCommand } from "~/composables/useCampaignFireCommand";
-import { formatCount } from "~/presentation/campaign";
+import {
+  deliveryActionLabel,
+  includesDirectMessage,
+  includesPublicPost,
+  reachLines,
+} from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
+import { scenesFromFrozenCommand } from "~/presentation/simulatedPreview";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
 const props = defineProps<{
@@ -10,6 +16,14 @@ const props = defineProps<{
   busy?: boolean;
   error?: string;
   shopTimezone: string;
+  /** A imagem do anúncio que está sendo decidido, quando existe. O texto vem do
+   *  próprio comando; a imagem não, porque o servidor congela o artefato por hash. */
+  imageUrl?: string;
+  /** O conteúdo por plataforma do anúncio decidido. Pelo mesmo motivo da imagem: o
+   *  formato público (`story`, `feed`, `standard`) não é editável no card e não viaja
+   *  no corpo do comando, mas é ele que diz qual retrato a prévia em tamanho real
+   *  precisa mostrar. */
+  platformContent?: Record<string, Record<string, unknown>>;
 }>();
 
 const emit = defineEmits<{
@@ -51,26 +65,113 @@ const ready = computed(() => {
 
 const title = computed(() => {
   if (!props.command) return "Confirmar decisão";
-  if (props.command.action === "fire") return "Confirmar este disparo?";
+  if (props.command.action === "fire") return "Criar para revisão?";
   if (props.command.action === "reject") return "Recusar este anúncio?";
-  if (props.command.body.publish_mode === "scheduled")
-    return "Confirmar este agendamento?";
-  if (includesDirectMessages.value && publicPlatforms.value.length)
-    return "Confirmar esta entrega agora?";
-  return includesDirectMessages.value
-    ? "Confirmar envio agora?"
-    : "Confirmar publicação agora?";
+  if (props.command.body.publish_mode === "scheduled") return "Agendar?";
+  if (includesDirectMessages.value && hasPublicPost.value)
+    return "Disparar agora?";
+  return includesDirectMessages.value ? "Enviar agora?" : "Publicar agora?";
 });
 
 const isFire = computed(() => props.command?.action === "fire");
-const publicPlatforms = computed(() =>
-  (challenge.value?.platforms ?? []).filter(
-    (platform) => platform !== "whatsapp",
-  ),
-);
+const challengePlatforms = computed(() => challenge.value?.platforms ?? []);
 const includesDirectMessages = computed(() =>
-  (challenge.value?.platforms ?? []).includes("whatsapp"),
+  includesDirectMessage(challengePlatforms.value),
 );
+const hasPublicPost = computed(() =>
+  includesPublicPost(challengePlatforms.value),
+);
+
+/** Este é o último botão do caminho e o único que faz alguma coisa sair. Os anteriores
+ *  levam a algum lugar ("Revisar anúncio" leva à revisão, "Continuar" leva a esta caixa);
+ *  este diz o ato, e o ato tem verbo próprio por destino — enviar, publicar, ou o
+ *  genérico disparar quando o anúncio faz os dois. */
+const confirmLabel = computed(() => {
+  if (props.busy) return "Registrando…";
+  if (isFire.value) return "Criar para revisão";
+  if (props.command?.action === "reject") return "Recusar";
+  return deliveryActionLabel({
+    platforms: challengePlatforms.value,
+    scheduled: Boolean(challenge.value?.scheduled_for),
+  });
+});
+
+/** O que vai sair. Estava faltando: a caixa contava PARA QUEM e ONDE, e não mostrava
+ *  O QUÊ — pedia a confirmação irreversível de um texto que o gestor não estava vendo.
+ *  Sai do corpo congelado do próprio comando, que é exatamente o que o servidor vai
+ *  publicar; ler do anúncio na tela mostraria uma edição posterior que não foi selada. */
+const outgoing = computed(() => {
+  const body = props.command?.body as Record<string, unknown> | undefined;
+  const text = typeof body?.body === "string" ? body.body.trim() : "";
+  // Com a cerquilha, como o gestor escreveu e como vai sair: o array guarda a palavra
+  // crua, e mostrar "padaria" onde sai "#padaria" não é a prévia do que sai.
+  const tags = Array.isArray(body?.hashtags)
+    ? (body.hashtags as unknown[])
+        .filter(
+          (tag): tag is string => typeof tag === "string" && tag.length > 0,
+        )
+        .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
+    : [];
+  return text || tags.length || props.imageUrl ? { text, tags } : null;
+});
+
+/** O mesmo conteúdo do resumo acima, agora em tamanho real e no lugar onde a pessoa vai
+ *  ver — o botão do olho abre por cima desta caixa.
+ *
+ *  ⚠️ Fonte do retrato AQUI: o corpo CONGELADO do comando, o mesmo do resumo. É o que o
+ *  servidor vai publicar. Ler do anúncio na tela retrataria uma edição posterior que não
+ *  foi selada, e essa é exatamente a diferença que esta caixa existe para não deixar
+ *  passar. Na tela de edição a fonte é o rascunho corrente, e lá isso é o certo.
+ *
+ *  ⚠️ Zero chamada ao servidor: tudo o que o retrato precisa já chegou. Quem só quer
+ *  confirmar não paga nada por esta prévia existir. */
+const simulatedScenes = computed(() =>
+  props.command?.action !== "approve" || !outgoing.value
+    ? []
+    : scenesFromFrozenCommand({
+        frozenBody: props.command?.body as Record<string, unknown> | undefined,
+        platforms: challengePlatforms.value,
+        platformLabels: Object.fromEntries(
+          challengePlatforms.value.map((platform) => [
+            platform,
+            platformResultLabel(platform),
+          ]),
+        ),
+        platformContent: props.platformContent,
+        imageUrl: props.imageUrl,
+      }),
+);
+
+/** Uma linha por destino, cada uma na sua grandeza. A regra mora em
+ *  `presentation/marketingDelivery`, porque o diálogo de recuperação precisa da mesma
+ *  — e era lá que ela faltava. */
+const reach = computed(() =>
+  reachLines({
+    platforms: challengePlatforms.value,
+    audienceCount: challenge.value?.audience_count ?? 0,
+  }),
+);
+
+/** Postagem sem foto é um fato que só aparece depois de publicada, quando já não tem
+ *  conserto. Se o disparo tem mural e não tem imagem, a caixa diz isso ANTES. */
+const missingImageForPost = computed(
+  () => hasPublicPost.value && !props.imageUrl,
+);
+
+/** O que acontece depois do botão, quando o disparo tem hora marcada.
+ *
+ * "Sai sozinho na hora marcada" não dizia o ato: o sistema não sai, ele envia, publica
+ * ou dispara. O verbo vem do destino, igual ao do botão — e a segunda frase existe
+ * porque o medo real de quem agenda é precisar voltar aqui para confirmar de novo. */
+const scheduledOutcomeNote = computed(() => {
+  const subject =
+    includesDirectMessages.value && hasPublicPost.value
+      ? "o anúncio é disparado"
+      : includesDirectMessages.value
+        ? "a mensagem é enviada"
+        : "a postagem é publicada";
+  return `Depois de confirmar, ${subject} na hora marcada. Você não precisa voltar aqui.`;
+});
 
 function submit() {
   if (!ready.value) return;
@@ -93,99 +194,91 @@ function submit() {
     <UiDialogContent class="sm:max-w-lg">
       <UiDialogHeader>
         <UiDialogTitle>{{ title }}</UiDialogTitle>
+        <!-- Uma linha. A descrição diz o que acontece DEPOIS do botão, e nada mais:
+             quem está aqui já decidiu, só quer conferir antes de não poder voltar. -->
         <UiDialogDescription>
           <template v-if="isFire">
-            O servidor congelou esta versão e calculou o público abaixo. A
-            confirmação cria somente um anúncio para revisão; nenhuma publicação
-            ou mensagem será enviada agora.
+            Nada é disparado agora. O anúncio vai para revisão.
           </template>
-          <template v-else>
-            O servidor congelou esta versão e calculou a consequência abaixo.
-            Nada será publicado ou enviado até a confirmação final.
+          <template v-else-if="command?.action === 'reject'">
+            Não vai para lugar nenhum e não volta para a fila.
           </template>
+          <template v-else-if="challenge?.scheduled_for">
+            {{ scheduledOutcomeNote }}
+          </template>
+          <template v-else>Depois de confirmar, não tem desfazer.</template>
         </UiDialogDescription>
       </UiDialogHeader>
 
-      <div v-if="challenge" class="space-y-4">
-        <dl
-          class="grid gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm sm:grid-cols-2"
+      <div v-if="challenge" class="space-y-3">
+        <!-- ⚠️ O QUÊ vem antes do PARA QUEM: a caixa pedia uma confirmação sem volta
+             de um texto que o gestor não estava vendo em lugar nenhum da tela. -->
+        <div
+          v-if="outgoing"
+          class="flex gap-3 rounded-lg border border-border bg-muted/40 p-3"
         >
-          <div>
-            <dt class="text-xs text-muted-foreground">Versão</dt>
-            <dd class="font-semibold">{{ challenge.base_version }}</dd>
-          </div>
-          <div v-if="includesDirectMessages">
-            <dt class="text-xs text-muted-foreground">
-              Pessoas para mensagem direta
-            </dt>
-            <dd class="font-semibold">
-              {{ formatCount(challenge.audience_count) }}
-              {{ challenge.audience_count === 1 ? "pessoa" : "pessoas" }}
-            </dd>
-          </div>
-          <div v-else>
-            <dt class="text-xs text-muted-foreground">Público da publicação</dt>
-            <dd class="font-semibold">Público geral da plataforma</dd>
-          </div>
-          <div class="sm:col-span-2">
-            <dt class="text-xs text-muted-foreground">Plataformas</dt>
-            <dd class="font-semibold">
-              {{
-                challenge.platforms.map(platformResultLabel).join(", ") ||
-                "Nenhuma"
-              }}
-            </dd>
-          </div>
+          <img
+            v-if="imageUrl"
+            :src="imageUrl"
+            alt="Imagem do anúncio"
+            class="size-16 shrink-0 rounded object-cover"
+          />
           <div
-            v-if="
-              isFire &&
-              command &&
-              'productLabel' in command &&
-              command.productLabel
-            "
-            class="sm:col-span-2"
+            v-else-if="missingImageForPost"
+            class="flex size-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded border border-dashed border-warning/60 text-warning"
           >
-            <dt class="text-xs text-muted-foreground">Produto</dt>
-            <dd class="font-semibold">{{ command.productLabel }}</dd>
+            <Icon name="lucide:image-off" class="size-5" />
+            <span class="text-[10px] font-medium leading-none">Sem foto</span>
           </div>
-          <div v-if="challenge.scheduled_for" class="sm:col-span-2">
-            <dt class="text-xs text-muted-foreground">Instante absoluto</dt>
-            <dd class="font-semibold">
-              {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
-              ({{ shopTimezone }})
-            </dd>
+          <div class="min-w-0 flex-1 text-sm">
+            <p v-if="outgoing.text" class="max-h-28 overflow-y-auto whitespace-pre-line">
+              {{ outgoing.text }}
+            </p>
+            <p v-if="outgoing.tags.length" class="mt-1 text-xs text-muted-foreground">
+              {{ outgoing.tags.join(" ") }}
+            </p>
           </div>
-        </dl>
+          <!-- O mesmo resumo, em tamanho real e no lugar onde a pessoa vai ver. A
+               miniatura continua respondendo "é este anúncio?" de relance; o olho
+               responde "o enquadramento está certo?" sem tirar ninguém daqui. -->
+          <AnnouncementSimulatedPreview
+            :scenes="simulatedScenes"
+            trigger-class="-my-1 shrink-0 self-start"
+          />
+        </div>
 
-        <ul
-          class="space-y-1 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
-          aria-label="Forma de entrega por plataforma"
-        >
-          <li v-if="publicPlatforms.length">
-            <strong
-              >{{
-                publicPlatforms.map(platformResultLabel).join(", ")
-              }}:</strong
-            >
-            uma postagem pública por plataforma; não envia mensagem direta por
-            pessoa.
-          </li>
-          <li v-if="includesDirectMessages">
-            <strong>WhatsApp:</strong>
-            mensagem direta para as pessoas elegíveis, com consentimento
-            revalidado no envio.
+        <ul class="space-y-0.5 text-sm font-medium" aria-label="Para quem vai">
+          <li v-for="line in reach" :key="line">{{ line }}</li>
+          <li v-if="!reach.length" class="text-muted-foreground">
+            Nenhuma plataforma
           </li>
         </ul>
+
+        <p v-if="challenge.scheduled_for" class="text-sm font-medium">
+          {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
+        </p>
+
+        <p
+          v-if="isFire && command && 'productLabel' in command && command.productLabel"
+          class="text-sm"
+        >
+          {{ command.productLabel }}
+        </p>
 
         <div
           v-if="challenge.dual_control"
           class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
           role="alert"
         >
-          <p class="font-semibold">Este volume exige duas pessoas.</p>
+          <!-- ⚠️ `dual_control` deixa o confirmar morto PARA SEMPRE nesta caixa. O
+               texto antigo explicava o desenho do gate e não dizia o gesto — botão
+               apagado com frase que não resolve é o mesmo que botão apagado sem frase.
+               Esta termina no que fazer, e é a MESMA do painel de resultado, que tinha
+               uma segunda redação para o mesmo estado. -->
+          <p class="font-semibold">Este disparo precisa de duas pessoas.</p>
           <p class="mt-1 text-muted-foreground">
-            A confirmação independente continua obrigatória; esta sessão não
-            substitui o segundo controle.
+            Você já fez a sua parte. Peça a outra pessoa com acesso ao Marketing
+            para abrir este mesmo anúncio e confirmar. Nada é disparado até lá.
           </p>
         </div>
 
@@ -269,14 +362,17 @@ function submit() {
         >
           {{ isFire ? "Voltar sem criar" : "Voltar sem confirmar" }}
         </UiButton>
-        <UiButton type="button" :disabled="!ready" @click="submit">
-          {{
-            busy
-              ? "Registrando…"
-              : isFire
-                ? "Criar para revisão"
-                : "Confirmar consequência"
-          }}
+        <!-- Com duplo controle o confirmar nunca liga; no lugar dele vai o gesto que
+             existe, que é fechar a caixa. -->
+        <UiButton
+          v-if="challenge?.dual_control"
+          type="button"
+          @click="emit('cancel')"
+        >
+          Entendi
+        </UiButton>
+        <UiButton v-else type="button" :disabled="!ready" @click="submit">
+          {{ confirmLabel }}
         </UiButton>
       </UiDialogFooter>
     </UiDialogContent>

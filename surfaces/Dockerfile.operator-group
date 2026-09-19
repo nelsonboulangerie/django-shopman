@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1
+# Imagens dos GRUPOS de apps de operador (ADR-030): um contêiner por grupo, com
+# o `.output/` de cada app construído exatamente como no Dockerfile.surface e um
+# roteador por Host (surfaces/operator-router, zero dependências) na porta 3000.
+#
+#   docker build -f surfaces/Dockerfile.operator-group --build-arg OPERATOR_GROUP=operator-floor  .
+#   docker build -f surfaces/Dockerfile.operator-group --build-arg OPERATOR_GROUP=operator-office .
+#
+# O grupo é BUILD ARG (e não `--target`) porque o build a partir do repositório
+# no App Platform (template .do/app.subdomains.yaml) não tem campo de target,
+# mas entrega as envs BUILD_TIME como build args. Sem o arg, o último FROM não
+# resolve e o build falha — de propósito: não existe grupo default.
+#
+# Um estágio por app: o BuildKit só constrói os estágios que o alvo usa e
+# reaproveita o cache dos apps que o push não tocou — mudar o PDV reconstrói o
+# estágio `pos`, não o `kds`. O que o grupo publica é UMA imagem; o deploy
+# reinicia o grupo inteiro (é o custo aceito na ADR-030).
+#
+# NUXT_* é runtimeConfig e continua vindo do spec em RUN_TIME. O launcher
+# entrega a cada app o conjunto dele (`<APP>__NUXT_...`); ver o README do
+# operator-router.
+
+ARG OPERATOR_GROUP
+
+FROM node:22-alpine AS kit
+WORKDIR /repo
+# A layer compartilhada precisa das próprias dependências antes do `npm ci` de
+# qualquer consumer (o postinstall faz `nuxt prepare` e importa a layer).
+COPY surfaces/operator-kit ./surfaces/operator-kit
+RUN cd surfaces/operator-kit && npm ci
+
+FROM kit AS pos
+COPY surfaces/pos-nuxt ./surfaces/pos-nuxt
+RUN cd surfaces/pos-nuxt && npm ci && npm run build
+
+FROM kit AS kds
+COPY surfaces/kds-nuxt ./surfaces/kds-nuxt
+RUN cd surfaces/kds-nuxt && npm ci && npm run build
+
+FROM kit AS orders
+COPY surfaces/orders-nuxt ./surfaces/orders-nuxt
+RUN cd surfaces/orders-nuxt && npm ci && npm run build
+
+# production-nuxt exige config também no build. A origem .invalid (RFC 2606) é
+# deliberadamente não roteável e existe apenas nesta camada; não vira ENV da
+# imagem. No boot, upstream-guard continua exigindo SHOPMAN_ENVIRONMENT e a URL
+# HTTPS reais (mesma receita do Dockerfile.surface).
+FROM kit AS production
+COPY surfaces/production-nuxt ./surfaces/production-nuxt
+RUN cd surfaces/production-nuxt && npm ci && \
+    SHOPMAN_ENVIRONMENT=build \
+    NUXT_DJANGO_BASE_URL=https://django-upstream.invalid \
+    npm run build
+
+FROM kit AS hub
+COPY surfaces/hub-nuxt ./surfaces/hub-nuxt
+RUN cd surfaces/hub-nuxt && npm ci && npm run build
+
+FROM kit AS marketing
+COPY surfaces/marketing-nuxt ./surfaces/marketing-nuxt
+RUN cd surfaces/marketing-nuxt && npm ci && npm run build
+
+FROM kit AS bi
+COPY surfaces/bi-nuxt ./surfaces/bi-nuxt
+RUN cd surfaces/bi-nuxt && npm ci && npm run build
+
+FROM kit AS purchase
+COPY surfaces/purchase-nuxt ./surfaces/purchase-nuxt
+RUN cd surfaces/purchase-nuxt && npm ci && npm run build
+
+# Base de runtime comum: só Node + o roteador. Nada de node_modules — o
+# `.output/` do Nitro já traz as dependências de servidor empacotadas.
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000
+WORKDIR /app
+COPY surfaces/operator-router/package.json surfaces/operator-router/groups.json ./router/
+COPY surfaces/operator-router/src ./router/src
+EXPOSE 3000
+STOPSIGNAL SIGTERM
+CMD ["node", "router/src/main.mjs"]
+
+FROM runtime AS operator-floor
+ENV OPERATOR_GROUP=operator-floor
+COPY --from=pos /repo/surfaces/pos-nuxt/.output ./apps/pos-nuxt/.output
+COPY --from=kds /repo/surfaces/kds-nuxt/.output ./apps/kds-nuxt/.output
+COPY --from=orders /repo/surfaces/orders-nuxt/.output ./apps/orders-nuxt/.output
+COPY --from=production /repo/surfaces/production-nuxt/.output ./apps/production-nuxt/.output
+COPY --from=hub /repo/surfaces/hub-nuxt/.output ./apps/hub-nuxt/.output
+
+FROM runtime AS operator-office
+ENV OPERATOR_GROUP=operator-office
+COPY --from=marketing /repo/surfaces/marketing-nuxt/.output ./apps/marketing-nuxt/.output
+COPY --from=bi /repo/surfaces/bi-nuxt/.output ./apps/bi-nuxt/.output
+COPY --from=purchase /repo/surfaces/purchase-nuxt/.output ./apps/purchase-nuxt/.output
+
+# O grupo pedido. O BuildKit só constrói os estágios de que ele depende.
+FROM ${OPERATOR_GROUP} AS group

@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvalCanaryNote,
   commandReceiptPresentation,
   deliveryCountItems,
   deliveryStatePresentation,
   marketingLoadError,
+  platformDeliveryLabel,
+  platformFanoutSummary,
+  platformSwitchedOff,
+  platformSwitchedOffNote,
   recoveryActionExplanation,
 } from "~/presentation/marketingResult";
 import type {
@@ -55,12 +60,49 @@ describe("Marketing result presentation", () => {
     ]);
   });
 
+  it("says a queued target of a switched-off platform waits for it, not that its turn will come", () => {
+    const readiness = {
+      state: "blocked" as const,
+      platforms: [
+        {
+          platform_ref: "instagram",
+          state: "blocked" as const,
+          reason_code: "platform_switched_off",
+          version: 1,
+          checked_at: "2026-09-17T10:00:00-03:00",
+          facts_as_of: null,
+          fresh_until: null,
+          source_status: "fresh",
+        },
+      ],
+    };
+    const counts = { ...emptyCounts, queued: 3 };
+
+    expect(platformSwitchedOff({ readiness }, "instagram")).toBe(true);
+    expect(platformSwitchedOff({ readiness }, "whatsapp")).toBe(false);
+    expect(
+      deliveryCountItems(counts, { platformSwitchedOff: true }).map(
+        (item) => `${item.count} ${item.label}`,
+      ),
+    ).toEqual(["3 aguardando a plataforma ligar"]);
+    expect(deliveryCountItems(counts)[0]?.label).toBe("na fila");
+    expect(
+      platformDeliveryLabel({ state: "delivering", counts }, true),
+    ).toBe("Aguardando a plataforma ligar");
+    expect(
+      platformDeliveryLabel({ state: "delivering", counts }, false),
+    ).toBe("Entrega em andamento");
+    const note = platformSwitchedOffNote("instagram");
+    expect(note).toContain("Instagram está desligado");
+    expect(note).not.toMatch(/adapt|integração|credencial|erro/i);
+  });
+
   it("explains that reconcile is lookup-only", () => {
     const action = {
       kind: "reconcile_unknown_delivery",
     } as MarketingActionProjectionV2;
 
-    expect(recoveryActionExplanation(action)).toContain("não reenvia");
+    expect(recoveryActionExplanation(action)).toMatch(/não reenvia/i);
   });
 
   it("keeps receipt outcome explicit in the same context", () => {
@@ -76,6 +118,34 @@ describe("Marketing result presentation", () => {
     });
   });
 
+  it("says a canary approval skipped the minimum only when the receipt records it", () => {
+    const canary = {
+      kind: "approve",
+      outcome: { audience_count: 1, canary: true, minimum_count: 3 },
+    } as MarketingCommandReceipt;
+    const legacyCanary = {
+      kind: "approve",
+      outcome: { audience_count: 1, canary: true },
+    } as MarketingCommandReceipt;
+    const regular = {
+      kind: "approve",
+      outcome: { audience_count: 12 },
+    } as MarketingCommandReceipt;
+    const forged = {
+      kind: "approve",
+      outcome: { canary: "true" },
+    } as MarketingCommandReceipt;
+
+    expect(approvalCanaryNote(canary)).toBe(
+      "Ensaio: o mínimo de 3 não vale; só a lista de canário recebe.",
+    );
+    expect(approvalCanaryNote(legacyCanary)).toBe(
+      "Ensaio: o mínimo de público não vale; só a lista de canário recebe.",
+    );
+    expect(approvalCanaryNote(regular)).toBe("");
+    expect(approvalCanaryNote(forged)).toBe("");
+  });
+
   it("does not disguise forbidden or service failure as not-found/empty", () => {
     expect(marketingLoadError({ statusCode: 403 }).title).toContain(
       "não tem acesso",
@@ -87,5 +157,38 @@ describe("Marketing result presentation", () => {
       title: "Não foi possível carregar o resultado",
       canRetry: true,
     });
+  });
+});
+
+describe("quanto já está preparado, na grandeza da plataforma", () => {
+  // ⚠️ A fração só quer dizer alguma coisa quando o denominador é GENTE. No mural ela
+  // lia sempre "1/1 destinos preparados" e mandava o gestor procurar o sentido de
+  // "destino" num lugar onde só existe um mural — enquanto no WhatsApp, na linha de
+  // cima, o mesmo "destino" era uma pessoa.
+  it("no WhatsApp conta pessoas na lista", () => {
+    expect(
+      platformFanoutSummary({
+        platform_ref: "whatsapp",
+        fanout_materialized: 37,
+        fanout_expected: 40,
+      }),
+    ).toBe("37 de 40 pessoas na lista");
+  });
+
+  it("no mural diz a postagem, sem fração", () => {
+    expect(
+      platformFanoutSummary({
+        platform_ref: "instagram",
+        fanout_materialized: 1,
+        fanout_expected: 1,
+      }),
+    ).toBe("postagem preparada");
+    expect(
+      platformFanoutSummary({
+        platform_ref: "instagram",
+        fanout_materialized: 0,
+        fanout_expected: 1,
+      }),
+    ).toBe("postagem ainda não preparada");
   });
 });

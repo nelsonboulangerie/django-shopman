@@ -228,11 +228,12 @@ def test_commit_adopts_planned_holds_after_otp_login(client):
     assert hold_ids
 
     raw_code, digest = generate_raw_code()
-    VerificationCode.objects.create(
+    verification_code = VerificationCode.objects.create(
         target_value="+5543999990001",
         purpose=VerificationCode.Purpose.LOGIN,
         code_hash=digest,
     )
+    verification_code.mark_sent()
     resp = client.post(
         "/api/v1/auth/verify-code/",
         data=json.dumps({"phone": "+5543999990001", "code": raw_code}),

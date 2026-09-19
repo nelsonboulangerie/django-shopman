@@ -67,7 +67,7 @@ export function useCampaignBoard() {
   } = useFetch<BoardResponse>("/api/v1/backstage/marketing/", {
     key: "marketing-board",
     server: true,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   });
   const {
     data: canonicalData,
@@ -77,7 +77,7 @@ export function useCampaignBoard() {
   } = useFetch<MarketingEnvelopeV2>("/api/v1/backstage/marketing/v2/", {
     key: "marketing-board-v2",
     server: true,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   });
 
   const board = computed(() => data.value?.board);
@@ -138,7 +138,7 @@ export function useCampaignBoard() {
     const announcement = pendingPosts.value.find((item) => item.pk === pk);
     if (!announcement) {
       useSonner.error(
-        "Este anúncio mudou ou saiu da fila. Atualizamos o painel.",
+        "Este anúncio mudou ou não está mais na fila. Atualizamos o painel.",
       );
       await refresh();
       return null;
@@ -167,7 +167,7 @@ export function useCampaignBoard() {
       command,
       publishMode === "scheduled"
         ? "Anúncio agendado."
-        : "Anúncio preparado para publicação.",
+        : "Anúncio autorizado. É disparado nos próximos minutos.",
       idempotencyKey,
     );
   }
@@ -180,7 +180,7 @@ export function useCampaignBoard() {
     const announcement = pendingPosts.value.find((item) => item.pk === pk);
     if (!announcement) {
       useSonner.error(
-        "Este anúncio mudou ou saiu da fila. Atualizamos o painel.",
+        "Este anúncio mudou ou não está mais na fila. Atualizamos o painel.",
       );
       await refresh();
       return null;
@@ -240,7 +240,7 @@ export function useCampaignBoard() {
           ? "Anúncio recusado."
           : command.body.publish_mode === "scheduled"
             ? "Anúncio agendado."
-            : "Anúncio preparado para publicação.";
+            : "Anúncio autorizado. É disparado nos próximos minutos.";
       useSonner.success(message);
       await refresh();
       return response;
@@ -282,7 +282,7 @@ export function useCampaignBoard() {
           ? "Anúncio recusado."
           : command.body.publish_mode === "scheduled"
             ? "Anúncio agendado."
-            : "Anúncio preparado para publicação.",
+            : "Anúncio autorizado. É disparado nos próximos minutos.",
       );
       await refresh();
       return response;

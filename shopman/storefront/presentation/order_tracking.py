@@ -266,7 +266,7 @@ class OrderTrackingProjection:
     status_color: str
     # Encomenda (WP-D): quando o pedido tem data futura, ``when_display`` traz
     # o combinado como o cliente escolheu no checkout ("sábado, 19/07 · A
-    # partir das 09h") para o cabeçalho/resumo da página.
+    # partir das 9h") para o cabeçalho/resumo da página.
     is_preorder: bool
     when_display: str | None
     copy: OrderTrackingCopyProjection
@@ -349,7 +349,7 @@ def build_order_tracking_status(order) -> OrderTrackingStatusProjection:
 def present_tracking(data: TrackingData) -> OrderTrackingProjection:
     copy = build_copy("TRACKING")
     last_updated_display = copy.title("TRACKING_PROMISE_UPDATED_NOW", "Atualizado agora")
-    when_display = _when_display(data.commitment_date, data.commitment_slot_ref)
+    when_display = _when_display(data.commitment_date, data.commitment_slot_label)
     promise = _present_promise(
         data.promise,
         status=data.status,
@@ -490,18 +490,16 @@ def _eta_display(eta_at: str | None) -> str | None:
         return None
 
 
-def _when_display(commitment_date_iso: str | None, slot_ref: str | None) -> str | None:
-    """"sábado, 19/07 · A partir das 09h" — a data e o slot como o cliente
-    escolheu no checkout (mesma composição do ``whenSummary`` da loja)."""
+def _when_display(commitment_date_iso: str | None, slot_label: str | None) -> str | None:
+    """"sábado, 19/07 · A partir das 9h" — a data e o slot como o cliente
+    escolheu no checkout (mesma composição do ``whenSummary`` da loja). O
+    rótulo já vem resolvido pela projection (as duas grades: canônico e meia
+    hora do PDV); aqui só se compõe."""
     date_part = _commitment_date_display(commitment_date_iso)
     if not date_part:
         return None
-    if slot_ref:
-        from shopman.storefront.services.pickup_slots import slot_label
-
-        label = slot_label(slot_ref)
-        if label:
-            return f"{date_part} · {label}"
+    if slot_label:
+        return f"{date_part} · {slot_label}"
     return date_part
 
 
@@ -1080,7 +1078,7 @@ def _waitlist_message(
             ).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE",
-            "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
         ).replace("{when}", wait_display)
     if data.fulfillment_wait_kind == "preorder":
         return copy.message(
@@ -1155,7 +1153,7 @@ def _paid_fulfillment_wait_message(
     if wait_display:
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID",
-            "Pagamento confirmado. Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            "Pagamento confirmado. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
         ).replace("{when}", wait_display)
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE",

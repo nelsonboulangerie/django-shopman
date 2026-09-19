@@ -26,7 +26,7 @@ function normalize(value: unknown): RailState {
 }
 
 export function useRailState() {
-  // Default por app (só vale quando ainda não há cookie): a Central começa colapsada;
+  // Default por app (só vale quando ainda não há cookie): o Shopman Apps começa colapsado;
   // as demais, compactas. Vem do runtimeConfig (kit define; cada app pode sobrescrever).
   const appDefault = normalize(useRuntimeConfig().public.railDefaultState);
 

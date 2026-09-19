@@ -1,9 +1,15 @@
 """Age-proof helpers shared by marketing audience and direct deliveries.
 
-The customer birthday is an existing canonical fact.  This module never asks
-for or persists additional personal data; it only prevents a specific 18+
-self-declaration from overriding a birthday that already proves the customer
-is a minor.
+Two proofs of adulthood, one veto:
+
+- ``Customer.birthday`` (optional, canonical) proves adult when it says so;
+- the declaration the person makes when signing in to the store
+  (``Customer.metadata["adult_declaration"]``, written by
+  ``shop/services/account.record_adult_declaration``) proves adult by itself —
+  the store never asks for a birth date to send news;
+- a birthday that proves a minor ALWAYS wins over any declaration.
+
+This module never asks for or persists additional personal data.
 """
 
 from __future__ import annotations
@@ -11,6 +17,14 @@ from __future__ import annotations
 from datetime import date
 
 from django.utils import timezone
+
+#: Onde a declaração feita no login mora em ``Customer.metadata``.
+ADULT_DECLARATION_KEY = "adult_declaration"
+#: Versões dos termos da entrada cujo aceite declara maioridade. A versão
+#: gravada mora em ``shop/services/account.LOGIN_TERMS_VERSION``; mudou a frase
+#: da entrada, sobe a versão lá E acrescenta a nova aqui — quem aceitou a antiga
+#: continua declarado, porque o carimbo guarda a versão que a pessoa leu.
+ADULT_DECLARING_TERMS_VERSIONS = frozenset({"login-terms-pt-BR-v1"})
 
 
 def is_known_minor(birthday: date | None, *, today: date | None = None) -> bool:
@@ -30,6 +44,31 @@ def is_known_adult(birthday: date | None, *, today: date | None = None) -> bool:
     """Return whether a stored birthday proves the customer is at least 18."""
 
     return birthday is not None and not is_known_minor(birthday, today=today)
+
+
+def declares_adult(metadata) -> bool:
+    """Whether ``Customer.metadata`` carries a login declaration of adulthood.
+
+    Only a declaration under a known terms version counts: a stray dict with the
+    right key but an unknown (or empty) version proves nothing.
+    """
+
+    if not isinstance(metadata, dict):
+        return False
+    declaration = metadata.get(ADULT_DECLARATION_KEY)
+    if not isinstance(declaration, dict):
+        return False
+    return str(declaration.get("terms_version") or "") in ADULT_DECLARING_TERMS_VERSIONS
+
+
+def is_proved_adult(
+    birthday: date | None, metadata, *, today: date | None = None
+) -> bool:
+    """Adult by birthday OR by the login declaration; a minor birthday vetoes both."""
+
+    if is_known_minor(birthday, today=today):
+        return False
+    return is_known_adult(birthday, today=today) or declares_adult(metadata)
 
 
 def customer_is_known_minor(customer_ref: str, *, today: date | None = None) -> bool:
@@ -54,21 +93,27 @@ def customer_is_known_minor(customer_ref: str, *, today: date | None = None) -> 
     return is_known_minor(birthday, today=today)
 
 
-def canonical_birthday_for_customer_id(customer_id: int | None) -> date | None:
-    """Read the current canonical birthday for a final delivery decision.
+def canonical_age_evidence_for_customer_id(
+    customer_id: int | None,
+) -> tuple[date | None, dict]:
+    """Read the current birthday AND login declaration for a final delivery decision.
 
-    Callers deliberately handle database failures as retryable. Returning
-    ``None`` is reserved for a missing customer or birthday and therefore can
-    never be confused with a successfully proven adult.
+    One query, both proofs. Callers deliberately handle database failures as
+    retryable. ``(None, {})`` is reserved for a missing customer (or one with
+    neither proof) and therefore can never be confused with a proven adult.
     """
 
     if customer_id is None:
-        return None
+        return None, {}
 
     from shopman.guestman.models import Customer
 
-    return (
+    row = (
         Customer.objects.filter(pk=customer_id)
-        .values_list("birthday", flat=True)
+        .values_list("birthday", "metadata")
         .first()
     )
+    if row is None:
+        return None, {}
+    birthday, metadata = row
+    return birthday, metadata if isinstance(metadata, dict) else {}
