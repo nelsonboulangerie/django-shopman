@@ -134,6 +134,7 @@ class NFCeEmitHandler:
             customer=payload.get("customer"), payment=payload["payment"],
             additional_info=payload.get("additional_info"),
             delivery=payload.get("delivery"),
+            intermediary=payload.get("intermediary"),
         )
 
         if result.success:
