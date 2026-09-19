@@ -110,6 +110,7 @@ def build_emission_payload(order) -> dict:
         payload["intermediary"] = intermediary
     else:
         _alert_intermediary_not_declared(order)
+    _alert_intermediary_base_unknown(order)
     return payload
 
 
@@ -278,6 +279,41 @@ def _alert_receipt_promised_without_emission(order, data: dict) -> None:
         ),
         order_ref=order.ref,
         dedupe_key=f"fiscal_receipt_promised:{order.ref}",
+    )
+
+
+def _alert_intermediary_base_unknown(order) -> None:
+    """Venda intermediada cuja BASE não pôde ser corrigida: grite igual.
+
+    Irmão de :func:`_alert_intermediary_not_declared`, e existe porque as duas
+    omissões da mesma família falhavam em sentidos opostos: faltar a
+    configuração do grupo gritava, faltar o detalhamento financeiro saía calado
+    pelo total cheio — com a receita da plataforma dentro da base, que é o
+    defeito de origem.
+
+    Silêncio legítimo (venda direta, e pedido do iFood sem ``totals``, cujo
+    total já vem da soma dos itens) é decidido em
+    ``fiscal_intermediary.unreadable_breakdown``, não aqui.
+    """
+    missing = fiscal_intermediary.unreadable_breakdown(order)
+    if not missing:
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    logger.error(
+        "fiscal.intermediary_base_unknown order=%s channel=%s motivo=%s",
+        order.ref, order.channel_ref, missing,
+    )
+    create_operator_alert(
+        type="fiscal_intermediary_base_unknown",
+        severity="critical",
+        message=(
+            f"A NFC-e do pedido {order.ref} vai declarar o total CHEIO do pedido: "
+            f"{missing}."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"fiscal_intermediary_base_unknown:{order.ref}",
     )
 
 

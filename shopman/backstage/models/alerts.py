@@ -114,6 +114,11 @@ class OperatorAlert(models.Model):
         # (Ajuste SINIEF 22/20). A nota sai VÁLIDA e fora da regra — defeito que
         # não reclama sozinho —, e o que falta é configuração, não retry.
         ("fiscal_intermediary_not_declared", "NFC-e sem o intermediador da venda"),
+        # Irmão do de cima, e a outra metade da mesma omissão: o canal é
+        # marketplace, mas a casa não sabe ler o detalhamento financeiro dele,
+        # então a nota sai pelo total CHEIO — com a receita da plataforma
+        # dentro da base tributável.
+        ("fiscal_intermediary_base_unknown", "NFC-e de marketplace com base não corrigida"),
         # A mercadoria SAIU (despacho ou conclusão) com a nota ainda na fila ou
         # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
         # barrar é do dono.

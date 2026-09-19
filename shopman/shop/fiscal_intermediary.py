@@ -22,6 +22,21 @@ segundo consumidor que não existe.
 Quem é intermediador não é palpite do código: é a configuração
 ``settings.SHOPMAN_FISCAL_INTERMEDIARIES`` (canal → CNPJ/identificador), porque
 o CNPJ do intermediador é dado do deployment, não do pedido.
+
+**Duas omissões, um único modo de falhar.** Uma venda intermediada pode chegar
+aqui faltando duas coisas diferentes, e as duas são graves do mesmo jeito:
+
+- falta a **configuração** do grupo (CNPJ/identificador) → a nota sai fora do
+  Ajuste SINIEF 22/20; grita por :func:`missing_configuration`;
+- falta o **detalhamento financeiro** que sustenta a base → a nota sai pelo
+  total cheio, com a receita da plataforma dentro; grita por
+  :func:`unreadable_breakdown`.
+
+Nenhuma das duas pode sair calada, e é fácil que a segunda saia: ela se
+disfarça de "não há o que corrigir". A ausência de registry (correta: não se
+cria backend plugável sem dois consumidores reais) não pode virar silêncio no
+dia em que um segundo marketplace for declarado — ver
+:data:`READABLE_BREAKDOWN_CHANNELS`, que é esse seam, nomeado.
 """
 
 from __future__ import annotations
@@ -32,7 +47,27 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-#: O único valor de ``deliveredBy`` que põe a taxa de entrega NA NOTA.
+#: Os canais cujo detalhamento financeiro este módulo sabe LER.
+#:
+#: ⚠️ **Este é o seam por onde um segundo marketplace entra.** O conceito de
+#: intermediador é genérico, mas a *leitura* do detalhamento não pode ser: cada
+#: plataforma entrega o dela com um nome próprio. Não há registry plugável
+#: porque não há segundo consumidor real — a casa não cria backend plugável
+#: para o futuro.
+#:
+#: O que a ausência de registry **não** pode virar é silêncio. Um canal
+#: declarado como intermediado que não esteja aqui é justamente o caso grave:
+#: a base da nota não seria corrigida, e a receita da plataforma entraria no
+#: documento — o defeito que este módulo existe para consertar, de volta
+#: inteiro, para o canal novo. Por isso ele **grita**, em
+#: :func:`unreadable_breakdown`.
+READABLE_BREAKDOWN_CHANNELS = frozenset({"ifood"})
+
+#: Onde o iFood guarda o detalhamento, dentro de ``Order.data``.
+IFOOD_DATA_KEY = "ifood"
+
+#: O valor de ``deliveredBy`` — vocabulário **do iFood** — que responde "sim" à
+#: pergunta genérica *o transporte foi da casa?*.
 #:
 #: A regra fiscal é sobre quem prestou o transporte: entrega da **loja** ⇒ a
 #: taxa é receita da loja e consta na nota; entrega da **plataforma** ⇒ não
@@ -40,7 +75,12 @@ logger = logging.getLogger(__name__)
 #: todo pedido do iFood é entregue pelo iFood — mas a regra é lida do campo, e
 #: não cravada, justamente para que o dia em que a entrega própria for ligada a
 #: nota saia certa em vez de errada em silêncio.
-MERCHANT_DELIVERY = "MERCHANT"
+#:
+#: O nome privado é deliberado: a pergunta da casa é :func:`house_delivered`;
+#: esta constante é só a palavra com que UMA plataforma a responde. Um segundo
+#: marketplace responderá com outra palavra, e ela entra junto com o leitor do
+#: detalhamento dele.
+_IFOOD_DELIVERED_BY_HOUSE = "MERCHANT"
 
 
 def _configured(channel_ref: str) -> dict:
@@ -105,13 +145,54 @@ def missing_configuration(order) -> str:
     return ", ".join(missing)
 
 
+def house_delivered(order) -> bool:
+    """O transporte desta venda foi da CASA, e não da plataforma?
+
+    A pergunta é genérica; a palavra que a responde é de cada plataforma.
+    """
+    data = (order.data or {}).get(IFOOD_DATA_KEY) or {}
+    return str(data.get("delivered_by") or "").strip().upper() == _IFOOD_DELIVERED_BY_HOUSE
+
+
+def unreadable_breakdown(order) -> str:
+    """Por que a base desta venda intermediada NÃO pôde ser corrigida. GRITA.
+
+    ``""`` quando não há nada a dizer — e são dois silêncios **diferentes**,
+    os dois legítimos:
+
+    - **Venda direta.** Não é intermediada; não há base a corrigir.
+    - **Pedido do iFood sem o detalhamento** (simulação de dev, payload
+      antigo). Este é silêncio *merecido*, não suposto: sem ``totals``, o
+      ``ifood_ingest`` monta ``total_q`` a partir da soma dos itens
+      (``total_q = order_amount_q or items_subtotal_q``) — ou seja, não há
+      receita de plataforma dentro dele, e a base já está certa.
+
+    O que NÃO é silêncio é o caso que a ausência de registry criaria: canal
+    declarado como intermediado que este módulo **não sabe ler**. Aí a base
+    ficaria sem correção com a receita da plataforma dentro dela, que é
+    exatamente o defeito de origem — e ele voltaria mudo, para o canal novo.
+    """
+    if not is_intermediated(order):
+        return ""
+    channel = str(getattr(order, "channel_ref", "") or "")
+    if channel in READABLE_BREAKDOWN_CHANNELS:
+        return ""
+    return (
+        f"o canal '{channel}' está declarado como intermediado em "
+        "SHOPMAN_FISCAL_INTERMEDIARIES, mas shopman.shop.fiscal_intermediary não "
+        "sabe ler o detalhamento financeiro dele (hoje só o iFood tem leitor). "
+        "Sem isso a base da nota não é corrigida e a receita da plataforma entra "
+        "no documento"
+    )
+
+
 def seller_amounts(order) -> dict | None:
     """A base da nota desta venda intermediada: ``{"base_q", "freight_q"}``.
 
-    ``None`` = **nada a corrigir**, e a nota segue pelo total do pedido como
-    sempre: ou o canal não é intermediado, ou a plataforma não mandou o
-    detalhamento financeiro (pedido de simulação, payload antigo). Um canal
-    intermediado sem detalhamento não é motivo para inventar número.
+    ``None`` = **nada a corrigir**, e a nota segue pelo total do pedido. Os
+    casos em que isso é verdade — e o caso em que parece verdade e não é —
+    estão em :func:`unreadable_breakdown`, que é quem grita pelo último.
+    Sozinha, esta função nunca inventa número.
 
     ``base_q`` é o que a nota declara: o total do pedido **menos** a receita da
     plataforma, e menos a taxa de entrega quando quem entregou foi a
@@ -125,17 +206,20 @@ def seller_amounts(order) -> dict | None:
     """
     if not is_intermediated(order):
         return None
+    if str(getattr(order, "channel_ref", "") or "") not in READABLE_BREAKDOWN_CHANNELS:
+        # Canal intermediado sem leitor: não há o que calcular, e o silêncio
+        # daqui é coberto pelo grito de unreadable_breakdown().
+        return None
 
-    totals = (((order.data or {}).get("ifood") or {}).get("totals") or {})
+    totals = (((order.data or {}).get(IFOOD_DATA_KEY) or {}).get("totals") or {})
     order_amount_q = int(totals.get("order_amount_q") or 0)
     if order_amount_q <= 0:
         return None
 
     additional_fees_q = max(0, int(totals.get("additional_fees_q") or 0))
     delivery_fee_q = max(0, int(totals.get("delivery_fee_q") or 0))
-    delivered_by = str(((order.data or {}).get("ifood") or {}).get("delivered_by") or "").strip().upper()
 
-    freight_q = delivery_fee_q if delivered_by == MERCHANT_DELIVERY else 0
+    freight_q = delivery_fee_q if house_delivered(order) else 0
     # O que sai da base: a receita da plataforma, sempre; e a taxa de entrega
     # quando o transporte não foi da casa. Os ``benefits`` continuam onde já
     # estavam — dentro do ``orderAmount``, portanto reduzindo a base, que é a
@@ -147,9 +231,12 @@ def seller_amounts(order) -> dict | None:
 
 
 __all__ = [
-    "MERCHANT_DELIVERY",
+    "IFOOD_DATA_KEY",
+    "READABLE_BREAKDOWN_CHANNELS",
+    "house_delivered",
     "intermediary_for",
     "is_intermediated",
     "missing_configuration",
     "seller_amounts",
+    "unreadable_breakdown",
 ]
