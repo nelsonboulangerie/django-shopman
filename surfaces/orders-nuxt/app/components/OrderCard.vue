@@ -289,7 +289,7 @@ function buttonClass(priority: string): string {
       class="flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5"
       data-ifood-pickup-code
     >
-      <span class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Código de retirada</span>
+      <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código de retirada</span>
       <span class="ml-auto text-base font-bold tabular-nums">{{ card.ifood_pickup_code }}</span>
     </p>
 
