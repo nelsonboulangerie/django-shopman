@@ -27,10 +27,9 @@ from __future__ import annotations
 
 import logging
 
-import requests
 from django.conf import settings
 
-from shopman.shop.services import ifood_auth, ifood_ingest, ifood_orders, webhook_idempotency
+from shopman.shop.services import ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
 
 logger = logging.getLogger(__name__)
 
@@ -52,40 +51,32 @@ def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {}) or {}
 
 
-def _base_url() -> str:
-    return str(_cfg().get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
-
-
 def poll() -> list[dict]:
     """Poll the iFood event stream. Returns the events list (``[]`` on 204/idle)."""
-    headers = ifood_auth.authorized_headers()
-    if not headers:
-        logger.warning("ifood_events.poll: OAuth not configured — skipping")
+    merchant_id = str(_cfg().get("merchant_id") or "").strip()
+    extra = {"x-polling-merchants": merchant_id} if merchant_id else None
+
+    resp = ifood_http.request(
+        "GET", "/order/v1.0/events:polling", label="poll", extra_headers=extra, idempotent=True
+    )
+    if resp is None:
+        # Sem credencial, transporte caído ou recusa de edge que sobreviveu às
+        # retentativas — `ifood_http` já registrou a forense.
         return []
 
-    url = f"{_base_url()}/order/v1.0/events:polling"
-    timeout = int(_cfg().get("timeout") or 30)
-    merchant_id = str(_cfg().get("merchant_id") or "").strip()
-    poll_headers = {**headers, "x-polling-merchants": merchant_id} if merchant_id else headers
-
-    try:
-        resp = requests.get(url, headers=poll_headers, timeout=timeout)
-        # Never broaden merchant scope on a rejected filter: the same app may
-        # authorize other stores, including production stores during testing.
-        if resp.status_code == 400 and merchant_id:
-            logger.warning(
-                "ifood_events.poll: iFood rejeitou x-polling-merchants (400) — "
-                "IFOOD_MERCHANT_ID provavelmente errado. Filtro preservado; "
-                "confira o Merchant ID no portal iFood."
-            )
-    except requests.RequestException as exc:
-        logger.warning("ifood_events.poll: request failed: %s", exc)
+    # Never broaden merchant scope on a rejected filter: the same app may
+    # authorize other stores, including production stores during testing.
+    if resp.status_code == 400 and merchant_id:
+        logger.warning(
+            "ifood_events.poll: iFood rejeitou x-polling-merchants (400) — "
+            "IFOOD_MERCHANT_ID provavelmente errado. Filtro preservado; "
+            "confira o Merchant ID no portal iFood."
+        )
         return []
 
     if resp.status_code == 204:
         return []
     if resp.status_code != 200:
-        logger.warning("ifood_events.poll: HTTP %s: %s", resp.status_code, resp.text[:200])
         return []
     try:
         events = resp.json()
@@ -100,22 +91,22 @@ def acknowledge(event_ids: list[str]) -> bool:
     event_ids = [e for e in event_ids if e]
     if not event_ids:
         return True
-    headers = ifood_auth.authorized_headers({"Content-Type": "application/json"})
-    if not headers:
-        return False
-
     ok = True
-    url = f"{_base_url()}/order/v1.0/events/acknowledgment"
     for start in range(0, len(event_ids), _ACK_BATCH):
         batch = [{"id": eid} for eid in event_ids[start:start + _ACK_BATCH]]
-        try:
-            resp = requests.post(url, json=batch, headers=headers, timeout=int(_cfg().get("timeout") or 30))
-        except requests.RequestException as exc:
-            logger.warning("ifood_events.acknowledge: request failed: %s", exc)
-            ok = False
-            continue
-        if resp.status_code not in (200, 202):
-            logger.warning("ifood_events.acknowledge: HTTP %s: %s", resp.status_code, resp.text[:200])
+        # Idempotente por id de evento: reconhecer o mesmo id duas vezes é
+        # inócuo, então vale retentar também `5xx` e transporte. O risco aqui é
+        # o inverso — um ACK que não sai faz o iFood reentregar o evento, e a
+        # reentrega já é tratada pelo dedupe durável.
+        resp = ifood_http.request(
+            "POST",
+            "/order/v1.0/events/acknowledgment",
+            label="acknowledge",
+            extra_headers={"Content-Type": "application/json"},
+            json=batch,
+            idempotent=True,
+        )
+        if resp is None or resp.status_code not in (200, 202):
             ok = False
     return ok
 

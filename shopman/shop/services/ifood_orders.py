@@ -23,10 +23,9 @@ import logging
 from copy import deepcopy
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-import requests
 from django.conf import settings
 
-from shopman.shop.services import ifood_auth
+from shopman.shop.services import ifood_http
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +38,6 @@ def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {}) or {}
 
 
-def _base_url() -> str:
-    return str(_cfg().get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
-
-
 def _to_q(value) -> int:
     """Convert an iFood decimal currency value (reais) to centavos."""
     try:
@@ -52,17 +47,20 @@ def _to_q(value) -> int:
 
 
 def fetch_order(order_id: str) -> dict:
-    """Fetch the full iFood order by id. Raises :class:`IFoodOrderFetchError`."""
-    headers = ifood_auth.authorized_headers()
-    if not headers:
-        raise IFoodOrderFetchError("iFood OAuth is not configured (client_id/client_secret)")
+    """Fetch the full iFood order by id. Raises :class:`IFoodOrderFetchError`.
 
-    url = f"{_base_url()}/order/v1.0/orders/{order_id}"
-    try:
-        resp = requests.get(url, headers=headers, timeout=int(_cfg().get("timeout") or 30))
-    except requests.RequestException as exc:
-        raise IFoodOrderFetchError(f"iFood order fetch failed: {exc}") from exc
-
+    Leitura pura, então passa por ``ifood_http`` como idempotente: a recusa de
+    edge e o ``5xx`` são retentados. Foi exatamente aqui que o ensaio de
+    12/09/2026 perdeu os detalhes do pedido oficial — o ``PLC`` chegou e o
+    ``GET`` levou 403 do edge, sem nenhuma retentativa.
+    """
+    resp = ifood_http.request(
+        "GET", f"/order/v1.0/orders/{order_id}", label="fetch_order", idempotent=True
+    )
+    if resp is None:
+        raise IFoodOrderFetchError(
+            f"iFood order fetch falhou para {order_id} (sem credencial, transporte ou recusa de edge)"
+        )
     if resp.status_code != 200:
         raise IFoodOrderFetchError(
             f"iFood order fetch HTTP {resp.status_code}: {resp.text[:200]}"
