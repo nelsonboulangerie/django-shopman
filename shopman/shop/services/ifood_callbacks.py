@@ -128,9 +128,12 @@ def remote_status_observed(order, status: str) -> bool:
 
 def send_action(order_id: str, action: str, *, body: dict | None = None) -> None:
     """POST a status action to iFood. Raises :class:`IFoodCallbackError` on failure."""
-    headers = ifood_auth.authorized_headers({"Content-Type": "application/json"})
+    headers, reason = ifood_auth.headers_with_reason({"Content-Type": "application/json"})
     if not headers:
-        raise IFoodCallbackError("iFood OAuth is not configured (client_id/client_secret)")
+        # "Sem token" não é sinônimo de "sem credencial": o edge do iFood também
+        # recusa a chamada de token. Reportar a causa errada manda quem depura
+        # conferir variável de ambiente que está certa.
+        raise IFoodCallbackError(ifood_auth.failure_message(reason))
 
     url = f"{_base_url()}/order/v1.0/orders/{order_id}/{action}"
     try:
@@ -178,9 +181,9 @@ def fetch_cancellation_reasons(order_id: str) -> list[dict]:
     ``{"cancelCodeId": "...", "description": "..."}``. Use it to discover the
     valid codes to configure ``cancellation_default_code``.
     """
-    headers = ifood_auth.authorized_headers()
+    headers, reason = ifood_auth.headers_with_reason()
     if not headers:
-        raise IFoodCallbackError("iFood OAuth is not configured (client_id/client_secret)")
+        raise IFoodCallbackError(ifood_auth.failure_message(reason))
     url = f"{_base_url()}/order/v1.0/orders/{order_id}/cancellationReasons"
     try:
         resp = requests.get(url, headers=headers, timeout=int(_cfg().get("timeout") or 30))

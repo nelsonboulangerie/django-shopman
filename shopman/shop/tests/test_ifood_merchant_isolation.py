@@ -14,8 +14,8 @@ def test_rejected_merchant_filter_never_retries_without_it():
     # um 400 no filtro de merchant NUNCA vira uma segunda consulta sem o filtro.
     response = MagicMock(status_code=400, text="Invalid merchant filter", headers={})
     with (
-        patch.object(ifood_http.ifood_auth, "authorized_headers",
-                     side_effect=lambda extra=None: {"Authorization": "Bearer test", **(extra or {})}),
+        patch.object(ifood_http.ifood_auth, "headers_with_reason",
+                     side_effect=lambda extra=None: ({"Authorization": "Bearer test", **(extra or {})}, "")),
         patch.object(ifood_http.requests, "get", return_value=response) as get,
     ):
         assert ifood_events.poll() == []

@@ -172,10 +172,15 @@ def _check_rate_limit(resp: requests.Response) -> None:
         raise IFoodRateLimitError(retry_after=retry_after)
 
 
-def _headers(cfg: dict) -> dict | None:
-    """OAuth Bearer + own User-Agent, or None when iFood auth is not configured."""
+def _headers(cfg: dict) -> tuple[dict | None, str]:
+    """``(headers, "")`` or ``(None, reason)`` — the reason names the real cause.
+
+    "No token" is not the same as "no credentials": the iFood edge also refuses
+    the token call. Reporting the wrong cause sends whoever debugs to an
+    environment variable that is already correct.
+    """
     ensure_catalog_write_allowed(cfg)
-    return ifood_auth.authorized_headers({"Content-Type": "application/json"})
+    return ifood_auth.headers_with_reason({"Content-Type": "application/json"})
 
 
 def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict) -> None:
@@ -222,11 +227,11 @@ class IFoodCatalogProjection:
             ensure_catalog_write_allowed(cfg)
         except IFoodCatalogWriteBlocked as exc:
             return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
-        headers = _headers(cfg)
+        headers, reason = _headers(cfg)
         if not headers:
             return ProjectionResult(
                 success=False,
-                errors=["iFood OAuth is not configured (client_id/client_secret)"],
+                errors=[ifood_auth.failure_message(reason)],
                 channel=channel,
             )
 
@@ -255,11 +260,11 @@ class IFoodCatalogProjection:
             ensure_catalog_write_allowed(cfg)
         except IFoodCatalogWriteBlocked as exc:
             return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
-        headers = _headers(cfg)
+        headers, reason = _headers(cfg)
         if not headers:
             return ProjectionResult(
                 success=False,
-                errors=["iFood OAuth is not configured (client_id/client_secret)"],
+                errors=[ifood_auth.failure_message(reason)],
                 channel=channel,
             )
 

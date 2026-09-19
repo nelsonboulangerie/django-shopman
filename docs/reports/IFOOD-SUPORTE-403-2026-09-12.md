@@ -83,6 +83,19 @@ O polling e o reconhecimento passaram a retentar a recusa de edge com backoff
 tentativas levam a falha de 42% para ~7%. Isso torna a integração utilizável,
 **mas é contorno, não conserto**: a recusa continua existindo do lado do iFood.
 
+A **chamada de token** tinha ficado de fora dessa travessia, e o log do ensaio de
+19/09 mostrou que ela leva a mesma recusa (`iFood OAuth: HTTP 403` no meio de uma
+série bem-sucedida). Agora ela retenta também, com backoff mais curto porque roda
+sob o lock do processo, e registra a `referencia=` do Akamai — mais um lote de
+referências para o chamado. A classificação da recusa mora em
+`shopman/shop/services/ifood_edge.py`, abaixo das duas camadas, porque
+`ifood_http` pede o header a `ifood_auth` e um não pode chamar o outro de volta.
+
+No mesmo passo, "sem token" deixou de ser reportado como "OAuth não configurado":
+a recusa de borda, a falha de transporte e a falta de credencial agora têm
+mensagem própria — antes as três mandavam quem depura conferir uma variável de
+ambiente que estava certa.
+
 ### O que ainda depende do iFood
 
 Com as referências em mãos, o chamado 33298264 pode ser respondido pedindo:
