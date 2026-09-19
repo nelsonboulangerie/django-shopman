@@ -57,6 +57,17 @@ class OperatorAlert(models.Model):
         # da loja: os pedidos seguem, mas SEM a conferência de horário.
         ("shop_calendar_unreadable", "Horário da loja ilegível"),
         ("ifood_schedule_invalid", "Agendamento iFood inválido"),
+        # O cliente mexeu no pedido DEPOIS de confirmado (evento ORDER_PATCHED).
+        # O pedido local continua com os itens originais: divergem os itens, o
+        # total, o que a cozinha prepara, o estoque que sai e a nota. Até aqui
+        # o evento era reconhecido e descartado em silêncio — dizíamos ao iFood
+        # que tratamos e não tratávamos. Reconciliar é trabalho de gente
+        # enquanto a Etapa 2 não existe, e por isso o alerta é `error`.
+        ("ifood_order_patched", "Cliente alterou o pedido no iFood"),
+        # Código de evento do iFood que chega sem tratamento nesta casa. O ACK
+        # sai (senão o iFood reentrega para sempre), mas nunca calado: é assim
+        # que um evento novo do marketplace aparece antes de virar prejuízo.
+        ("ifood_event_unhandled", "Evento do iFood sem tratamento"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
