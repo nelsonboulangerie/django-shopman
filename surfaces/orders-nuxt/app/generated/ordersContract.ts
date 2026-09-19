@@ -331,8 +331,8 @@ export interface OrderCardProjection {
   waitlist_deadline_iso: string;
   waitlist_label: string;
   ifood_cancellation_notice: string;
-  ifood_payment_summary: string[];
-  ifood_operation_summary: string[];
+  ifood_pickup_code: string;
+  ifood_schedule_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   test_order_label: string;
   test_order_notice: string;
