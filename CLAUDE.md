@@ -311,6 +311,20 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   engenheiro · jargão e colisão · prolixo), com antes/depois reais e a ordem da varredura,
   em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
+- **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
+  as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
+  `scripts/check_surface_versions.py` (`make test-surface-versions`, job no
+  `surfaces-gate.yml`), que confere **faixa** (`package.json`) **e versão travada**
+  (`package-lock.json`) — o `npm ci` do CI e do deploy instala o lock, e em 19/09/2026 o
+  `@nuxt/test-utils` tinha faixa idêntica nos dez apps e três versões travadas diferentes.
+  A referência é a versão **mais alta** presente, nunca a mais comum: por maioria o guard
+  mandaria rebaixar `@nuxt/eslint` e `@nuxt/icon` — alinhados e velhos, o oposto do que foi
+  decidido. ⚠️ Superfície nova entra em TRÊS lugares: `.github/dependabot.yml` (cadência),
+  `surfaces-gate.yml` (teste) e `SURFACES` no Makefile. Faltar no primeiro não acusa nada e
+  envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente desde que nasceu e
+  atrasado em 16 pacotes de uma vez. Exceção existe, mas é **declarada com motivo** no
+  `EXCEPTIONS` do guard (hoje uma: o pino exato do `operator-kit`), e nunca autoriza ficar
+  para trás.
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
   - **HTMX**: toda comunicação com servidor (GET, POST, polling, swaps). Incluindo `hx-on::before-request`/`after-request` para estados visuais de loading atrelados a requests.
   - **Alpine.js**: todo estado local na tela (abrir/fechar, toggles, dropdowns, modals, steppers, validação client-side, contadores, masks).

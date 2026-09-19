@@ -28,6 +28,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Deriva de versão entre as superfícies. Roda ANTES da matriz e em segundos:
+  # é leitura de `package.json` + `package-lock.json`, sem `npm ci`, sem rede.
+  #
+  # Por que é um job próprio e não um passo da matriz: a pergunta é sobre a
+  # RELAÇÃO entre os apps ("todos na mesma versão?"), e um passo dentro do job
+  # de um app só enxerga aquele app. Deriva entre irmãos é invisível de dentro
+  # de qualquer um deles.
+  surface-versions:
+    name: Versões das superfícies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Só a biblioteca padrão: o guard lê JSON e compara números. Sem `pip
+      # install`, sem constraints — este job não pode depender do ambiente
+      # Python do deploy para responder uma pergunta sobre arquivos npm.
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Gate de versões
+        run: python scripts/check_surface_versions.py
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest

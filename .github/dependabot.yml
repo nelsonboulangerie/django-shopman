@@ -15,6 +15,19 @@ version: 2
 
 updates:
   # ── Superfícies Nuxt ────────────────────────────────────────────────────────
+  # ⚠️ Esta lista é a cadência de atualização das superfícies, e app que FALTA
+  # aqui envelhece em silêncio — ele continua sendo TESTADO pelo
+  # `surfaces-gate.yml` (verde, sempre) e nunca é SUBIDO por ninguém. Foi
+  # exatamente o que houve com o `purchase-nuxt`, ausente desde que nasceu:
+  # medido em 19/09/2026, estava atrasado em 16 pacotes de uma vez, com `vue`,
+  # `eslint`, `vue-router`, `happy-dom`, `@vue/test-utils`, `tailwind-merge`,
+  # `motion-v` e `@iconify-json/lucide` travados atrás dos irmãos. Não foi
+  # decisão de ninguém; foi ausência de mecanismo.
+  #
+  # Quem criar uma superfície nova adiciona o diretório AQUI e no
+  # `surfaces-gate.yml`. O `scripts/check_surface_versions.py` cobra o resultado
+  # (versão divergente reprova), mas ele não sabe repor a cadência que falta —
+  # só acusa o atraso depois que ele já aconteceu.
   - package-ecosystem: npm
     directories:
       - /surfaces/storefront-nuxt
@@ -25,6 +38,7 @@ updates:
       - /surfaces/production-nuxt
       - /surfaces/marketing-nuxt
       - /surfaces/bi-nuxt
+      - /surfaces/purchase-nuxt
       - /surfaces/operator-kit
     schedule:
       interval: weekly

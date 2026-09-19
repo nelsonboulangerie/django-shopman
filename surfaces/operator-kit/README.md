@@ -600,3 +600,32 @@ Duas consequências que valem a leitura:
   no kit os `Ui*.vue` são planos (`app/components/UiNativeSelect.vue`) e escritos aqui.
   O glob da base não os alcança, e isso é deliberado: `@typescript-eslint/no-explicit-any`
   continua **erro** neles.
+
+## Versões: o kit segue os irmãos, com UMA exceção declarada
+
+A regra do ecossistema (decisão do dono, 18/09/2026) é **a mesma versão em todos os
+apps, e a mais recente estável**. O `scripts/check_surface_versions.py` cobra isso em
+todo PR, conferindo faixa (`package.json`) **e** versão travada (`package-lock.json`)
+de cada pacote declarado por dois ou mais apps de `surfaces/`.
+
+O kit tem **uma** divergência autorizada, e ela está escrita no `EXCEPTIONS` do próprio
+guard — não vale como exceção o que não estiver lá:
+
+- **`@iconify-json/lucide` com pino EXATO (`1.2.133`, sem `^`).** O kit define o
+  conjunto de ícones que os nove apps herdam por `extends`. Faixa aberta na layer
+  deixaria o mesmo nome de ícone resolver para arquivos diferentes em apps diferentes
+  na mesma leva — o kit não é um consumidor a mais, é a origem do conjunto.
+
+⚠️ **O pino exato tem um preço, e ele está medido.** Pino sem `^` tira o kit dos grupos
+do Dependabot: eles passam a cobrir 9 diretórios em vez de 10, e é daí que saem os PRs
+parciais (o #723 é o caso). Duas consequências práticas:
+
+1. **Subir o `@iconify-json/lucide` do kit é passo MANUAL.** Ninguém vai abrir esse PR
+   por você.
+2. **A versão do kit nunca pode ficar ABAIXO da dos apps.** O guard trata isso como
+   falha, de propósito: exceção autoriza *divergir*, não *ficar para trás*. Um app
+   excetuado que envelhece atrás dos irmãos é a deriva usando a exceção como
+   esconderijo.
+
+Qualquer outra divergência do kit é deriva, não decisão — alinhe pelo
+`python scripts/check_surface_versions.py --fix` seguido de `npm install`.

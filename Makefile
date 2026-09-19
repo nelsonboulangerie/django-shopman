@@ -302,6 +302,15 @@ test-constraints: ## Gate de pins: o constraints.txt cobre tudo que a imagem ins
 	@echo "── Constraints gate ──"
 	$(PYTHON) scripts/check_constraints.py
 
+# Irmão do `test-constraints`, do lado Nuxt: lá o risco é a imagem instalar o
+# que a suíte não viu; aqui é cada superfície instalar uma versão diferente da
+# vizinha. Confere FAIXA (package.json) e LOCK (package-lock.json), porque o
+# `npm ci` do CI e do deploy instala o lock — em 19/09/2026 o `@nuxt/test-utils`
+# tinha faixa idêntica nos dez apps e três versões travadas diferentes.
+test-surface-versions: ## Gate: mesma versão dos pacotes compartilhados nas 10 superfícies
+	@echo "── Versões das superfícies ──"
+	$(PYTHON) scripts/check_surface_versions.py
+
 # Gate da meia-correção: arquivo que grita numa linha e se cala na irmã.
 # Escopo = só o que o PR toca (diff contra o main). `all=1` varre o repositório
 # inteiro — é assim que o inventário da dívida é regerado.
