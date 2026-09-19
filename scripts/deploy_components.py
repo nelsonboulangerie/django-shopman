@@ -103,6 +103,25 @@ GROUP_SHARED_PATHS = (
     "surfaces/Dockerfile.operator-group",
 )
 
+#: O que mora DENTRO de uma surface e não chega na imagem. Prefixo `!` exclui.
+#:
+#: `surfaces/Dockerfile.surface` copia a surface inteira no estágio de build
+#: (linha 15) e só `/repo/surfaces/<s>/.output` no estágio final (linha 41). O
+#: que o Nuxt não assa no `.output` não vai para o ar — `tests/` é o caso puro,
+#: porque nenhum código de aplicação importa de lá.
+#:
+#: Sem isto, mudança de teste pedia deploy que não mudava um byte da imagem. Em
+#: 18/09/2026 seis PNG de baseline do Marketing reconstruíram e republicaram o
+#: `operator-office` inteiro, e as duas imagens saíram com digests idênticos —
+#: build e publicação pagos por nada, e duas imutáveis passando a dividir um
+#: digest, que é o que cega o confronto do `check_registry_drift.py`.
+#:
+#: ⚠️ A direção do erro importa. Excluir de MENOS custa minutos de build;
+#: excluir de MAIS deixa imagem velha no ar com tudo verde, que foi o buraco do
+#: PDV em 17/09. Por isso só entra aqui o que é DEMONSTRÁVEL pelo Dockerfile,
+#: nunca o que "provavelmente" não vai para a imagem.
+NAO_CHEGA_NA_IMAGEM = ("tests/**",)
+
 
 def load_groups(groups_json: Path = GROUPS_JSON) -> dict[str, list[str]]:
     """Grupos de operador lidos de `groups.json` — a MESMA lista do launcher."""
@@ -125,13 +144,27 @@ def component_paths(groups: dict[str, list[str]]) -> dict[str, tuple[str, ...]]:
 
     paths: dict[str, tuple[str, ...]] = {"web": WEB_PATHS}
     for surface in surfaces:
-        paths[surface] = (f"surfaces/{surface}/**", *SURFACE_SHARED_PATHS)
+        paths[surface] = (
+            f"surfaces/{surface}/**",
+            *SURFACE_SHARED_PATHS,
+            *_excluidos([surface, "operator-kit"]),
+        )
     for group, members in groups.items():
         paths[group] = (
             *GROUP_SHARED_PATHS,
             *(f"surfaces/{member}/**" for member in members),
+            *_excluidos([*members, "operator-kit"]),
         )
     return paths
+
+
+def _excluidos(surfaces: list[str]) -> tuple[str, ...]:
+    """`!surfaces/<s>/tests/**` para cada surface que o componente carrega."""
+    return tuple(
+        f"!surfaces/{surface}/{sub}"
+        for surface in dict.fromkeys(surfaces)
+        for sub in NAO_CHEGA_NA_IMAGEM
+    )
 
 
 def matches(path: str, pattern: str) -> bool:
@@ -146,6 +179,19 @@ def matches(path: str, pattern: str) -> bool:
     return path == pattern
 
 
+def toca(path: str, patterns: tuple[str, ...]) -> bool:
+    """O caminho pertence ao componente? Exclusão (`!`) vence inclusão.
+
+    A ordem não é negociável: `surfaces/kds-nuxt/tests/x.png` casa tanto o
+    `surfaces/kds-nuxt/**` quanto o `!surfaces/kds-nuxt/tests/**`, e quem tem
+    que ganhar é o segundo. Inclusão vencendo devolveria o comportamento
+    anterior sem ninguém notar.
+    """
+    if any(matches(path, p[1:]) for p in patterns if p.startswith("!")):
+        return False
+    return any(matches(path, p) for p in patterns if not p.startswith("!"))
+
+
 def components_for(
     changed: list[str], paths: dict[str, tuple[str, ...]]
 ) -> list[str]:
@@ -153,7 +199,7 @@ def components_for(
     return [
         name
         for name, patterns in paths.items()
-        if any(matches(f, p) for f in changed for p in patterns)
+        if any(toca(f, patterns) for f in changed)
     ]
 
 
@@ -187,13 +233,27 @@ def last_commit_touching(
 
     É o sha que o registry DEVERIA estar servindo para aquele componente.
     """
-    pathspec = [p[:-3] if p.endswith("/**") else p for p in patterns]
+    pathspec = [_pathspec(p) for p in patterns]
     result = _git(
         "log", "-1", "--format=%H", ref, "--", *pathspec, cwd=cwd
     )
     if result.returncode != 0:
         raise RuntimeError(f"git log de {patterns} falhou: {result.stderr.strip()}")
     return result.stdout.strip() or None
+
+
+def _pathspec(pattern: str) -> str:
+    """Padrão da tabela → pathspec do git. `!x/**` vira `:(exclude)x`.
+
+    A mesma tabela responde "o que construir" e "qual commit o registry deveria
+    estar servindo". Se a exclusão valesse só no primeiro, o confronto passaria
+    a cobrar um deploy que a decisão acabou de dispensar — vermelho perpétuo
+    por desacordo entre duas leituras do mesmo dado.
+    """
+    negado = pattern.startswith("!")
+    alvo = pattern[1:] if negado else pattern
+    alvo = alvo[:-3] if alvo.endswith("/**") else alvo
+    return f":(exclude){alvo}" if negado else alvo
 
 
 def build_matrix(names: list[str], groups: dict[str, list[str]]) -> list[dict]:

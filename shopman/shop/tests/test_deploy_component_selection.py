@@ -28,6 +28,7 @@ from deploy_components import (  # noqa: E402
     build_matrix,
     component_paths,
     decide,
+    last_commit_touching,
     load_groups,
 )
 
@@ -160,6 +161,55 @@ def test_o_kit_mexido_arrasta_toda_surface(repo: Path):
     assert "storefront-nuxt" in resultado
     assert "operator-floor" in resultado and "operator-office" in resultado
     assert "web" not in resultado
+
+
+def test_mexer_so_em_teste_nao_pede_deploy_de_ninguem(repo: Path):
+    """18/09/2026: seis PNG de baseline republicaram o `operator-office` à toa.
+
+    `Dockerfile.surface` copia a surface inteira no estágio de build e só o
+    `.output` no final. Teste não entra no `.output`, então a imagem sai byte a
+    byte idêntica — build e publicação pagos por nada, e duas imutáveis passando
+    a dividir um digest, que é o que cega o confronto com o registry.
+    """
+    base = commit(repo, ["README.md"], "base")
+    topo = commit(
+        repo,
+        ["surfaces/marketing-nuxt/tests/visual/baselines/x.png"],
+        "só retrato",
+    )
+    assert nomes(head=topo, base=base, per_app=True, repo=repo) == []
+
+
+def test_teste_do_kit_tambem_nao_arrasta_surface_nenhuma(repo: Path):
+    """O kit é compartilhado: o `tests/` dele arrastaria TODAS as surfaces."""
+    base = commit(repo, ["README.md"], "base")
+    topo = commit(repo, ["surfaces/operator-kit/tests/x.spec.ts"], "teste do kit")
+    assert nomes(head=topo, base=base, per_app=True, repo=repo) == []
+
+
+def test_codigo_junto_com_teste_ainda_constroi(repo: Path):
+    """A exclusão não pode virar desculpa para pular deploy de código real."""
+    base = commit(repo, ["README.md"], "base")
+    topo = commit(
+        repo,
+        ["surfaces/kds-nuxt/tests/x.spec.ts", "surfaces/kds-nuxt/app/x.vue"],
+        "teste e código no mesmo commit",
+    )
+    resultado = set(nomes(head=topo, base=base, per_app=True, repo=repo))
+    assert "kds-nuxt" in resultado and "operator-floor" in resultado
+
+
+def test_o_confronto_usa_a_MESMA_exclusao_que_a_decisao(repo: Path):
+    """Se só a decisão excluísse, o confronto cobraria deploy que ela dispensou.
+
+    Era vermelho perpétuo garantido: a guarda pediria um commit que nenhum run
+    jamais construiria, porque a decisão acabou de dizer que não havia o que
+    construir.
+    """
+    codigo = commit(repo, ["surfaces/kds-nuxt/app/x.vue"], "código")
+    commit(repo, ["surfaces/kds-nuxt/tests/x.spec.ts"], "só teste, depois")
+    patterns = component_paths(GROUPS)["kds-nuxt"]
+    assert last_commit_touching(patterns, "HEAD", repo) == codigo
 
 
 def test_per_app_desligado_tira_as_imagens_por_app_e_mantem_o_grupo(repo: Path):
