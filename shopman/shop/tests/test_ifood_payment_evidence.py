@@ -45,7 +45,21 @@ def test_ingest_preserves_settlement_without_manufacturing_payment(raw, expected
         order = ifood_ingest.ingest(payload)
     assert payment.get_payment_status(order) == expected
     assert payment.has_sufficient_captured_payment(order) is (expected == "paid")
-    assert order.data["payment"] == {"method": "external", "gateway": "ifood", "status": expected}
+    pagamento = order.data["payment"]
+    assert {key: pagamento[key] for key in ("method", "gateway", "status")} == {
+        "method": "external", "gateway": "ifood", "status": expected,
+    }
+    # Nenhuma cobrança local foi fabricada a partir da evidência importada.
+    assert "intent_ref" not in pagamento
+    # ``collection`` é a marca de ONDE o dinheiro entra, não de que entrou: só
+    # aparece quando a LOJA entrega e o iFood nomeou a forma pendente. Com
+    # entregador do iFood quem recebe é o iFood; sem nome de forma, a casa não
+    # sabe o que pedir na porta. Ver `ifood_ingest._collection_on_delivery`.
+    forma_pendente = next(
+        (m.get("method") for m in (raw.get("methods") or []) if m.get("prepaid") is False), "",
+    )
+    espera_cobranca_na_porta = delivered_by == "MERCHANT" and forma_pendente in {"CASH", "CREDIT", "DEBIT", "PIX"}
+    assert (pagamento.get("collection") == "on_delivery") is espera_cobranca_na_porta
     assert order.data["ifood"]["delivered_by"] == delivered_by
     assert order.data["ifood"]["payments"] == payload["payments"]
 
