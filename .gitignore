@@ -17,7 +17,10 @@ htmlcov/
 .DS_Store
 .venv/
 venv/
-.claude/
+# `.claude/*` e não `.claude/`: com o diretório inteiro ignorado o git nem desce
+# nele, e a exceção abaixo não teria efeito. As worktrees e o resto seguem fora.
+.claude/*
+!.claude/settings.json
 .codex/
 .secrets/
 node_modules/

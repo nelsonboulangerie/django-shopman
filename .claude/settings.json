@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm ci:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx playwright:*)",
+      "Bash(npx nuxt:*)",
+      "Bash(make test:*)",
+      "Bash(make test-offerman:*)",
+      "Bash(make test-stockman:*)",
+      "Bash(make test-framework:*)",
+      "Bash(make lint:*)",
+      "Bash(make admin:*)",
+      "Bash(make install:*)",
+      "Bash(make inflight:*)",
+      "Bash(make audit-branches:*)",
+      "Bash(make marketing-docs:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git fetch:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git merge-tree:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run view:*)"
+    ]
+  }
+}
