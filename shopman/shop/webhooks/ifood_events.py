@@ -201,7 +201,10 @@ class IFoodEventsWebhookView(APIView):
 
             try:
                 summary = ifood_events.process_events(order_events)
+            # O traceback é a única pista do que derrubou a entrega, e o alerta
+            # abaixo já é consequência dele: o log vem primeiro, sempre.
             except Exception as exc:
+                logger.exception("ifood_events_webhook: unexpected error processing events")
                 observability.record_webhook_failure(
                     provider="ifood",
                     reason="processing_failed",
@@ -209,7 +212,6 @@ class IFoodEventsWebhookView(APIView):
                     severity="critical",
                     exc=exc,
                 )
-                logger.exception("ifood_events_webhook: unexpected error processing events")
                 return Response(
                     {
                         "detail": "Unexpected webhook processing error.",
