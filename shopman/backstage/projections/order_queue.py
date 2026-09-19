@@ -1402,7 +1402,9 @@ def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | No
     if not _is_delivery(order):
         return {}
     payment = order.data.get("payment") or {}
-    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
+    # Quem diz que há dinheiro na porta é a parcela em espécie, não o método do
+    # topo: no pedido iFood o topo é `external` e a parcela mora na linha.
+    if operator_orders.cash_due_on_delivery_q(order) <= 0:
         return {}
     if by_order is None:
         change = operator_orders.courier_change(order)
