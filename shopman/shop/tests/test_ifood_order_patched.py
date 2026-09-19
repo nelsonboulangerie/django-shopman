@@ -1,0 +1,348 @@
+"""ORDER_PATCHED: o cliente alterou o pedido depois de confirmado.
+
+O defeito medido em 19/09/2026: o evento caía no ramo "código que não cria
+pedido é reconhecido e ignorado" de ``ifood_events.process_events``. Virava
+``ignored``, entrava no lote de acknowledge e sumia — dizíamos ao iFood que
+tratamos. O ``Order`` local ficava com os itens originais, divergindo o que a
+cozinha prepara, o estoque que sai, a cobrança e a nota.
+
+Fundamento (referência oficial de eventos do módulo Order, lida em 19/09/2026
+em https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/events):
+
+    ORDER_PATCHED — "Cliente adicionou, removeu ou modificou itens após
+    confirmação." Três ``changeType`` documentados, um exemplo cada:
+    ``DELETE_ITEMS``, ``ADD_ITEMS`` e ``UPDATE_ITEMS``. O ``metadata`` traz
+    ``items`` (SÓ os afetados), ``oldTotal`` e ``newTotal`` — é DELTA, nunca o
+    estado final do pedido.
+
+Esta é a Etapa 1: parar de mentir. O evento passa a ser gravado no pedido e a
+gritar com o operador; a reconciliação automática é a Etapa 2 e depende de uma
+decisão de desenho (``Order.total_q`` e ``Order.snapshot`` são ``SEALED_FIELDS``
+do Core — reescrever o pedido no lugar levanta ``ImmutabilityError``).
+"""
+
+from unittest.mock import patch
+
+import pytest
+from shopman.orderman.models import Order
+
+from shopman.backstage.models import OperatorAlert
+from shopman.shop.services import ifood_events
+
+
+def _patch_event(*, change_type="DELETE_ITEMS", items=None, old_total=25.5, new_total=20.5,
+                 event_id="evt-patch-1", order_id="ifood-order"):
+    metadata = {"id": order_id, "changeType": change_type}
+    if items is not None:
+        metadata["items"] = items
+    if old_total is not None:
+        metadata["oldTotal"] = old_total
+    if new_total is not None:
+        metadata["newTotal"] = new_total
+    return {
+        "id": event_id, "code": "ORDER_PATCHED", "fullCode": "ORDER_PATCHED",
+        "orderId": order_id, "metadata": metadata,
+    }
+
+
+def _order(**kwargs):
+    defaults = {
+        "ref": "IFD-PATCH", "channel_ref": "ifood", "external_ref": "ifood-order",
+        "status": "preparing", "total_q": 2550,
+        "data": {"fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"}},
+    }
+    defaults.update(kwargs)
+    return Order.objects.create(**defaults)
+
+
+def _process(events):
+    with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
+        summary = ifood_events.process_events(events)
+    return summary, ack
+
+
+# ── O evento deixa de ser engolido ─────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_order_patched_is_handled_not_ignored():
+    """A prova do defeito: antes disto o evento saía como `ignored`."""
+    order = _order()
+    summary, _ack = _process([_patch_event()])
+
+    assert summary["ignored"] == 0
+    assert summary["ingested"] == 1
+    assert summary["failed"] == 0
+    order.refresh_from_db()
+    assert len(order.data["ifood"]["patches"]) == 1
+
+
+@pytest.mark.django_db
+def test_the_change_is_recorded_with_the_facts_the_operator_needs():
+    order = _order()
+    _process([_patch_event(items=[{"id": "item_789", "name": "Bebida", "quantity": 1, "price": 5.0}])])
+
+    order.refresh_from_db()
+    record = order.data["ifood"]["patches"][0]
+    assert record["event_id"] == "evt-patch-1"
+    assert record["change_type"] == "DELETE_ITEMS"
+    assert record["items"][0]["name"] == "Bebida"
+    # Reais do iFood viram centavos, na convenção `_q` da casa.
+    assert record["old_total_q"] == 2550
+    assert record["new_total_q"] == 2050
+    assert record["local_total_q"] == 2550
+    assert record["order_status"] == "preparing"
+    # A chave que impede a Etapa 1 de se passar pela Etapa 2.
+    assert record["reconciled"] is False
+
+
+@pytest.mark.django_db
+def test_the_local_order_is_not_silently_rewritten():
+    """Etapa 1 não reconcilia — e não pode FINGIR que reconciliou."""
+    order = _order()
+    _process([_patch_event(new_total=20.5)])
+
+    order.refresh_from_db()
+    assert order.total_q == 2550  # o total local segue o original, explicitamente
+
+
+@pytest.mark.django_db
+def test_the_operator_is_told_loudly():
+    order = _order()
+    _process([_patch_event(items=[{"id": "item_789", "name": "Bebida", "quantity": 1}])])
+
+    alert = OperatorAlert.objects.get(type="ifood_order_patched")
+    assert alert.severity == "error"
+    assert alert.order_ref == order.ref
+    # A copy tem de ser inequívoca: o que mudou, quanto era, quanto é, e que a
+    # loja NÃO acompanhou a mudança.
+    assert "Bebida" in alert.message
+    assert "R$ 25,50" in alert.message
+    assert "R$ 20,50" in alert.message
+    assert "itens originais" in alert.message
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("change_type", "expected"), [
+    ("DELETE_ITEMS", "itens removidos"),
+    ("ADD_ITEMS", "itens adicionados"),
+    ("UPDATE_ITEMS", "quantidade de itens alterada"),
+])
+def test_every_documented_change_type_reads_in_plain_portuguese(change_type, expected):
+    _order()
+    _process([_patch_event(change_type=change_type, items=[{"id": "i", "name": "Sobremesa", "quantity": 1}])])
+
+    assert expected in OperatorAlert.objects.get(type="ifood_order_patched").message
+
+
+@pytest.mark.django_db
+def test_quantity_change_says_from_what_to_what():
+    """`UPDATE_ITEMS` traz oldQuantity/newQuantity — o aviso não pode omitir."""
+    _order()
+    _process([_patch_event(
+        change_type="UPDATE_ITEMS",
+        items=[{"id": "item_789", "name": "Pão", "oldQuantity": 1, "newQuantity": 2}],
+        old_total=25.5, new_total=51.0,
+    )])
+
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "de 1 para 2" in message
+
+
+@pytest.mark.django_db
+def test_an_undocumented_change_type_is_reported_raw_not_swallowed():
+    """Classificar mal é pior que não classificar: o changeType cru vai junto."""
+    _order()
+    _process([_patch_event(change_type="SWAP_ITEMS", items=[{"id": "i", "name": "Café", "quantity": 1}])])
+
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "SWAP_ITEMS" in message
+    assert "Café" in message
+
+
+@pytest.mark.django_db
+def test_a_missing_total_is_not_shown_as_zero():
+    """Ausente não é R$ 0,00 — zero como código secreto é defeito de copy."""
+    _order()
+    _process([_patch_event(old_total=None, new_total=None)])
+
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "R$ 0,00" not in message
+    assert "(não informado)" in message
+
+
+# ── O ACK é honesto: sai quando tratamos, não sai quando não dá ────────────────
+
+
+@pytest.mark.django_db
+def test_the_event_is_acknowledged_once_it_is_recorded():
+    _order()
+    _, ack = _process([_patch_event()])
+    assert ack.call_args[0][0] == ["evt-patch-1"]
+
+
+@pytest.mark.django_db
+def test_a_patch_before_the_order_exists_is_not_acknowledged():
+    """Pode chegar antes do PLACED, inclusive no mesmo lote: sem ACK, reentrega."""
+    summary, ack = _process([_patch_event()])
+
+    assert summary["failed"] == 1
+    assert summary["ingested"] == 0
+    ack.assert_not_called()
+    assert not OperatorAlert.objects.filter(type="ifood_order_patched").exists()
+
+
+@pytest.mark.django_db
+def test_redelivery_does_not_record_the_same_change_twice():
+    order = _order()
+    _process([_patch_event()])
+    summary, _ack = _process([_patch_event()])
+
+    assert summary["deduped"] == 1
+    order.refresh_from_db()
+    assert len(order.data["ifood"]["patches"]) == 1
+
+
+@pytest.mark.django_db
+def test_two_different_changes_both_survive():
+    """Alteração é acumulável: a segunda não pode apagar a primeira."""
+    order = _order()
+    _process([_patch_event(event_id="evt-1", change_type="DELETE_ITEMS")])
+    _process([_patch_event(event_id="evt-2", change_type="ADD_ITEMS")])
+
+    order.refresh_from_db()
+    assert [p["change_type"] for p in order.data["ifood"]["patches"]] == ["DELETE_ITEMS", "ADD_ITEMS"]
+
+
+@pytest.mark.django_db
+def test_an_event_from_another_merchant_is_never_consumed():
+    _order()
+    from django.test import override_settings
+
+    event = _patch_event()
+    event["merchantId"] = "outra-loja"
+    with override_settings(SHOPMAN_IFOOD={"merchant_id": "nossa-loja"}):
+        summary, ack = _process([event])
+
+    assert summary["failed"] == 1
+    ack.assert_not_called()
+
+
+# ── O que o pedido já viveu muda o TAMANHO do problema, não o registro ─────────
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["accepted", "preparing", "ready", "dispatched", "completed"])
+def test_a_patch_is_recorded_whatever_the_order_already_lived(status):
+    """A documentação não promete que ORDER_PATCHED pare no despacho.
+
+    Chegando depois de o pedido ter saído ou concluído, o registro e o aviso
+    continuam valendo — é justamente aí que a divergência custa dinheiro. Nada
+    aqui reabre o pedido: só grava o fato e chama alguém.
+    """
+    order = _order(status=status)
+    summary, _ack = _process([_patch_event()])
+
+    assert summary["ingested"] == 1
+    order.refresh_from_db()
+    assert order.status == status  # nenhum status foi mexido
+    assert order.data["ifood"]["patches"][0]["order_status"] == status
+
+
+@pytest.mark.django_db
+def test_an_authorized_nfce_turns_the_warning_into_a_fiscal_one():
+    """Nota autorizada: alterar vira assunto fiscal, e o sistema NÃO resolve."""
+    order = _order(status="completed", data={
+        "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"},
+        "nfce_access_key": "3526...chave",
+    })
+    _process([_patch_event()])
+
+    order.refresh_from_db()
+    assert order.data["ifood"]["patches"][0]["fiscal_authorized"] is True
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "NFC-e" in message
+    assert "contador" in message
+
+
+@pytest.mark.django_db
+def test_a_cancelled_nfce_is_not_treated_as_authorized():
+    order = _order(data={
+        "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"},
+        "nfce_access_key": "3526...chave", "nfce_cancelled": True,
+    })
+    _process([_patch_event()])
+
+    order.refresh_from_db()
+    assert order.data["ifood"]["patches"][0]["fiscal_authorized"] is False
+
+
+# ── Pedido de teste: registra e loga, mas não põe a padaria para trabalhar ─────
+
+
+@pytest.mark.django_db
+def test_a_test_order_records_the_change_without_alarming_the_shop():
+    """A supressão da #887 é sobre a padaria; o registro e o log continuam."""
+    order = _order(data={
+        "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT", "is_test": True},
+    })
+    summary, _ack = _process([_patch_event()])
+
+    assert summary["ingested"] == 1
+    order.refresh_from_db()
+    assert len(order.data["ifood"]["patches"]) == 1
+    assert not OperatorAlert.objects.filter(type="ifood_order_patched").exists()
+
+
+# ── O ramo que engolia tudo agora tem três destinos ───────────────────────────
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("code", sorted(ifood_events._INERT_CODES))
+def test_codes_with_a_written_decision_stay_quiet(code):
+    summary, ack = _process([{"id": f"evt-{code}", "code": code, "orderId": "ifood-order"}])
+
+    assert summary["ignored"] == 1
+    assert ack.call_args[0][0] == [f"evt-{code}"]
+    assert not OperatorAlert.objects.filter(type="ifood_event_unhandled").exists()
+
+
+@pytest.mark.django_db
+def test_an_unknown_code_is_acknowledged_but_never_silent():
+    """ACK para não reentregar em laço; alerta para não sumir."""
+    summary, ack = _process([{"id": "evt-x", "code": "SOME_NEW_IFOOD_CODE", "orderId": "ifood-order"}])
+
+    assert summary["ignored"] == 1
+    assert ack.call_args[0][0] == ["evt-x"]
+    alert = OperatorAlert.objects.get(type="ifood_event_unhandled")
+    assert "SOME_NEW_IFOOD_CODE" in alert.message
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("code", [
+    "DELIVERY_ADDRESS_CHANGE",
+    "DELIVERY_PHONE_CHANGE",
+    "DELIVERY_RETURNED_TO_ORIGIN",
+    "CANCELLATION_REQUEST_FAILED",
+])
+def test_documented_codes_we_do_not_handle_yet_are_visible(code):
+    """Estes têm ação oficial e NÃO têm tratamento aqui: têm de aparecer.
+
+    Eles não entram em `_INERT_CODES` de propósito. Enquanto não houver
+    processador, o operador é quem faz — e para fazer precisa saber.
+    """
+    _process([{"id": f"evt-{code}", "code": code, "orderId": "ifood-order"}])
+
+    assert OperatorAlert.objects.filter(type="ifood_event_unhandled").exists()
+
+
+@pytest.mark.django_db
+def test_patch_codes_carry_no_invented_short_code():
+    """`PTC` não existe na documentação — adivinhar sigla é como se erra aqui.
+
+    Na referência oficial, ORDER_PATCHED é um dos códigos cujo `code` e
+    `fullCode` são a mesma string. Se uma sigla aparecer no vivo, ela cai no
+    ramo não tratado e grita, que é o comportamento seguro.
+    """
+    assert ifood_events._PATCH_CODES == {"ORDER_PATCHED"}
+    assert "PTC" not in ifood_events._INERT_CODES
