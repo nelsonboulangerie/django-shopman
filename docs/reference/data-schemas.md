@@ -715,10 +715,21 @@ preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
 | `customer` | `dict` | hooks (opcional) | NFCeEmitHandler |
 | `additional_info` | `string` | hooks (opcional) | NFCeEmitHandler |
 | `delivery` | `dict` ou `null` | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
+| `intermediary` | `dict` (ausente na venda direta) | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
 
 `delivery={"address": delivery_address_structured}` indica entrega a domicílio,
 inclusive frete zero; `null` indica retirada. Dado insuficiente impede emitir,
 sem substituir por operação presencial ou retirar o frete dos valores.
+
+`intermediary={"cnpj", "id_cad_int_tran"}` identifica o intermediador da
+transação quando a venda veio de plataforma de terceiro (Ajuste SINIEF 22/20).
+A chave **não existe** na venda direta da casa, e também não existe quando o
+canal é intermediado mas a configuração está incompleta — nesse caso a emissão
+segue e o alerta `fiscal_intermediary_not_declared` grita. Quem declara o canal
+como intermediado é `settings.SHOPMAN_FISCAL_INTERMEDIARIES`; o mesmo ajuste
+corrige a BASE da nota (`payment.amount_q` sem a receita da plataforma, e sem o
+frete de quem não entregou) — motor em `shopman.shop.fiscal_intermediary`.
+⚠️ Nada disso altera `Order.total_q`, que continua sendo o total do pedido.
 
 #### `fiscal.cancel_nfce`
 

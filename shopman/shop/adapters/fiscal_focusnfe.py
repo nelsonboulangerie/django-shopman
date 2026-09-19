@@ -68,6 +68,7 @@ class FocusNFeBackend:
         payment: dict,
         additional_info: str | None = None,
         delivery: dict | None = None,
+        intermediary: dict | None = None,
     ) -> FiscalDocumentResult:
         config = _get_config()
         missing = _missing_config(config)
@@ -88,6 +89,7 @@ class FocusNFeBackend:
                 payment=payment,
                 additional_info=additional_info,
                 delivery=delivery,
+                intermediary=intermediary,
             )
             response = _request("POST", _nfce_path(reference, config), payload, config)
         except FocusNFePayloadError as exc:
@@ -260,6 +262,7 @@ def _build_nfce_payload(
     payment: dict,
     additional_info: str | None,
     delivery: dict | None = None,
+    intermediary: dict | None = None,
 ) -> dict:
     # Entrega é fato do pedido, inclusive grátis; taxa não decide indPres.
     # Dados fiscais incompletos recusam a emissão antes do HTTP, sem reclassificar
@@ -311,6 +314,15 @@ def _build_nfce_payload(
     if discount_q > 0:
         payload["valor_desconto"] = _money_q(discount_q)
         _apportion_over_items(mapped_items, discount_q, field="valor_desconto")
+    if intermediary:
+        payload.update(_intermediary_fields(intermediary))
+        if payload["presenca_comprador"] == "1":
+            # O grupo do intermediador só pode ser informado em operação NÃO
+            # presencial — a Focus documenta indPres ∈ {2,3,4,9} para ele. E
+            # venda por plataforma de terceiro nunca é presencial: quem não
+            # recebe em casa retirou no balcão o que pediu pelo app, e isso é
+            # indPres=2 (não presencial, pela Internet), não o balcão (1).
+            payload["presenca_comprador"] = "2"
     if config.get("serie_nfce"):
         payload["serie"] = str(config["serie_nfce"])
     if additional_info:
@@ -320,6 +332,36 @@ def _build_nfce_payload(
         payload.get("informacoes_adicionais_contribuinte") or f"Pedido {reference}"
     )
     return payload
+
+
+def _intermediary_fields(intermediary: dict) -> dict:
+    """Grupo do intermediador da transação, no dialeto da Focus NF-e.
+
+    Layout SEFAZ (Ajuste SINIEF 22/20 / NT 2020.006) → nome da Focus, conforme
+    a referência de campos 4.00 deles (campos.focusnfe.com.br), que os põe
+    PLANOS na raiz do JSON, sem objeto ``infIntermed``:
+
+    - ``indIntermed`` (B25b)              → ``indicador_intermediario``
+      (``0`` sem intermediador, ``1`` em plataforma de terceiros)
+    - ``infIntermed/CNPJ`` (YB02)         → ``cnpj_intermediario``
+    - ``infIntermed/idCadIntTran`` (YB03) → ``id_intermediario`` (String[2-60])
+
+    ⚠️ É ``intermediario``, com "i" — não ``intermediador``. Os dois últimos são
+    documentados como obrigatórios quando ``indicador_intermediario = 1``, e é
+    por isso que quem monta o payload só manda o grupo com os dois preenchidos.
+    """
+    cnpj = _digits(intermediary.get("cnpj"))
+    id_cad = str(intermediary.get("id_cad_int_tran") or "").strip()
+    if len(cnpj) != 14 or len(id_cad) < 2:
+        raise FocusNFePayloadError(
+            "Intermediador da venda incompleto: o grupo exige CNPJ de 14 dígitos "
+            "e o identificador do cadastro da loja na plataforma (2 a 60 caracteres)."
+        )
+    return {
+        "indicador_intermediario": "1",
+        "cnpj_intermediario": cnpj,
+        "id_intermediario": id_cad[:60],
+    }
 
 
 def _home_delivery_fields(config: dict, customer: dict, delivery: dict) -> dict:
