@@ -50,6 +50,7 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     completed_at_display: "",
     kitchen_note: "",
     customer_note: "",
+    test_order_label: "",
     ...over,
   };
 }
@@ -265,5 +266,17 @@ describe("KdsTicketCard — o canon do kit", () => {
     const classes = w.get("article").classes();
     expect(classes.some((c) => c.startsWith("ring"))).toBe(false);
     expect(classes).toContain("border-primary");
+  });
+
+  // A trava do servidor não cria ticket para pedido de teste; este card só
+  // existe para o que já estava no painel. O aviso vem antes do código.
+  it("avisa em largura inteira quando o ticket é de um pedido de teste", () => {
+    const w = mountCard({ ticket: ticket({ test_order_label: "Pedido de teste do iFood" }) });
+    expect(w.get("[data-kds-test-order]").text()).toContain("Pedido de teste do iFood");
+    expect(w.get("[data-kds-test-order]").text()).toContain("não produzir");
+  });
+
+  it("não avisa nada num ticket de pedido de verdade", () => {
+    expect(mountCard({ ticket: ticket() }).find("[data-kds-test-order]").exists()).toBe(false);
   });
 });

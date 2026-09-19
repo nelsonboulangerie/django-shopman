@@ -32,7 +32,7 @@ from django.utils import timezone
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.services import lead_time as lead_time_service
-from shopman.shop.services.order_helpers import get_commitment_date
+from shopman.shop.services.order_helpers import get_commitment_date, is_test_order
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,14 @@ def hold(order, *, require_all: bool = False) -> None:
       Encomenda com Quant planejado da data segue valendo (o hold ancora no
       plano e o gate nem dispara); venda imediata de estoque de hoje idem.
     """
+    # Pedido de teste de marketplace (homologação) não reserva: a reserva sai
+    # do estoque de venda da padaria e pode derrubar o cliente real que compra
+    # o mesmo pão no mesmo minuto. Sem hold aqui, o fulfill adiante também não
+    # tem o que baixar.
+    if is_test_order(order):
+        logger.info("stock.hold: pedido de teste order=%s — reserva suprimida", order.ref)
+        return
+
     if "hold_ids" in (order.data or {}):
         logger.info("stock.hold: skip (holds já criados) order=%s", order.ref)
         return
@@ -261,6 +269,14 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
 
     SYNC — must complete before notifying client.
     """
+    # Pedido de teste de marketplace: a baixa tiraria pão de verdade da
+    # prateleira para uma venda que nunca aconteceu. O gate está aqui, e não só
+    # na ausência de hold, porque a baixa é o efeito irreversível — se um hold
+    # existir por qualquer caminho, ele não vira saída de estoque.
+    if is_test_order(order):
+        logger.info("stock.fulfill: pedido de teste order=%s — baixa suprimida", order.ref)
+        return
+
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
@@ -374,6 +390,13 @@ def revert(order) -> None:
 
     SYNC — devolução ao estoque.
     """
+    # Pedido de teste de marketplace: ``revert`` não depende de hold — percorre
+    # os itens e CREDITA o estoque. Numa devolução de pedido de teste, isso
+    # inventaria pão que a casa nunca produziu.
+    if is_test_order(order):
+        logger.info("stock.revert: pedido de teste order=%s — devolução suprimida", order.ref)
+        return
+
     adapter = get_adapter("stock")
     if not adapter:
         return

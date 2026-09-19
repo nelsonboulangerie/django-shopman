@@ -333,6 +333,8 @@ export interface OrderCardProjection {
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_negotiations: IFoodNegotiationProjection[];
+  test_order_label: string;
+  test_order_notice: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -403,6 +405,8 @@ export interface OperatorOrderProjection {
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_negotiations: IFoodNegotiationProjection[];
+  test_order_label: string;
+  test_order_notice: string;
 }
 
 /** Top-level read model for the operator order queue. */

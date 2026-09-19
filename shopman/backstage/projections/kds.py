@@ -25,7 +25,12 @@ from shopman.shop.services import operator_orders
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
-from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS, advance_block_label
+from .order_queue import (
+    _DEFAULT_CHANNEL_ICON,
+    CHANNEL_ICONS,
+    _test_order_label,
+    advance_block_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +88,11 @@ class KDSTicketProjection:
     # gestor) and the customer's checkout note (order_notes). Empty when absent.
     kitchen_note: str = ""
     customer_note: str = ""
+    # Pedido de teste da homologação do iFood NÃO vira ticket (``kds.dispatch``
+    # o suprime). O crachá existe para o que já está no painel: ticket criado
+    # antes desta trava, ou disparado por outro caminho. Vazio no pedido de
+    # verdade — quem vê o crachá sabe que aquilo não se produz.
+    test_order_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -113,6 +123,9 @@ class KDSExpeditionCardProjection:
     # "" quando a ação está liberada.
     advance_block_label: str = ""
     advance_block_reason: str = ""
+    # O pedido de teste chega à Expedição como qualquer outro (o card é do
+    # PEDIDO, não do ticket) — e é aqui que alguém entregaria a sacola.
+    test_order_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -622,6 +635,7 @@ def _build_ticket(ticket, instance, *, source=None, is_scheduled: bool = False) 
         completed_at_display=_format_time(ticket.completed_at),
         kitchen_note=str(source_data.get("kitchen_note", "") or ""),
         customer_note=str(source_data.get("order_notes", "") or ""),
+        test_order_label=_test_order_label(source) if source is not None else "",
     )
 
 
@@ -666,6 +680,7 @@ def _build_scheduled_ticket(order: Order, instance, *, raw_items: list[dict]) ->
         status_label="Agendado",
         kitchen_note=str(source_data.get("kitchen_note", "") or ""),
         customer_note=str(source_data.get("order_notes", "") or ""),
+        test_order_label=_test_order_label(order),
     )
 
 
@@ -728,6 +743,7 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         is_scheduled=is_scheduled,
         advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
+        test_order_label=_test_order_label(order),
     )
 
 

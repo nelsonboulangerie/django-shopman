@@ -72,6 +72,33 @@ NEXT_ACTION_LABELS: dict[str, str] = {
 
 READY_DELIVERY_LABEL = "Marcar saída para entrega"
 
+# Pedido de teste da homologação do iFood: ele entra pelo polling como qualquer
+# outro e precisa ser aceito e concluído (é isso que o iFood valida do lado
+# dele), mas nada na casa se move por causa dele. Até hoje a única pista na tela
+# era o nome do item vir "NÃO ENTREGAR" — defesa humana em horário de movimento.
+# O rótulo é do CRACHÁ (cabe na linha de selos do card); o aviso é a frase
+# inteira, que diz o que fazer e o que a casa desligou.
+TEST_ORDER_LABEL = "Pedido de teste do iFood"
+TEST_ORDER_NOTICE = (
+    "Pedido de teste do iFood: avance as etapas normalmente, mas não produza "
+    "nem entregue nada. Ele não reserva estoque, não vai para a cozinha, não "
+    "emite nota fiscal e não avisa o cliente."
+)
+
+
+def _test_order_label(order) -> str:
+    """O crachá de pedido de teste, ou vazio quando o pedido é de verdade."""
+    from shopman.shop.services.order_helpers import is_test_order
+
+    return TEST_ORDER_LABEL if is_test_order(order) else ""
+
+
+def _test_order_notice(order) -> str:
+    """A frase inteira do pedido de teste, ou vazia quando o pedido é de verdade."""
+    from shopman.shop.services.order_helpers import is_test_order
+
+    return TEST_ORDER_NOTICE if is_test_order(order) else ""
+
 
 # ── Projections ────────────────────────────────────────────────────────
 
@@ -225,6 +252,12 @@ class OrderCardProjection:
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
+    # operável como qualquer outro e por isso tem de dizer, na tela, que é de
+    # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
+    # frase inteira. Vazios no pedido de verdade.
+    test_order_label: str = ""
+    test_order_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -395,6 +428,12 @@ class OperatorOrderProjection:
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
+    # operável como qualquer outro e por isso tem de dizer, na tela, que é de
+    # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
+    # frase inteira. Vazios no pedido de verdade.
+    test_order_label: str = ""
+    test_order_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -630,6 +669,8 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
         ifood_negotiations=negotiations(order, user=user),
+        test_order_label=_test_order_label(order),
+        test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
         payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
         can_confirm=not operator_orders.confirmation_block_reason(order),
@@ -1303,6 +1344,8 @@ def _build_card(
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
         ifood_negotiations=negotiations(order, user=user),
+        test_order_label=_test_order_label(order),
+        test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
         payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
         payment_pending=_is_payment_pending(order, method, payment_status),

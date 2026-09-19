@@ -2,6 +2,7 @@
 
 import json
 from copy import deepcopy
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,6 +66,11 @@ def rehearsal(settings, django_capture_on_commit_callbacks, request):
     # and the logistics variant differ from the original MERCHANT fixture.
     raw["merchant"]["id"] = "local-merchant"
     raw["delivery"]["deliveredBy"] = "IFOOD"
+    # A captura real é de um pedido de HOMOLOGAÇÃO (``isTest: true``). O ensaio
+    # padrão é o do pedido de VERDADE — é ele que tem de reservar estoque,
+    # fornar, emitir nota e avisar o cliente. O ensaio do pedido de teste pede a
+    # marca de volta por parametrização indireta.
+    raw["isTest"] = bool((getattr(request, "param", None) or {}).get("is_test", False))
     position = Position.objects.create(ref="local-stock", name="Stock", kind=PositionKind.PHYSICAL, is_saleable=True)
     for item in raw["items"]:
         sku = item.get("externalCode") or item["id"]
@@ -199,3 +205,70 @@ def test_food_cancellation_waits_for_can_then_restores_stock_and_cancels_kds(reh
     assert all(qty == Decimal("10") for qty in _quantities().values())
     actions = [url.rsplit("/", 1)[-1] for method, url, _ in rehearsal.calls if method == "POST"]
     assert actions.count("requestCancellation") == 1
+
+
+@pytest.mark.parametrize("rehearsal", [{"is_test": True}], indirect=True)
+def test_test_order_walks_the_whole_lifecycle_without_touching_the_bakery(rehearsal):
+    """Homologação: o pedido de teste percorre as transições e não move nada.
+
+    O iFood valida os callbacks DELE — aceitar, ficar pronto, despachar,
+    concluir. A padaria não pode pagar por isso com pão reservado, ticket na
+    cozinha, nota na Receita, mensagem para um terceiro nem ponto de fidelidade.
+    """
+    assert rehearsal.event("PLC")["ingested"] == 1
+    order = Order.objects.get(external_ref=rehearsal.raw["id"])
+    assert order.status == "new"
+    assert order.data["ifood"]["is_test"] is True
+    assert not Hold.objects.exists()
+    assert not KDSTicket.objects.exists()
+    assert all(qty == Decimal("10") for qty in _quantities().values())
+
+    assert rehearsal.event("CFM")["ingested"] == 1
+    order.refresh_from_db()
+    assert order.status == "accepted"
+    # Aceitar é o degrau que baixava estoque pelo ramo explícito do iFood.
+    assert not Hold.objects.exists()
+    assert all(qty == Decimal("10") for qty in _quantities().values())
+    assert not KDSTicket.objects.exists()
+
+    rehearsal.act(lambda: operator_orders.advance_order(order, actor="local-operator"))
+    order.refresh_from_db()
+    assert order.status == "preparing"
+    assert not KDSTicket.objects.exists()
+
+    rehearsal.act(lambda: operator_orders.advance_order(order, actor="local-operator"))
+    order.refresh_from_db()
+    assert order.status == "ready"
+    assert rehearsal.event("DSP")["ingested"] == 1
+    assert rehearsal.event("CON")["ingested"] == 1
+    order.refresh_from_db()
+    assert order.status == "completed"
+
+    # Nada do que a casa move ficou para trás.
+    assert all(qty == Decimal("10") for qty in _quantities().values())
+    assert not KDSTicket.objects.exists()
+    assert rehearsal.fiscal.emissions == []
+    assert "nfce_access_key" not in order.data
+    assert not Directive.objects.filter(topic="notification.send").exists()
+    assert not Directive.objects.filter(topic__startswith="loyalty.").exists()
+
+    # E o B.I. não conta a venda que não houve — nem como venda, nem como cancelada.
+    from shopman.backstage.bi.sources.orderman import read_sales
+
+    window = (order.created_at - timedelta(days=1), order.created_at + timedelta(days=1))
+    sales, cancelled = read_sales(window)
+    assert sales == []
+    assert cancelled == 0
+
+
+def test_real_order_stays_in_the_bi_so_the_suppression_cannot_leak(rehearsal):
+    """A metade que impede a correção de vazar: pedido real continua sendo venda."""
+    order, _expected = _ingest_and_prepare(rehearsal)
+    assert order.data["ifood"]["is_test"] is False
+    assert Directive.objects.filter(topic="notification.send").exists()
+
+    from shopman.backstage.bi.sources.orderman import read_sales
+
+    window = (order.created_at - timedelta(days=1), order.created_at + timedelta(days=1))
+    sales, _cancelled = read_sales(window)
+    assert [sale.ref for sale in sales] == [f"shopman:{order.ref}"]

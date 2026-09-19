@@ -22,6 +22,7 @@ from shopman.orderman.models import Directive
 from shopman.utils.monetary import format_money
 
 from shopman.shop.notifications import notify
+from shopman.shop.services.order_helpers import is_test_order
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,18 @@ def send(order, template: str, **extra) -> None:
 
     ASYNC — does not block the request.
     """
+    # Pedido de teste de marketplace: o payload de homologação traz um telefone
+    # que não é do cliente nenhum (o 0800 do iFood). Ele passa pelo guarda de
+    # pedido sem contato e a casa acaba mandando mensagem de verdade, pela API
+    # do ManyChat, para o número de um terceiro.
+    if is_test_order(order):
+        logger.info(
+            "notification.send: pedido de teste order=%s template=%s — aviso suprimido",
+            order.ref,
+            template,
+        )
+        return
+
     template = _canonical_template(template)
     dedupe_key = _dedupe_key(order, template)
 

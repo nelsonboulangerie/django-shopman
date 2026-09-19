@@ -218,6 +218,22 @@ describe("OrderCard iFood", () => {
   });
 });
 
+describe("pedido de teste da homologação", () => {
+  it("abre o card com o aviso, antes do código", () => {
+    const label = "Pedido de teste do iFood";
+    const notice = "Pedido de teste do iFood: avance as etapas normalmente, mas não produza nem entregue nada.";
+    const w = mountCard({ card: card({ channel_ref: "ifood", test_order_label: label, test_order_notice: notice }) });
+    const aviso = w.get("[data-test-order-notice]");
+    expect(aviso.text()).toContain(label);
+    expect(aviso.text()).toContain("não produza nem entregue");
+  });
+
+  it("não marca nada num pedido de verdade", () => {
+    const w = mountCard({ card: card({ channel_ref: "ifood" }) });
+    expect(w.find("[data-test-order-notice]").exists()).toBe(false);
+  });
+});
+
 it("links negotiations on a completed order without batch or fulfillment actions", () => {
   const order = card({ status: "completed", status_label: "Concluído", ifood_negotiations: [{ id: "dispute" }] as OrderCardProjection["ifood_negotiations"] });
   const w = mount(OrderCard, { props: { card: order, negotiationOnly: true }, global: { stubs } });

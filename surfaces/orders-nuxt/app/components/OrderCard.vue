@@ -75,6 +75,24 @@ function buttonClass(priority: string): string {
       card.can_confirm && !selected ? 'border-l-2 border-l-warning' : '',
     ]"
   >
+    <!-- Homologação do iFood: o pedido de teste é operável como qualquer outro,
+         e é essa semelhança que engana em horário de movimento. O aviso vem
+         ANTES do código, com a frase inteira: o que fazer (avançar) e o que não
+         fazer (produzir, entregar). Até aqui a única pista era o item vir com
+         "NÃO ENTREGAR" no nome. -->
+    <p
+      v-if="card.test_order_notice"
+      class="rounded-md border border-warning/50 bg-warning/15 p-2 text-xs font-medium"
+      role="status"
+      data-test-order-notice
+    >
+      <span class="mb-0.5 flex items-center gap-1.5 font-bold uppercase tracking-wide">
+        <Icon name="lucide:flask-conical" class="size-3.5 shrink-0" />
+        {{ card.test_order_label }}
+      </span>
+      {{ card.test_order_notice }}
+    </p>
+
     <!-- ref + timer -->
     <div class="flex items-start gap-2">
       <button

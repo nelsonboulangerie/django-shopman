@@ -25,7 +25,12 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import payment_gate
-from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
+from shopman.shop.services.order_helpers import (
+    get_commitment_date,
+    get_fulfillment_type,
+    is_test_order,
+    json_quantity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,15 @@ def dispatch(order) -> list:
 
     SYNC — tickets must be ready for the KDS display.
     """
+    # Pedido de teste de marketplace (homologação) não vira trabalho na
+    # cozinha: o ticket nasceria no MESMO painel da produção, com som e meta de
+    # tempo, e em horário de movimento ninguém lê o nome do item antes de
+    # fornar. A homologação é demonstrada no Gestor, onde o pedido continua
+    # visível e operável.
+    if is_test_order(order):
+        logger.info("kds.dispatch: pedido de teste order=%s — ticket suprimido", order.ref)
+        return []
+
     lines = _order_to_lines(order)
     if not lines:
         return []

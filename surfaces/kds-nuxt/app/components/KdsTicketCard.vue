@@ -209,6 +209,19 @@ const d = computed(
     ]"
     :data-status="ticket.status"
   >
+    <!-- Pedido de teste da homologação do iFood: a trava do servidor não cria
+         ticket para ele, então este card só existe para o que já estava no
+         painel. A faixa vem ANTES do código, em largura inteira: quem lê o
+         card tem de saber que aquilo não se forna antes de ler o que é. -->
+    <p
+      v-if="ticket.test_order_label"
+      class="relative z-20 flex items-center gap-1.5 border-b border-warning/40 bg-warning/20 px-3 py-1.5 text-sm font-bold uppercase tracking-wide"
+      data-kds-test-order
+    >
+      <Icon name="lucide:flask-conical" class="size-4 shrink-0" />
+      {{ ticket.test_order_label }} · não produzir
+    </p>
+
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
          seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
     <div class="relative flex flex-1 flex-col">
