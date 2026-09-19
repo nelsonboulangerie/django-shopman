@@ -6041,6 +6041,12 @@ class Command(BaseCommand):
                 **_marketplace_config,
                 "pricing": {"policy": "external"},
                 "editing": {"policy": "locked"},
+                # Via do entregador ANÔNIMA: o iFood determina que documento
+                # destinado a parceiro de entrega não traga CPF nem endereço, e
+                # o entregador dele já tem tudo na tela do app. O canal próprio
+                # fica no default ("identified") — a transportadora contratada
+                # pela casa não tem app, e o endereço só existe no papel.
+                "fulfillment": {"courier_ticket": "anonymous"},
             }),
             # WhatsApp: os pedidos entram pelo concierge (conversa por IA no ManyChat,
             # `shopman/storefront/concierge/`). Canal ATIVO porque existe implementação;

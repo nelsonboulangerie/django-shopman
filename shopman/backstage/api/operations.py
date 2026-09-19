@@ -2376,6 +2376,65 @@ class OrderTicketEscposView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
+        summary="Courier ticket bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="Courier ticket payload.")},
+    ),
+)
+class CourierTicketEscposView(APIView):
+    """A via do ENTREGADOR de um pedido — o único papel do trio que sai da casa.
+
+    Rota separada da filipeta de propósito: são dois papéis com destinatários
+    diferentes, e quem imprime escolhe qual. O carimbo de 2ª via também é
+    próprio (``courier_ticket_printed_at``) — a ficha já ter ido para o painel
+    não faz da primeira via do entregador uma segunda.
+
+    ⚠️ **Qual via sai não é escolha de quem chama.** Identificada ou Anônima é
+    decisão da configuração do canal, com um piso que ela não fura quando a
+    entrega é de terceiro (``order_helpers.courier_ticket_variant``). Um
+    parâmetro de rota aqui seria exatamente a porta pela qual o endereço do
+    cliente sairia num papel de parceiro de entrega. A resposta DIZ qual via
+    saiu (``variant``), para a tela poder nomear o papel que o operador pegou.
+
+    Mesma permissão da filipeta (``shop.manage_orders``): quem despacha é quem
+    cuida da fila.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services import order_ticket as tickets
+        from shopman.shop.services.order_helpers import courier_ticket_variant
+
+        order = Order.objects.filter(ref=ref).prefetch_related("items").first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        reprint = _stamp_first_print(ref, "courier_ticket_printed_at")
+        payload = tickets.courier_ticket_bytes(order, reprint=reprint)
+        variant = courier_ticket_variant(order)
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"via-do-entregador:{ref}",
+                "variant": variant,
+                "variant_label": (
+                    "Via do entregador — Identificada"
+                    if variant == "identified"
+                    else "Via do entregador — Anônima"
+                ),
+                "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
         summary="Orders committed within a period (order-ticket batch preview)",
         responses={200: OpenApiResponse(description="Orders in the period, panel-ordered.")},
     ),

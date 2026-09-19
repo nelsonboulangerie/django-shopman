@@ -139,6 +139,25 @@ class ChannelConfig:
         # não pergunta. A custódia é do equipamento, não de dinheiro: mora em
         # Order.data.dispatch.equipment,
         # e "onde está a maquininha" é derivado (saiu e não voltou).
+        courier_ticket: str = "identified"
+        # QUAL via do entregador este canal imprime
+        # (``backstage.services.receipt_escpos.courier_ticket``):
+        # "identified" — Via do entregador — Identificada. Endereço completo
+        #                (com complemento e referência), telefone, nome e, quando
+        #                há cobrança na porta, valor e troco. É o papel de quem
+        #                entrega PELA CASA: a transportadora contratada por ela
+        #                (Taon Delivery/Taxi Machine) não tem app nenhum, e o
+        #                endereço só existe para ela se estiver aqui.
+        # "anonymous"  — Via do entregador — Anônima. Só o que identifica o
+        #                pedido e o que confere a sacola. Sem endereço, sem
+        #                telefone, sem nome, sem CPF. É o papel de marketplace:
+        #                o iFood determina que documento destinado a parceiro de
+        #                entrega não traga CPF nem endereço, e o entregador dele
+        #                já tem tudo na tela do app.
+        # ⚠️ Canal novo escolhe AQUI, sem tocar em código. O que a configuração
+        # NÃO pode fazer é liberar dado do cliente para logística de terceiro:
+        # ``order_helpers.courier_ticket_variant`` derruba "identified" para
+        # "anonymous" quando o pedido diz que quem entrega é o marketplace.
 
     # ── 4. Estoque ──
 
@@ -438,6 +457,8 @@ class ChannelConfig:
             raise ValueError(f"fulfillment.courier inválido: {self.fulfillment.courier}")
         if self.fulfillment.prep_start not in ("auto", "operator"):
             raise ValueError(f"fulfillment.prep_start inválido: {self.fulfillment.prep_start}")
+        if self.fulfillment.courier_ticket not in ("identified", "anonymous"):
+            raise ValueError(f"fulfillment.courier_ticket inválido: {self.fulfillment.courier_ticket}")
         if self.stock.hold_ttl_minutes is not None and self.stock.hold_ttl_minutes <= 0:
             raise ValueError("stock.hold_ttl_minutes deve ser > 0 ou null")
         if self.stock.safety_margin < 0:
