@@ -6041,6 +6041,13 @@ class Command(BaseCommand):
                 **_marketplace_config,
                 "pricing": {"policy": "external"},
                 "editing": {"policy": "locked"},
+                # O telefone que chega no pedido do iFood é da CENTRAL dele: um
+                # 0800 mais um localizador que quem liga digita para cair no
+                # cliente. Serve para o operador ligar; não é contato do cliente
+                # e não é nosso para usar em aviso automático. Por pedido o
+                # sinal é o `phone_localizer`; esta linha é o que sustenta o
+                # pedido em que o iFood omitir o localizador.
+                "notifications": {"customer_phone": "relay"},
                 # Via do entregador ANÔNIMA: o iFood determina que documento
                 # destinado a parceiro de entrega não traga CPF nem endereço, e
                 # o entregador dele já tem tudo na tela do app. O canal próprio
