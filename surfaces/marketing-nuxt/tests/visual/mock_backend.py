@@ -390,6 +390,18 @@ def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> 
         "version": 2,
         "created_at": "2026-09-10T10:00:00-03:00",
         "created_at_display": "hoje às 10:00",
+        # ⚠️ As duas ações de ciclo dependem do `lifecycle`, como no Django. A
+        # lista era fixa, e um alerta já `acknowledged` vinha oferecendo
+        # "reconhecer" de novo — estado que `shopman/backstage/projections/
+        # marketing_actions.py` NUNCA emite, porque lá `acknowledge_notification`
+        # só entra em UNSEEN/SEEN e `mark_notification_seen` só em UNSEEN.
+        #
+        # Não era detalhe de fixture: o retrato `notifications__dedupe` saía com
+        # a palavra "Visto" TRÊS vezes na mesma caixa — chip no cartão
+        # reconhecido e botão nos dois. O PR #849 decidiu que `seen` não tem
+        # chip justamente para não dar "um carimbo para dois estados", e o
+        # retrato que deveria provar essa decisão era o único lugar do sistema
+        # onde ela parecia errada.
         "actions": [
             action(
                 "announcement:41",
@@ -398,8 +410,16 @@ def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> 
                 enabled=not stale,
                 reason="announcement_no_longer_actionable" if stale else "",
             ),
-            action(resource, "mark_notification_seen", "/api/v1/backstage/notifications/v2/seen/", method="POST"),
-            action(resource, "acknowledge_notification", f"/api/v1/backstage/notifications/{pk}/acknowledge/", method="POST"),
+            *(
+                [action(resource, "mark_notification_seen", "/api/v1/backstage/notifications/v2/seen/", method="POST")]
+                if lifecycle == "unseen"
+                else []
+            ),
+            *(
+                [action(resource, "acknowledge_notification", f"/api/v1/backstage/notifications/{pk}/acknowledge/", method="POST")]
+                if lifecycle in {"unseen", "seen"}
+                else []
+            ),
         ],
     }
 
