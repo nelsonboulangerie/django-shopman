@@ -13,8 +13,21 @@ const sourceLogo = new URL('brand/nelson-logo.svg', root)
 const splashScreensSource = new URL('pwa-splash-screens.json', root)
 const output = new URL('public/pwa/', root)
 
+// A marca tem DUAS versões oficiais, e o formato do ícone decide qual entra:
+//
+// - `brand/nelson-mark.svg` — o selo redondo, monograma marrom `#aa6a2b` sobre o
+//   disco amarelo `#ffcd40`, com FUNDO TRANSPARENTE fora do círculo. Vale onde o
+//   formato aceita alfa: os ícones `purpose: any` (desktop mostra o `any` como
+//   está, sem máscara — um selo redondo é a forma, não um azulejo), o favicon da
+//   aba e o `monochrome`. Esses saem do `pwa-assets.config.ts`.
+// - `brand/nelson-mark-bg.svg` — o mesmo selo sobre um QUADRADO AMARELO EM
+//   DEGRADÊ (`#cca135` → `#ffcd40` → `#e6b93a`), de ponta a ponta. Vale onde o
+//   formato exige opacidade: o `maskable` (o launcher Android recorta sozinho) e
+//   o `apple-touch-icon` (o iOS pinta de preto o que for transparente). O gerador
+//   lê uma fonte só, então estes dois são escritos aqui.
 const source = await readFile(sourceMark, 'utf8')
 const backgroundMark = await readFile(sourceBackgroundMark)
+// O `monochrome` é a silhueta: o disco amarelo sai e o que sobra vira preto.
 const monochrome = source
   .replace(/\s*<path class="st0"[^>]+\/>/, '')
   .replace(/fill:\s*#[0-9a-f]{6};/gi, 'fill: #000000;')
@@ -83,8 +96,6 @@ await sharp(Buffer.from(monochrome))
   .toFile(fileURLToPath(new URL('monochrome-512x512.png', output)))
 
 await Promise.all([
-  // O gerador usa uma única fonte. Sobrescrevemos somente os artefatos que
-  // precisam do fundo full-bleed com a variante oficial fornecida pelo dono.
   sharp(backgroundMark)
     .resize(512, 512, { fit: 'fill' })
     .png({ compressionLevel: 9 })

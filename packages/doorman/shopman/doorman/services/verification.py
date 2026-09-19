@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from django.contrib.auth import login
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from ..conf import doorman_settings, get_adapter
@@ -73,6 +74,7 @@ class AuthService:
         delivery_method: str = VerificationCode.DeliveryMethod.WHATSAPP,
         ip_address: str | None = None,
         sender: MessageSenderProtocol | None = None,
+        customer_id=None,
     ) -> CodeRequestResult:
         """
         Request a verification code.
@@ -114,76 +116,161 @@ class AuthService:
                 error_code=ErrorCode.ACCOUNT_INACTIVE,
             )
 
-        # G9: Rate limit by target
-        try:
-            Gates.rate_limit(
-                key=target_value,
-                max_requests=doorman_settings.ACCESS_CODE_RATE_LIMIT_MAX,
-                window_minutes=doorman_settings.ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES,
-            )
-        except GateError:
-            return CodeRequestResult(
-                success=False,
-                error="Too many attempts. Please wait a few minutes.",
-                error_code=ErrorCode.RATE_LIMIT,
-            )
+        # Phase A is deliberately durable: provider resolution can itself use
+        # a durable privacy intent.  Committing the OTP first keeps all network
+        # I/O outside database transactions and makes nested callers fail
+        # loudly instead of pretending an inner savepoint was a real commit.
+        with transaction.atomic(durable=True):
+            if purpose == VerificationCode.Purpose.LOGIN and customer_id is None:
+                customer_hint = adapter.resolve_customer(target_value)
+                if customer_hint is not None:
+                    customer_id = customer_hint.uuid
+            if customer_id is not None:
+                locked_customer = adapter.lock_active_customer_by_uuid(customer_id)
+                target_is_current = (
+                    purpose != VerificationCode.Purpose.LOGIN
+                    or (
+                        locked_customer is not None
+                        and adapter.login_target_belongs_to_customer(
+                            locked_customer,
+                            target_value,
+                        )
+                    )
+                )
+                if locked_customer is None or not target_is_current:
+                    return CodeRequestResult(
+                        success=False,
+                        error="Account inactive.",
+                        error_code=ErrorCode.ACCOUNT_INACTIVE,
+                    )
+                customer_id = locked_customer.uuid
 
-        # G11: Cooldown between code sends
-        try:
-            Gates.code_cooldown(
-                target_value=target_value,
-                cooldown_seconds=doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS,
-            )
-        except GateError:
-            return CodeRequestResult(
-                success=False,
-                error="Please wait before requesting a new code.",
-                error_code=ErrorCode.COOLDOWN,
-            )
-
-        # G10: Rate limit by IP
-        if ip_address:
+            # G9: Rate limit by target
             try:
-                Gates.ip_rate_limit(ip_address)
+                Gates.rate_limit(
+                    key=target_value,
+                    max_requests=doorman_settings.ACCESS_CODE_RATE_LIMIT_MAX,
+                    window_minutes=doorman_settings.ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES,
+                )
             except GateError:
                 return CodeRequestResult(
                     success=False,
-                    error="Too many attempts from this location.",
-                    error_code=ErrorCode.IP_RATE_LIMIT,
+                    error="Too many attempts. Please wait a few minutes.",
+                    error_code=ErrorCode.RATE_LIMIT,
                 )
 
-        # Invalidate previous codes
-        VerificationCode.objects.filter(
-            target_value=target_value,
-            purpose=purpose,
-            status__in=[VerificationCode.Status.PENDING, VerificationCode.Status.SENT],
-        ).update(status=VerificationCode.Status.EXPIRED)
+            # G11: Cooldown between code sends
+            try:
+                Gates.code_cooldown(
+                    target_value=target_value,
+                    cooldown_seconds=doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS,
+                )
+            except GateError:
+                return CodeRequestResult(
+                    success=False,
+                    error="Please wait before requesting a new code.",
+                    error_code=ErrorCode.COOLDOWN,
+                )
 
-        # Create code — store HMAC, send raw
-        from ..models.verification_code import generate_raw_code
+            # G10: Rate limit by IP
+            if ip_address:
+                try:
+                    Gates.ip_rate_limit(ip_address)
+                except GateError:
+                    return CodeRequestResult(
+                        success=False,
+                        error="Too many attempts from this location.",
+                        error_code=ErrorCode.IP_RATE_LIMIT,
+                    )
 
-        raw_code, hmac_digest = generate_raw_code()
-        code = VerificationCode.objects.create(
-            code_hash=hmac_digest,
-            target_value=target_value,
-            purpose=purpose,
-            delivery_method=delivery_method,
-            ip_address=ip_address,
-        )
+            previous_codes = VerificationCode.objects.filter(
+                target_value=target_value,
+                purpose=purpose,
+            )
+            if previous_codes.filter(
+                status=VerificationCode.Status.PENDING,
+                delivery_started_at__isnull=False,
+            ).exists():
+                return CodeRequestResult(
+                    success=False,
+                    error="A previous delivery still needs reconciliation.",
+                    error_code=ErrorCode.SEND_FAILED,
+                )
+            previous_codes.filter(
+                Q(status=VerificationCode.Status.SENT)
+                | Q(
+                    status=VerificationCode.Status.PENDING,
+                    delivery_started_at__isnull=True,
+                )
+            ).update(status=VerificationCode.Status.EXPIRED)
 
-        # Send raw code (not the HMAC)
+            # Create code — store HMAC, send raw only after this commit.
+            from ..models.verification_code import generate_raw_code
+
+            raw_code, hmac_digest = generate_raw_code()
+            code = VerificationCode.objects.create(
+                code_hash=hmac_digest,
+                target_value=target_value,
+                purpose=purpose,
+                delivery_method=delivery_method,
+                ip_address=ip_address,
+                customer_id=customer_id,
+            )
+
+        # Phase B fence: mark that provider I/O is about to start while holding
+        # Customer -> VerificationCode.  Deletion treats this PENDING marker as
+        # in-flight even after code expiry, so a late provider return cannot
+        # cross an already-completed account deletion.
+        with transaction.atomic():
+            if customer_id is not None:
+                locked_customer = adapter.lock_active_customer_by_uuid(customer_id)
+                target_is_current = (
+                    purpose != VerificationCode.Purpose.LOGIN
+                    or (
+                        locked_customer is not None
+                        and adapter.login_target_belongs_to_customer(
+                            locked_customer,
+                            target_value,
+                        )
+                    )
+                )
+                if locked_customer is None or not target_is_current:
+                    cls._fail_pending_code(code.pk)
+                    return CodeRequestResult(
+                        success=False,
+                        error="Account inactive.",
+                        error_code=ErrorCode.ACCOUNT_INACTIVE,
+                    )
+            code = VerificationCode.objects.select_for_update().filter(pk=code.pk).first()
+            if (
+                code is None
+                or code.status != VerificationCode.Status.PENDING
+                or code.is_expired
+            ):
+                cls._fail_pending_code(getattr(code, "pk", None))
+                return CodeRequestResult(
+                    success=False,
+                    error="Failed to prepare code delivery.",
+                    error_code=ErrorCode.SEND_FAILED,
+                )
+            code.delivery_started_at = timezone.now()
+            code.save(update_fields=["delivery_started_at"])
+
+        # Phase B: external I/O after both durable intents are visible.
         if sender:
             # Custom sender provided (e.g. tests) — bypass fallback chain
             try:
                 sent = sender.send_code(target_value, raw_code, delivery_method)
                 actual_method = delivery_method
                 if not sent:
+                    cls._fail_pending_code(code.pk)
                     return CodeRequestResult(
                         success=False, error="Failed to send code.",
                         error_code=ErrorCode.SEND_FAILED,
                     )
             except Exception:
                 logger.exception("Send failed", extra={"target": target_value})
+                cls._fail_pending_code(code.pk)
                 return CodeRequestResult(
                     success=False, error="Error sending code.",
                     error_code=ErrorCode.SEND_FAILED,
@@ -194,17 +281,51 @@ class AuthService:
                 target_value, raw_code, preferred_method=delivery_method,
             )
             if not sent:
+                cls._fail_pending_code(code.pk)
                 return CodeRequestResult(
                     success=False, error="Failed to send code.",
                     error_code=ErrorCode.SEND_FAILED,
                 )
 
-        # Record actual delivery method used (may differ from requested)
-        if actual_method != delivery_method:
-            code.delivery_method = actual_method
-            code.save(update_fields=["delivery_method"])
+        # Phase C: Customer -> VerificationCode, the same canonical order used
+        # by contact changes and account deletion.  If deletion/contact change
+        # won while transport was running, the delivered code is failed closed.
+        with transaction.atomic():
+            if customer_id is not None:
+                locked_customer = adapter.lock_active_customer_by_uuid(customer_id)
+                target_is_current = (
+                    purpose != VerificationCode.Purpose.LOGIN
+                    or (
+                        locked_customer is not None
+                        and adapter.login_target_belongs_to_customer(
+                            locked_customer,
+                            target_value,
+                        )
+                    )
+                )
+                if locked_customer is None or not target_is_current:
+                    cls._fail_pending_code(code.pk)
+                    return CodeRequestResult(
+                        success=False,
+                        error="Account inactive.",
+                        error_code=ErrorCode.ACCOUNT_INACTIVE,
+                    )
 
-        code.mark_sent()
+            code = VerificationCode.objects.select_for_update().filter(pk=code.pk).first()
+            if code is None or code.status != VerificationCode.Status.PENDING:
+                return CodeRequestResult(
+                    success=False,
+                    error="Failed to finalize code delivery.",
+                    error_code=ErrorCode.SEND_FAILED,
+                )
+            if actual_method != delivery_method:
+                code.delivery_method = actual_method
+            code.status = VerificationCode.Status.SENT
+            code.sent_at = timezone.now()
+            update_fields = ["status", "sent_at"]
+            if actual_method != delivery_method:
+                update_fields.append("delivery_method")
+            code.save(update_fields=update_fields)
 
         # Signal
         verification_code_sent.send(
@@ -223,6 +344,14 @@ class AuthService:
             delivery_method=actual_method,
             debug_code=raw_code,
         )
+
+    @staticmethod
+    def _fail_pending_code(code_id) -> None:
+        """Make a prepared code unusable without reviving terminal rows."""
+        VerificationCode.objects.filter(
+            pk=code_id,
+            status=VerificationCode.Status.PENDING,
+        ).update(status=VerificationCode.Status.FAILED)
 
     # ===========================================
     # Verify for Login
@@ -258,11 +387,73 @@ class AuthService:
                 error_code=ErrorCode.INVALID_TARGET,
             )
 
-        # Find valid code
-        code = cls._get_valid_code(
-            target_value, VerificationCode.Purpose.LOGIN, for_update=True
+        # Leitura indicativa sem lock para descobrir o titular. A ordem de
+        # bloqueio é sempre Customer -> VerificationCode, como na exclusão.
+        code_hint = cls._get_valid_code(
+            target_value,
+            VerificationCode.Purpose.LOGIN,
+            for_update=False,
         )
-        if not code:
+        if not code_hint:
+            return VerifyResult(
+                success=False,
+                error="Code expired. Please request a new one.",
+                error_code=ErrorCode.CODE_EXPIRED,
+            )
+
+        customer = None
+        customer_hint = None
+        if code_hint.customer_id:
+            customer_hint = adapter.resolve_customer_by_uuid(code_hint.customer_id)
+        if customer_hint is None:
+            customer_hint = adapter.resolve_customer(target_value)
+        if customer_hint is not None:
+            customer = adapter.lock_active_customer_by_uuid(customer_hint.uuid)
+            if customer is None:
+                return VerifyResult(
+                    success=False,
+                    error="Account inactive.",
+                    error_code=ErrorCode.ACCOUNT_INACTIVE,
+                )
+            if not adapter.login_target_belongs_to_customer(customer, target_value):
+                return VerifyResult(
+                    success=False,
+                    error="Code expired. Please request a new one.",
+                    error_code=ErrorCode.CODE_EXPIRED,
+                )
+
+        # A modern code is bound to the customer resolved when it was issued.
+        # Never fall back to auto-creation when that owner was deleted or when
+        # the target stopped belonging to it while this request waited.
+        if code_hint.customer_id and (
+            customer is None or str(code_hint.customer_id) != str(customer.uuid)
+        ):
+            return VerifyResult(
+                success=False,
+                error="Code expired. Please request a new one.",
+                error_code=ErrorCode.CODE_EXPIRED,
+            )
+
+        code = (
+            VerificationCode.objects.select_for_update()
+            .filter(
+                pk=code_hint.pk,
+                target_value=target_value,
+                purpose=VerificationCode.Purpose.LOGIN,
+                status=VerificationCode.Status.SENT,
+                expires_at__gt=timezone.now(),
+            )
+            .first()
+        )
+        if code is None:
+            return VerifyResult(
+                success=False,
+                error="Code expired. Please request a new one.",
+                error_code=ErrorCode.CODE_EXPIRED,
+            )
+        if code.customer_id and (
+            customer is None or str(code.customer_id) != str(customer.uuid)
+        ):
             return VerifyResult(
                 success=False,
                 error="Code expired. Please request a new one.",
@@ -281,7 +472,6 @@ class AuthService:
             )
 
         # Get or create Customer via adapter
-        customer = adapter.resolve_customer(target_value)
         created = False
 
         if not customer:
@@ -410,7 +600,7 @@ class AuthService:
             return queryset.filter(
                 target_value=target_value,
                 purpose=purpose,
-                status__in=[VerificationCode.Status.PENDING, VerificationCode.Status.SENT],
+                status=VerificationCode.Status.SENT,
                 expires_at__gt=timezone.now(),
             ).latest("created_at")
         except VerificationCode.DoesNotExist:
@@ -430,7 +620,12 @@ class AuthService:
         from datetime import timedelta
 
         cutoff = timezone.now() - timedelta(days=days)
-        deleted, _ = VerificationCode.objects.filter(
-            expires_at__lt=cutoff,
-        ).delete()
+        deleted, _ = (
+            VerificationCode.objects.filter(expires_at__lt=cutoff)
+            .exclude(
+                status=VerificationCode.Status.PENDING,
+                delivery_started_at__isnull=False,
+            )
+            .delete()
+        )
         return deleted

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "vue-sonner";
 import { computed, ref } from "vue";
 
-import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
+import type { POSCashDrawerProjection, POSDeviceAgentProjection, POSProjection } from "~/types/pos";
 import { useCounterAgent } from "~/composables/useCounterAgent";
 
 import { makeProjection } from "./_posSaleHarness";
@@ -18,13 +18,35 @@ const AGENT: POSCashDrawerProjection = {
   pulse: { pin: 0, on_ms: 50, off_ms: 500 },
 };
 
+/** A IMPRESSORA do balcão — capacidade própria, ligada à parte no Admin. */
+const PRINTER: POSDeviceAgentProjection = {
+  can_print: true,
+  agent_url: "http://127.0.0.1:47811",
+  token: "token-do-balcao",
+};
+
 // `null` = terminal que não declarou gaveta. Não use `undefined`: passar
 // `undefined` para um parâmetro com default reativa o default (aqui, AGENT).
-function makeDrawer(cash_drawer: POSCashDrawerProjection | null = AGENT) {
+//
+// A impressora acompanha a gaveta por default porque um terminal com gaveta
+// por agente TEM agente — mas os dois lados são passáveis em separado, que é
+// justamente a combinação que quebrava o balcão.
+function makeDrawer(
+  cash_drawer: POSCashDrawerProjection | null = AGENT,
+  device_agent: POSDeviceAgentProjection | null = PRINTER,
+) {
   const posValue = ref<POSProjection | null>(
-    makeProjection({ cash_drawer: cash_drawer ?? undefined }),
+    makeProjection({
+      cash_drawer: cash_drawer ?? undefined,
+      device_agent: device_agent ?? undefined,
+    }),
   );
   return useCounterAgent(computed(() => posValue.value));
+}
+
+/** Balcão como o dono configurou: bobina ligada, gaveta de chave. */
+function makePrinterOnlyCounter() {
+  return makeDrawer({ adapter: "manual", can_kick: false, open_on_cash_sale: false }, PRINTER);
 }
 
 function stubFetch(impl: (url: string, init?: RequestInit) => unknown) {
@@ -114,9 +136,83 @@ describe("useCounterAgent — o caminho físico da gaveta", () => {
     expect(await drawer.probe()).toEqual({ ok: false, message: "fila pausada" });
   });
 
-  it("testar gaveta num balcão de chave explica em vez de falhar", async () => {
-    const drawer = makeDrawer({ adapter: "manual", can_kick: false, open_on_cash_sale: false });
-    expect((await drawer.probe()).message).toContain("chave");
+  it("sondar um balcão sem agente nenhum explica as DUAS capacidades que faltam", async () => {
+    // A sonda é do AGENTE, não da gaveta: a frase precisa dizer o que falta de
+    // cada lado, senão o operador conserta o periférico errado.
+    const drawer = makeDrawer({ adapter: "manual", can_kick: false, open_on_cash_sale: false }, null);
+    const message = (await drawer.probe()).message;
+    expect(message).toContain("Impressora");
+    expect(message).toContain("Gaveta");
+  });
+
+  it("balcão de bobina e gaveta de chave AINDA sonda — o agente existe lá", async () => {
+    const fetchSpy = stubFetch(() => okResponse({ ok: true, queue: "TM-T20" }));
+    const result = await makePrinterOnlyCounter().probe();
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain("TM-T20");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://127.0.0.1:47811/health");
+  });
+});
+
+describe("useCounterAgent — impressora e gaveta são capacidades SEPARADAS", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("imprime num balcão com bobina e gaveta de chave", async () => {
+    // A regressão inteira mora aqui: `can_kick: false` recusava recibo, DANFE,
+    // ficha e comprovante de caixa num terminal cuja impressora estava sã.
+    const fetchSpy = stubFetch(() => okResponse({ ok: true, job_id: "42" }));
+    const counter = makePrinterOnlyCounter();
+
+    expect(counter.canKick.value).toBe(false);
+    expect(counter.canPrint.value).toBe(true);
+
+    const outcome = await counter.print("Zm9v", "recibo");
+
+    expect(outcome.status).toBe("printed");
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe("http://127.0.0.1:47811/print");
+    expect(JSON.parse(init!.body as string)).toMatchObject({
+      token: "token-do-balcao",
+      payload_b64: "Zm9v",
+      title: "recibo",
+    });
+  });
+
+  it("sem impressora a recusa fala de IMPRESSORA, nunca de gaveta", async () => {
+    // Frase de gaveta num balcão que só não tem bobina mandava o operador
+    // procurar defeito no periférico errado.
+    const fetchSpy = stubFetch(() => okResponse({ ok: true }));
+    const counter = makeDrawer(AGENT, null);
+
+    const outcome = await counter.print("Zm9v", "recibo");
+
+    expect(outcome.status).toBe("skipped");
+    expect(outcome.detail).toContain("Impressora");
+    expect(outcome.detail).not.toContain("Gaveta");
+    expect(counter.printUnavailableReason.value).toContain("Terminais do PDV");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("a recusa do servidor chega inteira, sem ser trocada pela da gaveta", async () => {
+    const counter = makeDrawer(AGENT, {
+      can_print: false,
+      reason: "A impressora deste terminal está sem token — salve o terminal no gestor para gerar um.",
+    });
+
+    expect((await counter.print("Zm9v", "recibo")).detail).toContain("sem token");
+  });
+
+  it("gaveta por agente segue chutando com o bloco dela, não com o da impressora", async () => {
+    const fetchSpy = stubFetch(() => okResponse({ ok: true }));
+    expect(await makePrinterOnlyCounter().kick("cash_sale")).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("hasAgent é a união: qualquer uma das duas capacidades acende o card", () => {
+    expect(makePrinterOnlyCounter().hasAgent.value).toBe(true);
+    expect(makeDrawer(AGENT, null).hasAgent.value).toBe(true);
+    expect(makeDrawer(null, null).hasAgent.value).toBe(false);
   });
 });
 

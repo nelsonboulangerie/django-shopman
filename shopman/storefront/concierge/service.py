@@ -468,19 +468,44 @@ class BindingAttachmentRejected(Exception):
         self.code = code
 
 
-def _resolved_customer(resolution: IdentityResolution):
-    """Converte somente resolução tipada e verificada na identidade canônica."""
+def _lock_resolved_customer(resolution: IdentityResolution):
+    """Trava e revalida a identidade canônica antes de gravar PII da conversa.
+
+    A resolução do adapter é apenas uma pista obtida antes da transação. Uma
+    exclusão ou troca de telefone pode vencer entre essa leitura e a escrita.
+    ``Customer`` é portanto sempre a primeira trava; só depois dela tocamos
+    ``Conversation`` e ``ConversationBinding``. O telefone alegado também
+    precisa continuar pertencendo ao titular na fonte canônica.
+    """
     if not isinstance(resolution, IdentityResolution) or not resolution.verified:
         return None
-    from shopman.guestman.services import customer as customer_service
 
-    customer = customer_service.get_by_uuid(str(resolution.customer_uuid))
-    if customer is None:
+    from shopman.guestman.models import ContactPoint
+    from shopman.utils.phone import normalize_phone
+
+    from shopman.shop.services import account as account_service
+
+    try:
+        customer = account_service.lock_active_customer(customer_uuid=resolution.customer_uuid)
+    except account_service.AccountUnavailable:
         return None
+
+    claimed_phone = normalize_phone(resolution.phone or "")
+    if resolution.phone and not claimed_phone:
+        return None
+    if claimed_phone:
+        owns_phone = claimed_phone == (customer.phone or "") or ContactPoint.objects.filter(
+            customer=customer,
+            type__in=[ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP],
+            value_normalized=claimed_phone,
+        ).exists()
+        if not owns_phone:
+            return None
+
     return customer, (
-        (resolution.phone or customer.phone or "").strip(),
+        claimed_phone or customer.phone or "",
         customer.ref,
-        (resolution.name or customer.name or "").strip(),
+        (customer.name or "").strip(),
     )
 
 
@@ -526,12 +551,15 @@ def attach_binding(
         raise BindingAttachmentRejected("scope_conflict")
     if connection.options.get("identity_link_enabled") is not True:
         raise BindingAttachmentRejected("identity_link_disabled")
-    resolved = _resolved_customer(resolution)
-    if resolved is None:
+    if not isinstance(resolution, IdentityResolution) or not resolution.verified:
         raise BindingAttachmentRejected("identity_unverified")
-    _customer, proposed = resolved
 
     with transaction.atomic():
+        resolved = _lock_resolved_customer(resolution)
+        if resolved is None:
+            raise BindingAttachmentRejected("identity_unverified")
+        _customer, proposed = resolved
+
         try:
             conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
         except (Conversation.DoesNotExist, TypeError, ValueError) as exc:
@@ -623,12 +651,15 @@ def identify(
     except Exception:
         logger.warning("concierge.identify failed conversation=%s", conversation.pk)
         info = None
-    resolved = _resolved_customer(info)
-    if resolved is None:
+    if not isinstance(info, IdentityResolution) or not info.verified:
         return conversation
-    _customer, proposed = resolved
 
     with transaction.atomic():
+        resolved = _lock_resolved_customer(info)
+        if resolved is None:
+            return conversation
+        _customer, proposed = resolved
+
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
         current_binding = ConversationBinding.objects.select_for_update().filter(
             pk=binding.pk,

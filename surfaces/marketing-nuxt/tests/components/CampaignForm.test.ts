@@ -401,9 +401,17 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     ];
     expect(payload.audience_rules).toEqual(audienceRules);
     expect("trigger_filter" in payload).toBe(false);
-    expect(wrapper.text()).toContain("bought_skus");
-    expect(wrapper.text()).toContain("future_selector");
-    expect(wrapper.text()).toContain("future_filter");
+    // O aviso conta que o que o formulário não edita continua valendo — em
+    // português. Chave nova do servidor entra na conta, nunca no texto.
+    expect(wrapper.text()).toContain(
+      "Filtros de público já salvos (produtos comprados, coleções compradas e mais 1 critério)",
+    );
+    expect(wrapper.text()).toContain(
+      "Os filtros do evento já salvos (coleções e mais 1 critério)",
+    );
+    expect(wrapper.text()).not.toMatch(
+      /\b(bought_skus|future_selector|future_filter)\b/,
+    );
   });
 
   it("altera critérios avançados sem apagar os seletores protegidos", async () => {
@@ -464,11 +472,14 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect(
       (restored.find("#rule-name").element as HTMLInputElement).value,
     ).toBe("Campanha em revisão");
+    // O chip é `role="checkbox"` com `aria-checked`, e não um botão com
+    // `aria-pressed`: escolher etiqueta é marcar item, não apertar um botão que fica
+    // apertado. O leitor de tela diz "marcada", que é o que a pessoa está fazendo.
     expect(
       restored
-        .findAll("button")
-        .find((button) => button.text() === "Sem glúten")!
-        .attributes("aria-pressed"),
+        .findAll('[role="checkbox"]')
+        .find((chip) => chip.text() === "Sem glúten")!
+        .attributes("aria-checked"),
     ).toBe("true");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
@@ -517,5 +528,186 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect((other.find("#rule-name").element as HTMLInputElement).value).toBe(
       "Campanha seis",
     );
+  });
+});
+
+describe("CampaignForm — as escolhas são peças do kit", () => {
+  // ⚠️ Os sete checkboxes e o rádio desta tela eram o controle nativo do browser com
+  // uma tinta do Tailwind por cima: desenho do sistema operacional no meio do desenho
+  // da casa, diferente em cada dispositivo, e sem o alvo de toque de 44 px que quem
+  // atende balcão precisa com uma mão só. Este teste prende a semântica que o
+  // primitivo garante — `role="checkbox"` com `aria-checked` — e prova que o valor
+  // marcado ainda chega ao payload.
+  it("marca o público por role=checkbox, e a marca chega ao envio", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    const birthday = wrapper
+      .findAll('[role="checkbox"]')
+      .find((box) => box.text().includes("Aniversariantes de hoje"))!;
+
+    expect(birthday.attributes("aria-checked")).toBe("false");
+    await birthday.trigger("click");
+    expect(birthday.attributes("aria-checked")).toBe("true");
+
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(
+      (payload.audience_rules as Record<string, unknown>).birthday_today,
+    ).toBe(true);
+  });
+
+  // ⚠️ A pílula de plataforma é um `UiToggleChip`, não um `UiCheckbox`: ela é um chip
+  // cuja caixa inteira acende e que ainda carrega o estado da plataforma. Era um
+  // `<input type="checkbox" class="sr-only">` embrulhado num `<label>` pintado —
+  // semântica escondida num lugar, alvo de toque noutro.
+  it("a pílula de plataforma é um chip com ARIA de escolha, e marcar chega ao envio", async () => {
+    const wrapper = form(makeRule({ platforms: [] }));
+
+    expect(wrapper.find('input[type="checkbox"].sr-only').exists()).toBe(false);
+    const pill = wrapper
+      .findAll('[role="checkbox"]')
+      .find((chip) => chip.text().includes("WhatsApp"))!;
+    expect(pill.attributes("aria-checked")).toBe("false");
+
+    await pill.trigger("click");
+    expect(pill.attributes("aria-checked")).toBe("true");
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.platforms).toContain("whatsapp");
+  });
+});
+
+describe("CampaignForm — a voz do gestor", () => {
+  // ⚠️ A entidade é `Campaign` e a lista chama de "campanha"; o formulário fechava
+  // com "Regra ativa", um terceiro nome para a mesma coisa.
+  it("chama a campanha de campanha, nunca de regra", () => {
+    const text = form(makeRule()).text();
+
+    expect(text).toContain("Campanha ligada");
+    expect(text).not.toMatch(/\bRegra\b/);
+  });
+
+  // ⚠️ O aviso de filtro preservado imprimia a CHAVE do JSON: "collections, skus",
+  // "bought_skus". Chave é contrato com o servidor, não vocabulário do gestor.
+  it("nomeia os filtros do evento preservados em português, sem chave JSON", () => {
+    const text = form(
+      makeRule({
+        trigger: "production_finished",
+        trigger_filter: {
+          collections: ["paes"],
+          skus: ["BAGUETE"],
+          chave_nova_do_servidor: 1,
+        },
+      }),
+    ).text();
+
+    expect(text).toContain(
+      "Os filtros do evento já salvos (coleções, produtos e mais 1 critério) continuam valendo.",
+    );
+    expect(text).not.toMatch(/\b(collections|skus|chave_nova_do_servidor)\b/);
+  });
+
+  it("nomeia os filtros de público preservados em português, sem chave JSON", () => {
+    const text = form(
+      makeRule({
+        trigger: "production_finished",
+        audience_rules: { bought_skus: ["BAGUETE"], bought_collections: ["paes"] },
+      }),
+    ).text();
+
+    expect(text).toContain(
+      "Filtros de público já salvos (produtos comprados, coleções compradas) continuam valendo",
+    );
+    expect(text).not.toMatch(/\bbought_(skus|collections)\b/);
+  });
+
+  // ⚠️ As quatro plataformas apareciam iguais e a recusa só chegava depois de
+  // aprovar. A prontidão é pré-condição de PUBLICAR, não de configurar.
+  it("mostra antes do clique onde a campanha não vai sair, sem travar o salvar", async () => {
+    const wrapper = mount(CampaignForm, {
+      props: {
+        rule: makeRule({ platforms: ["instagram"] }),
+        triggers: TRIGGERS,
+        platformOptions: PLATFORMS,
+        templates: TEMPLATES as never,
+        offers: OFFERS,
+        platformLabels: { whatsapp: "WhatsApp", instagram: "Instagram" },
+        platformReadiness: [
+          {
+            platform: "instagram",
+            state: "blocked",
+            ready: false,
+            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            limitation: "",
+            source_status: "live",
+          },
+          {
+            platform: "whatsapp",
+            state: "unknown",
+            ready: false,
+            reason: "Não foi possível verificar o transporte do WhatsApp agora.",
+            limitation: "",
+            source_status: "live",
+          },
+        ],
+      },
+      global: {
+        components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+        stubs: { Icon: true, NuxtLink: true },
+      },
+    });
+    const text = wrapper.text();
+
+    // A pílula conta o estado das duas, escolhida ou não.
+    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
+      "Instagram · não publica",
+    );
+    expect(wrapper.find('[data-readiness="unknown"]').text()).toContain(
+      "WhatsApp · não verificada",
+    );
+    // A escolhida ganha a frase completa; a não escolhida não faz barulho.
+    expect(text).toContain(
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
+    );
+    expect(text).toContain("A campanha pode ser salva assim mesmo.");
+    expect(text).not.toContain("Não foi possível verificar o transporte");
+
+    await wrapper.find("form").trigger("submit");
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+
+  it("descreve o público em conflito como frase, não como JSON", async () => {
+    const rule = makeRule({
+      trigger: "production_finished",
+      audience_rules: {},
+      updated_at: "v1",
+    });
+    const first = form(rule, "operator:7");
+    await first
+      .findAll("button")
+      .find((button) => button.text() === "Sem glúten")!
+      .trigger("click");
+    first.unmount();
+
+    const conflicted = form(
+      makeRule({
+        trigger: "production_finished",
+        audience_rules: { favorites: true, alerts: true },
+        updated_at: "v2",
+      }),
+      "operator:7",
+    );
+    await flushPromises();
+    const text = conflicted.text();
+
+    expect(text).toContain("Este conteúdo também mudou em outra sessão");
+    expect(text).toContain("Versão atual: Favoritos, alertas");
+    expect(text).toContain("Seu rascunho: Sem glúten");
+    expect(text).not.toContain("{");
+    expect(text).not.toMatch(/\b(favorites|alerts|tags)\b/);
   });
 });

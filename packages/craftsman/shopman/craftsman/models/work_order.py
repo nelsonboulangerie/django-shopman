@@ -157,7 +157,7 @@ class WorkOrder(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.ref} - {self.recipe.name}" if self.ref else f"WO-{self.pk}"
+        return f"{self.ref} · {self.recipe.name}" if self.ref else f"WO-{self.pk}"
 
     def clean(self):
         super().clean()

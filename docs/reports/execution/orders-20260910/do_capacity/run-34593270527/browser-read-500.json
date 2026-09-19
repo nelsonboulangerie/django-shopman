@@ -1,0 +1,302 @@
+{
+  "n": 500,
+  "samples": [
+    {
+      "sample": 0,
+      "usable_ms": 2333,
+      "ttfb_ms": 120.09999999997672,
+      "dom_content_ms": 197.70000000001164,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.229903,
+        "RecalcStyleDuration": 0.162265,
+        "ScriptDuration": 0.05564,
+        "TaskDuration": 2.020664
+      }
+    },
+    {
+      "sample": 1,
+      "usable_ms": 2426,
+      "ttfb_ms": 49.5,
+      "dom_content_ms": 133,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.243008,
+        "RecalcStyleDuration": 0.197991,
+        "ScriptDuration": 0.05517,
+        "TaskDuration": 2.04517
+      }
+    },
+    {
+      "sample": 2,
+      "usable_ms": 2298,
+      "ttfb_ms": 46.100000000034925,
+      "dom_content_ms": 127.89999999996508,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.200973,
+        "RecalcStyleDuration": 0.181233,
+        "ScriptDuration": 0.054891,
+        "TaskDuration": 1.977827
+      }
+    },
+    {
+      "sample": 3,
+      "usable_ms": 2332,
+      "ttfb_ms": 51,
+      "dom_content_ms": 133,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.219181,
+        "RecalcStyleDuration": 0.191852,
+        "ScriptDuration": 0.052208,
+        "TaskDuration": 2.044828
+      }
+    },
+    {
+      "sample": 4,
+      "usable_ms": 2573,
+      "ttfb_ms": 53,
+      "dom_content_ms": 141.30000000004657,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.23146,
+        "RecalcStyleDuration": 0.223902,
+        "ScriptDuration": 0.064659,
+        "TaskDuration": 2.134083
+      }
+    },
+    {
+      "sample": 5,
+      "usable_ms": 2579,
+      "ttfb_ms": 62.399999999965075,
+      "dom_content_ms": 165.39999999996508,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.249861,
+        "RecalcStyleDuration": 0.209807,
+        "ScriptDuration": 0.075315,
+        "TaskDuration": 2.289891
+      }
+    },
+    {
+      "sample": 6,
+      "usable_ms": 2384,
+      "ttfb_ms": 54.59999999997672,
+      "dom_content_ms": 150.70000000001164,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.222084,
+        "RecalcStyleDuration": 0.175445,
+        "ScriptDuration": 0.060789,
+        "TaskDuration": 2.071971
+      }
+    },
+    {
+      "sample": 7,
+      "usable_ms": 2375,
+      "ttfb_ms": 48.100000000034925,
+      "dom_content_ms": 130.30000000004657,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.234465,
+        "RecalcStyleDuration": 0.162402,
+        "ScriptDuration": 0.046799,
+        "TaskDuration": 1.949507
+      }
+    },
+    {
+      "sample": 8,
+      "usable_ms": 2366,
+      "ttfb_ms": 48,
+      "dom_content_ms": 133.90000000002328,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.222077,
+        "RecalcStyleDuration": 0.19546,
+        "ScriptDuration": 0.054037,
+        "TaskDuration": 2.053061
+      }
+    },
+    {
+      "sample": 9,
+      "usable_ms": 2223,
+      "ttfb_ms": 48.100000000034925,
+      "dom_content_ms": 132.29999999998836,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.218313,
+        "RecalcStyleDuration": 0.159004,
+        "ScriptDuration": 0.04554,
+        "TaskDuration": 1.912743
+      }
+    },
+    {
+      "sample": 10,
+      "usable_ms": 2410,
+      "ttfb_ms": 44.09999999997672,
+      "dom_content_ms": 125.39999999996508,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.214474,
+        "RecalcStyleDuration": 0.225224,
+        "ScriptDuration": 0.051761,
+        "TaskDuration": 2.018332
+      }
+    },
+    {
+      "sample": 11,
+      "usable_ms": 2288,
+      "ttfb_ms": 46.5,
+      "dom_content_ms": 126.09999999997672,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.205145,
+        "RecalcStyleDuration": 0.15467,
+        "ScriptDuration": 0.048203,
+        "TaskDuration": 2.007681
+      }
+    },
+    {
+      "sample": 12,
+      "usable_ms": 2322,
+      "ttfb_ms": 53.09999999997672,
+      "dom_content_ms": 136.5,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.222364,
+        "RecalcStyleDuration": 0.188208,
+        "ScriptDuration": 0.054716,
+        "TaskDuration": 2.012931
+      }
+    },
+    {
+      "sample": 13,
+      "usable_ms": 2421,
+      "ttfb_ms": 176.5,
+      "dom_content_ms": 259.20000000001164,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.233596,
+        "RecalcStyleDuration": 0.184055,
+        "ScriptDuration": 0.047053,
+        "TaskDuration": 2.010726
+      }
+    },
+    {
+      "sample": 14,
+      "usable_ms": 2504,
+      "ttfb_ms": 49.100000000034925,
+      "dom_content_ms": 131.79999999998836,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.233957,
+        "RecalcStyleDuration": 0.19446,
+        "ScriptDuration": 0.052422,
+        "TaskDuration": 2.083563
+      }
+    },
+    {
+      "sample": 15,
+      "usable_ms": 2285,
+      "ttfb_ms": 47.100000000034925,
+      "dom_content_ms": 125.59999999997672,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.210311,
+        "RecalcStyleDuration": 0.170641,
+        "ScriptDuration": 0.051757,
+        "TaskDuration": 2.036355
+      }
+    },
+    {
+      "sample": 16,
+      "usable_ms": 2231,
+      "ttfb_ms": 48.29999999998836,
+      "dom_content_ms": 132.5,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.205149,
+        "RecalcStyleDuration": 0.186142,
+        "ScriptDuration": 0.048386,
+        "TaskDuration": 1.926904
+      }
+    },
+    {
+      "sample": 17,
+      "usable_ms": 2387,
+      "ttfb_ms": 49.09999999997672,
+      "dom_content_ms": 134.09999999997672,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.198299,
+        "RecalcStyleDuration": 0.180218,
+        "ScriptDuration": 0.054059,
+        "TaskDuration": 1.978493
+      }
+    },
+    {
+      "sample": 18,
+      "usable_ms": 2301,
+      "ttfb_ms": 47.800000000046566,
+      "dom_content_ms": 130,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.207971,
+        "RecalcStyleDuration": 0.187412,
+        "ScriptDuration": 0.04954,
+        "TaskDuration": 2.010378
+      }
+    },
+    {
+      "sample": 19,
+      "usable_ms": 2340,
+      "ttfb_ms": 46,
+      "dom_content_ms": 129,
+      "transfer_bytes": 25571,
+      "encoded_bytes": 25271,
+      "work": {
+        "LayoutDuration": 0.220547,
+        "RecalcStyleDuration": 0.203776,
+        "ScriptDuration": 0.050936,
+        "TaskDuration": 2.035338
+      }
+    }
+  ],
+  "first_page": {
+    "sample": 0,
+    "usable_ms": 2333,
+    "ttfb_ms": 120.09999999997672,
+    "dom_content_ms": 197.70000000001164,
+    "transfer_bytes": 25571,
+    "encoded_bytes": 25271,
+    "work": {
+      "LayoutDuration": 0.229903,
+      "RecalcStyleDuration": 0.162265,
+      "ScriptDuration": 0.05564,
+      "TaskDuration": 2.020664
+    }
+  },
+  "p50_ms": 2353,
+  "p95_ms": 2573,
+  "scope": "Chromium desktop, localhost Nitro/Daphne/PostgreSQL/Redis; logged-in session; navigate + hydrate + type filter + observe one row; first sample cold context, later warm cache; login excluded and no field claim"
+}

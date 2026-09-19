@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MarketingHistoryFilterName } from "~/composables/useCampaignHistory";
-import { formatCount } from "~/presentation/campaign";
+import { choiceLabels, formatCount } from "~/presentation/campaign";
 import {
   historyActorLabel,
   historyHref,
@@ -12,9 +12,33 @@ import {
   deliveryCountItems,
   deliveryStatePresentation,
   marketingLoadError,
+  platformDeliveryLabel,
   platformResultLabel,
+  platformSwitchedOff,
 } from "~/presentation/marketingResult";
 import { scheduleSummary } from "~/utils/marketingSchedule";
+import type { AnnouncementProjectionV2 } from "~/types/campaign";
+
+type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
+
+function platformStateLabel(
+  announcement: AnnouncementProjectionV2,
+  platform: PlatformDelivery,
+): string {
+  return platformDeliveryLabel(
+    platform,
+    platformSwitchedOff(announcement, platform.platform_ref),
+  );
+}
+
+function platformCountItems(
+  announcement: AnnouncementProjectionV2,
+  platform: PlatformDelivery,
+) {
+  return deliveryCountItems(platform.counts, {
+    platformSwitchedOff: platformSwitchedOff(announcement, platform.platform_ref),
+  });
+}
 
 const {
   announcements,
@@ -32,6 +56,9 @@ const {
   setFilter,
   clearFilters,
 } = useCampaignHistory();
+// O assunto diz o NOME do produto, não o SKU: o rótulo mora em `options.products`.
+const { products } = useCampaigns();
+const productLabels = computed(() => choiceLabels(products.value));
 
 const loadFailure = computed(() =>
   marketingLoadError(error.value || loadMoreError.value),
@@ -81,7 +108,7 @@ const FILTERS = [
     options: [
       ["", "Todas"],
       ["operator", "Pessoa"],
-      ["automation", "Automação ou sem autoria"],
+      ["automation", "Automação"],
     ],
   },
 ] as const;
@@ -105,7 +132,7 @@ function changeFilter(name: MarketingHistoryFilterName, event: Event) {
   if (target instanceof HTMLSelectElement) void setFilter(name, target.value);
 }
 
-useHead({ title: "Histórico · Marketing" });
+useHead({ title: "Histórico" });
 </script>
 
 <template>
@@ -292,7 +319,7 @@ useHead({ title: "Histórico · Marketing" });
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <h2 class="font-semibold">
-                  {{ historySubject(announcement) }}
+                  {{ historySubject(announcement, productLabels) }}
                 </h2>
                 <span class="text-xs text-muted-foreground">
                   {{
@@ -340,11 +367,11 @@ useHead({ title: "Histórico · Marketing" });
                       {{ platformResultLabel(platform.platform_ref) }}
                     </span>
                     <span class="text-xs text-muted-foreground">
-                      {{ deliveryStatePresentation(platform.state).label }}
+                      {{ platformStateLabel(announcement, platform) }}
                     </span>
                   </div>
                   <p
-                    v-for="count in deliveryCountItems(platform.counts)"
+                    v-for="count in platformCountItems(announcement, platform)"
                     :key="count.key"
                     class="mt-1 text-xs text-muted-foreground"
                   >
@@ -353,7 +380,7 @@ useHead({ title: "Histórico · Marketing" });
                 </li>
               </ul>
               <p v-else class="mt-3 text-xs text-muted-foreground">
-                Não há contagem rastreável por plataforma neste registro.
+                Este registro é antigo e não guarda contagem por plataforma.
               </p>
 
               <NuxtLink

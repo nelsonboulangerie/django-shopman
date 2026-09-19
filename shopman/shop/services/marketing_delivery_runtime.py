@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Literal
 
 from shopman.shop.models import MarketingOutbox
 from shopman.shop.services.marketing_capabilities import platform_refs
@@ -24,6 +27,69 @@ class StagingReport:
     targets: int
     queued: int
     replayed: bool
+
+
+#: A flag de ambiente que registra o adapter de entrega de cada plataforma
+#: (``config/settings.py``). Desligada, o adapter existe no código mas não entra em
+#: ``SHOPMAN_MARKETING_DELIVERY_ADAPTERS``.
+PLATFORM_SWITCHES: Mapping[str, str] = MappingProxyType({
+    "instagram": "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED",
+    "facebook": "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED",
+    "google_business": "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED",
+    "whatsapp": "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED",
+})
+
+#: ``registered``: há adapter registrado para a plataforma neste ambiente.
+#: ``switched_off``: nada registrado e a flag da plataforma está desligada — escolha
+#: de quem opera o ambiente, não defeito.
+#: ``unconfigured``: nada registrado com a flag ligada (ou sem flag conhecida) —
+#: configuração quebrada.
+LaneState = Literal["registered", "switched_off", "unconfigured"]
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryLane:
+    platform: str
+    state: LaneState
+    switch: str
+
+
+def delivery_lane(platform: str) -> DeliveryLane:
+    """Diz, sem chamar ``get_adapter`` nem o provedor, em que estado a plataforma está.
+
+    Registro é a chave com caminho em ``SHOPMAN_MARKETING_DELIVERY_ADAPTERS`` (ou em
+    ``Shop.integrations``, que tem prioridade). Estar registrada não diz que a
+    credencial funciona: isso é o ``is_available`` do adapter, conferido por
+    ``delivery_provider``.
+    """
+
+    return _lane(str(platform or ""), registered=_registered_platforms())
+
+
+def delivery_lanes() -> tuple[DeliveryLane, ...]:
+    """Estado de cada plataforma do catálogo, na ordem do catálogo."""
+
+    registered = _registered_platforms()
+    return tuple(_lane(platform, registered=registered) for platform in SUPPORTED_PLATFORMS)
+
+
+def _registered_platforms() -> frozenset[str]:
+    from shopman.shop.adapters import configured_methods
+
+    return frozenset(configured_methods("marketing_delivery"))
+
+
+def _lane(platform: str, *, registered: frozenset[str]) -> DeliveryLane:
+    from django.conf import settings
+
+    switch = PLATFORM_SWITCHES.get(platform, "")
+    if platform in registered:
+        state: LaneState = "registered"
+    elif switch and not getattr(settings, switch, False):
+        state = "switched_off"
+    else:
+        state = "unconfigured"
+    return DeliveryLane(platform=platform, state=state, switch=switch)
 
 
 def delivery_provider(platform: str, *, require_available: bool = True):

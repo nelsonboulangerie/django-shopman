@@ -12,6 +12,8 @@ import { useOrderIntention } from "./useOrderIntention";
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
 import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
+import { useOperatorAppName } from "../../../operator-kit/app/composables/useOperatorWindowTitle";
+import { windowTitle } from "../../../operator-kit/app/presentation/windowTitle";
 
 export type { CancellationReason };
 
@@ -108,6 +110,10 @@ export const gestorAttentionStorageKey = (serviceDay: string) =>
 export function useOrdersBoard() {
   const intentions = useOrderIntention();
   const config = useRuntimeConfig();
+  // O título que pisca também começa pelo nome do app instalado ("Nelson · Gestor de
+  // pedidos"): sem ele o Chrome prefixa "<nome> - " na barra da janela a cada troca.
+  // O rótulo vem da identidade canônica; escrevê-lo aqui criava um segundo nome.
+  const appName = useOperatorAppName();
   const path = "/api/v1/backstage/orders/";
 
   // Antes do destravamento por PIN toda leitura volta 403 `station_locked`, e o
@@ -142,7 +148,7 @@ export function useOrdersBoard() {
   const totalCount = computed(() => queue.value?.total_count ?? 0);
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
   const preorders = computed<PreorderGroup[]>(() => (queue.value ? preorderGroups(queue.value) : []));
-  // Aparelhos na rua (maquininha): o quadro responde "onde está" sem abrir card.
+  // Maquininhas na rua: o quadro responde "onde está" sem abrir card.
   const equipmentAvailable = computed(() => queue.value?.equipment_available ?? []);
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
 
@@ -244,7 +250,9 @@ export function useOrdersBoard() {
     let flip = false;
     titleTimer = setInterval(() => {
       flip = !flip;
-      document.title = flip ? `● Pedido para tratar${ref_ ? ` ${ref_}` : ""}` : baseTitle;
+      document.title = flip
+        ? windowTitle(appName, `● Pedido para tratar${ref_ ? ` ${ref_}` : ""}`)
+        : baseTitle;
     }, 1_500);
   }
 

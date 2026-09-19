@@ -93,10 +93,14 @@ def _normalize_result(raw_result: Any, *, backend: str) -> NotificationResult:
         error = str(raw_result.get("error") or "").strip() or None
         if success:
             return NotificationResult(success=True, message_id=message_id)
+        retry_after = raw_result.get("retry_after_seconds")
         return NotificationResult(
             success=False,
             error=error or f"Adapter {backend} returned an unsuccessful result",
             outcome_unknown=raw_result.get("outcome_unknown") is True,
+            retry_after_seconds=(
+                retry_after if isinstance(retry_after, int) and not isinstance(retry_after, bool) and retry_after > 0 else None
+            ),
         )
     return NotificationResult(
         success=False,

@@ -327,10 +327,15 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     tenders = [
         tender for tender in (payment.get("tenders") or []) if isinstance(tender, dict) and tender.get("amount_q")
     ]
+    # ⚠️ Venda COD: o dinheiro ainda não entrou. A linha do tender saía igual à
+    # de uma venda paga, com "Recebido"/"Troco" e "Obrigado pela preferência!"
+    # — um recibo dizendo que o cliente pagou o que ele ainda vai pagar na
+    # porta. O papel afirma a pendência até o acerto (``cod_settled_at``).
+    cod_pending = _cod_pending(payment, tenders)
     if tenders:
         for tender in tenders:
             out += _pair(
-                payment_method_label(str(tender.get("method") or ""))[: COLUMNS // 2],
+                _tender_label(tender, pending=cod_pending)[: COLUMNS // 2],
                 f"R$ {format_money(int(tender.get('amount_q') or 0))}",
             )
     elif payment.get("method"):
@@ -340,17 +345,48 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
         )
     tendered_q = payment.get("tendered_q")
     change_q = payment.get("change_q")
-    if isinstance(tendered_q, int) and tendered_q > 0:
-        out += _pair("Recebido", f"R$ {format_money(tendered_q)}")
-    if isinstance(change_q, int) and change_q > 0:
-        out += _pair("Troco", f"R$ {format_money(change_q)}")
+    if not cod_pending:
+        if isinstance(tendered_q, int) and tendered_q > 0:
+            out += _pair("Recebido", f"R$ {format_money(tendered_q)}")
+        if isinstance(change_q, int) and change_q > 0:
+            out += _pair("Troco", f"R$ {format_money(change_q)}")
     out += _rule()
 
-    out += _centered("Obrigado pela preferência!")
+    if cod_pending:
+        from shopman.shop.services.order_helpers import get_fulfillment_type
+
+        out += _centered("*** PAGAMENTO PENDENTE ***")
+        out += _centered("COBRAR NA ENTREGA" if get_fulfillment_type(order) == "delivery" else "COBRAR NA RETIRADA")
+    else:
+        out += _centered("Obrigado pela preferência!")
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial
     return bytes(out)
+
+
+def _cod_pending(payment: dict, tenders: list[dict]) -> bool:
+    """Algum tender é cobrança NA PORTA e o acerto ainda não aconteceu?
+
+    O carimbo do acerto é ``payment.cod_settled_at``
+    (``operator_orders.settle_delivery_cash``). Sem tender gravado, vale a
+    marca do pagamento inteiro (``payment.collection``).
+    """
+    if payment.get("cod_settled_at"):
+        return False
+    if tenders:
+        return any(str(t.get("collection") or "").strip().lower() == "on_delivery" for t in tenders)
+    return str(payment.get("collection") or "").strip().lower() == "on_delivery"
+
+
+def _tender_label(tender: dict, *, pending: bool) -> str:
+    """A linha do tender; a parcela da porta ganha "(pendente)" enquanto o acerto não vem."""
+    from shopman.backstage.presentation.status import payment_method_label
+
+    label = payment_method_label(str(tender.get("method") or ""))
+    if pending and str(tender.get("collection") or "").strip().lower() == "on_delivery":
+        return f"{label} (pendente)"
+    return label
 
 
 def _commitment_headline(order) -> tuple[str, str]:
@@ -405,7 +441,7 @@ def _headline_name(name: str, width: int) -> str:
 
 
 def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint: bool = False) -> bytes:
-    """Filipeta do pedido REMOTO — o comprovante que vai para o painel físico.
+    """Ficha do pedido REMOTO — o papel que vai para o painel físico.
 
     Irmã do :func:`sale_receipt`, e o parentesco para aí: o recibo é a projeção
     do que já foi VENDIDO e PAGO; a filipeta sai ANTES do pagamento, para
@@ -435,7 +471,9 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
     out += _centered((shop_name or "NELSON BOULANGERIE").upper())
-    out += _centered("Comprovante de pedido")
+    # "Ficha do pedido", nunca "comprovante": o papel que diz no rodapé que não
+    # comprova pagamento não pode se apresentar como comprovante no topo.
+    out += _centered("Ficha do pedido")
     if reprint:
         # Mesma regra do recibo e da DANFE: sem a marca, dois papéis idênticos
         # circulam e a segunda via passa por original. Num painel de parede isso

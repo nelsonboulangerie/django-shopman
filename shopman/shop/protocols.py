@@ -44,6 +44,9 @@ class NotificationResult:
     message_id: str | None = None
     error: str | None = None
     outcome_unknown: bool = False
+    #: Nada saiu e o provedor só pode ser chamado de novo depois deste prazo (ex.: o
+    #: assinante já tem uma mensagem com flow assentando no ManyChat).
+    retry_after_seconds: int | None = None
 
 
 # ── Pricing (inline — era shopman.pricing.protocols) ──

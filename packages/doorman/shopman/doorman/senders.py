@@ -2,6 +2,16 @@
 Senders for delivering verification codes.
 
 Protocol-based for extensibility.
+
+⚠️ Todo sender declara ``reveals_code``. Não é metadado decorativo: é o que a
+trava de produção (``apps.py``) consulta para recusar o boot. Um sender que
+REVELA o código — imprime, loga, devolve na resposta — entrega para quem tem
+acesso ao processo, não para o cliente, e não pode rodar fora de DEBUG.
+
+A trava perguntava pelo NOME (``== "…ConsoleSender"``) e por isso conhecia só um
+dos dois irmãos: o ``LogSender``, que loga o código em claro exatamente do mesmo
+jeito, passava batido — e é justamente ele que os dois specs da DO declaram.
+Nome exato não é capability; ``reveals_code`` é.
 """
 
 import logging
@@ -12,6 +22,11 @@ logger = logging.getLogger("shopman.doorman.senders")
 
 class MessageSenderProtocol(Protocol):
     """Protocol that senders must implement."""
+
+    #: O código fica legível para quem tem acesso ao processo (stdout, log,
+    #: resposta HTTP) em vez de ir para o cliente? Senders de desenvolvimento
+    #: declaram ``True`` e a trava de produção os recusa.
+    reveals_code: bool
 
     def send_code(self, target: str, code: str, method: str) -> bool:
         """
@@ -28,8 +43,30 @@ class MessageSenderProtocol(Protocol):
         ...
 
 
+def sender_reveals_code(dotted_path: str) -> bool:
+    """O sender apontado por ``dotted_path`` revela o código em vez de entregá-lo?
+
+    Sender de fora deste módulo que não declara nada conta como entregador de
+    verdade — a trava existe para pegar os dublês da casa, não para exigir que
+    todo provedor externo conheça um atributo nosso.
+    """
+    from django.utils.module_loading import import_string
+
+    try:
+        sender_class = import_string(dotted_path)
+    except ImportError:
+        # Um caminho que não importa derruba o boot mais adiante, com mensagem
+        # própria. Aqui a resposta honesta é "não sei", e não-sei não é motivo
+        # para recusar.
+        logger.warning("MESSAGE_SENDER_CLASS não importa: %s", dotted_path)
+        return False
+    return bool(getattr(sender_class, "reveals_code", False))
+
+
 class ConsoleSender:
     """Sender for development - prints to console."""
+
+    reveals_code = True
 
     def send_code(self, target: str, code: str, method: str) -> bool:
         print(f"\n{'='*50}")
@@ -45,6 +82,8 @@ class ConsoleSender:
 class LogSender:
     """Sender that only logs - for testing."""
 
+    reveals_code = True
+
     def send_code(self, target: str, code: str, method: str) -> bool:
         logger.info(f"Code for {target} via {method}: {code}")
         return True
@@ -52,6 +91,8 @@ class LogSender:
 
 class WhatsAppCloudAPISender:
     """Sender via WhatsApp Cloud API."""
+
+    reveals_code = False
 
     def __init__(self):
         from .conf import doorman_settings
@@ -113,6 +154,10 @@ class SMSSender:
     Implement with your SMS provider (Twilio, AWS SNS, etc.)
     """
 
+    # Não entrega nada, mas também não revela: devolve False e a cadeia tenta o
+    # próximo. Falha fechado.
+    reveals_code = False
+
     def send_code(self, target: str, code: str, method: str) -> bool:
         logger.warning("SMS sender not implemented — configure a real sender for %s", method)
         return False
@@ -125,6 +170,8 @@ class EmailSender:
     Uses Django templates for email body (D1) and gettext for subject.
     Uses Django's DEFAULT_FROM_EMAIL setting for the sender address.
     """
+
+    reveals_code = False
 
     def send_code(self, target: str, code: str, method: str) -> bool:
         from django.core.mail import EmailMultiAlternatives

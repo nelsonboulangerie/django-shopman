@@ -26,6 +26,9 @@ const stubs = {
   },
 };
 
+const timersActive = ref(0);
+const timersRinging = ref(0);
+
 function press(
   key: string,
   overrides: KeyboardEventInit = {},
@@ -49,7 +52,13 @@ beforeEach(() => {
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
   vi.stubGlobal("useRoute", () => ({ path: "/plan" }));
   vi.stubGlobal("navigateTo", navigateSpy);
+  vi.stubGlobal("useFloorTimers", () => ({
+    activeCount: computed(() => timersActive.value),
+    ringingCount: computed(() => timersRinging.value),
+  }));
   navigateSpy.mockClear();
+  timersActive.value = 0;
+  timersRinging.value = 0;
   wrapper = mount(ProductionHeader, {
     props: { title: "Planejamento" },
     global: { stubs },
@@ -110,5 +119,31 @@ describe("ProductionHeader — atalhos descobríveis", () => {
     press("#", { altKey: true, code: "Digit3" });
 
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});
+
+// O botão de timers LEVA à página /timers (o diálogo morreu em 18/09/2026);
+// o que o cabeçalho ainda prova é o contador e o link.
+describe("ProductionHeader — timers da bancada", () => {
+  it("o botão Timers mostra os ativos depois de montar e leva a /timers", async () => {
+    timersActive.value = 2;
+    wrapper?.unmount();
+    wrapper = mount(ProductionHeader, {
+      props: { title: "Produção" },
+      global: { stubs },
+      attachTo: document.body,
+    });
+    await nextTick();
+
+    const link = wrapper.find('a[aria-label="Timers (2 ativos)"]');
+    expect(link.exists()).toBe(true);
+    expect(link.attributes("href")).toBe("/timers");
+    expect(link.text()).toContain("2");
+  });
+
+  it("sem timer ativo não há badge — e o link continua lá", () => {
+    const link = wrapper!.find('a[aria-label="Timers (0 ativos)"]');
+    expect(link.exists()).toBe(true);
+    expect(link.text()).not.toMatch(/\d/);
   });
 });

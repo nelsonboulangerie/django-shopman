@@ -44,7 +44,7 @@ def _ticket(instance_ref: str, *, status: str = "pending") -> KDSTicket:
         session_key=SESSION_KEY,
         kds_instance=instance,
         status=status,
-        items=[{"sku": "A", "name": "Item", "qty": 1, "checked": False}],
+        items=[{"sku": "A", "name": "Item", "qty": 1}],
     )
 
 
@@ -126,7 +126,7 @@ def _ticket_for(session_key: str, *, status: str = "pending") -> KDSTicket:
         session_key=session_key,
         kds_instance=instance,
         status=status,
-        items=[{"sku": "A", "name": "Item", "qty": 1, "checked": False}],
+        items=[{"sku": "A", "name": "Item", "qty": 1}],
     )
 
 

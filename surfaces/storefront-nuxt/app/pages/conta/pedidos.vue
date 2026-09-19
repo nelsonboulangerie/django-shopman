@@ -58,6 +58,11 @@ const conflictReplaceAction = computed(() => {
   return actions.find(action => action.ref.includes('replace')) ?? actions[0] ?? null
 })
 
+// O aceite só faz sentido quando a ação oferecida de fato apaga a sacola.
+const conflictNeedsAck = computed(() => !!conflictReplaceAction.value?.ref.includes('replace'))
+const replaceAcknowledged = ref(false)
+watch(conflictRef, () => { replaceAcknowledged.value = false })
+
 function dismissConflict () {
   conflict.value = null
 }
@@ -152,10 +157,26 @@ useSeoMeta({ title: 'Pedidos' })
             <UiAlertDialogTitle>{{ conflictRef?.copy.title.title || 'Sacola já tem itens' }}</UiAlertDialogTitle>
             <UiAlertDialogDescription>{{ conflictRef?.copy.message.message || conflictRef?.detail }}</UiAlertDialogDescription>
           </UiAlertDialogHeader>
+          <!-- Substituir apaga a sacola que o cliente montou, e isso não se desfaz:
+               a consequência é nomeada e o aceite é explícito. As duas chaves já
+               existiam no registro e não chegavam à tela. -->
+          <UiField v-if="conflictNeedsAck" orientation="horizontal">
+            <UiFieldContent>
+              <UiFieldLabel for="reorder-replace-ack">
+                {{ conflictRef?.copy.replace_ack_label?.message || 'Entendo que os itens atuais serão removidos.' }}
+              </UiFieldLabel>
+              <UiFieldDescription>{{ conflictRef?.copy.replace_help?.message }}</UiFieldDescription>
+            </UiFieldContent>
+            <UiCheckbox id="reorder-replace-ack" v-model="replaceAcknowledged" />
+          </UiField>
           <UiAlertDialogFooter>
-            <UiAlertDialogCancel>Cancelar</UiAlertDialogCancel>
-            <UiAlertDialogAction v-if="conflictReplaceAction" @click="performAction(conflictReplaceAction)">
-              Substituir
+            <UiAlertDialogCancel>{{ conflictRef?.copy.cancel_label?.title || 'Manter minha sacola' }}</UiAlertDialogCancel>
+            <UiAlertDialogAction
+              v-if="conflictReplaceAction"
+              :disabled="conflictNeedsAck && !replaceAcknowledged"
+              @click="performAction(conflictReplaceAction)"
+            >
+              {{ conflictReplaceAction.label }}
             </UiAlertDialogAction>
           </UiAlertDialogFooter>
         </UiAlertDialogContent>

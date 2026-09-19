@@ -2,6 +2,10 @@
 
 from django.contrib import admin
 from django.utils.html import format_html
+from shopman.guestman.admin_privacy import (
+    CustomerOwnedPrivacyFenceAdminMixin,
+    PrivacyReadOnlyAdminMixin,
+)
 from shopman.guestman.contrib.loyalty.models import LoyaltyAccount, LoyaltyTransaction
 
 
@@ -19,7 +23,7 @@ class LoyaltyTransactionInline(admin.TabularInline):
 
 
 @admin.register(LoyaltyAccount)
-class LoyaltyAccountAdmin(admin.ModelAdmin):
+class LoyaltyAccountAdmin(CustomerOwnedPrivacyFenceAdminMixin, admin.ModelAdmin):
     list_display = [
         "customer_link",
         "points_balance",
@@ -76,7 +80,7 @@ class LoyaltyAccountAdmin(admin.ModelAdmin):
 
 
 @admin.register(LoyaltyTransaction)
-class LoyaltyTransactionAdmin(admin.ModelAdmin):
+class LoyaltyTransactionAdmin(PrivacyReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = [
         "created_at",
         "customer_ref",
@@ -98,12 +102,6 @@ class LoyaltyTransactionAdmin(admin.ModelAdmin):
         "created_by",
     ]
     date_hierarchy = "created_at"
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
     def customer_ref(self, obj):
         return obj.account.customer.ref

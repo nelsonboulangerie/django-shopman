@@ -7,4 +7,4 @@ from django.utils.translation import gettext_lazy as _
 class OffermanImportExportConfig(AppConfig):
     name = "shopman.offerman.contrib.import_export"
     label = "offerman_import_export"
-    verbose_name = _("Offerman Import/Export")
+    verbose_name = _("Importação e exportação do catálogo")

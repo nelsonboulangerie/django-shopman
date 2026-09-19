@@ -21,7 +21,22 @@ import {
   preserveMarketingReceipt,
   restoreMarketingReceipt,
 } from "~/utils/marketingReceipt";
-import { marketingLoadError } from "~/presentation/marketingResult";
+import {
+  announcementDispatchNotice,
+  decisionOutcomeNotice,
+  deliverySettled,
+  marketingLoadError,
+  DELIVERY_TRACKING_POLICY,
+} from "~/presentation/marketingResult";
+// Um dono só para "WhatsApp fala com pessoa, o resto é mural": o card da revisão e a
+// caixa de confirmação já liam daqui, e escrever a regra pela terceira vez seria pedir
+// que as três envelhecessem separadas.
+import {
+  includesDirectMessage,
+  includesPublicPost,
+  outgoingImageUrl,
+} from "~/presentation/marketingDelivery";
+import { scheduleSummary } from "~/utils/marketingSchedule";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -33,13 +48,13 @@ const [legacyRequest, resultRequest] = await Promise.all([
     quiet_hours_suspended_for_local_simulation: boolean;
   }>(() => `/api/v1/backstage/marketing/announcements/${pk.value}/`, {
     key: () => `announcement-${pk.value}`,
-    onResponseError: operatorSessionOnError,
+    onResponseError: marketingSessionOnError,
   }),
   useFetch<MarketingEnvelopeV2>(
     () => `/api/v1/backstage/marketing/v2/announcements/${pk.value}/`,
     {
       key: () => `announcement-result-v2-${pk.value}`,
-      onResponseError: operatorSessionOnError,
+      onResponseError: marketingSessionOnError,
     },
   ),
 ]);
@@ -50,7 +65,9 @@ const {
   pending: resultPending,
   error: resultError,
 } = resultRequest;
-const { platforms, shopTimezone: optionsTimezone } = useCampaigns();
+const { platforms, products, shopTimezone: optionsTimezone } = useCampaigns();
+// Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
+const { platforms: platformReadiness } = usePlatforms();
 
 const announcement = computed(() => data.value?.announcement);
 const shopTimezone = computed(
@@ -92,9 +109,113 @@ const confirmingReject = ref(false);
 const rejectReason = ref("");
 const approvalKeys = new Map<string, string>();
 const draftOwner = useMarketingDraftOwner();
+// Foco explícito: esta tela não é uma sequência de blocos, mas o estado que nasce de
+// uma decisão precisa chegar aos olhos de quem estava rolando no meio da página.
+const { reveal } = useNextFocus();
 
 onMounted(() => {
   currentReceipt.value = restoreMarketingReceipt(pk.value);
+});
+
+/**
+ * Chegou por um disparo? O `dispatch` na query diz isso — e só isso. Os números vêm do
+ * comprovante e das plataformas do próprio anúncio, nunca da URL.
+ */
+const dispatchNotice = computed(() => {
+  const mode = route.query.dispatch;
+  if (mode !== "new" && mode !== "replayed") return null;
+  const rawCount = displayedReceipt.value?.outcome.audience_count;
+  return announcementDispatchNotice({
+    platforms: announcement.value?.platforms ?? [],
+    audienceCount:
+      typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : 0,
+    replayed: mode === "replayed",
+  });
+});
+
+const OUTCOME_TONE_CLASS = {
+  ok: "border-emerald-500/40 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300",
+  attention: "border-warning/40 bg-warning/5 text-warning",
+  danger: "border-destructive/40 bg-destructive/5 text-destructive",
+  quiet: "border-border bg-muted/40 text-foreground",
+} as const;
+
+/**
+ * O que a última decisão causou — estado, não toast.
+ *
+ * O toast some enquanto a entrega ainda está acontecendo, e foi isso que deixou o
+ * gestor sem saber se disparou. Esta faixa fica.
+ */
+const decisionOutcome = ref<{
+  action: "approve" | "reject";
+  publishMode?: PublishMode;
+  platforms: string[];
+  scheduledFor: string;
+} | null>(null);
+const decisionNotice = computed(() => {
+  const outcome = decisionOutcome.value;
+  if (!outcome) return null;
+  return decisionOutcomeNotice({
+    action: outcome.action,
+    publishMode: outcome.publishMode,
+    includesDirectMessage: includesDirectMessage(outcome.platforms),
+    includesPublicPost: includesPublicPost(outcome.platforms),
+    scheduledSummary: outcome.scheduledFor
+      ? scheduleSummary(outcome.scheduledFor, shopTimezone.value)
+      : "",
+    // O mesmo estado que encerra o acompanhamento é o que deixa a faixa trocar o
+    // gerúndio pelo particípio. Enquanto não assentar, "Enviado" seria mentira.
+    settled: deliverySettled(resultAnnouncement.value?.delivery),
+  });
+});
+
+/**
+ * Acompanhamento da entrega — não há canal SSE de marketing, e abrir um é WP próprio.
+ *
+ * A directive roda depois da decisão: no instante do refresh o resultado ainda é
+ * indefinido, e foi esse vazio que o gestor leu como "não aconteceu nada". Então a tela
+ * pergunta de novo, com espera crescente, até o estado assentar — e PARA. Se o teto
+ * chegar sem resposta, a tela diz isso e oferece o gesto; sucesso não se infere.
+ */
+class DeliveryNotSettled extends Error {}
+
+const trackingDelivery = ref(false);
+const trackingExhausted = ref(false);
+let trackingToken = 0;
+
+async function trackDeliveryUntilSettled() {
+  const token = ++trackingToken;
+  trackingDelivery.value = true;
+  trackingExhausted.value = false;
+  try {
+    await retryWithBackoff(
+      async () => {
+        if (token !== trackingToken) return;
+        await refreshResult();
+        if (!deliverySettled(resultAnnouncement.value?.delivery)) {
+          throw new DeliveryNotSettled();
+        }
+      },
+      {
+        ...DELIVERY_TRACKING_POLICY,
+        // Só "ainda não assentou" merece nova pergunta. Falha de rede sai pelo teto,
+        // que já termina dizendo que não sabemos — nunca dizendo que deu certo.
+        shouldRetry: (error) =>
+          error instanceof DeliveryNotSettled && token === trackingToken,
+        // Um navegador, um gestor: jitter aqui só atrasaria a resposta.
+        jitter: () => 0,
+      },
+    );
+  } catch {
+    if (token === trackingToken) trackingExhausted.value = true;
+  } finally {
+    if (token === trackingToken) trackingDelivery.value = false;
+  }
+}
+
+// Desmontou a tela, acabou o acompanhamento: nada fica batendo no servidor.
+onBeforeUnmount(() => {
+  trackingToken += 1;
 });
 
 async function refreshAll() {
@@ -155,12 +276,18 @@ async function finishDecision(
   publishMode?: PublishMode,
 ) {
   rememberReceipt(response);
+  decisionOutcome.value = {
+    action,
+    publishMode,
+    platforms: response.announcement.platforms ?? [],
+    scheduledFor: response.announcement.scheduled_for || "",
+  };
   useSonner.success(
     action === "reject"
       ? "Anúncio recusado."
       : publishMode === "scheduled"
         ? "Anúncio agendado."
-        : "Anúncio preparado para publicação.",
+        : "Entrega autorizada agora.",
   );
   clearBrowserMarketingDraft({
     owner: draftOwner.value,
@@ -169,6 +296,15 @@ async function finishDecision(
   // Stay on the exact resource: the receipt and per-platform result are the
   // useful completion state, not a toast followed by a generic board.
   await refreshAll();
+  await nextTick();
+  reveal("decision-outcome");
+  // Entrega imediata é a única que ainda vai mexer sozinha; agendada e recusa já
+  // assentaram, e perguntar de novo seria ruído. Sem `await`: o acompanhamento leva
+  // dezenas de segundos, e prender o diálogo e o card nesse tempo seria trocar um
+  // silêncio por uma trava.
+  if (action === "approve" && publishMode !== "scheduled") {
+    void trackDeliveryUntilSettled();
+  }
 }
 
 async function confirmServerDecision(value: {
@@ -225,7 +361,7 @@ async function resumeServerDecision() {
   }
 }
 
-useHead({ title: "Anúncio · Marketing" });
+useHead({ title: "Anúncio" });
 </script>
 
 <template>
@@ -237,8 +373,7 @@ useHead({ title: "Anúncio · Marketing" });
     >
       <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        O rascunho e a intenção foram preservados. Retome para receber uma nova
-        conferência do servidor.
+        Seu texto e sua escolha estão guardados. Retome para confirmar de novo.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
         <UiButton
@@ -274,6 +409,51 @@ useHead({ title: "Anúncio · Marketing" });
       Voltar ao painel
     </NuxtLink>
 
+    <!-- O que a decisão causou, em estado. Fica na tela; o toast só acompanha. -->
+    <section
+      v-if="decisionNotice"
+      data-focus-target="decision-outcome"
+      tabindex="-1"
+      class="mb-4 scroll-mt-4 rounded-md border p-4 outline-none"
+      :class="OUTCOME_TONE_CLASS[decisionNotice.tone]"
+      role="status"
+      aria-labelledby="decision-outcome-title"
+    >
+      <div class="flex items-start gap-2.5">
+        <Icon :name="decisionNotice.icon" class="mt-0.5 size-5 shrink-0" />
+        <div class="min-w-0">
+          <h2 id="decision-outcome-title" class="font-semibold">
+            {{ decisionNotice.title }}
+          </h2>
+          <p class="mt-1 text-sm opacity-90">{{ decisionNotice.detail }}</p>
+          <p
+            v-if="trackingDelivery"
+            class="mt-2 flex items-center gap-1.5 text-sm opacity-90"
+          >
+            <Icon
+              name="lucide:loader-circle"
+              class="size-4 shrink-0 animate-spin"
+            />
+            Acompanhando a entrega…
+          </p>
+          <template v-else-if="trackingExhausted">
+            <p class="mt-2 text-sm opacity-90">
+              Ainda não sabemos se foi disparado. Provavelmente é a fila.
+            </p>
+            <UiButton
+              type="button"
+              variant="outline"
+              class="mt-2"
+              @click="trackDeliveryUntilSettled"
+            >
+              <Icon name="lucide:refresh-cw" class="size-4" />
+              Atualizar
+            </UiButton>
+          </template>
+        </div>
+      </div>
+    </section>
+
     <div
       v-if="pending && !announcement"
       class="h-64 animate-pulse rounded-md bg-muted"
@@ -298,7 +478,7 @@ useHead({ title: "Anúncio · Marketing" });
         @click="refreshAll"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar novamente
+        Tentar de novo
       </UiButton>
       <NuxtLink
         v-else
@@ -330,9 +510,30 @@ useHead({ title: "Anúncio · Marketing" });
         class="scroll-mt-4"
         aria-label="Revisão do anúncio"
       >
+        <!-- Quem veio do disparo precisa saber por que está aqui — e que nada saiu. -->
+        <div
+          v-if="dispatchNotice"
+          class="mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+          role="status"
+        >
+          <Icon
+            name="lucide:badge-check"
+            class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+          />
+          <div class="min-w-0">
+            <p class="font-medium">{{ dispatchNotice.title }}</p>
+            <p class="text-muted-foreground">{{ dispatchNotice.detail }}</p>
+            <p v-if="dispatchNotice.replayNote" class="text-muted-foreground">
+              {{ dispatchNotice.replayNote }}
+            </p>
+          </div>
+        </div>
+
         <AnnouncementCard
           :announcement="announcement"
           :platform-options="platforms"
+          :platform-readiness="platformReadiness"
+          :product-options="products"
           :busy="busy"
           :draft-owner="draftOwner"
           :shop-timezone="shopTimezone"
@@ -397,8 +598,7 @@ useHead({ title: "Anúncio · Marketing" });
           O conteúdo abriu, mas o resultado de entrega não.
         </p>
         <p class="mt-1 text-muted-foreground">
-          Não vamos inferir sucesso enquanto o registro de entrega não
-          responder. O comprovante preservado continua abaixo quando existir.
+          Ainda não sabemos o que foi disparado. O comprovante continua abaixo.
         </p>
         <UiButton
           type="button"
@@ -406,7 +606,7 @@ useHead({ title: "Anúncio · Marketing" });
           class="mt-2"
           @click="refreshResult()"
         >
-          Tentar carregar o resultado
+          Tentar de novo
         </UiButton>
       </div>
       <AnnouncementResultPanel
@@ -477,6 +677,8 @@ useHead({ title: "Anúncio · Marketing" });
       :busy="confirmingDecision"
       :error="decisionError"
       :shop-timezone="shopTimezone"
+      :image-url="announcement ? outgoingImageUrl(announcement) : ''"
+      :platform-content="announcement?.platform_content || {}"
       @confirm="confirmServerDecision"
       @cancel="cancelServerDecision"
     />

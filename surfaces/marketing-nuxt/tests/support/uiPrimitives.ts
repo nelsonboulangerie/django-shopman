@@ -1,6 +1,17 @@
 import { config } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
 
+// Os primitivos de ESCOLHA entram de verdade, não como stub: eles vivem no
+// operator-kit e são SFC puro (nenhum runtime Nuxt, só o `Icon`, que cada teste já
+// stuba). Stub de checkbox/rádio/select seria justamente o lugar onde o contrato
+// que interessa — `aria-checked`, `mixed`, teclado — deixaria de ser testado aqui.
+import UiCheckbox from "../../../operator-kit/app/components/UiCheckbox.vue";
+import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
+import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
+import UiSelect from "../../../operator-kit/app/components/UiSelect.vue";
+import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
+import UiToggleChip from "../../../operator-kit/app/components/UiToggleChip.vue";
+
 function invoke(listener: unknown, event: Event) {
   if (Array.isArray(listener)) {
     for (const candidate of listener) invoke(candidate, event);
@@ -81,6 +92,12 @@ const UiTextarea = defineComponent({
 config.global.components = {
   ...config.global.components,
   UiButton,
+  UiCheckbox,
   UiInput,
+  UiRadio,
+  UiRadioGroup,
+  UiSelect,
+  UiSwitch,
   UiTextarea,
+  UiToggleChip,
 };

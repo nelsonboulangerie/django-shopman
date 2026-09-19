@@ -1,15 +1,64 @@
+import { OPERATOR_APPS, operatorShortcutIconSrc } from "../../../operator-kit/appIdentity";
+import {
+  crossAppLinkAttrs,
+  EXTERNAL_LINK_ATTRS,
+  type CrossAppLinkAttrs,
+} from "../../../operator-kit/app/presentation/appLaunch";
 import type { HubTileProjection } from "~/types/hub";
 
-// Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
+// Presentation pura do Shopman Apps — sem estado, sem Nuxt; testável isolada.
+
+/**
+ * O nome do app, UMA vez.
+ *
+ * O nome do launcher esteve escrito em três lugares com três grafias, e nada travava a
+ * divergência. Agora a tela inteira o lê daqui, e daqui ele sai do `app-identity.json` —
+ * a mesma fonte do manifesto, da barra de título e do ícone. O lado Django repete a
+ * string por necessidade (o deploy do backend não empacota `surfaces/`) e quem compara os
+ * dois lados é `shopman/backstage/tests/test_hub_projection_identity.py`.
+ */
+export const HUB_NAME = OPERATOR_APPS.hub.label;
 
 /** O ícone do tile vem sem prefixo do Django; o <Icon> do @nuxt/icon quer `lucide:x`. */
 export function tileIcon(icon: string): string {
   return icon.startsWith("lucide:") ? icon : `lucide:${icon}`;
 }
 
-/** Launch (superfície de operador) fica na mesma aba; external (loja do cliente) abre em nova. */
-export function tileTarget(tile: Pick<HubTileProjection, "kind">): "_self" | "_blank" {
-  return tile.kind === "external" ? "_blank" : "_self";
+/**
+ * O ícone REAL do app: o PNG da família PWA que cada superfície publica em
+ * `/pwa/pwa-192x192.png` (ver operator-kit/PWA_ICONS.md). O Shopman Apps não copia o
+ * arquivo — aponta para a origem do próprio tile, então ícone e app nunca divergem.
+ * A Loja (`external`) também publica a família. Devolve `null` para URL que não se
+ * resolve; a tela cai no Lucide (`tileIcon`).
+ */
+export const PWA_ICON_PATH = operatorShortcutIconSrc();
+
+export function tileIconUrl(tile: Pick<HubTileProjection, "url" | "kind">): string | null {
+  try {
+    return new URL(PWA_ICON_PATH, tile.url).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Como o tile abre.
+ *
+ * `external` (a loja do cliente) sempre em outra janela. `launch` (superfície de
+ * operador) depende de o Shopman Apps estar INSTALADO: como app, cada superfície tem janela
+ * própria e é lá que ela deve abrir — abrir dentro da janela do Shopman Apps produz a tarja
+ * de "saiu do app" e mantém o título e a cor do Shopman Apps na barra. Como aba de
+ * navegador, segue na mesma aba, que é o que se espera de um navegador.
+ *
+ * A regra mora no kit (`presentation/appLaunch.ts`), porque o caminho de volta — o
+ * ícone do Shopman Apps no rail de cada app — é exatamente o mesmo problema.
+ */
+export function tileLinkAttrs(
+  tile: Pick<HubTileProjection, "kind" | "url">,
+  context: { installed: boolean; currentOrigin: string },
+): CrossAppLinkAttrs {
+  if (tile.kind === "external") return EXTERNAL_LINK_ATTRS;
+  return crossAppLinkAttrs({ installed: context.installed, href: tile.url, currentOrigin: context.currentOrigin });
 }
 
 /** Grade vazia = operador autenticado sem nenhum app liberado (estado acolhedor). */
@@ -20,17 +69,17 @@ export function hubIsEmpty(tiles: HubTileProjection[]): boolean {
 /** Saudação sóbria (sem hora do dia — o operador entra em qualquer turno). */
 export function hubGreeting(operatorName: string): string {
   const name = (operatorName || "").trim();
-  return name ? `Olá, ${name}` : "Central de Apps";
+  return name ? `Olá, ${name}` : HUB_NAME;
 }
 
-// ── Por que a Central falhou, e o que isso pede da tela ──────────────────────
+// ── Por que o Shopman Apps falhou, e o que isso pede da tela ──────────────────────
 //
-// ⚠️ `useFetch` popula `error` em qualquer não-2xx, e a Central reduzia CINCO causas
+// ⚠️ `useFetch` popula `error` em qualquer não-2xx, e o Shopman Apps reduzia CINCO causas
 // distintas a um booleano que subia o formulário de senha. No balcão isso significa:
 // API fora do ar → formulário de senha; deploy em andamento → formulário de senha;
 // estação travada → formulário de SENHA, num balcão onde a credencial é PIN ou crachá.
 //
-// O código da recusa já chega no payload (`error.code`); a Central simplesmente não o
+// O código da recusa já chega no payload (`error.code`); o Shopman Apps simplesmente não o
 // lia. Classificar é ler o que o servidor já diz.
 
 export type HubFailure = "none" | "login" | "station" | "forbidden" | "unavailable";
@@ -77,13 +126,13 @@ export function hubFailureCopy(failure: HubFailure): { title: string; hint: stri
       };
     case "forbidden":
       return {
-        title: "Você não tem acesso à Central",
+        title: `Você não tem acesso ao ${HUB_NAME}`,
         hint: "Fale com o gerente para liberar os aplicativos do seu turno.",
         retry: false,
       };
     case "unavailable":
       return {
-        title: "Central indisponível",
+        title: `${HUB_NAME} indisponível`,
         hint: "Pode ser a rede ou uma atualização em andamento. Tente de novo em instantes.",
         retry: true,
       };

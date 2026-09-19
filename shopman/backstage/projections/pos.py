@@ -393,6 +393,11 @@ class POSProjection:
     # (`business_calendar`), dois momentos.
     delivery_today: str = ""
     delivery_slots_today: tuple[dict, ...] = ()
+    # A grade de ENCOMENDA (outro dia): os slots canônicos da casa, cada um
+    # ``{ref, label, starts_at}``. A tela precisa da lista para resolver um
+    # ``slot-09`` gravado num pedido cuja data virou hoje — a grade de hoje é
+    # de meias horas e não o conhece.
+    delivery_slots_canonical: tuple[dict, ...] = ()
     operators: tuple[dict, ...] = ()
     # Quem pode AUTORIZAR exceção (sangria, desconto acima do teto). Conjunto
     # diferente de `operators`: operar o PDV e assinar uma exceção são duas
@@ -409,6 +414,11 @@ class POSProjection:
     # Como ESTE balcão abre a gaveta. Vai para a superfície porque quem alcança
     # o agente na loopback é o navegador do balcão, não o servidor.
     cash_drawer: dict = field(default_factory=dict)
+    # Como ESTE balcão IMPRIME. Capacidade separada da gaveta, e é preciso que
+    # seja: o Admin liga impressora e gaveta de forma independente, e enquanto
+    # o PDV pendurava a impressão no flag da gaveta, um balcão com impressora e
+    # gaveta de chave recusava recibo, DANFE, ficha e comprovante de caixa.
+    device_agent: dict = field(default_factory=dict)
     # Nome fantasia da loja (Shop singleton) — a tela do cliente (segundo
     # monitor do balcão) dá as boas-vindas em nome da LOJA, não do terminal.
     shop_name: str = ""
@@ -510,7 +520,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         # resolve; duas sem estação válida pedem a escolha).
         terminal = resolve_terminal(terminal_ref, strict=False)
     cash_shift = _active_cash_shift_for_terminal(terminal)
-    from shopman.backstage.services.pos_hardware import CashDrawerConfig
+    from shopman.backstage.services.pos_hardware import CashDrawerConfig, DeviceAgentConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
 
     runtime = runtime_profile(terminal)
@@ -554,12 +564,14 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),
+        delivery_slots_canonical=tuple(_delivery_slots_canonical()),
         operators=_eligible_operator_cards(),
         managers=_manager_cards(operator),
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),
         terminal_roll_width_mm=runtime.printer.roll_width_mm,
         terminal_roll_margin_mm=runtime.printer.margin_mm,
         cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
+        device_agent=DeviceAgentConfig.from_terminal(terminal).surface_payload(),
         shop_name=_shop_name(),
     )
 
@@ -614,6 +626,20 @@ def _delivery_slots_today() -> list[dict]:
     from shopman.shop.services import business_calendar
 
     return business_calendar.delivery_slots_for(_delivery_today())
+
+
+def _delivery_slots_canonical() -> list[dict]:
+    """Os slots canônicos da casa, no formato que a tela consome: ``{ref, label, starts_at}``."""
+    from shopman.shop.services.fulfillment_window import canonical_slots
+
+    return [
+        {
+            "ref": str(slot.get("ref") or ""),
+            "label": str(slot.get("label") or "").strip() or str(slot.get("ref") or ""),
+            "starts_at": str(slot.get("starts_at") or ""),
+        }
+        for slot in canonical_slots()
+    ]
 
 
 def _eligible_operator_cards() -> tuple[dict, ...]:
@@ -1773,6 +1799,10 @@ def _checkout_contract(
             "fiscal_message": fiscal_message,
             # O toggle 'Nota fiscal' só aparece com adapter configurado E flag da loja on.
             "supports_fiscal_document": _supports_fiscal_document(),
+            # "Pedir papel já pede a nota — imprime sozinha assim que autorizar"
+            # só é verdade com o resolver de comprovante na env do deployment.
+            # A tela pergunta aqui, nunca ao default do código.
+            "receipt_requests_emission": _receipt_requests_emission(),
             "delivery_minimum_q": delivery_minimum_q,
             "delivery_minimum_display": f"R$ {format_money(delivery_minimum_q)}" if delivery_minimum_q else "",
             "requires_manager_approval_above_q": _discount_approval_threshold_q(),
@@ -2279,6 +2309,13 @@ def _pos_fiscal_toggle_enabled() -> bool:
     return fiscal_toggle_enabled()
 
 
+def _receipt_requests_emission() -> bool:
+    """Pedir o comprovante (papel/e-mail) emite a NFC-e? Quem responde é o resolver da env."""
+    from shopman.shop.services.fiscal import receipt_request_emits
+
+    return receipt_request_emits()
+
+
 def _supports_fiscal_document() -> bool:
     """O toggle 'Nota fiscal' deve aparecer no PDV? Adapter fiscal configurado E flag da
     loja ligado. Sem adapter OU flag desligado → recurso não aparece."""
@@ -2687,7 +2724,7 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     sales = []
     for order in orders:
         data = order.data or {}
-        fiscal_status, fiscal_label, fiscal_links = _fiscal_status(order)
+        fiscal_status, fiscal_label, fiscal_state, fiscal_links = _fiscal_status(order)
         payment = data.get("payment") or {}
         methods = [
             str(t.get("method") or "")
@@ -2704,6 +2741,9 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             "customer_name": str((data.get("customer") or {}).get("name") or ""),
             "fiscal_status": fiscal_status,
             "fiscal_label": fiscal_label,
+            # O MESMO vocabulário da resposta do fechamento e da pill do Gestor
+            # (``fiscal_service.FISCAL_STATES``).
+            "fiscal_state": fiscal_state,
             "fiscal_links": list(fiscal_links),
             "nfce_number": str(data.get("nfce_number") or ""),
             "email_sent": bool(data.get("nfce_email_sent_at")),

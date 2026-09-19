@@ -3,6 +3,7 @@
 from decimal import Decimal
 from typing import Any
 
+from django.db import transaction
 from shopman.guestman.contrib.preferences.models import CustomerPreference, PreferenceType
 from shopman.guestman.models import Customer
 
@@ -72,20 +73,23 @@ class PreferenceService:
         Raises:
             Customer.DoesNotExist: If customer not found
         """
-        customer = Customer.objects.get(ref=customer_ref, is_active=True)
-
-        pref, _ = CustomerPreference.objects.update_or_create(
-            customer=customer,
-            category=category,
-            key=key,
-            defaults={
-                "value": value,
-                "preference_type": preference_type,
-                "confidence": confidence,
-                "source": source,
-            },
-        )
-        return pref
+        with transaction.atomic():
+            customer = Customer.objects.select_for_update().get(
+                ref=customer_ref,
+                is_active=True,
+            )
+            pref, _ = CustomerPreference.objects.update_or_create(
+                customer=customer,
+                category=category,
+                key=key,
+                defaults={
+                    "value": value,
+                    "preference_type": preference_type,
+                    "confidence": confidence,
+                    "source": source,
+                },
+            )
+            return pref
 
     @classmethod
     def get_preferences(
@@ -143,13 +147,19 @@ class PreferenceService:
         Returns:
             True if deleted, False if not found
         """
-        deleted, _ = CustomerPreference.objects.filter(
-            customer__ref=customer_ref,
-            customer__is_active=True,
-            category=category,
-            key=key,
-        ).delete()
-        return deleted > 0
+        with transaction.atomic():
+            customer = Customer.objects.select_for_update().filter(
+                ref=customer_ref,
+                is_active=True,
+            ).first()
+            if customer is None:
+                return False
+            deleted, _ = CustomerPreference.objects.filter(
+                customer=customer,
+                category=category,
+                key=key,
+            ).delete()
+            return deleted > 0
 
     @classmethod
     def get_restrictions(cls, customer_ref: str) -> list[CustomerPreference]:

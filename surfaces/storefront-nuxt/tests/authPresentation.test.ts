@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  LOGIN_ADULT_DECLARATION,
+  LOGIN_ADULT_DECLARATION_LEAD,
+  LOGIN_TERMS_LINK_LABEL,
   RESEND_COOLDOWN_MS,
   accessLinkLanding,
   authErrorView,
   authStep,
   codeSentPrefix,
   otpValidUntilDisplay,
+  isMarketingPromptRouteExcluded,
   resendCooldown,
   welcomeNameValue
 } from '../app/presentation/auth'
@@ -122,4 +126,42 @@ describe('accessLinkLanding', () => {
   it('does not re-wrap a destination that is already the login screen', () => {
     expect(accessLinkLanding('/entrar?welcome=1&next=%2Ffinalizar', true)).toBe('/entrar?welcome=1&next=%2Ffinalizar')
   })
+})
+
+// ── A declaração de maioridade, feita ao ENTRAR ────────────────────────────
+//
+// Decisão do dono (16/09): pedir data de nascimento para receber novidades é
+// atrito demais. A prova de maioridade é a declaração feita ao entrar, e a
+// frase é fixa — o servidor carimba a versão que a representa.
+
+describe('LOGIN_ADULT_DECLARATION', () => {
+  it('is exactly the sentence the server version stands for', () => {
+    expect(LOGIN_ADULT_DECLARATION).toBe('Ao continuar, você confirma que é maior de idade e aceita os Termos de uso.')
+    expect(`${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_TERMS_LINK_LABEL}.`).toBe(LOGIN_ADULT_DECLARATION)
+  })
+
+  it('never says "18", "anos" or "adulto" to the customer', () => {
+    expect(LOGIN_ADULT_DECLARATION).not.toMatch(/18|anos|adult/i)
+  })
+})
+
+// ── O convite de novidades não é passo do login ────────────────────────────
+//
+// Ele sobe como sheet na página de destino e nunca interrompe o que a pessoa
+// veio fazer: fora das portas de entrada, do checkout e do pedido.
+
+describe('isMarketingPromptRouteExcluded', () => {
+  it.each(['/entrar', '/entrar/', '/a', '/a/', '/finalizar', '/finalizar/endereco', '/pedido/NB-123', '/pedido/NB-123/pagamento'])(
+    'keeps the sheet away from %s',
+    path => {
+      expect(isMarketingPromptRouteExcluded(path)).toBe(true)
+    }
+  )
+
+  it.each(['/', '/menu', '/sacola', '/conta', '/conta/preferencias', '/produto/croissant', '/pedidos'])(
+    'lets it open on %s',
+    path => {
+      expect(isMarketingPromptRouteExcluded(path)).toBe(false)
+    }
+  )
 })

@@ -355,6 +355,10 @@ export interface OmotenashiProjection {
   customer_name: string | null
   is_birthday: boolean
   audience: 'anon' | 'new' | 'returning' | 'vip'
+  // A pergunta de novidades ainda não foi respondida (anônimo: sempre false).
+  // Chega em toda visita — é daqui que o sheet de novidades sabe se sobe para
+  // quem entra pelo aparelho reconhecido, sem passar pelo login.
+  marketing_prompt_pending: boolean
 }
 
 export interface ShopStatusProjection {
@@ -451,6 +455,79 @@ export interface FAQItemProjection {
   answer: string
 }
 
+// ── Identidade pública do site (GET /api/v1/storefront/site/) ────────────────
+// O que o Google, o WhatsApp e os verificadores de domínio leem: título e
+// descrição por página, imagem de compartilhamento, códigos de verificação e o
+// estabelecimento (LocalBusiness). Qualquer string pode vir vazia, `geo` e
+// `founding_year` podem vir nulos e listas podem vir vazias.
+export interface SitePageSeoProjection {
+  title: string
+  description: string
+}
+
+export interface SitePagesProjection {
+  home: SitePageSeoProjection
+  menu: SitePageSeoProjection
+  faq: SitePageSeoProjection
+}
+
+export interface SiteVerificationsProjection {
+  google: string
+  bing: string
+  facebook: string
+  pinterest: string
+}
+
+export interface SiteAddressProjection {
+  street: string
+  neighborhood: string
+  locality: string
+  region: string
+  postal_code: string
+  country_code: string
+}
+
+export interface SiteGeoProjection {
+  latitude: number
+  longitude: number
+}
+
+export interface SiteOpeningHoursProjection {
+  days: string[]
+  opens: string
+  closes: string
+}
+
+export interface SiteBusinessProjection {
+  type: string
+  name: string
+  legal_name: string
+  description: string
+  url: string
+  telephone: string
+  email: string
+  logo_url: string
+  price_range: string
+  founding_year: number | null
+  address: SiteAddressProjection
+  geo: SiteGeoProjection | null
+  opening_hours: SiteOpeningHoursProjection[]
+  maps_url: string
+  same_as: string[]
+}
+
+export interface SiteProjection {
+  pages: SitePagesProjection
+  share_image_url: string
+  verifications: SiteVerificationsProjection
+  business: SiteBusinessProjection
+  faq: FAQItemProjection[]
+}
+
+export interface SiteResponse {
+  site: SiteProjection
+}
+
 export interface AuthCopyProjection {
   phone_heading: CopyEntryProjection
   phone_subtitle: CopyEntryProjection
@@ -532,6 +609,9 @@ export interface AuthSessionResponse {
   customer_phone: string
   customer_email: string
   requires_welcome?: boolean
+  // O gate de boas-vindas abre por duas perguntas independentes; a tela mostra só o que falta.
+  welcome_asks_name?: boolean
+  welcome_asks_marketing?: boolean
   welcome_suggested_name?: string
 }
 
@@ -1138,6 +1218,16 @@ export interface AccountDeviceCopy {
 export interface AccountDeviceResponse {
   devices: AccountDeviceProjection[]
   copy: AccountDeviceCopy
+  privacy_requests_available?: boolean
+}
+
+// POST/DELETE /api/v1/account/favorites/<sku>/. `is_notify_subscribed` é o sino
+// DEPOIS do gesto; `stock_alert_noted` diz se este favorito criou o aviso.
+export interface FavoriteToggleResponse {
+  ok: boolean
+  is_favorite: boolean
+  is_notify_subscribed: boolean
+  stock_alert_noted: boolean
 }
 
 export interface FavoritesResponse {

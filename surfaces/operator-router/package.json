@@ -1,0 +1,14 @@
+{
+  "name": "@shopman/operator-router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Launcher + roteador por Host dos grupos de apps Nuxt de operador (operator-floor, operator-office). Zero dependências: só a biblioteca padrão do Node.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test --test-reporter=spec \"test/*.test.mjs\""
+  }
+}

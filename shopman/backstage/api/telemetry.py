@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import re
 import time
 import uuid
 from typing import Any
@@ -98,6 +99,62 @@ class ClientErrorView(APIView):
                 message,
                 extra={"client_report": report},
             )
+        return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)
+
+
+_PWA_APPS = frozenset({"pos", "kds", "production", "orders", "hub", "marketing", "purchase", "bi"})
+_PWA_TRIGGERS = frozenset({"prompt", "idle"})
+# Versão do build: sha curto do App Platform (`SOURCE_VERSION`) ou "local" no dev.
+_PWA_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$")
+
+
+def sanitize_pwa_update(payload: Any) -> dict[str, str]:
+    """Aceita UMA troca de versão de app instalado, sem dimensão livre."""
+
+    if not isinstance(payload, dict):
+        return {}
+    app = payload.get("app")
+    trigger = payload.get("trigger")
+    if app not in _PWA_APPS or trigger not in _PWA_TRIGGERS:
+        return {}
+    report = {"app": app, "trigger": trigger}
+    for field in ("from_version", "to_version"):
+        value = payload.get(field)
+        # Versão ausente é fato comum (marca escrita por um bundle sem SOURCE_VERSION);
+        # versão FORA do formato é entrada arbitrária e não entra no log.
+        if isinstance(value, str) and _PWA_VERSION.match(value):
+            report[field] = value
+    return report
+
+
+@method_decorator(
+    ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"
+)
+class ClientPwaUpdateView(APIView):
+    """POST /api/v1/backstage/client-pwa-update/ — o app instalado trocou de versão.
+
+    O relato chega no boot seguinte à troca: o `updateServiceWorker(true)` termina em
+    reload, e nada que fique na memória sobrevive para contar o que aconteceu. Por isso
+    o instante do log É o instante da troca, a menos de um boot de Nuxt.
+
+    Sem autenticação e rate-limited por IP, pelo mesmo motivo do ``ClientErrorView``: o
+    POST sai de uma página que acabou de nascer, antes de a sessão de operador ter sido
+    reconferida — e exigir sessão trocaria a prova por um silêncio. O payload é
+    fechado em dimensão (app e gatilho de conjunto finito, versão com formato), então
+    não há o que um terceiro enfie aqui além de ruído contado pelo limite.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(tags=["telemetry"], summary="Report an operator PWA version swap")
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        report = sanitize_pwa_update(request.data if hasattr(request, "data") else {})
+        if report:
+            operational_event("pwa.update_applied", **report)
         return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)
 
 

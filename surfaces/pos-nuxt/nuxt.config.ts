@@ -45,24 +45,23 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: true,
       kiosk: false,
+      // SÓ a tela de venda, e mesmo nela só com o balcão vazio: as razões de espera
+      // (`useOperatorReloadHold` em `pages/index.vue`) barram carrinho, comanda,
+      // pagamento e resultado na tela. `/session` fica de fora porque a contagem de
+      // fechamento é digitada e não está salva; `/tickets`, porque a seleção de fichas
+      // para impressão é rascunho.
+      //
+      // ⚠️ `/display` fica de fora pelo motivo mais forte de todos: `skipWaiting` vale
+      // para a ORIGEM inteira, e toda janela que viu o worker em espera recarrega
+      // junto (o vite-plugin-pwa registra `controlling` → reload em cada uma). A tela
+      // do cliente ninguém toca, então ela seria considerada ociosa SEMPRE — e quem
+      // recarregaria no meio da venda seria o PDV, não ela.
+      idleReloadPaths: ["/"],
       push: { surfaceRef: "pos", categories: ["order", "system"] },
-      manifest: {
-        name: "Shopman PDV",
-        shortName: "PDV",
-        description: "Ponto de venda da Nelson Boulangerie.",
-        themeColor: "#FCF6F1",
-        backgroundColor: "#FCF6F1",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Venda", shortName: "Venda", url: "/", icon: "/pwa/pwa-192x192.png" },
-          { name: "Caixa", shortName: "Caixa", url: "/session", icon: "/pwa/pwa-192x192.png" },
-        ],
-      },
+      shortcuts: [
+        { name: "Venda", shortName: "Venda", url: "/" },
+        { name: "Caixa", shortName: "Caixa", url: "/session" },
+      ],
     }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
@@ -99,6 +98,12 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
+    // LIGHT-first — o PDV é superfície de balcão, em ambiente claro e virada para o
+    // cliente, como o Gestor e ao contrário do KDS (escuro, fundo de casa). Sem esta
+    // declaração ele seguia o tema do SISTEMA: um Mac no escuro abria o caixa escuro,
+    // e o comentário do KDS já descrevia o PDV como claro. O escuro segue no toggle.
+    preference: 'light',
+    fallback: 'light',
     storageKey: 'pos-nuxt-color-mode',
     classSuffix: ''
   },
@@ -121,7 +126,9 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman POS",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "robots", content: "noindex, nofollow" },

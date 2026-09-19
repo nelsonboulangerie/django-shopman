@@ -278,10 +278,12 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("Imediata");
     expect(wrapper.text()).toContain("Estado da entrega");
     expect(wrapper.text()).toContain("Próxima ação");
-    expect(wrapper.text()).toContain("Tentar novamente 1 falha");
+    expect(wrapper.text()).toContain("Tentar de novo 1 falha");
     expect(wrapper.text()).toContain("Fuso e horário permitido");
     expect(wrapper.text()).toContain("Horário de São Paulo");
-    expect(wrapper.text()).toContain("WhatsApp respeita o silêncio 20:00–08:00");
+    expect(wrapper.text()).toContain(
+      "WhatsApp respeita o silêncio 20:00–08:00",
+    );
     expect(wrapper.text()).toContain("Validade");
     expect(wrapper.text()).toContain("Este anúncio não expira antes do envio");
     expect(wrapper.text()).toContain("concluído");
@@ -321,8 +323,49 @@ describe("AnnouncementResultPanel", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("Ensaio local: silêncio 20:00–08:00 suspenso");
+    expect(wrapper.text()).toContain(
+      "Ensaio local: silêncio 20:00–08:00 suspenso",
+    );
     expect(wrapper.text()).toContain("sem efeito externo");
+  });
+
+  it("diz que a aprovação foi ensaio e que o mínimo configurado não valeu", () => {
+    const mountWith = (outcome: Record<string, unknown>) =>
+      mount(AnnouncementResultPanel, {
+        props: {
+          announcement: announcement(),
+          actions: [],
+          shopTimezone: "America/Sao_Paulo",
+          receipt: {
+            ...response().receipt,
+            kind: "approve",
+            outcome: {
+              audience_count: 1,
+              effective_at: "2026-09-09T09:01:00-03:00",
+              platforms: ["whatsapp"],
+              publish_mode: "now",
+              ...outcome,
+            },
+          },
+        },
+        global: {
+          components: { UiVerificationCodeInput: VerificationCodeInput },
+          stubs: {
+            Icon: true,
+            UiDialog: DialogStub,
+            UiDialogContent: SlotStub,
+            UiDialogHeader: SlotStub,
+            UiDialogTitle: SlotStub,
+            UiDialogDescription: SlotStub,
+            UiDialogFooter: SlotStub,
+          },
+        },
+      });
+
+    expect(mountWith({ canary: true, minimum_count: 3 }).text()).toContain(
+      "Ensaio: o mínimo de 3 não vale; só a lista de canário recebe.",
+    );
+    expect(mountWith({ minimum_count: 3 }).text()).not.toContain("Ensaio:");
   });
 
   it("explains a rejected decision without suggesting a delivery or cancellation", () => {
@@ -389,7 +432,7 @@ describe("AnnouncementResultPanel", () => {
     const wrapper = panel();
     const actionButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Tentar novamente 1 falha"))!;
+      .find((button) => button.text().includes("Tentar de novo 1 falha"))!;
 
     await Promise.all([
       actionButton.trigger("click"),
@@ -398,9 +441,12 @@ describe("AnnouncementResultPanel", () => {
     await flushPromises();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain("PUBLICAR 1");
-    expect(wrapper.text()).toContain("Destinos elegíveis");
-    expect(wrapper.text()).toContain("1 destino");
-    expect(wrapper.text()).toContain("Plataformas afetadas");
+    // ⚠️ Este é o diálogo onde o gestor autoriza REENVIO, e ele contava um número só
+    // chamado "destinos": ali a diferença entre 37 pessoas e um mural repetido 37
+    // vezes é a diferença entre um disparo e um acidente.
+    expect(wrapper.text()).toContain("O que isto alcança");
+    expect(wrapper.text()).toContain("WhatsApp · 1 pessoa");
+    expect(wrapper.text()).not.toMatch(/Destinos elegíveis|Plataformas afetadas/);
     expect(
       (wrapper.find("#recovery-username").element as HTMLInputElement).value,
     ).toBe("admin");
@@ -444,14 +490,16 @@ describe("AnnouncementResultPanel", () => {
     const wrapper = panel({ actions: [reconcileAction()] });
     const actionButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Consultar 1 resultado incerto"))!;
+      .find((button) =>
+        button.text().includes("Consultar 1 resultado incerto"),
+      )!;
 
     await actionButton.trigger("click");
     await flushPromises();
 
     expect(wrapper.text()).toContain("Somente consulta — nada será reenviado");
     expect(wrapper.text()).toContain("O sistema apenas pergunta ao provedor");
-    expect(wrapper.text()).toContain("Plataformas afetadas");
+    expect(wrapper.text()).toContain("O que isto alcança");
     expect(wrapper.text()).toContain("WhatsApp");
     expect(wrapper.text()).toContain("Código de 6 dígitos do autenticador");
     const confirmButton = wrapper

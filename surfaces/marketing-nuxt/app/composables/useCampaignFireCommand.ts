@@ -157,6 +157,13 @@ export function useCampaignFireCommand() {
         });
       }
       pendingCommand.value = { ...intent, challenge };
+      // `none` é o servidor dizendo que este comando não tem consequência externa e
+      // que o toque anterior já foi a decisão. O token continua sendo emitido e
+      // consumido — ele ancora versão, permissão e congelamento —, mas interromper o
+      // gestor com uma caixa que só repete o que a tela dele já mostra é pedir uma
+      // decisão que ele acabou de tomar. Quem escolhe a política continua sendo o
+      // servidor; o navegador só obedece ao modo que recebeu.
+      if (challenge.mode === "none") return await confirm({});
       return null;
     }
   }

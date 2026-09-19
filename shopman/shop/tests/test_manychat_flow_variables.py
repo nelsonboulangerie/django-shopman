@@ -8,8 +8,9 @@ chegou" saía com o nome do produto em branco, nos dois caminhos que usam flow (
 estoque e anúncio de campanha). Nada falhava; a mensagem só chegava incompleta.
 
 The low-level sequence remains covered for transactional templates. Marketing flows
-are now blocked before this sequence until G-H03 proves subscriber-state isolation;
-that negative contract lives in ``test_manychat_marketing_safety.py``.
+pass through the WhatsApp mode (``blocked``/``canary``/``open``) and every flow send
+reserves the subscriber first; those contracts live in
+``test_manychat_marketing_safety.py`` and ``test_manychat_flow_isolation.py``.
 """
 
 from __future__ import annotations

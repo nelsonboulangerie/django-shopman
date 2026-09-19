@@ -3,6 +3,7 @@
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
+from shopman.guestman.admin_privacy import CustomerOwnedPrivacyFenceAdminMixin
 from shopman.guestman.contrib.consent.models import CommunicationConsent
 from shopman.utils import unfold_badge
 from unfold.admin import ModelAdmin
@@ -12,7 +13,7 @@ _STATUS_COLORS = {"opted_in": "green", "opted_out": "red", "pending": "yellow"}
 
 
 @admin.register(CommunicationConsent)
-class CommunicationConsentAdmin(ModelAdmin):
+class CommunicationConsentAdmin(CustomerOwnedPrivacyFenceAdminMixin, ModelAdmin):
     list_display = [
         "customer_link",
         "channel",

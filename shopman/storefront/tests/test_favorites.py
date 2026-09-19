@@ -16,6 +16,14 @@ pytestmark = pytest.mark.django_db
 REF = "CUST-FAV-1"
 
 
+@pytest.fixture(autouse=True)
+def _canonical_favorite_customer():
+    Customer.objects.get_or_create(
+        ref=REF,
+        defaults={"first_name": "Cliente", "phone": "+5543999990099"},
+    )
+
+
 # ── service ─────────────────────────────────────────────────────────
 
 

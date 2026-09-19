@@ -929,33 +929,53 @@
     "OperationalCountersProjectionV2": {
       "additionalProperties": false,
       "properties": {
-        "accepted_unconfirmed_targets_today": {
-          "title": "Accepted Unconfirmed Targets Today",
+        "accepted_unconfirmed_people_today": {
+          "title": "Accepted Unconfirmed People Today",
           "type": "integer"
         },
-        "confirmed_targets_today": {
-          "title": "Confirmed Targets Today",
+        "accepted_unconfirmed_posts_today": {
+          "title": "Accepted Unconfirmed Posts Today",
           "type": "integer"
         },
-        "failed_final_targets_today": {
-          "title": "Failed Final Targets Today",
+        "confirmed_people_today": {
+          "title": "Confirmed People Today",
+          "type": "integer"
+        },
+        "confirmed_posts_today": {
+          "title": "Confirmed Posts Today",
+          "type": "integer"
+        },
+        "failed_final_people_today": {
+          "title": "Failed Final People Today",
+          "type": "integer"
+        },
+        "failed_final_posts_today": {
+          "title": "Failed Final Posts Today",
           "type": "integer"
         },
         "pending_decision_count": {
           "title": "Pending Decision Count",
           "type": "integer"
         },
-        "unknown_targets_open": {
-          "title": "Unknown Targets Open",
+        "unknown_people_open": {
+          "title": "Unknown People Open",
+          "type": "integer"
+        },
+        "unknown_posts_open": {
+          "title": "Unknown Posts Open",
           "type": "integer"
         }
       },
       "required": [
         "pending_decision_count",
-        "accepted_unconfirmed_targets_today",
-        "confirmed_targets_today",
-        "failed_final_targets_today",
-        "unknown_targets_open"
+        "confirmed_people_today",
+        "confirmed_posts_today",
+        "accepted_unconfirmed_people_today",
+        "accepted_unconfirmed_posts_today",
+        "failed_final_people_today",
+        "failed_final_posts_today",
+        "unknown_people_open",
+        "unknown_posts_open"
       ],
       "title": "OperationalCountersProjectionV2",
       "type": "object"

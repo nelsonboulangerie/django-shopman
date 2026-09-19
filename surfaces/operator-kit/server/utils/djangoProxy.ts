@@ -50,6 +50,10 @@ export function isSafeDjangoLocation(location: string): boolean {
   return location.startsWith("/")
     && !location.startsWith("//")
     && !location.includes("\\")
+    // Casar caractere de controle É o ponto: CR/LF/NUL num Location refletido pelo
+    // Django viram response splitting. A regra supõe que control char em regex é engano
+    // de digitação; aqui é a defesa, não o descuido.
+    // eslint-disable-next-line no-control-regex
     && !/[\x00-\x1F\x7F]/.test(location);
 }
 
@@ -201,6 +205,17 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   // pelo cliente entra à esquerda e não desloca a contagem.
   const forwardedFor = getRequestHeader(event, "x-forwarded-for");
   if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
+
+  // Só repassar não basta: este BFF chama o `api.` pela rede pública, e a borda
+  // de lá acrescenta o IP de SAÍDA deste processo à direita. Contando da
+  // direita, o Django gravava esse IP (igual para todo operador) na trilha de
+  // acesso e no aviso "Sua conta foi usada". O segredo autoriza o Django a ler
+  // um salto a mais — e só a quem o tem, senão qualquer cliente direto escolheria
+  // o IP que fica gravado. Vem da config do servidor (NUXT_DJANGO_PROXY_SECRET),
+  // nunca de cabeçalho do navegador; vazio = desligado, e o app que não recebe a
+  // env continua exatamente como antes.
+  const proxySecret = String(config.djangoProxySecret || "");
+  if (proxySecret) headers["x-shopman-proxy-secret"] = proxySecret;
 
   if (isUnsafeMethod) {
     headers.origin = djangoOrigin;

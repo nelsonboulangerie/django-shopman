@@ -15,15 +15,19 @@ Covers (SPEC-004 acceptance criteria):
 from __future__ import annotations
 
 import json
+from io import StringIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.core.management import call_command
 from django.test import override_settings
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.contrib.manychat.resolver import (
     ManychatSubscriberResolver,
     _custom_field_name_by_id,
+    _ProviderCreateOutcome,
+    _ProviderLookupOutcome,
 )
 from shopman.guestman.models import Customer
 
@@ -406,6 +410,103 @@ class TestResolveByPhone:
             "field_name": "w18335622_whatsapp_id",
             "field_value": "5543984049009",
         }
+
+    @override_settings(MANYCHAT_API_TOKEN="test-token")
+    def test_create_error_without_subscriber_id_leaves_privacy_pending(
+        self,
+        customer_without_manychat,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            ManychatSubscriberResolver,
+            "_lookup_by_whatsapp_id_custom_field_api",
+            classmethod(lambda cls, phone: None),
+        )
+        monkeypatch.setattr(
+            ManychatSubscriberResolver,
+            "_lookup_by_phone_api",
+            classmethod(lambda cls, phone: None),
+        )
+        monkeypatch.setattr(
+            ManychatSubscriberResolver,
+            "_create_whatsapp_subscriber_outcome",
+            classmethod(lambda cls, phone: _ProviderCreateOutcome()),
+        )
+
+        assert ManychatSubscriberResolver.resolve(customer_without_manychat.phone) is None
+        customer_without_manychat.refresh_from_db()
+        assert customer_without_manychat.metadata["manychat_resolution_pending"] is True
+
+    @override_settings(MANYCHAT_API_TOKEN="test-token")
+    def test_reconcile_uncertain_keeps_privacy_fence(
+        self,
+        customer_without_manychat,
+        monkeypatch,
+    ):
+        Customer.objects.filter(pk=customer_without_manychat.pk).update(
+            metadata={"manychat_resolution_pending": True},
+        )
+        monkeypatch.setattr(
+            ManychatSubscriberResolver,
+            "_lookup_by_phone_api_outcome",
+            classmethod(lambda cls, phone: _ProviderLookupOutcome()),
+        )
+
+        assert (
+            ManychatSubscriberResolver.reconcile_pending(customer_without_manychat.pk)
+            == "uncertain"
+        )
+        customer_without_manychat.refresh_from_db()
+        assert customer_without_manychat.metadata["manychat_resolution_pending"] is True
+
+    @override_settings(MANYCHAT_API_TOKEN="test-token")
+    def test_reconcile_confirmed_link_materializes_identifier(
+        self,
+        customer_without_manychat,
+        monkeypatch,
+    ):
+        Customer.objects.filter(pk=customer_without_manychat.pk).update(
+            metadata={"manychat_resolution_pending": True},
+        )
+        monkeypatch.setattr(
+            ManychatSubscriberResolver,
+            "_lookup_by_phone_api_outcome",
+            classmethod(
+                lambda cls, phone: _ProviderLookupOutcome(subscriber_id=321654987)
+            ),
+        )
+
+        assert (
+            ManychatSubscriberResolver.reconcile_pending(customer_without_manychat.pk)
+            == "linked"
+        )
+        customer_without_manychat.refresh_from_db()
+        assert "manychat_resolution_pending" not in customer_without_manychat.metadata
+        assert CustomerIdentifier.objects.filter(
+            customer=customer_without_manychat,
+            identifier_type=IdentifierType.MANYCHAT,
+            identifier_value="321654987",
+        ).exists()
+
+    def test_reconcile_command_reports_confirmed_absence(
+        self,
+        customer_without_manychat,
+        monkeypatch,
+    ):
+        output = StringIO()
+        monkeypatch.setattr(
+            ManychatSubscriberResolver,
+            "reconcile_pending",
+            classmethod(lambda cls, customer_pk: "absent"),
+        )
+
+        call_command(
+            "reconcile_manychat_privacy",
+            customer_ref=customer_without_manychat.ref,
+            stdout=output,
+        )
+
+        assert "Ausência confirmada" in output.getvalue()
 
 
 # ═══════════════════════════════════════════════════════════════════

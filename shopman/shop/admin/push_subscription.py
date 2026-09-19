@@ -1,4 +1,4 @@
-"""Admin somente leitura para aparelhos inscritos em Web Push."""
+"""Admin somente leitura para dispositivos inscritos em Web Push."""
 
 import hashlib
 

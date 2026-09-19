@@ -18,6 +18,14 @@ class ShopAppearance(Shop):
         verbose_name_plural = "Marca e aparência"
 
 
+class ShopSearch(Shop):
+    class Meta:
+        proxy = True
+        app_label = "shop"
+        verbose_name = "Busca e compartilhamento"
+        verbose_name_plural = "Busca e compartilhamento"
+
+
 class ShopOperation(Shop):
     class Meta:
         proxy = True

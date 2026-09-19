@@ -207,7 +207,7 @@ def create(
     if price_tier_ref:
         try:
             price_tier = PriceTier.objects.get(ref=price_tier_ref)
-        except PriceTier.DoesNotExist:
+        except PriceTier.DoesNotExist:  # silêncio-deliberado: tier opcional inválido mantém cadastro sem tier
             pass
 
     with transaction.atomic():
@@ -245,21 +245,27 @@ UPDATABLE_FIELDS = {
 
 def update(ref: str, **fields) -> Customer | None:
     """Update customer fields (only whitelisted fields are accepted)."""
-    cust = get(ref)
-    if not cust:
-        return None
+    with transaction.atomic():
+        cust = (
+            Customer.objects.select_for_update(of=("self",))
+            .select_related("price_tier")
+            .filter(ref=ref, is_active=True)
+            .first()
+        )
+        if not cust:
+            return None
 
-    changes = {}
-    for key, value in fields.items():
-        if key not in UPDATABLE_FIELDS:
-            continue
-        if hasattr(cust, key):
-            old_value = getattr(cust, key)
-            if old_value != value:
-                changes[key] = {"old": old_value, "new": value}
-            setattr(cust, key, value)
+        changes = {}
+        for key, value in fields.items():
+            if key not in UPDATABLE_FIELDS:
+                continue
+            if hasattr(cust, key):
+                old_value = getattr(cust, key)
+                if old_value != value:
+                    changes[key] = {"old": old_value, "new": value}
+                setattr(cust, key, value)
 
-    cust.save()
+        cust.save()
     if changes:
         customer_updated.send(sender=Customer, customer=cust, changes=changes)
     return cust
@@ -276,16 +282,20 @@ def purge_pii(customer) -> None:
     Pré-condição: o chamador já limpou phone/email do Customer e salvou, para que
     o _sync_contact_points do save() não recrie um ContactPoint a partir deles.
     """
+    failures: list[str] = []
+
     # ContactPoints — fonte de verdade de telefone/e-mail.
     try:
         customer.contact_points.all().delete()
     except Exception:
+        failures.append("contact_points")
         logger.warning("purge_pii: contact_points delete falhou customer=%s", customer.ref, exc_info=True)
 
     # Identifiers (contrib) — subscriber Manychat/Instagram.
     try:
         customer.identifiers.all().delete()
     except Exception:
+        failures.append("identifiers")
         logger.warning("purge_pii: identifiers delete falhou customer=%s", customer.ref, exc_info=True)
 
     # ExternalIdentity (core) — mapeamento provider→customer legado.
@@ -294,8 +304,11 @@ def purge_pii(customer) -> None:
 
         ExternalIdentity.objects.filter(customer=customer).delete()
     except Exception:
+        failures.append("external_identities")
         logger.warning("purge_pii: external_identity delete falhou customer=%s", customer.ref, exc_info=True)
 
     customer.document = ""
     customer.metadata = {}
     customer.save(update_fields=["document", "metadata", "updated_at"])
+    if failures:
+        raise RuntimeError("PII não removido de: " + ", ".join(failures))

@@ -33,5 +33,6 @@ useCustomerDisplayPublisher(snapshot);
 </script>
 
 <template>
-  <!-- Renderless: só publica. -->
+  <!-- Renderless: só publica. O slot vazio é o que o linter aceita como raiz. -->
+  <slot />
 </template>

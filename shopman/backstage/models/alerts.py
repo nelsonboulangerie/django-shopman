@@ -110,6 +110,10 @@ class OperatorAlert(models.Model):
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
         ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
         ("fiscal_partial_return", "Devolução parcial com NFC-e em pé"),
+        # A mercadoria SAIU (despacho ou conclusão) com a nota ainda na fila ou
+        # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
+        # barrar é do dono.
+        ("fiscal_handoff_without_nfce", "Pedido saiu sem NFC-e autorizada"),
         # O desconto de pontos já entrou no total e a baixa no saldo não passou:
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
@@ -144,6 +148,11 @@ class OperatorAlert(models.Model):
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
+        # Os apps de operação leem a memória e a CPU do próprio contêiner e
+        # reportam ao Django; acima do limite crítico do Admin por mais que a
+        # duração mínima, o serviço está no limite e as telas vão engasgar no
+        # movimento. O sistema resolve sozinho quando o uso volta a ficar folgado.
+        ("operator_capacity_critical", "Apps de operação no limite da capacidade"),
         ("low_rating", "Avaliação baixa recebida"),
         ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),

@@ -82,16 +82,16 @@ def mint_handoff_link(
 def token_source(token_str: str) -> str:
     """A ORIGEM do token (`manychat` | `internal` | `api`), lida antes do resgate.
 
-    ⚠️ É esta a distinção que autoriza confiar no aparelho, e ela é semântica, não técnica:
+    ⚠️ É esta a distinção que autoriza confiar no dispositivo, e ela é semântica, não técnica:
 
     - `manychat` — o link nasceu porque a pessoa MANDOU mensagem no WhatsApp. Enviar de um
       número prova posse dele, e é a mesma prova que o OTP dá (o código também chega naquele
-      número). Então confiar no aparelho aqui é coerente com o que já fazemos no login.
+      número). Então confiar no dispositivo aqui é coerente com o que já fazemos no login.
     - `internal` — nós empurramos o link (campanha). Prova que sabemos o número, não que
       quem tocou é a dona: mensagem se encaminha.
 
     Sem isto, ou nenhuma confirmação valeria para sempre (pedágio semanal), ou toda campanha
-    passaria a confiar no aparelho de quem tocasse primeiro.
+    passaria a confiar no dispositivo de quem tocasse primeiro.
     """
     if not token_str:
         return ""

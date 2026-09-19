@@ -506,6 +506,59 @@
     padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
   }
 
+  /* ── Dock: o card de ação que fica preso acima da navegação ─────────────────
+   * `sticky bottom-20` NÃO cumpre isso, e a diferença só aparece rolando. Um
+   * elemento sticky gruda na base da tela apenas enquanto o CONTAINER dele
+   * cobre aquela linha; quando o container acaba, o elemento passa a acompanhar
+   * o fim do container e sobe junto. Na sacola o container termina 144px antes
+   * do fim do `<main>` (a reserva morava no `<main>`, fora do container) e o
+   * rodapé do site continua rolando por mais ~590px depois disso. Medido em
+   * 375x667, folga entre o card e a navegação ao longo da rolagem:
+   *
+   *     sticky   15px → 15px → 148px → 407px → fora da tela
+   *     fixed    15px → 15px →  15px →  15px →  15px
+   *
+   * É o "flutuando no meio da tela" — o card abandonava a base no meio do
+   * caminho. `fixed` foi conferido nos DOIS modos de rolagem da loja: o
+   * navegador (quem rola é a janela) e o PWA iOS instalado (quem rola é
+   * `.shop-scroll-viewport`, um elemento aninhado). O scroller aninhado não
+   * desloca elemento fixo, então o número é o mesmo nos dois.
+   *
+   * `calc(5rem + env(safe-area-inset-bottom))` e não `bottom-20` seco: a
+   * navegação tem `pb-[env(safe-area-inset-bottom)]`, então ela CRESCE no
+   * aparelho com recorte. Com 5rem fixo o card entraria por baixo dela em
+   * qualquer iPhone moderno. Somando a mesma medida, a folga de 15px se
+   * mantém em todo aparelho.
+   *
+   * Só abaixo de `md`: é onde existe navegação inferior. Acima disso a tela
+   * decide sozinha (a coluna do desktop leva a ação no fluxo).
+   */
+  @media (max-width: 767px) {
+    .shop-action-dock {
+      position: fixed;
+      left: 1rem;
+      right: 1rem;
+      bottom: calc(5rem + env(safe-area-inset-bottom));
+      z-index: 30;
+    }
+
+    /* Elemento fixo sai do fluxo: sem reserva, o último item da lista morre
+     * atrás do card. A conta é a própria geometria do dock — 5rem até a base
+     * + a altura do card (97px medidos na sacola, ~120px com a linha de
+     * motivo) + respiro. 14rem cobre o caso alto com folga. */
+    .shop-dock-reserve {
+      padding-bottom: calc(14rem + env(safe-area-inset-bottom));
+    }
+  }
+
+  /* O respiro lateral acompanha o do `.shop-container`, que muda em `sm`. */
+  @media (min-width: 640px) and (max-width: 767px) {
+    .shop-action-dock {
+      left: 1.5rem;
+      right: 1.5rem;
+    }
+  }
+
   /* Fade suave do texto do hero entre slides (a imagem faz crossfade por
      opacity na própria camada empilhada — ver HomeHeroThing.vue). */
   .hero-text-enter-active {

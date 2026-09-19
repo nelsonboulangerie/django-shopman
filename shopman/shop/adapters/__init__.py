@@ -68,15 +68,20 @@ def _resolve_module(dotted_path):
     return import_module(dotted_path)
 
 
+def _shop_integrations_value(adapter_type: str):
+    """Valor bruto de ``Shop.integrations[adapter_type]``; ``None`` quando a camada não responde."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if not shop or not shop.integrations:
+        return None
+    return shop.integrations.get(adapter_type)
+
+
 def _from_shop_integrations(adapter_type: str, method=None):
     """Read adapter config from Shop.integrations (Admin-configurable, highest priority)."""
     try:
-        from shopman.shop.models import Shop
-        shop = Shop.load()
-        if not shop or not shop.integrations:
-            return None, False
-        integrations = shop.integrations
-        value = integrations.get(adapter_type)
+        value = _shop_integrations_value(adapter_type)
         if value is None:
             return None, False
         # Found a value — now resolve it
@@ -156,3 +161,30 @@ def get_adapter(adapter_type, method=None, channel=None):
         path, _ = _method_value(default, adapter_type, method)
         return _resolve_module(path)
     return _resolve_module(default)
+
+
+def configured_methods(adapter_type) -> tuple[str, ...]:
+    """Métodos com caminho declarado na camada que ``get_adapter`` consultaria.
+
+    Segue a mesma ordem de ``get_adapter`` (Shop.integrations → settings →
+    defaults) e devolve só as chaves com caminho preenchido: chave com ``None``
+    é método explicitamente desligado. Serve a quem precisa percorrer os métodos
+    ligados sem pedir, um a um, os que a configuração deixou de fora — pedir um
+    método ausente continua sendo aviso em ``get_adapter``.
+
+    Declarado não quer dizer disponível: credencial e probe de cada adapter
+    continuam sendo conferidos por quem o usa.
+    """
+    try:
+        value = _shop_integrations_value(adapter_type)
+    except Exception:
+        logger.debug("configured_methods: DB lookup failed for %s", adapter_type, exc_info=True)
+        value = None
+    if value is None:
+        settings_key = _SETTINGS_MAP.get(adapter_type)
+        value = getattr(settings, settings_key, None) if settings_key else None
+    if value is None:
+        value = _DEFAULTS.get(adapter_type)
+    if not isinstance(value, dict):
+        return ()
+    return tuple(method for method, path in value.items() if path)

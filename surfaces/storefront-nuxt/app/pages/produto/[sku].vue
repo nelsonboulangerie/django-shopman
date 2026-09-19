@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
 import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
-import { absoluteImage, breadcrumbJsonLd, jsonLdText, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
+import {
+  absoluteImage,
+  breadcrumbJsonLd,
+  jsonLdText,
+  metaDescription,
+  priceFromQ,
+  productCollectionCrumb,
+  productJsonLd
+} from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
 import { compactUnitWeightLabel } from '~/utils/display'
 
@@ -44,7 +52,14 @@ const badge = computed(() => product.value ? tileBadge(product.value) : null)
 // (AVAILABILITY-PLAN §2) e vive nas superfícies de operador.
 const unavailableReason = computed(() => {
   if (!product.value || product.value.can_add_to_cart) return ''
-  return product.value.availability_label || 'Este item não está disponível agora.'
+  return product.value.availability_label || 'Não está no cardápio de hoje.'
+})
+// Nem comprar nem avisar: o botão "Indisponível" é um botão morto, e a palavra já está
+// na etiqueta da foto. No lugar dele, uma saída de verdade — a seção de onde o item veio.
+const deadEnd = computed(() => !!product.value && !product.value.can_add_to_cart && !product.value.is_notifiable)
+const similarItemsTo = computed(() => {
+  const ref = product.value?.breadcrumb_category?.ref
+  return ref ? `/menu?secao=${encodeURIComponent(ref)}` : '/menu'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
 // Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
@@ -72,6 +87,9 @@ const nutrition = computed(() => nutritionTable(product.value?.nutrition || null
 const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
 const canonicalUrl = computed(() => `${requestUrl.origin}${route.path}`)
+// A coleção do produto entra na trilha só quando tem página própria
+// (/colecao/<ref>); nunca como `/menu#ref`, que é fragmento e não é página.
+const collectionCrumb = computed(() => productCollectionCrumb(product.value?.breadcrumb_category))
 const ogImage = computed(() => absoluteImage(requestUrl.origin, product.value?.image_url))
 const pageDescription = computed(() => metaDescription(product.value) || 'Produto')
 
@@ -113,10 +131,10 @@ useHead({
           innerHTML: jsonLdText(breadcrumbJsonLd([
             { name: 'Início', url: `${requestUrl.origin}/` },
             { name: 'Cardápio', url: `${requestUrl.origin}/menu` },
-            ...(product.value.breadcrumb_category
+            ...(collectionCrumb.value
               ? [{
-                  name: product.value.breadcrumb_category.name,
-                  url: `${requestUrl.origin}${product.value.breadcrumb_category.url}`
+                  name: collectionCrumb.value.name,
+                  url: `${requestUrl.origin}${collectionCrumb.value.path}`
                 }]
               : []),
             { name: product.value.name, url: canonicalUrl.value }
@@ -128,21 +146,21 @@ useHead({
 </script>
 
 <template>
-  <main class="pb-6 pt-0 lg:pb-8">
+  <main class="shop-dock-reserve pt-0 md:pb-6 lg:pb-8">
     <!-- Breadcrumb full-width encostando na navbar. Mobile: sem respiro (a barra
          dourada encosta direto na foto full-bleed). Desktop: respiro (lg:mb-6)
          antes do card contido, no mesmo ritmo da tela de conta. -->
     <div v-if="product" class="shop-breadcrumb-bar lg:mb-6">
       <div class="shop-container py-2">
-        <!-- A coleção do produto vem pronta em `breadcrumb_category`; a trilha
-             fixa Início/Cardápio/nome descartava esse nível e tirava do cliente
-             o caminho de volta para a categoria. -->
+        <!-- A coleção do produto vem em `breadcrumb_category`; a trilha fixa
+             Início/Cardápio/nome descartava esse nível e tirava do cliente o
+             caminho de volta para a categoria. O link é a página da coleção. -->
         <UiBreadcrumbs
           :items="[
             { label: 'Início', link: '/' },
             { label: 'Cardápio', link: '/menu' },
-            ...(product.breadcrumb_category
-              ? [{ label: product.breadcrumb_category.name, link: product.breadcrumb_category.url }]
+            ...(collectionCrumb
+              ? [{ label: collectionCrumb.name, link: collectionCrumb.path }]
               : []),
             { label: product.name }
           ]"
@@ -275,8 +293,9 @@ useHead({
 
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <p v-if="product.original_price_display" class="shop-meta line-through">
-                  {{ product.original_price_display }}
+                <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
+                <p v-if="product.original_price_display" class="shop-meta">
+                  antes <span class="line-through">{{ product.original_price_display }}</span>
                 </p>
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <p class="shop-price-strong">{{ product.price_display }}</p>
@@ -287,13 +306,14 @@ useHead({
               </div>
               <div class="hidden md:block">
                 <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" />
+                <UiButton v-else-if="deadEnd" variant="outline" :to="similarItemsTo">Ver itens parecidos</UiButton>
                 <CartQuantityAction
                   v-else
                   :meta="meta"
                   :qty="currentQty"
                   :disabled="!product.can_add_to_cart"
                   :max-qty="product.available_qty ?? product.max_qty"
-                  :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
+                  add-label="Adicionar"
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
               </div>
@@ -321,7 +341,7 @@ useHead({
                 </UiAccordionContent>
               </UiAccordionItem>
               <UiAccordionItem v-if="nutrition" value="nutrition">
-                <UiAccordionTrigger>Nutricional</UiAccordionTrigger>
+                <UiAccordionTrigger>Informação nutricional</UiAccordionTrigger>
                 <UiAccordionContent>
                   <div class="space-y-1 shop-body">
                     <p v-if="nutrition.serving" class="pb-1 shop-meta">Porção: {{ nutrition.serving }}</p>
@@ -336,11 +356,15 @@ useHead({
                         <span v-if="row.pdv != null" class="ml-2 shop-meta tabular-nums">{{ row.pdv }}% VD</span>
                       </span>
                     </div>
+                    <!-- "% VD" é sigla de rótulo de embalagem: quem não a decorou fica
+                         sem saber de que porcentagem se trata. -->
+                    <p class="pt-2 shop-meta">% VD: percentual do valor diário de referência.</p>
                   </div>
                 </UiAccordionContent>
               </UiAccordionItem>
               <UiAccordionItem v-if="product.conservation?.has_any || product.unit_weight_label || product.approx_dimensions_label" value="care">
-                <UiAccordionTrigger>Conservação</UiAccordionTrigger>
+                <!-- Peso e dimensões não são conservação: o rótulo nomeia as duas coisas. -->
+                <UiAccordionTrigger>Conservação e medidas</UiAccordionTrigger>
                 <UiAccordionContent>
                   <div class="space-y-2 shop-muted">
                     <p v-if="product.conservation?.shelf_life_label">{{ product.conservation.shelf_life_label }}</p>
@@ -368,7 +392,7 @@ useHead({
         </section>
 
         <div
-          class="sticky bottom-20 z-30 mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
+          class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
@@ -380,13 +404,14 @@ useHead({
               <p v-if="unavailableReason" class="mt-1 text-xs text-ink-foreground/70">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />
+            <UiButton v-else-if="deadEnd" variant="outline" size="sm" :to="similarItemsTo">Ver itens parecidos</UiButton>
             <CartQuantityAction
               v-else
               :meta="meta"
               :qty="currentQty"
               :disabled="!product.can_add_to_cart"
               :max-qty="product.available_qty ?? product.max_qty"
-              :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
+              add-label="Adicionar"
               tone="inverted"
             />
           </div>

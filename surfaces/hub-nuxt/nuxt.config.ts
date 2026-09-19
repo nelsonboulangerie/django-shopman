@@ -3,7 +3,7 @@ import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
-  // Central de Apps: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
+  // Shopman Apps: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
   // É o launcher pós-login — não hospeda CRUD; deep-linka pro Unfold quando preciso.
   extends: ["../operator-kit"],
 
@@ -19,7 +19,7 @@ export default defineNuxtConfig({
       // e o bundle serve o fallback 127.0.0.1 — links quebrados no ar, 28/08.
       djangoBaseUrl:
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
-      // A Central é a casa: o rail começa colapsado (o operador abre se quiser).
+      // O Shopman Apps é a casa: o rail começa colapsado (o operador abre se quiser).
       railDefaultState: "collapsed",
     },
   },
@@ -34,24 +34,11 @@ export default defineNuxtConfig({
         surfaceRef: "hub",
         categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
       },
-      manifest: {
-        name: "Shopman Central",
-        shortName: "Central",
-        description: "Central dos aplicativos de operação.",
-        themeColor: "#7C3A40",
-        backgroundColor: "#FCF6F1",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders", icon: "/pwa/pwa-192x192.png" },
-          { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos", icon: "/pwa/pwa-192x192.png" },
-          { name: "Produção", shortName: "Produção", url: "/shortcuts/production", icon: "/pwa/pwa-192x192.png" },
-        ],
-      },
+      shortcuts: [
+        { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders" },
+        { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos" },
+        { name: "Produção", shortName: "Produção", url: "/shortcuts/production" },
+      ],
     }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
@@ -81,6 +68,11 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
+    // LIGHT-first — o Shopman Apps é a casa dos apps de escritório e balcão, todos claros;
+    // só a Cozinha é escura. Sem a declaração ela seguia o tema do SISTEMA e abria de
+    // um jeito no Mac e de outro no tablet. O escuro segue no toggle do rail.
+    preference: "light",
+    fallback: "light",
     storageKey: "hub-nuxt-color-mode",
     classSuffix: "",
   },
@@ -99,10 +91,11 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Central de Apps",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#fafafa" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

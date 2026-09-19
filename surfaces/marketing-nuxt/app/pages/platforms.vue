@@ -8,9 +8,12 @@
 //
 // Plataforma ≠ canal: canal é por onde se VENDE, plataforma é por onde o anúncio SAI.
 import { platformIcon } from "~/presentation/campaign";
+import { canaryText } from "~/presentation/platformReadiness";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
+// Produtos publicáveis, para o teste de envio escolher por NOME em vez de digitar SKU.
+const { products } = useCampaigns();
 const waTemplate = useWhatsAppTemplate();
 
 // ⚠️ O detalhe abre em painel, não fica aberto na página. Com o WhatsApp expandido o tempo
@@ -85,6 +88,8 @@ async function onSendTest() {
 function summaryFor(platform: Platform): string {
   if (platform.state === "unknown") return platform.reason;
   if (platform.state === "blocked") return platform.reason;
+  if (typeof platform.canary_recipients === "number")
+    return canaryText(platform.canary_recipients);
   if (platform.limitation) return platform.limitation;
   return kindLabel(platform.kind);
 }
@@ -96,25 +101,49 @@ function kindLabel(kind: string): string {
     : "Uma postagem pública na plataforma; não envia mensagem direta.";
 }
 
-/** Bloqueio, limitação e saúde não podem parecer iguais. */
-function tone(platform: Pick<Platform, "state" | "source_status">) {
+/** Bloqueio, limitação e saúde não podem parecer iguais.
+ *
+ * ⚠️ Recebe `kind` porque o WhatsApp ENVIA mensagem e não publica nada: o carimbo do
+ * mural, colado nele, fazia o gestor ler "WhatsApp · Não publica" e concluir que o
+ * problema era de postagem, quando o que está parado são as MENSAGENS — a plataforma
+ * cuja falha custa dinheiro e cuja mensagem não se apaga. */
+function tone(
+  platform: Pick<
+    Platform,
+    "state" | "source_status" | "canary_recipients" | "reason_code" | "kind"
+  >,
+) {
   if (platform.source_status === "simulated")
     return {
       chip: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
       icon: "lucide:flask-conical",
       label: "Simulação local",
     };
+  // Desligada pela flag do ambiente é escolha de quem opera, não defeito: não
+  // pinta de vermelho como integração quebrada.
+  if (platform.reason_code === "platform_switched_off")
+    return {
+      chip: "bg-muted text-muted-foreground",
+      icon: "lucide:power-off",
+      label: "Desligada",
+    };
   if (platform.state === "blocked")
     return {
       chip: "bg-destructive/10 text-destructive",
       icon: "lucide:circle-slash",
-      label: "Não publica",
+      label: platform.kind === "direct_message" ? "Não envia" : "Não publica",
     };
   if (platform.state === "unknown")
     return {
       chip: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
       icon: "lucide:circle-help",
       label: "Não verificada",
+    };
+  if (platform.state === "degraded" && typeof platform.canary_recipients === "number")
+    return {
+      chip: "bg-warning/10 text-warning",
+      icon: "lucide:flask-conical",
+      label: "Em ensaio",
     };
   if (platform.state === "degraded")
     return {
@@ -137,6 +166,23 @@ function checkedAt(value: string): string {
   }).format(new Date(value));
 }
 
+// "Sem modelo" é a primeira opção da lista, não um cartão à parte: ela é uma
+// escolha como as outras, e separá-la só ensinava que não era.
+const templateOptions = computed(() => [
+  {
+    value: "",
+    label: "Sem modelo",
+    hint: "Texto livre — alcança só quem conversou nas últimas 24 horas.",
+  },
+  ...waTemplate.available.value.map((option) => ({
+    value: option.ns,
+    label: option.name,
+    // O `ns` não aparece na linha, mas a busca o considera: é por ele que a Meta
+    // chama o fluxo, e é ele que o gestor tem à mão quando o nome não bate.
+    keywords: option.ns,
+  })),
+]);
+
 const pendingFlowName = computed(() => {
   if (pendingFlow.value === "") return "Sem fluxo (janela de 24 horas)";
   return (
@@ -145,14 +191,14 @@ const pendingFlowName = computed(() => {
   );
 });
 
-useHead({ title: "Plataformas · Marketing" });
+useHead({ title: "Plataformas" });
 </script>
 
 <template>
   <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <h1 class="mb-1 text-lg font-semibold">Plataformas</h1>
     <p class="mb-4 text-sm text-muted-foreground">
-      Por onde o anúncio sai. Quem vende é o canal; aqui é quem fala.
+      Por onde o anúncio é disparado. Quem vende é o canal; aqui é quem fala.
     </p>
 
     <div
@@ -178,7 +224,7 @@ useHead({ title: "Plataformas · Marketing" });
             :disabled="loading"
             @click="loadPlatforms()"
           >
-            {{ loading ? "Verificando…" : "Verificar novamente" }}
+            {{ loading ? "Verificando…" : "Tentar de novo" }}
           </UiButton>
         </div>
       </div>
@@ -215,7 +261,7 @@ useHead({ title: "Plataformas · Marketing" });
         class="mt-3"
         @click="loadPlatforms()"
       >
-        Atualizar verificação
+        Atualizar
       </UiButton>
     </div>
 
@@ -274,7 +320,7 @@ useHead({ title: "Plataformas · Marketing" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{ opened?.label }}</UiSheetTitle>
           <UiSheetDescription>{{
             opened ? kindLabel(opened.kind) : ""
@@ -293,7 +339,7 @@ useHead({ title: "Plataformas · Marketing" });
               </p>
               <p class="mt-0.5">
                 {{
-                  opened.reason || opened.limitation || "Nada impede a entrega."
+                  opened.reason || opened.limitation || "Nada impede o disparo."
                 }}
               </p>
             </div>
@@ -354,68 +400,26 @@ useHead({ title: "Plataformas · Marketing" });
                   @click="onVerifyCatalog"
                 >
                   <Icon name="lucide:refresh-cw" class="size-4" />
-                  Verificar novamente
+                  Atualizar
                 </UiButton>
               </div>
 
               <div v-else class="mt-3 space-y-1.5">
-                <!-- Cartões de seleção preservam contexto e estado que um botão genérico esconderia. -->
-                <button
-                  type="button"
-                  class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-                  :class="
-                    waTemplate.current.value === ''
-                      ? 'border-primary'
-                      : 'border-border'
-                  "
-                  :disabled="
-                    savingTemplate ||
-                    !waTemplate.commandAvailable.value ||
-                    waTemplate.current.value === ''
-                  "
-                  @click="onChooseTemplate('')"
-                >
-                  <Icon
-                    name="lucide:circle-slash"
-                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  />
-                  <span>
-                    <span class="block text-sm font-medium">Sem modelo</span>
-                    <span class="block text-xs text-muted-foreground">
-                      Texto livre — alcança só quem conversou nas últimas 24
-                      horas.
-                    </span>
-                  </span>
-                </button>
-
-                <!-- Um único cartão v-for representa cada modelo remoto selecionável. -->
-                <button
-                  v-for="option in waTemplate.available.value"
-                  :key="option.ns"
-                  type="button"
-                  class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-                  :class="
-                    waTemplate.current.value === option.ns
-                      ? 'border-primary'
-                      : 'border-border'
-                  "
-                  :disabled="
-                    savingTemplate ||
-                    !waTemplate.commandAvailable.value ||
-                    waTemplate.current.value === option.ns
-                  "
-                  @click="onChooseTemplate(option.ns)"
-                >
-                  <Icon
-                    name="lucide:file-check-2"
-                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  />
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium">{{
-                      option.name
-                    }}</span>
-                  </span>
-                </button>
+                <!-- ⚠️ Era um cartão POR modelo. A conta do ManyChat não tem teto:
+                     com algumas dezenas de fluxos aprovados, escolher virava rolar
+                     a página inteira. Agora é UMA linha que diz o que está valendo,
+                     e a lista só abre quando alguém vai trocar — com busca, porque
+                     acima de doze opções ninguém varre com o olho. -->
+                <UiSelect
+                  :model-value="waTemplate.current.value"
+                  :options="templateOptions"
+                  label="Modelo aprovado"
+                  placeholder="Sem modelo"
+                  search-placeholder="Buscar modelo aprovado"
+                  empty-text="Nenhum modelo com esse nome"
+                  :disabled="savingTemplate || !waTemplate.commandAvailable.value"
+                  @update:model-value="onChooseTemplate(String($event))"
+                />
                 <p
                   v-if="waTemplate.available.value.length === 0"
                   class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
@@ -431,7 +435,7 @@ useHead({ title: "Plataformas · Marketing" });
                 v-if="waTemplate.current.value"
                 class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
               >
-                Com o modelo escolhido, o texto que sai no WhatsApp é o aprovado
+                Com o modelo escolhido, o texto enviado no WhatsApp é o aprovado
                 na Meta — o modelo entra só com as variáveis. O texto do modelo
                 continua valendo para Instagram, Facebook e para a sua revisão.
               </p>
@@ -441,7 +445,7 @@ useHead({ title: "Plataformas · Marketing" });
             <section class="mt-5 border-t border-border pt-4">
               <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Envia uma mensagem a um aparelho verificado. Nunca usa público
+                Envia uma mensagem a um número verificado. Nunca usa público
                 de campanha.
               </p>
 
@@ -449,12 +453,11 @@ useHead({ title: "Plataformas · Marketing" });
                 v-if="!waTemplate.canSendTest.value"
                 class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
               >
-                <p class="font-semibold">
-                  Teste não disponível para este papel
-                </p>
+                <!-- ⚠️ "Este papel" e "Editor habilitado" são o modelo de permissão
+                     falando; quem lê quer saber se PODE e, se não, a quem pedir. -->
+                <p class="font-semibold">Sua conta não pode fazer o teste.</p>
                 <p class="mt-1 text-muted-foreground">
-                  Um Editor habilitado ou responsável pelas plataformas pode
-                  fazer o teste no ambiente seguro.
+                  Peça a quem cuida das plataformas.
                 </p>
               </div>
 
@@ -466,7 +469,7 @@ useHead({ title: "Plataformas · Marketing" });
                   Teste externo bloqueado com segurança
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  Nenhum aparelho de teste verificado foi configurado. Peça ao
+                  Nenhum dispositivo de teste verificado foi configurado. Peça ao
                   responsável pelas plataformas; não é necessário copiar ou
                   informar um telefone aqui.
                 </p>
@@ -478,10 +481,10 @@ useHead({ title: "Plataformas · Marketing" });
                     for="test-target"
                     class="mb-1 block text-xs font-medium text-muted-foreground"
                   >
-                    Aparelho verificado
+                    Número verificado
                   </label>
                   <UiNativeSelect id="test-target" v-model="testTargetRef">
-                    <option value="" disabled>Escolha o aparelho</option>
+                    <option value="" disabled>Escolha o número</option>
                     <option
                       v-for="target in waTemplate.testTargets.value"
                       :key="target.ref"
@@ -491,18 +494,24 @@ useHead({ title: "Plataformas · Marketing" });
                     </option>
                   </UiNativeSelect>
                 </div>
+                <!-- ⚠️ Era "SKU (opcional)" em texto livre: o gestor não decora código
+                     de produto. A lista é a mesma do disparo manual (options.products). -->
                 <div>
                   <label
-                    for="test-sku"
+                    for="test-product"
                     class="mb-1 block text-xs font-medium text-muted-foreground"
-                    >SKU (opcional)</label
+                    >Produto (opcional)</label
                   >
-                  <UiInput
-                    id="test-sku"
-                    v-model="testSku"
-                    type="text"
-                    placeholder="BAGUETE"
-                  />
+                  <UiNativeSelect id="test-product" v-model="testSku">
+                    <option value="">Sem produto — só o texto do modelo</option>
+                    <option
+                      v-for="product in products"
+                      :key="product.value"
+                      :value="product.value"
+                    >
+                      {{ product.label }}
+                    </option>
+                  </UiNativeSelect>
                 </div>
                 <UiButton
                   type="button"

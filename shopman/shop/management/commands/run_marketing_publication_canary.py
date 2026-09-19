@@ -85,7 +85,10 @@ class Command(BaseCommand):
         from shopman.shop.services.marketing_artifacts import (
             resolve_approved_dispatch_artifact,
         )
-        from shopman.shop.services.marketing_delivery_runtime import delivery_provider
+        from shopman.shop.services.marketing_delivery_runtime import (
+            delivery_lane,
+            delivery_provider,
+        )
 
         platform = str(options["platform"])
         outbox_query = MarketingOutbox.objects.select_related(
@@ -137,7 +140,11 @@ class Command(BaseCommand):
             dict(artifact.provider_fields).get("publication_format") or ""
         )
         expected_confirmation = f"PUBLICAR {platform} {outbox.ref}"
-        provider_ready = delivery_provider(platform) is not None
+        lane = delivery_lane(platform)
+        # Desligada pela flag não pede o adapter: a resposta já é "desligada".
+        provider_ready = (
+            lane.state != "switched_off" and delivery_provider(platform) is not None
+        )
         target = DeliveryTarget.objects.filter(outbox=outbox).first()
 
         self.stdout.write(self.style.MIGRATE_HEADING("Canário público isolado"))
@@ -159,9 +166,13 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  mídia        : {_media_summary(artifact.image_url)}"
         )
-        self.stdout.write(
-            f"  integração   : {'pronta' if provider_ready else 'bloqueada'}"
-        )
+        if lane.state == "switched_off":
+            integration_state = f"desligada ({lane.switch}=false)"
+        elif lane.state == "unconfigured":
+            integration_state = "não registrada — erro de configuração"
+        else:
+            integration_state = "pronta" if provider_ready else "bloqueada"
+        self.stdout.write(f"  integração   : {integration_state}")
         self.stdout.write(f"  confirmação  : {expected_confirmation}")
 
         if not options["execute"]:

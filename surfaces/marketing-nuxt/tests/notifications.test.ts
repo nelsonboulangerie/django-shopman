@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   announcementSourceId,
   notificationAction,
-  notificationOwnerLabel,
   notificationReasonLabel,
   notificationStateLabel,
 } from "~/presentation/notifications";
@@ -149,10 +148,12 @@ describe("notification Actions", () => {
     ).toBeNull();
   });
 
-  it("keeps lifecycle, responsibility and disabled reasons explicit", () => {
-    expect(notificationStateLabel("seen")).toBe("Visto");
+  it("keeps lifecycle and disabled reasons explicit", () => {
     expect(notificationStateLabel("resolved")).toBe("Resolvido");
-    expect(notificationOwnerLabel("ops")).toBe("Operações");
+    // "Visto" é a palavra da casa para o gesto, a mesma dos timers da Produção.
+    expect(notificationStateLabel("acknowledged")).toBe("Visto");
+    // `seen` é o app registrando que mostrou: não é gesto de ninguém, não tem chip.
+    expect(notificationStateLabel("seen")).toBe("");
     expect(notificationReasonLabel("missing_capability")).toContain("acesso");
   });
 

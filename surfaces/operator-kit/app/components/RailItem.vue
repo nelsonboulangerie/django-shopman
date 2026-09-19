@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Item do rail — a unidade do `OperatorRail`, consistente nos 3 estados: só ícone
 // (compacto/colapsado, com tooltip nativo) ou ícone + rótulo (estendido). Vira <a> quando
-// recebe `href` (ex.: voltar à Central) ou <button> que emite `activate` (ex.: travar).
+// recebe `href` (ex.: voltar ao Shopman Apps) ou <button> que emite `activate` (ex.: travar).
 // Não conhece o estado do rail — lê `useRailState().showLabels` (verdade compartilhada).
 import { computed } from "vue";
 
@@ -11,7 +11,7 @@ const props = defineProps<{
   label: string;
   /** Realce de item ativo (nav) — vira `aria-current="page"`. */
   active?: boolean;
-  /** Item-link (navega em vez de emitir) — ex.: Central. */
+  /** Item-link (navega em vez de emitir) — ex.: Shopman Apps. */
   href?: string;
   /** Rótulo acessível quando difere do visível (ex.: "admin — travar"). */
   ariaLabel?: string;

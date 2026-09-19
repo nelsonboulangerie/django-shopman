@@ -89,11 +89,10 @@ describe("AnnouncementTemplateForm draft recovery", () => {
   it("usa Stories por padrão e só grava Feed após escolha explícita", async () => {
     const wrapper = form(template());
 
-    expect(
-      (wrapper.find('input[value="story"]').element as HTMLInputElement)
-        .checked,
-    ).toBe(true);
-    await wrapper.find('input[value="feed"]').setValue();
+    const formats = wrapper.findAll('[role="radio"]');
+    expect(formats[0]!.attributes("aria-checked")).toBe("true");
+    expect(formats[0]!.text()).toContain("Stories");
+    await formats[1]!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const payload = wrapper.emitted("submit")?.[0]?.[0] as {
@@ -134,7 +133,7 @@ describe("AnnouncementTemplateForm draft recovery", () => {
   it("avisa no próprio campo quando Stories ficaria sem imagem", async () => {
     const wrapper = form(template());
 
-    expect(wrapper.text()).toContain("O Story usará a foto do produto");
+    expect(wrapper.text()).toContain("Usa a foto do produto, em JPEG");
     await wrapper.find("#tpl-image").setValue("none");
 
     expect(wrapper.text()).toContain(

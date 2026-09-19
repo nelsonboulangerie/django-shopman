@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 
-// Read-window da Central: deriva tiles/operatorName da projection. Mockamos useFetch.
+// Read-window do Shopman Apps: deriva tiles/operatorName da projection. Mockamos useFetch.
 const { fetchResult } = vi.hoisted(() => ({ fetchResult: { value: null as unknown } }));
 
 mockNuxtImport("useFetch", () => () => fetchResult.value);
@@ -19,7 +19,7 @@ describe("useOperatorHub", () => {
   });
 
   it("deriva tiles e nome do operador da projection", async () => {
-    const hub = { operator_name: "Ana", tiles: [{ ref: "pos", label: "PDV", icon: "banknote", url: "/x", kind: "launch", description: "" }] };
+    const hub = { operator_name: "Ana", tiles: [{ ref: "pos", label: "PDV", icon: "shopping-basket", url: "/x", kind: "launch", description: "" }] };
     fetchResult.value = asyncData({ hub });
     const h = await useOperatorHub();
     expect(h.operatorName.value).toBe("Ana");

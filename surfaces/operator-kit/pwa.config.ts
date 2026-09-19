@@ -2,6 +2,16 @@ import { addPlugin, addServerHandler, createResolver, defineNuxtModule, installM
 import type { NuxtConfig } from "@nuxt/schema";
 import VitePwaModule from "@vite-pwa/nuxt";
 import type { ModuleOptions as VitePwaModuleOptions } from "@vite-pwa/nuxt";
+import { OPERATOR_APP_NAME_ROUTE } from "./app/presentation/windowTitle";
+import {
+  OPERATOR_ASSET_VERSION,
+  OPERATOR_CANVAS,
+  operatorAppIconSrc,
+  operatorAppIcons,
+  operatorAppIdentity,
+  operatorShortcutIconSrc,
+  type OperatorAppRef,
+} from "./appIdentity";
 
 export interface OperatorPwaIcon {
   src: string;
@@ -14,12 +24,21 @@ export interface OperatorPwaShortcut {
   name: string;
   shortName?: string;
   url: string;
+  /** Preenchido pela capability com o PNG da família; o app nunca escolhe. */
   icon?: string;
 }
 
+/**
+ * O manifesto RESOLVIDO: o que a capability montou a partir de `app-identity.json`.
+ * Nenhum app escreve isto — quem escreve é `resolveOperatorPwa`.
+ */
 export interface OperatorPwaManifestOptions {
-  name: string;
-  shortName: string;
+  /**
+   * Rótulo do app ("PDV"), e só ele. O nome instalado é `"<casa> · <rótulo>"`, com a
+   * casa (`Shop.short_name`) lida do Django em runtime — ver
+   * `server/utils/operatorTenant.ts`. Sem hífen e sem prefixo de marca aqui.
+   */
+  label: string;
   description: string;
   themeColor: string;
   backgroundColor: string;
@@ -28,18 +47,94 @@ export interface OperatorPwaManifestOptions {
   orientation?: "any" | "natural" | "landscape" | "portrait";
 }
 
+/**
+ * O que um app de operador DECLARA. Rótulo, descrição, cor e ícones NÃO entram aqui:
+ * saem de `app-identity.json` pela chave `app`. O que sobra é o que de facto varia
+ * entre um app e outro — como a janela abre, se a tela fica acesa, o que ele recebe
+ * por push e quais atalhos o SO oferece no ícone.
+ */
 export interface OperatorPwaCapabilityOptions {
-  app: string;
+  app: OperatorAppRef;
   display: "standalone" | "fullscreen";
-  manifest: OperatorPwaManifestOptions;
+  orientation?: "any" | "natural" | "landscape" | "portrait";
+  shortcuts?: OperatorPwaShortcut[];
   wakeLock?: boolean;
   kiosk?: boolean;
+  /**
+   * Rotas em que o app pode RECARREGAR SOZINHO para entrar na versão nova, quando
+   * ninguém toca nele e a tela não publicou nenhuma razão de espera
+   * (`useOperatorReloadHold`). Lista vazia = só o aviso ao operador.
+   *
+   * `"*"` libera tudo (KDS: nenhuma tela dele tem rascunho); `"/board"` libera o
+   * painel e o que está sob ele, e preserva os editores de receita; `"/"` libera
+   * SÓ a raiz. Kiosk exige a lista: um painel de parede que ninguém fecha nunca
+   * trocaria de versão sem ela.
+   */
   idleReloadPaths?: string[];
   push?: {
     surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi";
     categories: Array<"campaign" | "production" | "order" | "purchase" | "report" | "sign_in" | "system">;
   };
 }
+
+/** O que o runtime vê em `runtimeConfig.public.operatorPwa`: o declarado + o resolvido. */
+export interface ResolvedOperatorPwa extends OperatorPwaCapabilityOptions {
+  manifest: OperatorPwaManifestOptions;
+  /**
+   * A identidade que a TELA usa (rail, gate de login): o PNG do app e o nome Lucide de
+   * recurso. Vem pelo `runtimeConfig` para que nenhum componente reescreva o caminho
+   * `/pwa/pwa-64x64.png?v=N` — era assim que a versão do asset envelhecia num app só.
+   */
+  identity: { label: string; article: string; install: string; icon: string; iconSrc: string; color: string };
+}
+
+/**
+ * Monta o manifesto do app a partir da identidade canônica.
+ *
+ * `theme_color` é a cor do ÍCONE: é ela que pinta a barra de título do app instalado,
+ * e ícone e janela divergir é o que o dono viu no Mac (oito apps, oito barras sem
+ * relação com o ícone). `background_color` é o `--background` do tema do operador, o
+ * mesmo que a primeira tela vai pintar.
+ */
+export function resolveOperatorPwa(options: OperatorPwaCapabilityOptions): ResolvedOperatorPwa {
+  const identity = operatorAppIdentity(options.app);
+  const shortcutIcon = operatorShortcutIconSrc();
+  return {
+    ...options,
+    identity: {
+      label: identity.label,
+      article: identity.article,
+      install: identity.install,
+      icon: identity.fallbackIcon,
+      iconSrc: operatorAppIconSrc(),
+      color: identity.color,
+    },
+    manifest: {
+      label: identity.label,
+      description: identity.description,
+      themeColor: identity.color,
+      backgroundColor: identity.dark ? OPERATOR_CANVAS.dark : OPERATOR_CANVAS.light,
+      orientation: options.orientation || "any",
+      icons: operatorAppIcons(),
+      shortcuts: (options.shortcuts || []).map((shortcut) => ({ ...shortcut, icon: shortcut.icon || shortcutIcon })),
+    },
+  };
+}
+
+/** Suba junto com a forma/desenho do favicon: a aba guarda o ícone pela URL. */
+export const FAVICON_VERSION = "?v=1";
+
+/**
+ * Links de `<head>` que a capability PWA assume em todo app de operador. Os ícones
+ * saem de `pwa:assets` (PWA_ICONS.md). O favicon `.ico` (16/32/48) declara tamanho em
+ * vez de `sizes="any"`: com `any` o Chrome prefere o `.ico` ao SVG.
+ */
+export const OPERATOR_HEAD_LINKS = [
+  { rel: "manifest", href: "/manifest.webmanifest" },
+  { rel: "apple-touch-icon", href: `/pwa/apple-touch-icon-180x180.png?v=${OPERATOR_ASSET_VERSION}` },
+  { rel: "icon", type: "image/svg+xml", href: `/favicon.svg${FAVICON_VERSION}` },
+  { rel: "icon", sizes: "48x48", href: `/favicon.ico${FAVICON_VERSION}` },
+] as const;
 
 function namesImport(entry: unknown, name: string): boolean {
   if (typeof entry === "string") return entry === name;
@@ -55,38 +150,20 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     configKey: "operatorPwa",
   },
   defaults: {
-    app: "",
+    app: "" as OperatorAppRef,
     display: "standalone",
-    manifest: {
-      name: "",
-      shortName: "",
-      description: "",
-      themeColor: "#F5F5F4",
-      backgroundColor: "#FAFAF9",
-      icons: [],
-      orientation: "any",
-    },
     wakeLock: false,
     kiosk: false,
     idleReloadPaths: [],
     push: undefined,
   },
   async setup(options, nuxt) {
-    if (!options.app.trim()) throw new TypeError("operator PWA exige app");
-    if (!options.manifest.name.trim() || !options.manifest.shortName.trim()) {
-      throw new TypeError("operator PWA exige name e shortName");
-    }
-    if (!options.manifest.icons.some((icon) => icon.sizes === "192x192")) {
-      throw new TypeError("operator PWA exige ícone 192x192");
-    }
-    if (!options.manifest.icons.some((icon) => icon.sizes === "512x512")) {
-      throw new TypeError("operator PWA exige ícone 512x512");
-    }
+    if (!String(options.app).trim()) throw new TypeError("operator PWA exige app");
+    // `operatorAppIdentity` recusa app fora de `app-identity.json`: um erro de digitação
+    // na chave para o build em vez de publicar um manifesto sem nome nem cor.
+    const resolved = resolveOperatorPwa(options);
     if (options.kiosk && !options.idleReloadPaths?.length) {
       throw new TypeError("operator PWA kiosk exige rotas explícitas para recarga ociosa");
-    }
-    if (!options.kiosk && options.idleReloadPaths?.length) {
-      throw new TypeError("operator PWA sem kiosk não aceita recarga ociosa");
     }
     if (options.push && (!options.push.categories.length || new Set(options.push.categories).size !== options.push.categories.length)) {
       throw new TypeError("operator PWA push exige categorias explícitas e sem repetição");
@@ -105,10 +182,14 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
       });
     });
     const publicConfig = nuxt.options.runtimeConfig.public as Record<string, unknown>;
-    publicConfig.operatorPwa = JSON.parse(JSON.stringify(options));
+    publicConfig.operatorPwa = JSON.parse(JSON.stringify(resolved));
     publicConfig.vapidPublicKey = process.env.NUXT_PUBLIC_VAPID_PUBLIC_KEY || "";
     publicConfig.appVersion = process.env.NUXT_PUBLIC_APP_VERSION || process.env.SOURCE_VERSION || "local";
 
+    // O `sw.js` é o ÚNICO arquivo que não pode ser servido de cache: ele é a porta
+    // pela qual toda versão nova entra. `no-cache` obriga revalidação a cada sonda
+    // de `registration.update()` — sem isso, a sonda periódica perguntaria ao disco
+    // do navegador e responderia "nada novo" para sempre.
     const routeRules = nuxt.options.routeRules ||= {};
     routeRules["/sw.js"] = {
       ...routeRules["/sw.js"],
@@ -119,29 +200,37 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     };
 
     const head = nuxt.options.app.head;
+    // Título estático da página = o rótulo do app, e nada mais. É o que aparece antes de
+    // o `titleTemplate` entrar (primeiro byte do HTML) e o que o `windowTitle` reconhece
+    // como "home", para a raiz não virar "Nelson · PDV · PDV".
+    head.title = resolved.manifest.label;
     const managedMeta = new Set([
       "theme-color",
       "apple-mobile-web-app-capable",
       "apple-mobile-web-app-status-bar-style",
       "apple-mobile-web-app-title",
     ]);
-    const managedLinks = new Set(["manifest", "apple-touch-icon"]);
+    const managedLinks = new Set<string>(OPERATOR_HEAD_LINKS.map((link) => link.rel));
     head.meta = [
       ...(head.meta || []).filter((entry) => !managedMeta.has(String(entry.name || ""))),
-      { name: "theme-color", content: options.manifest.themeColor },
+      { name: "theme-color", content: resolved.manifest.themeColor },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
-      { name: "apple-mobile-web-app-title", content: options.manifest.shortName },
+      // Valor inicial; o plugin `operatorAppName` troca pelo nome com a casa em runtime.
+      { name: "apple-mobile-web-app-title", content: resolved.manifest.label },
     ];
     head.link = [
       ...(head.link || []).filter((entry) => !managedLinks.has(String(entry.rel || ""))),
-      { rel: "manifest", href: "/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png" },
+      ...OPERATOR_HEAD_LINKS.map((link) => ({ ...link })),
     ];
 
     addServerHandler({
       route: "/manifest.webmanifest",
       handler: resolver.resolve("./runtime/server/manifest"),
+    });
+    addServerHandler({
+      route: OPERATOR_APP_NAME_ROUTE,
+      handler: resolver.resolve("./runtime/server/appName"),
     });
     if (options.push) {
       addServerHandler({
@@ -149,6 +238,9 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
         handler: resolver.resolve("./runtime/server/push-worker"),
       });
     }
+    addPlugin({
+      src: resolver.resolve("./runtime/plugins/operatorAppName"),
+    });
     addPlugin({
       src: resolver.resolve("./runtime/plugins/pwaRegistration.client"),
       mode: "client",

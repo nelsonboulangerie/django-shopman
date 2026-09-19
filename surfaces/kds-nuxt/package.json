@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --source=../storefront-nuxt/brand/nelson-mark.svg --out=public/pwa --background=#0A0A0A --ink=#3F3F46 --paper=#FAFAF9 --badge=KDS",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --app=kds --out=public/pwa",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "nuxi typecheck",
     "postinstall": "nuxt prepare"
@@ -40,7 +40,7 @@
     "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.131",
+    "@iconify-json/lucide": "^1.2.132",
     "@nuxt/eslint": "^1.16.0",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "^1.63.0",

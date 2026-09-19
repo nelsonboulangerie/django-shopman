@@ -27,22 +27,9 @@ export default defineNuxtConfig({
       wakeLock: false,
       kiosk: false,
       push: { surfaceRef: "bi", categories: ["report"] },
-      manifest: {
-        name: "Shopman B.I.",
-        shortName: "B.I.",
-        description: "Leitura dos números da operação.",
-        themeColor: "#FFFFFF",
-        backgroundColor: "#FAFAF9",
-        orientation: "any",
-        icons: [
-          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-        shortcuts: [
-          { name: "Vendas", shortName: "Vendas", url: "/sales", icon: "/pwa/pwa-192x192.png" },
-        ],
-      },
+      shortcuts: [
+        { name: "Vendas", shortName: "Vendas", url: "/sales" },
+      ],
     }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
@@ -94,10 +81,11 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "B.I.",
+      // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/
+      // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
+      // barra de título e aba.
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#ffffff" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

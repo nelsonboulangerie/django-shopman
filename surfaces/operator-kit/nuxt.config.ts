@@ -1,6 +1,6 @@
 // Nuxt layer compartilhado das superfícies de operador.
 //
-// Os apps (pos/orders/kds/production-nuxt + Central de Apps) fazem
+// Os apps (pos/orders/kds/production-nuxt + Shopman Apps) fazem
 // `extends: ['../operator-kit']` no seu nuxt.config. Este layer contribui:
 //   - app/components  → auto-importados (ex.: OfflineBanner)
 //   - app/composables → auto-importados (ex.: useConnectivity)
@@ -20,22 +20,45 @@ export default defineNuxtConfig({
   future: { compatibilityVersion: 4 },
 
   runtimeConfig: {
+    // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o IP
+    // do operador um salto mais fundo no X-Forwarded-For (server/utils/djangoProxy.ts).
+    // Só no servidor — NUNCA em `public`. Declarado aqui para todo app que estende
+    // a layer poder recebê-lo por NUXT_DJANGO_PROXY_SECRET; cada componente liga
+    // pela env, com o MESMO valor do SHOPMAN_BFF_PROXY_SECRET do Django. Vazio = desligado.
+    djangoProxySecret: "",
+    // Nome do SERVIÇO no aviso de capacidade (server/utils/capacityReport.ts). Com
+    // vários apps no mesmo contêiner, o deploy declara NUXT_OPERATOR_SERVICE_NAME
+    // (`operator-floor`, `operator-office`) e todos reportam como um serviço só.
+    // Vazio = a identidade do app (`operatorPwa.app`), certo com um app por contêiner.
+    operatorServiceName: "",
     public: {
-      // URL da Central de Apps (launcher) — o ícone do app no topo do OperatorRail leva
+      // URL do Shopman Apps (a home) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.
       operatorHubUrl: process.env.NUXT_PUBLIC_OPERATOR_HUB_URL || "http://127.0.0.1:3001/",
       // Estado inicial do rail (só quando não há cookie ainda). Padrão compacto; a própria
-      // Central sobrescreve pra "collapsed" (é a casa, não precisa do rail aberto).
+      // home sobrescreve pra "collapsed" (é a casa, não precisa do rail aberto).
       railDefaultState: process.env.NUXT_PUBLIC_RAIL_DEFAULT_STATE || "compact",
       // URL do Gestor de Pedidos (orders-nuxt) — links cross-app "abrir no gestor"
       // apontam pra cá. Dev: orders-nuxt em :3004; prod: gestor.<zona> via env.
       ordersUrl: process.env.NUXT_PUBLIC_ORDERS_URL || "http://127.0.0.1:3004/",
-      // URL do PDV — usada pela Central para o atalho instalável same-origin que
+      // URL do PDV — usada pelo Shopman Apps para o atalho instalável same-origin que
       // então redireciona ao app dedicado. O destino continua dado de deploy.
       posUrl: process.env.NUXT_PUBLIC_POS_URL || "http://127.0.0.1:3002/",
       // URL do Produção (production-nuxt) — links cross-app "resolver na produção"
       // (ex.: fechamento do dia com ordens abertas). Dev: :3005; prod: prod.<zona>.
       productionUrl: process.env.NUXT_PUBLIC_PRODUCTION_URL || "http://127.0.0.1:3005/",
+      // A antessala deste app ("estou travado? quem está operando?"). O padrão é a
+      // compartilhada, e ele serve a todo app de operador ATENDIDO.
+      //
+      // ⚠️ NÃO é env, e não é preferência: é o outro lado de uma trava de servidor.
+      // Uma estação AUTÔNOMA (painel de parede da Produção, sem ninguém para digitar
+      // PIN) só tem a conta dela resolvida sob `/api/v1/backstage/production/` — o
+      // cookie de estação vale no domínio inteiro, e essa é a única barreira que
+      // impede a conta do painel de virar operador no PDV da aba ao lado (ver
+      // `shopman/backstage/station_trust.py`). Por isso a Produção aponta esta
+      // chave para a antessala DELA; um app que não é a Produção não tem por que
+      // mexer aqui, e mexer não lhe dá nada — quem decide é o servidor.
+      operatorSessionPath: "/api/v1/backstage/operator/session/",
     },
   },
 });

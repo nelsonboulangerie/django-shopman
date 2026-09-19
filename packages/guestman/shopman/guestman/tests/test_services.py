@@ -165,6 +165,62 @@ class TestCustomerService:
         assert cust.ref == "NEW-001"
         assert cust.price_tier == tier_regular
 
+    def test_purge_pii_reports_partial_failure_after_finishing_other_layers(
+        self,
+        customer,
+        monkeypatch,
+    ):
+        """Uma camada quebrada não pode virar sucesso silencioso nem ocultar as demais."""
+        from django.db.models import QuerySet
+        from shopman.guestman.models import ContactPoint, Customer
+
+        Customer.objects.filter(pk=customer.pk).update(
+            phone="",
+            email="",
+            document="12345678901",
+            metadata={"private": "value"},
+        )
+        customer.refresh_from_db()
+        original_delete = QuerySet.delete
+
+        def fail_contact_points(queryset):
+            if queryset.model is ContactPoint:
+                raise RuntimeError("contact storage unavailable")
+            return original_delete(queryset)
+
+        monkeypatch.setattr(QuerySet, "delete", fail_contact_points)
+
+        with pytest.raises(RuntimeError, match="contact_points"):
+            customer_service.purge_pii(customer)
+
+        customer.refresh_from_db()
+        assert customer.document == ""
+        assert customer.metadata == {}
+
+    def test_consent_evidence_redaction_removes_subject_pii_but_keeps_proof(self, customer):
+        from shopman.guestman.contrib.consent.models import CommunicationConsentEvent
+        from shopman.guestman.contrib.consent.service import ConsentService
+
+        ConsentService.grant_consent(
+            customer.ref,
+            "whatsapp",
+            source="account",
+            ip_address="203.0.113.42",
+            actor_ref="operator@example.com",
+        )
+        event = CommunicationConsentEvent.objects.get(customer=customer)
+        evidence_hash = event.evidence_hash
+        customer_ref_hash = event.customer_ref_hash
+
+        assert CommunicationConsentEvent.redact_subject(customer) == 1
+
+        event.refresh_from_db()
+        assert event.customer_id is None
+        assert event.ip_address is None
+        assert event.actor_ref == ""
+        assert event.evidence_hash == evidence_hash
+        assert event.customer_ref_hash == customer_ref_hash
+
 
 class TestAddressService:
     """Tests for address service."""

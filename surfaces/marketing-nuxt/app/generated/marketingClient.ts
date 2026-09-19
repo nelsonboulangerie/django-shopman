@@ -182,10 +182,14 @@ export interface MarketingHistoryDataV2 {
 
 export interface OperationalCountersProjectionV2 {
   pending_decision_count: number;
-  accepted_unconfirmed_targets_today: number;
-  confirmed_targets_today: number;
-  failed_final_targets_today: number;
-  unknown_targets_open: number;
+  confirmed_people_today: number;
+  confirmed_posts_today: number;
+  accepted_unconfirmed_people_today: number;
+  accepted_unconfirmed_posts_today: number;
+  failed_final_people_today: number;
+  failed_final_posts_today: number;
+  unknown_people_open: number;
+  unknown_posts_open: number;
 }
 
 export interface PlatformDeliveryProjectionV2 {

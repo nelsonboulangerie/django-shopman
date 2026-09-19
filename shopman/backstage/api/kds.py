@@ -2,7 +2,7 @@
 
 GET  /api/v1/backstage/kds/                       → list of KDS instances
 GET  /api/v1/backstage/kds/<ref>/                 → KDS board projection
-POST /api/v1/backstage/kds/tickets/<pk>/items/    → toggle item checked
+POST /api/v1/backstage/kds/tickets/<pk>/start/    → put ticket in progress
 POST /api/v1/backstage/kds/tickets/<pk>/done/     → mark ticket done
 POST /api/v1/backstage/kds/expedition/<pk>/action/ → dispatch/complete
 GET  /api/v1/backstage/kds/pickup/               → customer pickup board
@@ -19,7 +19,6 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.backstage.parsing import as_bool, as_int
 from shopman.backstage.projections.kds import (
     build_kds_board,
     build_kds_customer_status,
@@ -82,33 +81,22 @@ class KDSBoardView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Toggle KDS ticket item checked state",
+        summary="Start KDS ticket (put it in progress)",
         responses={200: OpenApiResponse(description="Updated ticket projection.")},
     ),
 )
-class KDSTicketItemView(APIView):
+class KDSTicketStartView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_kds"
 
     def post(self, request, ticket_pk: int):
-        # `bool("false")` é True, e o tablet da cozinha desmarcava o item marcando.
-        # Nenhum cliente de boa-fé manda isso hoje — o `useKdsBoard` manda booleano
-        # JSON —, mas quem fala com a API direto manda, e o parser estrito recusa
-        # em vez de adivinhar. Ver `shopman/backstage/parsing.py`.
-        index = as_int(request.data, "index", min_value=0, message="Index inválido.")
-        checked = as_bool(request.data, "checked")
         try:
-            kds_service.set_ticket_item_checked(
-                ticket_pk=ticket_pk,
-                index=index,
-                checked=checked,
-                actor=_actor(request),
-            )
+            kds_service.start_ticket(ticket_pk=ticket_pk, actor=_actor(request))
         except KDSTicketNotFound as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except KDSError as exc:
-            logger.debug("kds_ticket_item_update_failed ticket_pk=%s", ticket_pk, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao atualizar item."}, status=status.HTTP_400_BAD_REQUEST)
+            logger.debug("kds_ticket_start_failed ticket_pk=%s", ticket_pk, exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao iniciar o preparo."}, status=status.HTTP_400_BAD_REQUEST)
         ticket = build_kds_ticket(ticket_pk)
         return Response({"ticket": projection_data(ticket)})
 

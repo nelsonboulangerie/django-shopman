@@ -6,8 +6,10 @@
 // balcão precisa a qualquer hora: imprimir a DANFE na bobina (via agente do
 // balcão), reenviar por e-mail (o Focus entrega) e reprocessar falha. As ações
 // seguem o FATO (a nota existe), nunca o toggle que o operador marcou na venda.
-import type { POSPaymentDeliveryProjection, POSProjection } from "~/types/pos";
+import type { PosFiscalState, POSPaymentDeliveryProjection, POSProjection } from "~/types/pos";
 import { toast } from "vue-sonner";
+
+import { fiscalStateLabel } from "~/presentation/saleResult";
 
 interface RecentSale {
   order_ref: string;
@@ -18,6 +20,9 @@ interface RecentSale {
   customer_name: string;
   fiscal_status: string;
   fiscal_label: string;
+  /** O estado canônico da nota (o mesmo da tela de resultado). Opcional: o
+   *  backend pode chegar depois; sem ele valem `fiscal_status`/`fiscal_label`. */
+  fiscal_state?: PosFiscalState;
   fiscal_links: Array<{ label: string; url: string }>;
   nfce_number: string;
   email_sent: boolean;
@@ -38,11 +43,11 @@ const props = defineProps<{
 // (tela de resultado, chip de PIX pendente) e recarregar a Projection.
 const emit = defineEmits<{ "update:open": [boolean]; cancelled: [string] }>();
 
-const apiPath = usePosApiPath();
+const apiPath = useApiPath();
 const agent = useCounterAgent(computed(() => props.pos));
 // A bobina só existe onde existe agente; sem ele os botões de impressão
 // esconderiam uma promessa que esta lista não tem como cumprir.
-const canPrintOnAgent = computed(() => agent.canKick.value);
+const canPrintOnAgent = computed(() => agent.canPrint.value);
 const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoBaseUrl || ""));
 
 const sales = ref<RecentSale[]>([]);
@@ -256,6 +261,15 @@ async function submitCancel(aprovacao: Record<string, string>) {
   }
 }
 
+// O chip fala o MESMO rótulo da tela de resultado quando o servidor manda o
+// estado canônico; sem ele, o rótulo pronto do servidor.
+function fiscalChipLabel(sale: RecentSale): string {
+  return sale.fiscal_state ? fiscalStateLabel(sale.fiscal_state) : sale.fiscal_label;
+}
+function fiscalChipStatus(sale: RecentSale): string {
+  if (!sale.fiscal_state) return sale.fiscal_status;
+  return sale.fiscal_state === "not_expected" ? "not_requested" : sale.fiscal_state;
+}
 // Cor só funcional (design neutro de operador): o chip fiscal informa estado.
 function fiscalChipClass(status: string): string {
   if (status === "authorized") return "bg-success/10 text-success border-success/30";
@@ -274,7 +288,7 @@ function fiscalChipClass(status: string): string {
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balcão</p>
           <h2 class="text-lg font-semibold text-foreground">Últimas vendas</h2>
         </div>
-        <UiButton type="button" variant="outline" size="sm" :disabled="loading" @click="load">
+        <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
           <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
         </UiButton>
       </div>
@@ -298,9 +312,10 @@ function fiscalChipClass(status: string): string {
               </div>
               <span
                 class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium"
-                :class="fiscalChipClass(sale.fiscal_status)"
+                :class="fiscalChipClass(fiscalChipStatus(sale))"
+                data-fiscal-chip
               >
-                {{ sale.fiscal_label }}
+                {{ fiscalChipLabel(sale) }}
               </span>
             </div>
 
@@ -352,7 +367,10 @@ function fiscalChipClass(status: string): string {
                 @click="openEmailPrompt(sale)"
               >
                 <Icon name="lucide:mail" class="size-3.5" />
-                {{ sale.email_sent ? "Reenviar e-mail" : "Enviar e-mail" }}
+                <!-- ⚠️ Este botão só ABRE o campo de e-mail. Quem envia é o
+                     "Enviar" que aparece ali dentro — dizia "Enviar e-mail" e
+                     não enviava nada. -->
+                {{ sale.email_sent ? "E-mail da nota (já enviada)" : "E-mail da nota" }}
               </UiButton>
               <UiButton
                 v-if="sale.can_requeue_fiscal"

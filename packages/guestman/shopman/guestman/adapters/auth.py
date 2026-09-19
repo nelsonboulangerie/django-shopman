@@ -30,6 +30,10 @@ class CustomerResolver:
         c = customer_service.get_by_uuid(str(uuid))
         return self._to_info(c) if c else None
 
+    def lock_active_by_uuid(self, uuid) -> AuthCustomerInfo | None:
+        c = Customer.objects.select_for_update().filter(uuid=uuid, is_active=True).first()
+        return self._to_info(c) if c else None
+
     def get_by_identifier(self, identifier_type: str, identifier_value: str) -> AuthCustomerInfo | None:
         from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
 

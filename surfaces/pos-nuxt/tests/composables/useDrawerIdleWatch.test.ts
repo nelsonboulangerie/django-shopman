@@ -5,7 +5,7 @@
 // parado que uma gaveta aberta passa despercebida: dava para deixar aberta a
 // tarde inteira e só encontrar a trava na próxima venda, que talvez demorasse.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed } from "vue";
 
 import type { DrawerState } from "~/composables/useCounterAgent";
 import { useDrawerIdleWatch } from "~/composables/useDrawerIdleWatch";

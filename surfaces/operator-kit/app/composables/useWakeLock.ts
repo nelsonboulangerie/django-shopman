@@ -14,7 +14,7 @@ interface NavigatorWakeLockCapability {
 /**
  * Mantém uma surface operacional acordada sem transformar ausência de API em erro.
  *
- * Wake Lock é uma melhoria progressiva: Safari antigo, política do aparelho, aba
+ * Wake Lock é uma melhoria progressiva: Safari antigo, política do dispositivo, aba
  * oculta e recusa do navegador resultam em `false`, nunca em exceção para a tela.
  * Ao voltar ao primeiro plano, o lock é pedido novamente porque o navegador libera
  * automaticamente o sentinel quando o documento deixa de estar visível.

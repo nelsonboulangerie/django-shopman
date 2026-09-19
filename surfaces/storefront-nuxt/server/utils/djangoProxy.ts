@@ -163,6 +163,15 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   const forwardedFor = getRequestHeader(event, 'x-forwarded-for')
   if (forwardedFor) headers['x-forwarded-for'] = forwardedFor
 
+  // Só repassar não basta: o BFF chama o `api.` pela rede pública, e a borda de
+  // lá acrescenta o IP de SAÍDA deste processo à direita. Contando da direita, o
+  // Django gravava esse IP (igual para todo visitante) como evidência de
+  // consentimento. O segredo autoriza o Django a ler um salto a mais — e só a
+  // quem o tem, senão qualquer cliente direto escolheria o IP que fica gravado.
+  // Vem da config do servidor, nunca de cabeçalho do navegador.
+  const proxySecret = String(config.djangoProxySecret || '')
+  if (proxySecret) headers['x-shopman-proxy-secret'] = proxySecret
+
   if (isUnsafeMethod) {
     const origin = getRequestHeader(event, 'origin')
     const site = getRequestHeader(event, 'sec-fetch-site')

@@ -166,7 +166,6 @@ onBeforeUnmount(() => {
         v-model="query"
         class="h-11 pl-10 text-base"
         placeholder="Buscar por nome, telefone, CPF ou e-mail"
-        autofocus
         role="combobox"
         aria-expanded="true"
         aria-controls="pos-customer-search-listbox"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ProductDetailProjection, ShopProjection } from '~/types/shopman'
+import type { ProductDetailProjection, ShopProjection, SiteBusinessProjection } from '~/types/shopman'
 import {
   absoluteImage,
   absoluteUrl,
@@ -9,10 +9,17 @@ import {
   collectionJsonLd,
   faqJsonLd,
   jsonLdText,
+  listingDescription,
+  localBusinessJsonLd,
   metaDescription,
+  normalizeSite,
   priceFromQ,
+  productCollectionCrumb,
   productJsonLd,
-  truncateClean
+  sitePageSeo,
+  siteVerificationMeta,
+  truncateClean,
+  websiteJsonLd
 } from '~/presentation/seo'
 
 const ORIGIN = 'https://loja.exemplo.com'
@@ -217,6 +224,302 @@ describe('faqJsonLd', () => {
         }
       }
     ])
+  })
+})
+
+// ── Identidade pública do site ───────────────────────────────────────────────
+
+const FULL_SITE = {
+  pages: {
+    home: { title: 'Nelson Boulangerie · Padaria artesanal em Londrina', description: 'Pães de fermentação natural.' },
+    menu: { title: 'Cardápio', description: 'O cardápio do dia.' },
+    faq: { title: 'Perguntas frequentes', description: 'Entrega, encomenda e horário.' }
+  },
+  share_image_url: 'https://cdn.exemplo.com/share.jpg',
+  verifications: { google: 'g-123', bing: '', facebook: 'fb-456', pinterest: '' },
+  business: {
+    type: 'Bakery',
+    name: 'Nelson Boulangerie',
+    legal_name: 'Nelson Boulangerie Ltda',
+    description: 'Padaria artesanal em Londrina.',
+    url: '',
+    telephone: '+55 43 3323-1997',
+    email: 'nelson@boulangerie.com.br',
+    logo_url: '/static/logo.png',
+    price_range: '$$',
+    founding_year: 1997,
+    address: {
+      street: 'Av. Madre Leônia Milito, 446',
+      neighborhood: 'Bela Suíça',
+      locality: 'Londrina',
+      region: 'PR',
+      postal_code: '86050-270',
+      country_code: 'BR'
+    },
+    geo: { latitude: -23.3348, longitude: -51.1673 },
+    opening_hours: [
+      { days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], opens: '09:00', closes: '18:00' },
+      { days: ['Sunday'], opens: '08:00', closes: '12:00' }
+    ],
+    maps_url: 'https://g.page/nelsonboulangerie',
+    same_as: ['https://www.instagram.com/nelsonboulangerie', 'https://www.facebook.com/nelsonboulangerie']
+  },
+  faq: [{ ref: 'delivery', question: 'Vocês entregam?', answer: 'Sim.' }]
+}
+
+function sparseBusiness (overrides: Partial<SiteBusinessProjection> = {}): SiteBusinessProjection {
+  return { ...normalizeSite({ business: { name: 'Nelson Boulangerie' } })!.business, ...overrides }
+}
+
+// Caminhos de toda chave vazia ('' / null / [] / {}) — JSON-LD não carrega nenhuma.
+function emptyKeys (value: unknown, path = '$'): string[] {
+  if (Array.isArray(value)) {
+    return value.length ? value.flatMap((entry, index) => emptyKeys(entry, `${path}[${index}]`)) : [path]
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value)
+    if (!entries.length) return [path]
+    return entries.flatMap(([key, entry]) => emptyKeys(entry, `${path}.${key}`))
+  }
+  return value === '' || value === null || value === undefined ? [path] : []
+}
+
+describe('normalizeSite', () => {
+  it('devolve null quando o endpoint não mandou objeto', () => {
+    expect(normalizeSite(null)).toBeNull()
+    expect(normalizeSite(undefined)).toBeNull()
+    expect(normalizeSite('erro')).toBeNull()
+    expect(normalizeSite([])).toBeNull()
+  })
+
+  it('preenche o que faltou com vazio, nunca com undefined', () => {
+    const site = normalizeSite({ business: { name: '  Nelson  ', geo: { latitude: 'x', longitude: 1 }, founding_year: 0 } })!
+    expect(site.pages.home).toEqual({ title: '', description: '' })
+    expect(site.verifications).toEqual({ google: '', bing: '', facebook: '', pinterest: '' })
+    expect(site.business.name).toBe('Nelson')
+    expect(site.business.geo).toBeNull()
+    expect(site.business.founding_year).toBeNull()
+    expect(site.business.opening_hours).toEqual([])
+    expect(site.business.same_as).toEqual([])
+    expect(site.faq).toEqual([])
+  })
+
+  it('descarta pergunta sem resposta', () => {
+    const site = normalizeSite({ faq: [{ ref: 'a', question: 'P?', answer: '' }, { ref: 'b', question: 'Q?', answer: 'R.' }] })!
+    expect(site.faq).toEqual([{ ref: 'b', question: 'Q?', answer: 'R.' }])
+  })
+})
+
+describe('sitePageSeo', () => {
+  it('lê título e descrição da página', () => {
+    expect(sitePageSeo(normalizeSite(FULL_SITE), 'menu')).toEqual({ title: 'Cardápio', description: 'O cardápio do dia.' })
+  })
+  it('vazio sem site — a página cai no próprio padrão', () => {
+    expect(sitePageSeo(null, 'home')).toEqual({ title: '', description: '' })
+  })
+})
+
+describe('siteVerificationMeta', () => {
+  it('emite só as verificações preenchidas, com o nome que cada serviço lê', () => {
+    expect(siteVerificationMeta(normalizeSite(FULL_SITE)!.verifications)).toEqual([
+      { name: 'google-site-verification', content: 'g-123' },
+      { name: 'facebook-domain-verification', content: 'fb-456' }
+    ])
+  })
+  it('conhece Bing e Pinterest', () => {
+    expect(siteVerificationMeta({ bing: 'b', pinterest: 'p' })).toEqual([
+      { name: 'msvalidate.01', content: 'b' },
+      { name: 'p:domain_verify', content: 'p' }
+    ])
+  })
+  it('nada quando não há verificação', () => {
+    expect(siteVerificationMeta(null)).toEqual([])
+    expect(siteVerificationMeta({ google: '  ' })).toEqual([])
+  })
+})
+
+describe('localBusinessJsonLd', () => {
+  it('monta o LocalBusiness completo a partir do cadastro', () => {
+    const ld = localBusinessJsonLd({
+      business: normalizeSite(FULL_SITE)!.business,
+      origin: ORIGIN,
+      images: ['https://cdn.exemplo.com/share.jpg', '/media/pao.jpg']
+    })
+    expect(ld).toEqual({
+      '@context': 'https://schema.org',
+      '@type': 'Bakery',
+      '@id': 'https://loja.exemplo.com/#business',
+      url: 'https://loja.exemplo.com/',
+      name: 'Nelson Boulangerie',
+      legalName: 'Nelson Boulangerie Ltda',
+      description: 'Padaria artesanal em Londrina.',
+      telephone: '+55 43 3323-1997',
+      email: 'nelson@boulangerie.com.br',
+      image: [
+        'https://cdn.exemplo.com/share.jpg',
+        'https://loja.exemplo.com/media/pao.jpg',
+        'https://loja.exemplo.com/static/logo.png'
+      ],
+      logo: 'https://loja.exemplo.com/static/logo.png',
+      priceRange: '$$',
+      foundingDate: '1997',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Av. Madre Leônia Milito, 446 - Bela Suíça',
+        addressLocality: 'Londrina',
+        addressRegion: 'PR',
+        postalCode: '86050-270',
+        addressCountry: 'BR'
+      },
+      geo: { '@type': 'GeoCoordinates', latitude: -23.3348, longitude: -51.1673 },
+      openingHoursSpecification: [
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: [
+            'https://schema.org/Monday',
+            'https://schema.org/Tuesday',
+            'https://schema.org/Wednesday',
+            'https://schema.org/Thursday',
+            'https://schema.org/Friday',
+            'https://schema.org/Saturday'
+          ],
+          opens: '09:00',
+          closes: '18:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: ['https://schema.org/Sunday'],
+          opens: '08:00',
+          closes: '12:00'
+        }
+      ],
+      hasMap: 'https://g.page/nelsonboulangerie',
+      sameAs: ['https://www.instagram.com/nelsonboulangerie', 'https://www.facebook.com/nelsonboulangerie'],
+      hasMenu: 'https://loja.exemplo.com/menu'
+    })
+    expect(emptyKeys(ld)).toEqual([])
+  })
+
+  it('com cadastro esparso, omite tudo o que não sabe — nenhuma chave vazia', () => {
+    const ld = localBusinessJsonLd({ business: sparseBusiness(), origin: ORIGIN, images: [null, ''] })
+    expect(ld).toEqual({
+      '@context': 'https://schema.org',
+      '@type': 'LocalBusiness',
+      '@id': 'https://loja.exemplo.com/#business',
+      url: 'https://loja.exemplo.com/',
+      name: 'Nelson Boulangerie',
+      hasMenu: 'https://loja.exemplo.com/menu'
+    })
+    expect(emptyKeys(ld)).toEqual([])
+  })
+
+  it('endereço parcial vira PostalAddress só com o que existe', () => {
+    const ld = localBusinessJsonLd({
+      business: sparseBusiness({
+        address: { street: '', neighborhood: '', locality: 'Londrina', region: '', postal_code: '', country_code: 'BR' }
+      }),
+      origin: ORIGIN
+    })
+    expect(ld.address).toEqual({ '@type': 'PostalAddress', addressLocality: 'Londrina', addressCountry: 'BR' })
+    expect(emptyKeys(ld)).toEqual([])
+  })
+
+  it('horário: ignora dia desconhecido e grupo sem abertura, fechamento ou dias', () => {
+    const ld = localBusinessJsonLd({
+      business: sparseBusiness({
+        opening_hours: [
+          { days: ['monday', 'Feriado', 'https://schema.org/Tuesday'], opens: '07:00', closes: '19:00' },
+          { days: ['Sunday'], opens: '', closes: '12:00' },
+          { days: [], opens: '08:00', closes: '12:00' }
+        ]
+      }),
+      origin: ORIGIN
+    })
+    expect(ld.openingHoursSpecification).toEqual([
+      {
+        '@type': 'OpeningHoursSpecification',
+        dayOfWeek: ['https://schema.org/Monday', 'https://schema.org/Tuesday'],
+        opens: '07:00',
+        closes: '19:00'
+      }
+    ])
+  })
+
+  it('tipo mal formado cai em LocalBusiness; o logo da loja cobre o que falta', () => {
+    const ld = localBusinessJsonLd({
+      business: sparseBusiness({ type: 'Padaria Artesanal' }),
+      origin: ORIGIN,
+      fallbackLogoUrl: '/static/loja.png'
+    })
+    expect(ld['@type']).toBe('LocalBusiness')
+    expect(ld.logo).toBe('https://loja.exemplo.com/static/loja.png')
+    expect(ld.image).toEqual(['https://loja.exemplo.com/static/loja.png'])
+  })
+})
+
+describe('websiteJsonLd', () => {
+  it('liga o site ao estabelecimento pelo @id', () => {
+    expect(websiteJsonLd({ origin: ORIGIN, name: 'Nelson Boulangerie', publisherId: 'https://loja.exemplo.com/#business' })).toEqual({
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      '@id': 'https://loja.exemplo.com/#website',
+      url: 'https://loja.exemplo.com/',
+      inLanguage: 'pt-BR',
+      name: 'Nelson Boulangerie',
+      publisher: { '@id': 'https://loja.exemplo.com/#business' }
+    })
+  })
+  it('sem nome nem publisher, não emite chave vazia', () => {
+    const ld = websiteJsonLd({ origin: ORIGIN, name: '' })
+    expect(ld.name).toBeUndefined()
+    expect(ld.publisher).toBeUndefined()
+    expect(emptyKeys(ld)).toEqual([])
+  })
+  it('o Bakery de fallback usa o mesmo @id para o qual o WebSite aponta', () => {
+    const ld = bakeryJsonLd({ shop: shop(), origin: ORIGIN, url: ORIGIN + '/', latitude: null, longitude: null })
+    expect(ld['@id']).toBe('https://loja.exemplo.com/#business')
+  })
+})
+
+describe('listingDescription', () => {
+  it('diz o que é a casa, onde fica e o que tem', () => {
+    expect(listingDescription({
+      subject: 'Cardápio',
+      brandName: 'Nelson Boulangerie',
+      tagline: 'Padaria artesanal',
+      city: 'Londrina',
+      names: ['Pães', 'Viennoiseries', 'Cafés']
+    })).toBe('Cardápio da Nelson Boulangerie, padaria artesanal em Londrina: Pães, Viennoiseries e Cafés.')
+  })
+  it('sem nomes, fecha a frase; sem tagline, ainda diz a cidade', () => {
+    expect(listingDescription({ subject: 'Cardápio', brandName: 'Nelson Boulangerie', city: 'Londrina' }))
+      .toBe('Cardápio da Nelson Boulangerie em Londrina.')
+  })
+  it('tagline em Title Case (como está no cadastro vivo) desce a caixa inteira', () => {
+    expect(listingDescription({ subject: 'Cardápio', brandName: 'Nelson Boulangerie', tagline: 'Padaria Artesanal', city: 'Londrina' }))
+      .toBe('Cardápio da Nelson Boulangerie, padaria artesanal em Londrina.')
+  })
+  it('preserva sigla na tagline e corta em 160', () => {
+    expect(listingDescription({ subject: 'Rústicos', brandName: 'Loja', tagline: 'NB padaria', names: ['Pão'] }))
+      .toBe('Rústicos da Loja, NB padaria: Pão.')
+    const long = listingDescription({
+      subject: 'Cardápio',
+      brandName: 'Loja',
+      names: Array.from({ length: 4 }, (_, index) => `Produto de nome bem comprido número ${index}`)
+    })
+    expect(long.length).toBeLessThanOrEqual(161)
+    expect(long.endsWith('…')).toBe(true)
+  })
+})
+
+describe('productCollectionCrumb', () => {
+  it('aponta para a página da coleção estática', () => {
+    expect(productCollectionCrumb({ ref: 'rusticos', name: 'Rústicos' })).toEqual({ name: 'Rústicos', path: '/colecao/rusticos' })
+  })
+  it('nunca devolve fragmento; coleção dinâmica ou sem ref sai da trilha', () => {
+    expect(productCollectionCrumb({ ref: 'featured', name: 'Destaques' })).toBeNull()
+    expect(productCollectionCrumb({ ref: '', name: 'Rústicos' })).toBeNull()
+    expect(productCollectionCrumb(null)).toBeNull()
   })
 })
 

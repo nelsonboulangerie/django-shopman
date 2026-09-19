@@ -91,7 +91,7 @@ function props(overrides: Record<string, unknown> = {}) {
 // Os quatro rótulos que o botão principal assume. "Tentar de novo" entrou quando
 // a revisão que falha deixou de girar para sempre e virou a própria saída.
 const cta = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
-  w.findAll("button").find((b) => /Validar|Autorizar|Atualizando|Tentar de novo/.test(b.text()));
+  w.findAll("button").find((b) => /Validar|Pedir autorização|Atualizando|Tentar de novo/.test(b.text()));
 
 // A FAIXA ÚNICA DE AVISOS, no topo da coluna do valor: o bloqueio primeiro (com
 // o toque que resolve), depois as consequências, depois as ressalvas da review.
@@ -244,7 +244,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
     expect(button.attributes("disabled")).toBeDefined();
   });
 
-  it("aprovação de gerente pendente → 'Autorizar e validar' NÃO finaliza direto", async () => {
+  it("aprovação de gerente pendente → 'Pedir autorização' NÃO finaliza direto", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         paymentCovered: true,
@@ -254,7 +254,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
       }),
     });
     const button = cta(wrapper)!;
-    expect(button.text()).toContain("Autorizar");
+    expect(button.text()).toContain("Pedir autorização");
     await button.trigger("click");
     expect(wrapper.emitted("submit")).toBeUndefined(); // abre o diálogo de autorização
   });
@@ -749,7 +749,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   it("a bobina e o troco do entregador deixaram de ser legenda de campo", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
         receiptChannels: ["print"],
         fulfillmentType: "delivery",
         paymentCollection: "on_delivery",
@@ -762,6 +762,39 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");
     expect(wrapper.find(".order-2").text()).not.toContain("troco separado");
+  });
+
+  // "Pedir papel já pede a nota" só é verdade quando o CONTRATO diz que a regra
+  // fiscal lê o canal de impressão (`receipt_requests_emission`). Sem essa
+  // palavra, prometer "imprime sozinha" num dinheiro sem CPF é a mentira antiga.
+  it("a promessa da bobina obedece ao contrato: sem `receipt_requests_emission`, diz quando a nota sai", async () => {
+    const semPalavra = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(semPalavra).text()).toContain("A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).");
+    expect(avisos(semPalavra).text()).not.toContain("imprime sozinha");
+    semPalavra.unmount();
+
+    const explicitoFalso = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: false },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(explicitoFalso).text()).toContain("A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).");
+    explicitoFalso.unmount();
+
+    const comPalavra = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
+    comPalavra.unmount();
   });
 
   it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {
@@ -787,16 +820,20 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   });
 
   it("gerente exigido: o aviso explica, mas NÃO duplica o botão que autoriza", async () => {
-    // O caminho É o Validar, que neste estado se chama "Autorizar e validar".
-    // Um segundo botão faria o mesmo gesto — o mais delicado da tela — em dois
-    // lugares, e nenhum dos dois seria o óbvio.
+    // O caminho É o botão do rodapé, que neste estado se chama "Pedir
+    // autorização". Um segundo botão faria o mesmo gesto — o mais delicado da
+    // tela — em dois lugares, e nenhum dos dois seria o óbvio.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({ review: review({ requires_manager_approval: true }) }),
     });
     expect(avisos(wrapper).text()).toContain("Esta venda precisa de um gerente.");
     // a faixa não ganha um segundo botão de autorizar
     expect(avisos(wrapper).findAll("button")).toHaveLength(0);
-    expect(cta(wrapper)!.text()).toContain("Autorizar e validar");
+    // ⚠️ O botão ABRE o teclado do gerente: ele não autoriza nem valida, e não
+    // pode prometer nenhum dos dois. Só o último passo — o gerente digitando o
+    // PIN — diz o verbo do ato.
+    expect(cta(wrapper)!.text()).toContain("Pedir autorização");
+    expect(cta(wrapper)!.text()).not.toContain("Autorizar e validar");
   });
 
   it("sem pendência nenhuma, a faixa só carrega consequência", async () => {
@@ -1461,22 +1498,22 @@ it("explica antecipação e cobrança pendente no modo encomendas", async () => 
     paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
   }) });
   expect(w.text()).toContain("Pagamento da encomenda");
-  expect(w.text()).toContain("Pagamento antecipado");
-  expect(w.text()).toContain("Cobrar na entrega");
-  expect(w.text()).toContain("pagamento pendente até o recebimento ser registrado no Gestor");
+  expect(w.text()).toContain("No balcão");
+  expect(w.text()).toContain("Na entrega");
+  expect(w.text()).toContain("o entregador recebe e o Gestor registra");
   expect(w.text()).toContain("Levar maquininha");
   await w.setProps({ fulfillmentType: "pickup", paymentCollection: "terminal", paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" }] });
-  expect(w.text()).toContain("pendente até a confirmação do provedor de pagamento");
-  expect(w.text()).not.toContain("Cobrar na entrega");
+  expect(w.text()).toContain("até o provedor confirmar");
+  expect(w.text()).not.toContain("Na entrega");
 
   await w.setProps({
     fulfillmentType: "pickup",
     paymentCollection: "on_delivery",
     paymentTenders: [{ method: "cash", amount_q: 1000, collection: "on_delivery" }],
   });
-  expect(w.text()).toContain("Pagamento na retirada");
+  expect(w.text()).toContain("Na retirada");
   expect(w.text()).toContain("Registre o recebimento no Gestor antes de concluir a retirada");
-  expect(w.text()).not.toContain("Cobrar na entrega");
+  expect(w.text()).not.toContain("Na entrega");
 });
 
 it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {

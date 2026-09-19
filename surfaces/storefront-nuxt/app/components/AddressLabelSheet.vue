@@ -42,7 +42,10 @@ async function choose (key: AddressLabelKey) {
         body: labelPatchPayload(key, custom.value)
       })
     } catch {
-      // Etiqueta é açúcar — não trava o fluxo se o PATCH falhar.
+      // Etiqueta é açúcar — não trava o fluxo se o PATCH falhar. Mas o silêncio total
+      // deixava o cliente achando que "Casa" ficou salvo: o fluxo segue, e ele fica
+      // sabendo, com o lugar de refazer.
+      if (import.meta.client) useSonner.error('Não conseguimos salvar o apelido deste endereço. Dá para nomeá-lo em Conta › Endereços.')
     } finally {
       saving.value = false
     }

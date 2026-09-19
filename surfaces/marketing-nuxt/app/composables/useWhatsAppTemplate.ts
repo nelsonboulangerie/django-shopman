@@ -84,7 +84,7 @@ export function useWhatsAppTemplate() {
       key: "marketing-wa-template",
       server: false,
       immediate: false,
-      onResponseError: operatorSessionOnError,
+      onResponseError: marketingSessionOnError,
     },
   );
 
@@ -180,7 +180,7 @@ export function useWhatsAppTemplate() {
       testReceipt.value = response;
       if (response.ok) {
         useSonner.success(
-          "O ambiente de teste aceitou. Confira o aparelho; aceite ainda não é entrega.",
+          "O ambiente de teste aceitou. Confira o número; aceite ainda não é entrega.",
         );
       } else {
         useSonner.error(
