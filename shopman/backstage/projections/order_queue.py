@@ -1908,10 +1908,27 @@ def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
     }
 
 
+# O iFood entrega o nome do cliente MASCARADO em pedido de teste — 32 asteriscos,
+# não um campo vazio. Medido no alpha em 19/09/2026: ``customer_name`` chegava como
+# "********************************" e o card imprimia isso na linha do cliente,
+# onde parece defeito de renderização e ocupa o lugar do dado que importa. Máscara
+# não é nome: quem lê precisa saber que NÃO HÁ nome para chamar, e de quem é a
+# decisão de ocultar. Nome de verdade, inclusive abreviado ("Marina A."), passa.
+_MASKED_NAME_CHARS = set("*·•.…-_ ")
+_MASKED_NAME_LABEL = "Nome oculto pelo iFood"
+
+
+def _is_masked_name(label: str) -> bool:
+    """Um rótulo feito só de caracteres de máscara não identifica ninguém."""
+    return bool(label) and set(label) <= _MASKED_NAME_CHARS and any(ch in "*·•…" for ch in label)
+
+
 def _format_customer_display(value: str) -> str:
     label = (value or "").strip()
     if not label:
         return ""
+    if _is_masked_name(label):
+        return _MASKED_NAME_LABEL
 
     digits = "".join(ch for ch in label if ch.isdigit())
     if not digits:
