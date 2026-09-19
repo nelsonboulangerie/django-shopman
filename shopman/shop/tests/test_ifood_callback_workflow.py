@@ -201,7 +201,7 @@ def test_pickup_conclusion_suppresses_previously_queued_ready_callback():
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("terminal", [Order.Status.COMPLETED, Order.Status.RETURNED, Order.Status.CANCELLED])
-@pytest.mark.parametrize("callback_status", ["accepted", "ready", "dispatched"])
+@pytest.mark.parametrize("callback_status", ["accepted", "preparing", "ready", "dispatched"])
 def test_delayed_progress_callbacks_are_inert_after_terminal_state(terminal, callback_status):
     order = Order.objects.create(
         ref="TERMINAL-IFD", channel_ref="ifood", external_ref="terminal-order", status=terminal,
@@ -333,3 +333,117 @@ def test_happy_path_still_enqueues_the_callback_and_stays_quiet(caplog):
     assert directive.payload["status"] == "dispatched"
     assert directive.payload["delivered_by"] == "MERCHANT"
     assert "no callback for order" not in caplog.text
+
+
+# ── O preparo ATRAVESSA para o iFood ───────────────────────────────────────────
+# Medido em 19/09/2026: `startPreparation` e `PREPARATION_STARTED` não apareciam
+# em nenhum arquivo de `shopman/`, `packages/` ou `config/`. O status local
+# `preparing` movia o KDS e morria aqui — `action_for_status("preparing")`
+# devolvia None e o sinal desistia antes de enfileirar. O cliente via o pedido
+# parado em "confirmado" com a cozinha já trabalhando.
+#
+# Fundamento (workflow oficial do módulo Order, lido em 19/09/2026 em
+# https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/workflow):
+#
+#   "Iniciar preparo — Use POST /orders/{id}/startPreparation para iniciar o
+#   preparo." Ciclo de vida FOOD: PLACED → CONFIRMED → PREPARATION_STARTED →
+#   READY_TO_PICKUP → DISPATCHED → CONCLUDED, com "PREPARATION_STARTED — Preparo
+#   iniciado (opcional)" e "Iniciando preparação" no checklist do passo 18.
+
+
+@pytest.mark.parametrize(("fulfillment", "owner"), [
+    ("pickup", ""),
+    ("TAKEOUT", ""),
+    ("DINE_IN", ""),
+    ("delivery", "IFOOD"),
+    ("delivery", "MERCHANT"),
+    ("delivery", ""),
+    ("", ""),
+])
+def test_preparation_is_announced_for_every_fulfillment(fulfillment, owner):
+    """Começar a preparar não afirma nada sobre quem entrega — logística não entra."""
+    with patch.object(ifood_callbacks, "send_action") as send:
+        sent = ifood_callbacks.send_for_status(
+            "ifood-order", "preparing", fulfillment_type=fulfillment, delivered_by=owner,
+        )
+    assert sent is True
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+def test_preparation_action_is_the_documented_path_segment():
+    """A trava do VALOR: o caminho é `startPreparation`, não uma variação plausível."""
+    assert ifood_callbacks.action_for_status("preparing") == "startPreparation"
+    assert ifood_callbacks.STATUS_ACTION["preparing"] == "startPreparation"
+
+
+def test_bare_preparation_needs_no_context_unlike_dispatch():
+    with patch.object(ifood_callbacks, "send_action") as send:
+        assert ifood_callbacks.send_for_status("ifood-order", "preparing") is True
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+def test_start_preparation_helper_posts_the_documented_action():
+    with patch.object(ifood_callbacks, "send_action") as send:
+        ifood_callbacks.start_preparation("ifood-order")
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("fulfillment", "owner"), [
+    ("pickup", ""),
+    ("delivery", "IFOOD"),
+    ("delivery", "MERCHANT"),
+])
+def test_signal_enqueues_the_preparation_callback(fulfillment, owner):
+    order = Order.objects.create(
+        ref="PREP-IFD", channel_ref="ifood", external_ref="ifood-order", status="preparing",
+        data={"fulfillment_type": fulfillment, "ifood": {"delivered_by": owner}},
+    )
+    on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+    directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
+    assert directive.payload["status"] == "preparing"
+
+
+@pytest.mark.django_db
+def test_observed_remote_dispatch_suppresses_a_late_preparation_callback():
+    """O pedido já SAIU: contar "comecei a preparar" depois é narrar passado superado."""
+    order = Order.objects.create(
+        ref="PREP-LATE", channel_ref="ifood", external_ref="ifood-order", status="preparing",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_dispatched": {"event_id": "dsp-1"},
+        }},
+    )
+    assert ifood_callbacks.remote_status_observed(order, "preparing") is True
+    message = SimpleNamespace(payload={"ifood_order_id": order.external_ref, "status": "preparing"})
+    with patch.object(ifood_callbacks, "send_for_status") as send:
+        IFoodStatusCallbackHandler().handle(message=message, ctx={})
+    send.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_remote_confirmation_does_not_suppress_the_preparation_callback():
+    """CFM precede o preparo e não o dispensa — só o despacho observado o cala."""
+    order = Order.objects.create(
+        ref="PREP-CFM", channel_ref="ifood", external_ref="ifood-order", status="preparing",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_confirmed": {"event_id": "cfm-1"},
+        }},
+    )
+    assert ifood_callbacks.remote_status_observed(order, "preparing") is False
+    message = SimpleNamespace(payload={"ifood_order_id": order.external_ref, "status": "preparing"})
+    with patch.object(ifood_callbacks, "send_action") as send:
+        IFoodStatusCallbackHandler().handle(message=message, ctx={})
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+@pytest.mark.django_db
+def test_simulated_order_never_announces_preparation():
+    order = Order.objects.create(
+        ref="PREP-SIM", channel_ref="ifood", external_ref="IFOOD-SIM-987", status="preparing",
+        data={"fulfillment_type": "pickup", "ifood": {}},
+    )
+    on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    with patch.object(ifood_callbacks, "send_action") as send:
+        assert ifood_callbacks.send_for_status(order.external_ref, "preparing") is False
+    send.assert_not_called()

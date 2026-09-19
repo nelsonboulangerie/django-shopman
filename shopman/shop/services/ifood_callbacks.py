@@ -4,6 +4,7 @@ The merchant must tell iFood how an order progresses. Verified live (routes
 exist; a fake id returns ``404 OrderNotFound``):
 
 - ``POST /order/v1.0/orders/{id}/confirm``          → accept the order.
+- ``POST /order/v1.0/orders/{id}/startPreparation`` → preparation began.
 - ``POST /order/v1.0/orders/{id}/readyToPickup``    → order is ready.
 - ``POST /order/v1.0/orders/{id}/dispatch``         → order left for delivery.
 - ``POST /order/v1.0/orders/{id}/requestCancellation`` → ask iFood to cancel.
@@ -11,6 +12,7 @@ exist; a fake id returns ``404 OrderNotFound``):
 Internal ``Order.Status`` → iFood action:
 
     CONFIRMED  → confirm
+    PREPARING  → startPreparation
     READY      → readyToPickup (todo pedido: TAKEOUT, DINE_IN e DELIVERY)
     DISPATCHED → dispatch (entrega da loja — só ``deliveredBy: MERCHANT``)
     CANCELLED  → requestCancellation
@@ -40,8 +42,30 @@ class IFoodCallbackError(Exception):
 
 
 # Internal status → iFood order-action path segment.
+#
+# ``startPreparation`` é o único passo OPCIONAL do ciclo de vida FOOD — o
+# workflow oficial lista "PREPARATION_STARTED — Preparo iniciado (opcional)" e
+# os critérios de homologação não o exigem (só ``readyToPickup`` e
+# ``dispatch``). Mesmo assim ele entra, por três razões medidas na
+# documentação oficial
+# (https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/workflow):
+#
+# 1. Está no checklist de implementação deles ("Iniciando preparação") e no
+#    diagrama de sequência do passo 9 ("5- Start Preparation").
+# 2. O evento que ele gera — ``SEPARATION_STARTED`` / ``PREPARATION_STARTED`` —
+#    é informativo dos dois lados ("Ação necessária: Nenhuma"), então avisar não
+#    reabre nada nem muda o SLA. O único SLA documentado é o de CONFIRMAÇÃO (8
+#    minutos), que não depende deste envio.
+# 3. Sem ele o cliente vê o pedido parado em "confirmado" enquanto a cozinha já
+#    está trabalhando: o iFood só sabe o que a loja conta.
+#
+# ⚠️ Pedido AGENDADO: a documentação manda respeitar ``preparationStartDateTime``.
+# Quem garante isso não é este mapa e sim o portão local — ``operator_orders``
+# recusa a transição para ``preparing`` enquanto ``ifood_schedule.block_reason``
+# devolver motivo. O envio pega carona na transição, então nasce no horário.
 STATUS_ACTION = {
     "accepted": "confirm",
+    "preparing": "startPreparation",
     "ready": "readyToPickup",
     "dispatched": "dispatch",
     "cancelled": "requestCancellation",
@@ -132,7 +156,11 @@ def remote_status_observed(order, status: str) -> bool:
     remote = (order.data or {}).get("ifood") or {}
     if status == "accepted":
         return bool(remote.get("remote_confirmed") or remote.get("remote_dispatched"))
-    if status in {"ready", "dispatched"}:
+    # ``preparing`` entra aqui com ``ready``/``dispatched``, não com ``accepted``:
+    # a confirmação remota PRECEDE o preparo e não o dispensa, mas um despacho já
+    # observado significa que o pedido saiu — avisar "comecei a preparar" depois
+    # disso contaria ao iFood um passado que ele já superou.
+    if status in {"preparing", "ready", "dispatched"}:
         return bool(remote.get("remote_dispatched"))
     return False
 
@@ -172,6 +200,10 @@ def send_action(order_id: str, action: str, *, body: dict | None = None) -> None
 
 def confirm(order_id: str) -> None:
     send_action(order_id, "confirm")
+
+
+def start_preparation(order_id: str) -> None:
+    send_action(order_id, "startPreparation")
 
 
 def ready_to_pickup(order_id: str) -> None:
@@ -263,6 +295,7 @@ def send_for_status(
 
 __all__ = [
     "confirm",
+    "start_preparation",
     "ready_to_pickup",
     "dispatch",
     "request_cancellation",
