@@ -121,6 +121,23 @@ export function elapsedLabel(seconds: number): string {
  * Retorna "" quando não há prazo; "0:00" quando já venceu; senão "M:SS".
  * Puro e testável — o card passa um `nowMs` que tica no cliente.
  */
+/**
+ * Tom do prazo pelo que FALTA, não pelo que passou.
+ *
+ * O decorrido nunca fica vermelho sozinho — um pedido de 7 minutos com 10 de prazo
+ * está tranquilo, e um de 7 com 8 de prazo está para vencer. Os cortes valem para
+ * qualquer canal: o prazo do iFood e o timer da casa pedem a mesma leitura.
+ */
+export function deadlineTone(deadlineIso: string, nowMs: number): TimerTone {
+  if (!deadlineIso) return "muted";
+  const deadlineMs = Date.parse(deadlineIso);
+  if (Number.isNaN(deadlineMs)) return "muted";
+  const secondsLeft = (deadlineMs - nowMs) / 1000;
+  if (secondsLeft <= 60) return "late";
+  if (secondsLeft <= 180) return "warning";
+  return "ok";
+}
+
 export function confirmationRemainingLabel(deadlineIso: string, nowMs: number): string {
   if (!deadlineIso) return "";
   const deadlineMs = Date.parse(deadlineIso);

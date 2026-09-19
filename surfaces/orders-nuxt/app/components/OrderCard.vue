@@ -7,6 +7,7 @@ import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
   confirmationRemainingLabel,
+  deadlineTone,
   lucideIcon,
   splitRef,
   statusTone,
@@ -55,6 +56,7 @@ const nowMs = useNowTick(() => props.card.server_now_iso);
 const confirmationLeft = computed(() =>
   confirmationRemainingLabel(props.card.confirmation_deadline_iso, nowMs.value),
 );
+const deadlineTone_ = computed(() => deadlineTone(props.card.confirmation_deadline_iso, nowMs.value));
 
 function buttonClass(priority: string): string {
   if (priority === "primary")
@@ -113,6 +115,14 @@ function buttonClass(priority: string): string {
           <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
         </span>
         <span class="block truncate text-lg font-bold leading-tight tabular-nums group-hover:underline">{{ code.code }}</span>
+        <!-- Só quando o ref NÃO carrega o número do canal (colisão no dia, ou pedido
+             anterior a essa mudança). No caso normal o código acima já é ele, e
+             repetir aqui daria dois números para o operador conferir. -->
+        <span
+          v-if="card.channel_display_id"
+          class="block truncate text-xs font-medium tabular-nums text-muted-foreground"
+          data-channel-display-id
+        >iFood #{{ card.channel_display_id }}</span>
       </NuxtLink>
       <button
         v-if="!negotiationOnly"
@@ -126,22 +136,27 @@ function buttonClass(priority: string): string {
         <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
         <span v-if="card.assigned_operator" class="max-w-20 truncate">{{ card.assigned_operator }}</span>
       </button>
+      <!-- Um relógio só. Havendo prazo, ele é o relógio: quanto FALTA decide se o
+           operador pega este pedido agora, e quanto PASSOU não decide nada. Sem
+           prazo (a maioria dos estados), volta a contar o decorrido. -->
       <span
+        v-if="confirmationLeft"
+        class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
+        :class="timerChip(deadlineTone_)"
+        :title="card.confirmation_action === 'cancel' ? 'Cancelado automaticamente se vencer' : 'Confirmado automaticamente se vencer'"
+        role="timer"
+        aria-live="off"
+      >
+        <Icon name="lucide:hourglass" class="size-3" />
+        <span class="sr-only">Restam </span>{{ confirmationLeft }}
+      </span>
+      <span
+        v-else
         class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
         :class="timerChip(tTone)"
       >
         <Icon name="lucide:clock" class="size-3" />
         {{ elapsedLabel(card.elapsed_seconds) }}
-      </span>
-      <span
-        v-if="confirmationLeft"
-        class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-700 dark:text-amber-400"
-        :title="card.confirmation_action === 'cancel' ? 'Cancela automaticamente ao vencer' : 'Confirma automaticamente ao vencer'"
-        role="timer"
-        aria-live="off"
-      >
-        <Icon name="lucide:hourglass" class="size-3" />
-        {{ confirmationLeft }}
       </span>
     </div>
 

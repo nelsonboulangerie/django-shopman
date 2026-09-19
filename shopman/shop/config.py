@@ -79,6 +79,13 @@ class ChannelConfig:
         # Opt-in para mode=manual: após X minutos em NEW sem decisão do operador,
         # dispara OperatorAlert("stale_new_order"). 0 (default) desabilita.
         # Usado em canais marketplace (iFood) para escalar pedidos esquecidos.
+        external_sla_minutes: int = 0
+        # Prazo que o MARKETPLACE impõe para confirmar, contado da criação do pedido
+        # lá. Não é timer nosso: vencido, quem cancela é o marketplace, e o pedido
+        # some da fila sem a gente fazer nada. O card conta esse prazo para ele ficar
+        # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
+        # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
+        # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
 
     # ── 2. Pagamento ──
 
