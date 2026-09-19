@@ -62,9 +62,25 @@ esse digest** (mais de uma = dois commits publicaram a MESMA imagem). É o mesmo
 movimento do `#573`, quando o Deploy Images passou a DECLARAR o que publicou: o
 conserto não foi adivinhar melhor, foi obrigar o passo a dizer o que viu.
 
+## E repergunta antes de gritar
+
+A medida respondeu: em 18/09/2026 a guarda corria de 67 s a 114 s depois de a
+tag móvel ter sido empurrada, e lia a listagem `/tags` ainda no estado anterior
+ao push. Quatro corridas vermelhas seguidas, nenhuma com componente realmente
+para trás — e a remediação que a própria mensagem sugeria (republicar) não podia
+consertar nada, porque não havia o que republicar.
+
+Então divergência na primeira leitura não é veredito: a guarda repergunta, até
+`--reconfirmacoes` vezes a cada `--espera` segundos, e só acusa o que
+sobreviver. Isso NÃO é paciência com divergência de verdade, que atravessa
+qualquer espera — é recusar-se a confundir "o registry ainda não me contou" com
+"o componente ficou para trás". A linha final diz quantas leituras a divergência
+atravessou, que é a diferença entre afirmar e supor.
+
 Uso:
 
     DO_TOKEN=... python scripts/check_registry_drift.py
+    DO_TOKEN=... python scripts/check_registry_drift.py --reconfirmacoes 0
     python scripts/check_registry_drift.py --registry-json tags.json  # offline
 
 Saídas:
@@ -80,6 +96,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -157,25 +174,29 @@ class Leitura(NamedTuple):
     """
 
     shas: tuple[str, ...]
-    digest: str
-    #: Os digests de TODAS as entradas da listagem com aquele nome de tag. Mais
-    #: de uma entrada significa que a listagem repetiu a tag — o sintoma de
-    #: paginar uma lista que um push está mutando.
-    entradas: tuple[str, ...]
+    #: Os digests DISTINTOS que a tag móvel carregou na listagem. Mais de um
+    #: significa que a listagem repetiu a tag com valores diferentes — o sintoma
+    #: de paginar uma lista que um push está mutando. Medido em 19/09/2026: são
+    #: 1206 tags em 7 páginas, então esse mecanismo não é hipotético.
+    digests: tuple[str, ...]
+    #: Quantas entradas da listagem carregavam aquele NOME de tag.
+    entradas: int
     motivo: str
 
     def medida(self) -> str:
         """De onde a conclusão saiu. É isto que faz o próximo vermelho se explicar."""
-        partes = [f"digest lido na tag móvel: {_curto(self.digest) or '(nenhum)'}"]
-        if len(self.entradas) != 1:
-            digests = ", ".join(_curto(d) for d in self.entradas) or "nenhum"
-            partes.append(
-                f"{len(self.entradas)} entradas da listagem carregam esse NOME "
-                f"de tag ({digests})"
-            )
+        lidos = ", ".join(_curto(d) for d in self.digests) or "(nenhum)"
+        if len(self.digests) > 1:
+            partes = [
+                f"a tag móvel veio em {self.entradas} entradas da listagem, com "
+                f"digests DIFERENTES ({lidos}) — a listagem repetiu a tag"
+            ]
+        else:
+            partes = [f"digest lido na tag móvel: {lidos}"]
         imutaveis = ", ".join(s[:9] for s in self.shas) or "nenhuma"
         partes.append(
-            f"{len(self.shas)} tag(s) imutável(is) dividem esse digest: {imutaveis}"
+            f"{len(self.shas)} tag(s) imutável(is) dividem esse(s) digest(s): "
+            f"{imutaveis}"
         )
         return "; ".join(partes)
 
@@ -188,29 +209,34 @@ def _curto(digest: str) -> str:
 def read_published(tags: list[dict], moving_tag: str) -> Leitura:
     """Quais commits podem estar por trás da tag móvel — com a medida junto.
 
-    ⚠️ Não escolhe em silêncio. Quando duas imutáveis dividem o digest, as duas
-    voltam: a imagem é a mesma, então qualquer uma delas descreve fielmente o
-    que está no ar, e quem decide é o confronto, que sabe o que perguntar.
+    ⚠️ Não escolhe em silêncio, em nenhuma das duas frentes.
 
-    ⚠️ O digest da tag móvel continua saindo por ÚLTIMA-ESCRITA-VENCE, o mesmo
-    critério do dicionário que estava aqui antes. É de propósito: instrumentar
-    é medir o comportamento de hoje, não trocá-lo por outro antes de saber qual
-    dos mecanismos está em jogo. `entradas` é o que denuncia o colapso.
+    Quando duas imutáveis dividem um digest, as duas voltam: a imagem é a mesma,
+    então qualquer uma delas descreve fielmente o que está no ar.
+
+    E quando a LISTAGEM traz a mesma tag móvel duas vezes com digests
+    diferentes, os dois digests entram — em vez de deixar a última entrada
+    vencer, como fazia o `digest_por_tag` que estava aqui. Um digest que aparece
+    sob aquele nome de tag foi, em algum momento, o valor daquela tag: ignorá-lo
+    porque a paginação o colocou na página errada era exatamente o mecanismo que
+    ninguém conseguia descartar. Com 1206 tags em 7 páginas (medido em
+    19/09/2026), a lista muda debaixo da leitura com facilidade.
     """
-    entradas = tuple(
+    carregados = [
         t.get("manifest_digest") or "" for t in tags if t.get("tag") == moving_tag
-    )
-    digest = ""
-    for valor in entradas:
-        digest = valor or digest
-    if not digest:
+    ]
+    digests = tuple(dict.fromkeys(d for d in carregados if d))
+    if not digests:
         return Leitura(
-            (), "", entradas, f"a tag `{moving_tag}` não existe no registry"
+            (),
+            (),
+            len(carregados),
+            f"a tag `{moving_tag}` não existe no registry",
         )
 
     shas: list[str] = []
     for t in tags:
-        if t.get("manifest_digest") != digest:
+        if t.get("manifest_digest") not in digests:
             continue
         match = IMMUTABLE.match(t.get("tag") or "")
         if match and match["tag"] == moving_tag and match["sha"] not in shas:
@@ -218,13 +244,13 @@ def read_published(tags: list[dict], moving_tag: str) -> Leitura:
     if not shas:
         return Leitura(
             (),
-            digest,
-            entradas,
-            f"a tag `{moving_tag}` aponta para {digest}, e nenhuma tag "
-            f"`{moving_tag}-<sha>` aponta para o mesmo digest — impossível provar "
-            "qual commit está no ar",
+            digests,
+            len(carregados),
+            f"a tag `{moving_tag}` aponta para {', '.join(digests)}, e nenhuma "
+            f"tag `{moving_tag}-<sha>` aponta para o mesmo digest — impossível "
+            "provar qual commit está no ar",
         )
-    return Leitura(tuple(shas), digest, entradas, "")
+    return Leitura(tuple(shas), digests, len(carregados), "")
 
 
 def _divergencia(esperado: str, publicado: str, ref: str, repo: Path) -> str:
@@ -284,7 +310,8 @@ def audit(
             notas.append(
                 f"{name}: {len(leitura.shas)} commits publicaram a MESMA imagem "
                 f"({', '.join(s[:9] for s in leitura.shas)} → "
-                f"{_curto(leitura.digest)}) — build e publicação repetidos"
+                f"{', '.join(_curto(d) for d in leitura.digests)}) — build e "
+                "publicação repetidos"
             )
         if not all(queixas):
             # A imagem é idêntica nos candidatos: se ALGUM deles honra a
@@ -293,6 +320,16 @@ def audit(
             continue
         problemas.append(f"{name}: {queixas[0]} [{leitura.medida()}]")
     return problemas, notas
+
+
+def _confrontar(tags: list[dict], args, groups: dict[str, list[str]]):
+    return audit(
+        tags,
+        ref=args.ref,
+        per_app=args.per_app == "true",
+        repo=Path(args.repo),
+        groups=groups,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -308,39 +345,78 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="lê as tags de um arquivo em vez da API (teste offline)",
     )
+    parser.add_argument(
+        "--reconfirmacoes",
+        type=int,
+        default=4,
+        help="quantas vezes reperguntar ao registry antes de acusar divergência",
+    )
+    parser.add_argument(
+        "--espera",
+        type=float,
+        default=60.0,
+        help="segundos entre uma repergunta e a seguinte",
+    )
     args = parser.parse_args(argv)
 
-    try:
-        if args.registry_json:
+    groups = load_groups(Path(args.groups_json))
+    offline = bool(args.registry_json)
+
+    def perguntar() -> list[dict]:
+        if offline:
             payload = json.loads(Path(args.registry_json).read_text(encoding="utf-8"))
-            tags = payload["tags"] if isinstance(payload, dict) else payload
-        else:
-            token = os.environ.get("DO_TOKEN", "").strip()
-            if not token:
-                raise NaoDeuParaPerguntar("DO_TOKEN ausente")
-            tags = fetch_tags(args.registry, args.repository, token)
+            return payload["tags"] if isinstance(payload, dict) else payload
+        token = os.environ.get("DO_TOKEN", "").strip()
+        if not token:
+            raise NaoDeuParaPerguntar("DO_TOKEN ausente")
+        return fetch_tags(args.registry, args.repository, token)
+
+    # ⚠️ A repergunta NÃO é paciência com divergência de verdade — essa
+    # atravessa qualquer espera. É o conserto do defeito medido em 18/09/2026:
+    # a guarda corria 67 s a 114 s depois de a tag móvel ter sido empurrada, e
+    # lia a listagem `/tags` ainda no estado anterior ao push. Quatro corridas
+    # vermelhas seguidas, nenhuma com componente realmente para trás — e a
+    # remediação que a mensagem sugeria (republicar) não podia consertar, porque
+    # não havia o que republicar. Um vermelho que sobrevive a cinco leituras ao
+    # longo de quatro minutos é afirmação, não sintoma de leitura precoce.
+    tentativas = 0
+    try:
+        while True:
+            tags = perguntar()
+            problemas, notas = _confrontar(tags, args, groups)
+            tentativas += 1
+            if not problemas or offline or tentativas > args.reconfirmacoes:
+                break
+            print(
+                f"::notice::divergência na leitura {tentativas} "
+                f"({len(problemas)} componente(s)) — reperguntando ao registry "
+                f"em {args.espera:.0f}s, porque listagem lida logo depois de um "
+                "push já veio no estado anterior a ele",
+                file=sys.stderr,
+            )
+            time.sleep(args.espera)
     except (NaoDeuParaPerguntar, KeyError, ValueError, OSError) as exc:
         print(f"::warning::não deu para perguntar ao registry: {exc}", file=sys.stderr)
         return 2
 
-    problemas, notas = audit(
-        tags,
-        ref=args.ref,
-        per_app=args.per_app == "true",
-        repo=Path(args.repo),
-        groups=load_groups(Path(args.groups_json)),
-    )
     for nota in notas:
         print(f"::notice::{nota}", file=sys.stderr)
     if not problemas:
-        print("registry bate com o `main`: nenhum componente ficou para trás.")
+        if tentativas > 1:
+            print(
+                f"registry bate com o `main` na leitura {tentativas}: a listagem "
+                "estava atrás do push, não havia componente para trás."
+            )
+        else:
+            print("registry bate com o `main`: nenhum componente ficou para trás.")
         return 0
 
     for linha in problemas:
         print(f"::error::{linha}")
     atrasados = ",".join(linha.split(":")[0] for linha in problemas)
     print(
-        "::error::COMPONENTE PARA TRÁS. Republique com: "
+        f"::error::COMPONENTE PARA TRÁS, e não é leitura precoce: a divergência "
+        f"sobreviveu a {tentativas} leitura(s) do registry. Republique com: "
         f'gh workflow run deploy-images.yml --ref main -f components="{atrasados}"'
     )
     return 1
