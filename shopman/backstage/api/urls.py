@@ -93,6 +93,7 @@ from .notifications import (
     NotificationSeenBatchView,
 )
 from .operations import (
+    CourierTicketEscposView,
     DayClosingView,
     OperationEpisodeAnswerView,
     OperatorBadgeLostView,
@@ -493,6 +494,11 @@ urlpatterns = [
         "orders/<str:ref>/ticket-escpos/",
         OrderTicketEscposView.as_view(),
         name="api-backstage-order-ticket-escpos",
+    ),
+    path(
+        "orders/<str:ref>/courier-ticket-escpos/",
+        CourierTicketEscposView.as_view(),
+        name="api-backstage-order-courier-ticket-escpos",
     ),
     path("orders/<str:ref>/advance/", OrderAdvanceView.as_view(), name="api-backstage-order-advance"),
     path("orders/<str:ref>/confirm/", OrderConfirmView.as_view(), name="api-backstage-order-confirm"),
