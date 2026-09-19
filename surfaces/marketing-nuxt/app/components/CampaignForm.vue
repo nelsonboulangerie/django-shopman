@@ -866,7 +866,11 @@ function submit() {
         <div>
           <p class="mb-1 text-xs font-medium text-muted-foreground">Nos dias</p>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Botões de dia permanecem nativos para expor o estado múltiplo com aria-pressed. -->
+            <!-- ⚠️ Estes NÃO viram `UiToggleChip`, e o motivo é medido: o primitivo tem
+                 alvo de toque de 44px pelo token, e sete dias a 44px não cabem numa
+                 tela de 320. O kit recusa degrau denso em primitivo de propósito — 36px
+                 foi a dívida que a cópia antiga carregava. Ou esta grade reflui para
+                 caber, ou continua aqui, à mão, com a razão à vista. -->
             <button
               v-for="(label, day) in WEEKDAY_LABELS"
               :key="label"
@@ -946,17 +950,11 @@ function submit() {
       <legend class="mb-1 text-xs font-medium text-muted-foreground">
         Entregar por
       </legend>
-      <!-- ⚠️ Isto NÃO vira `UiCheckbox`, e a diferença não é de gosto: o primitivo
-           desenha um quadrado com rótulo ao lado, e o que está aqui é uma pílula —
-           a caixa inteira acende, e ela ainda carrega o estado da plataforma
-           ("não publica", "não verificada"). A peça que falta no kit é um
-           `UiToggleChip` (escolha múltipla desenhada como chip), que hoje não
-           existe; enquanto não existir, a semântica vem do checkbox `sr-only` e o
-           alvo vem da pílula. Os chips de etiqueta e de segmento mais abaixo são o
-           mesmo caso, escritos com `aria-pressed` em vez de checkbox — três cópias
-           do mesmo vazio, e o motivo de o primitivo valer a pena.
-           ⚠️ A pílula conta o estado ANTES do clique: as quatro apareciam iguais e
-           a recusa só vinha depois de aprovar. -->
+      <!-- ⚠️ `UiToggleChip` do kit, e não `UiCheckbox`: o checkbox desenha um quadrado
+           com rótulo ao lado, e o que está aqui é uma pílula cuja caixa inteira acende.
+           O vazio que esta tela registrava em comentário agora tem peça.
+           ⚠️ A pílula conta o estado da plataforma ANTES do clique: as quatro
+           apareciam iguais e a recusa só vinha depois de aprovar. -->
       <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
            Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
            numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
@@ -964,28 +962,17 @@ function submit() {
            tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
            de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
       <div class="grid gap-1.5 sm:flex sm:flex-wrap">
-        <label
+        <UiToggleChip
           v-for="option in platformOptions"
           :key="option.value"
-          class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-          :class="[
-            platforms.includes(option.value)
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:bg-muted',
-            readinessPillClass(readinessNote(option).tone),
-          ]"
+          :model-value="platforms.includes(option.value)"
+          :class="readinessPillClass(readinessNote(option).tone)"
           :data-readiness="readinessNote(option).tone"
+          @update:model-value="togglePlatform(option.value)"
         >
-          <input
-            type="checkbox"
-            class="sr-only"
-            :aria-label="option.label"
-            :checked="platforms.includes(option.value)"
-            @change="togglePlatform(option.value)"
-          />
           {{ option.label }}
           <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
-        </label>
+        </UiToggleChip>
       </div>
       <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
            mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
@@ -1091,23 +1078,19 @@ function submit() {
           >
             Etiquetas
           </legend>
+          <!-- ⚠️ Estes três grupos acendiam em `bg-primary` SÓLIDO, escrito à mão em
+               cada um. Sólido é do botão primário; o padrão único de seleção da casa é
+               contorno + tint levíssimo, e é o que o primitivo traz. Eram a mesma peça
+               copiada três vezes, com o alvo de toque em literal e sem ARIA de escolha. -->
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="tag in tags"
               :key="tag.value"
-              type="button"
-              :aria-pressed="selectedTags.includes(tag.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedTags.includes(tag.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedTags, tag.value)"
+              :model-value="selectedTags.includes(tag.value)"
+              @update:model-value="toggleChoice(selectedTags, tag.value)"
             >
               {{ tag.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
@@ -1118,22 +1101,14 @@ function submit() {
             Faixa de preço
           </legend>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="tier in priceTiers"
               :key="tier.value"
-              type="button"
-              :aria-pressed="selectedPriceTiers.includes(tier.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedPriceTiers.includes(tier.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedPriceTiers, tier.value)"
+              :model-value="selectedPriceTiers.includes(tier.value)"
+              @update:model-value="toggleChoice(selectedPriceTiers, tier.value)"
             >
               {{ tier.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
@@ -1144,22 +1119,14 @@ function submit() {
             Comportamento de compra
           </legend>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="segment in rfmSegments"
               :key="segment.value"
-              type="button"
-              :aria-pressed="selectedRfmSegments.includes(segment.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedRfmSegments.includes(segment.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedRfmSegments, segment.value)"
+              :model-value="selectedRfmSegments.includes(segment.value)"
+              @update:model-value="toggleChoice(selectedRfmSegments, segment.value)"
             >
               {{ segment.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 

@@ -222,9 +222,11 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(
       makeAnnouncement({ platforms: ["instagram", "whatsapp"] }),
     );
+    // A pílula é um `UiToggleChip`: o estado vive em `aria-checked`, não num
+    // `<input>` escondido atrás dela.
     const checked = wrapper
-      .findAll("input[type=checkbox]")
-      .filter((input) => (input.element as HTMLInputElement).checked);
+      .findAll('[role="checkbox"]')
+      .filter((chip) => chip.attributes("aria-checked") === "true");
     expect(checked).toHaveLength(2);
   });
 
