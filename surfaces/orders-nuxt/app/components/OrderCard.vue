@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 // One order card in the board. Glanceable: ref + timer up top, customer + items in
 // the middle, payment/total, then the pre-resolved affordances as buttons. Status
 // color is functional; chrome neutral. Tapping the ref opens the detail page.
@@ -268,7 +267,31 @@ function buttonClass(priority: string): string {
     <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" class="min-h-control block rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" data-ifood-negotiation-link>
       Negociação iFood · abrir solicitação e conferir prazo
     </NuxtLink>
-    <OrderIFoodSummary :cancellation-notice="card.ifood_cancellation_notice" :payment-summary="card.ifood_payment_summary" :operation-summary="card.ifood_operation_summary" />
+    <!-- O aviso de cancelamento continua: é estado do pedido, não evidência. A
+         evidência completa (bandeira, CEP, responsável pela entrega, janela em
+         três linhas) mora no detalhe — aqui ela fazia o card do iFood ter o dobro
+         da altura do card do PDV, na mesma coluna. -->
+    <p
+      v-if="card.ifood_cancellation_notice"
+      class="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs"
+      role="status"
+      data-ifood-cancellation
+    >{{ card.ifood_cancellation_notice }}</p>
+
+    <p v-if="card.ifood_schedule_label" class="text-xs text-muted-foreground" data-ifood-schedule>
+      {{ card.ifood_schedule_label }}
+    </p>
+
+    <!-- Rótulo à vista: sem ele, este quatro dígitos disputava com o número do
+         pedido — e era o único dos dois que aparecia. -->
+    <p
+      v-if="card.ifood_pickup_code"
+      class="flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5"
+      data-ifood-pickup-code
+    >
+      <span class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Código de retirada</span>
+      <span class="ml-auto text-base font-bold tabular-nums">{{ card.ifood_pickup_code }}</span>
+    </p>
 
     <!-- awaiting production -->
     <div v-if="card.awaiting_work_orders.length" class="flex flex-col gap-1">

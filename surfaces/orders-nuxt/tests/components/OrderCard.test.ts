@@ -41,8 +41,8 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     payment_method: "cash",
     payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
-    ifood_payment_summary: [],
-    ifood_operation_summary: [],
+    ifood_pickup_code: "",
+    ifood_schedule_label: "",
     ifood_negotiations: [],
     payment_status: "pending",
     payment_pending: true,
@@ -205,12 +205,11 @@ describe("OrderCard iFood", () => {
       advance_block_label: "Aguardando iFood",
       advance_block_reason: notice,
       ifood_cancellation_notice: notice,
-      ifood_payment_summary: ["Pago no iFood: R$ 10,00", "Cobrar na entrega: R$ 5,00"],
     }) });
     expect(w.get("[data-ifood-cancellation]").text()).toBe(notice);
-    expect(w.findAll("[data-ifood-payment]").map((line) => line.text())).toEqual([
-      "Pago no iFood: R$ 10,00", "Cobrar na entrega: R$ 5,00",
-    ]);
+    // O desdobramento por bandeira é do detalhe: no card ele empurrava a decisão
+    // para baixo da dobra sem ajudar a decidir nada.
+    expect(w.find("[data-ifood-payment]").exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
     const blocked = w.findAll("button").find((button) => button.text().includes("Aguardando iFood"));
     expect(blocked?.attributes("disabled")).toBeDefined();

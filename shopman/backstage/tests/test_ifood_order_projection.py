@@ -124,7 +124,13 @@ def test_builders_override_legacy_paid_with_ifood_evidence_without_local_collect
         assert "pago online" not in projected.payment_method_label.lower()
     if expected == "paid":
         assert projected.payment_status_label != "paid"
-    assert projected.ifood_payment_summary == ifood.payment_summary(order)
+    # A evidência textual por bandeira é do DETALHE; no card o que não pode mentir
+    # é o pill, checado acima (status, tom e rótulo). O aviso de cancelamento fica
+    # nos dois: é estado do pedido, não evidência financeira.
+    if hasattr(projected, "ifood_payment_summary"):
+        assert projected.ifood_payment_summary == ifood.payment_summary(order)
+    else:
+        assert projected.ifood_pickup_code == ifood.pickup_code(order)
     assert projected.ifood_cancellation_notice == ifood.cancellation_notice(order)
     assert projected.can_settle_delivery_cash is False
     assert projected.can_advance is False
@@ -152,5 +158,9 @@ def test_batched_board_retains_ifood_payment_evidence():
     assert card.payment_status == "pending"
     assert card.payment_tone == "neutral"
     assert "pago online" not in card.payment_method_label.lower()
-    assert card.ifood_payment_summary == ("Pagamento pendente no iFood: R$ 30,00",)
     assert "ainda não foi cancelado" in card.ifood_cancellation_notice
+    # O card não carrega mais o desdobramento: quem precisa dele abre o detalhe, e
+    # é lá que a evidência tem de continuar inteira.
+    assert not hasattr(card, "ifood_payment_summary")
+    detail = order_queue.build_operator_order(Order.objects.get(ref="IFOOD-BOARD"))
+    assert detail.ifood_payment_summary == ("Pagamento pendente no iFood: R$ 30,00",)

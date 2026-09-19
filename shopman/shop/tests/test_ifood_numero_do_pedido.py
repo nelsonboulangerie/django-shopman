@@ -131,3 +131,85 @@ def test_canal_sem_sla_configurado_nao_grava_prazo(ifood_channel):
     order = _ingest(_raw())
 
     assert "confirm_by" not in order.data["ifood"]
+
+
+# ── O card cabe numa olhada ────────────────────────────────────────────────────
+# Doze linhas para um pedido de dois itens, contra cinco do card do PDV na mesma
+# coluna: a fila deixava de ser varredura. O que decide fica; o resto é detalhe.
+
+
+def _scheduled(**schedule):
+    return SimpleNamespace(
+        channel_ref="ifood",
+        data={"ifood": {"order_timing": "SCHEDULED", "schedule": schedule}},
+    )
+
+
+def test_codigo_de_retirada_vai_ao_card():
+    from shopman.backstage.projections import ifood as proj
+
+    order = SimpleNamespace(channel_ref="ifood", data={"ifood": {"pickup_code": "8913"}})
+
+    assert proj.pickup_code(order) == "8913"
+
+
+def test_codigo_de_retirada_so_existe_no_ifood():
+    from shopman.backstage.projections import ifood as proj
+
+    assert proj.pickup_code(SimpleNamespace(channel_ref="web", data={"ifood": {"pickup_code": "8913"}})) == ""
+
+
+def test_pedido_imediato_nao_ganha_linha_de_agendamento():
+    from shopman.backstage.projections import ifood as proj
+
+    assert proj.schedule_label(SimpleNamespace(channel_ref="ifood", data={"ifood": {}})) == ""
+
+
+@pytest.mark.django_db
+def test_agendamento_vira_uma_linha_com_a_janela():
+    """Três linhas de janela viravam três linhas no card. Uma basta para triar."""
+    from django.utils import timezone
+
+    from shopman.backstage.projections import ifood as proj
+
+    hoje = timezone.localtime()
+    inicio = hoje.replace(hour=21, minute=9, second=0, microsecond=0)
+    fim = hoje.replace(hour=22, minute=9, second=0, microsecond=0)
+    order = _scheduled(delivery_start_at=inicio.isoformat(), delivery_end_at=fim.isoformat())
+
+    assert proj.schedule_label(order) == "Agendado · Hoje 21:09–22:09"
+
+
+@pytest.mark.django_db
+def test_agendamento_de_outro_dia_mostra_a_data():
+    """Em pedido para hoje a data é ruído; em pedido para amanhã ela é o ponto."""
+    from datetime import timedelta as _td
+
+    from django.utils import timezone
+
+    from shopman.backstage.projections import ifood as proj
+
+    amanha = timezone.localtime() + _td(days=1)
+    inicio = amanha.replace(hour=8, minute=0, second=0, microsecond=0)
+    fim = amanha.replace(hour=9, minute=0, second=0, microsecond=0)
+    order = _scheduled(delivery_start_at=inicio.isoformat(), delivery_end_at=fim.isoformat())
+
+    assert proj.schedule_label(order) == f"Agendado · {inicio:%d/%m} 08:00–09:00"
+
+
+@pytest.mark.django_db
+def test_agendamento_sem_fim_de_janela_nao_inventa_horario():
+    from django.utils import timezone
+
+    from shopman.backstage.projections import ifood as proj
+
+    inicio = timezone.localtime().replace(hour=15, minute=30, second=0, microsecond=0)
+
+    assert proj.schedule_label(_scheduled(delivery_start_at=inicio.isoformat())) == "Agendado · Hoje a partir de 15:30"
+
+
+def test_agendamento_sem_janela_nenhuma_ainda_se_declara():
+    """Sem horário, o pedido continua sendo agendado — calar seria pior."""
+    from shopman.backstage.projections import ifood as proj
+
+    assert proj.schedule_label(_scheduled()) == "Agendado"
