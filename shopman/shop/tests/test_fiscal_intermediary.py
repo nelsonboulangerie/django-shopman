@@ -170,8 +170,13 @@ def test_the_freight_rule_reads_delivered_by_instead_of_assuming_the_house_never
 
 
 @override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
-def test_an_ifood_order_without_the_financial_breakdown_is_left_alone():
-    """Simulação/payload antigo não manda ``totals`` — não é motivo para inventar número."""
+def test_an_ifood_order_without_the_financial_breakdown_is_left_alone_AND_stays_silent():
+    """Simulação/payload antigo não manda ``totals`` — e aqui o silêncio é MERECIDO.
+
+    Sem ``totals``, o ``ifood_ingest`` monta ``total_q`` da soma dos itens
+    (``total_q = order_amount_q or items_subtotal_q``). Não há receita de
+    plataforma dentro dele, então a base já está certa e não há o que gritar.
+    """
     Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood"})
     with patch.object(ifood_ingest.order_changed, "send"):
         order = ifood_ingest.ingest({
@@ -180,7 +185,76 @@ def test_an_ifood_order_without_the_financial_breakdown_is_left_alone():
         })
 
     assert fiscal_intermediary.seller_amounts(order) is None
+    assert fiscal_intermediary.unreadable_breakdown(order) == ""
     assert fiscal.note_base_q(order) == order.total_q == 1000
+
+
+# ── 1b. As duas omissões da mesma família falham do MESMO jeito ───────────
+#
+# Correção de desenho apontada em revisão: faltar a CONFIGURAÇÃO do grupo
+# gritava, mas faltar o DETALHAMENTO financeiro saía calado pelo total cheio —
+# com a receita da plataforma dentro da base, que é o defeito que esta PR
+# existe para consertar. O `None` de `seller_amounts` cobria duas coisas
+# opostas: "não há o que corrigir" e "deveria haver e eu não sei ler".
+#
+# A segunda é o que acontece no dia em que alguém declarar um segundo
+# marketplace: o defeito volta inteiro, para o canal novo, em silêncio.
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES={
+    "rappi": {"cnpj": "33014556000196", "id_cad_int_tran": "LOJA-9"},
+})
+def test_an_intermediated_channel_we_cannot_read_screams_instead_of_billing_the_full_total():
+    """O caso do SEGUNDO marketplace: declarado intermediado, sem leitor."""
+    Channel.objects.get_or_create(ref="rappi", defaults={"name": "Rappi"})
+    order = Order.objects.create(
+        ref="ORD-RAPPI-1", channel_ref="rappi", status=Order.Status.COMPLETED,
+        total_q=3949, data={"payment": {"method": "external", "amount_q": 3949}},
+    )
+    OrderItem.objects.create(order=order, line_id="1", sku="PAO-001", name="Pão",
+                             qty=1, unit_price_q=3000, line_total_q=3000)
+
+    assert fiscal_intermediary.is_intermediated(order) is True
+    assert fiscal_intermediary.seller_amounts(order) is None
+    assert "rappi" in fiscal_intermediary.unreadable_breakdown(order)
+
+    with patch("shopman.shop.services.observability.create_operator_alert") as alert:
+        fiscal.build_emission_payload(order)
+
+    tipos = [c.kwargs["type"] for c in alert.call_args_list]
+    assert "fiscal_intermediary_base_unknown" in tipos
+    corpo = next(c.kwargs["message"] for c in alert.call_args_list
+                 if c.kwargs["type"] == "fiscal_intermediary_base_unknown")
+    assert "total CHEIO" in corpo
+    assert "rappi" in corpo
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_the_readable_channel_and_the_direct_sale_never_raise_the_base_alarm():
+    """As duas metades que precisam continuar caladas."""
+    ifood = ingest_ifood()
+    balcao = counter_order()
+
+    assert fiscal_intermediary.unreadable_breakdown(ifood) == ""
+    assert fiscal_intermediary.unreadable_breakdown(balcao) == ""
+
+    for order in (ifood, balcao):
+        with patch("shopman.shop.services.observability.create_operator_alert") as alert:
+            fiscal.build_emission_payload(order)
+        tipos = [c.kwargs["type"] for c in alert.call_args_list]
+        assert "fiscal_intermediary_base_unknown" not in tipos
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_house_delivered_asks_the_generic_question_the_platform_answers_in_its_own_word():
+    assert fiscal_intermediary.house_delivered(ingest_ifood(delivered_by="MERCHANT")) is True
+    assert fiscal_intermediary.house_delivered(ingest_ifood(delivered_by="IFOOD")) is False
+    assert fiscal_intermediary.house_delivered(counter_order()) is False
+
+
+def test_the_seam_for_a_second_marketplace_is_named_in_one_place():
+    """Onde um segundo marketplace entra não pode ser descoberto por arqueologia."""
+    assert fiscal_intermediary.READABLE_BREAKDOWN_CHANNELS == frozenset({"ifood"})
 
 
 # ── 2. O pedido do canal próprio não muda em NADA ─────────────────────────
