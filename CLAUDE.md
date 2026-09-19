@@ -68,6 +68,24 @@ diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
   seguimento).
 - **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
   O que ficou de fora se diz com nome e motivo.
+- **Tarefa sugerida (o "chip") abre uma SESSÃO NOVA — e sessão nova não sabe o que
+  já existe.** Medido em 19/09/2026: um chip de tarefa sugerida abriu a segunda
+  sessão do mesmo trabalho de retratos do Marketing, e saíram **três PRs (#869,
+  #870, #871) para uma correção só** — nenhum deles sabia dos outros, e dois foram
+  fechados à mão depois. No mesmo dia o pedido chegou de novo ao dono, já com o
+  trabalho verde no `main`. O chip serve para o que **ainda não tem dono**, e
+  atrapalha em tudo que já tem.
+  - **Antes de sugerir:** confira se a frente já tem PR aberto ou sessão viva
+    (`gh pr list`, `git branch -r`, a lista de sessões). Se já tem, **não sugira** —
+    escreva no PR que existe, que é onde o dono olha.
+  - **Antes de aceitar** um chip que chegou: a mesma conferência, antes de abrir.
+    Chip que duplica PR aberto se **dispensa**, não se abre.
+  - **Sugestão que ficou obsoleta se retira**, em vez de esperar um toque que vai
+    refazer trabalho pronto.
+  - Retrato/baseline tem uma trava a mais: **só regera quem tem o browser da CI.**
+    Baseline gravada com outra versão do Chromium (1194 quando o Playwright do app
+    pede 1243, por exemplo) passa no local e reprova na CI. Esse trabalho vive numa
+    sessão só — nunca em duas.
 
 ## ⛔ A ESTEIRA: aprovado vira commit, push, PR e fila — no mesmo turno
 
