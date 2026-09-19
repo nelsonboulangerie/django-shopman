@@ -104,21 +104,64 @@ def map_order(order: dict) -> dict:
 
 
 def _map_customer(customer: dict) -> dict:
+    """Mapeia o objeto ``customer`` do iFood para o snapshot do pedido.
+
+    Três campos que a ingestão descartava e agora preserva, porque cada um
+    responde a uma pergunta que o resto do sistema estava errando:
+
+    - ``ifood_customer_id`` (``customer.id``) — identificador do CLIENTE, não
+      do pedido. É a chave de identidade de ``services/customer._handle_ifood``.
+      Antes a estratégia usava o id do PEDIDO, que é único por compra, então a
+      busca nunca casava e cada pedido criava um ``Customer`` novo.
+    - ``orders_count_on_merchant`` (``ordersCountOnMerchant``) — quantos pedidos
+      esta pessoa já fez NESTA loja, pela contagem do iFood (5 anos). Fato do
+      pedido, preservado no snapshot: vale a contagem no momento da compra.
+    - ``segmentation`` — a Super-Segmentação do iFood. ⚠️ A documentação do
+      iFood diz que é dado confidencial: não vai para o cliente nem para
+      terceiros. Fica no snapshot para leitura interna (B.I.).
+
+    ``phone.number`` é "telefone do cliente OU o 0800 do iFood", e o
+    ``localizer`` é o código que se digita nesse 0800 para chegar ao cliente.
+    A presença do localizador é o sinal de que o número é RELÉ, e não da
+    pessoa — quem apresenta o pedido ao operador lê isso em
+    ``backstage/projections/ifood.contact_relay``.
+    """
     phone = customer.get("phone") or {}
     if isinstance(phone, dict):
         # iFood masks the number and gives a call localizer to reach the customer.
         number = phone.get("number", "")
         localizer = phone.get("localizer", "")
+        localizer_expires_at = phone.get("localizerExpiration", "")
     else:
         number = str(phone)
         localizer = ""
+        localizer_expires_at = ""
     return {
         "name": customer.get("name", ""),
+        "ifood_customer_id": str(customer.get("id") or ""),
         "phone": number,
         "phone_localizer": localizer,
+        "phone_localizer_expires_at": str(localizer_expires_at or ""),
         "document": customer.get("documentNumber", ""),
         "document_type": customer.get("documentType", ""),
+        "orders_count_on_merchant": _orders_count(customer.get("ordersCountOnMerchant")),
+        "segmentation": str(customer.get("segmentation") or ""),
     }
+
+
+def _orders_count(value) -> int | None:
+    """``ordersCountOnMerchant`` como inteiro, ou ``None`` quando o iFood omite.
+
+    ``None`` e ``0`` são respostas diferentes: ``0`` é "primeira compra nesta
+    loja", ``None`` é "o iFood não informou" — o campo é opcional. Achatar as
+    duas em ``0`` faria o B.I. contar cliente novo onde não há informação.
+    """
+    if value is None:
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _map_delivery(order: dict) -> dict:

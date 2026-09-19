@@ -183,6 +183,47 @@ def test_map_order_against_real_captured_order():
     assert payload["customer"]["phone_localizer"] == "89338721"
     assert "gerado automaticamente" in payload["notes"]
 
+    # Identidade do CLIENTE (não do pedido) e o que o iFood sabe sobre ele
+    # nesta loja. Os três eram descartados pela ingestão até 19/09/2026.
+    assert payload["customer"]["ifood_customer_id"] == "dace8b15-e2be-408e-9b98-91b4e72e029f"
+    assert payload["customer"]["orders_count_on_merchant"] == 0
+    assert payload["customer"]["segmentation"] == "Cliente"
+    # O prazo do localizador: sem ele a tela não sabe se o código ainda serve.
+    assert payload["customer"]["phone_localizer_expires_at"] == "2026-07-01T05:55:59.112Z"
+
+
+def test_map_customer_distinguishes_no_count_from_zero_orders():
+    """``None`` é "o iFood não informou"; ``0`` é "primeira compra nesta loja".
+
+    O campo é opcional na documentação do iFood. Achatar ausência em ``0``
+    faria o B.I. contar cliente novo onde não há informação nenhuma.
+    """
+    from shopman.shop.services import ifood_orders
+
+    sem_contagem = ifood_orders.map_order({"id": "x", "customer": {"name": "A"}, "items": []})
+    assert sem_contagem["customer"]["orders_count_on_merchant"] is None
+
+    primeira = ifood_orders.map_order(
+        {"id": "x", "customer": {"name": "A", "ordersCountOnMerchant": 0}, "items": []}
+    )
+    assert primeira["customer"]["orders_count_on_merchant"] == 0
+
+    lixo = ifood_orders.map_order(
+        {"id": "x", "customer": {"name": "A", "ordersCountOnMerchant": "muitos"}, "items": []}
+    )
+    assert lixo["customer"]["orders_count_on_merchant"] is None
+
+
+def test_map_customer_survives_a_string_phone_without_localizer():
+    from shopman.shop.services import ifood_orders
+
+    payload = ifood_orders.map_order(
+        {"id": "x", "customer": {"name": "A", "phone": "+554399"}, "items": []}
+    )
+    assert payload["customer"]["phone_localizer"] == ""
+    assert payload["customer"]["phone_localizer_expires_at"] == ""
+    assert payload["customer"]["ifood_customer_id"] == ""
+
 
 def test_map_order_handles_string_phone_and_missing_external_code():
     from shopman.shop.services import ifood_orders

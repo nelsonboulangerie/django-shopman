@@ -56,9 +56,14 @@ const hasCustomerContact = computed(() =>
     order.value?.customer_phone_uri ||
       order.value?.customer_whatsapp_url ||
       order.value?.customer_email ||
+      order.value?.customer_phone_note ||
       customerAdminUrl.value,
   ),
 );
+// Pedido intermediado: o número do pedido é a central do marketplace, e o
+// jeito de chegar no cliente é ligar lá e digitar um código. A projeção decide
+// (ela conhece o localizador e o prazo dele); aqui só se mostra o que ela diz.
+const contactRelay = computed(() => order.value?.customer_phone_label || "");
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
@@ -309,7 +314,11 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <div class="grid gap-1 text-sm">
           <p class="flex items-center gap-2">
             <Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}
-            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name" class="text-muted-foreground tabular-nums" data-customer-phone>
+            <!-- Sem o relé: aqui o número é da pessoa, e cola ao nome dela. No
+                 pedido intermediado ele desce para o bloco de contato, onde
+                 vem dito de quem é — pendurado no nome do cliente, o 0800 da
+                 central passava por telefone dele. -->
+            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name && !contactRelay" class="text-muted-foreground tabular-nums" data-customer-phone>
               · {{ order.customer_phone }}
             </span>
           </p>
@@ -338,7 +347,24 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
              quem abre o detalhe abre justamente quando algo precisa ser dito:
              o item acabou, o endereço não fecha, a entrega vai atrasar. Cada
              botão só existe quando tem para onde levar. -->
-        <div v-if="hasCustomerContact" class="flex flex-wrap gap-2 border-t pt-3" data-customer-contact>
+        <div v-if="hasCustomerContact" class="border-t pt-3" data-customer-contact>
+          <!-- O número não é de ninguém: é a central do iFood mais um código
+               que leva até o cliente. Dizer isso ANTES dos botões é o que
+               impede o operador de tratar a central como se fosse a pessoa. -->
+          <p v-if="contactRelay" class="mb-2 flex items-start gap-2 text-sm" data-contact-relay>
+            <Icon name="lucide:phone-forwarded" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <span class="min-w-0">
+              <span class="font-medium">{{ contactRelay }}</span>
+              <span v-if="order.customer_phone" class="tabular-nums"> · {{ order.customer_phone }}</span>
+              <span
+                v-if="order.customer_phone_code"
+                class="ml-1 inline-flex items-center rounded-md border px-1.5 py-0.5 font-medium tabular-nums"
+                data-contact-relay-code
+              >Código {{ order.customer_phone_code }}</span>
+              <span class="block text-muted-foreground">{{ order.customer_phone_note }}</span>
+            </span>
+          </p>
+          <div class="flex flex-wrap gap-2">
           <a
             v-if="order.customer_whatsapp_url"
             :href="order.customer_whatsapp_url"
@@ -355,7 +381,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-phone
           >
-            <Icon name="lucide:phone" class="size-4" /> Ligar
+            <Icon name="lucide:phone" class="size-4" /> {{ contactRelay ? "Ligar para a central" : "Ligar" }}
           </a>
           <a
             v-if="order.customer_email"
@@ -375,6 +401,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           >
             <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
           </a>
+          </div>
         </div>
 
         <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
