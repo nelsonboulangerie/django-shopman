@@ -66,12 +66,13 @@ def ingest_ifood(*, delivered_by="IFOOD", order_type="DELIVERY", subtotal=3000,
         "orderType": order_type,
         "merchant": {"id": "merchant"},
         "customer": {"name": "Cliente iFood", "documentNumber": "52998224725", "documentType": "CPF"},
+        # Na retirada o iFood não manda endereço nenhum — só a entrega tem.
         "delivery": {
             "deliveredBy": delivered_by,
-            "deliveryAddress": {
+            **({"deliveryAddress": {
                 "formattedAddress": "Rua X, 123", "streetName": "Rua X", "streetNumber": "123",
                 "neighborhood": "Centro", "city": "Londrina", "state": "PR", "postalCode": "86010000",
-            },
+            }} if order_type == "DELIVERY" else {}),
         },
         "items": [{"id": "item-1", "externalCode": "PAO-001", "name": "Pão",
                    "quantity": 1, "unitPrice": subtotal / 100, "totalPrice": subtotal / 100}],
@@ -82,19 +83,7 @@ def ingest_ifood(*, delivered_by="IFOOD", order_type="DELIVERY", subtotal=3000,
         },
     })
     with patch.object(ifood_ingest.order_changed, "send"):
-        order = ifood_ingest.ingest(payload)
-    if order_type == "DELIVERY":
-        # O endereço ESTRUTURADO é o que a PR #886 passa a gravar no ingest — o
-        # adapter já o exigia, e é por isso que pedido iFood de entrega ainda
-        # não emitia nota nenhuma. Esta frente corrige o VALOR e o grupo do
-        # intermediador; ela roda em cima daquele endereço, então o teste o
-        # fornece em vez de fingir que a emissão não depende dele.
-        order.data["delivery_address_structured"] = {
-            "route": "Rua X", "street_number": "123", "neighborhood": "Centro",
-            "city": "Londrina", "state_code": "PR", "postal_code": "86010000",
-        }
-        order.save(update_fields=["data"])
-    return order
+        return ifood_ingest.ingest(payload)
 
 
 def counter_order(total_q=3000):
@@ -108,6 +97,39 @@ def counter_order(total_q=3000):
     OrderItem.objects.create(order=order, line_id="1", sku="PAO-001", name="Pão",
                              qty=1, unit_price_q=total_q, line_total_q=total_q)
     return order
+
+
+# ── 0. O endereço que faltava para a nota de entrega sair ─────────────────
+
+
+def test_the_ifood_delivery_address_reaches_the_note_as_components_not_only_as_text():
+    """Sem logradouro/número/bairro/município/UF, a NFC-e de entrega nem sai.
+
+    Medido em 19/09/2026 com a #886 já no ``main``: o destinatário da nota é
+    montado de COMPONENTE, e o ingest só gravava complemento, referência e CEP
+    — o resto morria dentro do ``formattedAddress``. A emissão era recusada
+    antes do HTTP, então toda a correção de valor desta PR ficaria dormente.
+    """
+    order = ingest_ifood(order_type="DELIVERY")
+
+    estruturado = order.data["delivery_address_structured"]
+
+    assert estruturado["route"] == "Rua X"
+    assert estruturado["street_number"] == "123"
+    assert estruturado["neighborhood"] == "Centro"
+    assert estruturado["city"] == "Londrina"
+    assert estruturado["state_code"] == "PR"
+    assert estruturado["postal_code"] == "86010000"
+    # O texto formatado continua com um dono só: ``delivery_address``.
+    assert "formatted_address" not in estruturado
+    assert order.data["delivery_address"] == "Rua X, 123"
+
+
+def test_a_pickup_order_gets_no_address_components_at_all():
+    order = ingest_ifood(order_type="TAKEOUT", delivery_fee=0)
+
+    assert order.data["fulfillment_type"] == "pickup"
+    assert "route" not in (order.data.get("delivery_address_structured") or {})
 
 
 # ── 1. A base da nota não carrega receita do iFood ────────────────────────
