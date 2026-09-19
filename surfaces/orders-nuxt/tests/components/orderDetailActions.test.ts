@@ -77,6 +77,9 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     customer_phone: "",
     customer_phone_uri: "",
     customer_whatsapp_url: "",
+    customer_phone_label: "",
+    customer_phone_code: "",
+    customer_phone_note: "",
     customer_email: "",
     customer_ref: "",
     channel_ref: "web",
@@ -480,6 +483,52 @@ describe("detalhe do pedido — falar com o cliente", () => {
 
     expect(tela.find("[data-customer-phone]").exists()).toBe(false);
     expect(tela.find("[data-contact-whatsapp]").exists()).toBe(true);
+  });
+
+  // Pedido intermediado: o número que chega é a central do marketplace, e o
+  // botão de WhatsApp mandava recado para o atendimento do iFood — nunca para
+  // o cliente. A projection diz o que o número é; a tela obedece.
+  it("relé de voz: mostra a central e o código, e não oferece WhatsApp", () => {
+    const tela = abrir(
+      order({
+        channel_ref: "ifood",
+        customer_phone: "0800 705 3040",
+        customer_phone_uri: "tel:08007053040",
+        customer_whatsapp_url: "",
+        customer_phone_label: "Central de atendimento do iFood",
+        customer_phone_code: "89338721",
+        customer_phone_note:
+          "Não é o telefone do cliente. Ligue para a central e digite o código abaixo para falar com ele.",
+      }),
+    );
+
+    expect(tela.find("[data-contact-whatsapp]").exists()).toBe(false);
+    expect(tela.find("[data-contact-relay]").text()).toContain("Central de atendimento do iFood");
+    expect(tela.find("[data-contact-relay-code]").text()).toContain("89338721");
+    expect(tela.find("[data-contact-relay]").text()).toContain("Não é o telefone do cliente");
+    expect(tela.find("[data-contact-phone]").text()).toContain("Ligar para a central");
+    // O número da central não fica pendurado no nome do cliente lá em cima,
+    // onde passaria por telefone dele.
+    expect(tela.find("[data-customer-phone]").exists()).toBe(false);
+  });
+
+  it("localizador vencido: sem código, sem WhatsApp, e o caminho que resta é dito", () => {
+    const tela = abrir(
+      order({
+        channel_ref: "ifood",
+        customer_phone: "0800 705 3040",
+        customer_phone_uri: "tel:08007053040",
+        customer_whatsapp_url: "",
+        customer_phone_label: "Central de atendimento do iFood",
+        customer_phone_code: "",
+        customer_phone_note:
+          "Não é o telefone do cliente. O código para falar com ele venceu em 01/07/2026 às 02:55; fale pelo chat do pedido no iFood.",
+      }),
+    );
+
+    expect(tela.find("[data-contact-whatsapp]").exists()).toBe(false);
+    expect(tela.find("[data-contact-relay-code]").exists()).toBe(false);
+    expect(tela.find("[data-contact-relay]").text()).toContain("chat do pedido no iFood");
   });
 });
 

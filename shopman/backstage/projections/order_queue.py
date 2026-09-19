@@ -330,6 +330,14 @@ class OperatorOrderProjection:
     customer_phone: str
     customer_phone_uri: str
     customer_whatsapp_url: str
+    # O que aquele número É, quando não é o telefone de uma pessoa. No pedido
+    # do iFood o que chega é a central deles mais um código localizador, e a
+    # tela mostrava isso como se fosse o cliente — com botão de WhatsApp
+    # apontando para o atendimento do marketplace. Vazias no canal próprio:
+    # lá o número é da pessoa e não precisa de explicação nenhuma.
+    customer_phone_label: str
+    customer_phone_code: str
+    customer_phone_note: str
     customer_email: str
     # Ref do Customer no cadastro, quando o pedido está ligado a um. É o que
     # deixa a tela oferecer "abrir cadastro" no Admin — hoje o único lugar onde
@@ -1869,14 +1877,44 @@ def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
             phone_raw = phone_raw or str(getattr(customer, "phone", "") or "").strip()
             email = str(getattr(customer, "email", "") or "").strip()
 
+    relay = ifood_projection.contact_relay(order)
+    if relay["label"]:
+        # Relé de voz do iFood: o número é a central deles, não o de ninguém.
+        # Duas consequências, e as duas são de correção, não de estilo:
+        #
+        # 1. Nada de WhatsApp — ``normalize_phone("0800 700 3050")`` devolve
+        #    ``+558007003050``, e o botão virava ``wa.me/558007003050``: recado
+        #    para o atendimento do iFood, com o número de um terceiro.
+        # 2. Nada de formatar — o mesmo 0800 saía da régua de celular como
+        #    "(80) 0705-3040", um DDD que não existe. O número vai para a tela
+        #    como o iFood o escreveu, e o ``tel:`` disca os dígitos crus.
+        digits_raw = "".join(ch for ch in phone_raw if ch.isdigit())
+        return {
+            "customer_phone": phone_raw,
+            "customer_phone_uri": f"tel:{digits_raw}" if digits_raw else "",
+            "customer_whatsapp_url": "",
+            "customer_email": email,
+            "customer_ref": customer_ref,
+            "customer_phone_label": relay["label"],
+            "customer_phone_code": relay["code"],
+            "customer_phone_note": relay["note"],
+        }
+
     e164 = normalize_phone(phone_raw) if phone_raw else ""
     digits = e164.lstrip("+")
+    intermediated = ifood_projection.is_intermediated_contact(order)
     return {
         "customer_phone": _format_customer_display(phone_raw) if phone_raw else "",
         "customer_phone_uri": f"tel:{e164}" if e164 else "",
-        "customer_whatsapp_url": f"https://wa.me/{digits}" if digits else "",
+        # Canal intermediado sem localizador: o iFood não garante que o número
+        # seja o do cliente, então a mensagem direta continua fora. Ligar segue
+        # valendo — é o que a central atende.
+        "customer_whatsapp_url": "" if intermediated else (f"https://wa.me/{digits}" if digits else ""),
         "customer_email": email,
         "customer_ref": customer_ref,
+        "customer_phone_label": "",
+        "customer_phone_code": "",
+        "customer_phone_note": "",
     }
 
 

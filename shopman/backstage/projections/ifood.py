@@ -124,3 +124,97 @@ def operation_summary(order) -> tuple[str, ...]:
         if reason:
             lines.append(reason)
     return tuple(lines)
+
+
+def is_intermediated_contact(order) -> bool:
+    """O contato do cliente neste pedido passa pelo marketplace, não é direto.
+
+    Canal intermediado é canal em que a loja NÃO tem o número da pessoa: o que
+    chega no pedido é o telefone da central do iFood. Enquanto for assim, a
+    tela do operador não pode oferecer mensagem direta — clicar em "WhatsApp"
+    mandava recado para o atendimento do iFood, nunca para o cliente.
+    """
+    return (getattr(order, "channel_ref", "") or "") == "ifood"
+
+
+def contact_relay(order) -> dict[str, str]:
+    """O que o telefone do pedido do iFood realmente é, pronto para a tela.
+
+    O iFood documenta ``phone.number`` como "telefone do cliente OU o 0800 do
+    iFood", e manda junto um ``localizer``: o código que se digita nesse 0800
+    para cair na linha da pessoa. **A presença do localizador é o sinal de que
+    o número é um relé de voz**, e não o telefone de ninguém — a ingestão já
+    sabia disso (``ifood_orders._map_customer``) e a apresentação não sabia.
+
+    O localizador tem prazo (``localizerExpiration``), e o iFood ainda para de
+    mandar o bloco ``phone`` três horas depois da entrega. Código vencido não
+    vira botão: a tela diz que venceu e aponta o chat do pedido, que é o
+    caminho que o próprio iFood indica.
+
+    Devolve as três chaves sempre; vazias quando não há relé (pedido de canal
+    próprio, ou pedido do iFood sem localizador).
+    """
+    empty = {"label": "", "code": "", "note": ""}
+    if not is_intermediated_contact(order):
+        return empty
+
+    customer = (order.data or {}).get("customer")
+    customer = customer if isinstance(customer, dict) else {}
+    localizer = str(customer.get("phone_localizer") or "").strip()
+    if not localizer:
+        return empty
+
+    expires_at = _expiration(customer.get("phone_localizer_expires_at"))
+    label = "Central de atendimento do iFood"
+
+    if expires_at is not None and expires_at <= _now():
+        return {
+            "label": label,
+            "code": "",
+            "note": (
+                "Não é o telefone do cliente. O código para falar com ele venceu em "
+                f"{_stamp(expires_at)}; fale pelo chat do pedido no iFood."
+            ),
+        }
+
+    note = (
+        "Não é o telefone do cliente. Ligue para a central e digite o código "
+        "abaixo para falar com ele."
+    )
+    if expires_at is not None:
+        note += f" O código vale até {_stamp(expires_at)}."
+    return {"label": label, "code": localizer, "note": note}
+
+
+def _now():
+    from django.utils import timezone
+
+    return timezone.now()
+
+
+def _expiration(value):
+    """``localizerExpiration`` como datetime com fuso, ou ``None``.
+
+    ``None`` significa "o iFood não disse até quando", e não "venceu": sem
+    prazo o código é apresentado, porque recusá-lo calaria a única forma de
+    falar com o cliente por uma informação que nunca veio.
+    """
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = parse_datetime(text)
+    except (ValueError, TypeError):
+        return None
+    if parsed is None or not timezone.is_aware(parsed):
+        return None
+    return parsed
+
+
+def _stamp(moment) -> str:
+    from django.utils import timezone
+
+    return timezone.localtime(moment).strftime("%d/%m/%Y às %H:%M")
