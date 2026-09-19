@@ -435,6 +435,26 @@ test.describe("listas operacionais", () => {
     await expectStableScreenshot(page, "campaigns__empty", V1440);
   });
 
+  // ⚠️ A grade dos sete dias só tinha retrato a 768px, onde ela cabe numa linha e não
+  // prova nada. O aperto mora a 320: sete chips de 44px não cabem lado a lado, e é por
+  // isso que a grade reflui para quatro colunas. Mudança feita para o menor mobile
+  // precisa de retrato no menor mobile.
+  test("os sete dias cabem a 320 porque a grade reflui", async ({ page }) => {
+    await openScenario(page, "campaigns-dense", "/campaigns", V320);
+    await page.getByRole("button", { name: "Nova campanha" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Quando acontecer").selectOption("schedule");
+    await expect(dialog.getByText("Nos dias")).toBeVisible();
+    await dialog
+      .getByText("Nos dias")
+      .evaluate((element) => element.scrollIntoView({ block: "start" }));
+    // Os sete continuam alcançáveis, cada um com o alvo de toque inteiro.
+    await expect(
+      dialog.getByRole("checkbox", { name: "dom", exact: true }),
+    ).toBeVisible();
+    await expectStableScreenshot(page, "campaign-form__weekdays-320", V320, "light", { fullPage: false });
+  });
+
   test("nova campanha preserva formulário e CTA com foco", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V320);
     await page.getByRole("button", { name: "Nova campanha" }).click();

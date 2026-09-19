@@ -126,7 +126,10 @@ describe("CampaignForm — natureza de cada saída", () => {
   it("não confunde postagem pública com mensagem direta", () => {
     const text = form(makeRule()).text();
 
-    expect(text).toContain("Entregar por");
+    // ⚠️ O MESMO rótulo do cartão de revisão. Eram dois nomes para o mesmo conceito —
+    // o cartão dizia uma coisa, o formulário outra —, e "por" ainda é ambíguo entre
+    // agente e meio: "disparado por Pablo" e "disparado por Instagram" leem igual.
+    expect(text).toContain("Disparado via");
     expect(text).toContain("uma postagem pública por plataforma");
     expect(text).toContain("WhatsApp envia uma mensagem por pessoa elegível");
     expect(text).toContain(
@@ -179,9 +182,12 @@ describe("CampaignForm — quando disparar", () => {
   it("manda só os dias marcados", async () => {
     const wrapper = form(makeRule());
 
+    // Os dias são `UiToggleChip`: `role="checkbox"` com `aria-checked`, e não botão
+    // com `aria-pressed` — marcar dia é marcar item, não apertar botão que fica
+    // apertado.
     const days = wrapper
-      .findAll("button[aria-pressed]")
-      .filter((b) => ["sex", "sáb"].includes(b.text()));
+      .findAll('[role="checkbox"]')
+      .filter((chip) => ["sex", "sáb"].includes(chip.text()));
     for (const day of days) await day.trigger("click");
     await wrapper.find("form").trigger("submit");
 
@@ -277,8 +283,8 @@ describe("CampaignForm — quando disparar", () => {
       (wrapper.find('input[type="time"]').element as HTMLInputElement).value,
     ).toBe("06:00");
     const marked = wrapper
-      .findAll('button[aria-pressed="true"]')
-      .map((b) => b.text());
+      .findAll('[role="checkbox"][aria-checked="true"]')
+      .map((chip) => chip.text());
     expect(marked).toContain("seg");
   });
 

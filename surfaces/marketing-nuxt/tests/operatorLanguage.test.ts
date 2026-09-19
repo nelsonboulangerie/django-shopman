@@ -251,3 +251,26 @@ describe("um gesto, um rótulo", () => {
     expect(leaks).toEqual([]);
   });
 });
+
+describe("o mesmo conceito tem um nome só nas duas telas", () => {
+  // ⚠️ A legenda das plataformas existe em DOIS lugares — o cartão de revisão e o
+  // formulário de campanha — e elas derivaram: uma virou "Disparado via" e a outra
+  // ficou em "Entregar por". Mesmo conceito, dois nomes, e nenhum teste reclamava,
+  // porque cada tela tinha o seu.
+  //
+  // "por" também é ambíguo em português: serve para AGENTE ("disparado por Pablo") e
+  // para MEIO ("disparado por Instagram"). Num cartão que mostra quem aprovou, a
+  // leitura errada está ao alcance. "via" só pode ser meio.
+  it("a legenda das plataformas é a mesma no cartão e no formulário", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const screens = vueFiles(appRoot)
+      .filter((path) => /AnnouncementCard|CampaignForm/.test(path))
+      .map((path) => screenText(readFileSync(path, "utf8")));
+
+    expect(screens).toHaveLength(2);
+    for (const text of screens) {
+      expect(text).toContain("Disparado via");
+      expect(text).not.toContain("Entregar por");
+    }
+  });
+});
