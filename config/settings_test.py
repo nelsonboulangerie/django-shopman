@@ -18,7 +18,10 @@ contaminação):
   PostgreSQL + Redis via ``DATABASE_URL``/``REDIS_URL`` (ver ``make test-runtime``).
 * ``SECRET_KEY``/``ALLOWED_HOSTS`` — inertes em teste (o test client usa
   ``testserver``, adicionado por ``setup_test_environment``).
-* ``EMAIL_*`` — o test runner do Django força o backend ``locmem``.
+* ``MAILERS`` — o ``setup_test_environment()`` do Django reescreve TODO alias
+  para ``{"BACKEND": locmem}``. ⚠️ Ele apaga as ``OPTIONS`` junto: dentro da
+  suíte o mailer ``default`` não tem host, porta nem timeout, e um teste que
+  precise deles declara o ``MAILERS`` do próprio cenário.
 * ``LOGGING`` — só formatação; ``caplog`` captura records, não formato.
 
 Os ``@override_settings`` por teste continuam funcionando normalmente: eles

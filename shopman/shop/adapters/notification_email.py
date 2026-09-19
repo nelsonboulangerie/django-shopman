@@ -16,6 +16,8 @@ from django.core.mail import send_mail
 from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
 
+from shopman.shop.mailers import default_mailer
+
 logger = logging.getLogger(__name__)
 
 SUBJECT_TEMPLATES: dict[str, str] = {
@@ -289,11 +291,12 @@ def is_available(recipient: str | None = None, **config) -> bool:
     "Email sent". Um canal inerte tem que devolver ``False`` para a cadeia
     seguir — é o que ``notification_sms.is_available`` já faz certo.
     """
-    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").lower()
+    mailer = default_mailer()
+    backend = mailer.backend.lower()
     if any(inerte in backend for inerte in _BACKENDS_INERTES):
         return False
     # Um backend SMTP sem host não fala com ninguém — falha na primeira conexão.
-    if "smtp" in backend and not str(getattr(settings, "EMAIL_HOST", "") or "").strip():
+    if "smtp" in backend and not mailer.host.strip():
         return False
     # Remetente que não existe no DNS = canal inerte, mesmo com SMTP de pé.
     remetente = str(

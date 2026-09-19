@@ -999,12 +999,33 @@ UNFOLD = {
 
 # ── Email ──────────────────────────────────────────────────────────
 
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+# ⚠️ O SETTING mudou de nome; a VARIÁVEL DE AMBIENTE não.
+#
+# O Django 6.1 deprecou todos os `EMAIL_*` e o Django 7 os remove — quem fica é
+# `MAILERS`. A migração é tudo-ou-nada, e o Django faz questão disso:
+#
+#   1. declarar `MAILERS` junto de qualquer `EMAIL_*` levanta
+#      `ImproperlyConfigured` já na carga do settings;
+#   2. com `MAILERS` definido, ler `settings.EMAIL_BACKEND` levanta
+#      `AttributeError` — e `getattr(settings, "EMAIL_BACKEND", "")` passa a
+#      devolver o default CALADO, que é fail-open no canal de e-mail;
+#   3. `override_settings(EMAIL_BACKEND=...)` deixa de valer.
+#
+# Por isso nenhum `EMAIL_*` sobra no código: quem lê a configuração resolvida é
+# `shopman.shop.mailers.default_mailer()`, o leitor único da casa.
+#
+# ⚠️ Os NOMES das variáveis de ambiente continuam `EMAIL_BACKEND`, `EMAIL_HOST`,
+# `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` e
+# `EMAIL_TIMEOUT`. Eles são o contrato do spec de deploy
+# (`.do/app.subdomains.yaml`, `.do/app.alpha-subdomains.yaml`) e do runbook
+# `conferir-spec-digitalocean.md` — ambiente vivo, não mecânica de repositório.
+# O que se renomeou aqui foi o setting do Django, e só.
+_EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+_EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+_EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+_EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
+_EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+_EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # ⚠️ O default é DELIBERADAMENTE não-entregável, e não deve ser "consertado"
 # para um domínio real. `.local` é TLD reservado a mDNS (RFC 6762): sem DNS
 # público, sem SPF, sem DMARC. `notification_email.is_available()` reconhece
@@ -1034,7 +1055,80 @@ VAPID_TIMEOUT_SECONDS = _env_int("VAPID_TIMEOUT_SECONDS", 10)
 # ocupa o worker de directives por dois minutos, e o que era "e-mail não saiu"
 # vira "a fila de directives parou". Quinze segundos são folgados para um SMTP
 # que funciona e curtos o bastante para um que não existe.
-EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+_EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+
+
+# Teto de espera do botão "testar envio" do Admin. É mais curto que o do worker
+# de propósito: ali há alguém olhando a tela, e um gestor não espera quinze
+# segundos por um clique sem achar que travou.
+_EMAIL_TIMEOUT_DIAGNOSTICO = 10
+
+
+def _mailer_options(backend: str, *, timeout: int | None = None) -> dict:
+    """As `OPTIONS` que ESTE backend aceita.
+
+    ⚠️ Não dá para mandar o mesmo bloco para todo backend. No mundo dos settings
+    antigos o backend de console simplesmente ignorava o host; em `MAILERS`, uma
+    option que o backend não conhece levanta `InvalidMailer` ("Unknown
+    options ...") — o `BaseEmailBackend` reporta em vez de engolir.
+
+    `host` vai como string mesmo quando vazia, e de propósito: `None` levantaria
+    `InvalidMailer` na construção do mailer, trocando o estado que a casa já
+    trata ("SMTP sem host não entrega, a cadeia segue para SMS") por uma exceção
+    em quem só queria perguntar se o canal está de pé.
+    """
+    if "smtp" not in backend.lower():
+        return {}
+    return {
+        "host": _EMAIL_HOST,
+        "port": _EMAIL_PORT,
+        "use_tls": _EMAIL_USE_TLS,
+        "username": _EMAIL_HOST_USER,
+        "password": _EMAIL_HOST_PASSWORD,
+        "timeout": _EMAIL_TIMEOUT if timeout is None else timeout,
+    }
+
+
+# Dois aliases, mesmo transporte, tetos de espera diferentes.
+#
+# O alias `diagnostics` existe porque a alternativa deixou de existir: o botão
+# de teste do Admin pedia a conexão com `get_connection(timeout=...)`, e tanto
+# o `get_connection()` quanto o argumento `connection=` do `EmailMessage` são
+# deprecados no Django 6.1. Em `MAILERS`, "o mesmo servidor com outro teto" é
+# um alias — e o efeito colateral é bom: os dois tetos passam a morar lado a
+# lado, num lugar só, em vez de um em settings e o outro numa constante de view.
+MAILERS = {
+    "default": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": _mailer_options(_EMAIL_BACKEND),
+    },
+    "diagnostics": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": _mailer_options(_EMAIL_BACKEND, timeout=_EMAIL_TIMEOUT_DIAGNOSTICO),
+    },
+}
+
+# `mail.E001` silenciado — a régua é do Django, a política é da casa.
+#
+# O check nasceu junto com `MAILERS` e reprova o `check --deploy` com ERRO
+# quando o backend `default` é de desenvolvimento (console/locmem/dummy/file).
+# A casa já responde a essa mesma pergunta, e responde melhor: a prontidão
+# `otp_delivery` distingue "e-mail inerte" de "nenhum canal entrega", e só o
+# segundo é erro. A decisão está escrita em
+# `backstage/services/integration_readiness.py`: o SMS é o canal de OTP por si,
+# o WhatsApp não faz OTP, e e-mail não configurado "não é pendência, é o
+# desenho". Deixar o `mail.E001` de pé colocaria o Django reprovando o deploy
+# por uma escolha deliberada — e um painel que fica vermelho por escolha da
+# casa ensina a ignorar o vermelho que importa.
+#
+# ⚠️ Silenciar aqui NÃO deixa o canal mudo. Quem grita continua gritando, e em
+# três lugares: `notification_email.is_available()` devolve `False` e a cadeia
+# segue para SMS/WhatsApp; a projeção de diagnóstico diz na tela POR QUE não
+# entrega; e a prontidão lista a perna que falta.
+SILENCED_SYSTEM_CHECKS = [
+    *globals().get("SILENCED_SYSTEM_CHECKS", []),
+    "mail.E001",
+]
 
 # ── REST Framework ─────────────────────────────────────────────────
 
