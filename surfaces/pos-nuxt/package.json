@@ -40,7 +40,7 @@
     "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.131",
+    "@iconify-json/lucide": "^1.2.132",
     "@nuxt/eslint": "^1.16.0",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "^1.63.0",
