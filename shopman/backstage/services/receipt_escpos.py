@@ -570,17 +570,22 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
 
         out += _centered("COBRAR NA ENTREGA")
         tenders = payment.get("tenders") or [{"method": metodo, "amount_q": order.total_q}]
-        for tender in tenders:
-            if tender.get("status") in {"received", "captured", "paid"}:
-                continue
-            if tender.get("collection", "on_delivery") != "on_delivery":
-                continue
+        a_receber = [
+            tender for tender in tenders
+            if tender.get("status") not in {"received", "captured", "paid"}
+            and tender.get("collection", "on_delivery") == "on_delivery"
+        ]
+        for tender in a_receber:
             out += _pair(
                 payment_method_label(str(tender.get("method") or "")),
                 f"R$ {format_money(int(tender.get('amount_q') or 0))}",
             )
         change_for_q = _change_for_q(order)
-        if metodo in {"cash", "mixed"}:
+        # Quem decide se há troco é a LINHA em espécie, não o método do topo. No
+        # pedido do marketplace o método do topo é `external` (o iFood é que
+        # precifica e concilia) e a parcela em dinheiro só aparece na linha —
+        # perguntar ao topo deixava a comanda do iFood sem "Troco para".
+        if any(str(tender.get("method") or "").lower() in {"cash", "mixed"} for tender in a_receber):
             if change_for_q:
                 out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
                 out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")

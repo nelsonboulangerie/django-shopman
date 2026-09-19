@@ -531,23 +531,41 @@ def _change_for_q(order: Order) -> int:
         return 0
 
 
+def cash_due_on_delivery_q(order: Order) -> int:
+    """Quanto desta entrega será recebido em ESPÉCIE na porta, em centavos.
+
+    A parcela em dinheiro está nas LINHAS (``payment.tenders``) quando elas
+    existem; só na ausência delas o método do topo responde pelo pedido
+    inteiro. Perguntar ao topo primeiro deixava o pedido de marketplace de
+    fora: lá o método é ``external`` — quem precifica e concilia é o iFood — e
+    a parcela em dinheiro aparece apenas na linha.
+
+    Não desconta acerto já feito: quem cuida disso é quem pergunta.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if get_fulfillment_type(order) != "delivery" or payment.get("collection") != "on_delivery":
+        return 0
+    tenders = payment.get("tenders") or []
+    if tenders:
+        return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") == "cash")
+    if payment.get("method") not in {"cash", "mixed"}:
+        return 0
+    return int(order.total_q or 0)
+
+
 def change_out_suggested_q(order: Order) -> int:
-    """Quanto de troco a loja sugere que o entregador leve: ``change_for_q − total``.
+    """Quanto de troco a loja sugere que o entregador leve: ``change_for_q − parcela em dinheiro``.
 
     Só enquanto é entrega em dinheiro na porta ainda não acertada; zero quando o
     cliente não pediu troco, pediu abaixo do total (erro de digitação) ou o
     dinheiro já entrou.
     """
     payment = (order.data or {}).get("payment") or {}
-    if get_fulfillment_type(order) != "delivery":
-        return 0
-    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
-        return 0
     if payment.get("cod_settled_at"):
         return 0
-    cash_due = sum(int(t.get("amount_q") or 0) for t in payment.get("tenders") or [] if t.get("method") == "cash")
-    if not payment.get("tenders"):
-        cash_due = int(order.total_q or 0)
+    cash_due = cash_due_on_delivery_q(order)
+    if cash_due <= 0:
+        return 0
     return max(0, _change_for_q(order) - cash_due)
 
 
