@@ -34,13 +34,13 @@ install: ## Instala deps + apps da suite em modo editável
 	# versão que a suíte viu" — e o `test-constraints` só confere COBERTURA, não
 	# igualdade. Verde aqui passa a significar verde no que sobe.
 	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install -c constraints.txt "Django>=6.0,<6.1" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
+	$(PYTHON) -m pip install -c constraints.txt "Django>=6.1,<6.2" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
 		"drf-spectacular>=0.29,<1.0" \
 		"django-csp>=4.0,<5.0" \
 		"django-ratelimit>=4.1,<5.0" \
 		"django-eventstream>=5.3,<6.0" \
 		"django-import-export>=4.4,<5.0" \
-		"django-unfold>=0.92,<0.93" \
+		"django-unfold>=0.107,<0.108" \
 		"daphne>=4.2,<5.0" \
 		"redis>=5.1,<8.0" \
 		"psycopg[binary]>=3.2,<4.0" \
