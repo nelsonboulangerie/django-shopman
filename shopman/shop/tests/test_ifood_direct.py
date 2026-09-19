@@ -471,10 +471,14 @@ def test_action_for_status_mapping():
     from shopman.shop.services import ifood_callbacks
 
     assert ifood_callbacks.action_for_status("accepted") == "confirm"
+    assert ifood_callbacks.action_for_status("preparing") == "startPreparation"
     assert ifood_callbacks.action_for_status("ready") == "readyToPickup"
     assert ifood_callbacks.action_for_status("dispatched") == "dispatch"
     assert ifood_callbacks.action_for_status("cancelled") == "requestCancellation"
-    assert ifood_callbacks.action_for_status("preparing") is None
+    # `completed` fecha pelo lado DELES (evento CON) — a loja nunca empurra
+    # conclusão, então continua sem ação. `preparing` deixou de estar nesta
+    # linha em 19/09/2026: ele tem `startPreparation` desde então.
+    assert ifood_callbacks.action_for_status("completed") is None
 
 
 @override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
@@ -621,7 +625,8 @@ def test_fetch_cancellation_reasons(fake_headers):
 def test_send_for_status_unmapped_returns_false():
     from shopman.shop.services import ifood_callbacks
 
-    assert ifood_callbacks.send_for_status("o1", "preparing") is False
+    # Status local sem ação no iFood: a conclusão é decisão DELES (evento CON).
+    assert ifood_callbacks.send_for_status("o1", "completed") is False
 
 
 def test_status_handler_raises_transient_on_callback_error(db):

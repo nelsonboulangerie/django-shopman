@@ -49,7 +49,7 @@ class IFoodStatusCallbackHandler:
         }
         if order is not None:
             context = ifood_callbacks.workflow_context(order)
-            if status in {"accepted", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
+            if status in {"accepted", "preparing", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
                 # A delayed progress callback cannot reopen a completed order.
                 # Keep legacy cancellation requests on their separate path.
                 return
