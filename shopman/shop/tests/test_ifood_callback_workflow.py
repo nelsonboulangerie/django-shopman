@@ -1,11 +1,14 @@
 """Official Order workflow: store dispatch, iFood logistics, and remote echoes."""
 
+import logging
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from shopman.orderman.models import Directive, Order
 
+from shopman.shop.handlers import ifood_status
 from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler, on_order_status_changed
 from shopman.shop.services import ifood_callbacks, ifood_events
 
@@ -183,3 +186,125 @@ def test_delayed_progress_callbacks_are_inert_after_terminal_state(terminal, cal
     with patch.object(ifood_callbacks, "send_for_status") as send:
         IFoodStatusCallbackHandler().handle(message=message, ctx={})
     send.assert_not_called()
+
+
+# ── Os desvios do sinal são AUDÍVEIS ───────────────────────────────────────────
+# Cada desvio de negócio (cancelamento remoto, transição já refletida, status sem
+# ação no fluxo) diz o que decidiu e com que dado. Medido em 19/09/2026: o
+# despacho do IFOOD-260919-Q38 sumiu sem uma linha de log, e a mudez custou vinte
+# minutos de eliminação de hipóteses.
+
+
+@contextmanager
+def _captured(caplog):
+    """O logger do módulo não propaga para o caplog (config de LOGGING da casa)."""
+    module_logger = logging.getLogger(ifood_status.__name__)
+    module_logger.addHandler(caplog.handler)
+    previous = module_logger.level
+    module_logger.setLevel(logging.INFO)
+    try:
+        with caplog.at_level(logging.INFO, logger=ifood_status.__name__):
+            yield
+    finally:
+        module_logger.setLevel(previous)
+        module_logger.removeHandler(caplog.handler)
+
+
+@pytest.mark.django_db
+def test_cancellation_that_originated_at_ifood_says_so(caplog):
+    order = Order.objects.create(
+        ref="MUTE-CAN", channel_ref="ifood", external_ref="ifood-order", status="cancelled",
+        data={"fulfillment_type": "delivery", "ifood_cancelled": True, "ifood": {"delivered_by": "MERCHANT"}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-CAN" in logged
+    assert "status=cancelled" in logged
+    assert "ifood_cancelled" in logged
+
+
+@pytest.mark.django_db
+def test_remote_actor_names_the_actor_and_the_markers(caplog):
+    order = Order.objects.create(
+        ref="MUTE-ACTOR", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_dispatched": {"event_id": "dsp-1"},
+        }},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="system:ifood:DSP")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-ACTOR" in logged
+    assert "status=dispatched" in logged
+    assert "remote actor=system:ifood:DSP" in logged
+    assert "remote_dispatched" in logged
+
+
+@pytest.mark.django_db
+def test_observed_remote_status_is_distinguishable_from_the_remote_actor(caplog):
+    order = Order.objects.create(
+        ref="MUTE-EVID", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_dispatched": {"event_id": "dsp-1"},
+        }},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-EVID" in logged
+    assert "remote status already observed" in logged
+    assert "remote_dispatched" in logged
+    # A ambiguidade que travou o diagnóstico: este desvio NÃO é o do ator remoto.
+    assert "remote actor=" not in logged
+
+
+@pytest.mark.django_db
+def test_status_without_ifood_action_logs_status_fulfillment_and_owner(caplog):
+    order = Order.objects.create(
+        ref="MUTE-ACTION", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {"delivered_by": "IFOOD"}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-ACTION" in logged
+    assert "no iFood action for status=dispatched" in logged
+    assert "fulfillment_type=delivery" in logged
+    assert "delivered_by=IFOOD" in logged
+
+
+@pytest.mark.django_db
+def test_missing_delivery_owner_reads_as_empty_not_as_absence(caplog):
+    order = Order.objects.create(
+        ref="MUTE-EMPTY", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    assert "delivered_by=(empty)" in caplog.text
+
+
+@pytest.mark.django_db
+def test_happy_path_still_enqueues_the_callback_and_stays_quiet(caplog):
+    order = Order.objects.create(
+        ref="MUTE-OK", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
+    assert directive.payload["status"] == "dispatched"
+    assert directive.payload["delivered_by"] == "MERCHANT"
+    assert "no callback for order" not in caplog.text
