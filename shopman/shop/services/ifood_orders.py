@@ -139,6 +139,16 @@ def _map_delivery(order: dict) -> dict:
         "complement": address.get("complement", ""),
         "reference": address.get("reference", ""),
         "postal_code": address.get("postalCode", ""),
+        # Os COMPONENTES do endereço, além do texto formatado. Eles chegavam do
+        # iFood, eram usados só para compor ``formatted`` e morriam aqui — e o
+        # destinatário da NFC-e de entrega a domicílio é montado de componente,
+        # não de texto corrido: sem eles o adapter fiscal recusa a nota por
+        # "confira logradouro, número, bairro, município, UF".
+        "street": address.get("streetName", ""),
+        "number": address.get("streetNumber", ""),
+        "neighborhood": address.get("neighborhood", ""),
+        "city": address.get("city", ""),
+        "state": address.get("state", ""),
         "scheduled_at": delivery.get("deliveryDateTime", ""),
         "pickup_code": delivery.get("pickupCode", ""),
         "delivered_by": delivery.get("deliveredBy", ""),
