@@ -1,9 +1,9 @@
 """As vias do pedido: o registro, a oferta por contexto e os filtros de divulgação.
 
 O dono cortou os papéis não fiscais da casa por AUDIÊNCIA, e são três: **Via
-Cozinha** (o KDS materializado), **Via Encomenda** (nasce no painel físico e
+Cozinha** (o KDS materializado), **Via Pedido** (nasce no painel físico e
 viaja com a sacola — um papel só, com duas fases de vida) e **Via Recibo** (quem
-pagou). A "via do entregador" não é uma quarta: é a Via Encomenda com o filtro
+pagou). A "via do entregador" não é uma quarta: é a Via Pedido com o filtro
 de identificação ligado.
 
 Este arquivo trava três coisas do registro (``services.order_documents``), e
@@ -11,7 +11,7 @@ nenhuma delas é leiaute — papel tem dono em ``receipt_escpos``, e os testes d
 continuam onde estão:
 
 1. **A oferta é por contexto**, e via sem papel não é oferecida.
-2. **A permissão é POR VIA.** Quem opera a cozinha não alcança a Via Encomenda
+2. **A permissão é POR VIA.** Quem opera a cozinha não alcança a Via Pedido
    nem a Via Recibo; quem não é do caixa não alcança o recibo.
 3. **Os filtros são DERIVADOS**, nunca escolhidos por quem imprime — e cada um
    tem um piso que a configuração (ou o pedido do cliente) não fura.
@@ -76,7 +76,9 @@ def _pedido_da_casa(ref: str, **data_extra) -> Order:
     return order
 
 
-def _pedido_do_ifood(order_id: str, *, delivered_by: str | None = "IFOOD") -> Order:
+def _pedido_do_ifood(
+    order_id: str, *, delivered_by: str | None = "IFOOD", localizer: str = "9988"
+) -> Order:
     """Pedido cru do iFood, do jeito que o Order Module v1.0 entrega, já ingerido."""
     delivery: dict = {
         "deliveryAddress": {"formattedAddress": "Rua das Flores, 123", "postalCode": "86020-000"},
@@ -89,7 +91,12 @@ def _pedido_do_ifood(order_id: str, *, delivered_by: str | None = "IFOOD") -> Or
         "displayId": "8842",
         "isTest": False,
         "orderType": "DELIVERY",
-        "customer": {"name": "Ana Ribeiro", "phone": {"number": "(43) 99911-2233"}},
+        # ⚠️ O iFood não manda o telefone do cliente: manda um número já
+        # mascarado por eles mais um localizador do relé de voz.
+        "customer": {
+            "name": "Ana Ribeiro",
+            "phone": {"number": "(43) 99911-2233", "localizer": localizer},
+        },
         "total": {"orderAmount": 45},
         "payments": {"prepaid": 45, "pending": 0,
                      "methods": [{"method": "CREDIT", "type": "ONLINE", "prepaid": True, "value": 45}]},
@@ -160,7 +167,7 @@ def test_o_catalogo_tem_tres_vias_por_audiencia():
     """Três audiências, três vias. A chave é quem LÊ o papel.
 
     ⚠️ "Painel" e "sacola" não são vias diferentes — são duas fases da Via
-    Encomenda. E "via do entregador" não é uma via: é a Via Encomenda com o
+    Pedido. E "via do entregador" não é uma via: é a Via Pedido com o
     filtro de identificação ligado.
     """
     assert _chaves(vias.DOCUMENTS) == [vias.KITCHEN, vias.ORDER, vias.RECEIPT]
@@ -176,7 +183,7 @@ def test_cada_via_carrega_a_propria_permissao():
 
 
 def test_as_quatro_chaves_de_carimbo_continuam_quatro():
-    """⚠️ A Via Encomenda é um papel só e tem DUAS chaves, porque são duas
+    """⚠️ A Via Pedido é um papel só e tem DUAS chaves, porque são duas
     fases: "a ficha já ter ido para o painel não faz da primeira via do
     entregador uma segunda". Unificar faria a primeira via que sai pela porta
     nascer marcada como reimpressão de um papel que ninguém segurou."""
@@ -323,7 +330,7 @@ def test_contexto_desconhecido_nao_oferece_nada(canal_proprio, caixa):
 
 
 def test_quem_cuida_da_fila_sem_ser_do_caixa_nao_ve_o_recibo(canal_proprio, gestor):
-    """A permissão do recibo é do CAIXA; a da Via Encomenda é de quem cuida da
+    """A permissão do recibo é do CAIXA; a da Via Pedido é de quem cuida da
     fila. São gates diferentes porque são papéis de pessoas diferentes."""
     order = _pedido_da_casa("ORD-PERM-GESTOR")
 
@@ -368,7 +375,7 @@ def test_no_canal_proprio_a_encomenda_leva_o_que_faz_a_entrega_acontecer(canal_p
     encomenda = _encomenda(_pedido_da_casa("ORD-ID-CASA"), gestor)
 
     assert encomenda.hides_customer_identity is False
-    assert encomenda.headline == "Via Encomenda"
+    assert encomenda.headline == "Via Pedido"
     assert encomenda.print_stamp_key == "ticket_printed_at"
     assert encomenda.route_name == "api-backstage-order-ticket-escpos"
 
@@ -379,7 +386,7 @@ def test_no_marketplace_a_encomenda_sai_sem_identificacao_do_cliente(canal_ifood
     encomenda = _encomenda(_pedido_do_ifood("ifood-id-1"), gestor)
 
     assert encomenda.hides_customer_identity is True
-    assert encomenda.headline == "Via Encomenda — sem identificação do cliente"
+    assert encomenda.headline == "Via Pedido — sem identificação do cliente"
     assert encomenda.print_stamp_key == "courier_ticket_printed_at"
     assert encomenda.route_name == "api-backstage-order-courier-ticket-escpos"
 
@@ -430,7 +437,7 @@ def test_na_retirada_a_identificacao_fica(canal_proprio, gestor):
 def test_a_fase_no_painel_herda_o_filtro_do_pedido(canal_ifood, gestor):
     """⚠️ Consequência direta de "um papel só", e ela é deliberada: o filtro é
     do PEDIDO, não da fase. Num pedido cuja entrega é de terceiro, a Via
-    Encomenda já nasce sem o nome do cliente — inclusive enquanto está pregada
+    Pedido já nasce sem o nome do cliente — inclusive enquanto está pregada
     na parede. O dia em que a fase voltar a mudar o conteúdo, ela volta como
     FASE, nunca como uma via a mais."""
     order = _pedido_do_ifood("ifood-id-painel")
@@ -440,6 +447,55 @@ def test_a_fase_no_painel_herda_o_filtro_do_pedido(canal_ifood, gestor):
 
     assert no_painel.applied_filters == no_despacho.applied_filters
     assert no_painel.hides_customer_identity is True
+
+
+# ── 5b. O que SOBREVIVE ao filtro de identificação ────────────────────────
+
+
+def test_o_localizador_sobrevive_ao_filtro_de_identificacao(canal_ifood, gestor):
+    """⚠️ O filtro esconde QUEM é o cliente, não toda forma de falar com ele.
+
+    O localizador do relé de voz não é nome, não é endereço e não é o telefone
+    do cliente: é um código que liga para ele sem dizer quem ele é. A
+    documentação de impressão do iFood pede justamente que ele saia na comanda.
+    """
+    encomenda = _encomenda(_pedido_do_ifood("ifood-relay-1"), gestor)
+
+    assert encomenda.hides_customer_identity is True
+    assert encomenda.anonymous_contact is not None
+    assert encomenda.anonymous_contact.kind == vias.IFOOD_VOICE_RELAY
+    assert encomenda.anonymous_contact.value == "9988"
+
+
+def test_o_localizador_tambem_vale_com_o_filtro_desligado(canal_ifood, gestor):
+    """⚠️ O número que o iFood manda JÁ vem mascarado por eles. Sem o
+    localizador ninguém completa a ligação — nem na via identificada de um
+    pedido de marketplace que a própria loja entrega."""
+    canal_ifood.config = {**canal_ifood.config, "fulfillment": {"courier_ticket": "identified"}}
+    canal_ifood.save(update_fields=["config"])
+
+    encomenda = _encomenda(_pedido_do_ifood("ifood-relay-2", delivered_by="MERCHANT"), gestor)
+
+    assert encomenda.hides_customer_identity is False
+    assert encomenda.anonymous_contact is not None
+    assert encomenda.anonymous_contact.value == "9988"
+
+
+def test_no_canal_proprio_nao_ha_rele_e_a_ausencia_e_dita(canal_proprio, gestor):
+    """"Não há relé" e "há um relé em branco" são coisas diferentes para quem
+    vai imprimir — por isso a ausência é ``None``, nunca um contato vazio."""
+    encomenda = _encomenda(_pedido_da_casa("ORD-SEM-RELE"), gestor)
+
+    assert encomenda.anonymous_contact is None
+
+
+def test_a_validade_do_localizador_e_desconhecida_ate_o_mapeamento_guardar(canal_ifood, gestor):
+    """⚠️ O localizador VENCE, e o ``phone.localizerExpiration`` do iFood ainda
+    não é guardado por ``ifood_orders._map_customer``. Vazio quer dizer "não
+    sei", nunca "não vence": quem compuser o papel diz o que sabe."""
+    encomenda = _encomenda(_pedido_do_ifood("ifood-relay-3"), gestor)
+
+    assert encomenda.anonymous_contact.expires_at == ""
 
 
 # ── 6. Filtro: valores ────────────────────────────────────────────────────
@@ -453,7 +509,7 @@ def test_o_presente_esconde_valores_na_via_que_acompanha_a_mercadoria(canal_prop
     encomenda = _encomenda(order, caixa)
 
     assert encomenda.hides_values is True
-    assert encomenda.headline == "Via Encomenda — sem valores"
+    assert encomenda.headline == "Via Pedido — sem valores"
 
 
 def test_o_recibo_de_quem_pagou_nunca_esconde_valor(canal_proprio, caixa):
@@ -530,5 +586,5 @@ def test_os_dois_filtros_se_acumulam_sem_se_atrapalhar(canal_ifood, gestor):
 
     assert encomenda.applied_filters == {vias.FILTER_CUSTOMER_IDENTITY, vias.FILTER_VALUES}
     assert encomenda.headline == (
-        "Via Encomenda — sem identificação do cliente, sem valores"
+        "Via Pedido — sem identificação do cliente, sem valores"
     )

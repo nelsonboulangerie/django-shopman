@@ -24,13 +24,13 @@ registro é o índice, não a gráfica.
 
 - **Via Cozinha** — o KDS materializado, para o posto que tem impressora e não
   tem tela.
-- **Via Encomenda** — nasce no painel físico e viaja com a sacola. **Um papel
+- **Via Pedido** — nasce no painel físico e viaja com a sacola. **Um papel
   só, com duas fases de vida**: ela fica pregada enquanto o pedido espera, e
   sai com a mercadoria quando ele parte.
 - **Via Recibo** — o papel de quem pagou.
 
 ⚠️ **"Painel" e "sacola" não são vias diferentes**, e "via do entregador"
-também não é uma. A via do entregador é a **Via Encomenda com o filtro de
+também não é uma. A via do entregador é a **Via Pedido com o filtro de
 identificação ligado** — o mesmo papel, com uma fatia a menos, porque quem o
 segura mudou. Modelá-la como documento próprio era descrever o filtro como se
 fosse audiência.
@@ -49,6 +49,13 @@ que todo filtro morde toda via: o recibo é a prova do pagamento e esconder
 valor ali o destrói; a via da cozinha não carrega nem contato nem dinheiro. O
 que é igual é a MÁQUINA — quem pergunta, quem responde, e o fato de que quem
 imprime não opina.
+
+⚠️ **O filtro de identificação esconde QUEM é o cliente, não toda forma de
+falar com ele.** O iFood não manda o telefone: manda um relé de voz — um 0800
+mais um localizador — e a documentação de impressão deles pede o localizador na
+comanda. Ele não é nome, não é endereço e não é o telefone do cliente, então
+sobrevive ao filtro (:func:`anonymous_contact`). É a diferença entre um filtro
+que pensa e um que apaga por palavra-chave.
 
 ## Por que o registro mora no backstage
 
@@ -74,12 +81,12 @@ catálogo só para os dois convidaria a próxima tela a tratá-los igual.
 
 1. **O carimbo de reimpressão.** O dono decidiu que ele passa a dizer
    "REIMPRESSÃO", e não "2a VIA": "via" agora nomeia a audiência, e "segunda
-   via da Via Encomenda" é ambíguo. Os quatro compositores de
+   via da Via Pedido" é ambíguo. Os quatro compositores de
    ``receipt_escpos`` ainda estampam "2a VIA", e trocar a palavra é mexer em
    documento existente — migração, não fundação.
 2. **O nome no alto da via que viaja.** O papel ainda se apresenta como "Via do
    entregador — Identificada/Anônima". Reconciliar essa copy com "Via
-   Encomenda" é parte de migrar o documento, não de registrá-lo.
+   Pedido" é parte de migrar o documento, não de registrá-lo.
 
 ## "Via" na tela, ``OrderDocument`` no código
 
@@ -149,6 +156,11 @@ def _customer_identity_is_hidden(order) -> bool:
     não é a casa, a identificação some assim mesmo, com log. Configuração é do
     operador, e operador erra; privacidade de cliente não pode custar um campo
     mal preenchido.
+
+    ⚠️ **O filtro esconde QUEM é o cliente, não toda forma de falar com ele.**
+    Um canal de contato que não revela identidade sobrevive ao filtro — ver
+    :func:`anonymous_contact`. A diferença é entre um filtro que pensa e um que
+    apaga por palavra-chave: "telefone" não é o alvo; "o telefone DELE" é.
     """
     from shopman.shop.services.order_helpers import (
         COURIER_TICKET_ANONYMOUS,
@@ -207,6 +219,66 @@ def _charging_at_the_door(order, payment: dict) -> bool:
     return receipt_escpos._charging_at_the_door(order, payment, paid=paid)
 
 
+#: O relé de voz do iFood: um 0800 e um localizador. Liga-se para o 0800,
+#: digita-se o localizador, e a chamada cai no cliente sem que ninguém da casa
+#: saiba o número dele.
+IFOOD_VOICE_RELAY = "ifood_voice_relay"
+
+
+@dataclass(frozen=True)
+class AnonymousContact:
+    """Um jeito de falar com o cliente que não diz quem ele é.
+
+    É o que sobrevive ao filtro de identificação, e é a prova de que o filtro
+    pensa em vez de apagar por palavra-chave: o localizador não é nome, não é
+    endereço e não é o telefone do cliente — é um código de relé.
+
+    ⚠️ **Não é só para a via filtrada.** O número que o iFood manda em
+    ``phone.number`` já vem mascarado por eles; sem o localizador ninguém
+    completa a ligação, **mesmo quando o filtro está desligado** (pedido de
+    marketplace que a própria loja entrega). Por isso este contato é resolvido
+    sempre que existe, e não só quando a identificação some. A documentação de
+    impressão do iFood pede exatamente isso: imprimir o localizador na comanda.
+
+    ⚠️ **O localizador VENCE.** O payload do iFood traz
+    ``phone.localizerExpiration``, e o nosso mapeamento
+    (``shop.services.ifood_orders._map_customer``) ainda não o guarda —
+    ``expires_at`` responde vazio até que guarde, e vazio quer dizer "não sei",
+    nunca "não vence". Quem compuser o papel diz o que sabe: apresentar como
+    válido um localizador que pode ter vencido é prometer uma ligação que vai
+    dar em nada. Mapear a expiração é seguimento, e mora em ``_map_customer``,
+    não aqui.
+    """
+
+    kind: str
+    label: str
+    value: str
+    expires_at: str = ""
+
+
+def anonymous_contact(order) -> AnonymousContact | None:
+    """O canal de contato deste pedido que não identifica o cliente, se houver.
+
+    Lê a chave que a ingestão do iFood já grava
+    (``Order.data["customer"]["phone_localizer"]``). No canal próprio não existe
+    localizador e o contato é o telefone mesmo — que aí é do cliente e está
+    sujeito ao filtro como qualquer outro dado dele. Por isso a ausência aqui é
+    ``None``, e não um contato vazio: "não há relé" e "há um relé em branco" são
+    coisas diferentes para quem vai imprimir.
+    """
+    data = getattr(order, "data", None) or {}
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    localizer = str(customer.get("phone_localizer") or "").strip()
+    if not localizer:
+        return None
+    return AnonymousContact(
+        kind=IFOOD_VOICE_RELAY,
+        label="Localizador iFood",
+        value=localizer,
+        expires_at=str(customer.get("phone_localizer_expiration") or ""),
+    )
+
+
 @dataclass(frozen=True)
 class DisclosureFilter:
     """Um filtro de divulgação: o que a via deixa de mostrar, e por decisão de quem.
@@ -253,7 +325,7 @@ class OrderDocument:
 
     ``permission`` é o codename Django exigido para pegar este papel, e ele é
     por via de propósito: o recibo é documento do CAIXA
-    (``cashman.operate_pos``), a Via Encomenda é de quem cuida da FILA
+    (``cashman.operate_pos``), a Via Pedido é de quem cuida da FILA
     (``shop.manage_orders``) e a Via Cozinha é do posto de preparo
     (``backstage.operate_kds``). Colapsar os três daria a quem opera o caixa o
     endereço do cliente de qualquer pedido da casa — e à cozinha, o recibo da
@@ -263,7 +335,7 @@ class OrderDocument:
     composição desta via. ``filtered_print_stamp_keys`` guarda a chave própria
     de uma combinação de filtros, quando ela existe.
 
-    ⚠️ **As chaves não se unificam, e o motivo é a FASE.** A Via Encomenda é um
+    ⚠️ **As chaves não se unificam, e o motivo é a FASE.** A Via Pedido é um
     papel só, mas ela é composta duas vezes na vida: uma para ficar no painel e
     outra para viajar com a sacola. "A ficha já ter ido para o painel não faz da
     primeira via do entregador uma segunda" — se as duas dividissem carimbo, a
@@ -319,6 +391,9 @@ class OfferedDocument:
     ``print_stamp_key`` e ``route_name`` já vêm resolvidos para a combinação de
     filtros: a tela não escolhe rota, ela recebe a que corresponde ao papel que
     o servidor decidiu.
+
+    ``anonymous_contact`` é o que SOBREVIVE ao filtro de identificação — o
+    caminho até o cliente que não diz quem ele é.
     """
 
     key: str
@@ -330,6 +405,7 @@ class OfferedDocument:
     applied_filters: frozenset[str]
     filter_labels: tuple[str, ...]
     alternate_surface: str
+    anonymous_contact: AnonymousContact | None = None
 
     @property
     def headline(self) -> str:
@@ -378,7 +454,7 @@ DOCUMENTS: tuple[OrderDocument, ...] = (
     ),
     OrderDocument(
         key=ORDER,
-        label="Via Encomenda",
+        label="Via Pedido",
         audience="o painel da casa, e depois quem leva a mercadoria",
         permission="shop.manage_orders",
         print_stamp_key="ticket_printed_at",
@@ -455,7 +531,7 @@ def documents_for(order, *, context: str, actor) -> list[OfferedDocument]:
     2. **O papel** existe? Via registrada sem rota é decisão tomada e migração
        pendente — não se oferece botão que responde 404.
     3. **A permissão** é por via. Quem não tem a permissão daquele papel não vê
-       o botão; o grupo Cozinha, por exemplo, não alcança nem a Via Encomenda
+       o botão; o grupo Cozinha, por exemplo, não alcança nem a Via Pedido
        nem a Via Recibo.
 
     Só então os filtros de divulgação são resolvidos, e a via sai com a rota e o
@@ -470,7 +546,7 @@ def documents_for(order, *, context: str, actor) -> list[OfferedDocument]:
     controle de acesso, e no dia em que for, o primeiro caminho que esquecer de
     perguntar vira o buraco.
 
-    ⚠️ **O filtro é do PEDIDO, não da fase.** A Via Encomenda é um papel só, e
+    ⚠️ **O filtro é do PEDIDO, não da fase.** A Via Pedido é um papel só, e
     por isso a identificação do cliente é decidida pelo pedido, não por a via
     estar no painel ou na sacola. Num pedido cuja entrega é de terceiro, isso
     significa que a via já nasce sem o nome do cliente — inclusive enquanto está
@@ -481,6 +557,7 @@ def documents_for(order, *, context: str, actor) -> list[OfferedDocument]:
     if actor is None:
         return []
 
+    contact = anonymous_contact(order)
     offered: list[OfferedDocument] = []
     for document in DOCUMENTS:
         if context not in document.contexts:
@@ -507,6 +584,10 @@ def documents_for(order, *, context: str, actor) -> list[OfferedDocument]:
                     item.label for item in FILTERS if item.key in applied
                 ),
                 alternate_surface=document.alternate_surface,
+                # Sempre que existe, e não só quando a identificação some: o
+                # número do iFood já vem mascarado, então sem o localizador
+                # ninguém liga nem na via identificada.
+                anonymous_contact=contact,
             )
         )
     return offered
