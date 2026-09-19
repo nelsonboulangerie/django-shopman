@@ -21,6 +21,25 @@ Robustness contract
 - An event is **acknowledged only after it is handled** (ingested, deduped, or
   an ignorable code). A processing failure leaves the event un-acked so iFood
   re-delivers it — the same at-least-once guarantee the webhook path has.
+
+O que "ignorable" quer dizer, desde 19/09/2026
+----------------------------------------------
+
+Até aqui, TODO código sem processador era ``ignored`` e entrava no lote de
+acknowledge: dizíamos ao iFood "tratamos" para qualquer coisa que não
+soubéssemos tratar. O ``ORDER_PATCHED`` — cliente altera itens depois do
+``CONFIRMED`` — caía nesse ramo, e o pedido local seguia com os itens
+originais, divergindo o que a cozinha prepara, o estoque, a cobrança e a nota.
+
+Agora há três destinos, e nenhum deles é silêncio:
+
+- **tratado** — tem processador (``PLC``, ``CFM``, ``DSP``, ``CAN``, ``CON``,
+  handshake e ``ORDER_PATCHED``);
+- **inerte** (``_INERT_CODES``) — ACK calado, mas por DECISÃO escrita e com
+  motivo ao lado de cada código;
+- **qualquer outro** — ACK (não ackar faria o iFood reentregar em laço) + log de
+  ``warning`` + alerta ``ifood_event_unhandled`` ao operador. Um código novo do
+  marketplace aparece antes de virar prejuízo, em vez de depois.
 """
 
 from __future__ import annotations
@@ -44,6 +63,32 @@ _CONCLUSION_CODES = {"CON", "CONCLUDED"}
 _CONFIRMATION_CODES = {"CFM", "CONFIRMED"}
 _DISPATCH_CODES = {"DSP", "DISPATCHED"}
 _HANDSHAKE_CODES = {"HSD", "HANDSHAKE_DISPUTE", "HSS", "HANDSHAKE_SETTLEMENT"}
+# Cliente alterou o pedido DEPOIS do CONFIRMED. Só `ORDER_PATCHED`, e é
+# deliberado: na referência oficial de eventos este é um dos poucos códigos cujo
+# `code` e `fullCode` são a MESMA string — a tabela "Referência rápida" lista
+# `ORDER_PATCHED` e os três exemplos trazem `"code": "ORDER_PATCHED"`. Não há
+# sigla de três letras documentada, e inventar uma ("PTC") seria adivinhar. Se
+# uma sigla aparecer no vivo, ela cai no ramo de código não tratado logo abaixo,
+# que grita — em vez de ser engolida como era até 19/09/2026.
+_PATCH_CODES = {"ORDER_PATCHED"}
+# Códigos documentados que esta casa decidiu não tratar, COM motivo. Não é
+# silêncio: é decisão escrita, e o ACK calado é a resposta certa para eles.
+_INERT_CODES = {
+    # Eco das nossas próprias chamadas. A tabela oficial diz "Ação necessária:
+    # Nenhuma" para os quatro.
+    "SEPARATION_STARTED", "PREPARATION_STARTED", "SEPARATION_ENDED",
+    "PREPARATION_ENDED", "READY_TO_PICKUP",
+    # Rastreio do entregador do iFood. A loja não repassa rastreio ao cliente
+    # (é o app deles que mostra), então nenhum destes vira trabalho aqui.
+    "ASSIGN_DRIVER", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN", "COLLECTED",
+    "ARRIVED_AT_DESTINATION", "DELIVERY_GROUP_ASSIGNED",
+    # Sugestão de horário para pedido agendado, de loja com "Preparo
+    # Inteligente". A casa começa o preparo pelo `preparationStartDateTime` do
+    # próprio pedido, que a documentação chama de mais restritivo.
+    "RECOMMENDED_PREPARATION_START",
+    # Pedido de cancelamento em trânsito: quem fecha é o CAN, que é tratado.
+    "CANCELLATION_REQUESTED",
+}
 _ACK_BATCH = 100  # iFood acknowledges in batches.
 
 
@@ -141,8 +186,13 @@ def process_events(events: list[dict]) -> dict:
             continue
 
         # Remote state changes reconcile only after the order exists.
-        if code in _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES | _DISPATCH_CODES | _HANDSHAKE_CODES:
-            if code in _HANDSHAKE_CODES:
+        if code in (
+            _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES
+            | _DISPATCH_CODES | _HANDSHAKE_CODES | _PATCH_CODES
+        ):
+            if code in _PATCH_CODES:
+                outcome = _process_patch(event, event_id, order_id)
+            elif code in _HANDSHAKE_CODES:
                 outcome = _process_handshake(event, settlement=code in {"HSS", "HANDSHAKE_SETTLEMENT"})
             elif code in _CANCELLATION_CODES:
                 outcome = _process_cancellation(event_id, order_id)
@@ -160,8 +210,14 @@ def process_events(events: list[dict]) -> dict:
                 failed += 1
             continue
 
-        # Non-order-creating codes are acknowledged and ignored (WP-2 scope).
+        # Código sem processador. Continua sendo ackado — não ackar faria o
+        # iFood reentregar para sempre, e a reentrega infinita esconde tanto
+        # quanto o silêncio. O que muda é que ele deixa de ser INVISÍVEL: só os
+        # códigos de `_INERT_CODES` passam calados, porque para eles existe
+        # decisão escrita. Qualquer outro vira aviso ao operador.
         if code not in _PLACED_CODES:
+            if code not in _INERT_CODES:
+                _alert_unhandled_event(code, order_id)
             ignored += 1
             handled_ids.append(event_id)
             continue
@@ -228,6 +284,239 @@ def _process_placed(event_id: str, order_id: str) -> str:
 
     webhook_idempotency.mark_done(claim, response_body={"status": "accepted", "order_ref": created.ref})
     return "ingested"
+
+
+def _alert_unhandled_event(code: str, order_id: str) -> None:
+    """Um código do iFood chegou sem processador — o ACK sai, mas não calado."""
+    from shopman.shop.services.observability import create_operator_alert
+
+    logger.warning(
+        "ifood_events: código %s sem tratamento (pedido %s); reconhecido para não "
+        "reentregar em laço, mas NADA foi aplicado ao pedido local",
+        code or "(vazio)", order_id or "(sem orderId)",
+    )
+    create_operator_alert(
+        type="ifood_event_unhandled",
+        severity="warning",
+        message=(
+            f"O iFood enviou o evento {code or '(sem código)'} e esta loja não sabe tratá-lo. "
+            "O pedido local não mudou. Confira o pedido no portal do iFood antes de continuar."
+        ),
+        order_ref="",
+        dedupe_key=f"ifood_event_unhandled:{code}",
+        debounce_minutes=60,
+    )
+
+
+#: Como a documentação nomeia cada alteração, em português de tela. A chave é o
+#: ``metadata.changeType``; os três valores são os documentados na referência de
+#: eventos (exemplos "Item removido", "Item adicionado" e "Quantidade
+#: modificada"). Valor fora desta tabela não vira "desconhecido" calado: cai no
+#: texto genérico e o changeType cru vai junto, porque o operador precisa saber
+#: o que o iFood disse, não o que nós conseguimos classificar.
+_CHANGE_TYPE_LABEL = {
+    "DELETE_ITEMS": "itens removidos",
+    "ADD_ITEMS": "itens adicionados",
+    "UPDATE_ITEMS": "quantidade de itens alterada",
+}
+
+
+def _money_q(value) -> int | None:
+    """Reais do iFood → centavos. ``None`` quando o campo não veio.
+
+    Distinguir ausente de zero importa: um total ausente não pode virar
+    "R$ 0,00" no aviso que o operador lê.
+    """
+    if value is None:
+        return None
+    try:
+        return int(round(float(value) * 100))
+    except (TypeError, ValueError):
+        return None
+
+
+def _describe_patch(metadata: dict) -> str:
+    """Uma frase inequívoca sobre o que o cliente mexeu, para o operador."""
+    change_type = str(metadata.get("changeType") or "").upper()
+    label = _CHANGE_TYPE_LABEL.get(change_type)
+    items = metadata.get("items") if isinstance(metadata.get("items"), list) else []
+    named = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("id") or "").strip()
+        # UPDATE_ITEMS traz oldQuantity/newQuantity; os outros trazem quantity.
+        if item.get("newQuantity") is not None or item.get("oldQuantity") is not None:
+            named.append(f"{name} (de {item.get('oldQuantity')} para {item.get('newQuantity')})")
+        elif item.get("quantity") is not None:
+            named.append(f"{name} ({item['quantity']}x)")
+        elif name:
+            named.append(name)
+    detail = "; ".join(n for n in named if n)
+    if label is None:
+        head = f"alteração do tipo {change_type or '(sem tipo)'}"
+    else:
+        head = label
+    return f"{head}: {detail}" if detail else head
+
+
+def _brl(value_q: int | None) -> str:
+    if value_q is None:
+        return "(não informado)"
+    return f"R$ {value_q / 100:.2f}".replace(".", ",")
+
+
+def _process_patch(event: dict, event_id: str, order_id: str) -> str:
+    """Registrar e GRITAR que o cliente alterou o pedido. Etapa 1 de duas.
+
+    O iFood emite ``ORDER_PATCHED`` quando o cliente adiciona, remove ou muda a
+    quantidade de itens depois do ``CONFIRMED``. Até 19/09/2026 o evento caía no
+    ramo "código que não cria pedido é reconhecido e ignorado": virava ``ignored``
+    e entrava no lote de acknowledge. Dizíamos ao iFood que tratamos, e o pedido
+    local seguia com os itens originais — divergindo o que a cozinha prepara, o
+    estoque que sai, a cobrança e a nota.
+
+    **Por que registrar em vez de reconciliar, nesta Etapa.** O ``metadata`` é
+    DELTA, não estado final: a referência de eventos traz só os itens afetados
+    mais ``oldTotal``/``newTotal``, nunca a lista final. Reconciliar de verdade
+    exige reler o pedido inteiro com ``ifood_orders.fetch_order`` — e esbarra
+    numa parede do Core que não é contornável com cuidado: ``Order.total_q`` e
+    ``Order.snapshot`` são ``SEALED_FIELDS``, e qualquer ``save()`` que os mude
+    levanta ``ImmutabilityError``. Reescrever o pedido no lugar não é uma
+    implementação mais caprichada da mesma ideia; é outra decisão de desenho.
+    Enquanto ela não existe, a correção é humana — e o que esta função garante é
+    que exista um humano sabendo.
+
+    **O ACK passa a ser honesto.** Reconhecemos porque de fato fizemos o que a
+    documentação lista como a terceira ação do evento ("Confirmar leitura do
+    evento") e porque gravamos o fato e chamamos alguém. O que não fazemos é
+    fingir que os itens foram conciliados.
+
+    Mesma disciplina dos outros processadores: claim por id de evento, ACK só
+    quando tratado, sem ACK em falha (um ``ORDER_PATCHED`` que chega antes do
+    ``PLC`` fica sem ACK e o iFood reentrega).
+    """
+    if not order_id:
+        logger.warning("ifood_events: ORDER_PATCHED %s sem orderId", event_id)
+        return "failed"
+
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE, f"event:{webhook_idempotency.stable_webhook_key(event_id)}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+
+    from django.db import transaction
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import is_test_order
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    try:
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(
+                channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+            ).first()
+            if order is None:
+                # Pode chegar antes do PLACED, inclusive no mesmo lote. Sem ACK:
+                # a reentrega aplica o registro depois do pedido existir.
+                logger.warning(
+                    "ifood_events: ORDER_PATCHED para pedido %s ainda inexistente; "
+                    "deixando sem ACK para reentrega", order_id,
+                )
+                webhook_idempotency.mark_failed(claim)
+                return "failed"
+
+            data = dict(order.data or {})
+            facts = dict(data.get("ifood") or {})
+            patches = list(facts.get("patches") or [])
+            if any(str(p.get("event_id")) == event_id for p in patches if isinstance(p, dict)):
+                webhook_idempotency.mark_done(claim, response_body={"status": "already_recorded"})
+                return "deduped"
+
+            old_total_q = _money_q(metadata.get("oldTotal"))
+            new_total_q = _money_q(metadata.get("newTotal"))
+            # A nota já autorizada muda a natureza do problema: alterar o pedido
+            # vira assunto fiscal (devolução/cancelamento), que esta Etapa NÃO
+            # resolve nem tenta adivinhar.
+            fiscal_authorized = bool(data.get("nfce_access_key")) and not data.get("nfce_cancelled")
+            record = {
+                "event_id": event_id,
+                "change_type": str(metadata.get("changeType") or ""),
+                "items": metadata.get("items") if isinstance(metadata.get("items"), list) else [],
+                "old_total_q": old_total_q,
+                "new_total_q": new_total_q,
+                "observed_at": timezone.now().isoformat(),
+                "order_status": order.status,
+                "local_total_q": order.total_q,
+                "fiscal_authorized": fiscal_authorized,
+                # A Etapa 2 (reconciliação automática) marca esta chave. Enquanto
+                # ela for False, o pedido local NÃO reflete a alteração.
+                "reconciled": False,
+            }
+            patches.append(record)
+            facts["patches"] = patches
+            data["ifood"] = facts
+            order.data = data
+            order.save(update_fields=["data", "updated_at"])
+
+            _alert_patched(order, record, fiscal_authorized=fiscal_authorized, suppressed=is_test_order(order))
+            webhook_idempotency.mark_done(
+                claim, response_body={"status": "recorded", "order_ref": order.ref},
+            )
+    except Exception:
+        logger.exception(
+            "ifood_events: falha ao registrar ORDER_PATCHED do pedido %s (evento %s)", order_id, event_id,
+        )
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+    return "ingested"
+
+
+def _alert_patched(order, record: dict, *, fiscal_authorized: bool, suppressed: bool) -> None:
+    """Aviso alto de que o pedido local diverge do pedido do cliente.
+
+    O log sai SEMPRE, inclusive para pedido de teste: quem depura precisa ver o
+    evento. O alerta na tela do operador é que é suprimido no pedido de teste —
+    a supressão da #887 é sobre não fazer a padaria trabalhar por homologação, e
+    um alerta vermelho no Gestor é trabalho.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    description = _describe_patch({
+        "changeType": record["change_type"], "items": record["items"],
+    })
+    logger.warning(
+        "ifood_events: pedido %s ALTERADO pelo cliente no iFood (%s). Total do iFood: %s → %s; "
+        "total local: %s (inalterado). NFC-e autorizada: %s. O pedido local NÃO foi reconciliado.",
+        order.ref, description,
+        _brl(record["old_total_q"]), _brl(record["new_total_q"]),
+        _brl(record["local_total_q"]), "sim" if fiscal_authorized else "não",
+    )
+    if suppressed:
+        return
+
+    message = (
+        f"O cliente alterou o pedido {order.ref} no iFood depois de confirmado: {description}. "
+        f"O total no iFood foi de {_brl(record['old_total_q'])} para {_brl(record['new_total_q'])}; "
+        f"o pedido nesta loja continua em {_brl(record['local_total_q'])} e com os itens originais. "
+        "Confira a comanda da cozinha, o estoque separado e a cobrança antes de continuar."
+    )
+    if fiscal_authorized:
+        message += (
+            " ATENÇÃO: a NFC-e deste pedido já foi autorizada. Corrigir a nota é decisão fiscal "
+            "(devolução ou cancelamento) e o sistema não faz isso sozinho — fale com o contador."
+        )
+    create_operator_alert(
+        type="ifood_order_patched",
+        severity="error",
+        message=message,
+        order_ref=order.ref,
+        dedupe_key=f"ifood_order_patched:{order.ref}:{record['event_id']}",
+    )
 
 
 def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) -> str:
