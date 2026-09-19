@@ -286,7 +286,7 @@ def test_a_queixa_declara_o_digest_lido_e_quantas_imutaveis_o_dividem(repo: Path
     problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
     queixa = next(p for p in problemas if p.startswith("pos-nuxt:"))
     assert "digest lido na tag móvel: sha256:pos-" in queixa
-    assert "1 tag(s) imutável(is) dividem esse digest" in queixa
+    assert "1 tag(s) imutável(is) dividem esse(s) digest(s)" in queixa
     assert antigo[:9] in queixa
 
 
@@ -306,7 +306,7 @@ def test_dois_commits_na_mesma_imagem_voltam_os_DOIS_e_nao_o_primeiro_do_dict():
     ]
     leitura = read_published(tags, "pos")
     assert leitura.shas == (velho, novo)
-    assert "2 tag(s) imutável(is) dividem esse digest" in leitura.medida()
+    assert "2 tag(s) imutável(is) dividem esse(s) digest(s)" in leitura.medida()
 
 
 def test_imagem_identica_em_dois_commits_nao_fica_vermelha_e_vira_nota(repo: Path):
@@ -333,10 +333,8 @@ def test_imagem_identica_em_dois_commits_nao_fica_vermelha_e_vira_nota(repo: Pat
 def test_tag_repetida_na_listagem_aparece_na_medida():
     """O sintoma de paginar uma lista que um push está mutando.
 
-    A mesma tag móvel volta em duas páginas com digests diferentes, e o colapso
-    por última-escrita-vence pode deixar a entrada ANTIGA escrever por último.
-    A medida denuncia; sem ela, o vermelho seria indistinguível de uma listagem
-    que serviu estado anterior ao push.
+    São 1206 tags em 7 páginas (medido em 19/09/2026), então a mesma tag móvel
+    voltar em duas páginas com digests diferentes não é hipótese de laboratório.
     """
     sha = "a" * 40
     tags = [
@@ -345,9 +343,38 @@ def test_tag_repetida_na_listagem_aparece_na_medida():
         {"tag": "pos", "manifest_digest": "sha256:velho"},
     ]
     leitura = read_published(tags, "pos")
-    assert leitura.digest == "sha256:velho"  # última-escrita-vence, como antes
-    assert "2 entradas da listagem carregam esse NOME de tag" in leitura.medida()
-    assert "sha256:novo" in leitura.medida()
+    assert leitura.digests == ("sha256:novo", "sha256:velho")
+    assert "2 entradas da listagem" in leitura.medida()
+    assert "digests DIFERENTES" in leitura.medida()
+
+
+def test_a_entrada_nova_nao_se_perde_quando_a_listagem_repete_a_tag(repo: Path):
+    """`digest_por_tag` era última-escrita-vence, e a paginação escolhia quem.
+
+    A tag móvel volta em duas páginas: primeiro já com o digest do push que
+    acabou de acontecer, depois com o anterior, porque a lista mudou debaixo da
+    leitura. Deixar a entrada ANTIGA escrever por último acusava um componente
+    para trás que não estava para trás. Um digest que apareceu sob aquele nome
+    de tag FOI o valor daquela tag em algum momento — ignorá-lo por causa da
+    página em que caiu era o mecanismo que ninguém conseguia descartar.
+    """
+    antigo = commit(repo, ["surfaces/pos-nuxt/x.ts"], "antes")
+    atual = commit(repo, ["surfaces/pos-nuxt/x.ts"], "o conserto")
+    tags = tags_do_registry(
+        {c["tag"]: atual for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
+    )
+    novo_digest = next(t["manifest_digest"] for t in tags if t["tag"] == "pos")
+    tags += [
+        {"tag": f"pos-{antigo}", "manifest_digest": "sha256:pos-antigo"},
+        # a página seguinte devolve a móvel de novo, no estado ANTERIOR
+        {"tag": "pos", "manifest_digest": "sha256:pos-antigo"},
+    ]
+    leitura = read_published(tags, "pos")
+    assert leitura.digests == (novo_digest, "sha256:pos-antigo")
+    assert set(leitura.shas) == {antigo, atual}
+
+    problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    assert problemas == []
 
 
 def test_o_confronto_nomeia_o_componente_que_ficou_para_tras(repo: Path):
@@ -429,6 +456,84 @@ def test_per_app_desligado_nao_cobra_tag_por_app(repo: Path):
     tags = tags_do_registry({"operator-floor": atual})
     assert audit(tags, ref="HEAD", per_app=False, repo=repo, groups=GROUPS)[0] == []
     assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] != []
+
+
+# ---------------------------------------------------------------------------
+# A guarda repergunta antes de gritar
+# ---------------------------------------------------------------------------
+
+
+def _rodar_guarda(repo: Path, listagens: list[list[dict]], monkeypatch) -> int:
+    """Roda a guarda contra uma sequência de listagens, uma por leitura."""
+    import check_registry_drift as guarda
+
+    restantes = list(listagens)
+    monkeypatch.setattr(
+        guarda, "fetch_tags", lambda *a, **k: restantes.pop(0) if restantes else []
+    )
+    monkeypatch.setenv("DO_TOKEN", "fingido")
+    return guarda.main(
+        ["--ref", "HEAD", "--repo", str(repo), "--per-app", "true", "--espera", "0"]
+    )
+
+
+def test_listagem_atrasada_no_primeiro_olhar_nao_vira_vermelho(repo: Path, monkeypatch):
+    """O defeito de 18/09: a guarda corria 67 s a 114 s depois do push.
+
+    Quatro corridas vermelhas seguidas, nenhuma com componente realmente para
+    trás — e a remediação que a mensagem sugeria não podia consertar, porque não
+    havia o que republicar.
+    """
+    antes = commit(repo, ["surfaces/pos-nuxt/x.ts"], "antes")
+    atual = commit(repo, ["surfaces/pos-nuxt/x.ts"], "o conserto, já empurrado")
+    tudo = [c["tag"] for c in build_matrix(list(component_paths(GROUPS)), GROUPS)]
+    atrasada = tags_do_registry(dict.fromkeys(tudo, atual) | {"pos": antes})
+    em_dia = tags_do_registry(dict.fromkeys(tudo, atual))
+
+    assert _rodar_guarda(repo, [atrasada, em_dia], monkeypatch) == 0
+
+
+def test_divergencia_que_sobrevive_as_reperguntas_continua_vermelha(
+    repo: Path, monkeypatch, capsys
+):
+    """Reperguntar não é paciência com divergência de verdade.
+
+    Componente realmente para trás atravessa qualquer espera — e a linha final
+    passa a dizer QUANTAS leituras ele atravessou, que é a diferença entre
+    afirmar e supor.
+    """
+    antes = commit(repo, ["surfaces/pos-nuxt/x.ts"], "antes")
+    atual = commit(repo, ["surfaces/pos-nuxt/x.ts"], "o conserto que nunca subiu")
+    tudo = [c["tag"] for c in build_matrix(list(component_paths(GROUPS)), GROUPS)]
+    atrasada = tags_do_registry(dict.fromkeys(tudo, atual) | {"pos": antes})
+
+    assert _rodar_guarda(repo, [atrasada] * 6, monkeypatch) == 1
+    saida = capsys.readouterr().out
+    assert "não é leitura precoce" in saida
+    assert "sobreviveu a 5 leitura(s)" in saida
+
+
+def test_modo_offline_nao_repergunta(repo: Path, tmp_path: Path):
+    """`--registry-json` é retrato de arquivo: reperguntar leria o mesmo."""
+    import check_registry_drift as guarda
+
+    antes = commit(repo, ["surfaces/pos-nuxt/x.ts"], "antes")
+    atual = commit(repo, ["surfaces/pos-nuxt/x.ts"], "o conserto")
+    tudo = [c["tag"] for c in build_matrix(list(component_paths(GROUPS)), GROUPS)]
+    arquivo = tmp_path / "tags.json"
+    arquivo.write_text(
+        json.dumps({"tags": tags_do_registry(dict.fromkeys(tudo, atual) | {"pos": antes})}),
+        encoding="utf-8",
+    )
+    assert (
+        guarda.main(
+            [
+                "--ref", "HEAD", "--repo", str(repo), "--per-app", "true",
+                "--registry-json", str(arquivo), "--espera", "999",
+            ]
+        )
+        == 1
+    )
 
 
 # ---------------------------------------------------------------------------

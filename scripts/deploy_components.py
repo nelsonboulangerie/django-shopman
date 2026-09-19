@@ -116,6 +116,14 @@ GROUP_SHARED_PATHS = (
 #: real que não vira imagem. Por isso a lista é só o que comprovadamente não
 #: entra no `.output` — diretório de teste e prosa. Config de build
 #: (`nuxt.config.ts`, `package.json`, `tsconfig.json`) fica de fora da exclusão.
+#:
+#: ⚠️ Config de TESTE (`playwright.*.config.ts`, `vitest.config.ts`,
+#: `eslint.config.mjs`) também fica de fora, e isso foi MEDIDO, não esquecido:
+#: 73 commits do histórico tocaram esses arquivos e só **2** não tocaram mais
+#: nada de `surfaces/` — os outros 71 vinham com código e publicariam de todo
+#: jeito. Excluí-los pouparia dois builds na vida do projeto e custaria glob de
+#: verdade em `matches`, que esta casa recusa de propósito. Se um dia o número
+#: mudar, meça de novo antes de mexer.
 SURFACE_TEST_PATHS = ("tests/**", "README.md")
 KIT_TEST_PATHS = ("tests/**", "docs/**", "README.md", "PWA_ICONS.md")
 ROUTER_TEST_PATHS = ("test/**", "README.md")
