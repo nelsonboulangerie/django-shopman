@@ -24,6 +24,12 @@ A correlação é possível porque o Deploy Images publica DUAS tags por
 componente: a móvel (`pos`) e a imutável (`pos-<sha>`). As duas apontam para o
 mesmo manifest digest, então o digest da tag móvel revela qual sha está no ar.
 
+⚠️ "Qual sha" pode ser mais de um, e isso não é defeito do registry. Commit que
+não altera o `.output` publica imagem byte a byte idêntica — o caso puro é
+mudança só em arquivo de teste — e então várias imutáveis dividem um digest.
+São nomes diferentes da MESMA imagem, então a invariante se satisfaz com
+qualquer um deles. O que este script não faz mais é escolher um em silêncio.
+
 ⚠️ **Isto é um pré-requisito para o E4 do WP-DO-ECONOMIA** (retenção de tags +
 garbage collection). A política proposta lá — guardar as 10 imutáveis mais
 recentes por componente e nunca tocar nas móveis — é compatível por construção,
@@ -51,6 +57,11 @@ Uso:
 
     DO_TOKEN=... python scripts/check_registry_drift.py
     python scripts/check_registry_drift.py --registry-json tags.json  # offline
+
+Ele também IMPRIME o que leu — digest da tag móvel e as imutáveis que o
+dividem — em toda corrida. Sem isso, "a listagem serve estado anterior ao push"
+e "li o digest certo e desempatei errado" produzem a mesma frase de erro, e a
+única forma de distinguir era ter a credencial do registry na mão.
 
 Saídas:
   0  tudo que o `main` pede está publicado
@@ -116,22 +127,81 @@ def fetch_tags(registry: str, repository: str, token: str) -> list[dict]:
     return tags
 
 
-def published_sha(tags: list[dict], moving_tag: str) -> tuple[str | None, str]:
-    """(sha publicado, motivo quando não dá para saber)."""
-    digest_por_tag = {t["tag"]: t.get("manifest_digest") for t in tags if t.get("tag")}
-    digest = digest_por_tag.get(moving_tag)
-    if not digest:
-        return None, f"a tag `{moving_tag}` não existe no registry"
+def curto(digest: str) -> str:
+    """`sha256:97057d40…` — o bastante para comparar duas leituras a olho."""
+    return f"{digest[:19]}…" if len(digest) > 19 else digest
 
-    for tag, outro_digest in digest_por_tag.items():
-        match = IMMUTABLE.match(tag)
-        if match and match["tag"] == moving_tag and outro_digest == digest:
-            return match["sha"], ""
-    return None, (
-        f"a tag `{moving_tag}` aponta para {digest}, e nenhuma tag "
-        f"`{moving_tag}-<sha>` aponta para o mesmo digest — impossível provar "
-        "qual commit está no ar"
+
+def digests_por_tag(tags: list[dict]) -> dict[str, set[str]]:
+    """Todas as leituras de cada tag, SEM colapsar.
+
+    ⚠️ Não é `{tag: digest}`, e a diferença é a causa de um vermelho que ninguém
+    conseguia explicar em 18/09/2026. A listagem pode trazer a MESMA tag duas
+    vezes — páginas distintas de uma lista que um push está mutando, ou entrada
+    remanescente. Num dict simples a última escrita vence em silêncio, e nada
+    garante que a última seja a mais nova: a guarda passa a responder o digest
+    anterior a um push que o log do build prova ter acontecido. Guardar o
+    conjunto faz a ambiguidade APARECER em vez de virar resposta errada.
+    """
+    leituras: dict[str, set[str]] = {}
+    for t in tags:
+        tag = t.get("tag")
+        digest = t.get("manifest_digest")
+        if tag and digest:
+            leituras.setdefault(tag, set()).add(digest)
+    return leituras
+
+
+def published_shas(
+    tags: list[dict], moving_tag: str
+) -> tuple[str, tuple[str, ...], str]:
+    """(digest lido na móvel, shas que dividem esse digest, motivo se não deu).
+
+    ⚠️ Devolve TODOS os shas, não um. Dois commits publicam a mesma imagem
+    sempre que a mudança não altera o `.output` — `Dockerfile.surface` copia a
+    surface inteira no estágio de build e só o `.output` no final, então commit
+    que mexe apenas em teste produz imagem byte a byte idêntica, e o cache a
+    reproduz. Medido em 18/09/2026: `210f2164c` e `15cd468f3` publicaram
+    `sha256:97057d40…`, o mesmo digest.
+
+    Escolher UM deles seria arbitrário — a versão anterior devolvia o primeiro
+    da ordem do dict, que é a ordem em que o registry listou, e nada ali prefere
+    o mais novo. Mas escolher também é desnecessário: as tags nomeiam a MESMA
+    imagem, então qualquer uma delas é um nome honesto do que está no ar, e quem
+    decide é a invariante — basta que UM dos candidatos a satisfaça.
+    """
+    leituras = digests_por_tag(tags)
+    digests = leituras.get(moving_tag) or set()
+    if not digests:
+        return "", (), f"a tag `{moving_tag}` não existe no registry"
+    if len(digests) > 1:
+        vistos = ", ".join(curto(d) for d in sorted(digests))
+        return (
+            "",
+            (),
+            f"a listagem trouxe `{moving_tag}` com {len(digests)} digests "
+            f"diferentes ({vistos}) — leitura ambígua do registry, não dá para "
+            "dizer o que está no ar",
+        )
+    digest = next(iter(digests))
+    shas = tuple(
+        sorted(
+            match["sha"]
+            for tag, outros in leituras.items()
+            if (match := IMMUTABLE.match(tag))
+            and match["tag"] == moving_tag
+            and digest in outros
+        )
     )
+    if not shas:
+        return (
+            digest,
+            (),
+            f"a tag `{moving_tag}` aponta para {curto(digest)}, e nenhuma tag "
+            f"`{moving_tag}-<sha>` aponta para o mesmo digest — impossível "
+            "provar qual commit está no ar",
+        )
+    return digest, shas, ""
 
 
 def audit(
@@ -141,13 +211,21 @@ def audit(
     per_app: bool,
     repo: Path,
     groups: dict[str, list[str]],
-) -> list[str]:
-    """Devolve as linhas de divergência. Lista vazia = o vivo bate com o `main`."""
+) -> tuple[list[str], list[str]]:
+    """(linhas de divergência, linhas do que foi LIDO no registry).
+
+    A segunda lista não é decoração. A guarda era a única peça da cadeia que
+    inferia um commit e escondia a medida de onde inferiu — dizia "publicado
+    2842ed54b" sem dizer qual digest tinha lido, e três hipóteses diferentes
+    produziam exatamente a mesma frase. Declarar o que se leu é o mesmo
+    movimento do #573, quando o Deploy Images passou a declarar o que publicou.
+    """
     paths = component_paths(groups)
     operator_surfaces = [s for members in groups.values() for s in members]
     tag_de = {c["name"]: c["tag"] for c in build_matrix(list(paths), groups)}
 
     problemas: list[str] = []
+    lido: list[str] = []
     for name, patterns in paths.items():
         # ⚠️ Com OPERATOR_PER_APP_IMAGES desligado, as imagens por app param de
         # ser publicadas de propósito (rede de rollback da ADR-030 vencida).
@@ -157,22 +235,32 @@ def audit(
         esperado = last_commit_touching(patterns, ref, repo)
         if esperado is None:
             continue  # nada no histórico tocou esse componente; nada a cobrar
-        publicado, motivo = published_sha(tags, tag_de[name])
-        if publicado is None:
+        digest, shas, motivo = published_shas(tags, tag_de[name])
+        if not shas:
+            lido.append(f"{name}: {motivo}")
             problemas.append(f"{name}: {motivo} (o `main` pede {esperado[:9]})")
-        elif not is_ancestor(esperado, publicado, repo):
+            continue
+
+        nomes = ", ".join(sha[:9] for sha in shas)
+        divididas = (
+            "" if len(shas) == 1 else f" ({len(shas)} tags dividem esse digest)"
+        )
+        lido.append(f"{name}: móvel em {curto(digest)} = {nomes}{divididas}")
+
+        contem = [sha for sha in shas if is_ancestor(esperado, sha, repo)]
+        if not contem:
             problemas.append(
-                f"{name}: publicado {publicado[:9]}, que NÃO contém "
+                f"{name}: publicado {nomes}, que NÃO contém "
                 f"{esperado[:9]} — a última mudança deste componente não está "
-                "no ar"
+                f"no ar (móvel em {curto(digest)})"
             )
-        elif not is_ancestor(publicado, ref, repo):
+        elif not any(is_ancestor(sha, ref, repo) for sha in contem):
             problemas.append(
-                f"{name}: publicado {publicado[:9]}, que não é ancestral do "
+                f"{name}: publicado {nomes}, que não é ancestral do "
                 f"topo — o ambiente vivo está servindo algo que não veio do "
-                "`main`"
+                f"`main` (móvel em {curto(digest)})"
             )
-    return problemas
+    return problemas, lido
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -203,13 +291,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"::warning::não deu para perguntar ao registry: {exc}", file=sys.stderr)
         return 2
 
-    problemas = audit(
+    problemas, lido = audit(
         tags,
         ref=args.ref,
         per_app=args.per_app == "true",
         repo=Path(args.repo),
         groups=load_groups(Path(args.groups_json)),
     )
+    # Sai SEMPRE, verde ou vermelho: é o que permite distinguir "li o digest
+    # novo e desempatei errado" de "li o digest anterior ao push" sem precisar
+    # de credencial para reproduzir. Uma corrida vermelha passa a responder
+    # sozinha qual das duas aconteceu.
+    print("o que o registry respondeu:")
+    for linha in lido:
+        print(f"  {linha}")
     if not problemas:
         print("registry bate com o `main`: nenhum componente ficou para trás.")
         return 0

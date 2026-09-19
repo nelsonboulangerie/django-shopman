@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from check_registry_drift import audit, published_sha  # noqa: E402
+from check_registry_drift import audit, published_shas  # noqa: E402
 from deploy_components import (  # noqa: E402
     build_matrix,
     component_paths,
@@ -200,14 +200,59 @@ def tags_do_registry(por_componente: dict[str, str]) -> list[dict]:
 
 def test_a_tag_movel_revela_o_commit_publicado():
     sha = "a" * 40
-    assert published_sha(tags_do_registry({"pos": sha}), "pos") == (sha, "")
+    digest, shas, motivo = published_shas(tags_do_registry({"pos": sha}), "pos")
+    assert (shas, motivo) == ((sha,), "")
+    assert digest == f"sha256:pos-{sha}"
 
 
 def test_tag_movel_sem_irma_imutavel_nao_da_para_provar():
     tags = [{"tag": "pos", "manifest_digest": "sha256:orfao"}]
-    publicado, motivo = published_sha(tags, "pos")
-    assert publicado is None
+    digest, shas, motivo = published_shas(tags, "pos")
+    assert shas == ()
     assert "impossível provar" in motivo
+    # O digest lido sai junto do motivo: é ele que distingue "li o estado
+    # anterior ao push" de "li o certo e não achei a irmã".
+    assert digest == "sha256:orfao"
+
+
+def test_duas_imutaveis_dividindo_um_digest_saem_as_duas():
+    """18/09/2026: `210f2164c` e `15cd468f3` publicaram `sha256:97057d40…`.
+
+    Mudança que não altera o `.output` — teste, no caso — produz imagem idêntica.
+    A versão anterior devolvia a PRIMEIRA da ordem do dict e chamava aquilo de
+    "o commit publicado", o que é escolha arbitrária disfarçada de medida.
+    """
+    novo, velho = "b" * 40, "a" * 40
+    digest = "sha256:mesma-imagem"
+    tags = [
+        {"tag": "pos", "manifest_digest": digest},
+        {"tag": f"pos-{velho}", "manifest_digest": digest},
+        {"tag": f"pos-{novo}", "manifest_digest": digest},
+    ]
+    lido, shas, motivo = published_shas(tags, "pos")
+    assert motivo == ""
+    assert lido == digest
+    assert set(shas) == {velho, novo}
+
+
+def test_a_mesma_tag_com_dois_digests_e_leitura_AMBIGUA_nao_resposta():
+    """A listagem paginada pode trazer a móvel duas vezes enquanto um push a muda.
+
+    Colapsar num dict deixa a última escrita vencer, e nada garante que a última
+    seja a mais nova — era assim que a guarda respondia o digest ANTERIOR a um
+    push que o log do build provava ter acontecido. Ambiguidade tem que virar
+    recusa de responder, não resposta.
+    """
+    sha = "a" * 40
+    tags = [
+        {"tag": "pos", "manifest_digest": "sha256:novo"},
+        {"tag": "pos", "manifest_digest": "sha256:anterior"},
+        {"tag": f"pos-{sha}", "manifest_digest": "sha256:anterior"},
+    ]
+    _, shas, motivo = published_shas(tags, "pos")
+    assert shas == ()
+    assert "ambígua" in motivo
+    assert "sha256:novo" in motivo and "sha256:anterior" in motivo
 
 
 def test_o_confronto_nomeia_o_componente_que_ficou_para_tras(repo: Path):
@@ -218,7 +263,7 @@ def test_o_confronto_nomeia_o_componente_que_ficou_para_tras(repo: Path):
         {c["tag"]: atual for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
         | {"pos": antigo}
     )
-    problemas = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
     assert len(problemas) == 1
     assert problemas[0].startswith("pos-nuxt:")
     assert antigo[:9] in problemas[0] and atual[:9] in problemas[0]
@@ -237,7 +282,7 @@ def test_republicar_do_topo_e_valido_e_nao_pode_ficar_vermelho(repo: Path):
     tags = tags_do_registry(
         {c["tag"]: topo for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     )
-    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS) == []
+    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] == []
 
 
 def test_publicado_fora_do_main_e_denunciado(repo: Path):
@@ -249,7 +294,7 @@ def test_publicado_fora_do_main_e_denunciado(repo: Path):
     tags = tags_do_registry(
         {c["tag"]: forasteiro for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     )
-    problemas = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+    problemas, _ = audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
     assert any("não é ancestral do topo" in p for p in problemas)
 
 
@@ -258,21 +303,21 @@ def test_o_confronto_cala_quando_o_vivo_bate_com_o_main(repo: Path):
     tags = tags_do_registry(
         {c["tag"]: atual for c in build_matrix(list(component_paths(GROUPS)), GROUPS)}
     )
-    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS) == []
+    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] == []
 
 
 def test_componente_ausente_do_registry_e_denunciado(repo: Path):
     commit(repo, ["surfaces/pos-nuxt/x.ts"], "primeira publicação")
     assert any(
         "não existe no registry" in p
-        for p in audit([], ref="HEAD", per_app=True, repo=repo, groups=GROUPS)
+        for p in audit([], ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0]
     )
 
 
 def test_componente_que_a_historia_nunca_tocou_nao_e_cobrado(repo: Path):
     """Cobrar tag de componente sem nenhum commit seria vermelho por nada."""
     commit(repo, ["shopman/a.py"], "só o web existe")
-    problemas = audit(
+    problemas, _ = audit(
         tags_do_registry({"web": git(repo, "rev-parse", "HEAD")}),
         ref="HEAD",
         per_app=True,
@@ -287,8 +332,8 @@ def test_per_app_desligado_nao_cobra_tag_por_app(repo: Path):
     commit(repo, ["surfaces/pos-nuxt/x.ts"], "pdv")
     atual = git(repo, "rev-parse", "HEAD")
     tags = tags_do_registry({"operator-floor": atual})
-    assert audit(tags, ref="HEAD", per_app=False, repo=repo, groups=GROUPS) == []
-    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS) != []
+    assert audit(tags, ref="HEAD", per_app=False, repo=repo, groups=GROUPS)[0] == []
+    assert audit(tags, ref="HEAD", per_app=True, repo=repo, groups=GROUPS)[0] != []
 
 
 # ---------------------------------------------------------------------------
