@@ -108,7 +108,14 @@ def test_email_e_whatsapp_recebem_as_mesmas_chaves_que_o_sms():
         return 1
 
     with patch("shopman.shop.adapters.notification_email.send_mail", side_effect=fake_send_mail):
-        with override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"):
+        with override_settings(
+            MAILERS={
+                "default": {
+                    "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+                    "OPTIONS": {"host": "smtp.exemplo.test"},
+                }
+            }
+        ):
             assert notification_email.send("joyce@example.com", "order_received", context) is True
 
     assert "Joyce" in sent["subject"]
