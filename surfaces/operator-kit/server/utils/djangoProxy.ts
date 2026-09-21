@@ -9,6 +9,7 @@ import {
   createError,
   getQuery,
   getRequestHeader,
+  getRequestURL,
   readRawBody,
   setResponseHeader,
   setResponseStatus,
@@ -154,6 +155,28 @@ export function hasPathTraversal (path: string): boolean {
   return true // não estabilizou em 3 voltas: recusa
 }
 
+/**
+ * A mutação veio de uma página DESTE app?
+ *
+ * Logo abaixo o BFF forja `Origin`/`Referer` para o Django e monta o
+ * `X-CSRFToken` a partir do próprio cookie — então o CSRF do Django sempre
+ * passa, e a conferência de origem tem de acontecer AQUI, antes disso. O cookie
+ * de operador é `SameSite=Lax` de domínio-pai, e Lax não separa subdomínios:
+ * sem esta trava, um XSS ou subdomínio tomado em qualquer `*.<zona>` fazia um
+ * form POST para `pdv.…/api/v1/backstage/...` com a sessão do operador.
+ *
+ * Mesma regra do BFF da loja: `Origin` presente e diferente da origem deste
+ * app, ou `Sec-Fetch-Site` `cross-site`/`same-site`, é recusa. Pedido sem
+ * nenhum dos dois (curl, chamada servidor-a-servidor) segue, como lá — quem
+ * não é navegador não carrega o cookie do operador por acidente.
+ */
+export function isForeignMutationOrigin(event: H3Event): boolean {
+  const origin = getRequestHeader(event, "origin");
+  const site = getRequestHeader(event, "sec-fetch-site");
+  if (site === "cross-site" || site === "same-site") return true;
+  return Boolean(origin && origin !== getRequestURL(event).origin);
+}
+
 export async function proxyDjangoApi(event: H3Event, path: string) {
   return proxyDjangoPath(event, `/api/v1/${path}`);
 }
@@ -218,6 +241,9 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   if (proxySecret) headers["x-shopman-proxy-secret"] = proxySecret;
 
   if (isUnsafeMethod) {
+    if (isForeignMutationOrigin(event)) {
+      throw createError({ statusCode: 403, statusMessage: "Origem não autorizada." });
+    }
     headers.origin = djangoOrigin;
     headers.referer = `${djangoOrigin}/`;
   }
