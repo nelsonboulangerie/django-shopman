@@ -204,6 +204,7 @@ def build_emission_payload(order) -> dict:
     payment.setdefault("amount_q", order.total_q)
     if _payment_below_total(payment, order):
         raise ValueError("Pagamento fiscal abaixo do total do pedido. Corrija antes de reprocessar.")
+    payment = _payment_net_of_change(payment, int(order.total_q or 0))
     delivery = None
     if data.get("fulfillment_type") == "delivery":
         delivery = {"address": dict(data.get("delivery_address_structured") or {})}
@@ -229,6 +230,42 @@ def _declared_payment_q(payment: dict) -> int:
     return max(0, int(payment.get("amount_q") or 0))
 
 
+def _payment_net_of_change(payment: dict, total_q: int) -> dict:
+    """O pagamento que a NOTA declara: o dinheiro entra líquido do troco.
+
+    Numa venda mista com troco (crédito 10,00 + dinheiro 5,00 numa venda de
+    13,00), os ``tenders`` gravados no commit são o que veio na mão. O PDV só
+    acerta o troco no ``settle`` (``pos._reconcile_order_payment_to_total``),
+    DEPOIS dos ``on_commit`` do commit — e a venda de balcão chega a COMPLETED
+    ali mesmo, com o ``on_completed`` pedindo a nota antes do acerto. O pedido
+    de nota que vem depois, já com o valor certo, cai no dedupe ``nfce:{ref}``.
+    Declarar 15,00 contra 13,00 de produtos, sem ``valor_troco``, a SEFAZ recusa.
+
+    Por isso a nota não depende da ordem: o excedente sobre o total sai das
+    linhas de DINHEIRO (a única forma que gera troco; a maquininha capturou o
+    valor inteiro), da última para a primeira — a mesma regra do acerto do PDV.
+    Excedente que o dinheiro não cobre não é troco: fica como está, e a recusa
+    continua ruidosa. Pagamento já acertado passa intocado.
+    """
+    tenders = [dict(t) for t in payment.get("tenders") or [] if isinstance(t, dict)]
+    excess_q = _declared_payment_q(payment) - total_q
+    if not tenders or excess_q <= 0:
+        return payment
+    cash = [t for t in reversed(tenders) if str(t.get("method") or "").lower() == "cash"]
+    if sum(max(0, int(t.get("amount_q") or 0)) for t in cash) < excess_q:
+        return payment
+    for tender in cash:
+        take_q = min(excess_q, max(0, int(tender.get("amount_q") or 0)))
+        tender["amount_q"] = int(tender.get("amount_q") or 0) - take_q
+        excess_q -= take_q
+        if not excess_q:
+            break
+    net = dict(payment)
+    net["tenders"] = tenders
+    net["amount_q"] = total_q
+    return net
+
+
 def _payment_below_total(payment: dict, order) -> bool:
     """O pagamento gravado ficou ABAIXO do total do pedido?
 
@@ -238,9 +275,10 @@ def _payment_below_total(payment: dict, order) -> bool:
     ``_reconcile_order_payment_to_total`` do PDV) não vira erro: vira um
     **desconto que não houve** dentro de um XML válido, subdeclarando a venda.
 
-    Só o lado de baixo é guardado aqui. Pagamento ACIMA do total gera
-    ``valor_total > valor_produtos`` sem desconto, e a própria SEFAZ recusa —
-    falha ruidosa não precisa de guarda nossa.
+    Só o lado de baixo é guardado aqui. Pagamento ACIMA do total por troco em
+    dinheiro é acertado na montagem (``_payment_net_of_change``); o excedente
+    que não é troco gera ``valor_total > valor_produtos`` sem desconto, e a
+    própria SEFAZ recusa — falha ruidosa não precisa de guarda nossa.
     """
     return 0 < _declared_payment_q(payment) < int(order.total_q or 0)
 
