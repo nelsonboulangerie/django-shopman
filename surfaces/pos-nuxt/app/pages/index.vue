@@ -85,8 +85,7 @@ const {
   managerApprovalError,
   customerFocusNonce,
   result,
-  closeOutcomeUncertain,
-  closeGuardPending,
+  closeGuardNotice,
   restoreUncertainClose,
   acknowledgeUncertainClose,
   pendingPixOrderRef,
@@ -826,10 +825,10 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 function restoreUncertainCloseFromStorage() {
-  restoreUncertainClose();
+  void restoreUncertainClose();
 }
 onMounted(() => {
-  restoreUncertainClose();
+  void restoreUncertainClose();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
 });
@@ -974,18 +973,18 @@ onBeforeUnmount(() => {
       </header>
 
       <UiAlert
-        v-if="closeOutcomeUncertain"
+        v-if="closeGuardNotice"
         variant="destructive"
         icon="lucide:triangle-alert"
         class="mx-4 mt-3 shrink-0"
         role="alert"
       >
-        <UiAlertTitle>{{ closeGuardPending ? 'Cobrança em processamento ou interrompida' : 'Resultado da cobrança não confirmado' }}</UiAlertTitle>
+        <UiAlertTitle>{{ closeGuardNotice.title }}</UiAlertTitle>
         <UiAlertDescription class="gap-3">
-          <p>{{ closeGuardPending ? 'Não libere enquanto a cobrança estiver processando. Se a aba anterior caiu, confira pedido e pagamento antes de reconciliar.' : 'Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados.' }} Este bloqueio permanece mesmo se a página for recarregada.</p>
+          <p>{{ closeGuardNotice.body }}</p>
           <div class="flex flex-wrap gap-2">
             <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
-            <UiButton size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
+            <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
           </div>
         </UiAlertDescription>
       </UiAlert>
