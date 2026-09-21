@@ -403,6 +403,7 @@ export interface OperatorOrderProjection {
   equipment_back_pending: boolean;
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  managers: Record<string, string>[];
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];

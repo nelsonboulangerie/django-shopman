@@ -1,6 +1,6 @@
 import { fixtureActions } from "../support/orderActions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref, watch } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
@@ -119,6 +119,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     equipment_label: "",
     equipment_back_pending: false,
     can_resend_payment_link: false,
+    managers: [{ username: "joyce", name: "Joyce Nogueira" }],
     payment_link_notice: "",
     customer_profile: null,
     revisions: {},
@@ -597,5 +598,22 @@ describe("detalhe iFood", () => {
     expect(w.get('[data-action="advance-blocked"]').attributes("disabled")).toBeDefined();
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
+  });
+});
+
+describe("segunda assinatura no cancelamento", () => {
+  // 21/09: cancelando pedido do iFood com o prazo correndo, o diálogo caía no
+  // campo livre e o gerente tinha de digitar o próprio nome. No PDV ele já era
+  // selecionado; o Gestor não recebia a lista.
+  it("entrega ao diálogo a lista de gerentes, para selecionar em vez de digitar", () => {
+    const ManagerAuthStub = defineComponent({
+      name: "OperatorManagerAuth",
+      props: { open: Boolean, managers: { type: Array, default: () => [] }, action: String, busy: Boolean, error: String },
+      template: "<div data-manager-auth />",
+    });
+    detalhe.value = order({ managers: [{ username: "joyce", name: "Joyce Nogueira" }] });
+    const w = mount(OrderDetailPage, { global: { stubs: { ...stubs, OperatorManagerAuth: ManagerAuthStub }, mocks: { $router: { go: vi.fn() } } } });
+
+    expect(w.findComponent(ManagerAuthStub).props("managers")).toEqual([{ username: "joyce", name: "Joyce Nogueira" }]);
   });
 });

@@ -721,13 +721,15 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
       </UiDialogContent>
     </UiDialog>
 
-    <!-- Segunda assinatura: o mesmo diálogo canônico do PDV. A lista de gerentes
-         vem vazia aqui (o Gestor não carrega a projeção do PDV), e o componente
-         cai no campo livre de propósito — esconder a única porta deixaria o
-         gerente sem saída no meio de um cancelamento. -->
+    <!-- Segunda assinatura: o mesmo diálogo canônico do PDV, com a MESMA lista de
+         gerentes (``managers`` da projeção de detalhe, montada por
+         ``pos._manager_cards``). Selecionar, não digitar: nome digitado erra, e o
+         servidor resolve a assinatura por username. Lista vazia ainda cai no
+         campo livre — é a porta de saída, não o caminho normal. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
       action="cancel_sale"
+      :managers="order?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @update:open="(aberto: boolean) => { if (!aberto) dismissManagerChallenge(); }"

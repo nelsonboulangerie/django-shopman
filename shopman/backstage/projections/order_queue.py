@@ -437,6 +437,13 @@ class OperatorOrderProjection:
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
+    # Quem pode dar a segunda assinatura (nome + ``username``, nada além) — a MESMA
+    # lista do PDV (``pos._manager_cards``). Sem ela o diálogo canônico caía no
+    # campo livre e o gerente tinha de DIGITAR o próprio nome no meio de um
+    # cancelamento com o relógio do iFood correndo; nome digitado erra, e o
+    # servidor resolve a assinatura por ``username``. Exclui quem opera: a
+    # segunda assinatura existe para haver duas pessoas.
+    managers: tuple[dict[str, str], ...] = ()
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
@@ -575,6 +582,13 @@ def _cancel_capability(order: Order, user) -> dict:
     }
 
 
+def _approver_options(user) -> tuple[dict[str, str], ...]:
+    """A lista do PDV para o diálogo de gerente do Gestor — uma fonte só."""
+    from shopman.backstage.projections.pos import _manager_cards
+
+    return _manager_cards(user)
+
+
 def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     """Build the expanded detail projection for a single order."""
     items = tuple(
@@ -678,6 +692,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         customer_note=str(order.data.get("order_notes", "") or ""),
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
+        managers=_approver_options(user),
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
