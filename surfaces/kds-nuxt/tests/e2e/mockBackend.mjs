@@ -4,9 +4,15 @@
 //   · sem o cookie → 403 nos endpoints de operador (device não autenticado → gate de login).
 // O board público do cliente (/kds/cliente/) responde 200 SEMPRE (o `/pickup` é público,
 // como o menuboard do Produção). Login/lock/ações reais rodam contra o Django (reviewer local).
+//
+// PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
+// estações `bancada` (preparo) e `expedicao` servem os quadros de previewFixtures.mjs,
+// com iniciar/finalizar/expedir mudando o quadro. Serve para VER os cards sem Django.
 import { createServer } from "node:http";
+import { createPreviewState } from "./previewFixtures.mjs";
 
 const port = Number(process.env.MOCK_PORT || 8798);
+const preview = process.env.KDS_MOCK_FIXTURE === "preview" ? createPreviewState() : null;
 
 // Uma identidade: `locked` é literalmente "não há operador". O mock dizia
 // `operator: null, locked: false` — combinação que o servidor não produz, e que
@@ -55,7 +61,7 @@ const server = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   res.setHeader("set-cookie", "csrftoken=e2e-mock; Path=/");
   const url = req.url || "";
-  const authed = (req.headers.cookie || "").includes("e2e_session=authed");
+  const authed = Boolean(preview) || (req.headers.cookie || "").includes("e2e_session=authed");
 
   // Público — sempre 200, com ou sem sessão de operador.
   if (/\/kds\/cliente\/?(\?|$)/.test(url)) return json(res, 200, CUSTOMER);
@@ -68,6 +74,12 @@ const server = createServer((req, res) => {
   if (!authed) return json(res, 403, { detail: "Autenticação necessária." });
 
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
+  if (preview) {
+    if (req.method === "POST" && preview.write(url)) return json(res, 200, {});
+    const station = url.match(/\/kds\/([^/?]+)\/?(\?|$)/);
+    if (station && station[1] !== "cliente") return json(res, 200, preview.board(station[1]));
+    if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, preview.index());
+  }
   if (/\/kds\/[^/]+\/?(\?|$)/.test(url)) return json(res, 200, BOARD); // /kds/<ref>/
   if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, INDEX); // índice de estações
   return json(res, 200, {});
