@@ -36,8 +36,11 @@ export type { CancellationReason };
 //
 // O KDS NÃO usa isto: fica com a tríade padrão do kit, de propósito, para o
 // operador distinguir "pedido tratável" de "ticket novo" só pelo ouvido.
+//
+// Volume 0,4: o dono pediu um terço a menos (21/09/2026) sobre o 0,6 de antes.
+// O ganho é linear, então 0,6 × 2/3 = 0,4 é exatamente "33,3% mais baixo".
 export const GESTOR_ALERT = {
-  volume: 0.6,
+  volume: 0.4,
   wave: "sine" as const,
   shape: "ping" as const,
   attack: 0.022,

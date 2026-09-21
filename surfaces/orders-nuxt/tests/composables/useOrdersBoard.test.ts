@@ -416,6 +416,10 @@ describe("GESTOR_ALERT — o som escolhido pelo dono", () => {
   // os números por gosto, mas o que quebraria o som em silêncio se alguém
   // mexesse sem ouvir.
 
+  it("toca um terço mais baixo que o 0,6 original — pedido do dono", () => {
+    expect(GESTOR_ALERT.volume).toBeCloseTo(0.6 * (2 / 3), 5);
+  });
+
   it("as notas se SOBREPÕEM — é acorde, não melodia", () => {
     const [primeira, segunda] = GESTOR_ALERT.notes;
     // A segunda entra ANTES da primeira acabar: é isso que faz as duas soarem
