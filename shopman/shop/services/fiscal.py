@@ -18,9 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 def _default_emission_decision(order) -> bool:
-    """Fallback quando não há resolver configurado: emite se o operador optou por emitir
-    (``order.data['fiscal']['issue_document']``)."""
-    return bool(((order.data or {}).get("fiscal") or {}).get("issue_document"))
+    """Fallback quando não há resolver configurado (ou ele quebrou): emite quando
+    a venda PEDIU a nota — CPF na nota, papel ou e-mail (``on_request_or_tax_id``).
+    Um resolver quebrado não pode ser a razão de a promessa do balcão morrer."""
+    from shopman.shop.fiscal_resolvers import on_request_or_tax_id
+
+    return bool(on_request_or_tax_id(order))
 
 
 def emission_resolver(order) -> bool:
@@ -386,6 +389,7 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
 
 #: Resolvers com os quais "pedir papel já pede a nota" é verdade.
 _RECEIPT_REQUEST_RESOLVERS = frozenset({
+    "shopman.shop.fiscal_resolvers.on_request_or_tax_id",
     "shopman.shop.fiscal_resolvers.on_requested_receipt",
     "shopman.shop.fiscal_resolvers.always",
 })
@@ -394,9 +398,11 @@ _RECEIPT_REQUEST_RESOLVERS = frozenset({
 def receipt_request_emits() -> bool:
     """Pedir o comprovante (papel ou e-mail) faz a NFC-e sair?
 
-    Só é verdade quando ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` carrega o resolver
-    de comprovante (``on_requested_receipt``) — ou ``always``. A env do
-    deployment sobrescreve o default do código, então a frase do balcão
+    É verdade quando ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` carrega um resolver
+    que lê o pedido de comprovante (``on_request_or_tax_id``, que é a base de
+    toda configuração, ``on_requested_receipt`` ou ``always``) — e também sem
+    resolver nenhum, porque o fallback é o mesmo ``on_request_or_tax_id``. A env
+    do deployment sobrescreve o default do código, então a frase do balcão
     ("imprime sozinha assim que autorizar") tem que perguntar aqui, nunca ao
     default.
     """
@@ -404,6 +410,8 @@ def receipt_request_emits() -> bool:
 
     raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
     paths = {p.strip() for p in str(raw).split(",") if p.strip()}
+    if not paths:
+        return True
     return bool(paths & _RECEIPT_REQUEST_RESOLVERS)
 
 

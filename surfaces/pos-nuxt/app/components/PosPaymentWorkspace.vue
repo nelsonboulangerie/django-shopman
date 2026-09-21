@@ -56,6 +56,7 @@ import {
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
+import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
   receiptContactChecked,
@@ -983,26 +984,21 @@ const notices = computed<CheckoutNotice[]>(() => {
         : "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega.",
     });
   }
-  if (wantsPrintedReceipt.value) {
-    // AGORA A FRASE PODE DIZER QUE A NOTA SAI. Não existe DANFE sem NFC-e
-    // autorizada — o papel é o espelho da nota —, então pedir papel é pedir a
-    // nota, e a regra fiscal do servidor lê este canal e emite. Antes o toggle
-    // não decidia nada: dinheiro sem CPF ligava "Impressa?", não gerava nota
-    // nenhuma e nada saía na bobina, calado.
-    //
-    // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
-    // SEFAZ. Prometer o instante seria a segunda mentira.
-    //
-    // ⚠️ Mas só quando o CONTRATO diz que pedir papel pede a nota
-    // (`receipt_requests_emission`). Sem essa palavra do servidor, a bobina só
-    // sai quando outra regra emitir (CPF, cartão, Pix) — e prometer "imprime
-    // sozinha" num dinheiro sem CPF seria a mentira de sempre com outra frase.
+  // PEDIR O COMPROVANTE É PEDIR A NOTA — papel ou e-mail, como o CPF. Não
+  // existe DANFE nem XML sem NFC-e autorizada, e a regra fiscal do servidor lê
+  // estes canais e emite. A frase só promete quando o CONTRATO confirma
+  // (`capabilities.receipt_requests_emission`); a redação mora em
+  // `presentation/receiptRequest.ts`.
+  const receiptNote = receiptRequestNote({
+    print: wantsPrintedReceipt.value,
+    email: wantsEmailReceipt.value,
+    emits: receiptRequestEmits(props.checkoutContract),
+  });
+  if (receiptNote) {
     notes.push({
-      key: "print",
-      icon: "lucide:printer",
-      message: props.checkoutContract?.receipt_requests_emission
-        ? "Pedir papel já pede a nota — imprime sozinha assim que autorizar."
-        : "A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).",
+      key: "receipt",
+      icon: wantsPrintedReceipt.value ? "lucide:printer" : "lucide:mail",
+      message: receiptNote,
     });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
