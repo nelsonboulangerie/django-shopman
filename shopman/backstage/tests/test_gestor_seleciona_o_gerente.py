@@ -13,13 +13,30 @@ from shopman.backstage.projections import order_queue
 @pytest.fixture
 def gerentes(db):
     from django.contrib.auth.models import Permission, User
+    from shopman.doorman.models import PinCredential
 
     perm = Permission.objects.get(codename="adjust_shift")
     joyce = User.objects.create_user("joyce", first_name="Joyce", last_name="Nogueira", is_staff=True)
     joyce.user_permissions.add(perm)
     pablo = User.objects.create_user("pablo", first_name="Pablo", is_staff=True)
     pablo.user_permissions.add(perm)
+    # Só entra na lista quem pode assinar de fato: gerente sem PIN cadastrado não
+    # teria como digitar nada no diálogo (``eligible_operators``).
+    PinCredential.set_for(joyce, "1234")
+    PinCredential.set_for(pablo, "5678")
     return joyce, pablo
+
+
+@pytest.mark.django_db
+def test_gerente_sem_pin_nao_e_oferecido(gerentes):
+    """Oferecer quem não tem PIN seria um botão que não assina."""
+    from django.contrib.auth.models import Permission, User
+
+    joyce, pablo = gerentes
+    sem_pin = User.objects.create_user("carla", first_name="Carla", is_staff=True)
+    sem_pin.user_permissions.add(Permission.objects.get(codename="adjust_shift"))
+
+    assert all(o["username"] != "carla" for o in order_queue._approver_options(pablo))
 
 
 @pytest.mark.django_db
