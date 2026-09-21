@@ -71,6 +71,7 @@ import {
   decisionFieldLabel,
 } from "~/presentation/customerDecision";
 import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptContact";
+import { closeGuardNotice } from "~/presentation/closeGuard";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -255,18 +256,54 @@ export function usePosSale(deps: PosSaleDeps) {
   const closeOutcomeUncertain = ref(false);
   const closeGuardPending = ref(false);
   const closeGuardFailureMessage = ref("");
+  // A cobrança em voo é DESTA aba: ela segura a trava e espera o servidor. O
+  // marcador existe (é o que protege um reload no meio), mas não há o que
+  // avisar — é o caminho feliz de toda venda. Sem esta distinção a faixa
+  // vermelha "Cobrança em processamento ou interrompida" acendia em TODA
+  // venda, durante o POST, com um botão de liberar a trava no meio da própria
+  // cobrança.
+  const closeInFlight = ref(false);
+  // Outra aba deste navegador segura a trava agora (Web Locks). Distingue
+  // "outra aba está cobrando" (espere) de "a aba que cobrava caiu" (confira).
+  const closeGuardHeldElsewhere = ref(false);
   const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
   const closeGuardUnavailableMessage = "Este navegador não conseguiu ativar a proteção contra cobrança duplicada. Nenhuma cobrança foi iniciada. Confira o armazenamento do navegador e reconcilie a venda antes de tentar novamente.";
   const closeGuardCoordinationUnavailableMessage = "Este navegador não oferece a coordenação segura entre abas exigida para cobrar. Nenhuma cobrança foi iniciada. Atualize o navegador ou use uma estação compatível.";
-  const closeGuardActiveMessage = "Há uma cobrança sendo processada nesta estação. Aguarde o resultado antes de reconciliar ou tentar novamente.";
+  const closeGuardActiveMessage = "Outra aba deste PDV está finalizando uma venda. Aguarde o resultado naquela aba antes de tentar de novo.";
   const closeGuardReconciliationFailedMessage = "Não foi possível registrar a reconciliação porque o armazenamento do navegador está indisponível. A proteção continua ativa e nenhuma nova cobrança será iniciada.";
 
-  function restoreUncertainClose() {
+  // Quem segura a trava agora? `navigator.locks.query()` responde sem pegá-la.
+  // Sem a consulta, o conservador é supor que alguém está cobrando: o aviso
+  // manda esperar, e liberar continua exigindo pegar a trava.
+  async function probeCloseLockHolder(): Promise<void> {
+    if (!closeGuardPending.value || closeInFlight.value) {
+      closeGuardHeldElsewhere.value = false;
+      return;
+    }
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.query) {
+      closeGuardHeldElsewhere.value = true;
+      return;
+    }
+    try {
+      const snapshot = await lockManager.query();
+      const held = Boolean(snapshot.held?.some((lock) => lock.name === CLOSE_GUARD_LOCK_NAME));
+      closeGuardHeldElsewhere.value = held && closeGuardPending.value && !closeInFlight.value;
+    } catch {
+      closeGuardHeldElsewhere.value = true;
+    }
+  }
+
+  function restoreUncertainClose(): Promise<void> {
+    // A aba que está cobrando não se corrige pelo que ela mesma gravou: o
+    // evento `storage` não chega a quem escreveu, mas o mount pode.
+    if (closeInFlight.value) return Promise.resolve();
     const guard = readCloseOutcomeUncertain();
     closeOutcomeUncertain.value = !guard.storageAvailable || Boolean(guard.marker);
     closeGuardPending.value = guard.marker?.state === "pending";
     closeGuardFailureMessage.value = guard.storageAvailable ? "" : closeGuardUnavailableMessage;
     if (!guard.storageAvailable) serverError.value = closeGuardUnavailableMessage;
+    return probeCloseLockHolder();
   }
 
   function establishCloseGuard(): CloseGuardMarker | null {
@@ -320,9 +357,11 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, (lock) => {
         if (!lock) {
+          closeGuardHeldElsewhere.value = true;
           serverError.value = closeGuardActiveMessage;
           return false;
         }
+        closeGuardHeldElsewhere.value = false;
         const current = readCloseOutcomeUncertain();
         if (!current.storageAvailable) {
           closeOutcomeUncertain.value = true;
@@ -2595,10 +2634,13 @@ export function usePosSale(deps: PosSaleDeps) {
           const current = readCloseOutcomeUncertain();
           closeOutcomeUncertain.value = true;
           closeGuardPending.value = current.marker?.state === "pending";
-          closeGuardFailureMessage.value = closeGuardActiveMessage;
+          closeGuardHeldElsewhere.value = true;
           serverError.value = closeGuardActiveMessage;
           return { kind: "blocked" };
         }
+        // Com a trava na mão, ninguém mais está cobrando: um marcador
+        // "pending" aqui é de uma aba que caiu antes da resposta.
+        closeGuardHeldElsewhere.value = false;
         const current = readCloseOutcomeUncertain();
         if (!current.storageAvailable || current.marker) {
           closeOutcomeUncertain.value = true;
@@ -2611,6 +2653,7 @@ export function usePosSale(deps: PosSaleDeps) {
         }
         const marker = establishCloseGuard();
         if (!marker) return { kind: "blocked" };
+        closeInFlight.value = true;
         try {
           const rawResponse = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
@@ -2646,6 +2689,8 @@ export function usePosSale(deps: PosSaleDeps) {
             markOwnedCloseGuardUncertain(marker);
           }
           return { kind: "error", error };
+        } finally {
+          closeInFlight.value = false;
         }
       });
     } catch {
@@ -2663,7 +2708,9 @@ export function usePosSale(deps: PosSaleDeps) {
       // A primeira resposta não provou se o servidor concluiu a operação. O
       // botão pode voltar a ser acionado (mouse, toque ou Enter), mas nunca
       // dispara outro close até a venda ser explicitamente reiniciada.
-      serverError.value = closeGuardFailureMessage.value || closeOutcomeUncertainMessage;
+      serverError.value = closeGuardHeldElsewhere.value
+        ? closeGuardActiveMessage
+        : closeGuardFailureMessage.value || closeOutcomeUncertainMessage;
       return;
     }
     if (!cart.items.length || requireCustomerDraftDecision()) return;
@@ -3165,6 +3212,13 @@ export function usePosSale(deps: PosSaleDeps) {
     result,
     closeOutcomeUncertain,
     closeGuardPending,
+    closeGuardNotice: computed(() => closeGuardNotice({
+      blocked: closeOutcomeUncertain.value,
+      inFlightHere: closeInFlight.value,
+      pending: closeGuardPending.value,
+      heldElsewhere: closeGuardHeldElsewhere.value,
+      browserFailure: closeGuardFailureMessage.value,
+    })),
     restoreUncertainClose,
     acknowledgeUncertainClose,
     pendingPixOrderRef,
