@@ -1742,6 +1742,9 @@ SHOPMAN_MARKETING_MEDIA_HOSTS = tuple(
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
 DOORMAN["ACCESS_LINK_ENTRY_URL"] = SHOPMAN_STOREFRONT_BASE_URL
+# A página de link inválido do doorman aponta para `doorman:code-request`, rota
+# que o deployment não monta (config/urls.py): a entrada de login é a da loja.
+DOORMAN["TEMPLATE_ACCESS_LINK_INVALID"] = "shop/access_link_invalid.html"
 
 # Ref of the Channel used for POS/counter orders.
 SHOPMAN_POS_CHANNEL_REF = os.environ.get("SHOPMAN_POS_CHANNEL_REF", "pdv")
