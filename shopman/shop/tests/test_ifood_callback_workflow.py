@@ -193,7 +193,9 @@ def test_pickup_conclusion_suppresses_previously_queued_ready_callback():
         }])["ingested"] == 1
     order.refresh_from_db()
     assert order.status == Order.Status.COMPLETED
-    assert not ifood_callbacks.remote_status_observed(order, "ready")
+    # Duas guardas agora, e qualquer uma basta: o pedido é terminal e o fato
+    # "concluído no iFood" está gravado.
+    assert ifood_callbacks.remote_status_observed(order, "ready")
     with patch.object(ifood_callbacks, "send_action") as send:
         IFoodStatusCallbackHandler().handle(message=directive, ctx={})
     send.assert_not_called()

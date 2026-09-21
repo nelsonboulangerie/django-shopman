@@ -333,6 +333,7 @@ export interface OrderCardProjection {
   ifood_cancellation_notice: string;
   ifood_pickup_code: string;
   ifood_schedule_label: string;
+  ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   test_order_label: string;
   test_order_notice: string;

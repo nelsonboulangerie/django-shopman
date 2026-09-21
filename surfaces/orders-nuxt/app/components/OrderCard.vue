@@ -278,6 +278,15 @@ function buttonClass(priority: string): string {
       data-ifood-cancellation
     >{{ card.ifood_cancellation_notice }}</p>
 
+    <!-- O iFood já passou deste ponto: dito como instrução, logo acima do resto,
+         para não parecer um segundo status disputando com o pill. -->
+    <p
+      v-if="card.ifood_remote_ahead_label"
+      class="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium"
+      role="status"
+      data-ifood-remote-ahead
+    >{{ card.ifood_remote_ahead_label }}</p>
+
     <p v-if="card.ifood_schedule_label" class="text-xs text-muted-foreground" data-ifood-schedule>
       {{ card.ifood_schedule_label }}
     </p>

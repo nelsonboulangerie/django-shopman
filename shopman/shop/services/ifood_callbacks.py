@@ -154,6 +154,12 @@ def workflow_context(order) -> dict[str, str]:
 def remote_status_observed(order, status: str) -> bool:
     """Do not echo a confirmed remote transition, even from an older Directive."""
     remote = (order.data or {}).get("ifood") or {}
+    # O iFood já CONCLUIU o pedido: qualquer aviso de progresso chegaria depois do
+    # fim e contaria ao marketplace um passado que ele encerrou. Medido em
+    # 21/09/2026: o pedido 1416 foi concluído lá às 14:54:56 e o nosso despacho
+    # saiu um minuto depois.
+    if remote.get("remote_concluded"):
+        return status in {"accepted", "preparing", "ready", "dispatched"}
     if status == "accepted":
         return bool(remote.get("remote_confirmed") or remote.get("remote_dispatched"))
     # ``preparing`` entra aqui com ``ready``/``dispatched``, não com ``accepted``:
