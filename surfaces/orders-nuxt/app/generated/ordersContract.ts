@@ -351,6 +351,9 @@ export interface OperatorOrderProjection {
   customer_phone: string;
   customer_phone_uri: string;
   customer_whatsapp_url: string;
+  customer_relay_phone: string;
+  customer_relay_code: string;
+  customer_relay_expires_at: string;
   customer_email: string;
   customer_ref: string;
   channel_ref: string;

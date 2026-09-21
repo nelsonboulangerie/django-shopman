@@ -49,11 +49,20 @@ const customerAdminUrl = computed(() => {
   if (!ref_ || !adminBaseUrl) return "";
   return `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(ref_)}`;
 });
+// Até quando o código do iFood leva à pessoa. Depois disso a central não repassa.
+const relayExpiresLabel = computed(() => {
+  const iso = order.value?.customer_relay_expires_at;
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  return `Vale até ${at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+});
 // Há alguma forma de alcançar a pessoa? Sem nenhuma, o bloco não aparece — vale
 // mais uma tela honesta do que uma fileira de botões que não fazem nada.
 const hasCustomerContact = computed(() =>
   Boolean(
     order.value?.customer_phone_uri ||
+      order.value?.customer_relay_phone ||
       order.value?.customer_whatsapp_url ||
       order.value?.customer_email ||
       customerAdminUrl.value,
@@ -349,13 +358,32 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           >
             <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
           </a>
+          <!-- Pedido do iFood: o número NÃO é do cliente. É o 0800 da central
+               deles + um código que leva até a pessoa, e o código vence. Por
+               isso não há WhatsApp aqui, e o "Ligar" disca os dois de uma vez. -->
+          <div
+            v-if="order.customer_relay_phone"
+            class="flex w-full flex-wrap items-center gap-2 rounded-md bg-muted px-2.5 py-2 text-sm"
+            data-contact-relay
+          >
+            <span class="text-muted-foreground">Falar pelo iFood:</span>
+            <span class="tabular-nums">Central {{ order.customer_relay_phone }}</span>
+            <template v-if="order.customer_relay_code">
+              <span class="text-muted-foreground">·</span>
+              <span class="font-semibold tabular-nums" data-contact-relay-code>Código {{ order.customer_relay_code }}</span>
+              <span v-if="relayExpiresLabel" class="text-xs text-muted-foreground">{{ relayExpiresLabel }}</span>
+            </template>
+            <span v-else class="text-xs text-muted-foreground" data-contact-relay-expired>
+              Código vencido: o iFood não repassa mais a ligação
+            </span>
+          </div>
           <a
             v-if="order.customer_phone_uri"
             :href="order.customer_phone_uri"
             class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-phone
           >
-            <Icon name="lucide:phone" class="size-4" /> Ligar
+            <Icon name="lucide:phone" class="size-4" /> {{ order.customer_relay_phone ? "Ligar pela central" : "Ligar" }}
           </a>
           <a
             v-if="order.customer_email"
