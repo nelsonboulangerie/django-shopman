@@ -442,9 +442,12 @@ function fiscalChipClass(status: string): string {
                 @click="openEmitFiscal(sale)"
               >
                 <Icon name="lucide:file-plus" class="size-3.5" />
-                <!-- Reticências: o toque abre a autorização do gerente. Não é
-                     "Tentar novamente": aqui nunca houve tentativa. -->
-                Emitir NFC-e…
+                <!-- Par do chip "Emissão não estabelecida" (escolha do Pablo).
+                     Reticências: o toque abre a autorização do gerente. Não é
+                     "Tentar novamente" (nunca houve tentativa) nem "Solicitar
+                     autorização" (a mesma tela já pede a autorização do
+                     GERENTE: a palavra teria dois sentidos no mesmo toque). -->
+                Estabelecer emissão…
               </UiButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->

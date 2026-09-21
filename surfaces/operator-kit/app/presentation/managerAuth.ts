@@ -65,7 +65,7 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
     reason: "",  // o motivo vem do servidor, em `approval_reasons`
   },
   emit_fiscal: {
-    title: "Autorizar emissão da NFC-e",
+    title: "Autorizar a emissão da NFC-e",
     reason: "A venda não pediu nota.",
   },
 };

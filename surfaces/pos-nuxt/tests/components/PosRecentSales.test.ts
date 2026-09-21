@@ -95,7 +95,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("o toque pede o gerente; a assinatura vai no corpo do POST", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    expect(emitButton()?.textContent?.trim()).toBe("Emitir NFC-e…");
+    expect(emitButton()?.textContent?.trim()).toBe("Estabelecer emissão…");
     const auth = w.findComponent({ name: "OperatorManagerAuth" });
     expect(auth.props("open")).toBe(false);
 
