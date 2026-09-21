@@ -1142,7 +1142,7 @@ def _pos_actions() -> tuple[Action, ...]:
         Action(
             ref="emit_fiscal",
             kind="mutation",
-            label="Emitir NFC-e não pedida",
+            label="Emitir NFC-e de venda sem emissão estabelecida",
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",
@@ -2726,6 +2726,12 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
+    # A emissão avulsa pode valer por mais dias que a lista (Admin → PDV e
+    # alertas): a lista alcança o prazo, senão a venda sumiria antes de vencer.
+    late_days = fiscal_service.late_emission_days()
+    if late_days:
+        first_day = timezone.localdate() - timezone.timedelta(days=late_days)
+        since = min(since, timezone.make_aware(timezone.datetime.combine(first_day, timezone.datetime.min.time())))
     orders = (
         Order.objects.filter(channel_ref=POS_CHANNEL_REF, created_at__gte=since)
         .prefetch_related("items")

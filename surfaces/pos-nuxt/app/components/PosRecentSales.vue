@@ -429,7 +429,8 @@ function fiscalChipClass(status: string): string {
                 @click="requeueFiscal(sale)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-3.5" />
-                Reprocessar nota
+                <!-- Sem reticências: o toque reenfileira na hora, não abre nada. -->
+                Tentar novamente
               </UiButton>
               <!-- Emissão avulsa: a regra da casa não emitiu. Botão NEUTRO — não
                    há nada errado com a venda; o gerente é pedido no toque. -->
@@ -441,7 +442,9 @@ function fiscalChipClass(status: string): string {
                 @click="openEmitFiscal(sale)"
               >
                 <Icon name="lucide:file-plus" class="size-3.5" />
-                Emitir NFC-e
+                <!-- Reticências: o toque abre a autorização do gerente. Não é
+                     "Tentar novamente": aqui nunca houve tentativa. -->
+                Emitir NFC-e…
               </UiButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->

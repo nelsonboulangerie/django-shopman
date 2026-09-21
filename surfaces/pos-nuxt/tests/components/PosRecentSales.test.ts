@@ -59,7 +59,7 @@ describe("PosRecentSales — o chip fiscal segue `fiscal_state` quando existe", 
       sale({ order_ref: "D", fiscal_state: "failed" }),
       sale({ order_ref: "E", fiscal_state: "not_expected" }),
     ]);
-    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e na fila", "NFC-e aguarda o pagamento", "NFC-e falhou", "NFC-e não pedida"]);
+    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e na fila", "NFC-e aguarda o pagamento", "NFC-e falhou", "Emissão não estabelecida"]);
     w.unmount();
   });
 
@@ -95,7 +95,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("o toque pede o gerente; a assinatura vai no corpo do POST", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    expect(emitButton()?.textContent).toContain("Emitir NFC-e");
+    expect(emitButton()?.textContent?.trim()).toBe("Emitir NFC-e…");
     const auth = w.findComponent({ name: "OperatorManagerAuth" });
     expect(auth.props("open")).toBe(false);
 
@@ -137,11 +137,11 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
     await vi.waitFor(() => expect(auth.props("open")).toBe(true));
 
     fetchMock.mockRejectedValueOnce(Object.assign(new Error("409"), {
-      data: { detail: "A emissão avulsa vale para vendas das últimas 24 horas. Para esta, fale com o contador." },
+      data: { detail: "Só dá para emitir nota de venda do mesmo dia." },
     }));
     auth.vm.$emit("authorize", "pablo", "4321");
     await vi.waitFor(() => expect(auth.props("open")).toBe(false));
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("24 horas"));
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("mesmo dia"));
     w.unmount();
   });
 });
