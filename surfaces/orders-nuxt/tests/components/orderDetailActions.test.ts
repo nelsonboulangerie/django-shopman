@@ -120,6 +120,9 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     equipment_back_pending: false,
     can_resend_payment_link: false,
     managers: [{ username: "joyce", name: "Joyce Nogueira" }],
+    customer_relay_phone: "",
+    customer_relay_code: "",
+    customer_relay_expires_at: "",
     payment_link_notice: "",
     customer_profile: null,
     revisions: {},
@@ -615,5 +618,28 @@ describe("segunda assinatura no cancelamento", () => {
     const w = mount(OrderDetailPage, { global: { stubs: { ...stubs, OperatorManagerAuth: ManagerAuthStub }, mocks: { $router: { go: vi.fn() } } } });
 
     expect(w.findComponent(ManagerAuthStub).props("managers")).toEqual([{ username: "joyce", name: "Joyce Nogueira" }]);
+  });
+});
+
+describe("contato de pedido do iFood", () => {
+  // 21/09: o detalhe oferecia WhatsApp para o 0800 da central do iFood.
+  it("relé mostra a central e o código, sem WhatsApp", () => {
+    const w = abrir(order({
+      customer_phone: "", customer_whatsapp_url: "",
+      customer_phone_uri: "tel:08007053040,89338721",
+      customer_relay_phone: "0800 705 3040", customer_relay_code: "89338721",
+    }));
+    expect(w.find("[data-contact-whatsapp]").exists()).toBe(false);
+    expect(w.get("[data-contact-relay-code]").text()).toBe("Código 89338721");
+    expect(w.get("[data-contact-phone]").text()).toContain("Ligar pela central");
+    expect(w.get("[data-contact-phone]").attributes("href")).toBe("tel:08007053040,89338721");
+  });
+  it("código vencido diz que a central não repassa e não oferece ligação", () => {
+    const w = abrir(order({
+      customer_phone: "", customer_whatsapp_url: "", customer_phone_uri: "",
+      customer_relay_phone: "0800 705 3040", customer_relay_code: "",
+    }));
+    expect(w.find("[data-contact-phone]").exists()).toBe(false);
+    expect(w.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
   });
 });

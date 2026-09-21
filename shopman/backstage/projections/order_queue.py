@@ -343,6 +343,12 @@ class OperatorOrderProjection:
     customer_phone: str
     customer_phone_uri: str
     customer_whatsapp_url: str
+    # Pedido de marketplace: o iFood não entrega o telefone do cliente, entrega o
+    # 0800 da central dele + um localizador com validade. É por onde se fala com a
+    # pessoa POR VOZ, discando os dois. Vazios quando o telefone é do cliente.
+    customer_relay_phone: str
+    customer_relay_code: str
+    customer_relay_expires_at: str
     customer_email: str
     # Ref do Customer no cadastro, quando o pedido está ligado a um. É o que
     # deixa a tela oferecer "abrir cadastro" no Admin — hoje o único lugar onde
@@ -1921,14 +1927,54 @@ def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
             phone_raw = phone_raw or str(getattr(customer, "phone", "") or "").strip()
             email = str(getattr(customer, "email", "") or "").strip()
 
+    from shopman.shop.services.notification import customer_phone_is_platform_relay
+
+    if phone_raw and customer_phone_is_platform_relay(order):
+        return {**_relay_contact(phone_raw, customer_data), "customer_email": email, "customer_ref": customer_ref}
+
     e164 = normalize_phone(phone_raw) if phone_raw else ""
     digits = e164.lstrip("+")
     return {
         "customer_phone": _format_customer_display(phone_raw) if phone_raw else "",
         "customer_phone_uri": f"tel:{e164}" if e164 else "",
         "customer_whatsapp_url": f"https://wa.me/{digits}" if digits else "",
+        "customer_relay_phone": "",
+        "customer_relay_code": "",
+        "customer_relay_expires_at": "",
         "customer_email": email,
         "customer_ref": customer_ref,
+    }
+
+
+def _relay_contact(phone_raw: str, customer_data: dict) -> dict[str, str]:
+    """O caminho de voz que o iFood deixa: 0800 da central + localizador.
+
+    Não é o telefone do cliente. Medido em 21/09/2026: o detalhe oferecia
+    "WhatsApp" para o 0800 da central e "Ligar" para ele sem o código — a
+    ligação caía na central, não na pessoa. O relé é só voz (sem WhatsApp), e a
+    ligação só completa com o localizador, que vence.
+    """
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    digits = "".join(ch for ch in phone_raw if ch.isdigit())
+    code = str(customer_data.get("phone_localizer") or "").strip()
+    expires_raw = str(customer_data.get("phone_localizer_expiration") or "").strip()
+    try:
+        expires = parse_datetime(expires_raw) if expires_raw else None
+    except (TypeError, ValueError):
+        expires = None
+    expired = expires is not None and timezone.is_aware(expires) and expires <= timezone.now()
+    usable = bool(digits and code and not expired)
+    return {
+        "customer_phone": "",          # não é o número da pessoa; não se exibe como se fosse
+        "customer_whatsapp_url": "",   # relé é voz: WhatsApp para a central não existe
+        # Vírgula = pausa na discagem (iOS e Android): disca a central e, quando
+        # ela atende, digita o localizador. Sem código válido, sem botão.
+        "customer_phone_uri": f"tel:{digits},{code}" if usable else "",
+        "customer_relay_phone": phone_raw,
+        "customer_relay_code": code if not expired else "",
+        "customer_relay_expires_at": expires.isoformat() if expires is not None else "",
     }
 
 
