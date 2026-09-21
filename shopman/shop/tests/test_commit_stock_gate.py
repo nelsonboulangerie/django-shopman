@@ -310,10 +310,11 @@ class CommitStockGateExternalChannelTests(TestCase):
             result = _commit("GATE-EXT-001", self.channel.ref, "GATE-EXT-KEY-001")
 
         order = Order.objects.get(ref=result.order_ref)
-        # Reserva best-effort falhou (sem estoque), mas o pedido existe e o
-        # operador foi alertado do gap — comportamento otimista preservado.
+        # O pedido existe (comportamento otimista preservado): a unidade que
+        # havia ficou reservada — o fulfill a baixa — e o operador foi
+        # alertado só do gap que sobrou.
         held = [h for h in (order.data or {}).get("hold_ids", []) if h.get("hold_id")]
-        self.assertEqual(held, [])
+        self.assertEqual([h["qty"] for h in held], [1.0])
 
         from shopman.backstage.models import OperatorAlert
 

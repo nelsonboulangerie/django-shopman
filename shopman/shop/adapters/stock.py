@@ -213,6 +213,65 @@ def create_hold(
         }
 
 
+def create_holds_up_to(
+    sku: str,
+    qty: Decimal,
+    ttl_minutes: int = 30,
+    *,
+    target_date: date | None = None,
+    reference: str | None = None,
+    channel_ref: str | None = None,
+    apply_safety_margin: bool = True,
+    **metadata,
+) -> list[tuple[str, Decimal]]:
+    """Reserva ATÉ ``qty``, em quantas reservas forem precisas.
+
+    O Stockman ancora cada reserva em UM quant (1:1 por desenho), e
+    ``create_hold`` falha quando nenhum quant sozinho cobre o pedido inteiro.
+    Aqui a reserva vai em pedaços: a cada volta, o maior saldo livre de um
+    quant elegível (no escopo do canal) vira uma reserva, até cobrir ``qty``
+    ou acabar o livre. Nunca reserva além do que está livre — reserva alheia
+    continua valendo.
+
+    Returns:
+        ``[(hold_id, qty), ...]`` do que foi reservado (vazia se nada coube).
+    """
+    from shopman.stockman.services.scope import quants_eligible_for
+
+    scope = get_channel_scope(channel_ref) if channel_ref else {}
+    reserved: list[tuple[str, Decimal]] = []
+    remaining = Decimal(str(qty))
+    while remaining > 0:
+        eligible = quants_eligible_for(
+            sku,
+            target_date=target_date or timezone.localdate(),
+            allowed_positions=scope.get("allowed_positions"),
+            excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
+        )
+        largest_free = max((quant.available for quant in eligible), default=Decimal("0"))
+        piece = min(largest_free, remaining)
+        if piece <= 0:
+            break
+        result = create_hold(
+            sku,
+            piece,
+            ttl_minutes,
+            target_date=target_date,
+            reference=reference,
+            channel_ref=channel_ref,
+            apply_safety_margin=apply_safety_margin,
+            **metadata,
+        )
+        if not result.get("success"):
+            break
+        reserved.append((result["hold_id"], piece))
+        remaining -= piece
+    return reserved
+
+
 def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
     """
     Fulfill a confirmed hold (decrements stock).
