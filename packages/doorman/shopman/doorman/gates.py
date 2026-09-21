@@ -7,6 +7,7 @@ G9: RateLimit - Rate limiting for code requests
 G10: IPRateLimit - Rate limiting by IP address
 G11: CodeCooldown - Minimum time between code sends
 G12: AccessLinkRateLimit - Rate limiting for access link requests
+G13: CodeFailureLimit - Wrong codes per target across codes (resends don't reset it)
 """
 
 from dataclasses import dataclass
@@ -242,6 +243,52 @@ class Gates:
                 )
 
         return GateResult(True, "G11_CodeCooldown")
+
+    # ===========================================
+    # G13: Code Failure Limit
+    # ===========================================
+
+    @classmethod
+    def code_failure_limit(
+        cls,
+        target_value: str,
+        max_failures: int,
+        window_hours: int,
+    ) -> GateResult:
+        """
+        G13: Wrong codes per target, summed across every code in the window.
+
+        ``max_attempts`` is per code, and a resend expires the previous code and
+        issues a fresh one with a full budget. Without a counter that crosses
+        codes, request → 5 guesses → wait cooldown → request again is a
+        brute-force loop (~2.400 guesses/day against 10^6 codes). The attempts
+        are already recorded on each ``VerificationCode`` row: this gate only
+        sums them, so no resend can reset it.
+
+        Checked before issuing a new code: once exhausted, no new code is sent
+        for this target until old failures leave the window.
+
+        Raises:
+            GateError: If the failure budget for the window is spent
+        """
+        from django.db.models import Sum
+
+        window_start = timezone.now() - timedelta(hours=window_hours)
+        failures = (
+            VerificationCode.objects.filter(
+                target_value=target_value,
+                created_at__gte=window_start,
+            ).aggregate(total=Sum("attempts"))["total"]
+            or 0
+        )
+
+        if failures >= max_failures:
+            raise GateError(
+                "G13_CodeFailureLimit",
+                f"Code failures: {failures}/{max_failures} in {window_hours}h.",
+            )
+
+        return GateResult(True, "G13_CodeFailureLimit")
 
     # ===========================================
     # G12: Access Link Rate Limit
