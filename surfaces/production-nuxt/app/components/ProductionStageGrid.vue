@@ -352,10 +352,43 @@ async function confirmPlan() {
     } else if (res.shortage) {
       planRow.value = null;
       shortage.value = res.shortage;
+    } else if (res.blocked && res.blocked.code !== "offline") {
+      resyncPlanDialog(row.output_sku);
     }
   } finally {
     planSubmitting.value = false;
   }
+}
+
+// Recusa por números que mudaram: o diálogo passa a mostrar a linha atual e
+// mantém a quantidade que o operador digitou — ele confere e confirma de novo,
+// sem redigitar.
+function resyncPlanDialog(outputSku: string) {
+  const fresh = rows.value.find((r) => r.output_sku === outputSku);
+  if (!fresh || planRow.value?.output_sku !== outputSku) return;
+  const typed = planQty.value;
+  const chosen = selectedPlannedPk.value;
+  planRow.value = fresh;
+  selectedPlannedPk.value = fresh.planned_orders.some((o) => o.pk === chosen)
+    ? chosen
+    : fresh.planned_orders.length === 1
+      ? fresh.planned_orders[0]!.pk
+      : null;
+  planQty.value = typed;
+}
+
+function resyncStartDialog(outputSku: string) {
+  const fresh = rows.value.find((r) => r.output_sku === outputSku);
+  if (!fresh || startRow.value?.output_sku !== outputSku) return;
+  const typed = startQty.value;
+  const chosen = selectedStartPk.value;
+  startRow.value = fresh;
+  selectedStartPk.value = fresh.planned_orders.some((o) => o.pk === chosen)
+    ? chosen
+    : fresh.planned_orders.length === 1
+      ? fresh.planned_orders[0]!.pk
+      : null;
+  startQty.value = typed;
 }
 
 async function retryPlanWithForce(reason: string, overrideProof: string) {
@@ -412,6 +445,8 @@ async function confirmStart() {
       useSonner.success(
         `Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`,
       );
+    } else if (res.blocked && res.blocked.code !== "offline") {
+      resyncStartDialog(row.output_sku);
     }
   } finally {
     startSubmitting.value = false;

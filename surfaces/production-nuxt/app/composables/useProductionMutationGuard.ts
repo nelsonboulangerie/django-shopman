@@ -1,5 +1,5 @@
 import type { MaybeRefOrGetter } from "vue";
-import { toValue } from "vue";
+import { toValue, watch } from "vue";
 import type {
   ProductionConflictRecovery,
 } from "~/generated/productionContract";
@@ -42,10 +42,22 @@ export interface ProductionMutationBlock {
     | "offline"
     | "stale_projection"
     | "action_not_projected"
-    | "action_disabled";
+    | "action_disabled"
+    | "changed_elsewhere";
   detail: string;
   recovery: ProductionConflictRecovery;
 }
+
+/**
+ * Quanto antes do vencimento a própria tela busca números novos. O poll do
+ * Planejamento roda a cada 60–72 s e a projeção vale 90 s: com o poll em dia,
+ * esta renovação nunca dispara. Ela existe para o poll que falhou (rede,
+ * deploy reiniciando o servidor) — antes dela, UMA falha deixava a tela
+ * vencida até o poll seguinte, e o toque do operador era recusado.
+ */
+export const PROJECTION_RENEW_LEAD_MS = 20_000;
+/** Intervalo entre tentativas quando a renovação não trouxe números novos. */
+export const PROJECTION_RENEW_RETRY_MS = 10_000;
 
 const ISO_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -77,6 +89,17 @@ export function projectionFreshUntilMs(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const REFRESH_LABEL = "Atualizar os números";
+const STALE_ON_SERVER_DETAIL =
+  "Nada foi salvo: os números desta tela passaram do prazo antes de o pedido chegar.";
+const REFRESHED_CONFIRM_AGAIN = "Os números já foram atualizados — confira e confirme de novo.";
+const UNREACHABLE_DETAIL =
+  "Nada foi salvo: não foi possível buscar os números atuais desta tela. O que você digitou continua aqui.";
+const CHANGED_ELSEWHERE_DETAIL =
+  "Nada foi salvo: outra tela alterou esta fornada enquanto você decidia. Os números já foram atualizados — confira e confirme de novo.";
+const NOT_PROJECTED_AFTER_REFRESH_DETAIL =
+  "Nada foi salvo: esta linha mudou em outra tela enquanto você decidia. Os números já foram atualizados — confira e confirme de novo.";
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -94,13 +117,13 @@ function staleRecovery(error: unknown): ProductionMutationBlock | null {
     detail:
       typeof envelope?.detail === "string" && envelope.detail
         ? envelope.detail
-        : "Os dados mudaram desde a última atualização.",
+        : STALE_ON_SERVER_DETAIL,
     recovery: {
       action: recovery?.action === "retry" ? "retry" : "refresh",
       label:
         typeof recovery?.label === "string" && recovery.label
           ? recovery.label
-          : "Atualizar dados",
+          : REFRESH_LABEL,
     },
   };
 }
@@ -129,6 +152,12 @@ function forbiddenRecovery(error: unknown): { detail: string; label: string } | 
  * estação está offline ou a projeção está ausente, inválida ou vencida. A
  * recuperação nunca repete uma escrita: ela apenas atualiza a projeção para o
  * operador revisar o formulário preservado e confirmar novamente.
+ *
+ * O vencimento é medido no relógio DESTE dispositivo a partir de quando a
+ * projeção chegou (chegada + validade que o servidor deu), e não comparando o
+ * `fresh_until` do servidor com o relógio local: um tablet com o relógio 40 s
+ * adiantado recusava quase metade das ações com a tela recém-atualizada. O
+ * servidor continua sendo a autoridade (409 `stale_projection`).
  */
 export function useProductionMutationGuard<T extends FreshProjection>(
   projection: MaybeRefOrGetter<T | null | undefined>,
@@ -137,12 +166,47 @@ export function useProductionMutationGuard<T extends FreshProjection>(
 ) {
   const { isOnline } = useConnectivity();
 
+  // Chegada de cada projeção, pela identidade que o servidor assinou.
+  let receivedKey = "";
+  let receivedAt = 0;
+  const identity = (current: T | null | undefined) =>
+    current ? `${current.generated_at}|${current.source_revision}` : "";
+  function markReceived(current: T | null | undefined) {
+    const key = identity(current);
+    if (key && key !== receivedKey) {
+      receivedKey = key;
+      receivedAt = now();
+    }
+  }
+  let mounted = false;
+  let disposed = false;
+  let renewTimer: ReturnType<typeof setTimeout> | null = null;
+  watch(
+    () => identity(toValue(projection)),
+    () => {
+      markReceived(toValue(projection));
+      if (mounted) scheduleRenewal();
+    },
+    { immediate: true },
+  );
+
+  /** Instante local (ms) em que a projeção vence, ou null se ela é inválida. */
+  function localDeadline(current: T | null | undefined): number | null {
+    const generatedAt = projectionFreshUntilMs(current?.generated_at);
+    const freshUntil = projectionFreshUntilMs(current?.fresh_until);
+    if (generatedAt === null || freshUntil === null) return null;
+    const lifetime = freshUntil - generatedAt;
+    if (lifetime <= 0) return null;
+    markReceived(current);
+    return receivedAt + lifetime;
+  }
+
   async function refreshSafely() {
     try {
       await refreshProjection();
     } catch (error) {
       useSonner.error(
-        httpErrorMessage(error, "Não foi possível atualizar os dados. Tente novamente."),
+        httpErrorMessage(error, "Não foi possível buscar os números atuais. Tente de novo."),
       );
     }
   }
@@ -151,7 +215,7 @@ export function useProductionMutationGuard<T extends FreshProjection>(
     const label =
       block.recovery.action === "refresh"
         ? block.recovery.label
-        : "Atualizar dados";
+        : REFRESH_LABEL;
     useSonner.error(block.detail, {
       action: {
         label,
@@ -164,27 +228,25 @@ export function useProductionMutationGuard<T extends FreshProjection>(
     if (!isOnline.value) {
       return {
         code: "offline",
-        detail: "Sem conexão. A ação não foi enviada e seus dados foram preservados.",
+        detail: "Sem conexão. Nada foi enviado, e o que você digitou continua aqui.",
         recovery: { action: "refresh", label: "Atualizar ao reconectar" },
       };
     }
 
     const current = toValue(projection);
-    const generatedAt = projectionFreshUntilMs(current?.generated_at);
-    const freshUntil = projectionFreshUntilMs(current?.fresh_until);
+    const deadline = localDeadline(current);
     if (
-      generatedAt === null ||
+      deadline === null ||
       typeof current?.source_revision !== "string" ||
       !current.source_revision.trim() ||
       !Number.isInteger(current.contract_version) ||
       current.contract_version < 1 ||
-      freshUntil === null ||
-      freshUntil <= now()
+      deadline <= now()
     ) {
       return {
         code: "stale_projection",
-        detail: "Estes dados estão desatualizados. Atualize antes de confirmar.",
-        recovery: { action: "refresh", label: "Atualizar dados" },
+        detail: UNREACHABLE_DETAIL,
+        recovery: { action: "refresh", label: "Tentar de novo" },
       };
     }
     return null;
@@ -196,13 +258,22 @@ export function useProductionMutationGuard<T extends FreshProjection>(
       notify(block);
       return { ok: false, blocked: block };
     }
+    return authorizeProjectedAction(actionRef, false);
+  }
+
+  function authorizeProjectedAction(
+    actionRef: string,
+    refreshed: boolean,
+  ): ProductionMutationAuthorization {
     const current = toValue(projection)!;
     const action = current.actions.find((candidate) => candidate.ref === actionRef);
     if (!action) {
       const unavailable: ProductionMutationBlock = {
         code: "action_not_projected",
-        detail: "Esta ação não faz parte do painel atual. Atualize os dados antes de agir.",
-        recovery: { action: "refresh", label: "Atualizar dados" },
+        detail: refreshed
+          ? NOT_PROJECTED_AFTER_REFRESH_DETAIL
+          : "Nada foi salvo: esta ação não está disponível nos números desta tela. Atualize e confira.",
+        recovery: { action: "refresh", label: REFRESH_LABEL },
       };
       notify(unavailable);
       return { ok: false, blocked: unavailable };
@@ -211,7 +282,7 @@ export function useProductionMutationGuard<T extends FreshProjection>(
       const disabled: ProductionMutationBlock = {
         code: "action_disabled",
         detail: action.reason || "Esta ação está indisponível no contexto atual.",
-        recovery: { action: "refresh", label: "Atualizar dados" },
+        recovery: { action: "refresh", label: REFRESH_LABEL },
       };
       notify(disabled);
       return { ok: false, blocked: disabled };
@@ -219,8 +290,8 @@ export function useProductionMutationGuard<T extends FreshProjection>(
     if (!action.proof.trim()) {
       const unavailable: ProductionMutationBlock = {
         code: "action_not_projected",
-        detail: "A autorização desta ação não veio no painel atual. Atualize os dados antes de agir.",
-        recovery: { action: "refresh", label: "Atualizar dados" },
+        detail: "Nada foi salvo: a autorização desta ação não veio nos números desta tela. Atualize e confira.",
+        recovery: { action: "refresh", label: REFRESH_LABEL },
       };
       notify(unavailable);
       return { ok: false, blocked: unavailable };
@@ -239,10 +310,96 @@ export function useProductionMutationGuard<T extends FreshProjection>(
     };
   }
 
+  /**
+   * Autoriza a ação do toque, buscando números novos primeiro quando os da
+   * tela venceram — o operador não deve ser mandado "atualizar" por uma coisa
+   * que a própria tela resolve sozinha.
+   *
+   * `seenRev` é a revisão da fornada que o operador tinha diante dos olhos ao
+   * decidir (a do diálogo aberto). Se a projeção atual traz outra revisão,
+   * outra tela mexeu na fornada: a ação é recusada com esse motivo, em vez de
+   * mandar a revisão nova e sobrescrever em silêncio o que a outra tela fez.
+   */
+  async function authorizeFreshMutation(
+    actionRef: string,
+    seenRev: number | null = null,
+  ): Promise<ProductionMutationAuthorization> {
+    let refreshed = false;
+    const block = currentBlock();
+    if (block?.code === "stale_projection") {
+      try {
+        await refreshProjection();
+        refreshed = true;
+      } catch {
+        // A recusa abaixo diz o que houve; o poll continua tentando.
+      }
+    }
+    const remaining = currentBlock();
+    if (remaining) {
+      notify(remaining);
+      return { ok: false, blocked: remaining };
+    }
+    const authorization = authorizeProjectedAction(actionRef, refreshed);
+    if (!authorization.ok) return authorization;
+    if (seenRev !== null && authorization.action.expected_rev !== null
+      && authorization.action.expected_rev !== seenRev) {
+      const changed: ProductionMutationBlock = {
+        code: "changed_elsewhere",
+        detail: CHANGED_ELSEWHERE_DETAIL,
+        recovery: { action: "refresh", label: REFRESH_LABEL },
+      };
+      useSonner.error(changed.detail);
+      return { ok: false, blocked: changed };
+    }
+    return authorization;
+  }
+
+  // ── Renovação: a tela visível nunca deveria chegar vencida ao toque ───────
+  function scheduleRenewal(delay?: number) {
+    if (renewTimer) clearTimeout(renewTimer);
+    renewTimer = null;
+    if (disposed) return;
+    const deadline = localDeadline(toValue(projection));
+    if (deadline === null) return;
+    const wait =
+      delay ?? Math.max(deadline - PROJECTION_RENEW_LEAD_MS - now(), 0);
+    renewTimer = setTimeout(() => void renew(), wait);
+  }
+
+  async function renew() {
+    renewTimer = null;
+    if (disposed) return;
+    const before = identity(toValue(projection));
+    if (!document.hidden && isOnline.value) {
+      try {
+        await refreshProjection();
+      } catch {
+        // Silencioso: quem avisa é o toque do operador, se ainda vencida.
+      }
+    }
+    // Números novos chegaram → o watch já reagendou pela nova validade.
+    if (!disposed && identity(toValue(projection)) === before) {
+      scheduleRenewal(PROJECTION_RENEW_RETRY_MS);
+    }
+  }
+
+  onMounted(() => {
+    mounted = true;
+    scheduleRenewal();
+  });
+  onBeforeUnmount(() => {
+    disposed = true;
+    if (renewTimer) clearTimeout(renewTimer);
+    renewTimer = null;
+  });
+
   function handleMutationError(error: unknown): boolean {
     const block = staleRecovery(error);
     if (block) {
-      notify(block);
+      // O servidor recusou por prazo: busca os números já, sem esperar o
+      // toque — o operador só precisa conferir e confirmar de novo.
+      useSonner.error(block.detail, { description: REFRESHED_CONFIRM_AGAIN });
+      void refreshSafely();
       return true;
     }
     const forbidden = forbiddenRecovery(error);
@@ -251,5 +408,11 @@ export function useProductionMutationGuard<T extends FreshProjection>(
     return true;
   }
 
-  return { currentBlock, authorizeMutation, handleMutationError, refreshSafely };
+  return {
+    currentBlock,
+    authorizeMutation,
+    authorizeFreshMutation,
+    handleMutationError,
+    refreshSafely,
+  };
 }
