@@ -138,9 +138,10 @@ const actionAria = computed(() => {
   return "";
 });
 
-// Tom do botão por ato. Iniciar é o convite (primary); finalizar é a confirmação
-// (neutro invertido — o mesmo do "Despachar" da expedição); bloqueado é contornado
-// em vermelho, porque não se convida ninguém a apertá-lo.
+// Tom do botão por ato. Iniciar é o convite, CONTORNADO em primary; finalizar é a
+// confirmação, o único sólido (neutro invertido — o mesmo do "Despachar" da
+// expedição); bloqueado é contornado em vermelho, porque não se convida ninguém a
+// apertá-lo.
 const actionTone = computed<KdsCardButtonTone>(() => {
   const kind = action.value.kind;
   if (kind === "start") return "invite";

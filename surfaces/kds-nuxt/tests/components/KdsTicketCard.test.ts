@@ -303,6 +303,14 @@ describe("KdsTicketCard — a anatomia da expedição", () => {
     expect(action.element.parentElement?.className).toContain("px-4");
   });
 
+  it("Iniciar é contornado; Finalizar é o único sólido (decisão de 21/09)", () => {
+    const iniciar = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
+    expect(iniciar.classes()).toContain("border-primary/70");
+    expect(iniciar.classes().some((c) => c === "bg-primary")).toBe(false);
+    const finalizar = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(finalizar.classes()).toContain("bg-foreground");
+  });
+
   it("à direita do código há UM chip (o relógio); a marca do detalhe não tem moldura", () => {
     const w = mountCard({ ticket: ticket() });
     const header = w.get("article").element.querySelector("[class*='justify-between']")!;
