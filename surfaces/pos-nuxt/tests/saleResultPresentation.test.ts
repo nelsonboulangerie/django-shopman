@@ -259,6 +259,6 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(fiscalStateLabel("queued")).toBe("NFC-e na fila");
     expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e aguarda o pagamento");
     expect(fiscalStateLabel("failed")).toBe("NFC-e falhou");
-    expect(fiscalStateLabel("not_expected")).toBe("Sem NFC-e");
+    expect(fiscalStateLabel("not_expected")).toBe("NFC-e não pedida");
   });
 });

@@ -264,6 +264,63 @@ def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
     return current
 
 
+@transaction.atomic
+def emit_fiscal_on_demand(order, *, actor: str, approved_by_username: str):
+    """Emite a NFC-e que a regra da casa NÃO emitiu — emissão avulsa, com gerente.
+
+    O desafio gerencial acontece ANTES (na view, por ``validate_manager_override``)
+    e quem chega aqui é o aprovador VERIFICADO. A autorização fica gravada em
+    ``Order.data["fiscal"]["issue_override"]`` e é ela que faz o
+    ``emission_resolver`` dizer sim — para este pedido e só para ele. A emissão
+    em si é o caminho de sempre (``fiscal.emit`` → Directive ``fiscal.emit_nfce``).
+
+    Tudo na mesma transação: se a Directive não nasce (sem backend, pagamento
+    abaixo do total), a autorização some junto e o pedido não fica com uma
+    exceção gravada que não produziu nota nenhuma.
+    """
+    from django.utils import timezone
+    from shopman.orderman.models import Directive, Order
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+    from shopman.shop.services import fiscal
+
+    if not approved_by_username:
+        raise OrderError("A emissão avulsa exige a autorização de um gerente.")
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    refusal = fiscal.issue_override_refusal(order)
+    if refusal:
+        raise OrderError(refusal)
+
+    data = dict(order.data or {})
+    fiscal_data = dict(data.get("fiscal") or {})
+    authorized_at = timezone.now().isoformat()
+    fiscal_data[fiscal.ISSUE_OVERRIDE_KEY] = {
+        "approved_by": approved_by_username,
+        "requested_by": actor,
+        "at": authorized_at,
+    }
+    data["fiscal"] = fiscal_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+    fiscal.emit(order)
+    current = (
+        Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if current is None or current.status not in {"queued", "running"}:
+        raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
+    order.emit_event(
+        event_type="fiscal_issue_override",
+        actor=actor,
+        payload={"topic": FISCAL_EMIT_NFCE, "approved_by": approved_by_username, "at": authorized_at},
+    )
+    return current
+
+
 def save_kitchen_note(order, *, notes: str, expected_revision=None, actor="system"):
     return operator_orders.save_kitchen_note(order, notes=notes, expected_revision=expected_revision, actor=actor)
 
