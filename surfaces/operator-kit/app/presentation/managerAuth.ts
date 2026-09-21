@@ -23,7 +23,8 @@ export type ManagerAction =
   | "serve_change"
   | "refund_cash"
   | "cancel_sale"
-  | "sale_approval";
+  | "sale_approval"
+  | "emit_fiscal";
 
 interface ManagerActionCopy {
   /** O ato, nomeado. Vira o título do diálogo. */
@@ -62,6 +63,10 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   sale_approval: {
     title: "Autorizar a venda",
     reason: "",  // o motivo vem do servidor, em `approval_reasons`
+  },
+  emit_fiscal: {
+    title: "Autorizar emissão da NFC-e",
+    reason: "A venda não pediu nota.",
   },
 };
 

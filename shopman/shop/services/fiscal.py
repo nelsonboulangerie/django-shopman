@@ -41,6 +41,13 @@ def emission_resolver(order) -> bool:
     """
     from django.conf import settings
 
+    # A emissão avulsa autorizada pelo gerente (Últimas vendas do PDV) passa POR
+    # CIMA da regra — é exatamente para isso que ela existe. Só um escritor grava
+    # a chave (``backstage.services.orders.emit_fiscal_on_demand``), depois do
+    # desafio gerencial; nenhuma outra porta a toca.
+    if issue_override(order):
+        return True
+
     raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
     paths = [p.strip() for p in str(raw).split(",") if p.strip()]
     if not paths:
@@ -54,6 +61,67 @@ def emission_resolver(order) -> bool:
         # Resolver quebrado NÃO deve travar o pedido — cai no fallback e registra.
         logger.warning("fiscal.emission_resolver: %s falhou; usando fallback", raw, exc_info=True)
         return _default_emission_decision(order)
+
+
+# ── Emissão avulsa (a regra da casa disse não; o gerente disse sim) ──────
+#
+# A regra padrão emite só quando pedem (nota, CPF ou comprovante). O cliente que
+# volta ao balcão meia hora depois pedindo a nota não tinha como ser atendido:
+# a regra já tinha decidido. A emissão avulsa é a exceção auditada — sempre com
+# o desafio gerencial, e com quem autorizou gravado no pedido.
+
+#: Chave em ``Order.data["fiscal"]``. Ver docs/reference/data-schemas.md.
+ISSUE_OVERRIDE_KEY = "issue_override"
+
+#: A emissão avulsa vale para as vendas da lista "Últimas vendas" (24 horas).
+#: A nota sai com a data e a hora da EMISSÃO (``data_emissao`` do adapter é o
+#: agora), não da venda — quanto mais longe da venda, mais a nota descola dela.
+ISSUE_OVERRIDE_MAX_AGE_HOURS = 24
+
+
+def issue_override(order) -> dict:
+    """A autorização gravada da emissão avulsa, ou ``{}``."""
+    value = ((order.data or {}).get("fiscal") or {}).get(ISSUE_OVERRIDE_KEY)
+    return value if isinstance(value, dict) and value.get("approved_by") else {}
+
+
+def issue_override_refusal(order, *, state: str | None = None) -> str:
+    """Por que a emissão avulsa NÃO pode sair para este pedido — ``""`` quando pode.
+
+    Uma função só para a lista (que decide se mostra o botão) e para o serviço
+    (que decide de novo, dentro da trava): botão que aparece e endpoint que
+    recusa é rótulo que mente.
+
+    Só serve para a nota que a regra NÃO emitiu (``not_expected``). Falha tem o
+    seu caminho (reprocessar); nota na fila ou esperando o pagamento já vai sair.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    data = order.data or {}
+    if data.get("nfce_access_key"):
+        return "A NFC-e desta venda já foi autorizada."
+    if str(order.status) in ("cancelled", "returned"):
+        return "Venda cancelada ou devolvida não emite NFC-e."
+    if is_test_order(order):
+        return "Pedido de teste não emite NFC-e."
+    if not fiscal_pool.get_backend():
+        return "A emissão de NFC-e não está configurada nesta loja."
+    if order.created_at and timezone.now() - order.created_at > timedelta(hours=ISSUE_OVERRIDE_MAX_AGE_HOURS):
+        return (
+            f"A emissão avulsa vale para vendas das últimas {ISSUE_OVERRIDE_MAX_AGE_HOURS} horas. "
+            "Para esta, fale com o contador."
+        )
+    if state is None:
+        state = fiscal_state(order)
+    if state != FISCAL_STATE_NOT_EXPECTED:
+        return "Esta venda já tem NFC-e em andamento."
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return "O pagamento desta venda ainda não confirmou. A nota só sai depois."
+    return ""
 
 
 def emit(order) -> None:

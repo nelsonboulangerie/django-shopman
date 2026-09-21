@@ -2616,6 +2616,58 @@ class POSResendFiscalEmailView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Issue the NFC-e the emission rule skipped (manager-approved, from the POS recent sales)",
+        responses={
+            200: OpenApiResponse(description="Emission queued."),
+            404: OpenApiResponse(description="Order not found."),
+            409: OpenApiResponse(description="Refused: already issued, cancelled, too old, payment pending or fiscal not configured."),
+            422: OpenApiResponse(description="Manager approval missing or invalid."),
+        },
+    ),
+)
+class POSEmitFiscalView(APIView):
+    """Emissão avulsa da NFC-e — a venda que a regra da casa não emitiu.
+
+    A regra padrão emite só a pedido; quando o cliente volta pedindo a nota, o
+    balcão emite por aqui. Sempre sob o desafio gerencial (crachá ou PIN, o
+    MESMO ``validate_manager_override`` do cancelamento), e quem assina é o
+    aprovador que o validador devolveu, nunca o nome do corpo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(ref=ref, channel_ref=POS_CHANNEL_REF).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                request.data.get("manager_approval"),
+                operator_username=_username(request),
+                action="emit_fiscal",
+                message="A emissão avulsa da NFC-e exige a autorização de um gerente.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        try:
+            orders_service.emit_fiscal_on_demand(
+                order, actor=_actor_pos(request), approved_by_username=approver.get_username(),
+            )
+        except OrderError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response({
+            "ok": True,
+            "order_ref": order.ref,
+            "detail": f"NFC-e de {order.ref} na fila. A nota sai com a data e a hora de agora.",
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Resend the payment-link notice from the POS",
         responses={
             200: OpenApiResponse(description="Notice queued again."),

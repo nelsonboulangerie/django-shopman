@@ -1140,6 +1140,16 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="none",
         ),
         Action(
+            ref="emit_fiscal",
+            kind="mutation",
+            label="Emitir NFC-e não pedida",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",
+            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
+            idempotency="none",
+        ),
+        Action(
             ref="open_cash_shift",
             kind="mutation",
             label="Abrir caixa",
@@ -2712,6 +2722,7 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
 
     from shopman.backstage.projections.order_queue import _fiscal_status
     from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
+    from shopman.shop.services import fiscal as fiscal_service
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
@@ -2752,6 +2763,9 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             "can_print_danfe": bool(data.get("nfce_access_key")),
             "can_resend_email": bool(data.get("nfce_access_key")),
             "can_requeue_fiscal": fiscal_status == "failed",
+            # Emissão avulsa: a regra da casa não emitiu, e o gerente pode mandar
+            # emitir. O MESMO predicado que o endpoint impõe de novo, na trava.
+            "can_emit_fiscal": not fiscal_service.issue_override_refusal(order, state=fiscal_state),
             # A correção sobrevive à saída da tela de resultado: a lista anuncia
             # o desfazer para a venda ainda DENTRO da janela — o mesmo predicado
             # que o cancel impõe (`recent_sale_cancellable`).
