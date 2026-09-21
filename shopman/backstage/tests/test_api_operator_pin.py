@@ -58,6 +58,39 @@ class POSOperatorApiTests(TestCase):
         resp = self.client.post(UNLOCK, {"operator_id": baker.pk, "pin": "5555", "perm": POS_PERM})
         self.assertEqual(resp.status_code, 403)
 
+    def _superuser_with_pin_and_badge(self):
+        dono = User.objects.create_user(
+            "admin", password="x", is_staff=True, is_superuser=True, first_name="Admin"
+        )
+        PinCredential.set_for(dono, "1234")
+        cred = PinCredential.objects.get(user=dono)
+        cred.set_badge("abcdef012345")
+        cred.save(update_fields=["badge_hash"])
+        return dono
+
+    def test_superuser_nao_destrava_por_pin(self):
+        """Superusuário não é operador de balcão: a sessão que sairia do PIN
+        herdaria `has_perm` sempre True (backup com dado de cliente, reset de PIN
+        alheio). O seed dava a ele o mesmo 1234 do balcão inteiro."""
+        dono = self._superuser_with_pin_and_badge()
+        for perm in (POS_PERM, ""):
+            resp = self.client.post(UNLOCK, {"operator_id": dono.pk, "pin": "1234", "perm": perm})
+            self.assertEqual(resp.status_code, 403, perm)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_superuser_nao_destrava_por_cracha(self):
+        self._superuser_with_pin_and_badge()
+        resp = self.client.post(UNLOCK, {"badge": "abcdef012345", "perm": POS_PERM})
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_superuser_fora_do_seletor_da_tela_de_bloqueio(self):
+        self._superuser_with_pin_and_badge()
+        resp = self.client.get("/api/v1/backstage/operator/eligible/", {"perm": POS_PERM})
+        self.assertEqual(resp.status_code, 200)
+        names = [o["username"] for o in resp.json()["operators"]]
+        self.assertEqual(names, ["ana"])
+
     def test_projection_reflects_active_operator_then_lock(self):
         self.client.post(UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM})
         pos = self.client.get("/api/v1/backstage/pos/")

@@ -51,8 +51,12 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 
     ``perm`` filters to the surface's permission (default POS). Pass ``None`` for
     every credentialed staff operator (the per-action gate enforces the rest).
+
+    Superusuário fica de fora: ver ``_eligible``.
     """
-    qs = User.objects.filter(is_staff=True, is_active=True, pin_credential__isnull=False)
+    qs = User.objects.filter(
+        is_staff=True, is_active=True, is_superuser=False, pin_credential__isnull=False
+    )
     if perm:
         qs = qs.filter(
             pk__in=User.objects.with_perm(
@@ -66,6 +70,14 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 
 def _eligible(user, perm: str | None) -> bool:
     if user is None or not user.is_active or not user.is_staff:
+        return False
+    # Superusuário não é operador de balcão. O PIN é credencial de balcão (curta,
+    # digitada à vista da fila) e a sessão que sai dele herda tudo da conta: para
+    # um superusuário, ``has_perm`` é sempre True — backup com dado de cliente,
+    # apuração, reset de PIN alheio. É a mesma recusa que ``reset_operator_pin``
+    # e ``station_trust.autonomous_account`` já fazem; faltava no destrave, no
+    # crachá e na assinatura de gerente. O dono entra por senha.
+    if user.is_superuser:
         return False
     if perm and not user.has_perm(perm):
         return False

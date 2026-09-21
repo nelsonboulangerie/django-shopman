@@ -577,8 +577,11 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
 
     from shopman.backstage.services.operator import eligible_operators, verify_operator_pin
 
+    # `cashman.operate_pos`, e não `backstage.operate_pos`: a permissão do PDV
+    # mora no cashman (ADR-022). A permissão inexistente passava só porque o
+    # `admin` superusuário tem `has_perm` sempre True — e era ele quem destravava.
     for perm in (
-        "backstage.operate_pos",
+        "cashman.operate_pos",
         "backstage.operate_kds",
         "backstage.operate_production",
     ):
@@ -587,14 +590,13 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
         assert any(verify_operator_pin(u, "1234", required_perm=perm) for u in operators), (
             f"PIN 1234 não destrava {perm}"
         )
+        assert all(not u.is_superuser for u in operators)
 
-    # O superuser 'admin' também opera — PIN destrava qualquer superfície.
+    # O superusuário NÃO destrava por PIN: não é operador de balcão, e a sessão
+    # que sairia do PIN herdaria `has_perm` sempre True. Ele entra por senha.
     admin = User.objects.get(username="admin")
-    assert verify_operator_pin(admin, "1234", required_perm="backstage.operate_pos")
-    assert verify_operator_pin(admin, "1234", required_perm="backstage.operate_kds")
-
-    # PIN errado nunca destrava.
-    assert not verify_operator_pin(admin, "0000", required_perm="backstage.operate_pos")
+    assert not verify_operator_pin(admin, "1234", required_perm="cashman.operate_pos")
+    assert not verify_operator_pin(admin, "1234", required_perm=None)
 
 
 @pytest.mark.django_db

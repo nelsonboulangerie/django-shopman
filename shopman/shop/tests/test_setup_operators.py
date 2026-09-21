@@ -73,12 +73,35 @@ def test_o_dono_audita_e_o_gerente_nao(elenco):
     assert "Dono" in [g.name for g in elenco["admin"].groups.all()]
 
 
-def test_todos_tem_pin_para_destravar_a_superficie(elenco):
+def test_todo_operador_de_balcao_tem_pin_e_o_superusuario_nao(elenco):
+    """O PIN é credencial de balcão; o superusuário não é operador de balcão.
+
+    O destrave recusa superusuário (`backstage.services.operator._eligible`): um
+    PIN 1234 na conta que tem `has_perm` sempre True era a chave-mestra que todo
+    o balcão conhecia. PIN ali seria credencial morta — então não nasce, e o de
+    uma rodada antiga sai.
+    """
     from shopman.doorman.models import PinCredential
 
-    for user in elenco.values():
+    for username, user in elenco.items():
+        if user.is_superuser:
+            assert not PinCredential.objects.filter(user=user).exists(), username
+            continue
         cred = PinCredential.objects.get(user=user)
         assert cred.verify(setup_operators.DEV_PIN)
+
+
+def test_rodada_nova_apaga_o_pin_que_o_superusuario_tinha():
+    from shopman.doorman.models import PinCredential
+
+    admin = get_user_model().objects.create_user(
+        username="admin", password="forte", is_staff=True, is_superuser=True
+    )
+    PinCredential.set_for(admin, setup_operators.DEV_PIN)
+
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    assert not PinCredential.objects.filter(user=admin).exists()
 
 
 def test_quem_inicia_dispositivo_tem_senha_e_o_balcao_so_PIN(elenco):
@@ -166,15 +189,18 @@ def test_permissao_avulsa_antiga_e_LIMPA(elenco):
 # ── Crachá ────────────────────────────────────────────────────────────────
 
 
-def test_todos_saem_com_cracha_emitido(elenco):
+def test_todo_operador_de_balcao_sai_com_cracha_emitido(elenco):
     """A máquina de ler crachá estava pronta; faltava CRACHÁ.
 
     Sem token emitido, passar o leitor não acha ninguém — e a tela parece
-    quebrada quando o que falta é o cadastro.
+    quebrada quando o que falta é o cadastro. O superusuário fica de fora: o
+    destrave recusa a conta dele, por PIN ou por crachá.
     """
     from shopman.doorman.models import PinCredential
 
     for username, user in elenco.items():
+        if user.is_superuser:
+            continue
         cred = PinCredential.objects.get(user=user)
         assert cred.badge_hash, f"{username} sem crachá"
 

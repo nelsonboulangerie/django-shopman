@@ -161,7 +161,7 @@ qualquer permissão avulsa que alguém tenha dado à mão:
 
 | Usuário | Grupo | Entra com |
 |---|---|---|
-| `admin` | **Dono** (+ superusuário) | senha `admin`, PIN `1234`, crachá emitido |
+| `admin` | **Dono** (+ superusuário) | só senha `admin` — superusuário não destrava por PIN nem crachá |
 | `joyce` | **Gerente** | só PIN `1234` |
 | `fran` | **Caixa** (loja) | PIN `1234`, crachá emitido |
 | `diofer` | **Cozinha** (produção) | PIN `1234`, crachá emitido |
