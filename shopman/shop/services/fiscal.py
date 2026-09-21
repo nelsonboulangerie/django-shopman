@@ -327,6 +327,7 @@ def cancel(order) -> None:
         return
 
     if not (order.data or {}).get("nfce_access_key"):
+        _verify_failed_emission(order)
         return
 
     if (order.data or {}).get("nfce_cancelled"):
@@ -338,6 +339,36 @@ def cancel(order) -> None:
     )
 
     logger.info("fiscal.cancel: queued for order %s", order.ref)
+
+
+def _verify_failed_emission(order) -> None:
+    """Venda desfeita sem chave, mas com emissão que já tentou: a nota pode existir.
+
+    Uma emissão que parou em ``failed`` depois de um POST (timeout pós-emissão,
+    janela de retry esgotada) pode ter deixado a nota AUTORIZADA na SEFAZ sem
+    que a resposta chegasse. Sem chave, não há o que cancelar — e ninguém mais
+    olharia. A directive volta para a fila com ``attempts=1``: o handler vê o
+    pedido desfeito, só CONSULTA o Focus pela referência (nunca POSTa) e, se a
+    nota existir, grava a chave e enfileira o cancelamento.
+
+    Directive viva (``queued``/``running``) não precisa disto: o próprio
+    handler faz a mesma consulta quando o pedido chega desfeito.
+    """
+    from django.utils import timezone
+    from shopman.orderman.models import Directive
+
+    directive = (
+        Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if directive is None or directive.status != "failed" or int(directive.attempts or 0) < 1:
+        return
+    directive.status = "queued"
+    directive.attempts = 1
+    directive.available_at = timezone.now()
+    directive.save(update_fields=["status", "attempts", "available_at", "updated_at"])
+    logger.info("fiscal.cancel: emissão falha de %s reaberta para consulta", order.ref)
 
 
 def _fiscal_customer(data: dict) -> dict:

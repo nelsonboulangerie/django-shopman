@@ -79,17 +79,27 @@ class NFCeEmitHandler:
             self._send_receipt_email(order)
             return
 
+        # attempts > 1 (não > 0): o dispatcher incrementa attempts para 1 ANTES
+        # de chamar o handler, então a PRIMEIRA execução já chega com attempts=1;
+        # só a partir da 2ª (re-claim após transiente) é retry de verdade — e
+        # só então pode existir um POST anterior com a resposta perdida.
+        is_retry = int(getattr(message, "attempts", 0) or 0) > 1
+
         if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
+            # Venda desfeita enquanto a emissão estava em retry: o POST anterior
+            # pode ter AUTORIZADO a nota (timeout pós-emissão). Recusar sem
+            # consultar deixava nota válida na SEFAZ sem chave no pedido e sem
+            # cancelamento — ``fiscal.cancel`` não age sem a chave. Nunca POSTa
+            # para pedido desfeito: só consulta, adota e cancela.
+            if is_retry and self._adopt_for_cancellation(order, order_ref):
+                return
             raise DirectiveTerminalError(
                 f"Pedido {order_ref} está {order.status}: não emitir NFC-e."
             )
 
         # Retry: o POST anterior pode ter emitido e a resposta se perdido
         # (timeout/worker morto). Consultar antes de re-POSTar com o mesmo ref.
-        # attempts > 1 (não > 0): o dispatcher incrementa attempts para 1 ANTES
-        # de chamar o handler, então a PRIMEIRA execução já chega com attempts=1;
-        # só a partir da 2ª (re-claim após transiente) é retry de verdade.
-        if int(getattr(message, "attempts", 0) or 0) > 1:
+        if is_retry:
             if self._adopt_existing(order, order_ref):
                 return
 
@@ -102,7 +112,7 @@ class NFCeEmitHandler:
 
         if result.success:
             self._record(order, result)
-            self._send_receipt_email(order)
+            self._after_authorized(order)
             return
 
         if result.error_code in _REFERENCE_CONFLICT_CODES:
@@ -136,10 +146,55 @@ class NFCeEmitHandler:
         status = query(reference=order_ref)
         if status.success and status.access_key:
             self._record(order, status)
-            self._send_receipt_email(order)
+            self._after_authorized(order)
             logger.info("fiscal.emit: nota existente adotada via consulta order=%s", order_ref)
             return True
         return False
+
+    def _adopt_for_cancellation(self, order, order_ref: str) -> bool:
+        """Pedido desfeito com POST anterior: a nota existe? Então adote e cancele.
+
+        ``True`` quando adotou (a directive de emissão termina ``done`` e a de
+        cancelamento fica na fila). Nota ainda em processamento ou Focus fora é
+        transiente: consultar de novo, porque recusar agora é o que deixava a
+        nota órfã. Sem nota, ``False`` — a recusa terminal segue no chamador.
+        """
+        query = getattr(self.backend, "query_status", None)
+        if query is None:
+            return False
+        status = query(reference=order_ref)
+        if status.success and status.access_key:
+            self._record(order, status)
+            self._after_authorized(order)
+            logger.warning(
+                "fiscal.emit: nota autorizada de pedido desfeito adotada para cancelamento order=%s",
+                order_ref,
+            )
+            return True
+        if _is_transient(status.error_code):
+            raise DirectiveTransientError(
+                f"Pedido {order_ref} desfeito com NFC-e sem resposta ({status.error_code}): "
+                "consultar de novo antes de encerrar."
+            )
+        return False
+
+    def _after_authorized(self, order) -> None:
+        """Nota gravada: pedido vivo recebe o e-mail; pedido desfeito, o cancelamento.
+
+        A venda pode ter sido desfeita com o POST em voo — ``_on_cancelled``
+        chamou ``fiscal.cancel`` quando ainda não havia chave, e ninguém mais
+        pediria o cancelamento desta nota. O status vem da linha, não do
+        objeto lido no início do ``handle``.
+        """
+        from shopman.orderman.models import Order
+
+        order.status = Order.objects.values_list("status", flat=True).get(pk=order.pk)
+        if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
+            from shopman.shop.services import fiscal
+
+            fiscal.cancel(order)
+            return
+        self._send_receipt_email(order)
 
     def _send_receipt_email(self, order) -> None:
         """Nota autorizada + cliente pediu e-mail → o Focus envia (DANFE + XML).
