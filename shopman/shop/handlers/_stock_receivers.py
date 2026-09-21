@@ -13,29 +13,67 @@ from shopman.shop.handlers._resilient import resilient_receiver
 logger = logging.getLogger(__name__)
 
 
+def _overbooked_holds_on_production_quants(product_ref, date):
+    """Reservas que o cancelamento deixou SEM lastro, e só elas.
+
+    Os quants de produção são compartilhados por todas as fornadas do mesmo
+    SKU/data/posição (``StockMovements.receive`` faz get_or_create), e a ponte
+    craftsman→stockman já subtraiu deles a contribuição da fornada cancelada.
+    O que sobra de reserva acima do saldo é o que perdeu lastro: soltar isso e
+    nada mais. Ficam de fora, por construção:
+
+    - o estoque FÍSICO (quant sem ``target_date``) — a vitrine não mudou; a
+      reserva de um pedido pago sobre ela continua valendo;
+    - as reservas cobertas pelas outras fornadas do dia;
+    - as de DEMANDA (``quant=None``), que não se apoiam em fornada alguma.
+
+    Dentro do quant, solta primeiro a sacola (reserva de sessão), depois o
+    pedido, e da mais nova para a mais antiga: quem reservou primeiro fica.
+    """
+    from decimal import Decimal
+
+    from shopman.stockman import Hold
+    from shopman.stockman.models import Quant
+
+    doomed = []
+    quants = Quant.objects.filter(sku=product_ref, target_date=date)
+    for quant in quants:
+        active = list(Hold.objects.filter(quant=quant).active().order_by("-pk"))
+        excess = sum((h.quantity for h in active), Decimal("0")) - quant.quantity
+        if excess <= 0:
+            continue
+
+        def _is_order(hold):
+            return str((hold.metadata or {}).get("reference") or "").startswith("order:")
+
+        for hold in sorted(active, key=_is_order):  # estável: sacolas antes, mais nova primeiro
+            if excess <= 0:
+                break
+            doomed.append(hold)
+            excess -= hold.quantity
+    return doomed
+
+
 @resilient_receiver
 def on_production_voided(sender, product_ref, date, action, work_order, **kwargs):
-    """When production is voided, release demand holds and notify sessions with planned holds.
+    """Fornada cancelada: solta só as reservas que ela deixou sem lastro.
+
+    Roda DEPOIS da ponte craftsman→stockman (``shopman.craftsman.contrib.stockman``
+    vem antes de ``shopman.shop`` no ``INSTALLED_APPS``), que já tirou dos quants
+    de produção a contribuição desta fornada. Ver
+    ``_overbooked_holds_on_production_quants`` para o que fica e o que sai.
 
     Best-effort por desenho (a liberação de cada hold já é engolida em DEBUG); o
     wrapper fecha o único ponto que faltava — a query de topo — para o void de
     uma WO nunca abortar a cadeia de receivers nem o caller.
     """
-    if action != "voided":
+    if action != "voided" or not date:
         return
 
-    from shopman.stockman import Hold, HoldStatus
     from shopman.stockman.service import Stock as stock
 
-    # Find pending holds for this SKU/date that are linked to planned quants
-    holds = Hold.objects.filter(
-        sku=product_ref,
-        target_date=date,
-        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-    )
-
     session_keys = set()
-    for hold in holds:
+    for hold in _overbooked_holds_on_production_quants(product_ref, date):
         ref = (hold.metadata or {}).get("reference")
         if ref:
             session_keys.add(ref)
