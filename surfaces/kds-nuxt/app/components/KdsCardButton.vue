@@ -4,10 +4,11 @@
 // Numa linha da grade todos caem na mesma altura, ao alcance do polegar.
 //
 // Tons — cor só onde tem significado:
-//  - `invite`  convite para começar, CONTORNADO em primary: "Iniciar preparo".
-//    Decisão do Pablo (21/09, #913): numa grade cheia de pedidos novos o
-//    botão sólido virava uma parede amarela; contornado, o convite segue
-//    visível e o único sólido da grade é o ato que tira o pedido da tela.
+//  - `invite`  convite para começar, CONTORNADO na MESMA cor do `confirm`:
+//    "Iniciar preparo". Decisão do Pablo (21/09, #913 e seguimento): numa
+//    grade cheia de pedidos novos o botão sólido virava uma parede amarela.
+//    Os dois atos do preparo têm uma cor só; o que os separa é contorno ×
+//    preenchimento, e o único sólido da grade é o ato que tira o pedido da tela.
 //  - `confirm` o ato que tira o pedido da tela (neutro invertido): "Finalizar
 //    preparo", "Despachar pedido", "Entregar pedido".
 //  - `outline` o gesto de volta: "Desfazer".
@@ -31,7 +32,7 @@ const props = withDefaults(
 defineEmits<{ click: [event: MouseEvent] }>();
 
 const TONES: Record<Exclude<KdsCardButtonTone, "inert">, string> = {
-  invite: "border-2 border-primary/70 text-primary hover:bg-primary/10 active:bg-primary/20",
+  invite: "border-2 border-foreground text-foreground hover:bg-foreground/10 active:bg-foreground/20",
   confirm: "bg-foreground text-background hover:bg-foreground/90 active:bg-foreground/80",
   outline: "border bg-card hover:bg-accent active:bg-accent/70",
   blocked: "border border-destructive/50 bg-destructive/10 text-destructive dark:text-red-300",
