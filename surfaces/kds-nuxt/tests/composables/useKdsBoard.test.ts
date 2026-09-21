@@ -355,3 +355,56 @@ describe("KDS_ALERT — a fanfarra escolhida pelo dono", () => {
     }
   });
 });
+
+/** EventSource de mentira: `failForGood` é a reconexão que recebeu 502 (CLOSED). */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  listeners = new Map<string, Array<() => void>>();
+  close = vi.fn(() => { this.readyState = 2; });
+  constructor(public url: string) { FakeEventSource.instances.push(this); }
+  addEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), handler]);
+  }
+  emit(name: string) { for (const handler of this.listeners.get(name) ?? []) handler(); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  failForGood() { this.readyState = 2; this.onerror?.(); }
+}
+
+/** Monta o composable com lifecycle e browser mínimos, e devolve o desmontar. */
+async function withMountedBrowser<T>(build: () => T): Promise<{ value: T; unmount: () => void }> {
+  const mounts: Array<() => void> = [];
+  const unmounts: Array<() => void> = [];
+  FakeEventSource.instances = [];
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounts.push(callback); });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmounts.push(callback); });
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { ...listeners, title: "", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  const value = build();
+  mounts.forEach((callback) => callback());
+  return { value, unmount: () => unmounts.forEach((callback) => callback()) };
+}
+
+describe("useKdsBoard — SSE da estação", () => {
+  beforeEach(() => { env.reset(); vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("recria o stream depois do 502 de deploy e refaz a leitura na reabertura", async () => {
+    const { unmount } = await withMountedBrowser(() => useKdsBoard("forno"));
+    try {
+      expect(FakeEventSource.instances[0]!.url).toBe("/sse/kds/forno");
+      FakeEventSource.instances[0]!.open();
+      FakeEventSource.instances[0]!.failForGood();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      env.refresh.mockClear();
+      FakeEventSource.instances[1]!.open();
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+});

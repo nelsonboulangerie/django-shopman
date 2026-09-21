@@ -41,6 +41,7 @@ O layer contribui, via auto-import do Nuxt:
 | `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
 | `server/utils/operatorSecurity.ts` | `operatorResponseHeaders`, `applyPrivateNoStore` | política testável de headers e preservação de `Vary` no BFF |
 | `server/utils/eventStream.ts` | `proxyEventStream` | streaming SSE same-origin do eventstream do Django |
+| `app/utils/resilientEventSource.ts` | `openResilientEventSource` | o lado do browser: EventSource que se recria com backoff (2 s → 60 s) depois de um não-200 na reconexão (502 de deploy) ou de um `stream-error` (canal recusado), e avisa a reabertura para o chamador refazer o fetch canônico |
 | `server/routes/health/live.get.ts` | — | `/health/live`: processo/BFF vivo, sem chamar o Django — é o health check da plataforma |
 | `server/routes/health/ready.get.ts` | — | `/health/ready`: BFF + `/health/ready/` do Django (smoke e diagnóstico, nunca health check da plataforma) |
 | `server/utils/healthProbe.ts` | `ProbeRateLimiter`, `checkDjangoReadiness`, `respondHealthLive`, `respondHealthReady` | corpo pobre (`ok`/`fail`), `no-store` e limitador em memória dos probes |
