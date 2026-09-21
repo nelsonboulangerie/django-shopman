@@ -254,7 +254,15 @@ def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
         directive.error_code = ""
         directive.last_error = ""
         directive.available_at = timezone.now()
-        directive.save(update_fields=["payload", "status", "error_code", "last_error", "available_at", "updated_at"])
+        # O reprocesso reabre a janela de retry inteira. Sem isto, a directive
+        # que esgotou as tentativas voltava com ``attempts`` no teto: um
+        # transiente a mais (Focus ainda instável) e ela morria de novo, sem
+        # espera nenhuma. Volta para 1, não para 0: a tentativa que falhou
+        # conta como a primeira, e o handler só consulta o Focus antes de
+        # re-POSTar a partir da segunda (``attempts > 1``) — um POST anterior
+        # pode ter autorizado a nota com a resposta perdida.
+        directive.attempts = 1
+        directive.save(update_fields=["payload", "status", "error_code", "last_error", "available_at", "attempts", "updated_at"])
     else:
         fiscal.emit(order)
     current = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
