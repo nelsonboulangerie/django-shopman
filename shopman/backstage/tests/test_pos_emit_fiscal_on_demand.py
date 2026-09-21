@@ -152,14 +152,55 @@ def test_segundo_pedido_nao_duplica_a_emissao(client, counter, backend):
 # ── Recusas honestas (e a autorização não fica gravada à toa) ─────────────
 
 
-def test_venda_de_mais_de_24_horas_recusa(client, counter, backend):
+def _yesterday_noon():
+    return timezone.make_aware(
+        timezone.datetime.combine(timezone.localdate() - timedelta(days=1), timezone.datetime.min.time())
+    ) + timedelta(hours=12)
+
+
+def test_venda_de_ontem_recusa_no_padrao_mesmo_dia(client, counter, backend):
     order = _sale()
-    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(hours=25))
+    Order.objects.filter(pk=order.pk).update(created_at=_yesterday_noon())
     response = _post(client, order.ref, {"username": "pablo", "pin": MANAGER_PIN})
     assert response.status_code == 409
-    assert "24 horas" in response.json()["detail"]
+    assert response.json()["detail"] == "Só dá para emitir nota de venda do mesmo dia."
     order.refresh_from_db()
     assert fiscal.ISSUE_OVERRIDE_KEY not in (order.data.get("fiscal") or {})
+
+
+def test_o_dia_e_o_da_loja_nao_24_horas_corridas(counter, backend):
+    """Venda de ontem há menos de 24 h continua fora; a de hoje cedo continua dentro."""
+    ontem = _sale("PDV-ONTEM")
+    hoje = _sale("PDV-HOJE")
+    Order.objects.filter(pk=ontem.pk).update(
+        created_at=timezone.make_aware(
+            timezone.datetime.combine(timezone.localdate() - timedelta(days=1), timezone.datetime.max.time())
+        )
+    )
+    Order.objects.filter(pk=hoje.pk).update(
+        created_at=timezone.make_aware(timezone.datetime.combine(timezone.localdate(), timezone.datetime.min.time()))
+    )
+    ontem.refresh_from_db()
+    hoje.refresh_from_db()
+    assert fiscal.issue_override_refusal(ontem) == "Só dá para emitir nota de venda do mesmo dia."
+    assert fiscal.issue_override_refusal(hoje) == ""
+
+
+def test_prazo_configurado_no_admin_estica_a_janela(client, counter, backend):
+    shop = Shop.objects.get()
+    shop.defaults = {"pos": {"late_fiscal_emission_days": 1}}
+    shop.save(update_fields=["defaults"])
+    order = _sale()
+    Order.objects.filter(pk=order.pk).update(created_at=_yesterday_noon())
+    # A lista alcança o prazo (senão a venda de ontem sumiria antes de vencer).
+    listed = {s["order_ref"]: s for s in client.get("/api/v1/backstage/pos/recent-sales/").json()["sales"]}
+    assert listed[order.ref]["can_emit_fiscal"] is True
+    assert _post(client, order.ref, {"username": "pablo", "pin": MANAGER_PIN}).status_code == 200
+
+    anteontem = _sale("PDV-ANTEONTEM")
+    Order.objects.filter(pk=anteontem.pk).update(created_at=_yesterday_noon() - timedelta(days=1))
+    anteontem.refresh_from_db()
+    assert fiscal.issue_override_refusal(anteontem) == "Só dá para emitir nota de venda de até 1 dia atrás."
 
 
 def test_nota_ja_autorizada_recusa(client, counter, backend):

@@ -93,8 +93,10 @@ export function resolveFiscalState(
  * ⚠️ `not_expected` é o COMPORTAMENTO PADRÃO da casa (nota só quando pedem: nota,
  * CPF ou comprovante), não um defeito. Um rótulo de ausência lê como falta — o
  * operador veria uma venda normal marcada como se algo tivesse dado errado.
- * "NFC-e não pedida" diz o fato sem alarme e já aponta o porquê, no mesmo vocabulário dos
- * outros quatro estados; o alarme fica com quem merece (`failed`), e o chip
+ * "Emissão não estabelecida" (escolha do Pablo) diz o fato sem alarme: a regra
+ * não estabeleceu nota para esta venda. NÃO "revogada" — no vocabulário fiscal
+ * isso é nota que existiu e foi desfeita, rótulo que mente. O mesmo texto da
+ * pill do Gestor de Pedidos (`order_queue._FISCAL_PILL`); o alarme fica com quem merece (`failed`), e o chip
  * continua neutro (`not_requested` em `PosRecentSales`). Se o cliente voltar
  * pedindo, a emissão avulsa sai da mesma lista, com gerente.
  */
@@ -104,7 +106,7 @@ export function fiscalStateLabel(state: PosFiscalState): string {
     case "queued": return "NFC-e na fila";
     case "awaiting_payment": return "NFC-e aguarda o pagamento";
     case "failed": return "NFC-e falhou";
-    default: return "NFC-e não pedida";
+    default: return "Emissão não estabelecida";
   }
 }
 

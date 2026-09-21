@@ -479,6 +479,18 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "Também depende do adapter fiscal estar pronto."
         ),
     )
+    fields["defaults_pos_late_fiscal_emission_days"] = forms.IntegerField(
+        label="Emissão avulsa de NFC-e: dias depois da venda",
+        required=False,
+        min_value=0,
+        max_value=30,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text=(
+            "Até quando o gerente pode mandar emitir, pelas Últimas vendas do PDV, a nota de uma "
+            "venda que não a pediu. 0 = só no mesmo dia da venda; 1 = até o dia seguinte; e assim "
+            "por diante. Em branco = mesmo dia. A nota sai com a data e a hora da emissão."
+        ),
+    )
     tier_help = {
         "silver": "Pontos acumulados (na vida toda) para o cliente chegar ao nível Prata.",
         "gold": "Pontos acumulados para chegar ao nível Ouro.",
@@ -1079,6 +1091,11 @@ class ShopForm(forms.ModelForm):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
 
+        if self._has("defaults_pos_late_fiscal_emission_days"):
+            pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
+            # Mostra o GRAVADO; ausente fica em branco (= mesmo dia, dito na ajuda).
+            self.fields["defaults_pos_late_fiscal_emission_days"].initial = pos_cfg.get("late_fiscal_emission_days")
+
         if self._has("defaults_marketing_whatsapp_minimum_audience"):
             marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
             # Mostra o que está GRAVADO; ausente fica em branco com o padrão no
@@ -1539,7 +1556,11 @@ class ShopForm(forms.ModelForm):
                 rules[key] = _reais_to_q(self.cleaned_data.get(field_name))
             defaults["rules"] = rules
 
-        if self._has("defaults_pos_discount_approval_threshold_q") or self._has("defaults_pos_fiscal_toggle"):
+        if (
+            self._has("defaults_pos_discount_approval_threshold_q")
+            or self._has("defaults_pos_fiscal_toggle")
+            or self._has("defaults_pos_late_fiscal_emission_days")
+        ):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             pos_cfg = dict(pos_cfg)
             if self._has("defaults_pos_discount_approval_threshold_q"):
@@ -1555,6 +1576,12 @@ class ShopForm(forms.ModelForm):
                     # Desligado = ausente (mesma semântica de _pos_fiscal_toggle_enabled,
                     # que trata a chave faltando como False) — mantém defaults compactos.
                     pos_cfg.pop("fiscal_toggle", None)
+            if self._has("defaults_pos_late_fiscal_emission_days"):
+                late_days = self.cleaned_data.get("defaults_pos_late_fiscal_emission_days")
+                if late_days is None:
+                    pos_cfg.pop("late_fiscal_emission_days", None)
+                else:
+                    pos_cfg["late_fiscal_emission_days"] = int(late_days)
             if pos_cfg:
                 defaults["pos"] = pos_cfg
             else:
@@ -2036,11 +2063,16 @@ _POS_FIELDSETS = (
     (
         "Ponto de venda (PDV)",
         {
-            "fields": ("defaults_pos_discount_approval_threshold_q", "defaults_pos_fiscal_toggle"),
+            "fields": (
+                "defaults_pos_discount_approval_threshold_q",
+                "defaults_pos_fiscal_toggle",
+                "defaults_pos_late_fiscal_emission_days",
+            ),
             "description": (
                 "Políticas do balcão. O limite de aprovação vale para descontos "
                 "manuais aplicados no PDV — acima dele, é preciso o PIN do gerente. "
-                "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado."
+                "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado. "
+                "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente."
             ),
         },
     ),

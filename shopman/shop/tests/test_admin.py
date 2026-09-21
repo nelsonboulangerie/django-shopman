@@ -1142,6 +1142,49 @@ class TestPosDiscountThresholdPolicy:
         assert _discount_approval_threshold_q() == 0
 
 
+class TestPosLateFiscalEmissionPolicy:
+    """Até quando a emissão avulsa de NFC-e vale — política da loja, no Admin."""
+
+    def test_form_saves_days_to_pos_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import fiscal
+
+        data = _shop_form_data(shop)
+        data["defaults_pos_late_fiscal_emission_days"] = "2"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.defaults["pos"]["late_fiscal_emission_days"] == 2
+        assert fiscal.late_emission_days() == 2
+
+    def test_blank_means_same_day(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import fiscal
+
+        shop.defaults = {"pos": {"late_fiscal_emission_days": 3}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        data["defaults_pos_late_fiscal_emission_days"] = ""
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert "pos" not in saved.defaults
+        assert fiscal.late_emission_days() == 0
+
+    def test_negative_is_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_pos_late_fiscal_emission_days"] = "-1"
+        assert not ShopForm(data=data, instance=shop).is_valid()
+
+    def test_field_lives_on_the_pos_page(self):
+        from shopman.shop.admin.shop import _POS_FIELDSETS
+
+        fields = [f for _, opts in _POS_FIELDSETS for f in opts["fields"]]
+        assert "defaults_pos_late_fiscal_emission_days" in fields
+
+
 class TestStockAlertCooldownPolicy:
     """WP-5b — cooldown de alerta de estoque vira política da loja."""
 

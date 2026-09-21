@@ -73,10 +73,37 @@ def emission_resolver(order) -> bool:
 #: Chave em ``Order.data["fiscal"]``. Ver docs/reference/data-schemas.md.
 ISSUE_OVERRIDE_KEY = "issue_override"
 
-#: A emissão avulsa vale para as vendas da lista "Últimas vendas" (24 horas).
-#: A nota sai com a data e a hora da EMISSÃO (``data_emissao`` do adapter é o
-#: agora), não da venda — quanto mais longe da venda, mais a nota descola dela.
-ISSUE_OVERRIDE_MAX_AGE_HOURS = 24
+#: Chave em ``Shop.defaults["pos"]``: quantos dias DEPOIS do dia da venda a
+#: emissão avulsa ainda vale. ``0`` (e ausente) = só no MESMO dia de operação.
+#: Editada no Admin (Configurações da loja → PDV e alertas).
+LATE_EMISSION_DAYS_KEY = "late_fiscal_emission_days"
+
+
+def late_emission_days() -> int:
+    """Dias além do dia da venda em que a emissão avulsa ainda vale (``0`` = mesmo dia).
+
+    A nota sai com a data e a hora da EMISSÃO (``data_emissao`` do adapter é o
+    agora), não da venda — quanto mais longe da venda, mais a nota descola dela.
+    Por isso o padrão é o mesmo dia, e esticar é decisão da loja, no Admin.
+    Valor ilegível cai no padrão seguro (mesmo dia), nunca em "sem limite".
+    """
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        pos_cfg = (shop.defaults.get("pos") or {}) if shop and isinstance(shop.defaults, dict) else {}
+        raw = pos_cfg.get(LATE_EMISSION_DAYS_KEY)
+        return max(0, int(raw)) if raw is not None else 0
+    except (TypeError, ValueError):
+        logger.warning("fiscal.late_emission_days: valor ilegível em Shop.defaults; usando o mesmo dia")
+        return 0
+
+
+def late_emission_rule_text(days: int) -> str:
+    """A regra por extenso, para a recusa dizer o que vale — não só que não vale."""
+    if days <= 0:
+        return "Só dá para emitir nota de venda do mesmo dia."
+    return f"Só dá para emitir nota de venda de até {days} dia{'s' if days > 1 else ''} atrás."
 
 
 def issue_override(order) -> dict:
@@ -95,8 +122,6 @@ def issue_override_refusal(order, *, state: str | None = None) -> str:
     Só serve para a nota que a regra NÃO emitiu (``not_expected``). Falha tem o
     seu caminho (reprocessar); nota na fila ou esperando o pagamento já vai sair.
     """
-    from datetime import timedelta
-
     from django.utils import timezone
 
     from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
@@ -110,11 +135,13 @@ def issue_override_refusal(order, *, state: str | None = None) -> str:
         return "Pedido de teste não emite NFC-e."
     if not fiscal_pool.get_backend():
         return "A emissão de NFC-e não está configurada nesta loja."
-    if order.created_at and timezone.now() - order.created_at > timedelta(hours=ISSUE_OVERRIDE_MAX_AGE_HOURS):
-        return (
-            f"A emissão avulsa vale para vendas das últimas {ISSUE_OVERRIDE_MAX_AGE_HOURS} horas. "
-            "Para esta, fale com o contador."
-        )
+    if order.created_at:
+        # Dia de OPERAÇÃO, pelo relógio da loja (TIME_ZONE), não UTC nem 24 h
+        # corridas: a venda das 23h e a nota das 0h10 são dias diferentes.
+        days = late_emission_days()
+        sale_day = timezone.localtime(order.created_at).date()
+        if (timezone.localdate() - sale_day).days > days:
+            return late_emission_rule_text(days)
     if state is None:
         state = fiscal_state(order)
     if state != FISCAL_STATE_NOT_EXPECTED:

@@ -1830,7 +1830,7 @@ _FISCAL_PILL = {
     "failed": ("failed", "NFC-e falhou"),
     "queued": ("pending", "NFC-e na fila"),
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
-    "not_expected": ("not_requested", "Fiscal não solicitado"),
+    "not_expected": ("not_requested", "Emissão não estabelecida"),
 }
 
 
