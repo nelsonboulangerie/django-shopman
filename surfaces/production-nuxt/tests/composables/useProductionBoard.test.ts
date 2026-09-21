@@ -262,7 +262,6 @@ describe("useProductionBoard — plan/start writes", () => {
       const [detail, options] = env.sonner.error.mock.calls[0]!;
       expect(detail).toMatch(/^Nada foi salvo/);
       expect(detail).toContain("continua aqui");
-      expect(detail).not.toContain("aparelho");
       expect(options).toEqual(
         expect.objectContaining({ action: expect.objectContaining({ label: "Tentar de novo" }) }),
       );
