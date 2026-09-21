@@ -217,6 +217,20 @@ def _resolve_position(ref: str):
     return Position.objects.filter(ref=ref).first()
 
 
+def _supply_entered_started_batch(work_order) -> bool:
+    """A contribuição desta WO foi movida para o quant ``batch='started'``?
+
+    Só o início EXPLÍCITO emite ``production_changed(action="started")``, que é
+    quem move a contribuição do planejado sem lote para o ``started``. O início
+    IMPLÍCITO do ``finish`` (WO fechada direto do planejado — a avulsa do
+    quiosque) só grava o evento, com ``payload.implicit``: a contribuição dela
+    ainda está no planejado. Debitar do ``started`` nesse caso tira do forno de
+    OUTRA fornada do mesmo SKU/dia e deixa a desta como estoque fantasma.
+    """
+    event = work_order.events.filter(kind="started").order_by("-seq").only("payload").first()
+    return event is not None and not (event.payload or {}).get("implicit")
+
+
 def _find_planned_quant(work_order, product_ref, date):
     """Locate the WO's planned quant.
 
@@ -658,18 +672,20 @@ def _write_off_yield_shortfall(
     # get_quant é lookup por COORDENADA (position=None ⇒ position IS NULL) —
     # o quant started vive na posição da WO. Busca na posição resolvida e,
     # se divergir, cai para o lote started da data em qualquer posição.
-    quant = StockQueries.get_quant(
-        product_ref,
-        target_date=date,
-        position=_resolve_position(work_order.position_ref),
-        batch=STARTED_BATCH,
-    )
-    if quant is None:
-        quant = (
-            Quant.objects.filter(sku=product_ref, target_date=date, batch=STARTED_BATCH, _quantity__gt=0)
-            .order_by("pk")
-            .first()
+    quant = None
+    if _supply_entered_started_batch(work_order):
+        quant = StockQueries.get_quant(
+            product_ref,
+            target_date=date,
+            position=_resolve_position(work_order.position_ref),
+            batch=STARTED_BATCH,
         )
+        if quant is None:
+            quant = (
+                Quant.objects.filter(sku=product_ref, target_date=date, batch=STARTED_BATCH, _quantity__gt=0)
+                .order_by("pk")
+                .first()
+            )
     if quant is None:
         # Quick-finish cria o STARTED apenas no ledger do Craftsman; não há um
         # sinal intermediário que mova o quant planejado para ``batch=started``.
@@ -837,12 +853,15 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
 
         # Find planned quant (may be at position_ref position or default)
         from_position = _resolve_position(work_order.position_ref)
-        quant = StockQueries.get_quant(
-            product_ref,
-            target_date=date,
-            position=from_position,
-            batch=STARTED_BATCH,
-        )
+        in_started = _supply_entered_started_batch(work_order)
+        quant = None
+        if in_started:
+            quant = StockQueries.get_quant(
+                product_ref,
+                target_date=date,
+                position=from_position,
+                batch=STARTED_BATCH,
+            )
         from_batch = STARTED_BATCH if quant is not None else ""
         if quant is None:
             quant = StockQueries.get_quant(
@@ -850,7 +869,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                 target_date=date,
                 position=from_position,
             )
-        if quant is None:
+        if quant is None and in_started:
             quant = StockQueries.get_quant(product_ref, target_date=date, batch=STARTED_BATCH)
             if quant is not None:
                 from_batch = STARTED_BATCH
