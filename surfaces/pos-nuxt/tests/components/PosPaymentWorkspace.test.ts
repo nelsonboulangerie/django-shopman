@@ -749,7 +749,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   it("a bobina e o troco do entregador deixaram de ser legenda de campo", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
         receiptChannels: ["print"],
         fulfillmentType: "delivery",
         paymentCollection: "on_delivery",
@@ -780,7 +780,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
 
     const explicitoFalso = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: false },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: false }, receipt_channels: [] },
         receiptChannels: ["print"],
       }),
     });
@@ -789,12 +789,50 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
 
     const comPalavra = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
         receiptChannels: ["print"],
       }),
     });
     expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
     comPalavra.unmount();
+  });
+
+  // A palavra do servidor mora em `capabilities`, ao lado de
+  // `supports_fiscal_document`. A tela a lia no TOPO do contrato, onde ela
+  // nunca vem: a faixa dizia ao operador que o papel NÃO pedia a nota, com a
+  // regra do servidor emitindo. No topo, ela não conta.
+  it("a promessa lê `capabilities.receipt_requests_emission`, não o topo do contrato", async () => {
+    const noTopo = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(noTopo).text()).not.toContain("imprime sozinha");
+    noTopo.unmount();
+  });
+
+  // "Por e-mail?" pede a nota como "Impressa?" e "CPF na nota?": a faixa diz.
+  it("pedir por e-mail também promete a nota", async () => {
+    const soEmail = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["email"],
+        receiptEmail: "cliente@example.org",
+      }),
+    });
+    expect(avisos(soEmail).text()).toContain("Pedir por e-mail já pede a nota — o e-mail sai assim que autorizar.");
+    soEmail.unmount();
+
+    const osDois = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["print", "email"],
+        receiptEmail: "cliente@example.org",
+      }),
+    });
+    expect(avisos(osDois).text()).toContain("Papel e e-mail já pedem a nota");
+    osDois.unmount();
   });
 
   it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {
