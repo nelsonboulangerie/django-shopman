@@ -303,10 +303,11 @@ describe("KdsTicketCard — a anatomia da expedição", () => {
     expect(action.element.parentElement?.className).toContain("px-4");
   });
 
-  it("Iniciar é contornado; Finalizar é o único sólido (decisão de 21/09)", () => {
+  it("Iniciar e Finalizar têm a mesma cor: um contornado, o outro sólido (decisão de 21/09)", () => {
     const iniciar = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
-    expect(iniciar.classes()).toContain("border-primary/70");
-    expect(iniciar.classes().some((c) => c === "bg-primary")).toBe(false);
+    expect(iniciar.classes()).toContain("border-foreground");
+    expect(iniciar.classes()).toContain("text-foreground");
+    expect(iniciar.classes().some((c) => c === "bg-foreground" || c.includes("primary"))).toBe(false);
     const finalizar = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
     expect(finalizar.classes()).toContain("bg-foreground");
   });
