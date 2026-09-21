@@ -41,6 +41,23 @@ def test_request_code_rate_limit_error_code(customer):
 
 
 @pytest.mark.django_db
+def test_request_code_failure_limit_error_code(customer):
+    """G13 failure budget returns TOO_MANY_FAILURES error code."""
+    from shopman.doorman.exceptions import GateError
+
+    with patch(
+        "shopman.doorman.services.verification.Gates.code_failure_limit",
+        side_effect=GateError("G13"),
+    ):
+        result = AuthService.request_code(
+            target_value=customer.phone,
+            sender=type("S", (), {"send_code": lambda *a: True})(),
+        )
+    assert not result.success
+    assert result.error_code == ErrorCode.TOO_MANY_FAILURES
+
+
+@pytest.mark.django_db
 def test_request_code_cooldown_error_code(customer):
     """G11 cooldown returns COOLDOWN error code."""
     from shopman.doorman.exceptions import GateError

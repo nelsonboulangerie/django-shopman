@@ -29,6 +29,10 @@ class DoormanSettings:
     ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES: int = 15
     ACCESS_CODE_RATE_LIMIT_MAX: int = 5
     ACCESS_CODE_COOLDOWN_SECONDS: int = 60
+    # Wrong codes per target, summed across codes (G13). ``MAX_ATTEMPTS`` is per
+    # code and a resend starts a fresh one; this budget is what a resend can't reset.
+    ACCESS_CODE_MAX_FAILURES_PER_TARGET: int = 15
+    ACCESS_CODE_FAILURE_WINDOW_HOURS: int = 24
 
     # PIN Credential (persistent short-secret for a principal; generic, surface-agnostic)
     PIN_MIN_LENGTH: int = 4
@@ -165,6 +169,10 @@ def validate_settings() -> list[str]:
         errors.append("DOORMAN.ACCESS_CODE_MAX_ATTEMPTS must be > 0")
     if s.ACCESS_CODE_RATE_LIMIT_MAX <= 0:
         errors.append("DOORMAN.ACCESS_CODE_RATE_LIMIT_MAX must be > 0")
+    if s.ACCESS_CODE_MAX_FAILURES_PER_TARGET <= 0:
+        errors.append("DOORMAN.ACCESS_CODE_MAX_FAILURES_PER_TARGET must be > 0")
+    if s.ACCESS_CODE_FAILURE_WINDOW_HOURS <= 0:
+        errors.append("DOORMAN.ACCESS_CODE_FAILURE_WINDOW_HOURS must be > 0")
     if s.ACCESS_LINK_TTL_MINUTES <= 0:
         errors.append("DOORMAN.ACCESS_LINK_TTL_MINUTES must be > 0")
     if s.DEVICE_TRUST_TTL_DAYS <= 0:

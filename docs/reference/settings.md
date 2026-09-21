@@ -160,6 +160,8 @@ de compra todo dia, em silêncio.
 | `ACCESS_CODE_COOLDOWN_SECONDS` | int | `60` | Cooldown entre pedidos de código |
 | `ACCESS_CODE_RATE_LIMIT_MAX` | int | `5` | Máx. códigos por janela |
 | `ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES` | int | `15` | Janela de rate limit |
+| `ACCESS_CODE_MAX_FAILURES_PER_TARGET` | int | `15` | Máx. códigos errados por telefone/e-mail na janela, somados entre códigos — o reenvio não zera (G13) |
+| `ACCESS_CODE_FAILURE_WINDOW_HOURS` | int | `24` | Janela do teto de códigos errados |
 
 ### Device Trust
 

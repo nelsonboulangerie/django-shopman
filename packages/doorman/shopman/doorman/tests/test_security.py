@@ -527,6 +527,52 @@ class TestVerificationCodeLifecycle:
         with pytest.raises(GateError):
             Gates.rate_limit(phone, max_requests=5, window_minutes=15)
 
+    @override_settings(
+        DOORMAN={
+            "ACCESS_CODE_COOLDOWN_SECONDS": 0,
+            "ACCESS_CODE_RATE_LIMIT_MAX": 1000,
+            "ACCESS_CODE_MAX_FAILURES_PER_TARGET": 15,
+        }
+    )
+    def test_resend_does_not_reset_the_failure_budget(self, customer):
+        """Reenviar o código não zera as tentativas: o teto é por telefone.
+
+        Cada reenvio expira o código anterior e nasce outro com 5 tentativas.
+        Sem um contador que atravesse os códigos, pedir → 5 chutes → pedir de
+        novo era força bruta (~2.400 chutes/dia). Aqui, a 4ª rodada não recebe
+        código: 15 erros em 24 h esgotam o número.
+        """
+        from unittest.mock import MagicMock
+
+        from shopman.doorman.error_codes import ErrorCode
+
+        phone = "+5541999999999"
+        for _round in range(3):
+            sent = AuthService.request_code(phone, sender=MagicMock())
+            assert sent.success, sent.error_code
+            for _ in range(5):
+                assert not AuthService.verify_for_login(phone, "not-it", None).success
+
+        blocked = AuthService.request_code(phone, sender=MagicMock())
+        assert not blocked.success
+        assert blocked.error_code == ErrorCode.TOO_MANY_FAILURES
+
+    def test_failure_budget_counts_only_the_window(self, db):
+        phone = "+5541888888888"
+        old = VerificationCode.objects.create(
+            target_value=phone, purpose=VerificationCode.Purpose.LOGIN, attempts=5
+        )
+        VerificationCode.objects.filter(pk=old.pk).update(
+            created_at=timezone.now() - timedelta(hours=25)
+        )
+        VerificationCode.objects.create(
+            target_value=phone, purpose=VerificationCode.Purpose.LOGIN, attempts=4
+        )
+
+        Gates.code_failure_limit(phone, max_failures=5, window_hours=24)
+        with pytest.raises(GateError):
+            Gates.code_failure_limit(phone, max_failures=4, window_hours=24)
+
     def test_rate_limit_by_ip(self, db):
         """Rate limit must block after too many requests per IP."""
         ip = "192.168.1.100"
