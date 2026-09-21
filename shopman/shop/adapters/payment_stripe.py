@@ -567,7 +567,7 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
     stripe = _get_stripe()
 
     try:
-        stripe.PaymentIntent.cancel(intent.gateway_id)
+        _void_on_stripe(stripe, intent)
 
         # A cobrança JÁ morreu no Stripe. Sem a baixa local, o Payman segue com
         # um intent de pé para um pedido que ninguém mais pode pagar, e o
@@ -585,6 +585,55 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
             error_code="stripe_error",
             message=str(e),
         )
+
+
+def _void_on_stripe(stripe, intent) -> None:
+    """Mata a cobrança no Stripe, qualquer que seja o degrau em que ela está.
+
+    ⚠️ Antes do webhook ``checkout.session.completed``, o ``gateway_id`` do
+    Payman é a Checkout Session (``cs_...``), não um PaymentIntent. Chamar
+    ``PaymentIntent.cancel("cs_...")`` era recusado pelo Stripe, o pedido era
+    dado como cancelado e a página de pagamento continuava aberta por 24 h: o
+    cliente ainda concluía o cartão e a autorização ficava retida até vencer.
+
+    - ``pi_...``: cancela o PaymentIntent (anula a autorização).
+    - sessão ``open``: EXPIRA a sessão — ninguém mais conclui aquele checkout.
+    - sessão ``expired``: nada a fazer, já está morta.
+    - sessão ``complete``: o cliente concluiu; cancela o PaymentIntent dela.
+
+    Qualquer recusa sobe como exceção: quem chama não pode jurar cancelamento.
+    """
+    gateway_id = str(intent.gateway_id or "")
+    if gateway_id.startswith("pi_"):
+        stripe.PaymentIntent.cancel(gateway_id)
+        return
+
+    session_id = str((intent.gateway_data or {}).get("checkout_session_id") or "")
+    session_id = session_id or (gateway_id if gateway_id.startswith("cs_") else "")
+    if not session_id:
+        stripe.PaymentIntent.cancel(gateway_id)
+        return
+
+    session = stripe.checkout.Session.retrieve(session_id)
+    if str(getattr(session, "status", "") or "") == "open":
+        try:
+            stripe.checkout.Session.expire(session_id)
+            return
+        except Exception:
+            # O cliente pode ter concluído entre a leitura e o expire: a sessão
+            # deixou de estar aberta. Relê e segue para anular o que nasceu.
+            logger.warning("stripe.checkout_session_expire_failed session=%s", session_id, exc_info=True)
+            session = stripe.checkout.Session.retrieve(session_id)
+    if str(getattr(session, "status", "") or "") == "expired":
+        return
+
+    payment_intent_id = _stripe_object_id(getattr(session, "payment_intent", None))
+    if not payment_intent_id:
+        raise RuntimeError(
+            f"Checkout Session {session_id} sem PaymentIntent e fora do estado aberto "
+            f"(status={getattr(session, 'status', '')!s}); nada a anular."
+        )
+    stripe.PaymentIntent.cancel(payment_intent_id)
 
 
 def get_status(intent_ref: str, **config) -> dict:
