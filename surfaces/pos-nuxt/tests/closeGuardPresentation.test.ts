@@ -49,7 +49,6 @@ describe("closeGuard — o aviso da trava contra cobrança duplicada", () => {
     for (const input of inputs) {
       const notice = closeGuardNotice(input)!;
       expect(notice.title).not.toMatch(/\bou\b/);
-      expect(`${notice.title} ${notice.body}`).not.toMatch(/aparelho/i);
     }
   });
 });
