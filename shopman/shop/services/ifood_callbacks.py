@@ -227,14 +227,18 @@ def fetch_cancellation_reasons(order_id: str) -> list[dict]:
     ``{"cancelCodeId": "...", "description": "..."}``. Use it to discover the
     valid codes to configure ``cancellation_default_code``.
     """
-    headers = ifood_auth.authorized_headers()
-    if not headers:
-        raise IFoodCallbackError("iFood OAuth is not configured (client_id/client_secret)")
-    url = f"{_base_url()}/order/v1.0/orders/{order_id}/cancellationReasons"
-    try:
-        resp = requests.get(url, headers=headers, timeout=int(_cfg().get("timeout") or 30))
-    except requests.RequestException as exc:
-        raise IFoodCallbackError(f"iFood cancellationReasons request failed: {exc}") from exc
+    # Pelo invólucro com retry, não por ``requests`` cru. Medido em 21/09/2026: uma
+    # única recusa de borda do Akamai nesta leitura virou 503 no meio de um
+    # cancelamento com o prazo do iFood correndo, e o operador perdeu a tentativa.
+    # É GET — idempotente —, então também repete em 5xx e queda de transporte.
+    from shopman.shop.services import ifood_http
+
+    resp = ifood_http.request(
+        "GET", f"/order/v1.0/orders/{order_id}/cancellationReasons",
+        label="cancellation_reasons", idempotent=True,
+    )
+    if resp is None:
+        raise IFoodCallbackError("iFood cancellationReasons unavailable after retries (edge, transport or no OAuth)")
     if resp.status_code != 200:
         raise IFoodCallbackError(
             f"iFood cancellationReasons HTTP {resp.status_code}: {resp.text[:200]}"

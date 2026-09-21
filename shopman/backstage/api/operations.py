@@ -1707,6 +1707,15 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
                 if prepare is not None:
                     refusal = prepare()
                     if refusal is not None:
+                        # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
+                        # aplicou nada, e a tela precisa saber disso para liberar a
+                        # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
+                        # motivos) parecia "talvez gravou", o recibo dizia
+                        # "desconhecido" e a tela prendia a intenção até o F5 — foi
+                        # assim que um cancelamento travou na homologação de 21/09.
+                        if isinstance(refusal.data, dict):
+                            refusal.data.setdefault("outcome", "not_applied")
+                            refusal.data.setdefault("intention", key)
                         return refusal
                 result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
         except RemoteMutationConflict as exc:
