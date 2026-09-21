@@ -43,6 +43,7 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ifood_cancellation_notice: "",
     ifood_pickup_code: "",
     ifood_schedule_label: "",
+    ifood_remote_ahead_label: "",
     ifood_negotiations: [],
     payment_status: "pending",
     payment_pending: true,
@@ -240,4 +241,16 @@ it("links negotiations on a completed order without batch or fulfillment actions
   expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
   expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
   expect(w.findAll("button")).toHaveLength(0);
+});
+
+describe("iFood à frente do estado local", () => {
+  // 21/09: o 1416 seguia "Em preparo" um minuto depois de encerrado no iFood.
+  it("mostra a instrução quando o iFood já concluiu", () => {
+    const w = mountCard({ card: card({ channel_ref: "ifood", ifood_remote_ahead_label: "Concluído no iFood · Finalize aqui" }) });
+    expect(w.get("[data-ifood-remote-ahead]").text()).toBe("Concluído no iFood · Finalize aqui");
+  });
+  it("não mostra nada no caso normal", () => {
+    const w = mountCard({ card: card({ channel_ref: "ifood" }) });
+    expect(w.find("[data-ifood-remote-ahead]").exists()).toBe(false);
+  });
 });

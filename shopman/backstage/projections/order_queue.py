@@ -261,6 +261,9 @@ class OrderCardProjection:
     # de ser varredura. Ficam só os dois fatos que decidem algo de relance.
     ifood_pickup_code: str = ""
     ifood_schedule_label: str = ""
+    # O iFood à frente do estado local (concluiu, ou o entregador dele já retirou):
+    # uma linha escrita como instrução. Vazia no caso normal.
+    ifood_remote_ahead_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
     # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
     # operável como qualquer outro e por isso tem de dizer, na tela, que é de
@@ -1373,6 +1376,7 @@ def _build_card(
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_pickup_code=ifood_projection.pickup_code(order),
         ifood_schedule_label=ifood_projection.schedule_label(order),
+        ifood_remote_ahead_label=ifood_projection.remote_ahead_label(order),
         ifood_negotiations=negotiations(order, user=user),
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),

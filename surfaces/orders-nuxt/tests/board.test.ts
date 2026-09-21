@@ -66,6 +66,7 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
     ifood_cancellation_notice: "",
     ifood_pickup_code: "",
     ifood_schedule_label: "",
+    ifood_remote_ahead_label: "",
     ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,

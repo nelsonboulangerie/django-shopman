@@ -176,3 +176,21 @@ def schedule_label(order) -> str:
     day = "Hoje" if start.date() == today else start.strftime("%d/%m")
     window = f"{start:%H:%M}–{end:%H:%M}" if end is not None else f"a partir de {start:%H:%M}"
     return f"Agendado · {day} {window}"
+
+
+def remote_ahead_label(order) -> str:
+    """O iFood já passou deste ponto — dito como instrução, não como segundo status.
+
+    O card mostra o status LOCAL ("Em preparo"). Quando o iFood está à frente, uma
+    linha só diz o que ele já sabe e o que falta fazer aqui. Sem ela, o pedido
+    1416 seguia "Em preparo" um minuto depois de encerrado no iFood (21/09/2026) e
+    parecia pedir trabalho que ninguém precisava mais.
+    """
+    if order.channel_ref != "ifood" or order.status in {"completed", "cancelled", "returned"}:
+        return ""
+    facts = (order.data or {}).get("ifood") or {}
+    if facts.get("remote_concluded"):
+        return "Concluído no iFood · Finalize aqui"
+    if facts.get("remote_dispatched") and order.status in {"new", "accepted", "preparing"}:
+        return "Retirado pelo entregador do iFood · Marque Pronto"
+    return ""
