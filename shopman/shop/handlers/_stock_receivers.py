@@ -80,7 +80,10 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
         try:
             stock.release(hold.hold_id, reason="Produção cancelada")
         except Exception:
-            logger.debug("on_production_voided: could not release hold %s", hold.hold_id)
+            # Reserva sem lastro que não saiu = pão prometido que não vai existir.
+            logger.warning(
+                "on_production_voided: could not release hold %s", hold.hold_id, exc_info=True,
+            )
 
     if not session_keys:
         return
@@ -152,7 +155,7 @@ def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
             if ref:
                 session_keys.add(ref)
                 hold_ids_by_session.setdefault(ref, []).append(hold_id)
-        except (Hold.DoesNotExist, IndexError, ValueError, TypeError):
+        except (Hold.DoesNotExist, IndexError, ValueError, TypeError):  # silêncio-deliberado: hold_id malformado ou já apagado não tem sessão a avisar
             pass
 
     # Encomenda cujo despertador já tocou (ativada na data, baixa pendente de
@@ -266,7 +269,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
         product = Product.objects.filter(sku=sku).first()
         if product is not None:
             product_name = product.name
-    except Exception:
+    except Exception:  # silêncio-deliberado: o aviso degrada para o SKU como nome
         logger.debug("stock_arrived: product lookup failed for sku=%s", sku, exc_info=True)
 
     try:
@@ -334,13 +337,13 @@ def _resolve_session_customer(session):
             customer = Customer.objects.filter(pk=customer_id).first()
             if customer is not None:
                 return customer
-        except (TypeError, ValueError):
+        except (TypeError, ValueError):  # silêncio-deliberado: id não numérico; tenta como uuid abaixo
             pass
         try:
             customer = Customer.objects.filter(uuid=str(customer_id)).first()
             if customer is not None:
                 return customer
-        except (TypeError, ValueError):
+        except (TypeError, ValueError):  # silêncio-deliberado: id que não é uuid; segue para o próximo identificador
             pass
 
     if customer_ref:
