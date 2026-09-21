@@ -9,7 +9,7 @@ import type {
   KDSTicketProjection,
 } from "~/types/kds";
 import { isExpeditionCard, shortDateLabel, splitRef } from "~/presentation/board";
-import type { KDSDensity } from "~/components/KdsTicketCard.vue";
+import type { KDSDensity } from "~/presentation/board";
 
 const route = useRoute();
 const router = useRouter();

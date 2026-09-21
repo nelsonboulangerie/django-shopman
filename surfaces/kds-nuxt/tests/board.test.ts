@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   allDayCounts,
+  cardScale,
+  fulfillmentLabel,
   boardView,
   elapsedLabel,
   isExpeditionCard,
@@ -365,5 +367,20 @@ describe("ticket adicional do mesmo pedido", () => {
     const done = ticket({ pk: 3, order_ref: "PDV-7", status: "done" });
     const extra = ticket({ pk: 9, order_ref: "PDV-7" });
     expect([...additionTicketPks([extra], [done])]).toEqual([9]);
+  });
+});
+
+describe("moldura comum dos cards", () => {
+  it("uma escala só para estação e expedição, e o botão nunca abaixo de h-11", () => {
+    expect(cardScale("compact").action).toContain("h-11");
+    expect(cardScale("cozy").action).toContain("h-11");
+    expect(cardScale("roomy").action).toContain("h-14");
+    expect(cardScale("compact").code).toBe("text-xl");
+    expect(cardScale("roomy").code).toBe("text-4xl");
+  });
+
+  it("Entrega/Retirada sai do ícone do ticket, com a palavra da expedição", () => {
+    expect(fulfillmentLabel("local_shipping")).toBe("Entrega");
+    expect(fulfillmentLabel("storefront")).toBe("Retirada");
   });
 });
