@@ -53,6 +53,7 @@
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
+| [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
 
 ---
 
@@ -110,6 +111,27 @@ python manage.py release_expired_holds
 ```
 
 **Recomendação:** Executar via cron a cada 5–15 minutos.
+
+---
+
+
+### apply_product_brands
+
+Declara a Marca que o feed Google/Meta (`g:brand`) e a página de produto
+(JSON-LD `brand`) publicam, em `Product.metadata['social']`. Produto feito ou
+montado na casa leva `Shop.brand_name`; revenda leva a marca do fabricante e,
+quando conferido pelo dígito verificador GS1, o GTIN. É a MESMA tabela que o
+`seed` aplica num banco novo.
+
+```bash
+python manage.py apply_product_brands            # só mostra o que faria
+python manage.py apply_product_brands --apply    # grava
+python manage.py apply_product_brands --sku QC   # um SKU só
+```
+
+Só preenche campo **vazio**: marca ou GTIN que o Gestor já curou fica como
+está e sai no relatório como divergência. Revenda nunca recebe a marca da loja,
+e SKU sem fabricante confirmado fica fora da tabela. Idempotente.
 
 ---
 

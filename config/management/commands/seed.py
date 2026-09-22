@@ -70,6 +70,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.management.commands.apply_product_brands import apply_brands
 from config.management.commands.apply_search_presence import (
     BRAND_PROFILES,
     SEARCH_FIELDS,
@@ -889,6 +890,9 @@ class Command(BaseCommand):
         self._seed_delivery_distance_bands()
         self._seed_delivery_zones()
         products = self._seed_catalog()
+        # Marca da casa nos feitos aqui, do fabricante na revenda: a mesma
+        # tabela que o `apply_product_brands` aplica num banco que já roda.
+        apply_brands(apply=True)
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
