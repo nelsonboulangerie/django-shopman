@@ -172,6 +172,23 @@ class POSHeadlessSurfaceContractTests(TestCase):
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
 
+    def test_products_expose_the_package_barcode_for_the_counter_scanner(self) -> None:
+        """O leitor do balcão DIGITA o código no campo de busca do PDV.
+
+        Sem o GTIN na projeção, bipar um pote de geleia não achava nada — a
+        busca só via nome e SKU. Produto da casa não tem código de barras, e a
+        chave sai vazia em vez de ausente: a tela não precisa saber quem tem.
+        """
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["gtin"], "")
+
+        product = Product.objects.get(sku="POS-HEADLESS-ITEM")
+        product.metadata = {**(product.metadata or {}), "social": {"gtin": "7898708850385"}}
+        product.save(update_fields=["metadata"])
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["gtin"], "7898708850385")
+
     def test_products_expose_primary_collection_color_and_icon(self) -> None:
         """Cor (hex NB) e ícone (Lucide) da coleção primária vestem o tile sem
         foto (fundo tintado + ícone + SKU). Produto sem coleção primária expõe
