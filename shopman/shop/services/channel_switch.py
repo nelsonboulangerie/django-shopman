@@ -26,7 +26,9 @@ madrugada, e a loja fechada à noite zeraria o catálogo inteiro na plataforma.
 
 O que desligado significa, por tipo de canal:
 
-* **Venda com checkout próprio** (loja online, WhatsApp, PDV) — o commit recusa
+* **PDV** — sem toggle: o balcão é a loja física, e parar de vender ali é fechar
+  o caixa. Nenhum estado de canal recusa venda no balcão (:func:`is_switchable`).
+* **Venda com checkout próprio** (loja online, WhatsApp) — o commit recusa
   (:func:`ensure_accepting_orders`, em ``sessions.commit_session``). A loja online
   avisa na home; o concierge do WhatsApp deixa de oferecer o pedido.
 * **iFood** — fechado no iFood pelo período. Sem prazo, o iFood não tem
@@ -71,7 +73,6 @@ _ANCHOR = (2026, 1, 5)
 #: "Sem entregador" só existe onde a casa entrega (no iFood quem entrega é o iFood).
 _REASONS_REMOTE = ("Loja cheia", "Desfalque na equipe", "Falta de produto", "Sem entregador", "Feriado", "Férias")
 _REASONS_IFOOD = ("Loja cheia", "Desfalque na equipe", "Falta de produto", "Feriado", "Férias")
-_REASONS_POS = ("Desfalque na equipe", "Falta de produto", "Feriado", "Férias")
 _REASONS_DISPLAY = ("Falta de produto", "Feriado", "Férias")
 
 
@@ -174,6 +175,20 @@ def closed_by_shop(channel, *, state=None, now: datetime | None = None) -> str:
     return "Fechado pelo horário da loja"
 
 
+def is_switchable(channel) -> bool:
+    """O canal tem o toggle? Todos, menos o PDV.
+
+    Decisão do dono (22/09/2026): o balcão É a loja física. Parar de vender no
+    balcão é fechar o caixa (o turno), não desligar um canal — então o PDV não tem
+    toggle, e nenhum estado de canal recusa venda no balcão.
+    """
+    return channel.ref != pos_channel_ref()
+
+
+def pos_channel_ref() -> str:
+    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+
+
 def ensure_accepting_orders(channel_ref: str, *, now: datetime | None = None) -> None:
     """Recusa o commit num canal de venda desligado.
 
@@ -184,6 +199,8 @@ def ensure_accepting_orders(channel_ref: str, *, now: datetime | None = None) ->
 
     from shopman.shop.models import Channel
 
+    if channel_ref == pos_channel_ref():
+        return  # o balcão nunca recusa venda por estado de canal (ver is_switchable)
     channel = Channel.objects.filter(ref=channel_ref).only("ref", "name", "is_active", "config").first()
     if channel is None or effective_active(channel, now=now):
         return
@@ -222,8 +239,6 @@ def reason_presets(channel, *, target: bool) -> tuple[str, ...]:
         return _REASONS_DISPLAY
     if channel.ref == IFOOD_CHANNEL_REF:
         return _REASONS_IFOOD
-    if channel.ref == getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"):
-        return _REASONS_POS
     return _REASONS_REMOTE
 
 
@@ -430,6 +445,8 @@ def request_switch(
     channel = Channel.objects.select_for_update().filter(ref=ref).first()
     if channel is None:
         raise ChannelSwitchError(f"Canal '{ref}' não encontrado.")
+    if not is_switchable(channel):
+        raise ChannelSwitchError("O PDV não se desliga por aqui: parar de vender no balcão é fechar o caixa.")
     if expected_revision is not None and revision(channel) != expected_revision:
         raise ChannelSwitchConflict("Este canal mudou. Confira o estado atual antes de ligar ou desligar.")
     reason = " ".join(str(reason or "").split())[:200]
@@ -699,6 +716,8 @@ __all__ = [
     "ensure_accepting_orders",
     "governed_by_calendar",
     "is_channel_active",
+    "is_switchable",
+    "pos_channel_ref",
     "moment",
     "notification_copy",
     "off_windows",

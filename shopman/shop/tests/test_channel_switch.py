@@ -344,3 +344,24 @@ def test_agendamento_notifica_como_agendamento(web, django_capture_on_commit_cal
     (notification,) = UserNotification.objects.filter(user=gestor)
     assert notification.title == "Desligamento agendado: Loja online"
     assert notification.message == "Desliga qui. 24/12 às 0h até sáb. 26/12 às 0h. Por Joyce: Férias."
+
+
+# ── PDV: sem toggle, e nada de canal recusa venda no balcão ───────────────────
+
+
+def test_pdv_nao_tem_toggle_e_nunca_recusa_venda_por_estado_de_canal(shop):
+    """Decisão do dono (22/09): o balcão é a loja física; parar de vender é fechar o caixa.
+
+    Mesmo com o canal PDV marcado inativo (pelo Admin, por um gesto antigo), a trava
+    de canal deixa passar — quem recusa, sem sessão, é o Core.
+    """
+    from shopman.orderman.exceptions import SessionError
+
+    pdv = Channel.objects.create(ref="pdv", name="PDV", is_active=False)
+
+    assert channel_switch.is_switchable(pdv) is False
+    with pytest.raises(channel_switch.ChannelSwitchError, match="fechar o caixa"):
+        channel_switch.request_switch("pdv", False, period="open", reason="Férias", actor=None)
+    channel_switch.ensure_accepting_orders("pdv")  # não levanta
+    with pytest.raises(SessionError):
+        sessions.commit_session(session_key="inexistente", channel_ref="pdv", idempotency_key="k-pdv")

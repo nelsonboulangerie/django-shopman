@@ -68,6 +68,8 @@ def build_channel_attention(*, user=None, now: datetime | None = None) -> Channe
     now = now or timezone.now()
     items: list[ChannelAttentionItem] = []
     for channel in Channel.objects.order_by("commerce_policy", "display_order", "name"):
+        if not switches.is_switchable(channel):
+            continue  # PDV: sem toggle, e nada de canal recusa venda no balcão
         name = channel.name or channel.ref
         sale = channel.commerce_policy == Channel.CommercePolicy.ORDER
         focus = f"/feeds?focus={channel.ref}"

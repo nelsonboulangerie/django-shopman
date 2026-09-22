@@ -76,3 +76,13 @@ def test_api_quem_ve_a_fila_le_e_so_quem_edita_canais_recebe_o_link(client, chan
     assert body["label"] == "1 desligado"
     assert body["can_open_channels"] is False
     assert body["queue"][0]["ref"] == "web"
+
+
+def test_pdv_nao_tem_toggle_no_card_nem_entra_no_aviso(channels):
+    from shopman.backstage.projections.feeds import build_feed_board
+
+    Channel.objects.create(ref="pdv", name="PDV", is_active=False)
+
+    card = next(c for c in build_feed_board(now=NOW).catalog_channels if c.ref == "pdv")
+    assert card.switch is None
+    assert build_channel_attention(now=NOW).count == 0
