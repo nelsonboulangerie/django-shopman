@@ -25,6 +25,10 @@ from django.conf import settings
 
 # Ref do canal da loja online — espelha a env do deploy (ver config/settings.py).
 STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+
+# Unidades que os canais remotos (loja online, WhatsApp, iFood) deixam de fora
+# da vitrine e da reserva, por SKU. Espelhada em ``shop.0064``.
+REMOTE_SAFETY_MARGIN = 2
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
@@ -515,7 +519,9 @@ STOREFRONT_STATES = {
 }
 
 #: Pronto que caracteriza "últimas unidades" (limiar padrão do canal = 5).
-STOREFRONT_LOW_STOCK_QTY = 2
+#: A loja online enxerga a prateleira MENOS a margem remota: com 2 físicas ela
+#: mostraria esgotado. Sobram 2 visíveis ao cliente remoto; o PDV vê todas.
+STOREFRONT_LOW_STOCK_QTY = 2 + REMOTE_SAFETY_MARGIN
 #: Planejado de amanhã que caracteriza "lista de espera / previsto".
 STOREFRONT_PLANNED_QTY = 10
 
@@ -5904,10 +5910,14 @@ class Command(BaseCommand):
             # virar pedido sem reserva (SKU fora do catálogo é recusado/alertado).
             # sells_nonconforming=True: no balcão o lote com desconto de
             # qualidade É vendido — a etiqueta explica (C2 do D1-RETIREMENT).
+            # safety_margin=0: o balcão NUNCA guarda unidade de ninguém — a
+            # margem existe para proteger ELE dos canais remotos. Explícito para
+            # que uma mudança de default na loja não chegue ao caixa em silêncio.
             "stock": {
                 "check_on_commit": False,
                 "allow_untracked": False,
                 "sells_nonconforming": True,
+                "safety_margin": 0,
             },
             "handle_label": "Comanda",
             "handle_placeholder": "Ex: 42",
@@ -5954,6 +5964,16 @@ class Command(BaseCommand):
         }
         _remote_stock = {
             "hold_ttl_minutes": 30,
+            # Margem de segurança (decisão do dono, 22/09: "Margem padrão fica em
+            # 2 unidades, configurável, claro"). Por SKU, dentro do escopo de
+            # posições do canal: o canal remoto não mostra nem reserva as últimas
+            # N unidades — elas ficam para o balcão, que é quem tem o cliente na
+            # frente. Vale na LEITURA (cardápio, checkout) e na reserva da
+            # sacola; NÃO vale no hold de commit (pedido já colocado pode
+            # consumi-la — ``services/stock.py``). Ajuste por canal no Admin
+            # (Canal → Estoque → ``safety_margin``). Bancos já existentes
+            # recebem o mesmo valor pela migração ``shop.0064``.
+            "safety_margin": REMOTE_SAFETY_MARGIN,
             # Canais de CLIENTE não aceitam SKU fora do catálogo como pedido
             # sem reserva — typo de SKU falha limpo no gate de commit.
             "allow_untracked": False,
