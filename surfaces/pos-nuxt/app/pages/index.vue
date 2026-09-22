@@ -26,6 +26,9 @@ const runtimeConfig = useRuntimeConfig();
 const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
 // Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
+// Link de um app de operador para OUTRO: instalado, o destino tem janela
+// própria. Quem decide `target`/`rel` é o kit — nunca um `_blank` escrito à mão.
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
 const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
@@ -984,6 +987,21 @@ onBeforeUnmount(() => {
           <p>{{ closeGuardNotice.body }}</p>
           <div class="flex flex-wrap gap-2">
             <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
+            <!-- O corpo dizia "confira no Gestor" e não levava. Agora leva: a
+                 fila, porque o que está em dúvida é se o pedido nasceu — não há
+                 `ref` para apontar. -->
+            <UiButton
+              v-if="closeGuardNotice.link"
+              variant="outline"
+              size="sm"
+              class="gap-1.5"
+              :href="closeGuardNotice.link.href"
+              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
+              data-close-guard-orders-link
+            >
+              <Icon name="lucide:external-link" class="size-4" />
+              {{ closeGuardNotice.link.label }}
+            </UiButton>
             <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
           </div>
         </UiAlertDescription>
