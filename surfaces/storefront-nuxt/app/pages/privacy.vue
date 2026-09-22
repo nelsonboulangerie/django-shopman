@@ -30,6 +30,7 @@ const shop = computed(() => session.shop.value)
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const updatedAt = '20 de agosto de 2026'
 
+useCanonical()
 useSeoMeta({
   title: 'Política de privacidade',
   description: 'O que a loja coleta, por que coleta e como você apaga ou exporta os seus dados.'
