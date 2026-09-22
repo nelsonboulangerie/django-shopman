@@ -123,14 +123,21 @@ export function breadcrumbJsonLd (items: Array<{ name: string, url: string }>): 
 }
 
 // ── JSON-LD: CollectionPage + ItemList ───────────────────────────────────────
-// Cardápio = uma página de coleção com a lista de produtos. Cada item aponta para
-// a própria PDP (/produto/<sku>) com Offer mínima — ajuda o Google a entender a
-// vitrine sem duplicar o Product completo (que vive na PDP).
+// Cardápio e coleções são páginas de RESUMO: a lista só aponta para as PDPs
+// (/produto/<sku>), que carregam o Product completo. É o padrão "summary page"
+// do Google para listas.
+//
+// Aqui já morou um Product mínimo por item (nome, sku, preço, imagem). O Google
+// lê cada um como uma listagem de comerciante e cobra o que ele não tem: em
+// 20 e 22/09/2026 o Search Console acusou "O campo description não foi
+// encontrado" e "Nenhum identificador global fornecido (GTIN, marca)" — os 42
+// itens do /menu e os de cada /colecao, todos incompletos por construção. Repetir
+// descrição e marca em cada item só duplicaria a PDP; a PDP é a dona do Product.
 export function collectionJsonLd (params: {
   name: string
   url: string
   origin: string
-  items: Array<Pick<CatalogItemProjection, 'sku' | 'name' | 'base_price_q' | 'availability' | 'image_url'>>
+  items: Array<Pick<CatalogItemProjection, 'sku' | 'name'>>
 }): Record<string, unknown> {
   const { name, url, origin, items } = params
   return {
@@ -141,27 +148,12 @@ export function collectionJsonLd (params: {
     mainEntity: {
       '@type': 'ItemList',
       numberOfItems: items.length,
-      itemListElement: items.map((item, index) => {
-        const product: Record<string, unknown> = {
-          '@type': 'Product',
-          name: item.name,
-          sku: item.sku,
-          url: absoluteUrl(origin, `/produto/${encodeURIComponent(item.sku)}`),
-          offers: {
-            '@type': 'Offer',
-            price: priceFromQ(item.base_price_q),
-            priceCurrency: CURRENCY,
-            availability: availabilitySchemaUrl(item.availability)
-          }
-        }
-        const image = absoluteImage(origin, item.image_url)
-        if (image) product.image = image
-        return {
-          '@type': 'ListItem',
-          position: index + 1,
-          item: product
-        }
-      })
+      itemListElement: items.map((item, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        name: item.name,
+        url: absoluteUrl(origin, `/produto/${encodeURIComponent(item.sku)}`)
+      }))
     }
   }
 }

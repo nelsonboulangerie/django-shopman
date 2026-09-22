@@ -19,6 +19,7 @@ const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const openingHours = computed(() => session.openingHours.value)
 const updatedAt = '20 de agosto de 2026'
 
+useCanonical()
 useSeoMeta({
   title: 'Termos de uso',
   description: 'Quem somos, como o pedido funciona, e o que vale em pagamento, retirada, entrega e cancelamento.'
