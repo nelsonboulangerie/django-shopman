@@ -144,6 +144,7 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
         {
             "id": "nfe-1",
             "materialSku": material.sku,
+            "productSku": "",
             "suggestedMaterialSku": "",
             "suggestionScore": 0,
             "conversionId": str(conversion.pk),

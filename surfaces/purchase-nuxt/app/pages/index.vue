@@ -40,6 +40,7 @@ const {
   noteConversionId,
   noteCostInput,
   materials,
+  resaleProducts,
   suppliers,
   conversions,
   costs,
@@ -106,7 +107,7 @@ const {
   receiptConversionsFor,
   setReceiptMode,
   setReceiptSupplier,
-  setReceiptLineMaterial,
+  setReceiptLineItem,
   acceptReceiptLineSuggestion,
   acceptReceiptLineConversion,
   acceptReceiptLineInvoiceAxes,
@@ -443,8 +444,8 @@ function onSheetUpdate(patch: Partial<ReceiptLine>) {
   if (openLineId.value) updateReceiptLine(openLineId.value, patch);
 }
 
-function onSheetSelectMaterial(sku: string) {
-  if (openLineId.value) setReceiptLineMaterial(openLineId.value, sku);
+function onSheetSelectItem(sku: string) {
+  if (openLineId.value) setReceiptLineItem(openLineId.value, sku);
 }
 
 function onSheetAcceptSuggestion() {
@@ -1087,12 +1088,13 @@ onBeforeUnmount(stopInvoiceScanner);
           v-model:open="lineSheetOpen"
           :preview="openPreview"
           :materials="materials"
+          :resale-products="resaleProducts"
           :conversions="openPreview ? receiptConversionsFor(openPreview.line.materialSku) : []"
           :pending="actionPending"
           :stock-after="openPreview ? stockAfterReceipt(openPreview.material.sku) : 0"
           :flash-field="sheetFlashField"
           @update="onSheetUpdate"
-          @select-material="onSheetSelectMaterial"
+          @select-item="onSheetSelectItem"
           @accept-suggestion="onSheetAcceptSuggestion"
           @select-conversion="onSheetSelectConversion"
           @accept-conversion="onSheetAcceptConversion"

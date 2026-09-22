@@ -47,6 +47,24 @@ class MaterialProjection:
 
 
 @dataclass(frozen=True)
+class ResaleProductProjection:
+    """Mercadoria que a casa compra pronta para vender (chá, geleia, queijo).
+
+    Vive no catálogo do Offerman, não na tabela de insumo: é o mesmo pote que
+    o cliente leva. A entrada do Compras credita o estoque DESTE sku, para que
+    prateleira e venda contem a mesma coisa.
+    """
+
+    sku: str
+    name: str
+    unit: str
+    shelfLifeDays: int | None
+    isActive: bool
+    brand: str
+    stockOnHand: float
+
+
+@dataclass(frozen=True)
 class SupplierContactProjection:
     """Uma pessoa do fornecedor, do jeito que a tela precisa lê-la."""
 
@@ -123,6 +141,8 @@ class ReceiptConversionSuggestionProjection:
 class ReceiptLineProjection:
     id: str
     materialSku: str
+    #: Preenchido quando a linha é mercadoria de revenda; exclui `materialSku`.
+    productSku: str
     suggestedMaterialSku: str
     suggestionScore: int
     conversionId: str | None
@@ -177,6 +197,8 @@ class ReceiptHistoryProjection:
 @dataclass(frozen=True)
 class PurchaseProjection:
     materials: tuple[MaterialProjection, ...]
+    #: Mercadoria de revenda — a outra metade do que chega numa nota.
+    resaleProducts: tuple[ResaleProductProjection, ...]
     suppliers: tuple[SupplierProjection, ...]
     conversions: tuple[MaterialConversionProjection, ...]
     costs: tuple[SupplierMaterialCostProjection, ...]
@@ -193,15 +215,19 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     MaterialConversion = apps.get_model("buyman", "MaterialConversion")
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
+    Product = apps.get_model("offerman", "Product")
+
     material_rows = list(Material.objects.all().order_by("-is_active", "sku"))
+    resale_rows = list(Product.objects.filter(metadata__purchase__resale=True).order_by("name"))
     supplier_rows = list(
         Supplier.objects.prefetch_related("contacts").order_by("-is_active", "name", "ref")
     )
     skus = [material.sku for material in material_rows]
+    resale_skus = [product.sku for product in resale_rows]
     supplier_refs = [supplier.ref for supplier in supplier_rows]
 
     policy = _purchase_policy()
-    stock_on_hand = _stock_on_hand_map(skus)
+    stock_on_hand = _stock_on_hand_map(skus + resale_skus)
     daily_use = _daily_use_map(skus, days=policy["consumption_window_days"])
     recipes = _recipes_map(skus)
     last_delivery = _last_delivery_map(supplier_refs)
@@ -220,6 +246,18 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             policy=policy,
         )
         for material in material_rows
+    )
+    resale_products = tuple(
+        ResaleProductProjection(
+            sku=product.sku,
+            name=product.name,
+            unit=product.unit,
+            shelfLifeDays=product.shelf_life_days,
+            isActive=bool(product.is_published),
+            brand=str(((product.metadata or {}).get("social") or {}).get("brand") or ""),
+            stockOnHand=_number(stock_on_hand.get(product.sku, Decimal("0"))),
+        )
+        for product in resale_rows
     )
     conversions = tuple(
         MaterialConversionProjection(
@@ -258,6 +296,7 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     default_supplier_ref = supplier_rows[0].ref if supplier_rows else ""
     return PurchaseProjection(
         materials=materials,
+        resaleProducts=resale_products,
         suppliers=suppliers,
         conversions=conversions,
         costs=costs,
@@ -482,6 +521,7 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
     return ReceiptLineProjection(
         id=str(line.get("id") or ""),
         materialSku=str(line.get("materialSku") or line.get("material_sku") or ""),
+        productSku=str(line.get("productSku") or line.get("product_sku") or ""),
         suggestedMaterialSku=str(line.get("suggestedMaterialSku") or line.get("suggested_material_sku") or ""),
         suggestionScore=int(_decimal(line.get("suggestionScore", line.get("suggestion_score", 0)) or 0)),
         conversionId=(
