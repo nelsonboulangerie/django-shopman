@@ -14,9 +14,14 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from shopman.offerman.models import Product
 
-from config.management.commands.rename_skus_to_real import RENAMES
+from shopman.shop.management.commands.ifood_retract_renamed_skus import (
+    _mapa_de_renames,
+    _orfaos_no_ifood,
+)
 
-PRIMEIRO_ANTIGO, PRIMEIRO_REAL = RENAMES[0]
+# A cadeia inteira: `BAGUETE` virou `BF`, que virou `TRADI`.
+PRIMEIRO_ANTIGO = "BAGUETE"
+CODIGO_DE_HOJE = "TRADI"
 
 
 class BackendFalso:
@@ -52,11 +57,13 @@ def test_recusa_enquanto_o_sku_antigo_for_o_produto_vivo(backend):
 
 @pytest.mark.django_db
 def test_retira_so_os_pares_que_o_rename_de_fato_trocou(backend):
-    Product.objects.create(sku=PRIMEIRO_REAL, name="Renomeado", base_price_q=100)
+    Product.objects.create(sku=CODIGO_DE_HOJE, name="Renomeado", base_price_q=100)
 
     call_command("ifood_retract_renamed_skus", stdout=StringIO())
 
-    assert backend.retirados == [PRIMEIRO_ANTIGO]
+    # Os DOIS códigos que esse produto já teve, não só o último: cada um deixou
+    # um item no cardápio do iFood.
+    assert sorted(backend.retirados) == ["BAGUETE", "BF"]
 
 
 @pytest.mark.django_db
@@ -71,10 +78,35 @@ def test_catalogo_intocado_nao_retira_nada(backend):
 
 @pytest.mark.django_db
 def test_ensaio_nao_chama_a_api(backend):
-    Product.objects.create(sku=PRIMEIRO_REAL, name="Renomeado", base_price_q=100)
+    Product.objects.create(sku=CODIGO_DE_HOJE, name="Renomeado", base_price_q=100)
 
     saida = StringIO()
     call_command("ifood_retract_renamed_skus", "--dry-run", stdout=saida)
 
     assert PRIMEIRO_ANTIGO in saida.getvalue()
     assert backend.retirados is None
+
+
+def test_le_os_dois_mapas_de_rename():
+    """A leva nova deixa o mesmo tipo de órfão que a antiga, e sem erro nenhum."""
+    from config.management.commands.apply_product_skus import RENAMES as CURADOS
+    from config.management.commands.rename_skus_to_real import RENAMES as REAIS
+
+    mapa = _mapa_de_renames()
+    assert {a for a, _n in REAIS} <= set(mapa)
+    assert {a for a, _n in CURADOS} <= set(mapa)
+
+
+def test_o_codigo_que_voltou_nao_e_retirado():
+    """`FENDU` virou `FE` em agosto, e a curadoria de setembro o devolve a `FENDU`.
+
+    Resolver a cadeia no papel daria um ciclo. Quem desempata é o catálogo: o
+    código que EXISTE hoje fica, o outro sai.
+    """
+    mapa = _mapa_de_renames()
+    assert mapa["FENDU"] == "FE" and mapa["FE"] == "FENDU"  # o ciclo é real
+
+    orfaos = _orfaos_no_ifood({"FENDU"})
+
+    assert "FE" in orfaos
+    assert "FENDU" not in orfaos
