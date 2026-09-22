@@ -359,7 +359,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
       </div>
 
       <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">RevPASH por faixa</h2>
+        <h2 class="text-lg font-semibold text-foreground">Receita por assento por hora</h2>
         <p class="mb-3 text-xs text-muted-foreground">
           Receita dos pedidos com item local ÷ (assentos × horas da faixa × dias com venda). Assentos:
           {{ formatInt(report.seats) }} — {{ report.seats_source }}. Todas as faixas do recorte de dia da semana.
@@ -371,7 +371,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
                 <th class="pb-2 text-left text-xs font-medium text-muted-foreground">Faixa</th>
                 <th :class="thClass">Receita local</th>
                 <th :class="thClass">Denominador</th>
-                <th :class="thClass">RevPASH</th>
+                <th :class="thClass">Receita por assento-hora</th>
               </tr>
             </thead>
             <tbody>
@@ -379,7 +379,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
                 <td class="py-1.5 pr-2 font-medium text-foreground">{{ row.title }}</td>
                 <td :class="tdClass">{{ formatMoney(row.revenue_local_q) }}</td>
                 <td class="py-1.5 text-right text-xs tabular-nums text-muted-foreground">{{ revpashHint(row.seats, row.hours, row.days) }}</td>
-                <td :class="tdClass">{{ formatMoney(row.revpash_q) }} <span class="text-xs text-muted-foreground">/ assento-hora</span></td>
+                <td :class="tdClass">{{ formatMoney(row.revpash_q) }}</td>
               </tr>
             </tbody>
           </table>
