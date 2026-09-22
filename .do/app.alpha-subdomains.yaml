@@ -301,19 +301,34 @@ envs:
   scope: RUN_TIME
   value: '${cache.REDIS_URL}'
   type: GENERAL
-# Pix na Efí de TESTES (homologação, EFI_SANDBOX=true), decidido pelo dono em
-# 22/09/2026: "tirar a simulação do pix e trocar para teste real da Efi". Saem
-# junto o simulador e as chaves que só ele lia (ALLOW_MOCK, EXPOSE_MOCK_CAPTURE,
-# MOCK_PIX_*): cartão e link são Stripe, nenhum método sobra no mock. A Efí de
-# testes só confirma Pix de até R$ 10,00 (`shop/services/pix_policy.py`). O
-# webhook da chave é cadastrado pelo job `release` (`efi_webhook --soft`).
+# Pix no SIMULADOR, de volta em 22/09/2026 (~17:20 UTC): a troca para a Efí de
+# testes (#951) subiu e a Efí recusou com 403 já no `release` (`efi_webhook`),
+# provavelmente na autenticação — com isso todo Pix novo falharia ao gerar o QR.
+# Voltar para a Efí só depois de o `efi_webhook` responder OK (credenciais,
+# certificado e escopos de webhook da aplicação conferidos com o Pablo).
 - key: SHOPMAN_PIX_ADAPTER
   scope: RUN_TIME
-  value: 'shopman.shop.adapters.payment_efi'
+  value: 'shopman.shop.adapters.payment_mock'
   type: GENERAL
 - key: SHOPMAN_CARD_ADAPTER
   scope: RUN_TIME
   value: 'shopman.shop.adapters.payment_stripe'
+  type: GENERAL
+- key: SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_EXPOSE_MOCK_CAPTURE
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_MOCK_PIX_AUTO_CONFIRM
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS
+  scope: RUN_TIME
+  value: '8'
   type: GENERAL
 - key: EFI_SANDBOX
   scope: RUN_TIME
