@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -196,6 +196,38 @@ export interface FeedBoardProjection {
   feeds: FeedProjection[];
   all_collections: CollectionOptionProjection[];
   catalog_channels: CatalogChannelProjection[];
+}
+
+/** ChannelHealthItem(key: 'str', state: 'str', label: 'str', hint: 'str' = '', action_label: 'str' = '', action_target: 'str' = '', action_path: 'str' = '') */
+export interface ChannelHealthItem {
+  key: string;
+  state: string;
+  label: string;
+  hint: string;
+  action_label: string;
+  action_target: string;
+  action_path: string;
+}
+
+/** ChannelHealthLink(label: 'str', target: 'str', path: 'str') */
+export interface ChannelHealthLink {
+  label: string;
+  target: string;
+  path: string;
+}
+
+/** ChannelHealthProjection(ref: 'str', ready: 'bool', summary: 'str', items: 'tuple[ChannelHealthItem, ...]', preview: 'tuple[ChannelHealthLink, ...]' = ()) */
+export interface ChannelHealthProjection {
+  ref: string;
+  ready: boolean;
+  summary: string;
+  items: ChannelHealthItem[];
+  preview: ChannelHealthLink[];
+}
+
+/** ChannelHealthBoardProjection(channels: 'tuple[ChannelHealthProjection, ...]') */
+export interface ChannelHealthBoardProjection {
+  channels: ChannelHealthProjection[];
 }
 
 /** One line item as displayed on order tracking or confirmation. */
