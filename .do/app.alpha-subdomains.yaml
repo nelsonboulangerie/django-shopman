@@ -301,29 +301,19 @@ envs:
   scope: RUN_TIME
   value: '${cache.REDIS_URL}'
   type: GENERAL
+# Pix na Efí de TESTES (homologação, EFI_SANDBOX=true), decidido pelo dono em
+# 22/09/2026: "tirar a simulação do pix e trocar para teste real da Efi". Saem
+# junto o simulador e as chaves que só ele lia (ALLOW_MOCK, EXPOSE_MOCK_CAPTURE,
+# MOCK_PIX_*): cartão e link são Stripe, nenhum método sobra no mock. A Efí de
+# testes só confirma Pix de até R$ 10,00 (`shop/services/pix_policy.py`). O
+# webhook da chave é cadastrado pelo job `release` (`efi_webhook --soft`).
 - key: SHOPMAN_PIX_ADAPTER
   scope: RUN_TIME
-  value: 'shopman.shop.adapters.payment_mock'
+  value: 'shopman.shop.adapters.payment_efi'
   type: GENERAL
 - key: SHOPMAN_CARD_ADAPTER
   scope: RUN_TIME
   value: 'shopman.shop.adapters.payment_stripe'
-  type: GENERAL
-- key: SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS
-  scope: RUN_TIME
-  value: 'true'
-  type: GENERAL
-- key: SHOPMAN_EXPOSE_MOCK_CAPTURE
-  scope: RUN_TIME
-  value: 'true'
-  type: GENERAL
-- key: SHOPMAN_MOCK_PIX_AUTO_CONFIRM
-  scope: RUN_TIME
-  value: 'false'
-  type: GENERAL
-- key: SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS
-  scope: RUN_TIME
-  value: '8'
   type: GENERAL
 - key: EFI_SANDBOX
   scope: RUN_TIME
@@ -1101,8 +1091,12 @@ jobs:
   instance_size_slug: apps-s-1vcpu-0.5gb
   kind: PRE_DEPLOY
   name: release
+  # `efi_webhook --soft`: confere o webhook do Pix na Efí e recadastra se divergir
+  # da URL canônica. Falha APARECE no log do release (e no Sentry), mas não
+  # derruba o deploy: webhook fora não justifica segurar a versão inteira.
   run_command: sh -c 'python manage.py check --deploy && python manage.py migrate
-    --noinput && python manage.py setup_groups && python manage.py bootstrap_whatsapp_channel'
+    --noinput && python manage.py setup_groups && python manage.py bootstrap_whatsapp_channel
+    && python manage.py efi_webhook --soft'
   image:
     registry_type: DOCR
     repository: shopman

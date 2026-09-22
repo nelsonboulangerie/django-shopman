@@ -108,6 +108,11 @@ https://api.<dominio>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>
 O header `X-Efi-Webhook-Token` continua aceito, para dev local e para um proxy
 futuro que consiga injetá-lo.
 
+**O cadastro é automático:** o job `release` roda `python manage.py efi_webhook --soft`,
+que confere o webhook da chave na Efí e recadastra se a URL divergir (inclusive
+depois de rotacionar o token). Ver `docs/reference/commands.md#efi_webhook`. A URL
+que ele cadastra já leva o `&ignorar=` descrito abaixo.
+
 ⚠️ **A verificar no primeiro cadastro: a Efí acrescenta `/pix` ao fim da URL
 registrada.** A doc de webhooks dela documenta o parâmetro `ignorar=` justamente
 para suprimir esse append (exemplo oficial:
