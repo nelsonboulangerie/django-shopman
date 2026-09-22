@@ -157,6 +157,13 @@ MANIFEST_ACCEPT = ", ".join(
 FONTE_DISTRIBUICAO = "distribuição (HEAD do manifest, o que o App Platform puxa)"
 FONTE_LISTAGEM = "listagem /tags da API da DO"
 
+# ⚠️ O registry fica atrás do Cloudflare, que responde 403 ao User-Agent
+# padrão do urllib (`Python-urllib/3.x`) — medido em 22/09/2026: mesmo bearer,
+# HEAD com o agente padrão = 403 `server: cloudflare`; com agente próprio = 200
+# e o digest certo. Sem isto a leitura pela distribuição falhava SEMPRE no CI e
+# a guarda caía calada de volta na listagem atrasada.
+USER_AGENT = "shopman-registry-guard/1"
+
 #: `pos-<40 hex>` → ("pos", sha). O sufixo imutável é o que permite dizer QUAL
 #: commit está por trás de uma tag móvel.
 IMMUTABLE = re.compile(r"^(?P<tag>.+)-(?P<sha>[0-9a-f]{40})$")
@@ -185,7 +192,7 @@ def fetch_tags(registry: str, repository: str, token: str) -> list[dict]:
     url = f"{API}/registry/{registry}/repositories/{repository}/tags?per_page=200"
     while url:
         request = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {token}"}
+            url, headers={"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT}
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -217,7 +224,9 @@ def _pull_token(registry: str, repository: str, token: str) -> str:
         f"&scope={urllib.parse.quote(scope, safe='')}"
     )
     basic = base64.b64encode(f"{token}:{token}".encode()).decode()
-    request = urllib.request.Request(url, headers={"Authorization": f"Basic {basic}"})
+    request = urllib.request.Request(
+        url, headers={"Authorization": f"Basic {basic}", "User-Agent": USER_AGENT}
+    )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.load(response)
@@ -234,7 +243,11 @@ def _manifest_digest(registry: str, repository: str, tag: str, bearer: str) -> s
     request = urllib.request.Request(
         url,
         method="HEAD",
-        headers={"Authorization": f"Bearer {bearer}", "Accept": MANIFEST_ACCEPT},
+        headers={
+            "Authorization": f"Bearer {bearer}",
+            "Accept": MANIFEST_ACCEPT,
+            "User-Agent": USER_AGENT,
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
