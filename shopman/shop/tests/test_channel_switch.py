@@ -269,7 +269,9 @@ def test_tv_desligada_vira_tela_preta_sem_produto(client, tv, django_user_model)
     assert data["is_active"] is False and data["groups"] == []
 
 
-def test_feed_desligado_sai_com_tudo_fora_de_estoque(client, shop):
+def test_feed_desligado_sai_com_tudo_fora_de_estoque(client, shop, settings):
+    # Sem a base da loja o feed responde 404 de propósito (#955): o link do item é da loja.
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://www.loja.test"
     collection = Collection.objects.create(ref="vitrine", name="Vitrine", is_active=True)
     product = Product.objects.create(
         sku="BAGUETE", name="Baguete", unit="un", base_price_q=1300, is_published=True, is_sellable=True,
