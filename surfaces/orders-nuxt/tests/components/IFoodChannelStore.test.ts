@@ -16,7 +16,6 @@ function projection(over: Partial<IFoodStoreProjection> = {}): IFoodStoreProject
     enabled: true,
     governs: true,
     channel_off: false,
-    can_open_channels: true,
     shop_open: true,
     shop_message: "Aberto até 18h",
     ifood_available: true,

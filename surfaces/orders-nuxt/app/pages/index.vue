@@ -380,7 +380,7 @@ function printQueue() {
       </p>
       <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
            recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
-      <IFoodQueueSignal />
+      <ChannelQueueSignal />
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
         <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
