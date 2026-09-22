@@ -16,7 +16,6 @@ import { compactUnitWeightLabel } from '~/utils/display'
 const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
-const session = useShopSession()
 const sku = computed(() => String(route.params.sku || ''))
 const { setFromServer, qtyForSku } = useCartState()
 
@@ -122,8 +121,7 @@ useHead({
           innerHTML: jsonLdText(productJsonLd({
             product: product.value,
             origin: requestUrl.origin,
-            url: canonicalUrl.value,
-            brandName: session.shop.value?.brand_name || ''
+            url: canonicalUrl.value
           }))
         },
         {
