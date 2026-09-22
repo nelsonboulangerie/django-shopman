@@ -142,9 +142,8 @@ def build_menuboard(ref: str) -> MenuboardProjection:
     """Monta o quadro: uma seção por coleção do canal, na ordem das coleções."""
     from shopman.offerman.models import Collection
 
-    from shopman.shop.services.display_prices import resolve_prices
-
     from shopman.shop.services.channel_switch import effective_active
+    from shopman.shop.services.display_prices import resolve_prices
 
     channel = resolve_menuboard(ref)
     if not effective_active(channel):

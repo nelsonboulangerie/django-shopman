@@ -78,10 +78,9 @@ def build_feed_items(ref: str) -> list[dict]:
     from shopman.offerman import get_social_attributes
     from shopman.offerman.models import Collection
 
+    from shopman.shop.services.channel_switch import effective_active
     from shopman.shop.services.display_prices import resolve_prices
     from shopman.shop.services.storefront_links import path_product
-
-    from shopman.shop.services.channel_switch import effective_active
 
     channel, fmt = _resolve_feed_channel(ref)
     switched_on = effective_active(channel)
