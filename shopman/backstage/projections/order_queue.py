@@ -86,6 +86,25 @@ TEST_ORDER_NOTICE = (
 )
 
 
+#: O rótulo do pagamento capturado por SIMULAÇÃO (``payment_mock``, Efí
+#: homologação, Stripe em chave de teste). "Pago" ali era rótulo que mente: o
+#: operador entregava confiando num dinheiro que nunca entrou.
+SIMULATED_PAYMENT_LABEL = "Pagamento simulado, sem dinheiro"
+
+
+def _order_payment_status_label(order, payment_status: str) -> str:
+    """O rótulo do pagamento no card e no detalhe — uma função para os dois."""
+    if order.channel_ref == "ifood":
+        return {"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(
+            payment_status, "Pagamento não informado"
+        )
+    from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+    if payment_status in _PAYMENT_COMPLETE and is_simulated_order_payment(order):
+        return SIMULATED_PAYMENT_LABEL
+    return payment_status_label(payment_status)
+
+
 def _test_order_label(order) -> str:
     """O crachá de pedido de teste, ou vazio quando o pedido é de verdade."""
     from shopman.shop.services.order_helpers import is_test_order
@@ -706,7 +725,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
+        payment_status_label=_order_payment_status_label(order, payment_status),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
         **cancel_capability,
@@ -1402,7 +1421,7 @@ def _build_card(
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
+        payment_status_label=_order_payment_status_label(order, payment_status),
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
         advance_block_label=advance_block_label(bloqueio),
@@ -1638,7 +1657,11 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
     # Pago é pago, em qualquer canal ou meio: verde primeiro. Uma captura
     # registrada (pix/cartão) vale para qualquer canal (web, whatsapp, pdv).
     if payment_status in _PAYMENT_COMPLETE:
-        return "success"
+        from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+        # Simulado não é verde: o pill não pode dizer "dinheiro garantido" ao
+        # lado de um rótulo que diz "sem dinheiro".
+        return "warning" if is_simulated_order_payment(order) else "success"
     # Marketplace / "pago online": o pedido chega pré-pago (iFood comita só o que
     # já foi pago), então o dinheiro está garantido — verde, mesmo sem captura nossa.
     if method == "external":
