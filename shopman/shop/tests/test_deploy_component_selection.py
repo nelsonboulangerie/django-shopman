@@ -471,6 +471,13 @@ def _rodar_guarda(repo: Path, listagens: list[list[dict]], monkeypatch) -> int:
     monkeypatch.setattr(
         guarda, "fetch_tags", lambda *a, **k: restantes.pop(0) if restantes else []
     )
+    # Estes testes são sobre a LISTAGEM; a distribuição "não responde", e a
+    # guarda cai para a listagem (o rebaixamento tem teste próprio abaixo).
+    monkeypatch.setattr(
+        guarda,
+        "fetch_distribution",
+        lambda _r, _p, tags, _t: guarda.Distribuicao({}, dict.fromkeys(tags, "fora")),
+    )
     monkeypatch.setenv("DO_TOKEN", "fingido")
     return guarda.main(
         ["--ref", "HEAD", "--repo", str(repo), "--per-app", "true", "--espera", "0"]
@@ -534,6 +541,174 @@ def test_modo_offline_nao_repergunta(repo: Path, tmp_path: Path):
         )
         == 1
     )
+
+
+# ---------------------------------------------------------------------------
+# A tag móvel se lê na distribuição, não na listagem (22/09/2026)
+# ---------------------------------------------------------------------------
+
+TOKEN_DA_DO = "dop_v1_segredo-que-nao-pode-vazar"
+BEARER = "bearer-do-registry-que-nao-pode-vazar"
+
+
+class _Resposta:
+    """O pedaço de `http.client.HTTPResponse` que a guarda usa."""
+
+    def __init__(self, corpo: bytes = b"", headers: dict[str, str] | None = None):
+        from email.message import Message
+
+        self._corpo = corpo
+        self.headers = Message()
+        for chave, valor in (headers or {}).items():
+            self.headers[chave] = valor
+
+    def read(self, *_a):
+        return self._corpo
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+def _registry_falso(listagem: list[dict], distribuicao: dict[str, str], *, auth_ok=True):
+    """Um `urlopen` que responde as três perguntas da guarda, como a DO responde.
+
+    A listagem `/tags` e a distribuição são servidas SEPARADAS de propósito: em
+    22/09/2026 elas discordavam por horas sobre a mesma tag móvel.
+    """
+    import base64
+    import urllib.error
+
+    pedidos: list = []
+
+    def urlopen(request, timeout=None):
+        pedidos.append(request)
+        url = request.full_url
+        auth = request.get_header("Authorization") or ""
+        if "/repositories/" in url and url.split("?")[0].endswith("/tags"):
+            assert auth == f"Bearer {TOKEN_DA_DO}"
+            return _Resposta(json.dumps({"tags": listagem, "links": {}}).encode())
+        if "/v2/registry/auth?" in url:
+            esperado = base64.b64encode(f"{TOKEN_DA_DO}:{TOKEN_DA_DO}".encode()).decode()
+            assert auth == f"Basic {esperado}"
+            assert "service=registry.digitalocean.com" in url
+            assert "repository%3Anelsonboulangerie%2Fshopman%3Apull" in url
+            if not auth_ok:
+                raise urllib.error.HTTPError(url, 401, "Unauthorized", None, None)
+            return _Resposta(json.dumps({"token": BEARER}).encode())
+        if url.startswith("https://registry.digitalocean.com/v2/nelsonboulangerie/shopman/manifests/"):
+            assert request.get_method() == "HEAD"
+            assert auth == f"Bearer {BEARER}"
+            assert "application/vnd.oci.image.index.v1+json" in request.get_header("Accept")
+            tag = url.rsplit("/", 1)[1]
+            if tag not in distribuicao:
+                raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+            return _Resposta(headers={"Docker-Content-Digest": distribuicao[tag]})
+        raise AssertionError(f"pergunta inesperada: {request.get_method()} {url}")
+
+    return urlopen, pedidos
+
+
+def _rodar_contra_registry(repo, monkeypatch, urlopen) -> int:
+    import check_registry_drift as guarda
+
+    monkeypatch.setattr(guarda.urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("DO_TOKEN", TOKEN_DA_DO)
+    return guarda.main(
+        [
+            "--ref", "HEAD", "--repo", str(repo), "--per-app", "true",
+            "--espera", "0", "--reconfirmacoes", "2",
+        ]
+    )
+
+
+def _hub_com_indice_parado(repo: Path):
+    """O estado de 22/09: `hub` publicado de novo, e a listagem parada no velho."""
+    antes = commit(repo, ["surfaces/hub-nuxt/x.ts"], "hub antes")
+    atual = commit(repo, ["surfaces/hub-nuxt/x.ts"], "o hub novo, já empurrado")
+    tudo = [c["tag"] for c in build_matrix(list(component_paths(GROUPS)), GROUPS)]
+    em_dia = tags_do_registry(dict.fromkeys(tudo, atual))
+    # A listagem guarda a imutável nova (com o digest certo) E a velha, mas a
+    # entrada da tag MÓVEL continua apontando para o digest velho.
+    velho = f"sha256:hub-{antes}"
+    listagem = [t for t in em_dia if t["tag"] != "hub"] + [
+        {"tag": f"hub-{antes}", "manifest_digest": velho},
+        {"tag": "hub", "manifest_digest": velho},
+    ]
+    distribuicao = {t["tag"]: t["manifest_digest"] for t in em_dia if t["tag"] in tudo}
+    return antes, atual, listagem, distribuicao, velho
+
+
+def test_listagem_parada_e_distribuicao_certa_fica_verde(repo: Path, monkeypatch, capsys):
+    """O vermelho de 22/09: oito horas acusando `hub-nuxt`, e o `hub` estava no ar.
+
+    A listagem `/tags` parou a tag móvel num digest velho; o HEAD do manifest —
+    de onde o App Platform puxa — respondia o novo. Ler a listagem acusava um
+    componente que não estava para trás, e a remediação (republicar) não mudava
+    nada, porque não havia o que republicar.
+    """
+    _, _, listagem, distribuicao, _ = _hub_com_indice_parado(repo)
+    urlopen, pedidos = _registry_falso(listagem, distribuicao)
+
+    assert _rodar_contra_registry(repo, monkeypatch, urlopen) == 0
+    heads = [r for r in pedidos if r.get_method() == "HEAD"]
+    assert any(r.full_url.endswith("/manifests/hub") for r in heads)
+    saida = capsys.readouterr()
+    assert TOKEN_DA_DO not in saida.out + saida.err
+    assert BEARER not in saida.out + saida.err
+
+
+def test_distribuicao_atras_de_verdade_continua_vermelha(repo: Path, monkeypatch, capsys):
+    """Ler na fonte não é passar pano: se o que o App Platform puxa é o velho, grita.
+
+    E a linha diz de onde leu, e que a listagem concordava — para ninguém
+    confundir este vermelho com o índice atrasado.
+    """
+    antes, atual, listagem, distribuicao, velho = _hub_com_indice_parado(repo)
+    distribuicao["hub"] = velho
+    urlopen, _ = _registry_falso(listagem, distribuicao)
+
+    assert _rodar_contra_registry(repo, monkeypatch, urlopen) == 1
+    saida = capsys.readouterr().out
+    linha = next(x for x in saida.splitlines() if x.startswith("::error::hub-nuxt:"))
+    assert f"publicado {antes[:9]}, que NÃO contém {atual[:9]}" in linha
+    assert "fonte: distribuição" in linha
+    assert "índice atrasado" not in linha  # listagem e fonte concordam
+    assert TOKEN_DA_DO not in saida and BEARER not in saida
+
+
+def test_a_medida_mostra_a_listagem_que_discordou_da_distribuicao():
+    sha = "a" * 40
+    tags = [
+        {"tag": "hub", "manifest_digest": "sha256:velho"},
+        {"tag": f"hub-{sha}", "manifest_digest": "sha256:novo"},
+    ]
+    leitura = read_published(tags, "hub", digest="sha256:novo")
+    assert leitura.shas == (sha,)
+    assert "fonte: distribuição" in leitura.medida()
+    assert "a listagem /tags dizia sha256:velho" in leitura.medida()
+
+
+def test_distribuicao_fora_do_ar_cai_para_a_listagem_e_diz(
+    repo: Path, monkeypatch, capsys
+):
+    """Sem a fonte, a listagem ainda decide — mas a linha declara o rebaixamento.
+
+    Um vermelho medido no índice não pode se passar por um medido na fonte:
+    foi exatamente o índice que mentiu por oito horas em 22/09/2026.
+    """
+    _, _, listagem, distribuicao, _ = _hub_com_indice_parado(repo)
+    urlopen, _ = _registry_falso(listagem, distribuicao, auth_ok=False)
+
+    assert _rodar_contra_registry(repo, monkeypatch, urlopen) == 1
+    saida = capsys.readouterr()
+    linha = next(x for x in saida.out.splitlines() if x.startswith("::error::hub-nuxt:"))
+    assert "fonte: listagem /tags da API da DO (a distribuição falhou:" in linha
+    assert "401" in linha
+    assert "::warning::distribuição do registry não respondeu" in saida.err
+    assert TOKEN_DA_DO not in saida.out + saida.err
 
 
 # ---------------------------------------------------------------------------
