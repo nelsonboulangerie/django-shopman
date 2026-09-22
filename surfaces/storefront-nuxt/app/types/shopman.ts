@@ -158,6 +158,12 @@ export interface ProductDetailProjection {
   nutrition: ProductNutritionProjection | null
   seo_description: string
   seo_keywords: string[]
+  // Identidade comercial do Catálogo do Gestor — a mesma do feed Google/Meta.
+  // '' = não informado (a PDP não completa com a marca da loja).
+  brand: string
+  gtin: string
+  mpn: string
+  item_condition: string
   breadcrumb_category: CategoryProjection | null
   cross_sell: CatalogItemProjection[]
   cross_sell_heading: string

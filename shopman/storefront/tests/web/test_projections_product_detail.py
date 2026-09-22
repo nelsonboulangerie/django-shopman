@@ -90,6 +90,25 @@ class TestBuildProductDetailShape:
         assert proj.is_bundle is False
         assert proj.components == ()
 
+    def test_commercial_identity_comes_from_the_catalog(self, listing, product):
+        """Marca/GTIN/MPN são os do Catálogo do Gestor — a mesma fonte do feed Google/Meta."""
+        product.metadata = {"social": {
+            "brand": "St. Dalfour", "gtin": "4006381333931", "mpn": "SD-MINI", "condition": "new",
+        }}
+        product.save()
+        _publish_on_listing(listing, product)
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        assert (proj.brand, proj.gtin, proj.mpn, proj.item_condition) == (
+            "St. Dalfour", "4006381333931", "SD-MINI", "new",
+        )
+
+    def test_commercial_identity_not_informed_stays_empty(self, listing, product):
+        """Sem marca no Catálogo a PDP não supõe a da loja: a casa também revende."""
+        _publish_on_listing(listing, product)
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        assert (proj.brand, proj.gtin, proj.mpn) == ("", "", "")
+        assert proj.item_condition == "new"
+
     def test_projection_is_immutable(self, listing, collection, collection_item, product):
         from dataclasses import FrozenInstanceError
 

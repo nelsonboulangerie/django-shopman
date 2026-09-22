@@ -73,35 +73,53 @@ export function truncateClean (text: string, max: number): string {
 }
 
 // ── JSON-LD: Product + Offer ─────────────────────────────────────────────────
+// Marca, GTIN e código do fabricante vêm do Catálogo do Gestor — a MESMA fonte do
+// feed do Google/Meta (Product.metadata.social). Aqui já se carimbava a marca da
+// loja em todo produto, e a PDP afirmava "Nelson Boulangerie" até para a geleia
+// St. Dalfour, enquanto o feed (corretamente) não afirmava nada: a loja também
+// revende. Campo vazio fica de fora — não informado não é o mesmo que "não tem".
+const ITEM_CONDITION: Record<string, string> = {
+  new: 'https://schema.org/NewCondition',
+  used: 'https://schema.org/UsedCondition',
+  refurbished: 'https://schema.org/RefurbishedCondition'
+}
+
 export function productJsonLd (params: {
   product: ProductDetailProjection
   origin: string
   url: string
-  brandName: string
 }): Record<string, unknown> {
-  const { product, origin, url, brandName } = params
+  const { product, origin, url } = params
   // Rich results favorecem múltiplas imagens: principal + galeria (absolutas, deduped).
   const images = [...new Set(
     [product.image_url, ...(product.gallery || [])]
       .map(candidate => absoluteImage(origin, candidate))
       .filter((candidate): candidate is string => !!candidate)
   )]
+  const offer: Record<string, unknown> = {
+    '@type': 'Offer',
+    price: priceFromQ(product.base_price_q),
+    priceCurrency: CURRENCY,
+    availability: availabilitySchemaUrl(product.availability),
+    url
+  }
+  const condition = ITEM_CONDITION[cleanText(product.item_condition)]
+  if (condition) offer.itemCondition = condition
   const ld: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
     sku: product.sku,
     description: metaDescription(product, 320),
-    offers: {
-      '@type': 'Offer',
-      price: priceFromQ(product.base_price_q),
-      priceCurrency: CURRENCY,
-      availability: availabilitySchemaUrl(product.availability),
-      url
-    }
+    offers: offer
   }
   if (images.length) ld.image = images.length === 1 ? images[0] : images
-  if (brandName) ld.brand = { '@type': 'Brand', name: brandName }
+  const brand = cleanText(product.brand)
+  if (brand) ld.brand = { '@type': 'Brand', name: brand }
+  const gtin = cleanText(product.gtin)
+  if (gtin) ld.gtin = gtin
+  const mpn = cleanText(product.mpn)
+  if (mpn) ld.mpn = mpn
   if (Array.isArray(product.seo_keywords) && product.seo_keywords.length) {
     ld.keywords = product.seo_keywords.join(', ')
   }

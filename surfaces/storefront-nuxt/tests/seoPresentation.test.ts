@@ -119,7 +119,7 @@ describe('metaDescription', () => {
 describe('productJsonLd', () => {
   it('monta Product + Offer com dados do backend', () => {
     const url = 'https://loja.exemplo.com/produto/CROIS-01'
-    const ld = productJsonLd({ product: product(), origin: ORIGIN, url, brandName: 'Nelson Boulangerie' })
+    const ld = productJsonLd({ product: product({ brand: 'Nelson Boulangerie', item_condition: 'new' }), origin: ORIGIN, url })
     expect(ld['@type']).toBe('Product')
     expect(ld.name).toBe('Croissant de Manteiga')
     expect(ld.sku).toBe('CROIS-01')
@@ -130,12 +130,32 @@ describe('productJsonLd', () => {
     expect(offer.price).toBe('12.90')
     expect(offer.priceCurrency).toBe('BRL')
     expect(offer.availability).toBe('https://schema.org/InStock')
+    expect(offer.itemCondition).toBe('https://schema.org/NewCondition')
     expect(offer.url).toBe(url)
   })
-  it('omite imagem/brand quando ausentes', () => {
-    const ld = productJsonLd({ product: product({ image_url: null }), origin: ORIGIN, url: 'x', brandName: '' })
+  it('declara a marca e os identificadores do Catálogo, não os da loja', () => {
+    const ld = productJsonLd({
+      product: product({ brand: 'St. Dalfour', gtin: '3232490001234', mpn: 'SD-MINI' }),
+      origin: ORIGIN,
+      url: 'x'
+    })
+    expect(ld.brand).toEqual({ '@type': 'Brand', name: 'St. Dalfour' })
+    expect(ld.gtin).toBe('3232490001234')
+    expect(ld.mpn).toBe('SD-MINI')
+  })
+  // Não informado não é "a marca é a da loja": a casa também revende.
+  it('omite imagem, marca e identificadores quando o Catálogo não informa', () => {
+    const ld = productJsonLd({ product: product({ image_url: null, brand: '', gtin: '', mpn: '' }), origin: ORIGIN, url: 'x' })
     expect(ld.image).toBeUndefined()
     expect(ld.brand).toBeUndefined()
+    expect(ld.gtin).toBeUndefined()
+    expect(ld.mpn).toBeUndefined()
+  })
+  // Backend anterior ao campo (janela de deploy): nada quebra, nada é inventado.
+  it('tolera a projeção sem os campos de identidade comercial', () => {
+    const ld = productJsonLd({ product: product(), origin: ORIGIN, url: 'x' })
+    expect(ld.brand).toBeUndefined()
+    expect((ld.offers as Record<string, unknown>).itemCondition).toBeUndefined()
   })
 })
 
