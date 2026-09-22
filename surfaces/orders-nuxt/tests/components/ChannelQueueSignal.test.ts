@@ -17,6 +17,18 @@ vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "" } }));
 
 const stubs = { Icon: true, RailToggle: true, NuxtLink: { props: ["to"], template: "<a :data-to='to'><slot /></a>" } };
 
+// O desenho da barra de seções é do kit (`OperatorAppBar`, com teste próprio do ponto
+// âmbar). O que cabe ao Gestor — e é o que este arquivo cobra — é ENTREGAR a atenção
+// do canal na seção certa. O duble abaixo só expõe o que foi entregue.
+const appBarStub = {
+  props: ["sections", "label", "current"],
+  template: `<header><span
+      v-for="section in sections"
+      :key="section.key"
+      :data-section="section.key"
+    ><span v-if="section.attention" :data-channels-attention="section.key">{{ section.attention }}</span></span><slot name="end" /></header>`,
+};
+
 const item = (ref_: string, kind: "sale" | "display", state: "off" | "paused" | "diverges", line: string) =>
   ({ ref: ref_, name: ref_, kind, state, line, focus_path: `/feeds?focus=${ref_}` });
 
@@ -66,11 +78,11 @@ describe("indicador no item Canais da navegação", () => {
   beforeEach(() => { attention.value = projection(); });
 
   it("estado normal: nada ao lado de Canais", () => {
-    expect(mount(GestorTopBar, { global: { stubs } }).find("[data-channels-attention]").exists()).toBe(false);
+    expect(mount(GestorTopBar, { global: { stubs: { ...stubs, OperatorAppBar: appBarStub } } }).find("[data-channels-attention]").exists()).toBe(false);
   });
 
   it("feed ou canal desligado: ponto âmbar + a contagem", () => {
     attention.value = projection({ count: 2, label: "2 desligados", items: [item("tv-1", "display", "off", "x"), item("web", "sale", "off", "y")] });
-    expect(mount(GestorTopBar, { global: { stubs } }).get("[data-channels-attention]").text()).toBe("2 desligados");
+    expect(mount(GestorTopBar, { global: { stubs: { ...stubs, OperatorAppBar: appBarStub } } }).get("[data-channels-attention]").text()).toBe("2 desligados");
   });
 });
