@@ -446,11 +446,8 @@ export interface PwaCopyProjection {
   install_message: CopyEntryProjection
   install_cta: CopyEntryProjection
   install_dismiss_cta: CopyEntryProjection
-  ios_title: CopyEntryProjection
-  ios_message: CopyEntryProjection
-  ios_share_step: CopyEntryProjection
-  ios_add_step: CopyEntryProjection
-  ios_done_cta: CopyEntryProjection
+  manual_title: CopyEntryProjection
+  manual_done_cta: CopyEntryProjection
   update_title: CopyEntryProjection
   update_cta: CopyEntryProjection
 }

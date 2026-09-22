@@ -1,28 +1,38 @@
 <script setup lang="ts">
+// O convite de instalação da loja.
+//
+// O COMO deixou de ser copy de servidor e passou a ser fato de plataforma: quem decide
+// o texto dos passos é `installPlan()` (`~/utils/installGuide`), por sistema + navegador.
+// A copy do Omotenashi continua dona do CONVITE — o título, o benefício e os rótulos de
+// botão, que são voz da casa. O passo a passo saiu de lá porque uma chave de copy é uma
+// só para todo mundo, e o caminho não é: dizia "Safari" para quem estava no Chrome, no
+// Firefox ou dentro do navegador do WhatsApp — e isso não é copy, é erro de fato.
 import type { PwaCopyProjection } from '~/types/shopman'
 
 const props = defineProps<{ copy?: PwaCopyProjection }>()
 const route = useRoute()
 const {
-  canInstall,
+  plan,
   install,
   isStandalone,
-  isIos,
   isDismissed,
   markShown,
-  dismiss
+  dismiss,
+  dismissAsDone
 } = usePwaInstall()
 const open = ref(false)
-const iosStep = ref<0 | 1>(0)
 // UM convite por página: divide a vez com o sheet de novidades (useShopInvite).
 const invite = useShopInvite()
 
+const manual = computed(() => plan.value.kind === 'steps')
 const excluded = computed(() => isPwaInviteRouteExcluded(route.path))
 const eligible = computed(() => Boolean(props.copy)
   && !excluded.value
   && !isStandalone.value
   && !isDismissed.value
-  && (canInstall.value || isIos.value)
+  // `invite` é falso onde não há caminho honesto (Firefox de computador, Safari antigo)
+  // e onde o caminho existe mas subir sozinho seria adivinhação (Chromium já instalado).
+  && plan.value.invite
   && invite.canOpen('pwa-install', route.path))
 
 // Síncrono: a vez fica marcada no mesmo instante em que o convite abre, antes de
@@ -35,7 +45,6 @@ watch(() => route.path, path => invite.leavePage(path))
 
 watch(eligible, (value) => {
   if (!value || open.value) return
-  iosStep.value = 0
   open.value = true
   markShown()
 }, { immediate: true })
@@ -49,6 +58,13 @@ function close () {
   dismiss()
 }
 
+// Ninguém sabe daqui se ela seguiu os passos — o iOS não avisa. Quem sabe é ela, e
+// repetir o convite na semana seguinte gasta a paciência de quem já resolveu.
+function finishManual () {
+  open.value = false
+  dismissAsDone()
+}
+
 async function installNow () {
   await install()
   open.value = false
@@ -59,14 +75,14 @@ async function installNow () {
   <BottomSheet
     v-if="copy"
     :open="open"
-    :title="isIos ? copy.ios_title.title : copy.install_title.title"
-    :description="isIos ? copy.ios_message.message : copy.install_message.message"
-    :max-width="isIos ? 'lg' : 'md'"
-    :content-class="isIos ? '!max-h-[calc(100dvh-1rem)]' : undefined"
+    :title="manual ? copy.manual_title.title : copy.install_title.title"
+    :description="copy.install_message.message"
+    :max-width="manual ? 'lg' : 'md'"
+    :content-class="manual ? '!max-h-[calc(100dvh-1rem)]' : undefined"
     data-testid="pwa-install-invite"
     @update:open="value => { if (!value) close() }"
   >
-    <PwaIosGuide v-if="isIos" :step="iosStep" :copy="copy" />
+    <PwaInstallSteps v-if="manual" :plan="plan" />
     <div v-else class="flex items-start gap-3 p-4">
       <span class="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
         <Icon name="lucide:download" class="size-5" />
@@ -76,34 +92,16 @@ async function installNow () {
 
     <template #footer>
       <UiButton
-        v-if="isIos && iosStep === 0"
+        v-if="manual"
         class="w-full"
-        icon="lucide:arrow-right"
-        data-testid="ios-next"
-        @click="iosStep = 1"
+        icon="lucide:check"
+        data-testid="install-done"
+        @click="finishManual"
       >
-        Próximo
+        {{ copy.manual_done_cta.title }}
       </UiButton>
-      <div v-else-if="isIos" class="grid w-full grid-cols-[auto_1fr] gap-2">
-        <UiButton
-          variant="outline"
-          icon="lucide:arrow-left"
-          aria-label="Voltar ao passo 1"
-          data-testid="ios-back"
-          @click="iosStep = 0"
-        >
-          Voltar
-        </UiButton>
-        <UiButton
-          icon="lucide:check"
-          data-testid="ios-done"
-          @click="close"
-        >
-          {{ copy.ios_done_cta.title }}
-        </UiButton>
-      </div>
       <UiButton
-        v-if="!isIos"
+        v-else
         class="w-full"
         icon="lucide:download"
         @click="installNow"
