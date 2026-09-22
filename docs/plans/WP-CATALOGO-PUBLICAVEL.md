@@ -55,6 +55,40 @@ torna isto delicado, e que **precisa estar no ensaio antes de gravar**:
 no mesmo molde do `apply_product_brands` — tabela versionada, relatório do que
 mudaria, alias criado junto, e recusa fechada em colisão.
 
+### ✅ F1a — o comando e o ensaio (feito, 22/09)
+
+`config/management/commands/apply_product_skus.py`, com ensaio por padrão
+(executa e desfaz) e `--apply`. O ensaio rodou contra uma **cópia** do banco
+vivo — não contra ele — e o laudo inteiro está em
+[`docs/reports/2026-09-22-ensaio-rename-sku-catalogo.md`](../reports/2026-09-22-ensaio-rename-sku-catalogo.md).
+
+Em uma linha: **72 dos 87 pares trocam, 15.786 linhas se mexem, 36 itens de feed
+mudam de `g:id`, e 15 pares param** — porque uma decisão de de-para de 19/08
+envelheceu quando o catálogo separou os produtos (os 12 chás Kãnfa creditados ao
+`THL`, `BBB` ao pacote, `PHO` ao pacote, `CHAI_A` a produto nenhum). Isso é
+curadoria, não rename: o conserto é no Gestor, e o comando é idempotente.
+
+Três coisas que o WP não previa e o ensaio achou:
+
+1. `ProductConsumptionTag.sku` é **único**, e o alpha guarda etiqueta dos dois
+   códigos (`FE` e `FENDU`): o cascade estourava a constraint no meio da
+   travessia. Voltou a política por model do `rename_skus_to_real`.
+2. O SKU também mora em **JSON fora do cascade** — payload de evento, snapshot
+   de pedido, `content` de anúncio. História fica; estado vivo pede janela (há
+   dois anúncios em `pending_review` com link para `/produto/BE`).
+3. `ifood_retract_renamed_skus` lia **um mapa só**, e as levas se encadeiam
+   (`BAGUETE → BF → TRADI`) e chegam a voltar (`FENDU → FE → FENDU`). Passou a
+   ler os dois e a resolver a cadeia contra o catálogo vivo.
+
+### ⏳ F1b — as tabelas de código (falta)
+
+671 literais no `seed.py`, 72 no `apply_product_brands.py`, 23 no
+`rename_skus_to_real.py`, 10 no `measure_eat_in_weights.py`, 8 no
+`apply_product_measurements.py`. **Fica para depois da palavra dele sobre a
+tabela**: reescrever 671 literais contra um de-para que ele ainda pode editar é
+retrabalho garantido. E precisa estar commitado **antes** do `--apply`, senão o
+próximo `seed` nasce discordando do alpha.
+
 ## F2 — Fotos
 
 59 produtos com foto de demonstração (Unsplash), 13 deles no feed do Google.
@@ -90,6 +124,7 @@ fallback, então ninguém "quebra" — só empobrece. Vale a régua de copy da c
   teste que trava a massa de cada peça.
 - Compras passou a receber **mercadoria de revenda** (PR #964) e o PDV a achar
   produto pelo **código de barras** (PR #970).
+- **F1a**: o comando do rename e o ensaio medido (ver acima).
 - Planos irmãos: `WP-RECEITAS-DA-CASA.md`, `WP-INSUMOS-SEM-FRICCAO.md`,
   `WP-VARIACAO-E-ADICIONAL.md`, `WP-VENDA-POR-PESO.md`.
 
