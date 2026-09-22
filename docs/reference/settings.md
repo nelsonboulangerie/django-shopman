@@ -140,7 +140,7 @@ de compra todo dia, em silêncio.
 | Setting | Tipo | Default | Descrição |
 |---------|------|---------|-----------|
 | `ACCESS_LINK_EXCHANGE_TTL_MINUTES` | int | `5` | TTL do access link (Manychat/API) |
-| `ACCESS_LINK_API_KEY` | str | `""` | **Obrigatório em produção.** Shared secret para `POST /auth/access/create/` |
+| `ACCESS_LINK_API_KEY` | str | `""` | **Obrigatório em produção.** Shared secret para `POST /api/auth/access/create/` (a ponte do ManyChat; o deployment não monta `/auth/access/create/`) |
 
 ### Access Link (email login)
 
