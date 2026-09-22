@@ -96,7 +96,7 @@ const BANNED = /aparelh/i;
 //     semântico: a matriz visual do Marketing tem baselines em PNG e havia duas
 //     levas na fila mexendo neles (#978 e #979) quando esta regra nasceu. Uma
 //     terceira frente no mesmo diretório travaria as três. A troca do Marketing
-//     vive no PR de seguimento #REPLACE_FOLLOWUP#; quando ele entrar, esta linha
+//     vive no PR de seguimento #984; quando ele entrar, esta linha
 //     sai daqui, e não há nada a decidir de novo.
 /** O nome do objeto na tela é "lote" — "fornada" nomeia o evento do forno. */
 const BANNED_BATCH = /\bfornadas?\b/i;
