@@ -11,7 +11,7 @@ import {
 // client-only, so ringing/sound is e2e/manual territory). Here we cover the pure,
 // unit-observable part: the arm/create→get→clear dictionary, the minutes clamp,
 // and the panel list (entries/activeCount/ringingCount).
-describe("useFloorTimers — forno (chave = fornada)", () => {
+describe("useFloorTimers — forno (chave = lote)", () => {
   it("arms a timer under its key and reads it back; clear removes it", () => {
     const timers = useFloorTimers();
     timers.arm("wo-1", 15);

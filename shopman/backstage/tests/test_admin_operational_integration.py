@@ -274,7 +274,7 @@ class AdminNavigationTests(TestCase):
         found = {card["label"] for group in build_settings_hub(q="producao")["groups"] for card in group["cards"]}
 
         self.assertIn("Produção", found)
-        self.assertIn("Defeitos de fornada", found)
+        self.assertIn("Defeitos de lote", found)
         self.assertNotIn("Cupons", found)
 
     def test_sidebar_badges_count_operational_attention(self) -> None:

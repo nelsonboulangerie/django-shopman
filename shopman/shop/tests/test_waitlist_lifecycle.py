@@ -1328,7 +1328,7 @@ class TestTheOperatorCannotPrepareWhatIsNotBaked:
     """⚠️ O selo avisava e o botão continuava vivo — avisar não é barrar.
 
     Reserva em fermata espera pão que AINDA NÃO EXISTE. O card do Gestor já
-    trazia "Na fila da fornada", mas "Iniciar preparo" seguia clicável ao lado:
+    trazia "Na fila do lote", mas "Iniciar preparo" seguia clicável ao lado:
     um toque mandava para o KDS uma separação impossível de fazer, e a linha da
     cozinha só descobria isso na hora de separar.
 

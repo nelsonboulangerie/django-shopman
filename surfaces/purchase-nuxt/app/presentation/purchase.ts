@@ -941,15 +941,15 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
   const blockers: ReorderBlocker[] = [];
 
   // O consumo não é digitado: sai das baixas de estoque que a produção lança ao
-  // FINALIZAR uma ficha (Move negativo, kind=MAKE). Enquanto a fornada não for
-  // fechada no sistema, o insumo tem consumo zero e o Compras não sugere nada.
+  // FINALIZAR uma ficha (Move negativo, kind=MAKE). Enquanto o lote não for
+  // fechado no sistema, o insumo tem consumo zero e o Compras não sugere nada.
   const semConsumo = active.filter((material) => material.dailyUse <= 0);
   if (semConsumo.length) {
     blockers.push({
       key: "no-consumption",
       headline: `${semConsumo.length} de ${active.length} insumos sem consumo medido`,
       detail:
-        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando uma fornada é finalizada na Produção. Sem fornada fechada, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
+        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando um lote é finalizado na Produção. Sem lote fechado, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
       count: semConsumo.length,
       action: { label: "Abrir Insumos", baseView: "materials" },
     });

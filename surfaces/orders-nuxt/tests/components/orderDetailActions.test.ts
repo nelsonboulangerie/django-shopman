@@ -206,14 +206,14 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
       status: "preparing",
       can_confirm: false,
       can_advance: false,
-      advance_block_label: "Aguardando fornada",
-      advance_block_reason: "A fornada do pão francês ainda não terminou.",
+      advance_block_label: "Esperando o lote…",
+      advance_block_reason: "O lote do pão francês ainda não terminou.",
     }));
 
     const bloqueado = w.find('[data-action="advance-blocked"]');
     expect(bloqueado.exists()).toBe(true);
     expect(bloqueado.attributes("disabled")).toBeDefined();
-    expect(bloqueado.attributes("title")).toBe("A fornada do pão francês ainda não terminou.");
+    expect(bloqueado.attributes("title")).toBe("O lote do pão francês ainda não terminou.");
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
   });
 

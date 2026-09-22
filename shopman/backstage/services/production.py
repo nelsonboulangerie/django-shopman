@@ -53,7 +53,7 @@ def _operator_error(exc: Exception) -> Exception:
 
     if isinstance(exc, StockError):
         return ProductionError(
-            f"A fornada não foi concluída porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
+            f"O lote não foi concluído porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
         )
     if isinstance(exc, ObjectDoesNotExist):
         return ProductionNotFound(
@@ -67,11 +67,11 @@ def _operator_error(exc: Exception) -> Exception:
     data = getattr(exc, "data", {}) or {}
     if code in ("TERMINAL_STATUS", "VOID_FROM_DONE"):
         if str(data.get("status") or "") == "void":
-            return ProductionConflict("Esta fornada foi estornada. Atualize o painel.", data=data)
+            return ProductionConflict("Este lote foi estornado. Atualize o painel.", data=data)
         if code == "VOID_FROM_DONE":
-            return ProductionConflict("Fornada concluída não pode ser estornada.", data=data)
+            return ProductionConflict("Lote concluído não pode ser estornado.", data=data)
         return ProductionConflict(
-            "Esta fornada já foi fechada em outra tela. Atualize o painel.",
+            "Este lote já foi fechado em outra tela. Atualize o painel.",
             data=data,
         )
     if code in (
@@ -81,7 +81,7 @@ def _operator_error(exc: Exception) -> Exception:
         "AMBIGUOUS_WORK_ORDER",
     ):
         return ProductionConflict(
-            "A fornada mudou em outra tela. Atualize o painel e tente de novo.",
+            "O lote mudou em outra tela. Atualize o painel e tente de novo.",
             code="conflict",
             data={**data, "cause": code.lower()},
         )
@@ -135,7 +135,7 @@ class ProductionBatchTraceabilityError(ProductionError):
         self.output_sku = output_sku
         self.cause = cause
         super().__init__(
-            "A fornada não foi concluída porque a rastreabilidade do lote falhou. Atualize o painel e tente novamente."
+            "O lote não foi concluído porque a rastreabilidade falhou. Atualize o painel e tente novamente."
         )
 
 
@@ -1021,14 +1021,14 @@ def apply_quick_finish(
                     work_order_ref=work_order.ref,
                 )
                 raise ProductionConflict(
-                    "A conclusão rápida não terminou; a mesma fornada foi preservada para retry.",
+                    "A conclusão rápida não terminou; o mesmo lote foi preservado para retry.",
                     code="quick_finish_incomplete",
                     data={
                         "work_order": work_order.ref,
                         "current_rev": work_order.rev,
                         "cause": type(translated).__name__,
                         "recovery_action": "retry",
-                        "recovery_label": "Retomar a mesma fornada",
+                        "recovery_label": "Retomar o mesmo lote",
                     },
                 ) from exc
         raise translated from (None if translated is exc else exc)
@@ -1392,7 +1392,7 @@ def apply_oven_arm(
             )
             if open_run is not None:
                 raise ProductionConflict(
-                    "Esta fornada já possui uma enfornada aberta. Retire-a antes de registrar outra.",
+                    "Este lote já possui uma enfornada aberta. Retire-a antes de registrar outra.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -1471,7 +1471,7 @@ def apply_oven_conclude(
                     ).first()
                     if replay.work_order_ref != work_order.ref or replay_event is None or replay_event.actor != actor:
                         raise ProductionConflict(
-                            "Esta tentativa de forno já pertence a outra fornada.",
+                            "Esta tentativa de forno já pertence a outro lote.",
                             code="conflict",
                             data={
                                 "work_order": work_order.ref,
@@ -1587,7 +1587,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
         raise ProductionError("Informe quality ou partition, nunca os dois.")
     if partition is not None:
         if not partition:
-            raise ProductionError("A partição da fornada não pode ser vazia.")
+            raise ProductionError("A partição do lote não pode ser vazia.")
         try:
             partition = [
                 {
@@ -1598,7 +1598,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
             ]
             partition_total = sum((group["quantity"] for group in partition), Decimal("0"))
         except (AttributeError, TypeError, ValueError, ArithmeticError, ProductionError) as exc:
-            raise ProductionError("Partição da fornada inválida.") from exc
+            raise ProductionError("Partição do lote inválida.") from exc
         if partition_total != quantity:
             raise ProductionError("A soma dos grupos deve ser exatamente igual à quantidade total informada.")
     else:
@@ -1660,7 +1660,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
         # preço/eligibilidade. Motivos diferentes no mesmo grau não criam
         # sublotes comercialmente distintos; o operador informa o principal.
         if grade in seen_grade_refs:
-            raise ProductionError(f"O grau de qualidade {grade} só pode aparecer uma vez na fornada.")
+            raise ProductionError(f"O grau de qualidade {grade} só pode aparecer uma vez no lote.")
         seen_grade_refs.add(grade)
 
         grade_fact = grades[grade]
@@ -1803,7 +1803,7 @@ def _locked_quality_source_stock(work_order, before_partition):
     batch_refs = [str(group.get("batch_ref") or "") for group in before_partition if not bool(group.get("loss"))]
     if not batch_refs or any(not ref for ref in batch_refs):
         raise ProductionConflict(
-            "Esta fornada não possui lotes identificáveis para uma correção segura.",
+            "Este lote não tem rastreabilidade identificável para uma correção segura.",
             code="quality_correction_blocked",
             data={"work_order": work_order.ref, "cause": "missing_batch_traceability"},
         )
@@ -1815,7 +1815,7 @@ def _locked_quality_source_stock(work_order, before_partition):
     present = sum((Decimal(str(quant.quantity)) for quant in quants), Decimal("0"))
     if present != expected:
         raise ProductionConflict(
-            "A qualidade não pode ser corrigida porque parte desta fornada já saiu do estoque.",
+            "A qualidade não pode ser corrigida porque parte deste lote já saiu do estoque.",
             code="quality_correction_blocked",
             data={
                 "work_order": work_order.ref,
@@ -1830,14 +1830,14 @@ def _locked_quality_source_stock(work_order, before_partition):
     disallowed_negative = Move.objects.filter(quant__in=quants, delta__lt=0)
     if disallowed_negative.exists():
         raise ProductionConflict(
-            "Parte desta fornada já foi movimentada. Nenhuma alteração foi feita.",
+            "Parte deste lote já foi movimentada. Nenhuma alteração foi feita.",
             code="quality_correction_blocked",
             data={"work_order": work_order.ref, "cause": "stock_already_moved"},
         )
     position_ids = {quant.position_id for quant in quants if quant.quantity > 0}
     if len(position_ids) != 1:
         raise ProductionConflict(
-            "Esta fornada está distribuída em mais de uma posição. Resolva o estoque antes de corrigir o QC.",
+            "Este lote está distribuído em mais de uma posição. Resolva o estoque antes de corrigir o QC.",
             code="quality_correction_blocked",
             data={"work_order": work_order.ref, "cause": "multiple_stock_positions"},
         )
@@ -2034,7 +2034,7 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
                 "quality_grade_ref": item.get("quality_grade_ref", ""),
                 "nonconformity_reason": str(meta.get("quality_reason") or ""),
                 "nonconformity_percent": int(meta.get("quality_markdown_percent") or 0),
-                "notes": f"Reclassificação QC da fornada {work_order.ref}",
+                "notes": f"Reclassificação QC do lote {work_order.ref}",
             },
         )
         if not created:
@@ -2282,7 +2282,7 @@ def apply_quality_review(
                 return replay
             if work_order.status != WorkOrder.Status.FINISHED:
                 raise ProductionConflict(
-                    "Conclua a fornada antes de revisar a qualidade.",
+                    "Conclua o lote antes de revisar a qualidade.",
                     data={"work_order": work_order.ref, "cause": "quality_review_requires_finished"},
                 )
             if WorkOrderEvent.objects.filter(
@@ -2293,14 +2293,14 @@ def apply_quality_review(
                 ),
             ).exists():
                 raise ProductionConflict(
-                    "A qualidade desta fornada já foi revisada.",
+                    "A qualidade deste lote já foi revisada.",
                     data={"work_order": work_order.ref, "cause": "quality_already_reviewed"},
                 )
 
             _check_rev(work_order, expected_rev)
             partition = quality_service.effective_partition(work_order)
             if not partition:
-                raise ProductionError("A fornada não possui fatos de qualidade para revisar.")
+                raise ProductionError("O lote não possui fatos de qualidade para revisar.")
             event = WorkOrderEvent.objects.create(
                 work_order=work_order,
                 seq=_next_seq(work_order),
@@ -2370,7 +2370,7 @@ def _record_quality_hold_risk(exc: ProductionConflict) -> None:
             "critical",
             (
                 f"O pedido {order_ref} foi protegido: uma correção física de {work_order_ref} "
-                "reduziria sua cobertura. Combine substituição, próxima fornada ou reembolso "
+                "reduziria sua cobertura. Combine substituição, próximo lote ou reembolso "
                 "com o cliente antes de liberar a reserva."
             ),
             order_ref=order_ref,
@@ -2436,7 +2436,7 @@ def apply_quality_correction(
                 return replay
             if work_order.status != WorkOrder.Status.FINISHED:
                 raise ProductionConflict(
-                    "Somente uma fornada concluída pode ter a qualidade corrigida.",
+                    "Somente um lote concluído pode ter a qualidade corrigida.",
                     data={"work_order": work_order.ref, "cause": "quality_correction_requires_finished"},
                 )
             if work_order.rev != expected_rev:
@@ -2447,7 +2447,7 @@ def apply_quality_correction(
             before = quality_service.effective_partition(work_order)
             if not before:
                 raise ProductionConflict(
-                    "A partição original desta fornada não pôde ser identificada.",
+                    "A partição original deste lote não pôde ser identificada.",
                     code="quality_correction_blocked",
                     data={"work_order": work_order.ref, "cause": "missing_quality_partition"},
                 )
@@ -2466,7 +2466,7 @@ def apply_quality_correction(
             after_saleable = _quality_partition_quantity(provisional, loss=False)
             after_loss = _quality_partition_quantity(provisional, loss=True)
             if after_saleable + after_loss != total:
-                raise ProductionError("A soma da correção deve manter o total contabilizado da fornada.")
+                raise ProductionError("A soma da correção deve manter o total contabilizado do lote.")
             saleable_changed = _saleable_quality_signature(before) != _saleable_quality_signature(provisional)
             loss_changed = _loss_quality_signature(before) != _loss_quality_signature(provisional)
             if not saleable_changed and not loss_changed:
@@ -2527,7 +2527,7 @@ def apply_quality_correction(
                     (
                         f"A qualidade de {work_order.ref} foi corrigida depois que "
                         f"{len(irreversible)} comunicação(ões) já havia(m) saído ou iniciado. "
-                        "Confira a fornada e o histórico de Marketing."
+                        "Confira o lote e o histórico de Marketing."
                     ),
                     order_ref=work_order.ref,
                 )
@@ -2671,7 +2671,7 @@ def apply_finish(
                 allow_implicit_start and work_order.status == WorkOrder.Status.PLANNED
             ):
                 raise ProductionConflict(
-                    "Inicie a fornada antes de concluir o QC.",
+                    "Inicie o lote antes de concluir o QC.",
                     data={
                         "work_order": work_order.ref,
                         "expected_rev": expected_rev,
@@ -2699,7 +2699,7 @@ def apply_finish(
             yield_deviation = reported_quantity - yield_anchor
             if yield_deviation < 0:
                 raise ProductionError(
-                    "A quantidade total deve incluir toda perda da fornada. "
+                    "A quantidade total deve incluir toda perda do lote. "
                     "Classifique o déficit com quantidade e motivo."
                 )
             deviation_context = None
@@ -3320,7 +3320,7 @@ def _check_linked_order_coverage(
         )
         if not create_new and len(work_orders) > 1 and work_order_id in (None, ""):
             raise ProductionConflict(
-                "Há mais de uma fornada nesta célula; selecione a referência exata.",
+                "Há mais de um lote nesta célula; selecione a referência exata.",
                 data={
                     "expected_rev": None,
                     "current_rev": None,
@@ -3353,7 +3353,7 @@ def _check_linked_order_coverage(
         )
         if work_order_id not in (None, "") and target_work_order is None:
             raise ProductionConflict(
-                "A fornada selecionada não pertence mais a esta célula.",
+                "O lote selecionado não pertence mais a esta célula.",
                 data={
                     "expected_rev": None,
                     "current_rev": None,

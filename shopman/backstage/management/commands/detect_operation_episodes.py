@@ -16,7 +16,7 @@ from shopman.backstage.services.episodes import detect_for_day
 
 
 class Command(BaseCommand):
-    help = "Detecta episódios que atrapalharam a operação (silêncio de vendas, fornada não realizada)."
+    help = "Detecta episódios que atrapalharam a operação (silêncio de vendas, lote não realizado)."
 
     def add_arguments(self, parser):
         parser.add_argument("--days", type=int, default=2)
