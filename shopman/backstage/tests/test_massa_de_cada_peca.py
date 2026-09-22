@@ -12,6 +12,7 @@ quem faz o pão (dono, 22/09):
 - **Baguete Gergelim Pequena** e **Baguete Lanche** eram tradição; são
   CIABATTA. A massa da ciabatta dá casca mais fina, e é por isso que a
   baguetinha sem gergelim vai no Jambon-Beurre.
+- **Coelhinho, Ursinho e Porquinho** eram brioche; são BUTTER.
 
 ⚠️ Este teste roda o seed inteiro de propósito. Ler a tabela do seed em vez do
 banco semeado provaria que a tabela concorda consigo mesma.
@@ -30,10 +31,16 @@ MASSA_DA_PECA = {
     "PR": "MASSA-BRIOCHE",
     "BEP": "MASSA-CIABATTA",
     "BAP": "MASSA-CIABATTA",
-    # Âncoras do que já estava certo, para o teste falhar se alguém "arrumar"
-    # demais: o croissant é de croissant, o bichinho é de brioche.
+    # Os três bichinhos são de BUTTER, não de brioche — e esta linha é a
+    # cicatriz de eu ter usado o Ursinho como "âncora do que já estava certo"
+    # sem perguntar. O dono corrigiu na mesma hora: "Ursinho, porquinho,
+    # coelhinho? A massa é butter".
+    "ANC": "MASSA-BUTTER",
+    "ANU": "MASSA-BUTTER",
+    "ANP": "MASSA-BUTTER",
+    # Âncoras do que já estava certo: o croissant é de croissant, a ciabatta
+    # de ciabatta.
     "CT": "MASSA-CROISSANT",
-    "ANU": "MASSA-BRIOCHE",
     "CI": "MASSA-CIABATTA",
 }
 

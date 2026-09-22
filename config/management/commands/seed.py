@@ -3855,6 +3855,8 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # Butter, não brioche (dono, 22/09): "Ursinho, porquinho,
+                # coelhinho? A massa é butter".
                 "ref": "animalzinho",
                 "name": "Animalzinho",
                 "output_sku": "ANC",
@@ -3862,7 +3864,7 @@ class Command(BaseCommand):
                 "items": [
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
                     # crus, para 90 g assados.
-                    ("MASSA-BRIOCHE", Decimal("0.060")),
+                    ("MASSA-BUTTER", Decimal("0.060")),
                     ("CREME-BAUNILHA", Decimal("0.040")),
                 ],
             },
@@ -4270,7 +4272,7 @@ class Command(BaseCommand):
                 "output_sku": "ANU",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.080")),    # 80 g/un
+                    ("MASSA-BUTTER", Decimal("0.080")),    # 80 g/un
                     ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
                 ],
             },
@@ -4280,7 +4282,7 @@ class Command(BaseCommand):
                 "output_sku": "ANP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.080")),    # 80 g/un
+                    ("MASSA-BUTTER", Decimal("0.080")),    # 80 g/un
                     ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
                 ],
             },
