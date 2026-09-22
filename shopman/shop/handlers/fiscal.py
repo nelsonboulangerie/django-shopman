@@ -50,10 +50,36 @@ class NFCeEmitHandler:
         from shopman.shop.services.observability import create_operator_alert
 
         order_ref = str((message.payload or {}).get("order_ref") or "")
+        if self._undone_before_any_emission(order_ref, message):
+            return
         create_operator_alert(
             type="fiscal_emit_failed", severity="critical", order_ref=order_ref,
             message=f"NFC-e do pedido {order_ref} sem emissão confirmada após {message.attempts} tentativa(s). Confira a fila fiscal e consulte a referência antes de reenviar.",
             dedupe_key=f"fiscal_emit_failed:{order_ref}",
+        )
+
+    @staticmethod
+    def _undone_before_any_emission(order_ref: str, message: Directive) -> bool:
+        """Venda desfeita antes da 1ª tentativa: a recusa É o desfecho certo.
+
+        Na 1ª execução (``attempts == 1``) nenhum POST aconteceu, então não há
+        nota que possa ter ficado autorizada sem chave — não há o que o
+        operador conferir. Alertar ``fiscal_emit_failed`` aqui só ensinava o
+        balcão a ignorar o alerta que importa. Com ``attempts > 1`` (retry, ou
+        emissão reaberta por ``fiscal.cancel`` para consulta) o alerta fica:
+        pode haver nota órfã.
+        """
+        from shopman.orderman.models import Order
+
+        if int(message.attempts or 0) > 1:
+            return False
+        row = Order.objects.filter(ref=order_ref).values_list("status", "data").first()
+        if row is None:
+            return False
+        status, data = row
+        return (
+            status in (Order.Status.CANCELLED, Order.Status.RETURNED)
+            and not (data or {}).get("nfce_access_key")
         )
 
     def __init__(self, backend: FiscalBackend):
