@@ -194,15 +194,26 @@ def hold(order, *, require_all: bool = False) -> None:
             # channel_ref aplica o escopo de POSIÇÕES do canal (excluded_positions,
             # posições staff-only). apply_safety_margin=False: a margem é buffer
             # de vitrine — um pedido JÁ commitado pode consumi-la.
+            # O dono é o PEDIDO desde já: vale o mesmo backstop longo do hold
+            # adotado da sacola (``_retag_hold_for_order``). Com o TTL de
+            # carrinho (30 min) a reserva vencia no meio de um PIX lento ou de
+            # uma confirmação manual, o sweep a soltava, e o ``fulfill`` falhava
+            # sem re-reservar (``hold_ids`` já existe) — pão vendido duas vezes.
+            # Reserva sem prazo (fornada/demanda) segue sem prazo: o adapter
+            # zera ``expires_at`` dela.
+            order_hold_kwargs = {
+                "reference": f"order:{order.ref}",
+                "target_date": target_date,
+                "channel_ref": getattr(order, "channel_ref", None),
+                "ttl_minutes": _ORDER_HOLD_BACKSTOP_HOURS * 60,
+                "apply_safety_margin": False,
+                "priority": _ORDER_HOLD_PRIORITY,
+            }
             result = adapter.create_hold(
                 sku=comp_sku,
                 qty=unmet_qty,
-                reference=f"order:{order.ref}",
-                target_date=target_date,
-                channel_ref=getattr(order, "channel_ref", None),
-                apply_safety_margin=False,
                 allow_demand=comp_allow_demand,
-                priority=_ORDER_HOLD_PRIORITY,
+                **order_hold_kwargs,
             )
             if not result.get("success"):
                 logger.warning(
@@ -228,10 +239,29 @@ def hold(order, *, require_all: bool = False) -> None:
                         {"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True}
                     )
                     continue
-                _alert_hold_gap(
-                    order, comp_sku, unmet_qty,
-                    "lead_time" if lead_time_earliest is not None else result.get("error_code"),
-                )
+                # Caminho brando (pedido já consumado fora: PDV, iFood). A
+                # reserva é 1:1 por quant e desconta as sacolas alheias; o que
+                # não cabe INTEIRO numa reserva ainda pode caber em pedaços.
+                # Reservar o que existe livre garante a baixa dele no
+                # ``fulfill`` — sem isso, 3 pedidos com 2 livres baixavam 0.
+                # O alerta fica só para o resto.
+                for part_id, part_qty in adapter.create_holds_up_to(
+                    sku=comp_sku, qty=unmet_qty, **order_hold_kwargs,
+                ):
+                    hold_ids.append({
+                        "sku": comp_sku,
+                        "hold_id": part_id,
+                        "qty": float(part_qty),
+                    })
+                    unmet_qty -= part_qty
+                if unmet_qty > 0:
+                    # O saldo do Stockman vem com 3 casas: "1×", não "1.000×".
+                    if unmet_qty == unmet_qty.to_integral_value():
+                        unmet_qty = unmet_qty.quantize(Decimal("1"))
+                    _alert_hold_gap(
+                        order, comp_sku, unmet_qty,
+                        "lead_time" if lead_time_earliest is not None else result.get("error_code"),
+                    )
                 continue
 
             hold_ids.append({
