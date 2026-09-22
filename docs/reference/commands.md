@@ -18,6 +18,7 @@
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
+| [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
@@ -409,6 +410,30 @@ python manage.py bootstrap_whatsapp_channel
 ```
 
 **Veja também:** [WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md)
+
+---
+
+### efi_webhook
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/efi_webhook.py`
+
+O webhook do Pix é cadastrado **por chave** na Efí, fora do banco e fora do spec. Este comando
+consulta o cadastrado (`GET /v2/webhook/:chave`) e, se divergir da URL canônica, cadastra
+(`PUT`, com `x-skip-mtls-checking: true`, porque a DO não faz mTLS) e relê para confirmar.
+Só age quando o adapter efetivo do Pix é a Efí. URL canônica:
+`https://<SHOPMAN_OPERATOR_API_HOST>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>&ignorar=`
+— o `&ignorar=` absorve o `/pix` que a Efí acrescenta ao fim da URL (sem ele o acréscimo cairia
+dentro do token e todo webhook voltaria 401). O token nunca sai inteiro na saída.
+
+Roda no job `release` do alpha com `--soft`: falha aparece no log do release e no Sentry, sem
+derrubar o deploy. Rotacionar o `EFI_WEBHOOK_TOKEN` basta: o próximo release recadastra.
+
+```bash
+python manage.py efi_webhook            # confere e cadastra se divergir
+python manage.py efi_webhook --check    # só confere (sai com erro se divergir)
+python manage.py efi_webhook --soft     # erro visível sem código de saída
+```
 
 ---
 
