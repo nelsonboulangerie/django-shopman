@@ -1635,9 +1635,11 @@ SHOPMAN_PURCHASE_NFE = {
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500"))
 SHOPMAN_ACCOUNTING_BACKEND = None
 
-# Operator email for backend notifications (order alerts, etc.).
-# Falls back to DEFAULT_FROM_EMAIL if None.
-SHOPMAN_OPERATOR_EMAIL = os.environ.get("SHOPMAN_OPERATOR_EMAIL", "").strip() or None
+# Endereço que recebe os alertas críticos e as notificações de sistema (sem
+# pedido): o dono/gestor, não o operador de balcão. Sem ele, o alerta crítico
+# por e-mail termina num aviso de log e a notificação de sistema cai no
+# DEFAULT_FROM_EMAIL.
+SHOPMAN_ALERT_EMAIL = os.environ.get("SHOPMAN_ALERT_EMAIL", "").strip() or None
 
 # Retenção da trilha de acessos de operador (SignInEvent), em dias.
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
