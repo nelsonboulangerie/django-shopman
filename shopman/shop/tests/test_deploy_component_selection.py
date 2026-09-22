@@ -573,7 +573,8 @@ class _Resposta:
 
 
 def _registry_falso(listagem: list[dict], distribuicao: dict[str, str], *, auth_ok=True):
-    """Um `urlopen` que responde as três perguntas da guarda, como a DO responde.
+    """Um `urlopen` que responde as três perguntas da guarda, como a DO responde —
+    inclusive o 403 do Cloudflare para o agente padrão do urllib.
 
     A listagem `/tags` e a distribuição são servidas SEPARADAS de propósito: em
     22/09/2026 elas discordavam por horas sobre a mesma tag móvel.
@@ -599,6 +600,12 @@ def _registry_falso(listagem: list[dict], distribuicao: dict[str, str], *, auth_
                 raise urllib.error.HTTPError(url, 401, "Unauthorized", None, None)
             return _Resposta(json.dumps({"token": BEARER}).encode())
         if url.startswith("https://registry.digitalocean.com/v2/nelsonboulangerie/shopman/manifests/"):
+            # O Cloudflare na frente do registry recusa o agente padrão do
+            # urllib (medido em 22/09/2026: 403 `server: cloudflare`). Sem
+            # `User-Agent` no Request, o urllib manda `Python-urllib/3.x`.
+            agente = request.get_header("User-agent") or ""
+            if not agente or agente.startswith("Python-urllib"):
+                raise urllib.error.HTTPError(url, 403, "Forbidden", None, None)
             assert request.get_method() == "HEAD"
             assert auth == f"Bearer {BEARER}"
             assert "application/vnd.oci.image.index.v1+json" in request.get_header("Accept")
