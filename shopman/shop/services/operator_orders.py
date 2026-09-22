@@ -386,7 +386,7 @@ def advance_order(
             cash_ledger.record(
                 "courier_out",
                 shift=cash_shift,
-                operator=_user_for_actor(actor) or cash_shift.operator,
+                operator=_user_for_actor(actor) or cash_shift.opened_by,
                 amount_q=-change_out,
                 order_ref=order.ref,
                 payload={
@@ -837,7 +837,7 @@ def settle_delivery_cash(
 
     from shopman.payman import PaymentService
 
-    receiver = _user_for_actor(actor) or cash_shift.operator
+    receiver = _user_for_actor(actor) or cash_shift.opened_by
 
     tenders = [dict(t) for t in payment.get("tenders") or []]
     if not tenders:
