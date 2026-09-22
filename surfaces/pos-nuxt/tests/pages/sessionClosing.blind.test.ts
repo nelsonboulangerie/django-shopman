@@ -39,7 +39,8 @@ function projection(overrides: Partial<DayClosingProjection> = {}): DayClosingPr
     pending_production: [
       {
         ref: "WO-042", output_sku: "BAGUETE", recipe_name: "Baguete", status: "started",
-        status_label: "Iniciada", quantity: "80", target_date_display: "18/08", is_overdue: true,
+        status_label: "Iniciada", quantity: "80",
+        target_date: "2026-08-17", target_date_display: "17/08", is_overdue: true,
       },
     ],
     has_pending_production: true,
@@ -94,7 +95,7 @@ describe("fechamento do dia — a contagem é cega ANTES de registrar", () => {
 
     expect(texto).toContain("Produção em aberto");
     expect(texto).toContain("Uma ordem de produção ainda está aberta");
-    expect(texto).toContain("Resolver na produção");
+    expect(texto).toContain("Abrir a Produção");
   });
 
   it("e mostra os campos de contagem, que é o que se veio fazer", async () => {
@@ -122,5 +123,46 @@ describe("fechamento do dia — DEPOIS de registrado, o quadro aparece", () => {
     const page = await abrirTela(projection({ already_closed: true }));
 
     expect(page.text()).not.toContain("Produção em aberto");
+  });
+});
+
+// O DEFEITO de 22/09/2026: a tabela lista o `ref` de cada ordem aberta e o
+// botão "Resolver na produção" apontava para a RAIZ da Produção. O dado que o
+// operador precisa estava na tela e era jogado fora no clique — ele chegava lá
+// e reencontrava a ordem à mão.
+describe("fechamento do dia — a travessia para a Produção carrega o contexto", () => {
+  it("a ordem pendente É o link: dia da ordem + busca pelo `ref`", async () => {
+    const page = await abrirTela(projection({ already_closed: true }));
+    const link = page.find("[data-work-order-link]");
+
+    expect(link.exists()).toBe(true);
+    expect(link.text()).toBe("WO-042");
+    // `target_date` da ordem, não "hoje": a grade da Produção recorta por data
+    // exata, e a ordem atrasada é de ontem.
+    expect(link.attributes("href")).toContain("date=2026-08-17");
+    expect(link.attributes("href")).toContain("q=WO-042");
+    expect(link.attributes("aria-label")).toBe("Abrir a ordem WO-042 na Produção");
+  });
+
+  it("o rótulo diz o que o link faz, e o link abre o dia do bloqueio mais velho", async () => {
+    const page = await abrirTela(projection());
+    const link = page.find("[data-production-link]");
+
+    expect(link.exists()).toBe(true);
+    // Antes da contagem a promessa é só "abrir a Produção": apontar para UMA
+    // ordem entregaria o SKU, e a contagem é cega.
+    expect(link.text()).toBe("Abrir a Produção");
+    expect(link.attributes("href")).toContain("date=2026-08-17");
+    expect(link.attributes("href")).not.toContain("q=");
+  });
+
+  it("nenhum link cross-app escreve `_blank` na mão — quem decide é o kit", async () => {
+    const page = await abrirTela(projection({ already_closed: true }));
+    const html = page.html();
+
+    expect(html).not.toContain('target="_blank" rel="noopener"');
+    // Aba comum (o teste não roda instalado): a troca de app fica na mesma
+    // janela, que é o que o operador espera do navegador.
+    expect(page.find("[data-work-order-link]").attributes("target")).toBe("_self");
   });
 });

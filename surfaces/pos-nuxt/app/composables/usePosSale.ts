@@ -72,6 +72,7 @@ import {
 } from "~/presentation/customerDecision";
 import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptContact";
 import { closeGuardNotice } from "~/presentation/closeGuard";
+import { orderUrl } from "~/presentation/crossAppLinks";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -2786,7 +2787,7 @@ export function usePosSale(deps: PosSaleDeps) {
         result.value = {
           salesMode: cart.salesMode,
           orderRef,
-          nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
+          nextUrl: orderUrl(ordersUrl.value, orderRef),
           payment: proof,
           paymentDelivery: response.payment_delivery || null,
           receipt,
@@ -3218,6 +3219,8 @@ export function usePosSale(deps: PosSaleDeps) {
       pending: closeGuardPending.value,
       heldElsewhere: closeGuardHeldElsewhere.value,
       browserFailure: closeGuardFailureMessage.value,
+      // "Confira no Gestor" sem link é menção, não ação: o aviso leva à fila.
+      ordersUrl: ordersUrl.value,
     })),
     restoreUncertainClose,
     acknowledgeUncertainClose,
