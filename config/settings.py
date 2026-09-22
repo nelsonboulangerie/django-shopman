@@ -670,6 +670,13 @@ SHOPMAN_IFOOD = {
     "cancellation_default_code": os.environ.get("IFOOD_CANCELLATION_CODE", ""),
     # iFood requires a non-empty `reason` alongside the code (400 otherwise).
     "cancellation_default_reason": os.environ.get("IFOOD_CANCELLATION_REASON", "Problemas de sistema na loja"),
+    # Módulo Merchant: o Shopman como fonte única de "loja aberta" no iFood — grava
+    # o horário semanal (PUT opening-hours), vira feriado/fechamento do calendário
+    # em interrupção, deixa o gestor pausar a loja no iFood e confere o status do
+    # iFood contra o da casa (OperatorAlert quando divergem). DESLIGADO por padrão:
+    # enquanto estiver desligado, quem manda no horário do iFood é o Portal do
+    # Parceiro, como sempre foi. Ver shopman/shop/services/ifood_merchant.py.
+    "merchant_sync_enabled": _env_bool("IFOOD_MERCHANT_SYNC", False),
     # Webhook push (WP-5, optional): HMAC-SHA256 secret for X-IFood-Signature.
     # Defaults to client_secret (per plan). Set from the portal's webhook section
     # if iFood provisions a distinct signing secret.

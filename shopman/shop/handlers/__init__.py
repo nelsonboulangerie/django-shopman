@@ -118,6 +118,7 @@ def register_all() -> None:
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
+    _register_ifood_merchant()
     from shopman.shop.handlers.ifood_handshake import IFoodHandshakeResponseHandler
 
     registry.register_directive_handler(IFoodHandshakeResponseHandler())
@@ -412,6 +413,30 @@ def _register_ifood_status_callbacks() -> None:
     registry.register_directive_handler(IFoodStatusCallbackHandler())
     order_changed.connect(on_order_status_changed, weak=False)
     logger.info("shopman.handlers: registered iFood status callbacks.")
+
+
+def _register_ifood_merchant() -> None:
+    """Loja aberta no iFood: horário/calendário → iFood e a pausa do gestor.
+
+    Atrás de ``SHOPMAN_IFOOD["merchant_sync_enabled"]`` (env ``IFOOD_MERCHANT_SYNC``),
+    desligado por padrão: desligado, o horário do iFood segue sendo o do Portal.
+    """
+    from shopman.shop.services import ifood_merchant
+
+    if not ifood_merchant.enabled():
+        return
+    from django.db.models.signals import post_save
+
+    from shopman.shop.handlers.ifood_merchant import (
+        IFoodMerchantInterruptionHandler,
+        IFoodMerchantSyncHandler,
+        on_shop_saved,
+    )
+
+    registry.register_directive_handler(IFoodMerchantSyncHandler())
+    registry.register_directive_handler(IFoodMerchantInterruptionHandler())
+    post_save.connect(on_shop_saved, weak=False, dispatch_uid="shopman.ifood_merchant.shop_saved")
+    logger.info("shopman.handlers: registered iFood merchant sync.")
 
 
 def _register_campaign() -> None:

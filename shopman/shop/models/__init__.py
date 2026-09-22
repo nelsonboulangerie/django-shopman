@@ -44,6 +44,12 @@ from .concierge import (
 from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .faq import FAQEntry
+from .ifood_merchant import (
+    IFoodInterruption,
+    IFoodInterruptionKind,
+    IFoodInterruptionState,
+    IFoodStoreStatus,
+)
 from .omotenashi_copy import OmotenashiCopy
 from .privacy import (
     PrivacyRequestOperation,
@@ -103,6 +109,10 @@ __all__ = [
     "DeliveryZone",
     "DeliveryDistanceBand",
     "FAQEntry",
+    "IFoodInterruption",
+    "IFoodInterruptionKind",
+    "IFoodInterruptionState",
+    "IFoodStoreStatus",
     "CatalogBinding",
     "CatalogSnapshot",
     "CatalogSyncState",
