@@ -1550,7 +1550,8 @@ SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES = int(os.environ.get("SHOPMAN_UNHANDL
 
 # Integrações cujo estado degradado é DECISÃO REGISTRADA deste deployment, e
 # não desvio. Provedor listado aqui (pelo `provider` da prontidão: `focus_nfe`,
-# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery`) nunca passa de
+# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery` e, com Compras ligada,
+# `purchase_nfe`) nunca passa de
 # `warning` no check_integration_drift e usa a janela longa — lembrete semanal
 # em vez de crítico diário. Existe para a instância que se declara `production`
 # e mantém, de propósito, a NFC-e em homologação: um alerta que grita todo dia

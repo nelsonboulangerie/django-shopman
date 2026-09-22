@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 from django.conf import settings
 
-from shopman.backstage.services.integration_readiness import build_provider_readiness
+from shopman.backstage.services.integration_readiness import build_monitored_readiness
 from shopman.shop.adapters import notification_email
 from shopman.shop.environment import environment_name, is_production
 from shopman.shop.mailers import default_mailer
@@ -120,7 +120,7 @@ def build_diagnostics() -> DiagnosticsProjection:
     return DiagnosticsProjection(
         environment=environment_name(),
         is_production=is_production(),
-        providers=tuple(item.as_projection() for item in build_provider_readiness(mode="runtime")),
+        providers=tuple(item.as_projection() for item in build_monitored_readiness(mode="runtime")),
         email=_email_projection(),
     )
 
