@@ -74,7 +74,7 @@ export function deliveryStatePresentation(
     not_started: {
       label: "A entrega ainda não começou",
       detail:
-        "Enquanto nenhuma faixa iniciar, o cancelamento ainda pode ser possível.",
+        "Enquanto nenhuma plataforma tiver começado, o cancelamento ainda pode ser possível.",
       tone: "quiet",
       icon: "lucide:clock-3",
     },
@@ -115,7 +115,7 @@ export function deliveryStatePresentation(
     cancelled: {
       label: "Entrega cancelada",
       detail:
-        "As faixas que ainda não tinham começado foram preservadas sem envio.",
+        "As plataformas que ainda não tinham começado não enviaram nada.",
       tone: "quiet",
       icon: "lucide:circle-slash",
     },
@@ -237,7 +237,7 @@ export function recoveryActionExplanation(
     return "Pergunta ao provedor o que aconteceu. Não reenvia nada.";
   }
   if (action.kind === "cancel_announcement") {
-    return "Cancela somente faixas que ainda não começaram. O que já começou segue até o fim.";
+    return "Cancela somente as plataformas que ainda não começaram. O que já começou segue até o fim.";
   }
   return "A consequência será revalidada pelo servidor antes de confirmar.";
 }
@@ -300,7 +300,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
   if (receipt.kind === "cancel") {
     return {
       title: "Cancelamento registrado",
-      detail: `${formatCount(count)} ${count === 1 ? "faixa que não tinha começado foi cancelada" : "faixas que não tinham começado foram canceladas"}.`,
+      detail: `${formatCount(count)} ${count === 1 ? "plataforma que não tinha começado não enviou nada" : "plataformas que não tinham começado não enviaram nada"}.`,
     };
   }
   if (receipt.kind === "approve") {
@@ -320,7 +320,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
     return {
       title: "Novo horário registrado",
       detail:
-        "As faixas ainda não iniciadas usam o instante guardado neste comprovante.",
+        "As plataformas que ainda não começaram usam o horário guardado neste comprovante.",
     };
   }
   return {
