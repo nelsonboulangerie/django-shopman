@@ -8,6 +8,7 @@ import {
   confirmationRemainingLabel,
   deadlineTone,
   lucideIcon,
+  onRoadLine,
   splitRef,
   statusTone,
   timerChip,
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>();
 
 const code = computed(() => splitRef(props.card.ref));
+const onRoad = computed(() => onRoadLine(props.card));
 const affordances = computed(() => props.negotiationOnly ? [] : cardAffordances(props.card));
 // Tom do pagamento vem da projeção, não de dedução na tela: dinheiro não é
 // "pago" nem "devendo" — é cobrança fora do site, e verde ali diria que entrou
@@ -195,15 +197,15 @@ function buttonClass(priority: string): string {
       <Icon name="lucide:coins" class="size-3.5 shrink-0" />
       <span class="truncate">{{ card.change_label }}</span>
     </p>
-    <!-- maquininha que saiu com o entregador: custódia no pedido -->
+    <!-- a maquininha na rua: o único sinal dela no quadro é esta linha, no
+         pedido que a levou ("Saiu com a maquininha Azul · junto com 0418") -->
     <p
-      v-if="card.equipment_label"
-      class="flex items-center gap-1.5 text-xs text-muted-foreground"
-      :class="{ 'font-medium': card.equipment_back_pending }"
+      v-if="onRoad"
+      class="flex items-center gap-1.5 text-xs font-medium"
       data-equipment-label
     >
-      <Icon name="lucide:smartphone-nfc" class="size-3.5 shrink-0" />
-      <span class="truncate">{{ card.equipment_label }}</span>
+      <Icon :name="card.equipment_label ? 'lucide:smartphone-nfc' : 'lucide:bike'" class="size-3.5 shrink-0" />
+      <span class="truncate">{{ onRoad }}</span>
     </p>
 
     <!-- status + payment + total -->

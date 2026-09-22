@@ -5,7 +5,6 @@ import {
   appendTag,
   bulkableRefs,
   changeBackSuggestionQ,
-  dispatchAsks,
   dispatchAsksChange,
   moneyInput,
   cardAffordances,
@@ -90,6 +89,10 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   equipment_out: [],
   equipment_label: "",
   equipment_back_pending: false,
+  dispatch_needs_machine: false,
+  trip_with: [],
+  courier_return_orders: [],
+  courier_return_lines: [],
   revisions: {},
   actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
   ...over,
@@ -380,13 +383,10 @@ describe("troco da entrega", () => {
     expect(moneyInput(505)).toBe("5,05");
     expect(moneyInput(0)).toBe("0,00");
   });
-  it("o despacho também pergunta quando o canal deixa levar a maquininha", () => {
-    const opt = [{ ref: "card_machine", label: "Maquininha" }];
-    expect(dispatchAsks(card({ next_status: "dispatched", change_out_suggested_q: 0, equipment_options: opt }))).toBe(true);
-    expect(dispatchAsks(card({ next_status: "dispatched", change_out_suggested_q: 0 }))).toBe(false);
-    // mas só o troco é exigido: o lote de avançar não exclui quem só tem maquininha
-    const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", equipment_options: opt })];
-    expect(bulkableRefs(rows, new Set(["A"]), "advance")).toEqual(["A"]);
+  it("saída com maquininha nunca entra no lote de avançar: a escolha mora no diálogo", () => {
+    const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", dispatch_needs_machine: true }),
+      card({ ref: "B", can_advance: true, next_status: "dispatched" })];
+    expect(bulkableRefs(rows, new Set(["A", "B"]), "advance")).toEqual(["B"]);
   });
   it("oferece 'Maquininha voltou' independentemente do acerto pendente", () => {
     const refs = cardAffordances(card({ can_advance: false, equipment_back_pending: true })).map((a) => a.ref);

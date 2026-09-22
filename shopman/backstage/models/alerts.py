@@ -102,6 +102,9 @@ class OperatorAlert(models.Model):
         ("courier_dispatch_failed", "Corrida não abriu na central"),
         ("courier_not_attended", "Nenhum entregador aceitou a corrida"),
         ("courier_ride_cancelled", "A central cancelou a corrida"),
+        # A maquininha não aparece na tela enquanto está na rua (o card da saída
+        # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
+        ("card_machine_overdue", "Maquininha fora há muito tempo"),
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
@@ -264,6 +267,7 @@ class OperatorAlert(models.Model):
         "ifood_store_closed_while_open",
         "ifood_store_open_while_closed",
         "ifood_store_sync_failed",
+        "card_machine_overdue",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
