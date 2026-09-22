@@ -26,6 +26,30 @@ def _default_emission_decision(order) -> bool:
     return bool(on_request_or_tax_id(order))
 
 
+def _fiscal_backend_is_homologation() -> bool:
+    """O backend fiscal declara que emite em homologação (nota sem valor fiscal)?
+
+    Backend que não declara é tratado como PRODUÇÃO: falha fechado. Errar para
+    "é produção" custa uma nota de teste que não sai; errar para o outro lado
+    custa uma NFC-e de verdade sobre dinheiro que não existe.
+    """
+    backend = fiscal_pool.get_backend()
+    return getattr(backend, "is_homologation", False) is True
+
+
+def simulated_payment_blocks_emission(order) -> bool:
+    """A venda foi paga por simulação e a nota seria de PRODUÇÃO?
+
+    A marca é a mesma régua que tira o pagamento simulado da receita
+    (``payment_provenance``): simulador local, Efí homologação, Stripe em chave
+    de teste. Em homologação a nota sai — não tem valor fiscal, e é assim que o
+    alpha exercita a emissão do Pix simulado. Em produção, nunca.
+    """
+    from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+    return is_simulated_order_payment(order) and not _fiscal_backend_is_homologation()
+
+
 def emission_resolver(order) -> bool:
     """Decide SE a NFC-e deve ser emitida para este pedido.
 
@@ -40,6 +64,12 @@ def emission_resolver(order) -> bool:
     próprio. Exemplos prontos em ``shopman.shop.fiscal_resolvers``.
     """
     from django.conf import settings
+
+    # Pagamento SIMULADO nunca vira nota de verdade — nem com a emissão avulsa do
+    # gerente. Vem antes do override de propósito: nota de produção é documento
+    # da Receita sobre uma venda que recebeu dinheiro, e aqui nenhum entrou.
+    if simulated_payment_blocks_emission(order):
+        return False
 
     # A emissão avulsa autorizada pelo gerente (Últimas vendas do PDV) passa POR
     # CIMA da regra — é exatamente para isso que ela existe. Só um escritor grava
@@ -133,6 +163,8 @@ def issue_override_refusal(order, *, state: str | None = None) -> str:
         return "Venda cancelada ou devolvida não emite NFC-e."
     if is_test_order(order):
         return "Pedido de teste não emite NFC-e."
+    if simulated_payment_blocks_emission(order):
+        return "Pagamento simulado não emite NFC-e: nenhum dinheiro entrou."
     if not fiscal_pool.get_backend():
         return "A emissão de NFC-e não está configurada nesta loja."
     if order.created_at:

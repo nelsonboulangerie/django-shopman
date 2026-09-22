@@ -118,6 +118,20 @@ def test_mode() -> bool:
     return publishable.startswith("pk_test_") or secret.startswith("sk_test_")
 
 
+def provenance_metadata(*, test: bool) -> dict[str, str]:
+    """A marca de proveniência da cobrança: chave de teste não é dinheiro.
+
+    Irmão exato da Efí homologação. Com ``sk_test_``/``pk_test_`` o Stripe
+    autoriza e captura cartões de teste (``4242…``) pelo caminho real inteiro, e
+    é para isso que o alpha usa a chave de teste — mas nenhum real entra. Sem a
+    marca, essas capturas entravam no fechamento, no B.I. e na conciliação como
+    receita. A classificação vem da CHAVE (``test_mode``), nunca do webhook.
+    """
+    from shopman.shop.services.payment_provenance import provenance_stamp
+
+    return provenance_stamp(environment="test" if test else "live", simulated=test)
+
+
 def create_intent(
     *,
     order_ref: str,
@@ -166,6 +180,7 @@ def create_intent(
         else None
     )
 
+    provenance = provenance_metadata(test=test_mode())
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
         amount_q=amount_q,
@@ -180,7 +195,7 @@ def create_intent(
         # `method` diz de que forma a CASA está cobrando.
         method=method,
         gateway="stripe",
-        gateway_data=metadata,
+        gateway_data={**metadata, **provenance},
         expires_at=expires_at,
         idempotency_key=idempotency_key,
     )
@@ -229,6 +244,7 @@ def create_intent(
     db_intent.gateway_id = session.id
     db_intent.gateway_data = {
         **metadata,
+        **provenance,
         "checkout_session_id": session.id,
         "checkout_url": session.url,
     }
