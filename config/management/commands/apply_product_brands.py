@@ -70,18 +70,20 @@ RESALE: dict[str, dict[str, str]] = {
     "AG": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
     # GTIN do pedido de venda 7970 da Kãnfa (My Chai, 30/06/2026), dígito
     # verificador GS1 conferido. Aconchego e Chalosofia vieram com código
-    # interno do fabricante (ACON_RV_P50/L50), que não é GTIN. As latas de
-    # Mama e Namastê têm código no pedido, mas lá o item é "Lata 70g" e aqui o
-    # nome diz 60g: gramatura a confirmar antes de declarar o identificador.
+    # interno do fabricante (ACON_RV_P50/L50), que não é GTIN. As latas de Mama
+    # e Namastê são "Lata 70g" no pedido, e o nome do catálogo dizia 60g: o dono
+    # confirmou os 70g em 22/09, então o identificador vale — o nome da peça é
+    # corrigido na curadoria do catálogo, e o SKU segue o mesmo (SKU é endereço,
+    # não descrição: trocá-lo quebraria o histórico de venda).
     "CHEGO_L50": {"brand": "Kãnfa"},
     "CHEGO_P50": {"brand": "Kãnfa"},
     "INTIMI_L50": {"brand": "Kãnfa"},
     "INTIMI_P50": {"brand": "Kãnfa", "gtin": "7898708850354"},
     "INTU_L70": {"brand": "Kãnfa", "gtin": "7898708850408"},
     "INTU_P50": {"brand": "Kãnfa", "gtin": "7898708850385"},
-    "MAMA_L60": {"brand": "Kãnfa"},
+    "MAMA_L60": {"brand": "Kãnfa", "gtin": "7898708850705"},
     "MAMA_P50": {"brand": "Kãnfa"},
-    "NAMAS_L60": {"brand": "Kãnfa"},
+    "NAMAS_L60": {"brand": "Kãnfa", "gtin": "7898708850668"},
     "NAMAS_P50": {"brand": "Kãnfa", "gtin": "7898708850644"},
     "SOFIA_P50": {"brand": "Kãnfa"},
     "VITAL_P50": {"brand": "Kãnfa"},
