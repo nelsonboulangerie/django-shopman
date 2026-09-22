@@ -506,19 +506,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PWA_INSTALL_TITLE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "PWA_IOS_ADD_STEP": (
+    "PWA_MANUAL_DONE_CTA": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "PWA_IOS_DONE_CTA": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "PWA_IOS_MESSAGE": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "PWA_IOS_SHARE_STEP": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "PWA_IOS_TITLE": (
+    "PWA_MANUAL_TITLE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "PWA_OFFLINE_MESSAGE": (

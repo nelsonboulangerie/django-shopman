@@ -162,11 +162,11 @@ class PwaCopyProjection:
     install_message: CopyEntryProjection
     install_cta: CopyEntryProjection
     install_dismiss_cta: CopyEntryProjection
-    ios_title: CopyEntryProjection
-    ios_message: CopyEntryProjection
-    ios_share_step: CopyEntryProjection
-    ios_add_step: CopyEntryProjection
-    ios_done_cta: CopyEntryProjection
+    # O caminho manual (iOS, Firefox do Android, Safari do macOS) tem título e botão
+    # próprios; os PASSOS não vêm daqui — são fato de plataforma, escritos no cliente
+    # por `installPlan()`, que conhece o navegador de quem está lendo.
+    manual_title: CopyEntryProjection
+    manual_done_cta: CopyEntryProjection
     update_title: CopyEntryProjection
     update_cta: CopyEntryProjection
 
@@ -509,11 +509,8 @@ def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
         install_message=_copy_entry("PWA_INSTALL_MESSAGE", omotenashi=omotenashi),
         install_cta=_copy_entry("PWA_INSTALL_CTA", omotenashi=omotenashi),
         install_dismiss_cta=_copy_entry("PWA_INSTALL_DISMISS_CTA", omotenashi=omotenashi),
-        ios_title=_copy_entry("PWA_IOS_TITLE", omotenashi=omotenashi),
-        ios_message=_copy_entry("PWA_IOS_MESSAGE", omotenashi=omotenashi),
-        ios_share_step=_copy_entry("PWA_IOS_SHARE_STEP", omotenashi=omotenashi),
-        ios_add_step=_copy_entry("PWA_IOS_ADD_STEP", omotenashi=omotenashi),
-        ios_done_cta=_copy_entry("PWA_IOS_DONE_CTA", omotenashi=omotenashi),
+        manual_title=_copy_entry("PWA_MANUAL_TITLE", omotenashi=omotenashi),
+        manual_done_cta=_copy_entry("PWA_MANUAL_DONE_CTA", omotenashi=omotenashi),
         update_title=_copy_entry("PWA_UPDATE_TITLE", omotenashi=omotenashi),
         update_cta=_copy_entry("PWA_UPDATE_CTA", omotenashi=omotenashi),
     )
