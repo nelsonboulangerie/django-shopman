@@ -15,6 +15,8 @@
  * obriga o operador a adivinhar qual das duas.
  */
 
+import { ordersQueueUrl } from "./crossAppLinks";
+
 export type CloseGuardSituation =
   /** Nada a avisar: sem marcador, ou a cobrança em voo é desta aba. */
   | "none"
@@ -39,6 +41,14 @@ export interface CloseGuardInput {
   heldElsewhere: boolean;
   /** Mensagem de falha do próprio navegador (storage/locks), se houver. */
   browserFailure: string;
+  /** Base do Gestor (`runtimeConfig.public.ordersUrl`). Vazio = sem link. */
+  ordersUrl?: string;
+}
+
+/** Um destino em OUTRO app — o `href` já pronto e o que o botão diz. */
+export interface CloseGuardLink {
+  href: string;
+  label: string;
 }
 
 export interface CloseGuardNotice {
@@ -47,6 +57,15 @@ export interface CloseGuardNotice {
   body: string;
   /** Liberar só faz sentido quando ninguém está cobrando agora. */
   canRelease: boolean;
+  /**
+   * A saída para o Gestor, quando conferir lá é o próximo passo.
+   *
+   * O texto dizia "confira em Últimas vendas ou no Gestor" e não levava a lugar
+   * nenhum — menção, não ação, com o `ordersUrl` já no `runtimeConfig`. Aqui não
+   * há `order_ref` em mão (o que está em dúvida é justamente se o pedido
+   * nasceu), então o destino é a FILA do Gestor, e o rótulo promete a fila.
+   */
+  link?: CloseGuardLink;
 }
 
 export function closeGuardSituation(input: CloseGuardInput): CloseGuardSituation {
@@ -59,6 +78,10 @@ export function closeGuardSituation(input: CloseGuardInput): CloseGuardSituation
 
 export function closeGuardNotice(input: CloseGuardInput): CloseGuardNotice | null {
   const situation = closeGuardSituation(input);
+  const queue = ordersQueueUrl(input.ordersUrl || "");
+  const ordersLink: CloseGuardLink | undefined = queue
+    ? { href: queue, label: "Procurar o pedido no Gestor" }
+    : undefined;
   switch (situation) {
     case "none":
       return null;
@@ -73,15 +96,17 @@ export function closeGuardNotice(input: CloseGuardInput): CloseGuardNotice | nul
       return {
         situation,
         title: "A última venda foi interrompida antes da resposta",
-        body: "A página fechou ou recarregou enquanto a venda era finalizada, e não sabemos se o pedido e o pagamento foram criados. Confira em Últimas vendas antes de cobrar de novo.",
+        body: "A página fechou ou recarregou enquanto a venda era finalizada, e não sabemos se o pedido e o pagamento foram criados. Confira antes de cobrar de novo.",
         canRelease: true,
+        link: ordersLink,
       };
     case "uncertain":
       return {
         situation,
         title: "Resultado da cobrança não confirmado",
-        body: "Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados. Este bloqueio permanece mesmo se a página for recarregada.",
+        body: "Antes de cobrar novamente, confira se o pedido e o pagamento foram criados. Este bloqueio permanece mesmo se a página for recarregada.",
         canRelease: true,
+        link: ordersLink,
       };
     case "browser_unavailable":
       return {

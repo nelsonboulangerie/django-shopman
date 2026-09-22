@@ -28,6 +28,7 @@ import {
   timerTone,
   toneBadge,
   triageCards,
+  zoneEmptyText,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
@@ -588,7 +589,7 @@ function printQueue() {
 
             <div v-if="!triaged(zone).length" class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-10 text-center text-muted-foreground">
               <Icon name="lucide:check-circle-2" class="size-6" />
-              <p class="text-sm">Nada por aqui agora.</p>
+              <p class="text-sm">{{ zoneEmptyText(zone.key) }}</p>
             </div>
 
             <OrderCard

@@ -58,7 +58,7 @@ useHead({ title: "Revisão de vínculos" });
     <p v-if="message" role="status" class="rounded-lg border p-3 text-sm">{{ message }}</p>
     <div v-if="error" role="alert" class="rounded-lg border border-destructive p-3 text-sm">
       Não foi possível atualizar a revisão. {{ board ? "Exibindo a última leitura disponível; a gravação está bloqueada." : "Tente novamente para consultar os inventários." }}
-      <button class="ml-2 min-h-11 underline" @click="refresh()">Tentar novamente</button>
+      <button class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
     </div>
     <p v-if="pending && !board" class="text-sm text-muted-foreground">Carregando inventários…</p>
     <template v-if="board">
@@ -84,7 +84,7 @@ useHead({ title: "Revisão de vínculos" });
         <dl class="space-y-1 break-all text-xs text-muted-foreground">
           <dt>Loja externa declarada</dt><dd>{{ board.selected_snapshot.account_ref }}</dd>
           <dt>Catálogo e contexto</dt><dd>{{ board.selected_snapshot.catalog_ref }} · {{ board.selected_snapshot.context }}</dd>
-          <dt>SHA-256 do arquivo</dt><dd>{{ board.selected_snapshot.sha256 }}</dd>
+          <dt>Identificação única do arquivo</dt><dd>{{ board.selected_snapshot.sha256 }}</dd>
         </dl>
         <p class="mt-3 text-xs text-muted-foreground">{{ board.notice }}</p>
       </details>

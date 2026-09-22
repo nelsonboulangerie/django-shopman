@@ -74,19 +74,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PWA_INSTALL_DISMISS_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Agora não")},
     },
-    "PWA_IOS_TITLE": {
+    # O passo a passo de instalação NÃO mora aqui, e a razão é de natureza: ele é fato
+    # de plataforma e muda com o navegador de quem está lendo. Chave de copy é uma só
+    # para todo mundo, então virava "no Safari, toque em Compartilhar" para quem estava
+    # no Chrome, no Firefox ou dentro do navegador do WhatsApp — não é voz da casa, é
+    # erro de fato. Quem escreve os passos é `installPlan()`, em
+    # `surfaces/*/app/utils/installGuide.ts`. Daqui sai só o convite: título e botões.
+    "PWA_MANUAL_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Coloque a loja na Tela de Início")},
     },
-    "PWA_IOS_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="No Safari, são só dois passos.")},
-    },
-    "PWA_IOS_SHARE_STEP": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Toque em Compartilhar na barra do Safari.")},
-    },
-    "PWA_IOS_ADD_STEP": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Escolha Adicionar à Tela de Início.")},
-    },
-    "PWA_IOS_DONE_CTA": {
+    "PWA_MANUAL_DONE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Já adicionei")},
     },
     "PWA_UPDATE_TITLE": {

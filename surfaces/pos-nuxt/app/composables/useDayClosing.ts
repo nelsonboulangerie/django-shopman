@@ -38,7 +38,7 @@ export async function useDayClosing({ action }: DayClosingDeps) {
       toast.success("Fechamento do dia registrado.");
       return true;
     } catch (err) {
-      toast.error(httpErrorMessage(err, "Falha no fechamento."));
+      toast.error(`${httpErrorMessage(err, "A contagem do fechamento não foi registrada.")} Os números seguem na tela. Tente de novo.`);
       // 409 (dia já fechado) ou validação: a projection manda na tela.
       await refresh();
       return false;

@@ -808,7 +808,7 @@ useHead({ title: "Catálogo" });
                     </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
                       <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
-                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar</button>
+                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar preço</button>
                     </div>
                   </UiPopoverContent>
                 </UiPopover>

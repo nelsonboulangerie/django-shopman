@@ -158,6 +158,22 @@ export interface ZoneView {
   count: number;
 }
 
+/** O estado vazio de cada coluna, nomeando a zona.
+ *
+ *  As três colunas repetiam "Nada por aqui agora." — a mesma frase três vezes na
+ *  mesma tela, e "aqui" nunca dizia qual das três estava vazia. Quem olha de longe
+ *  precisa saber se o que acabou foi a entrada, o preparo ou a saída. */
+export function zoneEmptyText(key: ZoneView["key"]): string {
+  switch (key) {
+    case "intake":
+      return "Nenhum pedido novo agora.";
+    case "prep":
+      return "Nenhum pedido em preparo agora.";
+    default:
+      return "Nenhum pedido para retirada ou entrega agora.";
+  }
+}
+
 /** Group the two-zone queue projection into the three action columns the board
  *  renders. Expedition merges pickup + delivery (ready) + delivery-in-transit. */
 export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {

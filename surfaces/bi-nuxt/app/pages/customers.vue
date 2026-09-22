@@ -48,7 +48,7 @@ const weeklySeries = computed(() =>
         <StatTile
           label="Com histórico analisado"
           :value="formatInt(report.with_insight)"
-          hint="Perfil RFM calculado pelo CRM"
+          hint="Clientes com recência, frequência e valor já calculados"
         />
         <StatTile label="Em risco de sumir" :value="formatInt(report.at_risk)" />
         <StatTile label="Ticket médio por cliente" :value="formatMoney(report.average_ticket_q)" />
@@ -56,7 +56,7 @@ const weeklySeries = computed(() =>
 
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Segmentos RFM</h2>
+          <h2 class="text-lg font-semibold text-foreground">Segmentos de cliente</h2>
           <p class="mb-3 text-xs text-muted-foreground">Recência, frequência e valor, calculados pelo CRM</p>
           <ChartHBarList v-if="segmentRows.length" :rows="segmentRows" />
           <p v-else class="text-sm text-muted-foreground">Nenhum cliente com perfil calculado ainda.</p>

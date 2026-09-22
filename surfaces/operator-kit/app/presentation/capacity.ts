@@ -59,17 +59,17 @@ export function capacitySummary(reading: CapacityResponse | null): string {
 }
 
 /**
- * De onde veio o número, sem jargão: o sistema do contêiner mede; a soma dos
- * processos estima (conta duas vezes a memória que eles dividem). Sem leitura, nada.
+ * De onde veio o número, na língua de quem lê: o servidor mede, ou a soma dos
+ * programas estima (conta duas vezes a memória que eles dividem). Sem leitura, nada.
  */
 export function capacitySourceText(reading: CapacityResponse | null): string {
   if (!reading?.available) return "";
   switch (reading.source) {
     case "cgroup-v2":
     case "cgroup-v1":
-      return "Medido pelo sistema do contêiner.";
+      return "Número medido no servidor.";
     case "proc":
-      return "Estimado pelos processos do serviço.";
+      return "Número estimado: a memória pode aparecer maior do que é.";
     default:
       return "";
   }
