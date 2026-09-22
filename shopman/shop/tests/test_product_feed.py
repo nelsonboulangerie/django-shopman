@@ -163,9 +163,11 @@ def test_feed_price_comes_from_the_channel_it_points_at(client, feed):
     assert item.find(f"{G}price").text == "25.00 BRL"
 
 
-def test_feed_link_ignores_the_host_that_served_the_feed(client, feed):
+def test_feed_link_ignores_the_host_that_served_the_feed(client, feed, settings):
     """O feed sai do Django headless (api.), que não tem página de produto."""
+    settings.ALLOWED_HOSTS = ["api.loja.test"]
     resp = client.get("/feed/google.xml", HTTP_HOST="api.loja.test")
+    assert resp.status_code == 200
     link = _items(resp.content)[0].find(f"{G}link").text
     assert link == f"{LOJA}/produto/BAGUETE"
     assert "api.loja.test" not in resp.content.decode()
