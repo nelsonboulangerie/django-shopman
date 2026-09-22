@@ -4042,11 +4042,14 @@ class Command(BaseCommand):
             },
             # ══ Seção 2b — fichas dos assados restaurados (crus do dono) ═════
             {
+                # Ciabatta, não tradição (dono, 22/09): é a baguetinha sem
+                # gergelim, de casca mais fina, que vai no Jambon-Beurre — e é
+                # por isso que ela toma o lugar da Mini Baguete no cardápio.
                 "ref": "baguete-lanche",
                 "name": "Baguete Lanche",
                 "output_sku": "BAP",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-TRADICAO", Decimal("0.260"))],  # 260 g/un
+                "items": [("MASSA-CIABATTA", Decimal("0.260"))],  # 260 g/un
             },
             {
                 "ref": "batard",
@@ -4056,12 +4059,15 @@ class Command(BaseCommand):
                 "items": [("MASSA-TRADICAO", Decimal("0.320"))],  # 320 g/un
             },
             {
+                # Ciabatta, não tradição (dono, 22/09): as baguetes de gergelim
+                # saem da massa da ciabatta, que dá casca mais fina — é por isso
+                # que a pequena sem gergelim (BAP) vai no Jambon-Beurre.
                 "ref": "baguete-gergelim-pequena",
                 "name": "Baguete Gergelim Pequena",
                 "output_sku": "BEP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-TRADICAO", Decimal("0.165")),  # 165 g/un
+                    ("MASSA-CIABATTA", Decimal("0.165")),  # 165 g/un
                     ("GERGELIM", Decimal("0.005")),        # 5 g/un
                 ],
             },
@@ -4153,12 +4159,16 @@ class Command(BaseCommand):
                 "items": [("MASSA-CROISSANT", Decimal("0.036"))],  # 36 g/un
             },
             {
+                # Brioche, não croissant (dono, 22/09): "nosso pain au raisin é de
+                # brioche, sim — folhado foi confusão de agente de IA". A ficha
+                # errada não era só nome: é o que a produção consome e o que o
+                # custo calcula.
                 "ref": "pain-aux-raisins",
                 "name": "Pain aux Raisins",
                 "output_sku": "PR",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.040")),   # 40 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.040")),     # 40 g/un
                     ("CREME-BAUNILHA", Decimal("0.018")),    # 18 g/un
                     ("PASSAS", Decimal("0.010")),            # 10 g/un
                 ],
