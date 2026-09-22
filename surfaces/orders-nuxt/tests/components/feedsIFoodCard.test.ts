@@ -15,6 +15,7 @@ vi.stubGlobal("useRoute", () => ({ get query() { return query.value; } }));
 vi.stubGlobal("useNextFocus", (source: unknown) => { focusSources.push(source); return { reveal: vi.fn() }; });
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
 vi.stubGlobal("useFeedBoard", () => ({ board, error: ref(null), errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections: vi.fn(), switchChannel: vi.fn(), setRotation: vi.fn() }));
+vi.stubGlobal("useChannelHealth", () => ({ healthOf: () => null, refresh: vi.fn() }));
 
 const channel = (ref_: string, name: string) => ({
   ref: ref_, name, projection_enabled: true, diagnostic: "Envio configurado.", synced: 3, pending: 0, errors: 0,

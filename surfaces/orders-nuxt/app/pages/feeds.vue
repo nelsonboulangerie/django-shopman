@@ -13,6 +13,8 @@ const catalogChannels = computed(() => board.value?.catalog_channels ?? []);
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
+// O checklist vivo de cada canal (o que falta, e o botão que resolve).
+const { healthOf } = useChannelHealth();
 
 // O sinal da aba Pedidos chega aqui com `?focus=ifood`: o card do canal iFood — onde
 // mora a pausa — vai para a linha de foco assim que a leitura o traz.
@@ -192,6 +194,8 @@ useHead({ title: "Canais" });
             <span v-if="!sc.collections.length" class="text-xs text-muted-foreground/70">Nenhuma coleção — nada a exibir.</span>
           </div>
 
+          <ChannelHealthChecklist :health="healthOf(sc.ref)" @choose-collections="openEdit(sc)" />
+
           <!-- rodapé: ações -->
           <div class="mt-auto flex items-center gap-1.5 border-t border-border pt-3" data-card-footer>
             <UiPopover :open="editRef === sc.ref" @update:open="(v) => { if (!v) editRef = null; else openEdit(sc); }">
@@ -318,10 +322,12 @@ useHead({ title: "Canais" });
             <div class="flex flex-col gap-2" data-card-body>
               <ChannelSwitchState v-if="channel.switch" :sw="channel.switch" />
               <p class="text-sm text-muted-foreground">{{ channel.diagnostic }}</p>
-              <p v-if="channel.observed" class="text-xs tabular-nums">
+              <ChannelHealthChecklist :health="healthOf(channel.ref)" />
+              <!-- com checklist, a contagem crua sai: o que pede ação já está nele -->
+              <p v-if="channel.observed && !healthOf(channel.ref)" class="text-xs tabular-nums">
                 Envio de produtos: {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
               </p>
-              <p v-else class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
+              <p v-else-if="!healthOf(channel.ref)" class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
               <IFoodChannelStore v-if="channel.ref === IFOOD_CHANNEL_REF" />
             </div>
             <!-- rodapé: ações -->

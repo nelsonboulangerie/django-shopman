@@ -5,7 +5,7 @@
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
-import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
+import { catalogDimensions, filterByDimensions, filtersFromQuery } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
 import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
@@ -62,7 +62,8 @@ const query = ref("");
 // Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
 // fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
 // servidor. Aqui é tudo client-side — a matriz já veio inteira.
-const filters = ref<ActiveFilters>({});
+// Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
+const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
 const searched = computed<CatalogRowProjection[]>(() => filterRows(matrix.value?.rows ?? [], query.value));
 // As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
 // senão marcar uma opção zeraria as contagens das outras.
