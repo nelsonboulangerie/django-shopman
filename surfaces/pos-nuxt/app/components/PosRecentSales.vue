@@ -70,7 +70,10 @@ async function load() {
     );
     sales.value = response.sales || [];
   } catch {
-    toast.error("Falha ao carregar as últimas vendas.");
+    // A lista se repõe sozinha: enquanto o painel está aberto, um poll de 5s
+    // refaz esta chamada. A saída diz isso em vez de pedir um gesto que o
+    // operador não precisa dar.
+    toast.error("A lista das últimas vendas não carregou. Ela tenta sozinha a cada poucos segundos; feche e reabra o painel para forçar.");
   } finally {
     loading.value = false;
   }
@@ -204,7 +207,7 @@ async function requeueFiscal(sale: RecentSale) {
     toast.success(`Emissão de ${sale.order_ref} reenfileirada.`);
     await load();
   } catch (error) {
-    toast.error(messageOf(error));
+    toast.error(`${messageOf(error)} A emissão não foi reenfileirada. Atualize a lista e confira a situação da nota antes de repetir.`);
   } finally {
     busyRef.value = "";
   }
@@ -247,7 +250,9 @@ async function submitEmitFiscal(aprovacao: Record<string, string>) {
       emitError.value = data.error.recovery || data.error.message || messageOf(error);
     } else {
       emitDialogOpen.value = false;
-      toast.error(data?.detail || messageOf(error));
+      // Nota fiscal não ganha "tente de novo": a emissão é assíncrona e a lista é
+      // quem diz se ela saiu. Conferir primeiro é o gesto certo aqui.
+      toast.error(`${data?.detail || messageOf(error)} A nota não foi emitida. Confira a venda na lista antes de pedir de novo.`);
     }
   } finally {
     emitBusy.value = false;
@@ -256,7 +261,10 @@ async function submitEmitFiscal(aprovacao: Record<string, string>) {
 
 function messageOf(error: unknown): string {
   const data = (error as { data?: { detail?: string } } | null)?.data;
-  return data?.detail || (error instanceof Error ? error.message : "Falha na ação.");
+  // Último recurso de CAUSA, quando o servidor não mandou `detail` e o erro não
+  // é um `Error`: aqui realmente não se sabe o que houve, e inventar um motivo
+  // seria pior. A saída é de quem chama — as três chamadas abaixo a trazem.
+  return data?.detail || (error instanceof Error ? error.message : "Não deu para concluir a ação.");
 }
 
 // Cancelar venda DESTA lista: a correção sobrevive à saída da tela de

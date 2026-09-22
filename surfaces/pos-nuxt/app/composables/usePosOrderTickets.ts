@@ -113,7 +113,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
       if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
-      toast.error(httpErrorMessage(error, "Falha ao compor as fichas no servidor."));
+      toast.error(`${httpErrorMessage(error, "O servidor não montou as fichas.")} Nada saiu na bobina. Tente de novo.`);
       return false;
     } finally {
       printing.value = false;
@@ -141,7 +141,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
       if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
-      toast.error(httpErrorMessage(error, "Falha ao compor a ficha no servidor."));
+      toast.error(`${httpErrorMessage(error, "O servidor não montou a ficha.")} Nada saiu na bobina. Tente de novo.`);
       return false;
     } finally {
       printingRef.value = "";
