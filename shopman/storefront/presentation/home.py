@@ -308,7 +308,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         if cart_has_items is not None
         else origin_channel == "whatsapp" and _request_cart_has_items(request)
     )
-    from shopman.shop.services.channel_switch import is_channel_active
+    from shopman.shop.projections.channel_state import accepting_orders
 
     notices = _home_notices(
         shop_status=shop_status,
@@ -316,7 +316,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         origin_channel=origin_channel,
         cart_has_items=notice_cart_has_items,
         whatsapp_url=public_config.whatsapp_url,
-        ordering_off=not is_channel_active(STOREFRONT_CHANNEL_REF),
+        ordering_off=not accepting_orders(STOREFRONT_CHANNEL_REF),
     )
 
     return HomeProjection(
