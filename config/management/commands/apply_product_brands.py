@@ -67,16 +67,21 @@ RESALE: dict[str, dict[str, str]] = {
     "QC": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
     "GL": {"brand": "St. Dalfour"},  # sabor indefinido: dois minis com GTINs distintos
     "AG": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
+    # GTIN do pedido de venda 7970 da Kãnfa (My Chai, 30/06/2026), dígito
+    # verificador GS1 conferido. Aconchego e Chalosofia vieram com código
+    # interno do fabricante (ACON_RV_P50/L50), que não é GTIN. As latas de
+    # Mama e Namastê têm código no pedido, mas lá o item é "Lata 70g" e aqui o
+    # nome diz 60g: gramatura a confirmar antes de declarar o identificador.
     "CHEGO_L50": {"brand": "Kãnfa"},
     "CHEGO_P50": {"brand": "Kãnfa"},
     "INTIMI_L50": {"brand": "Kãnfa"},
-    "INTIMI_P50": {"brand": "Kãnfa"},
-    "INTU_L70": {"brand": "Kãnfa"},
-    "INTU_P50": {"brand": "Kãnfa"},
+    "INTIMI_P50": {"brand": "Kãnfa", "gtin": "7898708850354"},
+    "INTU_L70": {"brand": "Kãnfa", "gtin": "7898708850408"},
+    "INTU_P50": {"brand": "Kãnfa", "gtin": "7898708850385"},
     "MAMA_L60": {"brand": "Kãnfa"},
     "MAMA_P50": {"brand": "Kãnfa"},
     "NAMAS_L60": {"brand": "Kãnfa"},
-    "NAMAS_P50": {"brand": "Kãnfa"},
+    "NAMAS_P50": {"brand": "Kãnfa", "gtin": "7898708850644"},
     "SOFIA_P50": {"brand": "Kãnfa"},
     "VITAL_P50": {"brand": "Kãnfa"},
 }
