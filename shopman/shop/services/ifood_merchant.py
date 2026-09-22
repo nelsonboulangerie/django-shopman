@@ -158,7 +158,8 @@ def _call(method: str, path: str, *, label: str, idempotent: bool, ok: tuple[int
 def _error_detail(resp) -> str:
     try:
         body = resp.json()
-    except Exception:
+    except ValueError:
+        # Corpo não-JSON (página de erro, vazio): o texto cru já é o detalhe.
         return (getattr(resp, "text", "") or "")[:200]
     if isinstance(body, dict):
         error = body.get("error") if isinstance(body.get("error"), dict) else body
@@ -169,7 +170,8 @@ def _error_detail(resp) -> str:
 def _json(resp):
     try:
         return resp.json()
-    except Exception:
+    except ValueError:
+        # 204/corpo vazio: quem chama trata ``None`` como "sem conteúdo".
         return None
 
 
