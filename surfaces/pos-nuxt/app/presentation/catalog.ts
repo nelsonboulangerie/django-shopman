@@ -51,9 +51,15 @@ function matchesWordStart(normalizedText: string, normalizedQuery: string): bool
 }
 
 /**
- * Filter the grid by active collection and a free-text query (name or product
- * code), accent-insensitive. Matches at the START of a word rank first — typing
- * "pa" should surface "Pão…" before anything that merely contains "pa".
+ * Filter the grid by active collection and a free-text query (name, SKU or
+ * barcode), accent-insensitive. Matches at the START of a word rank first —
+ * typing "pa" should surface "Pão…" before anything that merely contains "pa".
+ *
+ * ⚠️ O leitor de código de barras do balcão DIGITA aqui: ele é um teclado que
+ * manda os dígitos e um Enter. Por isso o GTIN entra no índice, e casa
+ * INTEIRO — um código de barras não é prefixo de nada, e casar por pedaço
+ * faria a bipada cair no produto errado. O casamento exato vem na frente da
+ * fila, para o Enter que o leitor manda em seguida pegar o produto bipado.
  */
 export function filterProducts(
   products: POSProductProjection[],
@@ -61,6 +67,7 @@ export function filterProducts(
 ): POSProductProjection[] {
   const collectionRef = options.collectionRef || "";
   const normalized = normalizeSearchText((options.query || "").trim());
+  const exact: POSProductProjection[] = [];
   const wordStart: POSProductProjection[] = [];
   const contains: POSProductProjection[] = [];
   for (const product of products) {
@@ -71,13 +78,16 @@ export function filterProducts(
     }
     const name = normalizeSearchText(product.name);
     const sku = normalizeSearchText(product.sku);
-    if (matchesWordStart(name, normalized) || sku.startsWith(normalized)) {
+    const gtin = normalizeSearchText(product.gtin || "");
+    if (gtin && gtin === normalized) {
+      exact.push(product);
+    } else if (matchesWordStart(name, normalized) || sku.startsWith(normalized)) {
       wordStart.push(product);
     } else if (name.includes(normalized) || sku.includes(normalized)) {
       contains.push(product);
     }
   }
-  return wordStart.concat(contains);
+  return exact.concat(wordStart, contains);
 }
 
 /**

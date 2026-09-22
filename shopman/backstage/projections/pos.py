@@ -59,6 +59,11 @@ class POSProductProjection:
     collection_color: str = ""
     collection_icon: str = ""
     image_url: str = ""
+    # Código de barras da embalagem (``metadata['social']['gtin']``), para o
+    # leitor do balcão. O leitor DIGITA no campo de busca: sem o código no
+    # índice, bipar um pote de geleia não achava nada. Vazio no que a casa faz
+    # — pão não tem código de barras.
+    gtin: str = ""
     # Esgotado de verdade no escopo do canal do PDV (stockman, leitura em lote).
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
     # da grade faria o operador procurar um botão que "sumiu".
@@ -2124,8 +2129,15 @@ def _product_projection(product: Product, price_q: int, *, sold_out: bool = Fals
         collection_color=str(meta.get("color") or ""),
         collection_icon=str(meta.get("icon") or ""),
         image_url=product.image_url or "",
+        gtin=_product_gtin(product),
         sold_out=sold_out,
     )
+
+
+def _product_gtin(product: Product) -> str:
+    metadata = product.metadata if isinstance(product.metadata, dict) else {}
+    social = metadata.get("social")
+    return str(social.get("gtin") or "") if isinstance(social, dict) else ""
 
 
 def _sold_out_skus(skus: list[str]) -> set[str]:

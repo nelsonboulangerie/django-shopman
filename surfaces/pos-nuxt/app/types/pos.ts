@@ -25,6 +25,9 @@ export interface POSProductProjection {
   collection_color: string
   collection_icon: string;
   image_url: string;
+  /** Código de barras da embalagem, para o leitor do balcão. Vazio no que a
+   *  casa faz — pão não tem código de barras. */
+  gtin?: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
 }
