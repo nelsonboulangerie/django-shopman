@@ -196,6 +196,28 @@ Ao juntá-los apareceram duas coisas que o par cru esconde:
 "excluir". Renomear antes de tirar não faz mal (e mantém a tabela completa), mas
 se a ordem for outra — tirar primeiro — eles saem sozinhos do caminho.
 
+## F2 e F3, medidos no mesmo banco
+
+**F2 — fotos: o dono é o [`WP-FOTOS-DA-CASA.md`](../plans/WP-FOTOS-DA-CASA.md)**
+(PR #975, do mesmo dia, já no `main`). Este ensaio só acrescenta dois fatos:
+o acervo `pablondrina/nb-catalog` **não tem foto real de nenhum dos 59** — as 51
+que servem já estão wiradas, e o que sobra lá é de outro produto, então não há
+nada a "ligar"; e dos 13 em coleção de feed, **5 saem por curadoria** (`PG`,
+`PU`, `TJ`, `TI` excluir, `MS` despublicar), sobrando **8**: `CCOM`, `CMA`,
+`CMO`, `JB`, `PPU`, `PI`, `PI4`, `QQ`.
+
+**F3 — descrições.** O WP dizia "42 publicados sem descrição longa". Medido:
+**`long_description` está vazia nos 111** — o campo nunca foi usado. E a PDP já
+mostra a curta, os ingredientes com alérgenos, a conservação e a tabela
+nutricional. A longa só rende um segundo parágrafo, e só vale se disser o que os
+outros campos não dizem. Isso é conhecimento da casa: a pergunta foi para a
+planilha em vez de virar prosa minha.
+
+**A planilha foi atualizada** (mesma URL): aba `Pendências 22-09` com as
+decisões — uma coluna amarela por linha, já com o valor de hoje dentro — e 8
+linhas novas no fim de `Produtos` para os produtos do alpha que nunca tiveram
+uma.
+
 ## Ordem de execução, quando você der a palavra
 
 ```bash

@@ -16,10 +16,15 @@
 | Marca declarada | **103** — gravado hoje; o feed e a PDP já publicam |
 | GTIN | 7 gravados (+3 quando o #966 mergear) |
 | Marcados como revenda | 15 |
-| **Fotos de demonstração (Unsplash)** | **59 produtos** — 13 deles no feed do Google |
-| **Publicados sem descrição longa** | **42** |
+| **Fotos de demonstração (Unsplash)** | **59 produtos** — 13 em coleção de feed, 8 depois da curadoria |
+| **Descrição longa** | **vazia nos 111** (42 deles publicados) |
 | Publicados sem coleção primária | 0 ✔ |
 | Preços em aberto | Coffee Cola, Queijo Vale do Testo |
+
+> **Atualizada em 22/09 pelo ensaio:** a planilha ganhou a aba **`Pendências
+> 22-09`** (o que depende dele, uma coluna amarela por linha, já com o valor de
+> hoje dentro) e **8 linhas novas no fim de `Produtos`** — `BK`, `CV`, `CX`,
+> `GR`, `LN`, `MT`, `QP`, `THL`, que estão no alpha e nunca tiveram linha.
 
 A planilha de curadoria é a fonte da decisão, e está aqui:
 **[Catálogo Nelson — consolidado](https://docs.google.com/spreadsheets/d/1wXoIxaYFiEn1hj2k2mEH0NrOP3b1-sTnbspakD_YhKA/edit)**
@@ -89,18 +94,40 @@ tabela**: reescrever 671 literais contra um de-para que ele ainda pode editar é
 retrabalho garantido. E precisa estar commitado **antes** do `--apply`, senão o
 próximo `seed` nasce discordando do alpha.
 
-## F2 — Fotos
+## F2 — Fotos: **o dono desta fatia é outro WP**
 
-59 produtos com foto de demonstração (Unsplash), 13 deles no feed do Google.
-Foto de banco de imagem no feed é risco de reprovação no Merchant Center e,
-pior, é promessa que a vitrine não honra. As fotos reais moram em
-`img.nelsonboulangerie.com.br` (ver [[project_fotos_de_produto_moram_na_loja]]).
+As fotos ganharam WP próprio no mesmo dia — [`WP-FOTOS-DA-CASA.md`](WP-FOTOS-DA-CASA.md),
+PR #975, já no `main` — com a ilustração por coleção, a fila do que falta
+ordenada pelo que mais vende e a cobrança diária. **Este WP não mexe em foto**;
+o que segue são os dois fatos que a medição do rename acrescentou:
 
-## F3 — Descrições
+- **O acervo não tem foto real de nenhum dos 59.** `pablondrina/nb-catalog` tem
+  57 fotos; as 51 que servem já estão wiradas, e o que sobra (`cca`, `cgo`,
+  `coc`, `pc3`, `sa`) é de outro produto. Não há nada a "ligar": os 59 são
+  sessão de fotos, não trabalho de cadastro.
+- **Dos 13 no feed, 5 saem por curadoria** — `PG`, `PU`, `TJ`, `TI` (excluir) e
+  `MS` (despublicar). Sobram **8**: `CCOM`, `CMA`, `CMO`, `JB`, `PPU`, `PI`,
+  `PI4`, `QQ`. É a esses 8 que a marca automática da F1 daquele WP precisa
+  chegar antes do go-live.
 
-42 publicados sem descrição longa. A PDP e o JSON-LD usam a curta como
-fallback, então ninguém "quebra" — só empobrece. Vale a régua de copy da casa
-(`docs/reference/omotenashi-copy.md`): primeiro inequívoco, depois curto.
+## F3 — Descrições (medido em 22/09: o campo nunca foi usado)
+
+O WP dizia "42 publicados sem descrição longa". Medido no alpha: **`long_description`
+está vazia nos 111 produtos** — 42 é só a parte que está publicada. O campo nunca
+foi usado.
+
+E a PDP **já mostra** a descrição curta, o `ingredients_text` (que inclui a
+declaração de alérgenos), a dica de conservação e a tabela nutricional; o
+`long_description` só rende um segundo parágrafo, e o JSON-LD e o feed caem na
+curta. Então a longa não "conserta" nada: ela só vale se disser o que os outros
+campos não dizem — de onde vem a farinha, quanto tempo fermenta, o que tem no
+blend.
+
+**Isso é conhecimento da casa, não derivação.** Escrever prosa em cima do que já
+está declarado seria a defeito "prolixo" de
+[`omotenashi-copy.md`](../reference/omotenashi-copy.md); inventar o resto seria
+prometer pela casa. A pergunta está na planilha, com a proposta de eu redigir a
+partir do cadastro e ele corrigir.
 
 ## F4 — O que a planilha já decidiu e ainda não foi aplicado
 
@@ -126,7 +153,8 @@ fallback, então ninguém "quebra" — só empobrece. Vale a régua de copy da c
   produto pelo **código de barras** (PR #970).
 - **F1a**: o comando do rename e o ensaio medido (ver acima).
 - Planos irmãos: `WP-RECEITAS-DA-CASA.md`, `WP-INSUMOS-SEM-FRICCAO.md`,
-  `WP-VARIACAO-E-ADICIONAL.md`, `WP-VENDA-POR-PESO.md`.
+  `WP-VARIACAO-E-ADICIONAL.md`, `WP-VENDA-POR-PESO.md` e — desde 22/09, dono da
+  antiga F2 — `WP-FOTOS-DA-CASA.md`.
 
 ## Regras desta frente
 
