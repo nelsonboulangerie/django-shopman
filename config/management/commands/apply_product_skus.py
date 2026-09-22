@@ -204,6 +204,33 @@ JSON_FORA_DO_CASCADE: tuple[tuple[str, str, str], ...] = (
 )
 
 
+#: Campo de SKU **único** onde os dois valores podem coexistir no banco. Aí o
+#: ``update`` do cascade estoura a constraint no meio da travessia, e o que
+#: fazer depende do que a linha significa — por isso a política é explícita por
+#: model, e model sem política faz o comando parar. É a mesma mecânica do
+#: ``rename_skus_to_real``, e pela mesma razão: prefiro recusar a inventar
+#: semântica de merge para tabela que não conheço.
+POLITICA_DE_COLISAO: dict[str, str] = {
+    # Etiqueta de consumo é ANOTAÇÃO sobre um produto, não o produto. A do
+    # código antigo e a do código novo descrevem a mesma coisa — a segunda
+    # sobrou do `propose_consumption_tags --include-historical`, que etiquetou
+    # também os códigos do cardápio 2027. Fundir é o certo.
+    "backstage.ProductConsumptionTag": "fundir",
+    # Produto é ENTIDADE: fundir apagaria um catálogo de vínculos, preços e
+    # listagens. Insumo idem — e insumo com SKU de produto vendável é sintoma.
+    # Os dois já são recusa dura em `_recusar`; ficam aqui para que a varredura
+    # não os leia como "sem política".
+    "offerman.Product": "recusar",
+    "buyman.Material": "recusar",
+}
+
+
+def _curadoria(nota: str | None) -> str:
+    """A nota do de-para, quando existe: quem decidiu e quando."""
+    nota = (nota or "").strip()
+    return f"A linha diz: «{nota}»." if nota else "A linha não diz quem decidiu."
+
+
 class Command(BaseCommand):
     help = "Troca os códigos do catálogo pelos SKUs curados da planilha (WP-CATALOGO-PUBLICAVEL F1)."
 
@@ -231,6 +258,11 @@ class Command(BaseCommand):
             )
 
         vivos = set(Product.objects.values_list("sku", flat=True))
+
+        # Duas ordens de problema, e elas não se resolvem igual. Colisão de
+        # namespace diz que a TABELA está errada, e nada pode ser gravado até
+        # alguém corrigi-la. De-para vencido diz que a CURADORIA de uma linha
+        # envelheceu: só aquele par para, e o resto segue.
         recusas = self._recusar(pares, vivos)
         if recusas:
             self._escrever_recusas(recusas)
@@ -238,17 +270,25 @@ class Command(BaseCommand):
                 "Nada foi gravado. Recusa fechada: colisão de SKU não se resolve por escolha "
                 "do comando — quem decide qual linha fica é quem cura o catálogo."
             )
+        impedidos = self._impedimentos_de_serie(pares, vivos)
+        # Lido ANTES da travessia: depois dela a coleção já responde com o
+        # código novo, e o relatório não teria mais como dizer o antes.
+        no_feed = self._skus_em_feed()
 
         feitos: list[tuple[str, str, int]] = []
         pulados: list[tuple[str, str]] = []
         aliases: list[str] = []
+        fusoes: list[str] = []
 
         with transaction.atomic():
             for antigo, novo in pares:
+                if antigo in impedidos:
+                    continue
                 if antigo not in vivos:
                     pulados.append((antigo, novo))
                     continue
                 aliases.extend(self._garantir_alias(antigo))
+                fusoes.extend(self._fundir_anotacoes(antigo, novo))
                 linhas = self._renomear(antigo, novo)
                 feitos.append((antigo, novo, linhas))
             if not apply:
@@ -256,7 +296,12 @@ class Command(BaseCommand):
                 # linhas do relatório é o que a gravação faria de verdade.
                 transaction.set_rollback(True)
 
-        self._relatorio(feitos, pulados, aliases, pares=pares, apply=apply, alvo=alvo)
+        self._relatorio(
+            feitos, pulados, aliases, impedidos, fusoes,
+            no_feed=no_feed, pares=pares, apply=apply, alvo=alvo,
+        )
+        if alvo and alvo in impedidos:
+            raise CommandError(impedidos[alvo])
 
     # ---------------------------------------------------------------- recusas
 
@@ -264,10 +309,16 @@ class Command(BaseCommand):
         """Tudo que impede a gravação. Lista inteira, não a primeira."""
         from shopman.buyman.models import Material
 
-        from shopman.backstage.models import ProductAlias
 
         recusas: list[str] = []
         insumos = set(Material.objects.values_list("sku", flat=True))
+
+        for campo in self._sem_politica():
+            recusas.append(
+                f"{campo} é campo de SKU único e não tem política de colisão. "
+                "Acrescente-a em POLITICA_DE_COLISAO antes de renomear — sem ela o "
+                "cascade estoura a constraint no meio da travessia."
+            )
 
         vistos: dict[str, str] = {}
         for antigo, novo in pares:
@@ -293,33 +344,43 @@ class Command(BaseCommand):
                     "(ver shopman/shop/services/sku_namespace.py)."
                 )
 
-        # A chave do de-para é (fonte, sku externo), e ela é única. Se o código
-        # de hoje já está nessa chave apontando para OUTRO produto, criar o
-        # alias estouraria a constraint — e, pior, o que existe hoje diz que a
-        # série daquele código é de outro produto.
-        chaves = {
-            sku: (pid, nome)
-            for sku, pid, nome in ProductAlias.objects.filter(
-                source=FONTE_HISTORICO, external_sku__in=[a for a, _ in pares]
-            ).values_list("external_sku", "product_id", "product__sku")
-        }
-        for antigo, _novo in pares:
-            dono = chaves.get(antigo)
-            if dono is None:
-                continue
-            pid, sku_do_dono = dono
+        return recusas
+
+    def _impedimentos_de_serie(self, pares, vivos) -> dict[str, str]:
+        """Pares que param sozinhos: a série daquele código é de outro produto.
+
+        A chave do de-para é ``(fonte, sku externo)`` e é única. Quando o código
+        de hoje já está nessa chave apontando para OUTRO produto, não há alias a
+        criar — e o que está lá diz que a venda histórica daquele código foi
+        creditada a outro produto.
+
+        Renomear não pioraria nada (o de-para não olha para o SKU do produto, e
+        sim para o FK). O que se perde é a última chance barata de notar o
+        engano: depois do rename, o laço entre "o código antigo" e "este
+        produto" existe só nesta tabela. Por isso o par para aqui, sozinho, com
+        a curadoria de origem citada — e os outros seguem.
+        """
+        from shopman.backstage.models import ProductAlias
+
+        impedidos: dict[str, str] = {}
+        linhas = ProductAlias.objects.filter(
+            source=FONTE_HISTORICO, external_sku__in=[a for a, _n in pares if a in vivos]
+        ).values_list("external_sku", "product_id", "product__sku", "product__name", "note")
+        for antigo, pid, sku_do_dono, nome_do_dono, nota in linhas:
             if pid is None:
-                recusas.append(
-                    f"{antigo}: já existe de-para '{FONTE_HISTORICO}:{antigo}' sem produto "
-                    "(produto extinto). Aponte-o para o produto certo, ou apague-o, antes de renomear."
+                impedidos[antigo] = (
+                    f"{antigo}: o de-para '{FONTE_HISTORICO}:{antigo}' existe sem produto "
+                    f"(marcado como extinto). {_curadoria(nota)} "
+                    "Aponte-o para o produto certo, ou apague-o, antes de renomear."
                 )
             elif sku_do_dono != antigo:
-                recusas.append(
-                    f"{antigo}: o de-para '{FONTE_HISTORICO}:{antigo}' já aponta para {sku_do_dono}, "
-                    f"não para o produto {antigo}. A série de venda daquele código está creditada "
-                    "a outro produto — isso é decisão de curadoria, não do rename."
+                impedidos[antigo] = (
+                    f"{antigo}: o de-para '{FONTE_HISTORICO}:{antigo}' credita a venda histórica "
+                    f"a {sku_do_dono} ({nome_do_dono}), não ao produto {antigo}. {_curadoria(nota)} "
+                    "Enquanto ela valer, este produto segue sem série — e renomeá-lo apagaria "
+                    "a última pista de que o código antigo era dele."
                 )
-        return recusas
+        return impedidos
 
     def _escrever_recusas(self, recusas: list[str]) -> None:
         self.stderr.write(self.style.ERROR(f"\n{len(recusas)} recusa(s):"))
@@ -337,8 +398,9 @@ class Command(BaseCommand):
         passa despercebido pela série; sem ele, a série se descola do produto e
         ninguém recebe erro.
         """
-        from shopman.backstage.models import AliasStatus, HistoricalSaleItem, ProductAlias
         from shopman.offerman.models import Product
+
+        from shopman.backstage.models import AliasStatus, HistoricalSaleItem, ProductAlias
 
         if not HistoricalSaleItem.objects.filter(sku=antigo).exists():
             return []
@@ -362,6 +424,60 @@ class Command(BaseCommand):
         )
         return [f"{FONTE_HISTORICO}:{antigo} → {produto.name}"]
 
+    # ------------------------------------------------------- campo único
+
+    def _campos_unicos_de_sku(self):
+        """(label, campo) de todo campo de SKU registrado que seja ``unique``."""
+        from django.apps import apps
+        from shopman.refs.registry import _ref_source_registry
+
+        for label, campo in sorted(_ref_source_registry.get_sources_for_type("SKU")):
+            app_label, model_name = label.split(".", 1)
+            try:
+                Model = apps.get_model(app_label, model_name)
+            except LookupError:
+                continue
+            if Model._meta.get_field(campo).unique:
+                yield label, campo, Model
+
+    def _sem_politica(self) -> list[str]:
+        return [
+            f"{label}.{campo}"
+            for label, campo, _Model in self._campos_unicos_de_sku()
+            if label not in POLITICA_DE_COLISAO
+        ]
+
+    def _fundir_anotacoes(self, antigo: str, novo: str) -> list[str]:
+        """Resolve o campo único onde os DOIS códigos já existem.
+
+        Sem isto o ``update`` do cascade estoura a constraint no meio da
+        travessia — e só aparece em banco com operação, porque teste unitário
+        cria um lado de cada vez.
+        """
+        fusoes: list[str] = []
+        for label, campo, Model in self._campos_unicos_de_sku():
+            if POLITICA_DE_COLISAO.get(label) != "fundir":
+                continue
+            velha = Model.objects.filter(**{campo: antigo}).first()
+            nova = Model.objects.filter(**{campo: novo}).first()
+            if velha is None or nova is None:
+                continue
+            # A curada vence a proposta. No empate sobrevive a do código antigo:
+            # ela descreve o produto que está sendo renomeado, e a outra sobrou
+            # de um catálogo que não existe mais.
+            if getattr(nova, "reviewed", False) and not getattr(velha, "reviewed", False):
+                fica, sai, motivo = nova, velha, "sobreviveu a curada"
+            else:
+                fica, sai, motivo = velha, nova, (
+                    "sobreviveu a curada" if getattr(velha, "reviewed", False)
+                    else "sobreviveu a do produto renomeado"
+                )
+            sai.delete()
+            setattr(fica, campo, antigo)  # o cascade a leva para o código novo
+            fica.save(update_fields=[campo])
+            fusoes.append(f"{label}: {antigo} + {novo} — {motivo}")
+        return fusoes
+
     # --------------------------------------------------------------- travessia
 
     def _renomear(self, antigo: str, novo: str) -> int:
@@ -371,7 +487,9 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------- relatório
 
-    def _relatorio(self, feitos, pulados, aliases, *, pares, apply, alvo) -> None:
+    def _relatorio(
+        self, feitos, pulados, aliases, impedidos, fusoes, *, no_feed, pares, apply, alvo
+    ) -> None:
         verbo = "Feito" if apply else "Faria"
         out = self.stdout
 
@@ -385,18 +503,37 @@ class Command(BaseCommand):
         else:
             out.write(self.style.SUCCESS("\nNada a renomear: o catálogo já está nos códigos curados."))
 
+        out.write("\n1) Série do B.I.")
         if aliases:
-            out.write(f"\n1) Série do B.I. — {len(aliases)} de-para {'criado' if apply else 'a criar'}:")
+            out.write(f"  {len(aliases)} de-para {'criado' if apply else 'a criar'}:")
             for a in aliases:
-                out.write(f"  {a}")
+                out.write(f"    {a}")
             out.write(
                 "  Sem eles a venda histórica daquele código se descola do produto, "
                 "e nada acusa."
             )
         elif feitos:
-            out.write("\n1) Série do B.I. — nenhum de-para a criar: quem tem série já tem o seu.")
+            out.write("  nenhum de-para a criar: quem tem série já tem o seu.")
+        if impedidos:
+            out.write(self.style.WARNING(
+                f"\n  ⛔ {len(impedidos)} par(es) NÃO renomeado(s) — a série daquele código "
+                "está creditada a outro produto:"
+            ))
+            for antigo in sorted(impedidos):
+                out.write(self.style.WARNING(f"    {impedidos[antigo]}"))
+            out.write(
+                "  Isto é decisão de curadoria, não do rename: a de-para de origem valia "
+                "quando o catálogo ainda não tinha o produto separado.\n"
+                "  Conserto: apontar o de-para para o produto certo no Gestor "
+                "(Admin → de-paras de produto), e rodar este comando de novo."
+            )
 
-        self._secao_vitrine(feitos)
+        if fusoes:
+            out.write(f"\n  {len(fusoes)} anotação(ões) fundida(s) no caminho:")
+            for f in fusoes:
+                out.write(f"    {f}")
+
+        self._secao_vitrine(feitos, no_feed)
         self._secao_codigo([a for a, _n, _l in feitos] or [a for a, _ in pares])
         self._secao_fichas([a for a, _n, _l in feitos] or [a for a, _ in pares])
         self._secao_namespace()
@@ -426,8 +563,12 @@ class Command(BaseCommand):
                 "  3. compute_product_affinity    — a afinidade guarda SKU e não entra no cascade"
             ))
 
-    def _secao_vitrine(self, feitos) -> None:
-        """2) O que muda na URL da PDP e no id do item no feed."""
+    def _skus_em_feed(self) -> set[str]:
+        """Os SKUs que hoje saem num feed de vitrine (Google/Meta).
+
+        O canal de exibição SEM formato é menuboard, não feed: item de TV não
+        passa por revisão de plataforma nenhuma.
+        """
         from shopman.offerman.models import Collection
 
         from shopman.shop.models import Channel
@@ -435,24 +576,29 @@ class Command(BaseCommand):
         refs: set[str] = set()
         for channel in Channel.objects.filter(commerce_policy=Channel.CommercePolicy.DISPLAY):
             display = (channel.config or {}).get("display") or {}
-            if (display.get("format") or ""):
+            if display.get("format") or "":
                 refs.update(display.get("collections") or [])
-        no_feed: set[str] = set()
+        skus: set[str] = set()
         for coll in Collection.objects.filter(ref__in=refs):
-            no_feed.update(p.sku for p in coll.product_queryset())
+            # O feed omite item sem imagem (`image_link` é obrigatório).
+            skus.update(p.sku for p in coll.product_queryset() if p.image_url)
+        return skus
 
+    def _secao_vitrine(self, feitos, no_feed: set[str]) -> None:
+        """2) O que muda na URL da PDP e no id do item no feed."""
         self.stdout.write("\n2) Endereço público — /produto/<sku> e o id do item no feed:")
         if not feitos:
             self.stdout.write("  nada a mudar.")
             return
-        # Depois do rename (ou do ensaio), a coleção já responde com o código
-        # novo; o par é que diz o antes e o depois.
-        novos_no_feed = [(a, n) for a, n, _l in feitos if n in no_feed]
-        for antigo, novo in novos_no_feed:
+        mudam = [(a, n) for a, n, _l in feitos if a in no_feed]
+        for antigo, novo in mudam:
             self.stdout.write(f"  /produto/{antigo} → /produto/{novo}   ·   g:id {antigo} → {novo}")
         self.stdout.write(
-            f"  {len(novos_no_feed)} de {len(feitos)} estão em coleção de feed. "
-            "O Merchant Center trata id novo como item novo: passa por revisão de novo."
+            f"  {len(mudam)} de {len(feitos)} estão em coleção de feed; os outros trocam "
+            "só a URL da página de produto.\n"
+            "  O Merchant Center trata id novo como item novo: o item passa por revisão "
+            "outra vez, e o antigo fica órfão até o feed ser lido de novo. Antes do go-live "
+            "isso é barato — depois custa reindexação e redirect."
         )
 
     def _secao_codigo(self, antigos: list[str]) -> None:
@@ -472,9 +618,8 @@ class Command(BaseCommand):
                 continue
             texto = caminho.read_text(errors="ignore")
             n = len(padrao.findall(texto))
-            if n:
-                achou = True
-                self.stdout.write(f"  {n:>5} ocorrência(s)  {rel}")
+            achou = achou or bool(n)
+            self.stdout.write(f"  {n:>5} ocorrência(s)  {rel}")
         if not achou:
             self.stdout.write("  nenhuma.")
         self.stdout.write(
