@@ -443,6 +443,13 @@ envs:
   scope: RUN_TIME
   value: 'f36a17d0-e10b-4fdd-a16d-c8ffd866e59b'
   type: GENERAL
+# Shopman é a fonte única de "loja aberta" no iFood (PR #945): horário,
+# calendário e pausa do gestor gravados no módulo Merchant; conferência de
+# status no maintenance-worker. Ligado pelo Pablo em 22/09/2026.
+- key: IFOOD_MERCHANT_SYNC
+  scope: RUN_TIME
+  value: '1'
+  type: GENERAL
 - key: IFOOD_WEBHOOK_TOKEN
   scope: RUN_TIME
   type: SECRET
@@ -576,6 +583,13 @@ envs:
 - key: SENTRY_DSN
   scope: RUN_TIME
   type: SECRET
+# Quem recebe os alertas críticos por e-mail (PR #943). Pessoal por ora, a
+# pedido do Pablo (22/09/2026) — trocar por alias do domínio oficial antes do
+# go-live.
+- key: SHOPMAN_ALERT_EMAIL
+  scope: RUN_TIME
+  value: 'pablondrina@gmail.com'
+  type: GENERAL
 
 # ── E-mail (SMTP) ─────────────────────────────────────────────────────
 # Sem estas, o EMAIL_BACKEND cai no default `console` do settings.py: o
