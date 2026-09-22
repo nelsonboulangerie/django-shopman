@@ -254,3 +254,34 @@ def test_soft_path_reserves_across_quants_when_none_covers_it_alone(_=None):
     assert not OperatorAlert.objects.filter(type="stock_hold_gap").exists()
     stock_service.fulfill(order)
     assert _sell_moves_total() == Decimal("2")
+
+
+def test_partial_holds_stop_when_a_hold_does_not_consume_free_stock(monkeypatch):
+    """Guarda de progresso do ``create_holds_up_to``.
+
+    Se o Stockman aceitar a reserva sem tirá-la do livre (reserva de DEMANDA,
+    ``quant=None``, ou desencontro entre a leitura do livre e a escolha do
+    quant), o pedaço não garante baixa nenhuma. Antes ele era contado como
+    reservado — e o laço seguia pedindo pedaços que não seguravam nada.
+    """
+    from shopman.shop.adapters import stock as stock_adapter
+
+    _setup_world(stock_qty=2)
+    calls: list[Decimal] = []
+
+    def _demand_hold(sku, qty, ttl_minutes=30, **kwargs):
+        calls.append(qty)
+        hold = Hold.objects.create(
+            sku=sku, quant=None, quantity=qty, target_date=timezone.localdate(),
+            status=HoldStatus.PENDING, metadata={"reference": kwargs.get("reference")},
+        )
+        return {"success": True, "hold_id": hold.hold_id}
+
+    monkeypatch.setattr(stock_adapter, "create_hold", _demand_hold)
+
+    reserved = stock_adapter.create_holds_up_to(SKU, Decimal("5"), reference="order:X")
+
+    assert reserved == []
+    assert len(calls) == 1
+    # A reserva sem lastro foi desfeita, não abandonada ativa.
+    assert not Hold.objects.filter(quant__isnull=True).exclude(status=HoldStatus.RELEASED).exists()

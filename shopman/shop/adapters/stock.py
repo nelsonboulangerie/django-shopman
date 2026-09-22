@@ -233,15 +233,20 @@ def create_holds_up_to(
     ou acabar o livre. Nunca reserva além do que está livre — reserva alheia
     continua valendo.
 
+    Cada volta precisa PROVAR progresso: a reserva tem de cair num quant (não
+    em demanda, ``quant=None``) e o livre do escopo tem de baixar. Se não
+    baixou, a reserva não segura nada — é desfeita e o laço para. Mais um teto
+    de voltas, para que nenhum desencontro entre a leitura do livre e a
+    escolha do quant no Stockman vire laço longo.
+
     Returns:
         ``[(hold_id, qty), ...]`` do que foi reservado (vazia se nada coube).
     """
+    from shopman.stockman.models import Hold
     from shopman.stockman.services.scope import quants_eligible_for
 
     scope = get_channel_scope(channel_ref) if channel_ref else {}
-    reserved: list[tuple[str, Decimal]] = []
-    remaining = Decimal(str(qty))
-    while remaining > 0:
+    def _free_by_quant() -> dict[int, Decimal]:
         eligible = quants_eligible_for(
             sku,
             target_date=target_date or timezone.localdate(),
@@ -251,7 +256,15 @@ def create_holds_up_to(
             include_nonconforming=scope.get("sells_nonconforming", True),
             allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
-        largest_free = max((quant.available for quant in eligible), default=Decimal("0"))
+        return {quant.pk: quant.available for quant in eligible}
+
+    reserved: list[tuple[str, Decimal]] = []
+    remaining = Decimal(str(qty))
+    free = _free_by_quant()
+    for _ in range(_MAX_PARTIAL_HOLDS):
+        if remaining <= 0:
+            break
+        largest_free = max(free.values(), default=Decimal("0"))
         piece = min(largest_free, remaining)
         if piece <= 0:
             break
@@ -267,9 +280,27 @@ def create_holds_up_to(
         )
         if not result.get("success"):
             break
+        hold = Hold.objects.filter(pk=int(result["hold_id"].split(":")[1])).only("quant").first()
+        free_after = _free_by_quant()
+        consumed = sum(free.values(), Decimal("0")) - sum(free_after.values(), Decimal("0"))
+        if hold is None or hold.quant_id is None or consumed < piece:
+            # Sem progresso real (demanda, ou o livre não baixou): a reserva não
+            # garante baixa nenhuma. Desfaz e para — o resto vira alerta.
+            logger.warning(
+                "create_holds_up_to: reserva sem progresso sku=%s hold=%s piece=%s consumed=%s",
+                sku, result["hold_id"], piece, consumed,
+            )
+            release_holds([result["hold_id"]])
+            break
         reserved.append((result["hold_id"], piece))
         remaining -= piece
+        free = free_after
     return reserved
+
+
+# Teto de reservas parciais por item: cada uma exige um quant com livre, e uma
+# vitrine real tem poucos. 20 é folga larga e ainda mantém o pior caso barato.
+_MAX_PARTIAL_HOLDS = 20
 
 
 def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
