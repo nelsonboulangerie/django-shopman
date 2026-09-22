@@ -25,8 +25,6 @@ class IFoodStoreProjection:
     governs: bool = False
     # Canal iFood desligado no Gestor (toggle "Ativo" do card): fechado pelo período.
     channel_off: bool = False
-    # Quem pode abrir a aba Canais (onde mora o toggle): o sinal da fila vira link.
-    can_open_channels: bool = False
     shop_open: bool = False
     shop_message: str = ""
     ifood_available: bool | None = None
@@ -63,7 +61,6 @@ def build_ifood_store_projection(*, user=None, now: datetime | None = None) -> I
         enabled=True,
         governs=ifood_merchant.governs(),
         channel_off=ifood_merchant.channel_off(now=now),
-        can_open_channels=bool(user is not None and user.has_perm("shop.manage_catalog")),
         shop_open=state.is_open,
         shop_message=state.message or ("Aberta" if state.is_open else "Fechada"),
         ifood_available=status.available if checked else None,

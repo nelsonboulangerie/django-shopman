@@ -150,8 +150,6 @@ _CONSEQUENCE = {
     ("whatsapp", True): "O WhatsApp volta a fechar pedido, dentro do horário da loja.",
     ("ifood", False): "A loja fecha no iFood. Os pedidos do iFood já aceitos seguem normalmente.",
     ("ifood", True): "A loja volta a abrir no iFood, dentro do horário da loja.",
-    ("pdv", False): "O PDV para de fechar vendas.",
-    ("pdv", True): "O PDV volta a fechar vendas.",
     ("order", False): "O canal para de aceitar pedidos.",
     ("order", True): "O canal volta a aceitar pedidos, dentro do horário da loja.",
     ("menuboard", False): "A TV apaga o cardápio e mostra só: \u201cConsulte o cardápio no balcão.\u201d",
@@ -162,16 +160,12 @@ _CONSEQUENCE = {
 
 
 def _switch_kind(channel, *, display_format: str | None) -> str:
-    from django.conf import settings
-
     from shopman.shop.services.channel_switch import IFOOD_CHANNEL_REF
 
     if display_format is not None:
         return "menuboard" if not display_format else "feed"
     if channel.ref == IFOOD_CHANNEL_REF:
         return "ifood"
-    if channel.ref == getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"):
-        return "pdv"
     if channel.ref in {"web", "whatsapp"}:
         return channel.ref
     return "order"
@@ -213,6 +207,7 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
     from shopman.backstage.services.operator import ADJUST_SHIFT
     from shopman.shop.models import Channel
     from shopman.shop.services import business_calendar
+    from shopman.shop.services import channel_switch as switches
     from shopman.shop.services.channel_switch import effective_active
 
     now = now or timezone.now()
@@ -304,8 +299,9 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
             errors=count.get("errors", 0), retracted=count.get("retracted", 0),
             skipped=count.get("skipped", 0), observed=count.get("observed", 0),
             is_active=effective_active(channel, now=now),
+            # PDV sem toggle (o balcão fecha pelo caixa, não pelo canal): card informativo.
             switch=_build_switch(channel, user=user, authorized=authorized, is_manager=is_manager,
-                                 state=state, now=now),
+                                 state=state, now=now) if switches.is_switchable(channel) else None,
         ))
     managers = () if is_manager or not authorized else tuple(
         ManagerOptionProjection(username=card["username"], name=card["name"]) for card in _manager_cards(user)

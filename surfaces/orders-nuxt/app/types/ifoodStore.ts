@@ -6,8 +6,6 @@ export interface IFoodStoreProjection {
   governs: boolean;
   /** Canal iFood desligado no Gestor (toggle "Ativo" do card). */
   channel_off: boolean;
-  /** Quem vê pode abrir a aba Canais (onde mora o toggle). */
-  can_open_channels: boolean;
   shop_open: boolean;
   shop_message: string;
   ifood_available: boolean | null;

@@ -4,6 +4,10 @@
 // Feeds). As funções comuns (Shopman Apps, operador, tema) vivem no OperatorRail à
 // esquerda; a nav de seção fica aqui porque precisa de rótulo legível.
 const route = useRoute();
+// Canal ou feed desligado, pausado ou divergente: um ponto âmbar + "1 desligado" no
+// item Canais. Estado normal não mostra nada.
+const { attention } = useChannelAttention();
+const channelsLabel = computed(() => attention.value?.label || "");
 const section = computed(() =>
   route.path.startsWith("/catalog") ? "catalog"
   : (route.path.startsWith("/feeds") || route.path.startsWith("/channels/")) ? "feeds"
@@ -44,6 +48,14 @@ const customersUrl = computed(() =>
       >
         <Icon :name="t.icon" class="size-4" :class="section === t.key ? 'text-foreground' : 'text-muted-foreground'" />
         <span>{{ t.label }}</span>
+        <span
+          v-if="t.key === 'feeds' && channelsLabel"
+          class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+          data-channels-attention
+        >
+          <span class="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+          {{ channelsLabel }}
+        </span>
       </NuxtLink>
     </nav>
     <a

@@ -25,7 +25,6 @@ _STORE_RESPONSE = inline_serializer(
         "enabled": serializers.BooleanField(),
         "governs": serializers.BooleanField(),
         "channel_off": serializers.BooleanField(),
-        "can_open_channels": serializers.BooleanField(),
         "shop_open": serializers.BooleanField(),
         "shop_message": serializers.CharField(),
         "ifood_available": serializers.BooleanField(allow_null=True),
