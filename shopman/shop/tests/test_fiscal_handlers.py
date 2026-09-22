@@ -446,3 +446,37 @@ def test_invalid_delivery_payload_is_terminal_and_visible_to_operator(order):
     alert = OperatorAlert.objects.get(type="integration_failed")
     assert order.ref in alert.message
     assert reason in alert.message
+
+
+# ── alerta de emissão falha: ruído x risco de nota órfã ──────────────────────
+
+
+def _failed_emit(order, *, attempts):
+    directive = _emit_directive(order)
+    Directive.objects.filter(pk=directive.pk).update(status="failed", attempts=attempts)
+    directive.refresh_from_db()
+    return directive
+
+
+def test_sale_undone_before_first_attempt_does_not_page_the_operator(order):
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+
+    NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=1))
+
+    assert not OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()
+
+
+def test_sale_undone_after_a_post_still_pages_the_operator(order):
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+
+    NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=2))
+
+    assert OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()
+
+
+def test_live_order_failing_on_first_attempt_still_pages_the_operator(order):
+    NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=1))
+
+    assert OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()
