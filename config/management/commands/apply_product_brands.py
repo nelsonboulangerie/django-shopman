@@ -38,10 +38,9 @@ from shopman.offerman.contrib.social.schema import set_social_attributes
 from shopman.offerman.models import Product
 
 # Feito ou montado aqui. Conferido contra o catálogo vivo do alpha em
-# 22/09/2026. Fora de propósito, esperando a palavra do dono: os chás servidos
-# no bule (THB/THC/THR/THS — blend próprio ou Kãnfa?) e a cream soda da
-# torneira (CV — feita aqui ou de barril?). Bacon (BK) e Mostarda (MT) ficam
-# fora porque a casa ainda não os faz.
+# 22/09/2026. Os chás do bule são preparados aqui com blend Kãnfa: a bebida
+# servida é da casa, como o espresso não leva a marca do torrador. Ficam fora
+# porque a casa ainda não faz: Cream Soda (CV), Bacon (BK) e Mostarda (MT).
 HOUSE_SKUS: frozenset[str] = frozenset({
     # Pães, viennoiserie, doces e salgados de forno
     "ANC", "ANP", "ANU", "BA", "BAP", "BAX", "BBB", "BBB2", "BCH", "BE", "BEP",
@@ -55,7 +54,7 @@ HOUSE_SKUS: frozenset[str] = frozenset({
     "CCOM", "CMA", "CMO", "JB", "MS", "PG", "PPU", "PU", "QQ", "TI", "TJ",
     # Bebidas preparadas no balcão
     "CD", "CE", "CHAI_A", "CL", "CQ", "CTV", "FP", "HI", "MC", "MH", "PS", "SE",
-    "SL", "SO", "SS",
+    "SL", "SO", "SS", "THB", "THC", "THR", "THS",
     # Despensa feita na casa (dono, 22/09)
     "PT", "TP",
 })
