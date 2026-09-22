@@ -272,8 +272,15 @@ def _collection_items(display: dict) -> list[ChannelHealthItem]:
     return items
 
 
-def _active_item(channel, *, paused_label: str) -> ChannelHealthItem:
-    if channel.is_active:
+def _is_on(channel, now: datetime) -> bool:
+    """O toggle "Ativo" AGORA: a janela do gesto pelo relógio, não pelo carimbo."""
+    from shopman.shop.services.channel_switch import effective_active
+
+    return effective_active(channel, now=now)
+
+
+def _active_item(channel, *, paused_label: str, now: datetime) -> ChannelHealthItem:
+    if _is_on(channel, now):
         return ChannelHealthItem(key="active", state=OK, label="Ligado")
     return ChannelHealthItem(key="active", state=TODO, label=paused_label, hint="Ligue no botão Ativo do card.")
 
@@ -335,13 +342,13 @@ def _display_health(channel, *, now: datetime) -> ChannelHealthProjection:
     fmt = display.get("format") or ""
     output = _output_path(channel.ref, fmt)
     if not fmt:
-        items = [_active_item(channel, paused_label="Pausado: a TV não mostra o cardápio")]
+        items = [_active_item(channel, paused_label="Pausado: a TV não mostra o cardápio", now=now)]
         items += _collection_items(display)
         items += _display_devices(channel, now=now)
         preview = (ChannelHealthLink(label="Ver a tela da TV", target="django", path=output),)
     else:
         platform = "o Google" if fmt == "google_merchant" else "a Meta" if fmt == "meta_catalog" else "a plataforma"
-        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe erro ao buscar o feed")]
+        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe erro ao buscar o feed", now=now)]
         items += _collection_items(display)
         preview = (ChannelHealthLink(label="Ver o feed", target="django", path=output),)
     return _health(channel.ref, items, preview)
@@ -350,7 +357,7 @@ def _display_health(channel, *, now: datetime) -> ChannelHealthProjection:
 # ── Loja online ───────────────────────────────────────────────────────────────
 
 
-def _storefront_health(channel) -> ChannelHealthProjection:
+def _storefront_health(channel, *, now: datetime) -> ChannelHealthProjection:
     from shopman.backstage.services.integration_readiness import (
         efi_pix_readiness,
         otp_delivery_readiness,
@@ -358,8 +365,10 @@ def _storefront_health(channel) -> ChannelHealthProjection:
     )
 
     items: list[ChannelHealthItem] = []
-    if not channel.is_active:
-        items.append(ChannelHealthItem(key="active", state=TODO, label="A loja online está desligada"))
+    if not _is_on(channel, now):
+        items.append(ChannelHealthItem(
+            key="active", state=TODO, label="A loja online está desligada", hint="Ligue no botão Ativo do card.",
+        ))
     for key, readiness, ok_label, todo_label in (
         ("login", otp_delivery_readiness(), "O cliente recebe o código para entrar", "O cliente não recebe o código para entrar"),
         ("pix", efi_pix_readiness(), "Pix pronto para cobrar", "O Pix não está pronto para cobrar"),
@@ -394,7 +403,7 @@ def build_channel_health(*, now: datetime | None = None) -> ChannelHealthBoardPr
         elif channel.ref == "ifood":
             channels.append(_health(channel.ref, _ifood_items(channel, now=now)))
         elif channel.ref == storefront_ref:
-            channels.append(_storefront_health(channel))
+            channels.append(_storefront_health(channel, now=now))
     return ChannelHealthBoardProjection(channels=tuple(channels))
 
 
