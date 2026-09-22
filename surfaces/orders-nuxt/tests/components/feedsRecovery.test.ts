@@ -33,7 +33,7 @@ it("failed save retains selected collections and the editor", async () => {
   const wrapper = render();
   await wrapper.get("[data-open-editor]").trigger("click");
   await wrapper.get("input[type=checkbox]").setValue(true);
-  const apply = wrapper.findAll("button").find((button) => button.text() === "Aplicar")!;
+  const apply = wrapper.findAll("button").find((button) => button.text() === "Salvar coleções")!;
   await apply.trigger("click");
   await flushPromises();
   expect(setCollections).toHaveBeenCalledWith("tv", ["bread"], "initial");
@@ -55,11 +55,11 @@ it("same-field refresh preserves the draft and requires an explicit resolution",
   window.confirm = priorConfirm;
   board.value.feeds[0].actions[0].payload_schema.base_revision = "changed";
   await flushPromises();
-  let apply = wrapper.findAll("button").find((button) => button.text() === "Aplicar")!;
+  let apply = wrapper.findAll("button").find((button) => button.text() === "Salvar coleções")!;
   expect(apply.attributes("disabled")).toBeDefined();
   expect((wrapper.get("input[type=checkbox]").element as HTMLInputElement).checked).toBe(true);
   await wrapper.findAll("button").find((button) => button.text() === "Manter minha seleção")!.trigger("click");
-  apply = wrapper.findAll("button").find((button) => button.text() === "Aplicar")!;
+  apply = wrapper.findAll("button").find((button) => button.text() === "Salvar coleções")!;
   await apply.trigger("click");
   expect(setCollections).toHaveBeenCalledWith("tv", ["bread"], "changed");
 });

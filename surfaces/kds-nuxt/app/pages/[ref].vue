@@ -216,7 +216,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <p
           class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
         >
-          {{ view?.isExpedition ? "Expedição" : "Estação KDS" }}
+          {{ view?.isExpedition ? "Expedição" : "Preparo" }}
         </p>
         <h1 class="truncate text-lg font-bold leading-tight">
           {{ view?.instanceName || stationRef }}

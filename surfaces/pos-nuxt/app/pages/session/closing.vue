@@ -205,7 +205,7 @@ async function confirmSubmit() {
             </span>
           </div>
           <p class="text-sm text-muted-foreground">
-            Ordens que seguiam abertas quando o dia foi encerrado. Ficaram registradas no snapshot; toque na ordem para abri-la na Produção.
+            Ordens que seguiam abertas quando o dia foi encerrado. Elas ficaram registradas neste fechamento; toque na ordem para abri-la na Produção.
           </p>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">

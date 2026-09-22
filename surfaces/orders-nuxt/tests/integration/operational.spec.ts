@@ -236,11 +236,11 @@ test("feed selection survives response loss and consults the same scoped receipt
     expect.soft(box?.height).toBeGreaterThanOrEqual(44);
   }
   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
-  await page.getByRole("button", { name: "Aplicar", exact: true }).click({ trial: true });
-  const applyBox = await page.getByRole("button", { name: "Aplicar", exact: true }).boundingBox();
-  expect.soft(applyBox?.height, "Aplicar: ação principal").toBeGreaterThanOrEqual(48);
+  await page.getByRole("button", { name: "Salvar coleções", exact: true }).click({ trial: true });
+  const applyBox = await page.getByRole("button", { name: "Salvar coleções", exact: true }).boundingBox();
+  expect.soft(applyBox?.height, "Salvar coleções: ação principal").toBeGreaterThanOrEqual(48);
   await page.getByLabel(new RegExp(lab.collection_name)).check();
-  await page.getByRole("button", { name: "Aplicar", exact: true }).click();
+  await page.getByRole("button", { name: "Salvar coleções", exact: true }).click();
   await expect(page.getByText("Coleções exibidas", { exact: true })).toHaveCount(0);
   await expect(feed.getByText(lab.collection_name, { exact: true })).toBeVisible();
   expect(posts).toBe(1);
@@ -399,9 +399,9 @@ test("cell lost response keeps one price intent and one canonical write", async 
   });
   await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("button", { name: /^Preço em/ }).first().click();
   await page.locator('input[inputmode="decimal"]').fill("14,23");
-  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await page.getByRole("button", { name: "Salvar preço", exact: true }).click();
   await expect.poll(() => receipts).toBe(1);
-  await expect(page.getByRole("button", { name: "Salvar", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Salvar preço", exact: true })).toHaveCount(0);
   expect(posts).toBe(1);
   const matrix = await (await page.request.get("/api/v1/backstage/catalog/")).json();
   expect(matrix.matrix.rows.find((row: { sku: string }) => row.sku === lab.edit_sku).cells.find((cell: { surface_ref: string }) => cell.surface_ref === "lab").price_q).toBe(1423);

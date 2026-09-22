@@ -128,7 +128,7 @@ export function deliveryStatePresentation(
     legacy_untracked: {
       label: "Resultado antigo sem rastreamento completo",
       detail:
-        "Este anúncio é anterior ao ledger por destino; não inferimos sucesso sem prova.",
+        "Não guardamos o resultado dele por plataforma. O que aconteceu na época não dá para conferir aqui.",
       tone: "attention",
       icon: "lucide:archive",
     },
@@ -237,7 +237,7 @@ export function recoveryActionExplanation(
     return "Pergunta ao provedor o que aconteceu. Não reenvia nada.";
   }
   if (action.kind === "cancel_announcement") {
-    return "Cancela somente faixas que ainda não começaram. Uma entrega iniciada nunca é apresentada como desfeita.";
+    return "Cancela somente faixas que ainda não começaram. O que já começou segue até o fim.";
   }
   return "A consequência será revalidada pelo servidor antes de confirmar.";
 }
@@ -401,7 +401,7 @@ export function marketingLoadError(error: unknown): {
   return {
     title: "Não foi possível carregar o resultado",
     detail:
-      "Pode ser uma interrupção de rede ou do serviço. O app não transforma essa falha em lista vazia.",
+      "Pode ser a rede. Isto não quer dizer que não há nada.",
     canRetry: true,
   };
 }
