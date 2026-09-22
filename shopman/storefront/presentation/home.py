@@ -308,12 +308,15 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         if cart_has_items is not None
         else origin_channel == "whatsapp" and _request_cart_has_items(request)
     )
+    from shopman.shop.services.channel_switch import is_channel_active
+
     notices = _home_notices(
         shop_status=shop_status,
         omotenashi=omotenashi,
         origin_channel=origin_channel,
         cart_has_items=notice_cart_has_items,
         whatsapp_url=public_config.whatsapp_url,
+        ordering_off=not is_channel_active(STOREFRONT_CHANNEL_REF),
     )
 
     return HomeProjection(
@@ -348,8 +351,30 @@ def _home_notices(
     origin_channel: str | None,
     cart_has_items: bool,
     whatsapp_url: str,
+    ordering_off: bool = False,
 ) -> tuple[HomeNoticeProjection, ...]:
     notices: list[HomeNoticeProjection] = []
+
+    if ordering_off:
+        # Loja online desligada no Gestor. O cardápio segue aberto para consulta;
+        # quem ia pedir precisa saber ANTES de montar a sacola, não no último botão.
+        notices.append(HomeNoticeProjection(
+            ref="ordering_off",
+            tone="warning",
+            title="A loja online não está recebendo pedidos agora",
+            message="O cardápio continua aqui para você consultar.",
+            priority="contextual",
+            actions=(
+                (Action(
+                    ref="contact_whatsapp",
+                    kind="external",
+                    label="Falar no WhatsApp",
+                    href=whatsapp_url,
+                    priority="quiet",
+                    idempotency="none",
+                ),) if whatsapp_url else ()
+            ),
+        ))
 
     status_message = (shop_status.message or "").strip()
     if status_message:

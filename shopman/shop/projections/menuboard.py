@@ -56,10 +56,21 @@ class MenuboardProjection:
     # falha aberta mostrando o cardápio inteiro quando o JS não roda.
     pages: tuple[MenuboardPage, ...] = field(default_factory=tuple)
     rotate_seconds: int = 0
+    # Canal desligado no Gestor (toggle "Ativo" da aba Canais): a TV continua
+    # servida, mas sem produto nenhum — tela preta com ``off_message``. Um 404
+    # deixaria a última pintura parada na tela (o JS só troca o quadro quando a
+    # leitura dá certo), e o cardápio velho seguiria à vista de quem entra.
+    is_active: bool = True
+    off_message: str = ""
+
+
+#: A frase da tela preta. Fala com quem está na loja olhando a TV: o que fazer
+#: agora, não por que a tela apagou.
+OFF_MESSAGE = "Consulte o cardápio no balcão."
 
 
 class MenuboardError(Exception):
-    """Raised when a ref is not a valid, active menuboard channel."""
+    """Raised when a ref is not a menuboard channel."""
 
 
 def resolve_menuboard(ref: str):
@@ -71,10 +82,10 @@ def resolve_menuboard(ref: str):
     from shopman.shop.models import Channel
 
     channel = Channel.objects.filter(
-        ref=ref, is_active=True, commerce_policy=Channel.CommercePolicy.DISPLAY
+        ref=ref, commerce_policy=Channel.CommercePolicy.DISPLAY
     ).first()
     if channel is None:
-        raise MenuboardError(f"Menuboard '{ref}' não encontrado ou inativo.")
+        raise MenuboardError(f"Menuboard '{ref}' não encontrado.")
     if ((channel.config or {}).get("display") or {}).get("format"):
         raise MenuboardError(f"Canal '{ref}' é um feed de plataforma, não um quadro.")
     return channel
@@ -133,7 +144,18 @@ def build_menuboard(ref: str) -> MenuboardProjection:
 
     from shopman.shop.services.display_prices import resolve_prices
 
+    from shopman.shop.services.channel_switch import effective_active
+
     channel = resolve_menuboard(ref)
+    if not effective_active(channel):
+        return MenuboardProjection(
+            ref=ref,
+            title="",
+            subtitle="",
+            pages=(MenuboardPage(),),
+            is_active=False,
+            off_message=OFF_MESSAGE,
+        )
     display = _display(channel)
     collection_refs = list(display.get("collections") or [])
     paused = set(display.get("paused_skus") or [])

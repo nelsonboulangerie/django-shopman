@@ -1,8 +1,9 @@
 """
 Backstage Feed API — Feeds (menuboard/Google/Meta) no Gestor.
 
-Read = board dos feeds + coleções disponíveis; write = ligar/pausar e escolher
-as coleções que cada feed exibe. Gate: ``shop.manage_catalog``.
+Read = board dos canais (venda e exibição) + coleções disponíveis; write = o toggle
+"Ativo" de qualquer canal (com período, motivo e gerente) e, nos feeds, as coleções
+e a rotação. Gate: ``shop.manage_catalog``.
 """
 
 from __future__ import annotations
@@ -83,16 +84,73 @@ class FeedBoardView(_FeedBase):
         return Response(read_data(board=projection_data(build_feed_board(user=request.user))))
 
 
-class FeedActiveView(_FeedBase):
-    operation = "active"
+class FeedSwitchView(_FeedBase):
+    """O toggle "Ativo" de qualquer card da aba Canais (venda ou exibição).
+
+    Gerente (``cashman.adjust_shift``, a mesma régua do PDV) só confirma; quem não é
+    manda a assinatura de um gerente (crachá ou usuário+PIN) em ``manager_approval``.
+    A credencial é conferida aqui e não entra na impressão digital da intenção.
+    """
+
+    operation = "switch"
 
     def post(self, request):
+        from datetime import datetime
+
+        from django.utils import timezone
+
+        from shopman.backstage.services.operator import ADJUST_SHIFT
+        from shopman.shop.services import channel_switch
+        from shopman.shop.services.pos import validate_manager_override
+        from shopman.shop.services.pos_intent import PosIntentError
+
         ref = str(request.data.get("ref") or "").strip()
         is_active = request.data.get("is_active")
-        if not ref or not isinstance(is_active, bool):
-            return Response({"detail": "ref e is_active (bool) são obrigatórios."}, status=400)
-        return self.mutate(request, ref, {"is_active": is_active},
-            lambda base: feed_service.set_active(ref, is_active, expected_revision=base))
+        period = str(request.data.get("period") or "").strip()
+        reason = str(request.data.get("reason") or "")
+        if not ref or not isinstance(is_active, bool) or period not in channel_switch.PERIODS:
+            return Response({"detail": "Escolha o canal, o estado e o período."}, status=400)
+
+        def when(field):
+            raw = str(request.data.get(field) or "").strip()
+            if not raw:
+                return None
+            try:
+                value = datetime.fromisoformat(raw)
+            except ValueError:
+                return None
+            return value if timezone.is_aware(value) else timezone.make_aware(value)
+
+        starts_at, ends_at = when("starts_at"), when("ends_at")
+        approver = request.user
+        if not request.user.has_perm(ADJUST_SHIFT):
+            try:
+                approver = validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=request.user.get_username(),
+                    action="channel_switch",
+                    message="Ligar ou desligar um canal pede um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        inputs = {
+            "is_active": is_active, "period": period, "reason": reason.strip(),
+            "starts_at": starts_at.isoformat() if starts_at else "", "ends_at": ends_at.isoformat() if ends_at else "",
+        }
+
+        def execute(base):
+            try:
+                channel_switch.request_switch(
+                    ref, is_active, period=period, reason=reason, starts_at=starts_at, ends_at=ends_at,
+                    actor=request.user, approved_by=approver, expected_revision=base,
+                )
+            except channel_switch.ChannelSwitchConflict as exc:
+                raise feed_service.FeedConflict(str(exc)) from exc
+            except channel_switch.ChannelSwitchError as exc:
+                raise CatalogError(str(exc)) from exc
+
+        return self.mutate(request, ref, inputs, execute)
 
 
 class FeedCollectionsView(_FeedBase):

@@ -44,6 +44,9 @@
     .live-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--gold); margin-right: 0.4rem; vertical-align: middle; }
     .live-dot.stale { background: var(--dim); }
     .empty { text-align: center; color: var(--dim); padding: 4rem 0; font-size: 1.2rem; }
+    /* Canal desligado no Gestor: tela preta, uma frase, nada de produto. Cobre a
+       tela inteira (inclusive o fundo do quadro) — é a TV "apagada" com recado. */
+    .off-screen { position: fixed; inset: 0; background: #000; color: var(--chalk); display: grid; place-items: center; padding: 2rem; text-align: center; font-size: clamp(1.6rem, 4vw, 3rem); letter-spacing: 0.02em; z-index: 10; }
   </style>
 </head>
 <body>
@@ -62,6 +65,9 @@
   {% endcomment %}
 
   <div id="menuboard-server">
+    {% if not board.is_active %}
+    <div class="off-screen" data-menuboard-off><p>{{ board.off_message }}</p></div>
+    {% else %}
     <header>
       <h1>{{ board.title }}</h1>
       <div class="subtitle">{{ board.subtitle }}</div>
@@ -89,10 +95,12 @@
     </div>
     {% if not board.groups %}<div class="empty">Sem itens no momento.</div>{% endif %}
     <footer><span class="live-dot stale"></span><span>cardápio do servidor</span></footer>
+    {% endif %}
   </div>
 
   <div class="board" id="menuboard-root" data-ref="{{ ref }}"
        x-data="menuboard()" x-init="init()" x-cloak>
+    <div class="off-screen" x-show="board.is_active === false" data-menuboard-off><p x-text="board.off_message"></p></div>
     <header>
       <h1 x-text="board.title"></h1>
       <div class="subtitle" x-text="board.subtitle"></div>
@@ -115,7 +123,7 @@
         </section>
       </template>
     </div>
-    <div class="empty" x-show="totalItems === 0">Sem itens no momento.</div>
+    <div class="empty" x-show="totalItems === 0 && board.is_active !== false">Sem itens no momento.</div>
     <div class="page-dots" x-show="pages.length > 1" aria-hidden="true">
       <template x-for="(p, i) in pages" :key="i">
         <span class="dot" :class="{ on: i === page }"></span>

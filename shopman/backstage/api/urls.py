@@ -36,13 +36,13 @@ from .catalog import (
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
 from .feeds import (
-    FeedActiveView,
     FeedBoardView,
     FeedCollectionsView,
     FeedRotationView,
+    FeedSwitchView,
 )
 from .hub import HubView
-from .ifood_store import IFoodStorePauseView, IFoodStoreResumeView, IFoodStoreView
+from .ifood_store import IFoodStoreView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -459,8 +459,6 @@ urlpatterns = [
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
-    path("ifood/store/pause/", IFoodStorePauseView.as_view(), name="api-backstage-ifood-store-pause"),
-    path("ifood/store/resume/", IFoodStoreResumeView.as_view(), name="api-backstage-ifood-store-resume"),
     # Catalog matrix (produto × superfície)
     path("catalog/channels/<str:ref>/review/", CatalogBindingReviewView.as_view(), name="api-backstage-catalog-binding-review"),
     path("catalog/channels/<str:ref>/snapshots/", CatalogSnapshotImportView.as_view(), name="api-backstage-catalog-snapshot-import"),
@@ -483,7 +481,7 @@ urlpatterns = [
     path("catalog/promise/<str:sku>/", ProductPromiseView.as_view(), name="api-backstage-catalog-promise-detail"),
     # Feeds (menuboard/Google/Meta)
     path("feeds/", FeedBoardView.as_view(), name="api-backstage-feeds"),
-    path("feeds/active/", FeedActiveView.as_view(), name="api-backstage-feeds-active"),
+    path("feeds/switch/", FeedSwitchView.as_view(), name="api-backstage-feeds-switch"),
     path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
     path("feeds/rotation/", FeedRotationView.as_view(), name="api-backstage-feeds-rotation"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).

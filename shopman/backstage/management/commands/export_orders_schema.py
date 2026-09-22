@@ -45,10 +45,13 @@ from shopman.backstage.projections.channel_health import (
 )
 from shopman.backstage.projections.feeds import (
     CatalogChannelProjection,
+    ChannelPeriodOption,
+    ChannelSwitchProjection,
     CollectionOptionProjection,
     FeedBoardProjection,
     FeedCollectionRef,
     FeedProjection,
+    ManagerOptionProjection,
 )
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
 from shopman.backstage.projections.order_queue import (
@@ -81,6 +84,9 @@ CONTRACT_DATACLASSES = (
     CatalogReviewItem,
     CatalogBindingReviewProjection,
     FeedCollectionRef,
+    ChannelPeriodOption,
+    ChannelSwitchProjection,
+    ManagerOptionProjection,
     FeedProjection,
     CatalogChannelProjection,
     CollectionOptionProjection,

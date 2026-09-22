@@ -1035,6 +1035,7 @@ Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem pas
 | Chave | Lido por | Descrição |
 |-------|----------|-----------|
 | `cutoff_hour` | CheckoutView._get_cutoff_info | Hora de corte para pedidos do dia (default 18) |
+| `activation` | `shop/services/channel_switch.py` (escrito pelo toggle "Ativo" da aba Canais e por `apply_due`) | A janela do último gesto no toggle de ligar/desligar: `{is_active, before, starts_at, ends_at (null = sem prazo), at, by, approved_by, reason, auto?}`. `is_active` é o estado pedido durante a janela; `before`, o estado para onde o canal volta no fim. Início futuro = agendamento. O estado que vale agora é `channel_switch.effective_active(channel)` (relógio), e `Channel.is_active` é o carimbo que o `maintenance_worker` acerta. O histórico de gestos fica no `LogEntry` do Admin (`action: "channel.switch"`). |
 
 ### Presets
 

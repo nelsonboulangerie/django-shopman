@@ -37,7 +37,6 @@ export interface SurfaceProjection {
   kind: SurfaceKind;
   transactional: boolean; // canal vende (preço/publicação); feed só exibe (pausa)
   icon: string; // dica de ícone p/ feeds (tv/rss); vazio p/ canal
-  is_active: boolean; // feed ligado/desligado (canal sempre ativo aqui)
   output_path: string; // saída pública do feed (abrir/prever); vazio p/ canal
   sync_key: string; // chave no CatalogSyncState.platform (ref p/ canais, kind p/ feeds)
 }

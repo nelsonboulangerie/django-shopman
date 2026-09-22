@@ -9,7 +9,9 @@ vi.stubGlobal("useNuxtData", () => ({ data: { value: { operator: { id: 1 } } } }
 describe("useFeedBoard", () => {
   beforeEach(() => {
     env.reset();
-    env.fetchData.value = { board: { feeds: ["menu-1", "m"].map((ref) => ({ ref, actions: ["active", "collections", "rotation"].map((ref) => ({ ref, enabled: true, reason: "", payload_schema: { base_revision: "fixture-base", expected_actor_id: 1 } })) })) } };
+    env.fetchData.value = { board: { catalog_channels: [], feeds: ["menu-1", "m"].map((ref) => ({ ref,
+      switch: { enabled: true, disabled_reason: "", base_revision: "switch-base", expected_actor_id: 1 },
+      actions: ["collections", "rotation"].map((ref) => ({ ref, enabled: true, reason: "", payload_schema: { base_revision: "fixture-base", expected_actor_id: 1 } })) })) } };
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
   });
 
@@ -18,12 +20,12 @@ describe("useFeedBoard", () => {
     expect(useFeedBoard().board.value).toEqual({ feeds: [{ ref: "menu" }] });
   });
 
-  it("setActive/setCollections postam url + body corretos", async () => {
+  it("switchChannel/setCollections postam url + body corretos", async () => {
     const s = useFeedBoard();
-    await s.setActive("menu-1", true);
+    expect(await s.switchChannel("menu-1", { is_active: false, period: "1h", reason: "Loja cheia" })).toEqual({ ok: true, code: "", message: "" });
     let [url, opts] = env.fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe("/api/v1/backstage/feeds/active/");
-    expect(opts.body).toMatchObject({ ref: "menu-1", is_active: true });
+    expect(String(url)).toBe("/api/v1/backstage/feeds/switch/");
+    expect(opts.body).toMatchObject({ ref: "menu-1", is_active: false, period: "1h", reason: "Loja cheia", base_revision: "switch-base" });
 
     await s.setCollections("menu-1", ["c1", "c2"]);
     [url, opts] = env.fetchMock.mock.calls[1]!;
@@ -40,26 +42,33 @@ describe("useFeedBoard", () => {
     let release!: (value: unknown) => void;
     env.fetchMock.mockReturnValueOnce(new Promise<unknown>((r) => { release = r; }));
     const s = useFeedBoard();
-    const first = s.setActive("m", true);
+    const first = s.switchChannel("m", { is_active: false, period: "1h", reason: "x" });
     expect(s.isBusy("m")).toBe(true);
-    expect(await s.setActive("m", false)).toBe(false);
+    expect((await s.switchChannel("m", { is_active: false, period: "1h", reason: "x" })).ok).toBe(false);
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
     release({ outcome: "applied" });
     await first;
     expect(s.isBusy("m")).toBe(false);
   });
 
-  it("falha acende errorMsg + toast e devolve false", async () => {
+  it("falha de coleções acende errorMsg + toast e devolve false", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Feed bloqueado" } });
     const s = useFeedBoard();
-    expect(await s.setActive("m", true)).toBe(false);
+    expect(await s.setCollections("m", [], "fixture-base")).toBe(false);
     expect(s.errorMsg.value).toBe("Feed bloqueado");
     expect(env.sonner.error).toHaveBeenCalledWith("Feed bloqueado");
+  });
+  it("falta de gerente no toggle não vira toast: é o próximo passo do modal", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 422, data: { detail: "Ligar ou desligar um canal pede um gerente.", error: { code: "manager_approval_required" } } });
+    const s = useFeedBoard();
+    const outcome = await s.switchChannel("m", { is_active: false, period: "1h", reason: "x" });
+    expect(outcome).toMatchObject({ ok: false, code: "manager_approval_required" });
+    expect(env.sonner.error).not.toHaveBeenCalled();
   });
   it("resposta perdida consulta a mesma intenção no feed certo sem segundo POST", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
     const s = useFeedBoard();
-    expect(await s.setActive("menu-1", false)).toBe(true);
+    expect((await s.switchChannel("menu-1", { is_active: false, period: "open", reason: "Férias" })).ok).toBe(true);
     expect(env.fetchMock).toHaveBeenCalledTimes(2);
     const post = env.fetchMock.mock.calls[0]![1];
     const read = env.fetchMock.mock.calls[1]![1];

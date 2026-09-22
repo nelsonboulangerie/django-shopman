@@ -63,6 +63,9 @@ MARKETING_DELIVERY_BATCH = 20
 MARKETING_DELIVERY_LEASE_SECONDS = 300
 
 MAINTENANCE_COMMANDS = (
+    # Primeiro: o fim de "desligar por 1 hora" religa o canal antes de o resto do
+    # ciclo (envio de catálogo, conferência do iFood) ler o estado dele.
+    "apply_channel_switches",
     "release_expired_holds",
     "cleanup_stale_sessions",
     # Depois do cleanup (que já libera ao deletar) e antes do planning: holds

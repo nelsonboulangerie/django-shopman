@@ -497,8 +497,23 @@ def test_matrix_includes_feed_column(client, operator, catalog_with_display):
     tv = surfaces["tv-salao"]
     assert tv["kind"] == "display"
     assert tv["transactional"] is False
-    assert tv["is_active"] is True
     assert tv["output_path"] == "/menuboard/tv-salao/"
+
+
+def test_switched_off_channel_and_feed_leave_the_columns(client, operator, catalog_with_display):
+    """Desligado no toggle da aba Canais = fora das colunas — venda ou exibição.
+
+    Antes, o feed desligado continuava coluna ("Pausado", esmaecido) e o canal de
+    venda desligado só saía pelo carimbo. Agora a janela do toggle vale pelo
+    relógio: desligar por 1 hora já tira a coluna, sem esperar o worker.
+    """
+    from shopman.shop.services import channel_switch
+
+    client.force_login(operator)
+    channel_switch.request_switch("tv-salao", False, period="1h", reason="Falta de produto", actor=operator)
+    channel_switch.request_switch("ifood", False, period="open", reason="Loja cheia", actor=operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    assert [s["ref"] for s in matrix["surfaces"]] == ["web"]
 
 
 def test_surface_short_name_falls_back_to_name(client, operator, catalog_with_display):
@@ -807,7 +822,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     surface = matrix["surfaces"][0]
     assert set(surface) == {
         "ref", "name", "short_name", "is_projection_target", "sync_status", "kind",
-        "transactional", "icon", "is_active", "output_path", "sync_key",
+        "transactional", "icon", "output_path", "sync_key",
     }
 
     row = matrix["rows"][0]

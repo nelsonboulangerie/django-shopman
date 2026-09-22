@@ -13,7 +13,7 @@ vi.stubGlobal("useNextFocus", vi.fn());
 let leave: () => boolean;
 vi.stubGlobal("onBeforeRouteLeave", (guard: () => boolean) => { leave = guard; });
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
-vi.stubGlobal("useFeedBoard", () => ({ board, error, errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections, setActive: vi.fn(), setRotation: vi.fn() }));
+vi.stubGlobal("useFeedBoard", () => ({ board, error, errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections, switchChannel: vi.fn(), setRotation: vi.fn() }));
 const popover = defineComponent({ props: ["open"], emits: ["update:open"], template: '<div :data-open="open"><button data-open-editor @click="$emit(\'update:open\', true)">Abrir editor</button><slot /></div>' });
 const render = () => mount(Feeds, { global: { stubs: { Icon: true, UiToolbar: { template: "<div><slot/><slot name=\"end\"/></div>" }, UiIconButton: true, UiPopover: popover, UiPopoverTrigger: { template: "<div><slot/></div>" }, UiPopoverContent: { template: "<div><slot/></div>" } } } });
 beforeEach(() => { board.value = null; error.value = null; setCollections.mockReset(); });
@@ -75,20 +75,37 @@ it("GET indisponível conserva o editor e a seleção da última leitura", async
   expect(setCollections).not.toHaveBeenCalled();
 });
 
-it("mostra integração sem switch de loja e preserva controles da TV", () => {
+it("todo card tem o mesmo toggle, e o toggle abre o modal em vez de mudar direto", async () => {
+  const switchState = { is_active: true, state_line: "", closed_by_shop: "", scheduled_line: "", title: "Desligar", consequence: "",
+    periods: [], reasons: [], reason_required: true, enabled: true, disabled_reason: "", base_revision: "r", expected_actor_id: 1,
+    requires_manager_approval: false };
   board.value = {
-    feeds: [{ ref: "tv", name: "TV", collections: [], actions: [{ ref: "active", enabled: true }], capability: "display", kind: "menuboard", is_active: true }],
+    feeds: [{ ref: "tv", name: "TV", collections: [], actions: [], capability: "display", kind: "menuboard", is_active: true, switch: switchState }],
     all_collections: [],
     catalog_channels: [{ ref: "ifood", name: "iFood", projection_enabled: false,
-      diagnostic: "Envio de catálogo desativado nesta instalação.", observed: 3,
-      synced: 1, pending: 1, errors: 1, retracted: 2, skipped: 3, catalog_path: "/catalog" }],
+      diagnostic: "Envio de catálogo desativado nesta instalação.", observed: 3, is_active: true,
+      synced: 1, pending: 1, errors: 1, retracted: 2, skipped: 3, catalog_path: "/catalog", switch: switchState }],
+    managers: [], viewer_name: "Joyce",
   };
-  const wrapper = render();
+  const wrapper = mount(Feeds, { global: { stubs: {
+    Icon: true, UiToolbar: { template: "<div><slot/><slot name=\"end\"/></div>" }, UiIconButton: true,
+    UiPopover: popover, UiPopoverTrigger: { template: "<div><slot/></div>" }, UiPopoverContent: { template: "<div><slot/></div>" },
+    ChannelSwitchDialog: { props: ["open", "sw"], template: "<div v-if='open' data-switch-dialog-stub :data-title='sw?.title' />" },
+    ChannelSwitchState: true, IFoodChannelStore: true,
+  } } });
   const integration = wrapper.get('[aria-label="Canais de venda"]');
   expect(integration.text()).toContain("Envio de catálogo desativado");
   expect(integration.text()).toContain("1 sincronizados · 1 pendentes · 1 com erro");
   expect(integration.text()).toContain("2 retirados · 3 não enviados");
-  expect(integration.find('[role="switch"]').exists()).toBe(false);
   expect(integration.findAll("nuxtlink").map(link => link.attributes("to"))).toEqual(["/channels/ifood/catalog", "/catalog"]);
-  expect(wrapper.findAll('[role="switch"]')).toHaveLength(1);
+  // Um toggle por card — venda e exibição —, com cabeçalho, corpo e rodapé.
+  expect(wrapper.findAll("[data-channel-switch]")).toHaveLength(2);
+  for (const card of wrapper.findAll("[data-channel-card]")) {
+    expect(card.find("[data-card-header] [data-channel-switch]").exists()).toBe(true);
+    expect(card.find("[data-card-body]").exists()).toBe(true);
+    expect(card.find("[data-card-footer]").exists()).toBe(true);
+  }
+  expect(wrapper.find("[data-switch-dialog-stub]").exists()).toBe(false);
+  await integration.get("[data-channel-switch]").trigger("click");
+  expect(wrapper.find("[data-switch-dialog-stub]").exists()).toBe(true);
 });

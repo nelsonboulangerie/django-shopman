@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // O SINAL da loja no iFood na aba Pedidos — nunca o controle. Aparece só quando muda
-// o que entra na fila: iFood pausado, pausa recusada, ou iFood divergente da loja.
-// Em estado normal não existe. Quem pode pausar segue o sinal até o card do canal
-// iFood (aba Canais), onde mora o controle; os outros leem o estado e seguem.
+// o que entra na fila: iFood desligado no Gestor, ou divergente da loja. Em estado
+// normal não existe. Quem pode abrir a aba Canais segue o sinal até o card do canal
+// iFood, onde mora o toggle; os outros leem o estado e seguem.
 import { IFOOD_FOCUS_KEY, queueSignal } from "~/presentation/ifoodStore";
 
 const { store } = useIFoodStore();
 const signal = computed(() => queueSignal(store.value));
-const canOpenControl = computed(() => Boolean(store.value?.can_pause));
+const canOpenControl = computed(() => Boolean(store.value?.can_open_channels));
 const target = { path: "/feeds", query: { focus: IFOOD_FOCUS_KEY } };
 </script>
 
