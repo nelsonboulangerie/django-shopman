@@ -13,36 +13,77 @@ from shopman.shop.handlers._resilient import resilient_receiver
 logger = logging.getLogger(__name__)
 
 
+def _overbooked_holds_on_production_quants(product_ref, date):
+    """Reservas que o cancelamento deixou SEM lastro, e só elas.
+
+    Os quants de produção são compartilhados por todas as fornadas do mesmo
+    SKU/data/posição (``StockMovements.receive`` faz get_or_create), e a ponte
+    craftsman→stockman já subtraiu deles a contribuição da fornada cancelada.
+    O que sobra de reserva acima do saldo é o que perdeu lastro: soltar isso e
+    nada mais. Ficam de fora, por construção:
+
+    - o estoque FÍSICO (quant sem ``target_date``) — a vitrine não mudou; a
+      reserva de um pedido pago sobre ela continua valendo;
+    - as reservas cobertas pelas outras fornadas do dia;
+    - as de DEMANDA (``quant=None``), que não se apoiam em fornada alguma.
+
+    Dentro do quant, solta primeiro a sacola (reserva de sessão), depois o
+    pedido, e da mais nova para a mais antiga: quem reservou primeiro fica.
+    """
+    from decimal import Decimal
+
+    from shopman.stockman import Hold
+    from shopman.stockman.models import Quant
+
+    doomed = []
+    quants = Quant.objects.filter(sku=product_ref, target_date=date)
+    for quant in quants:
+        active = list(Hold.objects.filter(quant=quant).active().order_by("-pk"))
+        excess = sum((h.quantity for h in active), Decimal("0")) - quant.quantity
+        if excess <= 0:
+            continue
+
+        def _is_order(hold):
+            return str((hold.metadata or {}).get("reference") or "").startswith("order:")
+
+        for hold in sorted(active, key=_is_order):  # estável: sacolas antes, mais nova primeiro
+            if excess <= 0:
+                break
+            doomed.append(hold)
+            excess -= hold.quantity
+    return doomed
+
+
 @resilient_receiver
 def on_production_voided(sender, product_ref, date, action, work_order, **kwargs):
-    """When production is voided, release demand holds and notify sessions with planned holds.
+    """Fornada cancelada: solta só as reservas que ela deixou sem lastro.
+
+    Roda DEPOIS da ponte craftsman→stockman (``shopman.craftsman.contrib.stockman``
+    vem antes de ``shopman.shop`` no ``INSTALLED_APPS``), que já tirou dos quants
+    de produção a contribuição desta fornada. Ver
+    ``_overbooked_holds_on_production_quants`` para o que fica e o que sai.
 
     Best-effort por desenho (a liberação de cada hold já é engolida em DEBUG); o
     wrapper fecha o único ponto que faltava — a query de topo — para o void de
     uma WO nunca abortar a cadeia de receivers nem o caller.
     """
-    if action != "voided":
+    if action != "voided" or not date:
         return
 
-    from shopman.stockman import Hold, HoldStatus
     from shopman.stockman.service import Stock as stock
 
-    # Find pending holds for this SKU/date that are linked to planned quants
-    holds = Hold.objects.filter(
-        sku=product_ref,
-        target_date=date,
-        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-    )
-
     session_keys = set()
-    for hold in holds:
+    for hold in _overbooked_holds_on_production_quants(product_ref, date):
         ref = (hold.metadata or {}).get("reference")
         if ref:
             session_keys.add(ref)
         try:
             stock.release(hold.hold_id, reason="Produção cancelada")
         except Exception:
-            logger.debug("on_production_voided: could not release hold %s", hold.hold_id)
+            # Reserva sem lastro que não saiu = pão prometido que não vai existir.
+            logger.warning(
+                "on_production_voided: could not release hold %s", hold.hold_id, exc_info=True,
+            )
 
     if not session_keys:
         return
@@ -114,7 +155,7 @@ def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
             if ref:
                 session_keys.add(ref)
                 hold_ids_by_session.setdefault(ref, []).append(hold_id)
-        except (Hold.DoesNotExist, IndexError, ValueError, TypeError):
+        except (Hold.DoesNotExist, IndexError, ValueError, TypeError):  # silêncio-deliberado: hold_id malformado ou já apagado não tem sessão a avisar
             pass
 
     # Encomenda cujo despertador já tocou (ativada na data, baixa pendente de
@@ -228,7 +269,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
         product = Product.objects.filter(sku=sku).first()
         if product is not None:
             product_name = product.name
-    except Exception:
+    except Exception:  # silêncio-deliberado: o aviso degrada para o SKU como nome
         logger.debug("stock_arrived: product lookup failed for sku=%s", sku, exc_info=True)
 
     try:
@@ -296,13 +337,13 @@ def _resolve_session_customer(session):
             customer = Customer.objects.filter(pk=customer_id).first()
             if customer is not None:
                 return customer
-        except (TypeError, ValueError):
+        except (TypeError, ValueError):  # silêncio-deliberado: id não numérico; tenta como uuid abaixo
             pass
         try:
             customer = Customer.objects.filter(uuid=str(customer_id)).first()
             if customer is not None:
                 return customer
-        except (TypeError, ValueError):
+        except (TypeError, ValueError):  # silêncio-deliberado: id que não é uuid; segue para o próximo identificador
             pass
 
     if customer_ref:
