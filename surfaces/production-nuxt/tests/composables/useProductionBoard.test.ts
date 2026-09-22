@@ -340,7 +340,7 @@ describe("useProductionBoard — plan/start writes", () => {
     expect(started.blocked?.code).toBe("changed_elsewhere");
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect(env.sonner.error).toHaveBeenCalledWith(
-      expect.stringContaining("outra tela alterou esta fornada"),
+      expect.stringContaining("outra tela alterou este lote"),
     );
   });
 

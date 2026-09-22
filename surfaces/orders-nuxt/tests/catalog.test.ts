@@ -239,7 +239,7 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
     expect(status.label).not.toBe("Oculto");
   });
 
-  it("'Fora do cardápio' vem antes de Esgotado (a fornada repõe; a categoria não)", () => {
+  it("'Fora do cardápio' vem antes de Esgotado (o lote repõe; a categoria não)", () => {
     const r = row({
       hidden_by_inactive_collection: true,
       sold_out: true,

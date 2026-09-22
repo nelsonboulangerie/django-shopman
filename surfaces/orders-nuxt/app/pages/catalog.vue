@@ -645,8 +645,8 @@ useHead({ title: "Catálogo" });
                           'bg-muted text-muted-foreground': rowStatuses[row.sku]?.tone === 'muted',
                         }"
                       >{{ rowStatuses[row.sku]?.label }}</span>
-                      <!-- esgotado que repõe por produção: a próxima fornada reativa sozinha -->
-                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} na fornada</span>
+                      <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
+                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} no lote</span>
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
                       <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">Resta {{ row.stock_qty }}</span>
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->

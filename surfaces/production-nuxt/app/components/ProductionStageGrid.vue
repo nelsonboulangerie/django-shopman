@@ -46,7 +46,7 @@ const props = defineProps<{
 const route = useRoute();
 const routeDate = typeof route.query.date === "string" ? route.query.date : "";
 
-// A Produção abre em HOJE (a fornada é do dia); só o Planejamento abre no dia
+// A Produção abre em HOJE (o lote é do dia); só o Planejamento abre no dia
 // seguinte à tarde, quando o padeiro planeja a próxima leva. Sem isto, a grade
 // herdava o default de planejamento e "Produção" amanhecia em amanhã depois do
 // meio-dia.
@@ -914,7 +914,7 @@ const headerCount = computed(() => {
           class="grid gap-2"
         >
           <p class="text-sm text-muted-foreground">
-            Selecione a fornada exata que deseja ajustar.
+            Selecione o lote exato que deseja ajustar.
           </p>
           <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
@@ -1046,7 +1046,7 @@ const headerCount = computed(() => {
           class="grid gap-2"
         >
           <p class="text-sm text-muted-foreground">
-            Selecione a fornada que vai confirmar.
+            Selecione o lote que vai confirmar.
           </p>
           <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
@@ -1063,7 +1063,7 @@ const headerCount = computed(() => {
           </button>
         </div>
         <p v-if="selectedStartOrder" class="text-sm text-muted-foreground">
-          Fornada #{{ selectedStartOrder.ref }} · planejado
+          Lote #{{ selectedStartOrder.ref }} · planejado
           {{ selectedStartOrder.planned_qty }}
         </p>
         <div v-if="selectedStartOrder" class="flex items-center gap-2">
@@ -1146,7 +1146,7 @@ const headerCount = computed(() => {
               {{ selectedStartedOrder.started_qty }} un. seguem para a
               Expedição
             </template>
-            <template v-else>Selecione a fornada.</template>
+            <template v-else>Selecione o lote.</template>
           </UiDialogDescription>
         </UiDialogHeader>
 
@@ -1179,7 +1179,7 @@ const headerCount = computed(() => {
           >
             <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
             <span
-              >A fornada volta atrás e o vínculo com pedidos é desfeito.</span
+              >O lote volta atrás e o vínculo com pedidos é desfeito.</span
             >
           </p>
           <UiTextarea

@@ -971,7 +971,7 @@ UNFOLD = {
         {
             "models": ["shop.qualitydefect", "shop.qualitygrade"],
             "items": [
-                {"title": "Defeitos de fornada", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
+                {"title": "Defeitos de lote", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
                 {"title": "Graus de qualidade", "link": reverse_lazy("admin:shop_qualitygrade_changelist")},
             ],
         },

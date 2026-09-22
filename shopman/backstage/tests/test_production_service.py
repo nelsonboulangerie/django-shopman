@@ -1091,7 +1091,7 @@ def test_batch_traceability_failure_rolls_back_finish_and_alerts(recipe, monkeyp
 
     with pytest.raises(
         production.ProductionBatchTraceabilityError,
-        match="rastreabilidade do lote falhou",
+        match="rastreabilidade falhou",
     ):
         _apply_finish(
             work_order_id=work_order.pk,

@@ -3086,7 +3086,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda da fornada. "
+                                "A quantidade total deve incluir toda perda do lote. "
                                 "Classifique o déficit em partition com um motivo de qualidade."
                             )
                         }

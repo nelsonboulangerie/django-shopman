@@ -137,7 +137,7 @@ class OperatorAlert(models.Model):
         ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
         (
             "production_quality_communication",
-            "Qualidade corrigida após comunicação da fornada",
+            "Qualidade corrigida após comunicação do lote",
         ),
         (
             "production_quality_hold_risk",

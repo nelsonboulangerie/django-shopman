@@ -1274,7 +1274,7 @@ def _commitment_date_display(commitment) -> str:
 
 
 _WAITLIST_LABELS = {
-    "fermata": "Na fila da fornada",
+    "fermata": "Na fila do lote",
     "confirming": "Aguardando o cliente confirmar",
     "confirmed": "Confirmado pelo cliente",
     "released": "Vaga liberada",
@@ -1690,7 +1690,7 @@ _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
-    operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando a fornada…",
+    operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando o lote…",
 }
 
 
