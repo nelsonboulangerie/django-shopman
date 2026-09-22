@@ -34,6 +34,7 @@ from .catalog import (
     CatalogSyncStatusView,
 )
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
+from .channel_health import ChannelHealthView
 from .feeds import (
     FeedActiveView,
     FeedBoardView,
@@ -485,6 +486,8 @@ urlpatterns = [
     path("feeds/active/", FeedActiveView.as_view(), name="api-backstage-feeds-active"),
     path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
     path("feeds/rotation/", FeedRotationView.as_view(), name="api-backstage-feeds-rotation"),
+    # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
+    path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
     # Order tickets (filipeta do pedido remoto) — o lote da semana para o painel.
     # ⚠️ ANTES de `orders/<str:ref>/`: `tickets` casaria com `<str:ref>` e a
     # conferência do lote viraria "pedido TICKETS não encontrado".
