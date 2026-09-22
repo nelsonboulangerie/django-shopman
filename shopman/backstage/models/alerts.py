@@ -43,6 +43,9 @@ class OperatorAlert(models.Model):
         # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
         # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
         ("integration_config_drift", "Integração em configuração degradada"),
+        # A prontidão só acusava o certificado DEPOIS de vencido, com o Pix já
+        # parado. Este tipo avisa antes: 30, 15, 7 e 3 dias, e no vencimento.
+        ("certificate_expiring", "Vencimento de certificado digital"),
         ("ifood_schedule_invalid", "Agendamento iFood inválido"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),

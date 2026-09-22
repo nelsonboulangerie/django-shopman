@@ -674,6 +674,23 @@ O dedupe é `(provider, lista de pendências)`, com `active_only=False`: consert
 pendência de três é fato novo e merece aviso novo; o mesmo conjunto de novo na janela, não —
 nem depois de reconhecido.
 
+O mesmo ciclo lê Compras (`purchase_nfe`) quando ela está ligada — leitor de NF-e ou
+certificado configurado (`build_monitored_readiness`). O PDV e a guarda de deploy
+(`SHOPMAN_E022`) continuam só com a prontidão do balcão.
+
+**Alerta:** `certificate_expiring`, o vencimento dos certificados digitais que a casa guarda
+(Efí e o e-CNPJ A1 de Compras). A prontidão só acusa o certificado depois de vencido; este
+aviso vem antes:
+
+| faltam | severidade |
+| --- | --- |
+| 30, 15 e 7 dias | `warning` |
+| 3 dias ou menos, ou vencido | `critical` (sai por e-mail) |
+
+Cada marco é um alerta só na vida do certificado — dedupe `(provedor, data de vencimento,
+marco)`, sem janela. Certificado renovado tem outra data e recomeça os marcos. A NFC-e fica de
+fora: o e-CNPJ dela mora no painel da Focus, e a API de emissão não informa a validade.
+
 ---
 
 ### diagnose_remote_order
