@@ -17,9 +17,11 @@ Este módulo faz três coisas, todas atrás de ``SHOPMAN_IFOOD["merchant_sync_en
    **interrupção** com início e fim, que é o que o iFood recomenda para
    fechamento temporário. Roda por Directive (``ifood.merchant_sync``), com
    retry, e é idempotente: lê antes de escrever, e só escreve o que difere.
-2. **Pausa do gestor** (:func:`request_pause` / :func:`request_resume`). Fechar
-   o iFood por estratégia com a casa aberta: uma interrupção com duração e
-   motivo, e quem pediu fica registrado. Retomar apaga a interrupção.
+2. **Toggle do canal** (``channel_switch``). Desligar o canal iFood no Gestor —
+   por 30 minutos, por hoje, por um período ou sem prazo — vira interrupção com
+   o mesmo início e fim (:func:`channel_off_closures`); sem prazo, blocos de 7
+   dias renovados pela conferência. Quem desligou, quando e por quê ficam no
+   canal. Ligar o canal nunca abre o iFood fora do horário da loja.
 3. **Conferência** (:func:`check_store`). O maintenance-worker lê ``GET /status``
    e, quando o iFood discorda da casa por mais de uma conferência, cria
    ``OperatorAlert``. É o vigia que o ``ifood_poll`` não tinha: polling caído
@@ -68,14 +70,15 @@ DIVERGENCE_ALERT_WINDOW_MINUTES = 60
 #: Sem gravação há mais que isto, a conferência pede uma nova (cura o que foi
 #: mexido no Portal e avança o horizonte do calendário).
 RESYNC_EVERY = timedelta(hours=6)
+#: Canal iFood desligado sem prazo no Gestor: o iFood não tem interrupção sem fim,
+#: então o desligamento vira blocos de 7 dias emendados a partir do gesto. O bloco
+#: seguinte é pedido quando o atual está a menos disto do fim — a conferência roda
+#: a cada poucos minutos e regrava a cada ``RESYNC_EVERY``.
+CHANNEL_OFF_RENEW_AHEAD = timedelta(days=1)
 
 ALERT_CLOSED_WHILE_OPEN = "ifood_store_closed_while_open"
 ALERT_OPEN_WHILE_CLOSED = "ifood_store_open_while_closed"
 ALERT_SYNC_FAILED = "ifood_store_sync_failed"
-
-#: Durações oferecidas ao gestor. ``until_close`` = até o fim do expediente de hoje.
-PAUSE_DURATIONS: dict[str, int] = {"30m": 30, "1h": 60, "2h": 120}
-PAUSE_UNTIL_CLOSE = "until_close"
 
 _IFOOD_DAYS = {
     "monday": "MONDAY",
@@ -116,6 +119,32 @@ def governs(shop=None) -> bool:
     caso nada é gravado nem conferido, e quem manda continua sendo o Portal.
     """
     return business_calendar.has_regular_hours(shop=shop)
+
+
+def _ifood_channel():
+    from shopman.shop.models import Channel
+    from shopman.shop.services.channel_switch import IFOOD_CHANNEL_REF
+
+    return Channel.objects.filter(ref=IFOOD_CHANNEL_REF).first()
+
+
+def channel_off(*, now: datetime | None = None) -> bool:
+    """O canal iFood está desligado no Gestor AGORA (toggle "Ativo" da aba Canais)?
+
+    Desligado, a loja fica fechada no iFood pelo período escolhido — com ou sem
+    grade semanal declarada: fechar não depende de expediente.
+    """
+    from shopman.shop.services.channel_switch import effective_active
+
+    channel = _ifood_channel()
+    return channel is not None and not effective_active(channel, now=now)
+
+
+def _has_off_windows(*, now: datetime) -> bool:
+    from shopman.shop.services.channel_switch import off_windows
+
+    channel = _ifood_channel()
+    return channel is not None and bool(off_windows(channel, now=now))
 
 
 # ── Cliente da API ────────────────────────────────────────────────────────────
@@ -347,6 +376,76 @@ def desired_calendar_closures(*, now: datetime | None = None, shop=None) -> list
     return closures
 
 
+def channel_off_closures(*, now: datetime | None = None, shop=None) -> list[CalendarClosure]:
+    """As interrupções que mantêm o iFood fechado pelas janelas do toggle do canal.
+
+    Cada janela vira blocos de até ``MAX_INTERRUPTION_DAYS`` contados do início
+    dela. Janela com fim entra inteira dentro do horizonte do calendário; janela
+    sem prazo entra pelo bloco em curso e, perto do fim dele, pelo seguinte.
+    """
+    from shopman.shop.services.channel_switch import off_windows
+
+    now = now or timezone.now()
+    channel = _ifood_channel()
+    if channel is None:
+        return []
+    tz = business_calendar.shop_timezone(shop=shop)
+    span = timedelta(days=MAX_INTERRUPTION_DAYS)
+    horizon = now + timedelta(days=CALENDAR_HORIZON_DAYS)
+    closures: list[CalendarClosure] = []
+    for start, end in off_windows(channel, now=now):
+        index = max(0, int((now - start) // span)) if now > start else 0
+        block_start = start + index * span
+        while block_start < (end or horizon) and block_start <= horizon:
+            block_end = block_start + span if end is None else min(block_start + span, end)
+            if end is None and block_start > now and block_start - now > CHANNEL_OFF_RENEW_AHEAD:
+                break
+            if block_end > now:
+                closures.append(CalendarClosure(
+                    key=f"off:{_key_stamp(block_start, tz)}-{_key_stamp(block_end, tz)}",
+                    starts_at=block_start,
+                    ends_at=block_end,
+                    label="",
+                ))
+            if end is None and block_end - now > CHANNEL_OFF_RENEW_AHEAD:
+                break
+            block_start = block_end
+    return closures
+
+
+def _key_stamp(value: datetime, tz) -> str:
+    return f"{timezone.localtime(value, timezone=tz):%y%m%d%H%M}"
+
+
+def _subtract(closure: CalendarClosure, cuts: list[CalendarClosure], tz) -> list[CalendarClosure]:
+    """O que sobra de um fechamento do calendário fora das janelas do toggle.
+
+    O iFood recusa (409) interrupção sobreposta. Onde o canal já está desligado,
+    o bloco do desligamento cobre; o feriado entra só no pedaço que sobra.
+    """
+    pieces = [(closure.starts_at, closure.ends_at)]
+    for cut in cuts:
+        next_pieces = []
+        for start, end in pieces:
+            if cut.ends_at <= start or cut.starts_at >= end:
+                next_pieces.append((start, end))
+                continue
+            if start < cut.starts_at:
+                next_pieces.append((start, cut.starts_at))
+            if cut.ends_at < end:
+                next_pieces.append((cut.ends_at, end))
+        pieces = next_pieces
+    if pieces == [(closure.starts_at, closure.ends_at)]:
+        return [closure]
+    return [
+        CalendarClosure(key=f"c:{_key_stamp(start, tz)}-{_key_stamp(end, tz)}", starts_at=start, ends_at=end, label=closure.label)
+        for start, end in pieces
+    ]
+
+
+CHANNEL_OFF_DESCRIPTION = "iFood desligado no Gestor"
+
+
 def _ifood_datetime(value: datetime, tz) -> str:
     return timezone.localtime(value, timezone=tz).isoformat(timespec="seconds")
 
@@ -415,30 +514,40 @@ def sync_store(*, now: datetime | None = None) -> SyncResult:
     if not enabled():
         return SyncResult(skipped="desligado")
     shop = Shop.load()
-    if not governs(shop):
+    now = now or timezone.now()
+    off = channel_off(now=now)
+    if not governs(shop) and not _has_off_windows(now=now):
         logger.info("ifood_merchant.sync: loja sem grade semanal — o Portal segue mandando no horário")
         return SyncResult(skipped="sem grade semanal")
-    now = now or timezone.now()
     result = SyncResult()
 
-    desired = desired_shifts(shop)
-    if not shifts_match(desired, get_opening_hours()):
-        put_opening_hours(desired)
-        result.hours_written = True
-        logger.info("ifood_merchant.sync: horário gravado no iFood (%s turnos)", len(desired))
+    if governs(shop):
+        desired = desired_shifts(shop)
+        if not shifts_match(desired, get_opening_hours()):
+            put_opening_hours(desired)
+            result.hours_written = True
+            logger.info("ifood_merchant.sync: horário gravado no iFood (%s turnos)", len(desired))
 
-    _reconcile_calendar(shop, now, result)
+    _reconcile_calendar(shop, now, result, off=off)
     _status_row(update={"synced_at": now})
     return result
 
 
-def _reconcile_calendar(shop, now: datetime, result: SyncResult) -> None:
+def _reconcile_calendar(shop, now: datetime, result: SyncResult, *, off: bool = False) -> None:
     from shopman.shop.models import IFoodInterruption, IFoodInterruptionKind
     from shopman.shop.models import IFoodInterruptionState as S
 
     tz = business_calendar.shop_timezone(shop=shop)
     mid = merchant_id()
-    desired = {closure.key: closure for closure in desired_calendar_closures(now=now, shop=shop)}
+    calendar = desired_calendar_closures(now=now, shop=shop) if governs(shop) else []
+    switched_off = channel_off_closures(now=now, shop=shop)
+    if switched_off:
+        if off:
+            # A pausa curta antiga (anterior ao toggle) sairia sobreposta (409).
+            _withdraw_manual_pauses(now=now)
+        calendar = [piece for closure in calendar for piece in _subtract(closure, switched_off, tz)]
+    closures = [*calendar, *switched_off]
+    desired = {closure.key: closure for closure in closures}
     remote = list_interruptions()
     remote_ids = {str(item.get("id")) for item in remote if item.get("id")}
 
@@ -473,12 +582,28 @@ def _reconcile_calendar(shop, now: datetime, result: SyncResult) -> None:
         record = IFoodInterruption.objects.create(
             kind=IFoodInterruptionKind.CALENDAR,
             merchant_id=mid,
-            description=closure.description,
+            description=CHANNEL_OFF_DESCRIPTION if closure.key.startswith("off:") else closure.description,
             starts_at=closure.starts_at,
             ends_at=closure.ends_at,
             calendar_key=closure.key,
         )
         _create_remote(record, remote=remote, now=now, tz=tz, result=result)
+
+
+def _withdraw_manual_pauses(*, now: datetime) -> None:
+    from shopman.shop.models import IFoodInterruption, IFoodInterruptionKind
+    from shopman.shop.models import IFoodInterruptionState as S
+
+    live = IFoodInterruption.objects.filter(
+        kind=IFoodInterruptionKind.MANUAL,
+        merchant_id=merchant_id(),
+        state__in=(S.PENDING_CREATE, S.ACTIVE, S.PENDING_REMOVE),
+    ).values_list("pk", flat=True)
+    for pk in list(live):
+        IFoodInterruption.objects.filter(pk=pk).exclude(state=S.PENDING_REMOVE).update(
+            state=S.PENDING_REMOVE, removed_at=now, updated_at=now
+        )
+        apply_interruption(pk, now=now)
 
 
 def _create_remote(record, *, remote: list[dict], now: datetime, tz, result: SyncResult | None = None) -> None:
@@ -536,11 +661,13 @@ def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
     )
 
 
-# ── 2. Pausa do gestor ────────────────────────────────────────────────────────
-
-
-class PauseRefused(Exception):
-    """Pedido de pausa/retomada que a casa recusa, com a frase para o gestor."""
+# ── 2. Pausa antiga do gestor ─────────────────────────────────────────────────
+#
+# A pausa curta tinha fluxo próprio (botão "Pausar o iFood…" no card). Ela virou
+# o toggle "Ativo" do canal, com período (``channel_switch``). O que fica aqui é
+# o que ainda pode existir no banco: uma pausa ``MANUAL`` viva é retirada quando
+# o canal é desligado (a interrupção nova sairia sobreposta) e segue contando na
+# conferência até vencer.
 
 
 def live_manual_pause(*, now: datetime | None = None):
@@ -559,111 +686,6 @@ def live_manual_pause(*, now: datetime | None = None):
         .select_related("requested_by", "removed_by")
         .order_by("-requested_at")
         .first()
-    )
-
-
-def last_manual_pause():
-    """A última pausa do gestor, viva ou não — para a tela contar o desfecho."""
-    from shopman.shop.models import IFoodInterruption, IFoodInterruptionKind
-
-    return (
-        IFoodInterruption.objects.filter(kind=IFoodInterruptionKind.MANUAL, merchant_id=merchant_id())
-        .select_related("requested_by", "removed_by")
-        .order_by("-requested_at")
-        .first()
-    )
-
-
-def pause_end_for(duration: str, *, now: datetime, state) -> datetime | None:
-    """O fim da pausa para ``duration``; None quando a opção não serve agora."""
-    if duration in PAUSE_DURATIONS:
-        return now + timedelta(minutes=PAUSE_DURATIONS[duration])
-    if duration == PAUSE_UNTIL_CLOSE and state.is_open and state.closes_at and state.resolved_at:
-        closes = time.fromisoformat(state.closes_at)
-        end = datetime.combine(state.resolved_at.date(), closes, tzinfo=state.resolved_at.tzinfo)
-        return end if end > now else None
-    return None
-
-
-def request_pause(*, duration: str, reason: str, user, now: datetime | None = None):
-    """Registra a pausa e pede ao iFood (Directive). Devolve a interrupção."""
-    from shopman.shop.models import IFoodInterruption, IFoodInterruptionKind, Shop
-
-    if not enabled():
-        raise PauseRefused("A integração da loja com o iFood está desligada.")
-    reason = " ".join(str(reason or "").split())
-    if not reason:
-        raise PauseRefused("Escreva o motivo da pausa.")
-    now = now or timezone.now()
-    state = business_calendar.current_business_state(now=now)
-    if not state.is_open:
-        raise PauseRefused("A loja já está fechada agora, e o iFood fecha junto. Não há o que pausar.")
-    ends_at = pause_end_for(duration, now=now, state=state)
-    if ends_at is None:
-        raise PauseRefused("Escolha por quanto tempo pausar.")
-
-    with transaction.atomic():
-        # Uma pausa por vez: o iFood recusaria a segunda (409), e duas linhas vivas
-        # deixariam a tela sem saber qual retomar.
-        Shop.objects.select_for_update().first()
-        if live_manual_pause(now=now) is not None:
-            raise PauseRefused("O iFood já está pausado. Retome antes de pausar de novo.")
-        record = IFoodInterruption.objects.create(
-            kind=IFoodInterruptionKind.MANUAL,
-            merchant_id=merchant_id(),
-            description=f"Pausa pelo gestor: {reason}"[:255],
-            reason=reason[:255],
-            starts_at=now,
-            ends_at=ends_at,
-            requested_by=user if getattr(user, "pk", None) else None,
-        )
-        _enqueue_interruption(record)
-    _log_manual("ifood_merchant.pause_requested", record, user)
-    return record
-
-
-def request_resume(*, user, now: datetime | None = None):
-    """Pede ao iFood a retirada da pausa do gestor. Devolve a interrupção."""
-    from shopman.shop.models import IFoodInterruption
-    from shopman.shop.models import IFoodInterruptionState as S
-
-    if not enabled():
-        raise PauseRefused("A integração da loja com o iFood está desligada.")
-    now = now or timezone.now()
-    with transaction.atomic():
-        current = live_manual_pause(now=now)
-        if current is None:
-            raise PauseRefused("O iFood não está pausado pelo gestor.")
-        record = IFoodInterruption.objects.select_for_update().get(pk=current.pk)
-        if record.state != S.PENDING_REMOVE:
-            record.state = S.PENDING_REMOVE
-            record.removed_by = user if getattr(user, "pk", None) else None
-            record.removed_at = now
-            record.save(update_fields=["state", "removed_by", "removed_at", "updated_at"])
-            _enqueue_interruption(record)
-    _log_manual("ifood_merchant.resume_requested", record, user)
-    return record
-
-
-def _enqueue_interruption(record) -> None:
-    from shopman.shop.directives import IFOOD_MERCHANT_INTERRUPTION, create_deduped
-
-    create_deduped(
-        IFOOD_MERCHANT_INTERRUPTION,
-        payload={"interruption_pk": record.pk, "state": record.state},
-        dedupe_key=f"{IFOOD_MERCHANT_INTERRUPTION}:{record.pk}:{record.state}",
-    )
-
-
-def _log_manual(event: str, record, user) -> None:
-    from shopman.shop.services.observability import operational_event
-
-    operational_event(
-        event,
-        interruption_pk=record.pk,
-        state=record.state,
-        ends_at=record.ends_at.isoformat(),
-        actor=getattr(user, "username", "") or "",
     )
 
 
@@ -748,6 +770,8 @@ def summarize_status(operations: list[dict]) -> tuple[bool, str, list[dict]]:
 def expected_available(*, now: datetime | None = None) -> tuple[bool, str]:
     """O que a casa diz: ``(deveria receber pedido no iFood?, por quê não)``."""
     now = now or timezone.now()
+    if channel_off(now=now):
+        return False, "iFood desligado no Gestor"
     state = business_calendar.current_business_state(now=now)
     if not state.is_open:
         return False, state.message or "loja fechada"
@@ -768,9 +792,9 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
     if not enabled():
         return None
     shop = Shop.load()
-    if not governs(shop):
-        return None
     now = now or timezone.now()
+    if not governs(shop) and not _has_off_windows(now=now):
+        return None
     try:
         operations = get_status()
     except MerchantAPIError as exc:
@@ -863,12 +887,11 @@ __all__ = [
     "CalendarClosure",
     "InterruptionOverlap",
     "MerchantAPIError",
-    "PAUSE_DURATIONS",
-    "PAUSE_UNTIL_CLOSE",
-    "PauseRefused",
     "StoreCheck",
     "SyncResult",
     "apply_interruption",
+    "channel_off",
+    "channel_off_closures",
     "check_store",
     "desired_calendar_closures",
     "desired_shifts",
@@ -879,8 +902,6 @@ __all__ = [
     "live_manual_pause",
     "merchant_id",
     "problem_copy",
-    "request_pause",
-    "request_resume",
     "summarize_status",
     "sync_store",
 ]

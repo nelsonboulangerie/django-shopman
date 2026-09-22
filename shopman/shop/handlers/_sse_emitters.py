@@ -172,6 +172,10 @@ def _publish_surface_changed(surface_ref: str) -> None:
         return
     try:
         send_event(f"stock-{surface_ref}", "listing-changed", {"surface_ref": surface_ref})
+        # A TV (menuboard) assina ``stock-catalog``, não ``stock-{ref}``: sem este
+        # segundo envio, ligar/desligar, trocar coleções ou rotação só chegava ao
+        # quadro no poll de 30 s. O quadro filtra nada — relê o próprio estado.
+        send_event("stock-catalog", "listing-changed", {"surface_ref": surface_ref})
     except Exception:
         logger.warning("SSE surface emit failed ref=%s", surface_ref, exc_info=True)
 

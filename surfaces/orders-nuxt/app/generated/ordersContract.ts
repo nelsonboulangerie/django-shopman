@@ -153,7 +153,39 @@ export interface FeedCollectionRef {
   exists: boolean;
 }
 
-/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = ()) */
+/** ChannelPeriodOption(key: 'str', label: 'str', enabled: 'bool', reason: 'str' = '') */
+export interface ChannelPeriodOption {
+  key: string;
+  label: string;
+  enabled: boolean;
+  reason: string;
+}
+
+/** O toggle "Ativo" de um card — o mesmo em canal de venda e de exibição. */
+export interface ChannelSwitchProjection {
+  is_active: boolean;
+  state_line: string;
+  closed_by_shop: string;
+  scheduled_line: string;
+  title: string;
+  consequence: string;
+  periods: ChannelPeriodOption[];
+  reasons: string[];
+  reason_required: boolean;
+  enabled: boolean;
+  disabled_reason: string;
+  base_revision: string;
+  expected_actor_id: number | null;
+  requires_manager_approval: boolean;
+}
+
+/** ManagerOptionProjection(username: 'str', name: 'str') */
+export interface ManagerOptionProjection {
+  username: string;
+  name: string;
+}
+
+/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = (), switch: 'ChannelSwitchProjection | None' = None) */
 export interface FeedProjection {
   ref: string;
   name: string;
@@ -167,9 +199,10 @@ export interface FeedProjection {
   rotate_seconds: number;
   items_per_page: number;
   actions: Action[];
+  switch: ChannelSwitchProjection | null;
 }
 
-/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog') */
+/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog', is_active: 'bool' = True, switch: 'ChannelSwitchProjection | None' = None) */
 export interface CatalogChannelProjection {
   ref: string;
   name: string;
@@ -182,6 +215,8 @@ export interface CatalogChannelProjection {
   skipped: number;
   observed: number;
   catalog_path: string;
+  is_active: boolean;
+  switch: ChannelSwitchProjection | null;
 }
 
 /** CollectionOptionProjection(ref: 'str', name: 'str', product_count: 'int') */
@@ -191,11 +226,13 @@ export interface CollectionOptionProjection {
   product_count: number;
 }
 
-/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = ()) */
+/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = (), managers: 'tuple[ManagerOptionProjection, ...]' = (), viewer_name: 'str' = '') */
 export interface FeedBoardProjection {
   feeds: FeedProjection[];
   all_collections: CollectionOptionProjection[];
   catalog_channels: CatalogChannelProjection[];
+  managers: ManagerOptionProjection[];
+  viewer_name: string;
 }
 
 /** ChannelHealthItem(key: 'str', state: 'str', label: 'str', hint: 'str' = '', action_label: 'str' = '', action_target: 'str' = '', action_path: 'str' = '') */

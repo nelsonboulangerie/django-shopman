@@ -560,7 +560,9 @@ useHead({ title: "Catálogo" });
               class="sticky top-0 z-20 w-[114px] border-b border-border bg-card px-2 py-2 text-left align-top"
               :class="firstFeedRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
-              <div class="flex flex-col gap-0.5" :class="{ 'opacity-45': !s.transactional && !s.is_active }">
+              <!-- Canal ou feed desligado não chega aqui: sai das colunas e só a aba
+                   Canais o mostra, para religar. -->
+              <div class="flex flex-col gap-0.5">
                 <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
                   <span class="truncate text-xs">{{ s.short_name }}</span>
@@ -571,14 +573,13 @@ useHead({ title: "Catálogo" });
                     :title="`Abrir ${s.name}`" @click.stop
                   ><Icon name="lucide:external-link" class="size-3" /></a>
                 </span>
-                <!-- Linha 2 só quando há estado a dizer: sync da plataforma ou feed pausado.
-                     O papel da superfície (feed/menuboard) já é dito pelo ícone + title. -->
-                <span v-if="syncBadge(s.sync_status) || (!s.transactional && !s.is_active)" class="flex items-center gap-1">
+                <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
+                     superfície (feed/menuboard) já é dito pelo ícone + title. -->
+                <span v-if="syncBadge(s.sync_status)" class="flex items-center gap-1">
                   <span
-                    v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium leading-tight"
+                    class="truncate text-xs font-medium leading-tight"
                     :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
                   >● {{ syncBadge(s.sync_status)!.label }}</span>
-                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">Pausado</span>
                 </span>
               </div>
             </th>

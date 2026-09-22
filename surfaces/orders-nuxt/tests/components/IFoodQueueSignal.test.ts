@@ -11,7 +11,7 @@ vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 
 const state = ref<IFoodStoreProjection | null>(null);
-vi.stubGlobal("useIFoodStore", () => ({ store: state, busy: ref(false), pause: vi.fn(), resume: vi.fn(), refresh: vi.fn() }));
+vi.stubGlobal("useIFoodStore", () => ({ store: state, refresh: vi.fn() }));
 
 const stubs = {
   Icon: true,
@@ -22,7 +22,8 @@ function projection(over: Partial<IFoodStoreProjection> = {}): IFoodStoreProject
   return {
     enabled: true,
     governs: true,
-    can_pause: true,
+    channel_off: false,
+    can_open_channels: true,
     shop_open: true,
     shop_message: "Aberto até 18h",
     ifood_available: true,
@@ -30,18 +31,9 @@ function projection(over: Partial<IFoodStoreProjection> = {}): IFoodStoreProject
     ifood_checked_at_display: "09:55",
     ifood_problems: [],
     diverges: false,
-    pause: null,
-    last_pause: null,
-    options: [],
     ...over,
   };
 }
-
-const activePause = {
-  ref: 1, state: "active" as const, state_label: "Em vigor no iFood", reason: "Cozinha cheia",
-  starts_at: "", ends_at: "", ends_at_display: "10:30", requested_by: "Ana",
-  requested_at_display: "10:00", removed_by: "", error: "",
-};
 
 describe("IFoodQueueSignal — na aba Pedidos, o sinal e nunca o controle", () => {
   beforeEach(() => {
@@ -53,21 +45,19 @@ describe("IFoodQueueSignal — na aba Pedidos, o sinal e nunca o controle", () =
     expect(wrapper.find("[data-ifood-signal]").exists()).toBe(false);
   });
 
-  it("desligada, não existe nem com pausa", () => {
-    state.value = projection({ enabled: false, pause: activePause });
+  it("integração desligada, não existe nem com o canal desligado", () => {
+    state.value = projection({ enabled: false, channel_off: true });
     const wrapper = mount(IFoodQueueSignal, { global: { stubs } });
     expect(wrapper.find("[data-ifood-signal]").exists()).toBe(false);
   });
 
-  it("pausado, diz até quando e por quê e leva ao card do canal iFood na aba Canais", () => {
-    state.value = projection({ pause: activePause });
+  it("canal desligado no Gestor: diz que nenhum pedido do iFood entra e leva ao card", () => {
+    state.value = projection({ channel_off: true });
     const wrapper = mount(IFoodQueueSignal, { global: { stubs } });
     const link = wrapper.get("[data-ifood-signal-link]");
-    expect(link.text()).toBe("iFood pausado até 10:30 — Cozinha cheia");
+    expect(link.text()).toBe("iFood desligado no Gestor: nenhum pedido do iFood entra");
     expect(link.attributes("data-path")).toBe("/feeds");
     expect(link.attributes("data-focus")).toBe("ifood");
-    expect(wrapper.find("[data-ifood-pause]").exists()).toBe(false);
-    expect(wrapper.find("[data-ifood-resume]").exists()).toBe(false);
   });
 
   it("divergente, diz o lado que importa à fila", () => {
@@ -76,17 +66,10 @@ describe("IFoodQueueSignal — na aba Pedidos, o sinal e nunca o controle", () =
     expect(wrapper.get("[data-ifood-signal]").text()).toBe("iFood fechado com a loja aberta: nenhum pedido do iFood entra");
   });
 
-  it("recusada, diz a recusa enquanto a janela pedida não passou", () => {
-    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    state.value = projection({ last_pause: { ...activePause, state: "failed", ends_at: future, error: "O iFood recusou o pedido (HTTP 409)." } });
+  it("quem não abre a aba Canais lê o estado, sem link para o controle", () => {
+    state.value = projection({ can_open_channels: false, channel_off: true });
     const wrapper = mount(IFoodQueueSignal, { global: { stubs } });
-    expect(wrapper.get("[data-ifood-signal]").text()).toBe("O iFood recusou a pausa pedida às 10:00");
-  });
-
-  it("quem não pode pausar lê o estado, sem link para o controle", () => {
-    state.value = projection({ can_pause: false, pause: activePause });
-    const wrapper = mount(IFoodQueueSignal, { global: { stubs } });
-    expect(wrapper.get("[data-ifood-signal]").text()).toBe("iFood pausado até 10:30 — Cozinha cheia");
+    expect(wrapper.get("[data-ifood-signal]").text()).toBe("iFood desligado no Gestor: nenhum pedido do iFood entra");
     expect(wrapper.find("[data-ifood-signal-link]").exists()).toBe(false);
   });
 });

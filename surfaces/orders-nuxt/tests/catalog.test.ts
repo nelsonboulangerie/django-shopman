@@ -29,7 +29,6 @@ const surface = (over: Partial<SurfaceProjection> = {}): SurfaceProjection => ({
   kind: "channel",
   transactional: true,
   icon: "",
-  is_active: true,
   output_path: "",
   ...over,
 });

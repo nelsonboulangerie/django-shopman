@@ -85,11 +85,6 @@ class IFoodInterruption(models.Model):
         verbose_name = "interrupção no iFood"
         verbose_name_plural = "interrupções no iFood"
         ordering = ("-requested_at",)
-        permissions = [
-            # Pausar a loja no iFood com a casa aberta é decisão de estratégia
-            # (cozinha cheia, sem entregador), não gesto de balcão: é do Gerente.
-            ("pause_ifood", "Pode pausar e retomar a loja no iFood"),
-        ]
 
     def __str__(self) -> str:
         return f"{self.get_kind_display()} {self.starts_at:%d/%m %H:%M}–{self.ends_at:%d/%m %H:%M}"

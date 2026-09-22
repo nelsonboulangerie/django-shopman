@@ -20,9 +20,8 @@ from django.urls import reverse
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
-from shopman.shop.directives import IFOOD_MERCHANT_INTERRUPTION, IFOOD_MERCHANT_SYNC
+from shopman.shop.directives import IFOOD_MERCHANT_SYNC
 from shopman.shop.handlers.ifood_merchant import (
-    IFoodMerchantInterruptionHandler,
     IFoodMerchantSyncHandler,
     on_shop_saved,
 )
@@ -280,7 +279,11 @@ def test_grade_recusada_pelo_ifood_nao_repete(fake):
         IFoodMerchantSyncHandler().handle(message=Directive(topic=IFOOD_MERCHANT_SYNC, payload={}), ctx={})
 
 
-# ── 2. Pausa do gestor ────────────────────────────────────────────────────────
+# ── 2. Toggle do canal → iFood ────────────────────────────────────────────────
+#
+# A pausa curta do gestor virou o toggle "Ativo" do card do canal, com período.
+# Desligar o iFood no Gestor vira interrupção com o início e o fim do período;
+# sem prazo, blocos de 7 dias renovados. Ligar nunca abre fora do horário da loja.
 
 
 def _user(username="gerente", *perms):
@@ -290,116 +293,139 @@ def _user(username="gerente", *perms):
     return get_user_model().objects.get(pk=user.pk)
 
 
-def _run_interruption_directives():
-    for directive in Directive.objects.filter(topic=IFOOD_MERCHANT_INTERRUPTION, status="queued").order_by("pk"):
-        IFoodMerchantInterruptionHandler().handle(message=directive, ctx={})
-        directive.status = "done"
-        directive.save(update_fields=["status"])
+def _ifood(**extra):
+    from shopman.shop.models import Channel
+
+    return Channel.objects.create(ref="ifood", name="iFood", **extra)
+
+
+def _switch(is_active, period, *, now=TUESDAY_10H, reason="Loja cheia", **extra):
+    from shopman.shop.services import channel_switch
+
+    return channel_switch.request_switch(
+        "ifood", is_active, period=period, reason=reason if not is_active else "", actor=None, now=now, **extra
+    )
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_pausa_do_gestor_vira_interrupcao_com_motivo_e_autor(fake):
+def test_desligar_por_1h_vira_interrupcao_com_o_fim_do_periodo(fake):
     _shop()
-    user = _user()
+    _ifood()
 
-    record = ifood_merchant.request_pause(duration="1h", reason="Cozinha cheia", user=user, now=TUESDAY_10H)
+    _switch(False, "1h")
+    ifood_merchant.sync_store(now=TUESDAY_10H)
 
-    assert record.state == IFoodInterruptionState.PENDING_CREATE
-    assert record.requested_by == user
-    assert fake.calls == []  # o request não atravessa a rede
-
-    _run_interruption_directives()
-
-    record.refresh_from_db()
-    assert record.state == IFoodInterruptionState.ACTIVE
-    assert fake.interruptions[0]["description"] == "Pausa pelo gestor: Cozinha cheia"
-    assert fake.interruptions[0]["end"] == "2026-12-22T11:00:00-03:00"
+    (interruption,) = fake.interruptions
+    assert interruption["start"] == "2026-12-22T10:01:00-03:00"  # já começou: próximo minuto
+    assert interruption["end"] == "2026-12-22T11:00:00-03:00"
+    assert interruption["description"] == ifood_merchant.CHANNEL_OFF_DESCRIPTION
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_retomar_apaga_a_interrupcao_e_registra_quem_retomou(fake):
+def test_sem_prazo_vira_blocos_de_7_dias_renovados_pela_conferencia(fake):
     _shop()
-    user = _user()
-    record = ifood_merchant.request_pause(duration="30m", reason="Sem entregador", user=user, now=TUESDAY_10H)
-    _run_interruption_directives()
+    _ifood()
+    _switch(False, "open")
 
-    ifood_merchant.request_resume(user=user, now=TUESDAY_10H + timedelta(minutes=5))
-    _run_interruption_directives()
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+    assert [i["end"] for i in fake.interruptions] == ["2026-12-29T10:00:00-03:00"]
 
-    record.refresh_from_db()
-    assert record.state == IFoodInterruptionState.REMOVED
-    assert record.removed_by == user
+    # A menos de um dia do fim, o bloco seguinte é pedido, emendado no fim do atual.
+    ifood_merchant.sync_store(now=TUESDAY_10H + timedelta(days=6, hours=12))
+    assert [(i["start"], i["end"]) for i in fake.interruptions][-1] == (
+        "2026-12-29T10:00:00-03:00", "2027-01-05T10:00:00-03:00",
+    )
+    assert len(fake.interruptions) == 2
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_religar_apaga_a_interrupcao(fake):
+    _shop()
+    _ifood()
+    _switch(False, "open")
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+    assert fake.interruptions
+
+    later = TUESDAY_10H + timedelta(hours=2)
+    _switch(True, "open", now=later)
+    ifood_merchant.sync_store(now=later)
+
     assert fake.interruptions == []
+    assert not IFoodInterruption.objects.filter(state=IFoodInterruptionState.ACTIVE).exists()
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_retomar_antes_da_criacao_nunca_cria_a_pausa(fake):
-    _shop()
-    user = _user()
-    ifood_merchant.request_pause(duration="30m", reason="Engano", user=user, now=TUESDAY_10H)
-    ifood_merchant.request_resume(user=user, now=TUESDAY_10H)
+def test_feriado_dentro_do_desligamento_nao_sai_sobreposto(fake):
+    """O iFood recusa (409) interrupção sobreposta: o feriado coberto pelo
+    desligamento não é pedido; o que sobra dele, sim."""
+    _shop(defaults=_closed({"date": "2026-12-25", "label": "Natal"}, {"date": "2027-01-01", "label": "Ano-novo"}))
+    _ifood()
+    _switch(False, "custom", starts_at=TUESDAY_10H, ends_at=datetime(2026, 12, 26, 0, 0, tzinfo=TZ))
 
-    _run_interruption_directives()
+    ifood_merchant.sync_store(now=TUESDAY_10H)
 
-    assert not [c for c in fake.calls if c[0] == "POST"]
-    assert IFoodInterruption.objects.get().state == IFoodInterruptionState.REMOVED
-
-
-@override_settings(SHOPMAN_IFOOD=ON)
-def test_post_perdido_e_adotado_em_vez_de_criar_outra_pausa(fake):
-    _shop()
-    user = _user()
-    record = ifood_merchant.request_pause(duration="30m", reason="Cozinha cheia", user=user, now=TUESDAY_10H)
-    # O iFood criou, mas a resposta se perdeu: a pausa já está lá.
-    fake.interruptions.append({
-        "id": "int-remota",
-        "start": "2026-12-22T10:00:00-03:00",
-        "end": "2026-12-22T10:30:00-03:00",
-        "description": record.description,
-    })
-
-    _run_interruption_directives()
-
-    record.refresh_from_db()
-    assert record.ifood_id == "int-remota"
-    assert not [c for c in fake.calls if c[0] == "POST"]
+    spans = sorted((i["start"], i["end"]) for i in fake.interruptions)
+    assert spans == [
+        ("2026-12-22T10:01:00-03:00", "2026-12-26T00:00:00-03:00"),  # o desligamento cobre o Natal
+        ("2027-01-01T00:00:00-03:00", "2027-01-02T00:00:00-03:00"),  # o Ano-novo segue do calendário
+    ]
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_pausa_sobreposta_e_recusada_e_vira_alerta(fake):
-    from shopman.backstage.models import OperatorAlert
-
+def test_agendamento_vira_interrupcao_com_inicio_futuro(fake):
     _shop()
-    fake.override[("POST", f"{BASE}/interruptions")] = _Resp(409, {"error": {"message": "InterruptionOverlap"}})
-    record = ifood_merchant.request_pause(duration="1h", reason="Cozinha cheia", user=_user(), now=TUESDAY_10H)
+    _ifood()
+    start = datetime(2026, 12, 23, 14, 0, tzinfo=TZ)
+    end = datetime(2026, 12, 23, 16, 0, tzinfo=TZ)
+    _switch(False, "custom", starts_at=start, ends_at=end, reason="Desfalque na equipe")
 
-    _run_interruption_directives()
+    ifood_merchant.sync_store(now=TUESDAY_10H)
 
-    record.refresh_from_db()
-    assert record.state == IFoodInterruptionState.FAILED
-    assert "mesmo horário" in record.last_error
-    assert OperatorAlert.objects.filter(type=ifood_merchant.ALERT_SYNC_FAILED).exists()
+    (interruption,) = fake.interruptions
+    assert (interruption["start"], interruption["end"]) == ("2026-12-23T14:00:00-03:00", "2026-12-23T16:00:00-03:00")
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_pausa_ate_o_fim_do_expediente_termina_no_fechamento(fake):
+def test_ligar_por_hoje_com_o_canal_desligado_volta_a_fechar_no_fechamento(fake):
+    """Religar "por hoje" reabre até o fechamento da loja; dali, fechado de novo."""
     _shop()
+    _ifood(is_active=False)
 
-    record = ifood_merchant.request_pause(duration="until_close", reason="Forno quebrado", user=_user(), now=TUESDAY_10H)
+    _switch(True, "today")
+    ifood_merchant.sync_store(now=TUESDAY_10H)
 
-    assert record.ends_at == datetime(2026, 12, 22, 18, 0, tzinfo=TZ)
+    (interruption,) = fake.interruptions
+    assert interruption["start"] == "2026-12-22T18:00:00-03:00"
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_pausa_com_a_loja_fechada_e_segunda_pausa_sao_recusadas():
-    _shop()
-    user = _user()
+def test_loja_sem_grade_desligada_no_gestor_fecha_o_ifood_sem_gravar_horario(fake):
+    Shop.objects.create(name="Sem grade", timezone="America/Sao_Paulo", opening_hours={})
+    _ifood()
+    _switch(False, "open")
 
-    with pytest.raises(ifood_merchant.PauseRefused, match="fechada"):
-        ifood_merchant.request_pause(duration="1h", reason="x", user=user, now=datetime(2026, 12, 22, 20, 0, tzinfo=TZ))
-    ifood_merchant.request_pause(duration="1h", reason="x", user=user, now=TUESDAY_10H)
-    with pytest.raises(ifood_merchant.PauseRefused, match="já está pausado"):
-        ifood_merchant.request_pause(duration="1h", reason="y", user=user, now=TUESDAY_10H)
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+
+    assert not [c for c in fake.calls if c[0] == "PUT"]
+    assert len(fake.interruptions) == 1
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_desligar_retira_a_pausa_manual_antiga(fake):
+    _shop()
+    _ifood()
+    fake.interruptions.append({"id": "int-antiga", "start": "2026-12-22T09:30:00-03:00", "end": "2026-12-22T11:00:00-03:00"})
+    IFoodInterruption.objects.create(
+        kind="manual", merchant_id=MID, ifood_id="int-antiga", description="Pausa pelo gestor: x", reason="x",
+        state=IFoodInterruptionState.ACTIVE, starts_at=datetime(2026, 12, 22, 9, 30, tzinfo=TZ),
+        ends_at=datetime(2026, 12, 22, 11, 0, tzinfo=TZ),
+    )
+
+    _switch(False, "open")
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+
+    assert [i["description"] for i in fake.interruptions] == [ifood_merchant.CHANNEL_OFF_DESCRIPTION]
+    assert IFoodInterruption.objects.get(kind="manual").state == IFoodInterruptionState.REMOVED
 
 
 # ── 3. Conferência ────────────────────────────────────────────────────────────
@@ -449,9 +475,10 @@ def test_ifood_aberto_com_a_casa_fechada_alerta(fake):
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_pausa_do_gestor_em_vigor_faz_a_casa_esperar_o_ifood_fechado(fake):
+def test_canal_desligado_faz_a_casa_esperar_o_ifood_fechado(fake):
     _shop()
-    ifood_merchant.request_pause(duration="1h", reason="Cozinha cheia", user=_user(), now=TUESDAY_10H)
+    _ifood()
+    _switch(False, "1h")
     fake.status = [{"operation": "DELIVERY", "available": False, "state": "WARNING", "validations": [
         {"code": "unavailabilities", "state": "WARNING", "message": {"title": "Pausa"}},
     ]}]
@@ -459,7 +486,10 @@ def test_pausa_do_gestor_em_vigor_faz_a_casa_esperar_o_ifood_fechado(fake):
     result = ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=1))
 
     assert result.expected_available is False
+    assert ifood_merchant.expected_available(now=TUESDAY_10H + timedelta(minutes=1))[1] == "iFood desligado no Gestor"
     assert IFoodStoreStatus.objects.get().divergent_since is None
+    # Fim do período: a casa volta a esperar o iFood aberto, sem esperar o worker.
+    assert ifood_merchant.expected_available(now=TUESDAY_10H + timedelta(minutes=61))[0] is True
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
@@ -488,51 +518,29 @@ def test_conferencia_desligada_nao_chama_o_ifood(fake):
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_api_quem_ve_a_fila_ve_o_status_mas_so_o_gerente_pausa(client, fake, monkeypatch):
+def test_api_quem_ve_a_fila_ve_o_status_e_o_canal_desligado(client, fake, monkeypatch):
     from django.utils import timezone
 
     monkeypatch.setattr(timezone, "now", lambda: TUESDAY_10H)  # loja aberta, sem depender do relógio
     _shop()
-    caixa = _user("caixa", "manage_orders")
-    gerente = _user("gerente", "manage_orders", "pause_ifood")
+    _ifood()
+    client.force_login(_user("caixa", "manage_orders"))
 
-    client.force_login(caixa)
     projection = client.get(reverse("api-backstage-ifood-store")).json()
-    assert projection["enabled"] is True and projection["can_pause"] is False
-    denied = client.post(reverse("api-backstage-ifood-store-pause"), {"duration": "1h", "reason": "x"}, content_type="application/json")
-    assert denied.status_code == 403
+    assert projection["enabled"] is True and projection["channel_off"] is False
+    # A pausa com endpoint próprio saiu: ligar/desligar é o toggle do card.
+    assert "can_pause" not in projection and "options" not in projection
 
-    client.force_login(gerente)
-    ok = client.post(
-        reverse("api-backstage-ifood-store-pause"),
-        {"duration": "1h", "reason": "Cozinha cheia"},
-        content_type="application/json",
-    )
-    assert ok.status_code == 200, ok.content
-    body = ok.json()
-    assert body["pause"]["state"] == "pending_create"
-    assert body["pause"]["reason"] == "Cozinha cheia"
-    assert body["pause"]["requested_by"] == "gerente"
-
-    again = client.post(
-        reverse("api-backstage-ifood-store-pause"),
-        {"duration": "1h", "reason": "de novo"},
-        content_type="application/json",
-    )
-    assert again.status_code == 409
-    assert "já está pausado" in again.json()["detail"]
-
-    resumed = client.post(reverse("api-backstage-ifood-store-resume"), {}, content_type="application/json")
-    assert resumed.status_code == 200
-    assert resumed.json()["pause"]["state"] == "pending_remove"
+    _switch(False, "1h")
+    assert client.get(reverse("api-backstage-ifood-store")).json()["channel_off"] is True
 
 
 @override_settings(SHOPMAN_IFOOD=OFF)
 def test_api_desligada_diz_so_que_esta_desligada(client):
     _shop()
-    client.force_login(_user("gerente", "manage_orders", "pause_ifood"))
+    client.force_login(_user("gerente", "manage_orders"))
 
     body = client.get(reverse("api-backstage-ifood-store")).json()
 
     assert body["enabled"] is False
-    assert body["pause"] is None and body["options"] == []
+    assert body["channel_off"] is False

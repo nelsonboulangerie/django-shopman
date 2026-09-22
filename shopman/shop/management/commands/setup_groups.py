@@ -161,9 +161,6 @@ class Command(BaseCommand):
                 # Cancelar depois de PRONTO (e a venda de balcão já fechada) é o
                 # degrau do gerente; a esteira normal permanece em manage_orders.
                 shop_shop("cancel_advanced_order"),
-                # Pausar a loja no iFood com a casa aberta (cozinha cheia, sem
-                # entregador) é estratégia, não gesto de balcão: é dela, não do Caixa.
-                _perm("shop", "ifoodinterruption", "pause_ifood"),
                 # Marketing seguro durante a transição capability-based. Efeitos
                 # externos ficam nos grupos específicos, deliberadamente vazios.
                 shop_campaign("view_marketing"),

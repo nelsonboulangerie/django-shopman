@@ -439,6 +439,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
 
     sleep.assert_not_called()
     assert cc.call_args_list == [
+        # Primeiro: o fim de um período do toggle de canal religa antes do resto.
+        call("apply_channel_switches"),
         call("release_expired_holds"),
         call("cleanup_stale_sessions"),
         call("sweep_orphan_holds"),

@@ -42,7 +42,7 @@ def _resolve_feed_channel(ref: str):
     from shopman.shop.models import Channel
 
     channel = Channel.objects.filter(
-        ref=ref, is_active=True, commerce_policy=Channel.CommercePolicy.DISPLAY
+        ref=ref, commerce_policy=Channel.CommercePolicy.DISPLAY
     ).first()
     if channel is None:
         raise ProductFeedError("not a display channel")
@@ -78,10 +78,12 @@ def build_feed_items(ref: str) -> list[dict]:
     from shopman.offerman import get_social_attributes
     from shopman.offerman.models import Collection
 
+    from shopman.shop.services.channel_switch import effective_active
     from shopman.shop.services.display_prices import resolve_prices
     from shopman.shop.services.storefront_links import path_product
 
     channel, fmt = _resolve_feed_channel(ref)
+    switched_on = effective_active(channel)
     display = (channel.config or {}).get("display") or {}
     collection_refs = list(display.get("collections") or [])
     paused = set(display.get("paused_skus") or [])  # pausa LOCAL (a global é do produto)
@@ -112,7 +114,18 @@ def build_feed_items(ref: str) -> list[dict]:
                 continue
             seen.add(product.sku)
             attributes = get_social_attributes(product)
-            available = product.is_published and product.is_sellable and product.sku not in paused
+            # Feed desligado no Gestor: todo item sai FORA DE ESTOQUE, e não some.
+            # Google e Meta param de anunciar item sem estoque, sem penalidade, e o
+            # item volta a rodar assim que o feed é religado. Tirar o item (feed
+            # vazio) apagaria o produto na plataforma — religar viraria cadastro
+            # novo, com nova revisão; e um 404 faria a busca agendada falhar, com a
+            # plataforma seguindo a anunciar a última versão que conseguiu ler.
+            available = (
+                switched_on
+                and product.is_published
+                and product.is_sellable
+                and product.sku not in paused
+            )
             items.append({
                 "id": product.sku,
                 "title": product.name[:150],

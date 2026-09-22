@@ -163,7 +163,6 @@ class SurfaceProjection:
     kind: str = "channel"  # channel (transacional) | display (menuboard) | feed (Google/Meta)
     transactional: bool = True  # canal vende (preço/publicação); feed só exibe (pausa)
     icon: str = ""  # dica de ícone p/ feeds (tv/rss)
-    is_active: bool = True  # feed ligado/desligado (canal sempre ativo aqui)
     output_path: str = ""  # saída pública do feed (abrir/prever); vazio p/ canal
     sync_key: str = ""  # ref do canal — a MESMA chave para transacional e exibição
 
@@ -358,11 +357,17 @@ def _build_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
     # Canal `display` não é coluna de canal: ele é superfície de exibição, montada
     # pelo caminho de feed. Sem este filtro a matriz duplicaria cada feed/TV — uma
     # vez como canal, outra como feed (ADR-018 §8: seleção por política, nunca por ref).
-    channels = list(
-        Channel.objects.filter(
-            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+    from shopman.shop.services.channel_switch import effective_active
+
+    # Desligado no toggle da aba Canais = fora das colunas (só a aba Canais o
+    # mostra, para religar). O período vale pelo relógio, não pelo carimbo.
+    channels = [
+        channel
+        for channel in Channel.objects.filter(
+            commerce_policy=Channel.CommercePolicy.ORDER
         ).order_by("display_order", "id")
-    )
+        if effective_active(channel)
+    ]
     listings = {lst.ref: lst for lst in Listing.objects.all()}
 
     # índice de células: surface_ref → sku → ListingItem (tier base = menor min_qty)
@@ -428,12 +433,16 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
     from shopman.offerman.models import Collection
 
     from shopman.shop.models import Channel
+    from shopman.shop.services.channel_switch import effective_active
 
-    channels = list(
-        Channel.objects.filter(
+    # Feed/TV desligado sai das colunas, igual ao canal de venda desligado.
+    channels = [
+        channel
+        for channel in Channel.objects.filter(
             commerce_policy=Channel.CommercePolicy.DISPLAY
         ).order_by("name")
-    )
+        if effective_active(channel)
+    ]
     if not channels:
         return [], {}
 
@@ -474,7 +483,6 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
                 kind=meta["capability"],
                 transactional=False,
                 icon=meta["icon"],
-                is_active=ch.is_active,
                 output_path=meta["path"].format(ref=ch.ref),
             )
         )
@@ -638,7 +646,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                 pim_complete=pim_complete,
                 hidden_by_inactive_collection=product.sku in hidden_skus,
                 product_action=product_switch_action(product, user),
-                resync_action=resync_action(product, [surface.ref for surface in surfaces if surface.is_active and surface.is_projection_target], user),
+                resync_action=resync_action(product, [surface.ref for surface in surfaces if surface.is_projection_target], user),
             )
         )
 
