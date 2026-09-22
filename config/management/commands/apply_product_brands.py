@@ -1,0 +1,179 @@
+"""Aplica Marca e GTIN do Catálogo (``Product.metadata['social']``) num banco que já roda.
+
+Usage::
+
+    python manage.py apply_product_brands            # só mostra o que mudaria
+    python manage.py apply_product_brands --apply    # grava
+    python manage.py apply_product_brands --sku CT   # um SKU só
+
+**Por que existe.** O feed do Google/Meta e a página de produto declaram a
+marca e o GTIN que o Catálogo do Gestor guarda em ``metadata['social']`` (PRs
+#957/#955). No alpha nenhum produto tinha marca, e o Search Console acusava
+"Nenhum identificador global fornecido" nos 48 itens do feed.
+
+**A regra (decisão do dono, 22/09/2026).** Produto que a casa faz ou monta aqui
+(pão, doce, salgado, prato, bebida preparada no balcão) leva a marca da casa,
+lida de ``Shop.brand_name``. Revenda leva a marca do fabricante e, quando
+conferido, o GTIN do código de barras. Revenda **nunca** leva a marca da loja,
+e o que ninguém confirmou fica fora da tabela: marca e GTIN vazios são "não
+informado", não um palpite.
+
+Toca só ``metadata['social']['brand']`` e ``metadata['social']['gtin']``. Não
+sobrescreve valor já preenchido com outra coisa (curadoria feita no Gestor
+vence): a divergência sai no relatório e o SKU fica como está. Sem ``--apply``
+não grava nada.
+
+O ``seed`` chama :func:`apply_brands` logo depois de semear o catálogo, para que
+um banco novo nasça igual ao que este comando deixa num banco vivo.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+from shopman.offerman import get_social_attributes
+from shopman.offerman.contrib.social.schema import set_social_attributes
+from shopman.offerman.models import Product
+
+# Feito ou montado aqui. Conferido contra o catálogo vivo do alpha em
+# 22/09/2026. Fora de propósito, esperando a palavra do dono: os chás servidos
+# no bule (THB/THC/THR/THS — blend próprio ou Kãnfa?) e a cream soda da
+# torneira (CV — feita aqui ou de barril?). Bacon (BK) e Mostarda (MT) ficam
+# fora porque a casa ainda não os faz.
+HOUSE_SKUS: frozenset[str] = frozenset({
+    # Pães, viennoiserie, doces e salgados de forno
+    "ANC", "ANP", "ANU", "BA", "BAP", "BAX", "BBB", "BBB2", "BCH", "BE", "BEP",
+    "BF", "BH", "BN", "CBT", "CF", "CGO", "CGR", "CH", "CI", "CM", "CN", "CO",
+    "COC", "CPQ", "CPX", "CT", "DL", "FA", "FE", "FF", "FOA", "FOC", "HO", "JO",
+    "KBB", "KP", "MA", "MBBBG", "MD", "ME", "MFF", "MIB", "MICBT", "MIF", "MIFOC",
+    "MIHO", "PC", "PH", "PHO", "PHO4", "PI", "PI4", "PR", "TB",
+    # Kit de produtos da casa
+    "COMBO-PETIT-DEJ",
+    # Pratos montados aqui
+    "CCOM", "CMA", "CMO", "JB", "MS", "PG", "PPU", "PU", "QQ", "TI", "TJ",
+    # Bebidas preparadas no balcão
+    "CD", "CE", "CHAI_A", "CL", "CQ", "CTV", "FP", "HI", "MC", "MH", "PS", "SE",
+    "SL", "SO", "SS",
+    # Despensa feita na casa (dono, 22/09)
+    "PT", "TP",
+})
+
+# Revenda: marca do fabricante; GTIN só quando o código foi conferido (dígito
+# verificador GS1 fecha e o produto do SKU é um só). Fonte: API do Yooga e a
+# PlanilhaProdutos2024 do dono.
+RESALE: dict[str, dict[str, str]] = {
+    "QC": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
+    "GL": {"brand": "St. Dalfour"},  # sabor indefinido: dois minis com GTINs distintos
+    "AG": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
+    "CHEGO_L50": {"brand": "Kãnfa"},
+    "CHEGO_P50": {"brand": "Kãnfa"},
+    "INTIMI_L50": {"brand": "Kãnfa"},
+    "INTIMI_P50": {"brand": "Kãnfa"},
+    "INTU_L70": {"brand": "Kãnfa"},
+    "INTU_P50": {"brand": "Kãnfa"},
+    "MAMA_L60": {"brand": "Kãnfa"},
+    "MAMA_P50": {"brand": "Kãnfa"},
+    "NAMAS_L60": {"brand": "Kãnfa"},
+    "NAMAS_P50": {"brand": "Kãnfa"},
+    "SOFIA_P50": {"brand": "Kãnfa"},
+    "VITAL_P50": {"brand": "Kãnfa"},
+}
+
+
+def desired_identity(house_brand: str) -> dict[str, dict[str, str]]:
+    """SKU → campos de ``metadata['social']`` que este comando garante."""
+    table = {sku: {"brand": house_brand} for sku in HOUSE_SKUS}
+    table.update({sku: dict(fields) for sku, fields in RESALE.items()})
+    return table
+
+
+def _house_brand() -> str:
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.only("brand_name", "name").first()
+    brand = (shop.brand_name or shop.name).strip() if shop else ""
+    if not brand:
+        raise CommandError("A loja não tem marca (Shop.brand_name): nada para declarar nos produtos da casa.")
+    return brand
+
+
+def apply_brands(*, apply: bool, only_sku: str | None = None) -> dict[str, list]:
+    """Calcula (e, com ``apply``, grava) marca/GTIN. Devolve o relatório.
+
+    Chaves: ``changes`` [(sku, [linhas])], ``conflicts`` [(sku, campo, atual,
+    desejado)], ``missing`` [sku], ``invalid`` [(sku, erros)].
+    """
+    table = desired_identity(_house_brand())
+    if only_sku:
+        if only_sku not in table:
+            raise CommandError(f"SKU {only_sku} não está na tabela deste comando.")
+        table = {only_sku: table[only_sku]}
+
+    products = {p.sku: p for p in Product.objects.filter(sku__in=table)}
+    report: dict[str, list] = {
+        "changes": [],
+        "conflicts": [],
+        "missing": sorted(set(table) - set(products)),
+        "invalid": [],
+    }
+
+    with transaction.atomic():
+        for sku in sorted(products):
+            product = products[sku]
+            current = get_social_attributes(product)
+            wanted = table[sku]
+            updates: dict[str, str] = {}
+            lines: list[str] = []
+            for field, value in wanted.items():
+                have = getattr(current, field)
+                if have == value:
+                    continue
+                if have:
+                    report["conflicts"].append((sku, field, have, value))
+                    continue
+                updates[field] = value
+                lines.append(f"{field}: → {value}")
+            if not updates:
+                continue
+            new_attrs = replace(current, **updates)
+            errors = new_attrs.errors()
+            if errors:
+                report["invalid"].append((sku, errors))
+                continue
+            report["changes"].append((sku, lines))
+            if apply:
+                product.metadata = set_social_attributes(product.metadata, new_attrs)
+                product.save(update_fields=["metadata", "updated_at"])
+    return report
+
+
+class Command(BaseCommand):
+    help = "Aplica a marca da casa nos produtos feitos aqui e a do fabricante na revenda."
+
+    def add_arguments(self, parser):
+        parser.add_argument("--apply", action="store_true", help="Grava. Sem esta flag só mostra.")
+        parser.add_argument("--sku", type=str, default=None, help="Um SKU só.")
+
+    def handle(self, *args, apply: bool = False, sku: str | None = None, **options):
+        report = apply_brands(apply=apply, only_sku=sku)
+
+        for product_sku, lines in report["changes"]:
+            self.stdout.write(f"  {product_sku:16} {'; '.join(lines)}")
+        for product_sku, field, have, want in report["conflicts"]:
+            self.stdout.write(self.style.WARNING(
+                f"  {product_sku:16} {field} já é {have!r} (a tabela diz {want!r}) — mantido"
+            ))
+        for product_sku, errors in report["invalid"]:
+            self.stdout.write(self.style.ERROR(f"  {product_sku:16} recusado: {' '.join(errors)}"))
+        if report["missing"]:
+            self.stdout.write(self.style.WARNING(
+                f"  {len(report['missing'])} SKU(s) fora do catálogo deste banco: {', '.join(report['missing'])}"
+            ))
+
+        verb = "gravados" if apply else "mudariam (rode com --apply para gravar)"
+        self.stdout.write(self.style.SUCCESS(
+            f"{len(report['changes'])} produto(s) {verb}; "
+            f"{len(report['conflicts'])} divergência(s) mantida(s); {len(report['invalid'])} recusado(s)."
+        ))
