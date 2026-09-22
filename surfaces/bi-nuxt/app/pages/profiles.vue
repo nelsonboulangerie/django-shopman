@@ -317,7 +317,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Bebida no pedido</h2>
           <p class="mb-3 text-xs text-muted-foreground">
-            Bebida é proxy parcial: existe C sem bebida (doce na mesa) e café pra levar infla B/C.
+            A bebida indica o perfil, mas não decide: há C sem bebida (doce na mesa) e o café pra levar aumenta B e C.
           </p>
           <div class="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
             <StatTile label="Com bebida" :value="formatPercent(report.beverage.strike_rate)" :hint="`${formatInt(report.beverage.orders_with_beverage)} pedidos`" />

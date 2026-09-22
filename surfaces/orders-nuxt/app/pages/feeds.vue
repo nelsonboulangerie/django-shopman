@@ -144,7 +144,7 @@ useHead({ title: "Canais" });
       <p v-if="errorMsg" role="alert" class="mb-3 text-sm text-destructive">{{ errorMsg }}</p>
       <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
         Não foi possível atualizar os feeds. {{ board ? "Exibindo a última leitura disponível." : "Tente atualizar para consultar os feeds." }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar novamente</button>
+        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
       </div>
       <!-- skeleton -->
       <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -224,7 +224,7 @@ useHead({ title: "Canais" });
                 </div>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete collectionDrafts[sc.ref]; editRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || collectionConflict(sc) || !actionFor(sc, 'collections')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Aplicar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || collectionConflict(sc) || !actionFor(sc, 'collections')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Salvar coleções</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>
@@ -271,7 +271,7 @@ useHead({ title: "Canais" });
                 <p class="mt-2 text-xs text-muted-foreground/70">Zere os dois para mostrar tudo numa tela só, sem rotação.</p>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete rotationDrafts[sc.ref]; rotationRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Aplicar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Salvar rotação</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>

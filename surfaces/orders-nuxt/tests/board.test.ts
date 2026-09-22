@@ -32,6 +32,7 @@ import {
   toneBadge,
   triageCards,
   zonesView,
+  zoneEmptyText,
   confirmationRemainingLabel,
   deadlineTone,
   realtimeIndicator,
@@ -202,6 +203,19 @@ describe("zonesView", () => {
     expect(zones[1]!.count).toBe(2);
     expect(zones[2]!.count).toBe(3); // pickup + delivery + transit
     expect(zones[2]!.cards.map((c) => c.ref)).toEqual(["D", "E", "F"]);
+  });
+
+  // ⚠️ As três colunas mostravam a MESMA frase — "Nada por aqui agora." — e "aqui"
+  // não é lugar nenhum: quem olha de longe não sabe se acabou a entrada, o preparo
+  // ou a saída. Cada zona diz o seu, e nenhuma repete a outra.
+  it("cada coluna vazia nomeia a própria zona", () => {
+    const texts = zonesView(queue()).map((zone) => zoneEmptyText(zone.key));
+    expect(texts).toEqual([
+      "Nenhum pedido novo agora.",
+      "Nenhum pedido em preparo agora.",
+      "Nenhum pedido para retirada ou entrega agora.",
+    ]);
+    expect(new Set(texts).size).toBe(3);
   });
 });
 

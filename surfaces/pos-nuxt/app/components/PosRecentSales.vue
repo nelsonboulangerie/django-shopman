@@ -437,8 +437,11 @@ function fiscalChipClass(status: string): string {
                 @click="requeueFiscal(sale)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-3.5" />
-                <!-- Sem reticências: o toque reenfileira na hora, não abre nada. -->
-                Tentar novamente
+                <!-- Sem reticências: o toque reenfileira na hora, não abre nada.
+                     A emissão FOI tentada e falhou (`can_requeue_fiscal` é
+                     `fiscal_status == "failed"`), então "de novo" é verdade — e o
+                     objeto vai no rótulo porque ao lado há outras três ações. -->
+                Tentar a emissão de novo
               </UiButton>
               <!-- Emissão avulsa: a regra da casa não emitiu. Botão NEUTRO — não
                    há nada errado com a venda; o gerente é pedido no toque. -->

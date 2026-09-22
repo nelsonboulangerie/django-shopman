@@ -44,7 +44,7 @@ const emit = defineEmits<{ retry: [] }>()
         @click="emit('retry')"
       >
         <Icon name="lucide:rotate-cw" class="size-4" />
-        Tentar novamente
+        Tentar de novo
       </button>
     </div>
   </main>

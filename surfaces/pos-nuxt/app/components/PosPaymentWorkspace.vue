@@ -2150,7 +2150,7 @@ defineExpose({
           <p v-if="review" class="text-center text-sm text-muted-foreground">
             Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
           </p>
-          <UiButton class="w-full" @click="discountSheetOpen = false">Concluir</UiButton>
+          <UiButton class="w-full" @click="discountSheetOpen = false">Voltar ao pagamento</UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

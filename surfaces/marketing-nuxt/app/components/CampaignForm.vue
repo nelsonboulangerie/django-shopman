@@ -1047,9 +1047,13 @@ function submit() {
             />
             <span>minutos antes</span>
           </span>
-          <span class="text-xs text-muted-foreground"
-            >(0 = todo mundo junto)</span
-          >
+          <!-- D5: "(0 = todo mundo junto)" obrigava a decorar o que o campo faz
+               vazio. A frase agora descreve o valor que ESTÁ na tela. -->
+          <span class="text-xs text-muted-foreground">{{
+            vipFirstMinutes > 0
+              ? "Os VIPs recebem primeiro; o restante da lista recebe depois desse intervalo."
+              : "Todo mundo recebe junto."
+          }}</span>
         </div>
 
         <div class="border-t border-border pt-3">
@@ -1163,9 +1167,11 @@ function submit() {
             />
             <span>horas</span>
           </span>
-          <span class="text-xs text-muted-foreground"
-            >(0 = não segmentar por horário)</span
-          >
+          <span class="text-xs text-muted-foreground">{{
+            preferredHourWindowHours > 0
+              ? "Quem costuma comprar dentro dessa janela recebe na hora de sempre; os demais recebem agora."
+              : "O horário preferido de cada pessoa não é considerado: todos recebem agora."
+          }}</span>
         </div>
 
         <p
@@ -1213,7 +1219,11 @@ function submit() {
           />
           <span>minutos</span>
         </span>
-        <span class="text-xs text-muted-foreground">(0 = sem prazo)</span>
+        <span class="text-xs text-muted-foreground">{{
+          expiresAfterMinutes > 0
+            ? "Sem revisão até lá, o anúncio caduca e nada é disparado."
+            : "O anúncio espera a revisão sem prazo: não caduca sozinho."
+        }}</span>
       </div>
       <UiCheckbox v-model="isActive" label="Campanha ligada" />
     </div>
