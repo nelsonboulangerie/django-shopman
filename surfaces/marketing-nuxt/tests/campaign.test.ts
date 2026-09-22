@@ -362,11 +362,11 @@ describe("hashtags", () => {
   });
 
   it("parses whatever the gestor pasted", () => {
-    expect(parseHashtags("#padaria #fornada")).toEqual(["padaria", "fornada"]);
-    expect(parseHashtags("padaria, fornada")).toEqual(["padaria", "fornada"]);
-    expect(parseHashtags("  #padaria \n fornada  ")).toEqual([
+    expect(parseHashtags("#padaria #lote")).toEqual(["padaria", "lote"]);
+    expect(parseHashtags("padaria, lote")).toEqual(["padaria", "lote"]);
+    expect(parseHashtags("  #padaria \n lote  ")).toEqual([
       "padaria",
-      "fornada",
+      "lote",
     ]);
     expect(parseHashtags("")).toEqual([]);
   });

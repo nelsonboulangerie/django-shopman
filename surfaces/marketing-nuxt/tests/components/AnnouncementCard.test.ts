@@ -59,9 +59,9 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
     audience_total: 15,
     platform_results: [],
     trigger: "production_finished",
-    trigger_label: "Fornada concluída",
-    rule_name: "Fornada de pães",
-    template_name: "Fornada",
+    trigger_label: "Lote concluído",
+    rule_name: "Lote de pães",
+    template_name: "Lote",
     sku: "CRO-001",
     created_at: "2026-07-18T07:00:00-03:00",
     expires_at: "",
@@ -106,7 +106,7 @@ describe("AnnouncementCard", () => {
     const text = mountCard(
       makeAnnouncement({ platforms: ["whatsapp"] }),
     ).text();
-    expect(text).toContain("Fornada de pães");
+    expect(text).toContain("Lote de pães");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
     expect(text).toContain("Expira em 20 min");
   });
@@ -235,7 +235,7 @@ describe("AnnouncementCard", () => {
     // publicar a versão anterior.
     const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("Texto revisado");
-    await wrapper.find("input[type=text]").setValue("#paes #fornada");
+    await wrapper.find("input[type=text]").setValue("#paes #lote");
     await wrapper.get("[data-testid=publish-now]").trigger("click");
 
     expect(wrapper.emitted("approve")).toBeTruthy();
@@ -245,7 +245,7 @@ describe("AnnouncementCard", () => {
     ];
     expect(pk).toBe(7);
     expect(edits.body).toBe("Texto revisado");
-    expect(edits.hashtags).toEqual(["paes", "fornada"]);
+    expect(edits.hashtags).toEqual(["paes", "lote"]);
     expect(edits.platforms).toEqual(["instagram"]);
     expect(wrapper.emitted("approve")![0]![2]).toBe("now");
   });
@@ -505,7 +505,7 @@ describe("AnnouncementCard", () => {
         suggestion: {
           ref: "11111111-1111-4111-8111-111111111111",
           body: "Croissant acabou de sair do forno.",
-          hashtags: ["Croissant", "Fornada"],
+          hashtags: ["Croissant", "Lote"],
           used_fact_ids: ["product_name"],
           warnings: ["operator_should_verify_tone"],
           policy_version: "marketing-ai-v2.1",

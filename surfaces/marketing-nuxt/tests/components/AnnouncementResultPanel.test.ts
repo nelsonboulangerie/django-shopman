@@ -227,7 +227,7 @@ function panel(options: { actions?: MarketingActionProjectionV2[] } = {}) {
       announcement: announcement(),
       actions: options.actions ?? [retryAction()],
       shopTimezone: "America/Sao_Paulo",
-      approvedText: "A fornada especial de hoje está pronta.",
+      approvedText: "O lote especial de hoje está pronto.",
       receipt: {
         ...response().receipt,
         ref: "receipt-before",
@@ -269,7 +269,7 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("não são reenviados");
     expect(wrapper.text()).toContain("Resumo da decisão");
     expect(wrapper.text()).toContain("Texto aprovado");
-    expect(wrapper.text()).toContain("A fornada especial de hoje está pronta.");
+    expect(wrapper.text()).toContain("O lote especial de hoje está pronto.");
     expect(wrapper.text()).toContain("Comprovante:");
     expect(wrapper.text()).toContain("Público");
     expect(wrapper.text()).toContain("3 pessoas");

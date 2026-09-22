@@ -133,7 +133,7 @@ const DRAFT_LABELS = {
 const TRIGGER_FILTER_LABELS: Record<string, string> = {
   collections: "coleções",
   skus: "produtos",
-  quality_min: "qualidade mínima da fornada",
+  quality_min: "qualidade mínima do lote",
   quality_min_share: "parcela mínima na qualidade",
   max_remaining: "estoque máximo restante",
 };
@@ -660,7 +660,7 @@ function submit() {
         id="rule-name"
         v-model="name"
         type="text"
-        placeholder="Fornada de pães → redes"
+        placeholder="Lote de pães → redes"
       />
     </div>
 
@@ -1013,7 +1013,7 @@ function submit() {
         <UiCheckbox
           v-model="alerts"
           label="Quem pediu &quot;me avise&quot; deste produto"
-          description="A fila do sino da loja: fornada para pão, reposição para o resto."
+          description="A fila do sino da loja: lote para pão, reposição para o resto."
         />
         <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
              soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de

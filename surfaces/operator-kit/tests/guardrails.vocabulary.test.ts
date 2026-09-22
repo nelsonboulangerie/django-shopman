@@ -93,11 +93,11 @@ const BANNED = /aparelh/i;
 //     tem voz própria, e "fornada" é palavra de marca de padaria. Trocar ali
 //     rebaixaria a voz da casa para o vocabulário do balcão. Decisão, não dívida.
 //   - **marketing-nuxt** — de fora por motivo MECÂNICO e TEMPORÁRIO, não
-//     semântico: a matriz visual do Marketing tem baselines em PNG e havia duas
-//     levas na fila mexendo neles (#978 e #979) quando esta regra nasceu. Uma
-//     terceira frente no mesmo diretório travaria as três. A troca do Marketing
-//     vive no PR de seguimento #REPLACE_FOLLOWUP#; quando ele entrar, esta linha
-//     sai daqui, e não há nada a decidir de novo.
+//     semântico. O app já fala "lote" (PR de seguimento): o que ainda diz
+//     "fornada" é só o HARNESS VISUAL — `tests/visual/mock_backend.py` e
+//     `tests/visual/marketing-matrix.spec.ts` —, e mexer nele muda os retratos
+//     em PNG. Baseline só se regera na sessão que tem o browser da CI, e essa
+//     sessão é uma só. A exenção cai junto com a regeneração.
 /** O nome do objeto na tela é "lote" — "fornada" nomeia o evento do forno. */
 const BANNED_BATCH = /\bfornadas?\b/i;
 
