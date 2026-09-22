@@ -47,6 +47,13 @@ DISPLAY_EXPIRY_WARNING = timedelta(days=7)
 OK = "ok"
 TODO = "todo"
 
+# O Gestor é tela de operador: nenhum item cita variável de ambiente, worker ou
+# deploy (defeito D6 de docs/reference/omotenashi-copy.md). Quando a correção não
+# está ao alcance dele, o item diz o efeito e a quem recorrer; o detalhe técnico
+# mora no Admin (diagnóstico de integrações).
+_ASK_SUPPORT = "Avise o responsável pelo sistema."
+_ASK_SUPPORT_LOWER = "avise o responsável pelo sistema."
+
 _DISPLAY_SUBJECT = "display"
 
 
@@ -115,15 +122,15 @@ def _ifood_items(channel, *, now: datetime) -> list[ChannelHealthItem]:
     items.append(ChannelHealthItem(
         key="credentials",
         state=OK if has_credentials else TODO,
-        label="Credenciais do iFood configuradas" if has_credentials else "Faltam as credenciais do iFood",
-        hint="" if has_credentials else "IFOOD_CLIENT_ID e IFOOD_CLIENT_SECRET, no deploy.",
+        label="A casa está conectada ao iFood" if has_credentials else "A casa não está conectada ao iFood: nenhum pedido do iFood entra",
+        hint="" if has_credentials else _ASK_SUPPORT,
     ))
     merchant = ifood_merchant.merchant_id()
     items.append(ChannelHealthItem(
         key="merchant",
         state=OK if merchant else TODO,
-        label="Loja do iFood vinculada" if merchant else "Falta dizer qual é a loja no iFood",
-        hint="" if merchant else "IFOOD_MERCHANT_ID, no deploy.",
+        label="Loja do iFood vinculada" if merchant else "A casa não sabe qual é a loja dela no iFood",
+        hint="" if merchant else _ASK_SUPPORT,
     ))
 
     # Horário: só é "gravado" quando o módulo Merchant está ligado E a casa
@@ -131,10 +138,11 @@ def _ifood_items(channel, *, now: datetime) -> list[ChannelHealthItem]:
     status = IFoodStoreStatus.objects.filter(merchant_id=merchant).first() if merchant else None
     merchant_on = ifood_merchant.enabled()
     if not merchant_on:
+        # Escolha da casa, não defeito: dito como efeito, sem acender pendência.
         items.append(ChannelHealthItem(
-            key="hours", state=TODO,
-            label="O horário do iFood ainda é o do Portal do Parceiro",
-            hint="Ligue IFOOD_MERCHANT_SYNC no deploy para a casa gravar horário, feriados e pausas no iFood.",
+            key="hours", state=OK,
+            label="O horário do iFood segue o do Portal do Parceiro",
+            hint="Feriados e pausas do iFood também se fazem lá.",
         ))
     elif not business_calendar.has_regular_hours():
         items.append(ChannelHealthItem(
@@ -161,30 +169,30 @@ def _ifood_items(channel, *, now: datetime) -> list[ChannelHealthItem]:
             items.append(ChannelHealthItem(
                 key="polling", state=TODO,
                 label="A última conferência com o iFood falhou",
-                hint=status.last_error[:200],
+                hint="A casa tenta de novo sozinha em alguns minutos. Se continuar, " + _ASK_SUPPORT_LOWER,
             ))
         elif status is None or status.checked_at is None:
             items.append(ChannelHealthItem(
                 key="polling", state=TODO,
                 label="O iFood ainda não foi conferido",
-                hint="A conferência roda no maintenance-worker, a cada ~5 min.",
+                hint="A primeira conferência sai em até 5 minutos.",
             ))
         elif now - status.checked_at > IFOOD_CHECK_STALE_AFTER:
             items.append(ChannelHealthItem(
                 key="polling", state=TODO,
-                label=f"A conferência com o iFood parou ({_hhmm(status.checked_at, now)})",
-                hint="Confira se o maintenance-worker está no ar.",
+                label=f"A casa parou de conferir o iFood (última às {_hhmm(status.checked_at, now)})",
+                hint="Sem a conferência, a casa não percebe o iFood fechado. " + _ASK_SUPPORT,
             ))
         elif any(isinstance(p, dict) and p.get("code") == "is-connected" for p in status.problems or []):
             items.append(ChannelHealthItem(
                 key="polling", state=TODO,
-                label="O iFood não está recebendo o polling da casa",
-                hint="Sem ele o iFood fecha a loja. Confira se o ifood-poll-worker está no ar.",
+                label="O iFood não está ouvindo a casa e fecha a loja para pedidos",
+                hint=_ASK_SUPPORT,
             ))
         else:
             items.append(ChannelHealthItem(
                 key="polling", state=OK,
-                label=f"O iFood recebe o polling da casa (conferido às {_hhmm(status.checked_at, now)})",
+                label=f"O iFood está ouvindo a casa (conferido às {_hhmm(status.checked_at, now)})",
             ))
 
     # Vínculos: o cardápio importado do iFood × os produtos da casa.
@@ -264,10 +272,17 @@ def _collection_items(display: dict) -> list[ChannelHealthItem]:
     return items
 
 
-def _active_item(channel, *, paused_label: str) -> ChannelHealthItem:
-    if channel.is_active:
+def _is_on(channel, now: datetime) -> bool:
+    """O toggle "Ativo" AGORA: a janela do gesto pelo relógio, não pelo carimbo."""
+    from shopman.shop.services.channel_switch import effective_active
+
+    return effective_active(channel, now=now)
+
+
+def _active_item(channel, *, paused_label: str, now: datetime) -> ChannelHealthItem:
+    if _is_on(channel, now):
         return ChannelHealthItem(key="active", state=OK, label="Ligado")
-    return ChannelHealthItem(key="active", state=TODO, label=paused_label, hint="Ligue no interruptor do card.")
+    return ChannelHealthItem(key="active", state=TODO, label=paused_label, hint="Ligue no botão Ativo do card.")
 
 
 def _display_devices(channel, *, now: datetime) -> list[ChannelHealthItem]:
@@ -327,13 +342,13 @@ def _display_health(channel, *, now: datetime) -> ChannelHealthProjection:
     fmt = display.get("format") or ""
     output = _output_path(channel.ref, fmt)
     if not fmt:
-        items = [_active_item(channel, paused_label="Pausado: a TV não mostra o cardápio")]
+        items = [_active_item(channel, paused_label="Pausado: a TV não mostra o cardápio", now=now)]
         items += _collection_items(display)
         items += _display_devices(channel, now=now)
         preview = (ChannelHealthLink(label="Ver a tela da TV", target="django", path=output),)
     else:
         platform = "o Google" if fmt == "google_merchant" else "a Meta" if fmt == "meta_catalog" else "a plataforma"
-        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe erro ao buscar o feed")]
+        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe erro ao buscar o feed", now=now)]
         items += _collection_items(display)
         preview = (ChannelHealthLink(label="Ver o feed", target="django", path=output),)
     return _health(channel.ref, items, preview)
@@ -342,7 +357,7 @@ def _display_health(channel, *, now: datetime) -> ChannelHealthProjection:
 # ── Loja online ───────────────────────────────────────────────────────────────
 
 
-def _storefront_health(channel) -> ChannelHealthProjection:
+def _storefront_health(channel, *, now: datetime) -> ChannelHealthProjection:
     from shopman.backstage.services.integration_readiness import (
         efi_pix_readiness,
         otp_delivery_readiness,
@@ -350,8 +365,10 @@ def _storefront_health(channel) -> ChannelHealthProjection:
     )
 
     items: list[ChannelHealthItem] = []
-    if not channel.is_active:
-        items.append(ChannelHealthItem(key="active", state=TODO, label="A loja online está desligada"))
+    if not _is_on(channel, now):
+        items.append(ChannelHealthItem(
+            key="active", state=TODO, label="A loja online está desligada", hint="Ligue no botão Ativo do card.",
+        ))
     for key, readiness, ok_label, todo_label in (
         ("login", otp_delivery_readiness(), "O cliente recebe o código para entrar", "O cliente não recebe o código para entrar"),
         ("pix", efi_pix_readiness(), "Pix pronto para cobrar", "O Pix não está pronto para cobrar"),
@@ -361,7 +378,7 @@ def _storefront_health(channel) -> ChannelHealthProjection:
             items.append(ChannelHealthItem(key=key, state=OK, label=ok_label))
         else:
             items.append(ChannelHealthItem(
-                key=key, state=TODO, label=todo_label, hint=readiness.message,
+                key=key, state=TODO, label=todo_label,
                 action_label="Ver integrações", action_target="admin", action_path="/admin/diagnostics/",
             ))
     base = str(getattr(settings, "SHOPMAN_STOREFRONT_BASE_URL", "") or "").strip().rstrip("/")
@@ -386,7 +403,7 @@ def build_channel_health(*, now: datetime | None = None) -> ChannelHealthBoardPr
         elif channel.ref == "ifood":
             channels.append(_health(channel.ref, _ifood_items(channel, now=now)))
         elif channel.ref == storefront_ref:
-            channels.append(_storefront_health(channel))
+            channels.append(_storefront_health(channel, now=now))
     return ChannelHealthBoardProjection(channels=tuple(channels))
 
 

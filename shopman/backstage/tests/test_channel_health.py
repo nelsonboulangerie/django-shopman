@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
 
 import pytest
@@ -68,7 +69,9 @@ def test_ifood_without_merchant_sync_says_hours_live_in_the_portal(settings, ifo
     assert not health.ready
     assert _item(health, "credentials").state == "todo"
     assert _item(health, "merchant").state == "todo"
-    assert _item(health, "hours").label == "O horário do iFood ainda é o do Portal do Parceiro"
+    # Horário no Portal é escolha da casa: dito como efeito, sem pendência.
+    hours = _item(health, "hours")
+    assert (hours.state, hours.label) == ("ok", "O horário do iFood segue o do Portal do Parceiro")
     # Sem o módulo Merchant ninguém confere o polling: o item não é inventado.
     assert _item(health, "polling") is None
 
@@ -115,8 +118,8 @@ def test_ifood_without_imported_menu_asks_for_the_import(settings, ifood):
 
 @pytest.mark.parametrize(("status", "label"), [
     ({}, "O iFood ainda não foi conferido"),
-    ({"checked_at_ago": 30}, "A conferência com o iFood parou"),
-    ({"checked_at_ago": 2, "problems": [{"code": "is-connected", "state": "ERROR"}]}, "O iFood não está recebendo o polling da casa"),
+    ({"checked_at_ago": 30}, "A casa parou de conferir o iFood"),
+    ({"checked_at_ago": 2, "problems": [{"code": "is-connected", "state": "ERROR"}]}, "O iFood não está ouvindo a casa"),
     ({"checked_at_ago": 2, "last_error": "HTTP 403"}, "A última conferência com o iFood falhou"),
 ])
 def test_ifood_polling_is_read_from_the_merchant_check(settings, ifood, hours, status, label):
@@ -236,3 +239,41 @@ def test_endpoint_requires_catalog_permission_and_returns_the_board(client, oper
     assert response.status_code == 200
     channel, = response.json()["health"]["channels"]
     assert channel["ref"] == "ifood" and channel["items"][0]["key"] == "credentials"
+
+
+# ── Linguagem de operador ────────────────────────────────────────────────────
+
+_ENGINEER_WORDS = re.compile(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|deploy|worker|polling|\bHTTP\b", re.IGNORECASE)
+
+
+def _every_item_text(board):
+    for channel in board.channels:
+        for item in channel.items:
+            yield channel.ref, item.key, item.label, item.hint
+
+
+def test_no_item_speaks_env_vars_workers_or_deploy_to_the_operator(settings, operator, monkeypatch):
+    """D6 (omotenashi-copy): o Gestor não pede o que o operador não alcança."""
+    Shop.objects.create(name="Loja")
+    Channel.objects.create(ref="ifood", name="iFood", commerce_policy="order")
+    Channel.objects.create(ref="web", name="Loja online", commerce_policy="order")
+    now = timezone.now()
+    texts = []
+    # Todos os caminhos do iFood que acendem pendência, um de cada vez.
+    for ifood_cfg, hours, status in (
+        ({"client_id": "", "client_secret": "", "merchant_id": ""}, False, None),
+        (IFOOD_ON | {"merchant_sync_enabled": False}, False, None),
+        (IFOOD_ON, False, None),
+        (IFOOD_ON, True, {}),
+        (IFOOD_ON, True, {"checked_at": now - timedelta(minutes=30), "synced_at": now}),
+        (IFOOD_ON, True, {"checked_at": now, "synced_at": now, "problems": [{"code": "is-connected"}]}),
+        (IFOOD_ON, True, {"checked_at": now, "synced_at": now, "last_error": "iFood merchant merchant_status: HTTP 403"}),
+    ):
+        settings.SHOPMAN_IFOOD = ifood_cfg
+        monkeypatch.setattr("shopman.shop.services.business_calendar.has_regular_hours", lambda hours=hours, **_: hours)
+        IFoodStoreStatus.objects.all().delete()
+        if status is not None:
+            IFoodStoreStatus.objects.create(merchant_id="m-1", **status)
+        texts += list(_every_item_text(build_channel_health(now=now)))
+    offenders = [t for t in texts if _ENGINEER_WORDS.search(t[2]) or _ENGINEER_WORDS.search(t[3])]
+    assert not offenders, offenders

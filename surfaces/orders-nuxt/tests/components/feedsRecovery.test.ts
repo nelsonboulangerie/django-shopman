@@ -14,9 +14,11 @@ let leave: () => boolean;
 vi.stubGlobal("onBeforeRouteLeave", (guard: () => boolean) => { leave = guard; });
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
 vi.stubGlobal("useFeedBoard", () => ({ board, error, errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections, switchChannel: vi.fn(), setRotation: vi.fn() }));
+const health = ref<Record<string, any>>({});
+vi.stubGlobal("useChannelHealth", () => ({ healthOf: (ref_: string) => health.value[ref_] ?? null, refresh: vi.fn() }));
 const popover = defineComponent({ props: ["open"], emits: ["update:open"], template: '<div :data-open="open"><button data-open-editor @click="$emit(\'update:open\', true)">Abrir editor</button><slot /></div>' });
-const render = () => mount(Feeds, { global: { stubs: { Icon: true, UiToolbar: { template: "<div><slot/><slot name=\"end\"/></div>" }, UiIconButton: true, UiPopover: popover, UiPopoverTrigger: { template: "<div><slot/></div>" }, UiPopoverContent: { template: "<div><slot/></div>" } } } });
-beforeEach(() => { board.value = null; error.value = null; setCollections.mockReset(); });
+const render = () => mount(Feeds, { global: { stubs: { Icon: true, UiToolbar: { template: "<div><slot/><slot name=\"end\"/></div>" }, UiIconButton: true, UiPopover: popover, UiPopoverTrigger: { template: "<div><slot/></div>" }, UiPopoverContent: { template: "<div><slot/></div>" }, ChannelHealthChecklist: { props: ["health"], emits: ["choose-collections"], template: '<div v-if="health" :data-checklist="health.ref"><button data-choose @click="$emit(\'choose-collections\')">escolher</button>{{ health.summary }}</div>' } } } });
+beforeEach(() => { health.value = {}; board.value = null; error.value = null; setCollections.mockReset(); });
 
 it("a failed first GET never says no feeds exist", () => {
   error.value = { status: 503 };
@@ -108,4 +110,25 @@ it("todo card tem o mesmo toggle, e o toggle abre o modal em vez de mudar direto
   expect(wrapper.find("[data-switch-dialog-stub]").exists()).toBe(false);
   await integration.get("[data-channel-switch]").trigger("click");
   expect(wrapper.find("[data-switch-dialog-stub]").exists()).toBe(true);
+});
+
+it("com checklist, o card mostra o que falta e a contagem crua sai", async () => {
+  board.value = {
+    feeds: [{ ref: "tv", name: "TV", collections: [], actions: [{ ref: "collections", enabled: true, payload_schema: { base_revision: "initial" } }], capability: "display", kind: "menuboard", is_active: true }],
+    all_collections: [],
+    catalog_channels: [{ ref: "ifood", name: "iFood", projection_enabled: true, diagnostic: "Envio configurado.", observed: 3,
+      synced: 1, pending: 1, errors: 1, retracted: 0, skipped: 0, catalog_path: "/catalog" }],
+  };
+  health.value = {
+    ifood: { ref: "ifood", ready: false, summary: "1 pendência", items: [], preview: [] },
+    tv: { ref: "tv", ready: false, summary: "2 pendências", items: [], preview: [] },
+  };
+  const wrapper = render();
+  const integration = wrapper.get('[aria-label="Canais de venda"]');
+  expect(integration.get("[data-checklist=ifood]").text()).toContain("1 pendência");
+  expect(integration.text()).not.toContain("sincronizados");
+  // "Escolher coleções" no checklist da TV abre a mesma escolha do botão Coleções.
+  expect(wrapper.get("[data-open]").attributes("data-open")).toBe("false");
+  await wrapper.get("[data-checklist=tv] [data-choose]").trigger("click");
+  expect(wrapper.get("[data-open]").attributes("data-open")).toBe("true");
 });
