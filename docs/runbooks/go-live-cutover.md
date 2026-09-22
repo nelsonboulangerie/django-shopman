@@ -32,6 +32,7 @@
 
 - [ ] Declarar `SHOPMAN_ENVIRONMENT=production` no ambiente de destino e executar `make production-readiness` com evidência de QA. Remover `SHOPMAN_EXPOSE_MOCK_CAPTURE`, `SHOPMAN_EXPOSE_DEBUG_OTP`, `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` e `SHOPMAN_STAGING_AUTOPILOT`.
 - [ ] Configurar `SENTRY_DSN` e comprovar o recebimento de um alerta sintético no procedimento autorizado de cutover. A presença da variável sozinha não comprova entrega.
+- [ ] Configurar `SHOPMAN_ALERT_EMAIL` (o dono/gestor) e comprovar que um alerta crítico chega por e-mail. Sem ela, o alerta crítico termina num aviso de log: ninguém fora do app fica sabendo.
 
 - [ ] `DJANGO_SECRET_KEY` forte (não o default) · `DJANGO_DEBUG=false` · `DJANGO_ALLOWED_HOSTS` explícito (sem `*`).
 - [ ] Banco de produção (Postgres) + Redis/Valkey provisionados; `DATABASE_URL`/cache configurados.

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def enqueue(alert):
-    recipient = str(getattr(settings, "SHOPMAN_OPERATOR_EMAIL", "") or "").strip()
+    recipient = str(getattr(settings, "SHOPMAN_ALERT_EMAIL", "") or "").strip()
     if not recipient:
         logger.warning("operator_alert.external_recipient_missing")
         return None

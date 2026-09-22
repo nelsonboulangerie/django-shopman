@@ -837,7 +837,7 @@ checkout_defaults:
 | `console`  | —                       | stdout (dev)       |
 | `none`     | —                       | Nenhum             |
 
-**Notificações de sistema** (sem order_ref): vão para `SHOPMAN_OPERATOR_EMAIL` via email → console.
+**Notificações de sistema** (sem order_ref): vão para `SHOPMAN_ALERT_EMAIL` via email → console.
 
 ---
 
