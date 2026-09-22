@@ -6,7 +6,7 @@
 // Nos feeds o operador também escolhe as coleções e a rotação de páginas da TV, e
 // abre/prevê a saída. A ORDEM das coleções é global (reordenável no Catálogo).
 import type { ChannelSwitchProjection, CollectionOptionProjection, FeedProjection } from "~/types/feeds";
-import { IFOOD_CHANNEL_REF, IFOOD_FOCUS_KEY } from "~/presentation/ifoodStore";
+import { IFOOD_CHANNEL_REF } from "~/presentation/ifoodStore";
 
 const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, switchChannel, setCollections, setRotation } = useFeedBoard();
 const catalogChannels = computed(() => board.value?.catalog_channels ?? []);
@@ -14,14 +14,14 @@ const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
 
-// O sinal da aba Pedidos chega aqui com `?focus=ifood`: o card do canal iFood — onde
-// mora a pausa — vai para a linha de foco assim que a leitura o traz.
+// O aviso da fila de Pedidos chega aqui com `?focus=<ref>`: o card daquele canal —
+// onde mora o toggle — vai para a linha de foco assim que a leitura o traz.
 const route = useRoute();
-const focusKey = computed(() =>
-  route.query.focus === IFOOD_FOCUS_KEY && catalogChannels.value.some((channel) => channel.ref === IFOOD_CHANNEL_REF)
-    ? IFOOD_FOCUS_KEY
-    : null,
-);
+const focusKey = computed(() => {
+  const wanted = typeof route.query.focus === "string" ? route.query.focus : "";
+  const known = [...catalogChannels.value, ...feeds.value].some((channel) => channel.ref === wanted);
+  return wanted && known ? wanted : null;
+});
 useNextFocus(focusKey);
 
 // saída servida pelo Django (menuboard/feed), não pelo host do Gestor.
@@ -153,8 +153,9 @@ useHead({ title: "Canais" });
         <h2 class="text-sm font-semibold sm:col-span-2 xl:col-span-3">Feeds e telas</h2>
         <article
           v-for="sc in feeds" :key="sc.ref"
-          class="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition"
+          class="flex scroll-mt-4 flex-col gap-3 rounded-xl border border-border bg-card p-4 outline-none transition"
           :data-channel-card="sc.ref"
+          :data-focus-target="sc.ref"
           :class="sc.is_active ? '' : 'opacity-80'"
         >
           <!-- cabeçalho: tipo + nome + toggle "Ativo" -->
@@ -297,7 +298,7 @@ useHead({ title: "Canais" });
             v-for="channel in catalogChannels" :key="channel.ref"
             class="flex scroll-mt-4 flex-col gap-3 rounded-xl border border-border bg-card p-4 outline-none transition"
             :class="channel.is_active ? '' : 'opacity-80'"
-            :data-focus-target="channel.ref === IFOOD_CHANNEL_REF ? IFOOD_FOCUS_KEY : undefined"
+            :data-focus-target="channel.ref"
             :data-channel-card="channel.ref"
           >
             <!-- cabeçalho: nome + toggle "Ativo" -->

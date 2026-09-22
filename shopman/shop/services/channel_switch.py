@@ -462,7 +462,9 @@ def request_switch(
     channel.save(update_fields=["is_active", "config"])
     _audit(channel, record, actor=actor, approved_by=approved_by, period=period)
     _apply_effects(channel, is_active=channel.is_active, changed=changed, actor=actor)
-    return activation(channel)
+    current_record = activation(channel)
+    _notify_change(channel, current_record, scheduled=start > now, now=now)
+    return current_record
 
 
 def apply_due(*, now: datetime | None = None) -> int:
@@ -506,6 +508,9 @@ def apply_due(*, now: datetime | None = None) -> int:
 
                 operational_event_on_commit(operational_event, channel_ref=channel.ref, actor="", reason="fim do período")
             _apply_effects(channel, is_active=target, changed=state_changed, actor=None)
+            if state_changed:
+                _notify_change(channel, activation(channel) if not ended else None, ended=ended,
+                               ended_at=record.ends_at, now=now)
     return changed
 
 
@@ -551,6 +556,72 @@ def _apply_effects(channel, *, is_active: bool, changed: bool, actor) -> None:
         ifood_merchant.enqueue_sync("channel_switch")
     if changed and is_active:
         _resync_projection(channel.ref)
+
+
+def _notify_change(channel, record: Activation | None, *, scheduled: bool = False, ended: bool = False,
+                   ended_at: datetime | None = None, now: datetime) -> None:
+    """Notificação comum (sino) na MUDANÇA de estado — o histórico de quem mexeu.
+
+    Vai para quem gerencia pedidos (``shop.manage_orders``, a régua do Gestor, onde
+    o sino mora), no mesmo formato das outras notificações informativas da casa.
+    Sem ação e sem link: a notificação conta o que aconteceu; o controle está na
+    aba Canais. Falhar aqui vira log, nunca desfaz o gesto.
+    """
+    title, message = notification_copy(channel, record, scheduled=scheduled, ended=ended, ended_at=ended_at, now=now)
+    if not title:
+        return
+
+    def _send() -> None:
+        try:
+            from django.contrib.auth import get_user_model
+
+            from shopman.shop.models import NotificationCategory, UserNotification
+            from shopman.shop.services.user_notifications import push_user_notification
+
+            recipients = get_user_model().objects.with_perm(
+                "shop.manage_orders", is_active=True, backend="django.contrib.auth.backends.ModelBackend",
+            )
+            for user in recipients:
+                notification = UserNotification.objects.create(
+                    user=user, category=NotificationCategory.SYSTEM, title=title, message=message,
+                )
+                push_user_notification(notification, enqueue_web_push=False)
+        except Exception:
+            logger.exception("channel_switch.notify_failed channel=%s", channel.ref)
+
+    transaction.on_commit(_send, robust=True)
+
+
+def notification_copy(channel, record: Activation | None, *, scheduled: bool = False, ended: bool = False,
+                      ended_at: datetime | None = None, now: datetime | None = None) -> tuple[str, str]:
+    """``(título, mensagem)`` da notificação de mudança. Título diz o que mudou e em qual canal."""
+    now = now or timezone.now()
+    name = channel.name or channel.ref
+    if ended:
+        verb = "religado" if channel.is_active else "desligado de novo"
+        return f"Canal {verb}: {name}", f"Fim do período ({moment(ended_at, now=now)})."
+    if record is None:
+        return "", ""
+    who = f"Por {record.by}" if record.by else "Pelo Gestor"
+    if record.approved_by and record.approved_by != record.by:
+        who += f", autorizado por {record.approved_by}"
+    reason = f": {record.reason}" if record.reason else ""
+    if scheduled:
+        verb = "Liga" if record.is_active else "Desliga"
+        span = f"{verb} {moment(record.starts_at, now=now)}"
+        if record.ends_at:
+            span += f" até {moment(record.ends_at, now=now)}"
+        kind = "Religação agendada" if record.is_active else "Desligamento agendado"
+        return f"{kind}: {name}", f"{span}. {who}{reason}."
+    if record.auto:
+        return f"Canal {'ligado' if record.is_active else 'desligado'}: {name}", "Início do período agendado."
+    title = f"Canal {'ligado' if record.is_active else 'desligado'}: {name}"
+    if record.ends_at is None:
+        tail = "" if record.is_active else " Sem prazo: fica assim até alguém religar."
+    else:
+        back = "Desliga de novo" if record.is_active else "Volta a ligar"
+        tail = f" {back} {moment(record.ends_at, now=now)}."
+    return title, f"{who}{reason}.{tail}"
 
 
 def _resync_projection(ref: str) -> None:
@@ -629,6 +700,7 @@ __all__ = [
     "governed_by_calendar",
     "is_channel_active",
     "moment",
+    "notification_copy",
     "off_windows",
     "period_options",
     "reason_presets",

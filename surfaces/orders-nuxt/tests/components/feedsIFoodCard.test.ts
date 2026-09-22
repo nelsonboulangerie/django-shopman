@@ -36,14 +36,14 @@ beforeEach(() => {
   board.value = { feeds: [], all_collections: [], catalog_channels: [channel("ifood", "iFood"), channel("web", "Loja online")] };
 });
 
-it("só o card do iFood carrega a loja no iFood, e é o alvo de foco", () => {
+it("só o card do iFood carrega a loja no iFood; todo card é alvo de foco pelo ref", () => {
   const wrapper = render();
   const ifood = wrapper.get("[data-channel-card='ifood']");
   const web = wrapper.get("[data-channel-card='web']");
   expect(ifood.find("[data-ifood-store-stub]").exists()).toBe(true);
   expect(web.find("[data-ifood-store-stub]").exists()).toBe(false);
   expect(ifood.attributes("data-focus-target")).toBe("ifood");
-  expect(web.attributes("data-focus-target")).toBeUndefined();
+  expect(web.attributes("data-focus-target")).toBe("web");
 });
 
 it("a frase da seção diz de que é o registro de envio, sem negar o estado lido do iFood", () => {
@@ -53,11 +53,13 @@ it("a frase da seção diz de que é o registro de envio, sem negar o estado lid
   expect(text).toContain("Envio de produtos: 3 sincronizados");
 });
 
-it("chegando com ?focus=ifood, o foco é o card do iFood; sem ele, nenhum", () => {
+it("chegando com ?focus=<ref> o foco é o card daquele canal; ref desconhecido ou ausente, nenhum", () => {
   render();
   expect(toValue(focusSources[0] as any)).toBeNull();
-  query.value = { focus: "ifood" };
-  focusSources.length = 0;
-  render();
-  expect(toValue(focusSources[0] as any)).toBe("ifood");
+  for (const [focus, expected] of [["ifood", "ifood"], ["web", "web"], ["fantasma", null]] as const) {
+    query.value = { focus };
+    focusSources.length = 0;
+    render();
+    expect(toValue(focusSources[0] as any)).toBe(expected);
+  }
 });

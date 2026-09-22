@@ -177,3 +177,18 @@ class FeedRotationView(_FeedBase):
             return Response({"detail": "ref é obrigatório."}, status=400)
         return self.mutate(request, ref, {"rotate_seconds": rotate_seconds, "items_per_page": items_per_page},
             lambda base: feed_service.set_rotation(ref, rotate_seconds=rotate_seconds, items_per_page=items_per_page, expected_revision=base))
+
+
+class ChannelAttentionView(APIView):
+    """Canais que pedem atenção: indicador da navegação e aviso da fila de Pedidos.
+
+    Quem vê a fila lê (``shop.manage_orders``); o controle mora na aba Canais.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.backstage.projections.channel_attention import build_channel_attention
+
+        return Response(read_data(attention=projection_data(build_channel_attention(user=request.user))))

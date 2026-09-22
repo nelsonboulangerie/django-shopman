@@ -287,3 +287,60 @@ def test_feed_desligado_sai_com_tudo_fora_de_estoque(client, shop, settings):
     items = ET.fromstring(resp.content).find("channel").findall("item")
     assert len(items) == 1  # o item continua: sumir apagaria o produto na plataforma
     assert items[0].find("{http://base.google.com/ns/1.0}availability").text == "out_of_stock"
+
+
+# ── Notificação comum (sino) só na mudança ────────────────────────────────────
+
+
+def _gestor(username="gestor"):
+    from django.contrib.auth.models import Permission
+
+    user = _person(username, "Pablo Valentini")
+    user.user_permissions.add(Permission.objects.get(codename="manage_orders", content_type__app_label="shop"))
+    return user
+
+
+def test_mudanca_de_estado_vira_notificacao_para_quem_gerencia_pedidos(web, django_capture_on_commit_callbacks):
+    from shopman.shop.models import UserNotification
+
+    gestor = _gestor()
+    ana = _person("ana", "Ana Souza")
+    with django_capture_on_commit_callbacks(execute=True):
+        channel_switch.request_switch("web", False, period="30m", reason="Loja cheia", actor=ana, now=TUESDAY_10H)
+
+    (notification,) = UserNotification.objects.filter(user=gestor)
+    assert notification.title == "Canal desligado: Loja online"
+    assert notification.message == "Por Ana Souza: Loja cheia. Volta a ligar hoje às 10h30."
+    assert notification.is_actionable is False
+
+
+def test_fim_do_periodo_notifica_uma_vez_e_o_worker_repetido_nao(web, django_capture_on_commit_callbacks):
+    from shopman.shop.models import UserNotification
+
+    gestor = _gestor()
+    channel_switch.request_switch("web", False, period="1h", reason="Loja cheia", actor=None, now=TUESDAY_10H)
+    UserNotification.objects.all().delete()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        channel_switch.apply_due(now=TUESDAY_10H + timedelta(minutes=61))
+        channel_switch.apply_due(now=TUESDAY_10H + timedelta(minutes=70))
+
+    (notification,) = UserNotification.objects.filter(user=gestor)
+    assert notification.title == "Canal religado: Loja online"
+    assert notification.message == "Fim do período (hoje às 11h)."
+
+
+def test_agendamento_notifica_como_agendamento(web, django_capture_on_commit_callbacks):
+    from shopman.shop.models import UserNotification
+
+    gestor = _gestor()
+    start = datetime(2026, 12, 24, 0, 0, tzinfo=TZ)
+    with django_capture_on_commit_callbacks(execute=True):
+        channel_switch.request_switch(
+            "web", False, period="custom", starts_at=start, ends_at=start + timedelta(days=2),
+            reason="Férias", actor=_person("joyce", "Joyce"), now=TUESDAY_10H,
+        )
+
+    (notification,) = UserNotification.objects.filter(user=gestor)
+    assert notification.title == "Desligamento agendado: Loja online"
+    assert notification.message == "Desliga qui. 24/12 às 0h até sáb. 26/12 às 0h. Por Joyce: Férias."

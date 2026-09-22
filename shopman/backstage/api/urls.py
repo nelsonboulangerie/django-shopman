@@ -36,6 +36,7 @@ from .catalog import (
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
 from .feeds import (
+    ChannelAttentionView,
     FeedBoardView,
     FeedCollectionsView,
     FeedRotationView,
@@ -482,6 +483,7 @@ urlpatterns = [
     # Feeds (menuboard/Google/Meta)
     path("feeds/", FeedBoardView.as_view(), name="api-backstage-feeds"),
     path("feeds/switch/", FeedSwitchView.as_view(), name="api-backstage-feeds-switch"),
+    path("channels/attention/", ChannelAttentionView.as_view(), name="api-backstage-channels-attention"),
     path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
     path("feeds/rotation/", FeedRotationView.as_view(), name="api-backstage-feeds-rotation"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
