@@ -359,19 +359,38 @@ export interface InstallTextPart {
   text: string;
   /** É o rótulo literal do menu — o que ela procura com os olhos. */
   strong: boolean;
+  /** O símbolo entra ANTES deste pedaço, colado no rótulo que ele nomeia. */
+  glyph?: InstallGlyph;
 }
 
 /**
- * Quebra `**assim**` em pedaços para a tela destacar o rótulo do menu.
+ * Quebra `**assim**` em pedaços para a tela destacar o rótulo do menu — e diz onde o
+ * símbolo entra.
  *
- * Marcação no texto do passo e não duas propriedades porque alguns passos têm dois
+ * Marcação no texto do passo, e não duas propriedades, porque alguns passos têm dois
  * rótulos ("Adicionar página a" … "Tela inicial") e outros nenhum.
+ *
+ * ## Por que o símbolo vai DENTRO da frase
+ *
+ * O desenho e o número disputavam o mesmo lugar: um medalhão numerado montado no canto
+ * do quadro do ícone deixava o olho sem saber se o número fazia parte do símbolo. O
+ * número voltou a ser o que ele é em qualquer lista — o marcador —, e o símbolo foi
+ * para onde o significado dele está: colado no rótulo que ele nomeia. Assim
+ * "Compartilhar" e o quadradinho com a seta chegam juntos no mesmo ponto da leitura,
+ * em vez de obrigarem quem lê a carregar o desenho por cima da linha inteira.
+ *
+ * Ele entra no PRIMEIRO rótulo em negrito, que é o que a pessoa procura com os olhos;
+ * sem nenhum rótulo, entra no começo da frase.
  */
-export function installTextParts(text: string): InstallTextPart[] {
-  return text
+export function installTextParts(text: string, glyph?: InstallGlyph): InstallTextPart[] {
+  const parts = text
     .split(/\*\*(.+?)\*\*/g)
-    .map((piece, index) => ({ text: piece, strong: index % 2 === 1 }))
+    .map((piece, index) => ({ text: piece, strong: index % 2 === 1 }) as InstallTextPart)
     .filter((part) => part.text.length > 0);
+  if (!glyph || parts.length === 0) return parts;
+  const alvo = parts.find((part) => part.strong) || parts[0]!;
+  alvo.glyph = glyph;
+  return parts;
 }
 
 /**

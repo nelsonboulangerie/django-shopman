@@ -224,4 +224,24 @@ describe("installTextParts", () => {
     expect(installTextParts("**A** e depois **B**").filter((part) => part.strong)).toHaveLength(2);
     expect(installTextParts("sem rótulo")).toEqual([{ text: "sem rótulo", strong: false }]);
   });
+
+  it("o símbolo entra no PRIMEIRO rótulo, que é o que ela procura com os olhos", () => {
+    const partes = installTextParts("Toque em **Compartilhar**, na barra de baixo.", "share-ios");
+    expect(partes.filter((part) => part.glyph)).toHaveLength(1);
+    expect(partes.find((part) => part.glyph)).toMatchObject({ text: "Compartilhar", glyph: "share-ios" });
+  });
+
+  it("com dois rótulos, só o primeiro leva o símbolo", () => {
+    const partes = installTextParts("Escolha **Adicionar página a** e depois **Tela inicial**.", "add-home");
+    expect(partes.filter((part) => part.glyph).map((part) => part.text)).toEqual(["Adicionar página a"]);
+  });
+
+  it("sem rótulo nenhum, o símbolo abre a frase", () => {
+    const partes = installTextParts("Abra o menu do navegador.", "menu-lines");
+    expect(partes[0]).toMatchObject({ text: "Abra o menu do navegador.", glyph: "menu-lines" });
+  });
+
+  it("sem símbolo, nada muda", () => {
+    expect(installTextParts("Escolha **Instalar**.").every((part) => part.glyph === undefined)).toBe(true);
+  });
 });
