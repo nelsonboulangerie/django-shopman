@@ -62,27 +62,35 @@ HOUSE_SKUS: frozenset[str] = frozenset({
 })
 
 # Revenda: marca do fabricante; GTIN só quando o código foi conferido (dígito
-# verificador GS1 fecha e o produto do SKU é um só). Fonte: API do Yooga e a
-# PlanilhaProdutos2024 do dono.
+# verificador GS1 fecha e o produto do SKU é um só). Fonte: API do Yooga, a
+# PlanilhaProdutos2024 do dono e as NF-e de compra.
+#
+# ⚠️ A Kãnfa declara "SEM GTIN" no campo próprio da NF-e e põe o código de
+# barras no CÓDIGO DO PRODUTO — só o Aconchego Pouch veio no campo certo. Os
+# códigos abaixo são EAN-13 com dígito verificador válido e prefixo de empresa
+# 7898708, o mesmo do item que ela declarou: é o código da embalagem, lido do
+# lugar errado da nota. Quem não tem código aqui é porque o fabricante manda
+# código interno (Aconchego Lata) ou lixo de cadastro (Chalosofia vem como
+# "CFOP5102"), ou porque o item não apareceu em nenhuma nota lida.
 RESALE: dict[str, dict[str, str]] = {
     "QC": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
     "GL": {"brand": "St. Dalfour"},  # sabor indefinido: dois minis com GTINs distintos
     "AG": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
     # GTIN do pedido de venda 7970 da Kãnfa (My Chai, 30/06/2026), dígito
     # verificador GS1 conferido. Aconchego e Chalosofia vieram com código
-    # interno do fabricante (ACON_RV_P50/L50), que não é GTIN. As latas de Mama
-    # e Namastê são "Lata 70g" no pedido, e o nome do catálogo dizia 60g: o dono
-    # confirmou os 70g em 22/09, então o identificador vale — o nome da peça é
-    # corrigido na curadoria do catálogo, e o SKU segue o mesmo (SKU é endereço,
-    # não descrição: trocá-lo quebraria o histórico de venda).
+    # interno do fabricante, que não é GTIN. As latas de Mama e Namastê são
+    # "Lata 70g" na nota, e o nome do catálogo dizia 60g: o dono confirmou os
+    # 70g em 22/09, então o identificador vale — o nome da peça é corrigido na
+    # curadoria do catálogo, e o SKU segue o mesmo (SKU é endereço, não
+    # descrição: trocá-lo quebraria o histórico de venda).
     "CHEGO_L50": {"brand": "Kãnfa"},
-    "CHEGO_P50": {"brand": "Kãnfa"},
-    "INTIMI_L50": {"brand": "Kãnfa"},
+    "CHEGO_P50": {"brand": "Kãnfa", "gtin": "7898708850316"},
+    "INTIMI_L50": {"brand": "Kãnfa", "gtin": "7898708850347"},
     "INTIMI_P50": {"brand": "Kãnfa", "gtin": "7898708850354"},
     "INTU_L70": {"brand": "Kãnfa", "gtin": "7898708850408"},
     "INTU_P50": {"brand": "Kãnfa", "gtin": "7898708850385"},
     "MAMA_L60": {"brand": "Kãnfa", "gtin": "7898708850705"},
-    "MAMA_P50": {"brand": "Kãnfa"},
+    "MAMA_P50": {"brand": "Kãnfa", "gtin": "7898708850682"},
     "NAMAS_L60": {"brand": "Kãnfa", "gtin": "7898708850668"},
     "NAMAS_P50": {"brand": "Kãnfa", "gtin": "7898708850644"},
     "SOFIA_P50": {"brand": "Kãnfa"},
