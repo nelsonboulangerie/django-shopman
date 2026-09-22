@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   ifoodStatusLine,
-  menuNeedsAttention,
   pauseInFlight,
   pauseTrail,
+  queueSignal,
   refusedPauseLine,
 } from "../app/presentation/ifoodStore";
 import type { IFoodPause, IFoodStoreProjection } from "../app/types/ifoodStore";
@@ -68,12 +68,33 @@ describe("a loja no iFood — frases", () => {
     expect(refusedPauseLine(store({ last_pause: pause({ state: "removed" }) }))).toBe("");
   });
 
-  it("o ponto de atenção acende só com divergência, pausa ou recusa — e nunca desligado", () => {
-    expect(menuNeedsAttention(store())).toBe(false);
-    expect(menuNeedsAttention(store({ diverges: true }))).toBe(true);
-    expect(menuNeedsAttention(store({ pause: pause() }))).toBe(true);
-    expect(menuNeedsAttention(store({ enabled: false, diverges: true }))).toBe(false);
-    expect(menuNeedsAttention(null)).toBe(false);
+  it("o sinal da aba Pedidos: em estado normal, nada — e nunca com a integração desligada", () => {
+    const now = new Date("2026-12-22T10:30:00-03:00");
+    expect(queueSignal(store(), now)).toBe("");
+    expect(queueSignal(store({ enabled: false, diverges: true, pause: pause() }), now)).toBe("");
+    expect(queueSignal(null, now)).toBe("");
+  });
+
+  it("o sinal diz a pausa: até quando e por quê; em trânsito, o que está acontecendo", () => {
+    const now = new Date("2026-12-22T10:30:00-03:00");
+    expect(queueSignal(store({ pause: pause() }), now)).toBe("iFood pausado até 11:00 — Cozinha cheia");
+    expect(queueSignal(store({ pause: pause({ state: "pending_create" }) }), now)).toBe("Pedindo a pausa ao iFood…");
+    expect(queueSignal(store({ pause: pause({ state: "pending_remove" }) }), now)).toBe("Retomando os pedidos no iFood…");
+  });
+
+  it("o sinal diz a divergência pelo lado que importa à fila", () => {
+    const now = new Date("2026-12-22T10:30:00-03:00");
+    expect(queueSignal(store({ diverges: true, ifood_available: false, ifood_status_label: "Fechado para pedidos" }), now))
+      .toBe("iFood fechado com a loja aberta: nenhum pedido do iFood entra");
+    expect(queueSignal(store({ diverges: true, shop_open: false }), now)).toBe("iFood recebendo pedidos com a loja fechada");
+  });
+
+  it("a recusa vira sinal só enquanto dura a janela que o gestor pediu", () => {
+    const refused = pause({ state: "failed", error: "O iFood recusou o pedido (HTTP 409).", requested_at_display: "10:00" });
+    expect(queueSignal(store({ last_pause: refused }), new Date("2026-12-22T10:30:00-03:00")))
+      .toBe("O iFood recusou a pausa pedida às 10:00");
+    expect(queueSignal(store({ last_pause: refused }), new Date("2026-12-22T11:30:00-03:00"))).toBe("");
+    expect(queueSignal(store({ last_pause: pause({ state: "removed" }) }), new Date("2026-12-22T10:30:00-03:00"))).toBe("");
   });
 
   it("pausa em trânsito é pedida ou retomada, não em vigor", () => {

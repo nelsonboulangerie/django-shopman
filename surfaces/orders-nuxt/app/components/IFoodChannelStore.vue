@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// Mais opções do Gestor → "A loja no iFood". Pedido literal do dono: não tão à vista,
-// mas acessível pelo gestor. Fecha (pausa) o iFood por estratégia com a loja aberta
-// — cozinha cheia, sem entregador — e retoma. Quem pausou, por quê e até quando
-// ficam na tela. Some por inteiro enquanto a integração estiver desligada.
+// A loja no iFood, dentro do card do canal iFood (aba Canais). O controle mora no
+// objeto que ele controla: pausar o iFood por estratégia com a loja aberta — cozinha
+// cheia, sem entregador — e retomar. Pedido do dono: não tão à vista, mas acessível
+// pelo gestor; por isso é ação secundária do card, não um botão na fila de pedidos.
+// Quem pausou, por quê e até quando ficam no card. Some por inteiro enquanto a
+// integração estiver desligada.
 import {
   ifoodStatusLine,
-  menuNeedsAttention,
   pauseTrail,
   refusedPauseLine,
 } from "~/presentation/ifoodStore";
@@ -14,13 +15,11 @@ const REASON_PRESETS = ["Cozinha cheia", "Sem entregador", "Falta de produto"];
 
 const { store, busy, pause, resume } = useIFoodStore();
 
-const menuOpen = ref(false);
 const dialogOpen = ref(false);
 const duration = ref("");
 const reason = ref("");
 
 const visible = computed(() => Boolean(store.value?.enabled));
-const attention = computed(() => menuNeedsAttention(store.value));
 const statusLine = computed(() => (store.value ? ifoodStatusLine(store.value) : ""));
 const refused = computed(() => (store.value ? refusedPauseLine(store.value) : ""));
 const livePause = computed(() => store.value?.pause ?? null);
@@ -33,7 +32,6 @@ const canConfirm = computed(() => {
 });
 
 function openPauseDialog() {
-  menuOpen.value = false;
   duration.value = "";
   reason.value = "";
   dialogOpen.value = true;
@@ -45,72 +43,48 @@ async function confirmPause() {
 }
 
 async function confirmResume() {
-  menuOpen.value = false;
   await resume();
 }
 </script>
 
 <template>
-  <div v-if="visible" class="relative" data-ifood-store-menu>
-    <button
-      type="button"
-      class="relative grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
-      aria-haspopup="menu"
-      :aria-expanded="menuOpen"
-      aria-label="Mais opções"
-      title="Mais opções"
-      @click="menuOpen = !menuOpen"
-    >
-      <Icon name="lucide:ellipsis-vertical" class="size-4" />
-      <span v-if="attention" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
-    </button>
-
-    <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
-    <div
-      v-if="menuOpen && store"
-      class="absolute right-0 z-50 mt-1 w-80 overflow-hidden rounded-md border bg-card shadow-lg"
-      role="menu"
-      aria-label="Mais opções"
-    >
-      <div class="border-b px-3 py-2.5">
-        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">A loja no iFood</p>
-        <p class="mt-1 text-sm font-semibold text-foreground" data-ifood-status>{{ statusLine }}</p>
-        <p v-if="livePause" class="mt-0.5 text-xs text-muted-foreground">{{ pauseTrail(livePause) }}</p>
-        <p v-if="refused" class="mt-1 text-xs text-destructive" role="alert" data-ifood-refused>{{ refused }}</p>
-        <ul v-if="store.diverges && store.ifood_problems.length" class="mt-1 flex flex-col gap-0.5 text-xs text-amber-700 dark:text-amber-300">
-          <li v-for="(problem, i) in store.ifood_problems" :key="i">{{ problem }}</li>
-        </ul>
-      </div>
-
-      <template v-if="store.can_pause">
-        <button
-          v-if="livePause"
-          type="button"
-          role="menuitem"
-          class="flex min-h-control w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-          :disabled="!canResume || busy"
-          data-ifood-resume
-          @click="confirmResume"
-        >
-          <Icon name="lucide:play" class="size-4" />
-          Voltar a receber pedidos do iFood
-        </button>
-        <button
-          v-else
-          type="button"
-          role="menuitem"
-          class="flex min-h-control w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-          :disabled="!store.shop_open || busy"
-          :title="store.shop_open ? '' : 'A loja já está fechada: o iFood fecha junto.'"
-          data-ifood-pause
-          @click="openPauseDialog"
-        >
-          <Icon name="lucide:pause" class="size-4" />
-          Pausar o iFood…
-        </button>
-      </template>
-      <p v-else class="px-3 py-2 text-xs text-muted-foreground">Pausar o iFood é permissão de gerente.</p>
+  <div v-if="visible && store" class="space-y-2 border-t border-border pt-3" data-ifood-store>
+    <p class="text-xs font-medium text-muted-foreground">A loja no iFood</p>
+    <div>
+      <p class="text-sm font-semibold text-foreground" data-ifood-status>{{ statusLine }}</p>
+      <p v-if="livePause" class="mt-0.5 text-xs text-muted-foreground" data-ifood-trail>{{ pauseTrail(livePause) }}</p>
+      <p v-if="refused" class="mt-1 text-xs text-destructive" role="alert" data-ifood-refused>{{ refused }}</p>
+      <ul v-if="store.diverges && store.ifood_problems.length" class="mt-1 flex flex-col gap-0.5 text-xs text-amber-700 dark:text-amber-300" data-ifood-problems>
+        <li v-for="(problem, i) in store.ifood_problems" :key="i">{{ problem }}</li>
+      </ul>
     </div>
+
+    <template v-if="store.can_pause">
+      <button
+        v-if="livePause"
+        type="button"
+        class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm hover:bg-accent disabled:opacity-50"
+        :disabled="!canResume || busy"
+        data-ifood-resume
+        @click="confirmResume"
+      >
+        <Icon name="lucide:play" class="size-4" />
+        Retomar o iFood
+      </button>
+      <button
+        v-else
+        type="button"
+        class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm hover:bg-accent disabled:opacity-50"
+        :disabled="!store.shop_open || busy"
+        :title="store.shop_open ? '' : 'A loja já está fechada: o iFood fecha junto.'"
+        data-ifood-pause
+        @click="openPauseDialog"
+      >
+        <Icon name="lucide:pause" class="size-4" />
+        Pausar o iFood…
+      </button>
+    </template>
+    <p v-else class="text-xs text-muted-foreground">Pausar o iFood é permissão de gerente.</p>
 
     <UiDialog :open="dialogOpen" @update:open="(value: boolean) => { if (!busy) dialogOpen = value; }">
       <UiDialogContent class="sm:max-w-md">
