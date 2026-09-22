@@ -326,7 +326,7 @@ async function printReceipt() {
       if (outcome.status === "printed") return;
       toast.warning(`A impressora do balcão não respondeu: ${outcome.detail || "sem detalhe"}. O recibo saiu pelo diálogo do navegador.`);
     } catch (error) {
-      toast.warning(`${httpErrorMessage(error, "Falha ao compor o recibo no servidor.")} O recibo saiu pelo diálogo do navegador.`);
+      toast.warning(`${httpErrorMessage(error, "O servidor não montou o recibo para a bobina.")} O recibo saiu pelo diálogo do navegador.`);
     } finally {
       printingReceipt.value = false;
     }
@@ -423,7 +423,9 @@ async function printDanfe() {
     danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
-    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."));
+    // Fragmento: entra dentro de "A DANFE não saiu na bobina: …", e é o
+    // `danfeFallbackToast` que traz a saída (ver a nota dele logo abaixo).
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"));
   } finally {
     printingDanfe.value = false;
   }

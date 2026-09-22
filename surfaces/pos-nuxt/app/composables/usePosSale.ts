@@ -1489,7 +1489,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (cart.tabSessionKey !== sessionKey || payload.session_key !== sessionKey) throw new Error("A comanda original foi encerrada.");
       await setFromTabPayload(payload);
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Não foi possível carregar a comanda atual.");
+      serverError.value = `${httpErrorMessage(error, "Não foi possível carregar a comanda atual.")} Nada foi perdido: os itens seguem na tela. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -1707,7 +1707,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
     } catch (error) {
       if (requestId === customerLookupRequest && cart.customerRef.trim() === customerRef && cart.tabSessionKey === tabSessionKey) {
-        serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+        serverError.value = `${httpErrorMessage(error, "Não deu para buscar o cadastro do cliente.")} A venda segue na tela. Tente de novo ou siga sem identificar o cliente.`;
       }
       return null;
     } finally {
@@ -1972,7 +1972,7 @@ export function usePosSale(deps: PosSaleDeps) {
           return false;
         }
       }
-      serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+      serverError.value = `${httpErrorMessage(error, "O cadastro do cliente não foi salvo.")} O que você digitou segue no formulário. Tente de novo.`;
       return false;
     } finally {
       lookupBusy.value = false;
@@ -2078,7 +2078,7 @@ export function usePosSale(deps: PosSaleDeps) {
       } catch (error) {
         if (customerDecision.value === decision && receiptDecisionMatches()) {
           if (handleReceiptIdentityFailure(error, pending.origin)) return;
-          serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+          serverError.value = `${httpErrorMessage(error, "O cadastro do cliente não foi salvo.")} O que você digitou segue no formulário. Tente de novo.`;
         }
       } finally {
         receiptDecisionBusy = false;
@@ -2150,7 +2150,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // unificados, sem o operador ter de buscar de novo.
       await lookupCustomer();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Não foi possível unificar os cadastros.");
+      serverError.value = `${httpErrorMessage(error, "Não foi possível unificar os cadastros.")} Os dois seguem separados. Tente de novo.`;
     } finally {
       customerMergeBusy.value = false;
     }
@@ -2207,7 +2207,7 @@ export function usePosSale(deps: PosSaleDeps) {
         await submitSale();
       }
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Não foi possível liberar o contato.");
+      serverError.value = `${httpErrorMessage(error, "Não foi possível liberar o contato.")} A decisão segue pendente na tela. Tente de novo.`;
     } finally {
       customerReleaseBusy.value = false;
     }
@@ -2579,7 +2579,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (handleReceiptIdentityFailure(error, "review")) return;
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
       checkoutMode.value = false;
-      serverError.value = httpErrorMessage(error, "Falha ao revisar checkout.");
+      serverError.value = `${httpErrorMessage(error, "A cobrança não abriu.")} A venda voltou para a tela com os itens intactos. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2606,7 +2606,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // justo nesse ramo — zero explicação na tela, com o cliente na frente. A
       // única saída era F4 (não documentado) ou Esc, que derruba o checkout.
       reviewFailed.value = true;
-      serverError.value = httpErrorMessage(error, "Falha ao revisar venda.");
+      serverError.value = `${httpErrorMessage(error, "Não deu para recalcular o total.")} Os itens seguem na comanda e nada foi cobrado. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2931,7 +2931,7 @@ export function usePosSale(deps: PosSaleDeps) {
       resetCart();
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao liberar comanda.");
+      serverError.value = `${httpErrorMessage(error, "A comanda não foi liberada.")} Ela segue aberta, com os itens. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2957,7 +2957,7 @@ export function usePosSale(deps: PosSaleDeps) {
       await reloadCurrentTab();
     } catch (error) {
       moveDialogOpen.value = false;
-      serverError.value = httpErrorMessage(error, "Falha ao preparar a comanda para mover itens.");
+      serverError.value = `${httpErrorMessage(error, "A comanda não ficou pronta para mover itens.")} Nada foi movido. Tente de novo.`;
     } finally {
       movePreparing.value = false;
       busy.value = false;
@@ -3006,7 +3006,7 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao mover itens.");
+      serverError.value = `${httpErrorMessage(error, "Os itens não foram movidos.")} Eles seguem na comanda de origem. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -3053,7 +3053,10 @@ export function usePosSale(deps: PosSaleDeps) {
       await refresh();
       return true;
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao enviar à cozinha.");
+      // "a comanda recusa o envio repetido" é fato, não conforto: o envio que deu
+      // certo muda a revisão da comanda, e o `expected_revision` desta chamada
+      // recusa a segunda com `tab_revision_conflict` (api/pos_concurrency.py).
+      serverError.value = `${httpErrorMessage(error, "Os itens não foram enviados à cozinha.")} Eles seguem na comanda. Tente de novo: a comanda recusa o envio repetido.`;
       return false;
     } finally {
       firing.value = false;
@@ -3077,7 +3080,7 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       await unfireLineIds([lineId]);
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao cancelar envio à cozinha.");
+      serverError.value = `${httpErrorMessage(error, "O envio à cozinha não foi cancelado.")} A cozinha segue com o pedido. Tente de novo ou avise a cozinha.`;
     } finally {
       firing.value = false;
     }
@@ -3095,7 +3098,7 @@ export function usePosSale(deps: PosSaleDeps) {
       await unfireLineIds(ids);
       return true;
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao cancelar envio à cozinha.");
+      serverError.value = `${httpErrorMessage(error, "O envio à cozinha não foi cancelado.")} A cozinha segue com o pedido. Tente de novo ou avise a cozinha.`;
       return false;
     } finally {
       firing.value = false;
@@ -3114,7 +3117,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (response.tab) await setFromTabPayload(response.tab);
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao renomear comanda.");
+      serverError.value = `${httpErrorMessage(error, "A comanda não foi renomeada.")} Ela segue com o nome anterior. Tente de novo.`;
     } finally {
       renamingTab.value = false;
     }
@@ -3174,7 +3177,9 @@ export function usePosSale(deps: PosSaleDeps) {
       // que continuava vivo. O PIN é limpo pelo próprio diálogo quando há erro.
       const failure = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error;
       cancelSaleError.value =
-        failure?.recovery || failure?.message || httpErrorMessage(error, "Falha ao cancelar venda.");
+        failure?.recovery
+        || failure?.message
+        || `${httpErrorMessage(error, "A venda não foi cancelada.")} Ela continua válida. Tente de novo; se a janela do operador já fechou, cancele pelo Gestor de pedidos.`;
     } finally {
       cancellingSale.value = false;
     }
