@@ -954,7 +954,7 @@ Lido por: `hooks._build_directive_payload`, `hooks._maybe_schedule_card_timeout`
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `hold_ttl_minutes` | `int \| None` | `None` | TTL das reservas. None = sem expiração |
-| `safety_margin` | `int` | `0` | Margem de segurança (unidades a subtrair do disponível) |
+| `safety_margin` | `int` | `0` | Margem de segurança: unidades de cada SKU que o canal não mostra nem reserva na sacola (o hold de commit ignora). Canais remotos (`web`, `whatsapp`, `ifood`) declaram **2** no seed e pela migração `shop.0064` (decisão do dono, 22/09/2026); o PDV declara 0 |
 | `planned_hold_ttl_hours` | `int` | `48` | TTL para holds planejados (fermata) |
 | `allowed_positions` | `list[str] \| None` | `None` | Posições de estoque aceitas. None = todas vendáveis |
 | `allow_untracked` | `bool` | `true` | SKU fora do CATÁLOGO pode entrar em pedido sem reserva (seam de integração/smoke). Canais de CLIENTE declaram `false` — typo de SKU falha limpo no gate de commit (`ValidationError(unknown_sku)`, sem pedido, sem hold). Produto que existe no catálogo mas não é rastreado pelo Stockman segue passando |
