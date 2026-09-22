@@ -115,6 +115,14 @@ def hold(order, *, require_all: bool = False) -> None:
 
     adapter = get_adapter("stock")
     hold_ids: list[dict] = []
+    # Só a venda já consumada fora (``payment.timing == "external"``: balcão,
+    # marketplace pago) e só para hoje: encomenda não tirou pão de ninguém.
+    cede_cart_holds = (
+        not require_all
+        and adopt_session_holds
+        and _sale_consummated_outside(order)
+    )
+    ceded_holds: list[dict] = []
 
     # Prior availability decisions (from _check_availability at on_commit).
     # Keyed by item SKU. Empty for channels that skip the availability gate (e.g. POS).
@@ -169,7 +177,19 @@ def hold(order, *, require_all: bool = False) -> None:
             else:
                 adopted_pairs, unmet_qty = [], comp_qty
             for hid, hqty in adopted_pairs:
-                _retag_hold_for_order(hid, order.ref)
+                if not _retag_hold_for_order(hid, order.ref):
+                    # A reserva deixou de valer entre a leitura da sacola e a
+                    # adoção: venceu, ou cedeu a uma venda de balcão no mesmo
+                    # instante (``reserve_ceding_cart_holds``). Registrá-la
+                    # daria ao pedido uma reserva morta — pedido pago sem
+                    # baixa. O que ela cobria volta a faltar e segue o
+                    # caminho de sempre: nova reserva ou "esgotou".
+                    logger.info(
+                        "stock.hold: hold da sacola perdido na adoção order=%s hold=%s qty=%s",
+                        order.ref, hid, hqty,
+                    )
+                    unmet_qty += hqty
+                    continue
                 hold_ids.append(
                     {"sku": comp_sku, "hold_id": hid, "qty": float(hqty)}
                 )
@@ -245,9 +265,27 @@ def hold(order, *, require_all: bool = False) -> None:
                 # Reservar o que existe livre garante a baixa dele no
                 # ``fulfill`` — sem isso, 3 pedidos com 2 livres baixavam 0.
                 # O alerta fica só para o resto.
-                for part_id, part_qty in adapter.create_holds_up_to(
-                    sku=comp_sku, qty=unmet_qty, **order_hold_kwargs,
-                ):
+                #
+                # Venda consumada de hoje (balcão, marketplace pago) vale mais
+                # que sacola: se o livre não basta, cedem as reservas de
+                # CARRINHO — as mais novas primeiro, só o que falta. Reserva de
+                # pedido não cede; o que nem assim couber é venda acima do
+                # estoque de verdade e vira o alerta abaixo.
+                if cede_cart_holds:
+                    parts, ceded = adapter.reserve_ceding_cart_holds(
+                        sku=comp_sku,
+                        qty=unmet_qty,
+                        beneficiary=f"order:{order.ref}",
+                        exclude_references=(session_key,) if session_key else (),
+                        **order_hold_kwargs,
+                    )
+                    for entry in ceded:
+                        ceded_holds.append({"sku": comp_sku, **entry})
+                else:
+                    parts = adapter.create_holds_up_to(
+                        sku=comp_sku, qty=unmet_qty, **order_hold_kwargs,
+                    )
+                for part_id, part_qty in parts:
                     hold_ids.append({
                         "sku": comp_sku,
                         "hold_id": part_id,
@@ -279,6 +317,9 @@ def hold(order, *, require_all: bool = False) -> None:
         adapter.release_holds(leftover_ids)
 
     order.data["hold_ids"] = hold_ids
+    if ceded_holds:
+        # Trilha para o operador: de quais sacolas saiu o que esta venda levou.
+        order.data["stock_ceded_holds"] = ceded_holds
     order.save(update_fields=["data", "updated_at"])
 
     logger.info("stock.hold: %d holds for order %s", len(hold_ids), order.ref)
@@ -681,8 +722,11 @@ _ORDER_HOLD_BACKSTOP_HOURS = 48
 _ORDER_HOLD_PRIORITY = 0
 
 
-def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
+def _retag_hold_for_order(hold_id: str, order_ref: str) -> bool:
     """Update Hold.metadata.reference from session_key to order ref.
+
+    Devolve ``False`` quando o hold já não está ativo (venceu ou cedeu) — o
+    chamador não pode contá-lo como reserva do pedido.
 
     This is bookkeeping so the hold can be discovered later via
     `release_holds_for_reference("order:<ref>")` if needed.
@@ -702,11 +746,13 @@ def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
     from datetime import timedelta
 
     adapter = get_adapter("stock")
-    adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY)
+    if not adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY):
+        return False
     if _is_fermata_hold(hold_id):
-        return
+        return True
     backstop = timezone.now() + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
     adapter.extend_hold(hold_id, expires_at=backstop)
+    return True
 
 
 def _is_fermata_hold(hold_id: str) -> bool:
@@ -734,6 +780,25 @@ def _is_fermata_hold(hold_id: str) -> bool:
     if hold is None:
         return False
     return hold.expires_at is None and waitlist.is_waitlist_hold(hold)
+
+
+def _sale_consummated_outside(order) -> bool:
+    """O pedido é venda já consumada fora (``payment.timing == "external"``)?
+
+    O mesmo critério do ``lifecycle.secure_stock`` para não recusar a venda:
+    balcão (o pão saiu pela porta) e marketplace (pago lá). Config ilegível
+    responde ``False``: sem certeza, nenhuma sacola alheia é tocada.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        return ChannelConfig.for_channel(order.channel_ref).payment.timing == "external"
+    except Exception:
+        logger.warning(
+            "stock._sale_consummated_outside: config lookup failed channel=%s",
+            getattr(order, "channel_ref", None),
+        )
+        return False
 
 
 def _channel_allows_preorder(order) -> bool:
