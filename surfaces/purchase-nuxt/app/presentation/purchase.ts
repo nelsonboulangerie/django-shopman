@@ -11,6 +11,7 @@ import type {
   ReceiptConversionSuggestion,
   ReceiptFieldAnchor,
   ReceiptLine,
+  ResaleProduct,
   ReceiptLinePreview,
   ReceiptLineRow,
   ReceiptLineStatus,
@@ -320,7 +321,7 @@ export function receiptNextStepField(warnings: ReceiptWarning[]): ReceiptFieldAn
  */
 export function receiptLineLabel(preview: ReceiptLinePreview): string {
   if (preview.line.invoiceDescription) return preview.line.invoiceDescription;
-  if (preview.line.materialSku) return preview.material.name;
+  if (preview.line.materialSku || preview.isResale) return preview.material.name;
   return "Item lançado à mão";
 }
 
@@ -531,7 +532,7 @@ export function receiptLineWarnings(
   if (!material) {
     return line.suggestedMaterialSku ?
         [{ key: "confirm-suggestion", label: "Confirme o insumo sugerido", tone: "block" }]
-      : [{ key: "missing-material", label: "Escolha o insumo desta linha", tone: "block" }];
+      : [{ key: "missing-material", label: "Escolha o insumo ou a mercadoria desta linha", tone: "block" }];
   }
   if (!Number.isFinite(line.purchaseQty) || line.purchaseQty <= 0) {
     warnings.push({ key: "invalid-qty", label: "Informe a quantidade recebida", tone: "block" });
@@ -581,13 +582,39 @@ export function receiptSettledSummary(preview: ReceiptLinePreview): string {
   return preview.totalCostQ > 0 ? `${settled} · ${formatMoney(preview.totalCostQ)}` : settled;
 }
 
+/**
+ * A mercadoria de revenda vestida de insumo — só para a tela.
+ *
+ * O resto do recebimento fala por nome, unidade e validade, que os dois têm.
+ * Traduzir aqui, num lugar só, evita espalhar `if (é revenda)` por cada campo.
+ */
+function resaleAsMaterial(product: ResaleProduct): Material {
+  return {
+    sku: product.sku,
+    name: product.name,
+    unit: product.unit as Material["unit"],
+    shelfLifeDays: product.shelfLifeDays,
+    isActive: product.isActive,
+    category: "Revenda",
+    stockOnHand: product.stockOnHand,
+    dailyUse: 0,
+    minStock: 0,
+    recipes: [],
+  } satisfies Material;
+}
+
 export function receiptLinePreview(
   line: ReceiptLine,
   mode: ReceiptMode,
   materials: Material[],
   conversions: MaterialConversion[],
+  resaleProducts: ResaleProduct[] = [],
 ): ReceiptLinePreview | null {
-  const matchedMaterial = materials.find((item) => item.sku === line.materialSku);
+  const matchedResale = line.productSku ?
+    resaleProducts.find((item) => item.sku === line.productSku)
+  : undefined;
+  const matchedMaterial =
+    matchedResale ? resaleAsMaterial(matchedResale) : materials.find((item) => item.sku === line.materialSku);
   const material = matchedMaterial ?? {
     sku: line.materialSku || "",
     name: line.materialSku || "Definir insumo",
@@ -610,6 +637,7 @@ export function receiptLinePreview(
   return {
     line,
     material,
+    isResale: Boolean(matchedResale),
     conversion,
     purchaseUnitLabel: receiptPurchaseUnitLabel(line, matchedMaterial, conversion),
     baseQty,

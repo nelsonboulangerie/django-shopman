@@ -18,7 +18,9 @@ conferido, o GTIN do código de barras. Revenda **nunca** leva a marca da loja,
 e o que ninguém confirmou fica fora da tabela: marca e GTIN vazios são "não
 informado", não um palpite.
 
-Toca só ``metadata['social']['brand']`` e ``metadata['social']['gtin']``. Não
+Toca ``metadata['social']['brand']``, ``metadata['social']['gtin']`` e a marca
+``metadata['purchase']['resale']``, que declara "a casa compra este produto
+pronto" — é o que o Compras oferece na entrada de mercadoria. Não
 sobrescreve valor já preenchido com outra coisa (curadoria feita no Gestor
 vence): a divergência sai no relatório e o SKU fica como está. Sem ``--apply``
 não grava nada.
@@ -98,6 +100,23 @@ def _house_brand() -> str:
     return brand
 
 
+def _mark_resale(product) -> bool:
+    """Declara ``metadata['purchase']['resale']``. Devolve True se mudou.
+
+    Sem esta marca o Compras não deixa a linha da nota apontar para o produto:
+    o perfil fiscal ``resale`` fala de substituição tributária, não de "comprado
+    pronto", e a falta de ficha só diz que ninguém cadastrou a ficha.
+    """
+    metadata = dict(product.metadata) if isinstance(product.metadata, dict) else {}
+    purchase = dict(metadata.get("purchase") or {})
+    if purchase.get("resale") is True:
+        return False
+    purchase["resale"] = True
+    metadata["purchase"] = purchase
+    product.metadata = metadata
+    return True
+
+
 def apply_brands(*, apply: bool, only_sku: str | None = None) -> dict[str, list]:
     """Calcula (e, com ``apply``, grava) marca/GTIN. Devolve o relatório.
 
@@ -134,16 +153,20 @@ def apply_brands(*, apply: bool, only_sku: str | None = None) -> dict[str, list]
                     continue
                 updates[field] = value
                 lines.append(f"{field}: → {value}")
-            if not updates:
+            marked = sku in RESALE and _mark_resale(product)
+            if marked:
+                lines.append("compra: mercadoria de revenda")
+            if not updates and not marked:
                 continue
-            new_attrs = replace(current, **updates)
+            new_attrs = replace(current, **updates) if updates else current
             errors = new_attrs.errors()
             if errors:
                 report["invalid"].append((sku, errors))
                 continue
             report["changes"].append((sku, lines))
             if apply:
-                product.metadata = set_social_attributes(product.metadata, new_attrs)
+                if updates:
+                    product.metadata = set_social_attributes(product.metadata, new_attrs)
                 product.save(update_fields=["metadata", "updated_at"])
     return report
 
