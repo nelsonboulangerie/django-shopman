@@ -208,6 +208,13 @@ class OperatorAlert(models.Model):
         # programa; a obrigação de cumprir a norma é de quem opera — então o
         # vencimento de um parâmetro legal precisa aparecer na tela dele.
         ("legal_parameter_stale", "Parâmetro de lei sem conferência"),
+        # A loja no iFood discorda da casa (``ifood_merchant.check_store``): o
+        # fechado-com-a-casa-aberta é pedido que não entra (polling caído, pausa
+        # esquecida no Portal); o aberto-com-a-casa-fechada é pedido que entra sem
+        # ninguém para fazer. E a pausa/horário que o iFood recusou gravar.
+        ("ifood_store_closed_while_open", "iFood fechado com a loja aberta"),
+        ("ifood_store_open_while_closed", "iFood aberto com a loja fechada"),
+        ("ifood_store_sync_failed", "Pausa ou horário não gravado no iFood"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -251,6 +258,9 @@ class OperatorAlert(models.Model):
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",
         "order_production_quality_risk",
+        "ifood_store_closed_while_open",
+        "ifood_store_open_while_closed",
+        "ifood_store_sync_failed",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

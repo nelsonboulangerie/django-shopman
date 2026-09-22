@@ -41,6 +41,7 @@ from .feeds import (
     FeedRotationView,
 )
 from .hub import HubView
+from .ifood_store import IFoodStorePauseView, IFoodStoreResumeView, IFoodStoreView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -455,6 +456,10 @@ urlpatterns = [
         name="api-backstage-closing-episode",
     ),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
+    # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
+    path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
+    path("ifood/store/pause/", IFoodStorePauseView.as_view(), name="api-backstage-ifood-store-pause"),
+    path("ifood/store/resume/", IFoodStoreResumeView.as_view(), name="api-backstage-ifood-store-resume"),
     # Catalog matrix (produto × superfície)
     path("catalog/channels/<str:ref>/review/", CatalogBindingReviewView.as_view(), name="api-backstage-catalog-binding-review"),
     path("catalog/channels/<str:ref>/snapshots/", CatalogSnapshotImportView.as_view(), name="api-backstage-catalog-snapshot-import"),

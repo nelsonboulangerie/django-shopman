@@ -102,6 +102,12 @@ CATALOG_PROJECT_SKU = "catalog.project_sku"
 IFOOD_STATUS_CALLBACK = "ifood.status_callback"
 IFOOD_HANDSHAKE_RESPONSE = "ifood.handshake_response"
 
+# iFood Merchant (loja aberta): o Shopman grava no iFood o horário semanal e as
+# interrupções do calendário (MERCHANT_SYNC, uma viva por vez), e cria/apaga a
+# pausa pedida pelo gestor (MERCHANT_INTERRUPTION, uma por interrupção e estado).
+IFOOD_MERCHANT_SYNC = "ifood.merchant_sync"
+IFOOD_MERCHANT_INTERRUPTION = "ifood.merchant_interruption"
+
 # Campanha (marketing operacional)
 # ANNOUNCEMENT_PUBLISH   — publica em plataforma externa (IG, Facebook, Google Business).
 # ANNOUNCEMENT_NOTIFY — dispara a audiência direta (WhatsApp), uma onda por directive

@@ -884,6 +884,25 @@ directive nasce com `available_at` depois da janela
 `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
 telefone, e quem já recebeu não recebe de novo.
 
+#### `ifood.merchant_sync`
+
+Grava no iFood a grade semanal (`PUT opening-hours`) e as interrupções do calendário.
+Uma viva por vez (`dedupe_key` fixo = o topic). Só existe com `IFOOD_MERCHANT_SYNC` ligado.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `reason` | `string` | `shop/services/ifood_merchant.enqueue_sync` (`shop_saved`, `check`) | log (informativo) |
+
+#### `ifood.merchant_interruption`
+
+Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da linha
+`IFoodInterruption` no momento do handler (travada), não o do payload.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `interruption_pk` | `int` | `shop/services/ifood_merchant._enqueue_interruption` | `IFoodMerchantInterruptionHandler` |
+| `state` | `string` | idem (estado no momento do pedido; compõe o `dedupe_key`) | informativo |
+
 ---
 
 ## Channel.config

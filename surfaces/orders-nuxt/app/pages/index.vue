@@ -517,6 +517,9 @@ function printQueue() {
         </div>
 
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar (atalho: r)" :spinning="pending" @click="refresh()" />
+        <!-- Mais opções: a loja no iFood (pausar/retomar). Por último e discreto de
+             propósito — é gesto de gerente, não de toda hora. -->
+        <IFoodStoreMenu />
       </template>
     </UiToolbar>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />

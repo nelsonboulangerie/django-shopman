@@ -294,6 +294,49 @@ def delivery_slots_for(
     return slots
 
 
+def has_regular_hours(*, shop=None) -> bool:
+    """Se a casa declarou grade semanal. Sem ela, o calendário degrada para aberto."""
+    shop = _load_shop(shop)
+    return bool(shop) and _has_regular_hours(shop)
+
+
+def weekly_windows(*, shop=None) -> dict[str, tuple[time, time]]:
+    """A grade semanal declarada: ``{"monday": (abre, fecha), ...}``.
+
+    Só entram os dias com expediente válido (abre antes de fechar), pela mesma
+    leitura que ``current_business_state`` usa — quem espelha a grade em outro
+    sistema (o iFood) não pode ter uma segunda interpretação dela.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return {}
+    out: dict[str, tuple[time, time]] = {}
+    for name in DAY_ORDER:
+        window = _weekday_window(shop, name)
+        if window is not None:
+            out[name] = window
+    return out
+
+
+def calendar_closure_on(day: date, *, shop=None) -> tuple[bool, str]:
+    """``(True, rótulo)`` quando uma exceção do calendário fecha ``day``.
+
+    Feriado, férias coletivas, fechamento pontual (``closed_dates`` e ranges).
+    Não olha a grade semanal: é a pergunta "o calendário fechou este dia?".
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return False, ""
+    closed, label, _source = closed_date_for(day, _closed_dates(shop))
+    return closed, label
+
+
+def shop_timezone(*, shop=None):
+    """O fuso da loja (``Shop.timezone``), com o fuso do Django como reserva."""
+    shop = _load_shop(shop)
+    return _localtime_for_shop(timezone.now(), shop).tzinfo if shop else timezone.get_current_timezone()
+
+
 def closed_date_for(day: date, closed_dates: list | tuple | None) -> tuple[bool, str, str]:
     """Return whether ``day`` is covered by a closure exception."""
     for entry in closed_dates or []:
@@ -427,10 +470,13 @@ def _has_regular_hours(shop) -> bool:
 
 
 def _day_window(shop, day: date) -> tuple[time, time] | None:
+    return _weekday_window(shop, DAY_ORDER[day.weekday()])
+
+
+def _weekday_window(shop, weekday: str) -> tuple[time, time] | None:
     hours = getattr(shop, "opening_hours", None)
     if not isinstance(hours, dict) or not hours:
         return None
-    weekday = DAY_ORDER[day.weekday()]
     raw = hours.get(weekday)
     if not isinstance(raw, dict):
         return None
