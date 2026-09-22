@@ -627,10 +627,16 @@ const pixProviderTestExceeded = computed(() =>
 const pixProviderTestMixed = computed(() =>
   hasPixProviderTestTender.value && (splitActive.value || hasNonPixTender.value),
 );
+const pixProviderTestLimitDisplay = computed(() => pixProviderTest.value?.max_amount_display || "R$ 10,00");
 const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
-  "Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. "
+  `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}. `
   + "Para continuar, troque a forma de pagamento ou ajuste os itens do pedido."
 ));
+// Dentro do limite o aviso só informa: a frase do contrato manda trocar a forma,
+// e isso ao lado de "está dentro do limite" obriga o operador a escolher uma leitura.
+const pixProviderTestWithinLimitMessage = computed(() =>
+  `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}.`,
+);
 /** Dá para dividir a conta AGORA? O link cobra a venda inteira, então ele fecha
  *  a porta — a não ser que a divisão já esteja armada, e aí o modal é por onde
  *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
@@ -792,12 +798,19 @@ const ctaBlock = computed<{
   // porque é uma limitação do instrumento já escolhido, independente dos
   // demais dados do pedido — o aviso precisa estar presente enquanto o Pix está.
   if (pixProviderTestMixed.value) {
+    // "Ajustar itens" não desfaz a combinação, então não é saída aqui. Pix
+    // sozinho só é saída quando o total cabe no teto.
+    const pixAloneFits = !exceedsPaymentConstraint(props.paymentTotalQ, pixProviderTest.value);
+    const pixAlone = splitActive.value
+      ? "Desfaça a divisão para usar Pix sozinho no total"
+      : "Use Pix sozinho no total";
     return {
       message: "Pix não pode ser combinado nem dividido durante os testes da Efí.",
-      hint: "Remova o Pix e escolha outra forma para esta divisão.",
+      hint: pixAloneFits
+        ? `${pixAlone}, ou remova o Pix e escolha outra forma.`
+        : "Remova o Pix e escolha outra forma.",
       actions: [
         { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
-        { label: "Ajustar itens", run: returnToCart },
       ],
     };
   }
@@ -939,7 +952,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       key: "pix-provider-test",
       tone: "warn",
       icon: "lucide:flask-conical",
-      message: pixProviderTestMessage.value,
+      message: pixProviderTestWithinLimitMessage.value,
       hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
     });
   }
