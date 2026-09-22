@@ -6,12 +6,23 @@
 // rotação de páginas da TV e abre/prevê a saída. A ORDEM das coleções é global
 // (reordenável no Catálogo).
 import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
+import { IFOOD_CHANNEL_REF, IFOOD_FOCUS_KEY } from "~/presentation/ifoodStore";
 
 const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
 const catalogChannels = computed(() => board.value?.catalog_channels ?? []);
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
+
+// O sinal da aba Pedidos chega aqui com `?focus=ifood`: o card do canal iFood — onde
+// mora a pausa — vai para a linha de foco assim que a leitura o traz.
+const route = useRoute();
+const focusKey = computed(() =>
+  route.query.focus === IFOOD_FOCUS_KEY && catalogChannels.value.some((channel) => channel.ref === IFOOD_CHANNEL_REF)
+    ? IFOOD_FOCUS_KEY
+    : null,
+);
+useNextFocus(focusKey);
 
 // saída servida pelo Django (menuboard/feed), não pelo host do Gestor.
 const runtimeConfig = useRuntimeConfig();
@@ -260,17 +271,25 @@ useHead({ title: "Canais" });
       </div>
       <section v-if="!loading && catalogChannels.length" class="mt-6 space-y-3" aria-label="Canais de venda">
         <h2 class="text-sm font-semibold">Canais de venda</h2>
-        <p class="text-xs text-muted-foreground">Últimos registros locais de envio. Não representam o estado atual da loja na plataforma.</p>
+        <p class="text-xs text-muted-foreground">
+          Envio de produtos: o que a casa registrou ao mandar o catálogo a cada canal.
+        </p>
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <article v-for="channel in catalogChannels" :key="channel.ref" class="space-y-3 rounded-xl border border-border bg-card p-4">
+          <article
+            v-for="channel in catalogChannels" :key="channel.ref"
+            class="scroll-mt-4 space-y-3 rounded-xl border border-border bg-card p-4 outline-none"
+            :data-focus-target="channel.ref === IFOOD_CHANNEL_REF ? IFOOD_FOCUS_KEY : undefined"
+            :data-channel-card="channel.ref"
+          >
             <h3 class="font-medium">{{ channel.name }}</h3>
             <p class="text-sm text-muted-foreground">{{ channel.diagnostic }}</p>
             <p v-if="channel.observed" class="text-xs tabular-nums">
-              {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
+              Envio de produtos: {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
             </p>
             <p v-else class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
             <NuxtLink :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`" class="mr-2 inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Revisar vínculos</NuxtLink>
             <NuxtLink :to="channel.catalog_path" class="inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Ver produtos no Catálogo</NuxtLink>
+            <IFoodChannelStore v-if="channel.ref === IFOOD_CHANNEL_REF" />
           </article>
         </div>
       </section>

@@ -378,6 +378,9 @@ function printQueue() {
         · Em trânsito: {{ equipmentOut.filter(item => item.identified).length }}
         <template v-if="equipmentOut.some(item => !item.identified)"> · Registros antigos sem maquininha identificada: {{ equipmentOut.filter(item => !item.identified).length }}</template>
       </p>
+      <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
+           recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
+      <IFoodQueueSignal />
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
         <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
@@ -517,9 +520,6 @@ function printQueue() {
         </div>
 
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar (atalho: r)" :spinning="pending" @click="refresh()" />
-        <!-- Mais opções: a loja no iFood (pausar/retomar). Por último e discreto de
-             propósito — é gesto de gerente, não de toda hora. -->
-        <IFoodStoreMenu />
       </template>
     </UiToolbar>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />

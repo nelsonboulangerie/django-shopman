@@ -1,4 +1,6 @@
-// Frases do menu "A loja no iFood" — puras, testáveis sem runtime.
+// Frases da loja no iFood — puras, testáveis sem runtime. O controle (pausar/retomar)
+// mora no card do canal iFood, na aba Canais; a aba Pedidos só mostra o SINAL, e só
+// quando ele muda o que entra na fila.
 // Copy: inequívoco primeiro (docs/reference/omotenashi-copy.md). Quem lê precisa saber,
 // sem completar sentido, se o iFood está recebendo pedido AGORA e por quê.
 import type { IFoodPause, IFoodStoreProjection } from "~/types/ifoodStore";
@@ -28,10 +30,34 @@ export function refusedPauseLine(store: IFoodStoreProjection): string {
   return last.error || "O iFood recusou a pausa.";
 }
 
-/** O ponto no botão de mais opções: só quando há algo que o gestor precisa ver. */
-export function menuNeedsAttention(store: IFoodStoreProjection | null): boolean {
-  if (!store?.enabled) return false;
-  return Boolean(store.diverges || store.pause || refusedPauseLine(store));
+/** O ref do canal iFood — o card da aba Canais que carrega o estado da loja. */
+export const IFOOD_CHANNEL_REF = "ifood";
+
+/** A chave de foco do card do iFood (`data-focus-target` + `?focus=` na URL). */
+export const IFOOD_FOCUS_KEY = "ifood";
+
+/**
+ * O sinal da aba Pedidos: uma frase quando o iFood não está entregando pedidos como
+ * a loja espera — pausado, com a pausa recusada, ou divergente. Estado normal: "".
+ * A recusa só vale enquanto dura a janela que o gestor pediu; depois dela, a fila
+ * já não tem o que esperar da pausa (o card do canal segue contando o desfecho).
+ */
+export function queueSignal(store: IFoodStoreProjection | null, now: Date = new Date()): string {
+  if (!store?.enabled) return "";
+  const pause = store.pause;
+  if (pause?.state === "active") return `iFood pausado até ${pause.ends_at_display} — ${pause.reason}`;
+  if (pause) return ifoodStatusLine(store);
+  if (store.diverges) {
+    if (store.ifood_available === false && store.shop_open) return "iFood fechado com a loja aberta: nenhum pedido do iFood entra";
+    if (store.ifood_available === true && !store.shop_open) return "iFood recebendo pedidos com a loja fechada";
+    return `iFood: ${store.ifood_status_label.toLowerCase()}, diferente do esperado`;
+  }
+  const last = store.last_pause;
+  if (last?.state === "failed" && Date.parse(last.ends_at) > now.getTime()) {
+    const when = last.requested_at_display ? ` às ${last.requested_at_display}` : "";
+    return `O iFood recusou a pausa pedida${when}`;
+  }
+  return "";
 }
 
 /** A pausa está em curso (pedida, em vigor ou sendo retomada)? */

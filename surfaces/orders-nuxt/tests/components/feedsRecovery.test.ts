@@ -8,6 +8,8 @@ const error = ref<any>(null);
 const setCollections = vi.fn();
 for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key, value);
 vi.stubGlobal("useHead", vi.fn());
+vi.stubGlobal("useRoute", () => ({ query: {} }));
+vi.stubGlobal("useNextFocus", vi.fn());
 let leave: () => boolean;
 vi.stubGlobal("onBeforeRouteLeave", (guard: () => boolean) => { leave = guard; });
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
