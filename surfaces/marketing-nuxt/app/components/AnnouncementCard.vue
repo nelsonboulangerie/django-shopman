@@ -665,7 +665,7 @@ function askToReject() {
             name="announcement_hashtags"
             type="text"
             autocomplete="off"
-            placeholder="#padaria #paoquentinho"
+            placeholder="#padaria #fornada"
           />
         </div>
 

@@ -100,8 +100,8 @@ describe("MarketingCommandConfirmationDialog", () => {
           body: {
             base_version: 3,
             publish_mode: "now",
-            body: "O lote saiu do forno. Reserve pelo site.",
-            hashtags: ["padaria", "lote"],
+            body: "Fornada saiu do forno. Reserve pelo site.",
+            hashtags: ["padaria", "fornada"],
           },
           href: "/api/v1/backstage/marketing/announcements/42/approve/",
           ownerRef: "operator:1",
@@ -123,7 +123,7 @@ describe("MarketingCommandConfirmationDialog", () => {
           },
         },
         shopTimezone: "America/Sao_Paulo",
-        imageUrl: "/media/lote.jpg",
+        imageUrl: "/media/fornada.jpg",
       },
       global: {
         stubs: {
@@ -138,9 +138,9 @@ describe("MarketingCommandConfirmationDialog", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("O lote saiu do forno. Reserve pelo site.");
-    expect(wrapper.text()).toContain("#padaria #lote");
-    expect(wrapper.find("img").attributes("src")).toBe("/media/lote.jpg");
+    expect(wrapper.text()).toContain("Fornada saiu do forno. Reserve pelo site.");
+    expect(wrapper.text()).toContain("#padaria #fornada");
+    expect(wrapper.find("img").attributes("src")).toBe("/media/fornada.jpg");
   });
 
   it("avisa que a postagem vai sair sem foto, antes e não depois", () => {
@@ -151,7 +151,7 @@ describe("MarketingCommandConfirmationDialog", () => {
         command: {
           announcementId: 42,
           action: "approve",
-          body: { base_version: 3, publish_mode: "now", body: "Lote." },
+          body: { base_version: 3, publish_mode: "now", body: "Fornada." },
           href: "/api/v1/backstage/marketing/announcements/42/approve/",
           ownerRef: "operator:1",
           idempotencyKey: "key",
@@ -197,7 +197,7 @@ describe("MarketingCommandConfirmationDialog", () => {
         command: {
           announcementId: 42,
           action: "approve",
-          body: { base_version: 3, publish_mode: "now", body: "Lote." },
+          body: { base_version: 3, publish_mode: "now", body: "Fornada." },
           href: "/api/v1/backstage/marketing/announcements/42/approve/",
           ownerRef: "operator:1",
           idempotencyKey: "key",
@@ -438,7 +438,7 @@ describe("MarketingCommandConfirmationDialog", () => {
           },
         },
         shopTimezone: "America/Sao_Paulo",
-        imageUrl: "/media/lote.jpg",
+        imageUrl: "/media/fornada.jpg",
         platformContent: {
           instagram: {
             publication_format: "story",
@@ -476,7 +476,7 @@ describe("MarketingCommandConfirmationDialog", () => {
     ]);
     expect(scenes.map((scene) => scene.imageUrl)).toEqual([
       "/media/vertical.jpg",
-      "/media/lote.jpg",
+      "/media/fornada.jpg",
     ]);
   });
 

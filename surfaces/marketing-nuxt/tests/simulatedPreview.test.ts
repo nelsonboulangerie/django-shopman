@@ -160,7 +160,7 @@ describe("de onde sai o conteúdo de cada lugar", () => {
         instagram: {
           artifact: {
             body: "Rascunho sendo editado agora",
-            hashtags: ["padaria", "lote"],
+            hashtags: ["padaria", "fornada"],
             image_url: "https://example.invalid/vertical.jpg",
             link: "/produtos/pao-artesanal/",
             provider_fields: { publication_format: "story" },
@@ -174,7 +174,7 @@ describe("de onde sai o conteúdo de cada lugar", () => {
     expect(scenes[0]?.body).toBe("Rascunho sendo editado agora");
     expect(scenes[0]?.kind).toBe("story");
     // Hashtag é guardada limpa e lida com "#": o retrato mostra o que sai.
-    expect(scenes[0]?.hashtags).toEqual(["#padaria", "#lote"]);
+    expect(scenes[0]?.hashtags).toEqual(["#padaria", "#fornada"]);
     expect(scenes[0]?.link).toBe("/produtos/pao-artesanal/");
   });
 

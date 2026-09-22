@@ -92,12 +92,35 @@ const BANNED = /aparelh/i;
 //     mesmo motivo que a mantém dizendo "aparelho": superfície de cliente final
 //     tem voz própria, e "fornada" é palavra de marca de padaria. Trocar ali
 //     rebaixaria a voz da casa para o vocabulário do balcão. Decisão, não dívida.
-//   - **marketing-nuxt** — de fora por motivo MECÂNICO e TEMPORÁRIO, não
-//     semântico. O app já fala "lote" (PR de seguimento): o que ainda diz
-//     "fornada" é só o HARNESS VISUAL — `tests/visual/mock_backend.py` e
-//     `tests/visual/marketing-matrix.spec.ts` —, e mexer nele muda os retratos
-//     em PNG. Baseline só se regera na sessão que tem o browser da CI, e essa
-//     sessão é uma só. A exenção cai junto com a regeneração.
+//   - **marketing-nuxt** — de fora de forma PERMANENTE, e por AUDIÊNCIA. Não é
+//     "porque é Marketing": é porque o Marketing é o único app que tem as duas
+//     audiências DENTRO DELE, e por isso a linha passa por dentro do app em vez
+//     de em volta.
+//
+//     A regra, que é a mesma da loja aplicada com o critério certo: **quem lê é
+//     quem manda na palavra.** Texto que o CLIENTE lê mantém "fornada" — a
+//     hashtag sugerida de um post, o corpo de um anúncio, o modelo de mensagem,
+//     a fila do sino da loja. Texto que o OPERADOR lê virou "lote" — rótulo de
+//     campo, título, ajuda do cockpit, mensagem de erro, rótulo de gatilho.
+//
+//     A prova de que a linha não é por app: `placeholder="#padaria #fornada"` é
+//     sugestão de hashtag de Instagram. `#lote` ali não é hashtag de padaria, é
+//     vocabulário de chão de fábrica num canal onde a casa fala com cliente.
+//
+//     ⚠️ E a trava NÃO consegue varrer só o chrome: as duas audiências moram no
+//     MESMO arquivo — `AnnouncementCard.vue` tem o rótulo que o gestor lê e o
+//     placeholder que vira post. Separar por diretório daria falso positivo em
+//     cima de conteúdo legítimo. Então o app inteiro fica exento, e isto está
+//     escrito aqui em vez de fingir cobertura: no Marketing, a palavra se
+//     escolhe lendo quem é o leitor da linha, e não há regex que faça isso.
+//
+//     ⚠️ E há um resto que a exenção esconde, então ele fica dito: o harness
+//     visual (`tests/visual/mock_backend.py`) ainda tem TRÊS strings de
+//     operador com a palavra velha — `schedule_label`, `rejected_reason` e o
+//     `title` da revisão. Elas deviam dizer "lote" pela regra de cima, e não
+//     dizem por motivo mecânico: mexer ali regera os retratos em PNG, e
+//     baseline só se regera na sessão que tem o browser da CI. Isto é dívida
+//     com nome, não decisão — some quando os retratos forem regerados.
 /** O nome do objeto na tela é "lote" — "fornada" nomeia o evento do forno. */
 const BANNED_BATCH = /\bfornadas?\b/i;
 

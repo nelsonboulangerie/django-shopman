@@ -235,7 +235,7 @@ describe("AnnouncementCard", () => {
     // publicar a versão anterior.
     const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("Texto revisado");
-    await wrapper.find("input[type=text]").setValue("#paes #lote");
+    await wrapper.find("input[type=text]").setValue("#paes #fornada");
     await wrapper.get("[data-testid=publish-now]").trigger("click");
 
     expect(wrapper.emitted("approve")).toBeTruthy();
@@ -245,7 +245,7 @@ describe("AnnouncementCard", () => {
     ];
     expect(pk).toBe(7);
     expect(edits.body).toBe("Texto revisado");
-    expect(edits.hashtags).toEqual(["paes", "lote"]);
+    expect(edits.hashtags).toEqual(["paes", "fornada"]);
     expect(edits.platforms).toEqual(["instagram"]);
     expect(wrapper.emitted("approve")![0]![2]).toBe("now");
   });
@@ -505,7 +505,7 @@ describe("AnnouncementCard", () => {
         suggestion: {
           ref: "11111111-1111-4111-8111-111111111111",
           body: "Croissant acabou de sair do forno.",
-          hashtags: ["Croissant", "Lote"],
+          hashtags: ["Croissant", "Fornada"],
           used_fact_ids: ["product_name"],
           warnings: ["operator_should_verify_tone"],
           policy_version: "marketing-ai-v2.1",

@@ -1013,7 +1013,7 @@ function submit() {
         <UiCheckbox
           v-model="alerts"
           label="Quem pediu &quot;me avise&quot; deste produto"
-          description="A fila do sino da loja: lote para pão, reposição para o resto."
+          description="A fila do sino da loja: fornada para pão, reposição para o resto."
         />
         <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
              soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de

@@ -73,7 +73,7 @@ describe("Marketing decision confirmation", () => {
     Object.assign(globalThis, { $fetch: fetcher });
     const command = useMarketingDecisionCommand();
     const body = {
-      body: "Lote pronto",
+      body: "Fornada pronta",
       platforms: ["instagram"],
       publish_mode: "now",
       publish_timezone: "America/Sao_Paulo",
