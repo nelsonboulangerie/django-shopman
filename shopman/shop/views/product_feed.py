@@ -22,7 +22,6 @@ docs/plans/CATALOG-FEEDS-GOOGLE-META.md.
 
 from __future__ import annotations
 
-from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.views import View
@@ -53,24 +52,41 @@ def _resolve_feed_channel(ref: str):
     return channel, fmt
 
 
-def _storefront_base(request) -> str:
-    base = getattr(settings, "SHOPMAN_STOREFRONT_URL", "") or ""
-    return (base or request.build_absolute_uri("/")).rstrip("/")
+def _storefront_base() -> str:
+    """Base da LOJA, onde o produto tem página — nunca o host que serviu o feed.
+
+    Lia ``SHOPMAN_STOREFRONT_URL``, um setting que não existe (o da casa é
+    ``SHOPMAN_STOREFRONT_BASE_URL``, via ``storefront_links``), e caía no host da
+    própria requisição. O feed é servido pelo Django headless, que não tem página
+    de produto: em 22/09/2026 os 48 itens do ``google-shopping`` no ar apontavam para
+    ``https://api.boulangerie.com.br/produto/<sku>``, que responde 404. Merchant
+    Center reprova item cuja landing page não abre.
+
+    Sem a base configurada não há link certo para dar, e um feed com link errado é
+    pior que feed nenhum: falha fechado.
+    """
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    base = storefront_base_url()
+    if not base:
+        raise ProductFeedError("SHOPMAN_STOREFRONT_BASE_URL vazio: o feed não tem para onde mandar o cliente")
+    return base
 
 
-def build_feed_items(ref: str, request) -> list[dict]:
+def build_feed_items(ref: str) -> list[dict]:
     """Itens do feed a partir das coleções do canal. Formatação = camada de view."""
     from shopman.offerman import get_social_attributes
     from shopman.offerman.models import Collection
 
     from shopman.shop.services.display_prices import resolve_prices
+    from shopman.shop.services.storefront_links import path_product
 
     channel, fmt = _resolve_feed_channel(ref)
     display = (channel.config or {}).get("display") or {}
     collection_refs = list(display.get("collections") or [])
     paused = set(display.get("paused_skus") or [])  # pausa LOCAL (a global é do produto)
     avail = _AVAILABILITY[fmt]
-    base = _storefront_base(request)
+    base = _storefront_base()
 
     colls = {c.ref: c for c in Collection.objects.filter(ref__in=collection_refs)}
 
@@ -101,7 +117,7 @@ def build_feed_items(ref: str, request) -> list[dict]:
                 "id": product.sku,
                 "title": product.name[:150],
                 "description": (product.long_description or product.short_description or product.name)[:5000],
-                "link": f"{base}/produto/{product.sku}",
+                "link": f"{base}{path_product(product.sku)}",
                 "image_link": product.image_url,
                 "brand": attributes.brand,
                 "gtin": attributes.gtin,
@@ -121,7 +137,7 @@ class ProductFeedView(View):
 
     def get(self, request, ref: str):
         try:
-            items = build_feed_items(ref, request)
+            items = build_feed_items(ref)
         except ProductFeedError as exc:
             raise Http404(str(exc)) from exc
 
@@ -134,6 +150,6 @@ class ProductFeedView(View):
         content = render(
             request,
             "feed/products.xml",
-            {"ref": ref, "brand": brand, "items": items, "link": _storefront_base(request)},
+            {"ref": ref, "brand": brand, "items": items, "link": _storefront_base()},
         ).content
         return HttpResponse(content, content_type="application/xml; charset=utf-8")

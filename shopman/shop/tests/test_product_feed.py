@@ -14,8 +14,12 @@ from shopman.shop.tests._display import display_channel
 G = "{http://base.google.com/ns/1.0}"
 
 
+LOJA = "https://www.loja.test"
+
+
 @pytest.fixture
-def feed(db):
+def feed(db, settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = LOJA
     Shop.objects.create(name="Nelson Boulangerie")
     display_channel("google", "Google Shopping", collections=["vitrine"], fmt="google_merchant", prices_from="web")
     display_channel("meta", "Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
@@ -45,6 +49,9 @@ def test_feed_is_valid_google_rss(client, feed):
     assert len(items) == 1  # só o produto COM imagem
     item = items[0]
     assert item.find(f"{G}id").text == "BAGUETE"
+    # A página do produto é da LOJA, não do host que serviu o feed.
+    assert item.find(f"{G}link").text == f"{LOJA}/produto/BAGUETE"
+    assert ET.fromstring(resp.content).find("channel").find("link").text == LOJA
     assert item.find(f"{G}price").text == "13.00 BRL"
     assert item.find(f"{G}availability").text == "in_stock"  # google = underscore
     assert item.find(f"{G}brand") is None  # marca da loja não prova a marca do produto
@@ -119,7 +126,8 @@ def test_local_pause_is_out_of_stock(client, feed):
     assert item_meta.find(f"{G}availability").text == "in stock"
 
 
-def test_smart_collection_feed(client, db):
+def test_smart_collection_feed(client, db, settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = LOJA
     display_channel("caros", "Caros", collections=["regra"], fmt="google_merchant", prices_from="web")
     Collection.objects.create(
         ref="regra", name="Regra", is_active=True,
@@ -153,3 +161,17 @@ def test_feed_price_comes_from_the_channel_it_points_at(client, feed):
 
     item = _items(client.get("/feed/google.xml").content)[0]
     assert item.find(f"{G}price").text == "25.00 BRL"
+
+
+def test_feed_link_ignores_the_host_that_served_the_feed(client, feed):
+    """O feed sai do Django headless (api.), que não tem página de produto."""
+    resp = client.get("/feed/google.xml", HTTP_HOST="api.loja.test")
+    link = _items(resp.content)[0].find(f"{G}link").text
+    assert link == f"{LOJA}/produto/BAGUETE"
+    assert "api.loja.test" not in resp.content.decode()
+
+
+def test_feed_without_storefront_base_fails_closed(client, feed, settings):
+    """Sem a base da loja não há link certo; feed com link 404 é reprovado item a item."""
+    settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+    assert client.get("/feed/google.xml").status_code == 404
