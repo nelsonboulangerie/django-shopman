@@ -1200,7 +1200,12 @@ export interface AccountDeviceProjection {
   created_at_display: string
   last_used_at: string | null
   last_used_at_display: string
-  location: string
+  /**
+   * "Londrina, PR · Brasil", ou "" quando a leitura do IP não foi confiável o bastante
+   * para nomear a cidade. Vazio é comum e legítimo — não trate como erro nem preencha
+   * com "Local desconhecido". Derivado no servidor a partir de base LOCAL, nunca gravado.
+   */
+  approximate_city: string
   is_current: boolean
 }
 
@@ -1209,6 +1214,8 @@ export interface AccountDeviceCopy {
   empty_title: string
   empty_message: string
   current_badge: string
+  last_used_prefix: string
+  near_prefix: string
   registered_prefix: string
   revoke_cta: string
   revoke_all_cta: string

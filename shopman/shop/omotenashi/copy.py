@@ -1299,6 +1299,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "DEVICE_LIST_CURRENT": {
         WILDCARD: {WILDCARD: CopyEntry(title="Este aparelho")},
     },
+    "DEVICE_LIST_LAST_USED_PREFIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Último uso em")},
+    },
+    # "Próximo a Londrina, PR · Brasil". O "Próximo a" é o que diz que a localização é
+    # aproximada, sem nota de rodapé — e é por isso que ele é prefixo e não legenda.
+    # ⚠️ Esta é copy da LOJA, onde a palavra é "aparelho": a exenção do Storefront na
+    # trava de vocabulário é decisão escrita do dono, não descuido.
+    "DEVICE_LIST_NEAR_PREFIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Próximo a")},
+    },
     "DEVICE_LIST_REGISTERED_PREFIX": {
         WILDCARD: {WILDCARD: CopyEntry(message="Registrado em")},
     },

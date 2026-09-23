@@ -544,6 +544,35 @@ WHITENOISE_MANIFEST_STRICT = os.environ.get(
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 MEDIA_URL = "/media/"
 
+# ── Cidade aproximada do dispositivo (base LOCAL, sem terceiro) ─────────
+# A tela "Segurança e dados" da loja escreve "Próximo a Londrina, PR · Brasil" ao lado do
+# dispositivo confiável, para a pessoa reconhecer o acesso. Até 23/09/2026 esse rótulo vinha
+# do `ip-api.com`, com o IP do titular saindo da casa em HTTP puro; a PR #991 removeu a
+# chamada e esta é a volta do rótulo SEM terceiro — base GeoLite2-City lida do disco.
+#
+# Vazio (o default fora da imagem) = desligado, e a tela simplesmente não mostra a linha.
+# Isso é de propósito: desenvolvimento e CI não baixam a base, e um rótulo de cidade não
+# vale uma dependência de build para quem só quer rodar a suíte.
+GEOIP_CITY_DATABASE_PATH = os.environ.get(
+    "GEOIP_CITY_DATABASE_PATH",
+    os.path.join(BASE_DIR, "data", "GeoLite2-City.mmdb"),
+)
+
+# O raio de precisão, em km, acima do qual a leitura NÃO vira rótulo. A base devolve o
+# raio junto com a resposta; acima do limiar a linha fica só com navegador e data.
+#
+# ⚠️ 50 não é preferência, é medição. Agrupando por ligação simples as 300 cidades
+# brasileiras com mais blocos de IP (base DB-IP Lite 2026-09, 14.345.887 redes lidas,
+# 9.901 cidades distintas), o grupo de Londrina — a cidade da frase escolhida pelo dono —
+# contém SÓ Londrina até 50 km. A 80 km ele passa a conter Maringá (80 km) e Sarandi
+# (74 km): a partir daí "Próximo a Londrina" pode estar nomeando a cidade errada. A 150 km
+# o país inteiro colapsa num grupo só de 187 âncoras e 1.580 km de diâmetro.
+#
+# O efeito colateral é o desejado: IP de saída de operadora de celular costuma vir com
+# raio de 100 km para cima e é descartado aqui, que é exatamente o caso em que o rótulo
+# mentiria. Em celular a linha fica só com navegador e data.
+GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = _env_int("GEOIP_CITY_MAX_ACCURACY_RADIUS_KM", 50)
+
 # ── Google Maps ──────────────────────────────────────────────────────
 # A chave do navegador aparece, por natureza, no bootstrap do Maps JS e deve ser
 # limitada por referer + APIs. A chave de servidor nunca é projetada para o

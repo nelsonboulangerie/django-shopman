@@ -118,6 +118,8 @@ const devicesCopy = computed(() => devicesResponse.value?.copy || {
   empty_title: 'Nenhum aparelho confiável',
   empty_message: 'Quando você optar por confiar neste aparelho no login, ele aparecerá aqui.',
   current_badge: 'Este aparelho',
+  last_used_prefix: 'Último uso em',
+  near_prefix: 'Próximo a',
   registered_prefix: 'Registrado em',
   revoke_cta: 'Remover',
   revoke_all_cta: 'Remover todos os aparelhos',
@@ -567,9 +569,21 @@ useSeoMeta({ title: 'Segurança e dados' })
                 <UiBadge v-if="device.is_current" variant="secondary">{{ devicesCopy.current_badge }}</UiBadge>
               </UiItemTitle>
               <UiItemDescription>
-                <span>{{ device.last_used_at_display }}</span>
-                <span v-if="device.location"> · {{ device.location }}</span>
-                <span> · {{ devicesCopy.registered_prefix }} {{ device.created_at_display }}</span>
+                <!--
+                  A cidade fica em LINHA PRÓPRIA, e não no meio das datas, porque a frase
+                  escolhida pelo dono já tem um "·" dentro ("Londrina, PR · Brasil"): em
+                  linha única o leitor veria quatro separadores iguais e teria de adivinhar
+                  quais agrupam o quê. Linha separada lê "o quê · onde · quando".
+                  Vazio é caso comum e legítimo — a leitura de IP só vira rótulo quando o
+                  raio de precisão é pequeno o bastante (ver services/ip_location.py), e em
+                  celular normalmente não é. Aí a linha some, e não vira "Local desconhecido".
+                -->
+                <span v-if="device.approximate_city" class="block">{{ devicesCopy.near_prefix }} {{ device.approximate_city }}</span>
+                <span class="block">
+                  <span v-if="device.last_used_at">{{ devicesCopy.last_used_prefix }} {{ device.last_used_at_display }}</span>
+                  <span v-else>{{ device.last_used_at_display }}</span>
+                  <span> · {{ devicesCopy.registered_prefix }} {{ device.created_at_display }}</span>
+                </span>
               </UiItemDescription>
             </UiItemContent>
             <UiItemActions>
