@@ -543,6 +543,7 @@ def test_a_cidade_aproximada_chega_a_tela_sem_nenhuma_chamada_de_rede(
     fallback para um serviço web quando a leitura não for confiável; é exatamente o caso
     em que a tela fica silenciosa hoje, e é exatamente o que não pode voltar.
     """
+    import datetime
     import socket
 
     from shopman.doorman.models import TrustedDevice
@@ -569,6 +570,16 @@ def test_a_cidade_aproximada_chega_a_tela_sem_nenhuma_chamada_de_rede(
     ip_location.reset_reader_cache()
     monkeypatch.setattr(ip_location, "_get_reader", _BaseNoDisco)
     settings.GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = 50
+    # ⚠️ A base falsa precisa de uma DATA, porque trocar o leitor pula quem a lê do
+    # arquivo — e base sem data legível conta como velha, que esconde a cidade. Sem esta
+    # linha o teste passaria a medir o caminho de silêncio achando que mede a frase.
+    settings.GEOIP_CITY_STALE_ALERT_DAYS = 21
+    settings.GEOIP_CITY_MAX_AGE_DAYS = 90
+    monkeypatch.setattr(
+        ip_location,
+        "_build_epoch",
+        int(datetime.datetime.now(datetime.UTC).timestamp()),
+    )
 
     TrustedDevice.objects.create(
         subject_type=SubjectType.CUSTOMER,

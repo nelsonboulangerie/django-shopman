@@ -108,23 +108,124 @@ consequência é que a chave fica legível no histórico da imagem — é uma ch
 base pública, revogável no painel da MaxMind, sem acesso a dado de cliente, mas **rotacione
 se a imagem for publicada em registry de terceiro**.
 
-## ⚠️ Atualização: NÃO é automática
+## A base envelhece — e agora ela avisa
 
-Isto é dito com todas as letras porque o contrário se supõe.
+A MaxMind republica a GeoLite2-City **toda terça-feira**. Esta imagem não rebaixa sozinha:
+a camada do Docker só refaz quando é invalidada, e com o cache do builder isso pode não
+acontecer por meses. Para forçar, bump em `ARG GEOLITE2_SNAPSHOT` no `Dockerfile` (a data
+da edição). O valor não é lido pelo script — ele invalida a camada e serve de registro.
 
-A MaxMind republica a GeoLite2-City **toda terça-feira**. Esta imagem **não** rebaixa
-sozinha: a camada do Docker só refaz quando é invalidada, e com o cache do builder isso
-pode não acontecer por meses. **Não existe job agendado, nem Dependabot, nem alerta de base
-velha.**
+Até 23/09/2026 isso era tudo, e o parágrafo acima era a única proteção que existia.
+Documentação não é mecanismo: quem lê o guia é quem já foi olhar.
 
-Para forçar a atualização, bump em `ARG GEOLITE2_SNAPSHOT` no `Dockerfile` (use a data da
-edição). O valor não é lido pelo script — ele existe para invalidar a camada, e serve de
-registro de quando a base da imagem foi trocada pela última vez.
+### Por que base velha é pior do que parece
 
-**O que uma base velha causa:** não é rótulo errado em massa — o filtro por raio continua
-valendo. É o caso pontual de uma faixa de IP realocada entre operadoras, que passa a nomear
-a cidade antiga. Para uma linha de reconhecimento de acesso, o risco é baixo; para não ser
-esquecido, é este parágrafo.
+Não é que ela erre muito. É **como** ela erra: em silêncio, e com a cara de quem acertou.
+
+Todo o resto desta frente falha alto — base ausente não abre, base corrompida levanta
+exceção, raio de precisão ruim é descartado. A base velha **abre, lê e responde**: um
+bloco de IP que mudou de operadora continua nomeando a cidade antiga, com raio bom,
+passando por todos os filtros que existem. A tela escreve "Próximo a Londrina, PR ·
+Brasil" com a autoridade de sempre e ninguém tem como desconfiar.
+
+E o alvo é grande. Medindo as **234.511 redes IPv4 brasileiras** da DB-IP Lite 2026-09
+(14.345.887 redes lidas, 88.123.296 endereços brasileiros cobertos):
+
+| tamanho do bloco | % das redes brasileiras | % dos endereços |
+|---|---|---|
+| `/24` | **49,71%** | 33,87% |
+| `/23` | 10,34% | 14,09% |
+| `/22` | 3,79% | 10,32% |
+| **`/22` ou menor** | **97,87%** | 62,04% |
+| `/16` ou maior | 0,09% | 23,72% |
+
+O espaço brasileiro é dominado por alocações **pequenas** — metade das redes é um `/24`
+sozinho —, e são elas que trocam de mão entre operadoras. "Bloco de IP muda de dono" não é
+hipótese remota aqui: é a forma do espaço.
+
+⚠️ **O que isso não mede.** Isto é a *exposição*, não a *taxa* de realocação. Medir a taxa
+exigiria comparar duas edições da base, e a segunda edição é um download que não foi
+feito. A medição justifica **existir** um limiar; a largura dele é julgamento, declarado
+abaixo.
+
+### Os dois limiares
+
+Todo `.mmdb` carrega a data em que foi construído (`metadata().build_epoch` — conferido no
+arquivo real, não na documentação). É dela que saem os dois gestos:
+
+| idade da base | a tela | o operador | lembrete |
+|---|---|---|---|
+| < 21 dias | mostra a cidade | nada | — |
+| 21 a 89 dias | **mostra** a cidade | `OperatorAlert` `warning` | 7 dias |
+| 90 dias ou mais | **não mostra** | `OperatorAlert` `error` | 24 horas |
+
+**21 dias = três publicações perdidas.** Sete dias é o chão físico (abaixo disso não
+existe base mais nova) e avisar em sete seria gritar sobre uma semana corrida. Três
+publicações seguidas sem bump não é semana corrida — é ninguém cuidando.
+
+**90 dias = o ponto em que o aviso comprovadamente não funcionou.** Entre 21 e 90 cabem
+~10 avisos semanais. Se nenhum virou bump, o deployment esqueceu que isto existe. É largo
+de propósito: como o bump é manual, um limiar curto deixaria a tela permanentemente muda e
+mataria o rótulo na prática. Mas depois de um trimestre, "Próximo a X" errado é pior que
+ausência — a cidade errada faz o titular responder "não fui eu" sobre o **próprio** acesso,
+que é o oposto exato da função da linha. É a mesma régua que já faz a cidade calar onde o
+raio de precisão é ruim.
+
+Os dois vivem em `config/settings.py` (`GEOIP_CITY_STALE_ALERT_DAYS` e
+`GEOIP_CITY_MAX_AGE_DAYS`) e aceitam env. Zero desliga a trava.
+
+⚠️ **Data ilegível conta como velha.** Base presente cujo `build_epoch` não se lê não vira
+"provavelmente nova": a cidade some e o alerta sai dizendo que a idade é *desconhecida*, em
+vez de inventar um número. É a mesma regra do raio ausente — mostrar uma cidade cuja
+confiabilidade não se pôde conferir *é* um palpite.
+
+### O que o operador vê, e como resolve
+
+Um alerta em **Alertas operacionais** (Admin), tipo *"Base de cidade dos dispositivos
+desatualizada"*, dizendo há quantos dias a base está, o que isso causa na tela, e o gesto:
+
+> A base de cidade dos dispositivos está com 34 dias (construída em 20/08/2026). A cidade
+> continua aparecendo, mas a base já perdeu publicações: a MaxMind republica toda terça.
+> […] Para atualizar: bump do `ARG GEOLITE2_SNAPSHOT` no Dockerfile (a data da edição
+> nova, ex. 2026-10) e novo deploy — é o bump que invalida a camada e rebaixa a base.
+
+Quem grita é `shopman/backstage/management/commands/check_geoip_freshness.py`, no ciclo do
+`maintenance_worker` (irmão do `check_integration_drift`). O dedupe é
+`(data de construção, faixa)`: bumpar a base recomeça a história, e passar de 21 → 90 dias
+é fato novo que sai na hora.
+
+⚠️ **Base AUSENTE não gera alerta**, de propósito. Ausência não é atraso: não há idade e
+não há o que bumpar, e é o estado previsto em dev, na CI e em qualquer imagem construída
+sem `MAXMIND_LICENSE_KEY`. Alertar ali seria ruído diário sobre um estado conhecido, até o
+operador aprender a ignorar o tipo inteiro. A ausência aparece no diagnóstico
+(`scripts/diagnose_operational.py`, linha `geoip city database`), que é onde se pergunta.
+
+⚠️ **Isto não entra no `/ready/`.** Prontidão que reprova por causa de um rótulo de cidade
+transforma um enfeite em bloqueio de deploy — a mesma troca que o `fetch-geolite2.sh`
+recusa quando sai com 0 sem a chave.
+
+### A atualização automática: um PR agendado, e nenhuma peça nova
+
+`.github/workflows/geolite2-refresh.yml` roda às **quartas** (a MaxMind publica às terças),
+confere a idade do `GEOLITE2_SNAPSHOT` e, passando de 21 dias, abre um PR bumpando aquela
+linha. Branch fixa (`chore/geolite2-snapshot`), um PR por vez.
+
+Não é componente de infraestrutura: é o que o Dependabot já faz para dependência. Um job
+que baixasse a base para um volume compartilhado resolveria o mesmo problema criando uma
+peça com estado — e a regra da casa é não criar peça sem provar necessidade.
+
+⚠️ **Ele não precisa da `MAXMIND_LICENSE_KEY`.** Não foi "pular com aviso": a chave é
+desnecessária aqui. O `GEOLITE2_SNAPSHOT` não é lido pelo `fetch-geolite2.sh` — ele só
+invalida a camada. Quem baixa é o build, com a chave dele. Então o workflow nunca fala com
+a MaxMind e não tem credencial para faltar; sem chave, o PR continua correto e o build que
+sair dele sobe sem base, a degradação prevista de sempre. Um workflow que dependesse da
+chave ficaria vermelho toda semana por falta de credencial, e vermelho previsível ensina a
+ignorar vermelho.
+
+⚠️ **O PR nasce sem checks.** Evento gerado pelo `GITHUB_TOKEN` não dispara workflow de
+`pull_request` — regra do GitHub. Ausência de check se parece com "ainda não começou"
+quando é "não vai começar". O corpo do PR diz o gesto na primeira linha: **feche e reabra
+o PR**, ou empurre um commit.
 
 ## Atribuição e licença
 
@@ -145,6 +246,8 @@ esquecido, é este parágrafo.
 | `shopman/shop/omotenashi/copy.py` | `DEVICE_LIST_NEAR_PREFIX` ("Próximo a"), editável no Admin |
 | `surfaces/storefront-nuxt/app/pages/conta/seguranca.vue` | a linha na tela |
 | `scripts/fetch-geolite2.sh` · `Dockerfile` | o download no build |
+| `shopman/backstage/management/commands/check_geoip_freshness.py` | a base velha vira alerta |
+| `.github/workflows/geolite2-refresh.yml` | o PR agendado que bumpa o snapshot |
 
 ## Testes que prendem isto
 
@@ -154,6 +257,13 @@ esquecido, é este parágrafo.
 - `shopman/storefront/tests/web/test_passkey.py` — as duas metades da decisão: nenhuma
   chamada de rede (com `urlopen` **e soquete** vigiados) e, mesmo assim, a frase chegando
   à tela.
+- `shopman/shop/tests/test_ip_location.py` (envelhecimento) — as duas faixas e suas bordas,
+  data ilegível que conta como velha, base ausente que **não** é base velha, limiar zerado
+  que desliga a trava, e a data lida de um `.mmdb` de verdade (montado byte a byte no
+  teste, porque o `maxminddb` só lê e um binário de 60 MB não se versiona).
+- `shopman/backstage/tests/test_geoip_freshness.py` — o tipo registrado em `TYPE_CHOICES`
+  (sem ele o alerta grava e a coluna do Admin some), as duas severidades, o gesto presente
+  em toda variação da mensagem, o dedupe por faixa e por data, e a ausência que cala.
 - `shopman/shop/tests/test_no_plaintext_third_party_calls.py` (da PR #991) — segue verde.
   O download do build é `https` e mora em shell, fora da varredura de `.py`: a trava não
   precisou de ajuste nenhum.
