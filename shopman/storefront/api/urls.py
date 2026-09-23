@@ -65,6 +65,7 @@ from .surface import (
     StorefrontHomeView,
     StorefrontMenuView,
     StorefrontProductView,
+    StorefrontLegalView,
     StorefrontSiteView,
 )
 from .telemetry import ClientErrorView
@@ -83,6 +84,7 @@ urlpatterns = [
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
     path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
+    path("storefront/legal/", StorefrontLegalView.as_view(), name="api-storefront-legal"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),
     path("storefront/menu/<slug:collection>/", StorefrontMenuView.as_view(), name="api-storefront-menu-collection"),
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),

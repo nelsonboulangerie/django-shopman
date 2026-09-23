@@ -32,6 +32,7 @@ from .catalog import (
 )
 from .checkout import CheckoutProjection, build_checkout
 from .fomo import FomoBadge, badges_for_product
+from .legal import LegalProjection, ProcessorProjection, build_legal
 from .home import (
     AuthCopyProjection,
     CopyEntryProjection,
@@ -89,6 +90,9 @@ __all__ = [
     "CustomerProfileProjection",
     "DiscountLineProjection",
     "FomoBadge",
+    "LegalProjection",
+    "ProcessorProjection",
+    "build_legal",
     "FAQItemProjection",
     "SiteProjection",
     "HomeHeroCopyProjection",
