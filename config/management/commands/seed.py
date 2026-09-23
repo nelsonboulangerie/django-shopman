@@ -3753,12 +3753,15 @@ class Command(BaseCommand):
                 # ignora é insumo que ninguém compra — some da sugestão e do
                 # custo por unidade.
                 #
-                # ⚠️ Este comentário dizia que a versão de chocolate (o coelhinho)
-                # saía deste mesmo creme com chocolate derretido na finalização.
-                # Não sai: o dono respondeu em 23/09 que o recheio do coelhinho é
-                # o CREME-CHOCOLATE, que já existe e é o mesmo do Cornet. Quem
-                # leva este creme de baunilha é o ursinho, o porquinho e o
-                # pain aux raisins.
+                # A versão de chocolate (o coelhinho) sai DESTE MESMO creme, com
+                # chocolate derretido na finalização — confirmado pelo dono em
+                # 23/09/2026, depois de eu ter apagado esta linha por achá-la
+                # contraditória. Ela não era: o CREME-CHOCOLATE é este creme com
+                # chocolate, não um creme feito do zero.
+                #
+                # ⚠️ E é por isso que a ficha do `creme-chocolate` (abaixo) está
+                # errada hoje: ela parte de leite, açúcar e manteiga como se
+                # fosse uma ganache. Ver a nota lá.
                 "ref": "creme-baunilha",
                 "name": "Creme de Baunilha",
                 "output_sku": "CREME-BAUNILHA",
@@ -4016,6 +4019,25 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # ⚠️ ESTA FICHA NÃO BATE COM A CASA, e a correção espera um número
+                # que só o dono tem (aberto em 23/09/2026).
+                #
+                # Ele confirmou que o creme de chocolate sai do CREME-BAUNILHA
+                # com chocolate derretido na finalização. A fórmula abaixo não
+                # faz isso: ela parte de leite, açúcar e manteiga com chocolate,
+                # sem ovo e sem farinha — é uma ganache, não um creme de
+                # confeiteiro com chocolate. Foi inferida, como as massas que
+                # ele corrigiu no dia anterior.
+                #
+                # O que falta para consertar é a PROPORÇÃO: quanto de chocolate
+                # entra em quanto de base. Inventar esse número seria repetir o
+                # erro que esta nota registra, então a ficha fica como está,
+                # errada e sinalizada, até ele dizer.
+                #
+                # Consequência viva enquanto isso: o custo por unidade e o rótulo
+                # nutricional derivado do Coelhinho (COE) e do Cornet (COC) saem
+                # desta fórmula — o do Coelhinho foi recalculado em 23/09 e deu
+                # 350 kcal, número que muda quando a ficha for corrigida.
                 "ref": "creme-chocolate",
                 "name": "Creme de Chocolate",
                 "output_sku": "CREME-CHOCOLATE",
