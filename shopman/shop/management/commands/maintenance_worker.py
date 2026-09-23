@@ -27,6 +27,7 @@ manutenção num loop (default: a cada 5 minutos):
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
   run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
+  run_alias_benchmark       — placar semanal do de-para de produto (B.I.)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -92,6 +93,10 @@ MAINTENANCE_COMMANDS = (
     # Com a série do dia em dia, os alarmes do B.I. comparam com o esperado e
     # avisam quem opera. Depois do refresh de propósito: leem a tabela recém-feita.
     "evaluate_bi_alerts",
+    # O placar do de-para de produto: mede os concorrentes contra os de-paras
+    # confirmados e guarda o resultado no Admin. Semanal e com gabarito mínimo —
+    # quem segura a cadência é o próprio comando; ciclo vazio não custa nada.
+    "run_alias_benchmark",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
