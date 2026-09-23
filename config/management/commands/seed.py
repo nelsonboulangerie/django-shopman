@@ -180,7 +180,7 @@ PRODUCTION_PLAN = [
     ("kuro-pan", Decimal("8"), (5, 20), (8, 0)),
     ("croissant", Decimal("42"), (5, 0), (7, 30)),
     ("pain-chocolat", Decimal("36"), (5, 30), (8, 0)),
-    ("animalzinho", Decimal("16"), (5, 30), (8, 30)),
+    ("coelhinho", Decimal("16"), (5, 30), (8, 30)),
     ("focaccia-dia", Decimal("10"), (7, 0), (10, 0)),
     ("folhado-dia", Decimal("30"), (8, 0), (11, 0)),
     # O bichon sai junto do chausson, um pouco abaixo em quantidade
@@ -248,7 +248,7 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "kuro-pan":                           24,
     "croissant":                          144,
     "pain-chocolat":                      108,
-    "animalzinho":                        48,
+    "coelhinho":                          48,
     "folhado-dia":                        36,
     "bichon":                             36,
     "madeleine":                          72,
@@ -1836,7 +1836,7 @@ class Command(BaseCommand):
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("MELON", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
-            ("COE", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 0, True,
+            ("COE", "Coelhinho de Chocolate", "Pão doce de massa amanteigada, em formato de coelhinho", 1000, "un", 0, True,
              f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
              f"{IMG}/co.webp", 120, "Melhor consumido no dia. Reaqueça a 180°C por 5min"),
@@ -3748,7 +3748,7 @@ class Command(BaseCommand):
                 ],
             },
             {
-                # O animalzinho leva creme, e a ficha não sabia disso: contava só
+                # O coelhinho leva creme, e a ficha não sabia disso: contava só
                 # a massa amanteigada. Recheio que a produção prepara e a ficha
                 # ignora é insumo que ninguém compra — some da sugestão e do
                 # custo por unidade.
@@ -3873,8 +3873,8 @@ class Command(BaseCommand):
             {
                 # Butter, não brioche (dono, 22/09): "Ursinho, porquinho,
                 # coelhinho? A massa é butter".
-                "ref": "animalzinho",
-                "name": "Animalzinho",
+                "ref": "coelhinho",
+                "name": "Coelhinho de Chocolate",
                 "output_sku": "COE",
                 "batch_size": Decimal("1"),
                 "items": [
@@ -5058,7 +5058,7 @@ class Command(BaseCommand):
         # ── Mise en place: pré-preparo pronto no depósito ────────────────────
         #
         # Onze das vinte receitas consomem massa ou recheio (baguete, croissant,
-        # ciabatta, campagne, shokupan, kuro-pan, pain au chocolat, animalzinho,
+        # ciabatta, campagne, shokupan, kuro-pan, pain au chocolat, coelhinho,
         # focaccia, folhado, bichon), e o seed não estocava NENHUM quilo de
         # massa. O guardrail de insumo (Buyman WP-B5b, ligado desde o commit
         # 47cc1958) então reprovava toda fornada planejada delas: o operador
@@ -5693,7 +5693,13 @@ class Command(BaseCommand):
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
-        if "brioche" in ref or "animalzinho" in ref:
+        # ⚠️ O `coelhinho` entra aqui porque o ref dele era `animalzinho` e casava
+        # com esta linha. Os dois IRMÃOS dele — `ursinho` e `porquinho`, mesma
+        # massa butter e mesma modelagem — nunca casaram, e caem no padrão de
+        # baixo, com quatro estações em vez de três. A divergência é anterior a
+        # este rename e é pergunta de produção, não de código: ou os três têm
+        # Modelagem, ou nenhum tem. Preservado como estava até o dono dizer.
+        if "brioche" in ref or "coelhinho" in ref:
             return ["Mistura", "Descanso", "Forno"]
         if ref.startswith("massa-"):
             return ["Pesagem", "Mistura", "Fermentação"]
