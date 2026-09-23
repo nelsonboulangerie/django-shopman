@@ -68,22 +68,31 @@ NCM_REVISADO: tuple[tuple[str, str, str], ...] = (
     ("SFTCH", "22029900", "09024000 é folha de chá preto a granel, acima de 3 kg"),
     ("CHHIB", "22029900", "19059090 é PRODUTO DE PADARIA (caía no default)"),
     ("CTFV", "22029900", "19059090 é PRODUTO DE PADARIA (caía no default)"),
+    # ── As sodas da casa (decisão dele, 23/09) ───────────────────────────────
+    # Ele leu certo: "a soda cai em preparação de balcão". E o argumento é mais
+    # forte do que parecia — o Imposto Seletivo sobre bebida açucarada só
+    # alcança o que está em EMBALAGEM PRIMÁRIA, "aquela em contato direto com o
+    # produto e destinada ao consumidor final" (LC 214/2025, art. 409, §1º, V).
+    # Soda tirada na torneira e servida no copo não tem embalagem primária, e o
+    # IS não a alcança em NCM nenhum. Sem esse peso na balança, sobra a
+    # classificação pura — e o que o cliente leva é a mesma bebida preparada que
+    # as outras dezessete.
+    ("SDLA", "22029900", "22021000 é o código do refrigerante em embalagem"),
+    ("CV", "22029900", "22021000 é o código do refrigerante em embalagem"),
 )
 
-#: A pergunta que tem dinheiro dentro, e que eu não respondo. Fica como está
-#: até o contador falar — o comando a imprime toda vez, para não virar silêncio.
-PERGUNTA_DO_CONTADOR: tuple[tuple[str, str, str], ...] = (
-    (
-        "SDLA", "22021000",
-        "Soda de Laranja da casa: 2202.10.00 descreve exatamente o que ela é "
-        "(água gaseificada aromatizada e adoçada) e é o ÚNICO código da posição "
-        "2202 alcançado pelo Imposto Seletivo a partir de 2027 (LC 214/2025, "
-        "Anexo XVII). O 2202.99.00 fica fora do IS. Mantido como está.",
-    ),
-    (
-        "CV", "22021000",
-        "Cream Soda da casa: mesma pergunta da Soda de Laranja. Mantido como está.",
-    ),
+#: O que o comando repete toda vez, para não virar silêncio. Não é pergunta
+#: pendente: é o contorno da decisão, que muda se a casa mudar de prática.
+AVISOS: tuple[str, ...] = (
+    "CEST vazio (decisão dele, 23/09): os CEST do 2202.99.00 — 17.113.00 chá, "
+    "17.114.00 café, 17.115.00 leite/cacau — descrevem o INDUSTRIALIZADO pronto "
+    "para beber, que circula com substituição tributária. O que a casa prepara "
+    "no balcão não é esse produto, e o perfil do catálogo é own_production.",
+    "⚠️ O dia em que a casa ENGARRAFAR a soda para vender, a conta muda: aí há "
+    "embalagem primária destinada ao consumidor final, o NCM passa a ser o "
+    "2202.10.00 e a casa vira FABRICANTE de bebida açucarada — contribuinte do "
+    "Imposto Seletivo na primeira operação, sem crédito a aproveitar. Servida no "
+    "copo, nada disso acontece.",
 )
 
 
@@ -139,17 +148,8 @@ class Command(BaseCommand):
         if ausentes:
             out.write(f"\n{len(ausentes)} fora do catálogo deste banco: {', '.join(sorted(ausentes))}")
 
-        out.write(self.style.WARNING("\n⚠️  O CEST fica VAZIO, e é decisão:"))
-        out.write(
-            "  Os CEST do 2202.99.00 (17.113.00 chá, 17.114.00 café, 17.115.00 leite/cacau)\n"
-            "  descrevem o INDUSTRIALIZADO pronto para beber, que circula com substituição\n"
-            "  tributária. O que a casa prepara no balcão não é esse produto — preencher um\n"
-            "  CEST ali declararia uma ST que não existe."
-        )
-        out.write(self.style.WARNING("\n⚠️  Duas linhas esperam o contador, e não foram tocadas:"))
-        for sku, ncm, pergunta in PERGUNTA_DO_CONTADOR:
-            out.write(f"  {sku:8s} segue em {ncm}")
-            out.write(f"           {pergunta}")
+        for aviso in AVISOS:
+            out.write(self.style.WARNING(f"\n{aviso}"))
 
         if not apply:
             out.write(self.style.WARNING("\n(ensaio: nada gravado. Para gravar: --apply)"))

@@ -13,7 +13,7 @@ import pytest
 from django.core.management import call_command
 from shopman.offerman.models import Product
 
-from config.management.commands.apply_fiscal_ncm import NCM_REVISADO, PERGUNTA_DO_CONTADOR
+from config.management.commands.apply_fiscal_ncm import AVISOS, NCM_REVISADO
 
 pytestmark = pytest.mark.django_db
 
@@ -39,12 +39,15 @@ def test_a_tabela_so_propoe_bebida_pronta():
     assert len(set(codigos)) == len(codigos)
 
 
-def test_as_duas_sodas_ficam_de_fora_da_tabela():
-    """A pergunta do Imposto Seletivo não se responde por comando."""
+def test_as_sodas_da_casa_entram_como_bebida_preparada():
+    """Decisão dele em 23/09, com o argumento da embalagem por trás.
+
+    O Imposto Seletivo sobre bebida açucarada só alcança o que está em
+    embalagem primária destinada ao consumidor final. Soda servida no copo não
+    tem — então o IS não pesa na escolha, e sobra a classificação pura.
+    """
     revisados = {sku for sku, _n, _p in NCM_REVISADO}
-    esperando = {sku for sku, _n, _p in PERGUNTA_DO_CONTADOR}
-    assert not (revisados & esperando)
-    assert esperando == {"SDLA", "CV"}
+    assert {"SDLA", "CV"} <= revisados
 
 
 def test_ensaio_nao_grava():
@@ -78,16 +81,20 @@ def test_preserva_o_resto_do_fiscal():
     assert fiscal == {"profile": "own_production", "unit": "UN", "ncm": "22029900"}
 
 
-def test_nao_encosta_nas_sodas():
+def test_o_aviso_do_engarrafamento_sai_toda_vez():
+    """O que muda a conta é a EMBALAGEM, e isso tem de ficar dito.
+
+    Servida no copo, a soda não é alcançada pelo Imposto Seletivo. Engarrafada
+    para vender, passa a ser — e a casa vira contribuinte.
+    """
     _product("SDLA", "22021000")
-    _product("CV", "22021000")
 
     out = StringIO()
     call_command("apply_fiscal_ncm", "--apply", stdout=out)
 
-    assert _ncm("SDLA") == "22021000"
-    assert _ncm("CV") == "22021000"
-    assert "Imposto Seletivo" in out.getvalue()
+    assert _ncm("SDLA") == "22029900"
+    texto = out.getvalue()
+    assert "ENGARRAFAR" in texto and "Imposto Seletivo" in texto
 
 
 def test_o_cest_vazio_sai_dito_toda_vez():
@@ -97,8 +104,12 @@ def test_o_cest_vazio_sai_dito_toda_vez():
     out = StringIO()
     call_command("apply_fiscal_ncm", "--apply", stdout=out)
 
-    assert "CEST fica VAZIO" in out.getvalue()
+    assert "CEST vazio" in out.getvalue()
     assert "substituição" in out.getvalue()
+
+
+def test_todo_aviso_tem_texto():
+    assert AVISOS and all(a.strip() for a in AVISOS)
 
 
 def test_rodar_de_novo_nao_faz_nada():
