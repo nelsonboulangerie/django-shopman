@@ -107,7 +107,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("HO", "HOD"),           # Hot Dog Vienna
     ("KBB", "KUBB"),         # Kuro Pan Burger
     ("KP", "KUP"),           # Kuro Pan
-    ("MBBBG", "BUBGMI"),     # Mini Brioche Burger Bun com gergelim
+    ("MBBBG", "BRBBM"),      # Mini Brioche Burger Bun com gergelim — irmão de BRBB/BRBB2
     ("MC", "CAPMO"),         # Mochaccino
     ("MD", "MDLN"),          # Madeleine
     ("ME", "MELON"),         # Melonpan
@@ -117,7 +117,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("MIF", "FOAM"),         # Mini Focaccia Alecrim
     ("MIFOC", "FOCM"),       # Mini Focaccia Cebola Roxa
     ("MIHO", "HODM"),        # Mini Hot Dog Vienna
-    ("MS", "MELICE"),        # Melon Iced Sando
+    ("MS", "MELSA"),         # Melon Iced Sando — o pão dele é o melonpan (MELON)
     ("PC", "PCHOC"),         # Pain au Chocolat
     ("PH", "TRABB"),         # Pão de Hambúrguer (massa tradição)
     ("PHO", "HOBB"),         # Pão para Hot Dog
