@@ -16,7 +16,7 @@ beforeAll(() => {
 beforeEach(() => window.localStorage.clear());
 
 const TRIGGERS = [
-  { value: "production_finished", label: "fornada pronta" },
+  { value: "production_finished", label: "lote pronto" },
   { value: "schedule", label: "Agendado" },
 ];
 const PLATFORMS = [

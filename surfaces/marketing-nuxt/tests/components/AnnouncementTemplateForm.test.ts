@@ -18,7 +18,7 @@ function template(
 ): AnnouncementTemplate {
   return {
     pk: 3,
-    name: "Fornada",
+    name: "Lote",
     body: "{{product_name}} saiu do forno",
     platform_variants: {},
     variables: ["product_name"],

@@ -133,7 +133,7 @@ const DRAFT_LABELS = {
 const TRIGGER_FILTER_LABELS: Record<string, string> = {
   collections: "coleções",
   skus: "produtos",
-  quality_min: "qualidade mínima da fornada",
+  quality_min: "qualidade mínima do lote",
   quality_min_share: "parcela mínima na qualidade",
   max_remaining: "estoque máximo restante",
 };
@@ -660,7 +660,7 @@ function submit() {
         id="rule-name"
         v-model="name"
         type="text"
-        placeholder="Fornada de pães → redes"
+        placeholder="Lote de pães → redes"
       />
     </div>
 

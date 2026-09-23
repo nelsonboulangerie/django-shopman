@@ -59,9 +59,9 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
     audience_total: 15,
     platform_results: [],
     trigger: "production_finished",
-    trigger_label: "Fornada concluída",
-    rule_name: "Fornada de pães",
-    template_name: "Fornada",
+    trigger_label: "Lote concluído",
+    rule_name: "Lote de pães",
+    template_name: "Lote",
     sku: "CRO-001",
     created_at: "2026-07-18T07:00:00-03:00",
     expires_at: "",
@@ -106,7 +106,7 @@ describe("AnnouncementCard", () => {
     const text = mountCard(
       makeAnnouncement({ platforms: ["whatsapp"] }),
     ).text();
-    expect(text).toContain("Fornada de pães");
+    expect(text).toContain("Lote de pães");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
     expect(text).toContain("Expira em 20 min");
   });
