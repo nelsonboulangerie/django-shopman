@@ -701,7 +701,12 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
     await h.sale.submitSale();
 
     expect(h.sale.checkoutMode.value).toBe(false);
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Sem preço");
+    // A causa do SERVIDOR sobrevive — ela é o que explica a recusa — e a saída
+    // vem junto, porque `httpErrorMessage` troca o fallback pelo `detail` e
+    // engoliria um gesto escrito lá dentro. Ver `tests/falhaComSaida.test.ts`.
+    const aviso = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? "");
+    expect(aviso).toContain("Sem preço");
+    expect(aviso).toContain("Tente de novo.");
     h.handles.dispose();
   });
 

@@ -197,6 +197,14 @@ envs:
 - key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
   scope: RUN_AND_BUILD_TIME
   type: SECRET
+# A chave de licença da MaxMind, usada SÓ no build, para baixar a base GeoLite2-City
+# que escreve "Próximo a Londrina, PR · Brasil" na tela "Segurança e dados" da loja.
+# Sem ela a imagem sobe sem a base e a tela fica só com navegador e data — nada quebra.
+# ⚠️ Como todo SECRET deste arquivo, o VALOR mora cifrado no painel, não aqui. Defina-o
+# no painel ANTES de aplicar o spec. Ver docs/guides/geolite2-city.md.
+- key: MAXMIND_LICENSE_KEY
+  scope: BUILD_TIME
+  type: SECRET
 - key: DJANGO_SETTINGS_MODULE
   scope: RUN_TIME
   value: 'config.settings'
@@ -1109,9 +1117,14 @@ jobs:
   # `efi_webhook --soft`: confere o webhook do Pix na Efí e recadastra se divergir
   # da URL canônica. Falha APARECE no log do release (e no Sentry), mas não
   # derruba o deploy: webhook fora não justifica segurar a versão inteira.
-  run_command: sh -c 'python manage.py check --deploy && python manage.py migrate
-    --noinput && python manage.py setup_groups && python manage.py bootstrap_whatsapp_channel
-    && python manage.py efi_webhook --soft'
+  # `migration_safety` roda ANTES do `migrate`: pós-`go-live-v1` ele RECUSA o
+  # deploy quando há migração destrutiva pendente sem ponto de restauração
+  # declarado em SHOPMAN_MIGRATION_BACKUP_REF. Pré-tag ele só relata o plano no
+  # log — o alpha ganha a visibilidade sem ganhar o bloqueio.
+  # Procedimento: docs/runbooks/backup-e-restore.md.
+  run_command: sh -c 'python manage.py check --deploy && python manage.py migration_safety
+    && python manage.py migrate --noinput && python manage.py setup_groups && python
+    manage.py bootstrap_whatsapp_channel && python manage.py efi_webhook --soft'
   image:
     registry_type: DOCR
     repository: shopman

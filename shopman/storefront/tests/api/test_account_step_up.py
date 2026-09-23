@@ -313,9 +313,10 @@ def test_delete_with_unavailable_receipt_key_fails_closed_without_mutation(
     assert customer.phone == "+5543999990021"
 
 
-def test_delete_explains_required_manychat_unlink_without_mutating_account(
+def test_delete_de_conta_vinculada_ao_manychat_conclui_sozinha(
     client: Client,
 ):
+    """A maioria dos clientes chega pelo ManyChat, e todos levavam 409 aqui."""
     customer = Customer.objects.create(
         ref="CUS-SU-DEL-MANYCHAT",
         first_name="Lia",
@@ -329,26 +330,33 @@ def test_delete_explains_required_manychat_unlink_without_mutating_account(
     _login_as_customer(client, customer)
     _authorize_step_up(client, customer, "delete")
 
-    response = client.post(
-        "/api/v1/account/delete/",
-        data={"acknowledged": True},
-        content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
-    )
+    with (
+        patch(
+            "shopman.guestman.contrib.manychat.resolver."
+            "ManychatSubscriberResolver.fetch_subscriber_info",
+            return_value={"custom_fields": []},
+        ),
+        patch("shopman.shop.adapters.notification_manychat.set_custom_field", return_value=True),
+    ):
+        response = client.post(
+            "/api/v1/account/delete/",
+            data={"acknowledged": True},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+        )
 
-    assert response.status_code == 409
-    assert response.json()["error"] == {
-        "code": "account_deletion_blocked",
-        "reason": "manychat_unlink_required",
-    }
-    assert "desvincular" in response.json()["detail"].lower()
-    assert "manychat" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    # A tela não fala mais em desvincular nem em ManyChat: não sobrou nada para
+    # o cliente pedir a ninguém.
+    assert "desvincular" not in response.content.decode().lower()
     customer.refresh_from_db()
-    assert customer.is_active is True
-    assert customer.phone == "+5543999990023"
+    assert customer.is_active is False
+    assert customer.phone == ""
 
 
-def test_delete_explains_pending_manychat_reconciliation(client: Client):
+def test_delete_com_reconciliacao_incerta_falha_fechado_sem_mandar_pedir(client: Client):
+    """Incerteza com o provedor é falha nossa, não tarefa para o cliente."""
     customer = Customer.objects.create(
         ref="CUS-SU-DEL-MANYCHAT-PENDING",
         first_name="Lia",
@@ -358,21 +366,24 @@ def test_delete_explains_pending_manychat_reconciliation(client: Client):
     _login_as_customer(client, customer)
     _authorize_step_up(client, customer, "delete")
 
-    response = client.post(
-        "/api/v1/account/delete/",
-        data={"acknowledged": True},
-        content_type="application/json",
-        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
-    )
+    with patch(
+        "shopman.guestman.contrib.manychat.resolver."
+        "ManychatSubscriberResolver.reconcile_pending",
+        return_value="uncertain",
+    ):
+        response = client.post(
+            "/api/v1/account/delete/",
+            data={"acknowledged": True},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+        )
 
-    assert response.status_code == 409
-    assert response.json()["error"] == {
-        "code": "account_deletion_blocked",
-        "reason": "manychat_reconciliation_pending",
-    }
+    assert response.status_code == 503
+    assert response.json()["error"] == {"code": "account_deletion_incomplete"}
     detail = response.json()["detail"].lower()
-    assert "verificação" in detail
-    assert "manychat" in detail
+    assert "nenhuma exclusão parcial foi confirmada" in detail
+    assert "peça" not in detail
+    assert "manychat" not in detail
     customer.refresh_from_db()
     assert customer.is_active is True
     assert customer.phone == "+5543999990024"

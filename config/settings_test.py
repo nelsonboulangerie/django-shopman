@@ -75,6 +75,14 @@ GOOGLE_MAPS_API_KEY = ""
 GOOGLE_MAPS_BROWSER_API_KEY = ""
 GOOGLE_MAPS_SERVER_API_KEY = ""
 
+# ⚠️ Base de cidade DESLIGADA por padrão na suíte, e explicitamente: o default de
+# `config/settings.py` aponta para `<BASE_DIR>/data/GeoLite2-City.mmdb`, e uma máquina que
+# tivesse esse arquivo faria os testes lerem a base real — verde aqui, vermelho na CI, ou
+# pior, o contrário. Quem testa a cidade aponta para uma fixture com `settings.GEOIP_...`
+# e chama `ip_location.reset_reader_cache()`.
+GEOIP_CITY_DATABASE_PATH = ""
+GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = 50
+
 # ── Adapters e seams plugáveis ───────────────────────────────────────────────
 SHOPMAN_PAYMENT_ADAPTERS = {
     "pix": "shopman.shop.adapters.payment_mock",

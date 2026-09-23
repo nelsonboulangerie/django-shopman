@@ -7,7 +7,7 @@ import type { Campaign } from "~/types/campaign";
 const rule = {
   pk: 3,
   version: 7,
-  name: "Fornada local",
+  name: "Lote local",
   audience_rules: { tags: ["clientes-da-casa"] },
   is_active: true,
 } as Campaign;

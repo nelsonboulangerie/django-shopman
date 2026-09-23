@@ -87,6 +87,7 @@ class PendingProductionProjection:
     status: str  # "planned" | "started"
     status_label: str  # "Planejada" | "Em produção"
     quantity: str  # display (planned qty ou started qty)
+    target_date: str  # ISO "2026-04-16" — a data que o link para a Produção precisa
     target_date_display: str  # "16/04"
     is_overdue: bool  # target_date < hoje
 
@@ -347,6 +348,7 @@ def _pending_production(today: date) -> tuple[PendingProductionProjection, ...]:
                     status=str(wo.status),
                     status_label=status_labels.get(wo.status, str(wo.status)),
                     quantity=str(qty or wo.quantity),
+                    target_date=wo.target_date.isoformat() if wo.target_date else "",
                     target_date_display=wo.target_date.strftime("%d/%m") if wo.target_date else "",
                     is_overdue=bool(wo.target_date and wo.target_date < today),
                 )

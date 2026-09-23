@@ -216,7 +216,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <p
           class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
         >
-          {{ view?.isExpedition ? "Expedição" : "Estação KDS" }}
+          {{ view?.isExpedition ? "Expedição" : "Preparo" }}
         </p>
         <h1 class="truncate text-lg font-bold leading-tight">
           {{ view?.instanceName || stationRef }}
@@ -344,8 +344,8 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <NuxtLink
           to="/pickup"
           class="grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          aria-label="Tela do cliente"
-          title="Tela do cliente"
+          aria-label="Painel de retirada"
+          title="Painel de retirada"
         >
           <Icon name="lucide:monitor" class="size-4" />
         </NuxtLink>

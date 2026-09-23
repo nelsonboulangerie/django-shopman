@@ -36,6 +36,12 @@ dependencies = [
     "django-unfold>=0.107,<0.108",
     "django-otp>=1.7,<2.0",
     "daphne>=4.2,<5.0",
+    # Leitor do formato MMDB, para a cidade aproximada do aparelho na tela "Segurança e
+    # dados". ⚠️ É o `maxminddb` e NÃO o `geoip2` de propósito: o `geoip2` embute também o
+    # cliente do web service da MaxMind, e a frente inteira existe justamente para que o
+    # IP do titular não saia da casa. Biblioteca sem código de rede é garantia mais forte
+    # que disciplina de quem chama. Ver shopman/shop/services/ip_location.py.
+    "maxminddb>=2.6,<4.0",
     "erpbrasil.edoc>=3.1,<4.0",
     "cryptography>=42",
     "defusedxml>=0.7,<1.0",

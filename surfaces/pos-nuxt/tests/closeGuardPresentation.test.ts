@@ -52,3 +52,42 @@ describe("closeGuard — o aviso da trava contra cobrança duplicada", () => {
     }
   });
 });
+
+// O DEFEITO de 22/09/2026: o corpo citava "confira no Gestor" e a faixa não
+// levava a lugar nenhum, com o `ordersUrl` já no `runtimeConfig`. Menção não é
+// ação. Aqui não há `order_ref` (o que está em dúvida é se o pedido nasceu),
+// então o destino honesto é a FILA, e o rótulo promete a fila.
+describe("closeGuard — a saída para o Gestor", () => {
+  const withOrders: CloseGuardInput = { ...base, ordersUrl: "https://pedidos.boulangerie/" };
+
+  it("resultado não confirmado leva à fila do Gestor", () => {
+    const notice = closeGuardNotice(withOrders);
+    expect(notice?.situation).toBe("uncertain");
+    expect(notice?.link).toEqual({
+      href: "https://pedidos.boulangerie",
+      label: "Procurar o pedido no Gestor",
+    });
+  });
+
+  it("venda interrompida tem a mesma dúvida e a mesma porta", () => {
+    const notice = closeGuardNotice({ ...withOrders, pending: true });
+    expect(notice?.situation).toBe("interrupted");
+    expect(notice?.link?.href).toBe("https://pedidos.boulangerie");
+  });
+
+  it("o corpo não repete o que o botão já diz", () => {
+    const notice = closeGuardNotice(withOrders);
+    expect(notice?.body).not.toContain("no Gestor");
+    expect(notice?.body).toContain("confira se o pedido e o pagamento foram criados");
+  });
+
+  it("sem `ordersUrl` configurado não há botão — e nenhuma promessa de link", () => {
+    expect(closeGuardNotice(base)?.link).toBeUndefined();
+  });
+
+  it("esperar outra aba não é conferir: sem porta para o Gestor", () => {
+    const notice = closeGuardNotice({ ...withOrders, pending: true, heldElsewhere: true });
+    expect(notice?.situation).toBe("other_tab_charging");
+    expect(notice?.link).toBeUndefined();
+  });
+});

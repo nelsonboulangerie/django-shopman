@@ -542,14 +542,14 @@ describe("ProductionLabelPrintDialog", () => {
   it("mostra retry só na falha comprovada e reprint nos estados ambíguos", async () => {
     printing.job.value = job("failed", { can_retry: true });
     const failed = wrapper();
-    expect(failed.text()).toContain("Tentar novamente");
+    expect(failed.text()).toContain("Tentar de novo");
     expect(failed.text()).not.toContain("Reimprimir 1 etiqueta");
     failed.unmount();
 
     printing.job.value = job("uncertain", { can_reprint: true });
     await nextTick();
     const unknown = wrapper();
-    expect(unknown.text()).not.toContain("Tentar novamente");
+    expect(unknown.text()).not.toContain("Tentar de novo");
     expect(unknown.text()).toContain("Reimprimir 1 etiqueta");
   });
 

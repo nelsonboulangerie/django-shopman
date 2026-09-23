@@ -118,6 +118,10 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     equipment_out: [],
     equipment_label: "",
     equipment_back_pending: false,
+    dispatch_needs_machine: false,
+    trip_with: [],
+    courier_return_orders: [],
+    courier_return_lines: [],
     can_resend_payment_link: false,
     managers: [{ username: "joyce", name: "Joyce Nogueira" }],
     customer_relay_phone: "",
@@ -206,14 +210,14 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
       status: "preparing",
       can_confirm: false,
       can_advance: false,
-      advance_block_label: "Aguardando fornada",
-      advance_block_reason: "A fornada do pão francês ainda não terminou.",
+      advance_block_label: "Esperando o lote…",
+      advance_block_reason: "O lote do pão francês ainda não terminou.",
     }));
 
     const bloqueado = w.find('[data-action="advance-blocked"]');
     expect(bloqueado.exists()).toBe(true);
     expect(bloqueado.attributes("disabled")).toBeDefined();
-    expect(bloqueado.attributes("title")).toBe("A fornada do pão francês ainda não terminou.");
+    expect(bloqueado.attributes("title")).toBe("O lote do pão francês ainda não terminou.");
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
   });
 

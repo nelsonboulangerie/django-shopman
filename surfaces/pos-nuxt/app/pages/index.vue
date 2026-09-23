@@ -26,6 +26,9 @@ const runtimeConfig = useRuntimeConfig();
 const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
 // Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
+// Link de um app de operador para OUTRO: instalado, o destino tem janela
+// própria. Quem decide `target`/`rel` é o kit — nunca um `_blank` escrito à mão.
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
 const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
@@ -323,7 +326,7 @@ async function printReceipt() {
       if (outcome.status === "printed") return;
       toast.warning(`A impressora do balcão não respondeu: ${outcome.detail || "sem detalhe"}. O recibo saiu pelo diálogo do navegador.`);
     } catch (error) {
-      toast.warning(`${httpErrorMessage(error, "Falha ao compor o recibo no servidor.")} O recibo saiu pelo diálogo do navegador.`);
+      toast.warning(`${httpErrorMessage(error, "O servidor não montou o recibo para a bobina.")} O recibo saiu pelo diálogo do navegador.`);
     } finally {
       printingReceipt.value = false;
     }
@@ -420,7 +423,9 @@ async function printDanfe() {
     danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
-    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."));
+    // Fragmento: entra dentro de "A DANFE não saiu na bobina: …", e é o
+    // `danfeFallbackToast` que traz a saída (ver a nota dele logo abaixo).
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"));
   } finally {
     printingDanfe.value = false;
   }
@@ -984,6 +989,21 @@ onBeforeUnmount(() => {
           <p>{{ closeGuardNotice.body }}</p>
           <div class="flex flex-wrap gap-2">
             <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
+            <!-- O corpo dizia "confira no Gestor" e não levava. Agora leva: a
+                 fila, porque o que está em dúvida é se o pedido nasceu — não há
+                 `ref` para apontar. -->
+            <UiButton
+              v-if="closeGuardNotice.link"
+              variant="outline"
+              size="sm"
+              class="gap-1.5"
+              :href="closeGuardNotice.link.href"
+              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
+              data-close-guard-orders-link
+            >
+              <Icon name="lucide:external-link" class="size-4" />
+              {{ closeGuardNotice.link.label }}
+            </UiButton>
             <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
           </div>
         </UiAlertDescription>

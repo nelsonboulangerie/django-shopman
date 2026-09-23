@@ -1802,6 +1802,9 @@ class OrderAdvanceView(_OrderActionBase):
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
             return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
         equipment = sorted(set(equipment))
+        trip_ref = body.get("trip_ref") or ""
+        if not isinstance(trip_ref, str):
+            return Response({"detail": "A saída deve ser a referência de um pedido."}, status=400)
         change_out = body.get("change_out")
         if change_out is not None:
             from shopman.backstage.services.exceptions import POSError
@@ -1813,14 +1816,14 @@ class OrderAdvanceView(_OrderActionBase):
                 return Response({"detail": str(exc)}, status=400)
         else:
             change_q = None
-        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q})
+        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q, **({"trip_ref": trip_ref} if trip_ref else {})})
 
         def execute():
             try:
                 orders_service.advance_order(
                     order, actor=_actor(request), operator=request.user,
                     change_out_raw=None if change_out is None else str(change_out),
-                    equipment=equipment, expected_revision=base, target_status=target,
+                    equipment=equipment, expected_revision=base, target_status=target, trip_ref=trip_ref,
                 )
             except orders_service.OrderChangeOutRequired as exc:
                 return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
@@ -2104,6 +2107,27 @@ class OrderEquipmentBackView(_OrderActionBase):
             return {"equipment": list(custody.equipment), "back_at": custody.back_at}
 
         return self._context_response(request, order, "equipment-back", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Courier came back: close the whole trip (delivery, cash, change and card machine)",
+        responses={200: OpenApiResponse(description="Trip closed.")},
+    ),
+)
+class OrderCourierBackView(_OrderActionBase):
+    intention_operation = "courier-back"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+
+        def execute(base):
+            return {"closed": orders_service.courier_returned(order, actor=_actor(request), expected_revision=base)}
+
+        return self._context_response(request, order, "courier-back", {}, execute)
 
 
 @extend_schema_view(
@@ -3086,7 +3110,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda da fornada. "
+                                "A quantidade total deve incluir toda perda do lote. "
                                 "Classifique o déficit em partition com um motivo de qualidade."
                             )
                         }

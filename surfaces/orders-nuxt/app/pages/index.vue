@@ -3,21 +3,20 @@
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
 // reconcile. Desktop-first (3 columns), responsive (stacks on tablet/phone).
-import type { AffordanceRef, SortKey, ZoneView } from "~/presentation/board";
+import type { AffordanceRef, DispatchStep, SortKey, ZoneView } from "~/presentation/board";
 import {
   bulkableRefs,
   cardAffordances,
   changeBackSuggestionQ,
   channelLabel,
   channelOptions,
-  dispatchAsks,
-  dispatchAsksChange,
   elapsedLabel,
   flattenZones,
   fulfillmentCounts,
   lucideIcon,
   moneyInput,
   nextSort,
+  oneTapDispatch,
   realtimeIndicator,
   resolveShortcut,
   rowsToCsv,
@@ -28,11 +27,12 @@ import {
   timerTone,
   toneBadge,
   triageCards,
+  zoneEmptyText,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, equipmentAvailable, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {
@@ -294,44 +294,50 @@ async function confirmSettle() {
   if (ok) { cashDrafts.clear("settlement", ref_); settleRef.value = null; }
 }
 
-// dispatch dialog: the store collected "troco para quanto?" at checkout; leaving
-// for delivery is when that becomes cash out of the drawer (courier_out). The
-// operator confirms the amount the courier actually takes (or "sem troco").
+// Saída para entrega: um toque quando não há o que perguntar (a maquininha
+// livre é escolhida sozinha); senão, o diálogo (troco, ir junto, qual maquininha,
+// ou onde elas estão). Os passos saem em ordem: quem abre a saída primeiro.
 const dispatchRef = ref<string | null>(null);
-const dispatchDraft = computed(() => {
-  const initial = { amount: moneyInput(dispatchCard.value?.change_out_suggested_q ?? 0), equipment: [] as string[] };
-  return (dispatchRef.value ? cashDrafts.dispatches.value[dispatchRef.value] : null) ?? initial;
-});
-const dispatchAmount = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
-// Equipamento marcado para sair com o entregador (refs do canal, ex. card_machine — hoje, a maquininha).
-const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
 const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
-const dispatchAsksChangeNow = computed(() => Boolean(dispatchCard.value && dispatchAsksChange(dispatchCard.value)));
-function openDispatch(card: OrderCardProjection) {
-  dispatchRef.value = card.ref;
-  cashDrafts.dispatch(card.ref, dispatchDraft.value);
+async function runDispatch(steps: DispatchStep[]) {
+  for (const step of steps) {
+    const ok = await advance(step.ref, step.changeOut, step.equipment, step.tripRef);
+    if (!ok) return false;
+  }
+  return true;
 }
-function toggleDispatchEquipment(ref_: string) {
-  dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
-    ? dispatchEquipment.value.filter((r) => r !== ref_)
-    : [...dispatchEquipment.value.filter(r => !ref_.startsWith("card_machine:") || !r.startsWith("card_machine:")), ref_];
+async function onDispatch(steps: DispatchStep[]) {
+  if (await runDispatch(steps)) dispatchRef.value = null;
 }
-async function confirmDispatch(amount: string | null) {
-  const ref_ = dispatchRef.value;
+
+// "Entregador voltou": confirma o que deve estar na mão e fecha a saída inteira.
+const courierBackRef = ref<string | null>(null);
+const courierBackCard = computed(() => allCards.value.find((c) => c.ref === courierBackRef.value) ?? null);
+async function confirmCourierBack() {
+  const ref_ = courierBackRef.value;
   if (!ref_) return;
-  // Sem troco a perguntar, o valor não vai (o servidor só exige quando sugere).
-  const changeOut = dispatchAsksChangeNow.value ? (amount ?? "").trim() || "0" : undefined;
-  const ok = await advance(ref_, changeOut, dispatchEquipment.value);
-  if (ok) { cashDrafts.clear("dispatch", ref_); dispatchRef.value = null; }
+  if (await courierBack(ref_)) courierBackRef.value = null;
+}
+function courierBackDifferent() {
+  const card = courierBackCard.value;
+  courierBackRef.value = null;
+  if (!card) return;
+  if (card.can_settle_delivery_cash) openSettle(card.ref);
+  else navigateTo(`/${card.ref}`);
 }
 
 function onAction(ref_: string, action: AffordanceRef) {
   if (action === "confirm") confirm(ref_);
   else if (action === "advance") {
     const card = allCards.value.find((c) => c.ref === ref_);
-    if (card && dispatchAsks(card)) openDispatch(card);
-    else advance(ref_);
+    if (card?.next_status !== "dispatched") advance(ref_);
+    else {
+      const steps = oneTapDispatch(card, allCards.value);
+      if (steps) runDispatch(steps);
+      else dispatchRef.value = card.ref;
+    }
   }
+  else if (action === "courier_back") courierBackRef.value = ref_;
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
   else if (action === "equipment_back") equipmentBack(ref_);
@@ -373,29 +379,9 @@ function printQueue() {
         aria-label="Buscar por código, cliente ou item (atalho: /)"
         @update:model-value="(v) => (query = v)"
       />
-      <p class="text-sm" data-equipment-available>
-        Maquininhas disponíveis: {{ equipmentAvailable.length }}<template v-if="equipmentAvailable.length"> · {{ equipmentAvailable.map(item => item.label).join(', ') }}</template>
-        · Em trânsito: {{ equipmentOut.filter(item => item.identified).length }}
-        <template v-if="equipmentOut.some(item => !item.identified)"> · Registros antigos sem maquininha identificada: {{ equipmentOut.filter(item => !item.identified).length }}</template>
-      </p>
       <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
            recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
       <ChannelQueueSignal />
-      <!-- onde está a maquininha: saiu com o entregador e não voltou -->
-      <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
-        <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
-        <NuxtLink
-          v-for="item in equipmentOut"
-          :key="`${item.ref}:${item.order_ref}`"
-          :to="`/${item.order_ref}`"
-          class="inline-flex items-center gap-1 rounded-md px-1 py-0.5 transition hover:bg-accent hover:text-foreground"
-          :aria-label="`Abrir pedido ${item.order_ref}`"
-        >
-          <span class="font-medium">{{ item.label }}</span>
-          <span class="text-muted-foreground">na rua com o pedido {{ item.order_ref }}<template v-if="item.customer_name"> · {{ item.customer_name }}</template></span>
-        </NuxtLink>
-      </div>
-
       <div v-if="allCards.length" class="flex flex-wrap items-center gap-1.5">
         <UiFilterChip :active="channel === 'all'" :count="allCards.length" @click="channel = 'all'">
           Todos
@@ -588,7 +574,7 @@ function printQueue() {
 
             <div v-if="!triaged(zone).length" class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-10 text-center text-muted-foreground">
               <Icon name="lucide:check-circle-2" class="size-6" />
-              <p class="text-sm">Nada por aqui agora.</p>
+              <p class="text-sm">{{ zoneEmptyText(zone.key) }}</p>
             </div>
 
             <OrderCard
@@ -806,50 +792,24 @@ function printQueue() {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- dispatch dialog: how much change leaves the drawer with the courier -->
-    <UiDialog :open="dispatchRef != null" @update:open="(v) => { if (!v) dispatchRef = null }">
-      <UiDialogContent class="sm:max-w-sm" data-dispatch-dialog>
-        <UiDialogHeader>
-          <UiDialogTitle>{{ dispatchAsksChangeNow ? "Troco para o entregador" : "Saída para entrega" }}</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="dispatchAsksChangeNow">
-              {{ dispatchCard?.change_label || "Quanto de troco o entregador leva da gaveta?" }} ({{ dispatchRef }}).
-              O valor sai do seu turno de caixa e volta no acerto.
-            </template>
-            <template v-else>O que sai com o entregador ({{ dispatchRef }}).</template>
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <label v-if="dispatchAsksChangeNow" class="min-h-control flex items-center gap-2 text-sm">
-          <span class="text-muted-foreground">R$</span>
-          <input
-            v-model="dispatchAmount"
-            type="text"
-            inputmode="decimal"
-            placeholder="Ex.: 20,00"
-            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-            aria-label="Troco que o entregador leva"
-          />
-        </label>
-        <!-- maquininha que o canal deixa levar: custódia no pedido -->
-        <div v-if="dispatchCard?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
-          <label
-            v-for="opt in dispatchCard.equipment_options"
-            :key="opt.ref"
-            class="min-h-control flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-          >
-            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
-          </label>
-        </div>
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
-          <button v-if="dispatchAsksChangeNow" type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
-          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
-            {{ dispatchAsksChangeNow ? "Levou o troco" : "Saiu para entrega" }}
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <!-- saída para entrega (só quando há o que perguntar) -->
+    <DispatchDialog
+      :card="dispatchCard"
+      :cards="allCards"
+      :busy="dispatchRef != null && isBusy(dispatchRef)"
+      @dispatch="onDispatch"
+      @courier-back="(ref_) => (courierBackRef = ref_)"
+      @close="dispatchRef = null"
+    />
+
+    <!-- entregador voltou: confere e fecha a saída inteira -->
+    <CourierBackDialog
+      :card="courierBackCard"
+      :busy="courierBackRef != null && isBusy(courierBackRef)"
+      @confirm="confirmCourierBack"
+      @different="courierBackDifferent"
+      @close="courierBackRef = null"
+    />
 
     <!-- settle-cash dialog -->
     <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">

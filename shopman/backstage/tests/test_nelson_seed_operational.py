@@ -51,7 +51,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert not Product.objects.filter(ingredients_text__icontains="não contém glúten").exists(), (
         "o seed não pode contradizer a política da casa: sem segregação, nenhum item afirma ausência de glúten"
     )
-    for sku in ("BF", "SS", "COMBO-PETIT-DEJ"):
+    for sku in ("TRADI", "SP", "COMBO-PETIT-DEJ"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
         assert fiscal["profile"] == "own_production"
@@ -62,7 +62,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert resolved["icms_situacao_tributaria"] == "102"
     croissant_history = [
         item
-        for item in OrderItem.objects.filter(sku="CT").select_related("order")
+        for item in OrderItem.objects.filter(sku="CRO").select_related("order")
         if (item.meta or {}).get("source") == "production_demand_history"
     ]
     assert len(croissant_history) >= 4
@@ -183,7 +183,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
     assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
 
-    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CT"])
+    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CRO"])
     assert suggestions
     assert suggestions[0].quantity > 0
 
@@ -350,7 +350,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
             creating_matter.append(sheet.ref)
     assert not creating_matter, f"fichas que criam matéria do nada: {creating_matter}"
 
-    assert Batch.objects.filter(sku="CT").exists()
+    assert Batch.objects.filter(sku="CRO").exists()
     assert set(Position.objects.filter(ref__in=["massa", "molde", "forno"]).values_list("ref", flat=True)) == {
         "massa",
         "molde",
@@ -516,7 +516,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     )
     assert work_order.status == WorkOrder.Status.PLANNED
     planned = Quant.objects.get(
-        sku="CT",
+        sku="CRO",
         target_date=today,
         position=production,
         batch="",
@@ -532,7 +532,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     )
     work_order.refresh_from_db()
     started = Quant.objects.get(
-        sku="CT",
+        sku="CRO",
         target_date=today,
         position=production,
         batch="started",
@@ -559,7 +559,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     assert finished == work_order.started_qty
     assert work_order.status == WorkOrder.Status.FINISHED
     assert Quant.objects.filter(
-        sku="CT",
+        sku="CRO",
         target_date__isnull=True,
         batch=output.batch_ref,
         _quantity=work_order.started_qty,
@@ -622,7 +622,7 @@ def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
 def test_seed_batch_helper_never_rewrites_frozen_quality():
     batch = Batch.objects.create(
         ref="CT-20260909-SEED",
-        sku="CT",
+        sku="CRO",
         production_date=date(2026, 9, 9),
         expiry_date=date(2026, 9, 9),
         quality_grade_ref="fair",
@@ -648,26 +648,26 @@ def test_seed_batch_helper_never_rewrites_frozen_quality():
 def test_seed_only_replaces_output_batch_that_carries_its_signature():
     owned = Batch.objects.create(
         ref="CT-20260909-OWNED",
-        sku="CT",
+        sku="CRO",
         notes="Seed Nelson producao WO-SEED",
     )
     _discard_owned_seed_output_batch(
         ref=owned.ref,
-        sku="CT",
+        sku="CRO",
         work_order_ref="WO-SEED",
     )
     assert not Batch.objects.filter(pk=owned.pk).exists()
 
     real = Batch.objects.create(
         ref="CT-20260909-REAL",
-        sku="CT",
+        sku="CRO",
         notes="Produção conferida pela equipe",
         quality_grade_ref="fair",
     )
     with pytest.raises(CommandError, match="fora do domínio do seed"):
         _discard_owned_seed_output_batch(
             ref=real.ref,
-            sku="CT",
+            sku="CRO",
             work_order_ref="WO-SEED",
         )
     real.refresh_from_db()

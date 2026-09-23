@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -25,6 +26,26 @@ from shopman.storefront.models import (
 from shopman.storefront.services import account_privacy
 
 pytestmark = pytest.mark.django_db
+
+
+@contextmanager
+def _provedor_confirma(custom_fields=None):
+    """O ManyChat respondendo o que só ele pode responder: "apaguei".
+
+    A confirmação é do PROVEDOR, nunca do silêncio: por isso todo teste de
+    caminho feliz precisa dizer explicitamente que ele confirmou.
+    """
+    with (
+        patch(
+            "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.fetch_subscriber_info",
+            return_value={"custom_fields": custom_fields or []},
+        ) as info,
+        patch(
+            "shopman.shop.adapters.notification_manychat.set_custom_field",
+            return_value=True,
+        ) as set_field,
+    ):
+        yield info, set_field
 
 
 def _customer(*, suffix: str = "A") -> Customer:
@@ -344,7 +365,14 @@ def test_active_order_blocks_without_anonymizing_customer() -> None:
     "link_kind",
     ("identifier", "legacy_identity", "source", "metadata"),
 )
-def test_proven_manychat_link_blocks_before_deletion(link_kind: str) -> None:
+def test_vinculo_com_o_manychat_nao_manda_mais_o_cliente_pedir_para_a_equipe(link_kind: str) -> None:
+    """A conta vinculada ao ManyChat se exclui sozinha, como a página promete.
+
+    Antes, QUALQUER uma destas quatro pegadas levava a 409 e a "peça à equipe
+    para desvincular essa integração" — e como o ManyChat é o caminho do login
+    por WhatsApp, isso alcançava a maioria dos clientes. Agora o vínculo deixou
+    de ser pré-condição e virou trabalho da própria exclusão.
+    """
     customer = _customer(suffix=f"M{link_kind}")
     if link_kind == "identifier":
         CustomerIdentifier.objects.create(
@@ -365,33 +393,287 @@ def test_proven_manychat_link_blocks_before_deletion(link_kind: str) -> None:
             metadata={"manychat_custom_fields": {"segment": "test"}},
         )
 
-    with pytest.raises(
-        account_privacy.AccountDeletionBlocked,
-        match="manychat_unlink_required",
-    ):
+    with _provedor_confirma():
+        outcome = account_privacy.delete_account(
+            customer=customer,
+            idempotency_key=str(uuid.uuid4()),
+            authorized_at=timezone.now(),
+        )
+
+    assert outcome.replayed is False
+    customer.refresh_from_db()
+    receipt = PrivacyRequestReceipt.objects.get()
+    assert customer.is_active is False
+    assert customer.phone == ""
+    assert receipt.state == PrivacyRequestState.COMPLETED
+
+
+def test_a_limpeza_apaga_os_campos_que_a_casa_empurrou_para_o_perfil_de_la() -> None:
+    """"Apagar lá primeiro" é o que a API do provedor permite: zerar os campos."""
+    customer = _customer(suffix="MSCRUB")
+    CustomerIdentifier.objects.create(
+        customer=customer,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value="99887766",
+    )
+
+    with _provedor_confirma(
+        custom_fields=[
+            {"name": "customer_name", "value": "Ana"},
+            {"name": "product_name", "value": "Pão"},
+            {"name": "vazio", "value": ""},
+        ]
+    ) as (_info, set_field):
         account_privacy.delete_account(
             customer=customer,
             idempotency_key=str(uuid.uuid4()),
             authorized_at=timezone.now(),
         )
 
+    apagados = {call.args[1]: call.args[2] for call in set_field.call_args_list}
+    assert apagados == {"customer_name": "", "product_name": ""}
+    # Campo que já estava vazio não vira chamada: não há o que apagar nele.
+    assert "vazio" not in apagados
+
+
+def test_a_lapide_impede_o_webhook_de_recriar_a_conta_excluida() -> None:
+    """O buraco pelo qual o bloqueio existia: o sync seguinte recriava tudo."""
+    from shopman.guestman.contrib.manychat.service import ManychatService
+
+    customer = _customer(suffix="MTUMBA")
+    CustomerIdentifier.objects.create(
+        customer=customer,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value="55443322",
+    )
+
+    with _provedor_confirma():
+        account_privacy.delete_account(
+            customer=customer,
+            idempotency_key=str(uuid.uuid4()),
+            authorized_at=timezone.now(),
+        )
+
+    antes = Customer.objects.count()
+    with pytest.raises(ValueError, match="conta excluida"):
+        ManychatService.sync_subscriber(
+            {
+                "id": "55443322",
+                "first_name": "Ana",
+                "last_name": "Silva",
+                "whatsapp_phone": "+5543999991000",
+            }
+        )
+    assert Customer.objects.count() == antes
+
+
+def test_limpeza_nao_confirmada_deixa_recibo_incompleto_e_chama_a_operacao() -> None:
+    """Sem confirmação do provedor não existe "pronto" — nem meia-exclusão."""
+    from shopman.backstage.models import OperatorAlert
+
+    customer = _customer(suffix="MFALHA")
+    CustomerIdentifier.objects.create(
+        customer=customer,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value="11223344",
+    )
+
+    # getInfo sem resposta: pode ser queda, token ausente ou assinante sumido.
+    # Nenhuma dessas hipóteses prova que o perfil de lá ficou limpo.
+    with patch(
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.fetch_subscriber_info",
+        return_value=None,
+    ):
+        with pytest.raises(account_privacy.ProviderErasureIncomplete):
+            account_privacy.delete_account(
+                customer=customer,
+                idempotency_key=str(uuid.uuid4()),
+                authorized_at=timezone.now(),
+            )
+
     customer.refresh_from_db()
     receipt = PrivacyRequestReceipt.objects.get()
     assert customer.is_active is True
     assert customer.phone
     assert receipt.state == PrivacyRequestState.FAILED
-    assert receipt.failure_stage == "precondition"
+    assert receipt.failure_stage == "provider_erasure"
+    assert OperatorAlert.objects.filter(type="account_deletion_incomplete").exists()
+    # E nada de lápide: a conta continua viva, o sync dela não pode ser recusado.
+    from shopman.guestman.models import ProviderErasureTombstone
+
+    assert ProviderErasureTombstone.objects.count() == 0
 
 
-def test_pending_manychat_reconciliation_blocks_with_specific_reason() -> None:
+def test_um_campo_que_nao_confirma_interrompe_tudo_em_vez_de_apagar_pela_metade() -> None:
+    """A primeira gravação sem confirmação para a exclusão inteira."""
+    customer = _customer(suffix="MCAMPO")
+    CustomerIdentifier.objects.create(
+        customer=customer,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value="66778899",
+    )
+
+    with (
+        patch(
+            "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.fetch_subscriber_info",
+            return_value={"custom_fields": [{"name": "customer_name", "value": "Ana"}]},
+        ),
+        patch("shopman.shop.adapters.notification_manychat.set_custom_field", return_value=False),
+    ):
+        with pytest.raises(account_privacy.ProviderErasureIncomplete):
+            account_privacy.delete_account(
+                customer=customer,
+                idempotency_key=str(uuid.uuid4()),
+                authorized_at=timezone.now(),
+            )
+
+    customer.refresh_from_db()
+    assert customer.is_active is True
+
+
+def test_a_exclusao_abre_tarefa_datada_para_o_que_a_api_do_provedor_nao_faz() -> None:
+    """A API do ManyChat não apaga assinante; isso não pode virar nota de rodapé."""
+    from shopman.backstage.models import OperatorAlert
+
+    customer = _customer(suffix="MTAREFA")
+    CustomerIdentifier.objects.create(
+        customer=customer,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value="12345678",
+    )
+
+    with _provedor_confirma():
+        outcome = account_privacy.delete_account(
+            customer=customer,
+            idempotency_key=str(uuid.uuid4()),
+            authorized_at=timezone.now(),
+        )
+
+    tarefa = OperatorAlert.objects.get(type="manychat_contact_erasure_due")
+    assert "12345678" in tarefa.message
+    assert "Delete Contact" in tarefa.message
+    assert "15 dias" in tarefa.message
+    assert str(outcome.receipt_ref) in tarefa.message
+    prazo = (timezone.now() + timedelta(days=15)).strftime("%d/%m/%Y")
+    assert prazo in tarefa.message
+
+
+def test_vinculo_que_aparece_durante_a_limpeza_nao_e_declarado_apagado() -> None:
+    """A corrida que a matriz nomeia: o writer vence DEPOIS da leitura.
+
+    A fase 1 fotografa a pegada do provedor; entre ela e a finalização, um
+    webhook ou o resolvedor podem vincular um assinante NOVO. Esse vínculo não
+    passou pela limpeza, então declarar a conta apagada seria mentir sobre ele.
+    A exclusão relê com o `Customer` travado e falha fechada.
+    """
+    from shopman.shop.services import manychat_erasure
+
+    customer = _customer(suffix="MCORRIDA")
+    Customer.objects.filter(pk=customer.pk).update(
+        metadata={"manychat_custom_fields": {"segment": "test"}},
+    )
+
+    def _writer_vence(*, customer_pk, ids, pending):
+        CustomerIdentifier.objects.create(
+            customer_id=customer_pk,
+            identifier_type=IdentifierType.MANYCHAT,
+            identifier_value="90909090",
+        )
+        return manychat_erasure.ErasureOutcome(confirmed=True, subscriber_ids=tuple(ids))
+
+    with patch("shopman.shop.services.manychat_erasure.run", side_effect=_writer_vence):
+        with pytest.raises(
+            account_privacy.ProviderErasureIncomplete,
+            match="manychat_link_appeared_during_erasure",
+        ):
+            account_privacy.delete_account(
+                customer=customer,
+                idempotency_key=str(uuid.uuid4()),
+                authorized_at=timezone.now(),
+            )
+
+    customer.refresh_from_db()
+    receipt = PrivacyRequestReceipt.objects.get()
+    assert customer.is_active is True
+    assert customer.phone
+    assert receipt.state == PrivacyRequestState.FAILED
+    assert receipt.failure_stage == "provider_erasure"
+
+    from shopman.guestman.models import ProviderErasureTombstone
+
+    assert ProviderErasureTombstone.objects.count() == 0
+
+
+def test_conta_sem_pegada_do_provedor_nao_abre_tarefa_nem_chama_o_manychat() -> None:
+    """Quem nunca passou pelo ManyChat não paga o custo da integração dele."""
+    from shopman.backstage.models import OperatorAlert
+
+    customer = _customer(suffix="MNADA")
+
+    with patch(
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.fetch_subscriber_info",
+    ) as info:
+        account_privacy.delete_account(
+            customer=customer,
+            idempotency_key=str(uuid.uuid4()),
+            authorized_at=timezone.now(),
+        )
+
+    info.assert_not_called()
+    assert not OperatorAlert.objects.filter(type="manychat_contact_erasure_due").exists()
+
+
+def test_reconciliacao_incerta_falha_fechado_sem_mandar_pedir_para_ninguem() -> None:
+    """Uma criação externa pode ter sido aceita: incerto não vira concluído."""
     customer = _customer(suffix="MPENDING")
     Customer.objects.filter(pk=customer.pk).update(
         metadata={"manychat_resolution_pending": True},
     )
 
-    with pytest.raises(
-        account_privacy.AccountDeletionBlocked,
-        match="manychat_reconciliation_pending",
+    with patch(
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.reconcile_pending",
+        return_value="uncertain",
+    ):
+        with pytest.raises(account_privacy.ProviderErasureIncomplete, match="uncertain"):
+            account_privacy.delete_account(
+                customer=customer,
+                idempotency_key=str(uuid.uuid4()),
+                authorized_at=timezone.now(),
+            )
+
+    customer.refresh_from_db()
+    receipt = PrivacyRequestReceipt.objects.get()
+    assert customer.is_active is True
+    assert customer.phone
+    assert receipt.state == PrivacyRequestState.FAILED
+    assert receipt.failure_stage == "provider_erasure"
+
+
+def test_reconciliacao_que_acha_o_assinante_limpa_e_sepulta_esse_vinculo() -> None:
+    """Resolvida a incerteza, o assinante encontrado entra na limpeza."""
+    customer = _customer(suffix="MACHOU")
+    Customer.objects.filter(pk=customer.pk).update(
+        metadata={"manychat_resolution_pending": True},
+    )
+
+    def _materializa(customer_pk):
+        # É o que o `_finalize_customer_resolution` faz de verdade: grava o
+        # identificador E tira a pendência. Deixar a pendência de pé aqui seria
+        # um mock mentindo — e a cerca da fase 2 reprova, com razão.
+        CustomerIdentifier.objects.create(
+            customer_id=customer_pk,
+            identifier_type=IdentifierType.MANYCHAT,
+            identifier_value="77777777",
+        )
+        Customer.objects.filter(pk=customer_pk).update(metadata={})
+        return "linked"
+
+    with (
+        patch(
+            "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.reconcile_pending",
+            side_effect=_materializa,
+        ),
+        _provedor_confirma(),
     ):
         account_privacy.delete_account(
             customer=customer,
@@ -399,12 +681,11 @@ def test_pending_manychat_reconciliation_blocks_with_specific_reason() -> None:
             authorized_at=timezone.now(),
         )
 
-    customer.refresh_from_db()
-    receipt = PrivacyRequestReceipt.objects.get()
-    assert customer.is_active is True
-    assert customer.phone
-    assert receipt.state == PrivacyRequestState.FAILED
-    assert receipt.failure_stage == "precondition"
+    from shopman.guestman.models import ProviderErasureTombstone, erasure_digest
+
+    assert ProviderErasureTombstone.objects.filter(
+        digest=erasure_digest("manychat", "subscriber_id", "77777777"),
+    ).exists()
 
 
 def test_pending_otp_delivery_blocks_until_the_code_delivery_window_closes() -> None:
@@ -436,6 +717,12 @@ def test_pending_otp_delivery_blocks_until_the_code_delivery_window_closes() -> 
 
 
 def test_expired_otp_never_clears_an_independent_manychat_uncertainty() -> None:
+    """O OTP vencido resolve a pendência DELE, nunca a incerteza do provedor.
+
+    As duas recusas são independentes: sair de uma não pode, por tabela, abrir
+    caminho para a outra. O que mudou é só o formato — a incerteza do ManyChat
+    não recusa mais por pré-condição, ela falha fechada depois de tentar.
+    """
     customer = _customer(suffix="OTPMC")
     Customer.objects.filter(pk=customer.pk).update(
         metadata={"manychat_resolution_pending": True},
@@ -447,15 +734,19 @@ def test_expired_otp_never_clears_an_independent_manychat_uncertainty() -> None:
         expires_at=timezone.now() - timedelta(seconds=1),
     )
 
-    with pytest.raises(
-        account_privacy.AccountDeletionBlocked,
-        match="manychat_reconciliation_pending",
+    with patch(
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.reconcile_pending",
+        return_value="uncertain",
     ):
-        account_privacy.delete_account(
-            customer=customer,
-            idempotency_key=str(uuid.uuid4()),
-            authorized_at=timezone.now(),
-        )
+        with pytest.raises(account_privacy.ProviderErasureIncomplete):
+            account_privacy.delete_account(
+                customer=customer,
+                idempotency_key=str(uuid.uuid4()),
+                authorized_at=timezone.now(),
+            )
+
+    customer.refresh_from_db()
+    assert customer.is_active is True
 
 
 def test_expired_otp_with_started_delivery_stays_fail_closed() -> None:

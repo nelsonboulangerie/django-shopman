@@ -75,22 +75,57 @@ Customer-first e provas focais. A limitação remanescente não é uma mutação
 aberta: é a necessidade de confirmar o desvínculo no provedor ManyChat antes de
 prometer a conclusão da exclusão.
 
+> **Atualizado em 23/09/2026 — o bloqueio virou trabalho.** O parágrafo abaixo
+> descrevia a decisão anterior: vínculo ManyChat comprovado RECUSAVA a exclusão,
+> e o cliente recebia 409 com "peça à equipe para desvincular". Como o ManyChat
+> é o caminho do login por WhatsApp, isso alcançava a maioria dos clientes — e
+> contradizia a promessa escrita na página de privacidade ("você pode excluir a
+> conta na hora, sem pedir para ninguém"). A LGPD trata exclusão como direito do
+> titular exercível por ele; mandar pedir à equipe é o oposto. Ver
+> `shopman/shop/services/manychat_erasure.py`.
+
 O lock resolve a corrida concorrente do ManyChat, mas não resolve sozinho um
 webhook novo recebido depois de a exclusão já ter removido os identificadores.
-Por isso, um vínculo ManyChat comprovado bloqueia a exclusão antes da mutação e
-o operador recebe a ação necessária: desvincular/suprimir no provedor. Não basta
-apagar o identificador local, pois isso não prova o desvínculo upstream. O
-onboarding existente permanece intacto e nenhum tombstone/TTL novo é inferido;
-até existir confirmação automatizada de desvínculo, a etapa é operacional.
+Esse caminho — a RESSURREIÇÃO — era a razão de fato do bloqueio, e agora ele é
+fechado por uma lápide: `ProviderErasureTombstone` guarda o HMAC do
+`subscriber_id` (nunca o valor em claro) e `ManychatService.sync_subscriber`
+recusa o assinante sepultado. O identificador local continua sendo apagado, mas
+não é mais ele que carrega a garantia.
+
+Medição de 23/09/2026 que muda o desenho: **a API pública do ManyChat não tem
+verbo de exclusão de assinante.** O inventário completo é `getInfo`,
+`findByName`, `findByCustomField`, `findBySystemField`, `getInfoByUserRef`,
+`createSubscriber`, `updateSubscriber`, `addTag(ByName)`, `removeTag(ByName)`,
+`setCustomField(s)`, `setCustomFieldByName`, `verifyBySignedRequest` e os três
+de envio. Nenhum apaga. Portanto "apagar lá primeiro" tem um teto, e ele é:
+
+1. **o que dá para apagar** — os campos personalizados que esta casa empurrou
+   para o perfil do assinante são zerados um a um por `setCustomFieldByName`, e
+   cada gravação devolve confirmação própria. A primeira que não confirmar
+   interrompe a exclusão inteira;
+2. **o que não dá** — a linha de contato do ManyChat (telefone e nome vindos do
+   WhatsApp) só sai pela mão de um humano na interface deles. Isso NÃO fica como
+   pendência silenciosa: a conclusão abre `manychat_contact_erasure_due`,
+   alerta crítico com o assinante, a instrução e o prazo de 15 dias.
+
+A ordem segue a deste documento — intenção durável (`manychat_erasure_pending`,
+sem PII) → I/O fora da transação → readquirir `Customer` → finalizar — e a
+pegada do provedor é **relida com o `Customer` travado** na finalização: vínculo
+que apareceu durante a limpeza não foi alcançado por ela, então a exclusão falha
+fechada (`manychat_link_appeared_during_erasure`) em vez de se declarar
+concluída. Limpeza não confirmada não vira "pronto": o recibo fica incompleto, a
+operação é chamada e o titular vê "tente de novo", nunca "peça para alguém".
 
 O resolvedor outbound também serializa pelo `Customer` antes de qualquer I/O.
 A chamada externa usa o timeout já limitado a dez segundos. Se o provedor não
 devolver um resultado conclusivo depois de iniciada a resolução, fica no
 cadastro apenas o estado operacional, sem PII,
-`manychat_resolution_pending=true`; esse estado bloqueia uma exclusão que, de
+`manychat_resolution_pending=true`; esse estado impede uma exclusão que, de
 outro modo, poderia prometer sucesso enquanto uma criação externa tivesse sido
-aceita. Uma resolução concluída troca essa pendência pelo identificador
-ManyChat comprovado, que mantém o mesmo bloqueio até o desvínculo operacional.
+aceita. A exclusão não recusa mais por causa dele: ela RESOLVE, chamando
+`reconcile_pending` dentro da própria fase de I/O. Encontrou o assinante, ele
+entra na limpeza e ganha lápide; ausência conclusiva libera; incerteza falha
+fechada.
 Timeout, erro HTTP ou qualquer resposta sem identificador continuam incertos:
 o provedor documenta que contato já existente também produz erro, portanto erro
 não prova ausência. O caminho operacional
@@ -103,7 +138,18 @@ atalho.
 ## Critério de encerramento técnico
 
 As provas concorrentes usam duas conexões e sincronização observável por lock do
-banco, sem `sleep` frágil. A limitação externa ManyChat acima exige desvínculo
-operacional comprovado e impede declarar esse fluxo como disponível de ponta a
-ponta. Ela não é ocultada como sucesso local. Produção, segredos, jobs e
-descarte de legado permanecem fora deste gate.
+banco, sem `sleep` frágil.
+
+⚠️ **As provas de ManyChat × exclusão nunca rodaram até 23/09/2026.** Elas
+moravam em `packages/guestman/shopman/guestman/tests/`, cujo rootdir carrega
+`guestman_test_settings` — que não instala `shopman.shop`. O `skip` de módulo
+disparava sempre, inclusive no CI, e skip de MÓDULO não passa pelo coletor de
+`run_runtime_tests.py`, então o gate nem reprovava. O arquivo é monolítico por
+natureza (importa `shopman.storefront.services.account_privacy`) e foi movido
+para `shopman/storefront/tests/test_manychat_privacy_postgres.py`, onde executa.
+
+A limitação externa ManyChat acima deixou de bloquear o fluxo: a exclusão
+conclui sozinha, e o que a API do provedor não faz vira tarefa datada do
+operador. O resíduo — a linha de contato no ManyChat — continua declarado, não
+ocultado como sucesso local. Produção, segredos, jobs e descarte de legado
+permanecem fora deste gate.

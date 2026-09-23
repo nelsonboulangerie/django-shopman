@@ -410,13 +410,13 @@ def material_opening_targets() -> dict[str, Decimal]:
 #   HO/MIHO: só a massa — a salsicha entra como insumo próprio na ficha.
 #   KBB: o dono ainda não pesou; estimado pela família do BBB.
 PESO_MASSA_CRUA_G = {
-    "FA": 400, "BAP": 260, "BAX": 480, "CF": 300, "BA": 320, "CGR": 340,
-    "PI": 30, "BEP": 170,
-    "FOA": 420, "CBT": 680, "FOC": 540, "MIF": 110, "MICBT": 180, "MIFOC": 160,
-    "CM": 36, "CN": 82, "PR": 68, "BCH": 42, "COC": 60,
-    "CH": 300, "BN": 240, "ANU": 110, "ANP": 110, "MBBBG": 32,
-    "BH": 100, "MA": 110, "CPQ": 90, "FF": 130, "MFF": 80,
-    "HO": 60, "MIHO": 40, "DL": 100, "JO": 40,
+    "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
+    "PIT": 30, "BGGP": 170,
+    "FOA": 420, "FOB": 680, "FOC": 540, "FOAP": 110, "FOBP": 180, "FOCP": 160,
+    "CRP": 36, "CN": 82, "BRRSN": 68, "BRCH": 42, "COC": 60,
+    "CHLH": 300, "BRNT": 240, "URS": 110, "PORQ": 110, "BRBBP": 32,
+    "BICH": 100, "MA": 110, "CRPQ": 90, "FFGO": 130, "FFGOP": 80,
+    "HOD": 60, "HODP": 40, "DELI": 100, "JO": 40,
 }
 
 
@@ -433,50 +433,50 @@ PESO_MASSA_CRUA_G = {
 # duas fontes para o mesmo número é drift à espera de acontecer.
 STOCK_VITRINE = {
     # Rústicos — volumes herdam a calibração dos antecessores
-    "BF": 22,
-    "BE": 12,
-    "CGO": 16,
+    "TRADI": 22,
+    "BGG": 12,
+    "CPG": 16,
     "CPX": 8,
     "CI": 24,
-    "FE": 20,
-    "TB": 24,
+    "FENDU": 20,
+    "TABAT": 24,
     "MIB": 18,
-    "PH": 20,
+    "TRABB": 20,
     # Finos
-    "CT": 42,
-    "PC": 36,
-    "FA": 18,
-    "KP": 8,
-    "ME": 11,
-    "ANC": 16,
+    "CRO": 42,
+    "PCHOC": 36,
+    "FORMA": 18,
+    "KUP": 8,
+    "MELON": 11,
+    "COE": 16,
     "CO": 20,
-    "BBB": 24,
-    "PHO": 48,
+    "BRBB": 24,
+    "HOL": 48,
     # Salgados de vitrine
-    "CMO": 10,
-    "CMA": 8,
-    "CCOM": 6,
-    "QQ": 10,
+    "CQMO": 10,
+    "CQMA": 8,
+    "CQCOM": 6,
+    "QJQT": 10,
     "JB": 10,
     "PG": 10,
-    "TI": 4,
+    "TABUA": 4,
     # Doces
-    "MD": 68,
-    "PPU": 8,
-    "MS": 8,
+    "MDLN": 68,
+    "PERDU": 8,
+    "MELSA": 8,
     "PU": 10,
     "TJ": 8,
     "COMBO-PETIT-DEJ": 8,
     # Bebidas com estoque físico (água engarrafada)
-    "AG": 48,
+    "AGUA-MINERAL-PRATA-310": 48,
     # Mercearia
     "MT": 8,
     "BK": 6,
-    "TP": 8,
-    "PT": 8,
+    "TPND": 8,
+    "RTAT": 8,
     "CX": 6,
     "GL": 24,
-    "QC": 6,
+    "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": 6,
     "QP": 6,
     "GR": 12,
     "THL": 10,
@@ -488,14 +488,14 @@ STOCK_VITRINE = {
 # vence HOJE (o fechamento baixa como perda_vencido), e o canal remoto respeita
 # os gates de lote (C2).
 LEFTOVER_ITEMS = [
-    ("BF", 2),
-    ("FE", 2),
-    ("TB", 3),
+    ("TRADI", 2),
+    ("FENDU", 2),
+    ("TABAT", 3),
     ("CI", 2),
-    ("PH", 3),
-    ("MD", 5),
-    ("CT", 3),
-    ("PC", 2),
+    ("TRABB", 3),
+    ("MDLN", 5),
+    ("CRO", 3),
+    ("PCHOC", 2),
 ]
 
 
@@ -513,8 +513,8 @@ STOREFRONT_STATES = {
     # Fendu não tem uma WorkOrder ativa hoje. Kuro Pan era usado aqui, mas ao
     # mesmo tempo nascia STARTED no quadro: fazer o estoque dessa fornada sumir
     # para simular "esgotado" tornava a própria confirmação inexequível.
-    "sold_out": "FE",      # esgotado + "me avise" (vendável, sem plano hoje)
-    "low_stock": "ME",     # últimas unidades (≤ limiar)
+    "sold_out": "FENDU",      # esgotado + "me avise" (vendável, sem plano hoje)
+    "low_stock": "MELON",     # últimas unidades (≤ limiar)
     "planned": "PU",       # lista de espera / previsto (sem pronto, com plano)
     "paused": "TJ",        # pausado pelo operador (is_sellable=False)
 }
@@ -1777,66 +1777,66 @@ class Command(BaseCommand):
         # vagas "do dia"; mercearia com preço provisório.
         products_data = [
             # ── Bebidas · Quentes ──
-            ("SS", "Espresso", "Café espresso puro, grão especial torrado artesanal", 800, "un", None, True,
+            ("SP", "Espresso", "Café espresso puro, grão especial torrado artesanal", 800, "un", None, True,
              unsplash("photo-1508088405209-fbd63b6a4f50"), 40, ""),
-            ("CD", "Café Coado", "Café coado na hora, grão especial torrado artesanal", 1200, "un", None, True,
+            ("COAD", "Café Coado", "Café coado na hora, grão especial torrado artesanal", 1200, "un", None, True,
              unsplash("photo-1541469406036-71229832e06e"), 150, ""),
-            ("PS", "Cappuccino", "Espresso com leite vaporizado e espuma cremosa", 1200, "un", None, True,
+            ("CAP", "Cappuccino", "Espresso com leite vaporizado e espuma cremosa", 1200, "un", None, True,
              unsplash("photo-1506372023823-741c83b836fe"), 180, ""),
-            ("MC", "Mochaccino", "Espresso com chocolate da casa e leite vaporizado", 1200, "un", None, True,
+            ("CAPMO", "Mochaccino", "Espresso com chocolate da casa e leite vaporizado", 1200, "un", None, True,
              unsplash("photo-1596078841242-12f73dc697c6"), 200, ""),
-            ("THC", "Chá Camille", "Blend da casa, servido em bule", 1400, "un", None, True,
+            ("CHCAM", "Chá Camille", "Blend da casa, servido em bule", 1400, "un", None, True,
              unsplash("photo-1602603412313-ab713536e288"), 400, ""),
-            ("THR", "Chá Rouge", "Blend da casa, servido em bule", 1400, "un", None, True,
+            ("CHROU", "Chá Rouge", "Blend da casa, servido em bule", 1400, "un", None, True,
              unsplash("photo-1563636680-28d36aeb83a4"), 400, ""),
-            ("THS", "Chá Sophie", "Blend da casa, servido em bule", 1400, "un", None, True,
+            ("CHSOP", "Chá Sophie", "Blend da casa, servido em bule", 1400, "un", None, True,
              unsplash("photo-1654713803623-3d2b9d39f6b3"), 400, ""),
-            ("THB", "Chá Bleu", "Blend da casa, servido em bule", 1400, "un", None, True,
+            ("CHBLU", "Chá Bleu", "Blend da casa, servido em bule", 1400, "un", None, True,
              unsplash("photo-1582786256312-079c49fb6980"), 400, ""),
             # ── Bebidas · Geladas ──
             ("CE", "Coffee Float", "Café gelado com sorvete", 1800, "un", None, True,
              unsplash("photo-1594631661960-34762327295a"), 300, ""),
-            ("FP", "Frappé", "Batido gelado: café, chocolate ou frutas vermelhas", 1800, "un", None, True,
+            ("FRAP", "Frappé", "Batido gelado: café, chocolate ou frutas vermelhas", 1800, "un", None, True,
              unsplash("photo-1719953107038-da34352e407e"), 400, ""),
-            ("AG", "Água", "Água mineral, com ou sem gás", 600, "un", None, True,
+            ("AGUA-MINERAL-PRATA-310", "Água", "Água mineral, com ou sem gás", 600, "un", None, True,
              unsplash("photo-1553564552-02656d6a2390"), 500, ""),
             # ── Bebidas · Especialidades na torneira ──
             ("CV", "Cream Soda do dia", "Cream soda artesanal da torneira, sabor do dia", 2100, "un", None, True,
              unsplash("photo-1605712916345-6ef6bcc2e29c"), 300, ""),
-            ("SO", "Soda de Laranja", "Soda artesanal de laranja, feita na casa", 1400, "un", None, True,
+            ("SDLA", "Soda de Laranja", "Soda artesanal de laranja, feita na casa", 1400, "un", None, True,
              unsplash("photo-1598830853058-3474f6a66003"), 300, ""),
             # ── Padaria · Rústicos ──
-            ("BF", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
+            ("TRADI", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
-            ("CGO", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 0, True,
+            ("CPG", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 0, True,
              f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 0, True,
              f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
              f"{IMG}/ci.webp", 180, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
-            ("BE", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
+            ("BGG", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
              f"{IMG}/be.webp", 260, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             # Fora do menu impresso, à venda na vitrine (coleção Rústicos, dono 17/08).
-            ("FE", "Fendu", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
+            ("FENDU", "Fendu", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/fe.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("TB", "Tabatière", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
+            ("TABAT", "Tabatière", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/tb.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
              f"{IMG}/bap.webp", 120, "Congele no mesmo dia. Reaqueça a 200°C por 5min"),
-            ("PH", "Pão de Hambúrguer", "Pão de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
+            ("TRABB", "Pão de Hambúrguer", "Pão de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/ph.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             # ── Padaria · Finos ──
-            ("CT", "Croissant", "Clássico em pura manteiga. Simples e delicioso. Ótimo com geleias!", 1300, "un", 0, True,
+            ("CRO", "Croissant", "Clássico em pura manteiga. Simples e delicioso. Ótimo com geleias!", 1300, "un", 0, True,
              f"{IMG}/ct.webp", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 0, True,
+            ("PCHOC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 0, True,
              f"{IMG}/pc.webp", 90, "Reaqueça no forno a 180°C por 5min. Evite micro-ondas"),
-            ("FA", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 1, True,
+            ("FORMA", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 1, True,
              f"{IMG}/fa.webp", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
-            ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
+            ("KUP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
-            ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
+            ("MELON", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
-            ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 0, True,
+            ("COE", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 0, True,
              f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
              f"{IMG}/co.webp", 120, "Melhor consumido no dia. Reaqueça a 180°C por 5min"),
@@ -1845,31 +1845,31 @@ class Command(BaseCommand):
             # receita produz unidade, o estoque conta unidade, e os dois anos de
             # histórico do Yooga — que eram unidade, a R$ 7 e R$ 8 — comparam
             # com o presente sem fator de conversão. Fora do menu impresso.
-            ("BBB", "Brioche Burger Bun", "Super leve, riquíssimo em ovos e manteiga", 800, "un", 1, True,
+            ("BRBB", "Brioche Burger Bun", "Super leve, riquíssimo em ovos e manteiga", 800, "un", 1, True,
              f"{IMG}/bbb.webp", 100, "Congele no mesmo dia. Reaqueça a 180°C por 5min"),
-            ("PHO", "Pão para Hot Dog", "Pão amanteigado, bom para cachorro quente", 700, "un", 1, True,
+            ("HOL", "Pão para Hot Dog", "Pão amanteigado, bom para cachorro quente", 700, "un", 1, True,
              f"{IMG}/pho.webp", 80, "Congele no mesmo dia por até 30 dias"),
             # ── Padaria · Salgados ──
-            ("CMO", "Croque Monsieur", "Clássico sanduíche francês gratinado com presunto e queijo gruyere", 2400, "un", 0, True,
+            ("CQMO", "Croque Monsieur", "Clássico sanduíche francês gratinado com presunto e queijo gruyere", 2400, "un", 0, True,
              unsplash("photo-1621188988504-f2a8ff685801"), 250, "Servir quente, imediatamente"),
-            ("CMA", "Croque Madame", "Croque monsieur com ovo pochado por cima", 2800, "un", 0, True,
+            ("CQMA", "Croque Madame", "Croque monsieur com ovo pochado por cima", 2800, "un", 0, True,
              unsplash("photo-1621188988280-67c8d6e130a6"), 290, "Servir quente, imediatamente"),
-            ("CCOM", "Croque Complet", "Croque com presunto, queijo, ovo e acompanhamento da casa", 3000, "un", 0, True,
+            ("CQCOM", "Croque Complet", "Croque com presunto, queijo, ovo e acompanhamento da casa", 3000, "un", 0, True,
              unsplash("photo-1531664412848-9610afed156c"), 320, "Servir quente, imediatamente"),
-            ("QQ", "Queijo-Quente", "Queijo quente da casa, no shokupan", 2600, "un", 0, True,
+            ("QJQT", "Queijo-Quente", "Queijo quente da casa, no shokupan", 2600, "un", 0, True,
              unsplash("photo-1528736235302-52922df5c122"), 250, "Servir quente, imediatamente"),
             ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto — o clássico parisiense", 1800, "un", 0, True,
              unsplash("photo-1753798130695-3c060be80e83"), 250, "Melhor consumido na hora"),
             ("PG", "Pain Grillé", "Fatia grossa na chapa com manteiga da casa", 1600, "un", 0, True,
              unsplash("photo-1637376516923-e88d431a677d"), 150, "Servir quente, imediatamente"),
-            ("TI", "Tábua de Iguarias da Casa", "Charcutaria, queijos e patês da casa, com pães", 5800, "un", 0, True,
+            ("TABUA", "Tábua de Iguarias da Casa", "Charcutaria, queijos e patês da casa, com pães", 5800, "un", 0, True,
              unsplash("photo-1640618491853-95b2c5041eda"), 500, "Servir na hora"),
             # ── Padaria · Doces ──
-            ("PPU", "Pain Perdu", "Fatia de brioche dourada na chapa, calda e toque de canela", 1800, "un", 0, True,
+            ("PERDU", "Pain Perdu", "Fatia de brioche dourada na chapa, calda e toque de canela", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
-            ("MS", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
+            ("MELSA", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
-            ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
+            ("MDLN", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
             # Purin e Tea Jelly são produtos novos em desenvolvimento; validade
             # 3 dias é a estimativa segura do dono (26/08). Não são pão: não
@@ -1887,15 +1887,15 @@ class Command(BaseCommand):
              unsplash("photo-1638324396220-432156cd9303"), 200, "Conservar refrigerado após aberto"),
             ("BK", "Bacon da Casa", "Bacon curado e defumado na casa (peça)", 2200, "un", 15, True,
              unsplash("photo-1766406838572-915da0343519"), 200, "Conservar refrigerado"),
-            ("TP", "Tapenade", "Pasta provençal de azeitonas da casa", 2400, "un", 15, True,
+            ("TPND", "Tapenade", "Pasta provençal de azeitonas da casa", 2400, "un", 15, True,
              unsplash("photo-1750874695064-f851719d1858"), 170, "Conservar refrigerado após aberto"),
-            ("PT", "Patê de Ratatouille", "Patê vegetal da casa", 2400, "un", 15, True,
+            ("RTAT", "Patê de Ratatouille", "Patê vegetal da casa", 2400, "un", 15, True,
              unsplash("photo-1777891257519-84d59a502ca1"), 170, "Conservar refrigerado após aberto"),
             ("CX", "Cornichons", "Picles franceses em conserva", 2800, "un", 90, True,
              unsplash("photo-1774456567094-726973275d34"), 200, "Conservar refrigerado após aberto"),
             ("GL", "Geleia St. Dalfour (mini)", "Geleia francesa 100% fruta, pote mini", 1600, "un", 180, True,
              unsplash("photo-1633084426862-3a8c25aa7ce5"), 28, "Conservar refrigerado após aberto"),
-            ("QC", "Camembert", "Queijo camembert de leite de vaca", 3800, "un", 20, True,
+            ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Camembert", "Queijo camembert de leite de vaca", 3800, "un", 20, True,
              unsplash("photo-1624806992066-5ffcf7ca186b"), 250, "Conservar refrigerado"),
             ("QP", "Queijo Pomerode", "Queijo colonial artesanal de Pomerode", 3200, "un", 30, True,
              unsplash("photo-1756922245026-934ff1648d79"), 300, "Conservar refrigerado"),
@@ -1910,31 +1910,31 @@ class Command(BaseCommand):
             # outras restaurações — o que a casa vendia, existe. Volume baixo
             # (2 a 40 vendas cada) não desqualifica: foi a lição da mini baguete
             # de gergelim, que vende pouco no balcão por ser de caixa presente.
-            ("CHAI_A", "Soft Chai Cítrico", "Chai da casa com cítricos, servido gelado", 2100, "un", None, True,
+            ("SFTCH", "Soft Chai Cítrico", "Chai da casa com cítricos, servido gelado", 2100, "un", None, True,
              unsplash("photo-1517701550927-30cf4ba1dba5"), 300, ""),
-            ("CHEGO_L50", "Aconchego Chai Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-ACONCHEGO-KANFA-L50", "Aconchego Chai Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 60, "Conservar em local seco e fechado"),
-            ("CHEGO_P50", "Aconchego Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-ACONCHEGO-KANFA-P50", "Aconchego Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("INTIMI_L50", "Intimidade Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
+            ("CHA-INTIMIDADE-KANFA-L50", "Intimidade Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 60, "Conservar em local seco e fechado"),
-            ("INTIMI_P50", "Intimidade Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-INTIMIDADE-KANFA-P50", "Intimidade Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("INTU_L70", "Intuição Chai Kãnfa — Lata 70g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
+            ("CHA-INTUICAO-KANFA-L70", "Intuição Chai Kãnfa — Lata 70g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 60, "Conservar em local seco e fechado"),
-            ("INTU_P50", "Intuição Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-INTUICAO-KANFA-P50", "Intuição Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("MAMA_L60", "Mama Chai Kãnfa — Lata 60g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-MAMA-KANFA-L70", "Mama Chai Kãnfa — Lata 60g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 60, "Conservar em local seco e fechado"),
-            ("MAMA_P50", "Mama Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-MAMA-KANFA-P50", "Mama Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("NAMAS_L60", "Namastê Chai Kãnfa — Lata 60g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-NAMASTE-KANFA-L70", "Namastê Chai Kãnfa — Lata 60g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 60, "Conservar em local seco e fechado"),
-            ("NAMAS_P50", "Namastê Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-NAMASTE-KANFA-P50", "Namastê Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("SOFIA_P50", "Chalosofia Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-CHALOSOFIA-KANFA-P50", "Chalosofia Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("VITAL_P50", "Vital Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-VITAL-KANFA-P50", "Vital Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
             # ── Voltaram do Yooga (18/08) ──
             # O cardápio 2027 tinha colapsado famílias inteiras em produtos
@@ -1954,88 +1954,88 @@ class Command(BaseCommand):
             # como placeholder. Só o Porquinho fica sem foto — não há registro
             # dele no acervo e foto errada é pior que sem foto — e cai no card
             # de categoria (ícone + SKU) da superfície.
-            ("SL", "Espresso Macchiato", "Espresso marcado com espuma de leite", 1000, "un", None, True,
+            ("SPMC", "Espresso Macchiato", "Espresso marcado com espuma de leite", 1000, "un", None, True,
              unsplash("photo-1485808191679-5f86510681a2"), 60, ""),
-            ("CL", "Caffè Latte", "Espresso com leite vaporizado", 1400, "un", None, True,
+            ("CAFL", "Caffè Latte", "Espresso com leite vaporizado", 1400, "un", None, True,
              unsplash("photo-1473027292808-697370c59ec5"), 250, ""),
-            ("CQ", "Chocolate Quente", "Chocolate quente cremoso da casa", 1800, "un", None, True,
+            ("CHOQ", "Chocolate Quente", "Chocolate quente cremoso da casa", 1800, "un", None, True,
              unsplash("photo-1497048297103-b34f2fc1df34"), 250, ""),
-            ("MH", "Mocha", "Espresso com chocolate e leite vaporizado", 2200, "un", None, True,
+            ("MOCHA", "Mocha", "Espresso com chocolate e leite vaporizado", 2200, "un", None, True,
              unsplash("photo-1517578239113-b03992dcdd25"), 250, ""),
-            ("HI", "Chá Hibisco", "Chá gelado de hibisco", 1800, "un", None, True,
+            ("CHHIB", "Chá Hibisco", "Chá gelado de hibisco", 1800, "un", None, True,
              unsplash("photo-1499638673689-79a0b5115d87"), 300, ""),
-            ("CTV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2900, "un", None, True,
+            ("CTFV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2900, "un", None, True,
              unsplash("photo-1594579629306-07af17998d4a"), 300, ""),
-            ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 0, True,
+            ("BICH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 0, True,
              f"{IMG}/bh.webp", 90, "Conservar refrigerado. Consumir no dia"),
             ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 0, True,
              f"{IMG}/ma.webp", 95, "Conservar refrigerado. Consumir no dia"),
-            ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
+            ("CRP", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
              f"{IMG}/cm.webp", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 0, True,
+            ("BRCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 0, True,
              f"{IMG}/bch.webp", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1800, "un", 0, True,
              f"{IMG}/cn.webp", 72, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 0, True,
+            ("BRRSN", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 0, True,
              f"{IMG}/pr.webp", 60, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1100, "un", 0, True,
              f"{IMG}/co.webp", 53, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("CH", "Challah", "Pão trançado de massa enriquecida", 1800, "un", 1, True,
+            ("CHLH", "Challah", "Pão trançado de massa enriquecida", 1800, "un", 1, True,
              f"{IMG}/ch.webp", 265, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("BN", "Brioche Nanterre", "Brioche em forma, massa amanteigada", 2200, "un", 1, True,
+            ("BRNT", "Brioche Nanterre", "Brioche em forma, massa amanteigada", 2200, "un", 1, True,
              f"{IMG}/bn.webp", 210, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("ANU", "Ursinho", "Doce moldado em ursinho, recheio de creme", 1400, "un", 0, True,
+            ("URS", "Ursinho", "Doce moldado em ursinho, recheio de creme", 1400, "un", 0, True,
              f"{IMG}/an.webp", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             # Não está sendo feito no momento (dono, 18/08). Nasce fora de venda:
             # o produto existe, guarda a história, e volta com uma flag.
-            ("ANP", "Porquinho", "Doce moldado em porquinho, recheio de creme", 1400, "un", 0, False,
+            ("PORQ", "Porquinho", "Doce moldado em porquinho, recheio de creme", 1400, "un", 0, False,
              "", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("KBB", "Kuro Pan Burger", "Kuro Pan em formato de bun para hambúrguer", 800, "un", 1, True,
+            ("KUBB", "Kuro Pan Burger", "Kuro Pan em formato de bun para hambúrguer", 800, "un", 1, True,
              unsplash("photo-1587606381527-172f6d902ada"), 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("MBBBG", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
+            ("BRBBP", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
              f"{IMG}/bbb.webp", 28, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("BAP", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
+            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
              f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("BAX", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
+            ("ITA", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
              f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("CF", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
+            ("CPBG", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
              f"{IMG}/cf.webp", 265, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("BA", "Bâtard", "Pão rústico curto, casca crocante", 1300, "un", 0, True,
+            ("BAT", "Bâtard", "Pão rústico curto, casca crocante", 1300, "un", 0, True,
              f"{IMG}/ba.webp", 280, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("CGR", "Pain de Campagne Redondo", "Campagne em formato redondo", 1800, "un", 0, True,
+            ("CPR", "Pain de Campagne Redondo", "Campagne em formato redondo", 1800, "un", 0, True,
              f"{IMG}/cgr.webp", 300, "Melhor consumido no dia. Congele por até 30 dias"),
             # Vienna é CAFÉ GELADO (dono, 26/08) — a curadoria histórica já o
             # marcava "bebida-preparada" (categoria "Cafés" no Yooga); a
             # restauração é que o tinha lido como pão.
-            ("SE", "Vienna", "Café gelado da casa", 1700, "un", None, True,
+            ("VIEN", "Vienna", "Café gelado da casa", 1700, "un", None, True,
              unsplash("photo-1517701604599-bb29b565090c"), 300, ""),
-            ("PI", "Pita", "Pão pita, unidade", 400, "un", 1, True,
+            ("PIT", "Pita", "Pão pita, unidade", 400, "un", 1, True,
              unsplash("photo-1521791697570-e1f13d0b81d0"), 25, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("BEP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
+            ("BGGP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
              f"{IMG}/be.webp", 150, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
              f"{IMG}/foa.webp", 370, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("CBT", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
+            ("FOB", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
              f"{IMG}/cbt.webp", 600, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
              f"{IMG}/foc.webp", 475, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("MIF", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
+            ("FOAP", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
              f"{IMG}/mif.webp", 95, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("MICBT", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
+            ("FOBP", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
              f"{IMG}/micbt.webp", 160, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("MIFOC", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
+            ("FOCP", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
              f"{IMG}/mifoc.webp", 140, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("CPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
+            ("CRPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
              f"{IMG}/cpq.webp", 80, "Servir quente, imediatamente"),
-            ("FF", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
+            ("FFGO", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
              f"{IMG}/ff.webp", 115, "Servir quente, imediatamente"),
-            ("MFF", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
+            ("FFGOP", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
              f"{IMG}/ff.webp", 70, "Servir quente, imediatamente"),
-            ("HO", "Hot Dog Vienna", "Cachorro-quente no pão vienense", 1500, "un", 0, True,
+            ("HOD", "Hot Dog Vienna", "Cachorro-quente no pão vienense", 1500, "un", 0, True,
              f"{IMG}/ho.webp", 100, "Servir quente, imediatamente"),
-            ("MIHO", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
+            ("HODP", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
              f"{IMG}/ho.webp", 55, "Servir quente, imediatamente"),
-            ("DL", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
+            ("DELI", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
              f"{IMG}/dl.webp", 90, "Servir quente, imediatamente"),
             ("JO", "Caranguejo", "Salgado moldado em caranguejo", 1800, "un", 0, True,
              f"{IMG}/jo.webp", 35, "Servir quente, imediatamente"),
@@ -2043,65 +2043,65 @@ class Command(BaseCommand):
 
         # Keywords by product (for find_alternatives and search)
         keywords_map = {
-            "BF": ["pao", "frances", "levain", "artesanal", "crocante"],
-            "BE": ["pao", "frances", "levain", "gergelim", "azeite"],
-            "CGO": ["pao", "campagne", "levain", "integral", "centeio"],
+            "TRADI": ["pao", "frances", "levain", "artesanal", "crocante"],
+            "BGG": ["pao", "frances", "levain", "gergelim", "azeite"],
+            "CPG": ["pao", "campagne", "levain", "integral", "centeio"],
             "CPX": ["pao", "campagne", "levain", "passas", "castanhas", "especial"],
             "CI": ["pao", "italiano", "levain", "azeite", "aerado"],
-            "CT": ["croissant", "folhado", "manteiga", "frances"],
+            "CRO": ["croissant", "folhado", "manteiga", "frances"],
             "CN": ["chausson", "folhado", "maca", "frances"],
-            "BH": ["bichon", "limao", "folhado", "doce"],
-            "PR": ["pain", "raisins", "passas", "folhado"],
-            "DL": ["deli", "milho", "bacon", "salgado"],
-            "HO": ["hotdog", "cachorro-quente", "vienna", "salgado"],
+            "BICH": ["bichon", "limao", "folhado", "doce"],
+            "BRRSN": ["pain", "raisins", "passas", "folhado"],
+            "DELI": ["deli", "milho", "bacon", "salgado"],
+            "HOD": ["hotdog", "cachorro-quente", "vienna", "salgado"],
             "FOA": ["focaccia", "alecrim", "italiano", "azeite"],
-            "HI": ["cha", "hibisco", "gelado", "bebida"],
-            "CTV": ["cha", "tonica", "frutas-vermelhas", "gelado"],
-            "PC": ["croissant", "folhado", "chocolate", "frances"],
-            "ME": ["pao-doce", "japones", "crocante", "amanteigado"],
+            "CHHIB": ["cha", "hibisco", "gelado", "bebida"],
+            "CTFV": ["cha", "tonica", "frutas-vermelhas", "gelado"],
+            "PCHOC": ["croissant", "folhado", "chocolate", "frances"],
+            "MELON": ["pao-doce", "japones", "crocante", "amanteigado"],
             "CO": ["pao-doce", "creme", "recheado", "amanteigado"],
-            "MD": ["bolinho", "frances", "classico", "doce"],
-            "CMO": ["lanche", "sanduiche", "frances", "presunto", "queijo", "gratinado"],
-            "CMA": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
-            "SS": ["cafe", "espresso", "bebida", "quente"],
-            "PS": ["cafe", "cappuccino", "leite", "bebida", "quente"],
-            "FE": ["pao", "frances", "levain", "individual", "artesanal"],
-            "TB": ["pao", "frances", "levain", "individual", "artesanal"],
+            "MDLN": ["bolinho", "frances", "classico", "doce"],
+            "CQMO": ["lanche", "sanduiche", "frances", "presunto", "queijo", "gratinado"],
+            "CQMA": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
+            "SP": ["cafe", "espresso", "bebida", "quente"],
+            "CAP": ["cafe", "cappuccino", "leite", "bebida", "quente"],
+            "FENDU": ["pao", "frances", "levain", "individual", "artesanal"],
+            "TABAT": ["pao", "frances", "levain", "individual", "artesanal"],
             "MIB": ["pao", "frances", "levain", "mini", "individual"],
-            "PH": ["pao", "hamburger", "levain", "individual"],
-            "BBB": ["brioche", "hamburger", "manteiga", "ovos"],
-            "PHO": ["pao", "hotdog", "manteiga", "salgado"],
-            "CD": ["cafe", "coado", "filtrado", "bebida", "quente"],
-            "MC": ["cafe", "mocha", "chocolate", "leite", "bebida", "quente"],
-            "THC": ["cha", "blend", "bule", "bebida", "quente"],
-            "THR": ["cha", "blend", "bule", "bebida", "quente"],
-            "THS": ["cha", "blend", "bule", "bebida", "quente"],
-            "THB": ["cha", "blend", "bule", "bebida", "quente"],
+            "TRABB": ["pao", "hamburger", "levain", "individual"],
+            "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
+            "HOL": ["pao", "hotdog", "manteiga", "salgado"],
+            "COAD": ["cafe", "coado", "filtrado", "bebida", "quente"],
+            "CAPMO": ["cafe", "mocha", "chocolate", "leite", "bebida", "quente"],
+            "CHCAM": ["cha", "blend", "bule", "bebida", "quente"],
+            "CHROU": ["cha", "blend", "bule", "bebida", "quente"],
+            "CHSOP": ["cha", "blend", "bule", "bebida", "quente"],
+            "CHBLU": ["cha", "blend", "bule", "bebida", "quente"],
             "CE": ["cafe", "sorvete", "gelado", "bebida", "frio"],
-            "FP": ["cafe", "frappe", "gelado", "batido", "bebida", "frio"],
-            "SE": ["cafe", "vienna", "gelado", "bebida", "frio"],
-            "AG": ["agua", "mineral", "bebida", "frio"],
+            "FRAP": ["cafe", "frappe", "gelado", "batido", "bebida", "frio"],
+            "VIEN": ["cafe", "vienna", "gelado", "bebida", "frio"],
+            "AGUA-MINERAL-PRATA-310": ["agua", "mineral", "bebida", "frio"],
             "CV": ["soda", "torneira", "artesanal", "bebida", "frio", "do-dia"],
-            "SO": ["soda", "laranja", "torneira", "artesanal", "bebida", "frio"],
-            "FA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
-            "KP": ["pao", "japones", "escuro", "macio"],
-            "ANC": ["pao-doce", "bichinho", "criancas", "do-dia"],
-            "CCOM": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
-            "QQ": ["lanche", "sanduiche", "queijo", "shokupan", "quente"],
+            "SDLA": ["soda", "laranja", "torneira", "artesanal", "bebida", "frio"],
+            "FORMA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
+            "KUP": ["pao", "japones", "escuro", "macio"],
+            "COE": ["pao-doce", "bichinho", "criancas", "do-dia"],
+            "CQCOM": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
+            "QJQT": ["lanche", "sanduiche", "queijo", "shokupan", "quente"],
             "JB": ["lanche", "sanduiche", "frances", "presunto", "manteiga"],
             "PG": ["torrada", "chapa", "manteiga", "quente"],
-            "TI": ["tabua", "charcutaria", "queijo", "pate", "compartilhar"],
-            "PPU": ["doce", "rabanada", "chapa", "frances"],
-            "MS": ["doce", "frutas", "chantilly", "japones", "gelado"],
+            "TABUA": ["tabua", "charcutaria", "queijo", "pate", "compartilhar"],
+            "PERDU": ["doce", "rabanada", "chapa", "frances"],
+            "MELSA": ["doce", "frutas", "chantilly", "japones", "gelado"],
             "PU": ["doce", "pudim", "japones", "sobremesa"],
             "TJ": ["doce", "gelatina", "cha", "sobremesa"],
             "MT": ["mercearia", "despensa", "mostarda", "artesanal", "pote"],
             "BK": ["mercearia", "despensa", "bacon", "defumado", "artesanal"],
-            "TP": ["mercearia", "despensa", "tapenade", "azeitona", "pote"],
-            "PT": ["mercearia", "despensa", "pate", "ratatouille", "vegetal", "pote"],
+            "TPND": ["mercearia", "despensa", "tapenade", "azeitona", "pote"],
+            "RTAT": ["mercearia", "despensa", "pate", "ratatouille", "vegetal", "pote"],
             "CX": ["mercearia", "despensa", "picles", "conserva", "frances"],
             "GL": ["mercearia", "despensa", "geleia", "fruta", "mini"],
-            "QC": ["mercearia", "despensa", "queijo", "camembert", "frances"],
+            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": ["mercearia", "despensa", "queijo", "camembert", "frances"],
             "QP": ["mercearia", "despensa", "queijo", "colonial", "local"],
             "GR": ["mercearia", "despensa", "cafe", "grao", "torra"],
             "THL": ["mercearia", "despensa", "cha", "lata", "presente"],
@@ -2112,13 +2112,13 @@ class Command(BaseCommand):
         # PDP metadata for remote purchase confidence. These are display-ready,
         # approximate values; ingredients/nutrition are materialized separately.
         PDP_METADATA = {
-            "BF": {
+            "TRADI": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
-            "BE": {
+            "BGG": {
                 "allergens": ["glúten", "gergelim"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
@@ -2130,19 +2130,19 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 26 x 5 x 4 cm",
             },
-            "FE": {
+            "FENDU": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
-            "TB": {
+            "TABAT": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
-            "CGO": {
+            "CPG": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "2 a 3 pessoas",
@@ -2160,31 +2160,31 @@ class Command(BaseCommand):
                 "serves": "1 a 2 pessoas",
                 "approx_dimensions": "aprox. 20 x 10 x 4 cm",
             },
-            "PH": {
+            "TRABB": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
-            "BBB": {
+            "BRBB": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
-            "PHO": {
+            "HOL": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 16 x 5 x 4 cm",
             },
-            "CT": {
+            "CRO": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
-            "PC": {
+            "PCHOC": {
                 "allergens": ["glúten", "leite", "ovos", "soja"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
@@ -2196,85 +2196,85 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 13 x 6 x 6 cm",
             },
-            "ME": {
+            "MELON": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
-            "MD": {
+            "MDLN": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 8 x 5 x 3 cm",
             },
-            "CMO": {
+            "CQMO": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 16 x 12 x 5 cm",
             },
-            "CMA": {
+            "CQMA": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 16 x 12 x 7 cm",
             },
-            "SS": {
+            "SP": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 xícara de 40 ml",
                 "approx_dimensions": "xícara 40 ml",
             },
-            "PS": {
+            "CAP": {
                 "allergens": ["leite"],
                 "dietary_info": [],
                 "serves": "1 xícara de 180 ml",
                 "approx_dimensions": "xícara 180 ml",
             },
-            "CD": {
+            "COAD": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "xícara 180 ml",
             },
-            "MC": {
+            "CAPMO": {
                 "allergens": ["leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "xícara 180 ml",
             },
-            "THC": {
+            "CHCAM": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 bule (2 xícaras)",
                 "approx_dimensions": "bule 400 ml",
             },
-            "THR": {
+            "CHROU": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 bule (2 xícaras)",
                 "approx_dimensions": "bule 400 ml",
             },
-            "THS": {
+            "CHSOP": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 bule (2 xícaras)",
                 "approx_dimensions": "bule 400 ml",
             },
-            "THB": {
+            "CHBLU": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 bule (2 xícaras)",
                 "approx_dimensions": "bule 400 ml",
             },
-            "HI": {
+            "CHHIB": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
-            "CTV": {
+            "CTFV": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
@@ -2286,13 +2286,13 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
-            "FP": {
+            "FRAP": {
                 "allergens": ["leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
-            "AG": {
+            "AGUA-MINERAL-PRATA-310": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
@@ -2304,7 +2304,7 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
-            "SO": {
+            "SDLA": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
@@ -2316,13 +2316,13 @@ class Command(BaseCommand):
                 "serves": "4 a 6 pessoas",
                 "approx_dimensions": "aprox. 24 x 18 x 4 cm",
             },
-            "FA": {
+            "FORMA": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "6 fatias grossas",
                 "approx_dimensions": "aprox. 18 x 10 x 10 cm",
             },
-            "KP": {
+            "KUP": {
                 "allergens": ["glúten"],
                 "dietary_info": [],
                 "serves": "2 a 3 pessoas",
@@ -2334,31 +2334,31 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
-            "BH": {
+            "BICH": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
-            "PR": {
+            "BRRSN": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
-            "ANC": {
+            "COE": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 x 8 cm",
             },
-            "CCOM": {
+            "CQCOM": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 14 x 12 cm",
             },
-            "QQ": {
+            "QJQT": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
@@ -2370,13 +2370,13 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 26 x 6 cm",
             },
-            "DL": {
+            "DELI": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 16 x 6 cm",
             },
-            "HO": {
+            "HOD": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
@@ -2388,19 +2388,19 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "2 fatias grossas",
             },
-            "TI": {
+            "TABUA": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "2 a 3 pessoas",
                 "approx_dimensions": "tábua com pães da casa",
             },
-            "PPU": {
+            "PERDU": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "2 fatias",
             },
-            "MS": {
+            "MELSA": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
@@ -2430,13 +2430,13 @@ class Command(BaseCommand):
                 "serves": "peça aprox. 200 g",
                 "approx_dimensions": "embalado a vácuo",
             },
-            "TP": {
+            "TPND": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "pote 170 g",
                 "approx_dimensions": "pote de vidro",
             },
-            "PT": {
+            "RTAT": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "pote 170 g",
@@ -2454,7 +2454,7 @@ class Command(BaseCommand):
                 "serves": "pote 28 g",
                 "approx_dimensions": "pote mini de vidro",
             },
-            "QC": {
+            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "allergens": ["leite"],
                 "dietary_info": [],
                 "serves": "aprox. 250 g",
@@ -2492,38 +2492,55 @@ class Command(BaseCommand):
         # pelo perfil fiscal (Fiscalman), a partir de `profile`. Todo o catálogo
         # atual é não-ST (perfil own_production → CFOP 5102/CSOSN 102, sem CEST).
         breads = {
-            "BF", "BE", "MIB", "FE", "TB",
-            "CGO", "CPX", "CI", "FA", "KP", "PH", "BBB", "PHO",
-            "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",  # focaccia é pão
+            "TRADI", "BGG", "MIB", "FENDU", "TABAT",
+            "CPG", "CPX", "CI", "FORMA", "KUP", "TRABB", "BRBB", "HOL",
+            "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",  # focaccia é pão
         }
         fiscal_ncm_by_sku = {
             # Folhados, doces e salgados de panificação/pastelaria (default).
             "default": "19059090",
             # Pães (NCM 1905.90.10).
             **dict.fromkeys(breads, "19059010"),
-            # Bebidas preparadas na loja.
-            "SS": "21011110",
-            "CD": "21011110",
-            "PS": "21011200",
-            "MC": "21011200",
-            "CE": "21011200",
-            "FP": "21011200",
-            "SE": "21011200",
-            "THC": "09024000",
-            "THR": "09024000",
-            "THS": "09024000",
-            "THB": "09024000",
-            "CV": "22021000",
-            "SO": "22021000",
-            "AG": "22011000",
+            # ── Bebidas PREPARADAS na loja (revisão de 23/09/2026) ───────────
+            # O capítulo 22 é o das bebidas PRONTAS; o 21.01 e o 21.06 são das
+            # preparações que servem para FAZER bebida (pó solúvel, extrato,
+            # concentrado). O que a casa entrega no balcão é a bebida pronta.
+            #
+            # O que estava aqui descrevia outra coisa: `21011110` é café
+            # SOLÚVEL, `21011200` é preparação à base de extrato de café,
+            # `09024000` é folha de chá a granel acima de 3 kg — e cinco delas
+            # nem estavam na lista, caindo no default `19059090`, que é PRODUTO
+            # DE PADARIA. Ver docs/reference/ncm-bebidas-preparadas.md.
+            #
+            # ⚠️ CEST fica vazio de propósito: os do 2202.99.00 descrevem o
+            # industrializado pronto para beber, que circula com ST. O que a
+            # casa prepara não é esse produto.
+            **dict.fromkeys(
+                ("SP", "COAD", "CAP", "CAPMO", "FRAP", "VIEN", "SPMC", "CAFL", "MOCHA",
+                 # O `CE` sai do catálogo por decisão dele, mas enquanto existe
+                 # é bebida preparada como as outras.
+                 "CE",
+                 "CHOQ", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SFTCH", "CHHIB", "CTFV",
+                 # As sodas da casa entram aqui por decisão dele em 23/09. O
+                 # Imposto Seletivo sobre bebida açucarada só alcança o que está
+                 # em EMBALAGEM PRIMÁRIA destinada ao consumidor final (LC
+                 # 214/2025, art. 409, §1º, V) — soda na torneira, servida no
+                 # copo, não tem. Sem esse peso, sobra a classificação pura, e o
+                 # que o cliente leva é a mesma bebida preparada que as outras.
+                 # ⚠️ Engarrafar para vender muda tudo: aí é 2202.10.00 e a casa
+                 # vira contribuinte do IS.
+                 "CV", "SDLA"),
+                "22029900",
+            ),
+            "AGUA-MINERAL-PRATA-310": "22011000",
             # Mercearia (revenda/produção própria — validar com o contador).
             "MT": "21033010",
             "BK": "02101900",
-            "TP": "20059900",
-            "PT": "20059900",
+            "TPND": "20059900",
+            "RTAT": "20059900",
             "CX": "20011000",
             "GL": "20079990",
-            "QC": "04069020",
+            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069020",
             "QP": "04061010",
             "GR": "09012100",
             "THL": "09022000",
@@ -2540,11 +2557,10 @@ class Command(BaseCommand):
             # forem `resale`, passam a exigir CSOSN 500, CFOP 5405/6405 e **CEST
             # por produto**. A bebida preparada não entra nessa dúvida: a regra
             # lista "bebidas preparadas" em `own_production` nominalmente.
-            "CHAI_A": "09024000",
             **dict.fromkeys(
-                ("INTU_P50", "INTU_L70", "CHEGO_P50", "CHEGO_L50",
-                 "NAMAS_P50", "NAMAS_L60", "INTIMI_P50", "INTIMI_L50",
-                 "VITAL_P50", "SOFIA_P50", "MAMA_P50", "MAMA_L60"),
+                ("CHA-INTUICAO-KANFA-P50", "CHA-INTUICAO-KANFA-L70", "CHA-ACONCHEGO-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50",
+                 "CHA-NAMASTE-KANFA-P50", "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50",
+                 "CHA-VITAL-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-MAMA-KANFA-L70"),
                 "09022000",
             ),
             "LN": "19053100",
@@ -2570,14 +2586,14 @@ class Command(BaseCommand):
             # herdado, o que não existia não se inventa), e o do storefront quer
             # compra web para todo produto publicado. Fabricar compra só para
             # passar no portão seria enganá-lo.
-            "CHAI_A", "CHEGO_L50", "CHEGO_P50", "INTIMI_L50", "INTIMI_P50",
-            "INTU_L70", "INTU_P50", "MAMA_L60", "MAMA_P50", "NAMAS_L60",
-            "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
-            "SL", "CL", "CQ", "MH", "MA", "CM", "BCH", "CN", "BH", "PR", "FOA",
-            "DL", "HO", "HI", "CTV",
-            "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG", "BAP",
-            "BAX", "CF", "BA", "CGR", "SE", "PI", "PI4", "BEP", "CBT", "FOC",
-            "MIF", "MICBT", "MIFOC", "CPQ", "FF", "MFF", "MIHO", "JO",
+            "SFTCH", "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50",
+            "CHA-INTUICAO-KANFA-L70", "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-L70",
+            "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
+            "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
+            "DELI", "HOD", "CHHIB", "CTFV",
+            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
+            "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
+            "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
         }
 
         # Galeria da PDP: fotos adicionais da casa em metadata["gallery"] (lidas
@@ -2585,16 +2601,16 @@ class Command(BaseCommand):
         # continua sendo image_url — promover uma foto = copiar a URL para lá.
         # São os retratos alternativos do acervo (sufixo 2), na mesma receita webp.
         gallery_by_sku = {
-            "CBT": [f"{IMG}/cbt2.webp"],
-            "CF": [f"{IMG}/cf2.webp"],
-            "CGO": [f"{IMG}/cgo2.webp"],
-            "CGR": [f"{IMG}/cgr2.webp"],
+            "FOB": [f"{IMG}/cbt2.webp"],
+            "CPBG": [f"{IMG}/cf2.webp"],
+            "CPG": [f"{IMG}/cgo2.webp"],
+            "CPR": [f"{IMG}/cgr2.webp"],
             "CN": [f"{IMG}/cn2.webp"],
-            "CT": [f"{IMG}/ct2.webp"],
-            "FA": [f"{IMG}/fa2.webp"],
+            "CRO": [f"{IMG}/ct2.webp"],
+            "FORMA": [f"{IMG}/fa2.webp"],
             "MA": [f"{IMG}/ma2.webp"],
-            "PH": [f"{IMG}/ph2.webp"],
-            "PHO": [f"{IMG}/pho2.webp"],
+            "TRABB": [f"{IMG}/ph2.webp"],
+            "HOL": [f"{IMG}/pho2.webp"],
         }
 
         products = {}
@@ -2698,13 +2714,13 @@ class Command(BaseCommand):
         #    vitrine acabar, a casa resolve (monta na hora, ou pega outra
         #    garrafa na geladeira).
         sells_without_stock_skus = [
-            "SS", "CD", "PS", "MC",
-            "THC", "THR", "THS", "THB",
-            "CE", "FP", "SE",
-            "CV", "SO", "AG",
-            "CMO", "CMA", "CCOM",
-            "QQ", "JB", "PG",
-            "PPU", "TI",
+            "SP", "COAD", "CAP", "CAPMO",
+            "CHCAM", "CHROU", "CHSOP", "CHBLU",
+            "CE", "FRAP", "VIEN",
+            "CV", "SDLA", "AGUA-MINERAL-PRATA-310",
+            "CQMO", "CQMA", "CQCOM",
+            "QJQT", "JB", "PG",
+            "PERDU", "TABUA",
         ]
 
         # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
@@ -2719,13 +2735,13 @@ class Command(BaseCommand):
         #    saía da sacola anunciada como preparada na hora: a mesma confusão
         #    entre política e promessa, agora na camada do dado.
         made_to_order_skus = [
-            "SS", "CD", "PS", "MC",
-            "THC", "THR", "THS", "THB",
-            "CE", "FP", "SE",
-            "CV", "SO",
-            "CMO", "CMA", "CCOM",
-            "QQ", "JB", "PG",
-            "PPU", "TI",
+            "SP", "COAD", "CAP", "CAPMO",
+            "CHCAM", "CHROU", "CHSOP", "CHBLU",
+            "CE", "FRAP", "VIEN",
+            "CV", "SDLA",
+            "CQMO", "CQMA", "CQCOM",
+            "QJQT", "JB", "PG",
+            "PERDU", "TABUA",
         ]
 
         for sku in sells_without_stock_skus:
@@ -2774,7 +2790,7 @@ class Command(BaseCommand):
             }
 
         DIRECT_OVERRIDES = {
-            "BE": {
+            "BGG": {
                 "ingredients_text": (
                     "Farinha de trigo, água, fermento natural, gergelim, azeite extra virgem, sal. "
                     "CONTÉM: glúten e gergelim."
@@ -2788,21 +2804,21 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(100, 1, 245.0, 50.0, 1.4, 8.0, 1.4, 0.2, 2.5, 420.0),
             },
-            "FE": {
+            "FENDU": {
                 "ingredients_text": (
                     "Farinha de trigo, água, fermento natural, sal. "
                     "CONTÉM: glúten."
                 ),
                 "nutrition_facts": nutrition(100, 1, 240.0, 50.0, 1.2, 8.0, 1.0, 0.2, 2.4, 430.0),
             },
-            "TB": {
+            "TABAT": {
                 "ingredients_text": (
                     "Farinha de trigo, água, fermento natural, sal. "
                     "CONTÉM: glúten."
                 ),
                 "nutrition_facts": nutrition(100, 1, 240.0, 50.0, 1.2, 8.0, 1.0, 0.2, 2.4, 430.0),
             },
-            "CGO": {
+            "CPG": {
                 "ingredients_text": (
                     "Farinha de trigo, farinha de trigo integral, água, fermento natural, farinha de centeio, sal. "
                     "CONTÉM: glúten."
@@ -2819,14 +2835,14 @@ class Command(BaseCommand):
                 # 5 porções de 100 g para os 500 g medidos pelo dono.
                 "nutrition_facts": nutrition(100, 5, 275.0, 48.0, 10.0, 8.0, 5.5, 0.8, 4.2, 340.0),
             },
-            "PH": {
+            "TRABB": {
                 "ingredients_text": (
                     "Farinha de trigo, água, fermento natural, azeite extra virgem, sal. "
                     "CONTÉM: glúten."
                 ),
                 "nutrition_facts": nutrition(100, 1, 245.0, 50.0, 1.4, 8.0, 1.4, 0.2, 2.5, 420.0),
             },
-            "BBB": {
+            "BRBB": {
                 "ingredients_text": (
                     "Farinha de trigo, ovos, manteiga, leite, açúcar, fermento biológico, sal. "
                     "CONTÉM: glúten, leite e ovos."
@@ -2834,7 +2850,7 @@ class Command(BaseCommand):
                 # Os valores já eram POR PORÇÃO; só o número de porções muda.
                 "nutrition_facts": nutrition(100, 1, 330.0, 46.0, 8.0, 9.0, 12.0, 7.0, 1.5, 360.0),
             },
-            "PHO": {
+            "HOL": {
                 "ingredients_text": (
                     "Farinha de trigo, ovos, manteiga, leite, açúcar, fermento biológico, sal. "
                     "CONTÉM: glúten, leite e ovos."
@@ -2848,21 +2864,21 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(100, 1, 315.0, 43.0, 14.0, 7.0, 12.0, 7.0, 1.4, 250.0),
             },
-            "ME": {
+            "MELON": {
                 "ingredients_text": (
                     "Farinha de trigo, leite, ovos, manteiga, açúcar, fermento biológico, sal. "
                     "CONTÉM: glúten, leite e ovos."
                 ),
                 "nutrition_facts": nutrition(100, 1, 335.0, 52.0, 15.0, 8.0, 10.0, 6.0, 1.5, 250.0),
             },
-            "CMO": {
+            "CQMO": {
                 "ingredients_text": (
                     "Pão de forma artesanal, molho bechamel, presunto, queijo gruyere, manteiga. "
                     "CONTÉM: glúten e leite."
                 ),
                 "nutrition_facts": nutrition(250, 1, 620.0, 42.0, 8.0, 28.0, 38.0, 22.0, 2.5, 1180.0),
             },
-            "CMA": {
+            "CQMA": {
                 "ingredients_text": (
                     "Pão de forma artesanal, molho bechamel, presunto, queijo gruyere, manteiga, ovo. "
                     "CONTÉM: glúten, leite e ovos."
@@ -2876,60 +2892,60 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(200, 1, 610.0, 74.0, 8.0, 14.0, 27.0, 16.0, 3.2, 620.0),
             },
-            "SS": {
+            "SP": {
                 "ingredients_text": "Café espresso. PODE CONTER GLÚTEN.",
                 "nutrition_facts": nutrition(40, 1, 2.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
             },
-            "PS": {
+            "CAP": {
                 "ingredients_text": (
                     "Café espresso e leite integral vaporizado. "
                     "CONTÉM: leite. PODE CONTER GLÚTEN."
                 ),
                 "nutrition_facts": nutrition(180, 1, 105.0, 9.0, 9.0, 6.0, 5.5, 3.4, 0.0, 85.0),
             },
-            "CD": {
+            "COAD": {
                 "ingredients_text": (
                     "Café coado: água filtrada e café em grão da casa."
                 ),
                 "nutrition_facts": nutrition(200, 1, 5.0, 0.8, 0.0, 0.3, 0.0, 0.0, 0.0, 5.0),
             },
-            "MC": {
+            "CAPMO": {
                 "ingredients_text": (
                     "Espresso, leite integral vaporizado e chocolate da casa. CONTÉM: leite."
                 ),
                 "nutrition_facts": nutrition(200, 1, 180.0, 22.0, 18.0, 7.0, 7.0, 4.5, 0.5, 80.0),
             },
-            "THC": {
+            "CHCAM": {
                 "ingredients_text": (
                     "Infusão do blend Camille da casa."
                 ),
                 "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
-            "THR": {
+            "CHROU": {
                 "ingredients_text": (
                     "Infusão do blend Rouge da casa."
                 ),
                 "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
-            "THS": {
+            "CHSOP": {
                 "ingredients_text": (
                     "Infusão do blend Sophie da casa."
                 ),
                 "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
-            "THB": {
+            "CHBLU": {
                 "ingredients_text": (
                     "Infusão do blend Bleu da casa."
                 ),
                 "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
-            "HI": {
+            "CHHIB": {
                 "ingredients_text": (
                     "Infusão gelada do blend do dia, levemente adoçada."
                 ),
                 "nutrition_facts": nutrition(300, 1, 40.0, 10.0, 9.0, 0.0, 0.0, 0.0, 0.0, 5.0),
             },
-            "CTV": {
+            "CTFV": {
                 "ingredients_text": (
                     "Infusão gelada do blend do dia, levemente adoçada."
                 ),
@@ -2941,7 +2957,7 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(300, 1, 220.0, 26.0, 22.0, 4.0, 11.0, 7.0, 0.0, 60.0),
             },
-            "FP": {
+            "FRAP": {
                 "ingredients_text": (
                     "Café ou chocolate ou frutas vermelhas, leite e gelo batidos. CONTÉM: leite."
                 ),
@@ -2953,25 +2969,25 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(300, 1, 120.0, 30.0, 28.0, 0.0, 0.0, 0.0, 0.0, 15.0),
             },
-            "SO": {
+            "SDLA": {
                 "ingredients_text": (
                     "Água gaseificada e xarope artesanal de laranja da casa."
                 ),
                 "nutrition_facts": nutrition(300, 1, 90.0, 22.0, 20.0, 0.3, 0.0, 0.0, 0.2, 10.0),
             },
-            "AG": {
+            "AGUA-MINERAL-PRATA-310": {
                 "ingredients_text": (
                     "Água mineral natural, com ou sem gás."
                 ),
                 "nutrition_facts": nutrition(500, 1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0),
             },
-            "CCOM": {
+            "CQCOM": {
                 "ingredients_text": (
                     "Pão de fermentação natural, presunto, queijo gruyere, molho bechamel, ovo e acompanhamento. CONTÉM: glúten, leite e ovos."
                 ),
                 "nutrition_facts": nutrition(320, 1, 620.0, 42.0, 6.0, 32.0, 36.0, 18.0, 2.5, 1250.0),
             },
-            "QQ": {
+            "QJQT": {
                 "ingredients_text": (
                     "Shokupan da casa, queijos selecionados e manteiga. CONTÉM: glúten e leite."
                 ),
@@ -2983,13 +2999,13 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(250, 1, 480.0, 52.0, 3.0, 22.0, 20.0, 11.0, 2.5, 1100.0),
             },
-            "DL": {
+            "DELI": {
                 "ingredients_text": (
                     "Pão amanteigado da casa com o recheio do dia (deli de milho e bacon ou salsicha artesanal). CONTÉM: glúten e leite."
                 ),
                 "nutrition_facts": nutrition(180, 1, 380.0, 40.0, 5.0, 14.0, 18.0, 7.0, 1.8, 850.0),
             },
-            "HO": {
+            "HOD": {
                 "ingredients_text": (
                     "Pão amanteigado da casa com o recheio do dia (deli de milho e bacon ou salsicha artesanal). CONTÉM: glúten e leite."
                 ),
@@ -3001,19 +3017,19 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(150, 1, 320.0, 40.0, 4.0, 9.0, 14.0, 8.0, 2.0, 480.0),
             },
-            "TI": {
+            "TABUA": {
                 "ingredients_text": (
                     "Seleção de charcutaria, queijos e patês da casa com pães. CONTÉM: glúten e leite."
                 ),
                 "nutrition_facts": nutrition(100, 5, 320.0, 12.0, 2.0, 16.0, 24.0, 12.0, 1.0, 900.0),
             },
-            "PPU": {
+            "PERDU": {
                 "ingredients_text": (
                     "Brioche da casa, ovos, leite, açúcar e canela, dourado na chapa. CONTÉM: glúten, leite e ovos."
                 ),
                 "nutrition_facts": nutrition(180, 1, 420.0, 48.0, 22.0, 11.0, 20.0, 11.0, 1.5, 320.0),
             },
-            "MS": {
+            "MELSA": {
                 "ingredients_text": (
                     "Shokupan da casa, chantilly e frutas frescas. CONTÉM: glúten e leite."
                 ),
@@ -3043,13 +3059,13 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(30, 7, 160.0, 0.5, 0.0, 10.0, 13.0, 4.5, 0.0, 580.0),
             },
-            "TP": {
+            "TPND": {
                 "ingredients_text": (
                     "Azeitonas pretas, alcaparras, azeite extra virgem e ervas."
                 ),
                 "nutrition_facts": nutrition(20, 8, 45.0, 1.0, 0.2, 0.4, 4.5, 0.7, 0.6, 180.0),
             },
-            "PT": {
+            "RTAT": {
                 "ingredients_text": (
                     "Berinjela, abobrinha, tomate, pimentão, cebola, azeite e ervas."
                 ),
@@ -3067,7 +3083,7 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(28, 1, 60.0, 15.0, 14.0, 0.1, 0.0, 0.0, 0.3, 5.0),
             },
-            "QC": {
+            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "ingredients_text": (
                     "Leite de vaca pasteurizado, fermento lático, coalho e sal. CONTÉM: leite."
                 ),
@@ -3116,11 +3132,11 @@ class Command(BaseCommand):
         # trimestre e o pacote de 4 sai a R$ 28,00; BBB valia R$ 8,00 e o de 2
         # sai a R$ 16,00. Empacotaram pelo unitário vezes a contagem.
         for pack_sku, nome, componente, quantidade, preco, ficha in (
-            ("PHO4", "Pão para Hot Dog (pc. 4un.)", "PHO", 4, 2800,
+            ("HOL4", "Pão para Hot Dog (pc. 4un.)", "HOL", 4, 2800,
              ("4 unidades", "aprox. 16 x 5 x 4 cm cada")),
-            ("BBB2", "Brioche Burger Bun (pc. 2un.)", "BBB", 2, 1600,
+            ("BRBB2", "Brioche Burger Bun (pc. 2un.)", "BRBB", 2, 1600,
              ("2 unidades", "aprox. 10 cm de diâmetro cada")),
-            ("PI4", "Pita (pc. 4un.)", "PI", 4, 1600,
+            ("PIT4", "Pita (pc. 4un.)", "PIT", 4, 1600,
              ("4 unidades", "aprox. 12 cm de diâmetro cada")),
         ):
             base = products[componente]
@@ -3171,8 +3187,8 @@ class Command(BaseCommand):
 
         # Mercearia: preços provisórios até a lista do Pablo (rastreável no Admin).
         mercearia_tbd_skus = [
-            "MT", "BK", "TP", "PT",
-            "CX", "GL", "QC", "QP",
+            "MT", "BK", "TPND", "RTAT",
+            "CX", "GL", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
             "GR", "THL", "LN",
         ]
         for sku in mercearia_tbd_skus:
@@ -3183,7 +3199,7 @@ class Command(BaseCommand):
         # Pães que aguentam o dia seguinte: a VALIDADE diz isso agora
         # (shelf_life_days=1 → o lote vence amanhã e sobrevive ao fechamento
         # de hoje). O antigo flag allows_next_day_sale morreu com o D-1 (C4).
-        next_day_skus = ["BF", "CI", "FE", "TB", "PH"]
+        next_day_skus = ["TRADI", "CI", "FENDU", "TABAT", "TRABB"]
         for sku in next_day_skus:
             p = products[sku]
             p.shelf_life_days = 1
@@ -3193,7 +3209,7 @@ class Command(BaseCommand):
         # registrar DEMANDA (encomenda sem fornada planejada) exige antecedência.
         # Ver Product.metadata.lead_time_hours em docs/reference/data-schemas.md.
         lead_time_hours_by_sku = {
-            "CGO": 24,
+            "CPG": 24,
             "CPX": 24,
         }
         for sku, hours in lead_time_hours_by_sku.items():
@@ -3203,7 +3219,7 @@ class Command(BaseCommand):
 
         # Bundle components
         ProductComponent.objects.filter(parent=combo).delete()
-        ProductComponent.objects.create(parent=combo, component=products["CT"], qty=Decimal("1"))
+        ProductComponent.objects.create(parent=combo, component=products["CRO"], qty=Decimal("1"))
         ProductComponent.objects.create(parent=combo, component=products["MIB"], qty=Decimal("1"))
 
         # Collections — a taxonomia do Cardápio 2027: o copo lidera; `mercearia`
@@ -3260,74 +3276,74 @@ class Command(BaseCommand):
 
         collection_skus = {
             "bebidas-quentes": [
-                "SS", "CD", "PS", "MC",
-                "THC", "THR", "THS", "THB",
+                "SP", "COAD", "CAP", "CAPMO",
+                "CHCAM", "CHROU", "CHSOP", "CHBLU",
                 # voltaram do Yooga (18/08)
-                "SL", "CL", "CQ", "MH",
+                "SPMC", "CAFL", "CHOQ", "MOCHA",
             ],
-            "bebidas-geladas": ["CE", "FP", "AG",
+            "bebidas-geladas": ["CE", "FRAP", "AGUA-MINERAL-PRATA-310",
                 # voltaram do Yooga (18/08)
-                "HI", "CTV", "SE", "CV", "SO",
+                "CHHIB", "CTFV", "VIEN", "CV", "SDLA",
                 # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
                 # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
                 # na mercearia. "Vendemos os pouches e latinhas com o chá seco
                 # para preparar em casa" — dono, 19/08.
-                "CHAI_A",
+                "SFTCH",
             ],
             "rusticos": [
                 # Vindos da extinta "balcao" (17/08): três pães de casca e o pão
                 # de hambúrguer, que o dono classificou aqui apesar da massa macia.
-                "FE", "TB", "MIB", "PH",
-                "BF", "CGO", "CPX", "CI",
-                "BE",
+                "FENDU", "TABAT", "MIB", "TRABB",
+                "TRADI", "CPG", "CPX", "CI",
+                "BGG",
                 # voltaram do Yooga (18/08)
-                "BAP", "BAX", "CF", "BA", "CGR", "PI", "PI4", "BEP", "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",
+                "BGL", "ITA", "CPBG", "BAT", "CPR", "PIT", "PIT4", "BGGP", "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",
             ],
             "macios": [
                 # Vindos da extinta "balcao" (17/08): buns em pacote, massa
                 # enriquecida, na mesma família dos pães japoneses daqui.
-                "BBB", "PHO", "PHO4", "BBB2",
-                "FA",
-                "KP", "ME", "ANC", "CO",
+                "BRBB", "HOL", "HOL4", "BRBB2",
+                "FORMA",
+                "KUP", "MELON", "COE", "CO",
                 # voltaram do Yooga (18/08)
-                "BCH", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
+                "BRCH", "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP",
                 # PR é BRIOCHE nesta casa, não massa folhada — o nome francês engana
                 # (decisão do dono, 02/09). Por isso mora aqui e não em Folhados.
-                "PR",
+                "BRRSN",
             ],
             # FOLHADOS é a família da massa laminada, e a massa manda — não o
             # recheo nem o sabor (dono, 02/09). Por isso o Folhado de Frango sai
             # de Salgados e o Bichon au Citron sai de Doces: os dois são folhado
             # antes de serem salgado ou doce. E o Pain aux Raisins faz o caminho
             # inverso, para Macios: o nome é francês, mas o nosso é de brioche.
-            "folhados": ["CT", "PC", "CM", "CN", "FF", "BH", "CPQ"],
+            "folhados": ["CRO", "PCHOC", "CRP", "CN", "FFGO", "BICH", "CRPQ"],
             "salgados": [
-                "CMO", "CMA", "CCOM",
-                "QQ", "JB", "PG", "TI",
+                "CQMO", "CQMA", "CQCOM",
+                "QJQT", "JB", "PG", "TABUA",
                 # voltaram do Yooga (18/08)
-                "MFF", "HO", "MIHO", "DL", "JO",
+                "FFGOP", "HOD", "HODP", "DELI", "JO",
                 # Também folhados (a massa é a categoria principal deles).
-                "FF", "CPQ",
+                "FFGO", "CRPQ",
             ],
-            "doces": ["PPU", "MS", "MD", "PU", "TJ",
+            "doces": ["PERDU", "MELSA", "MDLN", "PU", "TJ",
                 # voltaram do Yooga (18/08)
                 "MA",
                 # Recheados: doces de sabor, folhados/brioche de massa — e a massa
                 # é a categoria principal deles.
-                "PC", "CM", "CN", "BH", "PR",
+                "PCHOC", "CRP", "CN", "BICH", "BRRSN",
             ],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
             "combos": ["COMBO-PETIT-DEJ"],
             "mercearia": [
-                "MT", "BK", "TP", "PT",
-                "CX", "GL", "QC", "QP",
+                "MT", "BK", "TPND", "RTAT",
+                "CX", "GL", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
                 "GR", "THL", "LN",
                 # linha Chai Kãnfa (19/08)
                 # A FOLHA seca é mercearia: leva-se para preparar em casa.
-                "CHEGO_L50", "CHEGO_P50", "INTIMI_L50", "INTIMI_P50",
-                "INTU_L70", "INTU_P50", "MAMA_L60", "MAMA_P50", "NAMAS_L60",
-                "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
+                "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50",
+                "CHA-INTUICAO-KANFA-L70", "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-L70",
+                "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
             ],
         }
         # As coleções rotativas "*-do-dia" morreram em 01/09 (decisão do dono):
@@ -3369,11 +3385,11 @@ class Command(BaseCommand):
         # enviesada seria o cliente na porta. Ver `shop/services/product_readiness`.
         PRONTOS_AS_09H = [
             # folhados e croissants
-            "CT", "CM", "PC", "PR", "CN", "CO", "COC", "CPQ", "BH",
+            "CRO", "CRP", "PCHOC", "BRRSN", "CN", "CO", "COC", "CRPQ", "BICH",
             # brioches
-            "BBB", "BBB2", "BCH", "BN", "MBBBG",
+            "BRBB", "BRBB2", "BRCH", "BRNT", "BRBBP",
             # madeleines
-            "MD",
+            "MDLN",
             # a ciabatta, que é rústica mas sai cedo
             "CI",
         ]
@@ -3428,7 +3444,7 @@ class Command(BaseCommand):
         # o `total_promisable` vai a zero e o pacote deixa de poder ser montado
         # do próprio pão. A unidade segue vendável e some das vitrines de
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
-        so_no_balcao = {"PHO", "BBB", "PI"}
+        so_no_balcao = {"HOL", "BRBB", "PIT"}
 
         for listing_obj in [pdv, ifood, web, whatsapp]:
             ListingItem.objects.filter(listing=listing_obj).delete()
@@ -3769,7 +3785,7 @@ class Command(BaseCommand):
             {
                 "ref": "baguete",
                 "name": "Baguette de Tradition",
-                "output_sku": "BF",
+                "output_sku": "TRADI",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de massa por baguete, para 250 g assados.
@@ -3779,7 +3795,7 @@ class Command(BaseCommand):
             {
                 "ref": "campagne",
                 "name": "Pain de Campagne",
-                "output_sku": "CGO",
+                "output_sku": "CPG",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 340 g de massa por campagne, para 300 g assados.
@@ -3814,7 +3830,7 @@ class Command(BaseCommand):
             {
                 "ref": "shokupan",
                 "name": "Shokupan",
-                "output_sku": "FA",
+                "output_sku": "FORMA",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
@@ -3824,7 +3840,7 @@ class Command(BaseCommand):
             {
                 "ref": "kuro-pan",
                 "name": "Kuro Pan",
-                "output_sku": "KP",
+                "output_sku": "KUP",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de Massa Kuropan crus (o chocolate mora na massa),
@@ -3835,7 +3851,7 @@ class Command(BaseCommand):
             {
                 "ref": "croissant",
                 "name": "Croissant Manteiga",
-                "output_sku": "CT",
+                "output_sku": "CRO",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de massa por croissant, para 70 g assados.
@@ -3845,7 +3861,7 @@ class Command(BaseCommand):
             {
                 "ref": "pain-chocolat",
                 "name": "Pain au Chocolat",
-                "output_sku": "PC",
+                "output_sku": "PCHOC",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de folhada + 20 g de bâton (os dois bâtons
@@ -3859,7 +3875,7 @@ class Command(BaseCommand):
                 # coelhinho? A massa é butter".
                 "ref": "animalzinho",
                 "name": "Animalzinho",
-                "output_sku": "ANC",
+                "output_sku": "COE",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
@@ -3887,7 +3903,7 @@ class Command(BaseCommand):
                 # limão.
                 "ref": "bichon",
                 "name": "Bichon au Citron",
-                "output_sku": "BH",
+                "output_sku": "BICH",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
@@ -3899,7 +3915,7 @@ class Command(BaseCommand):
             {
                 "ref": "madeleine",
                 "name": "Madeleine",
-                "output_sku": "MD",
+                "output_sku": "MDLN",
                 "batch_size": Decimal("1"),
                 "items": [
                     # 28 g de Massa Madeleine por peça, para 25 g assados —
@@ -4049,14 +4065,14 @@ class Command(BaseCommand):
                 # por isso que ela toma o lugar da Mini Baguete no cardápio.
                 "ref": "baguete-lanche",
                 "name": "Baguete Lanche",
-                "output_sku": "BAP",
+                "output_sku": "BGL",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-CIABATTA", Decimal("0.260"))],  # 260 g/un
             },
             {
                 "ref": "batard",
                 "name": "Bâtard",
-                "output_sku": "BA",
+                "output_sku": "BAT",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("0.320"))],  # 320 g/un
             },
@@ -4066,7 +4082,7 @@ class Command(BaseCommand):
                 # que a pequena sem gergelim (BAP) vai no Jambon-Beurre.
                 "ref": "baguete-gergelim-pequena",
                 "name": "Baguete Gergelim Pequena",
-                "output_sku": "BEP",
+                "output_sku": "BGGP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.165")),  # 165 g/un
@@ -4077,35 +4093,35 @@ class Command(BaseCommand):
                 # Tradição, não ciabatta (dono, 26/08 — pergunta 2).
                 "ref": "italiano-rustico",
                 "name": "Italiano Rústico",
-                "output_sku": "BAX",
+                "output_sku": "ITA",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("0.480"))],  # 480 g/un
             },
             {
                 "ref": "baguette-campagne",
                 "name": "Baguette Campagne",
-                "output_sku": "CF",
+                "output_sku": "CPBG",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-CAMPAGNE", Decimal("0.300"))],  # 300 g/un
             },
             {
                 "ref": "campagne-redondo",
                 "name": "Pain de Campagne Redondo",
-                "output_sku": "CGR",
+                "output_sku": "CPR",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-CAMPAGNE", Decimal("0.340"))],  # 340 g/un
             },
             {
                 "ref": "pita",
                 "name": "Pita",
-                "output_sku": "PI",
+                "output_sku": "PIT",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-PITA", Decimal("0.030"))],  # 30 g/un
             },
             {
                 "ref": "focaccia-cebola-bacon-tomilho",
                 "name": "Focaccia Cebola, Bacon e Tomilho",
-                "output_sku": "CBT",
+                "output_sku": "FOB",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.600")),                  # 600 g/un
@@ -4125,7 +4141,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-focaccia-alecrim",
                 "name": "Mini Focaccia Alecrim",
-                "output_sku": "MIF",
+                "output_sku": "FOAP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
@@ -4136,7 +4152,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-focaccia-cebola-bacon-tomilho",
                 "name": "Mini Focaccia Cebola, Bacon e Tomilho",
-                "output_sku": "MICBT",
+                "output_sku": "FOBP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.158")),                 # 158 g/un
@@ -4146,7 +4162,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-focaccia-cebola-roxa",
                 "name": "Mini Focaccia Cebola Roxa",
-                "output_sku": "MIFOC",
+                "output_sku": "FOCP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.146")),          # 146 g/un
@@ -4156,7 +4172,7 @@ class Command(BaseCommand):
             {
                 "ref": "croissant-mini",
                 "name": "Croissant Mini",
-                "output_sku": "CM",
+                "output_sku": "CRP",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-CROISSANT", Decimal("0.036"))],  # 36 g/un
             },
@@ -4167,7 +4183,7 @@ class Command(BaseCommand):
                 # custo calcula.
                 "ref": "pain-aux-raisins",
                 "name": "Pain aux Raisins",
-                "output_sku": "PR",
+                "output_sku": "BRRSN",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BRIOCHE", Decimal("0.040")),     # 40 g/un
@@ -4189,7 +4205,7 @@ class Command(BaseCommand):
                 # Minas padrão + presunto DEFUMADO (Strass) — dono, 26/08 (P3).
                 "ref": "croissant-presunto-queijo",
                 "name": "Croissant Presunto e Queijo",
-                "output_sku": "CPQ",
+                "output_sku": "CRPQ",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CROISSANT", Decimal("0.060")),        # 60 g/un
@@ -4200,7 +4216,7 @@ class Command(BaseCommand):
             {
                 "ref": "folhado-frango",
                 "name": "Folhado de Frango",
-                "output_sku": "FF",
+                "output_sku": "FFGO",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-FOLHADO", Decimal("0.095")),   # 95 g/un
@@ -4210,7 +4226,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-folhado-frango",
                 "name": "Mini Folhado de Frango",
-                "output_sku": "MFF",
+                "output_sku": "FFGOP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-FOLHADO", Decimal("0.058")),   # 58 g/un
@@ -4223,7 +4239,9 @@ class Command(BaseCommand):
                 "output_sku": "JO",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FORMA", Decimal("0.038")),  # 38 g/un
+                    # Butter, como os outros pães-bicho — ele corrigiu em 23/09.
+                    # A ficha dizia FORMA; a gramatura não muda.
+                    ("MASSA-BUTTER", Decimal("0.038")),  # 38 g/un
                     ("GERGELIM", Decimal("0.002")),     # 2 g/un
                 ],
             },
@@ -4233,7 +4251,7 @@ class Command(BaseCommand):
                 # (com yudane) fica para a leva 2c, com a composição do dono.
                 "ref": "kuro-pan-burger",
                 "name": "Kuro Pan Burger",
-                "output_sku": "KBB",
+                "output_sku": "KUBB",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-KUROPAN", Decimal("0.090")),  # 90 g/un
@@ -4242,14 +4260,14 @@ class Command(BaseCommand):
             {
                 "ref": "brioche-nanterre",
                 "name": "Brioche Nanterre",
-                "output_sku": "BN",
+                "output_sku": "BRNT",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-BRIOCHE", Decimal("0.240"))],  # 240 g/un
             },
             {
                 "ref": "brioche-chocolat",
                 "name": "Brioche Chocolat",
-                "output_sku": "BCH",
+                "output_sku": "BRCH",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BRIOCHE", Decimal("0.034")),      # 34 g/un
@@ -4259,7 +4277,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-brioche-bun-gergelim",
                 "name": "Mini Brioche Burger Bun com gergelim",
-                "output_sku": "MBBBG",
+                "output_sku": "BRBBP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BRIOCHE", Decimal("0.030")),  # 30 g/un
@@ -4269,7 +4287,7 @@ class Command(BaseCommand):
             {
                 "ref": "ursinho",
                 "name": "Ursinho",
-                "output_sku": "ANU",
+                "output_sku": "URS",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.080")),    # 80 g/un
@@ -4279,7 +4297,7 @@ class Command(BaseCommand):
             {
                 "ref": "porquinho",
                 "name": "Porquinho",
-                "output_sku": "ANP",
+                "output_sku": "PORQ",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.080")),    # 80 g/un
@@ -4290,7 +4308,7 @@ class Command(BaseCommand):
                 # "No momento, tem sido feita na massa de Butter" (dono, 26/08).
                 "ref": "challah",
                 "name": "Challah",
-                "output_sku": "CH",
+                "output_sku": "CHLH",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-BUTTER", Decimal("0.300"))],  # 300 g/un
             },
@@ -4298,7 +4316,7 @@ class Command(BaseCommand):
                 # 60 g de butter + 50 g de salsicha Vienna (Strass) — dono.
                 "ref": "hot-dog-vienna",
                 "name": "Hot Dog Vienna",
-                "output_sku": "HO",
+                "output_sku": "HOD",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.060")),       # 60 g/un
@@ -4309,7 +4327,7 @@ class Command(BaseCommand):
                 # A mini leva MEIA salsicha (a mesma, cortada — dono, P6).
                 "ref": "mini-hot-dog-vienna",
                 "name": "Mini Hot Dog Vienna",
-                "output_sku": "MIHO",
+                "output_sku": "HODP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.040")),       # 40 g/un
@@ -4319,7 +4337,7 @@ class Command(BaseCommand):
             {
                 "ref": "deli-milho-bacon",
                 "name": "Deli Milho & Bacon",
-                "output_sku": "DL",
+                "output_sku": "DELI",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.070")),      # 70 g/un
@@ -4347,11 +4365,11 @@ class Command(BaseCommand):
             {
                 "ref": "queijo-quente",
                 "name": "Queijo-Quente",
-                "output_sku": "QQ",
+                "output_sku": "QJQT",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FA", Decimal("0.110")),
+                    ("FORMA", Decimal("0.110")),
                     ("QUEIJO-PRATO", Decimal("0.040")),
                     ("REQUEIJAO-CORTE", Decimal("0.030")),
                     ("QUEIJO-PARMESAO", Decimal("0.015")),
@@ -4361,11 +4379,11 @@ class Command(BaseCommand):
             {
                 "ref": "croque-monsieur",
                 "name": "Croque Monsieur",
-                "output_sku": "CMO",
+                "output_sku": "CQMO",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FA", Decimal("0.110")),
+                    ("FORMA", Decimal("0.110")),
                     ("PRESUNTO-CASA", Decimal("0.040")),
                     ("QUEIJO-GRUYERE", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
@@ -4376,11 +4394,11 @@ class Command(BaseCommand):
             {
                 "ref": "croque-madame",
                 "name": "Croque Madame",
-                "output_sku": "CMA",
+                "output_sku": "CQMA",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FA", Decimal("0.110")),
+                    ("FORMA", Decimal("0.110")),
                     ("PRESUNTO-CASA", Decimal("0.040")),
                     ("QUEIJO-GRUYERE", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
@@ -4390,11 +4408,11 @@ class Command(BaseCommand):
             {
                 "ref": "croque-complet",
                 "name": "Croque Complet",
-                "output_sku": "CCOM",
+                "output_sku": "CQCOM",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FA", Decimal("0.110")),
+                    ("FORMA", Decimal("0.110")),
                     ("PRESUNTO-CASA", Decimal("0.040")),
                     ("QUEIJO-GRUYERE", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
@@ -4411,7 +4429,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("BF", Decimal("0.125")),   # meia baguette
+                    ("TRADI", Decimal("0.125")),   # meia baguette
                     ("MANTEIGA-FR", Decimal("0.020")),
                     ("PRESUNTO-CASA", Decimal("0.070")),
                 ],
@@ -4423,7 +4441,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CGO", Decimal("0.120")),  # fatia grossa de campagne
+                    ("CPG", Decimal("0.120")),  # fatia grossa de campagne
                     ("MANTEIGA-FR", Decimal("0.015")),
                 ],
             },
@@ -4432,11 +4450,11 @@ class Command(BaseCommand):
                 # (dono, 26/08): a fatia é 1/8 do Nanterre assado (~26 g).
                 "ref": "pain-perdu",
                 "name": "Pain Perdu",
-                "output_sku": "PPU",
+                "output_sku": "PERDU",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("BN", Decimal("0.026")),
+                    ("BRNT", Decimal("0.026")),
                     ("CREME-LEITE-OVOS", Decimal("0.060")),
                     ("ACUCAR", Decimal("0.010")),
                     ("MANTEIGA-FR", Decimal("0.010")),
@@ -4447,7 +4465,7 @@ class Command(BaseCommand):
             {
                 "ref": "espresso",
                 "name": "Espresso",
-                "output_sku": "SS",
+                "output_sku": "SP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [("CAFE-GRAO", Decimal("0.018"))],
@@ -4455,7 +4473,7 @@ class Command(BaseCommand):
             {
                 "ref": "espresso-macchiato",
                 "name": "Espresso Macchiato",
-                "output_sku": "SL",
+                "output_sku": "SPMC",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4466,7 +4484,7 @@ class Command(BaseCommand):
             {
                 "ref": "cafe-coado",
                 "name": "Café Coado",
-                "output_sku": "CD",
+                "output_sku": "COAD",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4477,7 +4495,7 @@ class Command(BaseCommand):
             {
                 "ref": "cappuccino",
                 "name": "Cappuccino",
-                "output_sku": "PS",
+                "output_sku": "CAP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4488,7 +4506,7 @@ class Command(BaseCommand):
             {
                 "ref": "mochaccino",
                 "name": "Mochaccino",
-                "output_sku": "MC",
+                "output_sku": "CAPMO",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4500,7 +4518,7 @@ class Command(BaseCommand):
             {
                 "ref": "mocha",
                 "name": "Mocha",
-                "output_sku": "MH",
+                "output_sku": "MOCHA",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4512,7 +4530,7 @@ class Command(BaseCommand):
             {
                 "ref": "caffe-latte",
                 "name": "Caffè Latte",
-                "output_sku": "CL",
+                "output_sku": "CAFL",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4523,7 +4541,7 @@ class Command(BaseCommand):
             {
                 "ref": "chocolate-quente",
                 "name": "Chocolate Quente",
-                "output_sku": "CQ",
+                "output_sku": "CHOQ",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4534,7 +4552,7 @@ class Command(BaseCommand):
             {
                 "ref": "cha-camille",
                 "name": "Chá Camille",
-                "output_sku": "THC",
+                "output_sku": "CHCAM",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4545,7 +4563,7 @@ class Command(BaseCommand):
             {
                 "ref": "cha-rouge",
                 "name": "Chá Rouge",
-                "output_sku": "THR",
+                "output_sku": "CHROU",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4556,7 +4574,7 @@ class Command(BaseCommand):
             {
                 "ref": "cha-sophie",
                 "name": "Chá Sophie",
-                "output_sku": "THS",
+                "output_sku": "CHSOP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4567,7 +4585,7 @@ class Command(BaseCommand):
             {
                 "ref": "cha-bleu",
                 "name": "Chá Bleu",
-                "output_sku": "THB",
+                "output_sku": "CHBLU",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4578,7 +4596,7 @@ class Command(BaseCommand):
             {
                 "ref": "cha-hibisco",
                 "name": "Chá Hibisco",
-                "output_sku": "HI",
+                "output_sku": "CHHIB",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4590,7 +4608,7 @@ class Command(BaseCommand):
             {
                 "ref": "soft-chai-citrico",
                 "name": "Soft Chai Cítrico",
-                "output_sku": "CHAI_A",
+                "output_sku": "SFTCH",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4605,7 +4623,7 @@ class Command(BaseCommand):
                 # gelado?) segue aberta com o dono.
                 "ref": "vienna-gelado",
                 "name": "Vienna",
-                "output_sku": "SE",
+                "output_sku": "VIEN",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -4619,7 +4637,7 @@ class Command(BaseCommand):
                 # diferente da tônica de REVENDA, que o cardápio cortou.
                 "ref": "cha-tonica-frutas-vermelhas",
                 "name": "Chá Tônica Frutas Vermelhas",
-                "output_sku": "CTV",
+                "output_sku": "CTFV",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
@@ -6480,7 +6498,7 @@ class Command(BaseCommand):
 
         # Deterministic production-dependent order so Pedidos and Produção
         # always demonstrate the visual sync from WP-BS-9.
-        produced_product = products.get("CT") or products.get("BF")
+        produced_product = products.get("CRO") or products.get("TRADI")
         if produced_product:
             customer = customer_list[0]
             channel = channels["pdv"]
@@ -6642,7 +6660,7 @@ class Command(BaseCommand):
 
         now = timezone.now()
         web = channels.get(STOREFRONT_REF)
-        product = products.get("CT") or next(iter(products.values()), None)
+        product = products.get("CRO") or next(iter(products.values()), None)
         if web is None or product is None:
             self.stdout.write("  ⏭️  Sem canal web/produto para cenários de borda")
             return
@@ -6922,15 +6940,15 @@ class Command(BaseCommand):
         # Espelha o production_plan calibrado com os XMLs de NFC-e (o Sugerido
         # deve sair PRÓXIMO do planejado — ver comentário acima).
         history = {
-            "BF": weeks(22),
-            "CGO": weeks(16),
+            "TRADI": weeks(22),
+            "CPG": weeks(16),
             "CI": weeks(24),
-            "FA": weeks(18),
-            "KP": weeks(8),
-            "CT": weeks(42),
-            "PC": weeks(36),
-            "ANC": weeks(16),
-            "MD": weeks(68),
+            "FORMA": weeks(18),
+            "KUP": weeks(8),
+            "CRO": weeks(42),
+            "PCHOC": weeks(36),
+            "COE": weeks(16),
+            "MDLN": weeks(68),
         }
         # Ancora no localdate (fuso da loja), não em now(): o backend de demanda
         # filtra o histórico por __week_day, que extrai o dia convertendo para
@@ -7118,9 +7136,9 @@ class Command(BaseCommand):
                     return products[sku]
             return next(iter(products.values()))
 
-        croissant = pick("CT", "BF")
-        baguete = pick("BF", "CT")
-        pain = pick("PC", "FA", "CT")
+        croissant = pick("CRO", "TRADI")
+        baguete = pick("TRADI", "CRO")
+        pain = pick("PCHOC", "FORMA", "CRO")
 
         web = channels["web"].ref
         pdv = channels["pdv"].ref
@@ -7411,9 +7429,9 @@ class Command(BaseCommand):
             },
         )
         lines = [
-            {"line_id": f"L-QA-{fired_tab}-0", "sku": "CT", "name": "Croissant Tradicional",
+            {"line_id": f"L-QA-{fired_tab}-0", "sku": "CRO", "name": "Croissant Tradicional",
              "qty": 2, "unit_price_q": 1300, "line_total_q": 2600},
-            {"line_id": f"L-QA-{fired_tab}-1", "sku": "PC", "name": "Pain au Chocolat",
+            {"line_id": f"L-QA-{fired_tab}-1", "sku": "PCHOC", "name": "Pain au Chocolat",
              "qty": 1, "unit_price_q": 1500, "line_total_q": 1500},
         ]
         session.update_items(lines)
@@ -7462,16 +7480,16 @@ class Command(BaseCommand):
 
         for channel_ref, items in [
             ("pdv", [
-                {"line_id": uuid.uuid4().hex[:8], "sku": "CT", "name": "Croissant Tradicional", "qty": 2, "unit_price_q": 1300, "line_total_q": 2600},
-                {"line_id": uuid.uuid4().hex[:8], "sku": "PC", "name": "Pain au Chocolat", "qty": 1, "unit_price_q": 1500, "line_total_q": 1500},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "CRO", "name": "Croissant Tradicional", "qty": 2, "unit_price_q": 1300, "line_total_q": 2600},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "PCHOC", "name": "Pain au Chocolat", "qty": 1, "unit_price_q": 1500, "line_total_q": 1500},
             ]),
             ("web", [
-                {"line_id": uuid.uuid4().hex[:8], "sku": "BF", "name": "Baguete Francesa", "qty": 3, "unit_price_q": 1300, "line_total_q": 3900},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "TRADI", "name": "Baguete Francesa", "qty": 3, "unit_price_q": 1300, "line_total_q": 3900},
                 {"line_id": uuid.uuid4().hex[:8], "sku": "FOA", "name": "Focaccia Alecrim", "qty": 1, "unit_price_q": 2800, "line_total_q": 2800},
             ]),
             ("whatsapp", [
-                {"line_id": uuid.uuid4().hex[:8], "sku": "BF", "name": "Baguete Francesa", "qty": 10, "unit_price_q": 1300, "line_total_q": 13000},
-                {"line_id": uuid.uuid4().hex[:8], "sku": "CT", "name": "Croissant Tradicional", "qty": 20, "unit_price_q": 1300, "line_total_q": 26000},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "TRADI", "name": "Baguete Francesa", "qty": 10, "unit_price_q": 1300, "line_total_q": 13000},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "CRO", "name": "Croissant Tradicional", "qty": 20, "unit_price_q": 1300, "line_total_q": 26000},
             ]),
         ]:
             ch = channels[channel_ref]
@@ -7521,12 +7539,12 @@ class Command(BaseCommand):
 
         vitrine = positions["vitrine"]
         alerts_data = [
-            ("BF", 10),
+            ("TRADI", 10),
             ("MIB", 12),
-            ("FE", 15),
-            ("CT", 15),
-            ("PC", 12),
-            ("FA", 6),
+            ("FENDU", 15),
+            ("CRO", 15),
+            ("PCHOC", 12),
+            ("FORMA", 6),
             ("FOA", 4),
             ("CI", 8),
         ]
@@ -7567,7 +7585,7 @@ class Command(BaseCommand):
         shortage_target = (
             WorkOrder.objects.filter(
                 source_ref__startswith="seed:production:today:",
-                output_sku="CT",
+                output_sku="CRO",
             )
             .order_by("created_at")
             .first()
@@ -8489,12 +8507,12 @@ class Command(BaseCommand):
             return
 
         closing_items = [
-            {"sku": "BF", "qty_reported": 6, "qty_applied": 6, "qty_discrepancy": 0, "qty_remaining": 6, "qty_kept": 4, "qty_expired": 2, "qty_nonconforming": 0},
+            {"sku": "TRADI", "qty_reported": 6, "qty_applied": 6, "qty_discrepancy": 0, "qty_remaining": 6, "qty_kept": 4, "qty_expired": 2, "qty_nonconforming": 0},
             {"sku": "CI", "qty_reported": 3, "qty_applied": 3, "qty_discrepancy": 0, "qty_remaining": 3, "qty_kept": 2, "qty_expired": 1, "qty_nonconforming": 0},
-            {"sku": "FE", "qty_reported": 7, "qty_applied": 7, "qty_discrepancy": 0, "qty_remaining": 7, "qty_kept": 5, "qty_expired": 2, "qty_nonconforming": 0},
-            {"sku": "TB", "qty_reported": 5, "qty_applied": 5, "qty_discrepancy": 0, "qty_remaining": 5, "qty_kept": 4, "qty_expired": 1, "qty_nonconforming": 0},
+            {"sku": "FENDU", "qty_reported": 7, "qty_applied": 7, "qty_discrepancy": 0, "qty_remaining": 7, "qty_kept": 5, "qty_expired": 2, "qty_nonconforming": 0},
+            {"sku": "TABAT", "qty_reported": 5, "qty_applied": 5, "qty_discrepancy": 0, "qty_remaining": 5, "qty_kept": 4, "qty_expired": 1, "qty_nonconforming": 0},
             {"sku": "CI", "qty_reported": 4, "qty_applied": 4, "qty_discrepancy": 0, "qty_remaining": 4, "qty_kept": 3, "qty_expired": 1, "qty_nonconforming": 0},
-            {"sku": "PH", "qty_reported": 8, "qty_applied": 8, "qty_discrepancy": 0, "qty_remaining": 8, "qty_kept": 6, "qty_expired": 2, "qty_nonconforming": 0},
+            {"sku": "TRABB", "qty_reported": 8, "qty_applied": 8, "qty_discrepancy": 0, "qty_remaining": 8, "qty_kept": 6, "qty_expired": 2, "qty_nonconforming": 0},
         ]
         production_summary = {}
         for work_order in WorkOrder.objects.filter(target_date=yesterday).select_related("recipe"):
@@ -8681,8 +8699,8 @@ class Command(BaseCommand):
 
         plan = {
             # (cliente, sku, qtd, hora) — o Restaurante leva baguete e shokupan; o Café, croissant.
-            "yesterday": [("CLI-002", "BF", 10, 7), ("CLI-002", "FA", 4, 7)],
-            "today": [("CLI-002", "BF", 8, 7), ("CLI-004", "CT", 12, 8)],
+            "yesterday": [("CLI-002", "TRADI", 10, 7), ("CLI-002", "FORMA", 4, 7)],
+            "today": [("CLI-002", "TRADI", 8, 7), ("CLI-004", "CRO", 12, 8)],
         }[which]
         day = timezone.localtime(opened_at).date()
         for customer_ref, sku, qty, hour in plan:
@@ -8771,8 +8789,8 @@ class Command(BaseCommand):
 
         if Order.objects.filter(ref__in=["DLV-ACERTADA", "DLV-NARUA"]).exists():
             return
-        croissant = Product.objects.filter(sku="CT").first()
-        baguete = Product.objects.filter(sku="BF").first()
+        croissant = Product.objects.filter(sku="CRO").first()
+        baguete = Product.objects.filter(sku="TRADI").first()
         customer = Customer.objects.filter(ref="CLI-003").first()
         if croissant is None or baguete is None or customer is None:
             return
@@ -9081,11 +9099,11 @@ class Command(BaseCommand):
 
     BI_SHELF_PROFILES = {
         # sku: (produção/dia, hora que acaba ou None, dias de folga)
-        "CT": (42, 11, ()),          # some cedo: subprodução crônica
-        "PC": (36, 13, ()),      # some no meio da tarde
-        "BF": (22, 16, ()),            # aguenta quase o dia
-        "CGO": (16, None, ()),         # sempre sobra
-        "MD": (68, 12, (5, 6)),      # só falta no fim de semana
+        "CRO": (42, 11, ()),          # some cedo: subprodução crônica
+        "PCHOC": (36, 13, ()),      # some no meio da tarde
+        "TRADI": (22, 16, ()),            # aguenta quase o dia
+        "CPG": (16, None, ()),         # sempre sobra
+        "MDLN": (68, 12, (5, 6)),      # só falta no fim de semana
     }
 
     # Dois anos: é o alcance do histórico real da casa, e sem ele nenhuma
@@ -9231,33 +9249,33 @@ class Command(BaseCommand):
             # o B.I. conta bebida por pedido. Preparada = feita na casa; pronta
             # = industrializada. Água é pronta.
             "bebida-preparada": [
-                "PS", "THB", "THC", "THR", "THS", "CD", "CE",
-                "CV", "SS", "FP", "MC",
-                "SO",
+                "CAP", "CHBLU", "CHCAM", "CHROU", "CHSOP", "COAD", "CE",
+                "CV", "SP", "FRAP", "CAPMO",
+                "SDLA",
             ],
             "bebida-pronta": [
-                "AG",
+                "AGUA-MINERAL-PRATA-310",
             ],
             "consome-aqui": [
-                "COMBO-PETIT-DEJ", "CCOM",
-                "CMA", "CMO",
-                "JB", "MS",
-                "PG", "PPU",
-                "PU", "QQ", "TI", "TJ",
+                "COMBO-PETIT-DEJ", "CQCOM",
+                "CQMA", "CQMO",
+                "JB", "MELSA",
+                "PG", "PERDU",
+                "PU", "QJQT", "TABUA", "TJ",
             ],
             "leva": [
-                "BK", "BF", "BE",
-                "BBB", "GR", "CGO",
+                "BK", "TRADI", "BGG",
+                "BRBB", "GR", "CPG",
                 "CPX", "THL", "CX",
-                "KP", "LN",
-                "MT", "PH", "PHO", "PHO4", "BBB2",
-                "QC", "QP", "FA",
+                "KUP", "LN",
+                "MT", "TRABB", "HOL", "HOL4", "BRBB2",
+                "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP", "FORMA",
             ],
             "hibrido": [
-                "ANC", "CI", "CO",
-                "CT", "FE", "GL", "MD", "ME",
-                "MIB", "PC", "PT",
-                "TB", "TP",
+                "COE", "CI", "CO",
+                "CRO", "FENDU", "GL", "MDLN", "MELON",
+                "MIB", "PCHOC", "RTAT",
+                "TABAT", "TPND",
             ],
         }
         roles = {role.ref: role for role in ConsumptionRole.objects.all()}
@@ -9304,24 +9322,24 @@ class Command(BaseCommand):
         note_h = "híbrido confirmado pelo dono 18/08/2026: a bebida no pedido é que define"
         historical = {
             "leva": (note_a, [
-                "FA", "MFA",              # Forma Artesanal - 6 Fatias
-                "BBB", "MBBB", "MBBBG",   # Brioche Burger Bun
-                "PHO", "MPHO", "MIPHO",   # Pão Para Hot Dog
-                "PI", "MPI",              # Pita
-                "CH", "MCH",              # Challah
-                "BN", "MBN",              # Brioche Nanterre
-                "KP", "MKP",              # Kuro Pan
-                "KBB", "MKPB",            # Kuro Pan Burger
+                "FORMA", "MFA",              # Forma Artesanal - 6 Fatias
+                "BRBB", "MBBB", "BRBBP",   # Brioche Burger Bun
+                "HOL", "MPHO", "MIPHO",   # Pão Para Hot Dog
+                "PIT", "MPI",              # Pita
+                "CHLH", "MCH",              # Challah
+                "BRNT", "MBN",              # Brioche Nanterre
+                "KUP", "MKP",              # Kuro Pan
+                "KUBB", "MKPB",            # Kuro Pan Burger
             ]),
             "hibrido": (note_h, [
                 # viennoiserie e doces
-                "PC", "MPC", "CT", "MCT", "CN", "MD", "MMD", "BH", "MBH",
-                "BCH", "MBCH", "CM", "MCM", "PR", "MPR", "CO", "MCO",
-                "COC", "MCOC", "MA", "MMA", "ME", "MME",
+                "PCHOC", "MPC", "CRO", "MCT", "CN", "MDLN", "MMD", "BICH", "MBH",
+                "BRCH", "MBCH", "CRP", "MCM", "BRRSN", "MPR", "CO", "MCO",
+                "COC", "MCOC", "MA", "MMA", "MELON", "MME",
                 # os pães-bicho (melonpan): Coelhinho, Caranguejo, Ursinho, Porquinho
-                "ANC", "JO", "MJO", "ANU", "MANU", "ANP", "MANP",
+                "COE", "JO", "MJO", "URS", "MANU", "PORQ", "MANP",
                 # salgados montados: a bebida define, não o salgado
-                "HO", "MHO", "MIHO", "DL", "MDL", "CPQ", "MCPQ", "FF", "MFF",
+                "HOD", "MHO", "HODP", "DELI", "MDL", "CRPQ", "MCPQ", "FFGO", "FFGOP",
                 # os mesmos produtos com SKU do iFood (só entrega; a etiqueta é
                 # coerência, a entrega precede a cesta)
                 "IFOOD_7b8ad920c82b11eea8170d006",
@@ -9344,24 +9362,24 @@ class Command(BaseCommand):
         # reserva de categoria.
         round_two = (
             ("bebida-preparada", "café/chá da casa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
-                "PS", "SS", "SL", "CL", "CQ", "FP", "MH", "CTV", "MC", "SE", "HI", "CHAI_A",
+                "CAP", "SP", "SPMC", "CAFL", "CHOQ", "FRAP", "MOCHA", "CTFV", "CAPMO", "VIEN", "CHHIB", "SFTCH",
             ]),
             ("consome-aqui", "prato servido à mesa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
-                "CMO", "QQ", "CMA", "CCOM", "JB", "PPU",   # croques, queijo quente, jambon, pain perdu
+                "CQMO", "QJQT", "CQMA", "CQCOM", "JB", "PERDU",   # croques, queijo quente, jambon, pain perdu
             ]),
             ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
-                "BAX", "BF", "CF", "CGO", "CPX", "BE", "BAP", "CBT", "PH", "FOA", "BA", "CGR",
+                "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGG", "BGL", "FOB", "TRABB", "FOA", "BAT", "CPR",
                 "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
-                "BEP", "FOC", "MPH",
+                "BGGP", "FOC", "MPH",
                 # chás Kãnfa em pouch/lata (mercearia, como CHA-LATA)
-                "INTU_P50", "CHEGO_P50", "INTIMI_P50", "CHEGO_L50", "NAMAS_P50", "INTU_L70",
-                "NAMAS_L60", "INTIMI_L50", "SOFIA_P50", "VITAL_P50", "MAMA_L60", "MAMA_P50",
+                "CHA-INTUICAO-KANFA-P50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50", "CHA-NAMASTE-KANFA-P50", "CHA-INTUICAO-KANFA-L70",
+                "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-L50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50",
                 # pães com SKU do iFood (só entrega)
                 "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9",
             ]),
             ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
-                "CI", "CIQ", "MCI", "TB", "MTB", "FE", "MFE", "MIB",
-                "MICBT", "MIF", "MIFOC", "MMICBT", "MMIF",
+                "CI", "CIQ", "MCI", "TABAT", "MTB", "FENDU", "MFE", "MIB",
+                "FOBP", "FOAP", "FOCP", "MMICBT", "MMIF",
             ]),
         )
         entries = [(ref, note, skus) for ref, (note, skus) in historical.items()] + list(round_two)
@@ -9740,7 +9758,7 @@ class Command(BaseCommand):
                     },
                 )
         # Um produto parado por decisão: é o que a métrica de tempo pausado lê.
-        pausado = "KP"
+        pausado = "KUP"
         if pausado in products:
             ShelfOutage.objects.get_or_create(
                 sku=pausado, channel_ref=STOREFRONT_REF,
@@ -10234,6 +10252,6 @@ class Command(BaseCommand):
     def _bi_category(self, product) -> str:
         """Categoria da linha histórica — o recorte barato de 2 anos."""
         return {
-            "CT": "Viennoiserie", "PC": "Viennoiserie",
-            "BF": "Pães", "CGO": "Pães", "MD": "Confeitaria",
+            "CRO": "Viennoiserie", "PCHOC": "Viennoiserie",
+            "TRADI": "Pães", "CPG": "Pães", "MDLN": "Confeitaria",
         }.get(product.sku, "Pães")

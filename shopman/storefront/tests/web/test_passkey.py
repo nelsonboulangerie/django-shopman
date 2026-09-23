@@ -463,6 +463,141 @@ def test_the_device_list_survives_a_trusted_device(client, person):
     assert [row["label"] for row in rows] == ["iPhone da Ana"]
 
 
+def test_the_ip_of_the_owner_never_leaves_for_a_third_party(client, person, monkeypatch):
+    """O IP do titular fica em casa, mesmo com a tela aberta.
+
+    Até 23/09/2026 abrir "Segurança e dados" mandava o IP gravado no aparelho para o
+    `ip-api.com`, em HTTP sem TLS, só para escrever o nome da cidade ao lado do aparelho.
+    O teste prende as duas metades da correção: nenhuma saída de rede, e nenhum rótulo de
+    localização no contrato da tela.
+
+    ⚠️ O `urlopen` é vigiado, não bloqueado por import: se alguém reintroduzir a chamada,
+    quem falha é esta asserção com o nome do terceiro, e não um erro de rede obscuro na CI.
+
+    ⚠️ Em 23/09/2026 o rótulo de cidade VOLTOU para a tela, agora por base local lida do
+    disco (ver `shopman/shop/services/ip_location.py`). Este teste é o que garante que
+    "local" continua sendo verdade: vigiar só o `urlopen` deixaria passar um cliente HTTP
+    escrito com `socket` ou `http.client`, então o soquete também é vigiado — é a camada
+    por onde TODOS eles passam.
+    """
+    import socket
+    import urllib.request
+
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models.device_trust import SubjectType
+
+    chamadas = []
+
+    def _nao_deveria_sair(url, *args, **kwargs):
+        chamadas.append(str(getattr(url, "full_url", url)))
+        raise AssertionError(f"a tela de segurança saiu para a rede: {chamadas[-1]}")
+
+    def _nao_deveria_conectar(self, endereco):
+        chamadas.append(f"socket->{endereco}")
+        raise AssertionError(f"a tela de segurança abriu soquete para {endereco}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _nao_deveria_sair)
+    monkeypatch.setattr(socket.socket, "connect", _nao_deveria_conectar)
+
+    TrustedDevice.objects.create(
+        subject_type=SubjectType.CUSTOMER,
+        subject_id=str(person.uuid),
+        token_hash="b" * 64,
+        label="Chrome / Android",
+        ip_address="200.150.100.50",
+    )
+    _sign_in(client, person)
+
+    response = client.get("/api/v1/account/devices/")
+
+    assert response.status_code == 200, response.content
+    assert chamadas == []
+
+    row = response.json()["devices"][0]
+    assert "location" not in row
+    assert "200.150.100.50" not in response.content.decode()
+
+    # A base de cidade está DESLIGADA na suíte (`GEOIP_CITY_DATABASE_PATH = ""` em
+    # `config/settings_test.py`), então o campo existe e vem vazio. Vazio é o contrato:
+    # a tela some com a linha em vez de escrever "Local desconhecido".
+    assert row["approximate_city"] == ""
+
+    # O que sobra continua respondendo "fui eu que entrei?": o navegador e o aparelho,
+    # quando foi o último uso, e quando foi registrado.
+    assert row["label"] == "Chrome no Android"
+    assert row["last_used_at_display"]
+    assert row["created_at_display"]
+    assert response.json()["copy"]["last_used_prefix"] == "Último uso em"
+
+
+def test_a_cidade_aproximada_chega_a_tela_sem_nenhuma_chamada_de_rede(
+    client, person, monkeypatch, settings, tmp_path,
+):
+    """A frase escolhida pelo dono, de ponta a ponta, com a base lida do DISCO.
+
+    O teste acima prova que nada sai; este prova que, mesmo assim, a cidade chega. São as
+    duas metades da decisão de 23/09/2026 — tirar o terceiro sem perder o rótulo — e
+    separá-las é de propósito: uma passa sem a outra, e aí a frente está pela metade.
+
+    ⚠️ O soquete continua vigiado aqui. Um dia alguém vai "melhorar" a base local com um
+    fallback para um serviço web quando a leitura não for confiável; é exatamente o caso
+    em que a tela fica silenciosa hoje, e é exatamente o que não pode voltar.
+    """
+    import socket
+
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models.device_trust import SubjectType
+
+    from shopman.shop.services import ip_location
+
+    def _nao_deveria_conectar(self, endereco):
+        raise AssertionError(f"a tela de segurança abriu soquete para {endereco}")
+
+    monkeypatch.setattr(socket.socket, "connect", _nao_deveria_conectar)
+
+    class _BaseNoDisco:
+        """Responde como a GeoLite2-City responde: cidade, sigla do estado, país e raio."""
+
+        def get(self, ip):
+            return {
+                "city": {"names": {"en": "Londrina"}},
+                "subdivisions": [{"iso_code": "PR", "names": {"en": "Paraná"}}],
+                "country": {"iso_code": "BR", "names": {"en": "Brazil", "pt-BR": "Brasil"}},
+                "location": {"accuracy_radius": 20, "latitude": -23.3103, "longitude": -51.1628},
+            }
+
+    ip_location.reset_reader_cache()
+    monkeypatch.setattr(ip_location, "_get_reader", _BaseNoDisco)
+    settings.GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = 50
+
+    TrustedDevice.objects.create(
+        subject_type=SubjectType.CUSTOMER,
+        subject_id=str(person.uuid),
+        token_hash="c" * 64,
+        label="Chrome / Android",
+        ip_address="200.150.100.50",
+    )
+    _sign_in(client, person)
+
+    response = client.get("/api/v1/account/devices/")
+
+    assert response.status_code == 200, response.content
+    payload = response.json()
+
+    assert payload["devices"][0]["approximate_city"] == "Londrina, PR · Brasil"
+    assert payload["copy"]["near_prefix"] == "Próximo a"
+
+    # A frase que a pessoa lê, montada como a tela monta.
+    linha = f"{payload['copy']['near_prefix']} {payload['devices'][0]['approximate_city']}"
+    assert linha == "Próximo a Londrina, PR · Brasil"
+
+    # ⚠️ O IP continua FORA da resposta. A cidade é derivada dele, não o substitui na tela
+    # nem o acompanha até o navegador.
+    assert "200.150.100.50" not in response.content.decode()
+
+    ip_location.reset_reader_cache()
+
+
 def test_a_device_of_someone_else_never_appears(client, person, db):
     """O filtro por sujeito é o que separa as listas — e era ele que estava quebrado."""
     from shopman.doorman.models import TrustedDevice

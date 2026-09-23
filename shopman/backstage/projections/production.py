@@ -693,14 +693,14 @@ def _board_actions(
                 _production_action(
                     ref=f"void:{order.pk}",
                     kind="void",
-                    label="Estornar fornada",
+                    label="Estornar lote",
                     priority=90,
                     enabled=access.can_void,
-                    reason="Sem capacidade para estornar fornadas.",
+                    reason="Sem capacidade para estornar lotes.",
                     href=f"/api/v1/backstage/production/{order.pk}/void/",
                     payload_schema="ProductionVoidMutationRequest",
                     expected_rev=order.rev,
-                    confirmation_title="Estornar esta fornada?",
+                    confirmation_title="Estornar este lote?",
                     confirmation_label="Confirmar estorno",
                     confirmation_reason_required=True,
                 )
@@ -719,14 +719,14 @@ def _kds_actions(
             _production_action(
                 ref=f"void:{card.pk}",
                 kind="void",
-                label="Estornar fornada",
+                label="Estornar lote",
                 priority=90,
                 enabled=access.can_void,
-                reason="Sem capacidade para estornar fornadas.",
+                reason="Sem capacidade para estornar lotes.",
                 href=f"/api/v1/backstage/production/{card.pk}/void/",
                 payload_schema="ProductionVoidMutationRequest",
                 expected_rev=card.rev,
-                confirmation_title="Estornar esta fornada?",
+                confirmation_title="Estornar este lote?",
                 confirmation_label="Confirmar estorno",
                 confirmation_reason_required=True,
             )
@@ -753,11 +753,11 @@ def _qc_actions(
                         label="Confirmar qualidade",
                         priority=20,
                         enabled=card.can_correct,
-                        reason="Somente a gestão pode revisar uma fornada concluída.",
+                        reason="Somente a gestão pode revisar um lote concluído.",
                         href=f"/api/v1/backstage/production/{card.pk}/quality-review/",
                         payload_schema="ProductionQualityReviewMutationRequest",
                         expected_rev=card.rev,
-                        confirmation_title="Confirmar o QC desta fornada?",
+                        confirmation_title="Confirmar o QC deste lote?",
                         confirmation_label="Confirmar qualidade",
                     )
                 )
@@ -768,11 +768,11 @@ def _qc_actions(
                     label="Corrigir qualidade",
                     priority=40,
                     enabled=card.can_correct,
-                    reason="Somente a gestão pode corrigir uma fornada concluída.",
+                    reason="Somente a gestão pode corrigir um lote concluído.",
                     href=f"/api/v1/backstage/production/{card.pk}/quality-correction/",
                     payload_schema="ProductionQualityCorrectionMutationRequest",
                     expected_rev=card.rev,
-                    confirmation_title="Corrigir qualidade da fornada",
+                    confirmation_title="Corrigir qualidade do lote",
                     confirmation_label="Salvar correção",
                     confirmation_reason_required=True,
                 )
@@ -793,7 +793,7 @@ def _qc_actions(
                 href=f"/api/v1/backstage/production/{card.pk}/finish/",
                 payload_schema="ProductionFinishMutationRequest",
                 expected_rev=card.rev,
-                confirmation_title="Confirmar resultado da fornada",
+                confirmation_title="Confirmar resultado do lote",
                 confirmation_label="Confirmar",
             )
         )
@@ -825,18 +825,18 @@ def _qc_actions(
             _production_action(
                 ref=f"quick_finish:{recipe.pk}",
                 kind="quick_finish",
-                label="Confirmar fornada avulsa",
+                label="Confirmar lote avulso",
                 priority=30,
                 enabled=quick_enabled,
                 reason=(
-                    "Fornada avulsa só pode ser registrada no dia atual."
+                    "Lote avulso só pode ser registrado no dia atual."
                     if selected_date != timezone.localdate()
                     else "Sem capacidade para conclusão rápida."
                 ),
                 href="/api/v1/backstage/production/quick-finish/",
                 payload_schema="ProductionQuickFinishMutationRequest",
                 expected_rev=None,
-                confirmation_title="Confirmar fornada avulsa",
+                confirmation_title="Confirmar lote avulso",
                 confirmation_label="Confirmar",
             )
         )
@@ -1538,7 +1538,7 @@ def build_production_mise_en_place(
 _YIELD_MARGIN_NOTE = (
     "As massas já vêm com margem de segurança: meia divisão da balança por peça "
     "(o excesso esperado quando a régua é nunca sair abaixo do alvo), a perda da "
-    "masseira por fornada e uma folga para a variação. O que sobrar vira massa "
+    "masseira por lote e uma folga para a variação. O que sobrar vira massa "
     "velha de amanhã, dentro do teto."
 )
 

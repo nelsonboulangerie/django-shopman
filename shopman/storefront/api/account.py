@@ -129,7 +129,10 @@ def _serialize_device(device: dict) -> dict:
         "created_at_display": _fmt_dt(device.get("created_at")),
         "last_used_at": device.get("last_used_at").isoformat() if device.get("last_used_at") else None,
         "last_used_at_display": _fmt_dt(device.get("last_used_at")) or "Ainda não usado novamente",
-        "location": device.get("location") or "",
+        # "Londrina, PR · Brasil", ou vazio quando a leitura não foi confiável o bastante
+        # para nomear a cidade. Vazio é resposta legítima e frequente — ver
+        # `shopman/shop/services/ip_location.py`. Calculado na hora, nunca gravado.
+        "approximate_city": device.get("approximate_city") or "",
         "is_current": bool(device.get("is_current")),
     }
 
@@ -1039,6 +1042,16 @@ def _devices_copy() -> dict:
         "empty_title": title("DEVICE_LIST_EMPTY", "Nenhum aparelho confiável"),
         "empty_message": message("DEVICE_LIST_EMPTY", "Quando você optar por confiar neste aparelho no login, ele aparecerá aqui."),
         "current_badge": title("DEVICE_LIST_CURRENT", "Este aparelho"),
+        # ⚠️ Este prefixo nasceu junto com a saída do rótulo de cidade (23/09/2026). Sem ele
+        # a linha do aparelho vira "22/09/2026 às 14:30 · Registrado em 20/09/2026": duas
+        # datas, e a primeira sem dizer do que é. Quem pergunta "fui eu que entrei?" está
+        # justamente lendo essa primeira data.
+        "last_used_prefix": message("DEVICE_LIST_LAST_USED_PREFIX", "Último uso em"),
+        # ⚠️ "Próximo a" é escolha do dono (23/09/2026), não economia de palavra: ele
+        # comunica que a localização é aproximada sem precisar de nota de rodapé ao lado.
+        # A leitura vem de base local e já foi filtrada por confiança antes de chegar
+        # aqui — quem escrever outra coisa neste campo tem de manter essa promessa.
+        "near_prefix": message("DEVICE_LIST_NEAR_PREFIX", "Próximo a"),
         "registered_prefix": message("DEVICE_LIST_REGISTERED_PREFIX", "Registrado em"),
         "revoke_cta": title("DEVICE_REVOKE_CTA", "Remover"),
         "revoke_all_cta": title("DEVICE_REVOKE_ALL_CTA", "Remover todos os aparelhos"),
@@ -1469,16 +1482,6 @@ class AccountDeleteView(APIView):
                 ),
                 "marketing_delivery_in_flight": (
                     "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
-                ),
-                "manychat_unlink_required": (
-                    "Esta conta ainda está vinculada ao atendimento pelo ManyChat. "
-                    "Peça à equipe para desvincular essa integração antes de excluir a conta; "
-                    "assim ela não recria seus dados depois da exclusão."
-                ),
-                "manychat_reconciliation_pending": (
-                    "Uma verificação com o ManyChat ainda precisa ser concluída. "
-                    "Peça à equipe para conferir essa integração e tente excluir a conta novamente; "
-                    "assim não confirmamos a exclusão enquanto o provedor pode ter aceitado dados."
                 ),
             }
             return Response(

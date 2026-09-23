@@ -8,17 +8,9 @@ from threading import Event
 from time import monotonic
 
 import pytest
-from django.apps import apps
 from django.db import close_old_connections, connection, connections
 from django.test import override_settings
 from django.utils import timezone
-
-if not apps.is_installed("shopman.shop"):
-    pytest.skip(
-        "ManyChat x exclusão é integração monolítica registrada no runtime gate",
-        allow_module_level=True,
-    )
-
 from shopman.guestman.contrib.identifiers.models import (  # noqa: E402
     CustomerIdentifier,
     IdentifierType,
@@ -29,7 +21,11 @@ from shopman.guestman.contrib.manychat.resolver import (  # noqa: E402
     _ProviderLookupOutcome,
 )
 from shopman.guestman.contrib.manychat.service import ManychatService  # noqa: E402
-from shopman.guestman.models import Customer  # noqa: E402
+from shopman.guestman.models import (  # noqa: E402
+    Customer,
+    ProviderErasureTombstone,
+    erasure_digest,
+)
 
 from shopman.shop.services import account as account_service  # noqa: E402
 from shopman.storefront.services import account_privacy  # noqa: E402
@@ -40,6 +36,23 @@ requires_postgres = pytest.mark.skipif(
 )
 
 pytestmark = [pytest.mark.django_db(transaction=True), requires_postgres]
+
+
+def _provider_confirms(monkeypatch, *, custom_fields=None):
+    """O ManyChat confirmando a limpeza — o único jeito de haver "pronto".
+
+    Sem esta confirmação explícita a exclusão falha FECHADO, que é a resposta
+    certa quando o provedor não responde. Por isso todo caminho feliz precisa
+    dizer, no próprio teste, que ele confirmou.
+    """
+    monkeypatch.setattr(
+        ManychatSubscriberResolver,
+        "fetch_subscriber_info",
+        classmethod(lambda cls, subscriber_id: {"custom_fields": custom_fields or []}),
+    )
+    import shopman.shop.adapters.notification_manychat as adapter
+
+    monkeypatch.setattr(adapter, "set_custom_field", lambda *args, **kwargs: True)
 
 
 class Worker:
@@ -98,7 +111,13 @@ def _subscriber(customer: Customer, suffix: str) -> dict:
     }
 
 
-def test_manychat_binding_wins_then_deletion_blocks_before_mutation(monkeypatch):
+def test_manychat_binding_wins_then_deletion_reaches_the_new_link(monkeypatch):
+    """Se o writer vence, a exclusão espera e alcança o efeito recém-criado.
+
+    É a frase da matriz canônica, agora com a exclusão CONCLUINDO em vez de
+    recusar: o assinante que o sync acabou de vincular entra na limpeza e ganha
+    lápide, sem que ninguém precise pedir nada à equipe.
+    """
     customer = _customer("01")
     payload = _subscriber(customer, "01")
     customer_locked = Event()
@@ -116,6 +135,7 @@ def test_manychat_binding_wins_then_deletion_blocks_before_mutation(monkeypatch)
         "_lock_active_customer",
         staticmethod(pause_after_customer_lock),
     )
+    _provider_confirms(monkeypatch)
     sync = Worker(lambda: ManychatService.sync_subscriber(payload))
     deletion = Worker(
         lambda: account_privacy.delete_account(
@@ -138,17 +158,19 @@ def test_manychat_binding_wins_then_deletion_blocks_before_mutation(monkeypatch)
 
     assert not isinstance(sync_result, dict), sync_result
     assert sync_result[1] is False
-    assert deletion_result == {
-        "exception": "AccountDeletionBlocked",
-        "code": "account_deletion_blocked",
-        "reason": "manychat_unlink_required",
-    }
+    assert deletion_result is not None and not isinstance(deletion_result, dict), deletion_result
     customer.refresh_from_db()
-    assert customer.is_active is True
-    assert CustomerIdentifier.objects.filter(
+    assert customer.is_active is False
+    assert customer.phone == ""
+    # O identificador local sai junto com a conta...
+    assert not CustomerIdentifier.objects.filter(
         customer=customer,
         identifier_type=IdentifierType.MANYCHAT,
-        identifier_value=payload["id"],
+    ).exists()
+    # ...e a lápide fica no lugar dele, para o próximo webhook do MESMO
+    # assinante não recriar o cadastro que acabou de ser apagado.
+    assert ProviderErasureTombstone.objects.filter(
+        digest=erasure_digest("manychat", "subscriber_id", payload["id"]),
     ).exists()
 
 
@@ -254,7 +276,7 @@ def test_deletion_wins_then_stale_resolver_makes_no_provider_call(monkeypatch):
 
 
 @override_settings(MANYCHAT_API_TOKEN="test-token")
-def test_resolver_wins_then_deletion_waits_and_blocks(monkeypatch):
+def test_resolver_wins_then_deletion_waits_and_reaches_the_subscriber(monkeypatch):
     customer = _customer("04")
     provider_entered = Event()
     release_provider = Event()
@@ -289,30 +311,40 @@ def test_resolver_wins_then_deletion_waits_and_blocks(monkeypatch):
         )
     )
 
+    _provider_confirms(monkeypatch)
+
     with ThreadPoolExecutor(max_workers=2) as pool:
         resolved = pool.submit(resolver)
         try:
             assert provider_entered.wait(10)
             deleted = pool.submit(deletion)
-            # The durable intent was committed before provider I/O, so deletion
-            # can fail closed immediately instead of waiting on a long network
-            # transaction.
-            deletion_result = deleted.result(10)
         finally:
+            # A exclusão agora ESPERA o mutex do provedor em vez de recusar de
+            # cara: ela não pode mexer no perfil de lá enquanto o resolvedor
+            # está dentro dele. Por isso o provedor é liberado ANTES de colher
+            # o resultado — segurar os dois seria travar o teste, não o sistema.
             release_provider.set()
+        deletion_result = deleted.result(20)
         resolver_result = resolved.result(20)
 
     assert resolver_result == 876543210
-    assert deletion_result == {
-        "exception": "AccountDeletionBlocked",
-        "code": "account_deletion_blocked",
-        "reason": "manychat_reconciliation_pending",
-    }
-    assert CustomerIdentifier.objects.filter(
-        customer=customer,
-        identifier_type=IdentifierType.MANYCHAT,
-        identifier_value="876543210",
+    sepultado = ProviderErasureTombstone.objects.filter(
+        digest=erasure_digest("manychat", "subscriber_id", "876543210"),
     ).exists()
+    customer.refresh_from_db()
+
+    # Quem vence a corrida varia com o relógio; o INVARIANTE não. A exclusão
+    # nunca diz "pronto" sem ter alcançado o assinante que o resolvedor
+    # vinculou: ou ela conclui tendo sepultado 876543210, ou ela falha fechada
+    # com a conta intacta. O que ela jamais faz é concluir deixando o vínculo
+    # vivo — e jamais manda o cliente pedir à equipe.
+    if isinstance(deletion_result, dict):
+        assert deletion_result["exception"] == "ProviderErasureIncomplete"
+        assert customer.is_active is True
+        assert sepultado is False
+    else:
+        assert customer.is_active is False
+        assert sepultado is True
 
 
 @override_settings(MANYCHAT_API_TOKEN="test-token")
@@ -348,13 +380,15 @@ def test_crash_after_durable_intent_keeps_deletion_closed(monkeypatch):
     assert resolver_result["exception"] == "RuntimeError"
     customer.refresh_from_db()
     assert customer.metadata["manychat_resolution_pending"] is True
-    with pytest.raises(account_privacy.AccountDeletionBlocked) as exc_info:
+    with pytest.raises(account_privacy.ProviderErasureIncomplete) as exc_info:
         account_privacy.delete_account(
             customer=customer,
             idempotency_key=str(uuid.uuid4()),
             authorized_at=timezone.now(),
         )
-    assert exc_info.value.reason == "manychat_reconciliation_pending"
+    assert exc_info.value.reason == "manychat_reconciliation_uncertain"
+    customer.refresh_from_db()
+    assert customer.is_active is True
 
 
 @override_settings(MANYCHAT_API_TOKEN="test-token")
@@ -380,13 +414,13 @@ def test_uncertain_resolver_outcome_leaves_deletion_closed(monkeypatch):
     customer.refresh_from_db()
     assert customer.metadata["manychat_resolution_pending"] is True
 
-    with pytest.raises(account_privacy.AccountDeletionBlocked) as exc_info:
+    with pytest.raises(account_privacy.ProviderErasureIncomplete) as exc_info:
         account_privacy.delete_account(
             customer=customer,
             idempotency_key=str(uuid.uuid4()),
             authorized_at=timezone.now(),
         )
-    assert exc_info.value.reason == "manychat_reconciliation_pending"
+    assert exc_info.value.reason == "manychat_reconciliation_uncertain"
 
     monkeypatch.setattr(
         ManychatSubscriberResolver,

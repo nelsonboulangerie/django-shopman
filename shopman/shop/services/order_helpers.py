@@ -210,6 +210,15 @@ def delivery_auto_complete_grace_minutes(shop) -> int:
     return int(raw) if raw is not None else 30
 
 
+def card_machine_alert_minutes(shop) -> int:
+    """Quanto tempo a maquininha pode ficar na rua antes de virar alerta.
+    Calibrável em ``Shop.defaults["delivery"]["card_machine_alert_minutes"]``
+    (default 120). ``0`` ou negativo DESLIGA o alerta."""
+    cfg = (getattr(shop, "defaults", None) or {}).get("delivery") or {}
+    raw = cfg.get("card_machine_alert_minutes")
+    return int(raw) if raw is not None else 120
+
+
 def parse_commitment_date(value) -> date | None:
     """Parse an ISO delivery date into a ``date`` object."""
     if isinstance(value, date):

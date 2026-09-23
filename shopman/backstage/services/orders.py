@@ -42,7 +42,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None, trip_ref: str | None = None):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -75,7 +75,7 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
     try:
         return operator_orders.advance_order(
             order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
-            expected_revision=expected_revision, target_status=target_status,
+            expected_revision=expected_revision, target_status=target_status, trip_ref=trip_ref or None,
         )
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
@@ -177,6 +177,31 @@ def settle_delivery_cash(
         # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são
         # recusados pela constraint do livro; a tela merece o 400 com a mensagem
         # do pacote, não um 500.
+        raise OrderError(exc.message) from exc
+    except (ValueError, InvalidTransition) as exc:
+        raise OrderError(str(exc)) from exc
+
+
+def courier_returned(order, *, actor: str, expected_revision=None):
+    """"Entregador voltou": fecha a saída inteira. O acerto entra no turno ABERTO de quem recebe."""
+    from shopman.cashman.exceptions import CashError
+
+    from shopman.backstage.services import pos as pos_service
+    from shopman.backstage.services.exceptions import POSError, POSTerminalAmbiguous
+
+    needs_shift = any(operator_orders._cod_pending(m) for m in operator_orders.courier_return_members(order))
+    try:
+        shift = pos_service.current_shift(strict=True) if needs_shift else None
+    except POSTerminalAmbiguous as exc:
+        raise OrderConflict(str(exc)) from exc
+    except POSError as exc:
+        raise OrderError(str(exc) or "Abra um turno de caixa para receber a entrega.") from exc
+    try:
+        return operator_orders.courier_returned(order, actor=actor, cash_shift=shift,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}))
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except CashError as exc:
         raise OrderError(exc.message) from exc
     except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc)) from exc

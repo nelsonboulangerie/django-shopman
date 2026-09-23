@@ -470,7 +470,7 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
         await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
@@ -508,14 +508,18 @@ export function useOrdersBoard() {
   const confirm = (ref_: string) => act(ref_, "confirm");
   // ``change_out``: troco que o entregador leva da gaveta no despacho (reais);
   // só quando a tela perguntou. O servidor exige o valor quando o pedido pede troco.
-  const advance = (ref_: string, changeOut?: string, equipment?: string[]) => {
+  // ``tripRef``: sai na MESMA saída de outro pedido (mesmo entregador, mesma maquininha).
+  const advance = (ref_: string, changeOut?: string, equipment?: string[], tripRef?: string) => {
     const body: Record<string, unknown> = {};
     if (changeOut !== undefined) body.change_out = changeOut;
     if (equipment && equipment.length) body.equipment = equipment;
+    if (tripRef) body.trip_ref = tripRef;
     return act(ref_, "advance", Object.keys(body).length ? body : undefined);
   };
   // A maquininha voltou com o entregador (pedido que a levou no despacho).
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
+  // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
+  const courierBack = (ref_: string) => act(ref_, "courier-back");
   // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
   // backend calls requestCancellation with a valid code; empty for other channels.
   const reject = (ref_: string, reason: string, cancellation_code = "") =>
@@ -573,7 +577,7 @@ export function useOrdersBoard() {
   return {
     readMetadata, queue, zones, totalCount, preorders, realtime, pending, error,
     refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
-    fetchCancellationReasons, settleCash, equipmentBack, equipmentOut,
+    fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
     equipmentAvailable, assign, unassign, confirmMany, advanceMany,
     soundOn, soundBlocked, alerting, attentionPending, toggleSound,
     activateAttentionSound, acknowledgeAttention,
