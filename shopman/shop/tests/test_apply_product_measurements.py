@@ -30,7 +30,7 @@ pytestmark = pytest.mark.django_db
 def _campagne(unit_weight_g: int = 500, **rotulo) -> Product:
     """CGO como ele estava ANTES da correção: 500 g e a medida do pão grande."""
     produto = Product.objects.create(
-        sku="CGO",
+        sku="CPG",
         name="Pain de Campagne",
         base_price_q=2200,
         unit_weight_g=unit_weight_g,
@@ -46,7 +46,7 @@ def _campagne(unit_weight_g: int = 500, **rotulo) -> Product:
 
 def _ficha_do_campagne() -> Recipe:
     recipe = Recipe.objects.create(
-        ref="campagne", name="Pain de Campagne", output_sku="CGO",
+        ref="campagne", name="Pain de Campagne", output_sku="CPG",
         batch_size=Decimal("10"), is_active=True,
     )
     RecipeItem.objects.create(
@@ -125,7 +125,7 @@ def test_sku_fora_deste_banco_e_avisado_e_nao_quebra():
 
     assert "fora do catálogo deste banco" in saida
     assert "CI" in saida
-    assert Product.objects.get(sku="CGO").unit_weight_g == 300
+    assert Product.objects.get(sku="CPG").unit_weight_g == 300
 
 
 def test_rodar_de_novo_nao_tem_o_que_fazer():
@@ -144,13 +144,13 @@ def test_um_sku_so_nao_mexe_nos_outros():
     _rodar("--sku", "CI", "--apply")
 
     assert Product.objects.get(sku="CI").unit_weight_g == 180
-    assert Product.objects.get(sku="CGO").unit_weight_g == 500, "CGO não era o alvo"
+    assert Product.objects.get(sku="CPG").unit_weight_g == 500, "CGO não era o alvo"
 
 
 def test_a_tabela_cobre_o_que_o_pr_280_mudou():
     """Guarda de escopo: a tabela é a lista do que mudou, não um catálogo paralelo."""
     assert set(MEASUREMENTS) == {
-        "CGO", "CPX", "CGR", "CF", "CI", "CT", "KP", "MD", "BH", "CN", "FOA", "CBT", "FOC",
+        "CPG", "CPX", "CPR", "CPBG", "CI", "CRO", "KUP", "MDLN", "BICH", "CN", "FOA", "FOB", "FOC",
     }
     for sku, valores in MEASUREMENTS.items():
         assert "unit_weight_g" in valores, sku

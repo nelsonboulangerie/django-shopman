@@ -3,7 +3,7 @@
 Lê o `seed.py` como dado, sem rodá-lo: rodar custa minutos e monta 700 dias de
 histórico. O que estes testes protegem são erros de edição que o `ast.parse`
 aceita calado — e um deles quase passou: ao acrescentar produtos numa lista de
-uma linha, a vírgula que faltou fez `"TJ"` e `"BH"` virarem `"TJBH"`, porque
+uma linha, a vírgula que faltou fez `"TJ"` e `"BICH"` virarem `"TJBH"`, porque
 literais adjacentes concatenam em Python.
 """
 
@@ -48,7 +48,7 @@ def catalogo(arvore):
     # preço nem ficha de produto, tem componentes.
     # Nascem fora do products_data, num update_or_create próprio: bundle não
     # tem ficha de produto, tem componentes.
-    skus += ["COMBO-PETIT-DEJ", "PHO4", "BBB2", "PI4"]
+    skus += ["COMBO-PETIT-DEJ", "HOBB4", "BRBB2", "PIT4"]
     return skus
 
 
@@ -110,20 +110,42 @@ def test_um_produto_mora_em_uma_categoria_so(colecoes):
         assert len(skus) == len(set(skus)), f"'{ref}' repete SKU: {sorted({s for s in skus if skus.count(s) > 1})}"
 
 
-def test_o_catalogo_usa_os_codigos_reais(catalogo):
-    """Os SKUs inventados pela geração automática não voltam pelo seed.
+def test_o_hifen_no_sku_e_da_revenda(catalogo):
+    """Código com hífen é de REVENDA, e tem forma; da casa é curto e sem hífen.
 
-    Sobrevivem três, e cada um por um motivo escrito: dois pacotes cujo código
-    do Yooga media UNIDADE (decisão pendente do dono) e o combo, que é bundle
-    sem contrapartida no histórico.
+    Até 22/09/2026 este teste dizia outra coisa — "hífen = SKU inventado pela
+    geração automática" — porque naquele dia era verdade: os códigos com hífen
+    eram os nomes longos do cardápio 2027. A curadoria do dono fechou duas
+    convenções, e o hífen mudou de dono: da casa, código curto de 2 a 5 letras
+    que a equipe decora e digita; de revenda, ``TIPO-VARIANTE-MARCA-EMBALAGEM``,
+    onde ninguém decora código de fornecedor e a embalagem entra no fim porque
+    embalagem diferente é GTIN diferente.
+
+    O que o teste cobra agora é a FORMA, não a ausência: com hífen, o último
+    pedaço declara a embalagem (``310``, ``P50``, ``L70``, ``125``).
     """
-    # Sobra um: o combo, que é bundle sem contrapartida no histórico. Os pacotes
-    # de pão saíram desta lista ao virarem bundle sobre PHO e BBB.
+    import re
+
+    # O combo é bundle e nasceu antes das duas convenções; fica nomeado.
     permitidos = {"COMBO-PETIT-DEJ"}
-    inventados = sorted({sku for sku in catalogo if "-" in sku} - permitidos)
-    assert not inventados, (
-        f"SKU inventado de volta no seed: {inventados}. "
-        "Os códigos da casa são os do Yooga — ver docs/plans/sku-real-mapa.csv."
+    revenda = re.compile(r"^[A-Z]+(-[A-Z0-9]+)+-[A-Z]?\d+$")
+    fora_de_forma = sorted(
+        sku for sku in catalogo
+        if "-" in sku and sku not in permitidos and not revenda.match(sku)
+    )
+    assert not fora_de_forma, (
+        f"SKU com hífen fora da forma da revenda: {fora_de_forma}. "
+        "Da casa é código curto sem hífen; de revenda é "
+        "TIPO-VARIANTE-MARCA-EMBALAGEM, terminando na embalagem."
+    )
+
+
+def test_o_sku_da_casa_e_curto_e_sem_hifen(catalogo):
+    """A regra do dono: 2 a 5 letras, que a equipe decora e digita na busca."""
+    longos = sorted(sku for sku in catalogo if "-" not in sku and len(sku) > 5)
+    assert not longos, (
+        f"SKU da casa com mais de 5 caracteres: {longos}. "
+        "A regra é 2 a 5 letras, tiradas da palavra que distingue o produto."
     )
 
 
@@ -131,7 +153,7 @@ def test_o_bundle_existe_de_verdade(arvore):
     # O catálogo o acrescenta à mão porque ele nasce fora do products_data;
     # se o seed parar de criá-lo, os outros testes passariam por engano.
     fonte = SEED.read_text()
-    for sku in ('"COMBO-PETIT-DEJ"', '"PHO4"', '"BBB2"'):
+    for sku in ('"COMBO-PETIT-DEJ"', '"HOBB4"', '"BRBB2"'):
         assert f"sku={sku}" in fonte or f"({sku}," in fonte, f"{sku} sumiu do seed"
 
 
@@ -172,7 +194,7 @@ def test_as_duas_curadorias_de_consumo_nao_se_contradizem():
     """Onde cardápio e histórico se encontram, a leitura tem de ser a mesma.
 
     Elas se encontram desde que o catálogo passou a usar os códigos do Yooga:
-    "CT" no cardápio e "CT" no histórico são o mesmo produto. As duas gravam na
+    "CRO" no cardápio e "CRO" no histórico são o mesmo produto. As duas gravam na
     mesma linha (`sku` é único), então a segunda a rodar vence — em silêncio.
     Divergência aqui não daria erro nenhum: daria um número de B.I. diferente
     dependendo da ordem das funções.
@@ -209,8 +231,8 @@ def test_a_promessa_ao_cliente_nao_e_a_politica_de_estoque(arvore):
     politica = _atribuicao(arvore, "sells_without_stock_skus")
     promessa = _atribuicao(arvore, "made_to_order_skus")
 
-    assert "AG" in politica, "água vende sem saldo: sempre há outra na geladeira"
-    assert "AG" not in promessa, (
+    assert "AGUA-MINERAL-PRATA-310" in politica, "água vende sem saldo: sempre há outra na geladeira"
+    assert "AGUA-MINERAL-PRATA-310" not in promessa, (
         "ninguém prepara uma água na hora — o selo é sobre o acabamento, e "
         "garrafa não tem acabamento"
     )
@@ -229,7 +251,7 @@ def test_produto_sem_foto_e_decisao_nao_esquecimento(arvore):
     foto da casa ou Unsplash conferido a olho. Um produto novo que entrar sem
     foto tem que passar por aqui, de propósito.
     """
-    decididos_sem_foto = {"ANP"}
+    decididos_sem_foto = {"PORQ"}
     vazios = set()
     for elemento in _no_da_atribuicao(arvore, "products_data").elts:
         imagem = elemento.elts[7]
@@ -290,12 +312,12 @@ def test_toda_categoria_tem_cor_e_icone(arvore):
 # que a regra é sobre a massa e não sobre o nome.
 
 FAMILIA_LAMINADA = {
-    "CT": "Croissant",
-    "PC": "Pain au Chocolat",
-    "CM": "Croissant Mini",
+    "CRO": "Croissant",
+    "PCHOC": "Pain au Chocolat",
+    "CROMI": "Croissant Mini",
     "CN": "Chausson",
-    "FF": "Folhado de Frango",
-    "BH": "Bichon au Citron",
+    "FFGO": "Folhado de Frango",
+    "BICH": "Bichon au Citron",
 }
 
 
@@ -308,8 +330,8 @@ def test_massa_laminada_mora_em_folhados(sku, nome, colecoes):
 
 
 def test_pain_aux_raisins_e_brioche_e_fica_em_macios(colecoes):
-    assert "PR" in colecoes["macios"]
-    assert "PR" not in colecoes["folhados"], (
+    assert "BRRSN" in colecoes["macios"]
+    assert "BRRSN" not in colecoes["folhados"], (
         "o nosso Pain aux Raisins é de brioche; o nome francês não decide a categoria"
     )
 
@@ -322,16 +344,16 @@ def test_a_categoria_principal_do_laminado_e_folhados(colecoes):
         for sku in skus:
             principal.setdefault(sku, ref)
 
-    for sku in ("CT", "PC", "CM", "CN", "FF", "BH", "CPQ"):
+    for sku in ("CRO", "PCHOC", "CROMI", "CN", "FFGO", "BICH", "CROPQ"):
         assert principal[sku] == "folhados", (
             f"{sku} mora em '{principal[sku]}' — massa laminada mora em Folhados"
         )
-    assert principal["PR"] == "macios", "o nosso Pain aux Raisins é de brioche"
+    assert principal["BRRSN"] == "macios", "o nosso Pain aux Raisins é de brioche"
 
 
 def test_o_sabor_entra_como_categoria_adicional(colecoes):
-    for sku in ("PC", "CM", "CN", "BH", "PR"):
+    for sku in ("PCHOC", "CROMI", "CN", "BICH", "BRRSN"):
         assert sku in colecoes["doces"], f"{sku} é recheado doce e também é Doces"
-    for sku in ("FF", "CPQ"):
+    for sku in ("FFGO", "CROPQ"):
         assert sku in colecoes["salgados"], f"{sku} é salgado e também é Salgados"
-    assert "CT" not in colecoes["doces"], "o croissant puro não é doce"
+    assert "CRO" not in colecoes["doces"], "o croissant puro não é doce"

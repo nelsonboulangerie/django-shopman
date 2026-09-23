@@ -60,18 +60,23 @@ def world(db):
     bev = ConsumptionRole.objects.create(ref="bebida-preparada", label="Bebida", reading=Reading.ANCHOR,
                                          beverage=Beverage.PREPARED, eat_in_weight=95)
     leva = ConsumptionRole.objects.create(ref="leva", label="Leva", reading=Reading.TAKEAWAY, eat_in_weight=5)
-    for sku, role in [("CT", hib), ("MCT", hib), ("CROISSANT", hib), ("TB", hib), ("RARO", hib),
+    # O croissant é a etiqueta do catálogo de HOJE (`CRO`). O `MCT` é código do
+    # Yooga — "M"+SKU, a variante de metade do preço — e o `CROISSANT` é a
+    # sobra do cardápio 2027. Os dois chegam ao `CRO` por caminhos diferentes:
+    # o primeiro pela convenção do "M" mais a cadeia de renames, o segundo pelo
+    # mapa TWINS. É de propósito que nenhum dos três se escreva igual.
+    for sku, role in [("CRO", hib), ("MCT", hib), ("CROISSANT", hib), ("TB", hib), ("RARO", hib),
                       ("CAFE", bev), ("PAO", leva)]:
         ProductConsumptionTag.objects.create(sku=sku, role=role)
     # 10 vendas de balcão: 4 com café → média da casa 40%
     for _ in range(4):
-        _sale([("CAFE", "Café", "Cafés"), ("CT", "Croissant", "Pães Finos")])  # CT com bebida ×4
+        _sale([("CAFE", "Café", "Cafés"), ("CRO", "Croissant", "Pães Finos")])  # com bebida ×4
     for _ in range(2):
-        _sale([("CT", "Croissant", "Pães Finos")])  # CT sem bebida ×2 → CT: 4/6 = 67%
+        _sale([("CRO", "Croissant", "Pães Finos")])  # sem bebida ×2 → CRO: 4/6 = 67%
     for _ in range(4):
         _sale([("TB", "Tabatière", "Pães Finos"), ("PAO", "Pão", "Pães Rústicos")])  # TB 0%
     _sale([("RARO", "Raro", "Pães Finos")])  # 1 venda: sem base
-    _sale([("CAFE", "Café", "Cafés"), ("CT", "Croissant", "Pães Finos")], delivery=True)  # entrega: fora
+    _sale([("CAFE", "Café", "Cafés"), ("CRO", "Croissant", "Pães Finos")], delivery=True)  # entrega: fora
     return {"hib": hib}
 
 
@@ -86,7 +91,7 @@ def test_dry_run_prints_and_writes_nothing(world):
     call_command("measure_eat_in_weights", "--min-sales", "2", stdout=out)
     text = out.getvalue()
     assert "Média da casa: 36%" in text
-    assert "CT " in text and "herdado do gêmeo CT" in text
+    assert "CRO " in text and "herdado do gêmeo CRO" in text
     assert "sem --apply" in text
     assert ProductConsumptionTag.objects.filter(eat_in_weight__isnull=False).count() == 0
 
@@ -95,12 +100,15 @@ def test_dry_run_prints_and_writes_nothing(world):
 def test_apply_sets_measured_inherited_and_leaves_the_rest(world):
     call_command("measure_eat_in_weights", "--apply", "--min-sales", "2", stdout=StringIO())
     by = {t.sku: t for t in ProductConsumptionTag.objects.all()}
-    # CT: 67% com bebida contra 36% da casa → (67−36)/64 = 48
-    assert by["CT"].eat_in_weight == 48 and "peso pelo histórico" in by["CT"].note
+    # CRO: 67% com bebida contra 36% da casa → (67−36)/64 = 48
+    assert by["CRO"].eat_in_weight == 48 and "peso pelo histórico" in by["CRO"].note
     # TB: 0% → piso
     assert by["TB"].eat_in_weight == 5
-    # variante "M"+SKU e gêmeo do cardápio herdam do CT
-    assert by["MCT"].eat_in_weight == 48 and "herdado do gêmeo CT" in by["MCT"].note
+    # A variante "M"+SKU do Yooga herda do pai mesmo com o pai tendo trocado de
+    # código duas vezes: `MCT` → `CT` → (renames) → `CRO`. Sem a tradução da
+    # cadeia, ela cairia no piso do papel sem erro nenhum.
+    assert by["MCT"].eat_in_weight == 48 and "herdado do gêmeo CRO" in by["MCT"].note
+    # E o gêmeo do cardápio 2027 herda pelo TWINS.
     assert by["CROISSANT"].eat_in_weight == 48
     # base pequena fica no peso do papel; âncora e leva não são tocados
     assert by["RARO"].eat_in_weight is None

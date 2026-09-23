@@ -292,9 +292,11 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # ⚠️ A soma não é 59+61+4+70. Duas coisas a encolhem, e as duas são certas:
     # os quatro produtos "do dia" deixaram de existir (viraram coleção rotativa
     # sobre os reais), e 27 SKUs passaram a ser etiquetados uma vez só — com o
-    # catálogo usando os códigos do Yooga, "CT" no cardápio e "CT" no histórico
-    # são o mesmo produto (o 27º chegou em 26/08, quando SK morreu fundido no
-    # FA: Shokupan e Forma Artesanal sempre foram um produto). Que as duas
+    # catálogo e o histórico se encontrando no mesmo produto: a linha do Yooga
+    # chega à etiqueta pelo de-para, então uma etiqueta cobre os dois (o 27º
+    # chegou em 26/08, quando SK morreu fundido na Forma Artesanal, que sempre
+    # foi um produto só). Desde 22/09 o catálogo usa os códigos curados, e é o
+    # `ProductAlias` que traduz o código do Yooga para eles. Que as duas
     # curadorias CONCORDEM onde se encontram é o que test_seed_catalog_coerente
     # fixa, lendo o seed como dado.
     assert ProductConsumptionTag.objects.count() == 163  # ver a conta acima
@@ -305,17 +307,17 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # A regra da revisão: pão de abastecimento é "leva"; salgado montado e
     # viennoiserie ficam híbridos — a bebida no pedido é que define.
     by_sku = dict(ProductConsumptionTag.objects.values_list("sku", "role__ref"))
-    assert by_sku["FA"] == by_sku["BBB"] == by_sku["PHO"] == "leva"
-    assert by_sku["HO"] == by_sku["CPQ"] == by_sku["CT"] == by_sku["PC"] == "hibrido"
+    assert by_sku["FORMA"] == by_sku["BRBB"] == by_sku["HOBB"] == "leva"
+    assert by_sku["HOD"] == by_sku["CROPQ"] == by_sku["CRO"] == by_sku["PCHOC"] == "hibrido"
     # Segunda rodada: café do Yooga é bebida preparada por curadoria; croque é
     # mesa; pão rústico é leva; ciabatta/tabatière/fendu ficam híbridos como os
     # gêmeos do cardápio 2027 (histórico e cardápio não discordam).
-    assert by_sku["PS"] == by_sku["SS"] == "bebida-preparada"
-    assert by_sku["CMO"] == by_sku["PPU"] == "consome-aqui"
-    assert by_sku["BAX"] == by_sku["BAP"] == by_sku["PH"] == "leva"
+    assert by_sku["CAP"] == by_sku["SP"] == "bebida-preparada"
+    assert by_sku["CQMO"] == by_sku["PERDU"] == "consome-aqui"
+    assert by_sku["ITA"] == by_sku["TRADP"] == by_sku["TRABB"] == "leva"
     # `CIABATTA` saiu do encadeamento: com o catálogo usando os códigos reais,
     # ele É o `CI`, e uma etiqueta só cobre os dois.
-    assert by_sku["CI"] == by_sku["TB"] == by_sku["FE"] == "hibrido"
+    assert by_sku["CI"] == by_sku["TABAT"] == by_sku["FENDU"] == "hibrido"
     # 4 mesas internas + 4 externas + 6 lugares de balcão contam no teto; o
     # bistrô (2) e o bancão externo ficam fora, e é justamente por ficarem fora
     # que "bateu no teto" continua sendo um sinal.
@@ -359,10 +361,10 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
 
     _run("setup_bi_reference")
     leva = ConsumptionRole.objects.get(reading=Reading.TAKEAWAY)
-    ProductConsumptionTag.objects.filter(sku="SS").update(role=leva, note="mexi no Admin")
+    ProductConsumptionTag.objects.filter(sku="SP").update(role=leva, note="mexi no Admin")
 
     _run("setup_bi_reference")
-    tag = ProductConsumptionTag.objects.select_related("role").get(sku="SS")
+    tag = ProductConsumptionTag.objects.select_related("role").get(sku="SP")
     assert tag.role.reading == Reading.ANCHOR
 
 
