@@ -86,14 +86,36 @@ Três coisas que o WP não previa e o ensaio achou:
    (`BAGUETE → BF → TRADI`) e chegam a voltar (`FENDU → FE → FENDU`). Passou a
    ler os dois e a resolver a cadeia contra o catálogo vivo.
 
-### ⏳ F1b — as tabelas de código (falta)
+### ✅ F1b — as tabelas de código (feito, 22/09)
 
-671 literais no `seed.py`, 72 no `apply_product_brands.py`, 23 no
-`rename_skus_to_real.py`, 10 no `measure_eat_in_weights.py`, 8 no
-`apply_product_measurements.py`. **Fica para depois da palavra dele sobre a
-tabela**: reescrever 671 literais contra um de-para que ele ainda pode editar é
-retrabalho garantido. E precisa estar commitado **antes** do `--apply`, senão o
-próximo `seed` nasce discordando do alpha.
+**846 literais** trocados: `seed.py` (742), `apply_product_brands.py` (86),
+`measure_eat_in_weights.py` (10), `apply_product_measurements.py` (8), mais os
+testes que liam o código antigo. O `rename_skus_to_real.py` **não** foi tocado:
+é a história de um rename já executado, e reescrevê-lo falsificaria o registro
+e quebraria a cadeia que o iFood segue.
+
+Duas armadilhas que a varredura cega teria levado junto:
+
+- **O Paraná não é o Pain aux Raisins.** Dez linhas de `state_code: "PR"` no
+  seed, fora por exclusão explícita. (E o `fiscal_focusnfe.py`, que é só uma
+  lista de UF, nem entrou na varredura.)
+- **A herança do "M" do Yooga quebraria calada.** O `measure_eat_in_weights` dá
+  à variante de metade do preço o peso do pai pela convenção `MCT` → `CT`, e o
+  pai já trocou de código duas vezes: sem traduzir, as **41 variantes** cairiam
+  no piso do papel sem erro nenhum. A resolução da cadeia virou função
+  compartilhada (`apply_product_skus.codigo_de_hoje`), usada também pelo iFood.
+
+E uma regra que mudou de dono: `test_seed_catalog_coerente` cobrava "SKU com
+hífen é inventado pela geração automática" — verdade até 22/09, quando os com
+hífen eram os nomes do cardápio 2027. Agora **o hífen é da revenda**, e o teste
+cobra a forma (`TIPO-VARIANTE-MARCA-EMBALAGEM`, terminando na embalagem), com um
+irmão novo que cobra os 5 caracteres da regra da casa.
+
+### ⏳ O que falta em F1
+
+O **`apply_product_skus --apply` no alpha**, que pede a palavra do dono. Com a
+F1b no `main`, o `seed` e o banco passam a dizer a mesma coisa, que era a
+pré-condição.
 
 ## F2 — Fotos: **o dono desta fatia é outro WP**
 
