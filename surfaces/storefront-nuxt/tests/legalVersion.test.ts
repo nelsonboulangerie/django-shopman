@@ -45,7 +45,7 @@ function resumo (): string {
 }
 
 /** Resumo do texto publicado na versão abaixo. Muda junto com ela, nunca sozinho. */
-const RESUMO_PUBLICADO = '0583a03ebccfa5b2'
+const RESUMO_PUBLICADO = '9251594963ba91ba'
 const VERSAO_PUBLICADA = '2026-09-23'
 
 describe('páginas legais — o relógio', () => {
