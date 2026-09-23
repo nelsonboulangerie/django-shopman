@@ -62,7 +62,12 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/test_concierge_privacy_postgres.py",
     # ManyChat can attach identifiers and contact data while account deletion
     # runs. The shared Customer fence decides the winner without recreating PII.
-    "packages/guestman/shopman/guestman/tests/test_manychat_privacy_postgres.py",
+    # ⚠️ Este arquivo morava em `packages/guestman/` e NUNCA rodou: o rootdir
+    # de `packages/guestman` carrega `guestman_test_settings`, que não instala
+    # `shopman.shop`, então o skip de módulo disparava — inclusive no CI. E
+    # skip de MÓDULO não passa pelo coletor deste gate, então ele nem reprovava.
+    # As provas são da exclusão (monolito), e é aqui que elas rodam de verdade.
+    "shopman/storefront/tests/test_manychat_privacy_postgres.py",
     # Public Guestman child writers share the Customer-first privacy fence;
     # loyalty additionally proves it never takes LoyaltyAccount first.
     "packages/guestman/shopman/guestman/tests/test_privacy_mutation_fences_postgres.py",

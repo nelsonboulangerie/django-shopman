@@ -862,36 +862,6 @@ def privacy_order_deletion_blocker(customer_ref: str, phone: str) -> str:
     return ""
 
 
-def privacy_manychat_deletion_blocker(customer) -> str:
-    """Return the fail-closed ManyChat blocker without leaking kernel models.
-
-    Storefront is an adapter layer and must not reach into Guestman directly;
-    this domain service owns the provider-link facts used by account deletion.
-    """
-    from shopman.guestman.contrib.identifiers.models import (
-        CustomerIdentifier,
-        IdentifierType,
-    )
-    from shopman.guestman.models import ExternalIdentity
-
-    metadata = customer.metadata or {}
-    if bool(metadata.get("manychat_resolution_pending")):
-        return "manychat_reconciliation_pending"
-    linked = (
-        CustomerIdentifier.objects.filter(
-            customer=customer,
-            identifier_type=IdentifierType.MANYCHAT,
-        ).exists()
-        or ExternalIdentity.objects.filter(
-            customer=customer,
-            provider=ExternalIdentity.Provider.MANYCHAT,
-        ).exists()
-        or customer.source_system == "manychat"
-        or "manychat_custom_fields" in metadata
-    )
-    return "manychat_unlink_required" if linked else ""
-
-
 def privacy_otp_deletion_blocker(customer) -> str:
     """Keep deletion behind every committed, unfinished OTP delivery intent."""
     from django.db.models import Q

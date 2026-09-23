@@ -1470,16 +1470,6 @@ class AccountDeleteView(APIView):
                 "marketing_delivery_in_flight": (
                     "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
                 ),
-                "manychat_unlink_required": (
-                    "Esta conta ainda está vinculada ao atendimento pelo ManyChat. "
-                    "Peça à equipe para desvincular essa integração antes de excluir a conta; "
-                    "assim ela não recria seus dados depois da exclusão."
-                ),
-                "manychat_reconciliation_pending": (
-                    "Uma verificação com o ManyChat ainda precisa ser concluída. "
-                    "Peça à equipe para conferir essa integração e tente excluir a conta novamente; "
-                    "assim não confirmamos a exclusão enquanto o provedor pode ter aceitado dados."
-                ),
             }
             return Response(
                 {
