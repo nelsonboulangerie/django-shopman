@@ -42,7 +42,7 @@ MASSA_DA_PECA = {
     # cicatriz de eu ter usado o Ursinho como "âncora do que já estava certo"
     # sem perguntar. O dono corrigiu na mesma hora: "Ursinho, porquinho,
     # coelhinho? A massa é butter".
-    "animalzinho": "MASSA-BUTTER",
+    "coelhinho": "MASSA-BUTTER",
     "ursinho": "MASSA-BUTTER",
     "porquinho": "MASSA-BUTTER",
     # Âncoras do que já estava certo: o croissant é de croissant, a ciabatta

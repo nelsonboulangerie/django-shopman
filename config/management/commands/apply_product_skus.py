@@ -72,7 +72,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("ANP", "PORQ"),         # Porquinho
     ("ANU", "URS"),          # Ursinho
     ("BA", "BAT"),           # Bâtard
-    ("BAP", "BGL"),        # Baguete Lanche (massa tradição)
+    ("BAP", "BGL"),        # Baguete Lanche (massa CIABATTA — o dono corrigiu em 22/09)
     ("BAX", "ITA"),          # Italiano Rústico
     ("BBB", "BRBB"),         # Brioche Burger Bun
     ("BBB2", "BRBB2"),       # Brioche Burger Bun (pc. 2un.)
