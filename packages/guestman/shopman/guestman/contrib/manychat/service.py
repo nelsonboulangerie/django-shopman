@@ -5,6 +5,7 @@ import logging
 from django.db import transaction
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.models import Customer
+from shopman.guestman.models.erasure_tombstone import ProviderErasureTombstone
 
 logger = logging.getLogger("guestman.manychat")
 
@@ -17,6 +18,14 @@ UNIDENTIFIED_SUBSCRIBER = (
     "Nao foi possivel identificar este assinante: nenhum telefone conhecido. "
     "Assinante sem telefone (ex.: contato que chegou pelo Instagram) precisa "
     "entrar pelo site, com o proprio numero."
+)
+
+# Recusa de ressurreicao. Este assinante pertenceu a uma conta que o titular
+# mandou apagar: aceitar o sync recriaria, sozinho, o cadastro que ele pediu
+# para sumir. Quem quiser voltar comeca de novo pelo site, por ato proprio.
+ERASED_SUBSCRIBER = (
+    "Este contato pertenceu a uma conta excluida a pedido do titular e nao e "
+    "sincronizado de novo. Para voltar a comprar, e so entrar pelo site."
 )
 
 
@@ -57,6 +66,16 @@ class ManychatService:
         manychat_id = subscriber_data.get("id")
         if not manychat_id:
             raise ValueError("Subscriber data must contain 'id' field")
+        # A conta excluída não volta pela porta do provedor. Sem esta recusa, o
+        # próximo webhook deste assinante não acharia ninguém (o identificador
+        # foi apagado junto com a conta) e criaria um cadastro NOVO com os dados
+        # que o titular mandou apagar.
+        if ProviderErasureTombstone.matches(
+            provider=ProviderErasureTombstone.Provider.MANYCHAT,
+            handle_type=ProviderErasureTombstone.HandleType.SUBSCRIBER_ID,
+            value=manychat_id,
+        ):
+            raise ValueError(ERASED_SUBSCRIBER)
         incoming_phone = cls._preferred_phone(subscriber_data)
 
         with transaction.atomic():

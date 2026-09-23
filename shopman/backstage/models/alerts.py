@@ -92,6 +92,11 @@ class OperatorAlert(models.Model):
         # Exclusão de conta que não terminou. Dado de titular que continua no
         # banco é obrigação legal em aberto, não um 500 qualquer.
         ("account_deletion_incomplete", "Exclusão de conta incompleta"),
+        # A exclusão apaga tudo que é nosso e limpa os campos que empurramos
+        # para o perfil do assinante — mas a API pública do ManyChat não tem
+        # verbo para apagar o contato de lá. Essa última parte é na mão, tem
+        # prazo de 15 dias, e sem uma tarefa datada ninguém lembraria dela.
+        ("manychat_contact_erasure_due", "Contato no ManyChat esperando exclusão manual"),
         # Item que a cozinha NUNCA vai ver: sem estação casada, o pedido chega a
         # pronto com o item nunca preparado.
         ("kds_unrouted_item", "Item sem estação no KDS"),
