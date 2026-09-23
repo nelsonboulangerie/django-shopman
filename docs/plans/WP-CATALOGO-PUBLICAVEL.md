@@ -67,11 +67,12 @@ mudaria, alias criado junto, e recusa fechada em colisão.
 vivo — não contra ele — e o laudo inteiro está em
 [`docs/reports/2026-09-22-ensaio-rename-sku-catalogo.md`](../reports/2026-09-22-ensaio-rename-sku-catalogo.md).
 
-Em uma linha: **72 dos 87 pares trocam, 15.786 linhas se mexem, 36 itens de feed
-mudam de `g:id`, e 15 pares param** — porque uma decisão de de-para de 19/08
+Em uma linha: **os 86 pares trocam, ~16 mil linhas se mexem e 36 itens de feed
+mudam de `g:id`**. Os 15 que paravam — porque uma decisão de de-para de 19/08
 envelheceu quando o catálogo separou os produtos (os 12 chás Kãnfa creditados ao
-`THL`, `BBB` ao pacote, `PHO` ao pacote, `CHAI_A` a produto nenhum). Isso é
-curadoria, não rename: o conserto é no Gestor, e o comando é idempotente.
+`THL`, `BBB` ao pacote, `PHO` ao pacote, `CHAI_A` a produto nenhum). Isso era
+curadoria, não rename — e foi resolvido em 22/09 com a palavra dele, pelo
+`repoint_product_aliases`: **17.320 linhas de venda voltaram ao produto certo**.
 
 Três coisas que o WP não previa e o ensaio achou:
 

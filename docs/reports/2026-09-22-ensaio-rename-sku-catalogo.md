@@ -9,9 +9,12 @@
 
 ## O que o ensaio diz, em uma linha
 
-**72 dos 87 códigos trocam, 15.786 linhas se mexem, 36 itens de feed mudam de
-`g:id`, e 15 pares param** — não por causa do rename, mas porque uma decisão de
-curadoria de 19/08 envelheceu quando o catálogo separou os produtos.
+**71 dos 86 códigos trocam, 36 itens de feed mudam de `g:id`, e 15 pares param**
+— não por causa do rename, mas porque uma decisão de curadoria de 19/08
+envelheceu quando o catálogo separou os produtos.
+
+> Medido em 87 pares; o `GL` saiu depois, quando o dono disse que o pote mini
+> não vai mais existir. Os números de linha abaixo são os da medição.
 
 ## Como rodar
 
@@ -156,8 +159,11 @@ Renomear não pioraria nada — o de-para olha o FK, não o SKU. O que se perde 
 e "este produto" existe só na tabela do comando. Por isso cada par **para
 sozinho**, com a nota de origem citada, e os outros 72 seguem.
 
-**Conserto (seu, no Gestor):** Admin → de-paras de produto, apontar cada um para
-o produto certo. Depois é só rodar o comando de novo — ele é idempotente.
+**✅ Resolvido em 22/09, com a palavra dele ("faz").** Virou comando:
+`config/management/commands/repoint_product_aliases.py`, ensaio por padrão e
+`--apply`. Medido na cópia do alpha: **15 de-paras reapontados, 17.320 linhas de
+venda voltando ao produto certo** — e, com eles corrigidos, o rename passa a
+aceitar **os 86 pares**, não 71.
 
 ### c) O iFood: um mapa só, e uma cadeia que volta
 
@@ -178,17 +184,21 @@ Ao juntá-los apareceram duas coisas que o par cru esconde:
   código que **existe hoje**. Assim `FE` sai e `FENDU` fica, sem ninguém
   escolher nada. É o único par nessa situação.
 
-## Duas perguntas para você
+## As perguntas, respondidas em 22/09
 
-1. **Dois códigos da casa passam de 5 caracteres**, e a regra que você escreveu
-   na planilha diz até 5: `MBBBG → BUBGMI` (Mini Brioche Burger Bun com
-   gergelim) e `MS → MELICE` (Melon Iced Sando). Deixo como estão ou encurto?
-   *(`CROPQM` e `HOBBMI` têm o mesmo problema, mas são produtos a criar, fora
-   desta fatia.)*
-2. **`GL → GELEIA-DAMASCO-STDALFOUR-28` muda mais que o endereço.** Hoje `GL` é
-   "Geleia St. Dalfour (mini)", placeholder sem sabor; a planilha o casa com o
-   produto real do Yooga, que é **damasco**. Trocar o SKU declara o sabor. Se o
-   pote que fica no balcão não é o de damasco, o par sai da tabela.
+1. ~~**Dois códigos da casa passam de 5 caracteres**~~ — **encurtados, aprovado
+   por ele:** `MBBBG → BRBBM` (irmão de `BRBB` e `BRBB2`; o `BUBGMI` que a
+   planilha propunha começava com `BU`, prefixo do *Butter* Burger Bun, e
+   arquivava o brioche na família errada) e `MS → MELSA` (o pão dele é o
+   melonpan, que virou `MELON`). *(`CROPQM` e `HOBBMI` têm o mesmo problema, mas
+   são produtos a criar, fora desta fatia.)*
+2. ~~**`GL → GELEIA-DAMASCO-STDALFOUR-28`**~~ — **respondido em 22/09.** O `GL`
+   é placeholder de sabor indefinido, e existem **dois** minis St. Dalfour reais:
+   damasco e frutas vermelhas, com GTINs distintos. **Rename não divide produto**
+   — renomeá-lo para um dos dois declararia um sabor que ele nunca teve e
+   esconderia o outro. O `GL` sai como exclusão, os dois minis entram como
+   produto novo (fatia de criação, não de rename), e o par saiu da tabela com o
+   motivo escrito em `FORA_DA_TABELA`.
 
 ## Quatro pares renomeiam algo que a planilha manda tirar
 

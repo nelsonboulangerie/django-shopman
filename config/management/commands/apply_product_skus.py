@@ -107,7 +107,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("HO", "HOD"),           # Hot Dog Vienna
     ("KBB", "KUBB"),         # Kuro Pan Burger
     ("KP", "KUP"),           # Kuro Pan
-    ("MBBBG", "BUBGMI"),     # Mini Brioche Burger Bun com gergelim
+    ("MBBBG", "BRBBM"),      # Mini Brioche Burger Bun com gergelim — irmão de BRBB/BRBB2
     ("MC", "CAPMO"),         # Mochaccino
     ("MD", "MDLN"),          # Madeleine
     ("ME", "MELON"),         # Melonpan
@@ -117,7 +117,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("MIF", "FOAM"),         # Mini Focaccia Alecrim
     ("MIFOC", "FOCM"),       # Mini Focaccia Cebola Roxa
     ("MIHO", "HODM"),        # Mini Hot Dog Vienna
-    ("MS", "MELICE"),        # Melon Iced Sando
+    ("MS", "MELSA"),         # Melon Iced Sando — o pão dele é o melonpan (MELON)
     ("PC", "PCHOC"),         # Pain au Chocolat
     ("PH", "TRABB"),         # Pão de Hambúrguer (massa tradição)
     ("PHO", "HOBB"),         # Pão para Hot Dog
@@ -144,7 +144,6 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("AG", "AGUA-MINERAL-PRATA-310"),
     ("CHEGO_L50", "CHA-ACONCHEGO-KANFA-L50"),
     ("CHEGO_P50", "CHA-ACONCHEGO-KANFA-P50"),
-    ("GL", "GELEIA-DAMASCO-STDALFOUR-28"),
     ("INTIMI_L50", "CHA-INTIMIDADE-KANFA-L50"),
     ("INTIMI_P50", "CHA-INTIMIDADE-KANFA-P50"),
     ("INTU_L70", "CHA-INTUICAO-KANFA-L70"),
@@ -162,6 +161,15 @@ RENAMES: tuple[tuple[str, str], ...] = (
 #: esquecimento. A planilha não tem linha para estes oito, e um deles
 #: (``MT``) ainda é insumo de ficha — ver ``WP-INSUMOS-SEM-FRICCAO.md``.
 FORA_DA_TABELA: dict[str, str] = {
+    # Um produto não vira dois por rename: o `GL` é placeholder de sabor
+    # indefinido, e no lugar dele nascem os DOIS minis reais (damasco e frutas
+    # vermelhas, GTINs distintos). Renomeá-lo para um dos dois declararia um
+    # sabor que ele nunca teve e esconderia o outro. Sai como exclusão, e os
+    # dois entram como produto novo — outra fatia deste WP.
+    "GL": (
+        "o dono decidiu em 22/09 que o placeholder sai: no lugar dele nascem os DOIS "
+        "minis St. Dalfour reais, damasco e frutas vermelhas. Rename não divide produto"
+    ),
     "BK": "sem linha na planilha — a casa ainda não faz o bacon (ver apply_product_brands)",
     "CV": "sem linha na planilha — Cream Soda do dia, a casa ainda não faz",
     "CX": "sem linha na planilha — Cornichons, placeholder da despensa do Cardápio 2027",
