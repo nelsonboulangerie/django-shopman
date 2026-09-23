@@ -2545,18 +2545,25 @@ class Command(BaseCommand):
             "GR": "09012100",
             "THL": "09022000",
             # ── Linha Chai Kãnfa (19/08) ──
-            # ⚠️ Sem isto os 13 cairiam no default de PANIFICAÇÃO (1905.90.90),
-            # que é o NCM errado para chá. Vão por analogia ao que a casa já
-            # declara para a mesma natureza: a folha seca embalada acompanha o
-            # `THL` (chá da casa em lata), a bebida pronta acompanha os blends
-            # servidos em bule.
+            # ⚠️ Sem isto os 12 cairiam no default de PANIFICAÇÃO (1905.90.90),
+            # que é o NCM errado para chá.
             #
-            # ⚠️ E fica UMA pergunta para o contador, que eu não decido: os
-            # pouches e latas são revenda de industrializado, e o perfil fiscal
-            # do catálogo hoje é `own_production` (não-ST) para tudo. Se eles
-            # forem `resale`, passam a exigir CSOSN 500, CFOP 5405/6405 e **CEST
-            # por produto**. A bebida preparada não entra nessa dúvida: a regra
-            # lista "bebidas preparadas" em `own_production` nominalmente.
+            # O chá da Kãnfa é DUAS coisas, e o cadastro já as separa:
+            #
+            # 1. **A folha seca, que se revende** — estes 12, lata e pouch, com
+            #    `purchase.resale = true`. NCM 0902.20.00.
+            # 2. **A bebida preparada na hora**, que usa o blend como INSUMO:
+            #    `CHBLU`, `CHCAM`, `CHROU`, `CHSOP`, `SFTCH`, `CHHIB`, `CTFV`,
+            #    cada um com ficha apontando para `CHA-BLEU`, `CHA-CHAI`… NCM
+            #    2202.99.00, que é bebida pronta.
+            #
+            # ⚠️ O perfil `own_production` nos 12 está CERTO, e não é pergunta
+            # para ninguém: o eixo do perfil é **ST × não-ST**, não "quem
+            # fabricou" (ver fiscalman/classification.py — `own_production` é
+            # "fabricação própria **+ revenda comum**"). Chá seco é revenda
+            # comum; ST no segmento de bebida alcança refrigerante, água e
+            # industrializado. O `purchase.resale` é outro eixo: ele diz ao
+            # Compras que a casa compra pronto.
             **dict.fromkeys(
                 ("CHA-INTUICAO-KANFA-P50", "CHA-INTUICAO-KANFA-L70", "CHA-ACONCHEGO-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50",
                  "CHA-NAMASTE-KANFA-P50", "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50",
@@ -4359,9 +4366,13 @@ class Command(BaseCommand):
             # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
             # Dão custo, insumo e rótulo; não são fornada. A convenção dos
             # croques é do dono (P7): monsieur vai salada, madame vai ovo,
-            # complet vai salada e ovo. Consumo automático na VENDA de item
-            # made-to-order é mecanismo da Fase 2 do Buyman — a ficha nasce
-            # pronta para ele.
+            # complet vai salada e ovo.
+            #
+            # ⚠️ O consumo automático na VENDA destes itens NÃO EXISTE ainda: a
+            # ficha nasce pronta para ele, e o insumo entra pela compra e nunca
+            # sai. Dono do assunto: docs/plans/WP-BAIXA-DE-INSUMO-NA-VENDA.md.
+            # (Este comentário dizia "Fase 2 do Buyman", que é outra coisa — no
+            # plano do Buyman, Fase 2 é o Pedido de Compra.)
             {
                 "ref": "queijo-quente",
                 "name": "Queijo-Quente",
