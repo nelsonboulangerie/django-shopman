@@ -119,12 +119,13 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
-    # A água da casa é AGUA desde a curadoria de 22/09 (dele: "a água do nosso
-    # filtro chama AGUA"), e isso só cabe porque a garrafa que se vende saiu
-    # desse código — produto e insumo dividem um namespace de SKU só
-    # (shop/services/sku_namespace.py), e o ledger indexa por ele.
-    assert Material.objects.get(sku="AGUA").shelf_life_days is None  # não perecível
-    assert not Material.objects.filter(sku="AGUA-FILTRADA").exists()
+    # A água do filtro é AGUA-FILTRADA e fica (dele, 23/09: "Agua pode ser
+    # AGUA-FILTRADA mesmo ok"). O nome nasceu para não colidir com a garrafa que
+    # se vende, e a garrafa já saiu do código `AGUA` — produto e insumo dividem
+    # um namespace de SKU só (shop/services/sku_namespace.py), e o ledger indexa
+    # por ele.
+    assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
+    assert not Material.objects.filter(sku="AGUA").exists()
     assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
     assert not Product.objects.filter(sku="AGUA").exists()
     assert Material.objects.get(sku="FERMENTO-NATURAL").shelf_life_days == 7
@@ -145,7 +146,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # no perfil, mas agora como ponte do RECEBIMENTO (a nota fala em litro), não
     # da produção diária. O invariante da troca vive em
     # test_seed_liquid_base_unit.py.
-    for sku in ("AGUA", "LEITE", "AZEITE"):
+    for sku in ("AGUA-FILTRADA", "LEITE", "AZEITE"):
         material = Material.objects.get(sku=sku)
         assert material.unit == "kg", sku
         assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku

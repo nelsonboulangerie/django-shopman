@@ -65,7 +65,7 @@ def materials(db):
     rows = [
         ("FARINHA-T55", "Farinha de trigo T55", "kg"),
         ("FARINHA-T65", "Farinha de trigo T65", "kg"),
-        ("AGUA", "Água filtrada", "l"),
+        ("AGUA-FILTRADA", "Água filtrada", "l"),
         ("LEITE", "Leite integral", "l"),
         ("SAL", "Sal", "kg"),
         ("MANTEIGA-FRANCESA", "Manteiga francesa", "kg"),
@@ -80,7 +80,7 @@ def flour_formula(*, water=700, flour=1000, parts=None):
         "standardized": False,
         "items": [
             {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": flour, "unit": "g"},
-            {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
+            {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
             {"sku": "SAL", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
         "parts": parts or [],
@@ -118,7 +118,7 @@ def published_levain(db):
             "anchor": {"kind": "flour"},
             "items": [
                 {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
-                {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "ml"},
+                {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "ml"},
             ],
             "parts": [],
         },
@@ -390,7 +390,7 @@ def test_publish_writes_the_sheet_and_the_list_shows_it(client, editor, entry):
     recipe = Recipe.objects.get(ref="massa-tradicao")
     assert recipe.output_sku == "MASSA-TRADICAO"
     assert recipe.meta["version_ref"] == "massa-tradicao@1"
-    assert {item.input_sku for item in recipe.items.all()} == {"FARINHA-T55", "AGUA", "SAL"}
+    assert {item.input_sku for item in recipe.items.all()} == {"FARINHA-T55", "AGUA-FILTRADA", "SAL"}
     assert RecipeVersion.objects.get(entry=entry, number=1).meta["published_by"] == "recipes-editor"
 
     (card,) = client.get(LIST_URL).json()["book"]["entries"]
@@ -445,9 +445,9 @@ def test_lens_preview(client, editor, published_levain):
     assert lens["parts"][0]["has_formula"] is True
     assert lens["parts"][0]["kind_label"] == "Pré-fermento"
     assert {item["sku"]: item["quantity_display"] for item in lens["final_mix"]} == {
-        "FARINHA-T55": "800 g", "AGUA": "500 g", "SAL": "20 g",
+        "FARINHA-T55": "800 g", "AGUA-FILTRADA": "500 g", "SAL": "20 g",
     }
-    assert [item["sku"] for item in lens["bom"]] == ["FARINHA-T55", "AGUA", "SAL", "LEVAIN"]
+    assert [item["sku"] for item in lens["bom"]] == ["FARINHA-T55", "AGUA-FILTRADA", "SAL", "LEVAIN"]
     prefermented = next(m for m in lens["metrics"] if m["code"] == "prefermented_flour_pct")
     assert prefermented["value_display"] == "20%"
     assert prefermented["tone"] == "ok"
@@ -480,7 +480,7 @@ def test_standardize_to_the_house_basis(client, editor):
     assert body["lens"]["standardized"] is True
     assert body["lens"]["anchor_total_display"] == "1 kg"
 
-    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "parts": []}
+    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "parts": []}
     refused = _post(client, reverse("api-backstage-recipes-standardize"), {"formula": without_flour})
     assert refused.status_code == 400
     assert refused.json()["field"] == "anchor"
@@ -497,7 +497,7 @@ def test_compare_two_versions(client, viewer, entry):
     compare = response.json()["compare"]
     assert compare["a_title"] == "Massa Tradição (versão 1)"
     assert compare["b_title"] == "Massa Tradição (versão 2)"
-    water = next(row for row in compare["rows"] if row["sku"] == "AGUA")
+    water = next(row for row in compare["rows"] if row["sku"] == "AGUA-FILTRADA")
     assert water["a_display"] == "700 g"
     assert water["b_display"] == "750 g"
     assert water["delta_display"] == "+50 g"
@@ -654,7 +654,7 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
     assert formula["standardized"] is False
     assert formula["basis_g"] is None
     assert [(line["sku"], line["quantity"], line["unit"]) for line in formula["items"]] == [
-        ("FARINHA-T65", "1000", "g"), ("AGUA", "700", "g"), ("SAL", "20", "g"), ("LEVAIN", "200", "g"),
+        ("FARINHA-T65", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("SAL", "20", "g"), ("LEVAIN", "200", "g"),
     ]
 
 
@@ -673,7 +673,7 @@ def test_publish_writes_the_sheet_in_the_materials_unit(client, editor, material
     """A fórmula fala em grama e mililitro; o insumo é cadastrado em kg ou L, e a ficha fala a unidade do cadastro."""
     entry = craftsman.create_entry(ref="pao-em-gramas", name="Pão em gramas", kind="bread", output_sku="PAO-EM-GRAMAS")
     formula = flour_formula()
-    formula["items"][1] = {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "ml"}
+    formula["items"][1] = {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "ml"}
     craftsman.create_version(entry, formula=formula, yield_quantity="1.7", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-em-gramas/versions/1/publish/", {})
@@ -681,7 +681,7 @@ def test_publish_writes_the_sheet_in_the_materials_unit(client, editor, material
     items = {item.input_sku: (item.quantity, item.unit) for item in Recipe.objects.get(ref="pao-em-gramas").items.all()}
     assert items == {
         "FARINHA-T55": (Decimal("1"), "kg"),
-        "AGUA": (Decimal("0.7"), "L"),
+        "AGUA-FILTRADA": (Decimal("0.7"), "L"),
         "SAL": (Decimal("0.02"), "kg"),
     }
 
@@ -693,7 +693,7 @@ def test_publish_weighs_water_in_grams_against_a_material_sold_by_litre(client, 
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-agua-em-g/versions/1/publish/", {})
     assert response.status_code == 200, response.content
-    water = Recipe.objects.get(ref="pao-agua-em-g").items.get(input_sku="AGUA")
+    water = Recipe.objects.get(ref="pao-agua-em-g").items.get(input_sku="AGUA-FILTRADA")
     assert (water.quantity, water.unit) == (Decimal("0.7"), "L")
 
 

@@ -39,13 +39,12 @@ Aqui mora a tabela, o ensaio e as recusas.
    dividem um endereço só (``shop/services/sku_namespace.py``), e a colisão é
    recusada em ``pre_save`` nos dois modelos. Alvo que já é produto recusa aqui,
    antes de o ``pre_save`` estourar no meio da travessia.
-2. **Campo de SKU único onde os DOIS valores já existem no banco.** É o caso
-   vivo do ``AGUA``: renomear ``AGUA-FILTRADA → AGUA`` com o órfão ainda de pé
-   estoura a constraint. ⚠️ E aqui a varredura é mais larga que a do
-   ``apply_product_skus``: além de ``unique=True``, ela olha ``unique_together``
-   e ``UniqueConstraint``, porque o ``unique_quant_coordinate`` do Stockman é
-   ``NULLS NOT DISTINCT`` — os dois quants estão no mesmo depósito, com
-   ``target_date`` nulo, e colidem de verdade.
+2. **Campo de SKU único onde os DOIS valores já existem no banco.** A varredura
+   é mais larga que a do ``apply_product_skus``: além de ``unique=True``, ela
+   olha ``unique_together`` e ``UniqueConstraint``, porque o
+   ``unique_quant_coordinate`` do Stockman é ``NULLS NOT DISTINCT`` — dois
+   insumos no mesmo depósito com ``target_date`` nulo colidem de verdade. Foi
+   isso que travou o ``AGUA-FILTRADA → AGUA`` enquanto ele existiu.
 3. **O que a exclusão leva junto** — quant, saldo e movimento, contados e ditos.
 4. **Quantas linhas de ficha cada par arrasta**, medidas executando e desfazendo.
 5. **As tabelas de código que citam o SKU literal.** O ``seed.py`` é a fonte da
@@ -77,11 +76,10 @@ from django.db import transaction
 #: decifra.
 RENOMEACOES: tuple[tuple[str, str, str], ...] = (
     # ── decisão dele, 22/09/2026 ───────────────────────────────────────────
-    # "a água do nosso filtro chama AGUA". Só é possível porque a garrafa que se
-    # vende deixou de ser `AGUA` no rename do catálogo (virou
-    # AGUA-MINERAL-PRATA-310) — e porque o órfão `AGUA` sai logo acima, na mesma
-    # travessia. Sem as duas coisas isto é colisão de namespace.
-    ("AGUA-FILTRADA", "AGUA", "dele"),
+    # ⚠️ `AGUA-FILTRADA → AGUA` esteve aqui e SAIU: ele voltou atrás em 23/09
+    # ("Agua pode ser AGUA-FILTRADA mesmo ok"). Não é só a linha que sai — com
+    # ela sai a única colisão de coordenada de quant que este comando conhecia,
+    # e por isso o órfão `AGUA` deixou de ter pressa para sumir.
     # "a tônica de INSUMO é a Antarctica; a Wewi é revenda e vive no catálogo".
     # Com o fabricante no nome, as duas deixam de se confundir.
     ("TONICA", "TONICA-ANTARCTICA", "dele"),
@@ -101,9 +99,8 @@ RENOMEACOES: tuple[tuple[str, str, str], ...] = (
 #: ("órfão sai"), só por decisão escrita.
 EXCLUSOES: dict[str, str] = {
     "AGUA": (
-        "dele, 22/09/2026: «água mineral é só revenda, não insumo». O registro é órfão "
-        "(nenhuma ficha o usa) e o saldo de 5 l é do seed, não de contagem. "
-        "O SKU precisa ficar livre para a água do filtro assumi-lo"
+        "dele, 22/09/2026: «água mineral é só revenda, não insumo». O registro é órfão — "
+        "nenhuma ficha o usa, e o saldo de 5 l é do seed, não de contagem"
     ),
 }
 
@@ -283,8 +280,9 @@ class Command(BaseCommand):
         pulados: list[tuple[str, str]] = []
 
         with transaction.atomic():
-            # A exclusão vem PRIMEIRO, e não por arrumação: `AGUA-FILTRADA →
-            # AGUA` só caberia depois que o órfão `AGUA` saísse do lugar.
+            # A exclusão vem primeiro: enquanto houve um rename mirando o SKU
+            # de um insumo a apagar, essa ordem era a diferença entre caber e
+            # estourar a constraint no meio da travessia.
             for sku in exclusoes:
                 if sku in insumos and sku not in impedidos:
                     self._apagar(sku)
@@ -398,17 +396,19 @@ class Command(BaseCommand):
         é ``PROTECT``. Logo o quant de um insumo que já teve qualquer movimento
         — nem que seja o saldo de abertura do seed — **não sai do banco**.
 
-        Isso decide o caso do ``AGUA`` inteiro, e não só a exclusão:
-        ``unique_quant_coordinate`` é ``(sku, position, target_date, batch)``
-        com ``NULLS NOT DISTINCT``, e os dois quants de água estão no mesmo
-        depósito com ``target_date`` nulo. Com o órfão preso no lugar, o
-        ``update`` do cascade estouraria a constraint no meio da travessia.
+        É o que segura o órfão ``AGUA``: o saldo de 5 l dele é do seed, mas o
+        movimento que o registrou é ledger, e ledger não se apaga.
 
-        A cura não é forçar a trava — é o outro caminho, que já existe e já
-        espera a palavra dele: **a lista mora no ``seed.py``**, e um
-        ``seed --flush`` reconstrói o cadastro inteiro com o nome novo, sem
-        órfão e sem colisão. Por isso a frente para aqui, nomeada, e as outras
-        seguem.
+        Enquanto existiu um rename mirando esse SKU, o impedimento era duplo —
+        ``unique_quant_coordinate`` é ``(sku, position, target_date, batch)``
+        com ``NULLS NOT DISTINCT``, e os dois quants de água moravam no mesmo
+        depósito com ``target_date`` nulo, então o ``update`` do cascade
+        estouraria a constraint no meio da travessia. Esse rename saiu em 23/09,
+        e a varredura continua aqui porque o próximo par pode repeti-lo.
+
+        A cura nunca é forçar a trava. Para o órfão sair de verdade, o caminho é
+        o ``seed --flush``, que reconstrói o cadastro sem ele — e reseed pede a
+        palavra do dono.
         """
         impedidos: dict[str, str] = {}
 

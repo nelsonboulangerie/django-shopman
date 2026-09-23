@@ -31,7 +31,7 @@ def materials():
     rows = [
         ("FARINHA-T55", "Farinha de trigo T55", "kg"),
         ("FARINHA-INTEGRAL", "Farinha de trigo integral", "kg"),
-        ("AGUA", "Água filtrada", "l"),
+        ("AGUA-FILTRADA", "Água filtrada", "l"),
         ("MANTEIGA-FRANCESA", "Manteiga francesa", "kg"),
         ("OVOS", "Ovos", "kg"),
         ("SAL", "Sal", "kg"),
@@ -62,7 +62,7 @@ def test_japanese_bread_flour_finds_a_wheat_flour(materials):
 
 
 def test_french_water_finds_the_filtered_water(materials):
-    assert best_match("eau").sku == "AGUA"
+    assert best_match("eau").sku == "AGUA-FILTRADA"
 
 
 def test_a_qualifier_does_not_pull_the_wrong_ingredient(materials):
@@ -165,7 +165,7 @@ def test_normalization_drops_latin_accents_but_keeps_japanese_letters():
     ("name", "sku", "role"),
     [
         ("Farinha de trigo T55", "FARINHA-T55", "flour"),
-        ("Água filtrada", "AGUA", "liquid"),
+        ("Água filtrada", "AGUA-FILTRADA", "liquid"),
         ("Sal marinho", "SAL", "salt"),
         ("Salsicha vienna", "SALSICHA-VIENNA", "inclusion"),
         ("Manteiga francesa", "MANTEIGA-FRANCESA", "fat"),
