@@ -48,8 +48,15 @@ DENSIDADES = {
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
 COMPRADOS_EM_LITRO = ("LEITE", "AZEITE", "CREME-DE-LEITE")
 
-# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 37 linhas: toda
+# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 36 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
+#
+# ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE")`,
+# e ela saiu porque a RECEITA mudou, não porque a conversão foi desfeita: o dono
+# corrigiu que o creme de chocolate é o CREME-BAUNILHA com chocolate derretido,
+# então o leite dele não entra mais direto — entra pela base, onde já está
+# contado em `("creme-baunilha", "LEITE")`. Linha que sai daqui sem essa
+# explicação é conversão perdida, e o teste é quem grita.
 QUANTIDADES_EM_LITRO = {
     ("creme-levain", "AGUA"): Decimal("1.700"),
     ("massa-pasta-autolizada", "AGUA"): Decimal("3.500"),
@@ -69,7 +76,6 @@ QUANTIDADES_EM_LITRO = {
     ("recheio-cebola-bacon-tomilho", "AZEITE"): Decimal("0.150"),
     ("recheio-cebola-azapas", "AZEITE"): Decimal("0.150"),
     ("molho-bechamel", "LEITE"): Decimal("2.600"),
-    ("creme-chocolate", "LEITE"): Decimal("1.500"),
     ("creme-leite-ovos", "CREME-DE-LEITE"): Decimal("0.800"),
     ("creme-leite-ovos", "LEITE"): Decimal("0.600"),
     ("vinagrete-frances", "AZEITE"): Decimal("0.700"),

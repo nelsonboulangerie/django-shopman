@@ -108,7 +108,9 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "recheio-cebola-bacon-tomilho": ("2.7", "2.997", 4),
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
     "molho-bechamel": ("2.9", "3.098", 4),
-    "creme-chocolate": ("2.9", "3.095", 4),
+    # Duas linhas desde 23/09 (base + chocolate), com a MESMA soma: os três
+    # insumos que faziam as vezes da base viraram o CREME-BAUNILHA que ela é.
+    "creme-chocolate": ("2.9", "3.095", 2),
     "creme-leite-ovos": ("2", "2.076", 4),
     "salada-da-casa": ("1.8", "1.900", 4),
     "vinagrete-frances": ("0.9", "0.917", 5),
