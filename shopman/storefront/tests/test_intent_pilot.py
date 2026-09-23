@@ -82,14 +82,14 @@ def _labeled(text, *refs, categories):
 @pytest.mark.django_db
 def test_setup_creates_the_proposed_vocabulary_and_never_overwrites(categories):
     assert list(categories) == [
-        "order", "product_question", "hours_delivery", "order_status",
-        "complaint", "allergy", "special_order", "human",
+        "order", "product_question", "hours_delivery", "order_status", "special_order", "house_info",
+        "complaint", "allergy", "human", "job", "partnership", "supplier_offer",
     ]
     assert {ref for ref, c in categories.items() if c.sensitive} == {"complaint", "allergy", "human"}
     IntentCategory.objects.filter(ref="order").update(name="Compra")
     call_command("setup_intent_categories")
     assert IntentCategory.objects.get(ref="order").name == "Compra"
-    assert IntentCategory.objects.count() == 8
+    assert IntentCategory.objects.count() == 12
 
 
 @pytest.mark.django_db
@@ -202,14 +202,16 @@ def test_embedding_marks_every_intent_above_the_cut():
     assert set(prediction.intents) == {"order", "hours_delivery"}
 
 
-def test_external_contenders_need_written_approval(settings):
-    settings.SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED = False
+def test_external_contenders_need_their_provider_approved(settings):
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
     settings.AI_ASSIST_API_KEY = "k"
     settings.JEV_API_KEY = "k"
-    with pytest.raises(ContenderNotConfigured, match="SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED"):
+    assert LLMContender(client=object()).name.startswith("llm:")  # aprovado pelo dono em 23/09
+    with pytest.raises(ContenderNotConfigured, match="typesafe"):
+        JevContender(session=object())  # fornecedor novo: fora até ele decidir
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
+    with pytest.raises(ContenderNotConfigured, match="anthropic"):
         LLMContender(client=object())
-    with pytest.raises(ContenderNotConfigured, match="SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED"):
-        JevContender(session=object())
 
 
 class _FakeClient:
@@ -229,7 +231,7 @@ class _FakeClient:
 
 
 def test_llm_returns_several_intents_and_drops_the_unsure(settings):
-    settings.SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED = True
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
     client = _FakeClient(
         '{"intents": [{"ref": "order", "confidence": 0.9}, {"ref": "hours_delivery", "confidence": 0.8},'
         ' {"ref": "human", "confidence": 0.2}]}'
@@ -242,7 +244,7 @@ def test_llm_returns_several_intents_and_drops_the_unsure(settings):
 
 
 def test_llm_intent_outside_the_list_is_an_error(settings):
-    settings.SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED = True
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
     contender = LLMContender(client=_FakeClient('{"intents": [{"ref": "elogio", "confidence": 0.9}]}'))
     with pytest.raises(ContenderResponseError):
         contender.predict(Sample(1, "Amei!", frozenset()), CATS)
@@ -258,7 +260,7 @@ class _FakeSession:
 
 
 def test_jev_asks_one_yes_no_per_intent_in_one_call(settings):
-    settings.SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED = True
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"typesafe"})
     settings.JEV_API_KEY = "k"
     session = _FakeSession({
         "answers": {
@@ -310,7 +312,7 @@ def test_gold_ignores_pending_and_inactive_intents(categories):
 
 @pytest.mark.django_db
 def test_command_reports_without_external_contenders_and_csv_has_no_text(categories, settings, tmp_path, capsys):
-    settings.SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED = False
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
     with pytest.raises(CommandError, match="Gabarito vazio"):
         call_command("benchmark_intent_classifiers", contender=["regex"])
     _labeled("Quero falar com um atendente e fazer um pedido", "human", "order", categories=categories)
@@ -319,7 +321,7 @@ def test_command_reports_without_external_contenders_and_csv_has_no_text(categor
     call_command("benchmark_intent_classifiers", csv=str(out_csv))
     out = capsys.readouterr().out
     assert "llm: fora do placar" in out and "jev: fora do placar" in out
-    assert "2 mensagens rotuladas (1 com 2+ intenções" in out
+    assert "2 mensagens conferidas (1 com 2+ intenções" in out
     rows = out_csv.read_text(encoding="utf-8")
     assert "regex" in rows and "atendente" not in rows  # sem texto de cliente
 
@@ -333,3 +335,98 @@ def test_run_survives_a_failing_contender():
 
     boards = run([Sample(1, "oi", frozenset({"order"}))], CATS, [Broken()], prices={})
     assert boards[0].errors == 1 and "TimeoutError" in boards[0].rows[0][4]
+
+
+
+# ── Ciclo automático: a máquina faz, a casa confere ─────────────────────────
+
+
+class _Suggester:
+    name = "llm:claude-opus-5"
+    model = "claude-opus-5"
+
+    def predict(self, sample, categories):
+        if "pedido" in sample.text.lower() or "quero" in sample.text.lower():
+            return Prediction({"order": 0.9, "hours_delivery": 0.7})
+        return Prediction({})
+
+
+@pytest.mark.django_db
+def test_suggestions_prefill_but_only_what_someone_confirms_is_gold(categories):
+    from shopman.storefront.concierge.intent_pilot import propose_labels
+
+    sample = MessageIntentSample.objects.create(message=_inbound("Quero 2 croissants, abre domingo?"))
+    assert propose_labels(contender=_Suggester()) == 1
+    sample.refresh_from_db()
+    assert sample.status == SampleStatus.PROPOSED and sample.suggested_by == "claude-opus-5"
+    assert set(sample.intents.values_list("ref", flat=True)) == {"order", "hours_delivery"}
+    assert gold_samples() == []  # sugestão não é gabarito
+
+
+@pytest.mark.django_db
+def test_confirming_suggestions_in_bulk_signs_them(admin_client, categories):
+    proposed = MessageIntentSample.objects.create(message=_inbound("Quero pão"), status=SampleStatus.PROPOSED)
+    proposed.intents.set([categories["order"]])
+    pending = MessageIntentSample.objects.create(message=_inbound("oi"))
+    changelist = reverse("admin:storefront_messageintentsample_changelist")
+    admin_client.post(changelist, {"action": "confirm_suggestions", "_selected_action": [proposed.pk, pending.pk]})
+    proposed.refresh_from_db()
+    pending.refresh_from_db()
+    assert proposed.status == SampleStatus.LABELED and proposed.labeled_by == admin_client.user
+    assert pending.status == SampleStatus.PENDING  # sem sugestão, nada a confirmar
+    assert [sample.gold for sample in gold_samples()] == [frozenset({"order"})]
+
+
+@pytest.mark.django_db
+def test_cycle_samples_within_caps_and_waits_for_the_key(settings, monkeypatch):
+    from shopman.storefront.concierge import intent_pilot
+
+    settings.AI_ASSIST_API_KEY = ""
+    conversation = _conversation()
+    for index in range(5):
+        _inbound(f"mensagem número {index}", conversation)
+    monkeypatch.setattr(intent_pilot, "DAILY_SAMPLE_CAP", 3)
+
+    first = intent_pilot.run_cycle()
+    assert first.categories_created == 12 and first.sampled == 3
+    assert "AI_ASSIST_API_KEY" in first.proposal_skipped  # sem chave, a fila espera gente
+    assert intent_pilot.run_cycle().sampled == 0  # teto do dia
+
+
+@pytest.mark.django_db
+def test_measure_keeps_an_aggregate_report_without_customer_text(categories, settings, monkeypatch):
+    from shopman.storefront.concierge import intent_pilot
+    from shopman.storefront.models import IntentPilotReport
+
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
+    monkeypatch.setattr(intent_pilot, "MIN_LABELED_TO_MEASURE", 2)
+    _labeled("Quero falar com um atendente sobre meu pedido", "human", "order", categories=categories)
+    _labeled("Tem vaga de padeiro?", "job", categories=categories)
+
+    measurement = intent_pilot.maybe_measure()
+    report = measurement.report
+    assert report is not None and report.samples == 2 and "regex" in report.contenders
+    assert "llm: " in report.skipped  # provedor não aprovado neste teste
+    assert "atendente" not in report.report and "padeiro" not in report.report
+    assert "■ regex" in report.report
+    assert intent_pilot.maybe_measure().report is None  # um placar por semana
+    assert IntentPilotReport.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_report_is_readable_in_admin_and_read_only(admin_client, categories, monkeypatch):
+    from shopman.storefront.concierge import intent_pilot
+
+    monkeypatch.setattr(intent_pilot, "MIN_LABELED_TO_MEASURE", 1)
+    _labeled("Vocês abrem domingo?", "hours_delivery", categories=categories)
+    report = intent_pilot.maybe_measure().report
+    page = admin_client.get(reverse("admin:storefront_intentpilotreport_change", args=[report.pk]))
+    assert page.status_code == 200 and "acertou o conjunto inteiro" in page.content.decode()
+    assert admin_client.get(reverse("admin:storefront_intentpilotreport_add")).status_code == 403
+
+
+@pytest.mark.django_db
+def test_worker_command_is_silent_when_disabled(settings, capsys):
+    settings.SHOPMAN_INTENT_PILOT_ENABLED = False
+    call_command("run_intent_pilot")
+    assert not IntentCategory.objects.exists()

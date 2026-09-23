@@ -12,7 +12,7 @@ mensageria (INTENT-PILOT-PLAN): moram ao lado do concierge, que também é daqui
 """
 
 from .favorites import CustomerFavorite
-from .intents import IntentCategory, MessageIntentSample, SampleStatus
+from .intents import IntentCategory, IntentPilotReport, MessageIntentSample, SampleStatus
 from .stock_alerts import StockAlertDelivery, StockAlertOccurrence, StockAlertSubscription
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
     "StockAlertDelivery",
     "CustomerFavorite",
     "IntentCategory",
+    "IntentPilotReport",
     "MessageIntentSample",
     "SampleStatus",
 ]

@@ -43,6 +43,7 @@
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
+| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -1089,12 +1090,22 @@ mesmos `--shortlist` candidatos do fuzzy mais a opção "nenhum destes"; a cober
 teto deles e sai no relatório. O `embed` procura no catálogo inteiro (corte `--min-similarity`). Concorrente sem credencial fica de fora (ou falha, se pedido por
 `--matcher`). Gabarito vazio falha com o caminho para confirmar no Admin.
 
+### run_intent_pilot
+
+**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/INTENT-PILOT-PLAN.md)),
+e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
+por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
+`AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana.
+`--measure-now` força o placar. `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+
 ### setup_intent_categories
 
-**Propósito:** Cria as oito intenções propostas do piloto ([INTENT-PILOT-PLAN](../plans/INTENT-PILOT-PLAN.md)):
-pedido, dúvida de produto, horário/entrega, status do pedido, reclamação, alergia, encomenda
-especial, falar com uma pessoa. Idempotente; cria só as referências que faltam e nunca sobrescreve
-o que foi editado no Admin (Clientes → Intenções).
+**Propósito:** Cria as doze intenções do piloto (pedido, dúvida de produto, horário/endereço/entrega,
+status do pedido, encomenda especial, como funciona a casa, reclamação, alergia, falar com uma
+pessoa, vaga de emprego, parceria ou divulgação, proposta de fornecedor). Idempotente; cria só as
+referências que faltam e nunca sobrescreve o que foi editado no Admin (Clientes → Intenções). O
+ciclo automático já faz isto; o comando é para ambiente novo.
 
 ### sample_intent_messages
 
@@ -1110,7 +1121,7 @@ python manage.py sample_intent_messages --limit 200 [--days 90] [--min-chars 3]
 ### benchmark_intent_classifiers
 
 **Propósito:** Mede `regex` (a transferência de hoje), `embed` (embeddings locais, `fastembed`),
-`llm:<modelo>` e `jev` contra as mensagens rotuladas. Placar de conjunto (uma mensagem pode ter
+`llm:<modelo>` e `jev` contra as mensagens conferidas. Placar de conjunto (uma mensagem pode ter
 várias intenções): conjunto exato, exato nas mensagens com 2+ intenções, precisão, cobertura, F1,
 cobertura das sensíveis, cobertura por intenção, latência, custo por 1.000 mensagens. Não grava.
 
@@ -1121,9 +1132,10 @@ python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --llm
 ```
 
 **Comportamento:** todos recebem o texto **redigido** (`redact_observation_text`). `llm` e `jev`
-mandam esse texto para fora e só entram com `SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED=true`
-(decisão do dono); sem isso saem do placar dizendo por quê. O CSV não leva texto de cliente, só o
-número da amostra.
+mandam esse texto para fora e só entram se o provedor estiver em
+`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (default `anthropic`, decisão do dono em 23/09; `typesafe`
+fora); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
+texto de cliente, só o número da amostra.
 
 ### refresh_bi_daily_series
 

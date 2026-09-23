@@ -1,11 +1,12 @@
-"""Rotulagem do piloto de intenções — onde a casa diz o que o cliente quis.
+"""Conferência do piloto de intenções — a máquina sugere, a casa confere.
 
-Duas telas. **Intenções** é o vocabulário (editável: é a decisão do dono, e muda
-sem código). **Mensagens para rotular** é a fila que o ``sample_intent_messages``
-preenche: a pessoa lê a mensagem **redigida** (o mesmo texto que os
-classificadores recebem), marca TODAS as intenções que ela carrega — ou nenhuma
-— e salva. Salvar carimba quem e quando; a fila anda sozinha para a próxima a
-rotular.
+Três telas. **Intenções** é o vocabulário (editável: é a decisão do dono, e muda
+sem código). **Mensagens para rotular** é a fila que o ciclo automático enche e
+pré-marca: a pessoa lê a mensagem **redigida** (o mesmo texto que os
+classificadores recebem), vê as intenções sugeridas, corrige o que discorda e
+salva — ou, na lista, confere várias de uma vez com "Confirmar sugestões". Salvar
+carimba quem e quando; a fila anda sozinha para a próxima. **Placar das
+intenções** é só leitura: o que o ciclo mediu, sem texto de cliente.
 
 A mensagem nunca é editada aqui, nem copiada: a amostra aponta para ela, e
 apagar a mensagem (retenção, pedido do titular) apaga a amostra junto.
@@ -21,13 +22,15 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import display
 from unfold.widgets import UnfoldAdminCheckboxSelectMultipleWidget
 
-from shopman.storefront.models import IntentCategory, MessageIntentSample, SampleStatus
+from shopman.storefront.models import IntentCategory, IntentPilotReport, MessageIntentSample, SampleStatus
 
 _STATUS_LABELS = {
     "a rotular": "warning",
-    "rotulada": "success",
-    "pulada": "info",
+    "sugerida": "info",
+    "conferida": "success",
+    "pulada": "danger",
 }
+_OPEN = (SampleStatus.PROPOSED, SampleStatus.PENDING)
 
 
 @admin.register(IntentCategory)
@@ -50,9 +53,9 @@ class MessageIntentSampleForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["intents"].queryset = IntentCategory.objects.filter(active=True).order_by("position", "id")
-        # Quem abre para rotular está rotulando: o default do formulário já é o
+        # Quem abre para conferir está conferindo: o default do formulário já é o
         # estado que o salvar vai gravar.
-        if self.instance.status == SampleStatus.PENDING:
+        if self.instance.status in _OPEN:
             self.initial["status"] = SampleStatus.LABELED
 
 
@@ -64,9 +67,9 @@ class MessageIntentSampleAdmin(ModelAdmin):
     list_filter = ("status", "intents")
     ordering = ("status", "id")
     list_per_page = 50
-    fields = ("redacted_text_display", "intents", "status", "note", "labeled_by", "labeled_at")
-    readonly_fields = ("redacted_text_display", "labeled_by", "labeled_at")
-    actions = ("skip_selected",)
+    fields = ("redacted_text_display", "intents", "status", "note", "suggested_by", "labeled_by", "labeled_at")
+    readonly_fields = ("redacted_text_display", "suggested_by", "labeled_by", "labeled_at")
+    actions = ("confirm_suggestions", "skip_selected")
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("message", "labeled_by").prefetch_related("intents")
@@ -85,10 +88,10 @@ class MessageIntentSampleAdmin(ModelAdmin):
 
     @display(description="intenções")
     def intents_display(self, obj):
-        names = [intent.name for intent in obj.intents.all()]
-        if obj.status != SampleStatus.LABELED:
+        if obj.status not in (SampleStatus.LABELED, SampleStatus.PROPOSED):
             return "—"
-        return ", ".join(names) or "nenhuma da lista"
+        names = ", ".join(intent.name for intent in obj.intents.all()) or "nenhuma da lista"
+        return f"sugerido: {names}" if obj.status == SampleStatus.PROPOSED else names
 
     @display(description="estado", label=_STATUS_LABELS)
     def status_display(self, obj):
@@ -108,17 +111,47 @@ class MessageIntentSampleAdmin(ModelAdmin):
         # Depois de salvar uma, a próxima da fila — rotular 200 mensagens não
         # pode custar 200 voltas pela lista.
         if "_continue" not in request.POST and "_addanother" not in request.POST:
+            queue = MessageIntentSample.objects.exclude(pk=obj.pk).order_by("id")
+            # Primeiro as sugeridas (conferir é rápido), depois as que a máquina não marcou.
             following = (
-                MessageIntentSample.objects.filter(status=SampleStatus.PENDING).exclude(pk=obj.pk).order_by("id").first()
+                queue.filter(status=SampleStatus.PROPOSED).first()
+                or queue.filter(status=SampleStatus.PENDING).first()
             )
             if following is not None:
-                self.message_user(request, f"Mensagem {obj.pk} salva. Esta é a próxima a rotular.")
+                self.message_user(request, f"Mensagem {obj.pk} conferida. Esta é a próxima.")
                 return HttpResponseRedirect(
                     reverse("admin:storefront_messageintentsample_change", args=[following.pk])
                 )
         return super().response_change(request, obj)
 
+    @admin.action(description="Confirmar sugestões selecionadas como estão")
+    def confirm_suggestions(self, request, queryset):
+        count = 0
+        for sample in queryset.filter(status=SampleStatus.PROPOSED):
+            sample.mark_labeled(request.user)
+            sample.save(update_fields=["status", "labeled_by", "labeled_at"])
+            count += 1
+        ignored = queryset.count() - count
+        message = f"{count} sugestão(ões) confirmada(s): entram no gabarito."
+        if ignored:
+            message += f" {ignored} ignorada(s): só se confirma o que a máquina sugeriu."
+        self.message_user(request, message)
+
     @admin.action(description="Pular selecionadas (ininteligível, fora de contexto)")
     def skip_selected(self, request, queryset):
         count = queryset.update(status=SampleStatus.SKIPPED, labeled_by=None, labeled_at=None)
         self.message_user(request, f"{count} mensagem(ns) pulada(s): ficam fora do gabarito.")
+
+
+@admin.register(IntentPilotReport)
+class IntentPilotReportAdmin(ModelAdmin):
+    list_display = ("created_at", "samples", "contenders")
+    ordering = ("-created_at",)
+    fields = ("created_at", "samples", "contenders", "report", "skipped")
+    readonly_fields = fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

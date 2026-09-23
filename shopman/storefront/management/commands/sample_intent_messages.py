@@ -1,21 +1,18 @@
-"""Sorteia mensagens de clientes para o gabarito de intenções (INTENT-PILOT-PLAN).
+"""Sorteia mensagens para o gabarito de intenções (INTENT-PILOT-PLAN), à mão.
 
-Cria uma ``MessageIntentSample`` "a rotular" por mensagem sorteada: só entrada
-de cliente com texto, nunca uma que já esteja na amostra. Não copia texto — a
-amostra aponta para a mensagem, e a tela de rotulagem mostra a versão redigida.
-Rodar de novo acrescenta mais; nada é apagado.
+O ciclo automático (``run_intent_pilot``) já sorteia sozinho, com teto por dia;
+este comando existe para encher a fila de uma vez. Só entrada com texto, nunca
+uma que já esteja na amostra, e sem copiar texto: a amostra aponta para a
+mensagem, e a tela de conferência mostra a versão redigida.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
 
 
 class Command(BaseCommand):
-    help = "Sorteia mensagens de clientes para rotular no Admin (Clientes → Mensagens para rotular)."
+    help = "Sorteia mensagens de entrada para conferir no Admin (Clientes → Mensagens para rotular)."
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=200, help="Quantas sortear (default 200).")
@@ -23,31 +20,21 @@ class Command(BaseCommand):
         parser.add_argument("--min-chars", type=int, default=3, help="Ignora mensagens mais curtas (default 3).")
 
     def handle(self, *args, **options):
-        from shopman.shop.models import ConversationMessage
-        from shopman.storefront.models import MessageIntentSample
+        from shopman.storefront.concierge.intent_pilot import sample_messages
+        from shopman.storefront.models import MessageIntentSample, SampleStatus
 
         if options["limit"] <= 0:
             raise CommandError("--limit precisa ser positivo.")
-        candidates = (
-            ConversationMessage.objects.filter(kind=ConversationMessage.Kind.INBOUND)
-            .exclude(text="")
-            .filter(intent_sample__isnull=True)
-        )
-        if options["days"]:
-            candidates = candidates.filter(created_at__gte=timezone.now() - timedelta(days=options["days"]))
-        picked = [
-            message_id
-            for message_id, text in candidates.order_by("?").values_list("id", "text")[: options["limit"] * 3]
-            if len((text or "").strip()) >= options["min_chars"]
-        ][: options["limit"]]
-        MessageIntentSample.objects.bulk_create([MessageIntentSample(message_id=pk) for pk in picked])
-        pending = MessageIntentSample.objects.filter(status="pending").count()
+        picked = sample_messages(limit=options["limit"], days=options["days"], min_chars=options["min_chars"])
+        waiting = MessageIntentSample.objects.filter(
+            status__in=[SampleStatus.PENDING, SampleStatus.PROPOSED]
+        ).count()
         self.stdout.write(self.style.SUCCESS(
-            f"{len(picked)} mensagem(ns) sorteada(s); {pending} esperando rótulo. "
-            "Rotule em Admin → Clientes → Mensagens para rotular."
+            f"{picked} mensagem(ns) sorteada(s); {waiting} esperando conferência em "
+            "Admin → Clientes → Mensagens para rotular."
         ))
         if not picked:
             self.stdout.write(self.style.WARNING(
-                "Nenhuma mensagem nova: o concierge ainda não recebeu texto de cliente neste ambiente, "
-                "ou todas já estão na amostra."
+                "Nenhuma mensagem nova: o concierge não recebeu texto neste ambiente (atendimento ou "
+                "observação), ou todas já estão na amostra."
             ))
