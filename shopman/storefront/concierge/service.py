@@ -328,6 +328,45 @@ def purge_observations(*, now=None, connection_key: str = "", subject: str = "")
     }
 
 
+def align_observation_retention() -> int:
+    """O prazo de cada observação acompanha a política VIGENTE da connection, nos dois sentidos.
+
+    ``retention_until`` é carimbado na captura; sem isto, mudar
+    ``CONCIERGE_OBSERVATION_RETENTION_DAYS`` só valeria para o que chegasse
+    depois. Decisão do dono em 23/09/2026: guardar mais durante o aprendizado e
+    encurtar depois — então o prazo se recalcula a partir da captura
+    (``created_at + dias``) para tudo o que ainda existe. Estender não ressuscita
+    nada (o que já foi apagado continua apagado); encurtar apaga no próximo
+    ``purge_observations``. Política inválida (fora de 1–30) não mexe em nada.
+    Devolve quantas mensagens mudaram de prazo.
+    """
+    from . import transport
+
+    changed = 0
+    for connection in transport.configured_connections():
+        policy = connection.options.get("observation")
+        if not isinstance(policy, Mapping):
+            continue
+        try:
+            days = int(policy.get("retention_days"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= days <= 30:
+            continue
+        window = F("created_at") + timedelta(days=days)
+        changed += (
+            ConversationMessage.objects.filter(
+                automation_eligible=False,
+                envelope__processing_mode="observe",
+                binding__connection_key=connection.key,
+                retention_until__isnull=False,
+            )
+            .exclude(retention_until=window)
+            .update(retention_until=window)
+        )
+    return changed
+
+
 @_observed("intake")
 def receive_inbound(event: InboundEvent) -> IntakeResult:
     """Persiste um evento normalizado; identidade só é concedida pelo adapter."""

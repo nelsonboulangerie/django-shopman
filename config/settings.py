@@ -1392,9 +1392,12 @@ SHOPMAN_CONCIERGE = {
                         "CONCIERGE_OBSERVATION_NOTICE_VERSION", ""
                     ),
                     # O service converte e valida. Preservar o valor cru faz um
-                    # typo falhar fechado em vez de virar silenciosamente 7 dias.
+                    # typo falhar fechado em vez de virar silenciosamente 30 dias.
+                    # 30 (o teto aceito) durante o aprendizado, por decisão do dono
+                    # em 23/09/2026; depois encurta. Mudar o valor vale também para
+                    # o que já foi guardado (``align_observation_retention``).
                     "retention_days": os.environ.get(
-                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "7"
+                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "30"
                     ),
                     "allow_all_subjects": _env_bool(
                         "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS", False
