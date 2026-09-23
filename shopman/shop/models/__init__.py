@@ -33,7 +33,6 @@ from .campaign import (
     Trigger,
 )
 from .catalog_binding import CatalogBinding, CatalogSnapshot
-from .retired_product import RetiredProduct
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
 from .concierge import (
@@ -65,6 +64,7 @@ from .push_subscription import (
     PushSurface,
 )
 from .quality import QualityDefect, QualityGrade
+from .retired_product import RetiredProduct
 from .rules import RuleConfig
 from .settings_proxies import (
     ShopAppearance,
