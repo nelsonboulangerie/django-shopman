@@ -1,15 +1,14 @@
-"""Piloto do de-para de produto: fuzzy × Jev × LLM contra o gabarito confirmado.
+"""Piloto do de-para de produto: fuzzy × Jev × LLM × embeddings contra o gabarito confirmado.
 
 Invólucro de ``shopman.backstage.bi.matcher_benchmark``: escolhe concorrentes,
 roda, imprime o placar (acerto, o que aceitaria sozinho e quanto disso errado,
 latência, tokens, custo) e, com ``--csv``, grava caso a caso para auditoria.
 Não grava alias nenhum.
 
-Preços entram por argumento, em US$ por milhão de tokens: tabela de preço muda
-mais rápido que código. O default do Jev é o preço de lançamento (entrada
-US$ 0,042/M, saída grátis); o do LLM não tem default, porque depende do modelo
-em ``AI_ASSIST_MODEL`` — sem ``--llm-price-*`` o custo do LLM sai zerado e o
-relatório avisa.
+Preços em US$ por milhão de tokens. O default do Jev é o preço de lançamento
+(entrada US$ 0,042/M, saída grátis); o de cada LLM vem de ``LLM_PRICES``.
+``--*-price-*`` sobrescrevem (os de LLM valem para todos os ``--llm-model``);
+modelo fora da tabela sai com custo zerado e o relatório avisa.
 """
 
 from __future__ import annotations
@@ -20,7 +19,11 @@ from django.core.management.base import BaseCommand, CommandError
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE
 from shopman.backstage.bi.matcher_benchmark import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_MIN_SIMILARITY,
     DEFAULT_SHORTLIST,
+    LLM_PRICES,
+    EmbeddingMatcher,
     FuzzyMatcher,
     JevMatcher,
     LLMMatcher,
@@ -31,17 +34,29 @@ from shopman.backstage.bi.matcher_benchmark import (
     run,
 )
 
-MATCHERS = ("fuzzy", "jev", "llm")
+MATCHERS = ("fuzzy", "jev", "llm", "embed")
 
 
 class Command(BaseCommand):
-    help = "Mede fuzzy, Jev e LLM no de-para de produto contra os de-paras confirmados. Não grava nada."
+    help = "Mede fuzzy, Jev, LLM e embeddings no de-para de produto contra os de-paras confirmados. Não grava nada."
 
     def add_arguments(self, parser):
         parser.add_argument("--source", default="yooga", help="Origem do histórico (default: yooga).")
         parser.add_argument(
             "--matcher", choices=MATCHERS, action="append",
-            help="Concorrente; repetível. Sem --matcher, os três (quem não tiver credencial fica de fora).",
+            help="Concorrente; repetível. Sem --matcher, todos (quem não tiver credencial ou pacote fica de fora).",
+        )
+        parser.add_argument(
+            "--llm-model", action="append",
+            help="Modelo do concorrente llm; repetível (ex.: claude-haiku-4-5). Default: AI_ASSIST_MODEL.",
+        )
+        parser.add_argument(
+            "--embedding-model", default=DEFAULT_EMBEDDING_MODEL,
+            help=f"Modelo de embeddings do fastembed (default {DEFAULT_EMBEDDING_MODEL}).",
+        )
+        parser.add_argument(
+            "--min-similarity", type=float, default=DEFAULT_MIN_SIMILARITY,
+            help=f"Corte de similaridade dos embeddings, 0–1 (default {DEFAULT_MIN_SIMILARITY}).",
         )
         parser.add_argument("--limit", type=int, default=200, help="Máximo de casos do gabarito (default 200).")
         parser.add_argument(
@@ -55,13 +70,15 @@ class Command(BaseCommand):
         parser.add_argument("--min-score", type=int, default=DEFAULT_MIN_SCORE, help="Corte do fuzzy (default 80).")
         parser.add_argument("--jev-price-in", type=float, default=0.042, help="US$/M tokens de entrada do Jev.")
         parser.add_argument("--jev-price-out", type=float, default=0.0, help="US$/M tokens de saída do Jev.")
-        parser.add_argument("--llm-price-in", type=float, default=0.0, help="US$/M tokens de entrada do LLM.")
-        parser.add_argument("--llm-price-out", type=float, default=0.0, help="US$/M tokens de saída do LLM.")
+        parser.add_argument("--llm-price-in", type=float, help="US$/M tokens de entrada do LLM (default: LLM_PRICES).")
+        parser.add_argument("--llm-price-out", type=float, help="US$/M tokens de saída do LLM (default: LLM_PRICES).")
         parser.add_argument("--csv", help="Grava o resultado caso a caso neste arquivo.")
 
     def handle(self, *args, **options):
         if not 0 < options["accept_at"] <= 1:
             raise CommandError("--accept-at vai de 0 (exclusive) a 1.")
+        if not 0 <= options["min_similarity"] <= 1:
+            raise CommandError("--min-similarity vai de 0 a 1.")
         requested = options["matcher"] or list(MATCHERS)
         explicit = bool(options["matcher"])
 
@@ -72,8 +89,13 @@ class Command(BaseCommand):
                     matchers.append(FuzzyMatcher(min_score=options["min_score"]))
                 elif name == "jev":
                     matchers.append(JevMatcher())
+                elif name == "llm":
+                    for model in options["llm_model"] or [None]:
+                        matchers.append(LLMMatcher(model=model))
                 else:
-                    matchers.append(LLMMatcher())
+                    matchers.append(EmbeddingMatcher(
+                        model=options["embedding_model"], min_similarity=options["min_similarity"],
+                    ))
             except MatcherNotConfigured as exc:
                 if explicit:
                     raise CommandError(str(exc)) from exc
@@ -86,10 +108,16 @@ class Command(BaseCommand):
                 "Confirme alguns em Admin → B.I. → De-paras e rode de novo."
             )
         catalog = load_catalog()
-        prices = {
-            "jev": Price(options["jev_price_in"], options["jev_price_out"]),
-            "llm": Price(options["llm_price_in"], options["llm_price_out"]),
-        }
+        prices = {"jev": Price(options["jev_price_in"], options["jev_price_out"])}
+        self.unpriced = []
+        for matcher in matchers:
+            if isinstance(matcher, LLMMatcher):
+                table_in, table_out = LLM_PRICES.get(matcher.model, (None, None))
+                price_in = options["llm_price_in"] if options["llm_price_in"] is not None else table_in
+                price_out = options["llm_price_out"] if options["llm_price_out"] is not None else table_out
+                if price_in is None or price_out is None:
+                    self.unpriced.append(matcher.model)
+                prices[matcher.name] = Price(price_in or 0.0, price_out or 0.0)
         result = run(
             cases, catalog, matchers, prices=prices,
             shortlist_size=options["shortlist"], accept_at=options["accept_at"],
@@ -109,13 +137,14 @@ class Command(BaseCommand):
             f"Lista curta de {result.shortlist_size}: o produto certo estava nela em {coverage} "
             "— é o teto de acerto de Jev e LLM.\n"
         )
-        header = f"  {'':<6} {'acerto':>13} {'aceitaria sozinho (errados)':>28} {'p50 ms':>8} {'p95 ms':>8} {'tokens in/out':>15} {'US$':>9} {'US$/1k':>8} {'falhas':>7}"
+        width = max([6, *(len(board.matcher) for board in result.boards)])
+        header = f"  {'':<{width}} {'acerto':>13} {'aceitaria sozinho (errados)':>28} {'p50 ms':>8} {'p95 ms':>8} {'tokens in/out':>15} {'US$':>9} {'US$/1k':>8} {'falhas':>7}"
         self.stdout.write(header)
         for board in result.boards:
             per_thousand = board.cost_usd / board.total * 1000 if board.total else 0.0
             p50, p95 = board.latency(0.5), board.latency(0.95)
             self.stdout.write(
-                f"  {board.matcher:<6} "
+                f"  {board.matcher:<{width}} "
                 f"{f'{board.correct}/{board.total} ({board.correct / board.total:.0%})':>13} "
                 f"{f'{board.accepted} ({board.accepted_wrong})':>28} "
                 f"{f'{p50:.0f}' if p50 is not None else '—':>8} "
@@ -125,11 +154,12 @@ class Command(BaseCommand):
             )
         self.stdout.write(
             f"\n'Aceitaria sozinho' = confiança ≥ {options['accept_at']}; o número entre parênteses é o erro "
-            "que passaria sem ninguém ver. Latência do fuzzy não é medida (local, sem rede)."
+            "que passaria sem ninguém ver. Latência do fuzzy não é medida (local, sem rede); a do embed é "
+            "local (sem rede). O embed procura no catálogo inteiro, sem a lista curta."
         )
-        if any(b.matcher == "llm" for b in result.boards) and not (options["llm_price_in"] or options["llm_price_out"]):
+        for model in self.unpriced:
             self.stdout.write(self.style.WARNING(
-                "Custo do LLM zerado: passe --llm-price-in/--llm-price-out do modelo em AI_ASSIST_MODEL."
+                f"Custo de llm:{model} zerado: modelo fora da tabela; passe --llm-price-in/--llm-price-out."
             ))
         for board in result.boards:
             failures = [row for row in board.rows if row[5]]

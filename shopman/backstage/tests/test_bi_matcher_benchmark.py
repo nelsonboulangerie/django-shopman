@@ -15,6 +15,7 @@ from shopman.offerman.models import Product
 from shopman.backstage.bi.matcher_benchmark import (
     OTHER,
     Case,
+    EmbeddingMatcher,
     FuzzyMatcher,
     JevMatcher,
     LLMMatcher,
@@ -146,8 +147,15 @@ class _FakeClient:
         message = SimpleNamespace(
             content=[SimpleNamespace(type="text", text=text)],
             usage=SimpleNamespace(input_tokens=usage[0], output_tokens=usage[1]),
+            stop_reason="end_turn",
         )
-        self.messages = SimpleNamespace(create=lambda **kwargs: message)
+        self.calls = []
+
+        def create(**kwargs):
+            self.calls.append(kwargs)
+            return message
+
+        self.messages = SimpleNamespace(create=create)
 
 
 @pytest.mark.django_db
@@ -159,10 +167,81 @@ def test_llm_reads_json_choice_and_usage(catalog):
 
 
 @pytest.mark.django_db
+def test_llm_one_contender_per_model_and_low_effort_only_where_accepted(catalog, settings):
+    settings.AI_ASSIST_MODEL = "claude-opus-5"
+    candidates = shortlist("madeleine", load_catalog(), 2)
+    default = LLMMatcher(client=_FakeClient('{"choice": "p1", "confidence": 0.9}'))
+    default.match(Case("madeleine", None), candidates)
+    assert default.name == "llm:claude-opus-5"
+    assert default.client.calls[0]["output_config"] == {"effort": "low"}
+
+    haiku = LLMMatcher(model="claude-haiku-4-5", client=_FakeClient('{"choice": "p1", "confidence": 0.9}'))
+    haiku.match(Case("madeleine", None), candidates)
+    assert haiku.name == "llm:claude-haiku-4-5"
+    assert "output_config" not in haiku.client.calls[0]  # o Haiku 4.5 recusa o esforço
+
+
+@pytest.mark.django_db
 def test_llm_choice_outside_options_is_an_error(catalog):
     matcher = LLMMatcher(client=_FakeClient('{"choice": "p9", "confidence": 0.9}'))
     with pytest.raises(MatcherResponseError):
         matcher.match(Case("madeleine", None), shortlist("madeleine", load_catalog(), 2))
+
+
+# ── Embeddings ──────────────────────────────────────────────────────────────
+
+_VECTORS = {
+    # Nomes do catálogo (minúsculos) e das consultas, num espaço de brinquedo.
+    "croissant tradicional": [1.0, 0.0, 0.0],
+    "pain au chocolat": [0.0, 1.0, 0.0],
+    "baguete tradicional": [0.0, 0.0, 1.0],
+    "madeleine": [0.5, 0.5, 0.5],
+    "pao de chocolate": [0.1, 0.99, 0.0],  # o fuzzy não liga a "pain au chocolat"; o sentido liga
+    "bolo de pote": [0.7, -0.7, 0.1],
+}
+
+
+def _toy_embed(texts):
+    return [_VECTORS[text] for text in texts]
+
+
+@pytest.mark.django_db
+def test_embedding_finds_by_meaning_in_the_whole_catalog(catalog):
+    matcher = EmbeddingMatcher(embed=_toy_embed, min_similarity=0.8)
+    matcher.prepare(load_catalog())
+    hit = matcher.match(Case("Pao de chocolate", catalog["PC"].pk), candidates=[])  # sem lista curta
+    assert hit.product_pk == catalog["PC"].pk and hit.confidence > 0.99
+    miss = matcher.match(Case("Bolo de pote", None), candidates=[])
+    assert miss.product_pk is None and miss.confidence < 0.8
+
+
+@pytest.mark.django_db
+def test_run_prepares_the_embedding_catalog_once(catalog):
+    calls = []
+
+    def counting_embed(texts):
+        calls.append(len(texts))
+        return _toy_embed(texts)
+
+    matcher = EmbeddingMatcher(embed=counting_embed)
+    result = run([Case("pao de chocolate", catalog["PC"].pk)], load_catalog(), [matcher], prices={})
+    assert calls == [4, 1]  # catálogo uma vez, consulta uma vez
+    assert result.boards[0].correct == 1
+
+
+def test_embedding_without_package_stays_out(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_fastembed(name, *args, **kwargs):
+        if name == "fastembed":
+            raise ImportError("sem fastembed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_fastembed)
+    with pytest.raises(MatcherNotConfigured, match="pip install fastembed"):
+        EmbeddingMatcher()
 
 
 # ── Placar ──────────────────────────────────────────────────────────────────
@@ -214,3 +293,22 @@ def test_command_with_explicit_matcher_without_key_fails(settings, db):
     settings.JEV_API_KEY = ""
     with pytest.raises(CommandError, match="JEV_API_KEY"):
         call_command("benchmark_alias_matchers", matcher=["jev"])
+
+
+@pytest.mark.django_db
+def test_command_prices_each_llm_model_from_the_table(catalog, settings, monkeypatch, capsys):
+    from shopman.backstage.management.commands import benchmark_alias_matchers as command
+
+    class OfflineLLM(LLMMatcher):
+        def __init__(self, *, model=None):
+            super().__init__(model=model, client=_FakeClient('{"choice": "p1", "confidence": 0.95}', usage=(1_000_000, 0)))
+
+    monkeypatch.setattr(command, "LLMMatcher", OfflineLLM)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    call_command(
+        "benchmark_alias_matchers", matcher=["llm"], llm_model=["claude-haiku-4-5", "modelo-sem-preco"],
+    )
+    out = capsys.readouterr().out
+    haiku_line = next(line for line in out.splitlines() if "llm:claude-haiku-4-5" in line)
+    assert "1.0000" in haiku_line  # 1M tokens de entrada × US$ 1/M
+    assert "Custo de llm:modelo-sem-preco zerado" in out

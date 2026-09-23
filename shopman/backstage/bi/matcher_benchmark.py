@@ -1,6 +1,6 @@
 """Piloto do de-para de produto: quem acerta, quanto demora, quanto custa.
 
-Compara três formas de responder "este item do histórico é qual produto do
+Compara formas de responder "este item do histórico é qual produto do
 catálogo?" contra o **gabarito que a casa já deu**: os ``ProductAlias``
 confirmados no Admin (com produto, ou confirmados sem produto = extinto / fora
 do catálogo). Nada aqui grava alias; o piloto só mede.
@@ -10,11 +10,14 @@ do catálogo). Nada aqui grava alias; o piloto só mede.
 - ``jev``: o modelo de decisão da TypeSafe. Recebe os K candidatos mais
   parecidos (a mesma lista curta do fuzzy) mais a opção ``other`` e devolve
   uma escolha com probabilidade. Cobra só entrada.
-- ``llm``: o mesmo pedido ao LLM que o projeto já usa (``AI_ASSIST_*``), com
-  resposta em JSON. É a linha de base que o Jev promete bater em custo e tempo.
+- ``llm:<modelo>``: o mesmo pedido a um modelo da Anthropic (credencial de
+  ``AI_ASSIST_*``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
+  linha de base que o Jev promete bater em custo e tempo.
+- ``embed``: embeddings locais (``fastembed``), o produto mais próximo em
+  significado no catálogo inteiro. Custo zero, nada sai da casa.
 
-Os três olham **só o nome**: SKU exato continua ganhando antes de tudo no
-sugestor, e não é ali que mora a dúvida. Os dois modelos veem apenas a lista
+Todos olham **só o nome**: SKU exato continua ganhando antes de tudo no
+sugestor, e não é ali que mora a dúvida. Jev e LLM veem apenas a lista
 curta, então o teto deles é a "cobertura da lista curta" que o relatório mostra
 — se o produto certo não está entre os K, nenhum dos dois tem como acertar.
 
@@ -229,16 +232,28 @@ def parse_jev_response(payload: dict, *, question: str) -> tuple[str, float, int
 _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
 
 
+# US$ por milhão de tokens (entrada, saída), preço público de 24/06/2026. Só o
+# default do placar: ``--llm-price-in/--llm-price-out`` sobrescrevem, e modelo
+# fora da tabela sai com custo zerado e aviso.
+LLM_PRICES = {
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-sonnet-5": (2.00, 10.00),
+    "claude-opus-5": (5.00, 25.00),
+    "claude-opus-5-5": (4.00, 20.00),
+}
+
+
 class LLMMatcher:
-    """O LLM do projeto (``AI_ASSIST_*``) respondendo a mesma escolha em JSON.
+    """Um modelo da Anthropic (credencial de ``AI_ASSIST_*``) respondendo a escolha em JSON.
 
     Chama o SDK direto, e não ``copy_assist.suggest``, porque o piloto precisa do
-    ``usage`` (tokens) que o transporte de texto descarta.
+    ``usage`` (tokens) que o transporte de texto descarta. Um concorrente por
+    modelo (``llm:<modelo>``), para pôr o Haiku e o modelo do dia no mesmo placar.
+    Escolher entre opções é tarefa curta: esforço ``low`` onde o modelo aceita
+    (o Haiku 4.5 recusa o parâmetro).
     """
 
-    name = "llm"
-
-    def __init__(self, *, timeout: float = 60.0, client=None):
+    def __init__(self, *, model: str | None = None, timeout: float = 60.0, client=None):
         api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
         if client is None and not api_key:
             raise MatcherNotConfigured("LLM não configurado. Defina AI_ASSIST_API_KEY.")
@@ -247,7 +262,8 @@ class LLMMatcher:
 
             client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
         self.client = client
-        self.model = settings.AI_ASSIST_MODEL
+        self.model = model or settings.AI_ASSIST_MODEL
+        self.name = f"llm:{self.model}"
 
     def build_prompt(self, case: Case, keyed: dict[str, CatalogEntry]) -> str:
         options = "\n".join(f"- {key}: {entry.name} (SKU {entry.sku})" for key, entry in keyed.items())
@@ -260,11 +276,15 @@ class LLMMatcher:
     def match(self, case: Case, candidates: list[tuple[CatalogEntry, int]]) -> Verdict:
         keyed = _choice_keys(candidates)
         started = time.perf_counter()
+        extra = {} if self.model.startswith("claude-haiku") else {"output_config": {"effort": "low"}}
         message = self.client.messages.create(
             model=self.model,
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "user", "content": self.build_prompt(case, keyed)}],
+            **extra,
         )
+        if getattr(message, "stop_reason", "") == "max_tokens":
+            raise MatcherResponseError("LLM parou no limite de tokens: resposta cortada.")
         latency_ms = (time.perf_counter() - started) * 1000
         text = "".join(block.text for block in message.content if getattr(block, "type", "") == "text")
         found = _JSON_OBJECT.search(text)
@@ -286,6 +306,71 @@ class LLMMatcher:
             input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
         )
+
+
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_MIN_SIMILARITY = 0.8
+
+
+def _unit(vector) -> list[float]:
+    values = [float(x) for x in vector]
+    norm = sum(x * x for x in values) ** 0.5 or 1.0
+    return [x / norm for x in values]
+
+
+class EmbeddingMatcher:
+    """Embeddings locais: o produto de nome mais próximo em SIGNIFICADO, no catálogo inteiro.
+
+    Roda no próprio servidor (``fastembed``, modelo multilíngue aberto baixado
+    uma vez), custo zero por consulta, nada sai da casa. Diferente de Jev e LLM,
+    não depende da lista curta do fuzzy: compara com todos os produtos, então
+    pode achar o que o fuzzy nem listou. Confiança = similaridade de cosseno,
+    que não é probabilidade: o corte (``min_similarity``) se calibra no placar.
+
+    ``fastembed`` não é dependência da imagem de deploy (puxa ``onnxruntime``);
+    sem ele o concorrente fica de fora com o comando de instalação na mensagem.
+    """
+
+    name = "embed"
+
+    def __init__(self, *, model: str = DEFAULT_EMBEDDING_MODEL, min_similarity: float = DEFAULT_MIN_SIMILARITY, embed=None):
+        if embed is None:
+            try:
+                from fastembed import TextEmbedding
+            except ImportError as exc:
+                raise MatcherNotConfigured("Embeddings indisponíveis. Instale com: pip install fastembed") from exc
+            try:
+                encoder = TextEmbedding(model)
+            except Exception as exc:  # download do modelo: rede, disco, nome errado
+                logger.warning("bi.matcher_benchmark: modelo de embeddings não carregou: %s", type(exc).__name__)
+                raise MatcherNotConfigured(f"Modelo de embeddings '{model}' não carregou: {type(exc).__name__}") from exc
+
+            def embed(texts):
+                return list(encoder.embed(texts))
+
+        self.embed = embed
+        self.min_similarity = min_similarity
+        self.vectors: list[tuple[CatalogEntry, list[float]]] = []
+
+    def prepare(self, catalog: list[CatalogEntry]) -> None:
+        """Um vetor por produto, uma vez por rodada."""
+        vectors = self.embed([entry.name.lower() for entry in catalog]) if catalog else []
+        self.vectors = [(entry, _unit(vector)) for entry, vector in zip(catalog, vectors, strict=True)]
+
+    def match(self, case: Case, candidates: list[tuple[CatalogEntry, int]]) -> Verdict:
+        started = time.perf_counter()
+        query = _unit(self.embed([case.external_name.lower()])[0])
+        best_entry, best = None, -1.0
+        for entry, vector in self.vectors:
+            similarity = sum(a * b for a, b in zip(query, vector, strict=True))
+            if similarity > best:
+                best_entry, best = entry, similarity
+        latency_ms = (time.perf_counter() - started) * 1000
+        if best_entry is None:
+            return Verdict(product_pk=None, confidence=0.0, latency_ms=latency_ms)
+        confidence = max(0.0, min(1.0, best))
+        product_pk = best_entry.pk if best >= self.min_similarity else None
+        return Verdict(product_pk=product_pk, confidence=confidence, latency_ms=latency_ms)
 
 
 # ── Placar ──────────────────────────────────────────────────────────────────
@@ -366,6 +451,9 @@ def run(
 ) -> BenchmarkResult:
     """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para o piloto."""
     boards = [Scoreboard(matcher=m.name, price=prices.get(m.name, Price()), accept_at=accept_at) for m in matchers]
+    for matcher in matchers:
+        if hasattr(matcher, "prepare"):
+            matcher.prepare(catalog)
     shortlist_hits = cases_with_product = 0
     for case in cases:
         candidates = shortlist(case.external_name, catalog, shortlist_size)
