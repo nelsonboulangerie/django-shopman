@@ -78,7 +78,12 @@ class Command(BaseCommand):
         vivos = set(Product.objects.values_list("sku", flat=True))
         destino = _mapa_de_renames()
 
-        ainda_vivos = sorted(sku for sku in destino if sku in vivos)
+        # Um código que é chave do mapa E alvo dele VOLTOU: `FENDU` virou `FE`
+        # em agosto e `FE` voltou a `FENDU` agora. Ele está vivo porque é o
+        # código de hoje, não porque o rename ficou pela metade — e cobrá-lo
+        # aqui travava o comando inteiro depois de um rename que deu certo.
+        voltaram = set(destino) & set(destino.values())
+        ainda_vivos = sorted(sku for sku in destino if sku in vivos and sku not in voltaram)
         if ainda_vivos:
             raise CommandError(
                 f"{len(ainda_vivos)} SKU(s) antigos ainda existem no catálogo: "

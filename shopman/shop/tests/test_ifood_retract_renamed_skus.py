@@ -110,3 +110,20 @@ def test_o_codigo_que_voltou_nao_e_retirado():
 
     assert "FE" in orfaos
     assert "FENDU" not in orfaos
+
+
+@pytest.mark.django_db
+def test_o_codigo_que_voltou_nao_trava_o_comando(backend):
+    """Medido no alpha em 23/09, depois do rename dar certo.
+
+    `FENDU` é chave do mapa (virou `FE` em agosto) e alvo dele (`FE` voltou a
+    `FENDU` agora). Vivo, ele parecia um rename pela metade e travava o comando
+    inteiro — depois de um rename que tinha funcionado.
+    """
+    Product.objects.create(sku="FENDU", name="Fendu", base_price_q=600)
+
+    call_command("ifood_retract_renamed_skus", stdout=StringIO())
+
+    assert backend.retirados is not None
+    assert "FE" in backend.retirados       # o código de agosto ficou órfão
+    assert "FENDU" not in backend.retirados  # o de hoje é o produto vivo
