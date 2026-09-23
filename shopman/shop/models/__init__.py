@@ -64,6 +64,7 @@ from .push_subscription import (
     PushSurface,
 )
 from .quality import QualityDefect, QualityGrade
+from .retired_product import RetiredProduct
 from .rules import RuleConfig
 from .settings_proxies import (
     ShopAppearance,
@@ -114,6 +115,7 @@ __all__ = [
     "IFoodInterruptionState",
     "IFoodStoreStatus",
     "CatalogBinding",
+    "RetiredProduct",
     "CatalogSnapshot",
     "CatalogSyncState",
     "SyncStatus",

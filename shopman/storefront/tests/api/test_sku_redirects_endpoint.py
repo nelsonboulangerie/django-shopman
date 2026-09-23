@@ -67,3 +67,70 @@ def test_manda_para_o_produto_publicado(client):
     _product("MIB")
     redirects = client.get("/api/v1/storefront/sku-redirects/").json()["redirects"]
     assert redirects["MINI-BAGUETE"] == "MIB"
+
+
+# ── Lápides: o produto apagado e a prateleira de onde ele saiu ───────────────
+
+
+def _lapide(sku: str, *collection_refs: str):
+    from shopman.shop.services.retired_urls import record
+
+    record(sku=sku, collection_refs=collection_refs)
+
+
+def _colecao_com_produto(ref: str, nome: str, sku: str):
+    from shopman.offerman.models import Collection, CollectionItem
+
+    colecao = Collection.objects.create(ref=ref, name=nome, is_active=True)
+    CollectionItem.objects.create(collection=colecao, product=_product(sku))
+    return colecao
+
+
+def test_produto_apagado_sai_com_a_colecao_de_onde_veio(client):
+    _colecao_com_produto("doces", "Doces", "MDLN")
+    _lapide("PU", "doces")
+    gone = client.get("/api/v1/storefront/sku-redirects/").json()["gone"]
+    assert gone["PU"] == {"collection": "doces", "collection_name": "Doces"}
+
+
+def test_oferece_a_primeira_colecao_que_ainda_tem_produto(client):
+    """Produto morava em duas vitrines; a que esvaziou não serve de destino."""
+    from shopman.offerman.models import Collection
+
+    Collection.objects.create(ref="combos", name="Combos", is_active=True)
+    _colecao_com_produto("salgados", "Salgados", "QJQT")
+    _lapide("TABUA", "combos", "salgados")
+    gone = client.get("/api/v1/storefront/sku-redirects/").json()["gone"]
+    assert gone["TABUA"] == {"collection": "salgados", "collection_name": "Salgados"}
+
+
+def test_colecao_vazia_nao_vira_destino(client):
+    """O `COMBO-PETIT-DEJ` era o único de "Combos": a prateleira ficou vazia."""
+    from shopman.offerman.models import Collection
+
+    Collection.objects.create(ref="combos", name="Combos", is_active=True)
+    _lapide("COMBO-PETIT-DEJ", "combos")
+    gone = client.get("/api/v1/storefront/sku-redirects/").json()["gone"]
+    assert gone["COMBO-PETIT-DEJ"] == {"collection": "", "collection_name": ""}
+
+
+def test_produto_que_voltou_a_existir_perde_a_lapide(client):
+    """Lápide de quem está vivo mentiria: a página dele responde."""
+    _product("PU")
+    _lapide("PU", "doces")
+    gone = client.get("/api/v1/storefront/sku-redirects/").json()["gone"]
+    assert "PU" not in gone
+
+
+def test_codigo_que_renasceu_fora_da_vitrine_nao_diz_que_nao_existe(client):
+    """Renascer despublicado é existir: 410 diria "não volta" sobre algo que voltou.
+
+    O `GL` sai hoje e volta como duas geleias; se alguém reaproveitar o código,
+    a resposta certa volta a ser o 404, que é reversível.
+    """
+    produto = _product("GL")
+    produto.is_published = False
+    produto.save()
+    _lapide("GL", "mercearia")
+    gone = client.get("/api/v1/storefront/sku-redirects/").json()["gone"]
+    assert "GL" not in gone
