@@ -307,6 +307,44 @@ class StorefrontSiteView(APIView):
         return Response({"site": projection_data(site)})
 
 
+def _gone_products() -> dict:
+    """{sku apagado: {"collection": ref, "collection_name": nome}} — o 410 da loja.
+
+    Produto apagado nao deixa rastro no banco, e o 404 mentiria por omissao:
+    diria "nunca existiu" sobre um endereco que o Google indexou. A lapide
+    (``RetiredProduct``) guarda que existiu e de que prateleiras ele saiu.
+
+    Sai a PRIMEIRA coleccao que ainda existe e ainda tem produto publicado. A
+    prateleira vazia nao vira destino: a colecao "Combos" ficou sem nenhum item
+    quando o combo saiu, em 23/09/2026.
+
+    A lapide vale enquanto o SKU nao EXISTIR no catalogo — e existir aqui inclui
+    o despublicado. Codigo pode renascer fora da vitrine (a geleia `GL` sai hoje
+    e volta como dois produtos), e dizer "nao existe mais" sobre algo que existe
+    seria mentira: para esse a resposta e o 404, que e reversivel.
+    """
+    from shopman.shop.models import RetiredProduct
+    from shopman.shop.projections import catalog_context
+
+    def primeira_viva(refs):
+        for ref in refs:
+            colecao = catalog_context.get_active_collection(ref)
+            if colecao is None:
+                continue
+            if catalog_context.filter_by_collection(catalog_context.published_products(), ref).exists():
+                return ref, colecao.name
+        return "", ""
+
+    existentes = frozenset(catalog_context.products_queryset().values_list("sku", flat=True))
+    saida = {}
+    for lapide in RetiredProduct.objects.all():
+        if lapide.sku in existentes:
+            continue
+        ref, nome = primeira_viva(lapide.refs)
+        saida[lapide.sku] = {"collection": ref, "collection_name": nome}
+    return saida
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
@@ -344,7 +382,10 @@ class StorefrontSkuRedirectsView(APIView):
         # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
         # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
         published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
-        response = Response({"redirects": retired_skus(published)})
+        response = Response({
+            "redirects": retired_skus(published),
+            "gone": _gone_products(),
+        })
         response["Cache-Control"] = "public, max-age=300"
         return response
 

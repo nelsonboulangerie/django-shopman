@@ -33,6 +33,7 @@ from .campaign import (
     Trigger,
 )
 from .catalog_binding import CatalogBinding, CatalogSnapshot
+from .retired_product import RetiredProduct
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
 from .concierge import (
@@ -114,6 +115,7 @@ __all__ = [
     "IFoodInterruptionState",
     "IFoodStoreStatus",
     "CatalogBinding",
+    "RetiredProduct",
     "CatalogSnapshot",
     "CatalogSyncState",
     "SyncStatus",
