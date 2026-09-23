@@ -139,9 +139,20 @@ fora.
 ## Fora deste escopo
 
 - **Revenda de industrializado** (chás Kãnfa em lata e pouch, água mineral,
-  geleias, queijos): o NCM vem da NF-e do fornecedor, não desta revisão. Fica
-  de pé a pergunta que já estava no seed — se o perfil deles é `resale`, passam
-  a exigir CSOSN 500, CFOP 5405/6405 e **CEST por produto**.
+  geleias, queijos): o NCM vem da NF-e do fornecedor, não desta revisão.
+
+  ⚠️ **E não há pergunta de perfil aqui — eu cheguei a levantar uma, e estava
+  errado.** O eixo do `FiscalProfile` é **ST × não-ST**, não "quem fabricou":
+  `own_production` é, na letra do código, *"fabricação própria **+ revenda
+  comum**"*, e é a parametrização que o contador já fez (SEFA-PR). Chá seco é
+  revenda comum; a ST no segmento de bebida alcança refrigerante, água e
+  industrializado. O `purchase.resale = true` é outro eixo — ele diz ao Compras
+  que a casa compra pronto.
+
+  **O chá da Kãnfa é duas coisas, e o cadastro já as separa:** a folha seca que
+  se revende (12 produtos, lata e pouch, NCM 0902.20.00) e a bebida preparada
+  na hora com o blend como insumo (7 produtos, com ficha apontando para
+  `CHA-BLEU`, `CHA-CHAI`…, NCM 2202.99.00).
 - **Mercearia da casa** (`MT`, `BK`, `TPND`, `RTAT`, `GL`, `LN`): já estavam
   marcados "validar com o contador" e continuam.
 
