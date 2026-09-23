@@ -29,6 +29,8 @@ watch(() => data.value, value => {
   setFromServer(value?.cart)
 }, { immediate: true })
 
+requireContentOnSsr(error.value, !!data.value?.home, 'Loja')
+
 const home = computed(() => data.value?.home || null)
 const featured = computed(() => home.value?.featured_items || [])
 const sectionsCopy = computed(() => home.value?.sections_copy || null)

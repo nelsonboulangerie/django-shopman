@@ -29,6 +29,8 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
 if (error.value?.statusCode === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
 }
+// Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.
+requireContentOnSsr(error.value, !!data.value?.product, 'Produto')
 
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
