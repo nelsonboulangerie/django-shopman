@@ -161,10 +161,14 @@ RENAMES: tuple[tuple[str, str], ...] = (
 #: esquecimento. A planilha não tem linha para estes oito, e um deles
 #: (``MT``) ainda é insumo de ficha — ver ``WP-INSUMOS-SEM-FRICCAO.md``.
 FORA_DA_TABELA: dict[str, str] = {
+    # Um produto não vira dois por rename: o `GL` é placeholder de sabor
+    # indefinido, e no lugar dele nascem os DOIS minis reais (damasco e frutas
+    # vermelhas, GTINs distintos). Renomeá-lo para um dos dois declararia um
+    # sabor que ele nunca teve e esconderia o outro. Sai como exclusão, e os
+    # dois entram como produto novo — outra fatia deste WP.
     "GL": (
-        "o dono decidiu em 22/09 que o pote MINI não vai mais existir — a planilha o "
-        "renomearia para GELEIA-DAMASCO-STDALFOUR-28. Sai do catálogo; a geleia que "
-        "fica é a de 284 g, por sabor, e essas ainda vão nascer"
+        "o dono decidiu em 22/09 que o placeholder sai: no lugar dele nascem os DOIS "
+        "minis St. Dalfour reais, damasco e frutas vermelhas. Rename não divide produto"
     ),
     "BK": "sem linha na planilha — a casa ainda não faz o bacon (ver apply_product_brands)",
     "CV": "sem linha na planilha — Cream Soda do dia, a casa ainda não faz",

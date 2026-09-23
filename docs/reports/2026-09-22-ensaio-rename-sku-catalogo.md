@@ -188,12 +188,13 @@ Ao juntá-los apareceram duas coisas que o par cru esconde:
    gergelim) e `MS → MELICE` (Melon Iced Sando). Deixo como estão ou encurto?
    *(`CROPQM` e `HOBBMI` têm o mesmo problema, mas são produtos a criar, fora
    desta fatia.)*
-2. ~~**`GL → GELEIA-DAMASCO-STDALFOUR-28`**~~ — **respondido em 22/09: o pote
-   mini não vai mais existir.** O par saiu da tabela, a linha virou "excluir", e
-   `GL` passou a `FORA_DA_TABELA` com o motivo escrito. A geleia que fica é a de
-   284 g, por sabor, e essas ainda vão nascer. Sobrou uma ponta: o
-   `GELEIA-FRUTASVERM-STDALFOUR-28` **também é mini** e está marcado para criar —
-   se o mini sai, ele não nasce.
+2. ~~**`GL → GELEIA-DAMASCO-STDALFOUR-28`**~~ — **respondido em 22/09.** O `GL`
+   é placeholder de sabor indefinido, e existem **dois** minis St. Dalfour reais:
+   damasco e frutas vermelhas, com GTINs distintos. **Rename não divide produto**
+   — renomeá-lo para um dos dois declararia um sabor que ele nunca teve e
+   esconderia o outro. O `GL` sai como exclusão, os dois minis entram como
+   produto novo (fatia de criação, não de rename), e o par saiu da tabela com o
+   motivo escrito em `FORA_DA_TABELA`.
 
 ## Quatro pares renomeiam algo que a planilha manda tirar
 
