@@ -63,9 +63,9 @@ from .surface import (
     StorefrontCartView,
     StorefrontCheckoutView,
     StorefrontHomeView,
+    StorefrontLegalView,
     StorefrontMenuView,
     StorefrontProductView,
-    StorefrontLegalView,
     StorefrontSiteView,
 )
 from .telemetry import ClientErrorView
