@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import urllib.request
 import uuid
-
-from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -18,32 +14,22 @@ def cookie_name() -> str:
     return doorman_settings.DEVICE_TRUST_COOKIE_NAME
 
 
-def _geolocate_ip(ip: str) -> str:
-    """Resolve IP to city/region via ip-api.com, cached for the account surface."""
-    if not ip or ip.startswith("127.") or ip.startswith("10.") or ip == "::1":
-        return ""
-
-    cache_key = f"geo:{ip}"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
-
-    try:
-        url = f"http://ip-api.com/json/{ip}?fields=city,regionName,country&lang=pt-BR"
-        with urllib.request.urlopen(url, timeout=2) as resp:
-            data = json.loads(resp.read())
-        if data.get("city"):
-            location = f"{data['city']}, {data.get('regionName', '')}"
-            cache.set(cache_key, location, 86400)
-            return location
-    except Exception:
-        logger.exception("geolocate_ip_failed ip=%s", ip)
-
-    cache.set(cache_key, "", 3600)
-    return ""
-
-
 def list_devices(*, customer_id, raw_token: str | None) -> list[dict]:
+    """Os aparelhos confiáveis do titular, para a tela "Segurança e dados".
+
+    ⚠️ NÃO enriqueça esta lista com serviço de terceiro. Até 23/09/2026 havia aqui um
+    `_geolocate_ip()` que mandava o IP do titular para o `ip-api.com`, em HTTP puro, sem
+    TLS, a cada carga da tela, só para escrever "Londrina, Paraná" ao lado do
+    aparelho. IP de titular é dado pessoal sob a LGPD, e esse terceiro não constava da
+    lista de operadores da política de privacidade, que se declara "a lista inteira".
+    O que a casa ganhava (um rótulo de cidade) não pagava o que a casa mandava para fora.
+
+    A tela continua respondendo "fui eu que entrei?" com o que nunca precisou sair daqui:
+    o navegador e o aparelho (`label`), quando foi o último uso, quando foi registrado, e
+    o selo "Este aparelho" no que a pessoa está segurando agora. O IP segue GRAVADO em
+    `TrustedDevice.ip_address` e continua visível ao próprio titular na exportação LGPD e
+    ao operador no Admin — guardar é uma coisa, mandar para fora é outra.
+    """
     from shopman.doorman import SubjectType, TrustedDevice, hash_device_token
 
     # ⚠️ Era `filter(customer_id=...)`, e esse campo não existe mais: o model passou a usar
@@ -59,13 +45,11 @@ def list_devices(*, customer_id, raw_token: str | None) -> list[dict]:
         if not device.is_valid:
             continue
 
-        location = _geolocate_ip(device.ip_address) if device.ip_address else ""
         device_list.append({
             "id": str(device.id),
             "label": device.label.replace(" / ", " no ") if device.label else "",
             "created_at": device.created_at,
             "last_used_at": device.last_used_at,
-            "location": location,
             "is_current": current_hash is not None and device.token_hash == current_hash,
         })
 

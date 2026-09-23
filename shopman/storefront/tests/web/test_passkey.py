@@ -463,6 +463,56 @@ def test_the_device_list_survives_a_trusted_device(client, person):
     assert [row["label"] for row in rows] == ["iPhone da Ana"]
 
 
+def test_the_ip_of_the_owner_never_leaves_for_a_third_party(client, person, monkeypatch):
+    """O IP do titular fica em casa, mesmo com a tela aberta.
+
+    Até 23/09/2026 abrir "Segurança e dados" mandava o IP gravado no aparelho para o
+    `ip-api.com`, em HTTP sem TLS, só para escrever o nome da cidade ao lado do aparelho.
+    O teste prende as duas metades da correção: nenhuma saída de rede, e nenhum rótulo de
+    localização no contrato da tela.
+
+    ⚠️ O `urlopen` é vigiado, não bloqueado por import: se alguém reintroduzir a chamada,
+    quem falha é esta asserção com o nome do terceiro, e não um erro de rede obscuro na CI.
+    """
+    import urllib.request
+
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models.device_trust import SubjectType
+
+    chamadas = []
+
+    def _nao_deveria_sair(url, *args, **kwargs):
+        chamadas.append(str(getattr(url, "full_url", url)))
+        raise AssertionError(f"a tela de segurança saiu para a rede: {chamadas[-1]}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _nao_deveria_sair)
+
+    TrustedDevice.objects.create(
+        subject_type=SubjectType.CUSTOMER,
+        subject_id=str(person.uuid),
+        token_hash="b" * 64,
+        label="Chrome / Android",
+        ip_address="200.150.100.50",
+    )
+    _sign_in(client, person)
+
+    response = client.get("/api/v1/account/devices/")
+
+    assert response.status_code == 200, response.content
+    assert chamadas == []
+
+    row = response.json()["devices"][0]
+    assert "location" not in row
+    assert "200.150.100.50" not in response.content.decode()
+
+    # O que sobra continua respondendo "fui eu que entrei?": o navegador e o aparelho,
+    # quando foi o último uso, e quando foi registrado.
+    assert row["label"] == "Chrome no Android"
+    assert row["last_used_at_display"]
+    assert row["created_at_display"]
+    assert response.json()["copy"]["last_used_prefix"] == "Último uso em"
+
+
 def test_a_device_of_someone_else_never_appears(client, person, db):
     """O filtro por sujeito é o que separa as listas — e era ele que estava quebrado."""
     from shopman.doorman.models import TrustedDevice

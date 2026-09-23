@@ -118,6 +118,7 @@ const devicesCopy = computed(() => devicesResponse.value?.copy || {
   empty_title: 'Nenhum aparelho confiável',
   empty_message: 'Quando você optar por confiar neste aparelho no login, ele aparecerá aqui.',
   current_badge: 'Este aparelho',
+  last_used_prefix: 'Último uso em',
   registered_prefix: 'Registrado em',
   revoke_cta: 'Remover',
   revoke_all_cta: 'Remover todos os aparelhos',
@@ -567,8 +568,8 @@ useSeoMeta({ title: 'Segurança e dados' })
                 <UiBadge v-if="device.is_current" variant="secondary">{{ devicesCopy.current_badge }}</UiBadge>
               </UiItemTitle>
               <UiItemDescription>
-                <span>{{ device.last_used_at_display }}</span>
-                <span v-if="device.location"> · {{ device.location }}</span>
+                <span v-if="device.last_used_at">{{ devicesCopy.last_used_prefix }} {{ device.last_used_at_display }}</span>
+                <span v-else>{{ device.last_used_at_display }}</span>
                 <span> · {{ devicesCopy.registered_prefix }} {{ device.created_at_display }}</span>
               </UiItemDescription>
             </UiItemContent>

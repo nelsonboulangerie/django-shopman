@@ -129,7 +129,6 @@ def _serialize_device(device: dict) -> dict:
         "created_at_display": _fmt_dt(device.get("created_at")),
         "last_used_at": device.get("last_used_at").isoformat() if device.get("last_used_at") else None,
         "last_used_at_display": _fmt_dt(device.get("last_used_at")) or "Ainda não usado novamente",
-        "location": device.get("location") or "",
         "is_current": bool(device.get("is_current")),
     }
 
@@ -1039,6 +1038,11 @@ def _devices_copy() -> dict:
         "empty_title": title("DEVICE_LIST_EMPTY", "Nenhum aparelho confiável"),
         "empty_message": message("DEVICE_LIST_EMPTY", "Quando você optar por confiar neste aparelho no login, ele aparecerá aqui."),
         "current_badge": title("DEVICE_LIST_CURRENT", "Este aparelho"),
+        # ⚠️ Este prefixo nasceu junto com a saída do rótulo de cidade (23/09/2026). Sem ele
+        # a linha do aparelho vira "22/09/2026 às 14:30 · Registrado em 20/09/2026": duas
+        # datas, e a primeira sem dizer do que é. Quem pergunta "fui eu que entrei?" está
+        # justamente lendo essa primeira data.
+        "last_used_prefix": message("DEVICE_LIST_LAST_USED_PREFIX", "Último uso em"),
         "registered_prefix": message("DEVICE_LIST_REGISTERED_PREFIX", "Registrado em"),
         "revoke_cta": title("DEVICE_REVOKE_CTA", "Remover"),
         "revoke_all_cta": title("DEVICE_REVOKE_ALL_CTA", "Remover todos os aparelhos"),

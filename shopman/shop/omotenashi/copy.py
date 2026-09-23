@@ -1299,6 +1299,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "DEVICE_LIST_CURRENT": {
         WILDCARD: {WILDCARD: CopyEntry(title="Este aparelho")},
     },
+    "DEVICE_LIST_LAST_USED_PREFIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Último uso em")},
+    },
     "DEVICE_LIST_REGISTERED_PREFIX": {
         WILDCARD: {WILDCARD: CopyEntry(message="Registrado em")},
     },

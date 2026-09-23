@@ -1200,7 +1200,6 @@ export interface AccountDeviceProjection {
   created_at_display: string
   last_used_at: string | null
   last_used_at_display: string
-  location: string
   is_current: boolean
 }
 
@@ -1209,6 +1208,7 @@ export interface AccountDeviceCopy {
   empty_title: string
   empty_message: string
   current_badge: string
+  last_used_prefix: string
   registered_prefix: string
   revoke_cta: string
   revoke_all_cta: string
