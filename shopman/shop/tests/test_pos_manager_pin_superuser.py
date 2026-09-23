@@ -1,9 +1,9 @@
-"""Superusuário não assina exceção do caixa por PIN nem por crachá.
+"""Superusuário assina exceção do caixa ("Quem autoriza?") por PIN e por crachá.
 
-O PIN é credencial de balcão: curta, digitada à vista da fila e, no elenco de
-dev, a mesma para todo mundo. ``has_perm`` de superusuário é sempre True, então
-a conta passava no ``cashman.adjust_shift`` e qualquer operador que soubesse o
-PIN do ``admin`` se autorizava escolhendo "Admin" em "Quem autoriza?".
+O PIN é individual, em HMAC, com limite de tentativas e bloqueio: o dono que
+cadastrou o dele assina como qualquer gerente. O risco concreto era o PIN
+compartilhado do seed, e esse continua fechado no ``setup_operators``. Quem opera
+não se autoriza, superusuário ou não.
 """
 
 from __future__ import annotations
@@ -28,13 +28,40 @@ def _com_pin_e_cracha(user):
     return user
 
 
-def test_superusuario_nao_autoriza_por_pin_nem_por_cracha():
-    _com_pin_e_cracha(
+def _dono():
+    return _com_pin_e_cracha(
         get_user_model().objects.create_user("admin", password="x", is_staff=True, is_superuser=True)
     )
 
-    assert _verify_manager_pin("admin", "1234", operator_username="pos:fran") is None
-    assert _verify_manager_badge(BADGE, operator_username="pos:fran") is None
+
+def test_superusuario_autoriza_por_pin_e_por_cracha():
+    _dono()
+
+    assert _verify_manager_pin("admin", "1234", operator_username="pos:fran").username == "admin"
+    assert _verify_manager_badge(BADGE, operator_username="pos:fran").username == "admin"
+
+
+def test_superusuario_com_pin_errado_nao_autoriza():
+    _dono()
+
+    assert _verify_manager_pin("admin", "0000", operator_username="pos:fran") is None
+
+
+def test_superusuario_nao_autoriza_a_propria_operacao():
+    _dono()
+
+    assert _verify_manager_pin("admin", "1234", operator_username="pos:admin") is None
+    assert _verify_manager_badge(BADGE, operator_username="pos:admin") is None
+
+
+def test_quem_autoriza_lista_o_superusuario_menos_quando_ele_opera():
+    from shopman.backstage.projections.pos import _manager_cards
+
+    dono = _dono()
+    fran = get_user_model().objects.create_user("fran", password="x", is_staff=True)
+
+    assert [c["username"] for c in _manager_cards(fran)] == ["admin"]
+    assert _manager_cards(dono) == ()
 
 
 def test_gerente_de_verdade_continua_autorizando():

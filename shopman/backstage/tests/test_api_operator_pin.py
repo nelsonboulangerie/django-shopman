@@ -68,26 +68,41 @@ class POSOperatorApiTests(TestCase):
         cred.save(update_fields=["badge_hash"])
         return dono
 
-    def test_superuser_nao_destrava_por_pin(self):
-        """Superusuário não é operador de balcão: a sessão que sairia do PIN
-        herdaria `has_perm` sempre True (backup com dado de cliente, reset de PIN
-        alheio). O seed dava a ele o mesmo 1234 do balcão inteiro."""
+    def test_superuser_destrava_por_pin(self):
+        """O superusuário destrava como qualquer operador: o destrave é `login()`
+        real como a pessoa, e o PIN é dele, individual. Sem `perm` e com a do PDV."""
         dono = self._superuser_with_pin_and_badge()
         for perm in (POS_PERM, ""):
+            self.client.post(LOCK)
             resp = self.client.post(UNLOCK, {"operator_id": dono.pk, "pin": "1234", "perm": perm})
-            self.assertEqual(resp.status_code, 403, perm)
-        self.assertNotIn("_auth_user_id", self.client.session)
+            self.assertEqual(resp.status_code, 200, perm)
+            self.assertEqual(resp.json()["operator"]["name"], "Admin")
+            self.assertEqual(str(self.client.session["_auth_user_id"]), str(dono.pk))
 
-    def test_superuser_nao_destrava_por_cracha(self):
-        self._superuser_with_pin_and_badge()
-        resp = self.client.post(UNLOCK, {"badge": "abcdef012345", "perm": POS_PERM})
+    def test_superuser_com_pin_errado_nao_destrava(self):
+        dono = self._superuser_with_pin_and_badge()
+        resp = self.client.post(UNLOCK, {"operator_id": dono.pk, "pin": "0000", "perm": POS_PERM})
         self.assertEqual(resp.status_code, 403)
         self.assertNotIn("_auth_user_id", self.client.session)
 
-    def test_superuser_fora_do_seletor_da_tela_de_bloqueio(self):
+    def test_superuser_destrava_por_cracha(self):
+        dono = self._superuser_with_pin_and_badge()
+        resp = self.client.post(UNLOCK, {"badge": "abcdef012345", "perm": POS_PERM})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(str(self.client.session["_auth_user_id"]), str(dono.pk))
+
+    def test_superuser_com_pin_aparece_no_seletor_da_tela_de_bloqueio(self):
         self._superuser_with_pin_and_badge()
         resp = self.client.get("/api/v1/backstage/operator/eligible/", {"perm": POS_PERM})
         self.assertEqual(resp.status_code, 200)
+        names = [o["username"] for o in resp.json()["operators"]]
+        self.assertEqual(names, ["admin", "ana"])
+
+    def test_superuser_sem_pin_fica_fora_do_seletor(self):
+        """O filtro de ter credencial vale para ele também: quem não cadastrou PIN
+        não tem o que digitar na tela de bloqueio."""
+        User.objects.create_user("admin", password="x", is_staff=True, is_superuser=True)
+        resp = self.client.get("/api/v1/backstage/operator/eligible/", {"perm": POS_PERM})
         names = [o["username"] for o in resp.json()["operators"]]
         self.assertEqual(names, ["ana"])
 
