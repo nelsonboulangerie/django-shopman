@@ -161,10 +161,24 @@ qualquer permissão avulsa que alguém tenha dado à mão:
 
 | Usuário | Grupo | Entra com |
 |---|---|---|
-| `admin` | **Dono** (+ superusuário) | só senha `admin` — superusuário não destrava por PIN nem crachá |
+| `admin` | **Dono** (+ superusuário) | senha `admin`; o comando não dá PIN nem crachá a ele (ver abaixo) |
 | `joyce` | **Gerente** | só PIN `1234` |
 | `fran` | **Caixa** (loja) | PIN `1234`, crachá emitido |
 | `diofer` | **Cozinha** (produção) | PIN `1234`, crachá emitido |
+
+**Superusuário e PIN.** O superusuário destrava os apps de operador por PIN e
+por crachá como qualquer operador, aparece na tela de bloqueio e assina "Quem
+autoriza?" — desde que tenha PIN cadastrado. O destrave é um `login()` real como
+a pessoa (a sessão cicla, nada do anterior atravessa), e o PIN é individual, em
+HMAC, com limite de tentativas e bloqueio. Três coisas continuam fechadas:
+
+- `setup_operators` **não** dá o PIN de dev (`1234`) nem crachá ao superusuário, e
+  também não apaga o que ele já tem: o dono cadastra o próprio PIN e ele sobrevive
+  a toda rodada do comando;
+- `reset_operator_pin` recusa alvo superusuário (`superuser_target`): gerente não
+  reseta o PIN do dono;
+- terminal autônomo nunca age como superusuário
+  (`station_trust.autonomous_operator_for` / `eligible_station_operators`).
 
 Serve para **consertar acesso no staging sem rodar o `seed`**, que recriaria
 catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.
