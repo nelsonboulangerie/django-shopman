@@ -83,6 +83,13 @@ RESALE: dict[str, dict[str, str]] = {
     # 70g em 22/09, então o identificador vale — o nome da peça é corrigido na
     # curadoria do catálogo, e o SKU segue o mesmo (SKU é endereço, não
     # descrição: trocá-lo quebraria o histórico de venda).
+    # ⚠️ SEM GTIN, e isto é FATO do produto, não busca mal feita (23/09/2026).
+    # O fabricante declara `cEAN=SEM GTIN` para esta lata em DUAS notas (8246 de
+    # 01/07 e 8472 de 03/08) — e na MESMA nota declara o GTIN do pouch irmão no
+    # campo certo. Na loja da própria marca ela é o único item com código
+    # interno (`Acon_L50`) onde todos os vizinhos trazem um GTIN-13. Duas
+    # fontes do fabricante concordam: a lata do Aconchego não tem GTIN
+    # registrado. Só uma embalagem na mão muda esta linha.
     "CHA-ACONCHEGO-KANFA-L50": {"brand": "Kãnfa"},
     "CHA-ACONCHEGO-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850316"},
     "CHA-INTIMIDADE-KANFA-L50": {"brand": "Kãnfa", "gtin": "7898708850347"},
@@ -93,8 +100,15 @@ RESALE: dict[str, dict[str, str]] = {
     "CHA-MAMA-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850682"},
     "CHA-NAMASTE-KANFA-L70": {"brand": "Kãnfa", "gtin": "7898708850668"},
     "CHA-NAMASTE-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850644"},
-    "CHA-CHALOSOFIA-KANFA-P50": {"brand": "Kãnfa"},
-    "CHA-VITAL-KANFA-P50": {"brand": "Kãnfa"},
+    # Estes dois vieram da LOJA DA MARCA (kanfa.com.br), não de nota: nenhuma
+    # NF-e nossa os declara — a de 01/07 traz a Chalosofia com `cProd=CFOP5102`,
+    # que é o CFOP digitado no campo do produto. A loja guarda o GTIN-13 no
+    # campo de SKU, às vezes com um ou dois dígitos colados no fim. A regra não
+    # é palpite: aplicada aos oito chás cujo GTIN já tínhamos lido das notas do
+    # fornecedor, ela reproduz os OITO. Os dois abaixo passam no dígito
+    # verificador GS1 e usam o mesmo prefixo de empresa 7898708.
+    "CHA-CHALOSOFIA-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850460"},
+    "CHA-VITAL-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850729"},
 }
 
 
