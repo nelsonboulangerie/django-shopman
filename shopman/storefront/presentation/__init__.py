@@ -32,7 +32,6 @@ from .catalog import (
 )
 from .checkout import CheckoutProjection, build_checkout
 from .fomo import FomoBadge, badges_for_product
-from .legal import LegalProjection, ProcessorProjection, build_legal
 from .home import (
     AuthCopyProjection,
     CopyEntryProjection,
@@ -45,6 +44,7 @@ from .home import (
     ShopStatusProjection,
     build_home,
 )
+from .legal import LegalProjection, ProcessorProjection, build_legal
 from .order_history import (
     OrderHistoryProjection,
     build_order_history,
