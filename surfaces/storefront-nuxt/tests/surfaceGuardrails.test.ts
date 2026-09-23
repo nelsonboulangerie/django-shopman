@@ -277,8 +277,16 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain("ref: 'order'")
     expect(hero).toContain("ref: 'reorder'")
     expect(hero).toContain("ref: 'handmade'")
-    expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+imageUrl/)
-    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+imageUrl/)
+    expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    // Foto da casa, e uma por formato: o herói é faixa larga no computador e
+    // tela cheia em pé no celular — uma foto só perde metade do assunto num
+    // dos dois. Banco de imagem aqui é padaria de outra gente na nossa vitrine.
+    expect(hero).not.toContain('images.unsplash.com')
+    expect(hero).toContain('<source media="(min-width: 640px)"')
+    for (const foto of ['facade6', 'facade2', 'selfservice', 'facade4', 'interior', 'baguette']) {
+      expect(hero).toContain(`/img/home/${foto}.webp`)
+    }
     expect(hero).toContain('copy.reorder_title_prefix')
     expect(hero).toContain('copy.handmade_title_prefix')
     expect(hero).toContain('data-home-hero-carousel')
