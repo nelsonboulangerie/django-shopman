@@ -62,6 +62,9 @@ def _catalog_sku_by_external() -> dict[str, str]:
     try:
         from shopman.backstage.models import ProductAlias
     except Exception:  # pragma: no cover — backstage ausente do deployment
+        # Sem o de-para a cesta histórica segue com o código da fonte, que é o
+        # que ela é. Vale dizer, porque a afinidade fica menos costurada.
+        logger.debug("baskets: de-para indisponível; cesta histórica segue com o código da fonte.")
         return {}
     return dict(
         ProductAlias.objects.confirmed()
