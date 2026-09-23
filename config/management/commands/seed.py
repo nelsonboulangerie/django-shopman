@@ -3579,7 +3579,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FERMENTO-NATURAL", Decimal("1.700")),
                     ("FARINHA-T65", Decimal("1.700")),
-                    ("AGUA", Decimal("1.700")),
+                    ("AGUA-FILTRADA", Decimal("1.700")),
                 ],
             },
             {
@@ -3589,7 +3589,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("8.4"),
                 "items": [
                     ("FARINHA-T65", Decimal("5.000")),
-                    ("AGUA", Decimal("3.500")),
+                    ("AGUA-FILTRADA", Decimal("3.500")),
                 ],
             },
             {
@@ -3600,7 +3600,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1.9"),
                 "items": [
                     ("FARINHA-T55", Decimal("1.000")),
-                    ("AGUA", Decimal("1.000")),
+                    ("AGUA-FILTRADA", Decimal("1.000")),
                 ],
             },
             {
@@ -3624,7 +3624,7 @@ class Command(BaseCommand):
                     ("FARINHA-T65", Decimal("2.500")),
                     ("FARINHA-INTEGRAL", Decimal("2.500")),
                     ("FARINHA-CENTEIO", Decimal("0.600")),
-                    ("AGUA", Decimal("3.500")),
+                    ("AGUA-FILTRADA", Decimal("3.500")),
                     ("LEVAIN", Decimal("1.500")),
                     ("SAL", Decimal("0.100")),
                 ],
@@ -3636,7 +3636,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("10"),
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
-                    ("AGUA", Decimal("4.000")),
+                    ("AGUA-FILTRADA", Decimal("4.000")),
                     ("LEVAIN", Decimal("1.500")),
                     ("AZEITE", Decimal("0.228")),
                     ("SAL", Decimal("0.100")),
@@ -3721,7 +3721,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T45", Decimal("4.800")),
                     ("MANTEIGA-FRANCESA", Decimal("3.200")),
-                    ("AGUA", Decimal("1.800")),
+                    ("AGUA-FILTRADA", Decimal("1.800")),
                     ("SAL", Decimal("0.090")),
                 ],
             },
@@ -3971,7 +3971,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("8.2"),
                 "items": [
                     ("FARINHA-T65", Decimal("5.000")),
-                    ("AGUA", Decimal("3.000")),
+                    ("AGUA-FILTRADA", Decimal("3.000")),
                     ("AZEITE", Decimal("0.137")),
                     ("FERMENTO-BIOLOGICO", Decimal("0.100")),
                     ("SAL", Decimal("0.100")),
@@ -4536,7 +4536,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.015")),
-                    ("AGUA", Decimal("0.200")),
+                    ("AGUA-FILTRADA", Decimal("0.200")),
                 ],
             },
             {
@@ -4604,7 +4604,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-CAMILLE", Decimal("0.008")),
-                    ("AGUA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
                 ],
             },
             {
@@ -4615,7 +4615,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-ROUGE", Decimal("0.008")),
-                    ("AGUA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
                 ],
             },
             {
@@ -4626,7 +4626,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-SOPHIE", Decimal("0.008")),
-                    ("AGUA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
                 ],
             },
             {
@@ -4637,7 +4637,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-BLEU", Decimal("0.008")),
-                    ("AGUA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
                 ],
             },
             {
@@ -4649,7 +4649,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CHA-HIBISCO", Decimal("0.008")),
                     ("ACUCAR", Decimal("0.015")),
-                    ("AGUA", Decimal("0.300")),
+                    ("AGUA-FILTRADA", Decimal("0.300")),
                 ],
             },
             {
@@ -4662,7 +4662,7 @@ class Command(BaseCommand):
                     ("CHA-CHAI", Decimal("0.008")),
                     ("LIMAO", Decimal("0.020")),
                     ("ACUCAR", Decimal("0.015")),
-                    ("AGUA", Decimal("0.250")),
+                    ("AGUA-FILTRADA", Decimal("0.250")),
                 ],
             },
             {
@@ -4676,7 +4676,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
                     ("LEITE", Decimal("0.052")),
-                    ("AGUA", Decimal("0.200")),
+                    ("AGUA-FILTRADA", Decimal("0.200")),
                 ],
             },
             {
@@ -4711,7 +4711,7 @@ class Command(BaseCommand):
             "FARINHA-T45":  {"label": "Farinha de trigo T45",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-INTEGRAL":  {"label": "Farinha de trigo integral", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 340, "carbohydrates_g": 72, "sugars_g": 0.4, "proteins_g": 13, "total_fat_g": 2.5, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 10.7, "sodium_mg": 2}},
             "FARINHA-CENTEIO":      {"label": "Farinha de centeio",     "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 338, "carbohydrates_g": 76, "sugars_g": 1.0, "proteins_g": 10, "total_fat_g": 1.7, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 15.0, "sodium_mg": 2}},
-            "AGUA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
+            "AGUA-FILTRADA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
             "FERMENTO-NATURAL": {"label": "Fermento natural (levain)", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 220, "carbohydrates_g": 45, "sugars_g": 0.5, "proteins_g": 7,  "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.8,  "sodium_mg": 5}},
             "FERMENTO-BIOLOGICO": {"label": "Fermento biológico",     "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 105, "carbohydrates_g": 12, "sugars_g": 0,   "proteins_g": 13, "total_fat_g": 1.5, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 8.1,  "sodium_mg": 30}},
             "SAL":          {"label": "Sal marinho",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
@@ -4781,32 +4781,12 @@ class Command(BaseCommand):
         # iguais fariam a venda e o consumo dividirem o mesmo quant no ledger —
         # ver shopman/shop/services/sku_namespace.py.
         #
-        # A água da casa é `AGUA` desde a curadoria de 22/09/2026 (dele: "a água
-        # do nosso filtro chama AGUA"), e isso só cabe porque a garrafa que se
-        # vende deixou de ser `AGUA` no rename do catálogo — hoje ela é
-        # `AGUA-MINERAL-PRATA-310`. Antes disso a do filtro se chamava
-        # `AGUA-FILTRADA` justamente para não colidir com a garrafa.
+        # A água do filtro se chama `AGUA-FILTRADA` porque `AGUA` já foi a
+        # garrafa que se vende no balcão. A garrafa saiu desse código no rename
+        # do catálogo (hoje é `AGUA-MINERAL-PRATA-310`), e em 23/09/2026 ele
+        # decidiu que mesmo assim o insumo FICA como está: "Agua pode ser
+        # AGUA-FILTRADA mesmo ok".
         from shopman.buyman.models import Material, Supplier
-
-        # ⚠️ Trava da curadoria de 22/09/2026: num banco que ainda tem o cadastro
-        # antigo, este seed é destrutivo em silêncio. `update_or_create(sku="AGUA")`
-        # encontraria o insumo ÓRFÃO `AGUA` (o duplicado da água mineral) e o
-        # reescreveria como a água do filtro, enquanto o `AGUA-FILTRADA` de 15
-        # fichas sobraria de lado com o saldo de 211 l — e as fichas, recriadas
-        # logo abaixo, passariam a puxar do quant errado. Ninguém receberia erro.
-        #
-        # O ledger não deixa consertar isso depois (Move é imutável e a FK para o
-        # quant é PROTECT), então a hora de recusar é agora. `seed --flush`
-        # reconstrói tudo e não passa por aqui.
-        if Material.objects.filter(sku="AGUA-FILTRADA").exists():
-            raise CommandError(
-                "Este banco ainda tem o insumo `AGUA-FILTRADA`, de antes da curadoria da "
-                "lista (WP-INSUMOS-DA-VIDA-REAL). Seguir reescreveria o órfão `AGUA` como "
-                "água do filtro e deixaria 15 fichas puxando do saldo errado, sem erro "
-                "nenhum.\n"
-                "Use `seed --flush` para reconstruir, ou rode "
-                "`apply_material_skus` antes — ele diz, nominalmente, o que trava."
-            )
 
         # ── Fornecedores reais da casa (dono, 26/08) ─────────────────────────
         # Sem preço: custo por par (SupplierMaterialCost) espera a revisão de
@@ -4865,7 +4845,7 @@ class Command(BaseCommand):
             "FARINHA-T45": ("kg", 180), "FARINHA-INTEGRAL": ("kg", 120),
             "FARINHA-CENTEIO": ("kg", 120), "MALTE": ("kg", 365),
             "ACUCAR": ("kg", None), "SAL": ("kg", None), "GERGELIM": ("kg", 180),
-            "AGUA": ("kg", None), "LEITE": ("kg", 7), "AZEITE": ("kg", 540),
+            "AGUA-FILTRADA": ("kg", None), "LEITE": ("kg", 7), "AZEITE": ("kg", 540),
             "FERMENTO-NATURAL": ("kg", 7), "FERMENTO-BIOLOGICO": ("kg", 14),
             "MANTEIGA-FRANCESA": ("kg", 60), "OVOS": ("kg", 28),
             "CHOCOLATE-70": ("kg", 365), "AZEITONA": ("kg", 180),
@@ -4958,7 +4938,7 @@ class Command(BaseCommand):
         # mise en place do leite passa a anotar "≈ 3,4 litros" ao lado do peso,
         # que é como o padeiro despeja da caixa.
         #
-        # AGUA fica de FORA de propósito: ela é da torneira, não tem
+        # AGUA-FILTRADA fica de FORA de propósito: ela é da torneira, não tem
         # fornecedor (ver SUPPLIER_BY_MATERIAL) e nunca entra por nota. Fator que
         # ninguém usa é configuração morta; se um dia a água vier numa nota, a R4
         # trava e alguém declara o fator no gesto.

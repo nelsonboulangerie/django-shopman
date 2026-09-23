@@ -167,13 +167,16 @@ nomeada e o resto segue.
 
 ⚠️ **O ledger é o impedimento vivo.** `Move` recusa `delete()`/`update()` e a FK
 para o quant é `PROTECT`, então o quant de um insumo que teve qualquer movimento
-— nem que seja o saldo de abertura do seed — **não sai do banco**. É o que trava
-a troca `AGUA-FILTRADA → AGUA` no alpha: a coordenada do quant
-(`sku, position, target_date, batch`, com `NULLS NOT DISTINCT`) é a mesma para os
-dois, e o órfão não pode ceder o lugar. Quem fecha essa é o `seed --flush`, que
-reconstrói a lista sem órfão — **e o `seed` recusa rodar** num banco que ainda
-tenha `AGUA-FILTRADA`, porque ali um seed incremental reescreveria o órfão e
-deixaria 15 fichas puxando do saldo errado, sem erro nenhum.
+— nem que seja o saldo de abertura do seed — **não sai do banco**. É o que segura
+o insumo órfão `AGUA`: para ele sair de verdade o caminho é o `seed --flush`, e
+reseed pede a palavra do dono.
+
+A varredura de colisão olha `unique_together` e `UniqueConstraint`, e não só
+`unique=True`, porque `unique_quant_coordinate` é
+`(sku, position, target_date, batch)` com `NULLS NOT DISTINCT`: dois insumos no
+mesmo depósito com `target_date` nulo colidem de verdade. Foi isso que travou o
+`AGUA-FILTRADA → AGUA` enquanto esse par existiu — ele saiu da tabela em 23/09,
+por decisão do dono.
 
 ⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
 próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
@@ -345,7 +348,7 @@ para a nota fiscal seguinte não travar (ADR-024 R4).
 ```bash
 python manage.py convert_material_base_unit LEITE AZEITE --to kg              # ensaio
 python manage.py convert_material_base_unit LEITE AZEITE --to kg --apply      # executa
-python manage.py convert_material_base_unit AGUA --to kg --apply --no-bridge
+python manage.py convert_material_base_unit AGUA-FILTRADA --to kg --apply --no-bridge
 ```
 
 O fator sai da física (`shopman.utils.units`) quando a dimensão é a mesma, e da
