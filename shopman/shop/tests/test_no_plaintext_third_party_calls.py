@@ -2,7 +2,7 @@
 
 Em 23/09/2026 `shopman/shop/services/devices.py` mandava o IP do titular para
 `ip-api.com` em HTTP sem TLS, a cada carga da tela "Segurança e dados" da loja, só para
-escrever o nome da cidade ao lado do aparelho confiável. Duas coisas erradas de uma vez:
+escrever o nome da cidade ao lado do dispositivo confiável. Duas coisas erradas de uma vez:
 o dado pessoal saía para um terceiro que não constava da lista de operadores da política
 de privacidade (que se declara "a lista inteira"), e saía **em claro**, legível por
 qualquer um no caminho. A chamada foi removida; esta varredura é o que impede a volta.
