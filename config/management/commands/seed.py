@@ -3766,9 +3766,10 @@ class Command(BaseCommand):
                 # contraditória. Ela não era: o CREME-CHOCOLATE é este creme com
                 # chocolate, não um creme feito do zero.
                 #
-                # ⚠️ E é por isso que a ficha do `creme-chocolate` (abaixo) está
-                # errada hoje: ela parte de leite, açúcar e manteiga como se
-                # fosse uma ganache. Ver a nota lá.
+                # ⚠️ Por isso a ficha do `creme-chocolate` (abaixo) CONSOME esta:
+                # ela é este creme mais chocolate, não uma fórmula paralela. Até
+                # 23/09 ela partia de leite, açúcar e manteiga como se fosse uma
+                # ganache — corrigido.
                 "ref": "creme-baunilha",
                 "name": "Creme de Baunilha",
                 "output_sku": "CREME-BAUNILHA",
@@ -4026,34 +4027,35 @@ class Command(BaseCommand):
                 ],
             },
             {
-                # ⚠️ ESTA FICHA NÃO BATE COM A CASA, e a correção espera um número
-                # que só o dono tem (aberto em 23/09/2026).
+                # É o CREME-BAUNILHA com chocolate derretido na finalização —
+                # dono, 23/09/2026, depois de eu insistir numa pergunta que não
+                # precisava ser feita: *"se o creme-baunilha não é uma ganache,
+                # por que o creme-chocolate seria?"*.
                 #
-                # Ele confirmou que o creme de chocolate sai do CREME-BAUNILHA
-                # com chocolate derretido na finalização. A fórmula abaixo não
-                # faz isso: ela parte de leite, açúcar e manteiga com chocolate,
-                # sem ovo e sem farinha — é uma ganache, não um creme de
-                # confeiteiro com chocolate. Foi inferida, como as massas que
-                # ele corrigiu no dia anterior.
+                # A ficha antiga partia de leite, açúcar e manteiga com chocolate,
+                # sem ovo e sem farinha: uma ganache montada do zero, que ignorava
+                # a base que a casa já faz. Foi inferida, como as massas que ele
+                # corrigiu no dia anterior.
                 #
-                # O que falta para consertar é a PROPORÇÃO: quanto de chocolate
-                # entra em quanto de base. Inventar esse número seria repetir o
-                # erro que esta nota registra, então a ficha fica como está,
-                # errada e sinalizada, até ele dizer.
+                # ⚠️ NENHUM número declarado mudou. Os 1,895 kg de base são a soma
+                # exata dos três insumos que faziam as vezes dela (leite 1,545 +
+                # açúcar 0,200 + manteiga 0,150); o chocolate segue nos 1,200 kg
+                # que a ficha já declarava e o rendimento nos 2,9 kg. Só a
+                # NATUREZA da base mudou, que é o que ele corrigiu.
                 #
-                # Consequência viva enquanto isso: o custo por unidade e o rótulo
-                # nutricional derivado do Coelhinho (COE) e do Cornet (COC) saem
-                # desta fórmula — o do Coelhinho foi recalculado em 23/09 e deu
-                # 350 kcal, número que muda quando a ficha for corrigida.
+                # ⚠️ E um número merece o olho dele quando sobrar tempo: 1,200 kg
+                # de chocolate sobre 1,895 kg de base é 63%, proporção de ganache,
+                # não de creme de confeiteiro. Ele veio da ficha antiga e eu o
+                # preservei de propósito — trocar seria inventar duas vezes no
+                # mesmo commit. Não bloqueia nada; muda custo e rótulo quando for
+                # corrigido.
                 "ref": "creme-chocolate",
                 "name": "Creme de Chocolate",
                 "output_sku": "CREME-CHOCOLATE",
                 "batch_size": Decimal("2.9"),
                 "items": [
-                    ("LEITE", Decimal("1.545")),
+                    ("CREME-BAUNILHA", Decimal("1.895")),
                     ("CHOCOLATE-70", Decimal("1.200")),
-                    ("ACUCAR", Decimal("0.200")),
-                    ("MANTEIGA-FR", Decimal("0.150")),
                 ],
             },
             {
