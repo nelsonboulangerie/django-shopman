@@ -30,11 +30,14 @@ RUN addgroup --system shopman \
 # realocada entre operadoras pode nomear a cidade antiga. Ver docs/guides/geolite2-city.md.
 ARG GEOLITE2_SNAPSHOT=2026-09
 
-# ⚠️ A chave entra por `ARG`, e NÃO pelo segredo de BuildKit (`--mount=type=secret`), que
-# seria a forma tecnicamente melhor. O motivo é escrito para não ser "corrigido" depois: o
-# App Platform do DigitalOcean constrói com builder próprio, e não foi possível provar
-# aqui que ele aceita segredo de BuildKit. Se não aceitar, o Dockerfile deixa de construir
-# — e derrubar o deploy inteiro por causa de um rótulo de cidade é troca péssima.
+# ⚠️ A chave entra por `ARG`. Quem a passa, no deploy vivo, é o GitHub Actions
+# (`.github/workflows/deploy-images.yml`, segredo `MAXMIND_LICENSE_KEY` do repositório):
+# a imagem é construída LÁ e o App Platform só a puxa do DOCR. Env BUILD_TIME no painel da
+# DO não chega a este build. O `ARG`, e não o segredo de BuildKit (`--mount=type=secret`),
+# porque este Dockerfile também serve ao spec que o App Platform constrói sozinho
+# (`.do/app.subdomains.yaml`), e não foi possível provar que aquele builder aceita segredo
+# de BuildKit — se não aceitar, o Dockerfile deixa de construir, e derrubar o deploy
+# inteiro por causa de um rótulo de cidade é troca péssima.
 # O que isso custa: a chave fica legível no histórico da imagem. É uma chave de licença de
 # base PÚBLICA, revogável no painel da MaxMind, sem acesso a dado de cliente — mas se um
 # dia esta imagem for para registry de terceiro, rotacione.

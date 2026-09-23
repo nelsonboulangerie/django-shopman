@@ -97,13 +97,24 @@ e data, que é exatamente o comportamento pedido.
 ### Ligar em produção (ação pendente do dono)
 
 1. Criar conta gratuita em maxmind.com e gerar uma **license key** para GeoLite2.
-2. No painel do DigitalOcean, definir `MAXMIND_LICENSE_KEY` como env **BUILD_TIME**
-   (o `key` já está declarado nos dois specs de `.do/`, valuless, como todo SECRET da casa).
-3. Rebuild. O log do build diz `geolite2: ✓ base em /app/data/… , sha256 conferido.`
+2. No **GitHub**, criar o segredo de repositório `MAXMIND_LICENSE_KEY` (Settings → Secrets
+   and variables → Actions). O runbook passo a passo é
+   [`docs/plans/WP-MAXMIND-CHAVE-DO-DONO.md`](../plans/WP-MAXMIND-CHAVE-DO-DONO.md).
+3. Reconstruir a imagem `web`: rodar o workflow **Deploy images** com
+   `components=web`. O log do job `web` diz
+   `geolite2: ✓ base em /app/data/… , sha256 conferido.`
+
+⚠️ **Não é no painel da DigitalOcean.** O app vivo (`shopman-nelson`,
+`.do/app.alpha-subdomains.yaml`) roda imagem pronta do DOCR, construída no GitHub Actions
+(`.github/workflows/deploy-images.yml`); o App Platform não constrói nada. Env
+`BUILD_TIME` no painel nunca chega a esse build: a chave ficaria lá, cifrada e sem efeito,
+sem erro nenhum. Só o spec `.do/app.subdomains.yaml`, que o App Platform constrói a partir
+do `Dockerfile`, lê a chave do painel, e é por isso que só ele a declara.
 
 ⚠️ A chave entra por `ARG` do Docker e **não** por segredo de BuildKit. O motivo está
-escrito no `Dockerfile`: não foi possível provar que o builder do App Platform aceita
-`--mount=type=secret`, e derrubar o deploy por causa deste rótulo seria desproporcional. A
+escrito no `Dockerfile`: o mesmo arquivo serve ao spec que o App Platform constrói, não foi
+possível provar que aquele builder aceita `--mount=type=secret`, e derrubar o deploy por
+causa deste rótulo seria desproporcional. A
 consequência é que a chave fica legível no histórico da imagem — é uma chave de licença de
 base pública, revogável no painel da MaxMind, sem acesso a dado de cliente, mas **rotacione
 se a imagem for publicada em registry de terceiro**.
