@@ -16,6 +16,13 @@ quem faz o pão (dono, 22/09):
 
 ⚠️ Este teste roda o seed inteiro de propósito. Ler a tabela do seed em vez do
 banco semeado provaria que a tabela concorda consigo mesma.
+
+⚠️ A chave é o **ref da ficha**, não o SKU do produto. A primeira versão deste
+teste era indexada por SKU e ficou vermelha na CI algumas horas depois: o
+WP de rename passou no `main` e ANC/ANU/ANP/BAP/BEP/CT viraram COE/URS/PORQ/
+BGL/BGGP/CRO. O SKU é nome comercial e está em obra; o ref da ficha é a
+identidade dela e não mudou. O que este teste afirma — de que massa cada peça
+é — não deve cair porque o código do produto foi trocado.
 """
 
 from __future__ import annotations
@@ -26,22 +33,22 @@ from shopman.craftsman.models import Recipe
 
 pytestmark = pytest.mark.django_db
 
-#: SKU do produto → massa que a ficha dele tem de consumir.
+#: ref da ficha → massa que ela tem de consumir.
 MASSA_DA_PECA = {
-    "PR": "MASSA-BRIOCHE",
-    "BEP": "MASSA-CIABATTA",
-    "BAP": "MASSA-CIABATTA",
+    "pain-aux-raisins": "MASSA-BRIOCHE",
+    "baguete-gergelim-pequena": "MASSA-CIABATTA",
+    "baguete-lanche": "MASSA-CIABATTA",
     # Os três bichinhos são de BUTTER, não de brioche — e esta linha é a
     # cicatriz de eu ter usado o Ursinho como "âncora do que já estava certo"
     # sem perguntar. O dono corrigiu na mesma hora: "Ursinho, porquinho,
     # coelhinho? A massa é butter".
-    "ANC": "MASSA-BUTTER",
-    "ANU": "MASSA-BUTTER",
-    "ANP": "MASSA-BUTTER",
+    "animalzinho": "MASSA-BUTTER",
+    "ursinho": "MASSA-BUTTER",
+    "porquinho": "MASSA-BUTTER",
     # Âncoras do que já estava certo: o croissant é de croissant, a ciabatta
     # de ciabatta.
-    "CT": "MASSA-CROISSANT",
-    "CI": "MASSA-CIABATTA",
+    "croissant": "MASSA-CROISSANT",
+    "ciabatta": "MASSA-CIABATTA",
 }
 
 
@@ -50,13 +57,16 @@ def test_a_massa_de_cada_peca_e_a_que_o_dono_confirmou(monkeypatch):
     call_command("seed", verbosity=0)
 
     divergencias = []
-    for sku, massa in sorted(MASSA_DA_PECA.items()):
-        recipe = Recipe.objects.filter(output_sku=sku, is_active=True).first()
+    for ref, massa in sorted(MASSA_DA_PECA.items()):
+        recipe = Recipe.objects.filter(ref=ref, is_active=True).first()
         if recipe is None:
-            divergencias.append(f"{sku}: sem ficha ativa")
+            divergencias.append(f"{ref}: sem ficha ativa")
             continue
         massas = [item.input_sku for item in recipe.items.all() if item.input_sku.startswith("MASSA-")]
         if massas != [massa]:
-            divergencias.append(f"{sku}: ficha usa {massas or 'nenhuma massa'}, deveria usar [{massa}]")
+            divergencias.append(
+                f"{ref} ({recipe.output_sku}): ficha usa {massas or 'nenhuma massa'}, "
+                f"deveria usar [{massa}]"
+            )
 
     assert not divergencias, "Ficha com massa errada:\n  " + "\n  ".join(divergencias)
