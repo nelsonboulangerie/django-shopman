@@ -77,7 +77,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("BBB", "BRBB"),         # Brioche Burger Bun
     ("BBB2", "BRBB2"),       # Brioche Burger Bun (pc. 2un.)
     ("BCH", "BRCH"),         # Brioche Chocolat
-    ("BE", "BGGG"),          # Baguete Gergelim
+    ("BE", "BGG"),           # Baguete Gergelim — irmã da BGGP, a pequena
     ("BEP", "BGGP"),         # Baguete Gergelim Pequena
     ("BF", "TRADI"),         # Baguette de Tradition
     ("BH", "BICH"),          # Bichon au Citron
