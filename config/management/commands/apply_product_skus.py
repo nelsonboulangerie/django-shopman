@@ -72,7 +72,7 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("ANP", "PORQ"),         # Porquinho
     ("ANU", "URS"),          # Ursinho
     ("BA", "BAT"),           # Bâtard
-    ("BAP", "TRADP"),        # Baguete Lanche (massa tradição)
+    ("BAP", "BGL"),        # Baguete Lanche (massa tradição)
     ("BAX", "ITA"),          # Italiano Rústico
     ("BBB", "BRBB"),         # Brioche Burger Bun
     ("BBB2", "BRBB2"),       # Brioche Burger Bun (pc. 2un.)
@@ -91,10 +91,10 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("CH", "CHLH"),          # Challah
     ("CHAI_A", "SFTCH"),     # Soft Chai Cítrico
     ("CL", "CAFL"),          # Caffè Latte
-    ("CM", "CROMI"),         # Croissant Mini
+    ("CM", "CRP"),         # Croissant Mini
     ("CMA", "CQMA"),         # Croque Madame
     ("CMO", "CQMO"),         # Croque Monsieur
-    ("CPQ", "CROPQ"),        # Croissant Presunto e Queijo
+    ("CPQ", "CRPQ"),        # Croissant Presunto e Queijo
     ("CQ", "CHOQ"),          # Chocolate Quente
     ("CT", "CRO"),           # Croissant
     ("CTV", "CTFV"),         # Chá Tônica Frutas Vermelhas
@@ -107,21 +107,21 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("HO", "HOD"),           # Hot Dog Vienna
     ("KBB", "KUBB"),         # Kuro Pan Burger
     ("KP", "KUP"),           # Kuro Pan
-    ("MBBBG", "BRBBM"),      # Mini Brioche Burger Bun com gergelim — irmão de BRBB/BRBB2
+    ("MBBBG", "BRBBP"),      # Mini Brioche Burger Bun com gergelim — irmão de BRBB/BRBB2
     ("MC", "CAPMO"),         # Mochaccino
     ("MD", "MDLN"),          # Madeleine
     ("ME", "MELON"),         # Melonpan
-    ("MFF", "FFGOM"),        # Mini Folhado de Frango
+    ("MFF", "FFGOP"),        # Mini Folhado de Frango
     ("MH", "MOCHA"),         # Mocha
-    ("MICBT", "FOBM"),       # Mini Focaccia Cebola, Bacon e Tomilho
-    ("MIF", "FOAM"),         # Mini Focaccia Alecrim
-    ("MIFOC", "FOCM"),       # Mini Focaccia Cebola Roxa
-    ("MIHO", "HODM"),        # Mini Hot Dog Vienna
+    ("MICBT", "FOBP"),       # Mini Focaccia Cebola, Bacon e Tomilho
+    ("MIF", "FOAP"),         # Mini Focaccia Alecrim
+    ("MIFOC", "FOCP"),       # Mini Focaccia Cebola Roxa
+    ("MIHO", "HODP"),        # Mini Hot Dog Vienna
     ("MS", "MELSA"),         # Melon Iced Sando — o pão dele é o melonpan (MELON)
     ("PC", "PCHOC"),         # Pain au Chocolat
     ("PH", "TRABB"),         # Pão de Hambúrguer (massa tradição)
-    ("PHO", "HOBB"),         # Pão para Hot Dog
-    ("PHO4", "HOBB4"),       # Pão para Hot Dog (pc. 4un.)
+    ("PHO", "HOL"),         # Pão para Hot Dog
+    ("PHO4", "HOL4"),       # Pão para Hot Dog (pc. 4un.)
     ("PI", "PIT"),           # Pita
     ("PI4", "PIT4"),         # Pita (pc. 4un.)
     ("PPU", "PERDU"),        # Pain Perdu
@@ -155,6 +155,47 @@ RENAMES: tuple[tuple[str, str], ...] = (
     ("QC", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125"),
     ("SOFIA_P50", "CHA-CHALOSOFIA-KANFA-P50"),
     ("VITAL_P50", "CHA-VITAL-KANFA-P50"),
+)
+
+#: A SEGUNDA leva da curadoria (23/09/2026), depois de ele ver os códigos na
+#: tela. Um banco está em exatamente um dos dois estados — nos códigos do Yooga
+#: (e aí ``RENAMES`` o leva direto ao final) ou já nos intermediários (e aí é
+#: esta tabela que fecha). Por isso as duas convivem sem encadear.
+#:
+#: O que ele mudou, e por quê:
+#:
+#: - **``M`` de mini virou ``P``**: em português ``M`` se lê MÉDIO, e essa é a
+#:   leitura que o operador faz de relance. O nome na tela continua "Mini
+#:   Focaccia" — a letra é para digitar e ler, não para falar.
+#: - **``HOBB`` não é burger bun**: o pão do cachorro-quente é comprido, um
+#:   *roll*. Virou ``HOL`` (dele: "L pode ser de longo, em vez de redondo").
+#:   O ``BB`` segue certo no ``BRBB`` e no ``TRABB``, que são burger buns.
+#: - **``CROQ`` colidiria com os croques** (``CQMO``, ``CQMA``, ``CQCOM``) e
+#:   fecharia a porta do croissant só de queijo. A família virou ``CR``:
+#:   ``CRO`` · ``CRP`` · ``CRPQ`` · ``CRPQP``, com ``CRQJ`` reservado.
+#: - **``TRADP`` mentia a massa**: a Baguete Lanche é ``MASSA-CIABATTA``, não
+#:   tradição. Virou ``BGL``, ao lado de ``BGG`` e ``BGGP``, que são a mesma
+#:   massa.
+AJUSTES: tuple[tuple[str, str], ...] = (
+    ("FOAM", "FOAP"),        # Mini Focaccia Alecrim
+    ("FOBM", "FOBP"),        # Mini Focaccia Cebola, Bacon e Tomilho
+    ("FOCM", "FOCP"),        # Mini Focaccia Cebola Roxa
+    ("FFGOM", "FFGOP"),      # Mini Folhado de Frango
+    ("HODM", "HODP"),        # Mini Hot Dog Vienna
+    ("BRBBM", "BRBBP"),      # Mini Brioche Burger Bun com gergelim
+    ("CROMI", "CRP"),        # Croissant Mini
+    ("CROPQ", "CRPQ"),       # Croissant Presunto e Queijo
+    ("HOBB", "HOL"),         # Pão para Hot Dog — é um roll, não um burger bun
+    ("HOBB4", "HOL4"),       # Pão para Hot Dog (pc. 4un.)
+    ("TRADP", "BGL"),        # Baguete Lanche — massa ciabatta, não tradição
+)
+
+#: As duas tabelas, na ordem em que se aplicam. Cada uma é validada em si: o
+#: alvo repetido ENTRE elas é esperado (as duas levam ao mesmo lugar, por
+#: caminhos que nunca coexistem no mesmo banco).
+TABELAS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("curadoria", RENAMES),
+    ("ajustes", AJUSTES),
 )
 
 #: Fica de fora com o motivo escrito, para que a ausência seja decisão e não
@@ -285,7 +326,8 @@ class Command(BaseCommand):
 
         apply = options["apply"]
         alvo = (options["sku"] or "").strip()
-        pares = [p for p in RENAMES if not alvo or p[0] == alvo]
+        todos = [par for _rotulo, tabela in TABELAS for par in tabela]
+        pares = [p for p in todos if not alvo or p[0] == alvo]
         if alvo and not pares:
             motivo = FORA_DA_TABELA.get(alvo)
             raise CommandError(
@@ -356,15 +398,20 @@ class Command(BaseCommand):
                 "cascade estoura a constraint no meio da travessia."
             )
 
-        vistos: dict[str, str] = {}
-        for antigo, novo in pares:
-            if novo in vistos:
-                recusas.append(
-                    f"{antigo} e {vistos[novo]} querem os dois o código {novo}. "
-                    "Dois produtos não dividem endereço."
-                )
-            vistos[novo] = antigo
+        # Alvo repetido se cobra DENTRO de cada tabela: entre elas, o mesmo alvo
+        # é o ponto de encontro de dois caminhos que nunca coexistem no mesmo
+        # banco (o do Yooga e o dos códigos intermediários).
+        for rotulo, tabela in TABELAS:
+            vistos: dict[str, str] = {}
+            for antigo, novo in tabela:
+                if novo in vistos:
+                    recusas.append(
+                        f"em '{rotulo}': {antigo} e {vistos[novo]} querem os dois o código "
+                        f"{novo}. Dois produtos não dividem endereço."
+                    )
+                vistos[novo] = antigo
 
+        for antigo, novo in pares:
             if antigo not in vivos:
                 continue  # já renomeado ou ausente: o relatório conta como pulado
 

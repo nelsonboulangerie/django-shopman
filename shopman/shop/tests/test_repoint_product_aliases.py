@@ -14,7 +14,11 @@ import pytest
 from django.core.management import call_command
 from shopman.offerman.models import Product
 
-from config.management.commands.repoint_product_aliases import FONTE, REAPONTAR
+from config.management.commands.repoint_product_aliases import (
+    FONTE,
+    REAPONTAR,
+    REAPONTAR_PARA,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -51,10 +55,32 @@ def _alias(external_sku: str, *, para: Product | None, nome: str = "x"):
     )
 
 
+def _serie_creditada_a_outro(sku: str, *, dono, nome: str) -> None:
+    """Uma venda histórica naquele código, creditada ao produto errado."""
+    _venda(sku, nome=nome)
+    _alias(sku, para=dono, nome=nome)
+
+
 def test_a_tabela_nao_repete_codigo():
-    codigos = [sku for sku, _nota in REAPONTAR]
+    codigos = [sku for sku, _destino, _nota in REAPONTAR]
     assert len(set(codigos)) == len(codigos)
-    assert all(nota.strip() for _sku, nota in REAPONTAR)
+    assert all(nota.strip() for _sku, _destino, nota in REAPONTAR)
+
+
+def test_todo_destino_e_um_codigo_do_catalogo_de_hoje():
+    """O destino é escrito, não deduzido — então tem de ser o código de HOJE.
+
+    Enquanto o produto tinha o mesmo código do Yooga, deduzir bastava. Depois
+    do rename o comando passou a avisar "não existe produto CHEGO_L50" toda vez
+    que rodava, sobre linhas que já estavam certas.
+    """
+    from config.management.commands.apply_product_skus import RENAMES
+
+    antigos = {a for a, _n in RENAMES}
+    destinos = {d for _s, d, _n in REAPONTAR} | {d for _s, d, _n in REAPONTAR_PARA}
+    assert not (destinos & antigos), (
+        f"destino escrito com código que o rename já trocou: {sorted(destinos & antigos)}"
+    )
 
 
 def test_ensaio_nao_grava():
@@ -75,8 +101,9 @@ def test_ensaio_nao_grava():
 def test_apply_devolve_a_venda_ao_produto_certo():
     from shopman.backstage.models import ProductAlias
 
-    unidade = _product("BBB", "Brioche Burger Bun")
-    pacote = _product("BBB2", "Brioche Burger Bun (pc. 2un.)")
+    # O código do Yooga é `BBB`; o produto de hoje se chama `BRBB`.
+    unidade = _product("BRBB", "Brioche Burger Bun")
+    pacote = _product("BRBB2", "Brioche Burger Bun (pc. 2un.)")
     _alias("BBB", para=pacote, nome="Brioche Burger Bun - Unidade")
     _venda("BBB", nome="Brioche Burger Bun - Unidade")
 
@@ -85,14 +112,14 @@ def test_apply_devolve_a_venda_ao_produto_certo():
 
     alias = ProductAlias.objects.get(external_sku="BBB")
     assert alias.product_id == unidade.pk
-    assert "BBB2" in alias.note  # de onde veio fica escrito
+    assert "BRBB2" in alias.note  # de onde veio fica escrito
     assert "1 linha" in out.getvalue()
 
 
 def test_de_para_sem_produto_ganha_o_produto():
     from shopman.backstage.models import ProductAlias
 
-    chai = _product("CHAI_A", "Soft Chai Cítrico")
+    chai = _product("SFTCH", "Soft Chai Cítrico")
     _alias("CHAI_A", para=None, nome="Soft Chai Cítrico")
 
     call_command("repoint_product_aliases", "--apply", stdout=StringIO())
@@ -141,7 +168,44 @@ def test_os_mesmos_codigos_que_o_rename_recusa():
     from config.management.commands.apply_product_skus import RENAMES
 
     renomeaveis = {a for a, _n in RENAMES}
-    codigos = {sku for sku, _nota in REAPONTAR}
+    codigos = {sku for sku, _destino, _nota in REAPONTAR}
     # CHAI_A e os 12 chás e BBB/PHO estão nos dois lados — menos o que saiu da
     # tabela de rename por outro motivo.
     assert codigos <= renomeaveis | {"GL"}
+
+
+def test_a_segunda_leva_aponta_para_o_PAI_da_variante():
+    """As "METADE DO PREÇO" não têm produto de mesmo código: têm um pai.
+
+    `MJO` é a metade do Caranguejo (`JO`), e estava pendurada no Coelhinho
+    porque em 19/08 o catálogo tinha um "Animalzinho" só. O destino aqui é o
+    pai que o nome da linha nomeia, não um produto chamado `MJO`.
+    """
+    from shopman.backstage.models import ProductAlias
+
+    coelhinho = _product("COE", "Coelhinho de Chocolate")
+    caranguejo = _product("JO", "Caranguejo")
+    _serie_creditada_a_outro("MJO", dono=coelhinho, nome="Caranguejo - METADE DO PREÇO")
+
+    call_command("repoint_product_aliases", "--apply", stdout=StringIO())
+
+    assert ProductAlias.objects.get(external_sku="MJO").product_id == caranguejo.pk
+
+
+def test_pai_ausente_avisa_e_nao_inventa():
+    _product("COE", "Coelhinho de Chocolate")
+    _serie_creditada_a_outro(
+        "MJO", dono=Product.objects.get(sku="COE"), nome="Caranguejo - METADE DO PREÇO"
+    )
+
+    out = StringIO()
+    call_command("repoint_product_aliases", "--apply", stdout=out)
+
+    assert "não existe produto 'JO'" in out.getvalue()
+
+
+def test_as_duas_tabelas_nao_disputam_o_mesmo_codigo():
+    de_um = {sku for sku, _destino, _nota in REAPONTAR}
+    de_outro = {sku for sku, _destino, _nota in REAPONTAR_PARA}
+    assert not (de_um & de_outro)
+    assert all(nota.strip() for _s, _d, nota in REAPONTAR_PARA)

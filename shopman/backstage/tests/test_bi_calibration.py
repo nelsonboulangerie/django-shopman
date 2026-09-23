@@ -307,14 +307,14 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # A regra da revisão: pão de abastecimento é "leva"; salgado montado e
     # viennoiserie ficam híbridos — a bebida no pedido é que define.
     by_sku = dict(ProductConsumptionTag.objects.values_list("sku", "role__ref"))
-    assert by_sku["FORMA"] == by_sku["BRBB"] == by_sku["HOBB"] == "leva"
-    assert by_sku["HOD"] == by_sku["CROPQ"] == by_sku["CRO"] == by_sku["PCHOC"] == "hibrido"
+    assert by_sku["FORMA"] == by_sku["BRBB"] == by_sku["HOL"] == "leva"
+    assert by_sku["HOD"] == by_sku["CRPQ"] == by_sku["CRO"] == by_sku["PCHOC"] == "hibrido"
     # Segunda rodada: café do Yooga é bebida preparada por curadoria; croque é
     # mesa; pão rústico é leva; ciabatta/tabatière/fendu ficam híbridos como os
     # gêmeos do cardápio 2027 (histórico e cardápio não discordam).
     assert by_sku["CAP"] == by_sku["SP"] == "bebida-preparada"
     assert by_sku["CQMO"] == by_sku["PERDU"] == "consome-aqui"
-    assert by_sku["ITA"] == by_sku["TRADP"] == by_sku["TRABB"] == "leva"
+    assert by_sku["ITA"] == by_sku["BGL"] == by_sku["TRABB"] == "leva"
     # `CIABATTA` saiu do encadeamento: com o catálogo usando os códigos reais,
     # ele É o `CI`, e uma etiqueta só cobre os dois.
     assert by_sku["CI"] == by_sku["TABAT"] == by_sku["FENDU"] == "hibrido"

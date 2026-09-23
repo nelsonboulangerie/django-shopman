@@ -61,7 +61,8 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "croissant-presunto-queijo": ("12", {"MASSA-CROISSANT": "0.720", "PRESUNTO-DEFUMADO": "0.180", "QUEIJO-MINAS-PADRAO": "0.180"}),
     "folhado-frango": ("12", {"MASSA-FOLHADO": "1.140", "RECHEIO-FRANGO": "0.420"}),
     "mini-folhado-frango": ("12", {"MASSA-FOLHADO": "0.696", "RECHEIO-FRANGO": "0.264"}),
-    "caranguejo": ("16", {"MASSA-FORMA": "0.608", "GERGELIM": "0.032"}),
+    # Butter como os outros pães-bicho (ele, 23/09). A ficha dizia FORMA.
+    "caranguejo": ("16", {"MASSA-BUTTER": "0.608", "GERGELIM": "0.032"}),
     "kuro-pan-burger": ("12", {"MASSA-KUROPAN": "1.080"}),
     "brioche-nanterre": ("8", {"MASSA-BRIOCHE": "1.920"}),
     "brioche-chocolat": ("24", {"MASSA-BRIOCHE": "0.816", "GOTAS-CHOCOLATE": "0.192"}),

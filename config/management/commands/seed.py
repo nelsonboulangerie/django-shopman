@@ -410,13 +410,13 @@ def material_opening_targets() -> dict[str, Decimal]:
 #   HO/MIHO: só a massa — a salsicha entra como insumo próprio na ficha.
 #   KBB: o dono ainda não pesou; estimado pela família do BBB.
 PESO_MASSA_CRUA_G = {
-    "FORMA": 400, "TRADP": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
+    "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
-    "FOA": 420, "FOB": 680, "FOC": 540, "FOAM": 110, "FOBM": 180, "FOCM": 160,
-    "CROMI": 36, "CN": 82, "BRRSN": 68, "BRCH": 42, "COC": 60,
-    "CHLH": 300, "BRNT": 240, "URS": 110, "PORQ": 110, "BRBBM": 32,
-    "BICH": 100, "MA": 110, "CROPQ": 90, "FFGO": 130, "FFGOM": 80,
-    "HOD": 60, "HODM": 40, "DELI": 100, "JO": 40,
+    "FOA": 420, "FOB": 680, "FOC": 540, "FOAP": 110, "FOBP": 180, "FOCP": 160,
+    "CRP": 36, "CN": 82, "BRRSN": 68, "BRCH": 42, "COC": 60,
+    "CHLH": 300, "BRNT": 240, "URS": 110, "PORQ": 110, "BRBBP": 32,
+    "BICH": 100, "MA": 110, "CRPQ": 90, "FFGO": 130, "FFGOP": 80,
+    "HOD": 60, "HODP": 40, "DELI": 100, "JO": 40,
 }
 
 
@@ -451,7 +451,7 @@ STOCK_VITRINE = {
     "COE": 16,
     "CO": 20,
     "BRBB": 24,
-    "HOBB": 48,
+    "HOL": 48,
     # Salgados de vitrine
     "CQMO": 10,
     "CQMA": 8,
@@ -1847,7 +1847,7 @@ class Command(BaseCommand):
             # com o presente sem fator de conversão. Fora do menu impresso.
             ("BRBB", "Brioche Burger Bun", "Super leve, riquíssimo em ovos e manteiga", 800, "un", 1, True,
              f"{IMG}/bbb.webp", 100, "Congele no mesmo dia. Reaqueça a 180°C por 5min"),
-            ("HOBB", "Pão para Hot Dog", "Pão amanteigado, bom para cachorro quente", 700, "un", 1, True,
+            ("HOL", "Pão para Hot Dog", "Pão amanteigado, bom para cachorro quente", 700, "un", 1, True,
              f"{IMG}/pho.webp", 80, "Congele no mesmo dia por até 30 dias"),
             # ── Padaria · Salgados ──
             ("CQMO", "Croque Monsieur", "Clássico sanduíche francês gratinado com presunto e queijo gruyere", 2400, "un", 0, True,
@@ -1970,7 +1970,7 @@ class Command(BaseCommand):
              f"{IMG}/bh.webp", 90, "Conservar refrigerado. Consumir no dia"),
             ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 0, True,
              f"{IMG}/ma.webp", 95, "Conservar refrigerado. Consumir no dia"),
-            ("CROMI", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
+            ("CRP", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
              f"{IMG}/cm.webp", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("BRCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 0, True,
              f"{IMG}/bch.webp", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
@@ -1992,9 +1992,9 @@ class Command(BaseCommand):
              "", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("KUBB", "Kuro Pan Burger", "Kuro Pan em formato de bun para hambúrguer", 800, "un", 1, True,
              unsplash("photo-1587606381527-172f6d902ada"), 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("BRBBM", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
+            ("BRBBP", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
              f"{IMG}/bbb.webp", 28, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("TRADP", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
+            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
              f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
             ("ITA", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
              f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
@@ -2019,21 +2019,21 @@ class Command(BaseCommand):
              f"{IMG}/cbt.webp", 600, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
              f"{IMG}/foc.webp", 475, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("FOAM", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
+            ("FOAP", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
              f"{IMG}/mif.webp", 95, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("FOBM", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
+            ("FOBP", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
              f"{IMG}/micbt.webp", 160, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("FOCM", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
+            ("FOCP", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
              f"{IMG}/mifoc.webp", 140, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("CROPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
+            ("CRPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
              f"{IMG}/cpq.webp", 80, "Servir quente, imediatamente"),
             ("FFGO", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
              f"{IMG}/ff.webp", 115, "Servir quente, imediatamente"),
-            ("FFGOM", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
+            ("FFGOP", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
              f"{IMG}/ff.webp", 70, "Servir quente, imediatamente"),
             ("HOD", "Hot Dog Vienna", "Cachorro-quente no pão vienense", 1500, "un", 0, True,
              f"{IMG}/ho.webp", 100, "Servir quente, imediatamente"),
-            ("HODM", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
+            ("HODP", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
              f"{IMG}/ho.webp", 55, "Servir quente, imediatamente"),
             ("DELI", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
              f"{IMG}/dl.webp", 90, "Servir quente, imediatamente"),
@@ -2070,7 +2070,7 @@ class Command(BaseCommand):
             "MIB": ["pao", "frances", "levain", "mini", "individual"],
             "TRABB": ["pao", "hamburger", "levain", "individual"],
             "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
-            "HOBB": ["pao", "hotdog", "manteiga", "salgado"],
+            "HOL": ["pao", "hotdog", "manteiga", "salgado"],
             "COAD": ["cafe", "coado", "filtrado", "bebida", "quente"],
             "CAPMO": ["cafe", "mocha", "chocolate", "leite", "bebida", "quente"],
             "CHCAM": ["cha", "blend", "bule", "bebida", "quente"],
@@ -2172,7 +2172,7 @@ class Command(BaseCommand):
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
-            "HOBB": {
+            "HOL": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 unidade",
@@ -2493,8 +2493,8 @@ class Command(BaseCommand):
         # atual é não-ST (perfil own_production → CFOP 5102/CSOSN 102, sem CEST).
         breads = {
             "TRADI", "BGG", "MIB", "FENDU", "TABAT",
-            "CPG", "CPX", "CI", "FORMA", "KUP", "TRABB", "BRBB", "HOBB",
-            "FOA", "FOB", "FOC", "FOAM", "FOBM", "FOCM",  # focaccia é pão
+            "CPG", "CPX", "CI", "FORMA", "KUP", "TRABB", "BRBB", "HOL",
+            "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",  # focaccia é pão
         }
         fiscal_ncm_by_sku = {
             # Folhados, doces e salgados de panificação/pastelaria (default).
@@ -2573,11 +2573,11 @@ class Command(BaseCommand):
             "SFTCH", "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50",
             "CHA-INTUICAO-KANFA-L70", "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-L70",
             "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
-            "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CROMI", "BRCH", "CN", "BICH", "BRRSN", "FOA",
+            "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
             "DELI", "HOD", "CHHIB", "CTFV",
-            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBM", "TRADP",
+            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
             "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
-            "FOAM", "FOBM", "FOCM", "CROPQ", "FFGO", "FFGOM", "HODM", "JO",
+            "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
         }
 
         # Galeria da PDP: fotos adicionais da casa em metadata["gallery"] (lidas
@@ -2594,7 +2594,7 @@ class Command(BaseCommand):
             "FORMA": [f"{IMG}/fa2.webp"],
             "MA": [f"{IMG}/ma2.webp"],
             "TRABB": [f"{IMG}/ph2.webp"],
-            "HOBB": [f"{IMG}/pho2.webp"],
+            "HOL": [f"{IMG}/pho2.webp"],
         }
 
         products = {}
@@ -2834,7 +2834,7 @@ class Command(BaseCommand):
                 # Os valores já eram POR PORÇÃO; só o número de porções muda.
                 "nutrition_facts": nutrition(100, 1, 330.0, 46.0, 8.0, 9.0, 12.0, 7.0, 1.5, 360.0),
             },
-            "HOBB": {
+            "HOL": {
                 "ingredients_text": (
                     "Farinha de trigo, ovos, manteiga, leite, açúcar, fermento biológico, sal. "
                     "CONTÉM: glúten, leite e ovos."
@@ -3116,7 +3116,7 @@ class Command(BaseCommand):
         # trimestre e o pacote de 4 sai a R$ 28,00; BBB valia R$ 8,00 e o de 2
         # sai a R$ 16,00. Empacotaram pelo unitário vezes a contagem.
         for pack_sku, nome, componente, quantidade, preco, ficha in (
-            ("HOBB4", "Pão para Hot Dog (pc. 4un.)", "HOBB", 4, 2800,
+            ("HOL4", "Pão para Hot Dog (pc. 4un.)", "HOL", 4, 2800,
              ("4 unidades", "aprox. 16 x 5 x 4 cm cada")),
             ("BRBB2", "Brioche Burger Bun (pc. 2un.)", "BRBB", 2, 1600,
              ("2 unidades", "aprox. 10 cm de diâmetro cada")),
@@ -3281,16 +3281,16 @@ class Command(BaseCommand):
                 "TRADI", "CPG", "CPX", "CI",
                 "BGG",
                 # voltaram do Yooga (18/08)
-                "TRADP", "ITA", "CPBG", "BAT", "CPR", "PIT", "PIT4", "BGGP", "FOA", "FOB", "FOC", "FOAM", "FOBM", "FOCM",
+                "BGL", "ITA", "CPBG", "BAT", "CPR", "PIT", "PIT4", "BGGP", "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",
             ],
             "macios": [
                 # Vindos da extinta "balcao" (17/08): buns em pacote, massa
                 # enriquecida, na mesma família dos pães japoneses daqui.
-                "BRBB", "HOBB", "HOBB4", "BRBB2",
+                "BRBB", "HOL", "HOL4", "BRBB2",
                 "FORMA",
                 "KUP", "MELON", "COE", "CO",
                 # voltaram do Yooga (18/08)
-                "BRCH", "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBM",
+                "BRCH", "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP",
                 # PR é BRIOCHE nesta casa, não massa folhada — o nome francês engana
                 # (decisão do dono, 02/09). Por isso mora aqui e não em Folhados.
                 "BRRSN",
@@ -3300,21 +3300,21 @@ class Command(BaseCommand):
             # de Salgados e o Bichon au Citron sai de Doces: os dois são folhado
             # antes de serem salgado ou doce. E o Pain aux Raisins faz o caminho
             # inverso, para Macios: o nome é francês, mas o nosso é de brioche.
-            "folhados": ["CRO", "PCHOC", "CROMI", "CN", "FFGO", "BICH", "CROPQ"],
+            "folhados": ["CRO", "PCHOC", "CRP", "CN", "FFGO", "BICH", "CRPQ"],
             "salgados": [
                 "CQMO", "CQMA", "CQCOM",
                 "QJQT", "JB", "PG", "TABUA",
                 # voltaram do Yooga (18/08)
-                "FFGOM", "HOD", "HODM", "DELI", "JO",
+                "FFGOP", "HOD", "HODP", "DELI", "JO",
                 # Também folhados (a massa é a categoria principal deles).
-                "FFGO", "CROPQ",
+                "FFGO", "CRPQ",
             ],
             "doces": ["PERDU", "MELSA", "MDLN", "PU", "TJ",
                 # voltaram do Yooga (18/08)
                 "MA",
                 # Recheados: doces de sabor, folhados/brioche de massa — e a massa
                 # é a categoria principal deles.
-                "PCHOC", "CROMI", "CN", "BICH", "BRRSN",
+                "PCHOC", "CRP", "CN", "BICH", "BRRSN",
             ],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
@@ -3369,9 +3369,9 @@ class Command(BaseCommand):
         # enviesada seria o cliente na porta. Ver `shop/services/product_readiness`.
         PRONTOS_AS_09H = [
             # folhados e croissants
-            "CRO", "CROMI", "PCHOC", "BRRSN", "CN", "CO", "COC", "CROPQ", "BICH",
+            "CRO", "CRP", "PCHOC", "BRRSN", "CN", "CO", "COC", "CRPQ", "BICH",
             # brioches
-            "BRBB", "BRBB2", "BRCH", "BRNT", "BRBBM",
+            "BRBB", "BRBB2", "BRCH", "BRNT", "BRBBP",
             # madeleines
             "MDLN",
             # a ciabatta, que é rústica mas sai cedo
@@ -3428,7 +3428,7 @@ class Command(BaseCommand):
         # o `total_promisable` vai a zero e o pacote deixa de poder ser montado
         # do próprio pão. A unidade segue vendável e some das vitrines de
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
-        so_no_balcao = {"HOBB", "BRBB", "PIT"}
+        so_no_balcao = {"HOL", "BRBB", "PIT"}
 
         for listing_obj in [pdv, ifood, web, whatsapp]:
             ListingItem.objects.filter(listing=listing_obj).delete()
@@ -4044,7 +4044,7 @@ class Command(BaseCommand):
             {
                 "ref": "baguete-lanche",
                 "name": "Baguete Lanche",
-                "output_sku": "TRADP",
+                "output_sku": "BGL",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("0.260"))],  # 260 g/un
             },
@@ -4117,7 +4117,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-focaccia-alecrim",
                 "name": "Mini Focaccia Alecrim",
-                "output_sku": "FOAM",
+                "output_sku": "FOAP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
@@ -4128,7 +4128,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-focaccia-cebola-bacon-tomilho",
                 "name": "Mini Focaccia Cebola, Bacon e Tomilho",
-                "output_sku": "FOBM",
+                "output_sku": "FOBP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.158")),                 # 158 g/un
@@ -4138,7 +4138,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-focaccia-cebola-roxa",
                 "name": "Mini Focaccia Cebola Roxa",
-                "output_sku": "FOCM",
+                "output_sku": "FOCP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.146")),          # 146 g/un
@@ -4148,7 +4148,7 @@ class Command(BaseCommand):
             {
                 "ref": "croissant-mini",
                 "name": "Croissant Mini",
-                "output_sku": "CROMI",
+                "output_sku": "CRP",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-CROISSANT", Decimal("0.036"))],  # 36 g/un
             },
@@ -4177,7 +4177,7 @@ class Command(BaseCommand):
                 # Minas padrão + presunto DEFUMADO (Strass) — dono, 26/08 (P3).
                 "ref": "croissant-presunto-queijo",
                 "name": "Croissant Presunto e Queijo",
-                "output_sku": "CROPQ",
+                "output_sku": "CRPQ",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CROISSANT", Decimal("0.060")),        # 60 g/un
@@ -4198,7 +4198,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-folhado-frango",
                 "name": "Mini Folhado de Frango",
-                "output_sku": "FFGOM",
+                "output_sku": "FFGOP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-FOLHADO", Decimal("0.058")),   # 58 g/un
@@ -4211,7 +4211,9 @@ class Command(BaseCommand):
                 "output_sku": "JO",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FORMA", Decimal("0.038")),  # 38 g/un
+                    # Butter, como os outros pães-bicho — ele corrigiu em 23/09.
+                    # A ficha dizia FORMA; a gramatura não muda.
+                    ("MASSA-BUTTER", Decimal("0.038")),  # 38 g/un
                     ("GERGELIM", Decimal("0.002")),     # 2 g/un
                 ],
             },
@@ -4247,7 +4249,7 @@ class Command(BaseCommand):
             {
                 "ref": "mini-brioche-bun-gergelim",
                 "name": "Mini Brioche Burger Bun com gergelim",
-                "output_sku": "BRBBM",
+                "output_sku": "BRBBP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BRIOCHE", Decimal("0.030")),  # 30 g/un
@@ -4297,7 +4299,7 @@ class Command(BaseCommand):
                 # A mini leva MEIA salsicha (a mesma, cortada — dono, P6).
                 "ref": "mini-hot-dog-vienna",
                 "name": "Mini Hot Dog Vienna",
-                "output_sku": "HODM",
+                "output_sku": "HODP",
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.040")),       # 40 g/un
@@ -9238,7 +9240,7 @@ class Command(BaseCommand):
                 "BRBB", "GR", "CPG",
                 "CPX", "THL", "CX",
                 "KUP", "LN",
-                "MT", "TRABB", "HOBB", "HOBB4", "BRBB2",
+                "MT", "TRABB", "HOL", "HOL4", "BRBB2",
                 "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP", "FORMA",
             ],
             "hibrido": [
@@ -9293,8 +9295,8 @@ class Command(BaseCommand):
         historical = {
             "leva": (note_a, [
                 "FORMA", "MFA",              # Forma Artesanal - 6 Fatias
-                "BRBB", "MBBB", "BRBBM",   # Brioche Burger Bun
-                "HOBB", "MPHO", "MIPHO",   # Pão Para Hot Dog
+                "BRBB", "MBBB", "BRBBP",   # Brioche Burger Bun
+                "HOL", "MPHO", "MIPHO",   # Pão Para Hot Dog
                 "PIT", "MPI",              # Pita
                 "CHLH", "MCH",              # Challah
                 "BRNT", "MBN",              # Brioche Nanterre
@@ -9304,12 +9306,12 @@ class Command(BaseCommand):
             "hibrido": (note_h, [
                 # viennoiserie e doces
                 "PCHOC", "MPC", "CRO", "MCT", "CN", "MDLN", "MMD", "BICH", "MBH",
-                "BRCH", "MBCH", "CROMI", "MCM", "BRRSN", "MPR", "CO", "MCO",
+                "BRCH", "MBCH", "CRP", "MCM", "BRRSN", "MPR", "CO", "MCO",
                 "COC", "MCOC", "MA", "MMA", "MELON", "MME",
                 # os pães-bicho (melonpan): Coelhinho, Caranguejo, Ursinho, Porquinho
                 "COE", "JO", "MJO", "URS", "MANU", "PORQ", "MANP",
                 # salgados montados: a bebida define, não o salgado
-                "HOD", "MHO", "HODM", "DELI", "MDL", "CROPQ", "MCPQ", "FFGO", "FFGOM",
+                "HOD", "MHO", "HODP", "DELI", "MDL", "CRPQ", "MCPQ", "FFGO", "FFGOP",
                 # os mesmos produtos com SKU do iFood (só entrega; a etiqueta é
                 # coerência, a entrega precede a cesta)
                 "IFOOD_7b8ad920c82b11eea8170d006",
@@ -9338,7 +9340,7 @@ class Command(BaseCommand):
                 "CQMO", "QJQT", "CQMA", "CQCOM", "JB", "PERDU",   # croques, queijo quente, jambon, pain perdu
             ]),
             ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
-                "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGG", "TRADP", "FOB", "TRABB", "FOA", "BAT", "CPR",
+                "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGG", "BGL", "FOB", "TRABB", "FOA", "BAT", "CPR",
                 "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
                 "BGGP", "FOC", "MPH",
                 # chás Kãnfa em pouch/lata (mercearia, como CHA-LATA)
@@ -9349,7 +9351,7 @@ class Command(BaseCommand):
             ]),
             ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
                 "CI", "CIQ", "MCI", "TABAT", "MTB", "FENDU", "MFE", "MIB",
-                "FOBM", "FOAM", "FOCM", "MMICBT", "MMIF",
+                "FOBP", "FOAP", "FOCP", "MMICBT", "MMIF",
             ]),
         )
         entries = [(ref, note, skus) for ref, (note, skus) in historical.items()] + list(round_two)

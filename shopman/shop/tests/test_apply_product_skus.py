@@ -17,9 +17,11 @@ from django.core.management.base import CommandError
 from shopman.offerman.models import Product
 
 from config.management.commands.apply_product_skus import (
+    AJUSTES,
     FONTE_HISTORICO,
     FORA_DA_TABELA,
     RENAMES,
+    TABELAS,
     TABELAS_DE_CODIGO,
 )
 
@@ -57,16 +59,35 @@ def _venda(sku: str, *, nome: str, qty: int = 1):
 # --------------------------------------------------------------- a tabela
 
 
-def test_a_tabela_nao_disputa_codigo_consigo_mesma():
+@pytest.mark.parametrize("rotulo,tabela", TABELAS)
+def test_a_tabela_nao_disputa_codigo_consigo_mesma(rotulo, tabela):
     """Dois produtos não dividem endereço, nem na origem nem no destino."""
-    antigos = [a for a, _n in RENAMES]
-    novos = [n for _a, n in RENAMES]
-    assert len(set(antigos)) == len(antigos), "código de hoje repetido na tabela"
-    assert len(set(novos)) == len(novos), "código curado repetido na tabela"
+    antigos = [a for a, _n in tabela]
+    novos = [n for _a, n in tabela]
+    assert len(set(antigos)) == len(antigos), f"{rotulo}: código de hoje repetido"
+    assert len(set(novos)) == len(novos), f"{rotulo}: código curado repetido"
     assert not (set(novos) & set(antigos)), (
-        "um alvo é o código de hoje de outra linha: o rename teria de ser encadeado, "
-        "e a ordem da tabela passaria a importar"
+        f"{rotulo}: um alvo é o código de hoje de outra linha — o rename teria de ser "
+        "encadeado, e a ordem da tabela passaria a importar"
     )
+
+
+def test_as_duas_levas_chegam_ao_mesmo_lugar():
+    """A leva do Yooga e a dos códigos intermediários terminam no mesmo código.
+
+    É o que permite as duas conviverem: um banco está em UM dos dois estados, e
+    o par cuja origem não existe é pulado. Se divergirem, um banco antigo e o
+    alpha passariam a ter códigos diferentes para o mesmo produto.
+    """
+    finais = dict(RENAMES)
+    for intermediario, final in AJUSTES:
+        origens = [a for a, n in RENAMES if n == final]
+        assert origens, (
+            f"'{intermediario} → {final}' não tem contrapartida em RENAMES: um banco "
+            "vindo dos códigos do Yooga nunca chegaria a este código"
+        )
+        for origem in origens:
+            assert finais[origem] == final
 
 
 def test_nenhum_par_renomeia_para_ele_mesmo():

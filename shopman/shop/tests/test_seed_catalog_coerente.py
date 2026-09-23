@@ -48,7 +48,7 @@ def catalogo(arvore):
     # preço nem ficha de produto, tem componentes.
     # Nascem fora do products_data, num update_or_create próprio: bundle não
     # tem ficha de produto, tem componentes.
-    skus += ["COMBO-PETIT-DEJ", "HOBB4", "BRBB2", "PIT4"]
+    skus += ["COMBO-PETIT-DEJ", "HOL4", "BRBB2", "PIT4"]
     return skus
 
 
@@ -153,7 +153,7 @@ def test_o_bundle_existe_de_verdade(arvore):
     # O catálogo o acrescenta à mão porque ele nasce fora do products_data;
     # se o seed parar de criá-lo, os outros testes passariam por engano.
     fonte = SEED.read_text()
-    for sku in ('"COMBO-PETIT-DEJ"', '"HOBB4"', '"BRBB2"'):
+    for sku in ('"COMBO-PETIT-DEJ"', '"HOL4"', '"BRBB2"'):
         assert f"sku={sku}" in fonte or f"({sku}," in fonte, f"{sku} sumiu do seed"
 
 
@@ -314,7 +314,7 @@ def test_toda_categoria_tem_cor_e_icone(arvore):
 FAMILIA_LAMINADA = {
     "CRO": "Croissant",
     "PCHOC": "Pain au Chocolat",
-    "CROMI": "Croissant Mini",
+    "CRP": "Croissant Mini",
     "CN": "Chausson",
     "FFGO": "Folhado de Frango",
     "BICH": "Bichon au Citron",
@@ -344,7 +344,7 @@ def test_a_categoria_principal_do_laminado_e_folhados(colecoes):
         for sku in skus:
             principal.setdefault(sku, ref)
 
-    for sku in ("CRO", "PCHOC", "CROMI", "CN", "FFGO", "BICH", "CROPQ"):
+    for sku in ("CRO", "PCHOC", "CRP", "CN", "FFGO", "BICH", "CRPQ"):
         assert principal[sku] == "folhados", (
             f"{sku} mora em '{principal[sku]}' — massa laminada mora em Folhados"
         )
@@ -352,8 +352,8 @@ def test_a_categoria_principal_do_laminado_e_folhados(colecoes):
 
 
 def test_o_sabor_entra_como_categoria_adicional(colecoes):
-    for sku in ("PCHOC", "CROMI", "CN", "BICH", "BRRSN"):
+    for sku in ("PCHOC", "CRP", "CN", "BICH", "BRRSN"):
         assert sku in colecoes["doces"], f"{sku} é recheado doce e também é Doces"
-    for sku in ("FFGO", "CROPQ"):
+    for sku in ("FFGO", "CRPQ"):
         assert sku in colecoes["salgados"], f"{sku} é salgado e também é Salgados"
     assert "CRO" not in colecoes["doces"], "o croissant puro não é doce"
