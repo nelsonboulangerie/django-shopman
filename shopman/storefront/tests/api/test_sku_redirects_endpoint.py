@@ -45,3 +45,25 @@ def test_e_publico_e_pede_cache_curto(client):
     resp = client.get("/api/v1/storefront/sku-redirects/")
     assert resp.status_code == 200
     assert resp["Cache-Control"] == "public, max-age=300"
+
+
+def test_nao_manda_para_produto_despublicado(client):
+    """Despublicado continua no catálogo e some da loja: 301 para ele é 301 para 404.
+
+    `MINI-BAGUETE` virou `MIB` em agosto, e o `MIB` saiu da vitrine em 23/09 —
+    fica para a encomenda do restaurante, então pode voltar. Até lá não há
+    destino: nem o código antigo nem ele mesmo entram no mapa.
+    """
+    produto = _product("MIB")
+    produto.is_published = False
+    produto.save()
+    redirects = client.get("/api/v1/storefront/sku-redirects/").json()["redirects"]
+    assert "MINI-BAGUETE" not in redirects
+    assert "MIB" not in redirects
+
+
+def test_manda_para_o_produto_publicado(client):
+    """O mesmo código, publicado, é destino legítimo."""
+    _product("MIB")
+    redirects = client.get("/api/v1/storefront/sku-redirects/").json()["redirects"]
+    assert redirects["MINI-BAGUETE"] == "MIB"

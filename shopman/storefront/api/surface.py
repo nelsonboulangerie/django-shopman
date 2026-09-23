@@ -334,9 +334,17 @@ class StorefrontSkuRedirectsView(APIView):
     authentication_classes = []
 
     def get(self, request):
+        from shopman.shop.projections import catalog_context
         from shopman.shop.services.sku_history import retired_skus
 
-        response = Response({"redirects": retired_skus()})
+        # "Existe" para a LOJA e "existe" para o catalogo nao sao a mesma coisa:
+        # produto despublicado continua no catalogo (o `MIB` saiu da vitrine em
+        # 23/09/2026 e fica para a encomenda do restaurante), mas a loja responde
+        # 404 nele. Passar o catalogo inteiro como destino mandaria `MINI-BAGUETE`
+        # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
+        # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
+        published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
+        response = Response({"redirects": retired_skus(published)})
         response["Cache-Control"] = "public, max-age=300"
         return response
 
