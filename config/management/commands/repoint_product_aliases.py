@@ -41,25 +41,30 @@ from django.db.models import Count
 
 FONTE = "yooga"
 
-#: Códigos externos cujo de-para deve apontar para o produto de MESMO SKU.
+#: (código externo, SKU do produto de destino, o que a linha de 19/08 dizia).
 #: Autorizado pelo dono em 22/09/2026 ("faz"), depois de ver o ensaio do rename.
-#: Cada um traz o que a linha de 19/08 dizia, para que a troca seja legível.
-REAPONTAR: tuple[tuple[str, str], ...] = (
-    ("CHEGO_L50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("CHEGO_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("INTIMI_L50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("INTIMI_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("INTU_L70", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("INTU_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("MAMA_L60", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("MAMA_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("NAMAS_L60", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("NAMAS_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("SOFIA_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("VITAL_P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
-    ("BBB", "a unidade estava creditada ao pacote de 2"),
-    ("PHO", "a unidade estava creditada ao pacote de 4"),
-    ("CHAI_A", "estava como produto de outra época, sem produto nenhum"),
+#:
+#: ⚠️ O destino é escrito, não deduzido do próprio código. Quando estes pares
+#: nasceram, o produto tinha o mesmo código do Yooga — e deduzir bastava. O
+#: rename de 23/09 trocou os códigos, e o comando passou a avisar "não existe
+#: produto CHEGO_L50" toda vez que rodava, sobre linhas que já estavam certas.
+#: Comando que grita quando não há nada errado ensina a ignorar o grito.
+REAPONTAR: tuple[tuple[str, str, str], ...] = (
+    ("CHEGO_L50", "CHA-ACONCHEGO-KANFA-L50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("CHEGO_P50", "CHA-ACONCHEGO-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("INTIMI_L50", "CHA-INTIMIDADE-KANFA-L50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("INTIMI_P50", "CHA-INTIMIDADE-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("INTU_L70", "CHA-INTUICAO-KANFA-L70", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("INTU_P50", "CHA-INTUICAO-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("MAMA_L60", "CHA-MAMA-KANFA-L70", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("MAMA_P50", "CHA-MAMA-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("NAMAS_L60", "CHA-NAMASTE-KANFA-L70", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("NAMAS_P50", "CHA-NAMASTE-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("SOFIA_P50", "CHA-CHALOSOFIA-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("VITAL_P50", "CHA-VITAL-KANFA-P50", "chás Kãnfa lata/pouch = Chá da Casa (lata)"),
+    ("BBB", "BRBB", "a unidade estava creditada ao pacote de 2"),
+    ("PHO", "HOL", "a unidade estava creditada ao pacote de 4"),
+    ("CHAI_A", "SFTCH", "estava como produto de outra época, sem produto nenhum"),
 )
 
 #: Segunda leva (23/09/2026), conferida linha a linha por ele: as "METADE DO
@@ -94,9 +99,7 @@ class Command(BaseCommand):
         out = self.stdout
 
         # (código externo, sku do produto de destino, nota)
-        alvos: list[tuple[str, str, str]] = [
-            (sku, sku, nota) for sku, nota in REAPONTAR
-        ] + list(REAPONTAR_PARA)
+        alvos: list[tuple[str, str, str]] = list(REAPONTAR) + list(REAPONTAR_PARA)
         codigos = [sku for sku, _destino, _nota in alvos]
         produtos = dict(
             Product.objects.filter(
