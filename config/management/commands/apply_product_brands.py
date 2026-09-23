@@ -50,12 +50,10 @@ HOUSE_SKUS: frozenset[str] = frozenset({
     "COC", "CRPQ", "CPX", "CRO", "DELI", "FORMA", "FENDU", "FFGO", "FOA", "FOC", "HOD", "JO",
     "KUBB", "KUP", "MA", "BRBBP", "MDLN", "MELON", "FFGOP", "MIB", "FOBP", "FOAP", "FOCP",
     "HODP", "PCHOC", "TRABB", "HOL", "HOL4", "PIT", "PIT4", "BRRSN", "TABAT",
-    # Kit de produtos da casa
-    "COMBO-PETIT-DEJ",
     # Pratos montados aqui
-    "CQCOM", "CQMA", "CQMO", "JB", "MELSA", "PG", "PERDU", "PU", "QJQT", "TABUA", "TJ",
+    "CQCOM", "CQMA", "CQMO", "JB", "MELSA", "PERDU", "QJQT",
     # Bebidas preparadas no balcão
-    "COAD", "CE", "SFTCH", "CAFL", "CHOQ", "CTFV", "FRAP", "CHHIB", "CAPMO", "MOCHA", "CAP", "VIEN",
+    "SFTCH", "CAFL", "CHOQ", "CTFV", "FRAP", "CHHIB", "CAPMO", "MOCHA", "CAP", "VIEN",
     "SPMC", "SDLA", "SP", "CHBLU", "CHCAM", "CHROU", "CHSOP",
     # Despensa feita na casa (dono, 22/09)
     "RTAT", "TPND",
@@ -74,7 +72,6 @@ HOUSE_SKUS: frozenset[str] = frozenset({
 # "CFOP5102"), ou porque o item não apareceu em nenhuma nota lida.
 RESALE: dict[str, dict[str, str]] = {
     "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
-    "GL": {"brand": "St. Dalfour"},  # sabor indefinido: dois minis com GTINs distintos
     "AGUA-MINERAL-PRATA-310": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
     # GTIN do pedido de venda 7970 da Kãnfa (My Chai, 30/06/2026), dígito
     # verificador GS1 conferido. Aconchego e Chalosofia vieram com código

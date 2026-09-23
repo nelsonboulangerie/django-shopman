@@ -117,7 +117,7 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
 #: Montagem e bebida: ficha inativa (não é fornada), que já nascia por unidade.
 MONTAGEM_E_BEBIDA = frozenset({
     "queijo-quente", "croque-monsieur", "croque-madame", "croque-complet", "jambon-beurre",
-    "pain-grille", "pain-perdu", "espresso", "espresso-macchiato", "cafe-coado", "cappuccino",
+    "pain-perdu", "espresso", "espresso-macchiato", "cappuccino",
     "mochaccino", "mocha", "caffe-latte", "chocolate-quente", "cha-camille", "cha-rouge",
     "cha-sophie", "cha-bleu", "cha-hibisco", "soft-chai-citrico", "vienna-gelado",
     "cha-tonica-frutas-vermelhas",
