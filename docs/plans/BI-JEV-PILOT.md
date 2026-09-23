@@ -39,7 +39,14 @@ dá para medir já.
   total e por 1.000 itens; falhas. `--csv` grava caso a caso para auditoria.
 - **Dados**: só nome de produto (origem e catálogo). Nenhum dado de cliente sai do sistema.
 
-## Como rodar (staging)
+## Como roda
+
+**Sozinho, toda semana** (`run_alias_benchmark` no `maintenance_worker`): com 20 ou mais de-paras
+confirmados, mede fuzzy, Haiku 4.5 e Opus 5 (e embeddings e Jev quando houver pacote e chave) e
+guarda o placar em Admin → B.I. → **Placar do de-para**. O staging já tem 98 confirmados (registro
+de 22/08), então o primeiro placar sai no primeiro ciclo depois do deploy.
+
+## Rodar à mão (opcional)
 
 1. Confirmar de-paras no Admin → B.I. → De-paras. **O gabarito é o que a casa confirmou**, e sem
    gabarito o comando recusa. Umas 100 a 200 linhas variadas bastam.

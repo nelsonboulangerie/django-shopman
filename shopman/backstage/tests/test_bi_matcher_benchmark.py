@@ -297,13 +297,13 @@ def test_command_with_explicit_matcher_without_key_fails(settings, db):
 
 @pytest.mark.django_db
 def test_command_prices_each_llm_model_from_the_table(catalog, settings, monkeypatch, capsys):
-    from shopman.backstage.management.commands import benchmark_alias_matchers as command
+    from shopman.backstage.bi import matcher_benchmark
 
     class OfflineLLM(LLMMatcher):
         def __init__(self, *, model=None):
             super().__init__(model=model, client=_FakeClient('{"choice": "p1", "confidence": 0.95}', usage=(1_000_000, 0)))
 
-    monkeypatch.setattr(command, "LLMMatcher", OfflineLLM)
+    monkeypatch.setattr(matcher_benchmark, "LLMMatcher", OfflineLLM)
     _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
     call_command(
         "benchmark_alias_matchers", matcher=["llm"], llm_model=["claude-haiku-4-5", "modelo-sem-preco"],
@@ -312,3 +312,62 @@ def test_command_prices_each_llm_model_from_the_table(catalog, settings, monkeyp
     haiku_line = next(line for line in out.splitlines() if "llm:claude-haiku-4-5" in line)
     assert "1.0000" in haiku_line  # 1M tokens de entrada × US$ 1/M
     assert "Custo de llm:modelo-sem-preco zerado" in out
+
+
+# ── Medição automática: o placar vai para o Admin ───────────────────────────
+
+
+@pytest.mark.django_db
+def test_measure_waits_for_enough_gold_then_keeps_an_aggregate_report(catalog, settings, monkeypatch):
+    from shopman.backstage.bi import matcher_benchmark
+    from shopman.backstage.models import AliasBenchmarkReport
+
+    settings.AI_ASSIST_API_KEY = ""
+    settings.JEV_API_KEY = ""
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    report, reason = matcher_benchmark.maybe_measure()
+    assert report is None and "1 de 20" in reason
+
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    report, reason = matcher_benchmark.maybe_measure()
+    assert reason == "medido" and report.cases == 1 and report.contenders.startswith("fuzzy")
+    assert "llm: " in report.skipped and "jev: " in report.skipped
+    assert "■ fuzzy" in report.report and "acertou: 1 de 1" in report.report
+    assert "CROISSANT" not in report.report  # só agregado
+
+    again, reason = matcher_benchmark.maybe_measure()
+    assert again is None and "próximo sai" in reason  # um por semana
+    assert AliasBenchmarkReport.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_worker_command_is_quiet_until_it_measures(catalog, settings, capsys):
+    settings.AI_ASSIST_API_KEY = ""
+    call_command("run_alias_benchmark")
+    assert capsys.readouterr().out == ""
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    call_command("run_alias_benchmark", now=True)
+    assert "placar do de-para: medido" in capsys.readouterr().out
+
+
+@pytest.mark.django_db
+def test_report_is_readable_in_admin_and_read_only(catalog, settings, monkeypatch):
+    from django.contrib.auth.models import User
+    from django.test import Client
+    from django.urls import reverse
+
+    from shopman.backstage.bi import matcher_benchmark
+    from shopman.shop.models import Shop
+
+    settings.AI_ASSIST_API_KEY = ""
+    Shop.objects.create(name="Test Shop", brand_name="Test", short_name="TS", primary_color="#C5A55A", default_ddd="43")
+    User.objects.create_superuser("admin", "admin@test.com", "pass")
+    client = Client()
+    client.login(username="admin", password="pass")
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    report, _reason = matcher_benchmark.maybe_measure()
+
+    page = client.get(reverse("admin:backstage_aliasbenchmarkreport_change", args=[report.pk]))
+    assert page.status_code == 200 and "aceitaria sozinho" in page.content.decode()
+    assert client.get(reverse("admin:backstage_aliasbenchmarkreport_add")).status_code == 403

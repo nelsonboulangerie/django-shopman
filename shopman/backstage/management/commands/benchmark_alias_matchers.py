@@ -22,16 +22,12 @@ from shopman.backstage.bi.matcher_benchmark import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_MIN_SIMILARITY,
     DEFAULT_SHORTLIST,
-    EmbeddingMatcher,
-    FuzzyMatcher,
-    JevMatcher,
-    LLMMatcher,
-    MatcherNotConfigured,
+    build_matchers,
     gold_cases,
     load_catalog,
+    prices_for,
     run,
 )
-from shopman.shop.services.ai_pricing import LLM_PRICES, Price
 
 MATCHERS = ("fuzzy", "jev", "llm", "embed")
 
@@ -81,24 +77,17 @@ class Command(BaseCommand):
         requested = options["matcher"] or list(MATCHERS)
         explicit = bool(options["matcher"])
 
-        matchers = []
-        for name in requested:
-            try:
-                if name == "fuzzy":
-                    matchers.append(FuzzyMatcher(min_score=options["min_score"]))
-                elif name == "jev":
-                    matchers.append(JevMatcher())
-                elif name == "llm":
-                    for model in options["llm_model"] or [None]:
-                        matchers.append(LLMMatcher(model=model))
-                else:
-                    matchers.append(EmbeddingMatcher(
-                        model=options["embedding_model"], min_similarity=options["min_similarity"],
-                    ))
-            except MatcherNotConfigured as exc:
-                if explicit:
-                    raise CommandError(str(exc)) from exc
-                self.stdout.write(self.style.WARNING(f"{name}: fora do placar — {exc}"))
+        matchers, skipped = build_matchers(
+            requested,
+            llm_models=options["llm_model"],
+            min_score=options["min_score"],
+            embedding_model=options["embedding_model"],
+            min_similarity=options["min_similarity"],
+        )
+        for name, reason in skipped:
+            if explicit:
+                raise CommandError(reason)
+            self.stdout.write(self.style.WARNING(f"{name}: fora do placar — {reason}"))
 
         cases = gold_cases(options["source"], limit=options["limit"])
         if not cases:
@@ -107,16 +96,13 @@ class Command(BaseCommand):
                 "Confirme alguns em Admin → B.I. → De-paras e rode de novo."
             )
         catalog = load_catalog()
-        prices = {"jev": Price(options["jev_price_in"], options["jev_price_out"])}
-        self.unpriced = []
-        for matcher in matchers:
-            if isinstance(matcher, LLMMatcher):
-                table_in, table_out = LLM_PRICES.get(matcher.model, (None, None))
-                price_in = options["llm_price_in"] if options["llm_price_in"] is not None else table_in
-                price_out = options["llm_price_out"] if options["llm_price_out"] is not None else table_out
-                if price_in is None or price_out is None:
-                    self.unpriced.append(matcher.model)
-                prices[matcher.name] = Price(price_in or 0.0, price_out or 0.0)
+        prices, self.unpriced = prices_for(
+            matchers,
+            llm_price_in=options["llm_price_in"],
+            llm_price_out=options["llm_price_out"],
+            jev_price_in=options["jev_price_in"],
+            jev_price_out=options["jev_price_out"],
+        )
         result = run(
             cases, catalog, matchers, prices=prices,
             shortlist_size=options["shortlist"], accept_at=options["accept_at"],

@@ -454,6 +454,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # A série diária materializada do B.I. acompanha o dia (P3 da fundação).
         call("refresh_bi_daily_series"),
         call("evaluate_bi_alerts"),
+        # O placar do de-para: semanal, com gabarito mínimo (cadência no comando).
+        call("run_alias_benchmark"),
         call("expire_stale_announcements"),
         call("process_marketing_outbox", quiet_disabled=True),
         call(

@@ -43,6 +43,7 @@
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
+| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
@@ -1140,6 +1141,14 @@ por dia, fila aberta de até 200, dentro da retenção da observação), pré-ma
 `AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
 conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana.
 `--measure-now` força o placar. `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+
+### run_alias_benchmark
+
+**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. Roda no
+`maintenance_worker`: com pelo menos 20 `ProductAlias` confirmados e o último placar com mais de 7
+dias, mede `fuzzy`, `llm:claude-haiku-4-5`, `llm:claude-opus-5` e, quando disponíveis, `embed` e
+`jev`, e grava `AliasBenchmarkReport` (Admin → B.I. → Placar do de-para, só leitura, só agregado).
+Concorrente sem credencial ou pacote fica de fora e o placar diz por quê. `--now` força.
 
 ### setup_intent_categories
 

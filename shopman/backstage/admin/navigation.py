@@ -250,6 +250,8 @@ def get_sidebar_navigation(request):
             _model_item("De-para de produtos", "swap_horiz", "backstage.ProductAlias"),
             _model_item("De-para de categorias", "category", "backstage.CategoryAlias"),
             _model_item("De-para de pagamentos", "payments", "backstage.PaymentMethodAlias"),
+            # Quem acerta o de-para, e a que custo: a medição semanal, só leitura.
+            _model_item("Placar do de-para", "leaderboard", "backstage.AliasBenchmarkReport"),
             # O B.I. avisa: a régua é do gestor, o disparo é trilha.
             _model_item("Alarmes", "notifications_active", "backstage.BIAlertRule"),
             _model_item("Disparos de alarme", "campaign", "backstage.BIAlertEvent"),
