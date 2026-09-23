@@ -2501,18 +2501,32 @@ class Command(BaseCommand):
             "default": "19059090",
             # Pães (NCM 1905.90.10).
             **dict.fromkeys(breads, "19059010"),
-            # Bebidas preparadas na loja.
-            "SP": "21011110",
-            "COAD": "21011110",
-            "CAP": "21011200",
-            "CAPMO": "21011200",
-            "CE": "21011200",
-            "FRAP": "21011200",
-            "VIEN": "21011200",
-            "CHCAM": "09024000",
-            "CHROU": "09024000",
-            "CHSOP": "09024000",
-            "CHBLU": "09024000",
+            # ── Bebidas PREPARADAS na loja (revisão de 23/09/2026) ───────────
+            # O capítulo 22 é o das bebidas PRONTAS; o 21.01 e o 21.06 são das
+            # preparações que servem para FAZER bebida (pó solúvel, extrato,
+            # concentrado). O que a casa entrega no balcão é a bebida pronta.
+            #
+            # O que estava aqui descrevia outra coisa: `21011110` é café
+            # SOLÚVEL, `21011200` é preparação à base de extrato de café,
+            # `09024000` é folha de chá a granel acima de 3 kg — e cinco delas
+            # nem estavam na lista, caindo no default `19059090`, que é PRODUTO
+            # DE PADARIA. Ver docs/reference/ncm-bebidas-preparadas.md.
+            #
+            # ⚠️ CEST fica vazio de propósito: os do 2202.99.00 descrevem o
+            # industrializado pronto para beber, que circula com ST. O que a
+            # casa prepara não é esse produto.
+            **dict.fromkeys(
+                ("SP", "COAD", "CAP", "CAPMO", "FRAP", "VIEN", "SPMC", "CAFL", "MOCHA",
+                 # O `CE` sai do catálogo por decisão dele, mas enquanto existe
+                 # é bebida preparada como as outras.
+                 "CE",
+                 "CHOQ", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SFTCH", "CHHIB", "CTFV"),
+                "22029900",
+            ),
+            # ⚠️ As duas sodas da casa esperam o contador: o 2202.10.00 descreve
+            # o que elas são (água gaseificada aromatizada e adoçada) e é o
+            # ÚNICO código da posição 2202 alcançado pelo Imposto Seletivo a
+            # partir de 2027 (LC 214/2025, Anexo XVII). O 2202.99.00 fica fora.
             "CV": "22021000",
             "SDLA": "22021000",
             "AGUA-MINERAL-PRATA-310": "22011000",
@@ -2540,7 +2554,6 @@ class Command(BaseCommand):
             # forem `resale`, passam a exigir CSOSN 500, CFOP 5405/6405 e **CEST
             # por produto**. A bebida preparada não entra nessa dúvida: a regra
             # lista "bebidas preparadas" em `own_production` nominalmente.
-            "SFTCH": "09024000",
             **dict.fromkeys(
                 ("CHA-INTUICAO-KANFA-P50", "CHA-INTUICAO-KANFA-L70", "CHA-ACONCHEGO-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50",
                  "CHA-NAMASTE-KANFA-P50", "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50",
