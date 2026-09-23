@@ -1,0 +1,216 @@
+"""Piloto do de-para: gabarito, lista curta, os três concorrentes e o placar.
+
+Nenhum teste chama rede: Jev e LLM recebem transporte falso, e o que se fixa é
+o pedido que sai, a leitura do que volta e a conta de acerto/custo.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from django.core.management import CommandError, call_command
+from shopman.offerman.models import Product
+
+from shopman.backstage.bi.matcher_benchmark import (
+    OTHER,
+    Case,
+    FuzzyMatcher,
+    JevMatcher,
+    LLMMatcher,
+    MatcherNotConfigured,
+    MatcherResponseError,
+    Price,
+    gold_cases,
+    load_catalog,
+    parse_jev_response,
+    run,
+    shortlist,
+)
+from shopman.backstage.models import AliasStatus, ProductAlias
+
+
+@pytest.fixture
+def catalog(db):
+    products = {
+        sku: Product.objects.create(sku=sku, name=name)
+        for sku, name in (
+            ("CT", "Croissant Tradicional"),
+            ("PC", "Pain au Chocolat"),
+            ("BA", "Baguete Tradicional"),
+            ("MD", "Madeleine"),
+        )
+    }
+    return products
+
+
+def _confirmed(name, product=None, status=AliasStatus.CONFIRMED):
+    return ProductAlias.objects.create(source="yooga", external_name=name, product=product, status=status)
+
+
+# ── Gabarito ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_gold_is_only_confirmed_aliases_with_name(catalog):
+    _confirmed("CROISSANT TRAD", catalog["CT"])
+    _confirmed("Bolo de pote")  # confirmado sem produto = fora do catálogo
+    _confirmed("Pão de queijo", catalog["BA"], status=AliasStatus.PROPOSED)  # palpite da máquina não é gabarito
+    cases = gold_cases("yooga")
+    assert cases == [Case("CROISSANT TRAD", catalog["CT"].pk), Case("Bolo de pote", None)]
+
+
+@pytest.mark.django_db
+def test_shortlist_brings_the_most_similar_first(catalog):
+    found = shortlist("pain chocolat", load_catalog(), 2)
+    assert found[0][0].sku == "PC"
+    assert len(found) == 2
+
+
+# ── Concorrentes ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_fuzzy_keeps_todays_cut(catalog):
+    entries = load_catalog()
+    matcher = FuzzyMatcher(min_score=80)
+    hit = matcher.match(Case("croissant tradicional", None), shortlist("croissant tradicional", entries, 3))
+    assert hit.product_pk == catalog["CT"].pk and hit.confidence == 1.0
+    miss = matcher.match(Case("bolo de pote", None), shortlist("bolo de pote", entries, 3))
+    assert miss.product_pk is None and miss.confidence < 0.8
+
+
+class _FakeResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload, self.status_code, self.text = payload, status_code, str(payload)
+
+    def json(self):
+        return self._payload
+
+
+class _FakeSession:
+    def __init__(self, payload, status_code=200):
+        self.payload, self.status_code, self.sent = payload, status_code, []
+
+    def post(self, url, *, json, headers, timeout):
+        self.sent.append((url, json, headers))
+        return _FakeResponse(self.payload, self.status_code)
+
+
+@pytest.mark.django_db
+def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
+    settings.JEV_API_KEY = "test-key"
+    session = _FakeSession({
+        "answers": {"product": {"answer": "p1", "confidence": 0.97}},
+        "usage": {"input_tokens": 120},
+    })
+    matcher = JevMatcher(session=session)
+    candidates = shortlist("pain chocolat", load_catalog(), 3)
+    verdict = matcher.match(Case("pain chocolat", catalog["PC"].pk), candidates)
+
+    url, body, headers = session.sent[0]
+    assert url == settings.JEV_API_URL
+    assert headers["Authorization"] == "Bearer test-key"
+    choices = body["questions"]["product"]["choices"]
+    assert list(choices)[:3] == ["p1", "p2", "p3"] and OTHER in choices
+    assert body["state"] == {"sales_history_item": "pain chocolat"}
+    assert (verdict.product_pk, verdict.confidence, verdict.input_tokens) == (catalog["PC"].pk, 0.97, 120)
+
+
+@pytest.mark.django_db
+def test_jev_other_means_no_product(catalog, settings):
+    settings.JEV_API_KEY = "test-key"
+    matcher = JevMatcher(session=_FakeSession({"answers": {"product": {"answer": OTHER, "confidence": 0.9}}}))
+    verdict = matcher.match(Case("bolo de pote", None), shortlist("bolo de pote", load_catalog(), 3))
+    assert verdict.product_pk is None
+
+
+def test_jev_without_key_stays_out(settings):
+    settings.JEV_API_KEY = ""
+    with pytest.raises(MatcherNotConfigured):
+        JevMatcher(session=_FakeSession({}))
+
+
+def test_jev_parser_accepts_probabilities_list_shape_and_names_unknown_shapes():
+    choice, confidence, tokens = parse_jev_response(
+        {"answers": [{"id": "product", "value": "p2", "probabilities": {"p2": 0.8, "other": 0.2}}]},
+        question="product",
+    )
+    assert (choice, confidence, tokens) == ("p2", 0.8, 0)
+    with pytest.raises(MatcherResponseError, match="Chaves recebidas"):
+        parse_jev_response({"output": "?"}, question="product")
+
+
+class _FakeClient:
+    def __init__(self, text, usage=(300, 20)):
+        message = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text=text)],
+            usage=SimpleNamespace(input_tokens=usage[0], output_tokens=usage[1]),
+        )
+        self.messages = SimpleNamespace(create=lambda **kwargs: message)
+
+
+@pytest.mark.django_db
+def test_llm_reads_json_choice_and_usage(catalog):
+    matcher = LLMMatcher(client=_FakeClient('{"choice": "p1", "confidence": 0.85}'))
+    verdict = matcher.match(Case("madeleine", catalog["MD"].pk), shortlist("madeleine", load_catalog(), 3))
+    assert (verdict.product_pk, verdict.confidence) == (catalog["MD"].pk, 0.85)
+    assert (verdict.input_tokens, verdict.output_tokens) == (300, 20)
+
+
+@pytest.mark.django_db
+def test_llm_choice_outside_options_is_an_error(catalog):
+    matcher = LLMMatcher(client=_FakeClient('{"choice": "p9", "confidence": 0.9}'))
+    with pytest.raises(MatcherResponseError):
+        matcher.match(Case("madeleine", None), shortlist("madeleine", load_catalog(), 2))
+
+
+# ── Placar ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_scoreboard_counts_accepted_errors_cost_and_failures(catalog):
+    entries = load_catalog()
+    cases = [Case("madeleine", catalog["MD"].pk), Case("bolo de pote", None), Case("baguete", catalog["BA"].pk)]
+
+    class Scripted:
+        name = "llm"
+        answers = iter([("MD", 0.95), ("CT", 0.95), MatcherResponseError("quebrou")])
+
+        def match(self, case, candidates):
+            answer = next(self.answers)
+            if isinstance(answer, Exception):
+                raise answer
+            from shopman.backstage.bi.matcher_benchmark import Verdict
+
+            return Verdict(catalog[answer[0]].pk, answer[1], latency_ms=100, input_tokens=1_000_000, output_tokens=0)
+
+    result = run(cases, entries, [Scripted()], prices={"llm": Price(input_per_m=3.0)}, shortlist_size=3)
+    board = result.boards[0]
+    assert (board.total, board.correct, board.accepted, board.accepted_wrong, board.errors) == (3, 1, 2, 1, 1)
+    assert board.cost_usd == pytest.approx(6.0)
+    assert (result.cases_with_product, result.shortlist_hits) == (2, 2)
+
+
+@pytest.mark.django_db
+def test_command_reports_and_refuses_empty_gold(catalog, settings, tmp_path, capsys):
+    settings.JEV_API_KEY = ""
+    settings.AI_ASSIST_API_KEY = ""
+    with pytest.raises(CommandError, match="Gabarito vazio"):
+        call_command("benchmark_alias_matchers")
+
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    _confirmed("Bolo de pote")
+    out_csv = tmp_path / "piloto.csv"
+    call_command("benchmark_alias_matchers", csv=str(out_csv))
+    out = capsys.readouterr().out
+    assert "jev: fora do placar" in out and "llm: fora do placar" in out
+    assert "2 casos confirmados" in out
+    assert "fuzzy" in out and "2/2 (100%)" in out
+    assert out_csv.read_text(encoding="utf-8").splitlines()[1].startswith("fuzzy,CROISSANT TRADICIONAL,CT,CT")
+
+
+def test_command_with_explicit_matcher_without_key_fails(settings, db):
+    settings.JEV_API_KEY = ""
+    with pytest.raises(CommandError, match="JEV_API_KEY"):
+        call_command("benchmark_alias_matchers", matcher=["jev"])

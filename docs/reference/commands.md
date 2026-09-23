@@ -42,6 +42,7 @@
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
+| [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM no de-para de produto contra o gabarito confirmado; não grava |
 | [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
 | [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
@@ -1064,6 +1065,24 @@ python manage.py suggest_aliases --source yooga --kind product --min-score 80
 
 As regras **padrão** de categoria (23 trechos) e de forma de pagamento (15) não vêm daqui: vêm
 do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
+
+### benchmark_alias_matchers
+
+**Propósito:** Piloto do de-para de produto ([BI-JEV-PILOT](../plans/BI-JEV-PILOT.md)). Mede três
+concorrentes contra os `ProductAlias` **confirmados**: `fuzzy` (o `suggest_aliases` de hoje), `jev`
+(TypeSafe Jev, `JEV_API_KEY`) e `llm` (o LLM de `AI_ASSIST_*`). Não grava alias.
+
+**Uso:**
+```bash
+python manage.py benchmark_alias_matchers --matcher fuzzy
+python manage.py benchmark_alias_matchers --limit 200 --llm-price-in <US$/M> --llm-price-out <US$/M> --csv /tmp/piloto.csv
+```
+
+**Placar:** acerto; quantos aceitaria sozinho (confiança ≥ `--accept-at`, default 0.9) e quantos
+desses errados; latência p50/p95; tokens; custo total e por 1.000 itens; falhas. Jev e LLM veem os
+mesmos `--shortlist` candidatos do fuzzy mais a opção "nenhum destes"; a cobertura dessa lista é o
+teto deles e sai no relatório. Concorrente sem credencial fica de fora (ou falha, se pedido por
+`--matcher`). Gabarito vazio falha com o caminho para confirmar no Admin.
 
 ### refresh_bi_daily_series
 
