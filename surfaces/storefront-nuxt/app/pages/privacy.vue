@@ -79,8 +79,11 @@ useSeoMeta({
           <li>
             <strong>Aparelhos confiáveis.</strong> Quando você escolhe não pedir código de novo naquele
             aparelho, ficam guardados o navegador, a data e o <strong>endereço de IP</strong> daquele
-            acesso. Na tela de Segurança você vê o navegador e a data, que é o que permite reconhecer
-            se o acesso foi seu; o IP fica guardado e sai na cópia dos seus dados.
+            acesso. Na tela de Segurança você vê o navegador, a data e — quando dá para dizer com
+            honestidade — a cidade aproximada daquele acesso. Essa cidade é calculada <strong>aqui
+            dentro</strong>, por uma base que a loja guarda no próprio servidor: o seu IP não é
+            enviado a ninguém para isso, e a cidade não fica gravada. O IP fica guardado e sai na
+            cópia dos seus dados.
           </li>
           <li><strong>Endereço de IP</strong> também no envio de código, na declaração de maioridade e no aceite de cada canal de mensagem. É a prova de quando e de onde a escolha foi feita.</li>
           <li><strong>Avaliação e favoritos</strong>, quando você usa.</li>
