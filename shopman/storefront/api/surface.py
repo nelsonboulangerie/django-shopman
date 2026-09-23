@@ -310,6 +310,48 @@ class StorefrontSiteView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
+        summary="Retired product codes and where they went",
+        responses={200: OpenApiResponse(description="{'redirects': {sku aposentado: sku de hoje}}")},
+    ),
+)
+class StorefrontSkuRedirectsView(APIView):
+    """GET /api/v1/storefront/sku-redirects/ — o que a loja precisa para dar 301.
+
+    A URL do produto é o SKU, e o catálogo trocou de código duas vezes
+    (``CROISSANT`` → ``CT`` → ``CRO``). Sem este mapa, endereço que o Google
+    indexou vira 404 e a página recomeça do zero na busca.
+
+    Só sai o código que chega a produto VIVO (``retired_skus``): quem não chega
+    não tem destino honesto, e mandar a pessoa para outro 404 é pior que dizer
+    que não existe.
+
+    Público e sem sessão, como o resto do que a loja mostra a quem não entrou. O
+    ``Cache-Control`` é curto de propósito: rename é raro, mas quando acontece a
+    loja tem de acompanhar no mesmo dia.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from shopman.shop.projections import catalog_context
+        from shopman.shop.services.sku_history import retired_skus
+
+        # "Existe" para a LOJA e "existe" para o catalogo nao sao a mesma coisa:
+        # produto despublicado continua no catalogo (o `MIB` saiu da vitrine em
+        # 23/09/2026 e fica para a encomenda do restaurante), mas a loja responde
+        # 404 nele. Passar o catalogo inteiro como destino mandaria `MINI-BAGUETE`
+        # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
+        # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
+        published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
+        response = Response({"redirects": retired_skus(published)})
+        response["Cache-Control"] = "public, max-age=300"
+        return response
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
         summary="Storefront menu projection",
         responses={200: OpenApiResponse(description="Catalog projection plus cart projection.")},
     ),

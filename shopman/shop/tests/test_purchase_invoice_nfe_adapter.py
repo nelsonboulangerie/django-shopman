@@ -230,7 +230,7 @@ def test_material_name_inside_long_distributor_description_is_suggested(supplier
 
 @pytest.mark.django_db
 def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
-    Material.objects.create(sku="FERMENTO-BIO", name="Fermento biológico", unit="g")
+    Material.objects.create(sku="FERMENTO-BIOLOGICO", name="Fermento biológico", unit="g")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="FERM-500", product_name="FERM BIOL SECO INST FLEISCHMANN 500G", unit="UN"),
@@ -239,7 +239,7 @@ def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
 
     line = draft["lines"][0]
     assert line["materialSku"] == ""
-    assert line["suggestedMaterialSku"] == "FERMENTO-BIO"
+    assert line["suggestedMaterialSku"] == "FERMENTO-BIOLOGICO"
     assert line["suggestionScore"] == 100
 
 
@@ -424,7 +424,7 @@ def test_doczip_within_the_cap_still_decodes():
 def fermento(db):
     """Insumo pesado em kg — e comprado em pacote. E onde os dois eixos brigam."""
     return Material.objects.create(
-        sku="FERMENTO-BIO",
+        sku="FERMENTO-BIOLOGICO",
         name="Fermento biologico",
         unit="kg",
         metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
@@ -628,7 +628,7 @@ def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
     """O mesmo item, agora com insumo: o par da nota vira "Caixa 5 kg"."""
     from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
 
-    manteiga = Material.objects.create(sku="MANTEIGA-FR", name="Manteiga francesa", unit="kg")
+    manteiga = Material.objects.create(sku="MANTEIGA-FRANCESA", name="Manteiga francesa", unit="kg")
 
     suggestion = conversion_from_invoice_axes(
         material=manteiga,

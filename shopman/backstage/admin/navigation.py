@@ -154,6 +154,11 @@ def get_sidebar_navigation(request):
             _model_item("Entregas dos avisos", "outbox", "storefront.StockAlertDelivery"),
             # Atendimento conversacional: contexto, vínculos e volta ao concierge.
             _model_item("Conversas do concierge", "chat", "shop.Conversation"),
+            # Intenções das mensagens (INTENT-PILOT-PLAN): o vocabulário e a fila
+            # onde a casa marca o que o cliente quis, para medir classificadores.
+            _model_item("Intenções", "label", "storefront.IntentCategory"),
+            _model_item("Mensagens para rotular", "rule", "storefront.MessageIntentSample"),
+            _model_item("Placar das intenções", "leaderboard", "storefront.IntentPilotReport"),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.

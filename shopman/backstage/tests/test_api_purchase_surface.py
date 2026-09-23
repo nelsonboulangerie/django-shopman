@@ -944,7 +944,7 @@ def test_declare_conversion_refuses_a_blank_label(client, purchase_operator, mat
 def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client, purchase_operator, supplier):
     """Ponta a ponta: o caso do fermento chega na tela como sugestão, não como erro mudo."""
     Material.objects.create(
-        sku="FERMENTO-BIO",
+        sku="FERMENTO-BIOLOGICO",
         name="Fermento biologico",
         unit="kg",
         metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
@@ -986,7 +986,7 @@ def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client,
 
     assert response.status_code == 200
     line = response.json()["purchase"]["activeReceipt"]["lines"][0]
-    assert line["materialSku"] == "FERMENTO-BIO"
+    assert line["materialSku"] == "FERMENTO-BIOLOGICO"
     assert line["purchaseQty"] == 10.0
     assert line["invoiceUnit"] == "UN"
     assert line["requiresConversion"] is True
@@ -1090,7 +1090,7 @@ def test_declare_conversion_derives_the_factor_from_the_invoice_axes(client, pur
     unidade-base para converter PARA. Escolhido o insumo, o par da nota volta e
     o servidor deriva, com a mesma fisica do adapter.
     """
-    manteiga = Material.objects.create(sku="MANTEIGA-FR", name="Manteiga francesa", unit="kg")
+    manteiga = Material.objects.create(sku="MANTEIGA-FRANCESA", name="Manteiga francesa", unit="kg")
     client.force_login(purchase_operator)
 
     response = client.post(

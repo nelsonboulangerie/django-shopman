@@ -26,6 +26,7 @@ manutenção num loop (default: a cada 5 minutos):
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
+  run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -149,6 +150,11 @@ MAINTENANCE_COMMANDS = (
     # A retenção é executada automaticamente; o comando só toca mensagens
     # inelegíveis cujo prazo aprovado já venceu.
     "cleanup_concierge_observations",
+    # Piloto de intenções (INTENT-PILOT-PLAN): sorteia a mensagem observada
+    # recente, pré-marca as intenções e mede os classificadores. DEPOIS da
+    # limpeza, de propósito: nunca sorteia o que acabou de vencer. Tetos próprios
+    # (por dia, fila aberta, placar semanal) — em ciclo vazio não custa nada.
+    "run_intent_pilot",
     "check_directive_health",
     # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
     # checagem de ESTADO, não de evento: o que importa não é o instante em que

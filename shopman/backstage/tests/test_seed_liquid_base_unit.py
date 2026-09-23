@@ -37,7 +37,7 @@ from shopman.craftsman.models.recipe import _item_mass_in_kg
 # `Material.metadata`). O teste não a inventa: confere que o perfil semeado diz o
 # mesmo número.
 DENSIDADES = {
-    "AGUA-FILTRADA": Decimal("1.0"),
+    "AGUA": Decimal("1.0"),
     "LEITE": Decimal("1.03"),
     "AZEITE": Decimal("0.91"),
     "CREME-DE-LEITE": Decimal("1.01"),
@@ -58,19 +58,19 @@ COMPRADOS_EM_LITRO = ("LEITE", "AZEITE", "CREME-DE-LEITE")
 # contado em `("creme-baunilha", "LEITE")`. Linha que sai daqui sem essa
 # explicação é conversão perdida, e o teste é quem grita.
 QUANTIDADES_EM_LITRO = {
-    ("creme-levain", "AGUA-FILTRADA"): Decimal("1.700"),
-    ("massa-pasta-autolizada", "AGUA-FILTRADA"): Decimal("3.500"),
-    ("massa-yudane", "AGUA-FILTRADA"): Decimal("1.000"),
-    ("massa-campagne", "AGUA-FILTRADA"): Decimal("3.500"),
-    ("massa-ciabatta", "AGUA-FILTRADA"): Decimal("4.000"),
+    ("creme-levain", "AGUA"): Decimal("1.700"),
+    ("massa-pasta-autolizada", "AGUA"): Decimal("3.500"),
+    ("massa-yudane", "AGUA"): Decimal("1.000"),
+    ("massa-campagne", "AGUA"): Decimal("3.500"),
+    ("massa-ciabatta", "AGUA"): Decimal("4.000"),
     ("massa-ciabatta", "AZEITE"): Decimal("0.250"),
     ("massa-forma", "LEITE"): Decimal("1.800"),
     ("massa-croissant", "LEITE"): Decimal("1.200"),
     ("massa-kuropan", "LEITE"): Decimal("1.800"),
-    ("massa-folhado", "AGUA-FILTRADA"): Decimal("1.800"),
+    ("massa-folhado", "AGUA"): Decimal("1.800"),
     ("creme-baunilha", "LEITE"): Decimal("3.400"),
     ("massa-butter", "LEITE"): Decimal("1.600"),
-    ("massa-pita", "AGUA-FILTRADA"): Decimal("3.000"),
+    ("massa-pita", "AGUA"): Decimal("3.000"),
     ("massa-pita", "AZEITE"): Decimal("0.150"),
     ("recheio-frango", "AZEITE"): Decimal("0.150"),
     ("recheio-cebola-bacon-tomilho", "AZEITE"): Decimal("0.150"),
@@ -80,20 +80,20 @@ QUANTIDADES_EM_LITRO = {
     ("creme-leite-ovos", "LEITE"): Decimal("0.600"),
     ("vinagrete-frances", "AZEITE"): Decimal("0.700"),
     ("espresso-macchiato", "LEITE"): Decimal("0.020"),
-    ("cafe-coado", "AGUA-FILTRADA"): Decimal("0.200"),
+    ("cafe-coado", "AGUA"): Decimal("0.200"),
     ("cappuccino", "LEITE"): Decimal("0.150"),
     ("mochaccino", "LEITE"): Decimal("0.150"),
     ("mocha", "LEITE"): Decimal("0.180"),
     ("caffe-latte", "LEITE"): Decimal("0.220"),
     ("chocolate-quente", "LEITE"): Decimal("0.220"),
-    ("cha-camille", "AGUA-FILTRADA"): Decimal("0.400"),
-    ("cha-rouge", "AGUA-FILTRADA"): Decimal("0.400"),
-    ("cha-sophie", "AGUA-FILTRADA"): Decimal("0.400"),
-    ("cha-bleu", "AGUA-FILTRADA"): Decimal("0.400"),
-    ("cha-hibisco", "AGUA-FILTRADA"): Decimal("0.300"),
-    ("soft-chai-citrico", "AGUA-FILTRADA"): Decimal("0.250"),
+    ("cha-camille", "AGUA"): Decimal("0.400"),
+    ("cha-rouge", "AGUA"): Decimal("0.400"),
+    ("cha-sophie", "AGUA"): Decimal("0.400"),
+    ("cha-bleu", "AGUA"): Decimal("0.400"),
+    ("cha-hibisco", "AGUA"): Decimal("0.300"),
+    ("soft-chai-citrico", "AGUA"): Decimal("0.250"),
     ("vienna-gelado", "LEITE"): Decimal("0.050"),
-    ("vienna-gelado", "AGUA-FILTRADA"): Decimal("0.200"),
+    ("vienna-gelado", "AGUA"): Decimal("0.200"),
 }
 
 # O cadastro guarda três casas. Arredondar ali desloca a massa em no máximo meio
@@ -224,7 +224,7 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
         assert conversao.is_approximate is True, sku
         assert conversao.supplier_id is None, sku
         assert conversao.is_active is True, sku
-    assert not MaterialConversion.objects.filter(material__sku="AGUA-FILTRADA").exists()
+    assert not MaterialConversion.objects.filter(material__sku="AGUA").exists()
 
     # O ganho concreto: a massa do item sai direto do cadastro. Antes, item sem
     # `density_g_per_ml` devolvia `None` e calava o invariante da ficha inteira.
