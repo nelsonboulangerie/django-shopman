@@ -10,6 +10,12 @@ intenções** é só leitura: o que o ciclo mediu, sem texto de cliente.
 
 A mensagem nunca é editada aqui, nem copiada: a amostra aponta para ela, e
 apagar a mensagem (retenção, pedido do titular) apaga a amostra junto.
+
+⚠️ **A fila é corpus observado, e corpus observado tem portão próprio.** Ler
+ou conferir exige ``shop.review_conversation_observations`` — a mesma permissão
+que o Admin do concierge exige para mostrar uma observação. O ``view_*`` que o
+``setup_groups`` dá ao Gerente sobre o storefront inteiro NÃO basta: sem isso, a
+fila de conferência seria uma porta lateral para o corpus que a Conversa esconde.
 """
 
 from __future__ import annotations
@@ -59,6 +65,9 @@ class MessageIntentSampleForm(forms.ModelForm):
             self.initial["status"] = SampleStatus.LABELED
 
 
+OBSERVATION_PERMISSION = "shop.review_conversation_observations"
+
+
 @admin.register(MessageIntentSample)
 class MessageIntentSampleAdmin(ModelAdmin):
     form = MessageIntentSampleForm
@@ -76,6 +85,18 @@ class MessageIntentSampleAdmin(ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # a fila nasce do sorteio, não à mão
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm(OBSERVATION_PERMISSION) and super().has_view_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.has_perm(OBSERVATION_PERMISSION) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return False  # some sozinha com a mensagem; apagar à mão tiraria do gabarito sem rastro
+
+    def has_module_permission(self, request):
+        return request.user.has_perm(OBSERVATION_PERMISSION) and super().has_module_permission(request)
 
     @display(description="mensagem (redigida)")
     def text_preview(self, obj):
@@ -124,7 +145,7 @@ class MessageIntentSampleAdmin(ModelAdmin):
                 )
         return super().response_change(request, obj)
 
-    @admin.action(description="Confirmar sugestões selecionadas como estão")
+    @admin.action(description="Confirmar sugestões selecionadas como estão", permissions=["change"])
     def confirm_suggestions(self, request, queryset):
         count = 0
         for sample in queryset.filter(status=SampleStatus.PROPOSED):
@@ -137,7 +158,7 @@ class MessageIntentSampleAdmin(ModelAdmin):
             message += f" {ignored} ignorada(s): só se confirma o que a máquina sugeriu."
         self.message_user(request, message)
 
-    @admin.action(description="Pular selecionadas (ininteligível, fora de contexto)")
+    @admin.action(description="Pular selecionadas (ininteligível, fora de contexto)", permissions=["change"])
     def skip_selected(self, request, queryset):
         count = queryset.update(status=SampleStatus.SKIPPED, labeled_by=None, labeled_at=None)
         self.message_user(request, f"{count} mensagem(ns) pulada(s): ficam fora do gabarito.")

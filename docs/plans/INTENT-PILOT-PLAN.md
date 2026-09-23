@@ -96,6 +96,10 @@ A resposta decide três usos possíveis, que dependem do placar:
   23/09: **`anthropic` aprovado** (já recebe o texto cru quando o concierge atende; é o default)
   e **`typesafe` (Jev) fora** até o dono decidir (fornecedor novo, termos não avaliados, cadastro
   pausado). `regex` e `embed` rodam sem isso.
+- **A fila de conferência é corpus observado.** Abrir ou conferir exige
+  `shop.review_conversation_observations`, a mesma permissão que o Admin do concierge exige para
+  mostrar uma observação; o `view_*` que o Gerente tem sobre o storefront não basta. Hoje só o dono
+  (superusuário) confere; dar a permissão a mais alguém é a decisão G04 de nomear curadores.
 - **A pressa é a certa.** A mensagem observada vence em dias e leva a amostra junto; o ciclo
   sorteia só dentro da janela de retenção e pré-marca na hora, para a conferência caber nela.
 
@@ -106,7 +110,7 @@ o Jev fora (§4), e o corpus é a observação que já roda. Nenhum comando de c
 
 - a migração sobe no release; o vocabulário, o sorteio, a pré-marcação e o placar rodam no
   `maintenance_worker`;
-- **a equipe confere** em Admin → Clientes → Mensagens para rotular (filtro "sugerida"): leva
+- **quem tem a permissão de curadoria confere** em Admin → Clientes → Mensagens para rotular (filtro "sugerida"): leva
   segundos por mensagem, e a ação em lote confirma as que estão certas de uma vez;
 - **o placar aparece sozinho** em Admin → Clientes → Placar das intenções quando houver 30
   conferidas.

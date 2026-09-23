@@ -430,3 +430,29 @@ def test_worker_command_is_silent_when_disabled(settings, capsys):
     settings.SHOPMAN_INTENT_PILOT_ENABLED = False
     call_command("run_intent_pilot")
     assert not IntentCategory.objects.exists()
+
+
+@pytest.mark.django_db
+def test_label_queue_is_observed_corpus_and_needs_the_observation_permission(categories):
+    from django.contrib.auth.models import Permission
+
+    Shop.objects.create(name="Test Shop", brand_name="Test", short_name="TS", primary_color="#C5A55A", default_ddd="43")
+    sample = MessageIntentSample.objects.create(message=_inbound("Quero pão"), status=SampleStatus.PROPOSED)
+    manager = User.objects.create_user("gerente", password="pass", is_staff=True)
+    # O que o setup_groups dá ao Gerente sobre o storefront: ver e, aqui, até mudar.
+    manager.user_permissions.add(*Permission.objects.filter(
+        content_type__app_label="storefront", codename__in=["view_messageintentsample", "change_messageintentsample"],
+    ))
+    client = Client()
+    client.login(username="gerente", password="pass")
+    changelist = reverse("admin:storefront_messageintentsample_changelist")
+    change = reverse("admin:storefront_messageintentsample_change", args=[sample.pk])
+
+    assert client.get(changelist).status_code == 403  # view_* sozinho não abre o corpus
+    assert client.get(change).status_code == 403
+
+    manager.user_permissions.add(Permission.objects.get(codename="review_conversation_observations"))
+    manager = User.objects.get(pk=manager.pk)  # limpa o cache de permissões
+    client.force_login(manager)
+    assert client.get(changelist).status_code == 200
+    assert client.get(change).status_code == 200
