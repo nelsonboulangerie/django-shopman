@@ -83,14 +83,16 @@ RESALE: dict[str, dict[str, str]] = {
     # 70g em 22/09, então o identificador vale — o nome da peça é corrigido na
     # curadoria do catálogo, e o SKU segue o mesmo (SKU é endereço, não
     # descrição: trocá-lo quebraria o histórico de venda).
-    # ⚠️ SEM GTIN, e isto é FATO do produto, não busca mal feita (23/09/2026).
-    # O fabricante declara `cEAN=SEM GTIN` para esta lata em DUAS notas (8246 de
-    # 01/07 e 8472 de 03/08) — e na MESMA nota declara o GTIN do pouch irmão no
-    # campo certo. Na loja da própria marca ela é o único item com código
-    # interno (`Acon_L50`) onde todos os vizinhos trazem um GTIN-13. Duas
-    # fontes do fabricante concordam: a lata do Aconchego não tem GTIN
-    # registrado. Só uma embalagem na mão muda esta linha.
-    "CHA-ACONCHEGO-KANFA-L50": {"brand": "Kãnfa"},
+    # ⚠️ Este GTIN veio do DONO, lendo a lata (23/09/2026) — e é a lição desta
+    # linha. Eu tinha escrito aqui que a lata "não tem GTIN registrado", com
+    # duas fontes do fabricante concordando: `cEAN=SEM GTIN` em duas notas
+    # (8246 de 01/07 e 8472 de 03/08, ambas declarando o GTIN do pouch irmão no
+    # campo certo, na mesma nota) e, na loja da própria marca, o único item com
+    # código interno (`Acon_L50`) onde todo vizinho traz um GTIN-13.
+    # As duas fontes concordavam e as duas estavam erradas: o código existe,
+    # está impresso na embalagem, e o fabricante é que não o declara.
+    # **Ausência em toda fonte que eu alcanço não é ausência no mundo.**
+    "CHA-ACONCHEGO-KANFA-L50": {"brand": "Kãnfa", "gtin": "7898708850309"},
     "CHA-ACONCHEGO-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850316"},
     "CHA-INTIMIDADE-KANFA-L50": {"brand": "Kãnfa", "gtin": "7898708850347"},
     "CHA-INTIMIDADE-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850354"},
