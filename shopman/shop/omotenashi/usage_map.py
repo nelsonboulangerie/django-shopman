@@ -140,6 +140,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "DEVICE_LIST_LAST_USED_PREFIX": (
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
     ),
+    "DEVICE_LIST_NEAR_PREFIX": (
+        ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
+    ),
     "DEVICE_LIST_REGISTERED_PREFIX": (
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
     ),

@@ -129,6 +129,10 @@ def _serialize_device(device: dict) -> dict:
         "created_at_display": _fmt_dt(device.get("created_at")),
         "last_used_at": device.get("last_used_at").isoformat() if device.get("last_used_at") else None,
         "last_used_at_display": _fmt_dt(device.get("last_used_at")) or "Ainda não usado novamente",
+        # "Londrina, PR · Brasil", ou vazio quando a leitura não foi confiável o bastante
+        # para nomear a cidade. Vazio é resposta legítima e frequente — ver
+        # `shopman/shop/services/ip_location.py`. Calculado na hora, nunca gravado.
+        "approximate_city": device.get("approximate_city") or "",
         "is_current": bool(device.get("is_current")),
     }
 
@@ -1043,6 +1047,11 @@ def _devices_copy() -> dict:
         # datas, e a primeira sem dizer do que é. Quem pergunta "fui eu que entrei?" está
         # justamente lendo essa primeira data.
         "last_used_prefix": message("DEVICE_LIST_LAST_USED_PREFIX", "Último uso em"),
+        # ⚠️ "Próximo a" é escolha do dono (23/09/2026), não economia de palavra: ele
+        # comunica que a localização é aproximada sem precisar de nota de rodapé ao lado.
+        # A leitura vem de base local e já foi filtrada por confiança antes de chegar
+        # aqui — quem escrever outra coisa neste campo tem de manter essa promessa.
+        "near_prefix": message("DEVICE_LIST_NEAR_PREFIX", "Próximo a"),
         "registered_prefix": message("DEVICE_LIST_REGISTERED_PREFIX", "Registrado em"),
         "revoke_cta": title("DEVICE_REVOKE_CTA", "Remover"),
         "revoke_all_cta": title("DEVICE_REVOKE_ALL_CTA", "Remover todos os aparelhos"),
