@@ -564,6 +564,13 @@ envs:
   scope: RUN_TIME
   value: '4605528796186498,4685528796186498,1962036908'
   type: GENERAL
+# Prazo da observação (captura passiva): 30 dias, o teto aceito, durante o
+# aprendizado (decisão do dono, 23/09/2026); depois encurta. O valor novo vale
+# também para o já guardado: cleanup_concierge_observations realinha o prazo.
+- key: CONCIERGE_OBSERVATION_RETENTION_DAYS
+  scope: RUN_TIME
+  value: '30'
+  type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET
