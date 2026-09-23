@@ -149,15 +149,26 @@ fixa, que é onde a leitura costuma ser boa. Se o log do passo 4.1 disse ✓, a 
 
 ## 5. Depois de ligar: o que continua sendo seu
 
-**A base envelhece.** A MaxMind republica a GeoLite2 toda semana; a imagem só troca de
-base quando alguém força. Base velha não erra sempre, mas uma faixa de IP que trocou de
-operadora pode nomear a cidade antiga — com a mesma confiança de uma correta.
+**A base envelhece — mas não em silêncio.** A MaxMind republica a GeoLite2 toda semana.
+Base velha não erra sempre; o risco é uma faixa de IP que trocou de operadora nomear a
+cidade antiga, com a mesma confiança de uma correta.
 
-Forçar a troca é subir a data em `GEOLITE2_SNAPSHOT`, no `Dockerfile`. O campo serve
-também de registro de quando a base foi trocada pela última vez.
+Isso deixou de depender de alguém lembrar (PR #1021):
 
-> Há uma frente aberta para isso avisar sozinho quando a base ficar velha, em vez de
-> depender de alguém lembrar. Enquanto ela não entra, a lembrança é humana.
+- **aos 21 dias** sem troca, o sistema **avisa o operador** — são três publicações
+  perdidas; avisar em 7 seria gritar sobre uma semana corrida;
+- **aos 90 dias**, a cidade **some da tela** e volta a ser navegador e data. O sumiço não
+  acontece aos 21 de propósito: como o bump é manual, avisar e apagar no mesmo limiar
+  deixaria o rótulo permanentemente mudo;
+- **toda quarta**, um workflow abre sozinho o PR que sobe a data em `GEOLITE2_SNAPSHOT`.
+  Ele **não precisa da chave da MaxMind** — esse campo só invalida a camada da imagem;
+  quem baixa é o build.
+
+Na prática, depois de ligar a chave, a sua parte vira **aprovar o PR semanal**. Se ele
+parar de aparecer, isso é o sinal.
+
+> ⚙️ Os dois prazos são configuráveis. Se você preferir que a cidade **nunca** suma por
+> idade, `GEOIP_CITY_MAX_AGE_DAYS=0` desliga só essa metade e o aviso continua.
 
 **A chave é revogável.** Se por qualquer motivo você quiser cortá-la, o caminho é o portal
 da MaxMind, e o efeito é a tela voltar ao estado de hoje — navegador e data.
