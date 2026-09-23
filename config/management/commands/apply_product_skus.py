@@ -233,6 +233,34 @@ POLITICA_DE_COLISAO: dict[str, str] = {
 }
 
 
+def mapa_de_renames() -> dict[str, str]:
+    """Todo código que já foi nosso → o código que ele virou, nas duas levas.
+
+    O ``rename_skus_to_real`` trocou os códigos inventados do seed pelos do
+    Yooga; este comando troca os do Yooga pelos curados. Quem precisa saber "o
+    que é este código hoje" — o iFood, o B.I. — tem de olhar os dois, e não um.
+    """
+    from config.management.commands.rename_skus_to_real import RENAMES as REAIS
+
+    return dict(tuple(REAIS) + tuple(RENAMES))
+
+
+def codigo_de_hoje(sku: str, conhecidos) -> str:
+    """Segue a cadeia de renames até um código que EXISTE em ``conhecidos``.
+
+    As levas se encadeiam (``BAGUETE → BF → TRADI``) e chegam a voltar
+    (``FENDU → FE → FENDU``). Resolver no papel exigiria desempatar o ciclo, e
+    desempate é chute; quem decide é o conjunto do que existe hoje. Devolve o
+    próprio ``sku`` quando não há para onde ir.
+    """
+    destino = mapa_de_renames()
+    atual, visitados = sku, {sku}
+    while atual not in conhecidos and atual in destino and destino[atual] not in visitados:
+        atual = destino[atual]
+        visitados.add(atual)
+    return atual
+
+
 def _curadoria(nota: str | None) -> str:
     """A nota do de-para, quando existe: quem decidiu e quando."""
     nota = (nota or "").strip()

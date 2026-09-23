@@ -45,20 +45,20 @@ from shopman.offerman.models import Product
 # porque a casa ainda não faz: Cream Soda (CV), Bacon (BK) e Mostarda (MT).
 HOUSE_SKUS: frozenset[str] = frozenset({
     # Pães, viennoiserie, doces e salgados de forno
-    "ANC", "ANP", "ANU", "BA", "BAP", "BAX", "BBB", "BBB2", "BCH", "BE", "BEP",
-    "BF", "BH", "BN", "CBT", "CF", "CGO", "CGR", "CH", "CI", "CM", "CN", "CO",
-    "COC", "CPQ", "CPX", "CT", "DL", "FA", "FE", "FF", "FOA", "FOC", "HO", "JO",
-    "KBB", "KP", "MA", "MBBBG", "MD", "ME", "MFF", "MIB", "MICBT", "MIF", "MIFOC",
-    "MIHO", "PC", "PH", "PHO", "PHO4", "PI", "PI4", "PR", "TB",
+    "COE", "PORQ", "URS", "BAT", "TRADP", "ITA", "BRBB", "BRBB2", "BRCH", "BGGG", "BGGP",
+    "TRADI", "BICH", "BRNT", "FOB", "CPBG", "CPG", "CPR", "CHLH", "CI", "CROMI", "CN", "CO",
+    "COC", "CROPQ", "CPX", "CRO", "DELI", "FORMA", "FENDU", "FFGO", "FOA", "FOC", "HOD", "JO",
+    "KUBB", "KUP", "MA", "BRBBM", "MDLN", "MELON", "FFGOM", "MIB", "FOBM", "FOAM", "FOCM",
+    "HODM", "PCHOC", "TRABB", "HOBB", "HOBB4", "PIT", "PIT4", "BRRSN", "TABAT",
     # Kit de produtos da casa
     "COMBO-PETIT-DEJ",
     # Pratos montados aqui
-    "CCOM", "CMA", "CMO", "JB", "MS", "PG", "PPU", "PU", "QQ", "TI", "TJ",
+    "CQCOM", "CQMA", "CQMO", "JB", "MELSA", "PG", "PERDU", "PU", "QJQT", "TABUA", "TJ",
     # Bebidas preparadas no balcão
-    "CD", "CE", "CHAI_A", "CL", "CQ", "CTV", "FP", "HI", "MC", "MH", "PS", "SE",
-    "SL", "SO", "SS", "THB", "THC", "THR", "THS",
+    "COAD", "CE", "SFTCH", "CAFL", "CHOQ", "CTFV", "FRAP", "CHHIB", "CAPMO", "MOCHA", "CAP", "VIEN",
+    "SPMC", "SDLA", "SP", "CHBLU", "CHCAM", "CHROU", "CHSOP",
     # Despensa feita na casa (dono, 22/09)
-    "PT", "TP",
+    "RTAT", "TPND",
 })
 
 # Revenda: marca do fabricante; GTIN só quando o código foi conferido (dígito
@@ -73,9 +73,9 @@ HOUSE_SKUS: frozenset[str] = frozenset({
 # código interno (Aconchego Lata) ou lixo de cadastro (Chalosofia vem como
 # "CFOP5102"), ou porque o item não apareceu em nenhuma nota lida.
 RESALE: dict[str, dict[str, str]] = {
-    "QC": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
+    "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
     "GL": {"brand": "St. Dalfour"},  # sabor indefinido: dois minis com GTINs distintos
-    "AG": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
+    "AGUA-MINERAL-PRATA-310": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
     # GTIN do pedido de venda 7970 da Kãnfa (My Chai, 30/06/2026), dígito
     # verificador GS1 conferido. Aconchego e Chalosofia vieram com código
     # interno do fabricante, que não é GTIN. As latas de Mama e Namastê são
@@ -83,18 +83,18 @@ RESALE: dict[str, dict[str, str]] = {
     # 70g em 22/09, então o identificador vale — o nome da peça é corrigido na
     # curadoria do catálogo, e o SKU segue o mesmo (SKU é endereço, não
     # descrição: trocá-lo quebraria o histórico de venda).
-    "CHEGO_L50": {"brand": "Kãnfa"},
-    "CHEGO_P50": {"brand": "Kãnfa", "gtin": "7898708850316"},
-    "INTIMI_L50": {"brand": "Kãnfa", "gtin": "7898708850347"},
-    "INTIMI_P50": {"brand": "Kãnfa", "gtin": "7898708850354"},
-    "INTU_L70": {"brand": "Kãnfa", "gtin": "7898708850408"},
-    "INTU_P50": {"brand": "Kãnfa", "gtin": "7898708850385"},
-    "MAMA_L60": {"brand": "Kãnfa", "gtin": "7898708850705"},
-    "MAMA_P50": {"brand": "Kãnfa", "gtin": "7898708850682"},
-    "NAMAS_L60": {"brand": "Kãnfa", "gtin": "7898708850668"},
-    "NAMAS_P50": {"brand": "Kãnfa", "gtin": "7898708850644"},
-    "SOFIA_P50": {"brand": "Kãnfa"},
-    "VITAL_P50": {"brand": "Kãnfa"},
+    "CHA-ACONCHEGO-KANFA-L50": {"brand": "Kãnfa"},
+    "CHA-ACONCHEGO-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850316"},
+    "CHA-INTIMIDADE-KANFA-L50": {"brand": "Kãnfa", "gtin": "7898708850347"},
+    "CHA-INTIMIDADE-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850354"},
+    "CHA-INTUICAO-KANFA-L70": {"brand": "Kãnfa", "gtin": "7898708850408"},
+    "CHA-INTUICAO-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850385"},
+    "CHA-MAMA-KANFA-L70": {"brand": "Kãnfa", "gtin": "7898708850705"},
+    "CHA-MAMA-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850682"},
+    "CHA-NAMASTE-KANFA-L70": {"brand": "Kãnfa", "gtin": "7898708850668"},
+    "CHA-NAMASTE-KANFA-P50": {"brand": "Kãnfa", "gtin": "7898708850644"},
+    "CHA-CHALOSOFIA-KANFA-P50": {"brand": "Kãnfa"},
+    "CHA-VITAL-KANFA-P50": {"brand": "Kãnfa"},
 }
 
 

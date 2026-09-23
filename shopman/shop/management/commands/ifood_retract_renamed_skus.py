@@ -34,10 +34,9 @@ def _mapa_de_renames() -> dict[str, str]:
     não dava erro nenhum — deixava item órfão no cardápio de outra casa, que é o
     pior formato possível para uma falha.
     """
-    from config.management.commands.apply_product_skus import RENAMES as CURADOS
-    from config.management.commands.rename_skus_to_real import RENAMES as REAIS
+    from config.management.commands.apply_product_skus import mapa_de_renames
 
-    return dict(tuple(REAIS) + tuple(CURADOS))
+    return mapa_de_renames()
 
 
 def _orfaos_no_ifood(vivos: set[str]) -> list[str]:
@@ -53,17 +52,13 @@ def _orfaos_no_ifood(vivos: set[str]) -> list[str]:
     para quando chega num código que EXISTE hoje. Assim `FE` sai (virou órfão) e
     `FENDU` fica (é o produto vivo), sem ninguém escolher nada.
     """
-    destino = _mapa_de_renames()
-    orfaos: list[str] = []
-    for antigo in destino:
-        if antigo in vivos:
-            continue  # ainda é o produto vivo: não há órfão nenhum
-        atual, visitados = destino[antigo], {antigo}
-        while atual not in vivos and atual in destino and atual not in visitados:
-            visitados.add(atual)
-            atual = destino[atual]
-        if atual in vivos:
-            orfaos.append(antigo)
+    from config.management.commands.apply_product_skus import codigo_de_hoje
+
+    orfaos = [
+        antigo
+        for antigo in _mapa_de_renames()
+        if antigo not in vivos and codigo_de_hoje(antigo, vivos) in vivos
+    ]
     return sorted(orfaos)
 
 
