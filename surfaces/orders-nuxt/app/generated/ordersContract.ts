@@ -302,6 +302,7 @@ export interface EquipmentOptionProjection {
   label: string;
   enabled: boolean;
   reason: string;
+  order_ref: string;
 }
 
 /** Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou. */
@@ -396,6 +397,10 @@ export interface OrderCardProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  dispatch_needs_machine: boolean;
+  trip_with: string[];
+  courier_return_orders: string[];
+  courier_return_lines: string[];
   waitlist_state: string;
   waitlist_deadline_iso: string;
   waitlist_label: string;
@@ -473,6 +478,10 @@ export interface OperatorOrderProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  dispatch_needs_machine: boolean;
+  trip_with: string[];
+  courier_return_orders: string[];
+  courier_return_lines: string[];
   can_resend_payment_link: boolean;
   payment_link_notice: string;
   managers: Record<string, string>[];

@@ -254,3 +254,14 @@ describe("iFood à frente do estado local", () => {
     expect(w.find("[data-ifood-remote-ahead]").exists()).toBe(false);
   });
 });
+
+describe("OrderCard — maquininha na rua", () => {
+  it("o único sinal é a linha do card: com que maquininha saiu e com quem foi junto", () => {
+    const w = mountCard({ card: card({ status: "dispatched", equipment_label: "Saiu com a maquininha Azul", trip_with: ["DLV-0418"], equipment_back_pending: true }) });
+    expect(w.get("[data-equipment-label]").text()).toBe("Saiu com a maquininha Azul · junto com 0418");
+    expect(w.text()).not.toContain("Entregador levou");
+  });
+  it("sem maquininha na rua, nada", () => {
+    expect(mountCard({ card: card() }).find("[data-equipment-label]").exists()).toBe(false);
+  });
+});

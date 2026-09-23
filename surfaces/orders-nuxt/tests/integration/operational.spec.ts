@@ -742,7 +742,8 @@ test("identified machine dispatch recovers a lost response and return does not c
   const body = await (await page.request.get(`/api/v1/backstage/orders/${lab.device_order_ref}/`)).json();
   expect(body.order.can_settle_delivery_cash).toBe(true);
   await page.goto("/");
-  await expect(page.locator('[data-equipment-available]')).toContainText("Maquininha azul laboratório");
+  // Voltou: o quadro não fala mais da maquininha (nenhum indicador fixo).
+  await expect(page.locator('[data-equipment-label]')).toHaveCount(0);
 });
 
 test("device inventory uses the native Admin form", async ({ page }) => {

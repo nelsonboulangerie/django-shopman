@@ -143,6 +143,9 @@ class EquipmentOptionProjection:
     label: str
     enabled: bool = True
     reason: str = ""
+    # Pedido com o qual a maquininha está na rua (vazio quando livre): o despacho
+    # diz onde ela está e oferece "Entregador voltou" daquele pedido.
+    order_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -264,6 +267,15 @@ class OrderCardProjection:
     equipment_out: tuple[str, ...] = ()
     equipment_label: str = ""
     equipment_back_pending: bool = False
+    # A saída pede maquininha (pagamento com cartão na porta): o botão de saída
+    # vira "Saiu com a maquininha" e o sistema escolhe a livre.
+    dispatch_needs_machine: bool = False
+    # Outros pedidos que saíram junto com este (mesma saída, mesma maquininha).
+    trip_with: tuple[str, ...] = ()
+    # "Entregador voltou": pedidos que o gesto fecha e o que a mão do operador
+    # deve receber ("Maquininha Azul", "R$ 100,00 em dinheiro: ...").
+    courier_return_orders: tuple[str, ...] = ()
+    courier_return_lines: tuple[str, ...] = ()
     # Fila de espera (WP-P2E): o pedido que espera fornada não está parado por
     # descuido, e o que tem janela de confirmação aberta tem relógio correndo do
     # lado do CLIENTE. Sem o selo os dois se parecem com "pedido travado" no
@@ -453,6 +465,15 @@ class OperatorOrderProjection:
     equipment_out: tuple[str, ...] = ()
     equipment_label: str = ""
     equipment_back_pending: bool = False
+    # A saída pede maquininha (pagamento com cartão na porta): o botão de saída
+    # vira "Saiu com a maquininha" e o sistema escolhe a livre.
+    dispatch_needs_machine: bool = False
+    # Outros pedidos que saíram junto com este (mesma saída, mesma maquininha).
+    trip_with: tuple[str, ...] = ()
+    # "Entregador voltou": pedidos que o gesto fecha e o que a mão do operador
+    # deve receber ("Maquininha Azul", "R$ 100,00 em dinheiro: ...").
+    courier_return_orders: tuple[str, ...] = ()
+    courier_return_lines: tuple[str, ...] = ()
     # Link de pagamento do pedido remoto (WP-PAGAMENTO, frente 5). O botão
     # "Reenviar link" só existe quando o servidor vai aceitar o gesto
     # (``notification.payment_link_resend_refusal``): forma ``link`` com URL,
@@ -645,7 +666,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     is_delivery = _is_delivery(order)
     delivery_address, delivery_instructions = _delivery_address(order)
-    bloqueio = operator_orders.advance_block(order)
+    bloqueio = operator_orders.gestor_advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
 
     cancel_capability = _cancel_capability(order, user)
@@ -1358,7 +1379,7 @@ def _build_card(
     )
 
     batch_state = waitlist_states.get(order.ref) if waitlist_states is not None else None
-    bloqueio = operator_orders.advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
+    bloqueio = operator_orders.gestor_advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
@@ -1477,19 +1498,50 @@ def _equipment_fields(order: Order, *, channel_config=None) -> dict:
         options += tuple(EquipmentOptionProjection(
             ref=PREFIX + str(device.ref), label=device.label,
             enabled=device.active and device.current_order_id is None,
-            reason=(f"Em trânsito no pedido {device.current_order.ref}" if device.current_order_id else "Inativa" if not device.active else ""),
-        ) for device in devices)
+            reason=(f"Na rua com o pedido {_short_ref(device.current_order.ref)}" if device.current_order_id else "Inativa" if not device.active else ""),
+            order_ref=device.current_order.ref if device.current_order_id else "",
+        ) for device in devices if device.active or device.current_order_id)
     custody = operator_orders.equipment_custody(order)
+    # O card diz o que saiu, enquanto não voltou; depois, nada (zero não é informação).
     label = ""
-    if custody.equipment:
-        names = (order.data or {}).get("dispatch", {}).get("device_label") or ", ".join(_equipment_label(ref) for ref in custody.equipment)
-        label = f"Entregador levou {names.lower()}" if custody.pending else f"{names} voltou"
+    if custody.pending:
+        label = f"Saiu com a {machine_phrase((order.data or {}).get('dispatch', {}).get('device_label') or '')}"
+    from shopman.shop.adapters.delivery_devices import needs_card_machine
+
     return {
         "equipment_options": options,
         "equipment_out": custody.equipment,
         "equipment_label": label,
         "equipment_back_pending": custody.pending,
+        "dispatch_needs_machine": operator_orders.next_status_for(order) == "dispatched" and needs_card_machine(order),
+        **_trip_fields(order),
     }
+
+
+machine_phrase = operator_orders.machine_phrase
+_short_ref = operator_orders.short_ref
+
+
+def _trip_fields(order: Order) -> dict:
+    """A saída deste pedido: com quem saiu junto e o que "Entregador voltou" deve conferir."""
+    if order.status not in ("dispatched", "delivered"):
+        return {}
+    others = tuple(m.ref for m in operator_orders.trip_members(order) if m.pk != order.pk)
+    back = operator_orders.courier_return(order)
+    lines: list[str] = []
+    if back.machine:
+        phrase = machine_phrase(back.machine)
+        lines.append(phrase[0].upper() + phrase[1:])
+    if back.cash_q:
+        many = len(back.orders) > 1
+        parts = [f"{_money(q)} do pedido{' ' + _short_ref(ref) if many else ''}" for ref, q in back.cash_parts]
+        if back.change_q:
+            parts.append(f"{_money(back.change_q)} de troco")
+        if len(parts) > 1:
+            lines.append(f"{_money(back.cash_q)} em dinheiro: {' + '.join(parts)}")
+        else:
+            lines.append(f"{_money(back.change_q)} de troco" if back.change_q else f"{_money(back.cash_q)} em dinheiro")
+    return {"trip_with": others, "courier_return_orders": back.orders, "courier_return_lines": tuple(lines)}
 
 
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:
