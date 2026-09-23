@@ -277,29 +277,20 @@ POLITICA_DE_COLISAO: dict[str, str] = {
 def mapa_de_renames() -> dict[str, str]:
     """Todo código que já foi nosso → o código que ele virou, nas duas levas.
 
-    O ``rename_skus_to_real`` trocou os códigos inventados do seed pelos do
-    Yooga; este comando troca os do Yooga pelos curados. Quem precisa saber "o
-    que é este código hoje" — o iFood, o B.I. — tem de olhar os dois, e não um.
+    Mora em ``shopman.shop.services.sku_history``, que é a porta para quem só
+    quer perguntar: o cardápio do iFood, o 301 da loja, a herança de peso do
+    B.I. As TABELAS ficam aqui, que é onde a curadoria as edita.
     """
-    from config.management.commands.rename_skus_to_real import RENAMES as REAIS
+    from shopman.shop.services.sku_history import rename_map
 
-    return dict(tuple(REAIS) + tuple(RENAMES))
+    return rename_map()
 
 
 def codigo_de_hoje(sku: str, conhecidos) -> str:
-    """Segue a cadeia de renames até um código que EXISTE em ``conhecidos``.
+    """Segue a cadeia de renames até um código que EXISTE em ``conhecidos``."""
+    from shopman.shop.services.sku_history import current_sku
 
-    As levas se encadeiam (``BAGUETE → BF → TRADI``) e chegam a voltar
-    (``FENDU → FE → FENDU``). Resolver no papel exigiria desempatar o ciclo, e
-    desempate é chute; quem decide é o conjunto do que existe hoje. Devolve o
-    próprio ``sku`` quando não há para onde ir.
-    """
-    destino = mapa_de_renames()
-    atual, visitados = sku, {sku}
-    while atual not in conhecidos and atual in destino and destino[atual] not in visitados:
-        atual = destino[atual]
-        visitados.add(atual)
-    return atual
+    return current_sku(sku, conhecidos)
 
 
 def _curadoria(nota: str | None) -> str:
