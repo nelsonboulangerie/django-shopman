@@ -30,6 +30,13 @@ SEED = pathlib.Path(__file__).resolve().parents[3] / "config/management/commands
 
 #: As 42 fichas que rendem UNIDADE, como estavam escritas por lote antes do
 #: WP-FICHA-DE-PRODUTO-E-PROMESSA: (rendimento, {insumo: quantidade}).
+#:
+#: ⚠️ Seis linhas trocaram de MASSA em 22/09/2026, e não por conta: o dono leu a
+#: lista e corrigiu o que um agente tinha inferido. Bichinhos (animalzinho,
+#: ursinho, porquinho) são de BUTTER, não brioche; o pain aux raisins é de
+#: BRIOCHE ("folhado foi confusão de agente de IA"); as duas baguetes pequenas
+#: saem da massa da CIABATTA, de casca mais fina. Só o nome da massa mudou — a
+#: quantidade por fornada é a mesma ao miligrama, que é o que este teste mede.
 LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "baguete": ("25", {"MASSA-TRADICAO": "7.000"}),
     "campagne": ("10", {"MASSA-CAMPAGNE": "3.400"}),
@@ -39,13 +46,13 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
     "pain-chocolat": ("36", {"MASSA-CROISSANT": "2.880", "BATON-CHOCOLATE": "0.720"}),
-    "animalzinho": ("16", {"MASSA-BRIOCHE": "0.960", "CREME-BAUNILHA": "0.640"}),
+    "animalzinho": ("16", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.640"}),
     "folhado-dia": ("12", {"MASSA-FOLHADO": "0.744", "RECHEIO-MACA": "0.240"}),
     "bichon": ("12", {"MASSA-FOLHADO": "0.960", "CREME-LIMAO": "0.240"}),
     "madeleine": ("24", {"MASSA-MADELEINE": "0.672"}),
-    "baguete-lanche": ("12", {"MASSA-TRADICAO": "3.120"}),
+    "baguete-lanche": ("12", {"MASSA-CIABATTA": "3.120"}),
     "batard": ("10", {"MASSA-TRADICAO": "3.200"}),
-    "baguete-gergelim-pequena": ("12", {"MASSA-TRADICAO": "1.980", "GERGELIM": "0.060"}),
+    "baguete-gergelim-pequena": ("12", {"MASSA-CIABATTA": "1.980", "GERGELIM": "0.060"}),
     "italiano-rustico": ("8", {"MASSA-TRADICAO": "3.840"}),
     "baguette-campagne": ("12", {"MASSA-CAMPAGNE": "3.600"}),
     "campagne-redondo": ("10", {"MASSA-CAMPAGNE": "3.400"}),
@@ -56,7 +63,7 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.896", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.264"}),
     "mini-focaccia-cebola-roxa": ("12", {"MASSA-CIABATTA": "1.752", "RECHEIO-CEBOLA-AZAPAS": "0.168"}),
     "croissant-mini": ("24", {"MASSA-CROISSANT": "0.864"}),
-    "pain-aux-raisins": ("12", {"MASSA-CROISSANT": "0.480", "CREME-BAUNILHA": "0.216", "PASSAS": "0.120"}),
+    "pain-aux-raisins": ("12", {"MASSA-BRIOCHE": "0.480", "CREME-BAUNILHA": "0.216", "PASSAS": "0.120"}),
     "maca": ("12", {"MASSA-FOLHADO": "0.960", "RECHEIO-MACA": "0.360"}),
     "croissant-presunto-queijo": ("12", {"MASSA-CROISSANT": "0.720", "PRESUNTO-DEFUMADO": "0.180", "QUEIJO-MINAS-PADRAO": "0.180"}),
     "folhado-frango": ("12", {"MASSA-FOLHADO": "1.140", "RECHEIO-FRANGO": "0.420"}),
@@ -67,8 +74,8 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "brioche-nanterre": ("8", {"MASSA-BRIOCHE": "1.920"}),
     "brioche-chocolat": ("24", {"MASSA-BRIOCHE": "0.816", "GOTAS-CHOCOLATE": "0.192"}),
     "mini-brioche-bun-gergelim": ("24", {"MASSA-BRIOCHE": "0.720", "GERGELIM": "0.048"}),
-    "ursinho": ("12", {"MASSA-BRIOCHE": "0.960", "CREME-BAUNILHA": "0.360"}),
-    "porquinho": ("12", {"MASSA-BRIOCHE": "0.960", "CREME-BAUNILHA": "0.360"}),
+    "ursinho": ("12", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.360"}),
+    "porquinho": ("12", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.360"}),
     "challah": ("8", {"MASSA-BUTTER": "2.400"}),
     "hot-dog-vienna": ("12", {"MASSA-BUTTER": "0.720", "SALSICHA-VIENNA": "0.600"}),
     "mini-hot-dog-vienna": ("12", {"MASSA-BUTTER": "0.480", "SALSICHA-VIENNA": "0.300"}),
