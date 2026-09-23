@@ -184,6 +184,17 @@ Ao juntá-los apareceram duas coisas que o par cru esconde:
   código que **existe hoje**. Assim `FE` sai e `FENDU` fica, sem ninguém
   escolher nada. É o único par nessa situação.
 
+## Um terceiro código encurtou, e a razão está na própria tabela
+
+`BE → BGGG` virou **`BE → BGG`** (dúvida dele em 23/09: *"e se BE virar somente
+BG ou BGG?"*). O argumento não é de gosto: em toda a tabela **a base não carrega
+letra de tamanho, só a variante** — `BRBB`/`BRBB2`, `FOB`/`FOBM`, `HOD`/`HODM`,
+`FFGO`/`FFGOM`, `PIT`/`PIT4`. O `G` final de `BGGG` era "grande", um tamanho que
+o resto da casa deixa implícito; com ele, a baguete padrão parecia a variante.
+
+`BGG` e `BGGP` (a pequena) passam a dividir o começo, que é o que faz a família
+aparecer junta na busca por teclado.
+
 ## As perguntas, respondidas em 22/09
 
 1. ~~**Dois códigos da casa passam de 5 caracteres**~~ — **encurtados, aprovado

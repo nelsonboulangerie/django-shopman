@@ -434,7 +434,7 @@ PESO_MASSA_CRUA_G = {
 STOCK_VITRINE = {
     # Rústicos — volumes herdam a calibração dos antecessores
     "TRADI": 22,
-    "BGGG": 12,
+    "BGG": 12,
     "CPG": 16,
     "CPX": 8,
     "CI": 24,
@@ -1814,7 +1814,7 @@ class Command(BaseCommand):
              f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
              f"{IMG}/ci.webp", 180, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
-            ("BGGG", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
+            ("BGG", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
              f"{IMG}/be.webp", 260, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             # Fora do menu impresso, à venda na vitrine (coleção Rústicos, dono 17/08).
             ("FENDU", "Fendu", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
@@ -2044,7 +2044,7 @@ class Command(BaseCommand):
         # Keywords by product (for find_alternatives and search)
         keywords_map = {
             "TRADI": ["pao", "frances", "levain", "artesanal", "crocante"],
-            "BGGG": ["pao", "frances", "levain", "gergelim", "azeite"],
+            "BGG": ["pao", "frances", "levain", "gergelim", "azeite"],
             "CPG": ["pao", "campagne", "levain", "integral", "centeio"],
             "CPX": ["pao", "campagne", "levain", "passas", "castanhas", "especial"],
             "CI": ["pao", "italiano", "levain", "azeite", "aerado"],
@@ -2118,7 +2118,7 @@ class Command(BaseCommand):
                 "serves": "2 pessoas",
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
-            "BGGG": {
+            "BGG": {
                 "allergens": ["glúten", "gergelim"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
@@ -2492,7 +2492,7 @@ class Command(BaseCommand):
         # pelo perfil fiscal (Fiscalman), a partir de `profile`. Todo o catálogo
         # atual é não-ST (perfil own_production → CFOP 5102/CSOSN 102, sem CEST).
         breads = {
-            "TRADI", "BGGG", "MIB", "FENDU", "TABAT",
+            "TRADI", "BGG", "MIB", "FENDU", "TABAT",
             "CPG", "CPX", "CI", "FORMA", "KUP", "TRABB", "BRBB", "HOBB",
             "FOA", "FOB", "FOC", "FOAM", "FOBM", "FOCM",  # focaccia é pão
         }
@@ -2774,7 +2774,7 @@ class Command(BaseCommand):
             }
 
         DIRECT_OVERRIDES = {
-            "BGGG": {
+            "BGG": {
                 "ingredients_text": (
                     "Farinha de trigo, água, fermento natural, gergelim, azeite extra virgem, sal. "
                     "CONTÉM: glúten e gergelim."
@@ -3279,7 +3279,7 @@ class Command(BaseCommand):
                 # de hambúrguer, que o dono classificou aqui apesar da massa macia.
                 "FENDU", "TABAT", "MIB", "TRABB",
                 "TRADI", "CPG", "CPX", "CI",
-                "BGGG",
+                "BGG",
                 # voltaram do Yooga (18/08)
                 "TRADP", "ITA", "CPBG", "BAT", "CPR", "PIT", "PIT4", "BGGP", "FOA", "FOB", "FOC", "FOAM", "FOBM", "FOCM",
             ],
@@ -9234,7 +9234,7 @@ class Command(BaseCommand):
                 "PU", "QJQT", "TABUA", "TJ",
             ],
             "leva": [
-                "BK", "TRADI", "BGGG",
+                "BK", "TRADI", "BGG",
                 "BRBB", "GR", "CPG",
                 "CPX", "THL", "CX",
                 "KUP", "LN",
@@ -9338,7 +9338,7 @@ class Command(BaseCommand):
                 "CQMO", "QJQT", "CQMA", "CQCOM", "JB", "PERDU",   # croques, queijo quente, jambon, pain perdu
             ]),
             ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
-                "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGGG", "TRADP", "FOB", "TRABB", "FOA", "BAT", "CPR",
+                "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGG", "TRADP", "FOB", "TRABB", "FOA", "BAT", "CPR",
                 "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
                 "BGGP", "FOC", "MPH",
                 # chás Kãnfa em pouch/lata (mercearia, como CHA-LATA)
