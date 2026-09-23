@@ -46,7 +46,7 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
     "pain-chocolat": ("36", {"MASSA-CROISSANT": "2.880", "CHOCOLATE-BATON": "0.720"}),
-    "coelhinho": ("16", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.640"}),
+    "coelhinho": ("16", {"MASSA-BUTTER": "0.960", "CREME-CHOCOLATE": "0.640"}),
     "folhado-dia": ("12", {"MASSA-FOLHADO": "0.744", "RECHEIO-MACA": "0.240"}),
     "bichon": ("12", {"MASSA-FOLHADO": "0.960", "CREME-LIMAO": "0.240"}),
     "madeleine": ("24", {"MASSA-MADELEINE": "0.672"}),

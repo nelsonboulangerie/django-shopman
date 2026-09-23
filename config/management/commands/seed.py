@@ -2545,18 +2545,25 @@ class Command(BaseCommand):
             "GR": "09012100",
             "THL": "09022000",
             # ── Linha Chai Kãnfa (19/08) ──
-            # ⚠️ Sem isto os 13 cairiam no default de PANIFICAÇÃO (1905.90.90),
-            # que é o NCM errado para chá. Vão por analogia ao que a casa já
-            # declara para a mesma natureza: a folha seca embalada acompanha o
-            # `THL` (chá da casa em lata), a bebida pronta acompanha os blends
-            # servidos em bule.
+            # ⚠️ Sem isto os 12 cairiam no default de PANIFICAÇÃO (1905.90.90),
+            # que é o NCM errado para chá.
             #
-            # ⚠️ E fica UMA pergunta para o contador, que eu não decido: os
-            # pouches e latas são revenda de industrializado, e o perfil fiscal
-            # do catálogo hoje é `own_production` (não-ST) para tudo. Se eles
-            # forem `resale`, passam a exigir CSOSN 500, CFOP 5405/6405 e **CEST
-            # por produto**. A bebida preparada não entra nessa dúvida: a regra
-            # lista "bebidas preparadas" em `own_production` nominalmente.
+            # O chá da Kãnfa é DUAS coisas, e o cadastro já as separa:
+            #
+            # 1. **A folha seca, que se revende** — estes 12, lata e pouch, com
+            #    `purchase.resale = true`. NCM 0902.20.00.
+            # 2. **A bebida preparada na hora**, que usa o blend como INSUMO:
+            #    `CHBLU`, `CHCAM`, `CHROU`, `CHSOP`, `SFTCH`, `CHHIB`, `CTFV`,
+            #    cada um com ficha apontando para `CHA-BLEU`, `CHA-CHAI`… NCM
+            #    2202.99.00, que é bebida pronta.
+            #
+            # ⚠️ O perfil `own_production` nos 12 está CERTO, e não é pergunta
+            # para ninguém: o eixo do perfil é **ST × não-ST**, não "quem
+            # fabricou" (ver fiscalman/classification.py — `own_production` é
+            # "fabricação própria **+ revenda comum**"). Chá seco é revenda
+            # comum; ST no segmento de bebida alcança refrigerante, água e
+            # industrializado. O `purchase.resale` é outro eixo: ele diz ao
+            # Compras que a casa compra pronto.
             **dict.fromkeys(
                 ("CHA-INTUICAO-KANFA-P50", "CHA-INTUICAO-KANFA-L70", "CHA-ACONCHEGO-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50",
                  "CHA-NAMASTE-KANFA-P50", "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50",
@@ -3753,9 +3760,15 @@ class Command(BaseCommand):
                 # ignora é insumo que ninguém compra — some da sugestão e do
                 # custo por unidade.
                 #
-                # A versão de chocolate (o coelhinho) sai deste mesmo creme, com
-                # chocolate derretido na finalização; segue sem ficha separada
-                # enquanto o plano do dia não distinguir as duas.
+                # A versão de chocolate (o coelhinho) sai DESTE MESMO creme, com
+                # chocolate derretido na finalização — confirmado pelo dono em
+                # 23/09/2026, depois de eu ter apagado esta linha por achá-la
+                # contraditória. Ela não era: o CREME-CHOCOLATE é este creme com
+                # chocolate, não um creme feito do zero.
+                #
+                # ⚠️ E é por isso que a ficha do `creme-chocolate` (abaixo) está
+                # errada hoje: ela parte de leite, açúcar e manteiga como se
+                # fosse uma ganache. Ver a nota lá.
                 "ref": "creme-baunilha",
                 "name": "Creme de Baunilha",
                 "output_sku": "CREME-BAUNILHA",
@@ -3880,8 +3893,13 @@ class Command(BaseCommand):
                 "items": [
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
                     # crus, para 90 g assados.
+                    #
+                    # CHOCOLATE, não baunilha (dono, 23/09): a peça se chama
+                    # Coelhinho de Chocolate e a ficha dizia baunilha — o nome
+                    # e a ficha discordavam, e quem decide é quem faz. Os dois
+                    # irmãos (ursinho e porquinho) seguem de baunilha.
                     ("MASSA-BUTTER", Decimal("0.060")),
-                    ("CREME-BAUNILHA", Decimal("0.040")),
+                    ("CREME-CHOCOLATE", Decimal("0.040")),
                 ],
             },
             {
@@ -4008,6 +4026,25 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # ⚠️ ESTA FICHA NÃO BATE COM A CASA, e a correção espera um número
+                # que só o dono tem (aberto em 23/09/2026).
+                #
+                # Ele confirmou que o creme de chocolate sai do CREME-BAUNILHA
+                # com chocolate derretido na finalização. A fórmula abaixo não
+                # faz isso: ela parte de leite, açúcar e manteiga com chocolate,
+                # sem ovo e sem farinha — é uma ganache, não um creme de
+                # confeiteiro com chocolate. Foi inferida, como as massas que
+                # ele corrigiu no dia anterior.
+                #
+                # O que falta para consertar é a PROPORÇÃO: quanto de chocolate
+                # entra em quanto de base. Inventar esse número seria repetir o
+                # erro que esta nota registra, então a ficha fica como está,
+                # errada e sinalizada, até ele dizer.
+                #
+                # Consequência viva enquanto isso: o custo por unidade e o rótulo
+                # nutricional derivado do Coelhinho (COE) e do Cornet (COC) saem
+                # desta fórmula — o do Coelhinho foi recalculado em 23/09 e deu
+                # 350 kcal, número que muda quando a ficha for corrigida.
                 "ref": "creme-chocolate",
                 "name": "Creme de Chocolate",
                 "output_sku": "CREME-CHOCOLATE",
@@ -4363,9 +4400,13 @@ class Command(BaseCommand):
             # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
             # Dão custo, insumo e rótulo; não são fornada. A convenção dos
             # croques é do dono (P7): monsieur vai salada, madame vai ovo,
-            # complet vai salada e ovo. Consumo automático na VENDA de item
-            # made-to-order é mecanismo da Fase 2 do Buyman — a ficha nasce
-            # pronta para ele.
+            # complet vai salada e ovo.
+            #
+            # ⚠️ O consumo automático na VENDA destes itens NÃO EXISTE ainda: a
+            # ficha nasce pronta para ele, e o insumo entra pela compra e nunca
+            # sai. Dono do assunto: docs/plans/WP-BAIXA-DE-INSUMO-NA-VENDA.md.
+            # (Este comentário dizia "Fase 2 do Buyman", que é outra coisa — no
+            # plano do Buyman, Fase 2 é o Pedido de Compra.)
             {
                 "ref": "queijo-quente",
                 "name": "Queijo-Quente",
@@ -5055,6 +5096,27 @@ class Command(BaseCommand):
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
+        # ── Segunda passada: a derivação não pode depender da ORDEM da lista ──
+        #
+        # A derivação expande pré-preparo (o coelhinho leva creme; o creme leva
+        # leite, açúcar, chocolate) e por isso só acerta se a ficha do creme JÁ
+        # existir quando a do acabado é gravada. Rodando uma vez por ficha, ela
+        # depende de quem vem antes na lista — e em 23/09 isso mordeu: trocar o
+        # recheio do coelhinho de CREME-BAUNILHA (linha 3759, antes dele) por
+        # CREME-CHOCOLATE (linha 4016, DEPOIS) deixou o produto sem tabela
+        # nutricional, e o seed parou no guardrail de catálogo publicável com
+        # "COE: nutrition_facts". O sintoma acusa o produto; a causa é a ordem.
+        #
+        # Esta passada refaz a derivação com TODAS as fichas no banco. É
+        # idempotente (a derivação recusa sobrescrever rótulo manual, pelo
+        # `auto_filled`), custa um passe curto, e tira da lista a obrigação de
+        # estar topologicamente ordenada — que ninguém garantiria por muito tempo.
+        for rd in recipes_data:
+            product = Product.objects.filter(sku=rd["output_sku"]).first()
+            if product:
+                fill_nutrition_from_recipe(product)
+                aggregate_dietary_from_recipe(product)
+
         # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
         # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
         # Idempotente: ficha que já tem entry é pulada, então o reseed não duplica.
@@ -5729,13 +5791,12 @@ class Command(BaseCommand):
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
-        # ⚠️ O `coelhinho` entra aqui porque o ref dele era `animalzinho` e casava
-        # com esta linha. Os dois IRMÃOS dele — `ursinho` e `porquinho`, mesma
-        # massa butter e mesma modelagem — nunca casaram, e caem no padrão de
-        # baixo, com quatro estações em vez de três. A divergência é anterior a
-        # este rename e é pergunta de produção, não de código: ou os três têm
-        # Modelagem, ou nenhum tem. Preservado como estava até o dono dizer.
-        if "brioche" in ref or "coelhinho" in ref:
+        # O `coelhinho` SAIU desta linha em 23/09: ele casava por acidente, quando
+        # o ref dele ainda era `animalzinho`, e por isso tinha três passos onde os
+        # dois irmãos (`ursinho`, `porquinho`) tinham quatro — mesma massa, mesma
+        # modelagem. O dono desempatou: "os 3 têm modelagem". Agora os três caem
+        # juntos no padrão de baixo.
+        if "brioche" in ref:
             return ["Mistura", "Descanso", "Forno"]
         if ref.startswith("massa-"):
             return ["Pesagem", "Mistura", "Fermentação"]

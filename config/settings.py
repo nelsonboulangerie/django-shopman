@@ -1279,6 +1279,13 @@ AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
 AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
 
+# Piloto do de-para do B.I. (`benchmark_alias_matchers`): TypeSafe Jev contra o
+# fuzzy de hoje e o LLM acima. Só o comando de piloto lê isto; sem chave, o Jev
+# fica fora do placar e o resto roda.
+JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
+JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
+JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must
