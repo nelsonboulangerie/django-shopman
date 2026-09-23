@@ -1286,6 +1286,20 @@ JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
 JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
 JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
 
+# Piloto de intenções da mensageria (INTENT-PILOT-PLAN). Texto de cliente, mesmo
+# redigido, só sai da casa para os provedores desta lista — credencial sozinha
+# nunca liga provedor (a regra do Marketing). `anthropic` está aprovado pelo dono
+# em 23/09/2026 (já recebe o texto cru quando o concierge atende); `typesafe` (Jev)
+# é fornecedor novo e só entra quando ele decidir, pondo o nome aqui pelo ambiente.
+SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
+    value.strip().lower()
+    for value in os.environ.get("SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", "anthropic").split(",")
+    if value.strip()
+)
+# O ciclo automático do piloto no `maintenance_worker` (sorteia, pré-rotula, mede).
+# Sem mensagem observada ele não faz nada; desligar é só pôr false.
+SHOPMAN_INTENT_PILOT_ENABLED = _env_bool("SHOPMAN_INTENT_PILOT_ENABLED", True)
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must

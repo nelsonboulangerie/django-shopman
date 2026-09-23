@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from django.conf import settings
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
+from shopman.shop.services.ai_pricing import Price
 
 logger = logging.getLogger(__name__)
 
@@ -232,17 +233,6 @@ def parse_jev_response(payload: dict, *, question: str) -> tuple[str, float, int
 _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
 
 
-# US$ por milhão de tokens (entrada, saída), preço público de 24/06/2026. Só o
-# default do placar: ``--llm-price-in/--llm-price-out`` sobrescrevem, e modelo
-# fora da tabela sai com custo zerado e aviso.
-LLM_PRICES = {
-    "claude-haiku-4-5": (1.00, 5.00),
-    "claude-sonnet-5": (2.00, 10.00),
-    "claude-opus-5": (5.00, 25.00),
-    "claude-opus-5-5": (4.00, 20.00),
-}
-
-
 class LLMMatcher:
     """Um modelo da Anthropic (credencial de ``AI_ASSIST_*``) respondendo a escolha em JSON.
 
@@ -374,17 +364,6 @@ class EmbeddingMatcher:
 
 
 # ── Placar ──────────────────────────────────────────────────────────────────
-
-
-@dataclass
-class Price:
-    """US$ por milhão de tokens."""
-
-    input_per_m: float = 0.0
-    output_per_m: float = 0.0
-
-    def cost(self, input_tokens: int, output_tokens: int) -> float:
-        return (input_tokens * self.input_per_m + output_tokens * self.output_per_m) / 1_000_000
 
 
 @dataclass

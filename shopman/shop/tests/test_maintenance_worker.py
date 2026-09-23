@@ -481,6 +481,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_waitlist_windows"),
         call("recover_concierge"),
         call("cleanup_concierge_observations"),
+        # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.
+        call("run_intent_pilot"),
         call("check_directive_health"),
         # Checagem de ESTADO, não de evento: produto que já está invisível hoje
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por

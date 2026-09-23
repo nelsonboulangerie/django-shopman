@@ -22,17 +22,16 @@ from shopman.backstage.bi.matcher_benchmark import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_MIN_SIMILARITY,
     DEFAULT_SHORTLIST,
-    LLM_PRICES,
     EmbeddingMatcher,
     FuzzyMatcher,
     JevMatcher,
     LLMMatcher,
     MatcherNotConfigured,
-    Price,
     gold_cases,
     load_catalog,
     run,
 )
+from shopman.shop.services.ai_pricing import LLM_PRICES, Price
 
 MATCHERS = ("fuzzy", "jev", "llm", "embed")
 
