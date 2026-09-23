@@ -153,7 +153,9 @@ def test_os_pacotes_existem_de_verdade(arvore):
 
     Se o seed parar de criá-los, os outros testes passariam por engano. O
     `COMBO-PETIT-DEJ` estava aqui até 22/09/2026, quando o dono o tirou do
-    catálogo — era o único bundle, e saiu com os componentes.
+    catálogo. Ele NÃO era o único bundle: `BRBB2`, `HOL4` e `PIT4` também são
+    `ProductComponent`, e seguem. A diferença é de conteúdo, não de mecanismo —
+    o pacote traz N unidades do MESMO produto; o combo trazia peças diferentes.
     """
     fonte = SEED.read_text()
     for sku in ('"HOL4"', '"BRBB2"'):

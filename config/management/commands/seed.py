@@ -3066,8 +3066,11 @@ class Command(BaseCommand):
             p.metadata["lead_time_hours"] = hours
             p.save(update_fields=["metadata"])
 
-        # O único bundle do catálogo era o Combo Petit Déjeuner, que saiu em
-        # 22/09/2026. Sem bundle, não há componente a montar.
+        # O Combo Petit Déjeuner saiu em 22/09/2026 e levou junto os componentes
+        # dele. Os OUTROS bundles seguem vivos, montados logo acima: `BRBB2`,
+        # `HOL4` e `PIT4`. A diferença entre eles e o combo não é de mecanismo —
+        # os quatro eram `ProductComponent` —, é de conteúdo: o pacote traz N
+        # unidades do MESMO produto, e o combo trazia peças diferentes.
 
         # Collections — a taxonomia do Cardápio 2027: o copo lidera; `mercearia`
         # e `combos` existem mas ficam fora dos feeds (menu impresso/TVs).
