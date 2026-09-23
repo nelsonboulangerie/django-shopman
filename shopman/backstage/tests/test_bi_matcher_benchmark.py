@@ -21,7 +21,6 @@ from shopman.backstage.bi.matcher_benchmark import (
     LLMMatcher,
     MatcherNotConfigured,
     MatcherResponseError,
-    Price,
     gold_cases,
     load_catalog,
     parse_jev_response,
@@ -29,6 +28,7 @@ from shopman.backstage.bi.matcher_benchmark import (
     shortlist,
 )
 from shopman.backstage.models import AliasStatus, ProductAlias
+from shopman.shop.services.ai_pricing import Price
 
 
 @pytest.fixture

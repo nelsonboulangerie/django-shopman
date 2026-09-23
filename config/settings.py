@@ -1286,6 +1286,14 @@ JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
 JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
 JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
 
+# Piloto de intenções da mensageria (`benchmark_intent_classifiers`). Texto de
+# cliente, mesmo redigido, só sai da casa para LLM ou Jev com decisão escrita do
+# dono: é a mesma regra do Marketing (`SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED`),
+# credencial sozinha nunca liga provedor. Default desligado.
+SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED = os.environ.get(
+    "SHOPMAN_INTENT_PILOT_EXTERNAL_APPROVED", "false"
+).lower() in ("true", "1", "yes")
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must
