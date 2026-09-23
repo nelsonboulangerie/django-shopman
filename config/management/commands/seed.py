@@ -3753,9 +3753,12 @@ class Command(BaseCommand):
                 # ignora é insumo que ninguém compra — some da sugestão e do
                 # custo por unidade.
                 #
-                # A versão de chocolate (o coelhinho) sai deste mesmo creme, com
-                # chocolate derretido na finalização; segue sem ficha separada
-                # enquanto o plano do dia não distinguir as duas.
+                # ⚠️ Este comentário dizia que a versão de chocolate (o coelhinho)
+                # saía deste mesmo creme com chocolate derretido na finalização.
+                # Não sai: o dono respondeu em 23/09 que o recheio do coelhinho é
+                # o CREME-CHOCOLATE, que já existe e é o mesmo do Cornet. Quem
+                # leva este creme de baunilha é o ursinho, o porquinho e o
+                # pain aux raisins.
                 "ref": "creme-baunilha",
                 "name": "Creme de Baunilha",
                 "output_sku": "CREME-BAUNILHA",
@@ -3880,8 +3883,13 @@ class Command(BaseCommand):
                 "items": [
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
                     # crus, para 90 g assados.
+                    #
+                    # CHOCOLATE, não baunilha (dono, 23/09): a peça se chama
+                    # Coelhinho de Chocolate e a ficha dizia baunilha — o nome
+                    # e a ficha discordavam, e quem decide é quem faz. Os dois
+                    # irmãos (ursinho e porquinho) seguem de baunilha.
                     ("MASSA-BUTTER", Decimal("0.060")),
-                    ("CREME-BAUNILHA", Decimal("0.040")),
+                    ("CREME-CHOCOLATE", Decimal("0.040")),
                 ],
             },
             {
@@ -5019,6 +5027,27 @@ class Command(BaseCommand):
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
+        # ── Segunda passada: a derivação não pode depender da ORDEM da lista ──
+        #
+        # A derivação expande pré-preparo (o coelhinho leva creme; o creme leva
+        # leite, açúcar, chocolate) e por isso só acerta se a ficha do creme JÁ
+        # existir quando a do acabado é gravada. Rodando uma vez por ficha, ela
+        # depende de quem vem antes na lista — e em 23/09 isso mordeu: trocar o
+        # recheio do coelhinho de CREME-BAUNILHA (linha 3759, antes dele) por
+        # CREME-CHOCOLATE (linha 4016, DEPOIS) deixou o produto sem tabela
+        # nutricional, e o seed parou no guardrail de catálogo publicável com
+        # "COE: nutrition_facts". O sintoma acusa o produto; a causa é a ordem.
+        #
+        # Esta passada refaz a derivação com TODAS as fichas no banco. É
+        # idempotente (a derivação recusa sobrescrever rótulo manual, pelo
+        # `auto_filled`), custa um passe curto, e tira da lista a obrigação de
+        # estar topologicamente ordenada — que ninguém garantiria por muito tempo.
+        for rd in recipes_data:
+            product = Product.objects.filter(sku=rd["output_sku"]).first()
+            if product:
+                fill_nutrition_from_recipe(product)
+                aggregate_dietary_from_recipe(product)
+
         # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
         # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
         # Idempotente: ficha que já tem entry é pulada, então o reseed não duplica.
@@ -5693,13 +5722,12 @@ class Command(BaseCommand):
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
-        # ⚠️ O `coelhinho` entra aqui porque o ref dele era `animalzinho` e casava
-        # com esta linha. Os dois IRMÃOS dele — `ursinho` e `porquinho`, mesma
-        # massa butter e mesma modelagem — nunca casaram, e caem no padrão de
-        # baixo, com quatro estações em vez de três. A divergência é anterior a
-        # este rename e é pergunta de produção, não de código: ou os três têm
-        # Modelagem, ou nenhum tem. Preservado como estava até o dono dizer.
-        if "brioche" in ref or "coelhinho" in ref:
+        # O `coelhinho` SAIU desta linha em 23/09: ele casava por acidente, quando
+        # o ref dele ainda era `animalzinho`, e por isso tinha três passos onde os
+        # dois irmãos (`ursinho`, `porquinho`) tinham quatro — mesma massa, mesma
+        # modelagem. O dono desempatou: "os 3 têm modelagem". Agora os três caem
+        # juntos no padrão de baixo.
+        if "brioche" in ref:
             return ["Mistura", "Descanso", "Forno"]
         if ref.startswith("massa-"):
             return ["Pesagem", "Mistura", "Fermentação"]
