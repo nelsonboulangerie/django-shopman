@@ -45,11 +45,11 @@ from shopman.offerman.models import Product
 # porque a casa ainda não faz: Cream Soda (CV), Bacon (BK) e Mostarda (MT).
 HOUSE_SKUS: frozenset[str] = frozenset({
     # Pães, viennoiserie, doces e salgados de forno
-    "COE", "PORQ", "URS", "BAT", "TRADP", "ITA", "BRBB", "BRBB2", "BRCH", "BGG", "BGGP",
-    "TRADI", "BICH", "BRNT", "FOB", "CPBG", "CPG", "CPR", "CHLH", "CI", "CROMI", "CN", "CO",
-    "COC", "CROPQ", "CPX", "CRO", "DELI", "FORMA", "FENDU", "FFGO", "FOA", "FOC", "HOD", "JO",
-    "KUBB", "KUP", "MA", "BRBBM", "MDLN", "MELON", "FFGOM", "MIB", "FOBM", "FOAM", "FOCM",
-    "HODM", "PCHOC", "TRABB", "HOBB", "HOBB4", "PIT", "PIT4", "BRRSN", "TABAT",
+    "COE", "PORQ", "URS", "BAT", "BGL", "ITA", "BRBB", "BRBB2", "BRCH", "BGG", "BGGP",
+    "TRADI", "BICH", "BRNT", "FOB", "CPBG", "CPG", "CPR", "CHLH", "CI", "CRP", "CN", "CO",
+    "COC", "CRPQ", "CPX", "CRO", "DELI", "FORMA", "FENDU", "FFGO", "FOA", "FOC", "HOD", "JO",
+    "KUBB", "KUP", "MA", "BRBBP", "MDLN", "MELON", "FFGOP", "MIB", "FOBP", "FOAP", "FOCP",
+    "HODP", "PCHOC", "TRABB", "HOL", "HOL4", "PIT", "PIT4", "BRRSN", "TABAT",
     # Kit de produtos da casa
     "COMBO-PETIT-DEJ",
     # Pratos montados aqui

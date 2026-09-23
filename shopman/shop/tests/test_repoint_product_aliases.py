@@ -14,7 +14,11 @@ import pytest
 from django.core.management import call_command
 from shopman.offerman.models import Product
 
-from config.management.commands.repoint_product_aliases import FONTE, REAPONTAR
+from config.management.commands.repoint_product_aliases import (
+    FONTE,
+    REAPONTAR,
+    REAPONTAR_PARA,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -49,6 +53,12 @@ def _alias(external_sku: str, *, para: Product | None, nome: str = "x"):
         product=para, status=AliasStatus.CONFIRMED,
         note="curadoria 19/08 (Pablo): chás Kãnfa lata/pouch = Chá da Casa (lata)",
     )
+
+
+def _serie_creditada_a_outro(sku: str, *, dono, nome: str) -> None:
+    """Uma venda histórica naquele código, creditada ao produto errado."""
+    _venda(sku, nome=nome)
+    _alias(sku, para=dono, nome=nome)
 
 
 def test_a_tabela_nao_repete_codigo():
@@ -145,3 +155,40 @@ def test_os_mesmos_codigos_que_o_rename_recusa():
     # CHAI_A e os 12 chás e BBB/PHO estão nos dois lados — menos o que saiu da
     # tabela de rename por outro motivo.
     assert codigos <= renomeaveis | {"GL"}
+
+
+def test_a_segunda_leva_aponta_para_o_PAI_da_variante():
+    """As "METADE DO PREÇO" não têm produto de mesmo código: têm um pai.
+
+    `MJO` é a metade do Caranguejo (`JO`), e estava pendurada no Coelhinho
+    porque em 19/08 o catálogo tinha um "Animalzinho" só. O destino aqui é o
+    pai que o nome da linha nomeia, não um produto chamado `MJO`.
+    """
+    from shopman.backstage.models import ProductAlias
+
+    coelhinho = _product("COE", "Coelhinho de Chocolate")
+    caranguejo = _product("JO", "Caranguejo")
+    _serie_creditada_a_outro("MJO", dono=coelhinho, nome="Caranguejo - METADE DO PREÇO")
+
+    call_command("repoint_product_aliases", "--apply", stdout=StringIO())
+
+    assert ProductAlias.objects.get(external_sku="MJO").product_id == caranguejo.pk
+
+
+def test_pai_ausente_avisa_e_nao_inventa():
+    _product("COE", "Coelhinho de Chocolate")
+    _serie_creditada_a_outro(
+        "MJO", dono=Product.objects.get(sku="COE"), nome="Caranguejo - METADE DO PREÇO"
+    )
+
+    out = StringIO()
+    call_command("repoint_product_aliases", "--apply", stdout=out)
+
+    assert "não existe produto 'JO'" in out.getvalue()
+
+
+def test_as_duas_tabelas_nao_disputam_o_mesmo_codigo():
+    de_um = {sku for sku, _nota in REAPONTAR}
+    de_outro = {sku for sku, _destino, _nota in REAPONTAR_PARA}
+    assert not (de_um & de_outro)
+    assert all(nota.strip() for _s, _d, nota in REAPONTAR_PARA)
