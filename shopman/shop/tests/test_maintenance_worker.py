@@ -491,6 +491,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # estado, não um por ciclo) é do comando, não do worker.
         call("check_catalog_visibility"),
         call("check_integration_drift"),
+        call("check_geoip_freshness"),
         # A loja no iFood contra a casa: calado quando IFOOD_MERCHANT_SYNC está fora.
         call("check_ifood_store"),
         call("check_card_machines_out"),

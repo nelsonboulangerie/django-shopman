@@ -46,6 +46,13 @@ class OperatorAlert(models.Model):
         # A prontidão só acusava o certificado DEPOIS de vencido, com o Pix já
         # parado. Este tipo avisa antes: 30, 15, 7 e 3 dias, e no vencimento.
         ("certificate_expiring", "Vencimento de certificado digital"),
+        # A base de cidade dos dispositivos entra na imagem no build e não se atualiza
+        # sozinha. Base velha não erra alto: ela responde errado em SILÊNCIO — bloco de IP
+        # que mudou de operadora nomeia a cidade antiga com a mesma confiança de uma
+        # leitura correta. Nenhum tipo existente serve: `integration_config_drift` é
+        # configuração degradada e esta base está configurada certo; `certificate_expiring`
+        # é uma data que vence sozinha e esta só avança quando alguém faz deploy.
+        ("geoip_database_stale", "Base de cidade dos dispositivos desatualizada"),
         ("ifood_schedule_invalid", "Agendamento iFood inválido"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),

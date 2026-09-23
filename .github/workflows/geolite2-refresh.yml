@@ -1,0 +1,196 @@
+name: GeoLite2 Refresh
+
+# Abre PR bumpando o `ARG GEOLITE2_SNAPSHOT` do Dockerfile quando a base de cidade dos
+# dispositivos fica velha. É a metade automática da frente "a base não envelhece calada":
+# a outra metade é o `check_geoip_freshness`, que avisa o operador pelo OperatorAlert.
+#
+# ## Por que um workflow, e não uma peça nova
+#
+# O dono tem regra dura: nada de componente novo na infraestrutura sem provar necessidade.
+# Um PR agendado que bumpa uma linha é exatamente o que o Dependabot já faz para
+# dependência — não é serviço, não é worker, não é volume, não custa nada por mês e não
+# tem o que quebrar em produção. Um job que baixasse a base para um volume compartilhado
+# resolveria o mesmo problema criando um componente com estado; este não cria nada.
+#
+# ## ⚠️ Ele NÃO precisa da MAXMIND_LICENSE_KEY — e isso é de propósito
+#
+# Em 23/09/2026 a chave ainda não existe. Um workflow que dependesse dela ficaria VERMELHO
+# toda semana por falta de credencial, e semana após semana de vermelho previsível ensina
+# a ignorar o vermelho — o mesmo defeito que o `check_integration_drift` já documenta.
+#
+# A saída não foi "pular com aviso": foi perceber que a chave não é necessária aqui. O
+# `GEOLITE2_SNAPSHOT` não é lido pelo `fetch-geolite2.sh`; ele só INVALIDA a camada do
+# Docker e serve de registro de quando a base foi trocada. Quem baixa é o build, com a
+# chave dele. Então este workflow nunca toca na MaxMind, nunca baixa 60 MB e não tem
+# credencial nenhuma para faltar. Sem chave, o PR continua correto e o build que sair dele
+# simplesmente sobe sem base — a degradação prevista de sempre.
+#
+# ## ⚠️ PR aberto por workflow NÃO dispara os checks de `pull_request`
+#
+# É regra do GitHub: evento gerado pelo `GITHUB_TOKEN` não encadeia outro workflow. O PR
+# nasce sem check nenhum, e ausência de check se parece com "ainda não começou" quando na
+# verdade é "não vai começar" — armadilha que esta casa já pagou. Por isso o corpo do PR
+# diz, em primeira linha, o gesto que destrava: fechar e reabrir o PR, ou empurrar um
+# commit. Ambos partem de uma pessoa, e aí os checks rodam.
+
+"on":
+  schedule:
+    # Quarta-feira, 06:00 UTC. A MaxMind republica a GeoLite2-City às TERÇAS, então
+    # quarta é o primeiro dia em que existe algo novo para apontar.
+    #
+    # ⚠️ O GitHub estrangula workflow agendado em repositório movimentado e não avisa —
+    # medido nesta casa em 05/09/2026, num cron de 15 min que entregou de 1h40 a 4h06.
+    # Aqui isso é inofensivo: o gatilho é uma REDE de cadência mensal, não um relógio. Se
+    # uma quarta escapar, a seguinte pega, e o `check_geoip_freshness` continua avisando o
+    # operador pelo caminho que não depende do GitHub.
+    - cron: "0 6 * * 3"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: >-
+          Bumpa mesmo que a base ainda esteja dentro do prazo. Serve para conferir o
+          workflow inteiro sem esperar três semanas.
+        type: boolean
+        default: false
+
+concurrency:
+  # Um bump de cada vez. Cancelar o anterior é seguro: o trabalho é idempotente e o
+  # próximo run recalcula tudo do zero a partir do Dockerfile.
+  group: geolite2-refresh
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # O trabalho é um checkout, um sed e um `gh pr create`. Dez minutos é folga larga;
+    # o que este teto evita é um `git` ou `gh` pendurado queimando hora de runner por
+    # seis horas toda quarta, sem ninguém olhando.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decidir se a base já está velha
+        id: idade
+        env:
+          # ⚠️ Mesmo número do `GEOIP_CITY_STALE_ALERT_DAYS` dos settings, e isso é
+          # contrato: o PR tem de aparecer na MESMA semana em que o operador começa a ser
+          # avisado. Se os dois divergirem, o gestor recebe "base velha" e não encontra
+          # PR nenhum esperando por ele — ou o contrário, e o PR chega sem ninguém saber
+          # por quê. Mudar um pede mudar o outro.
+          LIMIAR_DIAS: "21"
+          FORCAR: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          ATUAL="$(sed -n 's/^ARG GEOLITE2_SNAPSHOT=//p' Dockerfile | head -n1)"
+          if [ -z "$ATUAL" ]; then
+            echo "::error::não achei 'ARG GEOLITE2_SNAPSHOT=' no Dockerfile — o workflow perdeu o alvo."
+            exit 1
+          fi
+
+          # O valor histórico é YYYY-MM (ex. 2026-09). Vale como data tratando-o como o
+          # dia 1; a partir deste workflow ele passa a ser a data da edição, YYYY-MM-DD.
+          case "$ATUAL" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]) ATUAL_DATA="${ATUAL}-01" ;;
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ATUAL_DATA="$ATUAL" ;;
+            *)
+              echo "::error::GEOLITE2_SNAPSHOT='$ATUAL' não é uma data reconhecível."
+              exit 1
+              ;;
+          esac
+
+          # A edição mais recente é a da última terça. Rodando na quarta, é ontem.
+          EDICAO="$(date -u -d 'last tuesday' +%F)"
+          HOJE_S="$(date -u +%s)"
+          ATUAL_S="$(date -u -d "$ATUAL_DATA" +%s)"
+          IDADE=$(( (HOJE_S - ATUAL_S) / 86400 ))
+
+          echo "snapshot atual=$ATUAL (${IDADE}d) · edição mais recente=$EDICAO · limiar=${LIMIAR_DIAS}d"
+          {
+            echo "atual=$ATUAL"
+            echo "edicao=$EDICAO"
+            echo "idade=$IDADE"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$ATUAL" = "$EDICAO" ]; then
+            echo "bump=nao" >> "$GITHUB_OUTPUT"
+            echo "A base já aponta para a edição mais recente. Nada a fazer." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$FORCAR" = "true" ] || [ "$IDADE" -ge "$LIMIAR_DIAS" ]; then
+            echo "bump=sim" >> "$GITHUB_OUTPUT"
+          else
+            echo "bump=nao" >> "$GITHUB_OUTPUT"
+            echo "Base com ${IDADE}d, abaixo do limiar de ${LIMIAR_DIAS}d. Sem PR." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Abrir (ou atualizar) o PR do bump
+        if: steps.idade.outputs.bump == 'sim'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATUAL: ${{ steps.idade.outputs.atual }}
+          EDICAO: ${{ steps.idade.outputs.edicao }}
+          IDADE: ${{ steps.idade.outputs.idade }}
+        run: |
+          set -euo pipefail
+
+          BRANCH="chore/geolite2-snapshot"
+          # Branch FIXA, de propósito: uma frente = um branch = um PR. Sem isso, um mês
+          # sem merge viraria quatro PRs para a mesma linha — que é o modo desta casa
+          # acumular trabalho dormente.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # ⚠️ Se o branch JÁ existe, partimos dele — nunca por cima dele. O `checkout@v4`
+          # traz só o branch default, então o runner não conhece o remoto e um
+          # `--force-with-lease` seria recusado por "stale info"; e um `--force` cego
+          # apagaria o commit que uma pessoa tivesse empurrado ali (empurrar um commit é,
+          # justamente, o gesto que este workflow pede para destravar os checks). Partindo
+          # do remoto, o push é fast-forward e não precisa de força nenhuma.
+          if git fetch origin "$BRANCH" 2>/dev/null; then
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -B "$BRANCH"
+          fi
+
+          # ⚠️ Só a linha do ARG, âncorada no começo. Um sed solto pela data acertaria os
+          # comentários do Dockerfile e os exemplos do guia.
+          sed -i "s|^ARG GEOLITE2_SNAPSHOT=.*|ARG GEOLITE2_SNAPSHOT=${EDICAO}|" Dockerfile
+          git add Dockerfile
+
+          if git diff --cached --quiet; then
+            echo "Dockerfile já estava em ${EDICAO}. Nada a commitar." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # ⚠️ Vários `-m` em vez de heredoc: heredoc dentro de bloco literal de YAML pede
+          # o corpo indentado, e corpo indentado vira bloco de código no Markdown do PR.
+          # O git junta cada `-m` com uma linha em branco, que é exatamente o formato de
+          # mensagem que esta casa usa.
+          git commit \
+            -m "A base de cidade aponta para a edição de ${EDICAO}" \
+            -m "A GeoLite2-City entra na imagem no build e só troca quando este ARG muda. Ela estava em ${ATUAL}, com ${IDADE} dias." \
+            -m "Base velha não erra alto: ela responde errado em silêncio. Um bloco de IP que mudou de operadora continua nomeando a cidade antiga, com raio de precisão bom, e a tela de segurança da loja escreve \"Próximo a X\" com a confiança de sempre." \
+            -m "O valor não é lido pelo scripts/fetch-geolite2.sh: ele invalida a camada do Docker e registra quando a base foi trocada pela última vez."
+
+          git push origin "$BRANCH"
+
+          ABERTOS="$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')"
+          if [ "$ABERTOS" != "0" ]; then
+            echo "PR já aberto para $BRANCH — o push acima atualizou o branch." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # O corpo mora em arquivo versionado: é prosa, se revisa em PR como prosa, e não
+          # precisa sobreviver às regras de escape de heredoc dentro de YAML.
+          sed -e "s|@ATUAL@|${ATUAL}|g" \
+              -e "s|@EDICAO@|${EDICAO}|g" \
+              -e "s|@IDADE@|${IDADE}|g" \
+              .github/geolite2-refresh-pr-body.md > "${RUNNER_TEMP}/corpo.md"
+
+          gh pr create \
+            --head "$BRANCH" \
+            --title "A base de cidade aponta para a edição de ${EDICAO}" \
+            --body-file "${RUNNER_TEMP}/corpo.md"

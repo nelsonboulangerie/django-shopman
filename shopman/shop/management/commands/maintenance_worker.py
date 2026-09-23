@@ -20,6 +20,7 @@ manutenção num loop (default: a cada 5 minutos):
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
   check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
+  check_geoip_freshness     — base de cidade velha vira alerta (velha, ela erra CALADA)
   check_ifood_store         — iFood fechado com a casa aberta (ou o contrário) vira alerta
   check_card_machines_out   — maquininha na rua além do limite vira alerta
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
@@ -173,6 +174,13 @@ MAINTENANCE_COMMANDS = (
     # cadência (diária, ou semanal quando o estado é decisão registrada) e a
     # severidade moram no comando — o worker não sabe régua.
     "check_integration_drift",
+    # Irmão do de cima, aplicado a um ARQUIVO em vez de um provedor: a base de
+    # cidade dos dispositivos entra na imagem no build e só troca por bump manual.
+    # Entra aqui porque velha ela não falha — ela RESPONDE ERRADO em silêncio, com
+    # raio de precisão bom e a confiança de sempre, e era a única forma de erro
+    # que aquele módulo não enxergava. Os dois limiares (avisar, e parar de
+    # mostrar a cidade) moram nos settings; a cadência, no comando.
+    "check_geoip_freshness",
     # A loja no iFood diz o mesmo que a casa? Lê o status do módulo Merchant e
     # alerta quando o iFood fecha com a casa aberta (polling caído, pausa
     # esquecida no Portal) ou abre com ela fechada. É o vigia que o
