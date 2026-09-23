@@ -113,17 +113,21 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.buyman.models import Material
 
     # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
-    # 26/08): queijos, presuntos, salsicha Vienna, frango, milho, bacon, café
-    # em grão, blends de chá, tônica, folhas da salada…
-    assert Material.objects.count() == 56
+    # 26/08) + a mostarda Dijon de food service, que entrou na curadoria da
+    # lista em 23/09 no lugar do `MT` da ficha do Vinagrete.
+    assert Material.objects.count() == 57
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
-    # A água da massa é AGUA-FILTRADA: AGUA é a garrafa que se vende no balcão, e
-    # produto e insumo dividem um namespace de SKU só (shop/services/sku_namespace.py).
-    assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
-    assert not Material.objects.filter(sku="AGUA").exists()
-    assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
+    # A água da casa é AGUA desde a curadoria de 22/09 (dele: "a água do nosso
+    # filtro chama AGUA"), e isso só cabe porque a garrafa que se vende saiu
+    # desse código — produto e insumo dividem um namespace de SKU só
+    # (shop/services/sku_namespace.py), e o ledger indexa por ele.
+    assert Material.objects.get(sku="AGUA").shelf_life_days is None  # não perecível
+    assert not Material.objects.filter(sku="AGUA-FILTRADA").exists()
+    assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
+    assert not Product.objects.filter(sku="AGUA").exists()
+    assert Material.objects.get(sku="FERMENTO-NATURAL").shelf_life_days == 7
     # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
     # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
     # derivada na tela de preparo, nunca gravada como verdade.
@@ -141,7 +145,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # no perfil, mas agora como ponte do RECEBIMENTO (a nota fala em litro), não
     # da produção diária. O invariante da troca vive em
     # test_seed_liquid_base_unit.py.
-    for sku in ("AGUA-FILTRADA", "LEITE", "AZEITE"):
+    for sku in ("AGUA", "LEITE", "AZEITE"):
         material = Material.objects.get(sku=sku)
         assert material.unit == "kg", sku
         assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku

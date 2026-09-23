@@ -56,6 +56,7 @@
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
+| [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
 
 ---
 
@@ -134,6 +135,44 @@ python manage.py apply_product_brands --sku QC   # um SKU só
 Só preenche campo **vazio**: marca ou GTIN que o Gestor já curou fica como
 está e sai no relatório como divergência. Revenda nunca recebe a marca da loja,
 e SKU sem fabricante confirmado fica fora da tabela. Idempotente.
+
+---
+
+
+### apply_material_skus
+
+Aplica a curadoria da lista de insumos (`WP-INSUMOS-DA-VIDA-REAL`) num banco que
+já roda: renomeia insumo arrastando a ficha técnica e o ledger, cria o insumo que
+falta, e reaponta a linha de ficha que citava um SKU de **produto**. Espelha, do
+lado do Buyman, o que o `apply_product_skus` faz no catálogo.
+
+```bash
+python manage.py apply_material_skus                    # ensaio: executa e desfaz
+python manage.py apply_material_skus --apply            # grava
+python manage.py apply_material_skus --sku MANTEIGA-FR  # um só, pelo SKU de hoje
+```
+
+Não mexe em unidade-base, custo, conversão de compra nem GTIN — esses são outros
+WPs, e todos assumem que a lista está certa. Idempotente.
+
+**Duas ordens de problema, e elas não param igual.** *Recusa* diz que a tabela
+está errada (dois insumos no mesmo endereço, alvo que já é produto vendável) e aí
+**nada** é gravado. *Impedimento* diz que o mundo trava uma frente: ela para
+nomeada e o resto segue.
+
+⚠️ **O ledger é o impedimento vivo.** `Move` recusa `delete()`/`update()` e a FK
+para o quant é `PROTECT`, então o quant de um insumo que teve qualquer movimento
+— nem que seja o saldo de abertura do seed — **não sai do banco**. É o que trava
+a troca `AGUA-FILTRADA → AGUA` no alpha: a coordenada do quant
+(`sku, position, target_date, batch`, com `NULLS NOT DISTINCT`) é a mesma para os
+dois, e o órfão não pode ceder o lugar. Quem fecha essa é o `seed --flush`, que
+reconstrói a lista sem órfão — **e o `seed` recusa rodar** num banco que ainda
+tenha `AGUA-FILTRADA`, porque ali um seed incremental reescreveria o órfão e
+deixaria 15 fichas puxando do saldo errado, sem erro nenhum.
+
+⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
+próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
+cobra; quem as troca é o commit.
 
 ---
 
@@ -301,7 +340,7 @@ para a nota fiscal seguinte não travar (ADR-024 R4).
 ```bash
 python manage.py convert_material_base_unit LEITE AZEITE --to kg              # ensaio
 python manage.py convert_material_base_unit LEITE AZEITE --to kg --apply      # executa
-python manage.py convert_material_base_unit AGUA-FILTRADA --to kg --apply --no-bridge
+python manage.py convert_material_base_unit AGUA --to kg --apply --no-bridge
 ```
 
 O fator sai da física (`shopman.utils.units`) quando a dimensão é a mesma, e da
