@@ -38,6 +38,8 @@ if (!dynamicRedirectTarget.value && error.value?.statusCode === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Coleção não encontrada', fatal: true })
 }
 
+if (!dynamicRedirectTarget.value) requireContentOnSsr(error.value, !!data.value?.catalog, 'Coleção')
+
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
 }, { immediate: true })
