@@ -19,6 +19,7 @@
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
 | [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
+| [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
@@ -458,6 +459,48 @@ python manage.py efi_webhook --soft     # erro visível sem código de saída
 ```
 
 ---
+
+### migration_safety
+
+A trava entre o deploy e o `migrate`. Roda no job `release` (PRE_DEPLOY),
+**antes** do `migrate --noinput`, e lê o mesmo plano que o `migrate` vai
+executar: quantas migrações estão pendentes neste banco e quais delas contêm
+operação destrutiva (`RemoveField`, `DeleteModel`, `RenameField`,
+`RenameModel`, `AlterField` — a lista do ADR-015).
+
+```bash
+python manage.py migration_safety            # trava (sai != 0 quando recusa)
+python manage.py migration_safety --report   # só relata; nunca recusa
+python manage.py migration_safety --json     # saída legível por máquina
+python manage.py migration_safety --database <alias>
+```
+
+Recusa o deploy em duas situações, ambas fechadas:
+
+- política do ADR-015 armada **e** migração destrutiva pendente **e**
+  `SHOPMAN_MIGRATION_BACKUP_REF` vazia — migração destrutiva não tem rollback
+  barato, e o ponto de restauração precisa estar anotado antes, não depois;
+- não foi possível ler o plano de migração — um portão que não enxerga recusa,
+  em vez de dizer "pode passar".
+
+A política é armada por `SHOPMAN_GO_LIVE` (o ambiente de deploy; a imagem não
+carrega o `.git`), pela tag `go-live-v1` no repositório local (dev/CI) ou à
+força por `SHOPMAN_ADR015_FORCE=1`/`0`. **Antes do go-live a trava só relata**,
+marcando cada destrutiva no log do release.
+
+Não roda system checks de propósito: ele executa antes do `migrate`, quando uma
+tabela nova ainda não existe, e vários checks do Shopman consultam o banco. O
+`check --deploy` do release job continua rodando, logo antes, no comando dele.
+
+Atalhos de leitura, contra o banco de `DATABASE_URL`:
+
+```bash
+DATABASE_URL='postgresql://…' make migrations-pending   # o que o próximo deploy vai migrar
+DATABASE_URL='postgresql://…' make migrations-plan      # o plano inteiro (showmigrations --plan)
+```
+
+Procedimento humano — como anotar o ponto de restauração, como ensaiar um
+restore e quanto custa: [`docs/runbooks/backup-e-restore.md`](../runbooks/backup-e-restore.md).
 
 ### cleanup_idempotency_keys
 
