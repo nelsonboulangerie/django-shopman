@@ -74,7 +74,7 @@ def test_o_pacote_declara_as_porcoes_do_pacote(monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "Rotulos-2026-Nelson!")
     call_command("seed", verbosity=0)
 
-    for pack_sku, base_sku, quantidade in (("PHO4", "PHO", 4), ("BBB2", "BBB", 2)):
+    for pack_sku, base_sku, quantidade in (("HOBB4", "HOBB", 4), ("BRBB2", "BRBB", 2)):
         pack = Product.objects.get(sku=pack_sku)
         base = Product.objects.get(sku=base_sku)
 
