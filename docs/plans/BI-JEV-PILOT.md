@@ -81,5 +81,4 @@ sendo o caminho sem chave nem pacote. Embeddings no caminho de produção signif
 
 O dono quer o mesmo tipo de ferramenta para reconhecer **intenções** (no plural: uma mensagem pode
 pedir, perguntar horário e reclamar ao mesmo tempo) nas mensagens de clientes. É frente própria,
-com plano próprio: dado de cliente, LGPD e o desenho do concierge (ADR-026) mudam as regras. Ver o
-relatório da sessão de 23/09 para o levantamento.
+com plano próprio: dado de cliente, LGPD e o desenho do concierge (ADR-026) mudam as regras.
