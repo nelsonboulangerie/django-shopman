@@ -25,6 +25,7 @@ catálogo.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import statistics
 import time
@@ -33,6 +34,8 @@ from dataclasses import dataclass, field
 from django.conf import settings
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SHORTLIST = 10
 OTHER = "other"
@@ -375,6 +378,7 @@ def run(
             except MatcherResponseError as exc:
                 verdict = Verdict(product_pk=None, confidence=0.0, error=str(exc)[:300])
             except Exception as exc:  # rede, timeout: conta como erro do concorrente, não do piloto
+                logger.warning("bi.matcher_benchmark: %s falhou num caso: %s", matcher.name, type(exc).__name__)
                 verdict = Verdict(product_pk=None, confidence=0.0, error=f"{type(exc).__name__}: {exc}"[:300])
             board.add(case, verdict)
     return BenchmarkResult(
