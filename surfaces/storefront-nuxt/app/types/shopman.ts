@@ -1245,3 +1245,20 @@ export interface FavoritesResponse {
   // Copy de empty-state (backend); opcional + fallback na própria tela.
   copy?: { empty?: EmptyStateCtaCopy | null }
 }
+
+/** Projeção das páginas legais — ver `shopman/storefront/presentation/legal.py`.
+ *
+ * A lista de operadores e a data vêm do servidor de propósito: texto que copia a
+ * verdade envelhece em silêncio, e foi exatamente o que aconteceu com a lista antiga.
+ */
+export interface LegalProcessorProjection {
+  name: string
+  role: string
+  shares: string
+}
+
+export interface LegalProjection {
+  version: string
+  updated_at: string
+  processors: LegalProcessorProjection[]
+}

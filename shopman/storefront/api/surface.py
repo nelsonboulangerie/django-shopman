@@ -29,6 +29,7 @@ from shopman.storefront.presentation import (
     build_catalog_items_for_skus,
     build_checkout,
     build_home,
+    build_legal,
     build_product_detail,
     build_reorder_conflict,
     build_site,
@@ -289,6 +290,21 @@ class StorefrontHomeView(APIView):
         responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
     ),
 )
+class StorefrontLegalView(APIView):
+    """GET /api/v1/storefront/legal/ — o que as páginas de Termos e Privacidade AFIRMAM.
+
+    A lista de operadores e a data saem daqui, e não do `.vue`, porque texto que copia a
+    verdade envelhece em silêncio: em 23/09/2026 cinco terceiros já recebiam dado de
+    cliente sem constar da lista que a página chamava de "a lista inteira".
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response({"legal": projection_data(build_legal())})
+
+
 class StorefrontSiteView(APIView):
     """GET /api/v1/storefront/site/ — o que busca e cartão de link precisam saber."""
 
