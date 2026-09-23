@@ -9,9 +9,12 @@
 
 ## O que o ensaio diz, em uma linha
 
-**72 dos 87 códigos trocam, 15.786 linhas se mexem, 36 itens de feed mudam de
-`g:id`, e 15 pares param** — não por causa do rename, mas porque uma decisão de
-curadoria de 19/08 envelheceu quando o catálogo separou os produtos.
+**71 dos 86 códigos trocam, 36 itens de feed mudam de `g:id`, e 15 pares param**
+— não por causa do rename, mas porque uma decisão de curadoria de 19/08
+envelheceu quando o catálogo separou os produtos.
+
+> Medido em 87 pares; o `GL` saiu depois, quando o dono disse que o pote mini
+> não vai mais existir. Os números de linha abaixo são os da medição.
 
 ## Como rodar
 
@@ -185,10 +188,12 @@ Ao juntá-los apareceram duas coisas que o par cru esconde:
    gergelim) e `MS → MELICE` (Melon Iced Sando). Deixo como estão ou encurto?
    *(`CROPQM` e `HOBBMI` têm o mesmo problema, mas são produtos a criar, fora
    desta fatia.)*
-2. **`GL → GELEIA-DAMASCO-STDALFOUR-28` muda mais que o endereço.** Hoje `GL` é
-   "Geleia St. Dalfour (mini)", placeholder sem sabor; a planilha o casa com o
-   produto real do Yooga, que é **damasco**. Trocar o SKU declara o sabor. Se o
-   pote que fica no balcão não é o de damasco, o par sai da tabela.
+2. ~~**`GL → GELEIA-DAMASCO-STDALFOUR-28`**~~ — **respondido em 22/09: o pote
+   mini não vai mais existir.** O par saiu da tabela, a linha virou "excluir", e
+   `GL` passou a `FORA_DA_TABELA` com o motivo escrito. A geleia que fica é a de
+   284 g, por sabor, e essas ainda vão nascer. Sobrou uma ponta: o
+   `GELEIA-FRUTASVERM-STDALFOUR-28` **também é mini** e está marcado para criar —
+   se o mini sai, ele não nasce.
 
 ## Quatro pares renomeiam algo que a planilha manda tirar
 

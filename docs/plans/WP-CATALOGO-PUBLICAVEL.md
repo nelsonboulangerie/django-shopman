@@ -67,8 +67,8 @@ mudaria, alias criado junto, e recusa fechada em colisão.
 vivo — não contra ele — e o laudo inteiro está em
 [`docs/reports/2026-09-22-ensaio-rename-sku-catalogo.md`](../reports/2026-09-22-ensaio-rename-sku-catalogo.md).
 
-Em uma linha: **72 dos 87 pares trocam, 15.786 linhas se mexem, 36 itens de feed
-mudam de `g:id`, e 15 pares param** — porque uma decisão de de-para de 19/08
+Em uma linha: **71 dos 86 pares trocam, ~15,8 mil linhas se mexem, 36 itens de
+feed mudam de `g:id`, e 15 pares param** — porque uma decisão de de-para de 19/08
 envelheceu quando o catálogo separou os produtos (os 12 chás Kãnfa creditados ao
 `THL`, `BBB` ao pacote, `PHO` ao pacote, `CHAI_A` a produto nenhum). Isso é
 curadoria, não rename: o conserto é no Gestor, e o comando é idempotente.
