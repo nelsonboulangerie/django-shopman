@@ -26,6 +26,7 @@ from config.management.commands.seed import (
     _discard_owned_seed_output_batch,
     _ensure_seed_active_production_supply,
     _ensure_seed_standard_batch,
+    prep_daily_needs,
 )
 from shopman.backstage.models import (
     KDSInstance,
@@ -302,12 +303,21 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert stock_service.available("FARINHA-T65") == flour_before
     assert Move.objects.count() == moves_before
 
-    # Mise en place: as dez receitas que consomem massa/recheio precisam achar
-    # o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
-    # reprovava toda fornada dessas dez, e o operador via "Insumos
-    # insuficientes" com o atalho "Concluir mesmo assim" a um toque, todo dia.
-    # Alarme sempre errado vira botão que se aprende a apertar.
-    for prep_sku in ("MASSA-CROISSANT", "MASSA-BRIOCHE", "MASSA-FORMA", "RECHEIO-MACA"):
+    # Mise en place: toda receita do plano que consome massa/recheio precisa
+    # achar o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
+    # reprovava a fornada, e o operador via "Insumos insuficientes" com o
+    # atalho "Concluir mesmo assim" a um toque, todo dia. Alarme sempre errado
+    # vira botão que se aprende a apertar.
+    #
+    # A lista sai de ``prep_daily_needs()`` — a MESMA função que o seed usa
+    # para dimensionar a mise en place —, e não de nomes escritos à mão aqui.
+    # Ela já foi uma tupla de quatro SKUs, e em 23/09 a correção da massa dos
+    # bichinhos (de brioche para butter, decisão do dono) tirou MASSA-BRIOCHE
+    # do plano: o seed parou de produzi-la, corretamente, e o teste reprovou
+    # por cobrar um nome que ele próprio tinha congelado. Derivar é o conserto.
+    prep_needs = prep_daily_needs()
+    assert prep_needs, "o plano do seed deixou de consumir pré-preparo"
+    for prep_sku in sorted(prep_needs):
         assert stock_service.available(prep_sku) > 0, f"{prep_sku} sem estoque"
     crying = sorted(
         {
