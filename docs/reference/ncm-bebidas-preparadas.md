@@ -69,6 +69,8 @@ Todos passam a **`2202.99.00`**, com **CEST vazio**:
 | `CHROU` | Chá Rouge | `09024000` | idem |
 | `CHSOP` | Chá Sophie | `09024000` | idem |
 | `SFTCH` | Soft Chai Cítrico | `09024000` | idem |
+| `SDLA` | Soda de Laranja | `22021000` | refrigerante em embalagem |
+| `CV` | Cream Soda do dia | `22021000` | refrigerante em embalagem |
 
 ## Duas coisas que eu NÃO decidi
 
@@ -87,24 +89,52 @@ O que a casa prepara no balcão não é esse produto, e o perfil fiscal do
 catálogo é `own_production` (CFOP 5102 / CSOSN 102, sem ST). Preencher um CEST
 ali declararia uma ST que não existe.
 
-**Pergunta ao contador:** confirma o CEST vazio para bebida preparada e servida?
+**Decisão do dono (23/09):** *"se não for útil CEST nas bebidas preparadas,
+deixa sem"*. Fica vazio. O contador confirma quando revisar.
 
-### 2. As duas sodas da casa — esta tem dinheiro dentro
+### 2. As duas sodas da casa — resolvido em 23/09, e o motivo não é o que eu achava
 
-`SDLA` (Soda de Laranja) e `CV` (Cream Soda) seguem em **`2202.10.00`**, como
-estavam. Os dois caminhos são defensáveis:
+`SDLA` (Soda de Laranja) e `CV` (Cream Soda) **passaram a `2202.99.00`**, como
+as outras. O dono leu certo — *"acho que a soda cai em preparação de balcão"* —
+e o argumento acabou sendo mais forte do que o dele:
 
-- **`2202.10.00`** descreve literalmente o que elas são: água gaseificada,
-  aromatizada e adoçada. É o código do refrigerante.
-- **`2202.99.00`** trataria toda bebida preparada no balcão igual, e a soda da
-  casa não é um refrigerante industrializado.
+> O Imposto Seletivo sobre bebida açucarada só alcança o produto em **embalagem
+> primária**, entendida como *"aquela em contato direto com o produto e
+> destinada ao consumidor final"* (LC 214/2025, art. 409, §1º, V).
 
-O que separa os dois não é estética: **o `2202.10.00` é o único código da
-posição 2202 alcançado pelo Imposto Seletivo** (LC 214/2025, Anexo XVII), com
-incidência a partir de 2027. O `2202.99.00` está fora.
+**Soda tirada na torneira e servida no copo não tem embalagem primária.** O IS
+não a alcança em NCM nenhum. Sem esse peso na balança, sobra a classificação
+pura — e o que o cliente leva é a mesma bebida preparada que as outras
+dezessete.
 
-**Pergunta ao contador:** a soda feita na torneira da casa e servida no copo é
-"bebida açucarada" para o Imposto Seletivo, ou é preparação de balcão?
+⚠️ **O que muda a conta é a embalagem, não o açúcar.** No dia em que a casa
+engarrafar a soda para vender, há embalagem primária destinada ao consumidor
+final: o NCM passa a ser o `2202.10.00`, e a casa vira **fabricante de bebida
+açucarada** — contribuinte do Imposto Seletivo na primeira operação de
+fornecimento, sem crédito a aproveitar. Servida no copo, nada disso acontece.
+
+## O que é o Imposto Seletivo, e o que ele faz com a casa
+
+- **Monofásico e sem crédito.** Incide **uma vez só** na cadeia, na primeira
+  operação de fornecimento, e é vedado tanto aproveitar crédito de etapa
+  anterior quanto gerar crédito para a seguinte (LC 214/2025, art. 410).
+- **Quem paga é o fabricante ou o importador**, não o balcão. A padaria que
+  **revende** Coca-Cola não calcula nem declara o IS: ele já veio dentro do
+  preço de compra, como custo.
+- **Para a casa, portanto, o efeito é de preço, não de obrigação.** O
+  industrializado que ela revende tende a ficar mais caro, e como não há
+  crédito, esse custo não se recupera — ou aperta a margem, ou vai para a
+  etiqueta.
+- **Começa em 2027, e não automaticamente.** As alíquotas dependem de lei
+  ordinária ainda não editada, respeitadas as anterioridades anual e
+  nonagesimal.
+- **A finalidade é extrafiscal**: desestimular consumo, não arrecadar. É por
+  isso que ele alcança o produto embalado que circula, e não a bebida que
+  alguém prepara e serve na hora.
+
+**A única porta pela qual a casa entraria nesse imposto é fabricar e embalar**
+um dos produtos da lista. Enquanto a soda sai da torneira para o copo, ela está
+fora.
 
 ## Fora deste escopo
 
@@ -132,4 +162,6 @@ O `seed` nasce com os mesmos valores.
 - [NCM do café para cafeteria — a xícara servida é bebida pronta](https://www.sisfood.com.br/saiba-mais/fiscal/ncm-cafe)
 - [NCM 2106.90.90 e a fronteira com o capítulo 22 (preparação × bebida pronta)](https://tributodevido.com.br/portal/classificar-preparacoes-alimenticias-compostas-na-ncm-2106-90-90/)
 - [Imposto Seletivo: LC 214/2025 alcança o 2202.10.00, a partir de 2027](https://www.sisfood.com.br/saiba-mais/fiscal/ncm-refrigerante)
-- [Imposto Seletivo sobre bebidas açucaradas](https://www.elscon.com.br/post/imposto-seletivo-bebidas-acucaradas)
+- [Imposto Seletivo sobre bebidas açucaradas: quem paga](https://www.elscon.com.br/post/imposto-seletivo-bebidas-acucaradas)
+- [LC 214/2025, art. 409 §1º V e art. 410 — incidência, embalagem primária e monofasia](https://modeloinicial.com.br/materia/direito-tributario-reforma-tributaria-lc-214-2025-imposto-seletivo)
+- [Imposto Seletivo: desenho, alcance e desafios (CRCSP)](https://online.crcsp.org.br/portal/noticias/noticia.asp?c=9819)

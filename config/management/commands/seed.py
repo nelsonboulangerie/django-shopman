@@ -2520,15 +2520,18 @@ class Command(BaseCommand):
                  # O `CE` sai do catálogo por decisão dele, mas enquanto existe
                  # é bebida preparada como as outras.
                  "CE",
-                 "CHOQ", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SFTCH", "CHHIB", "CTFV"),
+                 "CHOQ", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SFTCH", "CHHIB", "CTFV",
+                 # As sodas da casa entram aqui por decisão dele em 23/09. O
+                 # Imposto Seletivo sobre bebida açucarada só alcança o que está
+                 # em EMBALAGEM PRIMÁRIA destinada ao consumidor final (LC
+                 # 214/2025, art. 409, §1º, V) — soda na torneira, servida no
+                 # copo, não tem. Sem esse peso, sobra a classificação pura, e o
+                 # que o cliente leva é a mesma bebida preparada que as outras.
+                 # ⚠️ Engarrafar para vender muda tudo: aí é 2202.10.00 e a casa
+                 # vira contribuinte do IS.
+                 "CV", "SDLA"),
                 "22029900",
             ),
-            # ⚠️ As duas sodas da casa esperam o contador: o 2202.10.00 descreve
-            # o que elas são (água gaseificada aromatizada e adoçada) e é o
-            # ÚNICO código da posição 2202 alcançado pelo Imposto Seletivo a
-            # partir de 2027 (LC 214/2025, Anexo XVII). O 2202.99.00 fica fora.
-            "CV": "22021000",
-            "SDLA": "22021000",
             "AGUA-MINERAL-PRATA-310": "22011000",
             # Mercearia (revenda/produção própria — validar com o contador).
             "MT": "21033010",
