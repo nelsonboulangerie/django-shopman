@@ -178,7 +178,7 @@ navegador seria a segunda tabela de conversao que a ADR-024 existe para impedir.
 
 ```json
 {
-  "materialSku": "FERMENTO-BIO",
+  "materialSku": "FERMENTO-BIOLOGICO",
   "supplierRef": "SUP-MAURI",
   "label": "pacote 500 g",
   "factor": "0.5",

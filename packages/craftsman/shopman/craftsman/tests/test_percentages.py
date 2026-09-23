@@ -28,14 +28,14 @@ LEVAIN = {
     "anchor": {"kind": "flour"},
     "items": [
         {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
-        {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
+        {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
     ],
 }
 PASTA = {
     "anchor": {"kind": "flour"},
     "items": [
         {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
-        {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 600, "unit": "g"},
+        {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 600, "unit": "g"},
     ],
 }
 PART_FORMULAS = {"LEVAIN": LEVAIN, "PASTA-AUTOLIZADA": PASTA}
@@ -49,7 +49,7 @@ def tradicao(parts=None, **overrides):
         "standardized": True,
         "items": [
             {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
-            {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "g"},
+            {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "g"},
             {"sku": "SAL", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
         "parts": parts or [],
@@ -77,11 +77,11 @@ class TestClassifyIngredient:
             ("強力粉", "", "flour"),
             ("ライ麦", "", "flour"),
             ("", "FARINHA-T55", "flour"),
-            ("", "CENTEIO", "flour"),
-            ("", "FARINHA-INT", "flour"),
+            ("", "FARINHA-CENTEIO", "flour"),
+            ("", "FARINHA-INTEGRAL", "flour"),
             ("Fubá", "", "flour"),
             ("Água filtrada", "", "liquid"),
-            ("", "AGUA-FILTRADA", "liquid"),
+            ("", "AGUA", "liquid"),
             ("Water", "", "liquid"),
             ("Eau", "", "liquid"),
             ("水", "", "liquid"),
@@ -95,11 +95,11 @@ class TestClassifyIngredient:
             ("Flor de sal", "", "salt"),
             ("塩", "", "salt"),
             ("Salsa", "", "other"),
-            ("Fermento biológico", "FERMENTO-BIO", "yeast"),
+            ("Fermento biológico", "FERMENTO-BIOLOGICO", "yeast"),
             ("Levure fraîche", "", "yeast"),
             ("Yeast", "", "yeast"),
             ("イースト", "", "yeast"),
-            ("Manteiga", "MANTEIGA-FR", "fat"),
+            ("Manteiga", "MANTEIGA-FRANCESA", "fat"),
             ("Beurre", "", "fat"),
             ("Azeite", "AZEITE", "fat"),
             ("Óleo", "", "fat"),
@@ -128,7 +128,7 @@ class TestClassifyIngredient:
 
     def test_looks_like_flour_is_the_same_question(self):
         assert looks_like_flour("Farinha T55")
-        assert looks_like_flour("", "CENTEIO")
+        assert looks_like_flour("", "FARINHA-CENTEIO")
         assert not looks_like_flour("Leite integral", "LEITE")
 
 
@@ -161,7 +161,7 @@ class TestAnalyze:
         assert analysis.total_mass_g == Decimal("1720")
         assert analysis.hydration_pct == Decimal("70")
         assert analysis.salt_pct == Decimal("2")
-        assert by_sku(analysis.items)["AGUA-FILTRADA"].pct == Decimal("70")
+        assert by_sku(analysis.items)["AGUA"].pct == Decimal("70")
 
     def test_levain_at_twenty_percent_is_four_hundred_grams(self):
         """Levain 50/50 com 20% da farinha: 200 g de farinha ÷ 0,5 = 400 g de levain."""
@@ -203,12 +203,12 @@ class TestAnalyze:
 
         final_mix = by_sku(analysis.final_mix)
         assert final_mix["FARINHA-T55"].grams == Decimal("200")  # 1000 − 200 − 600
-        assert final_mix["AGUA-FILTRADA"].grams == Decimal("140")  # 700 − 200 − 360
+        assert final_mix["AGUA"].grams == Decimal("140")  # 700 − 200 − 360
         assert final_mix["SAL"].grams == Decimal("20")
 
         bom = {line["sku"]: line for line in analysis.bom}
         assert bom["FARINHA-T55"]["quantity"] == Decimal("200")
-        assert bom["AGUA-FILTRADA"]["quantity"] == Decimal("140")
+        assert bom["AGUA"]["quantity"] == Decimal("140")
         assert bom["LEVAIN"]["quantity"] == Decimal("400")
         assert bom["PASTA-AUTOLIZADA"]["quantity"] == Decimal("960")
         # A farinha não sai duas vezes: o BOM pesa o mesmo que a base.
@@ -230,7 +230,7 @@ class TestAnalyze:
         at_cap = by_sku(analysis.final_mix_at_cap)
         assert nominal["FARINHA-T55"].grams == Decimal("800")
         assert at_cap["FARINHA-T55"].grams == Decimal("640")
-        assert at_cap["AGUA-FILTRADA"].grams == Decimal("400")  # 500 × 0,8
+        assert at_cap["AGUA"].grams == Decimal("400")  # 500 × 0,8
         assert at_cap["SAL"].grams == Decimal("16")
 
         old_dough = [line for line in analysis.bom if line["meta"].get("role") == "old_dough"]
@@ -277,13 +277,13 @@ class TestAnalyze:
 
     def test_liquid_volume_without_density_assumes_water(self):
         formula = tradicao()
-        formula["items"][1] = {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": "0.7", "unit": "L"}
+        formula["items"][1] = {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": "0.7", "unit": "L"}
         analysis = analyze(formula)
         assert analysis.hydration_pct == Decimal("70")
         assert [w.code for w in analysis.warnings] == ["LIQUID_DENSITY_ASSUMED"]
         # A mistura final volta na unidade em que o item foi escrito.
-        assert by_sku(analysis.final_mix)["AGUA-FILTRADA"].unit == "L"
-        assert by_sku(analysis.final_mix)["AGUA-FILTRADA"].quantity == Decimal("0.7")
+        assert by_sku(analysis.final_mix)["AGUA"].unit == "L"
+        assert by_sku(analysis.final_mix)["AGUA"].quantity == Decimal("0.7")
 
     def test_without_flour_the_anchor_is_the_total_mass(self):
         ganache = {
@@ -317,7 +317,7 @@ class TestStandardize:
 
         standard = standardize(informed)
         quantities = {item["sku"]: item["quantity"] for item in standard["items"]}
-        assert quantities == {"FARINHA-T55": "1000", "AGUA-FILTRADA": "700", "SAL": "20"}
+        assert quantities == {"FARINHA-T55": "1000", "AGUA": "700", "SAL": "20"}
         assert standard["basis_g"] == "1000"
         assert standard["standardized"] is True
         assert standard["parts"][0]["quantity"] == "400"
@@ -333,7 +333,7 @@ class TestStandardize:
     def test_scale_keeps_percentages_and_drops_the_basis(self):
         scaled = scale(tradicao(), "2.5")
         assert {item["sku"]: item["quantity"] for item in scaled["items"]} == {
-            "FARINHA-T55": "2500", "AGUA-FILTRADA": "1750", "SAL": "50",
+            "FARINHA-T55": "2500", "AGUA": "1750", "SAL": "50",
         }
         assert scaled["standardized"] is False
         assert scaled["basis_g"] is None

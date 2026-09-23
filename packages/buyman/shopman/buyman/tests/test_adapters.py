@@ -31,9 +31,9 @@ class TestMaterialSkuValidator:
         from shopman.buyman.adapters.sku_validator import MaterialSkuValidator
 
         Material.objects.create(
-            sku="FERMENTO-NAT", name="Levain", unit="kg", shelf_life_days=7,
+            sku="FERMENTO-NATURAL", name="Levain", unit="kg", shelf_life_days=7,
         )
-        info = MaterialSkuValidator().get_sku_info("FERMENTO-NAT")
+        info = MaterialSkuValidator().get_sku_info("FERMENTO-NATURAL")
         assert info is not None
         assert info.unit == "kg"
         assert info.is_sellable is False

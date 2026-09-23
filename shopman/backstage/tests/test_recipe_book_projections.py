@@ -44,7 +44,7 @@ def flour_formula(*, water=700, salt=20, parts=None, extra=()):
         "standardized": False,
         "items": [
             {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
-            {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
+            {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
             {"sku": "SAL", "name": "Sal", "role": "salt", "quantity": salt, "unit": "g"},
             *extra,
         ],
@@ -61,7 +61,7 @@ def published_levain():
             "anchor": {"kind": "flour"},
             "items": [
                 {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
-                {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
+                {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
             ],
             "parts": [],
         },
@@ -134,10 +134,10 @@ def test_bakery_lens_items_metrics_and_tones(published_levain):
     assert salt.pct_display == "2%"
 
     assert [(item.sku, item.quantity_display) for item in lens.final_mix] == [
-        ("FARINHA-T55", "800 g"), ("AGUA-FILTRADA", "500 g"), ("SAL", "20 g"),
+        ("FARINHA-T55", "800 g"), ("AGUA", "500 g"), ("SAL", "20 g"),
     ]
     assert [(item.sku, item.quantity_display, item.role_label) for item in lens.bom] == [
-        ("FARINHA-T55", "800 g", "Farinha"), ("AGUA-FILTRADA", "500 g", "Líquido"),
+        ("FARINHA-T55", "800 g", "Farinha"), ("AGUA", "500 g", "Líquido"),
         ("SAL", "20 g", "Sal"), ("LEVAIN", "400 g", "Pré-fermento"),
     ]
     (part,) = lens.parts
@@ -307,7 +307,7 @@ def test_a_bootstrapped_sheet_reads_as_a_ficha_version():
     recipe = Recipe.objects.create(ref="massa-yudane", name="Yudane", output_sku="YUDANE", batch_size=Decimal("1.9"),
                                    meta={"output_unit": "kg"})
     RecipeItem.objects.create(recipe=recipe, input_sku="FARINHA-T55", quantity=Decimal("1"), unit="kg", sort_order=0)
-    RecipeItem.objects.create(recipe=recipe, input_sku="AGUA-FILTRADA", quantity=Decimal("1"), unit="kg", sort_order=1)
+    RecipeItem.objects.create(recipe=recipe, input_sku="AGUA", quantity=Decimal("1"), unit="kg", sort_order=1)
     craftsman.bootstrap_entry_from_recipe(recipe)
 
     detail = build_recipe_entry("massa-yudane")
@@ -333,8 +333,8 @@ def test_compare_tones_and_deltas():
     rows = {row.sku: row for row in compare.rows}
     assert rows["FARINHA-T55"].tone == "muted"
     assert rows["FARINHA-T55"].delta_display == "0 g"
-    assert rows["AGUA-FILTRADA"].tone == "ok"
-    assert rows["AGUA-FILTRADA"].delta_display == "+50 g"
+    assert rows["AGUA"].tone == "ok"
+    assert rows["AGUA"].delta_display == "+50 g"
     assert rows["MALTE"].tone == "warning"
     assert (rows["MALTE"].a_display, rows["MALTE"].b_display, rows["MALTE"].delta_display) == ("", "10 g", "")
     metrics = {metric.label: metric for metric in compare.metrics}
@@ -370,7 +370,7 @@ def test_ingredient_options_prefer_the_part_over_a_material_with_the_same_sku(pu
 
 def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_levain):
     Material.objects.create(sku="FARINHA-T65", name="Farinha de trigo T65", unit="kg")
-    Material.objects.create(sku="AGUA-FILTRADA", name="Água filtrada", unit="l")
+    Material.objects.create(sku="AGUA", name="Água filtrada", unit="l")
     Material.objects.create(sku="SAL", name="Sal", unit="kg")
     captured = CapturedRecipe(
         name="Pão de campanha", kind="bread", language="fr", yield_quantity=Decimal("2"), yield_unit="un",
@@ -388,7 +388,7 @@ def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_
     assert (flour.sku, flour.role, flour.quantity, flour.unit) == ("FARINHA-T65", "flour", "1", "kg")
     assert flour.match_confidence.endswith("%")
     assert flour.candidates[0].sku == "FARINHA-T65"
-    assert (water.sku, water.role) == ("AGUA-FILTRADA", "liquid")
+    assert (water.sku, water.role) == ("AGUA", "liquid")
     assert (levain.sku, levain.role) == ("LEVAIN", "other")
     assert any(candidate.is_part and candidate.entry_ref == "creme-levain" for candidate in levain.candidates)
     assert (pepper.sku, pepper.quantity, pepper.match_confidence) == ("", "", "")
@@ -396,7 +396,7 @@ def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_
     assert draft.formula["anchor"] == {"kind": "flour"}
     assert draft.formula["standardized"] is False
     assert [(line["sku"], line["quantity"], line["unit"]) for line in draft.formula["items"]] == [
-        ("FARINHA-T65", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("LEVAIN", "200", "g"),
+        ("FARINHA-T65", "1000", "g"), ("AGUA", "700", "g"), ("LEVAIN", "200", "g"),
     ]
 
 
