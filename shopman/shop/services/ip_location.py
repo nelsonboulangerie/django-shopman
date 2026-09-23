@@ -163,7 +163,13 @@ def reset_reader_cache() -> None:
         if _reader is not None:
             try:
                 _reader.close()
-            except Exception:  # pragma: no cover - fechar já fechado não interessa a ninguém
+            # Fechar um leitor já fechado (ou mapeado sobre arquivo que sumiu) não tem
+            # consequência: o objeto é descartado na linha seguinte de qualquer jeito. Este
+            # caminho só é exercitado por TESTE, que troca a base por fixture entre um caso
+            # e outro. Gritar aqui encheria o log de ruído de limpeza sem avisar ninguém
+            # sobre nada que dê para consertar — por isso o `debug`, e não o `exception` que
+            # o irmão de `_get_reader` usa quando a base não abre, que ali é defeito real.
+            except Exception:  # silêncio-deliberado: fechar duas vezes não é defeito, e só teste passa aqui
                 logger.debug("geoip_city_reader_close_failed", exc_info=True)
         _reader = None
         _reader_resolved = False
