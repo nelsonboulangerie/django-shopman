@@ -146,6 +146,7 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "materialSku": material.sku,
             "suggestedMaterialSku": "",
             "suggestionScore": 0,
+            "suggestionSource": "",
             "conversionId": str(conversion.pk),
             "requiresConversion": False,
             "conversionSuggestion": None,

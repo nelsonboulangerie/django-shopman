@@ -267,7 +267,12 @@ def _extract_proc_nfe_xml(response: Any, *, access_key: str = "") -> str | None:
 
 def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) -> dict[str, Any]:
     material, mapping = _material_for_item(item, supplier=supplier)
-    suggestion = None if material else _material_suggestion(item.name)
+    # Sem cadastro casado, o código de barras vem antes do nome: o GTIN da nota
+    # é o mesmo impresso no pote que a casa já vende (``social.gtin`` do
+    # produto), e o cadastro de compra do MESMO SKU é o item certo. Continua
+    # sendo SUGESTÃO — o operador confirma, e o recebimento aprende o de-para.
+    gtin_match = None if material else _material_by_catalog_gtin(item.ean)
+    suggestion = None if material else ((gtin_match, 100) if gtin_match else _material_suggestion(item.name))
     conversion = _conversion_for_item(item, material=material, supplier=supplier, mapping=mapping)
     quantity = _line_quantity(item, material=material, conversion=conversion)
     # A conversão é calculada contra o insumo SUGERIDO quando não há um
@@ -288,6 +293,7 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "materialSku": material.sku if material else "",
         "suggestedMaterialSku": suggestion[0].sku if suggestion else "",
         "suggestionScore": suggestion[1] if suggestion else 0,
+        "suggestionSource": ("gtin" if gtin_match else "name") if suggestion else "",
         "conversionId": str(conversion.pk) if conversion else None,
         "requiresConversion": requires_conversion,
         "conversionSuggestion": _conversion_suggestion_data(conversion_suggestion),
@@ -746,6 +752,24 @@ def _mapping_material_sku(mapping: Any | None) -> str:
     if not isinstance(mapping, dict):
         return ""
     return str(_first_mapping_value(mapping, "materialSku", "material_sku", "sku", "material") or "").strip()
+
+
+def _material_by_catalog_gtin(gtin: str) -> Any | None:
+    """O cadastro de compra do SKU cujo GTIN é o da nota, se houver um só.
+
+    Procura no produto do catálogo (``metadata.social.gtin``) e no próprio
+    cadastro de compra (``metadata.gtin``). Dois SKUs com o mesmo GTIN é
+    cadastro ambíguo: não sugere nenhum, em vez de sugerir o errado.
+    """
+    code = str(gtin or "").strip()
+    if not code.isdigit():
+        return None
+    Product = apps.get_model("offerman", "Product")
+    Material = apps.get_model("buyman", "Material")
+    skus = set(Product.objects.filter(metadata__social__gtin=code).values_list("sku", flat=True))
+    skus |= set(Material.objects.filter(metadata__gtin=code).values_list("sku", flat=True))
+    matches = list(Material.objects.filter(sku__in=skus, is_active=True)[:2])
+    return matches[0] if len(matches) == 1 else None
 
 
 def _material_by_sku(sku: str) -> Any | None:
