@@ -484,7 +484,7 @@ def _fiscal_profile_choices() -> list[dict]:
     from shopman.fiscalman.classification import FISCAL_PROFILES
 
     return [
-        {"key": p.key, "name": p.name, "requires_cest": p.requires_cest}
+        {"key": p.key, "name": p.name, "requires_cest": p.requires_cest, "carries_cest": p.carries_cest}
         for p in FISCAL_PROFILES.values()
     ]
 

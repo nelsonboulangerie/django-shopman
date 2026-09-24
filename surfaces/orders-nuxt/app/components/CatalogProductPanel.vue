@@ -814,7 +814,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               </label>
             </div>
 
-            <label v-if="activeFiscalProfile?.requires_cest" class="block">
+            <label v-if="activeFiscalProfile?.carries_cest" class="block">
               <span :class="labelClass">CEST</span>
               <input
                 v-model="draft.fiscal.cest" :class="fieldClass" type="text" inputmode="numeric"

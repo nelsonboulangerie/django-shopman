@@ -18,13 +18,20 @@ oficial do catálogo, ``gtin_is_valid``). Quem falta alguma dessas fica em
 
 **Como cada item nasce**
 
-- Unidade ``un``; perfil fiscal ``own_production`` (CSOSN 102, CFOP 5102). O
-  eixo do perfil é **ST × não-ST**, não "quem fabricou": ``own_production`` é
-  "fabricação própria + revenda comum" (``fiscalman/classification.py``; o
-  seed explica o mesmo para os chás Kãnfa). ⚠️ Por isso o **CEST não é
-  gravado**: o perfil ``own_production`` o recusa ("CEST não se aplica"), e
-  gravá-lo declararia uma ST que a casa não pratica hoje. O CEST da nota fica
-  na tabela, para quando o contador disser se algum destes é ST.
+- Unidade ``un`` e perfil fiscal **por item**, com o CEST do Anexo XVII do
+  Conv. ICMS 142/2018 (ver :data:`FISCAL_NOTES`):
+    * ``resale_common`` (102/5102 + CEST) — revenda fora da ST do PR: queijo,
+      manteiga, azeite, geleia, picles, presunto, chá em folhas. O CEST vai no
+      documento porque o Conv. 142/2018 (cl. 20ª, I; cl. 3ª para o Simples) o
+      exige para item listado "ainda que a operação não esteja sujeita ao
+      regime de ST";
+    * ``resale`` (500/5405 + CEST) — revenda NA ST do PR (RICMS/PR, Anexo IX,
+      art. 118): mostarda preparada (17.038.00) e os cremes de queijo como
+      "requeijão e similares" (17.023.00). ⚠️ Interpretação: confirmar com o
+      contador — se a compra NÃO veio com ST retida, é 102.
+  Produto que ainda está no perfil antigo (``own_production`` sem CEST) é
+  reclassificado; qualquer outra classificação já curada fica, e sai no
+  relatório como divergência.
 - Marca e GTIN em ``metadata['social']`` (o que o feed e a página declaram) e
   o **cadastro de compra** do mesmo SKU (``buyman.Material``): é ele que torna
   o item comprável, e é por ele que o Compras recebe a NF-e (ver
@@ -104,6 +111,8 @@ class GroceryItem:
     #: De onde veio o GTIN, quando NÃO foi da NF-e. Vai para
     #: ``metadata['gtin_source']``: quem lê sabe se é conferido ou palpite.
     gtin_source: str = ""
+    #: Perfil fiscal: ``resale_common`` (sem ST) ou ``resale`` (na ST do PR).
+    profile: str = "resale_common"
 
 
 #: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
@@ -122,8 +131,11 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("AZEITE-DEFUMADO-PICANTE-MIRANTE-250", "Azeite Defumado Picante Mirante 250ml", 7700,
                 "Mirante", "602883466128", "15092000", "1706700", None, ("azeite", "defumado", "picante")),
     # ── Conservas Duga ──
+    # NCM corrigido: a nota trazia 2103.90.99 (molhos e condimentos), que não
+    # tem CEST; berinjela preparada em óleo é 2005.99.00 → 17.092.00.
+    # ⚠️ Anotar para o contador.
     GroceryItem("BERINJELA-DUGA-320", "Berinjela Insalata Duga 320g", 3100, "Duga",
-                "7898655520010", "21039099", "1709200", 320, ("berinjela", "conserva", "antepasto")),
+                "7898655520010", "20059900", "1709200", 320, ("berinjela", "conserva", "antepasto")),
     GroceryItem("RELISH-ABOBRINHA-DUGA-320", "Relish de Abobrinha Duga 320g", 3100, "Duga",
                 "7898655520065", "20019000", "1709000", 320, ("relish", "abobrinha", "conserva")),
     GroceryItem("RELISH-CEBOLA-DUGA-320", "Relish de Cebola Duga 320g", 3100, "Duga",
@@ -132,14 +144,14 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "7898655520041", "20019000", "1709000", 320, ("relish", "pepino", "conserva")),
     # ── Cremes de queijo Pomerode ──
     GroceryItem("CREME-GORGONZOLA-POMERODE-90", "Creme de Gorgonzola Pomerode 90g", 2600, "Pomerode",
-                "7898361661236", "04063000", "1702300", 90, ("queijo", "creme", "gorgonzola")),
+                "7898361661236", "04063000", "1702300", 90, ("queijo", "creme", "gorgonzola"), profile="resale"),
     GroceryItem("CREME-PARMESAO-POMERODE-90", "Creme de Parmesão Kraeuterkaese Pomerode 90g", 2600,
-                "Pomerode", "7898361661014", "04063000", "1702300", 90, ("queijo", "creme", "parmesao")),
+                "Pomerode", "7898361661014", "04063000", "1702300", 90, ("queijo", "creme", "parmesao"), profile="resale"),
     # GTIN da web: Empório Varanda, Cosmos (lista do NCM 0406.30.00) e Santa
     # Helena; mesmo prefixo dos irmãos.
     GroceryItem("CREME-BRIE-POMERODE-90", "Creme de Brie Pomerode 90g", 2600, "Pomerode",
                 "7898361662103", "04063000", "1702300", 90, ("queijo", "creme", "brie"),
-                gtin_source=WEB_UNCONFIRMED),
+                gtin_source=WEB_UNCONFIRMED, profile="resale"),
     # Vendido POR PESO: a peça chega da Pomerode com peso diferente a cada
     # vez. Preço por quilo nenhuma fonte tem — o Yooga o registrava a R$ 0,00
     # (34 vendas, todas zeradas). Fica cadastrado e NÃO vendável até o dono
@@ -170,7 +182,7 @@ GROCERY: tuple[GroceryItem, ...] = (
     # de damasco veio da nota como 2007.99.90 e sem CEST; o de frutas
     # vermelhas, como os potes grandes.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-28", "Mini Geleia Damasco St. Dalfour 28g", 900, "St. Dalfour",
-                "084380980428", "20079990", "", 28, ("geleia", "damasco", "fruta", "mini")),
+                "084380980428", "20079990", "1709400", 28, ("geleia", "damasco", "fruta", "mini")),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-28", "Mini Geleia Frutas Vermelhas St. Dalfour 28g", 900,
                 "St. Dalfour", "084380980626", "20079910", "1709400", 28,
                 ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini")),
@@ -181,19 +193,19 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini")),
     # ── Mostardas Maille ──
     GroceryItem("MOSTARDA-MEL-MAILLE-215", "Mostarda com Mel Maille 215g", 4200, "Maille",
-                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel")),
+                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="resale"),
     GroceryItem("MOSTARDA-DIJON-MAILLE-215", "Mostarda Dijon Maille 215g", 3500, "Maille",
-                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon")),
+                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="resale"),
     # A embalagem (lida pelo dono em 24/09) confirma o 3036810207589 que
     # Auchan PT, Covabra e Open Food Facts davam; o Cosmos (…7558) errava.
     GroceryItem("MOSTARDA-ANCIENNE-MAILLE-210", "Mostarda à l'Ancienne Maille 210g", 4200, "Maille",
                 "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
-                gtin_source=OWNER_PACKAGE),
+                gtin_source=OWNER_PACKAGE, profile="resale"),
     # ── Mirante ──
     # 120 g e R$ 26 (dono, 24/09). GTIN-12 602883466111 (a embalagem traz
     # 0602883466111), guardado como os outros Mirante.
     GroceryItem("CHURRASQUINHO-PIMENTA-MIRANTE-120", "Churrasquinho de Pimenta Mirante 120g", 2600,
-                "Mirante", "602883466111", "21039099", "1709200", 120,
+                "Mirante", "602883466111", "21039099", "", 120,
                 ("churrasquinho", "pimenta", "conserva"), gtin_source=OWNER_PACKAGE),
     # ── Chá Kãnfa em lata ──
     # A lata de Chalosofia (dono, embalagem, 24/09). ⚠️ Na loja da Kãnfa o
@@ -211,8 +223,74 @@ GROCERY: tuple[GroceryItem, ...] = (
                 gtin_source=OWNER_PACKAGE),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
-                "Vito Bauducci", "7890203650002", "02101900", "1707904", 100, ("presunto", "cru", "fatiado")),
+                "Vito Bauducci", "7890203650002", "02101900", "1708701", 100, ("presunto", "cru", "fatiado")),
 )
+
+#: Preço que existe em alguma fonte mas o dono ainda não escolheu: sai no
+#: relatório como proposta e NÃO é gravado. Para gravar, mova para a tabela.
+PROPOSED_PRICE_Q: dict[str, tuple[int, str]] = {
+    # O Yooga guardava o valor da peça no acréscimo da venda (R$ 17–29, ~R$ 21)
+    # e nunca o peso; nenhuma NF-e de compra da Pomerode foi achada. O único
+    # preço por quilo registrado é o da planilha "PREÇOS MERCEARIA" (Drive,
+    # out/2023) — coerente com peças de ~126 g.
+    "QUEIJO-VALEDOTESTO-POMERODE": (16650, "planilha PREÇOS MERCEARIA, out/2023"),
+}
+
+
+#: O porquê de cada classificação fiscal, com fonte — para a revisão do dono
+#: e do contador. Pesquisa de 24/09/2026.
+FISCAL_NOTES: dict[str, str] = {
+    "obrigacao": (
+        "Conv. ICMS 142/2018, cl. 20ª, I (e cl. 3ª, Simples): informar o CEST do item "
+        "listado nos Anexos II a XXVI mesmo sem ST — confaz.fazenda.gov.br/legislacao/"
+        "convenios/2018/CV142_18; RICMS/PR, Anexo X, art. 1º, §§ 1º e 5º. A SEFAZ não "
+        "rejeita CSOSN 102 sem CEST (a rejeição 806 é só para ST), mas a obrigação existe."
+    ),
+    "st_no_pr": (
+        "RICMS/PR, Anexo IX, art. 118: na ST seguem mostarda preparada 2103.30.21 "
+        "(17.038.00), condimentos 2103.90.21/.91 (17.035.00) e requeijão e similares "
+        "(17.023.00); saíram em 1º/11/2019 (Decreto 2.673/2019) azeite, geleias/doces "
+        "(2007) e picles (2001). Queijos 0406 (17.024.00), manteiga e presunto cru "
+        "estão fora."
+    ),
+    "csosn_500": (
+        "Item na ST comprado com ST retida sai com CSOSN 500/CFOP 5405; com 102, o ICMS "
+        "entraria de novo no DAS. Interpretação — confirmar com o contador."
+    ),
+    "creme_de_queijo": (
+        "0406.30 (queijo fundido) → 17.023.00 (requeijão e similares, na ST do PR). "
+        "Alternativa defensável: 17.024.00 (queijos, fora da ST). Contador decide."
+    ),
+    "churrasquinho": (
+        "2103.90.99 (outros molhos) não está no Anexo XVII: sem CEST. Se o contador "
+        "enxergar condimento (2103.90.21/.91), vira 17.035.00 e ST."
+    ),
+}
+
+
+@dataclass(frozen=True)
+class SeedResaleFiscal:
+    """Revenda que o seed já semeia (chás Kãnfa, Camembert): só a classificação."""
+
+    sku: str
+    ncm: str
+    cest: str
+    profile: str = "resale_common"
+
+
+#: Os chás Kãnfa voltam ao NCM da NF-e (0902.10.00, chá verde em embalagem
+#: até 3 kg — a planilha anotou "antes 09022000"); CEST 17.097.00, chá em
+#: folhas fora da ST do PR. O Camembert, queijo 17.024.00.
+SEED_RESALE_FISCAL: tuple[SeedResaleFiscal, ...] = (
+    *(SeedResaleFiscal(sku, "09021000", "1709700") for sku in (
+        "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50",
+        "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTUICAO-KANFA-L70",
+        "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50",
+        "CHA-NAMASTE-KANFA-L70", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
+    )),
+    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400"),
+)
+
 
 #: Mercearia da planilha que NÃO entra, e por quê. Entra quando o dado faltante
 #: chegar — basta mover a linha para :data:`GROCERY`.
@@ -334,6 +412,36 @@ def _ensure_collection(product, collection) -> None:
     )
 
 
+def _wanted_fiscal(profile: str, ncm: str, cest: str, unit: str) -> dict:
+    return {"profile": profile, "ncm": ncm, "unit": unit.upper(), **({"cest": cest} if cest else {})}
+
+
+def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
+    """Garante a classificação da tabela. Devolve as linhas do que mudou.
+
+    Vazio ou no perfil antigo (``own_production`` sem CEST, que é como a
+    Mercearia nasceu antes do CEST) → a tabela manda. Qualquer outra coisa é
+    curadoria de alguém: fica, e a divergência sai no relatório.
+    """
+    metadata = _metadata(product)
+    current = dict(metadata.get("fiscal") or {})
+    if all((current.get(k) or "") == (wanted.get(k) or "") for k in ("profile", "ncm", "cest", "unit")):
+        return []
+    legacy = not current or (current.get("profile", "own_production") == "own_production"
+                             and not current.get("cest"))
+    if not legacy:
+        for field in ("profile", "ncm", "cest"):
+            if (current.get(field) or "") != (wanted.get(field) or ""):
+                report["conflicts"].append((product.sku, field, current.get(field) or "", wanted.get(field) or ""))
+        return []
+    metadata["fiscal"] = {**{k: v for k, v in current.items() if k != "cest"}, **wanted}
+    product.metadata = metadata
+    parts = [f"perfil {wanted['profile']}", f"ncm {wanted['ncm']}"]
+    if wanted.get("cest"):
+        parts.append(f"cest {wanted['cest']}")
+    return ["fiscal: " + ", ".join(parts)]
+
+
 def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int | None,
                   ncm: str, report: dict):
     """O produto existente (e as divergências dele com a tabela) ou um novo, não salvo."""
@@ -352,9 +460,6 @@ def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int
         have = getattr(product, field)
         if have != value:
             report["conflicts"].append((sku, field, have, value))
-    fiscal = _metadata(product).get("fiscal") or {}
-    if fiscal.get("ncm") and fiscal["ncm"] != ncm:
-        report["conflicts"].append((sku, "ncm", fiscal["ncm"], ncm))
     return product
 
 
@@ -388,12 +493,11 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     is_new = product.pk is None
     lines: list[str] = []
     metadata = _metadata(product)
-    fiscal = dict(metadata.get("fiscal") or {})
-    if not fiscal.get("ncm"):
-        fiscal.update({"profile": fiscal.get("profile") or "own_production", "ncm": item.ncm,
-                       "unit": item.unit.upper()})
-        lines.append(f"ncm: → {item.ncm}")
-    metadata["fiscal"] = fiscal
+    product.metadata = metadata
+    fiscal_lines = _sync_fiscal(product, _wanted_fiscal(item.profile, item.ncm, item.cest, item.unit), report)
+    if not is_new:
+        lines.extend(fiscal_lines)
+    metadata = _metadata(product)
 
     if item.gtin_source and metadata.get("gtin_source") != item.gtin_source:
         metadata["gtin_source"] = item.gtin_source
@@ -429,7 +533,13 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     if purchasable and not is_new:
         report["updated"].append((item.sku, ["compra: cadastro de compra do mesmo SKU"]))
     if product.base_price_q <= 0:
-        report["no_price"].append((item.sku, "sem preço em fonte nenhuma: cadastrado e fora da venda até o dono dizer"))
+        proposed = PROPOSED_PRICE_Q.get(item.sku)
+        reason = (
+            f"sem preço: proposta R$ {proposed[0] / 100:.2f}{'/kg' if item.unit == 'kg' else ''} "
+            f"({proposed[1]}) — o dono escolhe; fora da venda até lá"
+            if proposed else "sem preço em fonte nenhuma: cadastrado e fora da venda até o dono dizer"
+        )
+        report["no_price"].append((item.sku, reason))
     product.keywords.add(COLLECTION_REF, *item.keywords)
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
@@ -513,6 +623,19 @@ def _link_aliases(report: dict) -> None:
         report["aliases"].append((alias.external_name, before, target.sku))
 
 
+def _apply_seed_resale_fiscal(entry: SeedResaleFiscal, report: dict) -> None:
+    from shopman.offerman.models import Product
+
+    product = Product.objects.filter(sku=entry.sku).first()
+    if product is None:
+        report["missing"].append(entry.sku)
+        return
+    lines = _sync_fiscal(product, _wanted_fiscal(entry.profile, entry.ncm, entry.cest, "UN"), report)
+    if lines:
+        product.save(update_fields=["metadata", "updated_at"])
+        report["updated"].append((entry.sku, lines))
+
+
 def apply_grocery(*, apply: bool) -> dict[str, list]:
     """Cria/atualiza a Mercearia real. Sem ``apply``, executa e desfaz.
 
@@ -540,6 +663,8 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
             _apply_gift_box(box, collection, report)
         for real in REAL_PLACEHOLDERS:
             _apply_placeholder(real, report)
+        for entry in SEED_RESALE_FISCAL:
+            _apply_seed_resale_fiscal(entry, report)
         _link_aliases(report)
         if not apply:
             transaction.set_rollback(True)

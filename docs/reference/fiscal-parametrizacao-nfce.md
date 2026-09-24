@@ -13,18 +13,33 @@
 
 ## 2. Perfis fiscais (eixo real: ST vs não-ST)
 
-Os parâmetros que dependem da operação vivem em 2 perfis nomeados (`shopman/fiscalman/classification.py`);
+Os parâmetros que dependem da operação vivem em 3 perfis nomeados (`shopman/fiscalman/classification.py`);
 por produto guarda-se só `profile` + `ncm` + `cest` (em `Product.metadata["fiscal"]`).
 
 | Perfil | Aplica a | CSOSN | CFOP interno | CFOP interest. | Origem | CEST | PIS CST | COFINS CST |
 |---|---|---|---|---|---|---|---|---|
-| `own_production` (não-ST) | fabricação própria + revenda comum: pães, salgados, doces, bebidas preparadas | **102** | **5102** | 6102 | 0 | — | **99** | **99** |
-| `resale` (ST) | revenda sujeita a ST: refrigerantes, água, industrializados | **500** | **5405** | 6405 | 0 | **obrigatório** | **99** | **99** |
+| `own_production` (não-ST) | feito na casa: pães, salgados, doces, bebidas preparadas, caixas presente | **102** | **5102** | 6102 | 0 | — | **99** | **99** |
+| `resale_common` (não-ST) | revenda fora da ST do PR: queijo, manteiga, azeite, geleia, picles, presunto cru, chá em folhas | **102** | **5102** | 6102 | 0 | **informado quando o NCM tem** | **99** | **99** |
+| `resale` (ST) | revenda sujeita a ST no PR: refrigerantes, água, mostarda preparada, cremes de queijo (requeijão e similares) | **500** | **5405** | 6405 | 0 | **obrigatório** | **99** | **99** |
 
 - O contador classifica "alimentação em geral, salgados, doces" como **comercialização (5102/102)**,
   não produção própria (5101). Sob Simples o CFOP não altera o imposto (recolhido no DAS).
 - Revenda: usar o **NCM da nota fiscal de compra** do produto. CEST obrigatório (7 dígitos) por item.
-- Hoje o catálogo é 100% `own_production`; `resale` tem 0 membros (entra com bebida industrializada).
+- **CEST na revenda sem ST (24/09/2026).** O Conv. ICMS 142/2018 (cl. 20ª, I; cl. 3ª estende ao
+  Simples) manda informar o CEST do item listado nos Anexos II a XXVI "ainda que a operação não
+  esteja sujeita ao regime de substituição tributária"
+  ([CV142_18](https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18)); o RICMS/PR
+  repete no Anexo X, art. 1º, §§ 1º e 5º. A SEFAZ não rejeita CSOSN 102 sem CEST (a rejeição 806 é
+  só para CST/CSOSN de ST), mas a obrigação existe — daí o perfil `resale_common`.
+- **O que está na ST do PR** (RICMS/PR, Anexo IX, art. 118): mostarda preparada 2103.30.21
+  (17.038.00), condimentos 2103.90.21/.91 (17.035.00), requeijão e similares (17.023.00). Saíram em
+  1º/11/2019 (Decreto 2.673/2019): azeite, geleias/doces (2007), picles (2001). Fora: queijos 0406,
+  manteiga, presunto cru.
+- ⚠️ **Confirmar com o contador:** item na ST comprado com ST retida sai com CSOSN 500/5405 (com 102
+  o ICMS entraria de novo no DAS); o creme de queijo 0406.30 como 17.023.00 (na ST) ou 17.024.00
+  (queijo, fora); a berinjela em óleo como 2005.99.00 (a nota traz 2103.90.99, sem CEST).
+- A tabela por item mora em `config/management/commands/apply_grocery_catalog.py` (`GROCERY`,
+  `SEED_RESALE_FISCAL`, `FISCAL_NOTES`).
 
 ## 3. NCM por produto (catálogo atual — todos não-ST)
 
