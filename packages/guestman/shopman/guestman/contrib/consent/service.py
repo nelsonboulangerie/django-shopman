@@ -7,10 +7,10 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from shopman.guestman.contrib.consent.models import (
     CommunicationConsent,
@@ -30,6 +30,8 @@ DEFAULT_MARKETING_DISCLOSURE = (
     "qualquer momento em Minha conta e consultar a Política de Privacidade."
 )
 CONSENT_STATUS_BATCH_SIZE = 20_000
+# R11 da matriz de retenção: o IP bruto da prova vive no máximo 90 dias.
+CONSENT_IP_MAX_RETENTION_DAYS = 90
 
 
 class ConsentService:
@@ -292,6 +294,89 @@ class ConsentService:
                 customer__is_active=True,
             )
         )
+
+    @classmethod
+    def consent_ip_retention_days(cls, days: int | None = None) -> int:
+        """Prazo do IP bruto da prova, sempre entre 1 e 90 dias.
+
+        O teto de 90 dias é irredutível: nem configuração nem argumento o
+        estendem. Um prazo menor continua permitido.
+        """
+
+        configured = (
+            days
+            if days is not None
+            else getattr(settings, "SHOPMAN_CONSENT_IP_RETENTION_DAYS", CONSENT_IP_MAX_RETENTION_DAYS)
+        )
+        return min(CONSENT_IP_MAX_RETENTION_DAYS, max(1, int(configured)))
+
+    @classmethod
+    def expired_ip_cutoff(cls, *, days: int | None = None, now: datetime | None = None) -> datetime:
+        now = now or timezone.now()
+        return now - timedelta(days=cls.consent_ip_retention_days(days))
+
+    @classmethod
+    def _current_with_expired_ip(cls, cutoff: datetime) -> models.QuerySet:
+        """Projeções cujo IP foi coletado antes do corte.
+
+        O IP da projeção é sempre o do evento que ela aponta em
+        ``last_event_ref`` — e esse evento diz, em ``occurred_at``, quando o IP
+        foi coletado. ``updated_at`` sozinho não serve: ele avança quando a
+        projeção é reconstruída e manteria o mesmo IP além do prazo. Fica como
+        segunda porta para linhas sem evento apontado (legado), porque o IP de
+        uma linha nunca é mais novo que a última escrita dela.
+        """
+
+        expired_events = CommunicationConsentEvent.objects.filter(
+            occurred_at__lt=cutoff,
+        ).values("ref")
+        return CommunicationConsent.objects.filter(ip_address__isnull=False).filter(
+            models.Q(last_event_ref__in=expired_events) | models.Q(updated_at__lt=cutoff)
+        )
+
+    @classmethod
+    def count_expired_ip(
+        cls,
+        *,
+        days: int | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        """Conte IPs vencidos na projeção e na trilha, sem alterar nada."""
+
+        cutoff = cls.expired_ip_cutoff(days=days, now=now)
+        return {
+            "current": cls._current_with_expired_ip(cutoff).count(),
+            "events": CommunicationConsentEvent.objects.filter(
+                ip_address__isnull=False,
+                occurred_at__lt=cutoff,
+            ).count(),
+        }
+
+    @classmethod
+    @transaction.atomic
+    def redact_expired_ip(
+        cls,
+        *,
+        days: int | None = None,
+        now: datetime | None = None,
+        apply: bool = False,
+    ) -> dict[str, int]:
+        """Remova o IP bruto vencido sem apagar a prova do consentimento.
+
+        Sem ``apply=True`` só conta. Com ele, apaga apenas ``ip_address`` na
+        projeção e na trilha; finalidade, texto apresentado, hashes, estado e
+        instantes ficam como estão. Não roda sozinho: nenhum agendamento chama
+        esta função, e o primeiro ``apply`` em produção é gate humano (R11).
+        """
+
+        if not apply:
+            return cls.count_expired_ip(days=days, now=now)
+        cutoff = cls.expired_ip_cutoff(days=days, now=now)
+        # ``update`` em massa não toca ``updated_at`` (auto_now só vale no save):
+        # redigir o IP não finge que a escolha do cliente mudou.
+        current_count = cls._current_with_expired_ip(cutoff).update(ip_address=None)
+        event_count = CommunicationConsentEvent.redact_ip_collected_before(cutoff)
+        return {"current": current_count, "events": event_count}
 
     @classmethod
     def get_opted_in_channels(

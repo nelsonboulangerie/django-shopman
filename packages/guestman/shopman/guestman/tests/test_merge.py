@@ -981,6 +981,64 @@ class TestMergeUndo:
         assert "reverted" in undo_event.title.lower()
 
 
+class TestMergeUndoRecalculatesInsights:
+    """O undo devolve os pedidos ao doador; os dois agregados têm de acompanhar.
+
+    A ida já recalculava o sobrevivente; a volta não recalculava ninguém — o
+    sobrevivente ficava com o RFM inflado pelo histórico que devolveu e o doador
+    reativado com o retrato de antes da unificação.
+    """
+
+    def test_undo_recalculates_both_participants_after_reactivation(
+        self, source, target, evidence, monkeypatch
+    ):
+        from shopman.guestman.contrib.insights.service import InsightService
+
+        result = MergeService.merge(source, target, evidence, actor="test")
+
+        calls: list[tuple[str, bool]] = []
+
+        def spy(customer_ref):
+            is_active = Customer.objects.get(ref=customer_ref).is_active
+            calls.append((customer_ref, is_active))
+
+        monkeypatch.setattr(InsightService, "recalculate", classmethod(lambda cls, ref: spy(ref)))
+
+        MergeService.undo(result.audit_id, actor="test")
+
+        # Ambos, e o doador já reativado — ``recalculate`` só enxerga ativo.
+        assert sorted(calls) == [(source.ref, True), (target.ref, True)]
+
+    def test_undo_leaves_real_insight_rows_for_both(self, source, target, evidence):
+        from shopman.guestman.contrib.insights.models import CustomerInsight
+
+        result = MergeService.merge(source, target, evidence, actor="test")
+        CustomerInsight.objects.filter(customer=source).delete()
+
+        MergeService.undo(result.audit_id, actor="test")
+
+        assert CustomerInsight.objects.filter(customer=source).exists()
+        assert CustomerInsight.objects.filter(customer=target).exists()
+
+    def test_undo_survives_an_insight_failure(self, source, target, evidence, monkeypatch, caplog):
+        from shopman.guestman.contrib.insights.service import InsightService
+
+        result = MergeService.merge(source, target, evidence, actor="test")
+
+        def boom(cls, ref):
+            raise RuntimeError("backend fora do ar")
+
+        monkeypatch.setattr(InsightService, "recalculate", classmethod(boom))
+
+        with caplog.at_level("WARNING"):
+            MergeService.undo(result.audit_id, actor="test")
+
+        source.refresh_from_db()
+        assert source.is_active is True
+        assert MergeAudit.objects.get(pk=result.audit_id).status == MergeStatus.REVERTED
+        assert "could not recalculate insights" in caplog.text
+
+
 # ======================================================================
 # Full integration — everything together
 # ======================================================================

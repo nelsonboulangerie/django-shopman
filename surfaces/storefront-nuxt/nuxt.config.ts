@@ -118,7 +118,9 @@ export default defineNuxtConfig({
       clientsClaim: false,
       skipWaiting: false,
       globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-      globIgnores: ['pwa/screenshots/**'],
+      // `documentos-legais/` é o arquivo permanente de Termos/Privacidade citado pelos pedidos:
+      // abre por link, uma versão cresce a cada revisão e nenhuma precisa estar offline.
+      globIgnores: ['pwa/screenshots/**', 'documentos-legais/**'],
       manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
       runtimeCaching: [
         {

@@ -284,13 +284,13 @@ def test_auth_request_code_preserves_brazilian_ddi_without_plus(monkeypatch, cli
 
     response = client.post(
         "/api/v1/auth/request-code/",
-        data={"target": "55 43 98404-9009", "delivery_method": "whatsapp"},
+        data={"target": "55 43 98123-4567", "delivery_method": "whatsapp"},
         content_type="application/json",
     )
 
     assert response.status_code == 200
-    assert response.json()["phone"] == "+5543984049009"
-    assert sent["phone"] == "+5543984049009"
+    assert response.json()["phone"] == "+5543981234567"
+    assert sent["phone"] == "+5543981234567"
 
 
 def test_auth_request_code_preserves_international_phone(monkeypatch, client: Client):
@@ -762,7 +762,7 @@ def test_auth_request_code_does_not_send_to_invented_mobile(monkeypatch, client)
     monkeypatch.setattr(auth_api, "HAS_AUTH", True)
     monkeypatch.setattr(auth_api.auth_service, "request_code", send)
     response = client.post("/api/v1/auth/request-code/", {
-        "target": "(43) 9840-4900", "delivery_method": "whatsapp",
+        "target": "(43) 9812-3456", "delivery_method": "whatsapp",
     }, content_type="application/json")
     assert response.status_code == 400
     send.assert_not_called()

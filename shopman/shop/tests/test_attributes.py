@@ -377,3 +377,21 @@ def test_a_secondary_collection_answers_the_flavor_the_primary_leaves_blank():
     assert attributes.get(pchoc, "temperatura") == "ambiente"
     # Sem secundária, a lacuna fica lacuna.
     assert attributes.get(cro, "sabor") is None
+
+
+def test_a_secondary_sweets_collection_beats_the_soft_bread_guess():
+    """Brioche Chocolat: Macios (→ neutro) e também Doces (dono, 24/09)."""
+    from django.core.management import call_command
+
+    brioche = _product("BRCH", name="Brioche Chocolat")
+    _in_collection(brioche, "macios")
+    _in_collection(brioche, "doces", primary=False)
+    forma = _product("FORMA", name="Shokupan")
+    _in_collection(forma, "macios")
+
+    call_command("propose_product_attributes", verbosity=0)
+    brioche.refresh_from_db()
+    forma.refresh_from_db()
+
+    assert attributes.get(brioche, "sabor") == "doce"
+    assert attributes.get(forma, "sabor") == "neutro"

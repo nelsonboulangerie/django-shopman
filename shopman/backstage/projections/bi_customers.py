@@ -3,6 +3,12 @@
 Distribuição RFM e agregados do ``CustomerInsight`` (o agregado materializado
 que o guestman JÁ mantém — o B.I. só lê, nunca recalcula) e novos clientes
 por semana a partir de ``Customer.created_at``.
+
+Só cliente ATIVO entra em qualquer número daqui. A unificação de cadastros
+(``MergeService.merge``) não apaga o doador: desativa (``is_active=False``) e
+deixa o ``CustomerInsight`` dele parado no retrato de antes. Contá-lo é contar a
+mesma pessoa duas vezes — no segmento RFM, no ticket médio, no "em risco" e no
+total. O undo reativa o doador, e aí ele volta a contar sozinho.
 """
 
 from __future__ import annotations
@@ -48,7 +54,7 @@ def build_bi_customers(
     date_from, date_to = _normalize_window(date_from, date_to)
 
     insights = list(
-        CustomerInsight.objects.values_list(
+        CustomerInsight.objects.filter(customer__is_active=True).values_list(
             "rfm_segment", "average_ticket_q", "total_orders", "churn_risk"
         )
     )
@@ -72,7 +78,13 @@ def build_bi_customers(
     )
 
     week_counts: dict[date, int] = defaultdict(int)
-    created = Customer.objects.filter(
+    active_customers = Customer.objects.filter(is_active=True)
+    # Novos por semana também só contam ativos. O cadastro absorvido nasceu de
+    # verdade naquela semana, mas a unificação disse que ele era a mesma pessoa
+    # de outro cadastro — que já é contado na semana em que ELE nasceu. Contar
+    # os dois é inventar um cliente novo. (Consequência aceita: unificar hoje
+    # pode baixar a contagem de uma semana passada; é a correção, não deriva.)
+    created = active_customers.filter(
         created_at__date__range=(date_from, date_to)
     ).values_list("created_at", flat=True)
     for created_at in created:
@@ -87,7 +99,7 @@ def build_bi_customers(
             BICustomersWeekRow(week_start=week.isoformat(), new_customers=week_counts[week])
             for week in sorted(week_counts)
         ),
-        customers_total=Customer.objects.count(),
+        customers_total=active_customers.count(),
         with_insight=len(insights),
         at_risk=at_risk,
         average_ticket_q=sum(tickets) // len(tickets) if tickets else 0,

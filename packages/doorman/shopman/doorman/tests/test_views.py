@@ -440,7 +440,7 @@ class TestAccessLinkCreateViewEdges:
 
         with patch("shopman.doorman.views.access_link.get_customer_resolver", return_value=Resolver()):
             response = self._post_create({
-                "whatsapp_id": "43984049009",
+                "whatsapp_id": "43981234567",
                 "first_name": "Pablo",
                 "last_name": "Valentini",
                 "manychat_id": "4605528796186498",
@@ -451,7 +451,7 @@ class TestAccessLinkCreateViewEdges:
         data = json.loads(response.content)
         assert captured == {
             "id": "4605528796186498",
-            "whatsapp_id": "43984049009",
+            "whatsapp_id": "43981234567",
             "first_name": "Pablo",
             "last_name": "Valentini",
         }
@@ -478,7 +478,7 @@ class TestAccessLinkCreateViewEdges:
 
         response = self._post_create({
             "customer_id": str(customer.uuid),
-            "whatsapp_id": "43984049009",
+            "whatsapp_id": "43981234567",
             "first_name": "Pablo",
             "last_name": "Valentini",
             "manychat_id": "4605528796186498",
@@ -488,11 +488,11 @@ class TestAccessLinkCreateViewEdges:
 
         assert response.status_code == 200
         customer.refresh_from_db()
-        assert customer.phone == "+5543984049009"
+        assert customer.phone == "+5543981234567"
         assert ContactPoint.objects.filter(
             customer=customer,
             type=ContactPoint.Type.WHATSAPP,
-            value_normalized="+5543984049009",
+            value_normalized="+5543981234567",
             is_verified=True,
         ).exists()
         assert CustomerIdentifier.objects.filter(
@@ -539,7 +539,7 @@ class TestAccessLinkCreateViewEdges:
 
         response = self._post_create({
             "customer_id": str(customer.uuid),
-            "phone": "43984049009",
+            "phone": "43981234567",
             "first_name": "Diofer",
             "manychat_id": "1795248870",
             "source": "manychat",
@@ -582,12 +582,12 @@ class TestAccessLinkCreateViewEdges:
         Customer.objects.create(
             ref="ACCESS-MC-OTHER",
             first_name="Outro",
-            phone="43984049009",
+            phone="43981234567",
         )
 
         response = self._post_create({
             "customer_id": str(target.uuid),
-            "whatsapp_id": "43984049009",
+            "whatsapp_id": "43981234567",
             "manychat_id": "4605528796186498",
             "source": "manychat",
             "next": "/checkout/",

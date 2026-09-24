@@ -696,6 +696,9 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                 # offset; the exact JSON date check below remains authoritative.
                 last_order_at__gte=cutoff_at - timedelta(days=1),
                 favorite_products__isnull=False,
+                # Cadastro absorvido numa unificação fica inativo; o insight
+                # dele sobrevive, mas a pessoa já mora no cadastro que ficou.
+                customer__is_active=True,
             )
             .select_related("customer")
             .only(

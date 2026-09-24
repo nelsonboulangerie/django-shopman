@@ -263,7 +263,7 @@ class TestResolveByPhone:
             "shopman.guestman.contrib.manychat.resolver.urlopen",
             side_effect=fake_urlopen,
         ):
-            result = ManychatSubscriberResolver.resolve("+5543984049009")
+            result = ManychatSubscriberResolver.resolve("+5543981234567")
 
         assert result == 456789123
         assert len(captured) == 2
@@ -273,11 +273,11 @@ class TestResolveByPhone:
         assert second.path.endswith("/fb/subscriber/findByCustomField")
         assert parse_qs(first.query) == {
             "field_id": ["14436572"],
-            "field_value": ["+5543984049009"],
+            "field_value": ["+5543981234567"],
         }
         assert parse_qs(second.query) == {
             "field_id": ["14436572"],
-            "field_value": ["5543984049009"],
+            "field_value": ["5543981234567"],
         }
 
     @override_settings(
@@ -295,7 +295,7 @@ class TestResolveByPhone:
                 "timeout": timeout,
             })
             query = parse_qs(urlparse(request.full_url).query)
-            if query.get("field_value") == ["5543998404900"]:
+            if query.get("field_value") == ["5543998123456"]:
                 return _FakeManychatResponse({
                     "status": "success",
                     "data": [{"id": 456789123}],
@@ -306,7 +306,7 @@ class TestResolveByPhone:
             "shopman.guestman.contrib.manychat.resolver.urlopen",
             side_effect=fake_urlopen,
         ):
-            result = ManychatSubscriberResolver.resolve("+554398404900")
+            result = ManychatSubscriberResolver.resolve("+554398123456")
 
         assert result == 456789123
         looked_up_values = [
@@ -315,7 +315,7 @@ class TestResolveByPhone:
             if call["url"].endswith("findByCustomField")
             or "/subscriber/findByCustomField?" in call["url"]
         ]
-        assert "5543998404900" in looked_up_values
+        assert "5543998123456" in looked_up_values
 
     @override_settings(MANYCHAT_API_TOKEN="test-token")
     def test_unknown_phone_creates_whatsapp_subscriber(self):
@@ -347,17 +347,17 @@ class TestResolveByPhone:
             "shopman.guestman.contrib.manychat.resolver.urlopen",
             side_effect=fake_urlopen,
         ):
-            result = ManychatSubscriberResolver.resolve("+5543984049009")
+            result = ManychatSubscriberResolver.resolve("+5543981234567")
 
         assert result == 987123
         lookup_query = parse_qs(urlparse(captured[0]["url"]).query)
-        assert lookup_query == {"phone": ["+5543984049009"]}
+        assert lookup_query == {"phone": ["+5543981234567"]}
         fallback_lookup_query = parse_qs(urlparse(captured[1]["url"]).query)
-        assert fallback_lookup_query == {"phone": ["5543984049009"]}
+        assert fallback_lookup_query == {"phone": ["5543981234567"]}
         assert captured[2]["method"] == "POST"
         assert captured[2]["url"].endswith("/fb/subscriber/createSubscriber")
         assert captured[2]["body"] == {
-            "whatsapp_phone": "+5543984049009",
+            "whatsapp_phone": "+5543981234567",
         }
 
     @override_settings(
@@ -398,7 +398,7 @@ class TestResolveByPhone:
             "shopman.guestman.contrib.manychat.resolver.urlopen",
             side_effect=fake_urlopen,
         ):
-            result = ManychatSubscriberResolver.resolve("+5543984049009")
+            result = ManychatSubscriberResolver.resolve("+5543981234567")
 
         assert result == 987123
         mirror_body = next(
@@ -408,7 +408,7 @@ class TestResolveByPhone:
         assert mirror_body == {
             "subscriber_id": "987123",
             "field_name": "w18335622_whatsapp_id",
-            "field_value": "5543984049009",
+            "field_value": "5543981234567",
         }
 
     @override_settings(MANYCHAT_API_TOKEN="test-token")

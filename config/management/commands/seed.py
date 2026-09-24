@@ -2063,7 +2063,7 @@ class Command(BaseCommand):
             "CV": ["soda", "torneira", "artesanal", "bebida", "frio", "do-dia"],
             "SDLA": ["soda", "laranja", "torneira", "artesanal", "bebida", "frio"],
             "FORMA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
-            "KUP": ["pao", "japones", "escuro", "macio"],
+            "KUP": ["pao", "japones", "escuro", "macio", "kuropan"],
             "COE": ["pao-doce", "bichinho", "criancas", "do-dia"],
             "CQCOM": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
             "QJQT": ["lanche", "sanduiche", "queijo", "shokupan", "quente"],
@@ -2516,7 +2516,10 @@ class Command(BaseCommand):
         # portão de completude lá embaixo é justamente quem cobra isso, e ele
         # está certo. Publicar é um passo do gestor, depois de preencher a ficha.
         sem_ficha = {
-            # Os 41 seguem todos aqui, mesmo os que herdaram ficha dos "do dia".
+            # Seguem todos aqui, mesmo os que herdaram ficha dos "do dia". O Chá
+            # Hibisco e o Chá Tônica saíram em 24/09: têm ingredientes, tabela
+            # nutricional e alergênicos declarados (nenhum) no próprio seed, e o
+            # dono pediu "bebidas no catálogo".
             # Dois portões cobram, e os dois têm razão: o de completude quer
             # alergênicos e tabela nutricional (as fichas de "Folhado do dia" e
             # "Focaccia do dia" nunca tiveram as duas últimas — o que existia foi
@@ -2527,7 +2530,7 @@ class Command(BaseCommand):
             "CHA-INTUICAO-KANFA-L70", "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-L70",
             "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
             "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
-            "DELI", "HOD", "CHHIB", "CTFV",
+            "DELI", "HOD",
             "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
             "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
             "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
@@ -2618,7 +2621,7 @@ class Command(BaseCommand):
         sells_without_stock_skus = [
             "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
-            "FRAP", "VIEN",
+            "FRAP", "VIEN", "CHHIB", "CTFV",
             "CV", "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
             "QJQT", "JB",             "PERDU"         ]
@@ -2637,7 +2640,7 @@ class Command(BaseCommand):
         made_to_order_skus = [
             "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
-            "FRAP", "VIEN",
+            "FRAP", "VIEN", "CHHIB", "CTFV",
             "CV", "SDLA",
             "CQMO", "CQMA", "CQCOM",
             "QJQT", "JB",             "PERDU"         ]
@@ -3169,12 +3172,22 @@ class Command(BaseCommand):
                 # voltaram do Yooga (18/08)
                 "FFGOP", "HOD", "HODP", "DELI", "JO",
                 # Também folhados (a massa é a categoria principal deles).
-                "FFGO", "CRPQ"],
+                "FFGO", "CRPQ",
+                # Focaccia mora em Rústicos (a massa) e também é Salgados
+                # (dono, 24/09: "Focaccias são Salgados") — como já estava no
+                # alpha.
+                "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP"],
             "doces": ["PERDU", "MELSA", "MDLN",                 # voltaram do Yooga (18/08)
                 "MA",
                 # Recheados: doces de sabor, folhados/brioche de massa — e a massa
                 # é a categoria principal deles.
-                "PCHOC", "CRP", "CN", "BICH", "BRRSN"],
+                "PCHOC", "CRP", "CN", "BICH", "BRRSN",
+                # Os pães doces de Macios (dono, 24/09: "Brioche Chocolat é Doce
+                # sim. E tem mais opções que provavelmente deveriam estar em
+                # doces"; e depois: "esses são todos doces", Cornet e Melonpan
+                # incluídos). Macios continua a casa deles; Doces é a segunda.
+                # O Kuro Pan NÃO: fica só em Macios (dono, 24/09).
+                "BRCH", "COC", "COE", "URS", "PORQ", "CO", "MELON"],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
             "mercearia": [
@@ -4730,14 +4743,20 @@ class Command(BaseCommand):
         # aqui reprecifica toda a lista sozinho.
         from shopman.buyman.models import MaterialConversion
 
+        # A procedência do fator vai como DADO, não como comentário: até hoje só
+        # a salsicha dizia de onde veio o número, e dizia aqui, onde a tela não
+        # lê. Fator que a casa nunca pesou e fator que o dono declarou valiam o
+        # mesmo no banco — e sem distingui-los não há como saber qual calibrar.
+        Source = MaterialConversion.Source
         counting_conversions = {
-            "OVOS": ("ovos", Decimal("0.050")),
-            "LIMAO-SICILIANO": ("limões", Decimal("0.100")),
+            # 50 g é o ovo médio do mercado, não uma pesagem da casa.
+            "OVOS": ("ovos", Decimal("0.050"), Source.ESTIMATE),
+            "LIMAO-SICILIANO": ("limões", Decimal("0.100"), Source.ESTIMATE),
             # 50 g/un (dono, 26/08). A mini do hot dog é a MESMA salsicha
             # cortada ao meio — meio insumo, nunca um SKU próprio.
-            "SALSICHA-VIENNA": ("salsichas", Decimal("0.050")),
+            "SALSICHA-VIENNA": ("salsichas", Decimal("0.050"), Source.OWNER),
         }
-        for sku, (label, factor) in counting_conversions.items():
+        for sku, (label, factor, source) in counting_conversions.items():
             material = Material.objects.filter(sku=sku).first()
             if material is None:
                 continue
@@ -4748,10 +4767,15 @@ class Command(BaseCommand):
                 defaults={
                     "to_base_factor": factor,
                     "kind": MaterialConversion.Kind.APPROXIMATE,
+                    "source": source,
                     "is_active": True,
                 },
             )
-        self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
+        pendentes = sum(1 for *_x, source in counting_conversions.values() if source == Source.ESTIMATE)
+        self.stdout.write(
+            f"  ✅ {len(counting_conversions)} conversões de contagem"
+            + (f" ({pendentes} por calibrar)" if pendentes else "")
+        )
 
         # Equivalências APROXIMADAS de volume: os líquidos contam em kg porque a
         # bancada os pesa, mas a NOTA fala em litro. Sem o fator declarado a
@@ -4789,6 +4813,9 @@ class Command(BaseCommand):
                 defaults={
                     "to_base_factor": factor,
                     "kind": MaterialConversion.Kind.APPROXIMATE,
+                    # Densidade de tabela, não pesagem da casa: leite mais gordo
+                    # pesa diferente, e é por isso que o tipo é aproximado.
+                    "source": Source.ESTIMATE,
                     "is_active": True,
                 },
             )

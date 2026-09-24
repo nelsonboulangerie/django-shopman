@@ -6,8 +6,9 @@ aqui mede o motor contra o cardápio inteiro de uma vez.
 
 **O cardápio** é um recorte fiel do seed (SKU, nome, preço, coleção e
 palavras-chave do `seed.py`), e os atributos saem do MESMO comando que os
-propõe no alpha (`propose_product_attributes`) — inclusive as lacunas reais:
-folhado sem sabor, brioche de chocolate que a coleção chama de neutro.
+propõe no alpha (`propose_product_attributes`) — inclusive a lacuna real do
+croissant, cujo sabor nenhuma coleção responde. Os pães doces de Macios estão
+também em Doces desde 24/09 (dono: "Brioche Chocolat é Doce sim").
 
 **A nota** vem de uma rubrica que NÃO lê os atributos do motor. Cada SKU tem um
 papel "de verdade" (``TRUTH``), o que um atendente vê no balcão, e a rubrica
@@ -52,12 +53,12 @@ CHANNEL = "loja"
 # Palavras-chave como no seed — inclusive a falta delas (Mocha, Brioche Chocolat).
 CATALOG = [
     ("SP", "Espresso", 800, "bebidas-quentes", [], ["cafe", "espresso", "bebida", "quente"]),
-    ("COAD", "Café Coado", 1200, "bebidas-quentes", [], ["cafe", "coado", "bebida", "quente"]),
+    ("CHROU", "Chá Rouge", 1400, "bebidas-quentes", [], ["cha", "bebida", "quente"]),
     ("CAP", "Cappuccino", 1200, "bebidas-quentes", [], ["cafe", "cappuccino", "leite", "bebida"]),
     ("MOCHA", "Mocha", 2200, "bebidas-quentes", [], []),
     ("CHCAM", "Chá Camille", 1400, "bebidas-quentes", [], ["cha", "blend", "bebida", "quente"]),
     ("CHOQ", "Chocolate Quente", 1800, "bebidas-quentes", [], []),
-    ("CE", "Coffee Float", 1800, "bebidas-geladas", [], ["cafe", "sorvete", "gelado", "bebida"]),
+    ("CTFV", "Chá Tônica Frutas Vermelhas", 2900, "bebidas-geladas", [], ["cha", "tonica", "frutas-vermelhas", "gelado"]),
     ("FRAP", "Frappé", 1800, "bebidas-geladas", [], ["cafe", "frappe", "gelado", "bebida"]),
     ("AGUA", "Água", 600, "bebidas-geladas", [], ["agua", "mineral", "bebida", "frio"]),
     ("SDLA", "Soda de Laranja", 1400, "bebidas-geladas", [], ["soda", "laranja", "bebida"]),
@@ -65,11 +66,21 @@ CATALOG = [
     ("TRADI", "Baguette de Tradition", 1600, "rusticos", [], ["pao", "baguete"]),
     ("CPG", "Pain de Campagne", 2200, "rusticos", [], ["pao", "levain"]),
     ("MIB", "Mini Baguete", 900, "rusticos", [], ["pao", "baguete"]),
-    ("FORMA", "Shokupan", 2800, "macios", [], ["pao", "forma"]),
-    ("BRCH", "Brioche Chocolat", 1000, "macios", [], []),
+    ("CI", "Ciabatta", 1400, "rusticos", [], ["pao", "italiano", "levain", "azeite", "aerado"]),
+    ("TRABB", "Pão de Hambúrguer", 1200, "rusticos", [], ["pao", "hamburger", "levain", "individual"]),
+    ("FOA", "Focaccia Alecrim", 2800, "rusticos", ["salgados"], ["focaccia", "alecrim", "italiano", "azeite"]),
+    ("FOAP", "Mini Focaccia Alecrim", 1300, "rusticos", ["salgados"], []),
+    ("FORMA", "Shokupan", 2800, "macios", [], ["pao", "forma", "japones", "shokupan"]),
+    ("KUP", "Kuro Pan", 1600, "macios", [], ["pao", "japones", "escuro", "macio", "kuropan"]),
+    ("HOL", "Pão para Hot Dog", 900, "macios", [], ["hotdog", "manteiga", "pao", "salgado"]),
+    ("CO", "Cornet", 1200, "macios", ["doces"], ["amanteigado", "creme", "pao-doce", "recheado"]),
+    ("MELON", "Melonpan", 1400, "macios", ["doces"], ["amanteigado", "crocante", "japones", "pao-doce"]),
+    ("BRCH", "Brioche Chocolat", 1000, "macios", ["doces"], []),
+    ("COC", "Cornet de Chocolate", 900, "macios", ["doces"], []),
     ("CRO", "Croissant", 1300, "folhados", [], ["croissant", "folhado", "manteiga"]),
     ("PCHOC", "Pain au Chocolat", 1500, "folhados", ["doces"], ["croissant", "folhado", "chocolate"]),
     ("FFGO", "Folhado de Frango", 2000, "folhados", ["salgados"], []),
+    ("CRPQ", "Croissant Presunto e Queijo", 1600, "folhados", ["salgados"], []),
     ("CQMO", "Croque Monsieur", 2400, "salgados", [], ["lanche", "sanduiche", "queijo"]),
     ("CQMA", "Croque Madame", 2800, "salgados", [], ["lanche", "sanduiche", "ovo"]),
     ("CQCOM", "Croque Complet", 3000, "salgados", [], ["lanche", "sanduiche", "ovo"]),
@@ -79,40 +90,70 @@ CATALOG = [
     ("MDLN", "Madeleine", 600, "doces", [], ["bolinho", "frances", "doce"]),
     ("TJ", "Tea Jelly", 1800, "doces", [], ["doce", "gelatina", "cha", "sobremesa"]),
     ("MA", "Maçã", 1300, "doces", [], []),
+    # ⚠️ Geleia e manteiga de mercearia ainda NÃO estão à venda (a geleia do
+    # seed saiu em 23/09; "no lugar nascem os dois minis reais"). Entram aqui
+    # como o catálogo vai ser, para os pares do dono serem medidos.
     ("GL", "Geleia St. Dalfour (mini)", 1600, "mercearia", [], ["mercearia", "geleia", "fruta"]),
-    ("MT", "Mostarda da Casa", 1800, "mercearia", [], ["mercearia", "mostarda"]),
-    ("QP", "Queijo Pomerode", 3200, "mercearia", [], ["mercearia", "queijo"]),
+    ("MANT", "Manteiga (pote)", 1900, "mercearia", [], ["mercearia", "manteiga"]),
+    ("MT", "Mostarda da Casa", 1800, "mercearia", [], ["mercearia", "despensa", "mostarda", "artesanal", "pote"]),
+    ("QP", "Queijo Pomerode", 3200, "mercearia", [], ["mercearia", "despensa", "queijo", "colonial", "local"]),
+    ("CAMB", "Camembert", 3800, "mercearia", [], ["mercearia", "despensa", "queijo", "camembert", "frances"]),
+    ("TPND", "Tapenade", 2400, "mercearia", [], ["mercearia", "despensa", "tapenade", "azeitona", "pote"]),
+    ("RTAT", "Patê de Ratatouille", 2400, "mercearia", [], ["mercearia", "despensa", "pate", "ratatouille", "pote"]),
+    ("CX", "Cornichons", 2800, "mercearia", [], ["mercearia", "despensa", "picles", "conserva", "frances"]),
+    ("BK", "Bacon da Casa", 2200, "mercearia", [], ["mercearia", "despensa", "bacon", "defumado", "artesanal"]),
     ("GR", "Café em Grão (250g)", 4200, "mercearia", [], ["mercearia", "cafe", "grao"]),
 ]
 
 #: O papel de verdade, como o balcão vê — independente dos atributos derivados.
 TRUTH = {
-    "SP": "bebida_quente", "COAD": "bebida_quente", "CAP": "bebida_quente",
+    "SP": "bebida_quente", "CHROU": "bebida_quente", "CAP": "bebida_quente",
     "MOCHA": "bebida_quente", "CHCAM": "bebida_quente", "CHOQ": "bebida_quente",
-    "CE": "bebida_gelada", "FRAP": "bebida_gelada", "AGUA": "bebida_gelada",
+    "CTFV": "bebida_gelada", "FRAP": "bebida_gelada", "AGUA": "bebida_gelada",
     "SDLA": "bebida_gelada", "CHHIB": "bebida_gelada",
     "TRADI": "pao", "CPG": "pao", "MIB": "pao", "FORMA": "pao",
-    "BRCH": "doce", "PCHOC": "doce",
+    "CI": "pao", "TRABB": "pao", "KUP": "pao", "HOL": "pao",
+    "FOA": "salgado", "FOAP": "salgado", "CO": "doce", "MELON": "doce",
+    "BRCH": "doce", "COC": "doce", "PCHOC": "doce",
     "CRO": "folhado",
-    "FFGO": "salgado",
+    "FFGO": "salgado", "CRPQ": "salgado",
     "CQMO": "salgado", "CQMA": "salgado", "CQCOM": "salgado", "QJQT": "salgado", "JB": "salgado",
     "PERDU": "doce", "MDLN": "doce", "TJ": "doce", "MA": "doce",
     "GL": "acompanhamento", "MT": "acompanhamento", "QP": "acompanhamento",
+    "MANT": "acompanhamento", "CAMB": "acompanhamento", "TPND": "acompanhamento",
+    "RTAT": "acompanhamento", "CX": "acompanhamento", "BK": "acompanhamento",
     "GR": "varejo",
 }
 DRINKS = {"bebida_quente", "bebida_gelada"}
+#: O salgado LEVE que o dono pediu para doce + bebida (24/09): croissant de
+#: presunto e queijo, folhado de frango, queijo-quente.
+LIGHT_SAVORY = {"CRPQ", "FFGO", "QJQT", "FOAP", "FOA"}
+
+#: O pote que vai em cada pão, nas palavras do dono (24/09): "Pão <> Antepasto/
+#: Queijo/Manteiga, Croissant/Brioche <> Geleia", "Kuropan com manteiga e/ou
+#: geleia, combinação clássica". Lido pela RUBRICA, não pelo motor.
+_RUSTIC = {"QP", "CAMB", "TPND", "RTAT", "CX", "MANT"}
+GOES_WITH = {
+    "TRADI": _RUSTIC, "CPG": _RUSTIC, "MIB": _RUSTIC,
+    "CI": _RUSTIC | {"TPND"}, "TRABB": _RUSTIC | {"MT", "BK"},
+    "FORMA": {"MANT", "GL"}, "KUP": {"MANT", "GL"}, "HOL": {"MT"},
+    "CRO": {"GL", "MANT"},
+}
 FOODS = {"pao", "doce", "folhado", "salgado"}
 
 #: O histórico de mesa, adversário de propósito.
 AFFINITY = [
     ("CQMA", "CQMO", 9.0), ("CQMA", "CQCOM", 6.0), ("CQMO", "QJQT", 5.0),
-    ("SP", "CAP", 7.0), ("COAD", "SP", 5.0), ("CAP", "CHOQ", 4.0),
+    ("SP", "CAP", 7.0), ("CHROU", "SP", 5.0), ("CAP", "CHOQ", 4.0),
     ("CRO", "PCHOC", 8.0), ("TRADI", "CPG", 6.0), ("TRADI", "MIB", 5.0),
     ("TRADI", "AGUA", 1.02), ("MDLN", "AGUA", 4.0), ("CQMA", "SP", 3.0),
     ("CRO", "GR", 5.0), ("CAP", "GR", 4.0), ("SP", "MDLN", 1.5),
-    ("JB", "SDLA", 1.3), ("MDLN", "PERDU", 6.0), ("FRAP", "CE", 5.0),
+    ("JB", "SDLA", 1.3), ("MDLN", "PERDU", 6.0), ("FRAP", "CTFV", 5.0),
     ("QJQT", "AGUA", 2.5), ("PCHOC", "CAP", 2.0),
+    ("TRADI", "SP", 4.0), ("KUP", "CAP", 3.0), ("FORMA", "BK", 3.0),
 ]
+
+MERCEARIA = {s for s, *_ in CATALOG if TRUTH[s] == "acompanhamento"}
 
 ESGOTADO = {"availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False}
 
@@ -192,7 +233,16 @@ def grade(cart: tuple[str, ...], suggested: str | None, available: set[str]) -> 
     drink_available = any(TRUTH[s] in DRINKS for s in offerable)
     food_available = any(TRUTH[s] in FOODS for s in offerable)
 
+    takeaway = bool(kinds) and kinds <= {"pao"}
+    pantry_only = bool(kinds) and kinds <= {"acompanhamento"}
+    pots = set().union(*(GOES_WITH.get(s, set()) for s in cart)) & offerable
+    breads_for_pot = {b for b, goes in GOES_WITH.items() if goes & set(cart)} & offerable
+
     if suggested is None:
+        if takeaway and pots:
+            return 1, "pão para levar: calou com pote disponível"
+        if pantry_only:
+            return (1, "mercearia: calou com pão disponível") if breads_for_pot else (2, "mercearia: calou")
         if foods and not drinks:
             return (1, "calou com bebida disponível") if drink_available else (3, "calou: não há bebida")
         if drinks and not foods:
@@ -200,6 +250,9 @@ def grade(cart: tuple[str, ...], suggested: str | None, available: set[str]) -> 
         if "salgado" in foods and drinks and "doce" not in foods:
             doce_available = any(TRUTH[s] == "doce" for s in offerable)
             return (1, "calou com doce disponível") if doce_available else (3, "calou: não há doce")
+        if "doce" in foods and drinks and "salgado" not in foods:
+            savory_available = any(TRUTH[s] == "salgado" for s in offerable)
+            return (1, "calou com salgado disponível") if savory_available else (3, "calou: não há salgado")
         return 3, "mesa completa: calar é certo"
 
     k = TRUTH[suggested]
@@ -211,6 +264,21 @@ def grade(cart: tuple[str, ...], suggested: str | None, available: set[str]) -> 
         return 0, "bebida com bebida"
     if k == "varejo":
         return 1, "varejo oferecido numa refeição"
+
+    if takeaway:
+        # Dono, 24/09: pão para levar → a mercearia é o complemento principal.
+        if suggested in pots:
+            return 3, "pão para levar → o pote que vai nele"
+        if pots:
+            return 2, "pão para levar → outra coisa, com pote disponível"
+        if k == "bebida_quente":
+            return 3, "pão para levar, sem pote → café"
+        return 2, "pão para levar, sem pote → outra coisa"
+
+    if pantry_only:
+        if suggested in breads_for_pot:
+            return 3, "mercearia → o pão em que ela vai"
+        return 2, "mercearia → outra coisa"
 
     if foods and not drinks:
         if k in DRINKS:
@@ -238,16 +306,22 @@ def grade(cart: tuple[str, ...], suggested: str | None, available: set[str]) -> 
                 return 3, "salgado + bebida → doce"
             return 2, "salgado + bebida → outra comida"
         if "doce" in foods:
+            # Dono, 24/09: 1º um salgado LEVE (completa a mesa), 2º o pão.
+            if k == "salgado":
+                if suggested in LIGHT_SAVORY:
+                    return 3, "doce + bebida → salgado leve"
+                return 2, "doce + bebida → salgado de prato"
             if k == "acompanhamento":
                 return 1, "doce + bebida → acompanhamento"
             return 2, "doce + bebida → um convite a mais"
+        # Em refeição, o doce vem antes da mercearia (dono, 24/09).
         if k == "doce":
             return 3, "comida + bebida → doce"
-        if k == "acompanhamento" and "pao" in foods:
-            return 3, "pão + bebida → o que se passa no pão"
+        if k == "acompanhamento" and suggested in pots:
+            return 2, "pão + bebida → o pote (depois do doce)"
         return 2, "comida + bebida → outra comida"
 
-    # Sacola só de acompanhamento/varejo.
+    # Sacola de mercearia com outra mercearia/varejo.
     return (2, "mercearia → comida/bebida") if k in FOODS | DRINKS else (1, "mercearia → mercearia")
 
 
@@ -277,8 +351,10 @@ def baskets() -> list[tuple[str, tuple[str, ...], frozenset[str]]]:
         out.append(("salgado + doce + bebida", (s, d, b), none))
     for p, d, b, x in itertools.product(by_kind["pao"][:2], by_kind["doce"][:2], drinks[::5], ["GL"]):
         out.append(("pão + doce + bebida + geleia", (p, d, b, x), none))
-    out.append(("só mercearia", ("GL",), none))
-    out.append(("só mercearia", ("GR",), none))
+    # Pão para levar (dono, 24/09): pão sozinho, dois pães, pão + pote.
+    for a, b in itertools.product(by_kind["pao"], by_kind["acompanhamento"]):
+        out.append(("pão + mercearia", (a, b), none))
+    out.append(("só varejo", ("GR",), none))
 
     everything = frozenset(s for s, *_ in CATALOG)
     geladas = frozenset(by_kind["bebida_gelada"])
@@ -292,6 +368,8 @@ def baskets() -> list[tuple[str, tuple[str, ...], frozenset[str]]]:
         out.append(("limite: sem bebida quente", (d,), quentes))
     for d in by_kind["bebida_gelada"]:
         out.append(("limite: sem salgado", (d,), frozenset(by_kind["salgado"])))
+    for b in by_kind["pao"]:
+        out.append(("limite: pão para levar sem mercearia", (b,), frozenset(MERCEARIA)))
     out.append(("limite: sacola com tudo", ("CQMA", "MDLN", "SP", "TRADI", "GL"), none))
     return out
 
@@ -333,12 +411,10 @@ def report(rows) -> str:
     return "\n".join(lines)
 
 
-#: Lacunas de DADO do seed, não do motor: o motor só sabe o que o catálogo diz.
-#: O Brioche Chocolat mora só em Macios (→ sabor neutro, como o pão de forma),
-#: sem palavra-chave, e os irmãos recheados dele (Pain aux Raisins, Pain au
-#: Chocolat) estão TAMBÉM em Doces. Nenhum peso conserta isso; a curadoria sim
-#: — ver `test_with_the_data_gap_curated_nothing_is_strange`.
-KNOWN_DATA_GAPS = {"BRCH"}
+#: Lacunas de DADO do seed que o motor não tem como adivinhar. Vazia desde
+#: 24/09: o Brioche Chocolat (e os outros pães doces de Macios) entraram também
+#: em Doces, e o `propose_product_attributes` deixou de chamá-los de neutros.
+KNOWN_DATA_GAPS: set[str] = set()
 
 
 def _write_report(name: str, text: str) -> None:
@@ -358,23 +434,7 @@ def test_the_menu_is_graded_like_a_human_would(menu):
     rows = run_all()
     _write_report("cardápio do seed, como está", report(rows))
 
-    bad = [r for r in rows if r[3] <= 1 and not _touches_a_gap(r)]
-    assert not bad, "sugestão absurda ou estranha:\n" + "\n".join(
-        f"[{n}] {'+'.join(c)} → {t.sku if t else '—'} ({w})" for _, c, t, n, w in bad
-    )
-
-
-def test_with_the_data_gap_curated_nothing_is_strange(menu):
-    """O mesmo cardápio depois de o gestor dizer, no Admin, que o brioche é doce."""
-    from shopman.shop.services import attributes
-
-    brioche = Product.objects.get(sku="BRCH")
-    attributes.set(brioche, "sabor", "doce")
-
-    rows = run_all()
-    _write_report("cardápio com o Brioche Chocolat curado (sabor=doce)", report(rows))
-
-    bad = [r for r in rows if r[3] <= 1]
+    bad = [r for r in rows if r[3] == 0 or (r[3] == 1 and not _touches_a_gap(r))]
     assert not bad, "sugestão absurda ou estranha:\n" + "\n".join(
         f"[{n}] {'+'.join(c)} → {t.sku if t else '—'} ({w})" for _, c, t, n, w in bad
     )
@@ -391,9 +451,21 @@ def test_with_the_data_gap_curated_nothing_is_strange(menu):
         (("CQMA", "CQMO"), (), {"bebida_gelada"}),
         # Doce pede bebida quente; o histórico de madeleine com água não vence.
         (("MDLN",), (), {"bebida_quente"}),
-        # Pão pede café, e a Água (a mais vendida) nunca.
-        (("TRADI",), (), {"bebida_quente"}),
-        (("TRADI", "FORMA"), (), {"bebida_quente"}),
+        # Pão para levar pede o pote que vai nele (dono, 24/09) — e a Água, a
+        # mais vendida, nunca.
+        (("TRADI",), (), {"acompanhamento"}),
+        (("TRADI", "FORMA"), (), {"acompanhamento"}),
+        (("KUP",), (), {"acompanhamento"}),
+        (("FORMA",), (), {"acompanhamento"}),
+        (("HOL",), (), {"acompanhamento"}),
+        # Sem mercearia à venda, o pão volta a pedir o café.
+        (("TRADI",), ("GL", "MANT", "MT", "QP", "CAMB", "TPND", "RTAT", "CX", "BK"),
+         {"bebida_quente"}),
+        # O caminho de volta: quem leva o queijo leva o pão.
+        (("QP",), (), {"pao"}),
+        (("GL",), (), {"pao", "folhado"}),
+        # Em refeição o doce vem antes do pote.
+        (("TRADI", "CHROU"), (), {"doce"}),
         # Folhado sem sabor derivado ainda pede o café.
         (("CRO",), (), {"bebida_quente"}),
         # Bebida sozinha pede comida: quente → doce/folhado, gelada → salgado.
@@ -402,14 +474,20 @@ def test_with_the_data_gap_curated_nothing_is_strange(menu):
         (("SDLA",), (), {"salgado"}),
         # Salgado + bebida → doce, "claro!".
         (("CQMA", "SDLA"), (), {"doce"}),
-        (("JB", "COAD"), (), {"doce"}),
-        # Pão + café → o que se passa no pão, ou o doce.
-        (("TRADI", "COAD"), (), {"acompanhamento", "doce"}),
+        (("JB", "CHROU"), (), {"doce"}),
+        # Doce + bebida → o salgado LEVE que completa a mesa (dono, 24/09),
+        # e com mais força se a bebida é gelada.
+        (("MDLN", "SP"), (), {"salgado"}),
+        (("MDLN", "SDLA"), (), {"salgado"}),
+        (("BRCH", "CAP"), (), {"salgado"}),
+        # O folhado salgado completa o folhado doce: Folhados agrupa pela massa.
+        (("PCHOC", "CHROU"), (), {"salgado"}),
+
         # Preferência é peso, não filtro: sem gelada, o salgado leva a quente.
-        (("CQMA",), ("CE", "FRAP", "AGUA", "SDLA", "CHHIB"), {"bebida_quente"}),
+        (("CQMA",), ("CTFV", "FRAP", "AGUA", "SDLA", "CHHIB"), {"bebida_quente"}),
         # Sem bebida alguma, o salgado ainda tem o doce.
-        (("CQMA",), ("SP", "COAD", "CAP", "MOCHA", "CHCAM", "CHOQ",
-                     "CE", "FRAP", "AGUA", "SDLA", "CHHIB"), {"doce"}),
+        (("CQMA",), ("SP", "CHROU", "CAP", "MOCHA", "CHCAM", "CHOQ",
+                     "CTFV", "FRAP", "AGUA", "SDLA", "CHHIB"), {"doce"}),
     ],
 )
 def test_canonical_baskets(menu, cart, esgotados, wanted):

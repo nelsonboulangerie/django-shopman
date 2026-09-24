@@ -21,13 +21,13 @@ describe('authStep', () => {
   })
 
   it('moves to the code step once a code was requested', () => {
-    expect(authStep({ requestedPhone: '+5543984049009', verified: false, requiresWelcome: false })).toBe('code')
+    expect(authStep({ requestedPhone: '+5543981234567', verified: false, requiresWelcome: false })).toBe('code')
   })
 
   it('opens the welcome gate only after a verified session asks for it', () => {
-    expect(authStep({ requestedPhone: '+5543984049009', verified: true, requiresWelcome: true })).toBe('welcome')
-    expect(authStep({ requestedPhone: '+5543984049009', verified: false, requiresWelcome: true })).toBe('code')
-    expect(authStep({ requestedPhone: '+5543984049009', verified: true, requiresWelcome: false })).toBe('code')
+    expect(authStep({ requestedPhone: '+5543981234567', verified: true, requiresWelcome: true })).toBe('welcome')
+    expect(authStep({ requestedPhone: '+5543981234567', verified: false, requiresWelcome: true })).toBe('code')
+    expect(authStep({ requestedPhone: '+5543981234567', verified: true, requiresWelcome: false })).toBe('code')
   })
 })
 

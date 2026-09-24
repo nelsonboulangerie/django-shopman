@@ -15,7 +15,7 @@ describe('buildClientErrorReport', () => {
 
   it('redacts email and phone from the message', () => {
     const report = buildClientErrorReport(
-      new Error('falhou para ana@example.com no +55 43 98404-9009'),
+      new Error('falhou para ana@example.com no +55 43 98123-4567'),
       { kind: 'onerror' }
     )
     expect(report.message).not.toContain('example.com')

@@ -586,6 +586,10 @@ def _build_ops_from_data(data: dict) -> list[dict]:
         "recipient",
         "gift_message",
         "gift_hide_values",
+        # Versão dos documentos legais vigente no checkout. Fica em `session.data`,
+        # que o commit copia inteira para `Order.snapshot["data"]` (selado). Não
+        # entra na lista de `order.data` do CommitService: evidência não se edita.
+        "legal",
     ]
     for field in data_fields:
         if field in data:

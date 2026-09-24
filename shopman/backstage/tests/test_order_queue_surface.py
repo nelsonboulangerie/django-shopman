@@ -378,9 +378,9 @@ class OrderQueueSurfaceTests(TestCase):
         self.assertGreaterEqual(card.elapsed_seconds, 0)
 
     def test_customer_phone_is_formatted_for_operator_scan(self) -> None:
-        card = build_order_card(_phone_order("A-PHONE", "+5543984049009"))
+        card = build_order_card(_phone_order("A-PHONE", "+5543981234567"))
 
-        self.assertEqual(card.customer_name, "(43) 98404-9009")
+        self.assertEqual(card.customer_name, "(43) 98123-4567")
 
     def test_customer_landline_phone_is_formatted_without_brazil_country_code(self) -> None:
         card = build_order_card(_phone_order("A-LANDLINE", "554333231997"))
@@ -548,18 +548,18 @@ class CustomerContactReachesTheOperatorTests(TestCase):
     def test_detail_publishes_phone_to_read_and_links_to_click(self) -> None:
         from shopman.backstage.projections.order_queue import build_operator_order
 
-        proj = build_operator_order(_phone_order("CT-PHONE", "+5543984049009"))
+        proj = build_operator_order(_phone_order("CT-PHONE", "+5543981234567"))
 
-        self.assertEqual(proj.customer_phone, "(43) 98404-9009")
-        self.assertEqual(proj.customer_phone_uri, "tel:+5543984049009")
-        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/5543984049009")
+        self.assertEqual(proj.customer_phone, "(43) 98123-4567")
+        self.assertEqual(proj.customer_phone_uri, "tel:+5543981234567")
+        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/5543981234567")
 
     def test_phone_without_country_code_still_reaches_whatsapp(self) -> None:
         from shopman.backstage.projections.order_queue import build_operator_order
 
-        proj = build_operator_order(_phone_order("CT-NATIONAL", "43984049009"))
+        proj = build_operator_order(_phone_order("CT-NATIONAL", "43981234567"))
 
-        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/5543984049009")
+        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/5543981234567")
 
     def test_international_phone_keeps_its_own_country(self) -> None:
         from shopman.backstage.projections.order_queue import build_operator_order
@@ -617,13 +617,13 @@ class CustomerContactReachesTheOperatorTests(TestCase):
     def test_deleted_customer_is_not_an_error_the_snapshot_still_answers(self) -> None:
         from shopman.backstage.projections.order_queue import build_operator_order
 
-        order = _phone_order("CT-GONE", "+5543984049009")
+        order = _phone_order("CT-GONE", "+5543981234567")
         order.data = {**order.data, "customer": {**order.data["customer"], "ref": "CLI-SUMIU"}}
         order.save(update_fields=["data", "updated_at"])
 
         proj = build_operator_order(order)
 
-        self.assertEqual(proj.customer_phone, "(43) 98404-9009")
+        self.assertEqual(proj.customer_phone, "(43) 98123-4567")
         self.assertEqual(proj.customer_email, "")
 
 

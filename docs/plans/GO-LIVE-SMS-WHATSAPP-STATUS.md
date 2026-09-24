@@ -32,7 +32,7 @@
   `COMTELE_API_KEY` e adicionar `COMTELE_ROUTE=17`, senão o sender fica inerte.
 - **Teste end-to-end pendente** (envia SMS real, ~R$0,12): disparar pelo adapter —
   ```bash
-  .venv/bin/python -c "import django,os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');django.setup();from shopman.shop.adapters.otp_sms_comtele import ComteleSMSSender;print(ComteleSMSSender().send_code('5543984049009','482913','sms'))"
+  .venv/bin/python -c "import django,os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');django.setup();from shopman.shop.adapters.otp_sms_comtele import ComteleSMSSender;print(ComteleSMSSender().send_code('5543981234567','482913','sms'))"
   ```
 
 ### 2. WhatsApp — notificações de pedido (não bloqueado pela Comtele)

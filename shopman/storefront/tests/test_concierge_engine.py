@@ -45,7 +45,7 @@ pytestmark = pytest.mark.django_db
 
 CHANNEL = "whatsapp"
 SKU = "PAO-FRANCES"
-PHONE = "+5543984049009"
+PHONE = "+5543981234567"
 ADAPTER_PATH = "shopman.storefront.tests.test_concierge_engine.CommercialTestAdapter"
 CONNECTION_KEY = "commercial-test"
 PROVIDER = "provider-test"
@@ -1226,7 +1226,7 @@ def test_pilot_allowlist_keeps_everyone_else_out_without_side_effects(surface, m
             text="oi",
             event_id="b",
             subject="555",
-            profile={"whatsapp_phone": "+55 43 98404-9009"},
+            profile={"whatsapp_phone": "+55 43 98123-4567"},
         )
     )
     by_phone_from_provider = service.receive_inbound(

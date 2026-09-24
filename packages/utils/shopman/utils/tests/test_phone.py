@@ -7,24 +7,24 @@ class TestNormalizePhoneBrazilian:
     """Brazilian phone numbers."""
 
     def test_mobile_11_digits_no_prefix(self):
-        """43984049009 → +5543984049009"""
-        assert normalize_phone("43984049009") == "+5543984049009"
+        """43981234567 → +5543981234567"""
+        assert normalize_phone("43981234567") == "+5543981234567"
 
     def test_mobile_with_plus55(self):
-        """+5543984049009 stays the same."""
-        assert normalize_phone("+5543984049009") == "+5543984049009"
+        """+5543981234567 stays the same."""
+        assert normalize_phone("+5543981234567") == "+5543981234567"
 
     def test_mobile_with_55_no_plus(self):
-        """5543984049009 → +5543984049009"""
-        assert normalize_phone("5543984049009") == "+5543984049009"
+        """5543981234567 → +5543981234567"""
+        assert normalize_phone("5543981234567") == "+5543981234567"
 
     def test_mobile_with_spaced_55_no_plus(self):
-        """55 43 98404-9009 → +5543984049009"""
-        assert normalize_phone("55 43 98404-9009") == "+5543984049009"
+        """55 43 98123-4567 → +5543981234567"""
+        assert normalize_phone("55 43 98123-4567") == "+5543981234567"
 
     def test_mobile_with_spaced_55_no_plus_unmasked(self):
-        """55 43 984049009 → +5543984049009"""
-        assert normalize_phone("55 43 984049009") == "+5543984049009"
+        """55 43 981234567 → +5543981234567"""
+        assert normalize_phone("55 43 981234567") == "+5543981234567"
 
     def test_landline_10_digits(self):
         """4330281234 → +554330281234"""
@@ -35,30 +35,30 @@ class TestNormalizePhoneBrazilian:
         assert normalize_phone("+554330281234") == "+554330281234"
 
     def test_legacy_mobile_8_digit_local_gets_ninth_digit(self):
-        """43 9840-4900 → +5543998404900."""
-        assert normalize_phone("43 9840-4900") == "+5543998404900"
-        assert normalize_phone("+55 (43) 9840-4900") == "+5543998404900"
-        assert normalize_phone("+55 (043) 9840-4900") == "+5543998404900"
+        """43 9812-3456 → +5543998123456."""
+        assert normalize_phone("43 9812-3456") == "+5543998123456"
+        assert normalize_phone("+55 (43) 9812-3456") == "+5543998123456"
+        assert normalize_phone("+55 (043) 9812-3456") == "+5543998123456"
 
     def test_sao_paulo_mobile(self):
         """11999887766 → +5511999887766"""
         assert normalize_phone("11999887766") == "+5511999887766"
 
     def test_with_formatting(self):
-        """(43) 98404-9009 → +5543984049009"""
-        assert normalize_phone("(43) 98404-9009") == "+5543984049009"
+        """(43) 98123-4567 → +5543981234567"""
+        assert normalize_phone("(43) 98123-4567") == "+5543981234567"
 
     def test_with_dashes(self):
-        """43-98404-9009 → +5543984049009"""
-        assert normalize_phone("43-98404-9009") == "+5543984049009"
+        """43-98123-4567 → +5543981234567"""
+        assert normalize_phone("43-98123-4567") == "+5543981234567"
 
     def test_ios_autofill_zero_ddd(self):
-        """(043) 98404-9009 → +5543984049009 (iOS autofill adds zero to DDD)."""
-        assert normalize_phone("(043) 98404-9009") == "+5543984049009"
+        """(043) 98123-4567 → +5543981234567 (iOS autofill adds zero to DDD)."""
+        assert normalize_phone("(043) 98123-4567") == "+5543981234567"
 
     def test_ios_autofill_zero_ddd_same_as_without(self):
         """(043) and (43) must resolve to the same E.164 number."""
-        assert normalize_phone("(043) 98404-9009") == normalize_phone("(43) 98404-9009")
+        assert normalize_phone("(043) 98123-4567") == normalize_phone("(43) 98123-4567")
 
     def test_zero_prefix_ddd_sao_paulo(self):
         """(011) 99988-7766 → +5511999887766"""
@@ -69,20 +69,20 @@ class TestNormalizePhoneBrazilian:
         assert normalize_phone("(021) 99988-7766") == "+5521999887766"
 
     def test_plus_55_with_zero_before_ddd(self):
-        """+55 (043) 98404-9009 → +5543984049009"""
-        assert normalize_phone("+55 (043) 98404-9009") == "+5543984049009"
+        """+55 (043) 98123-4567 → +5543981234567"""
+        assert normalize_phone("+55 (043) 98123-4567") == "+5543981234567"
 
     def test_compact_plus_55_with_zero_before_ddd(self):
-        """+55043984049009 → +5543984049009"""
-        assert normalize_phone("+55043984049009") == "+5543984049009"
+        """+55043981234567 → +5543981234567"""
+        assert normalize_phone("+55043981234567") == "+5543981234567"
 
 
 class TestNormalizePhoneNoBrazilianCC:
     """Brazilian phone without country code: +DDD9XXXXXXXX instead of +55DDD9XXXXXXXX."""
 
     def test_brazilian_no_cc_detected(self):
-        """+43984049009 → +5543984049009 (Brazilian DDD, not Austria)."""
-        assert normalize_phone("+43984049009") == "+5543984049009"
+        """+43981234567 → +5543981234567 (Brazilian DDD, not Austria)."""
+        assert normalize_phone("+43981234567") == "+5543981234567"
 
     def test_brazilian_no_cc_sao_paulo(self):
         """+11999887766 → +5511999887766"""
@@ -141,7 +141,7 @@ class TestIsValidPhone:
     """is_valid_phone validation."""
 
     def test_valid_brazilian_mobile(self):
-        assert is_valid_phone("+5543984049009") is True
+        assert is_valid_phone("+5543981234567") is True
 
     def test_valid_us(self):
         assert is_valid_phone("+12025551234") is True
@@ -156,7 +156,7 @@ class TestIsValidPhone:
         assert is_valid_phone("") is False
 
     def test_valid_brazilian_mobile_with_bare_55(self):
-        assert is_valid_phone("55 43 98404-9009") is True
+        assert is_valid_phone("55 43 98123-4567") is True
 
     def test_too_short(self):
         assert is_valid_phone("123") is False
@@ -165,10 +165,10 @@ class TestIsValidPhone:
 def test_user_input_does_not_inherit_legacy_integration_repair():
     from shopman.utils.phone import normalize_phone, normalize_user_phone
 
-    for value in ["(43) 9840-4900", "+554398404900", "554398404900", "04398404900"]:
+    for value in ["(43) 9812-3456", "+554398123456", "554398123456", "04398123456"]:
         assert normalize_user_phone(value) == ""
-        assert normalize_phone(value) == "+5543998404900"
-    for value, expected in [("(43) 98404-9009", "+5543984049009"),
+        assert normalize_phone(value) == "+5543998123456"
+    for value, expected in [("(43) 98123-4567", "+5543981234567"),
                             ("(43) 3323-1997", "+554333231997"),
                             ("+14155551234", "+14155551234")]:
         assert normalize_user_phone(value) == expected

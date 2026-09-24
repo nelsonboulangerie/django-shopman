@@ -23,6 +23,7 @@
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Conta (padrão) ou, com `--apply`, apaga o IP bruto vencido das provas de consentimento — manual, fora do worker |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
@@ -63,6 +64,7 @@
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
 | [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
+| [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
 ---
 
@@ -182,6 +184,39 @@ por decisão do dono.
 ⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
 próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
 cobra; quem as troca é o commit.
+
+---
+
+
+### calibrate_conversions
+
+Lista as equivalências **aproximadas** que ninguém pesou, e grava a pesagem da
+casa. Pedido dele em 24/09/2026, ao perguntar o peso da folha de louro fresca —
+que fonte nenhuma sabe dizer.
+
+```bash
+python manage.py calibrate_conversions                          # o que falta
+python manage.py calibrate_conversions --weigh OVOS:ovos=0.058  # ensaio
+python manage.py calibrate_conversions --weigh OVOS:ovos=0.058 --apply
+```
+
+**O buraco que ele fecha.** A ADR-024 separa três tipos de conversão, e só a
+aproximada carrega incerteza — "1 ovo ≈ 50 g", "1 limão ≈ 100 g". O `kind` diz
+que a incerteza existe; não diz **quanto** dela. Até aqui, o ovo a 50 g estava no
+banco exatamente como estaria um número que a casa tivesse pesado, e ninguém
+sabia qual calibrar primeiro. A procedência da salsicha estava escrita — em
+comentário do `seed`, onde tela nenhuma lê.
+
+`MaterialConversion.source` passa a dizer de onde veio o número: lida na nota ·
+declarada pelo dono · **pesada na casa** · estimativa. Vazio conta como pendente
+de propósito, porque o silêncio de hoje é de fator que ninguém sabe de onde veio.
+
+⚠️ **Conversão convencionada não entra**: "1 saco = 25 kg" é contrato do
+fornecedor, não equivalência física — calibrar ali seria duvidar da nota, e o
+conserto de uma embalagem que mudou é corrigir a embalagem.
+
+O gesto: **pesar dez e dividir por dez**. A média de dez erra menos que a de um,
+e é o que o fator representa.
 
 ---
 
@@ -626,6 +661,40 @@ python manage.py auth_cleanup --days 7
 ```
 
 **Recomendação:** Executar via cron diariamente.
+
+---
+
+### purge_consent_ip
+
+**App:** `shopman.guestman` (app label: `guestman`)
+**Arquivo:** `packages/guestman/shopman/guestman/management/commands/purge_consent_ip.py`
+
+Aplica o prazo R11 da [matriz de retenção](../governance/data-retention-schedule.md)
+à prova de consentimento: apaga só o IP bruto coletado há mais do que o prazo.
+Finalidade, versão e texto apresentados, hashes, decisão, origem e instante
+continuam — a prova segue demonstrando a escolha, só sem o IP.
+
+O prazo conta da **coleta**: na trilha, o `occurred_at` do evento; na situação
+atual, o do evento que ela aponta (`last_event_ref`), com `updated_at` como
+segunda porta para linha legada sem evento. O `data_retention` conta R11 pelo
+mesmo serviço, então o inventário e o comando dão o mesmo número.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--days` | `SHOPMAN_CONSENT_IP_RETENTION_DAYS` (`90`) | Prazo do IP; sempre entre 1 e 90 (acima de 90 vira 90) |
+| `--apply` | — | Apaga de fato. Sem ela o comando só conta e não altera nada |
+
+```bash
+# Simulação (padrão): só contagens, sem dado pessoal na saída
+python manage.py purge_consent_ip
+
+# Apagar — em produção, só com a palavra do dono (gate humano de R11)
+python manage.py purge_consent_ip --apply
+```
+
+**Não é agendado.** Fica fora do `maintenance_worker` de propósito: a página
+pública de privacidade diz que hoje nada é apagado sozinho. Agendar pede
+decisão do dono e, antes, a nova versão da página.
 
 ---
 

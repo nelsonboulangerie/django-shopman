@@ -116,7 +116,7 @@ Aceite:
 **Entregas:**
 
 - UI de OTP valida exatamente 6 digitos enquanto backend exigir 6.
-- Telefone BR `55 43 984049009` e variantes seguem para backend sem truncar e verificam usando o telefone normalizado retornado.
+- Telefone BR `55 43 981234567` e variantes seguem para backend sem truncar e verificam usando o telefone normalizado retornado.
 - Modo internacional explicito quando habilitado; nunca confundir DDI com DDD.
 - Trust device completo: checagem de dispositivo confiavel, skip-OTP seguro, consentimento apos OTP para confiar, cookie HttpOnly pelo backend.
 - Access links preservam sessao e destino seguro para rotas Nuxt sem expor ref adivinhado; a propriedade da rota fica canonica em uma superficie, sem duplicacao.
@@ -125,7 +125,7 @@ Aceite:
 
 **Aceite:**
 
-- Telefone `55 43 984049009` autentica como `+5543984049009`.
+- Telefone `55 43 981234567` autentica como `+5543981234567`.
 - Usuario com cookie autenticado nao ve "Entrar" no header/bottom tabs apos reload.
 - Usuario sem nome cai em `/bem-vindo` antes de paginas GET da loja e volta ao `next` apos salvar.
 - Trust device so pula OTP com cookie valido e cliente correto.

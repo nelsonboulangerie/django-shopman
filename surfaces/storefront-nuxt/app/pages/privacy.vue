@@ -55,65 +55,64 @@ useSeoMeta({
       <p v-if="shop?.email">
         Para qualquer pedido sobre os seus dados, escreva para
         <NuxtLink :to="`mailto:${shop.email}`">{{ shop.email }}</NuxtLink>.
-        A resposta sai em até 15 dias, que é o prazo da LGPD.
+        A loja responde em até 15 dias, o prazo da LGPD.
       </p>
     </LegalSection>
 
     <LegalSection id="data-we-keep">
       <template #title>O que {{ marca }} guarda</template>
       <ul>
-        <li><strong>Telefone.</strong> É o seu login: a confirmação vem por código ou por link no WhatsApp, e não existe senha.</li>
-        <li><strong>Nome.</strong> Para chamar você pelo nome no balcão e no recado do pedido.</li>
-        <li><strong>E-mail.</strong> Opcional, para segunda via e para o recado quando o WhatsApp não vai.</li>
-        <li><strong>Endereço de entrega.</strong> Só quando você pede entrega, e os endereços que você salva na conta.</li>
-        <li><strong>CPF.</strong> Só se você pedir CPF na nota. Ele vai para a nota fiscal e fica nela.</li>
-        <li><strong>O que você comprou.</strong> Itens, valores, datas, forma de pagamento e o que você escreveu como observação ou avaliação.</li>
+        <li><strong>Telefone.</strong> É o seu login: você entra com um código ou um link pelo WhatsApp. Não existe senha.</li>
+        <li><strong>Nome.</strong> Para chamar você pelo nome no balcão e nas mensagens do pedido.</li>
+        <li><strong>E-mail</strong>, se você informar. Para a segunda via e para avisar quando o WhatsApp não chega.</li>
+        <li><strong>Endereço.</strong> O da entrega, quando você pede entrega, e os que você salva na conta.</li>
+        <li><strong>CPF</strong>, só se você pedir CPF na nota. Ele fica na nota fiscal.</li>
+        <li><strong>Compras.</strong> Itens, valores, datas, forma de pagamento e as observações que você escreve.</li>
+        <li><strong>Avaliações e favoritos</strong>, quando você usa.</li>
         <li>
-          <strong>Aparelhos confiáveis.</strong> Quando você escolhe não pedir código de novo naquele
-          aparelho, ficam guardados o navegador, a data e o <strong>endereço de IP</strong> daquele
-          acesso. Na tela de Segurança você vê o navegador, a data e — quando dá para dizer com
-          honestidade — a cidade aproximada daquele acesso. Essa cidade é calculada <strong>aqui
-          dentro</strong>, por uma base que a loja guarda no próprio servidor: o seu IP não é
-          enviado a ninguém para isso, e a cidade não fica gravada. O IP fica guardado e sai na
-          cópia dos seus dados.
+          <strong>Endereço de IP</strong> quando você pede um código, declara a maioridade e aceita
+          cada canal de mensagem. É a prova de quando e de onde você fez a escolha.
         </li>
-        <li><strong>Endereço de IP</strong> também no envio de código, na declaração de maioridade e no aceite de cada canal de mensagem. É a prova de quando e de onde a escolha foi feita.</li>
-        <li><strong>Avaliação e favoritos</strong>, quando você usa.</li>
+        <li>
+          <strong>Aparelhos confiáveis.</strong> Se você pede para não receber código de novo num
+          aparelho, a loja guarda o navegador, a data e o <strong>endereço de IP</strong> daquele
+          acesso. Na tela de Segurança você vê o navegador, a data e, quando dá para estimar, a
+          cidade aproximada, calculada <strong>no próprio servidor da loja</strong>: o seu IP não
+          vai para ninguém, e a cidade não fica gravada. O IP sai na cópia dos seus dados.
+        </li>
       </ul>
       <p>
         {{ marca }} <strong>não guarda senha</strong> e <strong>não guarda número de cartão</strong>.
-        O cartão você digita na tela da própria empresa que processa o pagamento; a loja recebe só
-        a confirmação de que o pagamento entrou.
+        Você digita o cartão na tela da empresa que processa o pagamento; a loja recebe só a
+        confirmação de que ele foi aprovado.
       </p>
       <p>
-        Enquanto você preenche o checkout, o rascunho — nome, telefone, endereço e recado — fica
-        guardado <strong>no seu próprio navegador por seis horas</strong>, para você não perder o
-        que digitou se a página fechar. Ele não vai para a loja antes de você enviar o pedido, e
-        sai do navegador quando você sai da conta.
+        O rascunho do checkout (nome, telefone, endereço e recado) fica <strong>no seu navegador
+        por seis horas</strong>, para você não perder o que digitou se a página fechar. Ele só vai
+        para a loja quando você envia o pedido, e sai do navegador quando você sai da conta.
       </p>
     </LegalSection>
 
     <LegalSection id="legal-basis">
-      <template #title>Por que {{ marca }} pode guardar</template>
+      <template #title>Para que {{ marca }} usa os seus dados</template>
       <ul>
         <li>
-          <strong>Para entregar a sua compra</strong> (execução de contrato, art. 7º V da LGPD). É o que
-          cobre o recado de "recebemos", "está pronto" e "saiu para entrega".
+          <strong>Para entregar o seu pedido</strong> (execução de contrato, art. 7º, V, da LGPD).
+          Inclui as mensagens de "recebemos", "está pronto" e "saiu para entrega".
         </li>
         <li>
-          <strong>Para cumprir a lei fiscal</strong> (art. 7º II). A nota fiscal e o registro da venda têm
-          prazo de guarda definido pelo fisco.
+          <strong>Para cumprir a lei fiscal</strong> (art. 7º, II). A nota fiscal e o registro da
+          venda têm prazo de guarda definido pelo fisco.
         </li>
         <li>
-          <strong>Com o seu consentimento</strong> (art. 7º I) para novidade e promoção. Você liga e
-          desliga cada canal em
-          <NuxtLink to="/conta/preferencias">Preferências</NuxtLink>,
-          quando quiser.
+          <strong>Para mandar novidades e promoções, só com o seu consentimento</strong> (art. 7º, I).
+          Você liga e desliga cada canal em
+          <NuxtLink to="/conta/preferencias">Preferências</NuxtLink>, quando quiser.
         </li>
         <li>
-          <strong>Porque você pediu para ser avisado</strong> de um produto específico. O aviso de
-          "voltou ao estoque" vai mesmo sem o consentimento geral de novidades — ele é o próprio
-          pedido que você fez —, e para de ir se você desligar as mensagens.
+          <strong>Para avisar que um produto voltou</strong>, quando você pede. Esse aviso vai mesmo
+          sem o consentimento de novidades, porque o pedido foi seu, e para se você desligar as
+          mensagens.
         </li>
       </ul>
     </LegalSection>
@@ -121,7 +120,7 @@ useSeoMeta({
     <LegalSection id="sharing">
       <template #title>Com quem {{ marca }} divide</template>
       <p>
-        Só com quem precisa para o pedido acontecer, e só o necessário. Esta lista sai da própria
+        Só com quem precisa dos dados para o pedido acontecer, e só o necessário. Esta lista sai da
         configuração da loja: quando um serviço entra ou sai, ela muda junto.
       </p>
       <ul v-if="legal?.processors?.length">
@@ -130,85 +129,84 @@ useSeoMeta({
         </li>
       </ul>
       <p>
-        Fora dessa lista, a loja não divide nada: não vende os seus dados, não cede lista para
-        terceiro e não manda o seu cadastro para rede social nem para plataforma de anúncio.
+        Mais ninguém recebe os seus dados. A loja não vende os seus dados, não cede listas e não
+        envia o seu cadastro para rede social nem para plataforma de anúncio.
       </p>
       <p>
-        O navegador também carrega a fonte da marca direto do <strong>Google Fonts</strong>, que
-        nesse momento enxerga o seu endereço de IP. Isso acontece em qualquer página da loja.
+        Toda página da loja carrega a fonte da marca do <strong>Google Fonts</strong>. Nesse
+        momento, o Google vê o seu endereço de IP.
       </p>
     </LegalSection>
 
     <LegalSection id="retention">
       <template #title>Por quanto tempo {{ marca }} guarda</template>
       <p>
-        O pedido e a nota ficam guardados pelo <strong>prazo fiscal</strong>, que não é escolha da
-        loja: documento fiscal tem prazo de guarda em lei, e ele vale mesmo depois de você apagar
-        a conta. <strong>A nota emitida com o seu CPF continua com ele</strong> — é o documento que
-        o fisco exige.
+        <strong>Pedidos e notas fiscais:</strong> pelo prazo que a lei fiscal exige, mesmo depois
+        que você exclui a conta. <strong>A nota emitida com o seu CPF continua com ele</strong>,
+        porque o fisco exige o documento.
       </p>
       <p>
-        Hoje esse descarte é feito por pedido, e não automaticamente: não existe um expurgo que
-        rode sozinho ao fim do prazo. Quando passar a existir, esta página muda.
+        Hoje nada é apagado sozinho quando esse prazo acaba: o descarte é feito sob pedido. Quando
+        passar a ser automático, esta página muda.
       </p>
       <p>
-        O resto vai embora quando você pede. Ao excluir a conta, o seu nome, telefone, e-mail,
-        endereços e preferências são apagados, e os pedidos antigos deixam de apontar para você.
-        Se alguma parte da exclusão falhar, a tela avisa e a equipe é chamada — a loja não diz
-        "pronto" pela metade.
+        <strong>Todo o resto:</strong> até você excluir a conta. Aí a loja apaga o seu nome,
+        telefone, e-mail, endereços e preferências, e os pedidos antigos deixam de apontar para
+        você. Se alguma parte da exclusão falhar, a tela avisa e a equipe é chamada: a loja não diz
+        "pronto" antes de terminar.
       </p>
     </LegalSection>
 
     <LegalSection id="cookies">
       <template #title>Cookies e o que fica no seu navegador</template>
       <p>
-        A loja grava três cookies, e todos servem para a loja funcionar: a sua sessão, a proteção
+        A loja usa três cookies, todos necessários para ela funcionar: a sua sessão, a proteção
         contra pedido forjado e, se você escolher, a marca do aparelho confiável.
-        <strong>Não há cookie de publicidade nem de rastreamento de terceiro.</strong>
+        <strong>Não há cookie de publicidade nem de rastreamento de terceiros.</strong>
       </p>
       <p>
-        Além deles, ficam no seu navegador o rascunho do checkout (seis horas, descrito acima) e
-        pequenas marcas do que você já dispensou, como o convite de instalar o aplicativo. Apagar
-        os dados do site no navegador tira tudo isso e desconecta a conta.
+        O navegador também guarda o rascunho do checkout (por seis horas) e as marcas do que você
+        já dispensou, como o convite para instalar o aplicativo. Apagar os dados do site no
+        navegador remove tudo isso e desconecta a conta.
       </p>
     </LegalSection>
 
     <LegalSection id="your-rights">
-      <template #title>Os seus direitos, e onde eles ficam</template>
-      <p>
-        Em
-        <NuxtLink to="/conta/seguranca">Segurança e dados</NuxtLink>
-        você baixa uma cópia dos seus dados e exclui a conta. A própria tela diz se falta algum
-        passo antes de excluir, e qual.
-      </p>
-      <p>
-        A cópia traz o que a loja guarda sobre você: cadastro, endereços, pedidos, preferências,
-        acessos e avaliações. Se quiser algo que não veio nela, peça pelo e-mail acima — a loja
-        responde dentro do prazo da LGPD.
-      </p>
-      <p>
-        Ao excluir, o seu nome, telefone, e-mail, endereços e o perfil de compra são apagados,
-        inclusive dentro dos pedidos antigos. O registro da compra continua (itens, valores e
-        datas), porque a lei fiscal manda guardar a venda.
-      </p>
-      <p>
-        Você também corrige o que está errado em
-        <NuxtLink to="/conta/perfil">Perfil</NuxtLink>
-        e desliga qualquer canal de mensagem em
-        <NuxtLink to="/conta/preferencias">Preferências</NuxtLink>.
-      </p>
-      <p v-if="shop?.email">
-        Se você deixou só o telefone para ser avisado de um produto, sem criar conta, escreva para
-        <NuxtLink :to="`mailto:${shop.email}`">{{ shop.email }}</NuxtLink>
-        e o número sai do aviso.
-      </p>
+      <template #title>Os seus direitos, e como usar cada um</template>
+      <ul>
+        <li>
+          <strong>Receber uma cópia.</strong> Em
+          <NuxtLink to="/conta/seguranca">Segurança e dados</NuxtLink> você baixa o que a loja
+          guarda sobre você: cadastro, endereços, pedidos, preferências, acessos e avaliações.
+          Faltou algo? Peça pelo e-mail acima, e a loja responde no prazo da LGPD.
+        </li>
+        <li>
+          <strong>Corrigir.</strong> Em <NuxtLink to="/conta/perfil">Perfil</NuxtLink>.
+        </li>
+        <li>
+          <strong>Parar as mensagens.</strong> Desligue cada canal em
+          <NuxtLink to="/conta/preferencias">Preferências</NuxtLink>.
+        </li>
+        <li>
+          <strong>Excluir a conta.</strong> Também em Segurança e dados. A tela diz se falta algum
+          passo antes, e qual. O seu nome, telefone, e-mail, endereços e perfil de compra são
+          apagados, inclusive nos pedidos antigos. O registro da venda (itens, valores e datas)
+          fica, porque a lei fiscal manda guardar.
+        </li>
+        <li v-if="shop?.email">
+          <strong>Sair de um aviso de produto</strong>, se você deixou só o telefone, sem criar
+          conta: escreva para
+          <NuxtLink :to="`mailto:${shop.email}`">{{ shop.email }}</NuxtLink>
+          e o número sai do aviso.
+        </li>
+      </ul>
     </LegalSection>
 
     <LegalSection id="changes">
       <template #title>Mudanças nesta página</template>
       <p>
-        A data no topo é a versão publicada deste texto, e ela muda junto com ele — não é digitada
-        à mão. Vale sempre a versão que está aqui.
+        A data no topo é a versão deste texto e muda sempre que ele muda. Vale a versão publicada
+        aqui.
       </p>
     </LegalSection>
   </LegalDocument>

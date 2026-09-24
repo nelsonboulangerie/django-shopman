@@ -29,7 +29,7 @@ class TestSanitizeClientReport:
     def test_redacts_email_and_phone_from_message_and_stack(self):
         report = sanitize_client_report(
             {
-                "message": "falhou para ana@example.com no +55 43 98404-9009",
+                "message": "falhou para ana@example.com no +55 43 98123-4567",
                 "stack": "at fn (ana@example.com)",
             }
         )
