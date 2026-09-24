@@ -163,11 +163,11 @@ python manage.py apply_grocery_catalog --apply    # grava
 Cada item nasce vendável e despublicado (ficha da embalagem por preencher),
 perfil fiscal `own_production` (revenda comum, CFOP 5102 — o CEST da nota fica
 na tabela e não é gravado), marca e GTIN em `metadata.social`,
-`metadata.purchase.resale = true` e coleção `mercearia`. **Listagem: PDV
+o cadastro de compra do mesmo SKU (`buyman.Material`) e coleção `mercearia`. **Listagem: PDV
 sempre; loja online, WhatsApp e iFood só com foto** — sem foto, o item sai do
 canal remoto. Quem não tem dado suficiente fica em `LEFT_OUT`, com o motivo.
-Item a quilo (`unit="kg"`, o Queijo Vale do Testo) nasce sem GTIN e vendável
-mesmo sem preço por quilo: o PDV cobra o valor da etiqueta da balança. GTIN que veio de pesquisa na web leva
+Item a quilo (`unit="kg"`, o Queijo Vale do Testo) nasce sem GTIN e nunca vai a
+canal remoto; sem preço, fica cadastrado e fora da venda (preço zero não vende). GTIN que veio de pesquisa na web leva
 `metadata.gtin_source`. Também cria as quatro caixas presente da casa
 (DIJON, LILLE, MIMO, NICE), sem GTIN.
 Nome/preço que o Gestor já mexeu fica e sai como divergência. Idempotente.
