@@ -78,6 +78,15 @@ class ResolvedReceiptLine:
     invoice_product_code: str
     invoice_lot: str
     checked: bool
+    #: O que a NF-e declarou sobre o item (GTIN da unidade, o outro GTIN, NCM,
+    #: CEST, unidade). Só a revenda (SKU que também se vende) usa: vira a
+    #: primeira fonte da sugestão de catálogo do produto
+    #: (``shop.services.product_enrichment``).
+    invoice_ean: str = ""
+    invoice_package_ean: str = ""
+    invoice_ncm: str = ""
+    invoice_cest: str = ""
+    invoice_unit: str = ""
 
     @property
     def sku(self) -> str:
@@ -324,6 +333,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
                 )
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
+            _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
 
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:
@@ -1315,7 +1325,22 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         invoice_product_code=str(raw.get("invoiceProductCode") or raw.get("invoice_product_code") or "").strip(),
         invoice_lot=str(raw.get("invoiceLot") or raw.get("invoice_lot") or "").strip(),
         checked=True,
+        invoice_ean=_raw_text(raw, "invoiceEan", "invoice_ean"),
+        invoice_package_ean=_raw_text(raw, "invoicePackageEan", "invoice_package_ean"),
+        invoice_ncm=_raw_text(raw, "invoiceNcm", "invoice_ncm"),
+        invoice_cest=_raw_text(raw, "invoiceCest", "invoice_cest"),
+        # O eixo tributável só vem quando diz algo diferente do comercial.
+        invoice_unit=_raw_text(raw, "invoiceTaxUnit", "invoice_tax_unit")
+        or _raw_text(raw, "invoiceUnit", "invoice_unit"),
     )
+
+
+def _raw_text(raw: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = str(raw.get(key) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _resolve_receipt_material(raw: dict[str, Any], *, index: int):
@@ -1446,6 +1471,46 @@ def _upsert_supplier_cost(*, material, supplier, conversion, cost_q: int, make_p
         cost.save()
     except ValidationError as exc:
         raise PurchaseError(str(exc), code="cost_validation_failed", field="costInput") from exc
+
+
+def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_key: str) -> None:
+    """A NF-e é a PRIMEIRA fonte da sugestão de catálogo da mercadoria de revenda.
+
+    Revenda é o cadastro de compra cujo SKU também existe no catálogo de venda
+    (ver ``shop/services/sku_namespace.py``). GTIN, NCM, CEST e unidade entram
+    no RASCUNHO desse produto (``metadata['enrichment']``), nunca no produto:
+    quem aceita é gente, campo a campo, no Admin. Insumo sem produto de venda
+    fica de fora até o WP de insumos decidir se o GTIN é do material ou da
+    oferta do fornecedor.
+
+    Sugestão é conveniência: se falhar, a entrada de estoque não cai — mas
+    grita no log, porque rascunho que some calado é pergunta que ninguém faz.
+    """
+    from shopman.shop.services.product_enrichment import suggest_from_invoice
+
+    Product = apps.get_model("offerman", "Product")
+    for line in lines:
+        if not (line.invoice_ean or line.invoice_ncm or line.invoice_cest):
+            continue
+        product = Product.objects.filter(sku=line.sku).first()
+        if product is None:
+            continue
+        try:
+            with transaction.atomic():
+                suggest_from_invoice(
+                    product,
+                    gtin=line.invoice_ean,
+                    other_gtin=line.invoice_package_ean,
+                    ncm=line.invoice_ncm,
+                    cest=line.invoice_cest,
+                    unit=line.invoice_unit,
+                    access_key=invoice_key,
+                )
+        except Exception:
+            logger.exception(
+                "purchase.catalog_suggestion_failed",
+                extra={"product": line.sku, "invoice_key_suffix": invoice_key[-8:]},
+            )
 
 
 def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) -> None:

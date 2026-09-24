@@ -54,6 +54,9 @@ function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
     lineNote: line.lineNote ?? "",
     invoiceProductCode: line.invoiceProductCode ?? "",
     invoiceEan: line.invoiceEan ?? "",
+    invoicePackageEan: line.invoicePackageEan ?? "",
+    invoiceNcm: line.invoiceNcm ?? "",
+    invoiceCest: line.invoiceCest ?? "",
     checked: Boolean(line.checked),
     purchaseQty: Number(line.purchaseQty) || 0,
   }));

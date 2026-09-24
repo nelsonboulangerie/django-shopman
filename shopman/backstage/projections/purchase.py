@@ -158,6 +158,9 @@ class ReceiptLineProjection:
     invoiceTotal: str
     invoiceProductCode: str
     invoiceEan: str
+    invoicePackageEan: str
+    invoiceNcm: str
+    invoiceCest: str
     checked: bool
 
 
@@ -545,6 +548,9 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         invoiceTotal=str(line.get("invoiceTotal") or line.get("invoice_total") or ""),
         invoiceProductCode=str(line.get("invoiceProductCode") or line.get("invoice_product_code") or ""),
         invoiceEan=str(line.get("invoiceEan") or line.get("invoice_ean") or ""),
+        invoicePackageEan=str(line.get("invoicePackageEan") or line.get("invoice_package_ean") or ""),
+        invoiceNcm=str(line.get("invoiceNcm") or line.get("invoice_ncm") or ""),
+        invoiceCest=str(line.get("invoiceCest") or line.get("invoice_cest") or ""),
         checked=bool(line.get("checked")),
     )
 
