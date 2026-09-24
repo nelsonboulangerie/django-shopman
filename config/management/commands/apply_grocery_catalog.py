@@ -63,7 +63,7 @@ fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
 
 **Caixas presente** (:data:`GIFT_BOXES`): produto da casa, SKU da casa, sem
 GTIN nem marca de revenda; entram no lugar da ``LN``. Os placeholders que
-saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_situacao``.
+saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_decisions``.
 
 **Placeholders da despensa que viram produto real** (:data:`REAL_PLACEHOLDERS`):
 Ratatouille, Tapenade e Camembert tinham nome e preço provisórios do Cardápio
@@ -285,7 +285,7 @@ YOOGA_NAMES: dict[str, str] = {
     "Caixa Presente Nice": "NICE",
 }
 
-#: Placeholders que saem pelo `apply_catalog_situacao`: um de-para que aponta
+#: Placeholders que saem pelo `apply_catalog_decisions`: um de-para que aponta
 #: para eles pode ser reapontado ao produto real. Qualquer outro alvo é
 #: curadoria de alguém, e fica.
 LEAVING_PLACEHOLDERS: frozenset[str] = frozenset({"MT", "QP", "CX", "BK", "GR", "LN", "THL"})
