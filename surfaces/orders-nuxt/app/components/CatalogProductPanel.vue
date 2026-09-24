@@ -159,7 +159,7 @@ const draft = reactive({
     hashtagsText: "",
     social_caption: "",
   },
-  fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN" },
+  fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN", origin: "0" },
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
@@ -213,6 +213,7 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.fiscal.ncm = f?.ncm ?? "";
   draft.fiscal.cest = f?.cest ?? "";
   draft.fiscal.unit = f?.unit || "UN";
+  draft.fiscal.origin = f?.origin || "0";
 }
 
 watch(
@@ -348,6 +349,7 @@ function buildPatch(): ProductDetailPatch {
   if (draft.fiscal.ncm.trim() !== f.ncm) fiscal.ncm = draft.fiscal.ncm.trim();
   if (draft.fiscal.cest.trim() !== f.cest) fiscal.cest = draft.fiscal.cest.trim();
   if (draft.fiscal.unit.trim() !== f.unit) fiscal.unit = draft.fiscal.unit.trim();
+  if (draft.fiscal.origin !== (f.origin || "0")) fiscal.origin = draft.fiscal.origin;
   if (Object.keys(fiscal).length) patch.fiscal = fiscal as ProductDetailPatch["fiscal"];
 
   return patch;
@@ -788,7 +790,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           <!-- Fiscal (NFC-e) -->
           <div v-show="tab === 'fiscal'" class="space-y-4">
             <p class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Usado na emissão da NFC-e. CFOP, CSOSN, origem e PIS/COFINS vêm do perfil — aqui
+              Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil — aqui
               só o que muda de produto para produto.
             </p>
 
@@ -813,6 +815,13 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                 <input v-model="draft.fiscal.unit" :class="fieldClass" type="text" maxlength="6" placeholder="UN" />
               </label>
             </div>
+
+            <label class="block">
+              <span :class="labelClass">Origem da mercadoria</span>
+              <UiNativeSelect v-model="draft.fiscal.origin" class="w-full">
+                <option v-for="o in props.detail?.fiscal_origins ?? []" :key="o.key" :value="o.key">{{ o.name }}</option>
+              </UiNativeSelect>
+            </label>
 
             <label class="block">
               <span :class="labelClass">CEST</span>
