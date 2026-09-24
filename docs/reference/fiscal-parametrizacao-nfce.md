@@ -55,20 +55,53 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 - A tabela por item mora em `config/management/commands/apply_grocery_catalog.py` (`GROCERY`,
   `SEED_RESALE_FISCAL`, `FISCAL_NOTES`).
 
-## 3. NCM por produto (catálogo atual — todos não-ST)
+## 3. NCM, CEST, origem e perfil por produto (estado de 24/09/2026)
 
-> Propostos por análise; **validar com o contador**. Sob Simples a NCM importa para conformidade/ST.
+> Decidido pelo dono por bom senso e pela prática da casa (a planilha de produtos do Yooga mostra o
+> que o contador já aplicava). O que ainda pede confirmação está marcado ⚠️ e **se confirma na
+> próxima NF-e de compra** (o recebimento compara NCM, CEST, ST e origem do fornecedor com o
+> cadastro e avisa) **ou com o contador**. Tabelas vivas: `config/management/commands/apply_fiscal_ncm.py`
+> (produção própria, bebidas preparadas, correções) e `apply_grocery_catalog.py` (revenda).
 
-| Grupo | NCM | Itens |
-|---|---|---|
-| Pães | `19059010` | baguetes, batard, fendu, ciabatta, focaccias, pão de forma, challah, brioches, campagne… |
-| Folhados/doces | `19059090` | croissant, pain au chocolat, chausson, bichon, cornet, melon pan, madeleine… |
-| Salgados/pratos | `19059090` ⚠️ | deli, hotdog, croque, quiches, tartines — *ou* `21069090` (decisão do contador) |
-| Café (espresso) | `21011110` | espresso, espresso duplo |
-| Café c/ leite | `21011200` | cappuccino, latte |
-| Chocolate quente | `18069000` | chocolate quente |
-| Chá | `09024000` | chá earl grey |
-| Suco | `20091200` | suco de laranja (espremido na hora) |
+### O que a casa faz — perfil `standard` (102/5102), origem 0
+
+| Grupo | NCM | CEST | Itens |
+|---|---|---|---|
+| Pão de forma | `1905.90.10` | 17.060.00 | Shokupan (`FORMA`) — o único pão de forma |
+| Pães, folhados, doces, salgados de forno | `1905.90.90` | 17.062.00 | baguetes, ciabatta, campagne, focaccias, brioches, pães de hambúrguer e hot dog, croissant, pain au chocolat, madeleine… |
+| Sanduíches e pratos montados | `1905.90.90` ⚠️ | 17.062.00 | croque, jambon-beurre, tartines — *ou* `2106.90.90` (confirmar com o contador) |
+| Caixas presente | `1905.90.90` ⚠️ | 17.062.00 | DIJON, LILLE, MIMO, NICE — composição ainda indefinida (confirmar com o contador) |
+| Despensa da casa | `2005.99.00` / `2005.70.00` | 17.092.00 | Ratatouille (`RTAT`) / Tapenade (`TPND`, azeitona preparada) |
+| Bebidas preparadas no balcão | `2202.99.00` | — | cafés, chás de bule, chocolate, sodas da torneira ([revisão](ncm-bebidas-preparadas.md)) |
+
+### Revenda — NCM da nota do fornecedor
+
+| Item | NCM | CEST | Perfil | Origem |
+|---|---|---|---|---|
+| Água Mineral Prata 310ml, sem gás e com gás (2 SKUs) | `2201.10.00` | 03.005.00 | `tax_substitution` (500/5405) | 0 |
+| Mostardas Maille (Dijon, Mel, à l'Ancienne) | `2103.30.21` | 17.038.00 | `tax_substitution` | 2 |
+| Cremes de queijo Pomerode (Gorgonzola, Parmesão, Brie) | `0406.30.00` | 17.023.00 | `tax_substitution` | 0 |
+| Queijos: Camembert, Mini Brie Ile de France | `0406.90.30` | 17.024.00 | `standard` | 2 |
+| Queijo Vale do Testo Pomerode (a quilo) | `0406.90.20` | 17.024.00 | `standard` | 0 |
+| Manteiga Président | `0405.10.00` | 17.025.00 | `standard` | 2 |
+| Geleias St. Dalfour (6 × 284 g, 2 × 28 g) | `2007.99.10` / `2007.91.00` (cítricos) | 17.094.00 | `standard` | 2 |
+| Azeites Mirante | `1509.20.00` ⚠️ | 17.067.00 | `standard` | 0 |
+| Relish Duga | `2001.90.00` | 17.090.00 | `standard` | 0 |
+| Berinjela Duga | `2005.99.00` ⚠️ | 17.092.00 | `standard` | 0 |
+| Churrasquinho de Pimenta Mirante | `2103.90.99` ⚠️ | — | `standard` | 0 |
+| Presunto cru Vito Bauducci | `0210.19.00` | 17.087.01 | `standard` | 0 |
+| Chás Kãnfa (latas e pouches) | `0902.10.00` ⚠️ | 17.097.00 | `standard` | 0 |
+
+### ⚠️ Confirmar na próxima NF-e / com o contador
+
+- **Chás Kãnfa:** fica o NCM que o fabricante declara na nota (0902.10.00, chá verde). Um chai de chá
+  preto seria 0902.30.00 — confirmar com o contador; a próxima NF-e da Kãnfa é comparada.
+- **Churrasquinho de Pimenta:** 2103.90.99 não tem CEST; se a nota vier como 2103.90.91 (molho de
+  pimenta), vira 17.035.00 e ST.
+- **Berinjela Duga:** a nota trazia 2103.90.99; o cadastro usa 2005.99.00 (hortícola preparado).
+- **Sanduíches e caixas presente:** 1905 × 2106 — decisão do contador.
+- **Azeite:** 1509.20 (extravirgem) × 1509.90 (outros) — a nota do fornecedor decide.
+- **Água Prata:** 03.005.00 é embalagem plástica até 500 ml; se a garrafa for de vidro, 03.001.00.
 
 ## 4. Setup de conta / SEFAZ (obrigatório p/ go-live — **não é código nosso**)
 
