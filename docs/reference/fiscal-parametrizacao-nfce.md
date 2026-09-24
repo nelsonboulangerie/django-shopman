@@ -45,8 +45,11 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
   Berinjela e churrasquinho: a casa usava 2103.90.99 + 17.092.00, incoerente com o Anexo; fica a
   correção (berinjela 2005.99.00 + 17.092.00; churrasquinho sem CEST). O que sobrar, **a próxima
   NF-e de compra confirma**: o recebimento compara NCM/CEST/ST do fornecedor com o cadastro e avisa.
-- **Produção própria:** 1905.90.90 → 17.062.00 (a casa já usava), 1905.90.10 → 17.060.00 ("outros
-  pães de forma" — ⚠️ a casa emitia as baguetes no 1905.90.90), 2005.99.00 → 17.092.00. Bebida
+- **Produção própria:** 1905.90.90 → 17.062.00 (pães, folhados, doces — a casa já usava),
+  1905.90.10 → 17.060.00 só para o pão de forma de verdade (Shokupan), 2005.99.00 → 17.092.00.
+  O 1905.90.20 não serve a nenhum item (é biscoito "cream cracker"/"água e sal", 17.056.00).
+- **Bebida industrializada de revenda com ST** (água mineral, refrigerante): `tax_substitution`
+  com o CEST do Anexo III — água em embalagem plástica até 500 ml 03.005.00 (vidro: 03.001.00). Bebida
   preparada no balcão (2202.99.00) segue sem CEST: o Anexo descreve o industrializado pronto para
   beber, e não é isso que a casa vende. Tabela em `apply_fiscal_ncm.HOUSE_CEST_BY_NCM`.
 - A tabela por item mora em `config/management/commands/apply_grocery_catalog.py` (`GROCERY`,

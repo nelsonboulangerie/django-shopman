@@ -20,6 +20,7 @@ from __future__ import annotations
 
 CEST_NCM: dict[str, tuple[tuple[str, ...], str]] = {
     # ── Anexo III — bebidas não alcoólicas ──
+    "0300100": (("2201.10",), "Água mineral ou potável, em garrafa de vidro de até 500 ml"),
     "0300500": (("2201.10",), "Água mineral ou potável, em copo ou embalagem plástica de até 500 ml"),
     "0301000": (("2202.10", "2202.99"), "Refrigerante em vidro descartável"),
     "0301002": (("2202.10", "2202.99"), "Refrigerante em lata"),

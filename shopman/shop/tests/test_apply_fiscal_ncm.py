@@ -156,13 +156,13 @@ def test_o_seed_nasce_com_o_mesmo_codigo():
 def test_o_cest_da_casa_sai_do_ncm():
     """Pão de 1905.90.90 leva 17.062.00 — identificação, não tributação."""
     _product("CRO", "19059090")
-    _product("TRADI", "19059010")
+    _product("FORMA", "19059010")
     _product("RTAT", "20059900")
 
     call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
 
-    cests = {sku: Product.objects.get(sku=sku).metadata["fiscal"].get("cest") for sku in ("CRO", "TRADI", "RTAT")}
-    assert cests == {"CRO": "1706200", "TRADI": "1706000", "RTAT": "1709200"}
+    cests = {sku: Product.objects.get(sku=sku).metadata["fiscal"].get("cest") for sku in ("CRO", "FORMA", "RTAT")}
+    assert cests == {"CRO": "1706200", "FORMA": "1706000", "RTAT": "1709200"}
     assert Product.objects.get(sku="CRO").metadata["fiscal"]["profile"] == "standard"
 
 
@@ -191,3 +191,43 @@ def test_todo_cest_da_casa_bate_com_o_ncm_no_anexo():
 
     for ncm, cest in HOUSE_CEST_BY_NCM.items():
         assert cest_ncm_warnings(ncm, cest) == [], (ncm, cest)
+
+
+# ── Pão de forma é 1905.90.10; o resto dos pães, 1905.90.90 ────────────────
+
+
+def test_baguete_sai_do_ncm_de_pao_de_forma_e_o_cest_acompanha():
+    produto = _product("TRADI", "19059010")
+    produto.metadata = {"fiscal": {**produto.metadata["fiscal"], "cest": "1706000"}}
+    produto.save()
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    fiscal = Product.objects.get(sku="TRADI").metadata["fiscal"]
+    assert (fiscal["ncm"], fiscal["cest"]) == ("19059090", "1706200")
+
+
+def test_pao_de_forma_fica_no_1905_90_10():
+    _product("FORMA", "19059010")
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    fiscal = Product.objects.get(sku="FORMA").metadata["fiscal"]
+    assert (fiscal["ncm"], fiscal["cest"]) == ("19059010", "1706000")
+
+
+def test_cest_escrito_a_mao_nao_acompanha_a_troca_de_ncm():
+    produto = _product("CI", "19059010")
+    produto.metadata = {"fiscal": {**produto.metadata["fiscal"], "cest": "1705000"}}
+    produto.save()
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    assert Product.objects.get(sku="CI").metadata["fiscal"]["cest"] == "1705000"
+
+
+def test_nenhum_pao_da_tabela_vai_para_o_1905_90_20():
+    from config.management.commands.apply_fiscal_ncm import BREAD_NCM
+
+    assert {ncm for _sku, ncm, _porque in BREAD_NCM} == {"19059090"}
+    assert "FORMA" not in {sku for sku, _ncm, _porque in BREAD_NCM}

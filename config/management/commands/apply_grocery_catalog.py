@@ -360,6 +360,10 @@ SEED_RESALE_FISCAL: tuple[SeedResaleFiscal, ...] = (
         "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
     )),
     SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400"),
+    # Água mineral está na ST do PR, e a casa a faturava com 500/5405 e o CEST
+    # 03.005.00 (água em embalagem plástica até 500 ml — Anexo III do Conv.
+    # 142/2018; se a garrafa de 310 ml for de VIDRO, o CEST é 03.001.00).
+    SeedResaleFiscal("AGUA-MINERAL-PRATA-310", "22011000", "0300500", profile="tax_substitution"),
 )
 
 
