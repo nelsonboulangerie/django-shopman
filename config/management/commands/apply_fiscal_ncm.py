@@ -87,9 +87,8 @@ NCM_REVISADO: tuple[tuple[str, str, str], ...] = (
 #:
 #: - 1905.90.90 → 17.062.00 "Outros pães, exceto o classificado no CEST
 #:   17.062.03" (pães, folhados, doces, salgados de forno, caixas presente);
-#: - 1905.90.10 → 17.060.00 "Outros pães de forma" — ⚠️ o seed põe baguetes e
-#:   ciabattas no 1905.90.10; a casa as emitia no 1905.90.90 (17.062.00). Fica
-#:   o CEST que o Anexo dá ao NCM de hoje; se o NCM mudar, o CEST acompanha;
+#: - 1905.90.10 → 17.060.00 "Outros pães de forma" — só o pão de forma de
+#:   verdade (o Shokupan, ``FORMA``); ver :data:`BREAD_NCM`;
 #: - 2005.99.00 → 17.092.00 (Ratatouille, Tapenade: hortícolas preparados).
 #:
 #: As bebidas preparadas (2202.99.00) ficam SEM CEST de propósito — ver AVISOS.
@@ -99,6 +98,26 @@ HOUSE_CEST_BY_NCM: dict[str, str] = {
     "19059010": "1706000",
     "20059900": "1709200",
 }
+
+
+#: Pão que NÃO é de forma sai do 1905.90.10 (dono, 24/09/2026). A TIPI e o
+#: Anexo XVII do Conv. ICMS 142/2018 chamam o 1905.90.10 de "pão de forma"
+#: (CEST 17.060.00, "outros pães de forma"); baguete, ciabatta, campagne,
+#: focaccia, brioche e pão de hambúrguer/hot dog são "outros pães", 1905.90.90
+#: (CEST 17.062.00) — e é como a casa sempre faturou (planilha de produtos do
+#: Yooga). Fica no 1905.90.10 só o Shokupan (``FORMA``), que é pão de forma.
+#:
+#: O 1905.90.20 (planilha antiga: Pain au Chocolat, Croissant Presunto e
+#: Queijo, Forma Artesanal, com CEST 17.053.00) NÃO serve a nenhum: no Anexo o
+#: 1905.90.20 é "biscoitos e bolachas ... cream cracker e água e sal" (17.056.00)
+#: e o 17.053.00 é biscoito de 1905.31.00. Viennoiserie é 1905.90.90; o pão de
+#: forma, 1905.90.10.
+BREAD_NCM: tuple[tuple[str, str, str], ...] = tuple(
+    (sku, "19059090", "1905.90.10 é pão de forma; este é outro pão (1905.90.90)")
+    for sku in (
+        "TRADI", "BGG", "MIB", "FENDU", "TABAT", "CPG", "CPX", "CI", "KUP", "TRABB", "BRBB", "BRBB2", "HOL", "HOL4", "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",
+    )
+)
 
 
 #: O que o comando repete toda vez, para não virar silêncio. Não é pergunta
@@ -156,14 +175,14 @@ class Command(BaseCommand):
 
         produtos = {
             p.sku: p
-            for p in Product.objects.filter(sku__in=[s for s, _n, _p in NCM_REVISADO])
+            for p in Product.objects.filter(sku__in=[s for s, _n, _p in (*NCM_REVISADO, *BREAD_NCM)])
         }
 
         trocas: list[tuple[str, str, str, str, str]] = []
         ausentes: list[str] = []
         cests: list[tuple[str, str, str]] = []
         with transaction.atomic():
-            for sku, ncm, porque in NCM_REVISADO:
+            for sku, ncm, porque in (*NCM_REVISADO, *BREAD_NCM):
                 produto = produtos.get(sku)
                 if produto is None:
                     ausentes.append(sku)
@@ -173,7 +192,14 @@ class Command(BaseCommand):
                 atual = (fiscal.get("ncm") or "").strip()
                 if atual == ncm:
                     continue
-                metadata = {**metadata, "fiscal": {**fiscal, "ncm": ncm}}
+                novo = {**fiscal, "ncm": ncm}
+                # O CEST que só existia por causa do NCM antigo acompanha a troca;
+                # CEST que alguém escreveu à mão fica.
+                if (fiscal.get("cest") or "") == house_cest_for(atual):
+                    novo.pop("cest", None)
+                    if house_cest_for(ncm):
+                        novo["cest"] = house_cest_for(ncm)
+                metadata = {**metadata, "fiscal": novo}
                 produto.metadata = metadata
                 produto.save(update_fields=["metadata"])
                 trocas.append((sku, produto.name, atual or "(vazio)", ncm, porque))

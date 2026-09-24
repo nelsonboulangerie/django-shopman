@@ -499,3 +499,16 @@ def test_caixa_presente_nasce_com_o_cest_dos_paes(catalog):
     assert Product.objects.get(sku="DIJON").metadata["fiscal"] == {
         "profile": "standard", "ncm": "19059090", "unit": "UN", "cest": "1706200",
     }
+
+
+def test_agua_mineral_de_revenda_tem_st_e_o_cest_do_anexo_iii(catalog):
+    Product.objects.create(
+        sku="AGUA-MINERAL-PRATA-310", name="Água", unit="un", base_price_q=600,
+        metadata={"fiscal": {"profile": "standard", "ncm": "22011000", "unit": "UN"}},
+    )
+
+    apply_grocery(apply=True)
+
+    fiscal = Product.objects.get(sku="AGUA-MINERAL-PRATA-310").metadata["fiscal"]
+    assert fiscal == {"profile": "tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500"}
+    assert resolve_fiscal_item(from_metadata({"fiscal": fiscal}))["cfop"] == "5405"

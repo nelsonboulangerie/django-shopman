@@ -2392,16 +2392,13 @@ class Command(BaseCommand):
         # CFOP/CSOSN/origem/PIS/COFINS NÃO vivem aqui: são resolvidos na emissão
         # pelo perfil fiscal (Fiscalman), a partir de `profile`. Todo o catálogo
         # atual é não-ST (perfil standard → CFOP 5102/CSOSN 102; o CEST é do produto).
-        breads = {
-            "TRADI", "BGG", "MIB", "FENDU", "TABAT",
-            "CPG", "CPX", "CI", "FORMA", "KUP", "TRABB", "BRBB", "HOL",
-            "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",  # focaccia é pão
-        }
         fiscal_ncm_by_sku = {
-            # Folhados, doces e salgados de panificação/pastelaria (default).
+            # Pães, folhados, doces e salgados de panificação (default): 1905.90.90,
+            # "outros pães" — baguete, ciabatta, campagne e focaccia inclusive,
+            # como a casa sempre faturou (ver `apply_fiscal_ncm.BREAD_NCM`).
             "default": "19059090",
-            # Pães (NCM 1905.90.10).
-            **dict.fromkeys(breads, "19059010"),
+            # Só o pão de forma de verdade fica em 1905.90.10.
+            "FORMA": "19059010",
             # ── Bebidas PREPARADAS na loja (revisão de 23/09/2026) ───────────
             # O capítulo 22 é o das bebidas PRONTAS; o 21.01 e o 21.06 são das
             # preparações que servem para FAZER bebida (pó solúvel, extrato,
