@@ -1703,6 +1703,35 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(offer).not.toMatch(/const skipped\s*=\s*ref<string\[\]>/)
   })
 
+  it('puts "Preparado na hora" on the product page and keeps it off the menu card', () => {
+    // ⚠️ Decisão do dono (24/09), e ela é sobre ATENÇÃO, não sobre espaço.
+    //
+    // O selo do card só acende quando algo foge do normal — a regra está escrita
+    // em `menu.ts`: "Badge só quando informa: disponível é o estado default e não
+    // ganha selo". "Últimas unidades", "Lista de espera" e "Pausado" moram nesse
+    // slot porque mudam e pedem decisão AGORA.
+    //
+    // "Preparado na hora" é o contrário: constante, nunca urgente, e verdadeira
+    // para ~1 em cada 4 produtos da casa. Posta ali, seria selo permanente num
+    // quarto dos cards — e o custo não é o selo novo, é o sinal que ele dilui:
+    // quem aprende que o slot é decorativo para de ler "Últimas unidades".
+    //
+    // Na ficha ela é o oposto de ruído: é onde se decide, junto dos outros
+    // atributos constantes (restrições, peso, medidas).
+    const pdp = read('app/pages/produto/[sku].vue')
+    expect(pdp).toContain('data-pdp-made-to-order')
+    expect(pdp).toContain('{{ product.made_to_order_label }}')
+    expect(read('app/types/shopman.ts')).toContain('is_made_to_order: boolean')
+
+    // A sacola mantém o selo: lá ele explica a ausência de aviso de estoque.
+    expect(read('app/pages/sacola.vue')).toContain('data-cart-line-made-to-order')
+
+    // E o card do cardápio segue sem ele — em qualquer das duas superfícies de
+    // listagem, porque acrescentar "só nesta" é como a regra se perde.
+    expect(read('app/components/ProductTile.vue')).not.toContain('made_to_order')
+    expect(read('app/components/ProductListItem.vue')).not.toContain('made_to_order')
+  })
+
   it('keeps the progress timeline readable by assistive tech', () => {
     // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
     // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o

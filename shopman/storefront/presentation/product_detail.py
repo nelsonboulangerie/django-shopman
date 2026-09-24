@@ -162,6 +162,23 @@ class ProductDetailProjection:
     unit_weight_label: str | None
     approx_dimensions_label: str | None
 
+    # Preparado na hora: promessa DECLARADA da casa
+    # (``Product.metadata["made_to_order"]``) — finalizado no momento de servir.
+    #
+    # Mora aqui, no bloco de atributos, e NÃO no selo de disponibilidade do card
+    # do cardápio, de propósito. O selo do card só acende quando algo foge do
+    # normal ("Últimas unidades", "Lista de espera", "Pausado") — é slot de
+    # exceção, e a regra está escrita em `menu.ts`: *"Badge só quando informa:
+    # disponível é o estado default e não ganha selo."* Esta frase é constante e
+    # vale para ~1 em cada 4 produtos da casa; pô-la lá poria selo permanente em
+    # um quarto dos cards e ensinaria o cliente a parar de ler o slot — custo que
+    # recai sobre "Últimas unidades", que é o que de fato faz alguém agir.
+    #
+    # Na ficha ela é o oposto de ruído: é onde se decide, e onde os atributos
+    # constantes já moram (alérgenos, restrições, peso, medidas).
+    is_made_to_order: bool
+    made_to_order_label: str
+
     # Dietary / allergen
     allergen: AllergenInfoProjection | None
 
@@ -352,6 +369,8 @@ def build_product_detail(
         request=request,
     )
 
+    is_made_to_order = _is_made_to_order(product)
+
     return ProductDetailProjection(
         sku=product.sku,
         slug=product.sku,
@@ -380,6 +399,8 @@ def build_product_detail(
         components=components,
         unit_weight_label=_unit_weight_label(product),
         approx_dimensions_label=_approx_dimensions_label(product),
+        is_made_to_order=is_made_to_order,
+        made_to_order_label=_made_to_order_label() if is_made_to_order else "",
         allergen=allergen,
         conservation=conservation,
         ingredients_text=ingredients_text,
@@ -574,6 +595,27 @@ def _unit_weight_label(product: Any) -> str | None:
     # Ver `catalog._unit_weight_label`: o rótulo diz de quem é o peso, porque ao lado
     # do preço dois números sem conector admitem "R$ 18,00 POR 500 g".
     return f"peça de ~{product.unit_weight_g} g" if product.unit_weight_g else None
+
+
+def _is_made_to_order(product: Any) -> bool:
+    """A casa DECLAROU que este item é finalizado na hora de servir?
+
+    Lê só o que foi declarado. Deduzir de ``availability_policy`` foi o desenho
+    anterior e ele quebrava nos dois sentidos: um pão marcado ``demand_ok`` por
+    razão de estoque ganhava a promessa, e apertar o croque para ``stock_only``
+    — o natural quando se passa a controlar o estoque dele — apagava a promessa,
+    calado. Política de estoque e promessa ao cliente são duas perguntas.
+    """
+    meta = product.metadata if isinstance(product.metadata, dict) else {}
+    return bool(meta.get("made_to_order"))
+
+
+def _made_to_order_label() -> str:
+    from shopman.shop.omotenashi import resolve_copy
+
+    return (
+        resolve_copy("PRODUCT_MADE_TO_ORDER", moment="*", audience="*").title or ""
+    ).strip()
 
 
 def _approx_dimensions_label(product: Any) -> str | None:

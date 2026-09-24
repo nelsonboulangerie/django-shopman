@@ -151,6 +151,12 @@ export interface ProductDetailProjection {
   components: ComponentProjection[]
   unit_weight_label: string | null
   approx_dimensions_label: string | null
+  // Preparado na hora: promessa DECLARADA da casa
+  // (`Product.metadata.made_to_order`), não dedução de availability_policy.
+  // Mora no bloco de atributos da ficha — e NÃO no selo do card do cardápio,
+  // que é slot de exceção ("Últimas unidades", "Lista de espera", "Pausado").
+  is_made_to_order: boolean
+  made_to_order_label: string
   allergen: ProductAllergenProjection | null
   conservation: ProductConservationProjection | null
   ingredients_text: string | null
