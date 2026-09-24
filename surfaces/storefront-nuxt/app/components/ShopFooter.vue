@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
+import { accountDestinationLink } from '~/utils/accountNavEntry'
 
 const session = useShopSession()
 
@@ -8,6 +9,9 @@ const openingHours = computed(() => session.openingHours.value)
 const whatsappUrl = computed(() => session.publicConfig.value?.whatsapp_url || shop.value?.whatsapp_url || '')
 const fullAddressLines = computed(() => addressLines(shop.value?.full_address))
 const year = new Date().getFullYear()
+// "Conta e pedidos" é destino, não porta: deslogado vai ao login JÁ com `next=/conta`;
+// sem isso o guard o toma por "só queria entrar" e o devolve à página de onde saiu.
+const accountHref = computed(() => accountDestinationLink(session.isAuthenticated.value, '/conta'))
 </script>
 
 <template>
@@ -39,7 +43,7 @@ const year = new Date().getFullYear()
         <NuxtLink to="/sacola" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
           Sacola
         </NuxtLink>
-        <NuxtLink to="/conta" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
+        <NuxtLink :to="accountHref" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
           Conta e pedidos
         </NuxtLink>
         <NuxtLink to="/faq" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
