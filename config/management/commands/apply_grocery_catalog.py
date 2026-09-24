@@ -61,7 +61,7 @@ fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
 
 **Caixas presente** (:data:`GIFT_BOXES`): produto da casa, SKU da casa, sem
 GTIN nem marca de revenda; entram no lugar da ``LN``. Os placeholders que
-saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_situacao``.
+saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_decisions``.
 
 **Placeholders da despensa que viram produto real** (:data:`REAL_PLACEHOLDERS`):
 Ratatouille, Tapenade e Camembert tinham nome e preço provisórios do Cardápio
@@ -164,7 +164,7 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("GELEIA-MORANGO-STDALFOUR-284", "Geleia Morango St. Dalfour 284g", 4200, "St. Dalfour",
                 "084380957444", "20079910", "1709400", 284, ("geleia", "morango", "fruta")),
     # Os dois minis nascem no lugar do `GL` (placeholder de sabor indefinido,
-    # que o dono mandou sair em 22/09 — ver `apply_catalog_situacao`). O NCM do
+    # que o dono mandou sair em 22/09 — ver `apply_catalog_decisions`). O NCM do
     # de damasco veio da nota como 2007.99.90 e sem CEST; o de frutas
     # vermelhas, como os potes grandes.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-28", "Mini Geleia Damasco St. Dalfour 28g", 900, "St. Dalfour",
@@ -278,7 +278,7 @@ YOOGA_NAMES: dict[str, str] = {
     "Caixa Presente Nice": "NICE",
 }
 
-#: Placeholders que saem pelo `apply_catalog_situacao`: um de-para que aponta
+#: Placeholders que saem pelo `apply_catalog_decisions`: um de-para que aponta
 #: para eles pode ser reapontado ao produto real. Qualquer outro alvo é
 #: curadoria de alguém, e fica.
 LEAVING_PLACEHOLDERS: frozenset[str] = frozenset({"MT", "QP", "CX", "BK", "GR", "LN", "THL"})

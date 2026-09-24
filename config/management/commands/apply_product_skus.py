@@ -213,7 +213,6 @@ FORA_DA_TABELA: dict[str, str] = {
         "minis St. Dalfour reais, damasco e frutas vermelhas. Rename não divide produto"
     ),
     "BK": "sem linha na planilha — a casa ainda não faz o bacon (ver apply_product_brands)",
-    "CV": "sem linha na planilha — Cream Soda do dia, a casa ainda não faz",
     "CX": "sem linha na planilha — Cornichons, placeholder da despensa do Cardápio 2027",
     "GR": "sem linha na planilha — Café em Grão 250g, placeholder da despensa",
     "LN": "sem linha na planilha — Lata Nelson, placeholder da despensa",

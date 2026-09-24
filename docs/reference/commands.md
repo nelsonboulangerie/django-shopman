@@ -64,6 +64,7 @@
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
 | [`apply_grocery_catalog`](#apply_grocery_catalog) | config | Seed | Cria a revenda real da Mercearia e as caixas presente (PDV; canal remoto só com foto) e troca os placeholders que já têm produto real |
+| [`apply_catalog_decisions`](#apply_catalog_decisions) | config | Dados | Executa o que o dono decidiu que sai do catálogo (apaga, com lápide) ou sai da loja (despublica) — ensaio por padrão |
 | [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
 | [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
@@ -171,6 +172,25 @@ canal remoto; sem preço, fica cadastrado e fora da venda (preço zero não vend
 `metadata.gtin_source`. Também cria as quatro caixas presente da casa
 (DIJON, LILLE, MIMO, NICE), sem GTIN.
 Nome/preço que o Gestor já mexeu fica e sai como divergência. Idempotente.
+
+---
+
+
+### apply_catalog_decisions
+
+Executa as decisões do dono sobre o catálogo, listadas no próprio comando
+(`DELETE` e `UNPUBLISH`, cada SKU com o motivo e a data). Excluir **apaga** o
+produto; despublicar tira da loja e deixa o cadastro.
+
+```bash
+python manage.py apply_catalog_decisions            # ensaio: executa e desfaz
+python manage.py apply_catalog_decisions --apply    # grava
+```
+
+Antes do delete, grava a lápide com as coleções de origem (a URL vira 410),
+esvazia a FK do de-para (o alias fica) e desfaz o vínculo de canal. Peça de
+bundle vivo é recusada. Pedido antigo não impede: o item guarda o SKU como
+texto. Idempotente — SKU que já saiu aparece como "já não está no catálogo".
 
 ---
 

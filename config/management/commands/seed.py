@@ -1824,8 +1824,6 @@ class Command(BaseCommand):
             ("AGUA-MINERAL-PRATA-310", "Água", "Água mineral, com ou sem gás", 600, "un", None, True,
              unsplash("photo-1553564552-02656d6a2390"), 500, ""),
             # ── Bebidas · Especialidades na torneira ──
-            ("CV", "Cream Soda do dia", "Cream soda artesanal da torneira, sabor do dia", 2100, "un", None, True,
-             unsplash("photo-1605712916345-6ef6bcc2e29c"), 300, ""),
             ("SDLA", "Soda de Laranja", "Soda artesanal de laranja, feita na casa", 1400, "un", None, True,
              unsplash("photo-1598830853058-3474f6a66003"), 300, ""),
             # ── Padaria · Rústicos ──
@@ -2083,7 +2081,6 @@ class Command(BaseCommand):
             "FRAP": ["cafe", "frappe", "gelado", "batido", "bebida", "frio"],
             "VIEN": ["cafe", "vienna", "gelado", "bebida", "frio"],
             "AGUA-MINERAL-PRATA-310": ["agua", "mineral", "bebida", "frio"],
-            "CV": ["soda", "torneira", "artesanal", "bebida", "frio", "do-dia"],
             "SDLA": ["soda", "laranja", "torneira", "artesanal", "bebida", "frio"],
             "FORMA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
             "KUP": ["pao", "japones", "escuro", "macio", "kuropan"],
@@ -2276,12 +2273,6 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "garrafa 500 ml",
             },
-            "CV": {
-                "allergens": [],
-                "dietary_info": ["100% vegetal"],
-                "serves": "1 pessoa",
-                "approx_dimensions": "copo 300 ml",
-            },
             "SDLA": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
@@ -2426,7 +2417,7 @@ class Command(BaseCommand):
                  # O `CE` sai do catálogo por decisão dele, mas enquanto existe
                  # é bebida preparada como as outras.
                  "CHOQ", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SFTCH", "CHHIB", "CTFV",
-                 # As sodas da casa entram aqui por decisão dele em 23/09. O
+                 # A soda da casa entra aqui por decisão dele em 23/09. O
                  # Imposto Seletivo sobre bebida açucarada só alcança o que está
                  # em EMBALAGEM PRIMÁRIA destinada ao consumidor final (LC
                  # 214/2025, art. 409, §1º, V) — soda na torneira, servida no
@@ -2434,7 +2425,7 @@ class Command(BaseCommand):
                  # que o cliente leva é a mesma bebida preparada que as outras.
                  # ⚠️ Engarrafar para vender muda tudo: aí é 2202.10.00 e a casa
                  # vira contribuinte do IS.
-                 "CV", "SDLA"),
+                 "SDLA"),
                 "22029900",
             ),
             "AGUA-MINERAL-PRATA-310": "22011000",
@@ -2574,7 +2565,7 @@ class Command(BaseCommand):
         # O Combo Petit Déjeuner saiu do catálogo em 22/09/2026, por decisão
         # do dono ("era ideia, não virou produto"), junto com o Café Coado, o
         # Coffee Float, o Purin, o Tea Jelly, o Pain Grillé, a Tábua e a geleia
-        # mini. Apagados do alpha em 23/09 pelo `apply_catalog_situacao`.
+        # mini. Apagados do alpha em 23/09 pelo `apply_catalog_decisions`.
 
         # ── DUAS listas, porque são DUAS perguntas ──────────────────────────
         #
@@ -2590,7 +2581,7 @@ class Command(BaseCommand):
             "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
             "FRAP", "VIEN", "CHHIB", "CTFV",
-            "CV", "SDLA", "AGUA-MINERAL-PRATA-310",
+            "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
             "QJQT", "JB",             "PERDU"         ]
 
@@ -2609,7 +2600,7 @@ class Command(BaseCommand):
             "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
             "FRAP", "VIEN", "CHHIB", "CTFV",
-            "CV", "SDLA",
+            "SDLA",
             "CQMO", "CQMA", "CQCOM",
             "QJQT", "JB",             "PERDU"         ]
 
@@ -2812,12 +2803,6 @@ class Command(BaseCommand):
                     "Café ou chocolate ou frutas vermelhas, leite e gelo batidos. CONTÉM: leite."
                 ),
                 "nutrition_facts": nutrition(300, 1, 230.0, 30.0, 26.0, 5.0, 10.0, 6.5, 0.3, 70.0),
-            },
-            "CV": {
-                "ingredients_text": (
-                    "Água gaseificada, xarope artesanal do dia e creme. CONTÉM: leite."
-                ),
-                "nutrition_facts": nutrition(300, 1, 120.0, 30.0, 28.0, 0.0, 0.0, 0.0, 0.0, 15.0),
             },
             "SDLA": {
                 "ingredients_text": (
@@ -3050,7 +3035,7 @@ class Command(BaseCommand):
                 "SPMC", "CAFL", "CHOQ", "MOCHA"],
             "bebidas-geladas": ["FRAP", "AGUA-MINERAL-PRATA-310",
                 # voltaram do Yooga (18/08)
-                "CHHIB", "CTFV", "VIEN", "CV", "SDLA",
+                "CHHIB", "CTFV", "VIEN", "SDLA",
                 # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
                 # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
                 # na mercearia. "Vendemos os pouches e latinhas com o chá seco
@@ -9256,7 +9241,7 @@ class Command(BaseCommand):
             # o B.I. conta bebida por pedido. Preparada = feita na casa; pronta
             # = industrializada. Água é pronta.
             "bebida-preparada": [
-                "CAP", "CHBLU", "CHCAM", "CHROU", "CHSOP", "CV", "SP", "FRAP", "CAPMO",
+                "CAP", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SP", "FRAP", "CAPMO",
                 "SDLA"],
             "bebida-pronta": [
                 "AGUA-MINERAL-PRATA-310"],

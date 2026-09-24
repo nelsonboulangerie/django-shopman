@@ -39,7 +39,7 @@ def test_a_tabela_so_propoe_bebida_pronta():
     assert len(set(codigos)) == len(codigos)
 
 
-def test_as_sodas_da_casa_entram_como_bebida_preparada():
+def test_a_soda_da_casa_entra_como_bebida_preparada():
     """Decisão dele em 23/09, com o argumento da embalagem por trás.
 
     O Imposto Seletivo sobre bebida açucarada só alcança o que está em
@@ -47,7 +47,7 @@ def test_as_sodas_da_casa_entram_como_bebida_preparada():
     tem — então o IS não pesa na escolha, e sobra a classificação pura.
     """
     revisados = {sku for sku, _n, _p in NCM_REVISADO}
-    assert {"SDLA", "CV"} <= revisados
+    assert "SDLA" in revisados
 
 
 def test_ensaio_nao_grava():
