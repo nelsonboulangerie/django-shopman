@@ -63,6 +63,7 @@
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
 | [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
+| [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
 ---
 
@@ -182,6 +183,39 @@ por decisão do dono.
 ⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
 próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
 cobra; quem as troca é o commit.
+
+---
+
+
+### calibrate_conversions
+
+Lista as equivalências **aproximadas** que ninguém pesou, e grava a pesagem da
+casa. Pedido dele em 24/09/2026, ao perguntar o peso da folha de louro fresca —
+que fonte nenhuma sabe dizer.
+
+```bash
+python manage.py calibrate_conversions                          # o que falta
+python manage.py calibrate_conversions --weigh OVOS:ovos=0.058  # ensaio
+python manage.py calibrate_conversions --weigh OVOS:ovos=0.058 --apply
+```
+
+**O buraco que ele fecha.** A ADR-024 separa três tipos de conversão, e só a
+aproximada carrega incerteza — "1 ovo ≈ 50 g", "1 limão ≈ 100 g". O `kind` diz
+que a incerteza existe; não diz **quanto** dela. Até aqui, o ovo a 50 g estava no
+banco exatamente como estaria um número que a casa tivesse pesado, e ninguém
+sabia qual calibrar primeiro. A procedência da salsicha estava escrita — em
+comentário do `seed`, onde tela nenhuma lê.
+
+`MaterialConversion.source` passa a dizer de onde veio o número: lida na nota ·
+declarada pelo dono · **pesada na casa** · estimativa. Vazio conta como pendente
+de propósito, porque o silêncio de hoje é de fator que ninguém sabe de onde veio.
+
+⚠️ **Conversão convencionada não entra**: "1 saco = 25 kg" é contrato do
+fornecedor, não equivalência física — calibrar ali seria duvidar da nota, e o
+conserto de uma embalagem que mudou é corrigir a embalagem.
+
+O gesto: **pesar dez e dividir por dez**. A média de dez erra menos que a de um,
+e é o que o fator representa.
 
 ---
 

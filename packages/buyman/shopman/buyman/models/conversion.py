@@ -42,6 +42,20 @@ class MaterialConversion(models.Model):
         CONVENTIONAL = "conventional", _("convencionada")
         APPROXIMATE = "approximate", _("aproximada")
 
+    class Source(models.TextChoices):
+        """De onde veio o número — não quem digitou, que é o ``created_by``.
+
+        A ADR-024 R3 manda a incerteza chegar até a tela, e ``kind`` só diz que
+        ela existe. Isto diz **quanto** dela: um fator que a casa pesou e um que
+        veio de estimativa valem o mesmo no banco enquanto ninguém os distinguir,
+        e aí não há como saber qual calibrar primeiro.
+        """
+
+        INVOICE = "invoice", _("lida na nota fiscal")
+        OWNER = "owner", _("declarada pelo dono")
+        HOUSE_SCALE = "house_scale", _("pesada na casa")
+        ESTIMATE = "estimate", _("estimativa — falta calibrar")
+
     material = models.ForeignKey(
         "buyman.Material", on_delete=models.CASCADE, related_name="conversions",
         verbose_name=_("Insumo"),
@@ -71,6 +85,17 @@ class MaterialConversion(models.Model):
         help_text=_(
             "Convencionada = exata por declaração do fornecedor. "
             "Aproximada = equivalência física, e o número carrega '≈' até a tela."
+        ),
+    )
+    source = models.CharField(
+        max_length=16,
+        choices=Source.choices,
+        blank=True,
+        default="",
+        verbose_name=_("Procedência do fator"),
+        help_text=_(
+            "De onde saiu o número. Vazio = ninguém declarou, e nesse caso ele "
+            "conta como pendente de calibragem junto com as estimativas."
         ),
     )
     is_active = models.BooleanField(default=True, db_index=True, verbose_name=_("Ativa"))
@@ -132,6 +157,23 @@ class MaterialConversion(models.Model):
             raise ValidationError({
                 "to_base_factor": _("O fator precisa ser maior que zero.")
             })
+
+    @property
+    def needs_calibration(self) -> bool:
+        """O fator ainda não passou pela balança nem pela palavra de quem sabe.
+
+        Vazio conta como pendente de propósito: o silêncio de hoje é de fatores
+        que ninguém sabe de onde vieram (o ovo a 50 g e o limão a 100 g estão
+        assim desde que nasceram), e tratá-lo como "declarado" esconderia
+        exatamente o que este campo existe para mostrar.
+
+        Convencionada não entra: "1 saco = 25 kg" é contrato do fornecedor, não
+        equivalência física — calibrar ali seria duvidar da nota.
+        """
+        return (
+            self.kind == self.Kind.APPROXIMATE
+            and self.source in ("", self.Source.ESTIMATE)
+        )
 
     def __str__(self) -> str:
         unit = getattr(self.material, "unit", "") if self.material_id else ""
