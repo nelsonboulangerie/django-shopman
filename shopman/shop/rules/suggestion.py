@@ -25,6 +25,7 @@ ManyChat que ensinou o preço disso.
     {"when": {"attr": "sabor", "value": "doce"}, "suggest": {"tag": "café"}, "weight": 2},
   ],
   "affinity_weight": 3,
+  "distinct_from_cart": ["natureza", "sabor"],
   "price": "below_cart_average",
   "context": {"delivery": {"exclude": {"attr": "temperatura", "value": "gelado"}}},
   "per_surface": {"web": 1, "concierge": 1},
@@ -45,6 +46,11 @@ ManyChat que ensinou o preço disso.
 
 A validação recusa atributo ou opção que não existe no registro — é o que
 impede uma regra de citar ``sabour`` e falhar em silêncio para sempre.
+
+``distinct_from_cart`` é portão: o adicional não pode ter os mesmos valores
+que um item da sacola em TODOS esses atributos (croque não sugere croque). A
+coleção primária igual também exclui, e essa não é configurável — é a definição
+de complemento, não uma preferência da casa.
 """
 
 from __future__ import annotations
@@ -92,8 +98,18 @@ DEFAULT_COMPLEMENT_PARAMS = {
             "suggest": {"attr": "temperatura", "value": "gelado"},
             "weight": 2,
         },
+        # O espelho de "doce pede café": quem leva a bebida ganha o doce
+        # (23/09, default sensato; a tabela de complementos é do dono).
+        {
+            "when": {"attr": "natureza", "value": "bebida"},
+            "suggest": {"attr": "sabor", "value": "doce"},
+            "weight": 2,
+        },
     ],
     "affinity_weight": 3,
+    # Adicional é complemento, não substituto: nada com a mesma natureza E o
+    # mesmo sabor de um item da sacola (croque não sugere croque — 23/09).
+    "distinct_from_cart": ["natureza", "sabor"],
     "price": "below_cart_average",
     "per_surface": {"web": 1, "concierge": 1},
 }
@@ -196,7 +212,9 @@ class ComplementRule(BaseRule):
     # registry do Orderman não deve registrá-la como nada.
     rule_type = "suggestion"
 
-    KNOWN = frozenset({"pairings", "affinity_weight", "price", "context", "per_surface"})
+    KNOWN = frozenset({
+        "pairings", "affinity_weight", "distinct_from_cart", "price", "context", "per_surface",
+    })
 
     def __init__(self, **params):
         self.params = dict(params)
@@ -229,6 +247,12 @@ class ComplementRule(BaseRule):
 
         if "affinity_weight" in params:
             _check_weight(params["affinity_weight"], where="affinity_weight")
+
+        distinct = params.get("distinct_from_cart") or []
+        if not isinstance(distinct, list):
+            raise SuggestionRuleError("'distinct_from_cart' precisa ser uma lista de atributos.")
+        for ref in distinct:
+            _check_attribute(ref, (), where=f"distinct_from_cart → '{ref}'")
 
         price = params.get("price")
         if price is not None and price not in PRICE_POLICIES:

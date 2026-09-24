@@ -10,8 +10,18 @@ Aqui há um lugar só, e ele combina três coisas:
 2. **Pareamentos configuráveis** — ``suggestion.complement`` em ``RuleConfig``.
    O motor não conhece "natureza" nem "sabor": ele lê a regra e obedece, e
    atributo novo no Admin amplia o vocabulário sem deploy.
-3. **Portões** — visível no canal, vendável, disponível agora, fora da sacola.
-   Sugestão que não passa nos portões não existe.
+3. **Portões** — visível no canal, vendável, disponível agora, fora da sacola,
+   e **de outra função** que a da sacola. Sugestão que não passa nos portões
+   não existe.
+
+⚠️ **Adicional é complemento, não substituto** (dono, 23/09). A sacola com
+Croque Madame recebeu Croque Monsieur: mesmo prato, mesma coleção, mais barato e
+com lift alto no histórico (quem pede um croque para a mesa pede o outro). Nada
+no motor dizia que "outro do mesmo" não é adicional. Agora há dois portões para
+isso — a coleção primária (a categoria do Offerman) e ``distinct_from_cart``
+(os atributos que definem a função, ``natureza`` + ``sabor`` por default) — e
+uma ordem: **o pareamento é a regra da casa**; a afinidade ordena dentro dele e
+só fala sozinha quando nenhum pareamento casa.
 
 ⚠️ **Portão é portão; sinal é sinal.** Preço não é portão: um filtro duro de
 preço calaria a sugestão numa sacola barata, e "sugestão que não sai" é pior
@@ -129,6 +139,12 @@ def _candidates(cart_skus: set[str], rule: dict) -> dict[str, dict]:
 
     A afinidade traz os pares que o histórico conhece. Os pareamentos trazem o
     resto: sem eles, um produto novo (sem histórico) nunca seria sugerido.
+
+    ⚠️ As duas filas são independentes. Antes, o pareamento só ganhava a vaga
+    que a afinidade deixasse, e em ordem alfabética de SKU: um item com 40
+    parceiros no histórico (o Croque Madame) nunca via uma bebida que não
+    tivesse sido comprada junto com ele — o pareamento "comida → bebida" ficava
+    escrito e sem ninguém para avaliar.
     """
     candidates: dict[str, dict] = {}
 
@@ -139,7 +155,7 @@ def _candidates(cart_skus: set[str], rule: dict) -> dict[str, dict]:
             entry["reasons"] = [f"affinity:{partner}"]
 
     if rule.get("pairings"):
-        for sku in _pairing_pool(cart_skus, len(candidates)):
+        for sku in _pairing_pool(cart_skus, rule):
             candidates.setdefault(sku, {"affinity": 0.0, "reasons": []})
 
     for sku in cart_skus:
@@ -162,23 +178,44 @@ def _affinity_partners(cart_skus: set[str]):
         yield row.sku_b, row.lift, row.sku_a
 
 
-def _pairing_pool(cart_skus: set[str], already: int) -> list[str]:
-    """SKUs vendáveis para o pareamento avaliar, além dos que a afinidade trouxe.
+def _pairing_pool(cart_skus: set[str], rule: dict) -> list[str]:
+    """Os SKUs vendáveis que algum pareamento da regra de fato casa.
 
-    Ordenado por nome só para ser determinístico: quem ordena de verdade é a
-    pontuação, logo abaixo.
+    O catálogo inteiro é avaliado (são centenas de linhas, não milhares) e só
+    quem casa entra; a fila fica com os ``CANDIDATE_POOL`` de maior peso. É o
+    que garante que "comida → bebida" encontre a bebida, em vez de depender de
+    ela cair entre os primeiros SKUs do alfabeto.
     """
     from shopman.offerman.models import Product
 
-    room = max(0, CANDIDATE_POOL - already)
-    if not room:
+    from shopman.shop.services import attributes
+
+    pairings = rule.get("pairings") or []
+    if not (pairings and cart_skus):
         return []
-    return list(
+
+    products = list(
         Product.objects.filter(is_published=True, is_sellable=True)
         .exclude(sku__in=cart_skus)
-        .order_by("sku")
-        .values_list("sku", flat=True)[:room]
+        .prefetch_related("keywords")
     )
+    everyone = products + _cart_products(cart_skus)
+    values = {
+        d.ref: attributes.get_many(everyone, d.ref)
+        for d in attributes.for_purpose("rule")
+    }
+
+    weighted: list[tuple[float, str]] = []
+    for product in products:
+        weight = sum(
+            float(p.get("weight", 1))
+            for p in pairings
+            if _pairing_reason(p, product.sku, cart_skus, values, product)
+        )
+        if weight > 0:
+            weighted.append((weight, product.sku))
+    weighted.sort(key=lambda w: (-w[0], w[1]))
+    return [sku for _, sku in weighted[:CANDIDATE_POOL]]
 
 
 # --- os portões ------------------------------------------------------------
@@ -260,11 +297,20 @@ def _score(
         d.ref: attributes.get_many(everyone, d.ref)
         for d in attributes.for_purpose("rule")
     }
+    distinct_refs = list(rule.get("distinct_from_cart") or [])
+    for ref in distinct_refs:
+        # A validação garante que o atributo existe; ele só pode não servir a
+        # "rule" — e ler assim mesmo é melhor que o portão se calar.
+        if ref not in values:
+            values[ref] = attributes.get_many(everyone, ref)
 
     affinity = _affinity_map(cart_skus, set(products))
+    same_role = _same_role_as_cart(set(products), cart_skus, distinct_refs, values)
 
-    out: list[Suggestion] = []
+    ranked: list[tuple[bool, Suggestion]] = []
     for sku, product in products.items():
+        if sku in same_role:
+            continue
         if _is_excluded(sku, excluded, values):
             continue
 
@@ -277,33 +323,41 @@ def _score(
             score += affinity_weight * max(0.0, lift - 1.0)
             reasons.append(f"affinity:{partner}")
 
+        paired = False
         for pairing in pairings:
             reason = _pairing_reason(pairing, sku, cart_skus, values, product)
             if reason:
                 score += float(pairing.get("weight", 1))
                 reasons.append(reason)
+                paired = True
+
+        if not reasons:
+            # Sem um motivo, não é sugestão — é um item aleatório do catálogo.
+            # Preço não é motivo: "é mais barato" sozinho fazia de qualquer
+            # item da casa uma sugestão (foi uma das portas do Croque Monsieur).
+            continue
 
         price_q = prices.get(sku)
         if prefers_cheaper and price_q is not None and cart_average and price_q < cart_average:
             score += 0.5
             reasons.append("price:below_cart_average")
 
-        if not reasons:
-            # Sem um motivo, não é sugestão — é um item aleatório do catálogo.
-            continue
-
-        out.append(Suggestion(
+        ranked.append((paired, Suggestion(
             sku=sku,
             name=getattr(product, "name", "") or "",
             unit_price_q=int(price_q or getattr(product, "base_price_q", 0) or 0),
             image_url=getattr(product, "image_url", None) or None,
             score=round(score, 4),
             reasons=tuple(reasons),
-        ))
+        )))
 
+    # O pareamento é a regra da casa e vem primeiro; a afinidade ordena dentro
+    # dele, e só fala sozinha quando nenhum pareamento casa. Sem esta ordem, um
+    # lift alto (quem pede um croque pede o outro para a mesa) passava por cima
+    # de "comida pede bebida" — e o histórico de mesa não é o que combina.
     # Empate desfeito pelo SKU, para a sugestão não dançar entre dois requests.
-    out.sort(key=lambda s: (-s.score, s.sku))
-    return out
+    ranked.sort(key=lambda r: (not r[0], -r[1].score, r[1].sku))
+    return [suggestion for _, suggestion in ranked]
 
 
 def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
@@ -370,6 +424,60 @@ def _matched(value, wanted: tuple[str, ...]) -> str | None:
 
 def _matches(value, wanted: tuple[str, ...]) -> bool:
     return _matched(value, wanted) is not None
+
+
+def _same_role_as_cart(
+    candidate_skus: set[str], cart_skus: set[str], distinct_refs: list, values: dict,
+) -> set[str]:
+    """Os candidatos que fazem o MESMO papel de algo que já está na sacola.
+
+    Adicional é complemento, não substituto: outro croque para quem leva um
+    croque é a pergunta "quer trocar?", não "quer junto?". Dois critérios, e
+    basta um:
+
+    - **mesma coleção primária** — a categoria que o Offerman já guarda, onde o
+      produto "mora" (regra do dono, 02/09). Salgado com salgado, folhado com
+      folhado, bebida quente com bebida quente;
+    - **mesmos valores em todos os ``distinct_from_cart``** da regra (default
+      ``natureza`` + ``sabor``): pão rústico e pão macio moram em coleções
+      diferentes e são o mesmo papel na mesa.
+
+    ⚠️ Dado que falta nunca exclui: só compara atributos quando os dois lados
+    têm todos preenchidos. Atributo em branco é ausência de dado, não igualdade.
+    """
+    if not (candidate_skus and cart_skus):
+        return set()
+
+    primary = _primary_collections(candidate_skus | cart_skus)
+    cart_collections = {primary[s] for s in cart_skus if s in primary}
+
+    def signature(sku):
+        sig = tuple((values.get(ref) or {}).get(sku) for ref in distinct_refs)
+        if not sig or any(v is None or v == [] for v in sig):
+            return None
+        return tuple(tuple(sorted(map(str, v))) if isinstance(v, list) else str(v) for v in sig)
+
+    cart_signatures = {sig for sig in map(signature, cart_skus) if sig is not None}
+
+    out: set[str] = set()
+    for sku in candidate_skus:
+        if primary.get(sku) in cart_collections:
+            out.add(sku)
+            continue
+        sig = signature(sku)
+        if sig is not None and sig in cart_signatures:
+            out.add(sku)
+    return out
+
+
+def _primary_collections(skus: set[str]) -> dict[str, str]:
+    """``{sku: ref da coleção primária}`` — onde o produto mora no cardápio."""
+    from shopman.offerman.models import CollectionItem
+
+    return dict(
+        CollectionItem.objects.filter(product__sku__in=skus, is_primary=True)
+        .values_list("product__sku", "collection__ref")
+    )
 
 
 def _context_exclusions(rule: dict, context: dict) -> list[dict]:
