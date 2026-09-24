@@ -45,7 +45,7 @@ import logging
 import time
 
 from django.core.management import call_command
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
@@ -133,9 +133,9 @@ MAINTENANCE_COMMANDS = (
     # (pedidos × intents × transações × DayClosing) e divergência vira
     # OperatorAlert com dedupe/debounce próprios. Re-rodar a cada ciclo é
     # deliberado: webhook tardio de pagamento muda o retrato do dia, e o
-    # DayClosing guarda sempre o último. Divergência aberta loga o
-    # CommandError do comando a cada ciclo — barulho honesto, some quando
-    # o operador resolve.
+    # DayClosing guarda sempre o último. A divergência aberta volta como o
+    # MESMO CommandError a cada ciclo; o worker grita a primeira e cala as
+    # repetições (ver `DIVERGENCIA_REPETIDA_AVISA_UMA_VEZ`).
     "reconcile_financial_day",
     "sweep_stuck_orders",
     # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
@@ -219,6 +219,20 @@ MAINTENANCE_COMMANDS = (
 
 MAINTENANCE_WORKER = "maintenance_worker"
 
+#: Comandos cuja divergência volta IGUAL a cada ciclo até alguém resolver. O
+#: `reconcile_financial_day` re-reconcilia ontem a cada 5 min e, enquanto a
+#: divergência estiver aberta, levanta o mesmo `CommandError` (a data está na
+#: mensagem). Em 22/09 isso virou 178 eventos no Sentry para UMA divergência —
+#: que já era OperatorAlert com dedupe (`payment_reconciliation_failed`,
+#: `financial-day:<data>:*`). Aqui a primeira ocorrência de cada mensagem sai
+#: como antes (`logger.exception`, evento no Sentry); a repetição vira aviso
+#: sem traceback, que o Sentry guarda só como rastro. Data nova, mensagem nova,
+#: grito novo. Exceção que NÃO é `CommandError` segue gritando sempre.
+DIVERGENCIA_REPETIDA_AVISA_UMA_VEZ = frozenset({"reconcile_financial_day"})
+#: Teto da memória de divergências já gritadas: uma por dia reconciliado; a
+#: mais antiga sai quando passa disto.
+DIVERGENCIAS_LEMBRADAS = 32
+
 
 class Command(BaseCommand):
     help = "Roda o ciclo de manutenção periódica (crons do deployment) em loop."
@@ -226,6 +240,12 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--interval", type=int, default=300, help="Segundos entre ciclos (default 300).")
         parser.add_argument("--once", action="store_true", help="Roda um único ciclo e sai.")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Divergências já gritadas neste processo: (comando, mensagem). Vive
+        # enquanto o worker vive; um restart grita de novo, uma vez.
+        self._divergencias_gritadas: dict[tuple[str, str], None] = {}
 
     def handle(self, *args, **options):
         interval = max(30, int(options["interval"]))
@@ -280,5 +300,27 @@ class Command(BaseCommand):
                     call_command(command, quiet_disabled=True, **kwargs)
                 else:
                     call_command(command, **kwargs)
+            except CommandError as exc:
+                if not self._ja_gritada(command, exc):
+                    logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)
+                else:
+                    logger.warning(
+                        "maintenance_worker: %s repetiu a divergência já avisada (%s); "
+                        "o OperatorAlert segue aberto até alguém resolver",
+                        command, exc,
+                    )
             except Exception:
                 logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)
+
+    def _ja_gritada(self, command: str, exc: CommandError) -> bool:
+        """True quando esta divergência já foi gritada; registra a que é nova."""
+
+        if command not in DIVERGENCIA_REPETIDA_AVISA_UMA_VEZ:
+            return False
+        chave = (command, str(exc))
+        if chave in self._divergencias_gritadas:
+            return True
+        self._divergencias_gritadas[chave] = None
+        while len(self._divergencias_gritadas) > DIVERGENCIAS_LEMBRADAS:
+            del self._divergencias_gritadas[next(iter(self._divergencias_gritadas))]
+        return False
