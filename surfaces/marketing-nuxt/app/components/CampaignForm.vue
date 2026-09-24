@@ -1002,7 +1002,7 @@ function submit() {
       class="rounded-lg border border-border p-3"
     >
       <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Avisar quem
+        Público alvo
       </legend>
       <div class="space-y-2.5">
         <UiCheckbox v-model="favorites" label="Quem favoritou o produto" />

@@ -465,7 +465,7 @@ test.describe("listas operacionais", () => {
   test("edição longa mostra schema completo", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
     await page.locator("main li").first().locator("button").nth(1).click();
-    await expect(page.getByRole("dialog")).toContainText("Avisar quem");
+    await expect(page.getByRole("dialog")).toContainText("Público alvo");
     // ⚠️ Sem esta espera o retrato era cara ou coroa: às vezes a prévia fiel ainda
     // dizia "Atualizando todas as plataformas…", às vezes já tinha chegado, e o
     // baseline guardava o que a máquina daquele dia decidiu. O estado assentado é um só.
@@ -484,7 +484,7 @@ test.describe("listas operacionais", () => {
   });
 
   // ⚠️ Os sete checkboxes de público ficam ABAIXO da dobra do diálogo: os retratos que
-  // já existiam afirmavam "Avisar quem" pelo DOM e nunca mostraram um só deles. Sete
+  // já existiam afirmavam "Público alvo" pelo DOM e nunca mostraram um só deles. Sete
   // controles trocados e nenhum olho em cima é como a deriva de desenho volta.
   test("as escolhas de público são as peças do kit", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
@@ -499,7 +499,7 @@ test.describe("listas operacionais", () => {
     // lugar só.
     await page
       .getByRole("dialog")
-      .getByText("Avisar quem")
+      .getByText("Público alvo")
       .evaluate((element) => element.scrollIntoView({ block: "start" }));
     await expect(
       page.getByRole("checkbox", { name: "Quem favoritou o produto" }),

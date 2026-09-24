@@ -141,11 +141,11 @@ describe("CampaignForm — natureza de cada saída", () => {
     const direct = form(makeRule({ platforms: ["whatsapp"] }));
     const publicOnly = form(makeRule({ platforms: ["instagram"] }));
 
-    expect(direct.text()).toContain("Avisar quem");
+    expect(direct.text()).toContain("Público alvo");
     expect(direct.text()).not.toContain(
       "Estas publicações vão para o público geral",
     );
-    expect(publicOnly.text()).not.toContain("Avisar quem");
+    expect(publicOnly.text()).not.toContain("Público alvo");
     expect(publicOnly.text()).toContain(
       "Estas publicações vão para o público geral",
     );

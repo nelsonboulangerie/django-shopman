@@ -355,12 +355,12 @@ watch(
 
     <fieldset v-else class="space-y-2">
       <legend class="text-xs font-medium text-muted-foreground">
-        Para quem
+        Público alvo
       </legend>
 
       <!-- Escolha exclusiva pelo primitivo da casa: seta anda entre as duas, uma
            parada de tabulação só, alvo de 44 px. -->
-      <UiRadioGroup v-model="useSaved" label="Para quem">
+      <UiRadioGroup v-model="useSaved" label="Público alvo">
         <UiRadio :value="true" label="O público da campanha">
           <template #description>
             {{

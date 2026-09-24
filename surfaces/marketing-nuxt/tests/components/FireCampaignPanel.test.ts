@@ -310,7 +310,7 @@ describe("FireCampaignPanel — postagem pública", () => {
     expect(wrapper.text()).toContain("1 postagem pública");
     expect(wrapper.text()).toContain("Uma postagem por plataforma");
     expect(wrapper.text()).toContain("Não seleciona contatos");
-    expect(wrapper.text()).not.toContain("Para quem");
+    expect(wrapper.text()).not.toContain("Público alvo");
     expect(wrapper.text()).not.toContain("pessoas recebem");
     expect(lastCountedRules).toBeNull();
     const submit = wrapper.find('button[type="submit"]');
