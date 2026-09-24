@@ -432,6 +432,28 @@ def test_focus_nfe_emits_the_profile_pis_cofins_cst_and_never_07():
     assert mapped["icms_situacao_tributaria"] == "102"
 
 
+@pytest.mark.parametrize(
+    ("gtin", "expected"),
+    [("3006670000187", "3006670000187"), ("", "SEM GTIN"), (None, "SEM GTIN")],
+    ids=["gtin-confiavel", "sem-gtin", "chave-ausente"],
+)
+def test_map_item_sends_the_gtin_in_both_barcode_fields(gtin, expected):
+    """cEAN e cEANTrib levam o mesmo GTIN; sem GTIN, o literal do leiaute 4.0."""
+    from shopman.shop.adapters.fiscal_focusnfe import _map_item
+
+    item = {
+        "sku": "DAL-FIG-284", "name": "Geleia", "qty": "1",
+        "unit_price_q": 3000, "total_q": 3000, "fiscal": FISCAL_STANDARD,
+    }
+    if gtin is not None:
+        item["gtin"] = gtin
+
+    mapped = _map_item(1, item, _settings())
+
+    assert mapped["codigo_barras_comercial"] == expected
+    assert mapped["codigo_barras_tributavel"] == expected
+
+
 _DELIVERY_ADDRESS = {"route": "Rua X", "street_number": "1", "neighborhood": "Jardim Real",
                      "city": "Londrina", "state_code": "PR", "postal_code": "86010-000"}
 
