@@ -310,6 +310,43 @@ o pain au chocolat em vez de substituí-lo.
 Os 25 com nota 2 são a mercearia sozinha e os cruzamentos quando a preferida
 está esgotada. Esse cruzado é o "não exclui" do dono.
 
+## Pão pede mercearia, e as bebidas voltam ao catálogo (24/09/2026, 2ª rodada)
+
+**Pão para levar** (sacola só de pão, sem refeição) → a mercearia é o
+complemento principal: o pote genérico pesa 3 e perde para o café (3 + 1); o
+pote que VAI naquele pão soma +2 e ganha. **Em refeição** (já há bebida) os
+pares de pote não falam — o doce que falta na mesa vem antes.
+
+Pares (peso 2, bônus, nunca filtro; `tag` = palavra-chave do produto,
+`collection` = coleção; o lado "pão" exige `sabor=neutro` no MESMO item, pela
+condição nova `all`, para a focaccia salgada não pedir o queijo do pão):
+
+| pão | pote |
+|---|---|
+| Rústicos (baguete, campagne, ciabatta…) | queijo · patê · tapenade · picles · manteiga |
+| focaccia · pão italiano | tapenade · azeite |
+| campagne | camembert |
+| croissant | geleia · mel · manteiga |
+| brioche | geleia · doce de leite · mel |
+| pain perdu (rabanada) | mel · doce de leite |
+| shokupan · **Kuro Pan** (dono: "combinação clássica") | manteiga · geleia |
+| pão de hot dog | mostarda |
+| pão de hambúrguer | mostarda · picles · queijo · bacon |
+
+E o caminho de volta (pote na sacola → o pão em que ele vai): queijo e patê →
+rústico; tapenade → focaccia/italiano; geleia → croissant/brioche/shokupan/Kuro
+Pan; manteiga → shokupan/Kuro Pan/rústico; mostarda → hot dog/hambúrguer;
+picles → hambúrguer.
+
+⚠️ Hoje a mercearia do alpha é placeholder (preço a definir, fora de venda) e
+não há geleia, manteiga, mel, azeite nem doce de leite no catálogo. Os pares
+estão prontos e não sugerem nada até o produto existir e estar à venda.
+
+| estresse (722 sacolas, com pão para levar e mercearia) | 3 | 2 | 1 | 0 | média |
+|---|---|---|---|---|---|
+| antes (#1040) | 555 | 167 | 0 | 0 | 2,77 |
+| depois | 684 | 38 | 0 | 0 | 2,95 |
+
 ## Referências
 
 - [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md) (a sugestão no chat é uma por conversa; desligada até F1)

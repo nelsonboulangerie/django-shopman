@@ -751,3 +751,62 @@ def test_the_new_schema_is_validated():
         ]})
     with pytest.raises(SuggestionRuleError, match="tag"):
         ComplementRule.validate_params({"one_per_cart": [{"tag": "cafe"}]})
+
+
+# --- 24/09: palavra-chave e coleção dos dois lados, e ``all`` no mesmo item --
+
+
+def _in_coll(product, ref, *, primary=True):
+    collection, _ = Collection.objects.get_or_create(ref=ref, defaults={"name": ref})
+    CollectionItem.objects.create(collection=collection, product=product, is_primary=primary)
+    return product
+
+
+def test_a_pairing_can_read_the_cart_by_keyword_and_collection(listing):
+    kuro = _product("KUP", "Kuro Pan", listing=listing, natureza="comida", sabor="neutro")
+    kuro.keywords.add("kuropan")
+    _in_coll(kuro, "macios")
+    manteiga = _product("MANT", "Manteiga", listing=listing, natureza="acompanhamento")
+    manteiga.keywords.add("manteiga")
+    queijo = _product("QP", "Queijo", listing=listing, natureza="acompanhamento")
+    queijo.keywords.add("queijo")
+    _rule({"pairings": [
+        {"when": {"tag": "kuropan"},
+         "suggest": [{"attr": "natureza", "value": "acompanhamento"}, {"tag": "manteiga"}],
+         "weight": 2},
+        {"when": {"collection": "rusticos"},
+         "suggest": [{"attr": "natureza", "value": "acompanhamento"}, {"tag": "queijo"}],
+         "weight": 2},
+    ]})
+
+    found = suggest(COMPLEMENT, cart_skus={"KUP"}, channel_ref=CHANNEL, limit=3)
+    assert [s.sku for s in found] == ["MANT"]
+    assert found[0].reasons == ("pairing:tag:kuropan→natureza=acompanhamento+tag:manteiga",)
+
+
+def test_all_asks_the_same_item_for_every_condition(listing):
+    """"Um pão que seja rústico": a focaccia é rústica e salgada, não é pão."""
+    focaccia = _in_coll(_product("FOA", "Focaccia", listing=listing,
+                                 natureza="comida", sabor="salgado"), "rusticos")
+    baguete = _in_coll(_product("TRADI", "Baguete", listing=listing,
+                                natureza="comida", sabor="neutro"), "rusticos")
+    queijo = _product("QP", "Queijo", listing=listing, natureza="acompanhamento")
+    queijo.keywords.add("queijo")
+    _rule({"pairings": [{
+        "when": {"all": [{"attr": "sabor", "value": "neutro"}, {"collection": "rusticos"}]},
+        "suggest": [{"attr": "natureza", "value": "acompanhamento"}, {"tag": "queijo"}],
+        "weight": 2,
+    }]})
+
+    assert suggest(COMPLEMENT, cart_skus={focaccia.sku}, channel_ref=CHANNEL) == ()
+    found = suggest(COMPLEMENT, cart_skus={baguete.sku}, channel_ref=CHANNEL)
+    assert [s.sku for s in found] == ["QP"]
+
+
+def test_catalog_conditions_stay_out_of_gates():
+    with pytest.raises(SuggestionRuleError, match="collection"):
+        ComplementRule.validate_params({"one_per_cart": [{"collection": "doces"}]})
+    with pytest.raises(SuggestionRuleError, match="all"):
+        ComplementRule.validate_params({"pairings": [
+            {"when": {"all": []}, "suggest": {"attr": "natureza", "value": "bebida"}},
+        ]})

@@ -219,6 +219,7 @@ def _pairing_pool(cart_skus: set[str], rule: dict) -> list[str]:
         d.ref: attributes.get_many(everyone, d.ref)
         for d in attributes.for_purpose("rule")
     }
+    values.update(_catalog_facts(everyone))
 
     weighted: list[tuple[float, str]] = []
     for product in products:
@@ -312,6 +313,7 @@ def _score(
         d.ref: attributes.get_many(everyone, d.ref)
         for d in attributes.for_purpose("rule")
     }
+    values.update(_catalog_facts(everyone))
     distinct_refs = list(rule.get("distinct_from_cart") or [])
     for ref in distinct_refs:
         # A validação garante que o atributo existe; ele só pode não servir a
@@ -402,48 +404,74 @@ def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
     """
     when_parts: list[str] = []
     for condition in _conditions(pairing.get("when")):
-        ref = condition.get("attr")
-        if not ref:
-            return None
-        wanted = _side_values(condition)
-        by_sku = values.get(ref) or {}
         hit = None
         for cart_sku in sorted(cart_skus):
-            hit = _matched(by_sku.get(cart_sku), wanted)
+            hit = _hit(condition, cart_sku, values)
             if hit is not None:
                 break
         if hit is None:
             return None
-        when_parts.append(f"{ref}={hit}")
+        when_parts.append(hit)
     if not when_parts:
         return None
 
     for condition in _conditions(pairing.get("when_absent")):
-        by_sku = values.get(condition.get("attr")) or {}
-        wanted = _side_values(condition)
-        if any(_matches(by_sku.get(cart_sku), wanted) for cart_sku in cart_skus):
+        if any(_hit(condition, cart_sku, values) is not None for cart_sku in cart_skus):
             return None
 
     suggest_parts: list[str] = []
     for condition in _conditions(pairing.get("suggest")):
-        if "tag" in condition:
-            tag = str(condition["tag"]).strip().lower()
-            keywords = {k.lower() for k in product.keywords.names()}
-            if tag not in keywords:
-                return None
-            suggest_parts.append(f"tag:{tag}")
-            continue
-        ref = condition.get("attr")
-        if not ref:
-            return None
-        hit = _matched((values.get(ref) or {}).get(sku), _side_values(condition))
+        hit = _hit(condition, sku, values)
         if hit is None:
             return None
-        suggest_parts.append(f"{ref}={hit}")
+        suggest_parts.append(hit)
     if not suggest_parts:
         return None
 
     return f"pairing:{'+'.join(when_parts)}→{'+'.join(suggest_parts)}"
+
+
+#: Chaves reservadas em ``values`` para o que o Offerman já guarda e não é
+#: atributo: palavras-chave (``Product.keywords``) e coleções (``CollectionItem``).
+TAGS = "__tags__"
+COLLECTIONS = "__collections__"
+
+
+def _catalog_facts(products) -> dict:
+    """Palavras-chave e coleções de cada produto, para as condições ``tag`` e
+    ``collection`` — dos dois lados do pareamento (sacola e candidato)."""
+    skus = {p.sku for p in products}
+    return {
+        TAGS: {p.sku: {k.lower() for k in p.keywords.names()} for p in products},
+        COLLECTIONS: _collections(skus) if skus else {},
+    }
+
+
+def _hit(condition: dict, sku: str, values: dict) -> str | None:
+    """O rótulo do que ``sku`` satisfaz em ``condition``, ou ``None``.
+
+    Três tipos de condição, todos dado que o catálogo já tem: ``attr`` (o
+    registro de atributos), ``tag`` (palavra-chave do produto) e ``collection``
+    (coleção, principal ou adicional). ``all`` junta condições que o MESMO item
+    tem de satisfazer — "um pão (neutro) que seja rústico" —, porque uma lista
+    em ``when`` pede cada uma em qualquer item da sacola.
+    """
+    if "all" in condition:
+        hits = [_hit(c, sku, values) for c in _conditions(condition["all"])]
+        if not hits or None in hits:
+            return None
+        return "(" + "&".join(hits) + ")"
+    if "tag" in condition:
+        tag = str(condition["tag"]).strip().lower()
+        return f"tag:{tag}" if tag in (values.get(TAGS) or {}).get(sku, set()) else None
+    if "collection" in condition:
+        ref = str(condition["collection"]).strip()
+        return f"collection:{ref}" if ref in (values.get(COLLECTIONS) or {}).get(sku, set()) else None
+    ref = condition.get("attr")
+    if not ref:
+        return None
+    matched = _matched((values.get(ref) or {}).get(sku), _side_values(condition))
+    return None if matched is None else f"{ref}={matched}"
 
 
 def _conditions(side) -> list[dict]:
@@ -617,7 +645,7 @@ def _cart_products(cart_skus: set[str]) -> list:
 
     if not cart_skus:
         return []
-    return list(Product.objects.filter(sku__in=cart_skus))
+    return list(Product.objects.filter(sku__in=cart_skus).prefetch_related("keywords"))
 
 
 def _listed_prices(skus: list[str], channel_ref: str) -> dict[str, int]:
