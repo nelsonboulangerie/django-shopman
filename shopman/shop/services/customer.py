@@ -359,7 +359,7 @@ def _maybe_update_name(adapter, customer: dict, name: str) -> None:
         first_name, last_name = _split_name(name)
         try:
             adapter.update_customer(customer["ref"], first_name=first_name, last_name=last_name)
-        except Exception:
+        except Exception:  # silêncio-deliberado: preencher nome vazio é oportunista; o pedido e o cliente já estão salvos
             logger.debug("customer.update_name: failed for ref=%s", customer.get("ref"), exc_info=True)
 
 
