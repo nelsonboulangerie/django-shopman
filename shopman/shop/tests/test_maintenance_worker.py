@@ -22,17 +22,20 @@ from unittest.mock import call, patch
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.utils import timezone
 from shopman.orderman.models import Order, Session
 from shopman.payman.models import PaymentIntent
 from shopman.stockman.models import Hold, HoldStatus, Quant
 
 from shopman.shop.management.commands.maintenance_worker import (
+    DIVERGENCIAS_LEMBRADAS,
     MAINTENANCE_COMMANDS,
     MARKETING_DELIVERY_BATCH,
     MARKETING_DELIVERY_LEASE_SECONDS,
     MARKETING_DELIVERY_WORKER_ID,
 )
+from shopman.shop.management.commands.maintenance_worker import Command as WorkerCommand
 
 # ``transaction=True`` não é preferência de estilo: sem ele estes testes só
 # passam em SQLite, e passam pelo motivo errado.
@@ -315,6 +318,113 @@ def test_every_task_failing_still_completes_the_cycle(caplog):
         # A entrada pode ser `(nome, kwargs)` — o log carrega só o nome.
         nome = command[0] if isinstance(command, tuple) else command
         assert any(nome in message for message in logged), f"faltou log de {nome}"
+
+
+# ── (b1) Divergência financeira repetida: grita uma vez por data ────────────
+#
+# O `reconcile_financial_day` re-reconcilia ontem a cada ciclo e, enquanto a
+# divergência estiver aberta, levanta o MESMO CommandError. Em 22/09 foram 178
+# eventos no Sentry para uma divergência que já era OperatorAlert com dedupe.
+
+RECONCILE = "reconcile_financial_day"
+
+
+def _call_command_que_diverge(mensagens):
+    """`call_command` falso: só a reconciliação falha, com a próxima mensagem da fila."""
+
+    def fake(command, **kwargs):
+        if command == RECONCILE:
+            raise CommandError(mensagens.pop(0))
+
+    return fake
+
+
+def _gritos(caplog, command):
+    return [
+        r for r in caplog.records
+        if r.name == WORKER_LOGGER and command in r.getMessage() and r.levelno >= logging.ERROR
+    ]
+
+
+def _avisos(caplog, command):
+    return [
+        r for r in caplog.records
+        if r.name == WORKER_LOGGER and command in r.getMessage() and r.levelno == logging.WARNING
+    ]
+
+
+def test_divergencia_financeira_repetida_grita_uma_vez_por_data(caplog):
+    worker = WorkerCommand()
+    ontem = "Reconciliação financeira de 2026-09-21 encontrou divergências."
+    hoje = "Reconciliação financeira de 2026-09-22 encontrou divergências."
+    with (
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.call_command",
+            side_effect=_call_command_que_diverge([ontem, ontem, ontem, hoje, hoje]),
+        ),
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        for _ in range(5):
+            worker._run_cycle()
+
+    gritos = _gritos(caplog, RECONCILE)
+    # Um grito por data, com traceback (é o que o Sentry transforma em evento).
+    assert len(gritos) == 2
+    assert all(r.exc_info is not None for r in gritos)
+    assert "2026-09-21" in str(gritos[0].exc_info[1])
+    assert "2026-09-22" in str(gritos[1].exc_info[1])
+    # As repetições ficam no log como aviso, sem traceback — rastro, não evento.
+    avisos = _avisos(caplog, RECONCILE)
+    assert len(avisos) == 3
+    assert all(r.exc_info is None for r in avisos)
+
+
+def test_excecao_inesperada_da_reconciliacao_grita_sempre(caplog):
+    """Só a divergência (CommandError) é deduplicada; o defeito de verdade grita."""
+    worker = WorkerCommand()
+
+    def fake(command, **kwargs):
+        if command == RECONCILE:
+            raise RuntimeError("banco caiu")
+
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.call_command", side_effect=fake),
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        worker._run_cycle()
+        worker._run_cycle()
+
+    gritos = _gritos(caplog, RECONCILE)
+    assert len(gritos) == 2
+    assert all(r.exc_info is not None for r in gritos)
+    assert not _avisos(caplog, RECONCILE)
+
+
+def test_command_error_de_outro_comando_segue_gritando_sempre(caplog):
+    worker = WorkerCommand()
+
+    def fake(command, **kwargs):
+        if command == "sweep_stuck_orders":
+            raise CommandError("configuração ausente")
+
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.call_command", side_effect=fake),
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        worker._run_cycle()
+        worker._run_cycle()
+
+    assert len(_gritos(caplog, "sweep_stuck_orders")) == 2
+
+
+def test_memoria_de_divergencias_tem_teto():
+    worker = WorkerCommand()
+    for dia in range(DIVERGENCIAS_LEMBRADAS + 5):
+        assert not worker._ja_gritada(RECONCILE, CommandError(f"dia {dia}"))
+    assert len(worker._divergencias_gritadas) == DIVERGENCIAS_LEMBRADAS
+    # A mais antiga saiu; a mais recente continua lembrada.
+    assert not worker._ja_gritada(RECONCILE, CommandError("dia 0"))
+    assert worker._ja_gritada(RECONCILE, CommandError(f"dia {DIVERGENCIAS_LEMBRADAS + 4}"))
 
 
 # ── (b2) Entrega de Marketing: dentro do ciclo, sem componente próprio ───────

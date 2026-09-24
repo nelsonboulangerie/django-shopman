@@ -193,3 +193,35 @@ def test_a_excecao_da_referencia_nao_abre_passagem_para_telefone():
     assert "[phone]" in redact_text("Reference #18.abc concluída; ligar para 11987654321")
     # A forma protegida é a da referência inteira; um trecho parecido não passa.
     assert "[phone]" in redact_text("pedido 18.1f9ab259 e telefone 11987654321")
+
+
+def test_data_iso_sobrevive_a_redacao():
+    """Data ISO tem oito dígitos com hífen — forma de telefone para o regex.
+
+    A mensagem da reconciliação financeira chegava ao Sentry como
+    "Reconciliação financeira de [phone]"; a data é o que diz qual dia divergiu.
+    """
+    casos = [
+        "Reconciliação financeira de 2026-09-21 encontrou divergências.",
+        "janela 2026-09-21T14:30:00Z até 2026-09-22T02:00:00.123456+00:00",
+        "fechamento 2026-09-21 14:30:00 e 2026-09-21 14:30",
+        "de 2026-12-31 a 2027-01-01",
+    ]
+    for texto in casos:
+        saida = redact_text(texto)
+        assert saida == texto, saida
+
+
+def test_a_excecao_da_data_nao_abre_passagem_para_telefone():
+    """A guarda é da data válida, não de qualquer corrida de dígitos com hífen."""
+    assert redact_text("dia 2026-09-21, ligar para 11 98765-4321") == (
+        "dia 2026-09-21, ligar para [phone]"
+    )
+    assert "[phone]" in redact_text("telefone +55 43 99999-8888")
+    assert "[phone]" in redact_text("telefone (43) 3025-1234")
+    assert "[phone]" in redact_text("telefone 43999998888")
+    # Mês 13 / dia 32 não é data: segue sendo tratado como telefone.
+    assert "[phone]" in redact_text("código 4399-13-12")
+    assert "[phone]" in redact_text("código 4399-12-32")
+    # Data grudada em mais dígitos não é data isolada.
+    assert "[phone]" in redact_text("número 2026-09-21-4321")

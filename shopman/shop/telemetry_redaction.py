@@ -105,6 +105,16 @@ _URL_RE = re.compile(r"https?://[^\s<>\]\[\"']+")
 # essa referência de um telefone — nenhuma corrida de dígitos sozinha casa aqui.
 _EDGE_REFERENCE_RE = re.compile(r"\b\d{1,3}\.[0-9a-f]{4,}\.\d{9,11}\.[0-9a-f]{4,}\b")
 _EDGE_REFERENCE_SLOT = "\x00ref{}\x00"
+# Data ISO (`2026-09-21`) e data-hora (`2026-09-21T14:30:00Z`, `2026-09-21 14:30`)
+# têm oito dígitos com hífen — forma que o regex de telefone casa. A mensagem da
+# reconciliação financeira chegava ao Sentry como "Reconciliação financeira de
+# [phone]", e a data é justamente o que diz qual dia divergiu. Mês e dia são
+# validados (01-12, 01-31): uma corrida de dígitos qualquer não ganha passagem.
+_ISO_DATE_RE = re.compile(
+    r"(?<![\w-])\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+    r"(?:[T ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?"
+    r"(?![\w-])"
+)
 
 
 def redact_text(value: str) -> str:
@@ -120,8 +130,8 @@ def redact_text(value: str) -> str:
     text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
     text = _PERSONAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
     text = _EMAIL_RE.sub("[email]", text)
-    # A referência do edge sai de cena antes dos regex de telefone/documento e
-    # volta inteira no fim: o timestamp Unix dela é uma corrida de dez dígitos,
+    # A referência do edge (e a data ISO, pelo mesmo motivo) sai de cena antes
+    # dos regex de telefone/documento e volta inteira no fim: o timestamp Unix dela é uma corrida de dez dígitos,
     # que o regex de telefone captura por forma. Guardar o trecho é mais seguro
     # que afrouxar o regex — nenhuma outra corrida de dígitos ganha passagem.
     guardadas: list[str] = []
@@ -131,6 +141,7 @@ def redact_text(value: str) -> str:
         return _EDGE_REFERENCE_SLOT.format(len(guardadas) - 1)
 
     text = _EDGE_REFERENCE_RE.sub(_guardar, text)
+    text = _ISO_DATE_RE.sub(_guardar, text)
     text = _PHONE_RE.sub("[phone]", text)
     text = _DOCUMENT_RE.sub("[document]", text)
     for index, original in enumerate(guardadas):
