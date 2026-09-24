@@ -60,7 +60,29 @@ it("informa rascunho à página para proteger navegação e descarte", async () 
   expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
 });
 
-describe("Comprado pronto", () => {
+describe("Vendido por peso", () => {
+  it("vira kg, o mesmo campo passa a ser o preço do quilo, e avisa que é só no balcão", async () => {
+    const w = panel();
+    const toggle = w.find('[data-testid="sold-by-weight"] input');
+    expect(w.text()).not.toContain("Preço por kg");
+    await toggle.setValue(true);
+    expect(w.text()).toContain("Preço por kg");
+    expect(w.text()).toContain("Vendido só no balcão");
+    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    expect(w.emitted("save")).toEqual([[{ unit: "kg" }]]);
+  });
+
+  it("desligar volta a vender por unidade e o rótulo volta a Preço", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, unit: "kg" } });
+    await w.find('[data-testid="sold-by-weight"] input').setValue(false);
+    expect(w.text()).not.toContain("Preço por kg");
+    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    expect(w.emitted("save")).toEqual([[{ unit: "un" }]]);
+  });
+});
+
+describe("Permitir compra", () => {
   it("é gesto na hora, fora do rascunho, e o quadrado espera o servidor", async () => {
     const w = panel();
     await w.setProps({ roles: { purchasable: false, sellable: true, produced: false, used_in_recipe: true } });

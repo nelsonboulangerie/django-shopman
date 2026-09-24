@@ -322,7 +322,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     }
   }
 
-  // "Comprado pronto": liga/desliga o cadastro de compra do MESMO SKU. Gesto
+  // "Permitir compra": liga/desliga o cadastro de compra do MESMO SKU. Gesto
   // próprio, fora do rascunho do painel — vale na hora, como o interruptor que é.
   // Devolve o detalhe novo (com os selos) ou null na recusa ("é produzido aqui").
   async function setPurchasable(sku: string, enabled: boolean): Promise<ProductDetailProjection | null> {

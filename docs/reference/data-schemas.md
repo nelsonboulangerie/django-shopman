@@ -1342,7 +1342,7 @@ Perfil do insumo (nutrição TACO/USDA por 100 g, alergênicos, `diet`,
 |-------|------|-------------|----------|-----------|
 | `supplier` | `str` ref | seed/admin (Buyman) | telas de compra/custo | Fornecedor preferencial (`Supplier.ref`) — dado real do dono (26/08). Preço NÃO mora aqui: custo por par é `SupplierMaterialCost`, aguardando a revisão de preços. |
 | `brand` | `str` | seed/admin (Buyman) | telas de compra | Marca praticada (ex.: "Foricher", "President"). |
-| `gtin` | `str` | admin (Buyman) | `shop/services/sku_records.start_selling` | Código de barras da embalagem. Vai para `Product.metadata.social.gtin` quando o item passa a ser vendido ("Vender também"). |
+| `gtin` | `str` | admin (Buyman) | `shop/services/sku_records.start_selling` | Código de barras da embalagem. Vai para `Product.metadata.social.gtin` quando o item passa a ser vendido ("Permitir revenda"). |
 | `ncm` | `str` | admin (Buyman) | `shop/services/sku_records.start_selling` | NCM da nota do fornecedor. Vira `Product.metadata.fiscal` (perfil `own_production`) ao ligar a venda. |
 | `image_url` | `str` URL | admin (Buyman) | `shop/services/sku_records.start_selling` | Foto de referência. Com ela o item entra também nos canais remotos; sem ela, só no PDV. |
 | `alt_suppliers` | `list[str]` | seed/admin (Buyman) | telas de compra | Fornecedores alternativos (ex.: Anaconda para as farinhas Embramex). |

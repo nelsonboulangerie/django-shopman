@@ -33,7 +33,7 @@ const props = defineProps<{
   initialTab?: string;
   conflict?: ProductEditConflict | null;
   error?: string;
-  // Selos do SKU e o gesto "Comprado pronto" — fora do rascunho: valem na hora.
+  // Selos do SKU e o gesto "Permitir compra" — fora do rascunho: valem na hora.
   roles?: SkuRoles | null;
   purchaseBusy?: boolean;
 }>();
@@ -45,6 +45,13 @@ const emit = defineEmits<{
   "dirty-change": [dirty: boolean];
   "set-purchasable": [enabled: boolean];
 }>();
+
+// Vendido por peso = unidade de venda kg (contrato do PDV). Desligar volta a
+// vender por unidade; outra unidade (lt, dz) se escreve no campo Unidade.
+const soldByWeight = computed(() => draft.unit.trim().toLowerCase() === "kg");
+function setSoldByWeight(on: boolean) {
+  draft.unit = on ? "kg" : "un";
+}
 
 // O interruptor mostra o que o SERVIDOR diz: devolve a marca ao estado atual e
 // deixa o selo novo (ou a recusa) redesenhar. Sem isso a recusa "é produzido
@@ -365,7 +372,7 @@ function requestClose(open: boolean) {
 watch(() => props.open, () => { discardRequested.value = false; });
 const conflictLabels: Record<string, string> = {
   name: "Nome", short_description: "Descrição curta", long_description: "Descrição completa",
-  keywords: "Palavras-chave", image_url: "Imagem", base_price_q: "Preço base",
+  keywords: "Palavras-chave", image_url: "Imagem", base_price_q: "Preço",
   unit: "Unidade", unit_weight_g: "Peso por unidade", availability_policy: "Disponibilidade",
   shelf_life_days: "Validade", storage_tip: "Conservação", production_cycle_hours: "Tempo de produção",
   is_batch_produced: "Produção em lote", is_published: "Publicado", is_sellable: "Disponível para venda",
@@ -516,18 +523,31 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
           <!-- Preço e config -->
           <div v-show="tab === 'config'" class="space-y-4">
+            <!-- Vendido por peso: a unidade de venda vira kg e o MESMO campo de
+                 preço passa a ser o preço do quilo. O preço final sai da balança
+                 do balcão, então o item não vai para canal remoto. -->
+            <label class="flex items-center gap-2 text-sm" data-testid="sold-by-weight">
+              <input
+                type="checkbox" class="size-4 rounded border-border"
+                :checked="soldByWeight"
+                @change="setSoldByWeight(($event.target as HTMLInputElement).checked)"
+              />
+              Vendido por peso
+            </label>
+            <p v-if="soldByWeight" class="-mt-2 text-xs text-muted-foreground">Vendido só no balcão: o preço final sai da balança.</p>
+
             <div class="grid grid-cols-2 gap-3">
               <label class="block">
-                <span :class="labelClass">Preço base (R$)</span>
+                <span :class="labelClass">{{ soldByWeight ? "Preço por kg" : "Preço" }}</span>
                 <input
                   v-model="draft.priceText" :class="fieldClass" type="text" inputmode="decimal" placeholder="0,00"
                   :aria-invalid="priceInvalid"
                 />
                 <span v-if="priceInvalid" class="mt-1 block text-xs text-destructive">Informe um valor válido.</span>
               </label>
-              <label class="block">
+              <label v-if="!soldByWeight" class="block">
                 <span :class="labelClass">Unidade</span>
-                <input v-model="draft.unit" :class="fieldClass" type="text" placeholder="un, kg, lt" />
+                <input v-model="draft.unit" :class="fieldClass" type="text" placeholder="un, lt" />
               </label>
             </div>
 
@@ -569,7 +589,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               Pode ser vendido no dia seguinte
             </label>
 
-            <!-- Comprado pronto: o cadastro de compra do MESMO SKU (mesmo estoque).
+            <!-- Permitir compra: o cadastro de compra do MESMO SKU (mesmo estoque).
                  Vale na hora, fora do "Salvar" — é interruptor, não rascunho. -->
             <div class="space-y-2 rounded-lg border border-border p-3" data-testid="purchase-toggle">
               <p :class="sectionClass">Compra</p>
@@ -585,7 +605,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                   :checked="Boolean(roles?.purchasable)" :disabled="purchaseBusy || !roles"
                   @change="onPurchaseChange"
                 />
-                Comprado pronto
+                Permitir compra
               </label>
               <p v-if="roles?.purchasable" class="text-xs text-muted-foreground">
                 Aparece no Compras: recebe nota, tem custo, mínimo e pedido.

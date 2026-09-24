@@ -215,20 +215,20 @@ class CatalogProductView(CatalogProductDetailView):
 
 
 class CatalogProductPurchaseView(_CatalogBase):
-    """"Comprado pronto": liga/desliga o cadastro de compra do mesmo SKU."""
+    """"Permitir compra": liga/desliga o cadastro de compra do mesmo SKU."""
 
     def post(self, request, sku: str):
         data = request.data if isinstance(request.data, dict) else {}
         enabled = data.get("enabled")
         if not isinstance(enabled, bool):
-            return Response({"detail": "Diga se o produto é comprado pronto (sim ou não).", "field": "enabled"}, status=400)
+            return Response({"detail": "Diga se a compra deste produto fica permitida (sim ou não).", "field": "enabled"}, status=400)
         try:
             product = catalog_service.set_purchasable(sku, enabled)
         except CatalogError as exc:
             return Response({"detail": str(exc), "field": "enabled"}, status=400)
         message = (
-            "Comprado pronto: o item já aparece no Compras para receber nota."
-            if enabled else "Saiu do Compras. Custo e histórico de compra ficam guardados."
+            "Compra permitida: o item aparece no Compras e já pode receber nota."
+            if enabled else "Compra desligada: o item sai do Compras. Custo e histórico ficam guardados."
         )
         return Response({"ok": True, "product": product, "message": message})
 

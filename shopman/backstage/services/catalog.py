@@ -566,7 +566,7 @@ def _roles_payload(sku: str) -> dict[str, bool]:
 
 @transaction.atomic
 def set_purchasable(sku: str, enabled: bool) -> dict:
-    """"Comprado pronto": liga/desliga o cadastro de compra do mesmo SKU.
+    """"Permitir compra": liga/desliga o cadastro de compra do mesmo SKU.
 
     Ligar cria (ou reativa) o ``Material`` do SKU, na mesma unidade — e recusa
     o que tem ficha ativa, porque o que é produzido aqui entra pela Produção.
@@ -917,7 +917,20 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
         except ValidationError as exc:
             raise CatalogError(_first_validation_message(exc)) from exc
 
-    product.save()
+    try:
+        product.save()
+    except ValidationError as exc:
+        # O porteiro de coerência do SKU (unidade de venda × de compra) fala
+        # em ``pre_save``: a mensagem dele vai inteira para a tela.
+        raise CatalogError(" ".join(exc.messages)) from exc
+
+    if "unit" in data:
+        # Vendido por peso é só no balcão: o preço final nasce na balança, e o
+        # cliente de longe não vê a peça (``sku_records.sells_remotely``).
+        from shopman.shop.services.sku_records import is_sold_by_weight, withdraw_from_remote_channels
+
+        if is_sold_by_weight(product.unit):
+            withdraw_from_remote_channels(product)
 
     if keywords is not None:
         product.keywords.set(keywords)

@@ -4,9 +4,9 @@ Decisão do dono (24/09/2026): comprável é ter cadastro no Compras; vendável 
 decisão explícita. Um item comprado pode ser insumo E revenda, e tornar
 vendável tem de ser um gesto só:
 
-- no Compras, "Vender também" pede SÓ o preço e cria o cadastro de venda do
+- no Compras, "Permitir revenda" pede SÓ o preço e cria o cadastro de venda do
   mesmo SKU, que entra no PDV (canal remoto só com foto);
-- no Catálogo, "Comprado pronto" cria o cadastro de compra do mesmo SKU —
+- no Catálogo, "Permitir compra" cria o cadastro de compra do mesmo SKU —
   e recusa o que tem ficha ativa ("é produzido aqui").
 
 Desligar nunca apaga: pausa e deslista a venda, inativa a compra.
@@ -208,3 +208,53 @@ class TestCompradoPronto:
         assert manteiga.purchasable and manteiga.sellable and manteiga.used_in_recipe
         assert not manteiga.produced
         assert sku_roles("CRO2").produced
+
+
+def _patch_detail(client, sku, payload):
+    from uuid import uuid4
+
+    url = f"/api/v1/backstage/catalog/product/{sku}/"
+    action = client.get(url).json()["action"]
+    return client.patch(url, {**action["payload_schema"], "patch": payload},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+
+
+class TestVendidoPorPeso:
+    """Vendido por peso (unidade kg) é só no balcão: o preço final sai da balança."""
+
+    def test_permitir_revenda_de_item_por_quilo_fica_so_no_pdv_mesmo_com_foto(self, listings):
+        queijo = Material.objects.create(
+            sku="QUEIJO-GRUYERE-KG", name="Gruyère", unit="kg",
+            metadata={"image_url": "https://img.example.com/gruyere.jpg"},
+        )
+
+        _projection, message = purchase_service.set_sale(queijo.sku, {"enabled": True, "priceInput": "149,90"})
+
+        product = Product.objects.get(sku=queijo.sku)
+        assert product.unit == "kg" and product.base_price_q == 14990
+        assert _listed(product) == {"pdv"}
+        assert "só no balcão" in message
+
+    def test_virar_vendido_por_peso_no_catalogo_tira_dos_canais_remotos(self, client, listings, gestor):
+        queijo = Product.objects.create(
+            sku="QUEIJO-BRIE", name="Brie", unit="un", base_price_q=4000, image_url="https://img.example.com/brie.jpg",
+        )
+        for listing in listings.values():
+            ListingItem.objects.create(listing=listing, product=queijo, price_q=4000)
+        client.force_login(gestor)
+
+        response = _patch_detail(client, queijo.sku, {"unit": "kg", "base_price_q": 16000})
+
+        assert response.status_code == 200, response.json()
+        assert set(ListingItem.objects.filter(product=queijo).values_list("listing__ref", flat=True)) == {"pdv"}
+
+    def test_unidade_que_desmente_o_cadastro_de_compra_volta_com_a_mensagem_do_porteiro(self, client, gestor):
+        manteiga = Product.objects.create(sku="MANTEIGA-200", name="Manteiga 200g", unit="un", base_price_q=1500)
+        Material.objects.create(sku=manteiga.sku, name=manteiga.name, unit="un")
+        client.force_login(gestor)
+
+        response = _patch_detail(client, manteiga.sku, {"unit": "kg"})
+
+        assert response.status_code == 400
+        assert "cadastro de compra" in response.json()["detail"]
+        assert Product.objects.get(sku=manteiga.sku).unit == "un"

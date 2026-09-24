@@ -174,7 +174,7 @@ export interface ProductDetailProjection {
   readonly dietary_from_recipe: boolean;
   readonly nutrition_auto_filled: boolean;
   readonly fiscal_profiles: FiscalProfileChoice[];
-  // Selos derivados do SKU — somente leitura. "Comprado pronto" é gesto próprio
+  // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
 }

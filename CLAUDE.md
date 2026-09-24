@@ -287,6 +287,10 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   unidade (`shop/services/sku_namespace.py`, SHOPMAN_W015). O Compras recebe SEMPRE pelo
   cadastro de compra; SKU com ficha ativa não entra pela compra (é produzido aqui). Não
   existe marca de "revenda" no produto — `metadata.purchase.resale` morreu em `shop.0073`.
+  Os dois gestos têm nome fixo (dono, 24/09): **"Permitir revenda"** no item do Compras
+  (pede só o preço, > 0) e **"Permitir compra"** no produto do Catálogo. **"Vendido por
+  peso"** é `Product.unit == "kg"`: o mesmo campo de preço vira "Preço por kg" e o item
+  fica só no balcão (`sku_records.sells_remotely`).
 - **URL é em inglês nas superfícies de operador, no Admin, no SSE do backstage e nas APIs.** Dentro desse perímetro não há exceção por tela.
   - ⚠️ **O Storefront fica de fora, e é decisão escrita do dono (24/09/2026)**: a loja fala português com o cliente, e as rotas dela são `/conta`, `/entrar`, `/sacola`, `/finalizar`, `/produto/<sku>`, `/pedido/<ref>`, `/privacidade`, `/termos`, `/documentos-legais/…`. Mesma lógica da exceção de *aparelho*: superfície de cliente final tem voz própria, e a exceção é da superfície inteira. A API que o Storefront consome (`/api/v1/storefront/…`) é API, e segue em inglês.
   - Apps Nuxt de operador: vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301, bookmarks de kiosk preservados — PR #68.

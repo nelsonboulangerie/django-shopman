@@ -969,3 +969,19 @@ export function skuRoleBadges(roles: SkuRoles | undefined): string[] {
   if (roles.usedInRecipe) badges.push("Usado em receita");
   return badges;
 }
+
+/**
+ * A copy do "Permitir revenda" para um item — curta e sem ambiguidade.
+ *
+ * Vendido por peso (unidade kg) é só no balcão: o preço final nasce na balança,
+ * e quem compra de longe não vê a peça. O resto entra no PDV e, com foto, na
+ * loja online. Preço zero nunca vende: o gesto só fica pronto com preço > 0.
+ */
+export function resaleCopy(unit: string, priceInput: string) {
+  const byWeight = unit === "kg";
+  return {
+    priceLabel: byWeight ? "Preço por kg (R$)" : `Preço de venda (R$ por ${unit})`,
+    reach: byWeight ? "Vendido só no balcão, por peso." : "Entra no PDV. Na loja online, só com foto.",
+    ready: parseMoneyInput(priceInput) > 0,
+  };
+}

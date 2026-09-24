@@ -440,7 +440,7 @@ export function usePurchaseDesk() {
   }
 
   /**
-   * "Vender também": um gesto, que pede só o preço ao ligar.
+   * "Permitir revenda": um gesto, que pede só o preço ao ligar.
    *
    * Devolve `true` quando o servidor aceitou, para a tela fechar o campo de
    * preço; a recusa (sem preço, "é produzido aqui") vira a mensagem do toast.

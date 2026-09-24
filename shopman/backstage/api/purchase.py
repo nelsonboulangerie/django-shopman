@@ -172,7 +172,7 @@ class PurchaseMinStockView(APIView):
 
 
 class PurchaseSaleView(APIView):
-    """"Vender também": liga/desliga a venda do item do Compras — ver `set_sale`.
+    """"Permitir revenda": liga/desliga a venda do item do Compras — ver `set_sale`.
 
     Decidir vender (e o preço) é poder de catálogo; por isso exige as duas
     permissões: operar o Compras E gerir o catálogo.
