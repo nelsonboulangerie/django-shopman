@@ -712,6 +712,63 @@
     background-color: color-mix(in srgb, var(--category-color) 28%, var(--background));
     color: color-mix(in srgb, var(--category-color) 52%, var(--foreground));
   }
+
+  /* Documento legal (privacidade, termos) — `LegalDocument` + `LegalSection`.
+     A página escreve só o TEXTO; a tipografia inteira mora aqui, uma vez.
+     Medida de leitura ~65ch; corpo maior e mais aberto que o `.shop-body`,
+     porque aqui se lê de ponta a ponta. A numeração das seções é um contador
+     de CSS: o número acompanha a ordem sozinho e não entra no texto do
+     documento (que a trava de versão em tests/legalVersion confere). */
+  .shop-legal {
+    counter-reset: legal-section;
+  }
+  .shop-legal-section {
+    counter-increment: legal-section;
+    /* A linha de foco: o salto do índice para ABAIXO do cabeçalho sticky. */
+    scroll-margin-top: 5rem;
+    @apply border-t border-border pt-8 outline-none;
+  }
+  .shop-legal-section + .shop-legal-section {
+    @apply mt-8;
+  }
+  .shop-legal-section:first-child {
+    @apply border-t-0 pt-0;
+  }
+  .shop-legal-heading {
+    @apply flex items-baseline gap-2 text-xl font-semibold tracking-tight;
+    line-height: 1.3;
+  }
+  .shop-legal-heading::before {
+    content: counter(legal-section) ".";
+    @apply min-w-6 shrink-0 text-base font-semibold tabular-nums text-primary;
+  }
+  .shop-legal-body {
+    @apply mt-3 space-y-4 text-base;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .shop-legal-body ul {
+    @apply list-disc space-y-2 pl-6 marker:text-muted-foreground;
+  }
+  .shop-legal-body strong {
+    @apply font-semibold;
+  }
+  .shop-legal-body a {
+    @apply underline underline-offset-2 hover:text-primary;
+  }
+  .shop-legal-toc {
+    counter-reset: legal-toc;
+  }
+  .shop-legal-toc li {
+    counter-increment: legal-toc;
+  }
+  .shop-legal-toc a {
+    @apply flex gap-2 rounded-md px-2 py-2 text-sm leading-5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+  }
+  .shop-legal-toc a::before {
+    content: counter(legal-toc) ".";
+    @apply min-w-5 shrink-0 tabular-nums;
+  }
 }
 
 @utility no-scrollbar {

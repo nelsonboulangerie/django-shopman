@@ -28,12 +28,27 @@ import { describe, expect, it } from 'vitest'
 const raiz = resolve(__dirname, '..')
 const paginas = ['app/pages/privacy.vue', 'app/pages/terms.vue'] as const
 
-/** Só o TEXTO que o cliente lê. Comentário e script mudam sem mudar o documento. */
+// Atributo que CARREGA documento: o título (`<LegalDocument title>`), o destino de
+// um link e as condições que ligam ou desligam um trecho. O resto de uma tag —
+// nome, classe, `id` de âncora, `data-*` — é apresentação.
+const TEXT_ATTRIBUTES = /(?:^|\s)(?::|v-bind:)?(title|to|href|v-if|v-else-if|v-for)="([^"]*)"/g
+
+/**
+ * Só o TEXTO que o cliente lê. Comentário, script e marcação mudam sem mudar o
+ * documento: trocar `<section class>` por `<LegalSection>` (23/09/2026, índice e
+ * seções numeradas) não é versão nova. O que fica: as palavras, o negrito (`**`),
+ * o item de lista (`•`), o destino dos links e as condições de cada trecho.
+ */
 function textoDaPagina (caminho: string): string {
   const fonte = readFileSync(resolve(raiz, caminho), 'utf8')
   const template = fonte.slice(fonte.indexOf('<template>'))
   return template
     .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<\/?strong>/g, '**')
+    .replace(/<li\b/g, ' • <li')
+    .replace(/<[^>]*>/g, tag => ' ' + [...tag.matchAll(TEXT_ATTRIBUTES)]
+      .map(([, name, value]) => (name === 'title' ? value : `${name}=${value}`))
+      .join(' ') + ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -44,8 +59,15 @@ function resumo (): string {
   return hash.digest('hex').slice(0, 16)
 }
 
-/** Resumo do texto publicado na versão abaixo. Muda junto com ela, nunca sozinho. */
-const RESUMO_PUBLICADO = 'e6148ffd58b62fa7'
+/**
+ * Resumo do texto publicado na versão abaixo. Muda junto com ela, nunca sozinho.
+ *
+ * Mudou em 23/09/2026 SEM a versão mudar, e é a única vez que isso é legítimo: a
+ * régua passou a ignorar marcação. O resumo novo foi calculado com a régua nova
+ * sobre o texto do `main` ANTES da troca de apresentação e sobre o texto depois
+ * dela — os dois deram este mesmo valor, que é a prova de que nenhuma palavra mudou.
+ */
+const RESUMO_PUBLICADO = '54ef09fa038daa8a'
 const VERSAO_PUBLICADA = '2026-09-23'
 
 describe('páginas legais — o relógio', () => {
