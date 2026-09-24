@@ -23,6 +23,11 @@ Deste diagnóstico saem as duas responsabilidades deste módulo:
    O log anterior cortava a resposta em 200 caracteres, exatamente antes dessa
    linha; foi por isso que o chamado 33298264 seguiu sem a prova que o resolveria.
 
+Como ler a recusa (classificar, extrair a referência, esperar) mora em
+``ifood_edge``, e não aqui: a chamada de token leva a mesma recusa e precisa do
+mesmo remédio, sem que os dois módulos possam se chamar — ver o cabeçalho de
+``ifood_edge``.
+
 Segurança do retry em chamadas de efeito
 ----------------------------------------
 
@@ -37,27 +42,15 @@ origem pode ter processado), então só são retentadas quando quem chama declar
 
 from __future__ import annotations
 
-import html
 import logging
-import random
-import re
-import time
 
 import requests
 from django.conf import settings
 
-from shopman.shop.services import ifood_auth
+from shopman.shop.services import ifood_auth, ifood_edge
+from shopman.shop.services.ifood_edge import API, EDGE, denial_kind, edge_reference
 
 logger = logging.getLogger(__name__)
-
-# A recusa do edge vem como HTML, não JSON. A recusa da própria API do iFood vem
-# como JSON e significa outra coisa (escopo/permissão) — remédio diferente.
-EDGE = "edge"
-API = "api"
-
-_REFERENCE_RE = re.compile(r"Reference\s*#\s*([0-9A-Za-z.\-]+)")
-# Cabeçalhos que ajudam a rastrear a recusa; nunca inclui Authorization.
-_FORENSIC_HEADERS = ("x-ifood-request-id", "x-request-id", "x-correlation-id", "server", "date")
 
 _DEFAULT_ATTEMPTS = 3
 _DEFAULT_BACKOFF = 0.75  # segundos; dobra a cada tentativa, com jitter
@@ -84,49 +77,6 @@ def _backoff() -> float:
     return max(0.0, float(_cfg().get("retry_backoff") or _DEFAULT_BACKOFF))
 
 
-def denial_kind(resp: requests.Response) -> str:
-    """``EDGE`` quando quem recusou foi o Akamai; ``API`` quando foi o iFood.
-
-    A distinção decide o remédio: recusa de edge se resolve com retry e, se
-    persistir, com liberação da origem junto ao iFood; recusa de API é escopo do
-    token ou permissão do merchant, e retry nenhum resolve.
-    """
-    content_type = (resp.headers.get("Content-Type") or "").lower()
-    if "json" in content_type:
-        return API
-    body = (resp.text or "")[:2000]
-    if "Access Denied" in body or "<HTML" in body.upper():
-        return EDGE
-    return API
-
-
-def edge_reference(body: str) -> str:
-    """O ``Reference #`` da página do Akamai, ou string vazia.
-
-    O corpo vem com entidades HTML (``&#46;`` no lugar do ponto), então o texto
-    é desescapado antes da busca — sem isso a referência não casa.
-    """
-    match = _REFERENCE_RE.search(html.unescape(body or ""))
-    return match.group(1) if match else ""
-
-
-def _forensics(resp: requests.Response) -> str:
-    """Resumo rastreável da recusa, sem segredo nem dado de cliente."""
-    parts = [f"http={resp.status_code}"]
-    kind = denial_kind(resp)
-    parts.append(f"recusa={kind}")
-    if kind == EDGE:
-        reference = edge_reference(resp.text or "")
-        parts.append(f"referencia={reference or 'ausente'}")
-    else:
-        parts.append(f"corpo={(resp.text or '')[:300]}")
-    for header in _FORENSIC_HEADERS:
-        value = resp.headers.get(header)
-        if value:
-            parts.append(f"{header}={value}")
-    return " ".join(parts)
-
-
 def request(
     method: str,
     path: str,
@@ -149,9 +99,14 @@ def request(
     last: requests.Response | None = None
 
     for attempt in range(1, total + 1):
-        headers = ifood_auth.authorized_headers(extra_headers)
+        headers, reason = ifood_auth.headers_with_reason(extra_headers)
         if not headers:
-            logger.warning("ifood_http.%s: OAuth não configurado — nada enviado", label)
+            # A razão vem do ``ifood_auth`` porque "sem token" tem três causas
+            # distintas (sem credencial, transporte, recusa) e o remédio de cada
+            # uma é outro. A forense da recusa já foi registrada lá.
+            logger.warning(
+                "ifood_http.%s: %s — nada enviado", label, ifood_auth.failure_message(reason)
+            )
             return None
 
         try:
@@ -164,7 +119,7 @@ def request(
             # Transporte: só retenta quando a chamada é idempotente, porque a
             # origem pode ter processado antes de a conexão cair.
             if idempotent and attempt < total:
-                _sleep(backoff, attempt)
+                ifood_edge.sleep_backoff(backoff, attempt)
                 continue
             logger.warning("ifood_http.%s: transporte falhou (%s)", label, type(exc).__name__)
             return None
@@ -186,32 +141,24 @@ def request(
             # O Akamai recusou antes da origem: a requisição não teve efeito
             # nenhum, então repetir é seguro inclusive para escrita.
             if attempt < total:
-                _sleep(backoff, attempt)
+                ifood_edge.sleep_backoff(backoff, attempt)
                 continue
             logger.warning(
                 "ifood_http.%s: recusado pelo edge do iFood em %s tentativas — %s",
-                label, total, _forensics(resp),
+                label, total, ifood_edge.forensics(resp),
             )
             return None
 
         if resp.status_code in _RETRYABLE_STATUS and idempotent and attempt < total:
-            _sleep(backoff, attempt)
+            ifood_edge.sleep_backoff(backoff, attempt)
             continue
 
-        logger.warning("ifood_http.%s: %s", label, _forensics(resp))
+        logger.warning("ifood_http.%s: %s", label, ifood_edge.forensics(resp))
         return resp
 
     if last is not None:
-        logger.warning("ifood_http.%s: esgotou %s tentativas — %s", label, total, _forensics(last))
+        logger.warning("ifood_http.%s: esgotou %s tentativas — %s", label, total, ifood_edge.forensics(last))
     return None
-
-
-def _sleep(backoff: float, attempt: int) -> None:
-    """Espera exponencial com jitter, para não sincronizar retentativas."""
-    if backoff <= 0:
-        return
-    delay = backoff * (2 ** (attempt - 1))
-    time.sleep(delay * (0.5 + random.random() / 2))
 
 
 __all__ = ["request", "denial_kind", "edge_reference", "base_url", "EDGE", "API"]

@@ -232,7 +232,7 @@ def deliver_response(payload):
     state = "unknown"
     result = None
     try:
-        headers = ifood_auth.authorized_headers()
+        headers, auth_reason = ifood_auth.headers_with_reason()
         if headers:
             cfg = getattr(settings, "SHOPMAN_IFOOD", {}) or {}
             base = str(cfg.get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
@@ -247,7 +247,13 @@ def deliver_response(payload):
             else:
                 logger.error("ifood_handshake: HTTP %s na disputa %s; resultado incerto, sem reenvio automático", http.status_code, payload["dispute_id"])
         else:
-            logger.error("ifood_handshake: autorização indisponível para disputa %s; resposta não enviada", payload["dispute_id"])
+            # A razão importa: falta de credencial se resolve no ambiente, recusa
+            # do edge se resolve com retry, e as duas devolviam a mesma linha.
+            logger.error(
+                "ifood_handshake: %s — disputa %s, resposta não enviada",
+                ifood_auth.failure_message(auth_reason),
+                payload["dispute_id"],
+            )
     except requests.RequestException:
         logger.error("ifood_handshake: falha de transporte na disputa %s; resultado incerto, sem reenvio automático", payload["dispute_id"])
     with transaction.atomic():

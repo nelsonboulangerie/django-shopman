@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import override_settings
 
+from shopman.shop.services import ifood_auth
+
 IFOOD_CFG = {
     "client_id": "cid",
     "client_secret": "csecret",
@@ -23,8 +25,8 @@ IFOOD_CFG = {
 @pytest.fixture
 def fake_headers():
     with patch(
-        "shopman.shop.services.ifood_auth.get_access_token",
-        return_value="fake-token",
+        "shopman.shop.services.ifood_auth.token_with_reason",
+        return_value=("fake-token", ""),
     ):
         yield
 
@@ -250,7 +252,10 @@ def test_fetch_order_404_raises(fake_headers):
 def test_fetch_order_without_oauth_raises():
     from shopman.shop.services import ifood_orders
 
-    with patch("shopman.shop.services.ifood_auth.get_access_token", return_value=None):
+    with patch(
+        "shopman.shop.services.ifood_auth.token_with_reason",
+        return_value=(None, ifood_auth.NOT_CONFIGURED),
+    ):
         with pytest.raises(ifood_orders.IFoodOrderFetchError):
             ifood_orders.fetch_order("abc")
 

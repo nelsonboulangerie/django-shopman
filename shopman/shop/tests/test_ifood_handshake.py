@@ -93,7 +93,7 @@ def test_invalid_decisions_never_enqueue(order, decision, reason, detail):
 
 def test_delivery_uses_dispute_id_and_only_once_until_hss(order):
     payload = queued(order)
-    with patch.object(hs.ifood_auth, "authorized_headers", return_value={"Authorization": "local-test"}), patch.object(
+    with patch.object(hs.ifood_auth, "headers_with_reason", return_value=({"Authorization": "local-test"}, "")), patch.object(
         hs.requests, "post", return_value=Mock(status_code=201, json=lambda: {"status": "ACCEPTED"}),
     ) as post:
         hs.deliver_response(payload)
@@ -108,7 +108,7 @@ def test_delivery_uses_dispute_id_and_only_once_until_hss(order):
 
 def test_timeout_is_ambiguous_and_never_resends_financial_decision(order):
     payload = queued(order)
-    with patch.object(hs.ifood_auth, "authorized_headers", return_value={"Authorization": "local-test"}), patch.object(
+    with patch.object(hs.ifood_auth, "headers_with_reason", return_value=({"Authorization": "local-test"}, "")), patch.object(
         hs.requests, "post", side_effect=requests.Timeout,
     ) as post:
         hs.deliver_response(payload)
@@ -122,7 +122,7 @@ def test_hss_during_send_is_not_overwritten(order):
     def reply(*args, **kwargs):
         ingest(event("HSS", "settlement-in-flight"))
         return Mock(status_code=201, json=lambda: {})
-    with patch.object(hs.ifood_auth, "authorized_headers", return_value={"Authorization": "local-test"}), patch.object(hs.requests, "post", side_effect=reply):
+    with patch.object(hs.ifood_auth, "headers_with_reason", return_value=({"Authorization": "local-test"}, "")), patch.object(hs.requests, "post", side_effect=reply):
         hs.deliver_response(payload)
     assert record(order)["state"] == "settled"
 
@@ -209,7 +209,7 @@ def test_delivery_explicit_rejection_uses_official_body(order):
     ingest(event())
     hs.enqueue_response(order, dispute_id="dispute-1", decision="reject", reason="WRONG_ORDER", actor="op")
     payload = Directive.objects.get(topic=IFOOD_HANDSHAKE_RESPONSE).payload
-    with patch.object(hs.ifood_auth, "authorized_headers", return_value={"Authorization": "local-test"}), patch.object(hs.requests, "post", return_value=Mock(status_code=201, json=lambda: {})) as post:
+    with patch.object(hs.ifood_auth, "headers_with_reason", return_value=({"Authorization": "local-test"}, "")), patch.object(hs.requests, "post", return_value=Mock(status_code=201, json=lambda: {})) as post:
         hs.deliver_response(payload)
     assert post.call_args.args[0].endswith("/disputes/dispute-1/reject")
     assert post.call_args.kwargs["json"] == {"reason": "WRONG_ORDER"}
@@ -254,7 +254,7 @@ def test_send_failures_are_observable_without_exposing_provider_content(order, c
     payload = queued(order)
     response = Mock(status_code=500 if failure == "http_error" else 201)
     response.json.side_effect = ValueError("sensitive provider response")
-    with patch.object(hs.logger, "handlers", [caplog.handler]), patch.object(hs.ifood_auth, "authorized_headers", return_value={} if failure == "no_auth" else {"Authorization": "private-token"}), patch.object(
+    with patch.object(hs.logger, "handlers", [caplog.handler]), patch.object(hs.ifood_auth, "headers_with_reason", return_value=({}, hs.ifood_auth.DENIED_EDGE) if failure == "no_auth" else ({"Authorization": "private-token"}, "")), patch.object(
         hs.requests, "post", return_value=response,
         side_effect=requests.Timeout("private-token in exception") if failure == "timeout" else None,
     ):

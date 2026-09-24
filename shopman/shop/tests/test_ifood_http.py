@@ -43,17 +43,18 @@ class _Resp:
 
 
 def _headers(extra=None):
+    """Dublê de ``ifood_auth.headers_with_reason``: ``(headers, razão)``."""
     base = {"Authorization": "Bearer tok", "User-Agent": "django-shopman/ifood-integration"}
     if extra:
         base.update(extra)
-    return base
+    return base, ""
 
 
 @override_settings(SHOPMAN_IFOOD=_CFG)
 def test_recusa_de_edge_e_repetida_e_a_segunda_tentativa_vale():
     """O 403 do Akamai é sorteado por tentativa: repetir resolve."""
     respostas = [_Resp(403, text=EDGE_BODY), _Resp(204)]
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "get", side_effect=respostas) as chamada:
         resp = ifood_http.request("GET", "/order/v1.0/events:polling", label="poll")
 
@@ -78,7 +79,7 @@ def test_recusa_de_edge_persistente_desiste_e_preserva_a_referencia():
     logger = logging.getLogger("shopman.shop.services.ifood_http")
     logger.addHandler(handler)
     try:
-        with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+        with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
              mock.patch.object(ifood_http.requests, "get", return_value=_Resp(403, text=EDGE_BODY)):
             resp = ifood_http.request("GET", "/order/v1.0/events:polling", label="poll")
     finally:
@@ -105,7 +106,7 @@ def test_403_em_json_e_recusa_da_api_e_nao_se_repete():
         json_body={"error": {"code": "403"}},
         headers={"Content-Type": "application/json"},
     )
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "get", return_value=negado) as chamada:
         resp = ifood_http.request("GET", "/order/v1.0/events:polling", label="poll")
 
@@ -116,7 +117,7 @@ def test_403_em_json_e_recusa_da_api_e_nao_se_repete():
 @override_settings(SHOPMAN_IFOOD=_CFG)
 def test_401_renova_o_token_uma_vez_e_repete():
     respostas = [_Resp(401, text="expired"), _Resp(200, json_body=[])]
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.ifood_auth, "get_access_token") as renova, \
          mock.patch.object(ifood_http.requests, "get", side_effect=respostas):
         resp = ifood_http.request("GET", "/order/v1.0/events:polling", label="poll")
@@ -128,13 +129,13 @@ def test_401_renova_o_token_uma_vez_e_repete():
 @override_settings(SHOPMAN_IFOOD=_CFG)
 def test_escrita_nao_repete_5xx_mas_repete_recusa_de_edge():
     """5xx é ambíguo para escrita (a origem pode ter processado); edge não é."""
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "post", return_value=_Resp(502, text="bad gateway")) as chamada:
         ifood_http.request("POST", "/order/v1.0/events/acknowledgment", label="acknowledge")
     assert chamada.call_count == 1, "escrita não idempotente não repete 5xx"
 
     respostas = [_Resp(403, text=EDGE_BODY), _Resp(202)]
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "post", side_effect=respostas) as chamada:
         resp = ifood_http.request("POST", "/order/v1.0/events/acknowledgment", label="acknowledge")
     assert resp is not None and resp.status_code == 202
@@ -144,7 +145,7 @@ def test_escrita_nao_repete_5xx_mas_repete_recusa_de_edge():
 @override_settings(SHOPMAN_IFOOD=_CFG)
 def test_leitura_idempotente_repete_5xx():
     respostas = [_Resp(503, text="unavailable"), _Resp(200, json_body={})]
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "get", side_effect=respostas) as chamada:
         resp = ifood_http.request("GET", "/order/v1.0/orders/x", label="fetch_order", idempotent=True)
     assert resp is not None and resp.status_code == 200
@@ -153,7 +154,8 @@ def test_leitura_idempotente_repete_5xx():
 
 @override_settings(SHOPMAN_IFOOD=dict(_CFG, client_id="", client_secret=""))
 def test_sem_credencial_nao_envia_nada():
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", lambda extra=None: None), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason",
+                           lambda extra=None: (None, ifood_http.ifood_auth.NOT_CONFIGURED)), \
          mock.patch.object(ifood_http.requests, "get") as chamada:
         assert ifood_http.request("GET", "/order/v1.0/events:polling", label="poll") is None
     chamada.assert_not_called()
@@ -167,7 +169,7 @@ def test_motivos_de_cancelamento_atravessam_a_recusa_de_borda():
 
     motivos = [{"cancelCodeId": "501", "description": "Problemas de sistema na loja"}]
     respostas = [_Resp(403, text=EDGE_BODY), _Resp(200, json_body=motivos)]
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "get", side_effect=respostas) as chamada:
         assert ifood_callbacks.fetch_cancellation_reasons("order-1") == motivos
     assert chamada.call_count == 2
@@ -179,7 +181,7 @@ def test_motivos_indisponiveis_depois_do_retry_viram_erro_nomeado():
 
     from shopman.shop.services import ifood_callbacks
 
-    with mock.patch.object(ifood_http.ifood_auth, "authorized_headers", _headers), \
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
          mock.patch.object(ifood_http.requests, "get", side_effect=[_Resp(403, text=EDGE_BODY)] * 5):
         with pytest.raises(ifood_callbacks.IFoodCallbackError, match="after retries"):
             ifood_callbacks.fetch_cancellation_reasons("order-1")

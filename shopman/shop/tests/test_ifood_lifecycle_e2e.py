@@ -120,7 +120,7 @@ def rehearsal(settings, django_capture_on_commit_callbacks, request):
 
     with (
         patch.dict(registry._registry._directive_handlers, handler_map, clear=True),
-        patch.object(ifood_auth, "get_access_token", return_value="local-test-token"),
+        patch.object(ifood_auth, "token_with_reason", return_value=("local-test-token", "")),
         patch("requests.sessions.Session.request", new=transport),
     ):
         # Test settings intentionally omit OAuth, so app startup omits this

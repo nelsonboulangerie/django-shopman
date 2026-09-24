@@ -173,9 +173,12 @@ def remote_status_observed(order, status: str) -> bool:
 
 def send_action(order_id: str, action: str, *, body: dict | None = None) -> None:
     """POST a status action to iFood. Raises :class:`IFoodCallbackError` on failure."""
-    headers = ifood_auth.authorized_headers({"Content-Type": "application/json"})
+    headers, reason = ifood_auth.headers_with_reason({"Content-Type": "application/json"})
     if not headers:
-        raise IFoodCallbackError("iFood OAuth is not configured (client_id/client_secret)")
+        # "Sem token" não é sinônimo de "sem credencial": o edge do iFood também
+        # recusa a chamada de token. Reportar a causa errada manda quem depura
+        # conferir variável de ambiente que está certa.
+        raise IFoodCallbackError(ifood_auth.failure_message(reason))
 
     url = f"{_base_url()}/order/v1.0/orders/{order_id}/{action}"
     try:

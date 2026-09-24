@@ -6,11 +6,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from django.test import override_settings
 from shopman.orderman.models import Directive, Order
 
 from shopman.shop.handlers import ifood_status
 from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler, on_order_status_changed
-from shopman.shop.services import ifood_callbacks, ifood_events
+from shopman.shop.services import ifood_auth, ifood_callbacks, ifood_events
+from shopman.shop.tests.test_ifood_auth import EDGE_BODY
 
 
 # A razão de cada linha, para que ninguém "simplifique" a regra de novo. O
@@ -213,6 +215,56 @@ def test_delayed_progress_callbacks_are_inert_after_terminal_state(terminal, cal
     with patch.object(ifood_callbacks, "send_for_status") as send:
         IFoodStatusCallbackHandler().handle(message=message, ctx={})
     send.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# A mensagem de falha tem de dizer a verdade: com 403 no token, o worker
+# reportava "iFood OAuth is not configured (client_id/client_secret)" — e as
+# credenciais estavam lá. Quem depurava ia conferir env que já estava certa.
+# ---------------------------------------------------------------------------
+
+_AUTH_CFG = {
+    "client_id": "cid-123",
+    "client_secret": "secret-xyz",
+    "api_base": "https://merchant-api.ifood.com.br",
+    "timeout": 5,
+    "token_retry_backoff": 0,
+}
+
+
+@override_settings(SHOPMAN_IFOOD=_AUTH_CFG)
+def test_recusa_de_edge_no_token_nao_vira_credencial_ausente_no_erro():
+    ifood_auth.reset_cache()
+    urls = []
+
+    def post(url, *args, **kwargs):
+        urls.append(url)
+        return SimpleNamespace(
+            status_code=403, text=EDGE_BODY, headers={"Content-Type": "text/html"},
+        )
+
+    with patch.object(ifood_callbacks.requests, "post", side_effect=post):
+        with pytest.raises(ifood_callbacks.IFoodCallbackError) as erro:
+            ifood_callbacks.send_action("order-1", "confirm")
+
+    mensagem = str(erro.value)
+    assert "not configured" not in mensagem
+    assert "edge" in mensagem
+    assert erro.value.retryable is True
+    # A ação nunca saiu: todas as chamadas foram ao endpoint de token.
+    assert urls and all(url.endswith("/authentication/v1.0/oauth/token") for url in urls)
+
+
+@override_settings(SHOPMAN_IFOOD=dict(_AUTH_CFG, client_id="", client_secret=""))
+def test_sem_credencial_a_mensagem_continua_dizendo_credencial_e_nada_e_enviado():
+    ifood_auth.reset_cache()
+
+    with patch.object(ifood_callbacks.requests, "post") as post:
+        with pytest.raises(ifood_callbacks.IFoodCallbackError) as erro:
+            ifood_callbacks.send_action("order-1", "confirm")
+
+    assert "is not configured (client_id/client_secret)" in str(erro.value)
+    post.assert_not_called()
 
 
 # ── Os desvios do sinal são AUDÍVEIS ───────────────────────────────────────────
