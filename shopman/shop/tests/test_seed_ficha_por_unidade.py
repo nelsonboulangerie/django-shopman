@@ -41,7 +41,11 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "baguete": ("25", {"MASSA-TRADICAO": "7.000"}),
     "campagne": ("10", {"MASSA-CAMPAGNE": "3.400"}),
     "ciabatta": ("20", {"MASSA-CIABATTA": "4.100"}),
-    "focaccia-dia": ("8", {"MASSA-CIABATTA": "3.312", "ALECRIM-FRESCO": "0.032", "SAL-GROSSO": "0.016"}),
+    # ⚠️ As seis focaccias mudaram de MASSA em 24/09/2026, por decisão do dono:
+    # 400 g crus em toda grande e 110 g em toda pequena; a CBT ganhou a
+    # proporção dele (queijo e sal na montagem). Linha atualizada no mesmo lote de
+    # antes (é ele que dá a régua da capacidade), não conta.
+    "focaccia-dia": ("8", {"MASSA-CIABATTA": "3.200", "ALECRIM-FRESCO": "0.032", "SAL-GROSSO": "0.016"}),
     "shokupan": ("12", {"MASSA-FORMA": "4.800"}),
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
@@ -57,11 +61,11 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "baguette-campagne": ("12", {"MASSA-CAMPAGNE": "3.600"}),
     "campagne-redondo": ("10", {"MASSA-CAMPAGNE": "3.400"}),
     "pita": ("24", {"MASSA-PITA": "0.720"}),
-    "focaccia-cebola-bacon-tomilho": ("6", {"MASSA-CIABATTA": "3.600", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.480"}),
-    "focaccia-cebola-roxa": ("6", {"MASSA-CIABATTA": "2.970", "RECHEIO-CEBOLA-AZAPAS": "0.270"}),
-    "mini-focaccia-alecrim": ("12", {"MASSA-CIABATTA": "1.260", "ALECRIM-FRESCO": "0.048", "SAL-GROSSO": "0.012"}),
-    "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.896", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.264"}),
-    "mini-focaccia-cebola-roxa": ("12", {"MASSA-CIABATTA": "1.752", "RECHEIO-CEBOLA-AZAPAS": "0.168"}),
+    "focaccia-cebola-bacon-tomilho": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-BACON-TOMILHO": "1.632", "QUEIJO-COLONIAL": "0.240", "SAL-REFINADO": "0.012"}),
+    "focaccia-cebola-roxa": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-AZAPAS": "0.270"}),
+    "mini-focaccia-alecrim": ("12", {"MASSA-CIABATTA": "1.320", "ALECRIM-FRESCO": "0.048", "SAL-GROSSO": "0.012"}),
+    "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.816", "QUEIJO-COLONIAL": "0.192", "SAL-REFINADO": "0.012"}),
+    "mini-focaccia-cebola-roxa": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-AZAPAS": "0.168"}),
     "croissant-mini": ("24", {"MASSA-CROISSANT": "0.864"}),
     "pain-aux-raisins": ("12", {"MASSA-BRIOCHE": "0.480", "CREME-BAUNILHA": "0.216", "PASSAS": "0.120"}),
     "maca": ("12", {"MASSA-FOLHADO": "0.960", "RECHEIO-MACA": "0.360"}),
@@ -101,19 +105,32 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "massa-madeleine": ("4.9", "5.000", 5),
     "recheio-maca": ("5", "5.080", 4),
     "creme-baunilha": ("5", "5.202", 5),
-    "creme-limao": ("3", "3.050", 4),
+    "creme-limao": ("3", "3.405", 8),
     "massa-butter": ("8.5", "8.898", 7),
     "massa-pita": ("8.2", "8.387", 6),
-    "recheio-frango": ("3.2", "4.077", 4),
-    "recheio-cebola-bacon-tomilho": ("2.7", "2.997", 4),
+    "recheio-frango": ("2.94", "4.930", 9),
+    "recheio-cebola-bacon-tomilho": ("2.717", "2.717", 6),
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
-    "molho-bechamel": ("2.9", "3.098", 4),
-    # Duas linhas desde 23/09 (base + chocolate), com a MESMA soma: os três
-    # insumos que faziam as vezes da base viraram o CREME-BAUNILHA que ela é.
-    "creme-chocolate": ("2.9", "3.095", 2),
+    "molho-bechamel": ("2.835", "4.077", 10),
+    "creme-chocolate": ("2.925", "2.925", 3),
     "creme-leite-ovos": ("2", "2.076", 4),
-    "salada-da-casa": ("1.8", "1.900", 4),
-    "vinagrete-frances": ("0.9", "0.917", 5),
+    "salada-da-casa": ("1.6", "1.600", 5),
+    "vinagrete-frances": ("0.825", "0.825", 7),
+}
+
+#: ⚠️ Sete fórmulas acima mudaram de receita DE VERDADE em 24/09/2026 — não por
+#: conta: o dono decidiu que as fichas da casa são as da planilha «Ficha Técnica
+#: - Maysa» (F2 do WP-FICHAS-REAIS-DA-CASA), e as linhas foram atualizadas como o
+#: docstring manda. O rendimento de ANTES fica aqui, porque é a régua da
+#: capacidade provisória (que continua a mesma em valor absoluto).
+RENDIMENTO_ANTES_DA_FICHA_DA_CASA: dict[str, str] = {
+    "creme-limao": "3",
+    "recheio-frango": "3.2",
+    "recheio-cebola-bacon-tomilho": "2.7",
+    "molho-bechamel": "2.9",
+    "creme-chocolate": "2.9",
+    "salada-da-casa": "1.8",
+    "vinagrete-frances": "0.9",
 }
 
 #: Montagem e bebida: ficha inativa (não é fornada), que já nascia por unidade.
@@ -257,9 +274,11 @@ class TestCapacidadeProvisoria:
             )
 
     def test_a_capacidade_da_formula_e_da_montagem_e_a_mesma_de_antes(self, fichas, capacidade):
-        """Nessas o rendimento não mudou, então a conta antiga ainda serve de régua."""
+        """A régua é o rendimento de antes; onde a receita mudou, o registrado."""
         for ref in set(FORMULA_EM_KG) | MONTAGEM_E_BEBIDA:
             rendimento, _itens = fichas[ref]
+            if ref in RENDIMENTO_ANTES_DA_FICHA_DA_CASA:
+                rendimento = Decimal(RENDIMENTO_ANTES_DA_FICHA_DA_CASA[ref])
             assert capacidade[ref] == int(rendimento * 3), f"{ref}: a capacidade absoluta mudou"
 
     def test_a_capacidade_nao_e_mais_derivada_do_rendimento(self, arvore):

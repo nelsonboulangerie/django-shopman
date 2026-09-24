@@ -48,7 +48,7 @@ DENSIDADES = {
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
 COMPRADOS_EM_LITRO = ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
 
-# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 35 linhas: toda
+# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 31 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
 #
 # ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE-INTEGRAL-A")`,
@@ -78,13 +78,9 @@ QUANTIDADES_EM_LITRO = {
     ("massa-butter", "LEITE-INTEGRAL-A"): Decimal("1.600"),
     ("massa-pita", "AGUA-FILTRADA"): Decimal("3.000"),
     ("massa-pita", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
-    ("recheio-frango", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
-    ("recheio-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
     ("recheio-cebola-azapas", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
-    ("molho-bechamel", "LEITE-INTEGRAL-A"): Decimal("2.600"),
     ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.800"),
     ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("0.600"),
-    ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.700"),
     ("espresso-macchiato", "LEITE-INTEGRAL-A"): Decimal("0.020"),
     ("cappuccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
     ("mochaccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
@@ -99,6 +95,24 @@ QUANTIDADES_EM_LITRO = {
     ("soft-chai-citrico", "AGUA-FILTRADA"): Decimal("0.250"),
     ("vienna-gelado", "LEITE-INTEGRAL-A"): Decimal("0.050"),
     ("vienna-gelado", "AGUA-FILTRADA"): Decimal("0.200"),
+}
+
+# Linhas que NASCERAM em kg: vêm da ficha técnica da casa (Maysa), que já pesa
+# os líquidos, e não passaram pela conversão de litro. Estão aqui para que o
+# teste continue gritando quando uma linha de líquido aparece ou some sem aviso.
+#
+# ⚠️ Quatro linhas saíram de `QUANTIDADES_EM_LITRO` em 24/09/2026, e saíram
+# porque a RECEITA foi trocada pela real, não porque a conversão foi desfeita
+# (F2 do WP-FICHAS-REAIS-DA-CASA): o bechamel da casa é infusionado e leva nata;
+# o recheio de frango troca o azeite por óleo e ganha o caldo; o de cebola e o
+# vinagrete (que é outra receita) têm a proporção de azeite da ficha dela.
+NASCIDAS_EM_KG = {
+    ("molho-bechamel", "LEITE-INTEGRAL-A"): Decimal("3.000"),
+    ("molho-bechamel", "NATA-FRESCA"): Decimal("0.255"),
+    ("creme-limao", "LEITE-INTEGRAL-A"): Decimal("1.125"),
+    ("recheio-frango", "AGUA-FILTRADA"): Decimal("1.040"),
+    ("recheio-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.300"),
+    ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
 }
 
 # O cadastro guarda três casas. Arredondar ali desloca a massa em no máximo meio
@@ -155,10 +169,13 @@ def test_cada_quantidade_e_a_do_litro_multiplicada_pela_densidade():
     partir do cadastro anterior, insumo a insumo.
     """
     declaradas = _liquidos_declarados_no_seed()
-    assert set(declaradas) == set(QUANTIDADES_EM_LITRO), (
+    conhecidas = set(QUANTIDADES_EM_LITRO) | set(NASCIDAS_EM_KG)
+    assert set(declaradas) == conhecidas, (
         "linha de líquido que apareceu ou sumiu do seed sem passar por aqui: "
-        f"{sorted(set(declaradas) ^ set(QUANTIDADES_EM_LITRO))}"
+        f"{sorted(set(declaradas) ^ conhecidas)}"
     )
+    for chave, quilos in NASCIDAS_EM_KG.items():
+        assert declaradas[chave] == quilos, chave
     for (ref, sku), litros in sorted(QUANTIDADES_EM_LITRO.items()):
         esperado = (litros * DENSIDADES[sku]).quantize(
             Decimal("0.001"), rounding=ROUND_HALF_UP
@@ -205,7 +222,7 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     # insumo em `kg` seria número mudo: a separação pesaria uma coisa e o ledger
     # baixaria outra.
     itens = RecipeItem.objects.filter(input_sku__in=DENSIDADES)
-    assert itens.count() == len(QUANTIDADES_EM_LITRO)
+    assert itens.count() == len(QUANTIDADES_EM_LITRO) + len(NASCIDAS_EM_KG)
     for item in itens.select_related("recipe"):
         assert item.unit == "kg", f"{item.recipe.ref}/{item.input_sku}: {item.unit}"
         item.full_clean()

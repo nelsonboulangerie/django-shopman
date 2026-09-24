@@ -100,13 +100,29 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         ("massa-tradicao", "mass", 1),
         ("creme-levain", "mass", 1),
         ("creme-baunilha", "cream", 2),
-        ("recheio-frango", "other_filling", 3),
+        ("recheio-cebola-azapas", "other_filling", 3),
     ):
         meta = Recipe.objects.get(ref=ref).meta
         assert meta["shelf_life_days"] == days
         assert meta["preparation_kind"] == kind
         assert meta["shelf_life_source"] == "pre_go_live_example"
         assert meta["shelf_life_review_required"] is True
+
+    # Onde a ficha técnica da casa declara a validade, vale a dela — e ainda
+    # assim pede a revisão assinada: é de 2017-2023, ninguém a reconfirmou.
+    for ref, days in (("recheio-frango", 2), ("molho-bechamel", 7), ("creme-limao", 3)):
+        meta = Recipe.objects.get(ref=ref).meta
+        assert meta["shelf_life_days"] == days
+        assert meta["shelf_life_source"] == "house_recipe_sheet"
+        assert meta["shelf_life_review_required"] is True
+
+    # O aproveitamento da ficha da casa chega à linha: a cebola do recheio
+    # rende 84%, e o que sai do estoque é a BRUTA.
+    cebola = RecipeItem.objects.get(
+        recipe__ref="recheio-cebola-bacon-tomilho", input_sku="CEBOLA-BRANCA"
+    )
+    assert cebola.usable_factor == Decimal("0.84")
+    assert cebola.gross_quantity > cebola.quantity
 
     # Buyman Material master (WP-B4): insumos viram Material first-class (sku sem
     # prefixo INS-), com unit + shelf-life. Os input_sku das receitas resolvem.
@@ -115,8 +131,9 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
     # 26/08) + a mostarda Dijon de food service, que entrou no lugar do `MT` da
     # ficha do Vinagrete + o SEGUNDO café: `CAFE-GRAO` era genérico e escondia
-    # dois blends de dois fornecedores (dono, 24/09).
-    assert Material.objects.count() == 58
+    # dois blends de dois fornecedores (dono, 24/09) + 13 que as fichas reais
+    # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA).
+    assert Material.objects.count() == 71
     # A divisão do café não é cosmética: são dois fornecedores, e um deles vem
     # direto do produtor. Quem usa cada um vem da ficha, não do nome.
     assert Material.objects.get(sku="CAFE-ORFEU-CLASSICO").metadata["supplier"] == "orfeu"

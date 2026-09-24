@@ -135,6 +135,22 @@ PRE_GO_LIVE_PREPARATION_SHELF_LIFE_DAYS = {
 }
 
 
+# Validades que a FICHA TÉCNICA DA CASA declara (planilha «Ficha Técnica -
+# Maysa», dele; em dias RESFRIADO, dia 1 = o dia em que se faz). Valem mais que
+# o exemplo genérico acima porque são da casa — mas continuam pedindo a revisão
+# assinada no Admin: a ficha é de 2017-2023 e ninguém a reconfirmou para o
+# go-live. Ver docs/plans/WP-FICHAS-REAIS-DA-CASA.md.
+HOUSE_SHEET_SHELF_LIFE_DAYS = {
+    "recheio-cebola-bacon-tomilho": 5,
+    "creme-limao": 3,
+    "molho-bechamel": 7,
+    "vinagrete-frances": 15,
+    # 30 dias congelado; o que conta aqui é o resfriado, depois de descongelar.
+    "recheio-frango": 2,
+    "creme-chocolate": 5,
+}
+
+
 def _pre_go_live_preparation_shelf_life(recipe_ref: str) -> tuple[str, int] | None:
     if recipe_ref == "creme-levain" or recipe_ref.startswith("massa-"):
         kind = "mass"
@@ -144,6 +160,8 @@ def _pre_go_live_preparation_shelf_life(recipe_ref: str) -> tuple[str, int] | No
         kind = "other_filling"
     else:
         return None
+    if recipe_ref in HOUSE_SHEET_SHELF_LIFE_DAYS:
+        return kind, HOUSE_SHEET_SHELF_LIFE_DAYS[recipe_ref]
     return kind, PRE_GO_LIVE_PREPARATION_SHELF_LIFE_DAYS[kind]
 
 # O catálogo nasce por data migration em qualquer deployment, mas ``seed
@@ -410,7 +428,10 @@ def material_opening_targets() -> dict[str, Decimal]:
 PESO_MASSA_CRUA_G = {
     "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
-    "FOA": 420, "FOB": 680, "FOC": 540, "FOAP": 110, "FOBP": 180, "FOCP": 160,
+    # Focaccia: 400 g de massa crua na grande e 110 g na pequena, TODAS (dono,
+    # 24/09/2026); a cobertura soma por cima. Os de alecrim e cebola roxa só
+    # trocaram a massa — a cobertura deles ele ainda vai conferir.
+    "FOA": 406, "FOB": 714, "FOC": 445, "FOAP": 115, "FOBP": 195, "FOCP": 124,
     "CRP": 36, "CN": 82, "BRRSN": 68, "BRCH": 42, "COC": 60,
     "CHLH": 300, "BRNT": 240, "URS": 110, "PORQ": 110, "BRBBP": 32,
     "BICH": 100, "MA": 110, "CRPQ": 90, "FFGO": 130, "FFGOP": 80,
@@ -1995,17 +2016,17 @@ class Command(BaseCommand):
             ("BGGP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
              f"{IMG}/be.webp", 150, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
-             f"{IMG}/foa.webp", 370, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foa.webp", 355, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOB", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             f"{IMG}/cbt.webp", 600, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cbt.webp", 630, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
-             f"{IMG}/foc.webp", 475, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foc.webp", 390, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOAP", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
-             f"{IMG}/mif.webp", 95, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mif.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOBP", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
-             f"{IMG}/micbt.webp", 160, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/micbt.webp", 170, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOCP", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
-             f"{IMG}/mifoc.webp", 140, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mifoc.webp", 110, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CRPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
              f"{IMG}/cpq.webp", 80, "Servir quente, imediatamente"),
             ("FFGO", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
@@ -3630,17 +3651,26 @@ class Command(BaseCommand):
                 ],
             },
             {
-                # Recheio do Bichon au Citron, que até aqui era produto de
-                # catálogo sem ficha nenhuma.
+                # Recheio do Bichon au Citron = o «Recheio Citron» da ficha da
+                # casa (Maysa), que rende 0,6 kg; aqui ×5. São DOIS limões: o
+                # taiti só no suco, o siciliano no suco e nas raspas — as raspas
+                # saem do mesmo limão espremido, então não pesam de novo.
+                # ⚠️ A ficha dela diz «ovos: 0,075 Unidade», que é peso rotulado
+                # como contagem (o creme do pain perdu escreve «2 un ≈ 110 g»):
+                # lido como 75 g por receita — pergunta aberta ao dono.
                 "ref": "creme-limao",
                 "name": "Creme de Limão Siciliano",
                 "output_sku": "CREME-LIMAO",
                 "batch_size": Decimal("3"),
                 "items": [
-                    ("OVOS", Decimal("1.000")),
-                    ("ACUCAR-CRISTAL", Decimal("0.950")),
-                    ("LIMAO-SICILIANO", Decimal("0.700")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.400")),
+                    ("LEITE-INTEGRAL-A", Decimal("1.125")),
+                    ("ACUCAR-REFINADO", Decimal("0.865")),
+                    ("OVOS", Decimal("0.375")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.375")),
+                    ("LIMAO-TAHITI", Decimal("0.280"), Decimal("0.40")),     # suco
+                    ("LIMAO-SICILIANO", Decimal("0.200"), Decimal("0.40")),  # suco + raspas
+                    ("AMIDO-MILHO", Decimal("0.160")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.025")),
                 ],
             },
             {
@@ -3681,9 +3711,9 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("1"),
                 "items": [
-                    # 414 g de massa + 4 g de alecrim + 2 g de sal grosso =
-                    # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
-                    ("MASSA-CIABATTA", Decimal("0.414")),
+                    # 400 g de massa (dono, 24/09) + 4 g de alecrim + 2 g de sal
+                    # grosso = 406 g crus por focaccia, ~355 g assados.
+                    ("MASSA-CIABATTA", Decimal("0.400")),
                     ("ALECRIM-FRESCO", Decimal("0.004")),
                     ("SAL-GROSSO", Decimal("0.002"))
                 ],
@@ -3826,28 +3856,47 @@ class Command(BaseCommand):
                 ],
             },
             {
-                # Cozido perde água: 4,08 kg de insumo para 3,2 kg de recheio.
+                # A ficha da casa (Maysa, 10/10/2022), na escala dela: 1 kg de
+                # frango rende 2,94 kg de recheio. O «caldo» é o da panela de
+                # pressão da receita anterior, guardado congelado — no estoque é
+                # água; a ficha dela o pesa em 1,04 kg. O milho vem «1 lt» e
+                # escorrido: lido como 1 kg (pergunta aberta ao dono). A folha de
+                # louro do cozimento (0,34 g) fica fora: não cabe na precisão de
+                # grama da ficha, e custo e rótulo não a sentem.
                 "ref": "recheio-frango",
                 "name": "Recheio de Frango",
                 "output_sku": "RECHEIO-FRANGO",
-                "batch_size": Decimal("3.2"),
+                "batch_size": Decimal("2.94"),
                 "items": [
-                    ("FRANGO", Decimal("3.600")),
-                    ("CEBOLA-ROXA", Decimal("0.300")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137")),
-                    ("SAL-REFINADO", Decimal("0.040"))
+                    ("AGUA-FILTRADA", Decimal("1.040")),
+                    ("FRANGO", Decimal("1.000")),
+                    ("MILHO-VERDE-CONSERVA", Decimal("1.000")),
+                    ("CEBOLA-BRANCA", Decimal("0.760"), Decimal("0.85")),
+                    ("TOMATE", Decimal("0.760"), Decimal("0.63")),   # sem sementes
+                    ("OLEO-SOJA", Decimal("0.200")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.120")),
+                    ("SAL-REFINADO", Decimal("0.030")),
+                    ("COLORAU", Decimal("0.020")),
                 ],
             },
             {
+                # Dez focaccias grandes pela «proporção da CBT grande» do dono
+                # (24/09/2026): 200 g de cebola BRANCA, 38 de bacon e 2 folhas de
+                # louro (0,34 g cada, pesadas por ele). Azeite, tomilho e pimenta
+                # vêm da ficha da casa (Maysa). Sal e queijo colonial NÃO entram
+                # aqui: vão na montagem, sobre a massa — estão na ficha da peça.
+                # A mini leva a mesma mistura em 1/4 (50 g de cebola, 10 de bacon).
                 "ref": "recheio-cebola-bacon-tomilho",
                 "name": "Recheio de Cebola, Bacon e Tomilho",
                 "output_sku": "RECHEIO-CEBOLA-BACON-TOMILHO",
-                "batch_size": Decimal("2.7"),
+                "batch_size": Decimal("2.717"),
                 "items": [
-                    ("CEBOLA-ROXA", Decimal("1.800")),
-                    ("BACON", Decimal("1.000")),
-                    ("TOMILHO-FRESCO", Decimal("0.060")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137"))
+                    ("CEBOLA-BRANCA", Decimal("2.000"), Decimal("0.84")),
+                    ("BACON", Decimal("0.380")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.300")),
+                    ("TOMILHO-FRESCO", Decimal("0.020"), Decimal("0.60")),  # só folhas
+                    ("PIMENTA-PRETA", Decimal("0.010")),
+                    ("LOURO", Decimal("0.007")),                          # 20 folhas
                 ],
             },
             {
@@ -3862,47 +3911,41 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # O bechamel da casa (Maysa, 10/10/2022), ×3: leite infusionado
+                # com vinho e aromáticos, coado; roux; nata e parmesão no fim.
+                # Rende 0,945 kg por 1 L de leite — a redução está no batch_size.
                 "ref": "molho-bechamel",
                 "name": "Béchamel",
                 "output_sku": "MOLHO-BECHAMEL",
-                "batch_size": Decimal("2.9"),
+                "batch_size": Decimal("2.835"),
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("2.678")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.200")),
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.200")),
-                    ("SAL-REFINADO", Decimal("0.020"))
+                    ("LEITE-INTEGRAL-A", Decimal("3.000")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.348")),
+                    ("NATA-FRESCA", Decimal("0.255")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.225")),
+                    ("QUEIJO-PARMESAO", Decimal("0.108")),
+                    ("VINHO-BRANCO-SECO", Decimal("0.105")),
+                    ("TOMILHO-FRESCO", Decimal("0.012")),
+                    ("SAL-REFINADO", Decimal("0.012")),
+                    ("ALECRIM-FRESCO", Decimal("0.006")),
+                    ("LOURO", Decimal("0.006")),
                 ],
             },
             {
                 # É o CREME-BAUNILHA com chocolate derretido na finalização —
-                # dono, 23/09/2026, depois de eu insistir numa pergunta que não
-                # precisava ser feita: *"se o creme-baunilha não é uma ganache,
-                # por que o creme-chocolate seria?"*.
-                #
-                # A ficha antiga partia de leite, açúcar e manteiga com chocolate,
-                # sem ovo e sem farinha: uma ganache montada do zero, que ignorava
-                # a base que a casa já faz. Foi inferida, como as massas que ele
-                # corrigiu no dia anterior.
-                #
-                # ⚠️ NENHUM número declarado mudou. Os 1,895 kg de base são a soma
-                # exata dos três insumos que faziam as vezes dela (leite 1,545 +
-                # açúcar 0,200 + manteiga 0,150); o chocolate segue nos 1,200 kg
-                # que a ficha já declarava e o rendimento nos 2,9 kg. Só a
-                # NATUREZA da base mudou, que é o que ele corrigiu.
-                #
-                # ⚠️ E um número merece o olho dele quando sobrar tempo: 1,200 kg
-                # de chocolate sobre 1,895 kg de base é 63%, proporção de ganache,
-                # não de creme de confeiteiro. Ele veio da ficha antiga e eu o
-                # preservei de propósito — trocar seria inventar duas vezes no
-                # mesmo commit. Não bloqueia nada; muda custo e rótulo quando for
-                # corrigido.
+                # dono, 23/09/2026: *"se o creme-baunilha não é uma ganache, por
+                # que o creme-chocolate seria?"*. A proporção é a da ficha da
+                # casa (Maysa): 500 g de creme de baunilha quente para 215 g de
+                # chocolate 40% cacau — que É o meio amargo (dono, 24/09) — e
+                # 65 g de ao leite; aqui ×3,75.
                 "ref": "creme-chocolate",
                 "name": "Creme de Chocolate",
                 "output_sku": "CREME-CHOCOLATE",
-                "batch_size": Decimal("2.9"),
+                "batch_size": Decimal("2.925"),
                 "items": [
-                    ("CREME-BAUNILHA", Decimal("1.895")),
-                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("1.200")),
+                    ("CREME-BAUNILHA", Decimal("1.875")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.806")),
+                    ("CHOCOLATE-GOTAS-AOLEITE", Decimal("0.244")),
                 ],
             },
             {
@@ -3919,33 +3962,42 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # A «guarnição de salada verde e tomatinhos» da ficha da casa,
+                # ×20: 80 g por prato, e 30 deles são o vinagrete. O dono (24/09)
+                # manteve a americana e o cereja no lugar da crespa e do pera, e
+                # a salada GANHOU o vinagrete — que por isso sai da ficha dos
+                # croques como linha própria.
                 "ref": "salada-da-casa",
                 "name": "Salada da Casa",
                 "output_sku": "SALADA-DA-CASA",
-                "batch_size": Decimal("1.8"),
+                "batch_size": Decimal("1.6"),
                 "items": [
-                    ("ALFACE-AMERICANA", Decimal("0.700")),
-                    ("ALFACE-ROXA", Decimal("0.400")),
-                    ("RUCULA", Decimal("0.300")),
-                    ("TOMATE-CEREJA", Decimal("0.500"))
+                    ("VINAGRETE-FRANCES", Decimal("0.600")),
+                    ("TOMATE-CEREJA", Decimal("0.500")),
+                    ("ALFACE-AMERICANA", Decimal("0.200")),
+                    ("ALFACE-ROXA", Decimal("0.200")),
+                    ("RUCULA", Decimal("0.100")),
                 ],
             },
             {
-                # A mostarda é a DA CASA (produto MT) — ficha consome produto.
+                # O «Vinagrete da Boulan» da ficha da casa (Maysa), ×5 — é outra
+                # receita, não um ajuste da antiga: cebola BRANCA curtida no sal
+                # e no vinagre de vinho tinto, depois dijon, pimenta, azeite e
+                # girassol. Açúcar e limão não existem nela. A mostarda é a
+                # Beaufor Dijon de food service (dele, 22/09/2026), não o produto
+                # `MT` de prateleira.
                 "ref": "vinagrete-frances",
                 "name": "Vinagrete à Francesa",
                 "output_sku": "VINAGRETE-FRANCES",
-                "batch_size": Decimal("0.9"),
+                "batch_size": Decimal("0.825"),
                 "items": [
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.637")),
-                    # Era `MT`, o SKU do PRODUTO Mostarda da Casa: a ficha
-                    # apontava para o catálogo de venda, não para um insumo. A
-                    # mostarda que entra aqui é a Beaufor Dijon de food service
-                    # (dele, 22/09/2026) — ver WP-INSUMOS-DA-VIDA-REAL.
-                    ("MOSTARDA-DIJON", Decimal("0.100")),
-                    ("LIMAO-SICILIANO", Decimal("0.150")),
-                    ("SAL-REFINADO", Decimal("0.010")),
-                    ("ACUCAR-CRISTAL", Decimal("0.020"))
+                    ("CEBOLA-BRANCA", Decimal("0.200")),
+                    ("MOSTARDA-DIJON", Decimal("0.200")),
+                    ("VINAGRE-VINHO-TINTO", Decimal("0.150")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.150")),
+                    ("OLEO-GIRASSOL", Decimal("0.100")),
+                    ("SAL-REFINADO", Decimal("0.020")),
+                    ("PIMENTA-PRETA", Decimal("0.005")),
                 ],
             },
             # ══ Seção 2b — fichas dos assados restaurados (crus do dono) ═════
@@ -4014,8 +4066,13 @@ class Command(BaseCommand):
                 "output_sku": "FOB",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.600")),                  # 600 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.080")),   # 80 g/un
+                    # A «proporção da CBT grande» do dono (24/09): 200 g de
+                    # cebola, 38 de bacon, 40 de queijo e 2 folhas de louro, sobre
+                    # 400 g de massa. O queijo e o sal vão na montagem.
+                    ("MASSA-CIABATTA", Decimal("0.400")),
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.272")),
+                    ("QUEIJO-COLONIAL", Decimal("0.040")),
+                    ("SAL-REFINADO", Decimal("0.002")),
                 ],
             },
             {
@@ -4024,7 +4081,7 @@ class Command(BaseCommand):
                 "output_sku": "FOC",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.495")),          # 495 g/un
+                    ("MASSA-CIABATTA", Decimal("0.400")),          # 400 g/un (dono, 24/09)
                     ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.045")),   # 45 g/un
                 ],
             },
@@ -4034,7 +4091,7 @@ class Command(BaseCommand):
                 "output_sku": "FOAP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
+                    ("MASSA-CIABATTA", Decimal("0.110")),  # 110 g/un (dono, 24/09)
                     ("ALECRIM-FRESCO", Decimal("0.004")),         # 4 g/un
                     ("SAL-GROSSO", Decimal("0.001")),      # 1 g/un
                 ],
@@ -4045,8 +4102,12 @@ class Command(BaseCommand):
                 "output_sku": "FOBP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.158")),                 # 158 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.022")),   # 22 g/un
+                    # «Proporção da CBT pequena» (dono, 24/09): 50 g de cebola,
+                    # 10 de bacon, 16 de queijo, 1 folha de louro, sobre 110 g.
+                    ("MASSA-CIABATTA", Decimal("0.110")),
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.068")),
+                    ("QUEIJO-COLONIAL", Decimal("0.016")),
+                    ("SAL-REFINADO", Decimal("0.001")),
                 ],
             },
             {
@@ -4055,7 +4116,7 @@ class Command(BaseCommand):
                 "output_sku": "FOCP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.146")),          # 146 g/un
+                    ("MASSA-CIABATTA", Decimal("0.110")),          # 110 g/un (dono, 24/09)
                     ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.014")),   # 14 g/un
                 ],
             },
@@ -4281,8 +4342,7 @@ class Command(BaseCommand):
                     ("PRESUNTO-CASA", Decimal("0.040")),
                     ("QUEIJO-GOUDA", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
-                    ("SALADA-DA-CASA", Decimal("0.060")),
-                    ("VINAGRETE-FRANCES", Decimal("0.010"))
+                    ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
                 ],
             },
             {
@@ -4311,8 +4371,7 @@ class Command(BaseCommand):
                     ("QUEIJO-GOUDA", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
                     ("OVOS", Decimal("0.050")),
-                    ("SALADA-DA-CASA", Decimal("0.060")),
-                    ("VINAGRETE-FRANCES", Decimal("0.010"))
+                    ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
                 ],
             },
             {
@@ -4546,7 +4605,7 @@ class Command(BaseCommand):
             "OVOS":         {"label": "Ovos",                   "allergens": ["ovos"], "diet": "vegetarian", "nutrition": {"energy_kcal": 155, "carbohydrates_g": 1.1, "sugars_g": 1.1, "proteins_g": 13,  "total_fat_g": 11,  "saturated_fat_g": 3.3, "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 124}},
             "AZEITE-EXTRAVIRGEM":       {"label": "Azeite extra virgem",    "allergens": [], "diet": "vegan", "density_g_per_ml": 0.91, "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0,   "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 100, "saturated_fat_g": 14,  "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 2}},
             "MALTE-EXTRATO":        {"label": "Malte",                  "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 78, "sugars_g": 60,  "proteins_g": 10, "total_fat_g": 1.8, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 7,  "sodium_mg": 23}},
-            "CHOCOLATE-GOTAS-MEIOAMARGO": {"label": "Chocolate amargo 70%",   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 598, "carbohydrates_g": 46, "sugars_g": 24,  "proteins_g": 7.8, "total_fat_g": 43, "saturated_fat_g": 24,  "trans_fat_g": 0,   "fiber_g": 11, "sodium_mg": 20}},
+            "CHOCOLATE-GOTAS-MEIOAMARGO": {"label": "Gotas de chocolate meio amargo",   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 598, "carbohydrates_g": 46, "sugars_g": 24,  "proteins_g": 7.8, "total_fat_g": 43, "saturated_fat_g": 24,  "trans_fat_g": 0,   "fiber_g": 11, "sodium_mg": 20}},
             "CEBOLA-ROXA":  {"label": "Cebola roxa",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 40,  "carbohydrates_g": 9,   "sugars_g": 4.2, "proteins_g": 1.1, "total_fat_g": 0.1, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 1.7, "sodium_mg": 4}},
             "AZEITONA-AZAPA":     {"label": "Azeitona azapa",       "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 115, "carbohydrates_g": 6.3, "sugars_g": 0,   "proteins_g": 0.8, "total_fat_g": 10.7, "saturated_fat_g": 1.4, "trans_fat_g": 0,  "fiber_g": 3.2, "sodium_mg": 735}},
             "ALECRIM-FRESCO":      {"label": "Alecrim",                "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 131, "carbohydrates_g": 21, "sugars_g": 0,   "proteins_g": 3.3, "total_fat_g": 5.9, "saturated_fat_g": 2.8, "trans_fat_g": 0,   "fiber_g": 14, "sodium_mg": 26}},
@@ -4564,7 +4623,7 @@ class Command(BaseCommand):
             "QUEIJO-COLONIAL": {"label": "Queijo colonial", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 24, "total_fat_g": 29, "saturated_fat_g": 18, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 620}},
             "QUEIJO-PRATO": {"label": "Queijo prato", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 1.9, "sugars_g": 1.0, "proteins_g": 23, "total_fat_g": 29, "saturated_fat_g": 17, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 580}},
             "QUEIJO-PARMESAO": {"label": "Queijo parmesão", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 453, "carbohydrates_g": 1.7, "sugars_g": 0.8, "proteins_g": 36, "total_fat_g": 34, "saturated_fat_g": 20, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1200}},
-            "QUEIJO-GOUDA": {"label": "Queijo gruyère", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 413, "carbohydrates_g": 0.4, "sugars_g": 0.4, "proteins_g": 30, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 714}},
+            "QUEIJO-GOUDA": {"label": "Queijo gouda", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 413, "carbohydrates_g": 0.4, "sugars_g": 0.4, "proteins_g": 30, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 714}},
             "REQUEIJAO-CORTE": {"label": "Requeijão de corte artesanal", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 260, "carbohydrates_g": 3.0, "sugars_g": 2.5, "proteins_g": 12, "total_fat_g": 22, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 520}},
             "SALSICHA-VIENNA": {"label": "Salsicha vienna artesanal", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 290, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 13, "total_fat_g": 25, "saturated_fat_g": 9, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1050}},
             "FRANGO": {"label": "Frango (sobrecoxa desossada)", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 165, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 26, "total_fat_g": 6.5, "saturated_fat_g": 1.8, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 85}},
@@ -4573,7 +4632,11 @@ class Command(BaseCommand):
             "SALSINHA-DESIDRATADA": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
             "TOMILHO-FRESCO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
             "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
-            "CHOCOLATE-GOTAS-AOLEITE": {"label": "Gotas de chocolate", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 480, "carbohydrates_g": 60, "sugars_g": 47, "proteins_g": 4.2, "total_fat_g": 24, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 6, "sodium_mg": 11}},
+            # Ao LEITE: o nome diz, e o rótulo tem de dizer também (dono, 24/09). Este
+            # perfil vinha como "vegan" e sem alérgeno, herdado do genérico
+            # "gotas de chocolate" — o rótulo do Brioche Chocolat só não mentia
+            # porque a massa brioche já declara leite pela manteiga.
+            "CHOCOLATE-GOTAS-AOLEITE": {"label": "Gotas de chocolate ao leite", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 480, "carbohydrates_g": 60, "sugars_g": 47, "proteins_g": 4.2, "total_fat_g": 24, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 6, "sodium_mg": 11}},
             "CHOCOLATE-BATON-MEIOAMARGO": {"label": "Bâton de chocolate meio amargo", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 540, "carbohydrates_g": 57, "sugars_g": 45, "proteins_g": 5.0, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 7, "sodium_mg": 15}},
             "BAUNILHA-EXTRATO-NATURAL": {"label": "Baunilha (fava/pasta)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 288, "carbohydrates_g": 13, "sugars_g": 13, "proteins_g": 0.1, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 9}},
             "NATA-FRESCA": {"label": "Creme de leite fresco", "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.01, "nutrition": {"energy_kcal": 292, "carbohydrates_g": 3.7, "sugars_g": 3.0, "proteins_g": 2.6, "total_fat_g": 30, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 27}},
@@ -4600,6 +4663,25 @@ class Command(BaseCommand):
             # Maille. Substituiu o `MT` na ficha do Vinagrete à Francesa.
             "MOSTARDA-DIJON": {"label": "Mostarda Dijon Beaufor (balde 1 kg)", "allergens": ["mostarda"], "diet": "vegan", "nutrition": {"energy_kcal": 66, "carbohydrates_g": 5.8, "sugars_g": 2.3, "proteins_g": 4.4, "total_fat_g": 3.3, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 4.0, "sodium_mg": 2360}},
             "TOMATE-CEREJA": {"label": "Tomatinho cereja", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 18, "carbohydrates_g": 3.9, "sugars_g": 2.6, "proteins_g": 0.9, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.2, "sodium_mg": 5}},
+            # ── Insumos que as fichas REAIS da casa usam (Ficha Técnica - Maysa,
+            # 23/09/2026) e a lista não tinha. Nome, unidade e marca vêm da aba
+            # `Insumos` da planilha viva; nutrição TACO/USDA simplificada, como
+            # o resto desta tabela. Alérgeno falha FECHADO: sulfito no vinho e
+            # no vinagre, soja no óleo de soja, e a pimenta-do-reino que a casa
+            # declara por decisão do dono (ALERGENOS_CANONICOS).
+            "CEBOLA-BRANCA": {"label": "Cebola branca", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 40, "carbohydrates_g": 9.3, "sugars_g": 4.2, "proteins_g": 1.1, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.7, "sodium_mg": 4}},
+            "ACUCAR-REFINADO": {"label": "Açúcar refinado", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 387, "carbohydrates_g": 100, "sugars_g": 100, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "AMIDO-MILHO": {"label": "Amido de milho", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 381, "carbohydrates_g": 91, "sugars_g": 0, "proteins_g": 0.3, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0.9, "sodium_mg": 9}},
+            "LIMAO-TAHITI": {"label": "Limão taiti", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 30, "carbohydrates_g": 10.5, "sugars_g": 1.7, "proteins_g": 0.7, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 2.8, "sodium_mg": 2}},
+            "MANTEIGA-EXTRA-SEM-SAL": {"label": "Manteiga extra sem sal Batavo", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 11}},
+            "VINHO-BRANCO-SECO": {"label": "Vinho branco seco", "allergens": ["sulfitos"], "diet": "vegetarian", "nutrition": {"energy_kcal": 82, "carbohydrates_g": 2.6, "sugars_g": 1.0, "proteins_g": 0.1, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 5}},
+            "VINAGRE-VINHO-TINTO": {"label": "Vinagre de vinho tinto", "allergens": ["sulfitos"], "diet": "vegan", "nutrition": {"energy_kcal": 19, "carbohydrates_g": 0.3, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 8}},
+            "LOURO": {"label": "Louro em folha", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 313, "carbohydrates_g": 75, "sugars_g": 0, "proteins_g": 7.6, "total_fat_g": 8.4, "saturated_fat_g": 2.3, "trans_fat_g": 0, "fiber_g": 26, "sodium_mg": 23}},
+            "OLEO-GIRASSOL": {"label": "Óleo de girassol", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 100, "saturated_fat_g": 10, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 0}},
+            "OLEO-SOJA": {"label": "Óleo de soja", "allergens": ["soja"], "diet": "vegan", "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 100, "saturated_fat_g": 15.6, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 0}},
+            "PIMENTA-PRETA": {"label": "Pimenta-do-reino preta em grão", "allergens": ["pimenta-do-reino"], "diet": "vegan", "nutrition": {"energy_kcal": 251, "carbohydrates_g": 64, "sugars_g": 0.6, "proteins_g": 10, "total_fat_g": 3.3, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 25, "sodium_mg": 20}},
+            "TOMATE": {"label": "Tomate", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 18, "carbohydrates_g": 3.9, "sugars_g": 2.6, "proteins_g": 0.9, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.2, "sodium_mg": 5}},
+            "COLORAU": {"label": "Colorau", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 351, "carbohydrates_g": 70, "sugars_g": 2, "proteins_g": 8, "total_fat_g": 5, "saturated_fat_g": 1, "trans_fat_g": 0, "fiber_g": 20, "sodium_mg": 30}},
         }
 
         # Buyman Material master — os insumos viram Material first-class (sku sem
@@ -4660,6 +4742,10 @@ class Command(BaseCommand):
             "FARINHA-CENTEIO-INTEGRAL-ORGANICA": ("paullinia", "Centeio orgânico Paullinia", []),
             "AZEITE-EXTRAVIRGEM": ("espaco-gastronomico", "Luglio", []),
             "ACUCAR-CRISTAL": ("alto-alegre", "Alto Alegre", []),
+            "ACUCAR-REFINADO": ("alto-alegre", "Alto Alegre", []),
+            # A manteiga extra é a Batavo (dono, 24/09); a President sem sal fica
+            # com o folhado e o brioche. Fornecedor ainda não declarado.
+            "MANTEIGA-EXTRA-SEM-SAL": (None, "Batavo", []),
             "CAFE-ORFEU-CLASSICO": ("orfeu", "Orfeu Clássico", []),
             "CAFE-TAMURA-CHOCOMELO": ("tamura", "Chocomelo", []),
             # «Precioso», premiado, produzido na região (dono, 24/09/2026).
@@ -4711,6 +4797,12 @@ class Command(BaseCommand):
             # Sem validade: a Dijon industrializada não é fresca. A embalagem de
             # 1 kg é eixo de COMPRA (MaterialConversion), não unidade-base.
             "MOSTARDA-DIJON": ("kg", None),
+            # Fichas reais da casa (F2 do WP-FICHAS-REAIS-DA-CASA)
+            "CEBOLA-BRANCA": ("kg", 30), "TOMATE": ("kg", 7), "LIMAO-TAHITI": ("kg", 21),
+            "LOURO": ("kg", 180), "ACUCAR-REFINADO": ("kg", None), "AMIDO-MILHO": ("kg", 365),
+            "MANTEIGA-EXTRA-SEM-SAL": ("kg", 60), "VINHO-BRANCO-SECO": ("kg", 365),
+            "VINAGRE-VINHO-TINTO": ("kg", None), "OLEO-GIRASSOL": ("kg", 365),
+            "OLEO-SOJA": ("kg", 365), "PIMENTA-PRETA": ("kg", 365), "COLORAU": ("kg", 365),
         }
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
@@ -4755,6 +4847,10 @@ class Command(BaseCommand):
             # 50 g/un (dono, 26/08). A mini do hot dog é a MESMA salsicha
             # cortada ao meio — meio insumo, nunca um SKU próprio.
             "SALSICHA-VIENNA": ("salsichas", Decimal("0.050"), Source.OWNER),
+            # Pesada pelo dono em balança de precisão (24/09/2026): 10 folhas
+            # FRESCAS = 3,4 g. A ficha da casa anotava «5 folhas = 1 g», e as
+            # tabelas dão 0,2–0,3 g — números da folha seca.
+            "LOURO": ("folhas", Decimal("0.00034"), Source.HOUSE_SCALE),
         }
         for sku, (label, factor, source) in counting_conversions.items():
             material = Material.objects.filter(sku=sku).first()
@@ -4887,7 +4983,11 @@ class Command(BaseCommand):
                     shelf_life_days = provisional_days
                     shelf_review_meta = {
                         "preparation_kind": preparation_kind,
-                        "shelf_life_source": "pre_go_live_example",
+                        "shelf_life_source": (
+                            "house_recipe_sheet"
+                            if rd["ref"] in HOUSE_SHEET_SHELF_LIFE_DAYS
+                            else "pre_go_live_example"
+                        ),
                         "shelf_life_review_required": True,
                     }
             else:
@@ -4919,12 +5019,17 @@ class Command(BaseCommand):
                 },
             )
             RecipeItem.objects.filter(recipe=recipe).delete()
-            for input_sku, qty in rd["items"]:
+            # Linha = (insumo, quantidade LÍQUIDA) ou (insumo, líquida,
+            # rendimento). O terceiro número é o «Rend. %» da ficha da casa, em
+            # fração: cebola 0,84, tomilho só folhas 0,60, suco de limão 0,40. A bruta,
+            # que sai do estoque, é derivada — nunca escrita aqui.
+            for input_sku, qty, *usable in rd["items"]:
                 meta = INGREDIENT_PROFILES.get(input_sku, {})
                 RecipeItem.objects.create(
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
+                    usable_factor=usable[0] if usable else Decimal("1"),
                     unit=_recipe_item_unit(input_sku),
                     meta=meta,
                 )
