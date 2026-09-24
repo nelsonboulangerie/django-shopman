@@ -927,7 +927,8 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     if "unit" in data:
         # Vendido por peso é só no balcão: o preço final nasce na balança, e o
         # cliente de longe não vê a peça (``sku_records.sells_remotely``).
-        from shopman.shop.services.sku_records import is_sold_by_weight, withdraw_from_remote_channels
+        from shopman.shop.services.sku_records import withdraw_from_remote_channels
+        from shopman.shop.services.weighed_sale import is_sold_by_weight
 
         if is_sold_by_weight(product.unit):
             withdraw_from_remote_channels(product)

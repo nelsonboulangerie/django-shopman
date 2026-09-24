@@ -100,7 +100,8 @@ class BusinessHoursRule(BaseRule):
         except Exception:
             # Sem grade, a regra conclui "sempre aberto" e o pedido fora de hora
             # passa sem a marca — degradar é certo (a venda não para), calar não.
-            logger.warning("business_hours_rule: could not load shop opening hours", exc_info=True)
+            logger.error("business_hours_rule: could not load shop opening_hours", exc_info=True)
+            _alert_calendar_unreadable("opening_hours", "o horário de funcionamento")
         return None
 
     @staticmethod
@@ -124,9 +125,35 @@ class BusinessHoursRule(BaseRule):
                     dates.extend(value)
             return dates
         except Exception:
-            # Sem as datas de fechamento, feriado vira dia aberto: grita.
-            logger.warning("business_hours_rule: could not load shop closed dates", exc_info=True)
+            # Sem as datas de fechamento, feriado vira dia aberto.
+            logger.error("business_hours_rule: could not load shop closed_dates", exc_info=True)
+            _alert_calendar_unreadable("closed_dates", "as datas de fechamento")
         return []
+
+
+def _alert_calendar_unreadable(part: str, label: str) -> None:
+    """A regra de horário ficou cega: grita no Sentry e no painel do gestor.
+
+    O ``logger.error`` com traceback (no ``except`` de quem chama) leva o erro ao
+    Sentry. Falhar em ler a grade afeta TODO pedido até alguém corrigir, então
+    um log sozinho não serve: o ``OperatorAlert`` chega a quem pode agir,
+    deduplicado por causa. A venda não trava — o pedido segue sem a conferência.
+    """
+    try:
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="shop_calendar_unreadable",
+            severity="error",
+            message=(
+                f"Não foi possível ler {label} da loja. Os pedidos seguem, mas sem a "
+                "conferência de horário. Confira a configuração da loja no Admin."
+            ),
+            dedupe_key=f"shop_calendar_unreadable:{part}",
+            part=part,
+        )
+    except Exception:
+        logger.exception("business_hours_rule: falha ao registrar o alerta de horário ilegível")
 
 
 class PricedItemsRule(BaseRule):

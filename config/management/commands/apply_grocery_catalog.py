@@ -153,10 +153,9 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "7898361662103", "04063000", "1702300", 90, ("queijo", "creme", "brie"),
                 gtin_source=WEB_UNCONFIRMED, profile="resale"),
     # Vendido POR PESO: a peça chega da Pomerode com peso diferente a cada
-    # vez. Preço por quilo nenhuma fonte tem — o Yooga o registrava a R$ 0,00
-    # (34 vendas, todas zeradas). Fica cadastrado e NÃO vendável até o dono
-    # dizer o preço do quilo: preço zero não vende (dono, 24/09).
-    GroceryItem("QUEIJO-VALEDOTESTO-POMERODE", "Queijo Vale do Testo Pomerode 3m", 0, "Pomerode",
+    # vez. O preço do quilo é a conta de :data:`VALE_DO_TESTO_PRICE`: custo de
+    # 2025 corrigido pelo IPCA do queijo, mais o markup da mercearia.
+    GroceryItem("QUEIJO-VALEDOTESTO-POMERODE", "Queijo Vale do Testo Pomerode 3m", 21900, "Pomerode",
                 "", "04069020", "1702400", None, ("queijo", "colonial", "pomerode"), unit="kg"),
     # ── Geleias St. Dalfour ──
     # - o 810019371295 do Limão é mesmo St. Dalfour, mas do sabor **Limão &
@@ -215,26 +214,89 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("CHA-CHALOSOFIA-KANFA-L50", "Chalosofia Kãnfa — Lata 50g", 7300, "Kãnfa",
                 "7898708850477", "09021000", "1709700", 50, ("cha", "chalosofia", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
-    # A lata de Vital Chai (dono confirmou 7898708850743, 24/09 — o mesmo que
-    # a loja da Kãnfa mostra). Peso da planilha (60 g); a loja chama a lata
-    # de "70g", pergunta aberta.
-    GroceryItem("CHA-VITAL-KANFA-L60", "Vital Chai Kãnfa — Lata 60g", 7300, "Kãnfa",
-                "7898708850743", "09021000", "1709700", 60, ("cha", "vital", "chai", "lata", "kanfa"),
+    # A lata de Vital Chai (dono confirmou 7898708850743 e os 70 g, 24/09 — a
+    # loja da Kãnfa já a chamava de "Lata 70g"; a planilha dizia 60 g).
+    GroceryItem("CHA-VITAL-KANFA-L70", "Vital Chai Kãnfa — Lata 70g", 7300, "Kãnfa",
+                "7898708850743", "09021000", "1709700", 70, ("cha", "vital", "chai", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
                 "Vito Bauducci", "7890203650002", "02101900", "1708701", 100, ("presunto", "cru", "fatiado")),
 )
 
-#: Preço que existe em alguma fonte mas o dono ainda não escolheu: sai no
-#: relatório como proposta e NÃO é gravado. Para gravar, mova para a tabela.
-PROPOSED_PRICE_Q: dict[str, tuple[int, str]] = {
-    # O Yooga guardava o valor da peça no acréscimo da venda (R$ 17–29, ~R$ 21)
-    # e nunca o peso; nenhuma NF-e de compra da Pomerode foi achada. O único
-    # preço por quilo registrado é o da planilha "PREÇOS MERCEARIA" (Drive,
-    # out/2023) — coerente com peças de ~126 g.
-    "QUEIJO-VALEDOTESTO-POMERODE": (16650, "planilha PREÇOS MERCEARIA, out/2023"),
-}
+@dataclass(frozen=True)
+class SupplierCost:
+    """Custo de compra conhecido, com a origem — vira o custo do fornecedor."""
+
+    sku: str
+    supplier_ref: str
+    supplier_name: str
+    cost_q: int  # por unidade-base do cadastro de compra (aqui, o quilo)
+    date: str
+    source: str
+
+
+#: O que a casa pagou (dono, 24/09: "em 2025 pagamos ao fornecedor R$ 140,07/kg").
+#: A NF Pomerode 145675 é de 05/09/2025 — o mês do custo é set/2025.
+SUPPLIER_COSTS: tuple[SupplierCost, ...] = (
+    SupplierCost("QUEIJO-VALEDOTESTO-POMERODE", "pomerode", "Pomerode", 14007, "2025-09-05",
+                 "dono, 2025 (NF Pomerode 145675)"),
+)
+
+
+@dataclass(frozen=True)
+class PriceFromCost:
+    """Preço de venda derivado do custo: correção pela inflação + markup."""
+
+    cost_q: int
+    #: Variação mensal (%) do índice usado, do mês seguinte ao do custo até o
+    #: último publicado. Dado oficial, não estimativa.
+    monthly_pct: tuple[tuple[str, str], ...]
+    index: str
+    markup_pct: int
+
+    @property
+    def factor(self):
+        from decimal import Decimal
+
+        acc = Decimal(1)
+        for _month, pct in self.monthly_pct:
+            acc *= Decimal(1) + Decimal(pct) / Decimal(100)
+        return acc
+
+    @property
+    def corrected_cost_q(self) -> int:
+        from decimal import ROUND_HALF_UP, Decimal
+
+        return int((Decimal(self.cost_q) * self.factor).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+    @property
+    def price_q(self) -> int:
+        from shopman.shop.resale_markup import suggested_price_q
+
+        return suggested_price_q(self.corrected_cost_q, self.markup_pct)
+
+
+#: O preço do quilo do Vale do Testo (dono, 24/09: "corrija inflação + alguma
+#: correção apropriada + markup"). Custo de set/2025 corrigido pelo **IPCA do
+#: subitem Queijo** (IBGE, SIDRA tabela 7060, variável 63, subitem 1111011),
+#: de out/2025 a ago/2026 — o último mês publicado em 24/09/2026. O custo é de
+#: 05/09/2025: a variação de setembro já estava no preço pago, então a
+#: correção começa em outubro. Acumulado: +3,86% (o IPCA geral, série SGS 433
+#: do BCB, dá +3,73% no mesmo período → R$ 218/kg; o do queijo é o índice do
+#: próprio produto). R$ 140,07 × 1,038584 = R$ 145,47; × 1,5 (markup padrão
+#: da mercearia, ``resale_markup``) = R$ 218,21 → R$ 219,00 (para cima, real
+#: inteiro, a regra do ``suggested_price_q``).
+VALE_DO_TESTO_PRICE = PriceFromCost(
+    cost_q=14007,
+    monthly_pct=(
+        ("2025-10", "-0.50"), ("2025-11", "-0.55"), ("2025-12", "1.00"), ("2026-01", "-0.63"),
+        ("2026-02", "0.68"), ("2026-03", "-0.28"), ("2026-04", "1.13"), ("2026-05", "1.56"),
+        ("2026-06", "0.53"), ("2026-07", "0.40"), ("2026-08", "0.48"),
+    ),
+    index="IPCA subitem 1111011.Queijo (IBGE SIDRA 7060)",
+    markup_pct=50,
+)
 
 
 #: O porquê de cada classificação fiscal, com fonte — para a revisão do dono
@@ -276,17 +338,23 @@ class SeedResaleFiscal:
     ncm: str
     cest: str
     profile: str = "resale_common"
+    #: Peso líquido confirmado pelo dono (latas, 24/09). ``None`` = não mexe.
+    weight_g: int | None = None
 
 
 #: Os chás Kãnfa voltam ao NCM da NF-e (0902.10.00, chá verde em embalagem
 #: até 3 kg — a planilha anotou "antes 09022000"); CEST 17.097.00, chá em
 #: folhas fora da ST do PR. O Camembert, queijo 17.024.00.
 SEED_RESALE_FISCAL: tuple[SeedResaleFiscal, ...] = (
+    # Latas: pesos confirmados pelo dono em 24/09 — Namastê, Intuição, Mama
+    # Chai e Vital Chai têm 70 g; Aconchego, Chalosofia e Intimidade, 50 g.
+    *(SeedResaleFiscal(sku, "09021000", "1709700", weight_g=weight) for sku, weight in (
+        ("CHA-ACONCHEGO-KANFA-L50", 50), ("CHA-INTIMIDADE-KANFA-L50", 50),
+        ("CHA-INTUICAO-KANFA-L70", 70), ("CHA-MAMA-KANFA-L70", 70), ("CHA-NAMASTE-KANFA-L70", 70),
+    )),
     *(SeedResaleFiscal(sku, "09021000", "1709700") for sku in (
-        "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50",
-        "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTUICAO-KANFA-L70",
-        "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50",
-        "CHA-NAMASTE-KANFA-L70", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
+        "CHA-ACONCHEGO-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-INTIMIDADE-KANFA-P50",
+        "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
     )),
     SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400"),
 )
@@ -458,6 +526,8 @@ def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int
         return product
     for field, value in (("name", name), ("base_price_q", price_q), ("unit", unit)):
         have = getattr(product, field)
+        if field == "base_price_q" and have <= 0 < value:
+            continue  # preço zero é vazio: quem preenche é o _apply_item
         if have != value:
             report["conflicts"].append((sku, field, have, value))
     return product
@@ -503,6 +573,13 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
         metadata["gtin_source"] = item.gtin_source
         lines.append(f"origem do GTIN: {item.gtin_source}")
     product.metadata = metadata
+    if not is_new and product.base_price_q <= 0 < item.price_q:
+        # O preço que faltava chegou: preenche e devolve a venda (produto e
+        # listagem) — foi a falta de preço, e só ela, que a tirou.
+        product.base_price_q = item.price_q
+        product.is_sellable = True
+        lines.append(f"preço: → R$ {item.price_q / 100:.2f}{'/kg' if item.unit == 'kg' else ''}; venda ligada")
+        ListingItem.objects.filter(product=product).update(price_q=item.price_q, is_sellable=True)
     if product.base_price_q <= 0 and product.is_sellable:
         # Preço zero não vende (dono, 24/09): cadastrado, sim; vendável, não.
         product.is_sellable = False
@@ -533,13 +610,7 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     if purchasable and not is_new:
         report["updated"].append((item.sku, ["compra: cadastro de compra do mesmo SKU"]))
     if product.base_price_q <= 0:
-        proposed = PROPOSED_PRICE_Q.get(item.sku)
-        reason = (
-            f"sem preço: proposta R$ {proposed[0] / 100:.2f}{'/kg' if item.unit == 'kg' else ''} "
-            f"({proposed[1]}) — o dono escolhe; fora da venda até lá"
-            if proposed else "sem preço em fonte nenhuma: cadastrado e fora da venda até o dono dizer"
-        )
-        report["no_price"].append((item.sku, reason))
+        report["no_price"].append((item.sku, "sem preço em fonte nenhuma: cadastrado e fora da venda até o dono dizer"))
     product.keywords.add(COLLECTION_REF, *item.keywords)
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
@@ -631,8 +702,48 @@ def _apply_seed_resale_fiscal(entry: SeedResaleFiscal, report: dict) -> None:
         report["missing"].append(entry.sku)
         return
     lines = _sync_fiscal(product, _wanted_fiscal(entry.profile, entry.ncm, entry.cest, "UN"), report)
+    if entry.weight_g is not None and product.unit_weight_g != entry.weight_g:
+        lines.append(f"peso: {product.unit_weight_g} g → {entry.weight_g} g")
+        product.unit_weight_g = entry.weight_g
     if lines:
-        product.save(update_fields=["metadata", "updated_at"])
+        product.save(update_fields=["metadata", "unit_weight_g", "updated_at"])
+        report["updated"].append((entry.sku, lines))
+
+
+def _apply_supplier_cost(entry: SupplierCost, report: dict) -> None:
+    """Custo do fornecedor no cadastro de compra, com a origem ao lado."""
+    from shopman.buyman.models import Material, Supplier, SupplierMaterialCost
+
+    material = Material.objects.filter(sku=entry.sku).first()
+    if material is None:
+        report["missing"].append(entry.sku)
+        return
+    supplier, created_supplier = Supplier.objects.get_or_create(
+        ref=entry.supplier_ref, defaults={"name": entry.supplier_name},
+    )
+    lines: list[str] = []
+    if created_supplier:
+        lines.append(f"fornecedor {entry.supplier_ref} criado")
+    cost, created = SupplierMaterialCost.objects.get_or_create(
+        supplier=supplier, material=material,
+        defaults={"cost_q": entry.cost_q, "is_preferred": True},
+    )
+    if created:
+        lines.append(f"custo {entry.supplier_ref}: R$ {entry.cost_q / 100:.2f}/{material.unit} ({entry.source})")
+    elif cost.cost_q != entry.cost_q:
+        report["conflicts"].append((entry.sku, "custo", cost.cost_q, entry.cost_q))
+    metadata = dict(material.metadata or {})
+    purchase = dict(metadata.get("purchase") or {})
+    origin = {"cost_q": entry.cost_q, "date": entry.date, "source": entry.source, "supplier": entry.supplier_ref}
+    if purchase.get("cost_origin") != origin or metadata.get("supplier") != entry.supplier_ref:
+        purchase["cost_origin"] = origin
+        metadata["purchase"] = purchase
+        metadata.setdefault("supplier", entry.supplier_ref)
+        material.metadata = metadata
+        material.save(update_fields=["metadata"])
+        if not created:
+            lines.append(f"origem do custo: {entry.source}")
+    if lines:
         report["updated"].append((entry.sku, lines))
 
 
@@ -721,6 +832,8 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
             _apply_placeholder(real, report)
         for entry in SEED_RESALE_FISCAL:
             _apply_seed_resale_fiscal(entry, report)
+        for cost in SUPPLIER_COSTS:
+            _apply_supplier_cost(cost, report)
         for opening in OPENINGS:
             _apply_opening(opening, report)
         _link_aliases(report)

@@ -167,17 +167,14 @@ def remote_listing_refs() -> tuple[str, ...]:
     return (getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web"), "whatsapp", "ifood")
 
 
-def is_sold_by_weight(unit: str | None) -> bool:
-    """Vendido por peso é ``Product.unit == "kg"`` — o contrato do PDV (WP-VENDA-POR-PESO)."""
-    return normalize(unit) == "kg"
-
-
 def sells_remotely(product) -> bool:
     """O cliente pode comprar isto de longe? Só com foto, e nunca por peso.
 
     Sem foto ele não decide; por peso, o preço final só existe na balança do
     balcão — cobrar "o quilo" de quem não viu a peça é prometer o que não se sabe.
     """
+    from shopman.shop.services.weighed_sale import is_sold_by_weight
+
     return bool(product.image_url) and not is_sold_by_weight(product.unit)
 
 

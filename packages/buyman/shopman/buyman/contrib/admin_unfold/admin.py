@@ -141,8 +141,8 @@ class SupplierMaterialCostAdmin(BaseModelAdmin):
     def base_cost_display(self, obj: SupplierMaterialCost):
         """A divisão que o operador não precisa fazer — e o "≈" quando é estimada."""
         prefix = "≈ " if obj.is_approximate else ""
-        unit = obj.material.unit if obj.material_id else ""
-        return f"{prefix}{format_money(obj.cost_per_base_unit_q)} / {unit}".strip(" /")
+        cents, unit = obj.cost_per_display_unit_q()
+        return f"{prefix}{format_money(cents)} / {unit}".strip(" /")
 
     @display(description=_("Preferencial"))
     def preferred_display(self, obj: SupplierMaterialCost):
