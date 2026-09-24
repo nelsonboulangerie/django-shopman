@@ -218,10 +218,35 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
         )
         raise PinChangeError(
             "superuser_target",
-            "Esta conta administra o sistema e não usa PIN de balcão. "
-            "Troque a senha dela pelo Admin.",
+            "Esta conta administra o sistema: o PIN dela só pode ser criado ou "
+            "trocado pela própria pessoa, em \"Criar ou trocar meu PIN\".",
         )
     temp = (temp_pin or "").strip() or _generate_temp_pin()
     PinCredential.validate_raw(temp)  # policy check before writing (raises PinCredentialError)
     PinCredential.set_for(target_user, temp, must_change=True)
+    return temp
+
+
+def issue_own_temp_pin(user) -> str:
+    """Gera um PIN temporário para QUEM PEDIU, e só para essa pessoa.
+
+    É a porta de entrada do dono no balcão. O superusuário destrava por PIN, mas
+    não tinha como ganhar um: o app no ar não tem console (``set_operator_pin``
+    não serve), o Admin não cria credencial à mão e ``reset_operator_pin`` recusa
+    alvo superusuário — de propósito, porque ali quem pede é o gerente e quem
+    recebe o PIN em claro é outra pessoa.
+
+    Aqui não existe "outra pessoa": o alvo é sempre o próprio ``user``, que já
+    provou a senha para chegar ao Admin. Por isso não há escalada, e a mesma
+    regra serve para superusuário e para qualquer staff. O PIN nasce com
+    ``must_change``: a tela de bloqueio obriga a troca no primeiro destrave, e o
+    número que apareceu na tela deixa de valer.
+
+    Levanta :class:`PinChangeError` (``not_operator``) para conta inativa ou sem
+    ``is_staff`` — quem não é operador não ganha PIN de balcão.
+    """
+    if user is None or not getattr(user, "is_active", False) or not getattr(user, "is_staff", False):
+        raise PinChangeError("not_operator", "Só uma conta ativa da equipe pode ter PIN.")
+    temp = _generate_temp_pin()
+    PinCredential.set_for(user, temp, must_change=True)
     return temp
