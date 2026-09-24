@@ -158,6 +158,12 @@ export interface ProductDetailProjection {
   nutrition: ProductNutritionProjection | null
   seo_description: string
   seo_keywords: string[]
+  // Identidade comercial do Catálogo do Gestor — a mesma do feed Google/Meta.
+  // '' = não informado (a PDP não completa com a marca da loja).
+  brand: string
+  gtin: string
+  mpn: string
+  item_condition: string
   breadcrumb_category: CategoryProjection | null
   cross_sell: CatalogItemProjection[]
   cross_sell_heading: string
@@ -440,11 +446,8 @@ export interface PwaCopyProjection {
   install_message: CopyEntryProjection
   install_cta: CopyEntryProjection
   install_dismiss_cta: CopyEntryProjection
-  ios_title: CopyEntryProjection
-  ios_message: CopyEntryProjection
-  ios_share_step: CopyEntryProjection
-  ios_add_step: CopyEntryProjection
-  ios_done_cta: CopyEntryProjection
+  manual_title: CopyEntryProjection
+  manual_done_cta: CopyEntryProjection
   update_title: CopyEntryProjection
   update_cta: CopyEntryProjection
 }
@@ -1197,7 +1200,12 @@ export interface AccountDeviceProjection {
   created_at_display: string
   last_used_at: string | null
   last_used_at_display: string
-  location: string
+  /**
+   * "Londrina, PR · Brasil", ou "" quando a leitura do IP não foi confiável o bastante
+   * para nomear a cidade. Vazio é comum e legítimo — não trate como erro nem preencha
+   * com "Local desconhecido". Derivado no servidor a partir de base LOCAL, nunca gravado.
+   */
+  approximate_city: string
   is_current: boolean
 }
 
@@ -1206,6 +1214,8 @@ export interface AccountDeviceCopy {
   empty_title: string
   empty_message: string
   current_badge: string
+  last_used_prefix: string
+  near_prefix: string
   registered_prefix: string
   revoke_cta: string
   revoke_all_cta: string
@@ -1234,4 +1244,21 @@ export interface FavoritesResponse {
   items: CatalogItemProjection[]
   // Copy de empty-state (backend); opcional + fallback na própria tela.
   copy?: { empty?: EmptyStateCtaCopy | null }
+}
+
+/** Projeção das páginas legais — ver `shopman/storefront/presentation/legal.py`.
+ *
+ * A lista de operadores e a data vêm do servidor de propósito: texto que copia a
+ * verdade envelhece em silêncio, e foi exatamente o que aconteceu com a lista antiga.
+ */
+export interface LegalProcessorProjection {
+  name: string
+  role: string
+  shares: string
+}
+
+export interface LegalProjection {
+  version: string
+  updated_at: string
+  processors: LegalProcessorProjection[]
 }

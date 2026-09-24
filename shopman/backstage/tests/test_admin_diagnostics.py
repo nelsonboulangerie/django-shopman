@@ -14,6 +14,7 @@ from django.test import override_settings
 from django.urls import reverse
 
 from shopman.backstage.projections.diagnostics import build_diagnostics
+from shopman.shop.mailers import DIAGNOSTICS_ALIAS
 
 pytestmark = pytest.mark.django_db
 
@@ -25,6 +26,30 @@ SMTP = "django.core.mail.backends.smtp.EmailBackend"
 REMETENTE_REAL = "nelson@nelsonboulangerie.com.br"
 LOCMEM = "django.core.mail.backends.locmem.EmailBackend"
 CONSOLE = "django.core.mail.backends.console.EmailBackend"
+
+
+def mailers(backend: str, **options) -> dict:
+    """O `MAILERS` de um cenário — os DOIS aliases que a casa declara.
+
+    ⚠️ `override_settings(MAILERS=...)` TROCA o dicionário inteiro, não faz
+    merge. Um cenário que declarasse só o `default` faria o botão de teste
+    levantar `MailerDoesNotExist` ao pedir o alias `diagnostics`.
+
+    O `diagnostics` fica sempre em memória, e isso separa os dois eixos que o
+    teste precisa separar: o `default` DESCREVE o canal (é ele que
+    `is_available` lê para liberar ou recusar o botão) e o `diagnostics`
+    TRANSPORTA. Sem essa separação não dá para testar o caminho feliz — a casa
+    trata locmem como inerte de propósito, então um `default` em memória faria
+    o próprio botão recusar o envio, e recusar certo.
+
+    ⚠️ `OPTIONS` só vai preenchida para SMTP, como em `config/settings.py`: com
+    `MAILERS`, uma option que o backend não conhece levanta `InvalidMailer`
+    ("Unknown options ..."). O mundo dos settings antigos engolia; este não.
+    """
+    return {
+        "default": {"BACKEND": backend, "OPTIONS": options},
+        DIAGNOSTICS_ALIAS: {"BACKEND": LOCMEM},
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +75,7 @@ def url():
 # ── A projeção ───────────────────────────────────────────────────────────────
 
 
-@override_settings(EMAIL_BACKEND=CONSOLE)
+@override_settings(MAILERS=mailers(CONSOLE))
 def test_console_e_inerte_e_a_projecao_diz_isso():
     """Console imprime e devolve sucesso — o pior tipo de mentira."""
     email = build_diagnostics().email
@@ -58,7 +83,7 @@ def test_console_e_inerte_e_a_projecao_diz_isso():
     assert "inerte" in email.motivo.lower()
 
 
-@override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="")
+@override_settings(MAILERS=mailers(SMTP, host=""))
 def test_smtp_sem_host_nao_entrega():
     email = build_diagnostics().email
     assert email.entrega is False
@@ -66,8 +91,7 @@ def test_smtp_sem_host_nao_entrega():
 
 
 @override_settings(
-    EMAIL_BACKEND=SMTP,
-    EMAIL_HOST="smtp.gmail.com",
+    MAILERS=mailers(SMTP, host="smtp.gmail.com"),
     DEFAULT_FROM_EMAIL="nelson@nelsonboulangerie.com.br",
 )
 def test_smtp_com_host_e_remetente_real_entrega():
@@ -75,8 +99,7 @@ def test_smtp_com_host_e_remetente_real_entrega():
 
 
 @override_settings(
-    EMAIL_BACKEND=SMTP,
-    EMAIL_HOST="smtp.gmail.com",
+    MAILERS=mailers(SMTP, host="smtp.gmail.com"),
     DEFAULT_FROM_EMAIL="noreply@shopman.local",
 )
 def test_smtp_de_pe_com_remetente_reservado_nao_entrega_e_a_tela_diz_por_que():
@@ -96,7 +119,7 @@ def test_smtp_de_pe_com_remetente_reservado_nao_entrega_e_a_tela_diz_por_que():
     assert "inerte" not in email.motivo.lower()
 
 
-@override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.gmail.com", EMAIL_HOST_PASSWORD="segredo")
+@override_settings(MAILERS=mailers(SMTP, host="smtp.gmail.com", password="segredo"))
 def test_a_senha_nunca_sai_da_projecao():
     """Só o FATO de existir senha viaja; o valor, nunca."""
     email = build_diagnostics().email
@@ -112,7 +135,7 @@ def test_a_tela_exige_login(client, url):
     assert resposta.status_code in {302, 403}
 
 
-@override_settings(EMAIL_BACKEND=LOCMEM)
+@override_settings(MAILERS=mailers(LOCMEM))
 def test_a_tela_abre_e_mostra_a_prontidao(client, gestor, url):
     client.force_login(gestor)
     resposta = client.get(url)
@@ -124,21 +147,14 @@ def test_a_tela_abre_e_mostra_a_prontidao(client, gestor, url):
 
 
 @pytest.fixture
-def smtp_de_mentira(monkeypatch):
-    """Config de SMTP real (para `is_available` liberar) + conexão em memória.
+def smtp_de_mentira():
+    """`default` de SMTP real (para `is_available` liberar) + envio em memória.
 
-    ⚠️ Não dá para testar o caminho feliz com `EMAIL_BACKEND=locmem`: a casa
-    trata locmem como **inerte** de propósito (`notification_email.is_available`),
-    então o próprio botão recusa o envio — e recusa certo. A disponibilidade e o
-    transporte são eixos separados, e o teste tem de separá-los também.
+    Nenhum monkeypatch: o alias `diagnostics` do `mailers()` já é o transporte
+    em memória, e é por ele que a view envia (`send(using=...)`).
     """
-    monkeypatch.setattr(
-        "shopman.backstage.admin_console.diagnostics.get_connection",
-        lambda **kwargs: mail.get_connection(backend=LOCMEM),
-    )
     with override_settings(
-        EMAIL_BACKEND=SMTP,
-        EMAIL_HOST="smtp.gmail.com",
+        MAILERS=mailers(SMTP, host="smtp.gmail.com"),
         DEFAULT_FROM_EMAIL=REMETENTE_REAL,
     ):
         mail.outbox.clear()
@@ -155,12 +171,15 @@ def test_o_teste_vai_para_quem_esta_logado(client, gestor, url, smtp_de_mentira)
 
 def test_o_corpo_nao_carrega_segredo(client, gestor, url, smtp_de_mentira):
     client.force_login(gestor)
-    with override_settings(EMAIL_HOST_PASSWORD="senha-de-app-secreta"):
+    with override_settings(
+        MAILERS=mailers(SMTP, host="smtp.gmail.com", password="senha-de-app-secreta"),
+        DEFAULT_FROM_EMAIL=REMETENTE_REAL,
+    ):
         client.post(url, follow=True)
     assert "senha-de-app-secreta" not in mail.outbox[0].body
 
 
-@override_settings(EMAIL_BACKEND=CONSOLE)
+@override_settings(MAILERS=mailers(CONSOLE))
 def test_com_canal_inerte_o_botao_recusa_em_vez_de_fingir(client, gestor, url):
     """Enviar por um backend que sempre 'funciona' provaria nada."""
     client.force_login(gestor)
@@ -171,7 +190,7 @@ def test_com_canal_inerte_o_botao_recusa_em_vez_de_fingir(client, gestor, url):
     assert any("inerte" in a.lower() for a in avisos)
 
 
-@override_settings(EMAIL_BACKEND=LOCMEM)
+@override_settings(MAILERS=mailers(LOCMEM))
 def test_usuario_sem_email_recebe_explicacao(client, url, django_user_model):
     sem_email = django_user_model.objects.create_superuser(
         username="sem-email", email="", password="x"
@@ -184,7 +203,7 @@ def test_usuario_sem_email_recebe_explicacao(client, url, django_user_model):
 
 
 @override_settings(
-    EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.invalido.local", DEFAULT_FROM_EMAIL=REMETENTE_REAL
+    MAILERS=mailers(SMTP, host="smtp.invalido.local"), DEFAULT_FROM_EMAIL=REMETENTE_REAL
 )
 def test_falha_de_envio_mostra_o_erro_inteiro(client, gestor, url, monkeypatch):
     """Porta fechada, senha errada e SPF ausente são sintomas diferentes.
@@ -205,36 +224,60 @@ def test_falha_de_envio_mostra_o_erro_inteiro(client, gestor, url, monkeypatch):
     assert any("OSError" in a for a in avisos)
 
 
-def test_o_envio_usa_timeout_curto(client, gestor, url, monkeypatch):
+def test_o_botao_tem_teto_de_espera_MENOR_que_o_do_worker():
     """Sem teto, uma porta bloqueada pendura o clique por minutos.
 
-    O sintoma de saída de rede bloqueada não é recusa — é silêncio. Ver
-    `EMAIL_TIMEOUT` em settings, que fecha o mesmo buraco para o worker.
+    O sintoma de saída de rede bloqueada não é recusa — é silêncio.
+
+    ⚠️ A garantia mudou de lugar junto com o código: ela era "a view passa
+    `timeout=` para `get_connection()`" e passou a ser "o alias `diagnostics`
+    declara um teto menor que o do `default`". Medir a chamada não prova mais
+    nada — a view não passa timeout nenhum, quem carrega o teto é o alias.
     """
-    capturado = {}
+    from config.settings import _mailer_options
 
-    def fake_get_connection(**kwargs):
-        capturado.update(kwargs)
-        return mail.get_connection(backend=LOCMEM)
+    do_worker = _mailer_options(SMTP)["timeout"]
+    do_botao = _mailer_options(SMTP, timeout=_teto_do_botao())["timeout"]
 
-    monkeypatch.setattr(
-        "shopman.backstage.admin_console.diagnostics.get_connection", fake_get_connection
+    assert do_botao <= 30
+    assert do_botao < do_worker, (
+        "o botão tem alguém olhando a tela; o worker, não. Igualar os dois "
+        "devolve o clique pendurado que este teto existe para evitar."
     )
-    with override_settings(
-        EMAIL_BACKEND=SMTP,
-        EMAIL_HOST="smtp.gmail.com",
-        DEFAULT_FROM_EMAIL=REMETENTE_REAL,
-    ):
-        client.force_login(gestor)
-        client.post(url, follow=True)
 
-    assert capturado.get("timeout") is not None
-    assert capturado["timeout"] <= 30
+
+def _teto_do_botao() -> int:
+    from config.settings import _EMAIL_TIMEOUT_DIAGNOSTICO
+
+    return _EMAIL_TIMEOUT_DIAGNOSTICO
+
+
+def test_os_dois_aliases_existem_em_settings():
+    """A view pede `using=DIAGNOSTICS_ALIAS`; settings tem de ter esse alias.
+
+    ⚠️ Vale de verdade dentro da suíte: o `setup_test_environment()` do Django
+    troca o BACKEND de todo alias por locmem, mas PRESERVA as chaves. Alias que
+    sumisse de settings sumiria aqui também — e o botão levantaria
+    `MailerDoesNotExist` só na tela do gestor.
+    """
+    from django.conf import settings
+
+    assert DIAGNOSTICS_ALIAS in settings.MAILERS
+    assert "default" in settings.MAILERS
 
 
 def test_settings_tem_teto_de_espera_para_o_worker():
-    """O botão tem o teto dele; a fila de directives precisa do próprio."""
-    from django.conf import settings
+    """O botão tem o teto dele; a fila de directives precisa do próprio.
 
-    assert getattr(settings, "EMAIL_TIMEOUT", None)
-    assert settings.EMAIL_TIMEOUT <= 60
+    ⚠️ A pergunta vai ao módulo de settings, não a `settings.MAILERS`, e por um
+    motivo: o `setup_test_environment()` do Django reescreve TODO alias de
+    `MAILERS` para `{"BACKEND": locmem}` — sem `OPTIONS`. Perguntar ao
+    `settings` durante a suíte mediria o ambiente de teste e responderia que não
+    há teto nenhum. O que interessa é o que o deploy monta quando o backend é
+    SMTP, que é o único caso em que existe socket para pendurar.
+    """
+    from config.settings import _mailer_options
+
+    timeout = _mailer_options(SMTP)["timeout"]
+    assert timeout
+    assert timeout <= 60

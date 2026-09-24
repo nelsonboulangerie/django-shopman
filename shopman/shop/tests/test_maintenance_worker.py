@@ -439,6 +439,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
 
     sleep.assert_not_called()
     assert cc.call_args_list == [
+        # Primeiro: o fim de um período do toggle de canal religa antes do resto.
+        call("apply_channel_switches"),
         call("release_expired_holds"),
         call("cleanup_stale_sessions"),
         call("sweep_orphan_holds"),
@@ -452,6 +454,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # A série diária materializada do B.I. acompanha o dia (P3 da fundação).
         call("refresh_bi_daily_series"),
         call("evaluate_bi_alerts"),
+        # O placar do de-para: semanal, com gabarito mínimo (cadência no comando).
+        call("run_alias_benchmark"),
         call("expire_stale_announcements"),
         call("process_marketing_outbox", quiet_disabled=True),
         call(
@@ -479,12 +483,18 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_waitlist_windows"),
         call("recover_concierge"),
         call("cleanup_concierge_observations"),
+        # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.
+        call("run_intent_pilot"),
         call("check_directive_health"),
         # Checagem de ESTADO, não de evento: produto que já está invisível hoje
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por
         # estado, não um por ciclo) é do comando, não do worker.
         call("check_catalog_visibility"),
         call("check_integration_drift"),
+        call("check_geoip_freshness"),
+        # A loja no iFood contra a casa: calado quando IFOOD_MERCHANT_SYNC está fora.
+        call("check_ifood_store"),
+        call("check_card_machines_out"),
         # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
         # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
         # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio

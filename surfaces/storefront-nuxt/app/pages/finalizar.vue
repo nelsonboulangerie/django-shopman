@@ -341,14 +341,34 @@ const deliveryBelowMinimum = computed(() =>
 const savedAddresses = computed(() => checkout.value?.saved_addresses || [])
 const paymentMethods = computed(() => checkout.value?.payment_methods || [])
 const pixProviderTest = computed(() => pixProviderTestConstraint(checkout.value?.payment_constraints))
-const pixProviderTestSelected = computed(() => state.payment_method === 'pix' && !!pixProviderTest.value)
-const pixProviderTestExceeded = computed(() =>
-  pixProviderTestSelected.value && exceedsPaymentConstraint(cart.value?.grand_total_q, pixProviderTest.value)
+// Recusa `pix_test_amount_limit` do servidor: ele mede o total AUTORITATIVO, que
+// pode ter mudado desde que a tela carregou. Vale enquanto o total da tela for o
+// que o servidor recusou; a sacola mudou, quem decide volta a ser a conta local.
+const pixLimitRefusal = ref<{ message: string, totalQ: number } | null>(null)
+const pixLimitRefusalActive = computed(() =>
+  !!pixLimitRefusal.value && state.payment_method === 'pix' &&
+  (cart.value?.grand_total_q == null || cart.value.grand_total_q === pixLimitRefusal.value.totalQ)
 )
-const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
-  'Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. ' +
-  'Para continuar, troque a forma de pagamento ou ajuste os itens do pedido.'
-))
+const pixProviderTestSelected = computed(() =>
+  state.payment_method === 'pix' && (!!pixProviderTest.value || pixLimitRefusalActive.value)
+)
+const pixProviderTestExceeded = computed(() =>
+  pixProviderTestSelected.value &&
+  (pixLimitRefusalActive.value || exceedsPaymentConstraint(cart.value?.grand_total_q, pixProviderTest.value))
+)
+const pixProviderTestLimitDisplay = computed(() => pixProviderTest.value?.max_amount_display || 'R$ 10,00')
+const pixProviderTestMessage = computed(() => {
+  if (pixLimitRefusalActive.value && pixLimitRefusal.value?.message) return pixLimitRefusal.value.message
+  // Dentro do limite a frase não pode mandar trocar nada: seria instrução que o
+  // pedido não precisa seguir, ao lado de "está dentro do limite".
+  if (!pixProviderTestExceeded.value) {
+    return `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}.`
+  }
+  return pixProviderTest.value?.message || (
+    `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}. ` +
+    'Para continuar, troque a forma de pagamento ou ajuste os itens do pedido.'
+  )
+})
 const submitDisabled = computed(() =>
   !action.value?.enabled || !!cart.value?.is_empty || submitting.value || pixProviderTestExceeded.value
 )
@@ -549,7 +569,9 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
     icon: 'lucide:clipboard-check',
     loading: submitting.value,
     disabled: submitDisabled.value,
-    reason: submitDisabled.value ? (action.value?.reason || '') : '',
+    reason: pixProviderTestExceeded.value
+      ? `Pix vai até ${pixProviderTestLimitDisplay.value} no período de testes. Troque a forma de pagamento ou ajuste os itens.`
+      : submitDisabled.value ? (action.value?.reason || '') : '',
     run: continueFromPayment
   }
 })
@@ -1183,6 +1205,20 @@ async function submitCheckout () {
     if (data.error_code === 'identity_confirmation_required') {
       identityConfirmOffer.value = true
       submitting.value = false
+      return
+    }
+    // Pix acima do teto da Efí de testes: a recusa é o MESMO aviso do passo de
+    // pagamento, com as duas saídas — não um erro genérico sem caminho.
+    if (data.error_code === 'pix_test_amount_limit') {
+      const refusedTotal = Number((data.context as { current_amount_q?: unknown } | undefined)?.current_amount_q)
+      pixLimitRefusal.value = {
+        message: serverError.value,
+        totalQ: Number.isFinite(refusedTotal) ? refusedTotal : Number(cart.value?.grand_total_q)
+      }
+      serverError.value = ''
+      confirmOpen.value = false
+      activeStep.value = 'payment'
+      await refresh()
       return
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {

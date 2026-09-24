@@ -5,7 +5,6 @@ import {
   appendTag,
   bulkableRefs,
   changeBackSuggestionQ,
-  dispatchAsks,
   dispatchAsksChange,
   moneyInput,
   cardAffordances,
@@ -32,7 +31,9 @@ import {
   toneBadge,
   triageCards,
   zonesView,
+  zoneEmptyText,
   confirmationRemainingLabel,
+  deadlineTone,
   realtimeIndicator,
 } from "../app/presentation/board";
 import type { OrderCardProjection, TwoZoneQueueProjection } from "../app/types/orders";
@@ -63,8 +64,9 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   payment_method: "cash",
   payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
-    ifood_payment_summary: [],
-    ifood_operation_summary: [],
+    ifood_pickup_code: "",
+    ifood_schedule_label: "",
+    ifood_remote_ahead_label: "",
     ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,
@@ -87,6 +89,10 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   equipment_out: [],
   equipment_label: "",
   equipment_back_pending: false,
+  dispatch_needs_machine: false,
+  trip_with: [],
+  courier_return_orders: [],
+  courier_return_lines: [],
   revisions: {},
   actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
   ...over,
@@ -103,6 +109,38 @@ describe("statusTone", () => {
   it("toneBadge returns a class string per tone", () => {
     expect(toneBadge("danger")).toContain("red");
     expect(toneBadge("neutral")).toContain("muted");
+  });
+});
+
+describe("deadlineTone", () => {
+  // O tom vem do que FALTA, não do que passou: um pedido de 7 minutos com 10 de
+  // prazo está tranquilo, e um de 7 com 8 está para vencer. Foi essa conta que
+  // ninguém fez na homologação de 19/09, seis vezes seguidas.
+  const now = Date.parse("2026-09-19T18:50:00Z");
+  const em = (seconds: number) => new Date(now + seconds * 1000).toISOString();
+
+  it("fica vermelho no último minuto", () => {
+    expect(deadlineTone(em(60), now)).toBe("late");
+    expect(deadlineTone(em(5), now)).toBe("late");
+  });
+
+  it("avisa em âmbar nos três minutos finais", () => {
+    expect(deadlineTone(em(61), now)).toBe("warning");
+    expect(deadlineTone(em(180), now)).toBe("warning");
+  });
+
+  it("fica calmo com folga", () => {
+    expect(deadlineTone(em(181), now)).toBe("ok");
+    expect(deadlineTone(em(3600), now)).toBe("ok");
+  });
+
+  it("prazo vencido é o mais urgente que existe, não some", () => {
+    expect(deadlineTone(em(-30), now)).toBe("late");
+  });
+
+  it("sem prazo ou com data ilegível não pinta alarme", () => {
+    expect(deadlineTone("", now)).toBe("muted");
+    expect(deadlineTone("amanhã cedo", now)).toBe("muted");
   });
 });
 
@@ -168,6 +206,19 @@ describe("zonesView", () => {
     expect(zones[1]!.count).toBe(2);
     expect(zones[2]!.count).toBe(3); // pickup + delivery + transit
     expect(zones[2]!.cards.map((c) => c.ref)).toEqual(["D", "E", "F"]);
+  });
+
+  // ⚠️ As três colunas mostravam a MESMA frase — "Nada por aqui agora." — e "aqui"
+  // não é lugar nenhum: quem olha de longe não sabe se acabou a entrada, o preparo
+  // ou a saída. Cada zona diz o seu, e nenhuma repete a outra.
+  it("cada coluna vazia nomeia a própria zona", () => {
+    const texts = zonesView(queue()).map((zone) => zoneEmptyText(zone.key));
+    expect(texts).toEqual([
+      "Nenhum pedido novo agora.",
+      "Nenhum pedido em preparo agora.",
+      "Nenhum pedido para retirada ou entrega agora.",
+    ]);
+    expect(new Set(texts).size).toBe(3);
   });
 });
 
@@ -332,13 +383,10 @@ describe("troco da entrega", () => {
     expect(moneyInput(505)).toBe("5,05");
     expect(moneyInput(0)).toBe("0,00");
   });
-  it("o despacho também pergunta quando o canal deixa levar a maquininha", () => {
-    const opt = [{ ref: "card_machine", label: "Maquininha" }];
-    expect(dispatchAsks(card({ next_status: "dispatched", change_out_suggested_q: 0, equipment_options: opt }))).toBe(true);
-    expect(dispatchAsks(card({ next_status: "dispatched", change_out_suggested_q: 0 }))).toBe(false);
-    // mas só o troco é exigido: o lote de avançar não exclui quem só tem maquininha
-    const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", equipment_options: opt })];
-    expect(bulkableRefs(rows, new Set(["A"]), "advance")).toEqual(["A"]);
+  it("saída com maquininha nunca entra no lote de avançar: a escolha mora no diálogo", () => {
+    const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", dispatch_needs_machine: true }),
+      card({ ref: "B", can_advance: true, next_status: "dispatched" })];
+    expect(bulkableRefs(rows, new Set(["A", "B"]), "advance")).toEqual(["B"]);
   });
   it("oferece 'Maquininha voltou' independentemente do acerto pendente", () => {
     const refs = cardAffordances(card({ can_advance: false, equipment_back_pending: true })).map((a) => a.ref);

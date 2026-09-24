@@ -137,6 +137,42 @@ class StripeWebhookView(APIView):
         webhook_idempotency.mark_done(claim, response_body=response_body)
         return Response(response_body, status=status.HTTP_200_OK)
 
+    @staticmethod
+    def _void_authorization_after_cancel(order, intent_ref: str) -> None:
+        """Anula a autorização que chegou para pedido cancelado e alerta o gestor."""
+        from shopman.payman import PaymentService
+
+        from shopman.shop.services import observability
+        from shopman.shop.services import payment as payment_service
+
+        payment_service.cancel(order, reason="authorized_after_order_cancelled")
+        try:
+            voided = PaymentService.get(intent_ref).status == "cancelled"
+        except Exception:
+            logger.warning("stripe.void_after_cancel_reread_failed intent=%s", intent_ref, exc_info=True)
+            voided = False
+
+        if voided:
+            message = (
+                f"Pedido {order.ref}: o cliente autorizou o cartão depois do cancelamento. "
+                "A autorização foi anulada no Stripe; nada foi cobrado."
+            )
+            severity = "warning"
+        else:
+            message = (
+                f"Pedido {order.ref}: o cliente autorizou o cartão depois do cancelamento e a "
+                f"anulação FALHOU (intent {intent_ref}). O valor está retido no cartão dele: "
+                "cancelar o pagamento no painel do Stripe."
+            )
+            severity = "critical"
+        observability.create_operator_alert(
+            type="payment_after_cancel",
+            severity=severity,
+            message=message,
+            order_ref=order.ref,
+            intent_ref=intent_ref,
+        )
+
     def _trigger_order_hooks(self, intent_ref: str) -> None:
         """Find associated order and trigger flow dispatch."""
         from shopman.payman import PaymentService
@@ -161,6 +197,14 @@ class StripeWebhookView(APIView):
                 order = Order.objects.get(ref=intent.order_ref)
             except Order.DoesNotExist:
                 return
+
+        if order and intent.status == "authorized" and order.status == Order.Status.CANCELLED:
+            # O cliente concluiu o cartão DEPOIS de o pedido ser cancelado (a
+            # página do Stripe ficou aberta, ou o expire não chegou a tempo).
+            # Captura manual: sem ninguém anular, o valor fica retido no cartão
+            # dele até a autorização vencer (até 7 dias). Anula agora e avisa.
+            self._void_authorization_after_cancel(order, intent_ref)
+            return
 
         if order and intent.status == "authorized" and order.status == Order.Status.ACCEPTED:
             method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()

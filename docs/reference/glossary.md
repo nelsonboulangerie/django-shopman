@@ -26,6 +26,7 @@ Termos de domínio usados no código e na documentação.
 | **Hold** | Reserva temporária de quantidade. Ciclo: PENDING → CONFIRMED → FULFILLED ou RELEASED. Tem TTL de expiração. Dois tipos: `reservation` (pedido reservou estoque) e `demand` (demanda planejada). |
 | **Position** | Onde o estoque existe. Tipos: PHYSICAL (depósito, vitrine), VIRTUAL (em trânsito), PROCESS (área de produção). Flag `is_saleable` indica se é posição de venda. |
 | **PositionKind** | Enum: `PHYSICAL`, `VIRTUAL`, `PROCESS`. |
+| **Batch** | Lote de RASTREABILIDADE do estoque: `ref`, validade e fornecedor (`verbose_name="Referência do Lote"`). Segue o produto depois de pronto. Não confundir com o **Lote** da Produção (WorkOrder), que é o trabalho que o produziu — quando uma frase precisa dos dois, reescreva-a para falar de *rastreabilidade*, em vez de dizer "lote" duas vezes. |
 
 ## Orderman (Pedidos)
 
@@ -46,6 +47,8 @@ Termos de domínio usados no código e na documentação.
 | **Recipe** | Ficha técnica / BOM (Bill of Materials). `ref` único (slug), `output_ref` (string-agnostic), `batch_size` como rendimento base. |
 | **RecipeItem** | Ingrediente na receita. Usa coeficiente francês para escalar quantidades proporcionalmente ao rendimento base. |
 | **WorkOrder** | Ordem de produção. Liga uma receita às quantidades `planned`, `started` e `finished`, com status canônico `planned` → `started` → `finished` (ou `void`). |
+| **Lote** | O nome DE TELA da WorkOrder, desde 22/09/2026 — *"lote, genérico mesmo"* (decisão do dono). Substitui "fornada" nas superfícies de operador, porque *fornada* só serve para o que vai ao forno e a casa produz coisa que não vai. O identificador no código continua `WorkOrder`/`batch`. Trava: `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts`. |
+| **Fornada** | O evento do forno. Pela [ADR-017](../decisions/adr-017-quality-as-production-outcome.md) uma fornada PRODUZ um lote — mesmo objeto, visto de dois lados. Segue sendo a palavra certa em prosa sobre o forno (enfornar, retirar, timer do forno) e na voz da LOJA, que continua dizendo "fornada" ao cliente. O que ela não é mais: o rótulo do botão do operador. |
 
 ## Guestman (Clientes)
 
@@ -107,3 +110,5 @@ Termos de domínio usados no código e na documentação.
 | **`ref`** | Identificador textual de entidade. Nunca `code` (exceção: `Product.sku`). Ver ADR-004. |
 | **Confirmação otimista** | Pedido é auto-confirmado se operador não cancelar dentro do prazo configurado. |
 | **Coeficiente francês** | Método de escalar ingredientes proporcionalmente ao batch size na produção. |
+| **Tela do cliente** | O segundo monitor do balcão do PDV (`/display`), virado para quem está pagando. Nome mantido. |
+| **Painel de retirada** | O painel público da Cozinha (`/pickup`), que mostra os pedidos em preparo e prontos para retirar. Chamava-se "Tela do cliente" até 22/09/2026 — dois objetos com o mesmo nome; este passou a se chamar pelo que faz. A URL segue em inglês e não mudou. |

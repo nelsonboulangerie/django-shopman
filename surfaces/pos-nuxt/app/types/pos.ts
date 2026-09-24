@@ -25,6 +25,9 @@ export interface POSProductProjection {
   collection_color: string
   collection_icon: string;
   image_url: string;
+  /** Código de barras da embalagem, para o leitor do balcão. Vazio no que a
+   *  casa faz — pão não tem código de barras. */
+  gtin?: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
 }
@@ -147,6 +150,14 @@ export interface POSCheckoutCapabilities {
   kitchen_handoff?: POSKitchenHandoffCapability | null;
   tab_manipulation?: POSTabManipulationCapability | null;
   sale_correction?: POSSaleCorrectionCapability | null;
+  /** Pedir o comprovante ("Impressa?" / "Por e-mail?") é pedir a NOTA? Quando a
+   *  regra fiscal lê esses canais e emite, a tela promete que o papel e o e-mail
+   *  saem; sem isso eles só saem quando outra regra (CPF, cartão, Pix) emitir.
+   *  ⚠️ Mora em `capabilities`, ao lado de `supports_fiscal_document` — é onde
+   *  o servidor publica. Lida no topo do contrato, ela vinha sempre `undefined`
+   *  e a tela dizia ao operador que o papel NÃO pedia a nota. Ausente é "não
+   *  promete". */
+  receipt_requests_emission?: boolean;
   [key: string]: unknown;
 }
 
@@ -166,11 +177,6 @@ export interface POSCheckoutContractProjection {
   // antesala ("sem turno aberto não há venda") lia daí — se o contrato mudasse a
   // chave, ele receberia `undefined` em silêncio e a antesala nunca dispararia.
   capabilities: POSCheckoutCapabilities;
-  /** Pedir papel ("Impressa?") é pedir a NOTA? Quando a regra fiscal lê o canal
-   *  de impressão e emite, a tela promete "imprime sozinha"; sem isso a bobina
-   *  só sai quando outra regra (CPF, cartão, Pix) emitir. Opcional: backend
-   *  pode chegar depois — ausente é "não promete". */
-  receipt_requests_emission?: boolean;
 }
 
 /**

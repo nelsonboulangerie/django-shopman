@@ -95,3 +95,58 @@ def test_surface_api_stays_mounted(prefix):
         f"{prefix} não está mais montado no config/urls.py — uma superfície viva "
         "(BFF/Nuxt) foi desmontada por engano."
     )
+
+
+# ── Doorman: só a ponte do ManyChat e a entrada de reserva do link ─────────────
+#
+# `shopman.doorman.urls` e `shopman.doorman.api.urls` inteiros eram uma segunda
+# porta de login ao lado da loja: OTP sem o rate limit por IP e o `csrf_protect`
+# de `api/v1/auth/*`. Nenhuma superfície os chamava. Ver config/urls.py.
+
+UNMOUNTED_DOORMAN_PATHS = [
+    "/api/auth/request-code/",
+    "/api/auth/verify-code/",
+    "/auth/code/request/",
+    "/auth/code/verify/",
+    "/auth/access/create/",
+    "/auth/access-link/",
+    "/auth/devices/",
+    "/auth/logout/",
+    "/auth/health/",
+]
+
+
+def _view_module(path: str) -> str:
+    from django.urls import Resolver404, resolve
+
+    try:
+        match = resolve(path)
+    except Resolver404:
+        return ""
+    view = getattr(match.func, "view_class", match.func)
+    return view.__module__
+
+
+@pytest.mark.parametrize("path", UNMOUNTED_DOORMAN_PATHS)
+def test_legacy_doorman_login_routes_are_not_mounted(path):
+    assert not _view_module(path).startswith("shopman.doorman"), (
+        f"{path} voltou a cair no doorman. A loja entra por api/v1/auth/, com rate limit "
+        "por IP e csrf_protect; uma segunda porta de login não passa por nenhum dos dois."
+    )
+
+
+def test_manychat_bridge_and_link_fallback_stay_mounted():
+    """Consumidores nomeados: o External Request do ManyChat, e a entrada de
+    reserva do `AccessLinkService._build_url` quando a loja não está configurada."""
+    from django.urls import reverse
+
+    assert _view_module("/api/auth/access/create/") == "shopman.doorman.views.access_link"
+    assert reverse("doorman:access-exchange") == "/auth/access/"
+
+
+def test_invalid_link_page_renders_without_the_unmounted_login_route(client):
+    """O template do doorman aponta para `doorman:code-request`; sem a rota, a página
+    de link inválido virava 500. O deployment usa o próprio template."""
+    response = client.get("/auth/access/")
+    assert response.status_code == 200
+    assert "Link inválido" in response.content.decode()

@@ -30,6 +30,13 @@ SEED = pathlib.Path(__file__).resolve().parents[3] / "config/management/commands
 
 #: As 42 fichas que rendem UNIDADE, como estavam escritas por lote antes do
 #: WP-FICHA-DE-PRODUTO-E-PROMESSA: (rendimento, {insumo: quantidade}).
+#:
+#: ⚠️ Seis linhas trocaram de MASSA em 22/09/2026, e não por conta: o dono leu a
+#: lista e corrigiu o que um agente tinha inferido. Bichinhos (coelhinho,
+#: ursinho, porquinho) são de BUTTER, não brioche; o pain aux raisins é de
+#: BRIOCHE ("folhado foi confusão de agente de IA"); as duas baguetes pequenas
+#: saem da massa da CIABATTA, de casca mais fina. Só o nome da massa mudou — a
+#: quantidade por fornada é a mesma ao miligrama, que é o que este teste mede.
 LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "baguete": ("25", {"MASSA-TRADICAO": "7.000"}),
     "campagne": ("10", {"MASSA-CAMPAGNE": "3.400"}),
@@ -38,14 +45,14 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "shokupan": ("12", {"MASSA-FORMA": "4.800"}),
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
-    "pain-chocolat": ("36", {"MASSA-CROISSANT": "2.880", "BATON-CHOCOLATE": "0.720"}),
-    "animalzinho": ("16", {"MASSA-BRIOCHE": "0.960", "CREME-BAUNILHA": "0.640"}),
+    "pain-chocolat": ("36", {"MASSA-CROISSANT": "2.880", "CHOCOLATE-BATON": "0.720"}),
+    "coelhinho": ("16", {"MASSA-BUTTER": "0.960", "CREME-CHOCOLATE": "0.640"}),
     "folhado-dia": ("12", {"MASSA-FOLHADO": "0.744", "RECHEIO-MACA": "0.240"}),
     "bichon": ("12", {"MASSA-FOLHADO": "0.960", "CREME-LIMAO": "0.240"}),
     "madeleine": ("24", {"MASSA-MADELEINE": "0.672"}),
-    "baguete-lanche": ("12", {"MASSA-TRADICAO": "3.120"}),
+    "baguete-lanche": ("12", {"MASSA-CIABATTA": "3.120"}),
     "batard": ("10", {"MASSA-TRADICAO": "3.200"}),
-    "baguete-gergelim-pequena": ("12", {"MASSA-TRADICAO": "1.980", "GERGELIM": "0.060"}),
+    "baguete-gergelim-pequena": ("12", {"MASSA-CIABATTA": "1.980", "GERGELIM": "0.060"}),
     "italiano-rustico": ("8", {"MASSA-TRADICAO": "3.840"}),
     "baguette-campagne": ("12", {"MASSA-CAMPAGNE": "3.600"}),
     "campagne-redondo": ("10", {"MASSA-CAMPAGNE": "3.400"}),
@@ -56,22 +63,23 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.896", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.264"}),
     "mini-focaccia-cebola-roxa": ("12", {"MASSA-CIABATTA": "1.752", "RECHEIO-CEBOLA-AZAPAS": "0.168"}),
     "croissant-mini": ("24", {"MASSA-CROISSANT": "0.864"}),
-    "pain-aux-raisins": ("12", {"MASSA-CROISSANT": "0.480", "CREME-BAUNILHA": "0.216", "PASSAS": "0.120"}),
+    "pain-aux-raisins": ("12", {"MASSA-BRIOCHE": "0.480", "CREME-BAUNILHA": "0.216", "PASSAS": "0.120"}),
     "maca": ("12", {"MASSA-FOLHADO": "0.960", "RECHEIO-MACA": "0.360"}),
     "croissant-presunto-queijo": ("12", {"MASSA-CROISSANT": "0.720", "PRESUNTO-DEFUMADO": "0.180", "QUEIJO-MINAS-PADRAO": "0.180"}),
     "folhado-frango": ("12", {"MASSA-FOLHADO": "1.140", "RECHEIO-FRANGO": "0.420"}),
     "mini-folhado-frango": ("12", {"MASSA-FOLHADO": "0.696", "RECHEIO-FRANGO": "0.264"}),
-    "caranguejo": ("16", {"MASSA-FORMA": "0.608", "GERGELIM": "0.032"}),
+    # Butter como os outros pães-bicho (ele, 23/09). A ficha dizia FORMA.
+    "caranguejo": ("16", {"MASSA-BUTTER": "0.608", "GERGELIM": "0.032"}),
     "kuro-pan-burger": ("12", {"MASSA-KUROPAN": "1.080"}),
     "brioche-nanterre": ("8", {"MASSA-BRIOCHE": "1.920"}),
-    "brioche-chocolat": ("24", {"MASSA-BRIOCHE": "0.816", "GOTAS-CHOCOLATE": "0.192"}),
+    "brioche-chocolat": ("24", {"MASSA-BRIOCHE": "0.816", "CHOCOLATE-GOTAS": "0.192"}),
     "mini-brioche-bun-gergelim": ("24", {"MASSA-BRIOCHE": "0.720", "GERGELIM": "0.048"}),
-    "ursinho": ("12", {"MASSA-BRIOCHE": "0.960", "CREME-BAUNILHA": "0.360"}),
-    "porquinho": ("12", {"MASSA-BRIOCHE": "0.960", "CREME-BAUNILHA": "0.360"}),
+    "ursinho": ("12", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.360"}),
+    "porquinho": ("12", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.360"}),
     "challah": ("8", {"MASSA-BUTTER": "2.400"}),
     "hot-dog-vienna": ("12", {"MASSA-BUTTER": "0.720", "SALSICHA-VIENNA": "0.600"}),
     "mini-hot-dog-vienna": ("12", {"MASSA-BUTTER": "0.480", "SALSICHA-VIENNA": "0.300"}),
-    "deli-milho-bacon": ("12", {"MASSA-BUTTER": "0.840", "MILHO-VERDE": "0.240", "BACON": "0.120", "SALSINHA-DESID": "0.012"}),
+    "deli-milho-bacon": ("12", {"MASSA-BUTTER": "0.840", "MILHO-VERDE": "0.240", "BACON": "0.120", "SALSINHA-DESIDRATADA": "0.012"}),
     "cornet-chocolate": ("12", {"MASSA-BUTTER": "0.576", "CREME-CHOCOLATE": "0.144"}),
 }
 
@@ -100,7 +108,9 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "recheio-cebola-bacon-tomilho": ("2.7", "2.997", 4),
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
     "molho-bechamel": ("2.9", "3.098", 4),
-    "creme-chocolate": ("2.9", "3.095", 4),
+    # Duas linhas desde 23/09 (base + chocolate), com a MESMA soma: os três
+    # insumos que faziam as vezes da base viraram o CREME-BAUNILHA que ela é.
+    "creme-chocolate": ("2.9", "3.095", 2),
     "creme-leite-ovos": ("2", "2.076", 4),
     "salada-da-casa": ("1.8", "1.900", 4),
     "vinagrete-frances": ("0.9", "0.917", 5),

@@ -223,7 +223,13 @@ try {
   check(swResponse.ok, 'service worker responde 200')
   check(swResponse.headers.get('cache-control') === 'no-cache, no-store, must-revalidate', 'service worker nunca fica imutável')
 
-  const documentResponse = await fetch(`${baseUrl}/`, { headers: { 'x-forwarded-proto': 'https' } })
+  // Accept de navegador, porque o que se mede aqui e o DOCUMENTO. Sem ele o
+  // Nitro responde JSON quando a home nao renderiza (a previa sobe sem backend,
+  // e desde `useContentGuard` isso e um 503), e o JSON vem com a CSP dura do
+  // framework -- o gate acusava a loja por uma pagina que nenhum navegador pede.
+  const documentResponse = await fetch(`${baseUrl}/`, {
+    headers: { 'x-forwarded-proto': 'https', accept: 'text/html,application/xhtml+xml' }
+  })
   const document = await documentResponse.text()
   const csp = documentResponse.headers.get('content-security-policy') || ''
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')

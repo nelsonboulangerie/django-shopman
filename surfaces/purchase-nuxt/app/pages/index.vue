@@ -40,6 +40,7 @@ const {
   noteConversionId,
   noteCostInput,
   materials,
+  resaleProducts,
   suppliers,
   conversions,
   costs,
@@ -106,7 +107,7 @@ const {
   receiptConversionsFor,
   setReceiptMode,
   setReceiptSupplier,
-  setReceiptLineMaterial,
+  setReceiptLineItem,
   acceptReceiptLineSuggestion,
   acceptReceiptLineConversion,
   acceptReceiptLineInvoiceAxes,
@@ -443,8 +444,8 @@ function onSheetUpdate(patch: Partial<ReceiptLine>) {
   if (openLineId.value) updateReceiptLine(openLineId.value, patch);
 }
 
-function onSheetSelectMaterial(sku: string) {
-  if (openLineId.value) setReceiptLineMaterial(openLineId.value, sku);
+function onSheetSelectItem(sku: string) {
+  if (openLineId.value) setReceiptLineItem(openLineId.value, sku);
 }
 
 function onSheetAcceptSuggestion() {
@@ -861,7 +862,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <div><dt class="text-xs text-muted-foreground">Estimado</dt><dd class="font-semibold tabular-nums">{{ formatMoney(row.estimatedCostQ) }}</dd></div>
             </dl>
             <div class="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="openQuoteFor(row.material, row.supplier?.ref)">Ajustar</button>
+              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="openQuoteFor(row.material, row.supplier?.ref)">Lançar custo</button>
               <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || purchaseRequestStatus(row.material.sku) === 'sent' || actionPending" @click="sendPurchaseRequest(row.material.sku)">
                 {{ purchaseRequestStatus(row.material.sku) === "sent" ? "Enviado" : "Enviar pedido" }}
               </button>
@@ -1087,12 +1088,13 @@ onBeforeUnmount(stopInvoiceScanner);
           v-model:open="lineSheetOpen"
           :preview="openPreview"
           :materials="materials"
+          :resale-products="resaleProducts"
           :conversions="openPreview ? receiptConversionsFor(openPreview.line.materialSku) : []"
           :pending="actionPending"
           :stock-after="openPreview ? stockAfterReceipt(openPreview.material.sku) : 0"
           :flash-field="sheetFlashField"
           @update="onSheetUpdate"
-          @select-material="onSheetSelectMaterial"
+          @select-item="onSheetSelectItem"
           @accept-suggestion="onSheetAcceptSuggestion"
           @select-conversion="onSheetSelectConversion"
           @accept-conversion="onSheetAcceptConversion"
@@ -1556,8 +1558,8 @@ onBeforeUnmount(stopInvoiceScanner);
               </p>
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(false)">Salvar</button>
-              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(true)">Salvar padrão</button>
+              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(false)">Salvar custo</button>
+              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(true)">Salvar como padrão</button>
             </div>
           </div>
         </aside>

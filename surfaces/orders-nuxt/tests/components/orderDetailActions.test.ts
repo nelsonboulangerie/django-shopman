@@ -1,6 +1,6 @@
 import { fixtureActions } from "../support/orderActions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref, watch } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
@@ -118,7 +118,15 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     equipment_out: [],
     equipment_label: "",
     equipment_back_pending: false,
+    dispatch_needs_machine: false,
+    trip_with: [],
+    courier_return_orders: [],
+    courier_return_lines: [],
     can_resend_payment_link: false,
+    managers: [{ username: "joyce", name: "Joyce Nogueira" }],
+    customer_relay_phone: "",
+    customer_relay_code: "",
+    customer_relay_expires_at: "",
     payment_link_notice: "",
     customer_profile: null,
     revisions: {},
@@ -202,14 +210,14 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
       status: "preparing",
       can_confirm: false,
       can_advance: false,
-      advance_block_label: "Aguardando fornada",
-      advance_block_reason: "A fornada do pão francês ainda não terminou.",
+      advance_block_label: "Esperando o lote…",
+      advance_block_reason: "O lote do pão francês ainda não terminou.",
     }));
 
     const bloqueado = w.find('[data-action="advance-blocked"]');
     expect(bloqueado.exists()).toBe(true);
     expect(bloqueado.attributes("disabled")).toBeDefined();
-    expect(bloqueado.attributes("title")).toBe("A fornada do pão francês ainda não terminou.");
+    expect(bloqueado.attributes("title")).toBe("O lote do pão francês ainda não terminou.");
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
   });
 
@@ -597,5 +605,45 @@ describe("detalhe iFood", () => {
     expect(w.get('[data-action="advance-blocked"]').attributes("disabled")).toBeDefined();
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
+  });
+});
+
+describe("segunda assinatura no cancelamento", () => {
+  // 21/09: cancelando pedido do iFood com o prazo correndo, o diálogo caía no
+  // campo livre e o gerente tinha de digitar o próprio nome. No PDV ele já era
+  // selecionado; o Gestor não recebia a lista.
+  it("entrega ao diálogo a lista de gerentes, para selecionar em vez de digitar", () => {
+    const ManagerAuthStub = defineComponent({
+      name: "OperatorManagerAuth",
+      props: { open: Boolean, managers: { type: Array, default: () => [] }, action: String, busy: Boolean, error: String },
+      template: "<div data-manager-auth />",
+    });
+    detalhe.value = order({ managers: [{ username: "joyce", name: "Joyce Nogueira" }] });
+    const w = mount(OrderDetailPage, { global: { stubs: { ...stubs, OperatorManagerAuth: ManagerAuthStub }, mocks: { $router: { go: vi.fn() } } } });
+
+    expect(w.findComponent(ManagerAuthStub).props("managers")).toEqual([{ username: "joyce", name: "Joyce Nogueira" }]);
+  });
+});
+
+describe("contato de pedido do iFood", () => {
+  // 21/09: o detalhe oferecia WhatsApp para o 0800 da central do iFood.
+  it("relé mostra a central e o código, sem WhatsApp", () => {
+    const w = abrir(order({
+      customer_phone: "", customer_whatsapp_url: "",
+      customer_phone_uri: "tel:08007053040,89338721",
+      customer_relay_phone: "0800 705 3040", customer_relay_code: "89338721",
+    }));
+    expect(w.find("[data-contact-whatsapp]").exists()).toBe(false);
+    expect(w.get("[data-contact-relay-code]").text()).toBe("Código 89338721");
+    expect(w.get("[data-contact-phone]").text()).toContain("Ligar pela central");
+    expect(w.get("[data-contact-phone]").attributes("href")).toBe("tel:08007053040,89338721");
+  });
+  it("código vencido diz que a central não repassa e não oferece ligação", () => {
+    const w = abrir(order({
+      customer_phone: "", customer_whatsapp_url: "", customer_phone_uri: "",
+      customer_relay_phone: "0800 705 3040", customer_relay_code: "",
+    }));
+    expect(w.find("[data-contact-phone]").exists()).toBe(false);
+    expect(w.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
   });
 });

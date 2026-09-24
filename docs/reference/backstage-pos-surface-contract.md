@@ -250,7 +250,7 @@ capture. Gateway/webhook/Payman status remains authoritative.
 | `supports_delivery_address_autocomplete` | address autocomplete may be enabled. |
 | `provider_readiness` | non-secret readiness rows for Focus NFe, Efí PIX and Stripe card. |
 | `fiscal_document` | fiscal runtime status: `ready`, `warning`, `error`. |
-| `receipt_requests_emission` | asking for the receipt (paper/e-mail) emits the NFC-e — true only when the deployment's `SHOPMAN_FISCAL_EMISSION_RESOLVER` carries `on_requested_receipt` (or `always`). Gates the "prints itself once authorized" copy. |
+| `receipt_requests_emission` | asking for the receipt (paper/e-mail) emits the NFC-e, exactly like "CPF na nota" — true when the deployment's `SHOPMAN_FISCAL_EMISSION_RESOLVER` carries `on_request_or_tax_id` (which reads the three counter requests), `on_requested_receipt` or `always`, and when it is empty (the fallback is the same request). Lives in `capabilities`, next to `supports_fiscal_document`. Gates the "prints itself / e-mail goes once authorized" copy. |
 | `delivery_minimum_q` | display/validation hint; backend remains authority. |
 | `requires_manager_approval_above_q` | threshold for approval credentials. |
 | `address_autocomplete` | provider/key/fields/bias/reverse action metadata. |

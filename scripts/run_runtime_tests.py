@@ -62,7 +62,12 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/test_concierge_privacy_postgres.py",
     # ManyChat can attach identifiers and contact data while account deletion
     # runs. The shared Customer fence decides the winner without recreating PII.
-    "packages/guestman/shopman/guestman/tests/test_manychat_privacy_postgres.py",
+    # ⚠️ Este arquivo morava em `packages/guestman/` e NUNCA rodou: o rootdir
+    # de `packages/guestman` carrega `guestman_test_settings`, que não instala
+    # `shopman.shop`, então o skip de módulo disparava — inclusive no CI. E
+    # skip de MÓDULO não passa pelo coletor deste gate, então ele nem reprovava.
+    # As provas são da exclusão (monolito), e é aqui que elas rodam de verdade.
+    "shopman/storefront/tests/test_manychat_privacy_postgres.py",
     # Public Guestman child writers share the Customer-first privacy fence;
     # loyalty additionally proves it never takes LoyaltyAccount first.
     "packages/guestman/shopman/guestman/tests/test_privacy_mutation_fences_postgres.py",
@@ -118,17 +123,75 @@ DEFAULT_RUNTIME_TEST_PATHS = (
 )
 
 
+def _reason(longrepr) -> str:
+    return longrepr[2] if isinstance(longrepr, tuple) else str(longrepr)
+
+
 @dataclass(eq=False)
 class SkipCollector:
+    """Reprova o gate em qualquer forma de "não rodou", não só na visível.
+
+    Havia um buraco do tamanho do problema: ``pytest_runtest_logreport`` só
+    existe para teste que chegou a ser COLETADO. Um módulo que se pula sozinho
+    na coleta — ``pytest.skip(..., allow_module_level=True)``, o padrão de quem
+    escreve integração monolítica dentro de um pacote cujas settings não
+    instalam ``shopman.shop`` — não produz report de execução nenhum: o pytest
+    imprime ``0 collected, 1 skipped`` e sai com 0. O gate lia esse 0 e dizia
+    verde.
+
+    O que torna o buraco perigoso é que esse skip depende do ``rootdir``, e o
+    ``rootdir`` depende dos argumentos. Medido em 23/09/2026 com
+    ``packages/doorman/.../test_verification_ownership_postgres.py``: rodado
+    SOZINHO, o ``rootdir`` é ``packages/doorman``, as settings são
+    ``doorman_test_settings`` (sem ``shopman.shop``) e o módulo se pula —
+    ``0 collected, 1 skipped``, saída 0. Rodado com a lista inteira, o
+    ``rootdir`` é a raiz, as settings são ``config.settings`` e os cinco testes
+    rodam e passam (conferido no log da fila de merge do PR #989, 23/09 10:00).
+
+    Ou seja: o mesmo arquivo roda ou não roda conforme quem o invoca, e até
+    aqui o gate não sabia a diferença. Enquanto ele responder 0 a um módulo
+    pulado, "coberto pelo gate" é uma afirmação que ninguém verifica — e o dia
+    em que uma settings mudar, a cobertura evapora em silêncio.
+
+    Por isso são três redes, e não uma:
+
+    1. ``pytest_runtest_logreport`` — o skip de teste, que já existia;
+    2. ``pytest_collectreport`` — o skip de MÓDULO, invisível à primeira;
+    3. ``pytest_itemcollected`` + ``collected_files`` — o catch-all: arquivo
+       listado que não entregou NENHUM teste reprova, qualquer que tenha sido
+       o mecanismo (skip de coleta, arquivo esvaziado, rename silencioso).
+
+    A terceira usa ``pytest_itemcollected`` de propósito, e não a lista final de
+    ``pytest_collection_modifyitems``: aquele hook roda por item durante a
+    coleta, antes de qualquer desseleção, então um ``-k`` de quem está depurando
+    não vira reprovação falsa.
+    """
+
     skipped: list[tuple[str, str]] = field(default_factory=list)
+    collect_skipped: list[tuple[str, str]] = field(default_factory=list)
+    collected_files: set[Path] = field(default_factory=set)
 
     def pytest_runtest_logreport(self, report) -> None:
         if not report.skipped:
             return
         if report.when not in {"setup", "call"}:
             return
-        reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else str(report.longrepr)
-        self.skipped.append((report.nodeid, reason))
+        self.skipped.append((report.nodeid, _reason(report.longrepr)))
+
+    def pytest_collectreport(self, report) -> None:
+        if not report.skipped:
+            return
+        self.collect_skipped.append((report.nodeid, _reason(report.longrepr)))
+
+    def pytest_itemcollected(self, item) -> None:
+        path = getattr(item, "path", None)
+        if path is None:
+            return
+        self.collected_files.add(Path(str(path)).resolve())
+
+    def empty_paths(self, runtime_paths: list[str]) -> list[str]:
+        """Caminhos pedidos que não entregaram um único teste."""
+        return [path for path in runtime_paths if (ROOT / path).resolve() not in self.collected_files]
 
 
 def _runtime_paths() -> list[str]:
@@ -166,10 +229,37 @@ def main(argv: list[str] | None = None) -> int:
     ]
     result = pytest.main(pytest_args, plugins=[collector])
 
-    if result == 0 and collector.skipped:
+    violations = False
+
+    if collector.skipped:
+        violations = True
         print("\nRuntime gate failed because tests were skipped:", file=sys.stderr)
         for nodeid, reason in collector.skipped:
             print(f"- {nodeid}: {reason}", file=sys.stderr)
+
+    if collector.collect_skipped:
+        violations = True
+        print("\nRuntime gate failed because whole modules were skipped at collection:", file=sys.stderr)
+        for nodeid, reason in collector.collect_skipped:
+            print(f"- {nodeid}: {reason}", file=sys.stderr)
+
+    # `--maxfail=1` interrompe a EXECUÇÃO, não a coleta: os arquivos seguintes
+    # já foram coletados e continuam contando. Mas se a própria coleta abortou
+    # (erro de import), a lista fica curta e "vazio" seria mentira — por isso a
+    # varredura de coleta vazia só vale quando nada falhou na execução.
+    if not violations and result == 0:
+        empty = collector.empty_paths(runtime_paths)
+        if empty:
+            violations = True
+            print(
+                "\nRuntime gate failed because listed files collected zero tests "
+                "(they are declared covered and do not run):",
+                file=sys.stderr,
+            )
+            for path in empty:
+                print(f"- {path}", file=sys.stderr)
+
+    if violations and result == 0:
         return 1
 
     return int(result)

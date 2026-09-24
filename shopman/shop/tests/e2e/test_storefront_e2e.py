@@ -349,9 +349,19 @@ class TestOperator:
         assert response.status == 200, f"{url_name} respondeu {response.status}"
         expect(page.locator("body")).to_be_visible()
         assert "/admin/login/" not in page.url
-        # Controle positivo: o shell do Admin renderizou de verdade (a barra de
-        # navegação do Unfold), e não uma página de erro com 200.
-        expect(page.locator("h1, h2").first).to_be_visible()
+        # Controle positivo: a tela renderizou de verdade, e não uma página de
+        # erro com 200. O sinal é o TÍTULO da página (o `<h1>` de breadcrumb que
+        # o Unfold monta a partir do `title` da view).
+        #
+        # ⚠️ Era `locator("h1, h2").first` e quebrou no bump do django-unfold
+        # 0.92 → 0.107: a partir de alguma dessas treze minors os grupos da
+        # barra lateral viraram `<h2>` clicável (`x-on:click="navigationOpen =
+        # !navigationOpen"`), e eles vêm ANTES do `<h1>` no DOM. Com a lateral
+        # recolhida, o `.first` passou a resolver para um `<h2>` `hidden` e as
+        # quatro rotas falhavam com a página inteira renderizada corretamente
+        # atrás. Ancorar no `<h1>` diz o que o teste quer dizer — "a página tem
+        # título" — e não depende da ordem do chrome no DOM.
+        expect(page.locator("h1").first).to_be_visible()
 
     @pytest.mark.parametrize("url_name", OPERATOR_ADMIN_ROUTES)
     def test_10_operator_pages_require_auth(self, page, operator_base_url, url_name):

@@ -159,3 +159,29 @@ def test_sem_credencial_nao_envia_nada():
          mock.patch.object(ifood_http.requests, "get") as chamada:
         assert ifood_http.request("GET", "/order/v1.0/events:polling", label="poll") is None
     chamada.assert_not_called()
+
+
+@override_settings(SHOPMAN_IFOOD=_CFG)
+def test_motivos_de_cancelamento_atravessam_a_recusa_de_borda():
+    """21/09/2026: uma recusa de borda nesta leitura derrubou um cancelamento
+    com o prazo do iFood correndo. Ela passa pelo mesmo retry do polling."""
+    from shopman.shop.services import ifood_callbacks
+
+    motivos = [{"cancelCodeId": "501", "description": "Problemas de sistema na loja"}]
+    respostas = [_Resp(403, text=EDGE_BODY), _Resp(200, json_body=motivos)]
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
+         mock.patch.object(ifood_http.requests, "get", side_effect=respostas) as chamada:
+        assert ifood_callbacks.fetch_cancellation_reasons("order-1") == motivos
+    assert chamada.call_count == 2
+
+
+@override_settings(SHOPMAN_IFOOD=_CFG)
+def test_motivos_indisponiveis_depois_do_retry_viram_erro_nomeado():
+    import pytest
+
+    from shopman.shop.services import ifood_callbacks
+
+    with mock.patch.object(ifood_http.ifood_auth, "headers_with_reason", _headers), \
+         mock.patch.object(ifood_http.requests, "get", side_effect=[_Resp(403, text=EDGE_BODY)] * 5):
+        with pytest.raises(ifood_callbacks.IFoodCallbackError, match="after retries"):
+            ifood_callbacks.fetch_cancellation_reasons("order-1")

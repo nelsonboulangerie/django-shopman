@@ -117,7 +117,7 @@ const PAD_ADD =
       <UiDialogHeader>
         <UiDialogTitle>Novo timer</UiDialogTitle>
         <UiDialogDescription
-          >Lembrete deste dispositivo. Não trava fornada, QC nem
+          >Lembrete deste dispositivo. Não trava lote, QC nem
           Continuar.</UiDialogDescription
         >
       </UiDialogHeader>

@@ -98,7 +98,12 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return ultimaTentativa.chave;
   }
 
-  async function run(path: string, body: Record<string, unknown>, failMessage: string): Promise<boolean> {
+  async function run(
+    path: string,
+    body: Record<string, unknown>,
+    causa: string,
+    saida: string,
+  ): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
     const comChave = { ...body, client_request_id: chaveDoGesto(path, body) };
@@ -111,10 +116,16 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     } catch (error) {
       const code = httpErrorCode(error);
       if (code === "manager_approval_required" || code === "manager_approval_invalid") {
-        managerChallenge.value = { code, message: httpErrorMessage(error, failMessage) };
+        // Sem `saida` de propósito: aqui a saída É o diálogo de PIN que a página
+        // abre em seguida. "Tente de novo" mandaria repetir o gesto que já está
+        // na tela, e empurraria o operador para longe da assinatura que falta.
+        managerChallenge.value = { code, message: httpErrorMessage(error, causa) };
         return false;
       }
-      toast.error(httpErrorMessage(error, failMessage));
+      // A saída vive FORA do `httpErrorMessage`: ele substitui o fallback pelo
+      // `detail` do servidor, então gesto escrito dentro da causa some exatamente
+      // quando o servidor explica o que houve — que é quando ele mais importa.
+      toast.error(`${httpErrorMessage(error, causa)} ${saida}`);
       return false;
     } finally {
       busy.value = false;
@@ -125,7 +136,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       actionHref(actions.value, "open_cash_shift", "/api/v1/backstage/pos/cash/open/"),
       { opening_amount: amount || "0", terminal_ref: pos.value?.terminal_ref || "" },
-      "Falha ao abrir caixa.",
+      "O caixa não abriu.",
+      "O turno continua fechado. Tente de novo: repetir não abre dois turnos.",
     );
   }
 
@@ -133,7 +145,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       actionHref(actions.value, "close_cash_shift", "/api/v1/backstage/pos/cash/close/"),
       { closing_amount: payload.amount || "0", notes: payload.notes },
-      "Falha ao fechar caixa.",
+      "O caixa não fechou.",
+      "O turno segue aberto e a contagem continua na tela. Tente de novo: repetir não fecha duas vezes.",
     );
   }
 
@@ -156,7 +169,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       actionHref(actions.value, "cash_movement", "/api/v1/backstage/pos/cash/movement/"),
       body,
-      "Falha ao registrar movimento.",
+      "O movimento não entrou no livro-caixa.",
+      "A gaveta não abriu e o valor segue na tela. Tente de novo agora: a mesma tentativa não vira dois lançamentos.",
     ).then((ok) => {
       // Só abre depois do servidor aceitar: gaveta aberta por um movimento que
       // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
@@ -201,7 +215,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       const receipt = await action.call<{ payload_b64: string; title: string }>(getPath, { method: "GET" });
       outcome = await drawer.print(receipt.payload_b64, receipt.title);
     } catch (error) {
-      outcome = { status: "failed", detail: httpErrorMessage(error, "Falha ao montar o comprovante.") };
+      // Fragmento em minúscula de propósito: entra DENTRO de "O comprovante não
+      // saiu: …", e a saída (ação "Tentar de novo" + onde se resolve) é do toast
+      // logo abaixo. Frase inteira aqui duplicaria o sujeito.
+      outcome = { status: "failed", detail: httpErrorMessage(error, "o servidor não montou o comprovante") };
     }
     if (outcome.status === "failed") {
       // Nunca só "indisponível": o operador ganha a saída na mão — tentar de
@@ -258,7 +275,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     const registered = await run(
       actionHref(actions.value, "drawer_open", "/api/v1/backstage/pos/cash/drawer-open/"),
       { reason },
-      "Falha ao registrar a abertura.",
+      "A abertura da gaveta não entrou na trilha.",
+      "A gaveta continua fechada: sem registro ela não abre. Tente de novo.",
     );
     if (!registered) return false;
     return drawer.kick("no_sale");
@@ -286,7 +304,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       actionHref(actions.value, "request_change", "/api/v1/backstage/pos/cash/change-request/"),
       { amount: payload.amount, denominations: payload.denominations, note: payload.note },
-      "Falha ao pedir troco.",
+      "O pedido de troco não foi enviado.",
+      "Ninguém foi avisado ainda. Tente de novo.",
     );
   }
 
@@ -307,7 +326,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(payload.ref)}/serve/`,
       body,
-      "Falha ao atender o pedido.",
+      // "o pedido", sozinho, é o pedido do CLIENTE em todo o resto do PDV.
+      "O pedido de troco não foi atendido.",
+      "A gaveta não abriu e o pedido segue na lista. Tente de novo.",
     ).then((ok) => {
       // Só depois do `ok`: gaveta aberta por um atendimento recusado (PIN
       // errado, pedido já resolvido) é dinheiro exposto sem lastro.
@@ -334,7 +355,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       `/api/v1/backstage/pos/cash/refund/${encodeURIComponent(payload.orderRef)}/`,
       body,
-      "Falha ao devolver o dinheiro.",
+      "A devolução não foi registrada.",
+      "O dinheiro não saiu da gaveta e a devolução segue pendente. Tente de novo: o servidor não devolve duas vezes.",
     ).then((ok) => {
       // A gaveta abre para entregar as notas, e só depois do `ok`: devolução
       // recusada (PIN errado, já devolvida) não pode abrir a gaveta.
@@ -352,7 +374,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       `/api/v1/backstage/pos/accounts/${encodeURIComponent(payload.customerRef)}/settle/`,
       { amount: payload.amount, method: payload.method },
-      "Falha ao receber o acerto.",
+      "O acerto não foi registrado.",
+      "Nada entrou na gaveta e o saldo do cliente não mudou. Tente de novo agora: a mesma tentativa não cobra duas vezes.",
     ).then((ok) => {
       // Dinheiro entrando: a gaveta abre para guardar, depois do `ok`.
       if (ok && payload.method === "cash") void drawer.kick("account_settled");
@@ -364,7 +387,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return run(
       `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(ref)}/cancel/`,
       {},
-      "Falha ao cancelar o pedido.",
+      "O pedido de troco não foi cancelado.",
+      "Ele segue na lista. Tente de novo.",
     );
   }
 

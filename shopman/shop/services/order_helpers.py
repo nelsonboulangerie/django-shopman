@@ -7,9 +7,12 @@ during the session→order data schema evolution.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 def get_fulfillment_type(order) -> str:
@@ -51,6 +54,115 @@ def is_test_order(order) -> bool:
     if isinstance(ifood, dict) and ifood.get("is_test") is True:
         return True
     return False
+
+
+def delivery_ownership(order) -> str:
+    """De quem é a responsabilidade de levar este pedido até o cliente?
+
+    Quatro respostas, e a pergunta por trás delas é sempre a mesma: **a
+    logística é de um terceiro que já tem os dados do cliente?**
+
+    - ``"house"`` — a casa. Inclusive quando quem pedala é transportadora
+      contratada por ela (a Nelson usa Taon Delivery/Taxi Machine no canal
+      próprio): quem contrata o entregador é a loja, então é a loja que precisa
+      dizer a ele onde tocar a campainha. Terceirizada da casa não é terceiro
+      com os dados do cliente — ela não tem app nenhum, tem o papel.
+    - ``"marketplace"`` — o marketplace. O entregador chega com o endereço e o
+      telefone já na tela do app dele; repetir isso no papel não ajuda ninguém
+      e espalha dado pessoal.
+    - ``"unknown"`` — pedido de marketplace em que o responsável não veio no
+      payload. Na dúvida a casa NÃO repete dado pessoal: desconhecido não é
+      autorização, é falta de prova — a mesma porta que
+      ``ifood_ingest._collection_on_delivery`` fecha para a cobrança.
+    - ``"none"`` — retirada. Não há entrega, logo não há dono dela.
+
+    A marca vem de ``data["ifood"]["delivered_by"]`` (``deliveredBy`` do Order
+    Module). Pedido sem bloco de marketplace é pedido do canal próprio, e no
+    canal próprio a entrega é sempre compromisso da casa. Outra origem de
+    marketplace, quando existir, ganha seu ramo AQUI — este é o único lugar em
+    que a pergunta é respondida.
+    """
+    if get_fulfillment_type(order) != "delivery":
+        return "none"
+    data = getattr(order, "data", None) or {}
+    ifood = data.get("ifood")
+    if not isinstance(ifood, dict):
+        return "house"
+    owner = str(ifood.get("delivered_by") or "").strip().upper()
+    if owner == "MERCHANT":
+        return "house"
+    if owner == "IFOOD":
+        return "marketplace"
+    return "unknown"
+
+
+def house_owns_the_delivery(order) -> bool:
+    """A entrega é compromisso da CASA — a logística não é de terceiro.
+
+    Predicado de :func:`delivery_ownership`, e a razão de ele existir separado é
+    que quem pergunta quase sempre quer só o sim/não.
+
+    Retirada responde ``False``: ninguém leva nada.
+    """
+    return delivery_ownership(order) == "house"
+
+
+#: As duas vias do entregador, pelo nome que a casa usa:
+#: **Identificada** (endereço, telefone, nome, cobrança na porta) e **Anônima**
+#: (só o que identifica o pedido e confere a sacola).
+COURIER_TICKET_IDENTIFIED = "identified"
+COURIER_TICKET_ANONYMOUS = "anonymous"
+
+
+def courier_ticket_variant(order) -> str:
+    """Qual via do entregador este pedido imprime — e quem decide isso.
+
+    **A configuração decide onde há escolha.** O canal de venda declara a via em
+    ``ChannelConfig.fulfillment.courier_ticket``: o canal próprio imprime a
+    Identificada (a transportadora contratada pela casa não tem app — o endereço
+    só existe para ela no papel), o canal de marketplace imprime a Anônima.
+    Canal novo entra por configuração, sem tocar nesta função.
+
+    **A regra de terceiro trava onde não há escolha.** Configuração é do
+    operador, e operador erra: um canal de marketplace deixado como
+    ``identified`` mandaria endereço, telefone e nome do cliente para a mão de um
+    entregador que trabalha para outra empresa. O iFood proíbe isso em documento
+    destinado a parceiro de entrega, e a casa não tem interesse em espalhar dado
+    de cliente. Então a configuração não é obedecida calada: quando o PEDIDO diz
+    que quem entrega não é a casa (:func:`delivery_ownership`), prevalece a
+    Anônima, e o log diz de quem era a escolha e por que ela caiu.
+
+    ``unknown`` desce junto com ``marketplace``, pela regra desta casa: na dúvida
+    não se repete dado pessoal. Responsável não informado é falta de prova, e
+    falta de prova não autoriza — o Gestor, aliás, nem despacha esse pedido
+    (``AdvanceBlock.IFOOD_DELIVERY_UNKNOWN``).
+    """
+    from shopman.shop.config import ChannelConfig
+
+    configured = str(
+        ChannelConfig.for_channel(order.channel_ref or "").fulfillment.courier_ticket
+        or COURIER_TICKET_IDENTIFIED
+    )
+    if configured == COURIER_TICKET_ANONYMOUS:
+        return COURIER_TICKET_ANONYMOUS
+
+    ownership = delivery_ownership(order)
+    if get_fulfillment_type(order) == "delivery" and ownership != "house":
+        # ⚠️ A razão ANTES do retorno, e não depois: quem lê o log precisa saber
+        # que a via saiu Anônima contra a configuração do canal, e não por
+        # escolha de alguém. Sem esta linha a correção iria para o lugar errado
+        # — alguém mexeria no papel em vez de arrumar o canal.
+        logger.warning(
+            "Via do entregador ANÔNIMA no pedido %s: o canal '%s' está configurado como "
+            "'identified', mas a entrega deste pedido é de terceiro (%s). Endereço, "
+            "telefone e nome do cliente não saem no papel. Corrija "
+            "fulfillment.courier_ticket do canal.",
+            order.ref,
+            order.channel_ref or "",
+            ownership,
+        )
+        return COURIER_TICKET_ANONYMOUS
+    return COURIER_TICKET_IDENTIFIED
 
 
 def exclude_test_orders(queryset):
@@ -96,6 +208,15 @@ def delivery_auto_complete_grace_minutes(shop) -> int:
     cfg = (getattr(shop, "defaults", None) or {}).get("delivery") or {}
     raw = cfg.get("auto_complete_grace_minutes")
     return int(raw) if raw is not None else 30
+
+
+def card_machine_alert_minutes(shop) -> int:
+    """Quanto tempo a maquininha pode ficar na rua antes de virar alerta.
+    Calibrável em ``Shop.defaults["delivery"]["card_machine_alert_minutes"]``
+    (default 120). ``0`` ou negativo DESLIGA o alerta."""
+    cfg = (getattr(shop, "defaults", None) or {}).get("delivery") or {}
+    raw = cfg.get("card_machine_alert_minutes")
+    return int(raw) if raw is not None else 120
 
 
 def parse_commitment_date(value) -> date | None:

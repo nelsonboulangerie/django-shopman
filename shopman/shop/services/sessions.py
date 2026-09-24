@@ -98,7 +98,14 @@ def commit_session(
     ctx: dict | None = None,
     channel_config: dict | None = None,
 ) -> CommitResult:
-    """Commit a session through the canonical Orderman service."""
+    """Commit a session through the canonical Orderman service.
+
+    Canal desligado no Gestor (toggle "Ativo" da aba Canais) não fecha pedido —
+    ver ``channel_switch.ensure_accepting_orders``.
+    """
+    from shopman.shop.services.channel_switch import ensure_accepting_orders
+
+    ensure_accepting_orders(channel_ref)
     return CommitService.commit(
         session_key=session_key,
         channel_ref=channel_ref,

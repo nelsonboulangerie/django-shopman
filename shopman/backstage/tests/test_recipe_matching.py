@@ -30,12 +30,12 @@ LEVAIN = IngredientCandidate(sku="LEVAIN", name="Levain", unit="kg", role="yeast
 def materials():
     rows = [
         ("FARINHA-T55", "Farinha de trigo T55", "kg"),
-        ("FARINHA-INT", "Farinha de trigo integral", "kg"),
+        ("FARINHA-INTEGRAL", "Farinha de trigo integral", "kg"),
         ("AGUA-FILTRADA", "Água filtrada", "l"),
-        ("MANTEIGA-FR", "Manteiga francesa", "kg"),
+        ("MANTEIGA-FRANCESA", "Manteiga francesa", "kg"),
         ("OVOS", "Ovos", "kg"),
         ("SAL", "Sal", "kg"),
-        ("FERMENTO-BIO", "Fermento biológico", "kg"),
+        ("FERMENTO-BIOLOGICO", "Fermento biológico", "kg"),
     ]
     created = {sku: Material.objects.create(sku=sku, name=name, unit=unit) for sku, name, unit in rows}
     Material.objects.create(sku="FARINHA-VELHA", name="Farinha de trigo antiga", unit="kg", is_active=False)
@@ -70,7 +70,7 @@ def test_a_qualifier_does_not_pull_the_wrong_ingredient(materials):
     match = best_match("manteiga sem sal")
 
     assert match is not None
-    assert match.sku == "MANTEIGA-FR"
+    assert match.sku == "MANTEIGA-FRANCESA"
 
 
 def test_an_extra_option_the_module_does_not_know_can_win(materials):
@@ -129,7 +129,7 @@ def test_an_inactive_material_never_shows_up(materials):
 
 
 def test_a_typed_prefix_ranks_like_a_match(materials):
-    assert search_ingredients("ferm")[0].sku == "FERMENTO-BIO"
+    assert search_ingredients("ferm")[0].sku == "FERMENTO-BIOLOGICO"
 
 
 # ── Normalização, sinônimos e papel (puros) ─────────────────────────────────
@@ -168,11 +168,11 @@ def test_normalization_drops_latin_accents_but_keeps_japanese_letters():
         ("Água filtrada", "AGUA-FILTRADA", "liquid"),
         ("Sal marinho", "SAL", "salt"),
         ("Salsicha vienna", "SALSICHA-VIENNA", "inclusion"),
-        ("Manteiga francesa", "MANTEIGA-FR", "fat"),
+        ("Manteiga francesa", "MANTEIGA-FRANCESA", "fat"),
         ("Creme de leite fresco", "CREME-DE-LEITE", "dairy"),
-        ("Fermento natural (levain)", "FERMENTO-NAT", "yeast"),
+        ("Fermento natural (levain)", "FERMENTO-NATURAL", "yeast"),
         ("Ovos", "OVOS", "egg"),
-        ("Gotas de chocolate", "GOTAS-CHOCOLATE", "inclusion"),
+        ("Gotas de chocolate", "CHOCOLATE-GOTAS", "inclusion"),
         ("Malte", "MALTE", "sugar"),
         ("Cebola roxa", "CEBOLA-ROXA", "inclusion"),
         ("Coisa nenhuma", "X", "other"),

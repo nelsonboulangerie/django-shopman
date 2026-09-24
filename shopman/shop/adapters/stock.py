@@ -213,6 +213,272 @@ def create_hold(
         }
 
 
+def create_holds_up_to(
+    sku: str,
+    qty: Decimal,
+    ttl_minutes: int = 30,
+    *,
+    target_date: date | None = None,
+    reference: str | None = None,
+    channel_ref: str | None = None,
+    apply_safety_margin: bool = True,
+    **metadata,
+) -> list[tuple[str, Decimal]]:
+    """Reserva ATÉ ``qty``, em quantas reservas forem precisas.
+
+    O Stockman ancora cada reserva em UM quant (1:1 por desenho), e
+    ``create_hold`` falha quando nenhum quant sozinho cobre o pedido inteiro.
+    Aqui a reserva vai em pedaços: a cada volta, o maior saldo livre de um
+    quant elegível (no escopo do canal) vira uma reserva, até cobrir ``qty``
+    ou acabar o livre. Nunca reserva além do que está livre — reserva alheia
+    continua valendo.
+
+    Cada volta precisa PROVAR progresso: a reserva tem de cair num quant (não
+    em demanda, ``quant=None``) e o livre do escopo tem de baixar. Se não
+    baixou, a reserva não segura nada — é desfeita e o laço para. Mais um teto
+    de voltas, para que nenhum desencontro entre a leitura do livre e a
+    escolha do quant no Stockman vire laço longo.
+
+    Returns:
+        ``[(hold_id, qty), ...]`` do que foi reservado (vazia se nada coube).
+    """
+    from shopman.stockman.models import Hold
+
+    def _free_by_quant() -> dict[int, Decimal]:
+        return _free_by_eligible_quant(sku, target_date=target_date, channel_ref=channel_ref)
+
+    reserved: list[tuple[str, Decimal]] = []
+    remaining = Decimal(str(qty))
+    free = _free_by_quant()
+    for _ in range(_MAX_PARTIAL_HOLDS):
+        if remaining <= 0:
+            break
+        largest_free = max(free.values(), default=Decimal("0"))
+        piece = min(largest_free, remaining)
+        if piece <= 0:
+            break
+        result = create_hold(
+            sku,
+            piece,
+            ttl_minutes,
+            target_date=target_date,
+            reference=reference,
+            channel_ref=channel_ref,
+            apply_safety_margin=apply_safety_margin,
+            **metadata,
+        )
+        if not result.get("success"):
+            break
+        hold = Hold.objects.filter(pk=int(result["hold_id"].split(":")[1])).only("quant").first()
+        free_after = _free_by_quant()
+        consumed = sum(free.values(), Decimal("0")) - sum(free_after.values(), Decimal("0"))
+        if hold is None or hold.quant_id is None or consumed < piece:
+            # Sem progresso real (demanda, ou o livre não baixou): a reserva não
+            # garante baixa nenhuma. Desfaz e para — o resto vira alerta.
+            logger.warning(
+                "create_holds_up_to: reserva sem progresso sku=%s hold=%s piece=%s consumed=%s",
+                sku, result["hold_id"], piece, consumed,
+            )
+            release_holds([result["hold_id"]])
+            break
+        reserved.append((result["hold_id"], piece))
+        remaining -= piece
+        free = free_after
+    return reserved
+
+
+def _free_by_eligible_quant(sku: str, *, target_date: date | None, channel_ref: str | None) -> dict[int, Decimal]:
+    """Livre de cada quant elegível no escopo do canal (a mesma régua da reserva)."""
+    from shopman.stockman.services.scope import quants_eligible_for
+
+    scope = get_channel_scope(channel_ref) if channel_ref else {}
+    eligible = quants_eligible_for(
+        sku,
+        target_date=target_date or timezone.localdate(),
+        allowed_positions=scope.get("allowed_positions"),
+        excluded_positions=scope.get("excluded_positions"),
+        expiry_margin_days=scope.get("expiry_margin_days", 0),
+        include_nonconforming=scope.get("sells_nonconforming", True),
+        allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
+    )
+    return {quant.pk: quant.available for quant in eligible}
+
+
+# Teto de reservas parciais por item: cada uma exige um quant com livre, e uma
+# vitrine real tem poucos. 20 é folga larga e ainda mantém o pior caso barato.
+_MAX_PARTIAL_HOLDS = 20
+
+
+# Carimbos que o Stockman e o ciclo do hold escrevem no metadata; a reserva que
+# devolve o troco ao carrinho nasce com os seus próprios, nunca com os da cedida.
+_HOLD_LIFECYCLE_METADATA = frozenset({
+    "reference", "release_reason", "released_by", "confirmed_by", "ceded_to", "ceded_remainder_of",
+})
+
+
+def is_cart_hold(hold) -> bool:
+    """A reserva é de CARRINHO — pode ceder à venda já consumada?
+
+    O critério é o que a casa já usa para ordenar quem sai primeiro quando a
+    fornada encolhe (``handlers/_stock_receivers``) e para varrer órfãos
+    (``sweep_orphan_holds``): a ``reference`` do hold. Sacola é a chave da
+    sessão; pedido é ``order:<ref>`` desde o commit (``_retag_hold_for_order``
+    ou a reserva nascida no pedido). Não há campo novo.
+
+    Ficam de fora, por serem promessa e não intenção de compra:
+
+    - pedido (``order:``) — comprometido/pago, nunca cede;
+    - hold sem referência — reserva manual do operador, decisão humana;
+    - reserva de produção (``purpose=workorder``) — insumo, não venda;
+    - fila de fornada e demanda (``planned``/``on_demand``) e todo hold sem
+      prazo: quem está na fila recebeu a palavra da casa, inclusive nos 15 min
+      de confirmação depois que o lote sai.
+    """
+    metadata = hold.metadata or {}
+    reference = str(metadata.get("reference") or "")
+    if not reference or reference.startswith("order:"):
+        return False
+    if metadata.get("purpose") == "workorder":
+        return False
+    if metadata.get("planned") or metadata.get("on_demand"):
+        return False
+    return hold.expires_at is not None
+
+
+def reserve_ceding_cart_holds(
+    sku: str,
+    qty: Decimal,
+    ttl_minutes: int = 30,
+    *,
+    beneficiary: str,
+    target_date: date | None = None,
+    reference: str | None = None,
+    channel_ref: str | None = None,
+    exclude_references: tuple[str, ...] = (),
+    **metadata,
+) -> tuple[list[tuple[str, Decimal]], list[dict]]:
+    """Reserva ``qty`` para uma venda já consumada, cedendo reservas de CARRINHO.
+
+    Para o caminho otimista (balcão, marketplace pago): o pão já saiu pela
+    porta, e a sacola de alguém na loja online é só intenção de compra. Quando
+    o livre não basta, cedem as reservas de carrinho (``is_cart_hold``) nos
+    quants elegíveis da venda — as mais recentes primeiro, e só o que falta.
+    Reserva de pedido não cede: o que nem assim couber volta ao chamador, que
+    alerta o operador.
+
+    Uma reserva maior que a falta é solta inteira (o Stockman não parte hold)
+    e o troco volta ao carrinho numa reserva nova, na mesma sessão e com o
+    mesmo prazo, DEPOIS que a venda reservou a sua parte.
+
+    Concorrência: tudo numa transação. Os holds candidatos são travados
+    (``select_for_update``) antes de qualquer quant — a mesma ordem hold→quant
+    do commit da loja, que trava o hold no ``retag`` e o quant ao reservar o
+    resto. Um hold que o checkout adotou no mesmo instante já tem
+    ``order:<ref>`` quando o lock sai e não cede; um hold que cedeu primeiro
+    deixa de estar ativo, e o ``retag`` do checkout devolve ``False``.
+
+    Returns:
+        ``(reserved, ceded)`` — ``reserved`` como em ``create_holds_up_to``;
+        ``ceded`` com uma entrada por reserva cedida: ``{hold_id, reference,
+        qty, ceded_qty, remainder_hold_id}``.
+    """
+    from django.db import transaction
+    from shopman.stockman.models import Hold
+    from shopman.stockman.service import Stock as stock
+
+    qty = Decimal(str(qty))
+    ceded: list[dict] = []
+    remainders: list[tuple[Hold, Decimal, dict]] = []
+    with transaction.atomic():
+        quant_ids = list(_free_by_eligible_quant(sku, target_date=target_date, channel_ref=channel_ref))
+        # Trava os candidatos ANTES de medir o livre: a medida vale até o fim.
+        candidates = list(
+            Hold.objects.select_for_update()
+            .filter(quant_id__in=quant_ids)
+            .active()
+            .exclude(metadata__reference__startswith="order:")
+            .order_by("-created_at", "-pk")
+        ) if quant_ids else []
+        free = _free_by_eligible_quant(sku, target_date=target_date, channel_ref=channel_ref)
+        shortfall = qty - sum(free.values(), Decimal("0"))
+        for hold in candidates:
+            if shortfall <= 0:
+                break
+            cart_reference = str((hold.metadata or {}).get("reference") or "")
+            if not is_cart_hold(hold) or cart_reference in exclude_references:
+                continue
+            take = min(hold.quantity, shortfall)
+            released = stock.release(hold.hold_id, reason=f"Cedida à venda {beneficiary}")
+            # O destino fica no próprio hold, para quem abrir a reserva depois.
+            released.metadata = {**(released.metadata or {}), "ceded_to": beneficiary}
+            released.save(update_fields=["metadata"])
+            logger.info(
+                "stock.cart_hold_ceded hold=%s session=%s qty=%s ceded=%s to=%s",
+                hold.hold_id, cart_reference, hold.quantity, take, beneficiary,
+            )
+            shortfall -= take
+            entry = {
+                "hold_id": hold.hold_id,
+                "reference": cart_reference,
+                "qty": float(hold.quantity),
+                "ceded_qty": float(take),
+                "remainder_hold_id": None,
+            }
+            ceded.append(entry)
+            if hold.quantity > take:
+                remainders.append((hold, hold.quantity - take, entry))
+
+        reserved = create_holds_up_to(
+            sku,
+            qty,
+            ttl_minutes,
+            target_date=target_date,
+            reference=reference,
+            channel_ref=channel_ref,
+            **metadata,
+        )
+
+        for hold, remainder, entry in remainders:
+            entry["remainder_hold_id"] = _return_remainder_to_cart(hold, remainder)
+    return reserved, ceded
+
+
+def _return_remainder_to_cart(hold, remainder: Decimal) -> str | None:
+    """Devolve à sacola o que a reserva cedida tinha além da falta."""
+    from shopman.orderman.models import Session
+
+    cart_reference = str((hold.metadata or {}).get("reference") or "")
+    session_channel = (
+        Session.objects.filter(session_key=cart_reference).values_list("channel_ref", flat=True).first()
+    )
+    carried = {
+        key: value
+        for key, value in (hold.metadata or {}).items()
+        if not key.startswith("_") and key not in _HOLD_LIFECYCLE_METADATA
+    }
+    result = create_hold(
+        hold.sku,
+        remainder,
+        target_date=hold.target_date,
+        reference=cart_reference,
+        channel_ref=session_channel,
+        # Não é reserva nova: é a sacola recebendo de volta o que já era dela.
+        # A margem da vitrine barraria justamente esta devolução.
+        apply_safety_margin=False,
+        ceded_remainder_of=hold.hold_id,
+        **carried,
+    )
+    if not result.get("success"):
+        # A sacola descobre na revalidação/checkout, como numa reserva vencida.
+        logger.warning(
+            "stock.cart_hold_remainder_lost hold=%s session=%s qty=%s code=%s",
+            hold.hold_id, cart_reference, remainder, result.get("error_code"),
+        )
+        return None
+    extend_hold(result["hold_id"], expires_at=hold.expires_at)
+    return result["hold_id"]
+
+
 def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
     """
     Fulfill a confirmed hold (decrements stock).

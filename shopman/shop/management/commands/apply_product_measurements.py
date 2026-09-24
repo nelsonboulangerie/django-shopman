@@ -52,22 +52,22 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # (PESO_MASSA_CRUA_G no seed) e seis valores assados foram recalibrados a
 # partir dela — estimativas de ~12%, a conferir na balança com a peça pronta.
 MEASUREMENTS: dict[str, dict[str, object]] = {
-    "CGO": {
+    "CPG": {
         "unit_weight_g": 300,
         "serves": "2 a 3 pessoas",
         "approx_dimensions": "aprox. 15 cm de diâmetro x 10 cm de altura",
     },
     "CPX": {"unit_weight_g": 500, "approx_dimensions": "aprox. 15 x 15 x 10 cm"},
-    "CGR": {"unit_weight_g": 300},
-    "CF": {"unit_weight_g": 265},
+    "CPR": {"unit_weight_g": 300},
+    "CPBG": {"unit_weight_g": 265},
     "CI": {"unit_weight_g": 180},
-    "CT": {"unit_weight_g": 70},
-    "KP": {"unit_weight_g": 250},
-    "MD": {"unit_weight_g": 25},
-    "BH": {"unit_weight_g": 90},
+    "CRO": {"unit_weight_g": 70},
+    "KUP": {"unit_weight_g": 250},
+    "MDLN": {"unit_weight_g": 25},
+    "BICH": {"unit_weight_g": 90},
     "CN": {"unit_weight_g": 72},
     "FOA": {"unit_weight_g": 370},
-    "CBT": {"unit_weight_g": 600},
+    "FOB": {"unit_weight_g": 600},
     "FOC": {"unit_weight_g": 475},
 }
 

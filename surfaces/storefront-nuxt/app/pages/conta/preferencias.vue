@@ -282,7 +282,8 @@ useSeoMeta({ title: 'Preferências' })
           <UiAlertDialogHeader>
             <UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>
             <UiAlertDialogDescription>
-              O cancelamento é definitivo para este aviso. Mensagens já aceitas pelo provedor não podem ser retiradas.
+              O cancelamento é definitivo para este aviso, e o seu número é apagado junto. Mensagens já
+              aceitas pelo provedor não podem ser retiradas.
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>

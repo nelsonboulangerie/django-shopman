@@ -7,6 +7,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from shopman.doorman.views.access_link import AccessLinkCreateView, AccessLinkExchangeView
 
 from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
@@ -17,6 +18,7 @@ from shopman.backstage.admin_console.pos_counter_agent import (
     pos_counter_agent_view,
 )
 from shopman.backstage.admin_console.settings_hub import settings_hub_view
+from shopman.backstage.views.admin_login import admin_login
 from shopman.backstage.views.two_factor import admin_2fa_enroll, admin_2fa_verify
 from shopman.shop.views.admin_host import admin_host_root
 from shopman.shop.views.health import HealthCheckView, ReadyCheckView
@@ -101,6 +103,9 @@ urlpatterns = [
     ),
     path("admin/2fa/verify/", admin_2fa_verify, name="admin_2fa_verify"),
     path("admin/2fa/enroll/", admin_2fa_enroll, name="admin_2fa_enroll"),
+    # Antes do `admin.site.urls`: a senha do Admin passa pelo mesmo freio de
+    # tentativas do login de operador (ver `backstage/views/admin_login.py`).
+    path("admin/login/", admin_login),
     path("admin/", admin.site.urls),
     # OpenAPI
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
@@ -131,8 +136,34 @@ urlpatterns = [
 # Se um desses ganhar consumidor real, ele volta COM permissão explícita
 # (IsAdminUser/DjangoModelPermissions) e o guardrail é atualizado deliberadamente.
 
-urlpatterns += _include_optional("api/auth/", "shopman.doorman.api.urls")
-urlpatterns += _include_optional("auth/", "shopman.doorman.urls")
+# Do doorman, o deployment monta DUAS rotas, cada uma com consumidor nomeado:
+#
+# - `api/auth/access/create/`: a ponte do ManyChat. O External Request do flow
+#   chama servidor a servidor com `ACCESS_LINK_API_KEY` (docs/guides/
+#   whatsapp-access-link.md).
+# - `auth/access/` (`doorman:access-exchange`): a entrada de reserva do
+#   `AccessLinkService._build_url` quando `ACCESS_LINK_ENTRY_URL` está vazio
+#   (suíte de testes, dev local sem loja). Com a loja configurada, como em todo
+#   ambiente vivo, o link emitido é `{loja}/a?t=` e a troca é POST.
+#
+# O resto de `shopman.doorman.urls` e `shopman.doorman.api.urls` (OTP por
+# `api/auth/request-code|verify-code` e `auth/code/*`, pedido de link por
+# e-mail, dispositivos, logout, health) era uma segunda porta de login ao lado
+# da loja, sem o rate limit por IP e o `csrf_protect` que `api/v1/auth/*` tem,
+# e nenhuma superfície a chamava: a loja entra por `api/v1/auth/` (BFF Nuxt).
+# Guardrail: shopman/shop/tests/test_api_perimeter.py.
+urlpatterns += [
+    path("api/auth/access/create/", AccessLinkCreateView.as_view(), name="auth-access-create"),
+    path(
+        "auth/",
+        include(
+            (
+                [path("access/", AccessLinkExchangeView.as_view(), name="access-exchange")],
+                "doorman",
+            )
+        ),
+    ),
+]
 
 urlpatterns += _include_optional("api/webhooks/", "shopman.shop.webhooks.urls")
 # Concierge de WhatsApp (superfície de cliente): /api/webhooks/manychat/conversation/

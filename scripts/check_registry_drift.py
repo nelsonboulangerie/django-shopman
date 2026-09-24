@@ -77,6 +77,31 @@ qualquer espera — é recusar-se a confundir "o registry ainda não me contou" 
 "o componente ficou para trás". A linha final diz quantas leituras a divergência
 atravessou, que é a diferença entre afirmar e supor.
 
+## A tag móvel se lê na DISTRIBUIÇÃO, não na listagem
+
+A repergunta consertou o atraso de segundos, e 22/09/2026 mostrou o atraso de
+horas. Desde 00:17 UTC, todo push no `main` ficou vermelho acusando `hub-nuxt`
+para trás ("publicado fc29a0c30, que NÃO contém 8d4ed17c9"), e não estava. A
+listagem de tags da API da DO (`GET /v2/registry/<r>/repositories/<repo>/tags`,
+a mesma do `doctl registry repository list-tags`) mostrava a tag móvel `hub` em
+`sha256:5b01d7ac…`, atualizada 00:09:22 e PARADA assim por oito horas, apesar de
+cinco pushes posteriores dela. A API de distribuição — `HEAD
+registry.digitalocean.com/v2/<r>/<repo>/manifests/hub` — respondia
+`sha256:0dd7b725…`, o mesmo digest de `hub-806f5281c…`; e a listagem de
+MANIFESTS trazia esse digest com as imutáveis novas. Só a entrada da tag MÓVEL
+na listagem de tags estava velha. A repergunta de quatro minutos não alcança
+um cache de oito horas, e a remediação sugerida (republicar) foi rodada às
+07:31 e não mudou nada — não havia o que republicar.
+
+Então o digest da tag móvel vem agora de onde o App Platform PUXA: o endpoint de
+distribuição, com bearer token do `GET /v2/registry/auth` (Basic com o próprio
+token da DO). É essa a verdade do ambiente vivo, por definição — a listagem é
+um índice, e índice pode atrasar. A listagem continua servindo para o que só
+ela faz: mapear digest → imutáveis `<tag>-<sha>`, que nascem uma vez e não
+mudam de valor. Cada linha declara a FONTE do digest; se a distribuição falhar
+(rede, auth), a guarda cai para a listagem e diz isso na própria linha, com o
+erro — nunca em silêncio, porque aí o vermelho volta a poder ser do índice.
+
 Uso:
 
     DO_TOKEN=... python scripts/check_registry_drift.py
@@ -92,12 +117,14 @@ Saídas:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import NamedTuple
@@ -115,6 +142,27 @@ from deploy_components import (  # noqa: E402
 )
 
 API = "https://api.digitalocean.com/v2"
+#: De onde o App Platform puxa. É aqui que a tag móvel diz a verdade.
+DISTRIBUTION = "https://registry.digitalocean.com/v2"
+#: Manifest e índice, OCI e Docker: sem o tipo certo no `Accept`, o registry
+#: pode converter e devolver o digest de OUTRA representação da mesma imagem.
+MANIFEST_ACCEPT = ", ".join(
+    [
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    ]
+)
+FONTE_DISTRIBUICAO = "distribuição (HEAD do manifest, o que o App Platform puxa)"
+FONTE_LISTAGEM = "listagem /tags da API da DO"
+
+# ⚠️ O registry fica atrás do Cloudflare, que responde 403 ao User-Agent
+# padrão do urllib (`Python-urllib/3.x`) — medido em 22/09/2026: mesmo bearer,
+# HEAD com o agente padrão = 403 `server: cloudflare`; com agente próprio = 200
+# e o digest certo. Sem isto a leitura pela distribuição falhava SEMPRE no CI e
+# a guarda caía calada de volta na listagem atrasada.
+USER_AGENT = "shopman-registry-guard/1"
 
 #: `pos-<40 hex>` → ("pos", sha). O sufixo imutável é o que permite dizer QUAL
 #: commit está por trás de uma tag móvel.
@@ -144,7 +192,7 @@ def fetch_tags(registry: str, repository: str, token: str) -> list[dict]:
     url = f"{API}/registry/{registry}/repositories/{repository}/tags?per_page=200"
     while url:
         request = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {token}"}
+            url, headers={"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT}
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -161,6 +209,89 @@ def fetch_tags(registry: str, repository: str, token: str) -> list[dict]:
         file=sys.stderr,
     )
     return tags
+
+
+def _pull_token(registry: str, repository: str, token: str) -> str:
+    """Bearer de leitura para UM repositório, trocado pelo token da DO.
+
+    O token da DO vai em Basic (usuário = senha = token), como o `docker login`
+    do DOCR. ⚠️ Nenhum dos dois tokens sai em mensagem: o erro carrega a URL,
+    que não tem segredo, e a exceção do urllib, que não carrega cabeçalho.
+    """
+    scope = f"repository:{registry}/{repository}:pull"
+    url = (
+        f"{API}/registry/auth?service=registry.digitalocean.com"
+        f"&scope={urllib.parse.quote(scope, safe='')}"
+    )
+    basic = base64.b64encode(f"{token}:{token}".encode()).decode()
+    request = urllib.request.Request(
+        url, headers={"Authorization": f"Basic {basic}", "User-Agent": USER_AGENT}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.load(response)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise NaoDeuParaPerguntar(f"auth do registry ({url}): {exc}") from exc
+    bearer = payload.get("token") if isinstance(payload, dict) else None
+    if not bearer:
+        raise NaoDeuParaPerguntar("auth do registry respondeu sem `token`")
+    return bearer
+
+
+def _manifest_digest(registry: str, repository: str, tag: str, bearer: str) -> str:
+    url = f"{DISTRIBUTION}/{registry}/{repository}/manifests/{tag}"
+    request = urllib.request.Request(
+        url,
+        method="HEAD",
+        headers={
+            "Authorization": f"Bearer {bearer}",
+            "Accept": MANIFEST_ACCEPT,
+            "User-Agent": USER_AGENT,
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            digest = response.headers.get("Docker-Content-Digest") or ""
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise NaoDeuParaPerguntar(f"HEAD {url}: {exc}") from exc
+    if not digest.startswith("sha256:"):
+        raise NaoDeuParaPerguntar(f"HEAD {url}: sem `Docker-Content-Digest`")
+    return digest
+
+
+class Distribuicao(NamedTuple):
+    """O digest de cada tag móvel segundo a distribuição — e o que falhou.
+
+    `falhas[tag]` é o motivo de a tag ter caído para a listagem. Ele viaja até
+    a linha de erro: um vermelho medido no índice não pode se passar por um
+    medido na fonte.
+    """
+
+    digests: dict[str, str]
+    falhas: dict[str, str]
+
+
+def fetch_distribution(
+    registry: str, repository: str, moving_tags: list[str], token: str
+) -> Distribuicao:
+    """HEAD no manifest de cada tag móvel, com UM bearer para todas.
+
+    Não levanta: falha de auth vira falha de todas as tags, falha de uma tag
+    vira falha só dela. Quem decide o que fazer com isso é `audit`, que cai
+    para a listagem e declara.
+    """
+    try:
+        bearer = _pull_token(registry, repository, token)
+    except NaoDeuParaPerguntar as exc:
+        return Distribuicao({}, dict.fromkeys(moving_tags, str(exc)))
+    digests: dict[str, str] = {}
+    falhas: dict[str, str] = {}
+    for tag in moving_tags:
+        try:
+            digests[tag] = _manifest_digest(registry, repository, tag, bearer)
+        except NaoDeuParaPerguntar as exc:
+            falhas[tag] = str(exc)
+    return Distribuicao(digests, falhas)
 
 
 class Leitura(NamedTuple):
@@ -182,17 +313,32 @@ class Leitura(NamedTuple):
     #: Quantas entradas da listagem carregavam aquele NOME de tag.
     entradas: int
     motivo: str
+    #: De onde veio o digest da tag móvel — distribuição ou listagem, e, se
+    #: listagem, por que a distribuição não respondeu.
+    fonte: str = FONTE_LISTAGEM
+    #: O que a LISTAGEM dizia da tag móvel quando a fonte foi a distribuição.
+    #: Divergir dela é o sintoma de 22/09/2026, e fica à vista.
+    na_listagem: tuple[str, ...] = ()
 
     def medida(self) -> str:
         """De onde a conclusão saiu. É isto que faz o próximo vermelho se explicar."""
         lidos = ", ".join(_curto(d) for d in self.digests) or "(nenhum)"
-        if len(self.digests) > 1:
+        if self.fonte == FONTE_DISTRIBUICAO:
+            partes = [f"fonte: {self.fonte}; digest lido na tag móvel: {lidos}"]
+            listados = ", ".join(_curto(d) for d in self.na_listagem) or "(nenhum)"
+            if set(self.na_listagem) != set(self.digests):
+                partes.append(
+                    f"a listagem /tags dizia {listados} — índice atrasado, ignorado"
+                )
+        elif len(self.digests) > 1:
             partes = [
                 f"a tag móvel veio em {self.entradas} entradas da listagem, com "
                 f"digests DIFERENTES ({lidos}) — a listagem repetiu a tag"
             ]
         else:
             partes = [f"digest lido na tag móvel: {lidos}"]
+        if self.fonte != FONTE_DISTRIBUICAO:
+            partes.insert(0, f"fonte: {self.fonte}")
         imutaveis = ", ".join(s[:9] for s in self.shas) or "nenhuma"
         partes.append(
             f"{len(self.shas)} tag(s) imutável(is) dividem esse(s) digest(s): "
@@ -206,7 +352,9 @@ def _curto(digest: str) -> str:
     return digest[:19] + "…" if len(digest) > 19 else digest
 
 
-def read_published(tags: list[dict], moving_tag: str) -> Leitura:
+def read_published(
+    tags: list[dict], moving_tag: str, digest: str = "", fonte: str = FONTE_LISTAGEM
+) -> Leitura:
     """Quais commits podem estar por trás da tag móvel — com a medida junto.
 
     ⚠️ Não escolhe em silêncio, em nenhuma das duas frentes.
@@ -221,17 +369,27 @@ def read_published(tags: list[dict], moving_tag: str) -> Leitura:
     porque a paginação o colocou na página errada era exatamente o mecanismo que
     ninguém conseguia descartar. Com 1206 tags em 7 páginas (medido em
     19/09/2026), a lista muda debaixo da leitura com facilidade.
+
+    Com `digest` (lido na distribuição), a listagem deixa de opinar sobre a tag
+    móvel e só mapeia o digest para as imutáveis — o que ela lista sob o nome
+    móvel vai para a medida, não para a conclusão.
     """
     carregados = [
         t.get("manifest_digest") or "" for t in tags if t.get("tag") == moving_tag
     ]
-    digests = tuple(dict.fromkeys(d for d in carregados if d))
+    listados = tuple(dict.fromkeys(d for d in carregados if d))
+    if digest:
+        fonte, digests = FONTE_DISTRIBUICAO, (digest,)
+    else:
+        digests = listados
+    extra = {"fonte": fonte, "na_listagem": listados if digest else ()}
     if not digests:
         return Leitura(
             (),
             (),
             len(carregados),
             f"a tag `{moving_tag}` não existe no registry",
+            **extra,
         )
 
     shas: list[str] = []
@@ -249,8 +407,9 @@ def read_published(tags: list[dict], moving_tag: str) -> Leitura:
             f"a tag `{moving_tag}` aponta para {', '.join(digests)}, e nenhuma "
             f"tag `{moving_tag}-<sha>` aponta para o mesmo digest — impossível "
             "provar qual commit está no ar",
+            **extra,
         )
-    return Leitura(tuple(shas), digests, len(carregados), "")
+    return Leitura(tuple(shas), digests, len(carregados), "", **extra)
 
 
 def _divergencia(esperado: str, publicado: str, ref: str, repo: Path) -> str:
@@ -275,6 +434,7 @@ def audit(
     per_app: bool,
     repo: Path,
     groups: dict[str, list[str]],
+    distribuicao: Distribuicao | None = None,
 ) -> tuple[list[str], list[str]]:
     """Devolve (divergências, notas). Divergências vazias = o vivo bate com o `main`.
 
@@ -282,6 +442,9 @@ def audit(
     imutáveis dividindo um digest é dois commits publicando a MESMA imagem, e
     isso é desperdício de build e de registry mesmo quando a invariante está
     honrada.
+
+    `distribuicao` é a fonte do digest das tags móveis. Sem ela (modo offline),
+    ou na tag em que ela falhou, vale a listagem — e a medida diz qual valeu.
     """
     paths = component_paths(groups)
     operator_surfaces = [s for members in groups.values() for s in members]
@@ -298,7 +461,18 @@ def audit(
         esperado = last_commit_touching(patterns, ref, repo)
         if esperado is None:
             continue  # nada no histórico tocou esse componente; nada a cobrar
-        leitura = read_published(tags, tag_de[name])
+        tag = tag_de[name]
+        if distribuicao is not None and tag in distribuicao.digests:
+            leitura = read_published(tags, tag, digest=distribuicao.digests[tag])
+        elif distribuicao is not None:
+            falha = distribuicao.falhas.get(tag, "tag não consultada")
+            leitura = read_published(
+                tags,
+                tag,
+                fonte=f"{FONTE_LISTAGEM} (a distribuição falhou: {falha})",
+            )
+        else:
+            leitura = read_published(tags, tag)
         if not leitura.shas:
             problemas.append(
                 f"{name}: {leitura.motivo} (o `main` pede {esperado[:9]}) "
@@ -322,13 +496,14 @@ def audit(
     return problemas, notas
 
 
-def _confrontar(tags: list[dict], args, groups: dict[str, list[str]]):
+def _confrontar(tags: list[dict], distribuicao, args, groups: dict[str, list[str]]):
     return audit(
         tags,
         ref=args.ref,
         per_app=args.per_app == "true",
         repo=Path(args.repo),
         groups=groups,
+        distribuicao=distribuicao,
     )
 
 
@@ -362,14 +537,27 @@ def main(argv: list[str] | None = None) -> int:
     groups = load_groups(Path(args.groups_json))
     offline = bool(args.registry_json)
 
-    def perguntar() -> list[dict]:
+    moving_tags = [c["tag"] for c in build_matrix(list(component_paths(groups)), groups)]
+
+    def perguntar() -> tuple[list[dict], Distribuicao | None]:
         if offline:
             payload = json.loads(Path(args.registry_json).read_text(encoding="utf-8"))
-            return payload["tags"] if isinstance(payload, dict) else payload
+            return (payload["tags"] if isinstance(payload, dict) else payload), None
         token = os.environ.get("DO_TOKEN", "").strip()
         if not token:
             raise NaoDeuParaPerguntar("DO_TOKEN ausente")
-        return fetch_tags(args.registry, args.repository, token)
+        tags = fetch_tags(args.registry, args.repository, token)
+        distribuicao = fetch_distribution(
+            args.registry, args.repository, moving_tags, token
+        )
+        for falha in dict.fromkeys(distribuicao.falhas.values()):
+            print(
+                f"::warning::distribuição do registry não respondeu ({falha}) — "
+                "a tag móvel afetada foi lida na listagem /tags, que pode estar "
+                "atrasada por horas",
+                file=sys.stderr,
+            )
+        return tags, distribuicao
 
     # ⚠️ A repergunta NÃO é paciência com divergência de verdade — essa
     # atravessa qualquer espera. É o conserto do defeito medido em 18/09/2026:
@@ -382,8 +570,8 @@ def main(argv: list[str] | None = None) -> int:
     tentativas = 0
     try:
         while True:
-            tags = perguntar()
-            problemas, notas = _confrontar(tags, args, groups)
+            tags, distribuicao = perguntar()
+            problemas, notas = _confrontar(tags, distribuicao, args, groups)
             tentativas += 1
             if not problemas or offline or tentativas > args.reconfirmacoes:
                 break

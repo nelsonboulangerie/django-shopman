@@ -1,5 +1,8 @@
 """
-Mutações dos canais de EXIBIÇÃO para o Gestor — ligar/pausar + escolher coleções.
+Mutações dos canais de EXIBIÇÃO para o Gestor — coleções, rotação e pausa por item.
+
+Ligar/desligar o canal (de venda OU de exibição) é o toggle "Ativo", que mora em
+``shopman.shop.services.channel_switch``.
 
 Escreve no ``Channel`` de ``commerce_policy="display"`` (as coleções e a pausa local
 vivem no aspecto ``config.display``, sem migração — é o padrão de extensibilidade do
@@ -57,7 +60,6 @@ def revision(channel, field: str) -> str:
 
     display = _display(channel)
     values = {
-        "active": channel.is_active,
         "collections": display.get("collections") or [],
         "rotation": [display.get("rotate_seconds", 0), display.get("items_per_page", 0)],
     }
@@ -68,16 +70,6 @@ def revision(channel, field: str) -> str:
 def _check_revision(channel, field: str, expected_revision):
     if expected_revision is not None and revision(channel, field) != expected_revision:
         raise FeedConflict("Este campo mudou. Seu rascunho foi preservado; confira o valor atual antes de salvar.")
-
-
-@transaction.atomic
-def set_active(ref: str, is_active: bool, *, expected_revision=None) -> None:
-    sc = _display_channel(ref)
-    _check_revision(sc, "active", expected_revision)
-    if sc.is_active != is_active:
-        sc.is_active = is_active
-        sc.save(update_fields=["is_active"])
-        _notify(ref)
 
 
 @transaction.atomic

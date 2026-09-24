@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types surfaces-lint help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -34,13 +34,13 @@ install: ## Instala deps + apps da suite em modo editável
 	# versão que a suíte viu" — e o `test-constraints` só confere COBERTURA, não
 	# igualdade. Verde aqui passa a significar verde no que sobe.
 	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install -c constraints.txt "Django>=6.0,<6.1" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
+	$(PYTHON) -m pip install -c constraints.txt "Django>=6.1,<6.2" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
 		"drf-spectacular>=0.29,<1.0" \
 		"django-csp>=4.0,<5.0" \
 		"django-ratelimit>=4.1,<5.0" \
 		"django-eventstream>=5.3,<6.0" \
 		"django-import-export>=4.4,<5.0" \
-		"django-unfold>=0.92,<0.93" \
+		"django-unfold>=0.107,<0.108" \
 		"daphne>=4.2,<5.0" \
 		"redis>=5.1,<8.0" \
 		"psycopg[binary]>=3.2,<4.0" \
@@ -258,6 +258,20 @@ test-counter-agent: ## Testes do agente do balcão (tools/pos-counter-agent)
 test-migrations: ## Gate de migrations: nada sem migration + schema limpo do zero + grafo consistente
 	@echo "── Migrations gate ──"
 	$(PYTHON) scripts/check_migrations.py $(if $(json),--json,)
+
+migrations-pending: ## O que o próximo deploy VAI migrar no banco de DATABASE_URL, e o que ali é destrutivo (leitura)
+	@test -n "$$DATABASE_URL" || { \
+	  echo "DATABASE_URL não definida — este alvo lê o banco do alpha/produção, não o local." >&2; \
+	  echo "Pegue a connection string no painel da DigitalOcean (Databases → Connection details)" >&2; \
+	  echo "e rode: DATABASE_URL='postgresql://...' make migrations-pending" >&2; \
+	  echo "Procedimento completo: docs/runbooks/backup-e-restore.md" >&2; \
+	  exit 1; }
+	@echo "── Migrações pendentes ──"
+	$(PYTHON) manage.py migration_safety --report $(if $(json),--json,)
+
+migrations-plan: ## O plano INTEIRO (aplicadas + pendentes) do banco de DATABASE_URL — leitura crua do Django
+	@test -n "$$DATABASE_URL" || { echo "DATABASE_URL não definida (ver 'make migrations-pending')." >&2; exit 1; }
+	$(PYTHON) manage.py showmigrations --plan
 
 marketing-capacity: ## Gate local isolado: 200k candidatos + 20k targets, sem provider
 	@echo "── Marketing capacity 2× (banco de teste descartável; sem provider) ──"

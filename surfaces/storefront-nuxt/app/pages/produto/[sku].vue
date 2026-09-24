@@ -16,7 +16,6 @@ import { compactUnitWeightLabel } from '~/utils/display'
 const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
-const session = useShopSession()
 const sku = computed(() => String(route.params.sku || ''))
 const { setFromServer, qtyForSku } = useCartState()
 
@@ -27,9 +26,24 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
 
 // SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
 // não uma página-fantasma 200 indexável. Falhas de rede seguem no retry inline.
+//
+// Antes do 404, uma pergunta: este código já foi um produto nosso? Se foi, a
+// resposta honesta é 410 ("não existe mais") com a prateleira de onde ele saiu
+// — ver `useRetiredProduct`.
 if (error.value?.statusCode === 404) {
+  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), sku.value)
+  if (retired) {
+    throw createError({
+      statusCode: 410,
+      statusMessage: 'Este item saiu do cardápio',
+      fatal: true,
+      data: retired
+    })
+  }
   throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
 }
+// Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.
+requireContentOnSsr(error.value, !!data.value?.product, 'Produto')
 
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
@@ -122,8 +136,7 @@ useHead({
           innerHTML: jsonLdText(productJsonLd({
             product: product.value,
             origin: requestUrl.origin,
-            url: canonicalUrl.value,
-            brandName: session.shop.value?.brand_name || ''
+            url: canonicalUrl.value
           }))
         },
         {

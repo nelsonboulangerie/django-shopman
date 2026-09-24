@@ -63,7 +63,7 @@ const instagramFormats = computed(
 // padrão e por quê.
 const FORMAT_HINTS: Record<string, string> = {
   story:
-    "Efêmero e urgente: é o padrão para fornadas e oportunidades do momento.",
+    "Efêmero e urgente: é o padrão para lotes e oportunidades do momento.",
   feed: "Permanente. Só será usado quando você escolher esta opção.",
 };
 

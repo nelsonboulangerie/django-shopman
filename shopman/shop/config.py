@@ -79,6 +79,13 @@ class ChannelConfig:
         # Opt-in para mode=manual: após X minutos em NEW sem decisão do operador,
         # dispara OperatorAlert("stale_new_order"). 0 (default) desabilita.
         # Usado em canais marketplace (iFood) para escalar pedidos esquecidos.
+        external_sla_minutes: int = 0
+        # Prazo que o MARKETPLACE impõe para confirmar, contado da criação do pedido
+        # lá. Não é timer nosso: vencido, quem cancela é o marketplace, e o pedido
+        # some da fila sem a gente fazer nada. O card conta esse prazo para ele ficar
+        # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
+        # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
+        # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
 
     # ── 2. Pagamento ──
 
@@ -139,6 +146,25 @@ class ChannelConfig:
         # não pergunta. A custódia é do equipamento, não de dinheiro: mora em
         # Order.data.dispatch.equipment,
         # e "onde está a maquininha" é derivado (saiu e não voltou).
+        courier_ticket: str = "identified"
+        # QUAL via do entregador este canal imprime
+        # (``backstage.services.receipt_escpos.courier_ticket``):
+        # "identified" — Via do entregador — Identificada. Endereço completo
+        #                (com complemento e referência), telefone, nome e, quando
+        #                há cobrança na porta, valor e troco. É o papel de quem
+        #                entrega PELA CASA: a transportadora contratada por ela
+        #                (Taon Delivery/Taxi Machine) não tem app nenhum, e o
+        #                endereço só existe para ela se estiver aqui.
+        # "anonymous"  — Via do entregador — Anônima. Só o que identifica o
+        #                pedido e o que confere a sacola. Sem endereço, sem
+        #                telefone, sem nome, sem CPF. É o papel de marketplace:
+        #                o iFood determina que documento destinado a parceiro de
+        #                entrega não traga CPF nem endereço, e o entregador dele
+        #                já tem tudo na tela do app.
+        # ⚠️ Canal novo escolhe AQUI, sem tocar em código. O que a configuração
+        # NÃO pode fazer é liberar dado do cliente para logística de terceiro:
+        # ``order_helpers.courier_ticket_variant`` derruba "identified" para
+        # "anonymous" quando o pedido diz que quem entrega é o marketplace.
 
     # ── 4. Estoque ──
 
@@ -217,6 +243,20 @@ class ChannelConfig:
         # Prioridade phone-first (Brasil): manychat (WhatsApp) > sms > email > console
         fallback_chain: list[str] = field(default_factory=lambda: ["sms", "email"])
         routing: dict[str, str] | None = None
+        customer_phone: str = "direct"
+        # De quem é o telefone que chega no pedido por este canal?
+        # "direct" — do próprio cliente; serve para WhatsApp, SMS e aviso automático.
+        # "relay"  — da PLATAFORMA. O marketplace não entrega o número do cliente:
+        #            o iFood devolve um 0800 da central dele mais um localizador,
+        #            e quem liga digita o localizador para cair na pessoa. É canal
+        #            de VOZ, para o operador usar à mão — não é contato do cliente,
+        #            não é nosso para usar em aviso automático, e o pedido conta
+        #            como "sem contato do cliente" mesmo com o campo preenchido.
+        # Por pedido, o sinal é o `phone_localizer` ao lado do número (o próprio
+        # iFood diz que aquilo é relé); a declaração aqui é o que sustenta o
+        # pedido em que a plataforma omitiu o localizador — o número continua
+        # sendo dela. Uma lista de números não serve: o iFood tem mais de um e
+        # eles mudam.
 
     # ── 6. Pricing ──
 
@@ -438,6 +478,8 @@ class ChannelConfig:
             raise ValueError(f"fulfillment.courier inválido: {self.fulfillment.courier}")
         if self.fulfillment.prep_start not in ("auto", "operator"):
             raise ValueError(f"fulfillment.prep_start inválido: {self.fulfillment.prep_start}")
+        if self.fulfillment.courier_ticket not in ("identified", "anonymous"):
+            raise ValueError(f"fulfillment.courier_ticket inválido: {self.fulfillment.courier_ticket}")
         if self.stock.hold_ttl_minutes is not None and self.stock.hold_ttl_minutes <= 0:
             raise ValueError("stock.hold_ttl_minutes deve ser > 0 ou null")
         if self.stock.safety_margin < 0:
@@ -472,6 +514,10 @@ class ChannelConfig:
             raise ValueError(f"notifications.backend inválido: {self.notifications.backend}")
         if not isinstance(self.notifications.fallback_chain, list):
             raise ValueError("notifications.fallback_chain deve ser uma lista")
+        if self.notifications.customer_phone not in ("direct", "relay"):
+            raise ValueError(
+                f"notifications.customer_phone inválido: {self.notifications.customer_phone}",
+            )
         if self.pricing.policy not in ("internal", "external"):
             raise ValueError(f"pricing.policy inválido: {self.pricing.policy}")
         if self.editing.policy not in ("open", "locked"):

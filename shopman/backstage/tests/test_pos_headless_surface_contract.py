@@ -124,7 +124,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(pos["delivery_slots_canonical"][0]["starts_at"], "09:00")
 
     def test_checkout_says_whether_asking_for_paper_emits_the_note(self) -> None:
-        """"Pedir papel já pede a nota" só é verdade com o resolver de comprovante na env."""
+        """"Pedir papel já pede a nota" é verdade com qualquer resolver que leia o pedido do balcão."""
         with override_settings(
             SHOPMAN_FISCAL_EMISSION_RESOLVER=(
                 "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
@@ -134,10 +134,20 @@ class POSHeadlessSurfaceContractTests(TestCase):
             capabilities = self.client.get("/api/v1/backstage/pos/").json()["pos"]["checkout"]["capabilities"]
             self.assertTrue(capabilities["receipt_requests_emission"])
 
+        # A base sozinha também: papel e e-mail pedem a nota como o CPF pede.
         with override_settings(
             SHOPMAN_FISCAL_EMISSION_RESOLVER=(
                 "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
                 "shopman.shop.fiscal_resolvers.eletronic_payment"
+            ),
+        ):
+            capabilities = self.client.get("/api/v1/backstage/pos/").json()["pos"]["checkout"]["capabilities"]
+            self.assertTrue(capabilities["receipt_requests_emission"])
+
+        with override_settings(
+            SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+                "shopman.shop.fiscal_resolvers.eletronic_payment,"
+                "shopman.shop.fiscal_resolvers.deferred_settlement"
             ),
         ):
             capabilities = self.client.get("/api/v1/backstage/pos/").json()["pos"]["checkout"]["capabilities"]
@@ -161,6 +171,23 @@ class POSHeadlessSurfaceContractTests(TestCase):
         Quant.objects.create(sku="POS-HEADLESS-ITEM", position=vitrine)
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
+
+    def test_products_expose_the_package_barcode_for_the_counter_scanner(self) -> None:
+        """O leitor do balcão DIGITA o código no campo de busca do PDV.
+
+        Sem o GTIN na projeção, bipar um pote de geleia não achava nada — a
+        busca só via nome e SKU. Produto da casa não tem código de barras, e a
+        chave sai vazia em vez de ausente: a tela não precisa saber quem tem.
+        """
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["gtin"], "")
+
+        product = Product.objects.get(sku="POS-HEADLESS-ITEM")
+        product.metadata = {**(product.metadata or {}), "social": {"gtin": "7898708850385"}}
+        product.save(update_fields=["metadata"])
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["gtin"], "7898708850385")
 
     def test_products_expose_primary_collection_color_and_icon(self) -> None:
         """Cor (hex NB) e ícone (Lucide) da coleção primária vestem o tile sem
@@ -492,12 +519,42 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
     @override_settings(
         SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
-        SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.eletronic_payment,"
+            "shopman.shop.fiscal_resolvers.deferred_settlement"
+        ),
+    )
+    def test_paper_and_email_emit_like_the_cpf_even_without_the_receipt_resolver(self) -> None:
+        """"Impressa?" e "Por e-mail?" obrigam a NFC-e, como "CPF na nota?".
+
+        Dinheiro, sem CPF, com a env que traz só a base do pedido do balcão
+        (sem ``on_requested_receipt``): o CPF emitia, o papel e o e-mail não. A
+        mesma pergunta não pode ter resposta diferente conforme a porta.
+        """
+        for channels in (["print"], ["email"], ["print", "email"]):
+            with self.subTest(channels=channels):
+                closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=channels)
+                self.assertTrue(closed["fiscal_expected"])
+                self.assertEqual(closed["fiscal_state"], "queued")
+                self.assertTrue(
+                    Directive.objects.filter(
+                        topic="fiscal.emit_nfce", payload__order_ref=closed["order_ref"]
+                    ).exists(),
+                )
+                self.assertFalse(
+                    OperatorAlert.objects.filter(type="fiscal_receipt_promised", order_ref=closed["order_ref"]).exists()
+                )
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.eletronic_payment",
     )
     def test_close_alerts_the_counter_when_the_promised_receipt_will_not_be_emitted(self) -> None:
         """Promessa feita no balcão não morre num ``return`` mudo.
 
-        Deployment mal configurado (sem ``on_requested_receipt``): o operador
+        Deployment mal configurado (sem resolver que leia o pedido do balcão —
+        nem ``on_request_or_tax_id``, nem ``on_requested_receipt``): o operador
         marca o canal, a regra recusa, e antes disso NINGUÉM ficava sabendo —
         nem log, nem alerta. O cliente ia embora esperando o anexo.
         """

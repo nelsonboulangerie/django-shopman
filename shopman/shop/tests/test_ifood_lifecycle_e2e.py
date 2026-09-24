@@ -84,7 +84,10 @@ def rehearsal(settings, django_capture_on_commit_callbacks, request):
             return SimpleNamespace(status_code=200, json=lambda: deepcopy(raw), text="")
         if method.upper() == "POST" and url.startswith("https://ifood.invalid/order/v1.0/"):
             action = url.rsplit("/", 1)[-1]
-            if action in {"acknowledgment", "confirm", "readyToPickup", "dispatch", "requestCancellation"}:
+            if action in {
+                "acknowledgment", "confirm", "startPreparation", "readyToPickup",
+                "dispatch", "requestCancellation",
+            }:
                 return SimpleNamespace(status_code=202, json=lambda: {}, text="")
         raise AssertionError(f"Unexpected HTTP blocked in local rehearsal: {method} {url}")
 
@@ -154,6 +157,11 @@ def _ingest_and_prepare(rehearsal):
     assert order.status == "preparing"
     assert KDSTicket.objects.filter(session_key=order.session_key).exists()
     assert sum(len(ticket.items) for ticket in KDSTicket.objects.all()) == len(rehearsal.raw["items"])
+    # O preparo ATRAVESSA: a mesma transição que abre o ticket na cozinha conta
+    # ao iFood que a comida começou. Sem isto o cliente vê "confirmado" enquanto
+    # a padaria já está trabalhando.
+    actions = [url.rsplit("/", 1)[-1] for method, url, _ in rehearsal.calls if method == "POST"]
+    assert actions.count("startPreparation") == 1
     return order, expected
 
 
@@ -182,6 +190,9 @@ def test_food_fixture_full_lifecycle_keeps_stock_kds_and_fiscal_exactly_once(reh
     actions = [url.rsplit("/", 1)[-1] for method, url, _ in rehearsal.calls if method == "POST"]
     assert "confirm" not in actions and "dispatch" not in actions
     assert actions.count("readyToPickup") == 1
+    # A ORDEM do ciclo de vida FOOD, não só a presença: preparo antes de pronto.
+    assert actions.count("startPreparation") == 1
+    assert actions.index("startPreparation") < actions.index("readyToPickup")
 
 
 def test_food_cancellation_waits_for_can_then_restores_stock_and_cancels_kds(rehearsal):
@@ -251,6 +262,13 @@ def test_test_order_walks_the_whole_lifecycle_without_touching_the_bakery(rehear
     assert "nfce_access_key" not in order.data
     assert not Directive.objects.filter(topic="notification.send").exists()
     assert not Directive.objects.filter(topic__startswith="loyalty.").exists()
+
+    # Mas os callbacks DELES continuam saindo: é justamente o que a homologação
+    # valida. A supressão do pedido de teste é sobre a padaria, não sobre o iFood.
+    actions = [url.rsplit("/", 1)[-1] for method, url, _ in rehearsal.calls if method == "POST"]
+    assert actions.count("startPreparation") == 1
+    assert actions.count("readyToPickup") == 1
+    assert actions.index("startPreparation") < actions.index("readyToPickup")
 
     # E o B.I. não conta a venda que não houve — nem como venda, nem como cancelada.
     from shopman.backstage.bi.sources.orderman import read_sales

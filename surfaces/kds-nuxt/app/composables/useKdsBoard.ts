@@ -12,6 +12,7 @@ import {
   type KDSBoardView,
 } from "~/presentation/board";
 import type { Ref } from "vue";
+import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
 
 /**
  * O aviso de ticket novo do KDS — a FANFARRA.
@@ -117,7 +118,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     KDS_ALERT,
   );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: EventSource | null = null;
+  let source: ResilientEventSource | null = null;
   let attentionReady = false;
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
@@ -207,17 +208,16 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/kds/[ref].ts) faz streaming do
     // eventstream do Django, em dev e em prod — nada de gate por origem.
-    const url = ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL);
-    try {
-      source = new EventSource(url, { withCredentials: true });
-      // django-eventstream pushes named events; any of them means "refetch".
-      const onPush = () => { refresh(); };
-      ["message", "backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"]
-        .forEach((name) => source!.addEventListener(name, onPush));
-      source.onerror = () => { /* EventSource auto-reconnects; poll covers gaps. */ };
-    } catch {
-      source = null; // SSE unavailable → polling carries it.
-    }
+    // django-eventstream pushes named events; any of them means "refetch".
+    // Depois do 502 de deploy o EventSource cru ficava CLOSED e a cozinha só
+    // via ticket novo no poll de 15 s até recarregar; o do kit se recria, e a
+    // reabertura refaz a leitura para cobrir o que passou no meio.
+    source = openResilientEventSource({
+      url: ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL),
+      events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
+      onEvent: () => { refresh(); },
+      onOpen: (reconnected) => { if (reconnected) refresh(); },
+    });
   }
 
   let removeVisibilityListeners: (() => void) | null = null;
@@ -232,8 +232,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
     // (keepalive), em vez de sumir com a aba.
     const onVisible = () => {
-      if (document.visibilityState === "visible") refresh();
-      else flushFinishes();
+      if (document.visibilityState === "visible") {
+        refresh();
+        source?.reconnectNow();
+      } else flushFinishes();
     };
     const onPageHide = () => flushFinishes();
     document.addEventListener("visibilitychange", onVisible);

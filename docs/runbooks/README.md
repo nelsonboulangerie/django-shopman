@@ -43,6 +43,7 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 - [Loja aberta/fechada em estado errado](loja-estado-incorreto.md)
 - [Pedido remoto preso](pedido-remoto-preso.md)
 - [Rollback de deploy quebrado](rollback-de-deploy.md)
+- [Backup antes do `migrate`, e restore ensaiado](backup-e-restore.md)
 - [Alpha tecnico pronto-para-virar](alpha-technical-readiness.md)
 - [Alpha DigitalOcean - handoff operacional](alpha-digitalocean-handoff.md)
 - [Ativar Focus NFe (NFC-e): homologação → produção](ativar-focus-nfe.md)

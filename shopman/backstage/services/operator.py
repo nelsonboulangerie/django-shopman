@@ -51,6 +51,8 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 
     ``perm`` filters to the surface's permission (default POS). Pass ``None`` for
     every credentialed staff operator (the per-action gate enforces the rest).
+
+    Superusuário entra na lista quando tem PIN cadastrado: ver ``_eligible``.
     """
     qs = User.objects.filter(is_staff=True, is_active=True, pin_credential__isnull=False)
     if perm:
@@ -67,6 +69,16 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 def _eligible(user, perm: str | None) -> bool:
     if user is None or not user.is_active or not user.is_staff:
         return False
+    # Superusuário destrava por PIN e por crachá como qualquer operador, e assina
+    # "Quem autoriza?". O destrave é ``login()`` de verdade como a pessoa: a sessão
+    # cicla e nada do operador anterior atravessa. O PIN é individual, guardado em
+    # HMAC, com limite de tentativas e bloqueio. O risco que sobra (alguém ver o
+    # dono digitar) é o mesmo de qualquer gerente. O risco concreto era o PIN
+    # compartilhado do seed, e esse continua fechado: ``setup_operators`` não dá
+    # PIN nem crachá ao superusuário, o dono cadastra o dele. Continuam recusando
+    # superusuário o ``reset_operator_pin`` (gerente não reseta o PIN do dono) e o
+    # ``station_trust.autonomous_operator_for`` (terminal autônomo nunca age como
+    # superusuário).
     if perm and not user.has_perm(perm):
         return False
     return True
@@ -198,7 +210,7 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
         # claro a quem pediu; sobre uma conta superusuária isso é a chave-mestra
         # entregue em mão — `_eligible` deixa passar porque `has_perm` de
         # superusuário é sempre True, e o cookie de sessão leva a aba ao lado para
-        # o /admin/. É o mesmo buraco que `station_trust.autonomous_account`
+        # o /admin/. É o mesmo buraco que `station_trust.autonomous_operator_for`
         # recusa para o totem; a recusa faltava no caminho do PIN.
         logger.error(
             "Reset de PIN pedido sobre conta SUPERUSUÁRIA — recusado.",

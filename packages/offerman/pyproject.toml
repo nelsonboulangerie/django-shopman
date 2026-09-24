@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Shopman Offerman — Product Catalog"
 requires-python = ">=3.12"
 dependencies = [
-    "Django>=6.0,<6.1",
+    "Django>=6.1,<6.2",
     "shopman-utils>=0.3.0",
     "django-taggit>=6.1,<7.0",
     "django-simple-history>=3.11,<4.0",
@@ -23,7 +23,7 @@ import_export = [
     "django-import-export>=4.4,<5.0",
 ]
 unfold = [
-    "django-unfold>=0.92,<0.93",
+    "django-unfold>=0.107,<0.108",
     "django-import-export>=4.4,<5.0",
 ]
 dev = [

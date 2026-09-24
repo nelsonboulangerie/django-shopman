@@ -63,6 +63,34 @@ class FutureWorkBlocked(ValueError):
     """Mutação recusada: a encomenda futura está disponível só para consulta."""
 
 
+class TicketRecallBlocked(ValueError):
+    """Desfazer finalização recusado: o pedido já saiu da cozinha."""
+
+
+# Enquanto o pedido está num destes, a cozinha ainda responde por ele e o
+# "desfazer finalização" tem o que desfazer. Depois (despachado, entregue,
+# concluído, cancelado, devolvido) reabrir o ticket poria trabalho morto de volta
+# na grade — e, num pedido pronto que já tinha saído, nada o traria de volta.
+RECALLABLE_ORDER_STATUSES = frozenset({
+    Order.Status.NEW,
+    Order.Status.ACCEPTED,
+    Order.Status.PREPARING,
+    Order.Status.READY,
+})
+
+
+def recall_block_reason(source) -> str:
+    """Por que o ticket desta origem não pode voltar à cozinha; "" quando pode.
+
+    ``source`` é o ``Order`` (ou a ``Session`` da comanda aberta, que ainda não
+    virou pedido e por isso sempre pode). A lista de concluídos recentes do KDS
+    lê a mesma régua que o servidor aplica, para não oferecer o que vai recusar.
+    """
+    if not isinstance(source, Order) or source.status in RECALLABLE_ORDER_STATUSES:
+        return ""
+    return f"O pedido já está {source.get_status_display()}: a finalização não pode mais ser desfeita."
+
+
 def dispatch(order) -> list:
     """
     Route an order's not-yet-fired lines to KDS, creating KDSTickets.
@@ -727,7 +755,9 @@ def reopen_ticket(ticket, *, actor: str) -> bool:
     advanced to READY because this was its last open ticket, it is pulled back to
     PREPARING (it is no longer ready). Best-effort on the order side — the recall
     of the ticket always lands; the order back-transition only if the lifecycle
-    allows it. Returns False if the ticket was not ``done``.
+    allows it. Returns False if the ticket was not ``done``; raises
+    ``TicketRecallBlocked`` when the order already left the kitchen
+    (``RECALLABLE_ORDER_STATUSES``).
     """
     from django.db import transaction
 
@@ -740,6 +770,9 @@ def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status != "done":
         return False
+    blocked = recall_block_reason(source)
+    if blocked:
+        raise TicketRecallBlocked(blocked)
     ticket.status = "in_progress"
     ticket.completed_at = None
     ticket.save(update_fields=["status", "completed_at"])
@@ -812,17 +845,26 @@ def expedition_block_reason(order, *, action: str) -> str:
 
         if needs_card_machine(order):
             return "Abra este pedido no Gestor e confirme a maquininha no despacho."
+        if operator_orders.change_out_suggested_q(order) > 0:
+            # O troco sai da gaveta no despacho (``courier_out``) e só o Gestor
+            # pergunta quanto: despachar daqui deixaria a gaveta desfalcada sem
+            # linha no livro, e o acerto recusaria o troco devolvido.
+            return "Abra este pedido no Gestor e informe o troco que o entregador leva."
     return ""
 
 
 def expedition_action(order, *, action: str, actor: str) -> str:
     """Apply an expedition action and return the new order status.
 
-    A expedição é o painel por onde a mercadoria fisicamente sai, então ela
-    consulta o gate de pagamento como o Gestor consulta — antes ela chamava
-    ``transition_status`` direto e uma venda de link/pix não capturada saía pela
-    porta sem um centavo. Dinheiro na entrega (COD) passa: é venda legítima cujo
-    pagamento acontece na porta, por desenho (ver ``payment_gate``).
+    A expedição é outra porta por onde a mercadoria sai, e a saída tem UMA
+    implementação: ``operator_orders.advance_order``, a mesma do Gestor. É lá
+    que moram o gate de pagamento, a custódia da maquininha, o fulfillment de
+    entrega, o troco da gaveta (``courier_out``), o aviso fiscal e a
+    auto-conclusão da entrega. Quando a expedição fazia a transição por conta
+    própria, a entrega despachada daqui ficava sem auto-conclusão, com o
+    fulfillment parado e — com troco — sem a linha do livro que o acerto exige.
+    O que a expedição não sabe perguntar (quanto de troco, qual maquininha)
+    ela recusa com "abra no Gestor" (``expedition_block_reason``).
     """
     _ensure_source_due(order)
     is_delivery = get_fulfillment_type(order) == "delivery"
@@ -837,14 +879,17 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     blocked = expedition_block_reason(order, action=action)
     if blocked:
         raise ValueError(blocked)
-    # A outra porta por onde a mercadoria sai: mesmo aviso do Gestor
-    # (``operator_orders.advance_order``), sem barrar.
-    from shopman.shop.services import fiscal as fiscal_service
+    from shopman.shop.services import operator_orders
 
-    fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
-    order.transition_status(next_status, actor=actor)
+    try:
+        new_status = operator_orders.advance_order(order, actor=actor, target_status=next_status)
+    except operator_orders.ChangeOutRequired as exc:
+        # Rede de segurança: o bloqueio acima já diz isto antes do toque.
+        raise ValueError(
+            "Abra este pedido no Gestor e informe o troco que o entregador leva."
+        ) from exc
     logger.info("kds_expedition %s order=%s", action, order.ref)
-    return next_status
+    return new_status
 
 
 def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> str:

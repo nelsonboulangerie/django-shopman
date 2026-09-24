@@ -109,13 +109,18 @@ def _map_customer(customer: dict) -> dict:
         # iFood masks the number and gives a call localizer to reach the customer.
         number = phone.get("number", "")
         localizer = phone.get("localizer", "")
+        # O localizador VENCE: depois disso a central não repassa a ligação, e
+        # oferecer o código na tela seria mandar o operador discar para o nada.
+        localizer_expiration = phone.get("localizerExpiration", "")
     else:
         number = str(phone)
         localizer = ""
+        localizer_expiration = ""
     return {
         "name": customer.get("name", ""),
         "phone": number,
         "phone_localizer": localizer,
+        "phone_localizer_expiration": localizer_expiration,
         "document": customer.get("documentNumber", ""),
         "document_type": customer.get("documentType", ""),
     }

@@ -114,7 +114,13 @@ def dynamic_block(conversation: Conversation, *, is_first_turn: bool, cart_summa
     if conversation.customer_name:
         lines.append(f"Cliente: {conversation.customer_name}.")
     commercial_authority = bool(getattr(conversation, "_commercial_authority", False))
-    if conversation.phone and commercial_authority:
+    if getattr(conversation, "_channel_off", False):
+        lines.append(
+            "Pedidos por este canal estão desligados agora pela loja. Tire dúvidas normalmente, mas não "
+            "ofereça montar nem fechar pedido; se o cliente quiser pedir, diga com gentileza que os pedidos "
+            "por aqui estão pausados no momento."
+        )
+    elif conversation.phone and commercial_authority:
         lines.append("Telefone conhecido: pode fechar pedido pelo chat.")
     elif conversation.phone:
         lines.append("Telefone conhecido, mas este turno não pode alterar ou fechar pedido pelo chat.")

@@ -109,9 +109,9 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     # Ninguém no ar hoje é afetado (Cozinha e Gerente têm as duas permissões), mas
     # qualquer grant customizado cai nele na hora — que é o caso normal quando entra
     # gente nova.
-    _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_operate_production),
+    _AppSpec("production", "Produção", "Produção e lotes", "croissant", "launch", can_operate_production),
     _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package", "launch", can_operate_purchase),
-    _AppSpec("marketing", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_campaigns),
+    _AppSpec("marketing", "Marketing", "Divulgar o lote", "megaphone", "launch", can_manage_campaigns),
     _AppSpec("bi", "B.I.", "Números da operação", "chart-no-axes-combined", "launch", can_view_bi),
     _AppSpec("loja", "Loja online", "Abrir a loja do cliente", "store", "external", is_superuser),
 )

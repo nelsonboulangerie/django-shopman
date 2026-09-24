@@ -1,4 +1,5 @@
 import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
+import { toast } from "vue-sonner";
 import { describe, expect, it, vi } from "vitest";
 
 import PosRecentSales from "~/components/PosRecentSales.vue";
@@ -58,13 +59,89 @@ describe("PosRecentSales — o chip fiscal segue `fiscal_state` quando existe", 
       sale({ order_ref: "D", fiscal_state: "failed" }),
       sale({ order_ref: "E", fiscal_state: "not_expected" }),
     ]);
-    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e na fila", "NFC-e aguarda o pagamento", "NFC-e falhou", "Sem NFC-e"]);
+    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e na fila", "NFC-e aguarda o pagamento", "NFC-e falhou", "Emissão não estabelecida"]);
     w.unmount();
   });
 
   it("sem `fiscal_state`, vale o rótulo do servidor", async () => {
     const w = await montar([sale()]);
     expect(chips()).toEqual(["Rótulo do servidor"]);
+    w.unmount();
+  });
+});
+
+/**
+ * Emissão avulsa: a venda não pediu nota, o cliente voltou pedindo. O botão
+ * segue o servidor (`can_emit_fiscal`) e a emissão só sai com o gerente — o
+ * MESMO `OperatorManagerAuth` das outras exceções do PDV.
+ */
+describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
+  const emitButton = () => document.body.querySelector<HTMLButtonElement>('[data-action="emit-fiscal"]');
+
+  it("o chip da venda sem nota pedida é neutro, não alarme", async () => {
+    const w = await montar([sale({ fiscal_state: "not_expected" })]);
+    const chip = document.body.querySelector("[data-fiscal-chip]")!;
+    expect(chip.className).toContain("bg-muted");
+    expect(chip.className).not.toContain("destructive");
+    expect(chip.className).not.toContain("warning");
+    w.unmount();
+  });
+
+  it("sem `can_emit_fiscal`, nenhum botão", async () => {
+    const w = await montar([sale({ fiscal_state: "not_expected" })]);
+    expect(emitButton()).toBeNull();
+    w.unmount();
+  });
+
+  it("o toque pede o gerente; a assinatura vai no corpo do POST", async () => {
+    const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
+    expect(emitButton()?.textContent?.trim()).toBe("Estabelecer emissão…");
+    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("open")).toBe(false);
+
+    emitButton()!.click();
+    await vi.waitFor(() => expect(auth.props("open")).toBe(true));
+    expect(auth.props("action")).toBe("emit_fiscal");
+    // Nada sai antes da assinatura.
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("emit-fiscal"))).toBe(false);
+
+    fetchMock.mockResolvedValueOnce({ ok: true, detail: "NFC-e de PDV-042 na fila. A nota sai com a data e a hora de agora." });
+    auth.vm.$emit("authorize", "pablo", "4321");
+    await vi.waitFor(() => expect(auth.props("open")).toBe(false));
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes("/pos/orders/PDV-042/emit-fiscal/"));
+    expect(call?.[1]).toMatchObject({ method: "POST", body: { manager_approval: { username: "pablo", pin: "4321" } } });
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("data e a hora de agora"));
+    w.unmount();
+  });
+
+  it("PIN recusado fica no diálogo, que continua aberto", async () => {
+    const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
+    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    emitButton()!.click();
+    await vi.waitFor(() => expect(auth.props("open")).toBe(true));
+
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error("422"), {
+      data: { detail: "Aprovação gerencial inválida.", error: { field: "manager_approval", message: "Aprovação gerencial inválida.", recovery: "Revise o gerente e o PIN." } },
+    }));
+    auth.vm.$emit("authorize", "pablo", "0000");
+    await vi.waitFor(() => expect(auth.props("error")).toBe("Revise o gerente e o PIN."));
+    expect(auth.props("open")).toBe(true);
+    w.unmount();
+  });
+
+  it("recusa de negócio (venda antiga) fecha o diálogo e diz o porquê", async () => {
+    const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
+    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    emitButton()!.click();
+    await vi.waitFor(() => expect(auth.props("open")).toBe(true));
+
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error("409"), {
+      data: { detail: "Só dá para emitir nota de venda do mesmo dia." },
+    }));
+    auth.vm.$emit("authorize", "pablo", "4321");
+    await vi.waitFor(() => expect(auth.props("open")).toBe(false));
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("mesmo dia"));
     w.unmount();
   });
 });

@@ -26,6 +26,7 @@ from config.management.commands.seed import (
     _discard_owned_seed_output_batch,
     _ensure_seed_active_production_supply,
     _ensure_seed_standard_batch,
+    prep_daily_needs,
 )
 from shopman.backstage.models import (
     KDSInstance,
@@ -50,7 +51,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert not Product.objects.filter(ingredients_text__icontains="não contém glúten").exists(), (
         "o seed não pode contradizer a política da casa: sem segregação, nenhum item afirma ausência de glúten"
     )
-    for sku in ("BF", "SS", "COMBO-PETIT-DEJ"):
+    for sku in ("TRADI", "SP", "COMBO-PETIT-DEJ"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
         assert fiscal["profile"] == "own_production"
@@ -61,7 +62,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert resolved["icms_situacao_tributaria"] == "102"
     croissant_history = [
         item
-        for item in OrderItem.objects.filter(sku="CT").select_related("order")
+        for item in OrderItem.objects.filter(sku="CRO").select_related("order")
         if (item.meta or {}).get("source") == "production_demand_history"
     ]
     assert len(croissant_history) >= 4
@@ -112,17 +113,22 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.buyman.models import Material
 
     # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
-    # 26/08): queijos, presuntos, salsicha Vienna, frango, milho, bacon, café
-    # em grão, blends de chá, tônica, folhas da salada…
-    assert Material.objects.count() == 56
+    # 26/08) + a mostarda Dijon de food service, que entrou na curadoria da
+    # lista em 23/09 no lugar do `MT` da ficha do Vinagrete.
+    assert Material.objects.count() == 57
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
-    # A água da massa é AGUA-FILTRADA: AGUA é a garrafa que se vende no balcão, e
-    # produto e insumo dividem um namespace de SKU só (shop/services/sku_namespace.py).
+    # A água do filtro é AGUA-FILTRADA e fica (dele, 23/09: "Agua pode ser
+    # AGUA-FILTRADA mesmo ok"). O nome nasceu para não colidir com a garrafa que
+    # se vende, e a garrafa já saiu do código `AGUA` — produto e insumo dividem
+    # um namespace de SKU só (shop/services/sku_namespace.py), e o ledger indexa
+    # por ele.
     assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
     assert not Material.objects.filter(sku="AGUA").exists()
-    assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
+    assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
+    assert not Product.objects.filter(sku="AGUA").exists()
+    assert Material.objects.get(sku="FERMENTO-NATURAL").shelf_life_days == 7
     # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
     # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
     # derivada na tela de preparo, nunca gravada como verdade.
@@ -182,7 +188,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
     assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
 
-    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CT"])
+    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CRO"])
     assert suggestions
     assert suggestions[0].quantity > 0
 
@@ -302,12 +308,21 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert stock_service.available("FARINHA-T65") == flour_before
     assert Move.objects.count() == moves_before
 
-    # Mise en place: as dez receitas que consomem massa/recheio precisam achar
-    # o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
-    # reprovava toda fornada dessas dez, e o operador via "Insumos
-    # insuficientes" com o atalho "Concluir mesmo assim" a um toque, todo dia.
-    # Alarme sempre errado vira botão que se aprende a apertar.
-    for prep_sku in ("MASSA-CROISSANT", "MASSA-BRIOCHE", "MASSA-FORMA", "RECHEIO-MACA"):
+    # Mise en place: toda receita do plano que consome massa/recheio precisa
+    # achar o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
+    # reprovava a fornada, e o operador via "Insumos insuficientes" com o
+    # atalho "Concluir mesmo assim" a um toque, todo dia. Alarme sempre errado
+    # vira botão que se aprende a apertar.
+    #
+    # A lista sai de ``prep_daily_needs()`` — a MESMA função que o seed usa
+    # para dimensionar a mise en place —, e não de nomes escritos à mão aqui.
+    # Ela já foi uma tupla de quatro SKUs, e em 23/09 a correção da massa dos
+    # bichinhos (de brioche para butter, decisão do dono) tirou MASSA-BRIOCHE
+    # do plano: o seed parou de produzi-la, corretamente, e o teste reprovou
+    # por cobrar um nome que ele próprio tinha congelado. Derivar é o conserto.
+    prep_needs = prep_daily_needs()
+    assert prep_needs, "o plano do seed deixou de consumir pré-preparo"
+    for prep_sku in sorted(prep_needs):
         assert stock_service.available(prep_sku) > 0, f"{prep_sku} sem estoque"
     crying = sorted(
         {
@@ -340,7 +355,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
             creating_matter.append(sheet.ref)
     assert not creating_matter, f"fichas que criam matéria do nada: {creating_matter}"
 
-    assert Batch.objects.filter(sku="CT").exists()
+    assert Batch.objects.filter(sku="CRO").exists()
     assert set(Position.objects.filter(ref__in=["massa", "molde", "forno"]).values_list("ref", flat=True)) == {
         "massa",
         "molde",
@@ -506,7 +521,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     )
     assert work_order.status == WorkOrder.Status.PLANNED
     planned = Quant.objects.get(
-        sku="CT",
+        sku="CRO",
         target_date=today,
         position=production,
         batch="",
@@ -522,7 +537,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     )
     work_order.refresh_from_db()
     started = Quant.objects.get(
-        sku="CT",
+        sku="CRO",
         target_date=today,
         position=production,
         batch="started",
@@ -549,7 +564,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     assert finished == work_order.started_qty
     assert work_order.status == WorkOrder.Status.FINISHED
     assert Quant.objects.filter(
-        sku="CT",
+        sku="CRO",
         target_date__isnull=True,
         batch=output.batch_ref,
         _quantity=work_order.started_qty,
@@ -577,8 +592,11 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
 
     from shopman.backstage.services.operator import eligible_operators, verify_operator_pin
 
+    # `cashman.operate_pos`, e não `backstage.operate_pos`: a permissão do PDV
+    # mora no cashman (ADR-022). A permissão inexistente passava só porque o
+    # `admin` superusuário tem `has_perm` sempre True — e era ele quem destravava.
     for perm in (
-        "backstage.operate_pos",
+        "cashman.operate_pos",
         "backstage.operate_kds",
         "backstage.operate_production",
     ):
@@ -588,13 +606,14 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
             f"PIN 1234 não destrava {perm}"
         )
 
-    # O superuser 'admin' também opera — PIN destrava qualquer superfície.
+    # O seed não dá o PIN de dev ao superusuário (o 1234 que o balcão inteiro
+    # conhece): ele não aparece na lista nem destrava com esse PIN até cadastrar
+    # o próprio. O destrave em si aceita superusuário — ver `_eligible`.
     admin = User.objects.get(username="admin")
-    assert verify_operator_pin(admin, "1234", required_perm="backstage.operate_pos")
-    assert verify_operator_pin(admin, "1234", required_perm="backstage.operate_kds")
-
-    # PIN errado nunca destrava.
-    assert not verify_operator_pin(admin, "0000", required_perm="backstage.operate_pos")
+    for perm in ("cashman.operate_pos", "backstage.operate_kds", "backstage.operate_production"):
+        assert admin not in eligible_operators(perm=perm)
+    assert not verify_operator_pin(admin, "1234", required_perm="cashman.operate_pos")
+    assert not verify_operator_pin(admin, "1234", required_perm=None)
 
 
 @pytest.mark.django_db
@@ -610,7 +629,7 @@ def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
 def test_seed_batch_helper_never_rewrites_frozen_quality():
     batch = Batch.objects.create(
         ref="CT-20260909-SEED",
-        sku="CT",
+        sku="CRO",
         production_date=date(2026, 9, 9),
         expiry_date=date(2026, 9, 9),
         quality_grade_ref="fair",
@@ -636,26 +655,26 @@ def test_seed_batch_helper_never_rewrites_frozen_quality():
 def test_seed_only_replaces_output_batch_that_carries_its_signature():
     owned = Batch.objects.create(
         ref="CT-20260909-OWNED",
-        sku="CT",
+        sku="CRO",
         notes="Seed Nelson producao WO-SEED",
     )
     _discard_owned_seed_output_batch(
         ref=owned.ref,
-        sku="CT",
+        sku="CRO",
         work_order_ref="WO-SEED",
     )
     assert not Batch.objects.filter(pk=owned.pk).exists()
 
     real = Batch.objects.create(
         ref="CT-20260909-REAL",
-        sku="CT",
+        sku="CRO",
         notes="Produção conferida pela equipe",
         quality_grade_ref="fair",
     )
     with pytest.raises(CommandError, match="fora do domínio do seed"):
         _discard_owned_seed_output_batch(
             ref=real.ref,
-            sku="CT",
+            sku="CRO",
             work_order_ref="WO-SEED",
         )
     real.refresh_from_db()

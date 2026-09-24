@@ -9,28 +9,37 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _load_certificate(*, path: str, pfx_base64: str, password: str, pfx: bool):
+    """Devolve ``(certificado, chave privada)``; ``None`` na chave quando ela falta."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.serialization import pkcs12
+
+    data = Path(path).read_bytes() if path else base64.b64decode(pfx_base64, validate=True)
+    if pfx:
+        private_key, certificate, _ = pkcs12.load_key_and_certificates(
+            data,
+            password.encode() if password else None,
+        )
+        return certificate, private_key
+    certificate = x509.load_pem_x509_certificate(data)
+    if b"PRIVATE KEY-----" not in data:
+        return certificate, None
+    return certificate, serialization.load_pem_private_key(data, password=None)
+
+
 def certificate_issue(*, path: str = "", pfx_base64: str = "", password: str = "", pfx: bool = False) -> str:
     """An empty result means locally usable and currently valid, not remotely trusted."""
     try:
-        from cryptography import x509
         from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.serialization import pkcs12
 
-        data = Path(path).read_bytes() if path else base64.b64decode(pfx_base64, validate=True)
-        if pfx:
-            private_key, certificate, _ = pkcs12.load_key_and_certificates(
-                data,
-                password.encode() if password else None,
-            )
-            if private_key is None:
-                return "missing_private_key"
-            if certificate is None:
-                return "invalid"
-        else:
-            certificate = x509.load_pem_x509_certificate(data)
-            if b"PRIVATE KEY-----" not in data:
-                return "missing_private_key"
-            private_key = serialization.load_pem_private_key(data, password=None)
+        certificate, private_key = _load_certificate(
+            path=path, pfx_base64=pfx_base64, password=password, pfx=pfx,
+        )
+        if private_key is None:
+            return "missing_private_key"
+        if certificate is None:
+            return "invalid"
         certificate_public_key = certificate.public_key().public_bytes(
             serialization.Encoding.DER,
             serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -51,3 +60,23 @@ def certificate_issue(*, path: str = "", pfx_base64: str = "", password: str = "
         # Includes unavailable parser, unreadable files, bad password and malformed data.
         return "invalid"
     return ""
+
+
+def certificate_expires_at(
+    *, path: str = "", pfx_base64: str = "", password: str = "", pfx: bool = False,
+) -> datetime | None:
+    """O fim da validade do certificado (UTC), ou ``None`` quando ele não abre.
+
+    ``certificate_issue`` só responde "vale ou não vale AGORA" — e por isso a casa
+    só sabia do vencimento depois dele. A data é o que permite avisar ANTES.
+    Certificado que não abre (senha errada, arquivo ilegível) não tem data: esse
+    problema é da prontidão, que já o acusa como ``invalid``.
+    """
+    try:
+        certificate, _ = _load_certificate(path=path, pfx_base64=pfx_base64, password=password, pfx=pfx)
+    except Exception:
+        logger.warning("certificate_expiry_unreadable")
+        return None
+    if certificate is None:
+        return None
+    return certificate.not_valid_after_utc

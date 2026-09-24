@@ -91,7 +91,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "version": 1,
         "name": f"Fornada artesanal {pk:02d}{suffix}",
         "trigger": "production_finished",
-        "trigger_label": "Fornada concluída",
+        "trigger_label": "Lote concluído",
         "trigger_filter": {"collections": ["paes-artesanais"]},
         "template_id": 1,
         "template_name": "Novidades da padaria",
@@ -99,7 +99,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "audience_rules": {"tags": ["clientes-da-casa"]},
         "promotion_ref": "",
         "schedule": {"type": "immediate", "timezone": "America/Sao_Paulo"},
-        "schedule_label": "Assim que a fornada terminar",
+        "schedule_label": "Assim que o lote terminar",
         "fires_on_its_own": False,
         "sent_count": 12 if pk % 3 else 0,
         "reached_total": 999 if pk % 3 else 0,
@@ -169,7 +169,7 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "audience_total": 12,
         "platform_results": [],
         "trigger": "production_finished",
-        "trigger_label": "Fornada concluída",
+        "trigger_label": "Lote concluído",
         "rule_name": "Fornada artesanal",
         "template_name": "Novidades da padaria",
         "sku": "PAO-VISUAL-001",
@@ -180,7 +180,7 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "published_at": "2026-09-10T10:10:00-03:00" if status == "settled" else "",
         "approved_by": "Operadora Visual" if status not in {"pending_review", "expired"} else "",
         "rejected_by": "Operadora Visual" if status == "rejected" else "",
-        "rejected_reason": "A informação da fornada mudou." if status == "rejected" else "",
+        "rejected_reason": "A informação do lote mudou." if status == "rejected" else "",
         "ai_suggestion_enabled": False,
     }
 
@@ -376,7 +376,7 @@ def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> 
     return {
         "pk": pk,
         "category": "marketing_approval",
-        "title": "Revisão de fornada aguardando decisão",
+        "title": "Revisão de lote aguardando decisão",
         "message": "O anúncio expira em uma hora e alcança 12 pessoas elegíveis.",
         "lifecycle": lifecycle,
         "severity": "action_required",
@@ -589,7 +589,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"options": {
                 "triggers": [
                     {"value": "manual", "label": "Disparo manual"},
-                    {"value": "production_finished", "label": "Fornada concluída"},
+                    {"value": "production_finished", "label": "Lote concluído"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
                 # Google entra só no cenário dos quatro retratos: acrescentá-lo em todos

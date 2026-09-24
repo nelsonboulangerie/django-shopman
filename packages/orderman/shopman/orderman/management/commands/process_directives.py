@@ -9,6 +9,7 @@ from django.core.management import BaseCommand
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 from shopman.orderman import registry, worker_heartbeat
+from shopman.orderman.dispatch import notify_terminal_failure, retry_policy
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -16,11 +17,6 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 5
 REAP_STUCK_TIMEOUT_MINUTES = 10
-
-
-def _backoff_seconds(attempts: int) -> int:
-    """Exponential backoff: 2^attempts seconds."""
-    return 2 ** attempts
 
 
 def _reap_stuck_directives(timeout_minutes: int, max_attempts: int) -> int:
@@ -47,9 +43,14 @@ def _reap_stuck_directives(timeout_minutes: int, max_attempts: int) -> int:
         stuck_list = list(stuck)
 
         reaped = 0
+        failed = []
         for d in stuck_list:
-            if d.attempts >= max_attempts:
+            handler_max_attempts, _ = retry_policy(
+                registry.get_directive_handler(d.topic), d.attempts, max_attempts
+            )
+            if d.attempts >= handler_max_attempts:
                 d.status = "failed"
+                failed.append(d)
                 d.last_error = f"Stuck in 'running' for >{timeout_minutes}min (reaped after {d.attempts} attempts)"
             else:
                 d.status = "queued"
@@ -58,6 +59,8 @@ def _reap_stuck_directives(timeout_minutes: int, max_attempts: int) -> int:
             d.save(update_fields=["status", "available_at", "last_error", "updated_at"])
             reaped += 1
 
+    for d in failed:
+        notify_terminal_failure(registry.get_directive_handler(d.topic), d)
     return reaped
 
 
@@ -180,6 +183,7 @@ class Command(BaseCommand):
                     directive.save(update_fields=["status", "attempts", "updated_at"])
                     continue
 
+                handler_max_attempts, retry_delay = retry_policy(handler, directive.attempts, max_attempts)
                 try:
                     handler.handle(message=directive, ctx={"actor": "process_directives"})
                     # Auto-complete: only if handler didn't change status (e.g. deferral)
@@ -205,15 +209,15 @@ class Command(BaseCommand):
                 except DirectiveTransientError as exc:
                     logger.warning(
                         "Directive %s #%s transient failure (attempt %d/%d): %s",
-                        directive.topic, directive.pk, directive.attempts, max_attempts, exc,
+                        directive.topic, directive.pk, directive.attempts, handler_max_attempts, exc,
                     )
-                    if directive.attempts >= max_attempts:
+                    if directive.attempts >= handler_max_attempts:
                         directive.status = "failed"
                         directive.error_code = "terminal"
                     else:
                         directive.status = "queued"
                         directive.error_code = "transient"
-                        directive.available_at = now + timedelta(seconds=_backoff_seconds(directive.attempts))
+                        directive.available_at = now + timedelta(seconds=retry_delay)
                     directive.last_error = str(exc)[:500]
                     directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
                     failures += 1
@@ -221,20 +225,23 @@ class Command(BaseCommand):
                         self.style.WARNING(f"Transient: {directive.topic} #{directive.pk}: {exc}")
                     )
                 except Exception as exc:
-                    logger.exception("Directive %s #%s failed (attempt %d/%d)", directive.topic, directive.pk, directive.attempts, max_attempts)
-                    if directive.attempts >= max_attempts:
+                    logger.exception("Directive %s #%s failed (attempt %d/%d)", directive.topic, directive.pk, directive.attempts, handler_max_attempts)
+                    if directive.attempts >= handler_max_attempts:
                         directive.status = "failed"
                         directive.error_code = "terminal"
                     else:
                         directive.status = "queued"
                         directive.error_code = "transient"
-                        directive.available_at = now + timedelta(seconds=_backoff_seconds(directive.attempts))
+                        directive.available_at = now + timedelta(seconds=retry_delay)
                     directive.last_error = str(exc)[:500]
                     directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
                     failures += 1
                     self.stderr.write(
                         self.style.ERROR(f"Erro ao processar {directive.topic} #{directive.pk}: {exc}")
                     )
+                finally:
+                    if directive.status == "failed":
+                        notify_terminal_failure(handler, directive)
 
             self.stdout.write(self.style.SUCCESS(f"Diretivas concluídas: {processed}"))
             if failures:

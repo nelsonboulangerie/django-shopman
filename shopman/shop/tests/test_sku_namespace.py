@@ -65,7 +65,7 @@ class TestPorteiroDeSku:
         assert "FARINHA-T65" in str(exc.value)
 
     def test_sku_livre_passa_dos_dois_lados(self):
-        Material.objects.create(sku="FERMENTO-NAT", name="Levain", unit="kg")
+        Material.objects.create(sku="FERMENTO-NATURAL", name="Levain", unit="kg")
         product = Product.objects.create(sku="CROISSANT", name="Croissant", unit="un", base_price_q=800)
         assert product.pk is not None
 

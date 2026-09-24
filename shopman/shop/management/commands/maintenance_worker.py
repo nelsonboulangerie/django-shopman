@@ -20,10 +20,15 @@ manutenção num loop (default: a cada 5 minutos):
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
   check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
+  check_geoip_freshness     — base de cidade velha vira alerta (velha, ela erra CALADA)
+  check_ifood_store         — iFood fechado com a casa aberta (ou o contrário) vira alerta
+  check_card_machines_out   — maquininha na rua além do limite vira alerta
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
+  run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
+  run_alias_benchmark       — placar semanal do de-para de produto (B.I.)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -62,6 +67,9 @@ MARKETING_DELIVERY_BATCH = 20
 MARKETING_DELIVERY_LEASE_SECONDS = 300
 
 MAINTENANCE_COMMANDS = (
+    # Primeiro: o fim de "desligar por 1 hora" religa o canal antes de o resto do
+    # ciclo (envio de catálogo, conferência do iFood) ler o estado dele.
+    "apply_channel_switches",
     "release_expired_holds",
     "cleanup_stale_sessions",
     # Depois do cleanup (que já libera ao deletar) e antes do planning: holds
@@ -86,6 +94,10 @@ MAINTENANCE_COMMANDS = (
     # Com a série do dia em dia, os alarmes do B.I. comparam com o esperado e
     # avisam quem opera. Depois do refresh de propósito: leem a tabela recém-feita.
     "evaluate_bi_alerts",
+    # O placar do de-para de produto: mede os concorrentes contra os de-paras
+    # confirmados e guarda o resultado no Admin. Semanal e com gabarito mínimo —
+    # quem segura a cadência é o próprio comando; ciclo vazio não custa nada.
+    "run_alias_benchmark",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
@@ -144,6 +156,11 @@ MAINTENANCE_COMMANDS = (
     # A retenção é executada automaticamente; o comando só toca mensagens
     # inelegíveis cujo prazo aprovado já venceu.
     "cleanup_concierge_observations",
+    # Piloto de intenções (INTENT-PILOT-PLAN): sorteia a mensagem observada
+    # recente, pré-marca as intenções e mede os classificadores. DEPOIS da
+    # limpeza, de propósito: nunca sorteia o que acabou de vencer. Tetos próprios
+    # (por dia, fila aberta, placar semanal) — em ciclo vazio não custa nada.
+    "run_intent_pilot",
     "check_directive_health",
     # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
     # checagem de ESTADO, não de evento: o que importa não é o instante em que
@@ -157,6 +174,21 @@ MAINTENANCE_COMMANDS = (
     # cadência (diária, ou semanal quando o estado é decisão registrada) e a
     # severidade moram no comando — o worker não sabe régua.
     "check_integration_drift",
+    # Irmão do de cima, aplicado a um ARQUIVO em vez de um provedor: a base de
+    # cidade dos dispositivos entra na imagem no build e só troca por bump manual.
+    # Entra aqui porque velha ela não falha — ela RESPONDE ERRADO em silêncio, com
+    # raio de precisão bom e a confiança de sempre, e era a única forma de erro
+    # que aquele módulo não enxergava. Os dois limiares (avisar, e parar de
+    # mostrar a cidade) moram nos settings; a cadência, no comando.
+    "check_geoip_freshness",
+    # A loja no iFood diz o mesmo que a casa? Lê o status do módulo Merchant e
+    # alerta quando o iFood fecha com a casa aberta (polling caído, pausa
+    # esquecida no Portal) ou abre com ela fechada. É o vigia que o
+    # ``ifood_poll`` não tinha. Desligado (IFOOD_MERCHANT_SYNC), volta calado.
+    "check_ifood_store",
+    # A maquininha não tem indicador fixo no Gestor: o card da saída basta. Só
+    # quando passa do limite (default 2 h, em Shop.defaults) vira alerta.
+    "check_card_machines_out",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.

@@ -43,6 +43,16 @@ class OperatorAlert(models.Model):
         # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
         # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
         ("integration_config_drift", "Integração em configuração degradada"),
+        # A prontidão só acusava o certificado DEPOIS de vencido, com o Pix já
+        # parado. Este tipo avisa antes: 30, 15, 7 e 3 dias, e no vencimento.
+        ("certificate_expiring", "Vencimento de certificado digital"),
+        # A base de cidade dos dispositivos entra na imagem no build e não se atualiza
+        # sozinha. Base velha não erra alto: ela responde errado em SILÊNCIO — bloco de IP
+        # que mudou de operadora nomeia a cidade antiga com a mesma confiança de uma
+        # leitura correta. Nenhum tipo existente serve: `integration_config_drift` é
+        # configuração degradada e esta base está configurada certo; `certificate_expiring`
+        # é uma data que vence sozinha e esta só avança quando alguém faz deploy.
+        ("geoip_database_stale", "Base de cidade dos dispositivos desatualizada"),
         ("ifood_schedule_invalid", "Agendamento iFood inválido"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
@@ -89,6 +99,11 @@ class OperatorAlert(models.Model):
         # Exclusão de conta que não terminou. Dado de titular que continua no
         # banco é obrigação legal em aberto, não um 500 qualquer.
         ("account_deletion_incomplete", "Exclusão de conta incompleta"),
+        # A exclusão apaga tudo que é nosso e limpa os campos que empurramos
+        # para o perfil do assinante — mas a API pública do ManyChat não tem
+        # verbo para apagar o contato de lá. Essa última parte é na mão, tem
+        # prazo de 15 dias, e sem uma tarefa datada ninguém lembraria dela.
+        ("manychat_contact_erasure_due", "Contato no ManyChat esperando exclusão manual"),
         # Item que a cozinha NUNCA vai ver: sem estação casada, o pedido chega a
         # pronto com o item nunca preparado.
         ("kds_unrouted_item", "Item sem estação no KDS"),
@@ -99,6 +114,9 @@ class OperatorAlert(models.Model):
         ("courier_dispatch_failed", "Corrida não abriu na central"),
         ("courier_not_attended", "Nenhum entregador aceitou a corrida"),
         ("courier_ride_cancelled", "A central cancelou a corrida"),
+        # A maquininha não aparece na tela enquanto está na rua (o card da saída
+        # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
+        ("card_machine_overdue", "Maquininha fora há muito tempo"),
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
@@ -134,7 +152,7 @@ class OperatorAlert(models.Model):
         ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
         (
             "production_quality_communication",
-            "Qualidade corrigida após comunicação da fornada",
+            "Qualidade corrigida após comunicação do lote",
         ),
         (
             "production_quality_hold_risk",
@@ -208,6 +226,13 @@ class OperatorAlert(models.Model):
         # programa; a obrigação de cumprir a norma é de quem opera — então o
         # vencimento de um parâmetro legal precisa aparecer na tela dele.
         ("legal_parameter_stale", "Parâmetro de lei sem conferência"),
+        # A loja no iFood discorda da casa (``ifood_merchant.check_store``): o
+        # fechado-com-a-casa-aberta é pedido que não entra (polling caído, pausa
+        # esquecida no Portal); o aberto-com-a-casa-fechada é pedido que entra sem
+        # ninguém para fazer. E a pausa/horário que o iFood recusou gravar.
+        ("ifood_store_closed_while_open", "iFood fechado com a loja aberta"),
+        ("ifood_store_open_while_closed", "iFood aberto com a loja fechada"),
+        ("ifood_store_sync_failed", "Pausa ou horário não gravado no iFood"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -251,6 +276,10 @@ class OperatorAlert(models.Model):
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",
         "order_production_quality_risk",
+        "ifood_store_closed_while_open",
+        "ifood_store_open_while_closed",
+        "ifood_store_sync_failed",
+        "card_machine_overdue",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

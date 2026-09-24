@@ -3,6 +3,7 @@
 // already screen-ready (status_label, timer_class, next_action_label, can_* flags
 // pre-resolved); this layer only derives the view shape, the functional-color tone,
 // and the action affordances. No status arithmetic (the backend owns the lifecycle).
+import type { EquipmentOptionProjection } from "~/generated/ordersContract";
 import type {
   OrderCardProjection,
   OrderTimerClass,
@@ -121,6 +122,23 @@ export function elapsedLabel(seconds: number): string {
  * Retorna "" quando não há prazo; "0:00" quando já venceu; senão "M:SS".
  * Puro e testável — o card passa um `nowMs` que tica no cliente.
  */
+/**
+ * Tom do prazo pelo que FALTA, não pelo que passou.
+ *
+ * O decorrido nunca fica vermelho sozinho — um pedido de 7 minutos com 10 de prazo
+ * está tranquilo, e um de 7 com 8 de prazo está para vencer. Os cortes valem para
+ * qualquer canal: o prazo do iFood e o timer da casa pedem a mesma leitura.
+ */
+export function deadlineTone(deadlineIso: string, nowMs: number): TimerTone {
+  if (!deadlineIso) return "muted";
+  const deadlineMs = Date.parse(deadlineIso);
+  if (Number.isNaN(deadlineMs)) return "muted";
+  const secondsLeft = (deadlineMs - nowMs) / 1000;
+  if (secondsLeft <= 60) return "late";
+  if (secondsLeft <= 180) return "warning";
+  return "ok";
+}
+
 export function confirmationRemainingLabel(deadlineIso: string, nowMs: number): string {
   if (!deadlineIso) return "";
   const deadlineMs = Date.parse(deadlineIso);
@@ -139,6 +157,22 @@ export interface ZoneView {
   icon: string;
   cards: OrderCardProjection[];
   count: number;
+}
+
+/** O estado vazio de cada coluna, nomeando a zona.
+ *
+ *  As três colunas repetiam "Nada por aqui agora." — a mesma frase três vezes na
+ *  mesma tela, e "aqui" nunca dizia qual das três estava vazia. Quem olha de longe
+ *  precisa saber se o que acabou foi a entrada, o preparo ou a saída. */
+export function zoneEmptyText(key: ZoneView["key"]): string {
+  switch (key) {
+    case "intake":
+      return "Nenhum pedido novo agora.";
+    case "prep":
+      return "Nenhum pedido em preparo agora.";
+    default:
+      return "Nenhum pedido para retirada ou entrega agora.";
+  }
 }
 
 /** Group the two-zone queue projection into the three action columns the board
@@ -205,7 +239,7 @@ export function preorderGroups(queue: Pick<TwoZoneQueueProjection, "preorders">)
 
 // ── Action affordances ─────────────────────────────────────────────────────
 
-export type AffordanceRef = "confirm" | "advance" | "reject" | "settle_cash" | "equipment_back";
+export type AffordanceRef = "confirm" | "advance" | "reject" | "settle_cash" | "equipment_back" | "courier_back";
 
 export interface Affordance {
   ref: AffordanceRef;
@@ -234,6 +268,14 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
     disabled: !a.enabled,
     reason: a.reason,
   }));
+  // "Entregador voltou" fecha a saída inteira (entrega, dinheiro, troco e
+  // maquininha): quando existe, é o ÚNICO gesto do card — os passos avulsos
+  // (entregue, acertar, maquininha voltou) ficam no detalhe, para exceção.
+  const courierBack = projected.find((a) => a.ref === "courier-back");
+  if (courierBack) {
+    return [{ ref: "courier_back", label: courierBack.label, icon: "lucide:undo-2", priority: "primary", needsInput: true,
+      disabled: !courierBack.enabled, reason: courierBack.reason }];
+  }
   if (card.can_settle_delivery_cash) {
     const settle = projected.find((action) => action.ref === "settle-delivery-cash");
     out.push({ ref: "settle_cash", label: card.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
@@ -496,11 +538,12 @@ export function bulkableRefs(
   action: BulkAction,
 ): string[] {
   // Despacho que pede troco não entra no lote: precisa de um valor por pedido
-  // (o servidor recusa sem ele), e o lote não tem onde perguntar.
+  // (o servidor recusa sem ele), e o lote não tem onde perguntar. Nem o que sai
+  // com maquininha: a escolha (ou a saída junto) mora no diálogo de saída.
   const can =
     action === "confirm"
       ? (c: OrderCardProjection) => c.can_confirm
-      : (c: OrderCardProjection) => c.can_advance && !dispatchAsksChange(c);
+      : (c: OrderCardProjection) => c.can_advance && !dispatchAsksChange(c) && !c.dispatch_needs_machine;
   return cards.filter((c) => selected.has(c.ref) && can(c)).map((c) => c.ref);
 }
 
@@ -514,12 +557,85 @@ export function dispatchAsksChange(card: Pick<OrderCardProjection, "next_status"
   return card.next_status === "dispatched" && card.change_out_suggested_q > 0;
 }
 
-/** O despacho tem o que perguntar: troco sugerido OU maquininha que o canal deixa levar.
- *  (Só o troco é exigido pelo servidor; a maquininha é oferta do despacho.) */
-export function dispatchAsks(
-  card: Pick<OrderCardProjection, "next_status" | "change_out_suggested_q" | "equipment_options">,
-): boolean {
-  return card.next_status === "dispatched" && (card.change_out_suggested_q > 0 || card.equipment_options.length > 0);
+/** Um pedido pronto para sair para entrega pelas mãos do operador (candidato a ir junto). */
+export function readyToDispatch(card: OrderCardProjection): boolean {
+  const advance = (card.actions ?? []).find((a) => a.ref === "advance");
+  return card.status === "ready" && card.fulfillment_type === "delivery" && card.next_status === "dispatched" && Boolean(advance?.enabled);
+}
+
+/** Os outros pedidos prontos que podem ir na MESMA saída deste. */
+export function tripCandidates(card: OrderCardProjection, cards: OrderCardProjection[]): OrderCardProjection[] {
+  return cards.filter((other) => other.ref !== card.ref && readyToDispatch(other));
+}
+
+export function freeMachines(options: EquipmentOptionProjection[]): EquipmentOptionProjection[] {
+  return options.filter((opt) => opt.ref.startsWith("card_machine:") && opt.enabled !== false);
+}
+
+export interface DispatchStep {
+  ref: string;
+  changeOut?: string;
+  equipment?: string[];
+  tripRef?: string;
+}
+
+/** A saída em passos: quem precisa de maquininha abre a saída (reserva a
+ *  escolhida); os outros entram nela (``tripRef``) e a compartilham. */
+export function dispatchSteps(
+  cards: OrderCardProjection[],
+  opts: { machineRef?: string; changeOut?: Record<string, string> } = {},
+): DispatchStep[] {
+  const anchor = cards.find((c) => c.dispatch_needs_machine) ?? cards[0];
+  if (!anchor) return [];
+  const change = (c: OrderCardProjection) =>
+    dispatchAsksChange(c) ? { changeOut: (opts.changeOut?.[c.ref] ?? "").trim() || moneyInput(c.change_out_suggested_q) } : {};
+  return [
+    { ref: anchor.ref, ...change(anchor), ...(anchor.dispatch_needs_machine && opts.machineRef ? { equipment: [opts.machineRef] } : {}) },
+    ...cards.filter((c) => c.ref !== anchor.ref).map((c) => ({ ref: c.ref, ...change(c), tripRef: anchor.ref })),
+  ];
+}
+
+/** Um toque: sem troco a informar, sem outro pedido pronto para ir junto e,
+ *  se precisa de maquininha, exatamente UMA livre (o sistema escolhe). Nulo = diálogo. */
+export function oneTapDispatch(card: OrderCardProjection, cards: OrderCardProjection[]): DispatchStep[] | null {
+  if (dispatchAsksChange(card) || tripCandidates(card, cards).length) return null;
+  if (!card.dispatch_needs_machine) return dispatchSteps([card]);
+  const free = freeMachines(card.equipment_options);
+  return free.length === 1 ? dispatchSteps([card], { machineRef: free[0]!.ref }) : null;
+}
+
+function joinRefs(refs: string[]): string {
+  return refs.length <= 1 ? (refs[0] ?? "") : `${refs.slice(0, -1).join(", ")} e ${refs[refs.length - 1]}`;
+}
+
+/** Nenhuma livre: onde elas estão ("As duas maquininhas estão na rua: pedidos 0415 e 0418."). */
+export function machinesOutSentence(options: EquipmentOptionProjection[]): string {
+  const out = options.filter((opt) => opt.ref.startsWith("card_machine:") && opt.order_ref);
+  if (!out.length) return "Nenhuma maquininha livre.";
+  const refs = [...new Set(out.map((opt) => splitRef(opt.order_ref).code))];
+  const subject = out.length === 1 ? "A maquininha está na rua" : out.length === 2 ? "As duas maquininhas estão na rua" : `As ${out.length} maquininhas estão na rua`;
+  return `${subject}: ${refs.length === 1 ? "pedido" : "pedidos"} ${joinRefs(refs)}.`;
+}
+
+/** "Saiu com a maquininha Azul" (o rótulo pode já começar com "Maquininha"). */
+export function machinePhrase(label: string): string {
+  const clean = label.trim();
+  if (!clean) return "maquininha";
+  return clean.toLowerCase().startsWith("maquininha") ? clean[0]!.toLowerCase() + clean.slice(1) : `maquininha ${clean}`;
+}
+
+/** Os pedidos que "Entregador voltou" fecha, para a confirmação ("Fecha os pedidos 0415 e 0418."). */
+export function courierReturnOrders(card: Pick<OrderCardProjection, "courier_return_orders">): string {
+  const refs = (card.courier_return_orders ?? []).map((ref) => splitRef(ref).code);
+  return refs.length > 1 ? `Fecha a saída dos pedidos ${joinRefs(refs)}.` : "";
+}
+
+/** A linha do card na rua: "Saiu com a maquininha Azul · junto com 0415". */
+export function onRoadLine(card: Pick<OrderCardProjection, "equipment_label" | "trip_with">): string {
+  const others = card.trip_with ?? [];
+  const together = others.length ? `junto com ${joinRefs(others.map((ref) => splitRef(ref).code))}` : "";
+  if (!card.equipment_label) return together ? `Saiu ${together}` : "";
+  return joinFacts(card.equipment_label, together);
 }
 
 /** Sugestão do que deve ter voltado: TUDO o que saiu.

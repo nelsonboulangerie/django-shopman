@@ -377,7 +377,9 @@ def payment_notice_refusal(order) -> NotificationResendRefused | None:
     if expires_at is not None and expires_at <= timezone.now():
         return NotificationResendRefused("payment_notice_expired", "A cobrança venceu. Gere um novo pagamento.")
     customer = (order.data or {}).get("customer") or {}
-    if not isinstance(customer, dict) or not (customer.get("phone") or customer.get("email")):
+    if not isinstance(customer, dict):
+        customer = {}
+    if not (customer_contact_phone(order) or customer.get("email")):
         return NotificationResendRefused(
             "payment_notice_contact_required", "Identifique o cliente com WhatsApp ou e-mail para enviar a cobrança.",
         )
@@ -854,17 +856,66 @@ def _resolve_recipient(order, backend_name: str = "") -> str | None:
         # ("5543984049009"), e o adapter o tomava por subscriber_id — o ManyChat
         # respondia "Subscriber does not exist", a cadeia caía para o e-mail, e
         # um cliente COM WhatsApp cadastrado nunca recebia o link por lá.
-        return _manychat_phone(customer_data.get("phone") or order.data.get("customer_phone"))
+        return _manychat_phone(customer_contact_phone(order))
 
     if backend_name == "email":
         email = customer_data.get("email")
         return email or None
 
     return (
-        customer_data.get("phone")
-        or order.data.get("customer_phone")
+        customer_contact_phone(order)
         or (order.handle_ref if order.handle_type in ("customer", "phone") else None)
     )
+
+
+def customer_phone_is_platform_relay(order) -> bool:
+    """O número deste pedido é relé da plataforma, e não o do cliente?
+
+    Marketplace não entrega o telefone do cliente. O iFood devolve um 0800 da
+    central dele mais um **localizador**: quem liga disca o 0800, digita o
+    localizador e só então cai na pessoa. Isso é canal de VOZ da plataforma,
+    para o operador usar à mão — não é contato do cliente, não serve para
+    WhatsApp nem SMS, e não é nosso para usar em aviso automático.
+
+    Dois sinais, ambos estruturais e nenhum deles uma lista de números (o iFood
+    tem mais de um 0800 e eles mudam):
+
+    - o ``phone_localizer`` gravado ao lado do número pelo mapeamento
+      (``services/ifood_orders``) — é o próprio iFood dizendo que aquilo é relé;
+    - a declaração do canal (``notifications.customer_phone = "relay"``), que
+      sustenta o pedido em que a plataforma omitir o localizador: o número
+      continua sendo dela.
+    """
+    customer_data = (order.data or {}).get("customer")
+    if not isinstance(customer_data, dict):
+        customer_data = {}
+    if str(customer_data.get("phone_localizer") or "").strip():
+        return True
+
+    from shopman.shop.config import ChannelConfig
+
+    config = ChannelConfig.for_channel(order.channel_ref)
+    return config.notifications.customer_phone == "relay"
+
+
+def customer_contact_phone(order) -> str:
+    """O telefone por onde PODEMOS falar com o cliente — ``""`` quando não há.
+
+    "Telefone preenchido" não é "temos como falar com o cliente": um relé de
+    voz da plataforma ocupa o mesmo campo e não é destino de aviso nenhum.
+    Todo ponto que resolve destinatário, identidade ou recusa de cobrança
+    pergunta aqui — um campo, uma resposta.
+    """
+    data = order.data or {}
+    customer_data = data.get("customer")
+    if not isinstance(customer_data, dict):
+        customer_data = {}
+    phone = str(customer_data.get("phone") or data.get("customer_phone") or "").strip()
+    if not phone:
+        return ""
+    if customer_phone_is_platform_relay(order):
+        return ""
+    return phone
 
 
 def _manychat_phone(raw) -> str | None:
@@ -937,7 +988,10 @@ def _resolve_customer_identity(order) -> tuple[str, str]:
         )
         return _IDENTITY_UNAVAILABLE, ""
 
-    phone = customer_data.get("phone") or data.get("customer_phone")
+    # Relé da plataforma não identifica ninguém: procurar o cliente pelo 0800 da
+    # central do iFood acharia, na melhor hipótese, nada — e na pior a ficha de
+    # quem por acaso tiver aquele número.
+    phone = customer_contact_phone(order)
     if phone:
         try:
             from shopman.guestman.services import customer as customer_service
@@ -1028,13 +1082,16 @@ def _expected_order_without_contact(order, *, template: str) -> bool:
     deliberate exception: even at the counter, no destination means the customer
     was never charged, so that template must fail loudly. A remote first-party
     order without contact is likewise an operational failure.
+
+    "Sem destino" é o que ``customer_contact_phone`` responde, não "campo
+    vazio": o pedido do iFood chega com o 0800 da central preenchido e mesmo
+    assim não tem como alcançar o cliente.
     """
     data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     has_contact = bool(
-        customer.get("phone")
+        customer_contact_phone(order)
         or customer.get("email")
-        or data.get("customer_phone")
         or (
             getattr(order, "handle_ref", "")
             and getattr(order, "handle_type", "") in {"customer", "phone", "manychat"}

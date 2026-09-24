@@ -1,5 +1,7 @@
 """Official Order workflow: store dispatch, iFood logistics, and remote echoes."""
 
+import logging
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -7,28 +9,43 @@ import pytest
 from django.test import override_settings
 from shopman.orderman.models import Directive, Order
 
+from shopman.shop.handlers import ifood_status
 from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler, on_order_status_changed
 from shopman.shop.services import ifood_auth, ifood_callbacks, ifood_events
 from shopman.shop.tests.test_ifood_auth import EDGE_BODY
 
 
+# A razão de cada linha, para que ninguém "simplifique" a regra de novo. O
+# fundamento é o workflow oficial do módulo Order:
+# https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/workflow
+#
+#   readyToPickup — "Obrigatório para pedidos TAKEOUT, DINE_IN e DELIVERY";
+#   "Para pedidos com entrega própria, notifique o pedido pronto via
+#   /readyToPickup ANTES de despachar via /dispatch". Todo tipo de pedido
+#   avisa; o dono da entrega não entra na decisão.
+#
+#   dispatch — só a loja despacha, e só quando ela é a dona da entrega
+#   (deliveredBy: MERCHANT). Na entrega do iFood quem leva é o entregador
+#   deles. Dono ausente nunca é lido como MERCHANT.
 @pytest.mark.parametrize(("status", "fulfillment", "owner", "expected"), [
-    ("ready", "pickup", "", "readyToPickup"),
-    ("ready", "TAKEOUT", "", "readyToPickup"),
-    ("ready", "DINE_IN", "", "readyToPickup"),
-    ("ready", "delivery", "IFOOD", "readyToPickup"),
-    ("ready", "delivery", "MERCHANT", None),
-    ("ready", "delivery", "", None),
-    ("ready", "delivery", "UNKNOWN", None),
-    ("ready", "", "MERCHANT", None),
-    ("dispatched", "delivery", "MERCHANT", "dispatch"),
-    ("dispatched", "delivery", "IFOOD", None),
-    ("dispatched", "delivery", "", None),
-    ("dispatched", "delivery", "UNKNOWN", None),
-    ("dispatched", "pickup", "MERCHANT", None),
-    ("dispatched", "DINE_IN", "MERCHANT", None),
-    ("dispatched", "", "MERCHANT", None),
-    ("accepted", "", "", "confirm"),
+    # ready: obrigatório em TAKEOUT, DINE_IN e DELIVERY — sempre avisa.
+    ("ready", "pickup", "", "readyToPickup"),          # retirada no balcão
+    ("ready", "TAKEOUT", "", "readyToPickup"),         # TAKEOUT: obrigatório
+    ("ready", "DINE_IN", "", "readyToPickup"),         # DINE_IN: obrigatório
+    ("ready", "delivery", "IFOOD", "readyToPickup"),   # chama o entregador do iFood
+    ("ready", "delivery", "MERCHANT", "readyToPickup"),  # entrega própria: avisa ANTES do dispatch
+    ("ready", "delivery", "", "readyToPickup"),        # dono desconhecido: "pronto" não afirma quem leva
+    ("ready", "delivery", "UNKNOWN", "readyToPickup"),  # idem — a dúvida é sobre a entrega, não sobre a comida
+    ("ready", "", "MERCHANT", "readyToPickup"),        # tipo ausente: não há tipo em que o aviso não valha
+    # dispatched: espelho estrito — só entrega DA LOJA.
+    ("dispatched", "delivery", "MERCHANT", "dispatch"),  # a loja levou
+    ("dispatched", "delivery", "IFOOD", None),         # quem leva é o entregador deles
+    ("dispatched", "delivery", "", None),               # ausência de dono nunca é MERCHANT
+    ("dispatched", "delivery", "UNKNOWN", None),        # dono desconhecido idem
+    ("dispatched", "pickup", "MERCHANT", None),         # retirada não se despacha
+    ("dispatched", "DINE_IN", "MERCHANT", None),        # consumo no local não se despacha
+    ("dispatched", "", "MERCHANT", None),               # tipo ausente não autoriza despacho
+    ("accepted", "", "", "confirm"),                    # confirm independe de logística
 ])
 def test_send_follows_fulfillment_and_explicit_delivery_owner(status, fulfillment, owner, expected):
     with patch.object(ifood_callbacks, "send_action") as send:
@@ -42,17 +59,25 @@ def test_send_follows_fulfillment_and_explicit_delivery_owner(status, fulfillmen
         send.assert_not_called()
 
 
-@pytest.mark.parametrize("status", ["ready", "dispatched"])
-def test_bare_status_does_not_send_logistics_without_context(status):
+def test_bare_status_does_not_dispatch_without_context():
+    """Sem contexto não se despacha: dispatch depende de a loja ser a dona da entrega."""
     with patch.object(ifood_callbacks, "send_action") as send:
-        assert ifood_callbacks.send_for_status("ifood-order", status) is False
+        assert ifood_callbacks.send_for_status("ifood-order", "dispatched") is False
     send.assert_not_called()
+
+
+def test_bare_ready_still_notifies_because_every_order_type_requires_it():
+    """O aviso de pronto não depende de contexto — é obrigatório em TAKEOUT, DINE_IN e DELIVERY."""
+    with patch.object(ifood_callbacks, "send_action") as send:
+        assert ifood_callbacks.send_for_status("ifood-order", "ready") is True
+    send.assert_called_once_with("ifood-order", "readyToPickup")
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(("status", "owner", "expected"), [
     ("ready", "IFOOD", "readyToPickup"),
-    ("ready", "MERCHANT", None),
+    ("ready", "MERCHANT", "readyToPickup"),  # entrega própria também avisa pronto
+    ("ready", "", "readyToPickup"),
     ("dispatched", "MERCHANT", "dispatch"),
     ("dispatched", "IFOOD", None),
     ("dispatched", "", None),
@@ -121,7 +146,10 @@ def test_remote_actor_does_not_enqueue_echo(status, actor):
 @pytest.mark.parametrize(("status", "fulfillment", "owner", "queued"), [
     ("ready", "pickup", "", True),
     ("ready", "delivery", "IFOOD", True),
-    ("ready", "delivery", "MERCHANT", False),
+    # O defeito medido ao vivo em 19/09/2026 (IFOOD-260919-Q38, deliveredBy:
+    # MERCHANT): o "pronto" do operador não gerava directive nenhuma.
+    ("ready", "delivery", "MERCHANT", True),
+    ("ready", "delivery", "", True),
     ("dispatched", "delivery", "MERCHANT", True),
     ("dispatched", "delivery", "IFOOD", False),
     ("dispatched", "delivery", "", False),
@@ -167,7 +195,9 @@ def test_pickup_conclusion_suppresses_previously_queued_ready_callback():
         }])["ingested"] == 1
     order.refresh_from_db()
     assert order.status == Order.Status.COMPLETED
-    assert not ifood_callbacks.remote_status_observed(order, "ready")
+    # Duas guardas agora, e qualquer uma basta: o pedido é terminal e o fato
+    # "concluído no iFood" está gravado.
+    assert ifood_callbacks.remote_status_observed(order, "ready")
     with patch.object(ifood_callbacks, "send_action") as send:
         IFoodStatusCallbackHandler().handle(message=directive, ctx={})
     send.assert_not_called()
@@ -175,7 +205,7 @@ def test_pickup_conclusion_suppresses_previously_queued_ready_callback():
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("terminal", [Order.Status.COMPLETED, Order.Status.RETURNED, Order.Status.CANCELLED])
-@pytest.mark.parametrize("callback_status", ["accepted", "ready", "dispatched"])
+@pytest.mark.parametrize("callback_status", ["accepted", "preparing", "ready", "dispatched"])
 def test_delayed_progress_callbacks_are_inert_after_terminal_state(terminal, callback_status):
     order = Order.objects.create(
         ref="TERMINAL-IFD", channel_ref="ifood", external_ref="terminal-order", status=terminal,
@@ -235,3 +265,239 @@ def test_sem_credencial_a_mensagem_continua_dizendo_credencial_e_nada_e_enviado(
 
     assert "is not configured (client_id/client_secret)" in str(erro.value)
     post.assert_not_called()
+
+
+# ── Os desvios do sinal são AUDÍVEIS ───────────────────────────────────────────
+# Cada desvio de negócio (cancelamento remoto, transição já refletida, status sem
+# ação no fluxo) diz o que decidiu e com que dado. Medido em 19/09/2026: o
+# despacho do IFOOD-260919-Q38 sumiu sem uma linha de log, e a mudez custou vinte
+# minutos de eliminação de hipóteses.
+
+
+@contextmanager
+def _captured(caplog):
+    """O logger do módulo não propaga para o caplog (config de LOGGING da casa)."""
+    module_logger = logging.getLogger(ifood_status.__name__)
+    module_logger.addHandler(caplog.handler)
+    previous = module_logger.level
+    module_logger.setLevel(logging.INFO)
+    try:
+        with caplog.at_level(logging.INFO, logger=ifood_status.__name__):
+            yield
+    finally:
+        module_logger.setLevel(previous)
+        module_logger.removeHandler(caplog.handler)
+
+
+@pytest.mark.django_db
+def test_cancellation_that_originated_at_ifood_says_so(caplog):
+    order = Order.objects.create(
+        ref="MUTE-CAN", channel_ref="ifood", external_ref="ifood-order", status="cancelled",
+        data={"fulfillment_type": "delivery", "ifood_cancelled": True, "ifood": {"delivered_by": "MERCHANT"}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-CAN" in logged
+    assert "status=cancelled" in logged
+    assert "ifood_cancelled" in logged
+
+
+@pytest.mark.django_db
+def test_remote_actor_names_the_actor_and_the_markers(caplog):
+    order = Order.objects.create(
+        ref="MUTE-ACTOR", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_dispatched": {"event_id": "dsp-1"},
+        }},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="system:ifood:DSP")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-ACTOR" in logged
+    assert "status=dispatched" in logged
+    assert "remote actor=system:ifood:DSP" in logged
+    assert "remote_dispatched" in logged
+
+
+@pytest.mark.django_db
+def test_observed_remote_status_is_distinguishable_from_the_remote_actor(caplog):
+    order = Order.objects.create(
+        ref="MUTE-EVID", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_dispatched": {"event_id": "dsp-1"},
+        }},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-EVID" in logged
+    assert "remote status already observed" in logged
+    assert "remote_dispatched" in logged
+    # A ambiguidade que travou o diagnóstico: este desvio NÃO é o do ator remoto.
+    assert "remote actor=" not in logged
+
+
+@pytest.mark.django_db
+def test_status_without_ifood_action_logs_status_fulfillment_and_owner(caplog):
+    order = Order.objects.create(
+        ref="MUTE-ACTION", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {"delivered_by": "IFOOD"}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    logged = caplog.text
+    assert "MUTE-ACTION" in logged
+    assert "no iFood action for status=dispatched" in logged
+    assert "fulfillment_type=delivery" in logged
+    assert "delivered_by=IFOOD" in logged
+
+
+@pytest.mark.django_db
+def test_missing_delivery_owner_reads_as_empty_not_as_absence(caplog):
+    order = Order.objects.create(
+        ref="MUTE-EMPTY", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    assert "delivered_by=(empty)" in caplog.text
+
+
+@pytest.mark.django_db
+def test_happy_path_still_enqueues_the_callback_and_stays_quiet(caplog):
+    order = Order.objects.create(
+        ref="MUTE-OK", channel_ref="ifood", external_ref="ifood-order", status="dispatched",
+        data={"fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"}},
+    )
+    with _captured(caplog):
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+
+    directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
+    assert directive.payload["status"] == "dispatched"
+    assert directive.payload["delivered_by"] == "MERCHANT"
+    assert "no callback for order" not in caplog.text
+
+
+# ── O preparo ATRAVESSA para o iFood ───────────────────────────────────────────
+# Medido em 19/09/2026: `startPreparation` e `PREPARATION_STARTED` não apareciam
+# em nenhum arquivo de `shopman/`, `packages/` ou `config/`. O status local
+# `preparing` movia o KDS e morria aqui — `action_for_status("preparing")`
+# devolvia None e o sinal desistia antes de enfileirar. O cliente via o pedido
+# parado em "confirmado" com a cozinha já trabalhando.
+#
+# Fundamento (workflow oficial do módulo Order, lido em 19/09/2026 em
+# https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/workflow):
+#
+#   "Iniciar preparo — Use POST /orders/{id}/startPreparation para iniciar o
+#   preparo." Ciclo de vida FOOD: PLACED → CONFIRMED → PREPARATION_STARTED →
+#   READY_TO_PICKUP → DISPATCHED → CONCLUDED, com "PREPARATION_STARTED — Preparo
+#   iniciado (opcional)" e "Iniciando preparação" no checklist do passo 18.
+
+
+@pytest.mark.parametrize(("fulfillment", "owner"), [
+    ("pickup", ""),
+    ("TAKEOUT", ""),
+    ("DINE_IN", ""),
+    ("delivery", "IFOOD"),
+    ("delivery", "MERCHANT"),
+    ("delivery", ""),
+    ("", ""),
+])
+def test_preparation_is_announced_for_every_fulfillment(fulfillment, owner):
+    """Começar a preparar não afirma nada sobre quem entrega — logística não entra."""
+    with patch.object(ifood_callbacks, "send_action") as send:
+        sent = ifood_callbacks.send_for_status(
+            "ifood-order", "preparing", fulfillment_type=fulfillment, delivered_by=owner,
+        )
+    assert sent is True
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+def test_preparation_action_is_the_documented_path_segment():
+    """A trava do VALOR: o caminho é `startPreparation`, não uma variação plausível."""
+    assert ifood_callbacks.action_for_status("preparing") == "startPreparation"
+    assert ifood_callbacks.STATUS_ACTION["preparing"] == "startPreparation"
+
+
+def test_bare_preparation_needs_no_context_unlike_dispatch():
+    with patch.object(ifood_callbacks, "send_action") as send:
+        assert ifood_callbacks.send_for_status("ifood-order", "preparing") is True
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+def test_start_preparation_helper_posts_the_documented_action():
+    with patch.object(ifood_callbacks, "send_action") as send:
+        ifood_callbacks.start_preparation("ifood-order")
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("fulfillment", "owner"), [
+    ("pickup", ""),
+    ("delivery", "IFOOD"),
+    ("delivery", "MERCHANT"),
+])
+def test_signal_enqueues_the_preparation_callback(fulfillment, owner):
+    order = Order.objects.create(
+        ref="PREP-IFD", channel_ref="ifood", external_ref="ifood-order", status="preparing",
+        data={"fulfillment_type": fulfillment, "ifood": {"delivered_by": owner}},
+    )
+    on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+    directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
+    assert directive.payload["status"] == "preparing"
+
+
+@pytest.mark.django_db
+def test_observed_remote_dispatch_suppresses_a_late_preparation_callback():
+    """O pedido já SAIU: contar "comecei a preparar" depois é narrar passado superado."""
+    order = Order.objects.create(
+        ref="PREP-LATE", channel_ref="ifood", external_ref="ifood-order", status="preparing",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_dispatched": {"event_id": "dsp-1"},
+        }},
+    )
+    assert ifood_callbacks.remote_status_observed(order, "preparing") is True
+    message = SimpleNamespace(payload={"ifood_order_id": order.external_ref, "status": "preparing"})
+    with patch.object(ifood_callbacks, "send_for_status") as send:
+        IFoodStatusCallbackHandler().handle(message=message, ctx={})
+    send.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_remote_confirmation_does_not_suppress_the_preparation_callback():
+    """CFM precede o preparo e não o dispensa — só o despacho observado o cala."""
+    order = Order.objects.create(
+        ref="PREP-CFM", channel_ref="ifood", external_ref="ifood-order", status="preparing",
+        data={"fulfillment_type": "delivery", "ifood": {
+            "delivered_by": "MERCHANT", "remote_confirmed": {"event_id": "cfm-1"},
+        }},
+    )
+    assert ifood_callbacks.remote_status_observed(order, "preparing") is False
+    message = SimpleNamespace(payload={"ifood_order_id": order.external_ref, "status": "preparing"})
+    with patch.object(ifood_callbacks, "send_action") as send:
+        IFoodStatusCallbackHandler().handle(message=message, ctx={})
+    send.assert_called_once_with("ifood-order", "startPreparation")
+
+
+@pytest.mark.django_db
+def test_simulated_order_never_announces_preparation():
+    order = Order.objects.create(
+        ref="PREP-SIM", channel_ref="ifood", external_ref="IFOOD-SIM-987", status="preparing",
+        data={"fulfillment_type": "pickup", "ifood": {}},
+    )
+    on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator:a")
+    assert not Directive.objects.filter(topic="ifood.status_callback").exists()
+    with patch.object(ifood_callbacks, "send_action") as send:
+        assert ifood_callbacks.send_for_status(order.external_ref, "preparing") is False
+    send.assert_not_called()

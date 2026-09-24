@@ -130,7 +130,7 @@ def test_structured_suggestion_uses_only_canonical_facts_and_writes_hash_audit(
     prompt = calls[0]["prompt"]
     assert prompt["canonical_facts"] == [
         {"id": "product_name", "label": "Produto", "value": "Croissant"},
-        {"id": "event_type", "label": "Ocasião", "value": "Fornada concluída"},
+        {"id": "event_type", "label": "Ocasião", "value": "Lote concluído"},
     ]
     assert "Acolhedor e concreto." in prompt["untrusted_inputs"]["brand_voice"]
 

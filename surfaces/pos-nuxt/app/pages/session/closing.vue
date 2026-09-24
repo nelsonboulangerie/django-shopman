@@ -30,12 +30,21 @@ import {
   productionRows,
   sanitizeQtyInput,
 } from "~/presentation/closing";
+import { oldestPendingDate, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
+import type { ClosingPendingProduction } from "~/types/closing";
 
 useHead({ title: "Fechamento do dia" });
 
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
 const productionUrl = computed(() => String(runtimeConfig.public.productionUrl || ""));
+// Sair do PDV para a Produção é troca de APP: instalado, o destino tem janela
+// própria. Quem decide `target`/`rel` é o kit, nunca um `_blank` na mão.
+const { attrsFor } = useOperatorAppLink();
+// UMA ordem: a tabela mostra o `ref`, e o link leva ATÉ ele (data + busca).
+function workOrderHref(row: ClosingPendingProduction): string {
+  return productionWorkOrderUrl(productionUrl.value, row);
+}
 
 // A projection do PDV entra só pelo `can_audit_cash`: o próximo passo do fim
 // de dia (o relatório) é porta que bate na cara de quem não audita, e a tela
@@ -46,6 +55,16 @@ const canAuditCash = computed(() => pos.value?.cash_runtime?.can_audit_cash === 
 const { closing, pending, accessDenied, submitting, submit } = await useDayClosing({ action });
 
 const dayProduction = computed(() => productionRows(closing.value?.production_summary));
+
+// A grade da Produção no dia do bloqueio mais VELHO. A grade abre em hoje por
+// padrão e ordem atrasada é de ontem: sem a data, "Abrir a Produção" entregaria
+// uma grade sem nada para resolver.
+const productionGrid = computed(() =>
+  productionGridUrl(
+    productionUrl.value,
+    oldestPendingDate(closing.value?.pending_production ?? []),
+  ),
+);
 
 // Contagem cega: um input por SKU, começa VAZIO (contar de verdade, não
 // aceitar default). O CTA só arma quando toda linha tem um número.
@@ -163,13 +182,17 @@ async function confirmSubmit() {
               : `${closing.pending_production.length} ordens de produção ainda estão abertas.` }}
             Conclua ou estorne antes de encerrar o dia.
           </p>
+          <!-- A contagem é CEGA: aqui o link não pode apontar para uma ordem,
+               porque a ordem carrega SKU. Leva à grade da Produção no dia do
+               bloqueio mais velho, e o rótulo promete só isso. -->
           <a
-            v-if="productionUrl"
+            v-if="productionGrid"
             class="text-sm font-medium underline underline-offset-4"
-            :href="productionUrl"
-            target="_blank" rel="noopener"
+            :href="productionGrid"
+            v-bind="attrsFor(productionGrid)"
+            data-production-link
           >
-            Resolver na produção
+            Abrir a Produção
           </a>
         </section>
 
@@ -182,7 +205,7 @@ async function confirmSubmit() {
             </span>
           </div>
           <p class="text-sm text-muted-foreground">
-            Ordens que seguiam abertas quando o dia foi encerrado. Ficaram registradas no snapshot; resolva na produção.
+            Ordens que seguiam abertas quando o dia foi encerrado. Elas ficaram registradas neste fechamento; toque na ordem para abri-la na Produção.
           </p>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -197,7 +220,20 @@ async function confirmSubmit() {
               </thead>
               <tbody>
                 <tr v-for="row in closing.pending_production" :key="row.ref" class="border-b border-border/60 last:border-0">
-                  <td class="py-1.5 pr-3 font-medium">{{ row.ref }}</td>
+                  <!-- O `ref` na tela É o caminho: o link abre a Produção no dia
+                       da ordem, já filtrada por ela. Antes o botão da seção
+                       jogava o operador na raiz e ele reencontrava à mão. -->
+                  <td class="py-1.5 pr-3 font-medium">
+                    <a
+                      v-if="workOrderHref(row)"
+                      class="underline underline-offset-4"
+                      :href="workOrderHref(row)"
+                      v-bind="attrsFor(workOrderHref(row))"
+                      :aria-label="`Abrir a ordem ${row.ref} na Produção`"
+                      data-work-order-link
+                    >{{ row.ref }}</a>
+                    <template v-else>{{ row.ref }}</template>
+                  </td>
                   <td class="py-1.5 pr-3">{{ row.output_sku }}</td>
                   <td class="py-1.5 pr-3" :class="row.is_overdue ? 'text-destructive' : ''">{{ pendingStatusDisplay(row) }}</td>
                   <td class="py-1.5 pr-3 tabular-nums">{{ row.quantity }}</td>
@@ -207,12 +243,13 @@ async function confirmSubmit() {
             </table>
           </div>
           <a
-            v-if="productionUrl"
+            v-if="productionGrid"
             class="text-sm font-medium underline underline-offset-4"
-            :href="productionUrl"
-            target="_blank" rel="noopener"
+            :href="productionGrid"
+            v-bind="attrsFor(productionGrid)"
+            data-production-link
           >
-            Resolver na produção
+            Abrir a Produção
           </a>
         </section>
 
