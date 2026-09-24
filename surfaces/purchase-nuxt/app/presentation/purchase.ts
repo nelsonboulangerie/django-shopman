@@ -1002,3 +1002,29 @@ export function resaleSuggestionView(suggestion: SaleSuggestion | null | undefin
     basis: `custo ${formatMoney(suggestion.costQ)}/${unit} · markup ${suggestion.markupPct}% (${category})`,
   };
 }
+
+/** Unidades em que o aberto pode ser medido — o que se pesa ou se mede. */
+export const OPENED_UNITS = ["kg", "g", "l", "ml"] as const;
+
+/**
+ * "Quando aberto, vira": só embalagem contada por unidade se abre, e o aberto é
+ * um insumo pesado ou medido. Devolve as opções do seletor (sem a própria
+ * embalagem) e o resumo do que já está declarado.
+ */
+export function openingView(material: Material, materials: Material[]) {
+  const canOpen = material.unit === "un" && !material.roles?.produced;
+  const options = materials
+    .filter((item) => item.isActive && item.sku !== material.sku && (OPENED_UNITS as readonly string[]).includes(item.unit))
+    .map((item) => ({ value: item.sku, label: `${item.name} (${item.unit})` }));
+  const declared = material.opensInto;
+  const summary =
+    declared ?
+      `Vira ${formatDecimalPtBr(declared.quantity)} ${declared.unit} de ${declared.name}` +
+      (declared.shelfLifeDays !== null ? ` · depois de aberta, vale ${declared.shelfLifeDays} dias` : "")
+    : "";
+  return { canOpen, options, summary, suggestedQuantity: formatDecimalPtBr(material.netContentKg ?? "") };
+}
+
+function formatDecimalPtBr(value: string): string {
+  return value ? value.replace(".", ",") : "";
+}

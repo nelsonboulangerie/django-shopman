@@ -10,6 +10,7 @@ import type {
   PurchaseReceiptConfirmPayload,
   PurchaseReceiptRejectPayload,
   PurchaseRequestActionPayload,
+  PurchaseOpeningPayload,
   PurchaseResponse,
   PurchaseSalePayload,
   PurchaseScanInvoicePayload,
@@ -25,6 +26,8 @@ export const PURCHASE_API_ENDPOINTS = {
   upsertCost: `${PURCHASE_API_BASE}costs/`,
   upsertCostBatch: `${PURCHASE_API_BASE}costs/batch/`,
   setMinStock: `${PURCHASE_API_BASE}materials/min-stock/`,
+  setOpening: (materialSku: string) =>
+    `${PURCHASE_API_BASE}materials/${encodeURIComponent(materialSku)}/opening/`,
   setSale: (materialSku: string) =>
     `${PURCHASE_API_BASE}materials/${encodeURIComponent(materialSku)}/sale/`,
   declareConversion: `${PURCHASE_API_BASE}conversions/`,
@@ -123,6 +126,14 @@ export function usePurchaseApi() {
     });
   }
 
+  async function setOpening(materialSku: string, payload: PurchaseOpeningPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.setOpening(materialSku), {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
   async function setSale(materialSku: string, payload: PurchaseSalePayload) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.setSale(materialSku), {
       ...fetchOptions(),
@@ -155,6 +166,7 @@ export function usePurchaseApi() {
     upsertCostBatch,
     setMinStock,
     setSale,
+    setOpening,
     declareConversion,
     fetchCount,
     confirmCount,

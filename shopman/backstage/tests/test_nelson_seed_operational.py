@@ -163,11 +163,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
     # Os insumos (sem cadastro de venda) seguem 75; a revenda soma o cadastro de
     # compra do mesmo SKU — um por item de `RESALE` e da Mercearia.
-    from config.management.commands.apply_grocery_catalog import GROCERY
+    from config.management.commands.apply_grocery_catalog import GROCERY, OPENINGS
     from config.management.commands.apply_product_brands import RESALE
 
     vendaveis = set(Product.objects.values_list("sku", flat=True))
     assert Material.objects.exclude(sku__in=vendaveis).count() == 75
+    # O tablete Président de 200 g se abre no insumo que a manteiga de wasabi já
+    # usa: nenhum cadastro novo, nenhuma ficha mexida.
+    for opening in OPENINGS:
+        tablete = Material.objects.get(sku=opening.sku)
+        assert tablete.metadata["opens_into"]["sku"] == opening.opened_sku
+        assert RecipeItem.objects.filter(input_sku=opening.opened_sku, recipe__is_active=True).exists()
     assert set(Material.objects.filter(sku__in=vendaveis).values_list("sku", flat=True)) == (
         set(RESALE) | {item.sku for item in GROCERY}
     )

@@ -46,6 +46,27 @@ export interface Material {
   salePriceQ?: number | null;
   /** O preço que "Permitir revenda" propõe; ausente sem custo conhecido. */
   saleSuggestion?: SaleSuggestion | null;
+  /** "Quando aberto, vira": em que insumo a embalagem se abre na produção. */
+  opensInto?: OpensInto | null;
+  /** Conteúdo de uma embalagem em kg, pelo peso líquido declarado ("0.2"); vazio sem declaração. */
+  netContentKg?: string;
+}
+
+export interface OpensInto {
+  sku: string;
+  name: string;
+  unit: string;
+  quantity: string;
+  shelfLifeDays: number | null;
+}
+
+export interface PurchaseOpeningPayload {
+  enabled: boolean;
+  openedSku?: string;
+  createOpened?: boolean;
+  openedUnit?: string;
+  quantity?: string;
+  shelfLifeDays?: string;
 }
 
 /** custo × (1 + markup), para cima até o real inteiro — ver `shop/resale_markup.py`. */

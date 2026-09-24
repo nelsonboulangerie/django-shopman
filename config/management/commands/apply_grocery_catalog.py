@@ -636,6 +636,62 @@ def _apply_seed_resale_fiscal(entry: SeedResaleFiscal, report: dict) -> None:
         report["updated"].append((entry.sku, lines))
 
 
+@dataclass(frozen=True)
+class Opening:
+    """Revenda que a produção também usa: a embalagem se abre num insumo pesado.
+
+    Ver ``shopman/shop/services/package_opening.py``. Declarado aqui para que o
+    banco novo (seed) e o que já roda (este comando) terminem iguais.
+    """
+
+    sku: str
+    #: O insumo em que ela se abre — o que as fichas JÁ usam, para não mexer nelas.
+    opened_sku: str
+    opened_name: str
+    opened_unit: str
+    quantity: str
+    shelf_life_days: int
+    #: De onde veio a validade depois de aberta.
+    source: str
+
+
+OPENINGS: tuple[Opening, ...] = (
+    # O tablete de 200 g abre em 0,200 kg de MANTEIGA-PRESIDENT-COM-SAL, o insumo
+    # que as fichas das montagens já usam (a manteiga de wasabi) — então nenhuma
+    # ficha muda. As massas usam OUTRA manteiga (a sem sal, a granel) e ficam
+    # como estão. Validade depois de aberta: 30 dias refrigerada — orientação
+    # usual de rótulo para manteiga com sal a 0–10 °C (pouca água livre, o sal
+    # conserva); o lote do aberto nunca passa da validade da embalagem
+    # (``package_opening._opened_batch``). ⚠️ Conferir no rótulo da Président
+    # que chega: se ele disser menos, vale o rótulo.
+    Opening("MANTEIGA-SAL-PRESIDENT-200", "MANTEIGA-PRESIDENT-COM-SAL", "Manteiga President com sal", "kg",
+            "0.200", 30, "orientação usual de rótulo de manteiga com sal refrigerada (conferir no rótulo)"),
+)
+
+
+def _apply_opening(opening: Opening, report: dict) -> None:
+    from shopman.buyman.models import Material
+
+    from shopman.shop.services.package_opening import declare_opening
+
+    package = Material.objects.filter(sku=opening.sku).first()
+    if package is None:
+        report["missing"].append(opening.sku)
+        return
+    current = (package.metadata or {}).get("opens_into") if isinstance(package.metadata, dict) else None
+    if isinstance(current, dict) and current.get("sku"):
+        return  # já declarado (aqui ou pelo Compras): quem declarou manda
+    opened = Material.objects.filter(sku=opening.opened_sku).first()
+    if opened is None:
+        opened = Material(sku=opening.opened_sku, name=opening.opened_name, unit=opening.opened_unit)
+        opened.full_clean()
+        opened.save()
+    declare_opening(package, opened_sku=opened.sku, quantity=opening.quantity, shelf_life_days=opening.shelf_life_days)
+    report["updated"].append(
+        (opening.sku, [f"quando aberto, vira {opened.sku} ({opening.quantity} {opened.unit})"])
+    )
+
+
 def apply_grocery(*, apply: bool) -> dict[str, list]:
     """Cria/atualiza a Mercearia real. Sem ``apply``, executa e desfaz.
 
@@ -665,6 +721,8 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
             _apply_placeholder(real, report)
         for entry in SEED_RESALE_FISCAL:
             _apply_seed_resale_fiscal(entry, report)
+        for opening in OPENINGS:
+            _apply_opening(opening, report)
         _link_aliases(report)
         if not apply:
             transaction.set_rollback(True)

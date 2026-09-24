@@ -171,6 +171,25 @@ class PurchaseMinStockView(APIView):
         )
 
 
+class PurchaseOpeningView(APIView):
+    """"Quando aberto, vira": em que insumo a embalagem se abre — ver `set_opening`."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Declare what a package opens into (opened ingredient, content, shelf life)",
+        responses={200: OpenApiResponse(description="Opening declared and projection refreshed.")},
+    )
+    def post(self, request, material_sku: str):
+        try:
+            projection, message = purchase_service.set_opening(material_sku, dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message=message)
+
+
 class PurchaseSaleView(APIView):
     """"Permitir revenda": liga/desliga a venda do item do Compras — ver `set_sale`.
 

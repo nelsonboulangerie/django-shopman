@@ -217,6 +217,7 @@ from .purchase import (
     PurchaseCountConfirmView,
     PurchaseCountView,
     PurchaseMinStockView,
+    PurchaseOpeningView,
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
     PurchaseRequestSendView,
@@ -420,6 +421,11 @@ urlpatterns = [
         "purchase/materials/<str:material_sku>/sale/",
         PurchaseSaleView.as_view(),
         name="api-backstage-purchase-sale",
+    ),
+    path(
+        "purchase/materials/<str:material_sku>/opening/",
+        PurchaseOpeningView.as_view(),
+        name="api-backstage-purchase-opening",
     ),
     # Contagem de insumos — auditoria de estoque, restrita a gestor/dono.
     path("purchase/count/", PurchaseCountView.as_view(), name="api-backstage-purchase-count"),
