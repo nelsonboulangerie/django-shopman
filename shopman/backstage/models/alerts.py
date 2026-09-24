@@ -135,6 +135,11 @@ class OperatorAlert(models.Model):
         # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
         # barrar é do dono.
         ("fiscal_handoff_without_nfce", "Pedido saiu sem NFC-e autorizada"),
+        # A SEFAZ recusou o GTIN de um produto: a nota já foi reemitida "SEM
+        # GTIN" (a venda não espera) e o produto ficou marcado
+        # (``metadata.gtin_nf_rejected``). O que sobra é gente conferir o
+        # código na embalagem e limpar a marca.
+        ("fiscal_gtin_rejected", "GTIN recusado pela SEFAZ; nota saiu SEM GTIN"),
         # O desconto de pontos já entrou no total e a baixa no saldo não passou:
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),

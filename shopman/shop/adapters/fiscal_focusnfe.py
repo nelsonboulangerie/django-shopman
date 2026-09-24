@@ -635,9 +635,24 @@ def _document_result(response: dict, config: dict | None = None) -> FiscalDocume
         danfe_url=_focus_url(_first(response, "caminho_danfe", "danfe_url"), config),
         qrcode_url=_first(response, "qrcode_url", "url_qrcode", "qrcode"),
         status="authorized" if success else "denied",
-        error_code=None if success else str(_first(response, "codigo", "codigo_erro", default="focus_nfe_not_authorized")),
+        error_code=None if success else _denied_error_code(response),
         error_message=None if success else _response_error_message(response),
     )
+
+
+def _denied_error_code(response: dict) -> str:
+    """Código da recusa. Rejeição da SEFAZ vira ``sefaz_<cStat>``.
+
+    A Focus responde a NFC-e rejeitada com HTTP 201, ``status:
+    "erro_autorizacao"``, ``status_sefaz`` (o cStat) e ``mensagem_sefaz`` —
+    https://doc.focusnfe.com.br/reference/emitir_nfce. Sem o cStat no código, o
+    handler não distinguia "GTIN recusado" (reemite "SEM GTIN",
+    ``services.fiscal.SEFAZ_GTIN_REJECTION_CODES``) de qualquer outra recusa.
+    """
+    cstat = _digits(response.get("status_sefaz"))
+    if _norm(response.get("status")) == "erro_autorizacao" and cstat:
+        return f"sefaz_{cstat}"
+    return str(_first(response, "codigo", "codigo_erro", default="focus_nfe_not_authorized"))
 
 
 def _document_error_result(exc: Exception) -> FiscalDocumentResult:
