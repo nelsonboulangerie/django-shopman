@@ -39,6 +39,39 @@
 - [ ] **Gateways em modo PRODUÇÃO**: EFI (Pix) cert+creds de prod, Stripe live keys, iFood prod. (Hoje staging = sandbox/test.)
 - [ ] `ADMIN_PASSWORD` forte (≥12, não-trivial) p/ o bootstrap do superuser de prod (em prod NÃO usar `admin/admin`).
 - [ ] Notificação: ManyChat token de prod, EmailSender de prod.
+- [ ] 🔴 **BLOQUEIO — rotacionar a chave de API da Comtele (vazou).** O repositório é
+      **público**. A chave (a única da conta, a que manda o SMS do login) foi publicada
+      em **30/06/2026** em dois commits: `cefff8f8e` (valor inteiro em
+      `docs/plans/GO-LIVE-SMS-WHATSAPP-STATUS.md`) e `4469773ab` (valor de fixture em
+      `shopman/shop/tests/test_otp_sms_comtele.py`, onde ficou até 23/09/2026). Tirar do
+      arquivo **não despublica o histórico**: a chave antiga tem de morrer na Comtele. A
+      trava `shopman/shop/tests/test_sem_segredo_no_repositorio.py` impede a volta dela
+      (por hash) e de qualquer UUID atribuído a nome de credencial.
+
+      Onde a chave mora (e só aqui): spec **live** do app `shopman-alpha`
+      (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`), variável app-level `COMTELE_API_KEY`,
+      `type: SECRET` (vale para `web` e workers). No GitHub **não** há segredo da
+      Comtele (o CI usa o valor falso `ci-comtele-api-key`). Localmente, os `.env`
+      de worktree antigos podem ter a chave velha: apague depois da troca.
+
+      ⚠️ **Com uma chave só, revogar antes de trocar derruba o SMS do login.** A ordem
+      certa encolhe essa janela para os minutos do deploy:
+
+      1. **Painel da Comtele** (portal.comtele.com.br → Configurações → Chaves de API):
+         se o painel deixar ter duas, **gere a nova sem revogar a antiga**. Se só
+         permitir uma, pule para o passo 1b.
+         1b. Sem duas chaves simultâneas: faça a troca fora do horário da loja. O
+         login pelo WhatsApp continua funcionando durante a janela, porque não
+         depende de SMS.
+      2. **DigitalOcean → shopman-alpha → Settings → App-Level Environment Variables**
+         → `COMTELE_API_KEY` → cole a nova → **Encrypt** ligado → Save. Isso dispara
+         o redeploy. ⛔ Não use `doctl apps update --spec` com o arquivo do repo: ele
+         apaga os segredos (ver [conferir-spec-digitalocean](conferir-spec-digitalocean.md)).
+      3. Espere o deploy ficar `ACTIVE` e prove: um login por SMS no seu número. No
+         Gestor não deve aparecer alerta "Integração SMS de login (Comtele) falhando".
+      4. **Só agora revogue a chave antiga** no painel da Comtele (no caso 1b, ela já
+         morreu no passo 1).
+      5. Troque a chave nos `.env` locais que ainda a tenham.
 
 ## 3. Hardening (Lote C — Pablo)
 
