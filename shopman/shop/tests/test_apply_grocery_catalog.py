@@ -383,7 +383,8 @@ def test_caixa_presente_e_produto_da_casa_so_no_pdv(catalog):
     for box in GIFT_BOXES:
         caixa = Product.objects.get(sku=box.sku)
         assert (caixa.name, caixa.base_price_q) == (box.name, box.price_q)
-        assert caixa.is_sellable and not caixa.is_published
+        # Kit sem composição: cadastrado e listado no PDV, fora da venda.
+        assert not caixa.is_sellable and not caixa.is_published
         assert "purchase" not in caixa.metadata
         assert get_social_attributes(caixa).gtin == ""
         assert _refs(box.sku) == {"pdv"}
@@ -598,3 +599,55 @@ def test_a_manteiga_abre_na_unidade_do_insumo_que_ela_vira():
         assert opening.opened_unit == "g", opening.sku
         weight = next(i.weight_g for i in GROCERY if i.sku == opening.sku)
         assert Decimal(opening.quantity) == Decimal(weight), opening.sku
+
+
+# ── Caixa presente é kit: sem composição, fora da venda ───────────────────
+
+
+def test_caixa_presente_sem_composicao_e_kit_fora_da_venda(catalog):
+    report = apply_grocery(apply=True)
+
+    for box in GIFT_BOXES:
+        caixa = Product.objects.get(sku=box.sku)
+        assert caixa.metadata["kit"] is True
+        assert not caixa.is_sellable
+        assert not ListingItem.objects.filter(product=caixa, is_sellable=True).exists()
+        assert not caixa.components.exists()  # composição não se inventa
+        assert (box.sku, "caixa presente sem composição: fora da venda até o dono definir") in (
+            report["kits_without_components"]
+        )
+
+
+def test_caixa_presente_que_estava_a_venda_sai_e_o_relatorio_diz(catalog):
+    apply_grocery(apply=True)
+    box = GIFT_BOXES[0]
+    Product.objects.filter(sku=box.sku).update(is_sellable=True)
+    ListingItem.objects.filter(product__sku=box.sku).update(is_sellable=True)
+
+    report = apply_grocery(apply=True)
+
+    assert not Product.objects.get(sku=box.sku).is_sellable
+    assert not ListingItem.objects.filter(product__sku=box.sku, is_sellable=True).exists()
+    assert (box.sku, ["venda: desligada até ter composição"]) in report["updated"]
+
+
+def test_caixa_presente_com_composicao_nao_e_desligada(catalog):
+    from shopman.offerman.models import ProductComponent
+
+    apply_grocery(apply=True)
+    box = GIFT_BOXES[0]
+    caixa = Product.objects.get(sku=box.sku)
+    ProductComponent.objects.create(parent=caixa, component=Product.objects.get(sku=DIJON), qty=1)
+    Product.objects.filter(sku=box.sku).update(is_sellable=True)
+
+    report = apply_grocery(apply=True)
+
+    assert Product.objects.get(sku=box.sku).is_sellable
+    assert box.sku not in {sku for sku, _ in report["kits_without_components"]}
+
+
+def test_o_relatorio_do_comando_lista_a_caixa_sem_composicao(catalog):
+    out = StringIO()
+    call_command("apply_grocery_catalog", stdout=out)
+
+    assert "caixa presente sem composição: fora da venda até o dono definir" in out.getvalue()

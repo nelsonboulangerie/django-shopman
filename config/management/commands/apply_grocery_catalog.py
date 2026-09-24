@@ -68,7 +68,13 @@ fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
 ``metadata['gtin_source'] = "web, a confirmar na embalagem"``.
 
 **Caixas presente** (:data:`GIFT_BOXES`): produto da casa, SKU da casa, sem
-GTIN nem marca de revenda; entram no lugar da ``LN``. Os placeholders que
+GTIN nem marca de revenda; entram no lugar da ``LN``. Caixa presente é **kit**
+(``metadata['kit'] = True``, decisão do dono em 24/09): na NFC-e cada
+componente sai como item próprio, com a tributação dele. Kit sem composição
+(``ProductComponent``) não tem o que pôr na nota, então fica
+``is_sellable=False`` — no produto e na listagem — até o dono definir o que vai
+dentro. Ligar a venda depois de cadastrar a composição é passo do gestor: o
+comando não religa. Os placeholders que
 saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_decisions``.
 
 **Placeholders da despensa que viram produto real** (:data:`REAL_PLACEHOLDERS`):
@@ -419,8 +425,9 @@ class GiftBox:
 
 
 #: As quatro caixas presente (planilha consolidada; entram no lugar do `LN`,
-#: decisão do dono em 24/09). Composição ainda indefinida: vendável no PDV,
-#: sem ficha, despublicada na loja. A marca da casa vem do
+#: decisão do dono em 24/09). São kits, e a composição ainda é indefinida:
+#: cadastradas, listadas no PDV e FORA da venda até o dono definir o que vai
+#: dentro (ver ``_apply_gift_box``); despublicadas na loja. A marca da casa vem do
 #: `apply_product_brands`.
 GIFT_BOXES: tuple[GiftBox, ...] = (
     GiftBox("DIJON", "Caixa Presente Dijon", 27000, "19059090"),
@@ -669,20 +676,50 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
 
 
 def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
-    """Caixa presente: produto da casa. Sem GTIN, sem marca de revenda."""
+    """Caixa presente: produto da casa, e kit. Sem GTIN, sem marca de revenda.
+
+    Kit sem componentes não vende: a NFC-e abre o kit em um item por
+    componente (``shop/services/fiscal._kit_lines``), e sem composição a nota
+    sairia com o NCM de pão para o que for vinho. Composição não se inventa —
+    quem define é o dono.
+    """
+    from shopman.offerman.models import ListingItem
+
     product = _get_or_build(box.sku, box.name, box.price_q, unit="un", weight_g=None, ncm=box.ncm,
                             report=report)
-    if product.pk is None:
+    is_new = product.pk is None
+    lines: list[str] = []
+    if is_new:
         from config.management.commands.apply_fiscal_ncm import house_cest_for
 
         cest = house_cest_for(box.ncm)
         if cest:
             product.metadata["fiscal"]["cest"] = cest
+    metadata = _metadata(product)
+    if metadata.get("kit") is not True:
+        metadata["kit"] = True
+        product.metadata = metadata
+        lines.append("kit: marcado")
+    has_components = not is_new and product.components.exists()
+    if not has_components and product.is_sellable:
+        product.is_sellable = False
+        if not is_new:
+            lines.append("venda: desligada até ter composição")
+    if is_new:
         product.save()
         report["created"].append(box)
+    elif lines:
+        product.save()
+        report["updated"].append((box.sku, lines))
     product.keywords.add(COLLECTION_REF, "presente", "caixa")
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
+    if not product.is_sellable:
+        ListingItem.objects.filter(product=product, is_sellable=True).update(is_sellable=False)
+    if not has_components:
+        report["kits_without_components"].append(
+            (box.sku, "caixa presente sem composição: fora da venda até o dono definir")
+        )
 
 
 def _apply_placeholder(real: RealPlaceholder, report: dict) -> None:
@@ -870,13 +907,15 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
     ``listed``/``unlisted`` [(sku, listagem)], ``conflicts`` [(sku, campo, atual,
     tabela)], ``refused`` [(sku, motivo)], ``no_price`` [(sku, motivo)],
     ``aliases`` [(nome no Yooga, antes, depois)],
-    ``missing`` [sku], ``left_out`` [(sku, motivo)].
+    ``missing`` [sku], ``left_out`` [(sku, motivo)],
+    ``kits_without_components`` [(sku, motivo)].
     """
     from shopman.offerman.models import Collection
 
     report: dict[str, list] = {
         "created": [], "updated": [], "listed": [], "unlisted": [], "conflicts": [],
         "refused": [], "no_price": [], "aliases": [], "missing": [],
+        "kits_without_components": [],
         "left_out": sorted(LEFT_OUT.items()),
     }
     refs = {COLLECTION_REF, *(item.collection for item in GROCERY)}
@@ -940,6 +979,8 @@ class Command(BaseCommand):
         for sku, field, have, want in report["conflicts"]:
             out.write(self.style.WARNING(f"  {sku:38s} {field} já é {have!r} (a tabela diz {want!r}) — mantido"))
         for sku, reason in report["no_price"]:
+            out.write(self.style.WARNING(f"  {sku:38s} {reason}"))
+        for sku, reason in report["kits_without_components"]:
             out.write(self.style.WARNING(f"  {sku:38s} {reason}"))
         for sku, reason in report["refused"]:
             out.write(self.style.ERROR(f"  {sku:38s} recusado: {reason}"))
