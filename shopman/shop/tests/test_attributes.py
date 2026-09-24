@@ -356,3 +356,24 @@ def test_the_registry_can_rebuild_itself_after_a_truncate():
     }
     # E é idempotente: rodar de novo não duplica nem reescreve.
     assert ensure_definitions() == 0
+
+
+def test_a_secondary_collection_answers_the_flavor_the_primary_leaves_blank():
+    """Pain au Chocolat: Folhados (sem sabor) e também Doces (dono, 02/09)."""
+    from django.core.management import call_command
+
+    pchoc = _product("PCHOC", name="Pain au Chocolat")
+    _in_collection(pchoc, "folhados")
+    _in_collection(pchoc, "doces", primary=False)
+    cro = _product("CRO", name="Croissant")
+    _in_collection(cro, "folhados")
+
+    call_command("propose_product_attributes", verbosity=0)
+    pchoc.refresh_from_db()
+    cro.refresh_from_db()
+
+    assert attributes.get(pchoc, "sabor") == "doce"
+    # A primária continua mandando no resto.
+    assert attributes.get(pchoc, "temperatura") == "ambiente"
+    # Sem secundária, a lacuna fica lacuna.
+    assert attributes.get(cro, "sabor") is None

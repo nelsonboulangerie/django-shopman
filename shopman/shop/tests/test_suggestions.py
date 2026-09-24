@@ -451,18 +451,41 @@ def test_the_owner_defaults_are_seeded_and_valid():
 
 
 def test_the_seeded_pairings_are_the_ones_the_owner_dictated():
+    """Os critérios do dono (23/09), lidos na regra que o deploy deixa no banco.
+
+    O comportamento é provado em `test_suggestion_stress.py`; aqui só se
+    confere que a regra viva carrega as decisões — e não as que ele desfez.
+    """
     params = RuleConfig.objects.get(ref="suggestion.complement").params
-    pairs = {
-        (p["when"]["attr"], p["when"]["value"])
+
+    def side(value):
+        items = value if isinstance(value, list) else [value]
+        return {(c.get("attr") or "tag", c.get("value") or c.get("tag")) for c in items}
+
+    rules = [
+        (side(p["when"]), side(p.get("when_absent") or []), side(p["suggest"]), p["weight"])
         for p in params["pairings"]
-    }
-    assert pairs == {
-        ("natureza", "comida"), ("sabor", "doce"), ("temperatura", "quente"),
-        # 23/09: o espelho de "doce pede café" — quem leva a bebida ganha o doce.
-        ("natureza", "bebida"),
-    }
-    assert params["affinity_weight"] == 3
+    ]
+    no_drink = {("natureza", "bebida")}
+    no_food = {("natureza", "comida")}
+
+    # A frente é bebida ↔ comida, e vale mais que qualquer preferência.
+    assert ({("natureza", "comida")}, no_drink, {("natureza", "bebida")}, 3) in rules
+    assert ({("natureza", "bebida")}, no_food, {("natureza", "comida")}, 3) in rules
+    # As preferências dele: somam, não filtram.
+    assert ({("sabor", "salgado")}, no_drink,
+            {("natureza", "bebida"), ("temperatura", "gelado")}, 2) in rules
+    assert ({("sabor", "doce")}, no_drink,
+            {("natureza", "bebida"), ("temperatura", "quente")}, 2) in rules
+    # "Se já tem salgado e já tem bebida, oferece um doce, claro!"
+    assert ({("sabor", "salgado"), ("natureza", "bebida")}, set(), {("sabor", "doce")}, 3) in rules
+    # O que ele desfez: quente → gelado (bebida com bebida) e doce → tag café.
+    assert not any(s == {("temperatura", "gelado")} for _, _, s, _ in rules)
+    assert not any(("tag", "café") in s for _, _, s, _ in rules)
+
+    assert params["one_per_cart"] == [{"attr": "natureza", "value": "bebida"}]
     assert params["distinct_from_cart"] == ["natureza", "sabor"]
+    assert params["affinity_weight"] == 3
     assert params["price"] == "below_cart_average"
 
 
@@ -652,3 +675,79 @@ def test_the_seeded_rule_offers_something_sweet_to_someone_carrying_coffee(listi
 def test_distinct_from_cart_refuses_an_attribute_that_does_not_exist():
     with pytest.raises(SuggestionRuleError, match="sabour"):
         ComplementRule.validate_params({"distinct_from_cart": ["sabour"]})
+
+
+# --- o esquema de 23/09: sacola composta, ausência e um por sacola ---------
+
+
+def test_when_absent_silences_a_pairing_once_the_cart_has_it(listing):
+    _product("PAO", "Pão", listing=listing, natureza="comida")
+    _product("CAFE", "Café", listing=listing, natureza="bebida")
+    _rule({"pairings": [{
+        "when": {"attr": "natureza", "value": "comida"},
+        "when_absent": [{"attr": "natureza", "value": "bebida"}],
+        "suggest": {"attr": "natureza", "value": "bebida"}, "weight": 3,
+    }]})
+
+    assert [s.sku for s in suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL)] == ["CAFE"]
+    _product("SUCO", "Suco", listing=listing, natureza="bebida")
+    assert suggest(COMPLEMENT, cart_skus={"PAO", "CAFE"}, channel_ref=CHANNEL) == ()
+
+
+def test_a_when_list_needs_every_condition_somewhere_in_the_cart(listing):
+    _product("CROQUE", "Croque", listing=listing, natureza="comida", sabor="salgado")
+    _product("SUCO", "Suco", listing=listing, natureza="bebida")
+    _product("MAD", "Madeleine", listing=listing, natureza="comida", sabor="doce")
+    _rule({"pairings": [{
+        "when": [{"attr": "sabor", "value": "salgado"}, {"attr": "natureza", "value": "bebida"}],
+        "suggest": {"attr": "sabor", "value": "doce"}, "weight": 3,
+    }]})
+
+    assert suggest(COMPLEMENT, cart_skus={"CROQUE"}, channel_ref=CHANNEL) == ()
+    found = suggest(COMPLEMENT, cart_skus={"CROQUE", "SUCO"}, channel_ref=CHANNEL)
+    assert [s.sku for s in found] == ["MAD"]
+    assert found[0].reasons == ("pairing:sabor=salgado+natureza=bebida→sabor=doce",)
+
+
+def test_one_per_cart_keeps_a_second_drink_out_even_with_history(listing):
+    _product("CAFE", "Café", listing=listing, natureza="bebida")
+    _product("CAPPU", "Cappuccino", listing=listing, natureza="bebida")
+    _affinity("CAFE", "CAPPU", 9.0)
+    _rule({"affinity_weight": 3, "one_per_cart": [{"attr": "natureza", "value": "bebida"}]})
+
+    assert suggest(COMPLEMENT, cart_skus={"CAFE"}, channel_ref=CHANNEL) == ()
+
+
+def test_history_breaks_ties_but_never_inverts_a_preference(listing):
+    """Salgado pede gelada (+1); o café com lift 50 ainda perde para o suco."""
+    _product("CROQUE", "Croque", listing=listing, natureza="comida", sabor="salgado")
+    _product("CAFE", "Café", price_q=500, listing=listing,
+             natureza="bebida", temperatura="quente")
+    _product("SUCO", "Suco", price_q=1500, listing=listing,
+             natureza="bebida", temperatura="gelado")
+    _affinity("CROQUE", "CAFE", 50.0)
+    _rule({"pairings": [
+        {"when": {"attr": "natureza", "value": "comida"},
+         "suggest": {"attr": "natureza", "value": "bebida"}, "weight": 3},
+        {"when": {"attr": "sabor", "value": "salgado"},
+         "suggest": [{"attr": "natureza", "value": "bebida"},
+                     {"attr": "temperatura", "value": "gelado"}], "weight": 1},
+    ], "affinity_weight": 3, "price": "below_cart_average"})
+
+    found = suggest(COMPLEMENT, cart_skus={"CROQUE"}, channel_ref=CHANNEL, limit=2)
+    assert [s.sku for s in found] == ["SUCO", "CAFE"]
+
+
+def test_the_new_schema_is_validated():
+    with pytest.raises(SuggestionRuleError, match="vazia"):
+        ComplementRule.validate_params({"pairings": [
+            {"when": [], "suggest": {"attr": "natureza", "value": "bebida"}},
+        ]})
+    with pytest.raises(SuggestionRuleError, match="sabour"):
+        ComplementRule.validate_params({"pairings": [
+            {"when": {"attr": "natureza", "value": "comida"},
+             "when_absent": [{"attr": "sabour", "value": "doce"}],
+             "suggest": {"attr": "natureza", "value": "bebida"}},
+        ]})
+    with pytest.raises(SuggestionRuleError, match="tag"):
+        ComplementRule.validate_params({"one_per_cart": [{"tag": "cafe"}]})

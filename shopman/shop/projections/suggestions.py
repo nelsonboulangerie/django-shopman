@@ -18,10 +18,19 @@ Aqui há um lugar só, e ele combina três coisas:
 Croque Madame recebeu Croque Monsieur: mesmo prato, mesma coleção, mais barato e
 com lift alto no histórico (quem pede um croque para a mesa pede o outro). Nada
 no motor dizia que "outro do mesmo" não é adicional. Agora há dois portões para
-isso — a coleção primária (a categoria do Offerman) e ``distinct_from_cart``
+isso — uma coleção em comum (a categoria do Offerman) e ``distinct_from_cart``
 (os atributos que definem a função, ``natureza`` + ``sabor`` por default) — e
 uma ordem: **o pareamento é a regra da casa**; a afinidade ordena dentro dele e
 só fala sozinha quando nenhum pareamento casa.
+
+⚠️ **O histórico desempata, não decide** (dono, 23/09: preferências "não devem
+excluir cruzamentos diferentes", e o sistema não pode ser "desumano ou
+engessado"). Pareamento pesa em inteiros; histórico e preço somam juntos menos
+de 1 (``AFFINITY_TIEBREAK`` + ``PRICE_TIEBREAK``), então escolhem entre as
+bebidas geladas qual oferecer, mas nunca trocam a gelada pela quente que o
+salgado não pede. ``one_per_cart`` é o portão de "bebida com bebida, não". O
+estresse contra o cardápio inteiro, com nota de atendente por sacola, mora em
+``shop/tests/test_suggestion_stress.py``.
 
 ⚠️ **Portão é portão; sinal é sinal.** Preço não é portão: um filtro duro de
 preço calaria a sugestão numa sacola barata, e "sugestão que não sai" é pior
@@ -52,6 +61,12 @@ SUBSTITUTE = "substitute"
 #: ter de onde escolher quando a afinidade é fina, baixo o bastante para a
 #: consulta de disponibilidade não virar varredura de catálogo.
 CANDIDATE_POOL = 40
+
+#: Teto do que o histórico (lift) soma, e do que "mais barato" soma. Juntos
+#: ficam abaixo de 1, o menor degrau entre dois pesos de pareamento: histórico e
+#: preço desempatam DENTRO de uma preferência e nunca a invertem.
+AFFINITY_TIEBREAK = 0.6
+PRICE_TIEBREAK = 0.3
 
 
 @dataclass(frozen=True)
@@ -304,12 +319,20 @@ def _score(
         if ref not in values:
             values[ref] = attributes.get_many(everyone, ref)
 
+    one_per_cart = rule.get("one_per_cart") or []
+    for condition in _conditions(one_per_cart):
+        ref = condition.get("attr")
+        if ref and ref not in values:
+            values[ref] = attributes.get_many(everyone, ref)
+
     affinity = _affinity_map(cart_skus, set(products))
     same_role = _same_role_as_cart(set(products), cart_skus, distinct_refs, values)
 
     ranked: list[tuple[bool, Suggestion]] = []
     for sku, product in products.items():
         if sku in same_role:
+            continue
+        if _already_has_one(sku, cart_skus, one_per_cart, values):
             continue
         if _is_excluded(sku, excluded, values):
             continue
@@ -318,9 +341,12 @@ def _score(
         score = 0.0
 
         lift, partner = affinity.get(sku, (0.0, None))
-        if lift and affinity_weight:
-            # Lift 1 é o acaso; o que pontua é o quanto ele passa disso.
-            score += affinity_weight * max(0.0, lift - 1.0)
+        if lift > 1.0 and affinity_weight:
+            # O histórico DESEMPATA, não decide (dono, 23/09): a contribuição
+            # é limitada abaixo do menor degrau de peso de um pareamento, então
+            # nenhum lift passa por cima de uma preferência declarada. Lift 1 é
+            # o acaso; 1 − 1/lift cresce com ele e nunca chega a 1.
+            score += AFFINITY_TIEBREAK * (1.0 - 1.0 / lift)
             reasons.append(f"affinity:{partner}")
 
         paired = False
@@ -339,7 +365,7 @@ def _score(
 
         price_q = prices.get(sku)
         if prefers_cheaper and price_q is not None and cart_average and price_q < cart_average:
-            score += 0.5
+            score += PRICE_TIEBREAK
             reasons.append("price:below_cart_average")
 
         ranked.append((paired, Suggestion(
@@ -363,44 +389,86 @@ def _score(
 def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
     """O código do motivo, se este pareamento casa; ``None`` se não casa.
 
+    ``when`` fala da SACOLA: cada condição tem de ser satisfeita por algum item
+    dela (``[sabor=salgado, natureza=bebida]`` = "tem salgado E tem bebida",
+    em itens diferentes ou no mesmo). ``when_absent`` também fala da sacola:
+    nenhum item pode satisfazer nenhuma daquelas condições ("ainda não tem
+    bebida"). ``suggest`` fala do CANDIDATO: ele tem de satisfazer todas.
+
     O motivo nomeia o valor que **de fato casou**, não o primeiro que a regra
     declarou. Com ``in: [acompanhamento, bebida]``, oferecer um café e explicar
     "→ acompanhamento" seria uma explicação errada — e explicação errada é pior
     que explicação nenhuma, porque o gestor ajusta a regra errada.
     """
-    when = pairing.get("when") or {}
-    suggest_side = pairing.get("suggest") or {}
-
-    when_ref = when.get("attr")
-    when_values = _side_values(when)
-    if not when_ref:
-        return None
-
-    by_sku = values.get(when_ref) or {}
-    matched_when = None
-    for cart_sku in cart_skus:
-        matched_when = _matched(by_sku.get(cart_sku), when_values)
-        if matched_when is not None:
-            break
-    if matched_when is None:
-        return None
-
-    if "tag" in suggest_side:
-        tag = str(suggest_side["tag"]).strip().lower()
-        keywords = {k.lower() for k in product.keywords.names()}
-        if tag not in keywords:
+    when_parts: list[str] = []
+    for condition in _conditions(pairing.get("when")):
+        ref = condition.get("attr")
+        if not ref:
             return None
-        return f"pairing:{when_ref}={matched_when}→tag:{tag}"
+        wanted = _side_values(condition)
+        by_sku = values.get(ref) or {}
+        hit = None
+        for cart_sku in sorted(cart_skus):
+            hit = _matched(by_sku.get(cart_sku), wanted)
+            if hit is not None:
+                break
+        if hit is None:
+            return None
+        when_parts.append(f"{ref}={hit}")
+    if not when_parts:
+        return None
 
-    suggest_ref = suggest_side.get("attr")
-    if not suggest_ref:
+    for condition in _conditions(pairing.get("when_absent")):
+        by_sku = values.get(condition.get("attr")) or {}
+        wanted = _side_values(condition)
+        if any(_matches(by_sku.get(cart_sku), wanted) for cart_sku in cart_skus):
+            return None
+
+    suggest_parts: list[str] = []
+    for condition in _conditions(pairing.get("suggest")):
+        if "tag" in condition:
+            tag = str(condition["tag"]).strip().lower()
+            keywords = {k.lower() for k in product.keywords.names()}
+            if tag not in keywords:
+                return None
+            suggest_parts.append(f"tag:{tag}")
+            continue
+        ref = condition.get("attr")
+        if not ref:
+            return None
+        hit = _matched((values.get(ref) or {}).get(sku), _side_values(condition))
+        if hit is None:
+            return None
+        suggest_parts.append(f"{ref}={hit}")
+    if not suggest_parts:
         return None
-    matched_suggest = _matched(
-        (values.get(suggest_ref) or {}).get(sku), _side_values(suggest_side),
-    )
-    if matched_suggest is None:
-        return None
-    return f"pairing:{when_ref}={matched_when}→{suggest_ref}={matched_suggest}"
+
+    return f"pairing:{'+'.join(when_parts)}→{'+'.join(suggest_parts)}"
+
+
+def _conditions(side) -> list[dict]:
+    """Um lado do pareamento como lista de condições (objeto ou lista deles)."""
+    if not side:
+        return []
+    if isinstance(side, dict):
+        return [side]
+    return [c for c in side if isinstance(c, dict)]
+
+
+def _already_has_one(sku: str, cart_skus: set[str], one_per_cart: list, values: dict) -> bool:
+    """O candidato cai numa classe de que a sacola já tem um (``one_per_cart``).
+
+    "Bebida com bebida, acho que não" (dono, 23/09): com um café na sacola, o
+    adicional não é outra bebida — é a comida que ainda falta.
+    """
+    for condition in _conditions(one_per_cart):
+        by_sku = values.get(condition.get("attr")) or {}
+        wanted = _side_values(condition)
+        if _matches(by_sku.get(sku), wanted) and any(
+            _matches(by_sku.get(c), wanted) for c in cart_skus
+        ):
+            return True
+    return False
 
 
 def _side_values(side: dict) -> tuple[str, ...]:
@@ -435,9 +503,9 @@ def _same_role_as_cart(
     croque é a pergunta "quer trocar?", não "quer junto?". Dois critérios, e
     basta um:
 
-    - **mesma coleção primária** — a categoria que o Offerman já guarda, onde o
-      produto "mora" (regra do dono, 02/09). Salgado com salgado, folhado com
-      folhado, bebida quente com bebida quente;
+    - **uma coleção em comum** — a categoria que o Offerman já guarda, primária
+      ou secundária (o Pain au Chocolat é Folhados e Doces). Salgado com
+      salgado, folhado com folhado, doce com doce;
     - **mesmos valores em todos os ``distinct_from_cart``** da regra (default
       ``natureza`` + ``sabor``): pão rústico e pão macio moram em coleções
       diferentes e são o mesmo papel na mesa.
@@ -448,8 +516,10 @@ def _same_role_as_cart(
     if not (candidate_skus and cart_skus):
         return set()
 
-    primary = _primary_collections(candidate_skus | cart_skus)
-    cart_collections = {primary[s] for s in cart_skus if s in primary}
+    collections = _collections(candidate_skus | cart_skus)
+    cart_collections: set[str] = set()
+    for cart_sku in cart_skus:
+        cart_collections |= collections.get(cart_sku, set())
 
     def signature(sku):
         sig = tuple((values.get(ref) or {}).get(sku) for ref in distinct_refs)
@@ -461,7 +531,7 @@ def _same_role_as_cart(
 
     out: set[str] = set()
     for sku in candidate_skus:
-        if primary.get(sku) in cart_collections:
+        if collections.get(sku, set()) & cart_collections:
             out.add(sku)
             continue
         sig = signature(sku)
@@ -470,14 +540,21 @@ def _same_role_as_cart(
     return out
 
 
-def _primary_collections(skus: set[str]) -> dict[str, str]:
-    """``{sku: ref da coleção primária}`` — onde o produto mora no cardápio."""
+def _collections(skus: set[str]) -> dict[str, set[str]]:
+    """``{sku: {refs das coleções}}`` — primária e secundárias.
+
+    As secundárias contam: o Pain au Chocolat mora em Folhados e TAMBÉM é Doces
+    (regra do dono, 02/09). Com ele na sacola, a madeleine é outro doce.
+    """
     from shopman.offerman.models import CollectionItem
 
-    return dict(
-        CollectionItem.objects.filter(product__sku__in=skus, is_primary=True)
-        .values_list("product__sku", "collection__ref")
+    out: dict[str, set[str]] = {}
+    rows = CollectionItem.objects.filter(product__sku__in=skus).values_list(
+        "product__sku", "collection__ref",
     )
+    for sku, ref in rows:
+        out.setdefault(sku, set()).add(ref)
+    return out
 
 
 def _context_exclusions(rule: dict, context: dict) -> list[dict]:
