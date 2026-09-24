@@ -22,6 +22,7 @@ from config.management.commands.apply_grocery_catalog import (
     GIFT_BOXES,
     GROCERY,
     LEFT_OUT,
+    OWNER_PACKAGE,
     REAL_PLACEHOLDERS,
     WEB_UNCONFIRMED,
     apply_grocery,
@@ -255,12 +256,27 @@ def test_item_a_quilo_com_gtin_e_recusado(catalog, monkeypatch):
     assert report["refused"] == [(VALE_DO_TESTO, "item a quilo não leva GTIN de embalagem")]
 
 
-def test_gtin_da_web_fica_marcado_como_a_conferir(catalog):
+def test_a_origem_do_gtin_fica_marcada(catalog):
     apply_grocery(apply=True)
 
+    brie = Product.objects.get(sku="CREME-BRIE-POMERODE-90")
+    assert brie.metadata["gtin_source"] == WEB_UNCONFIRMED
     ancienne = Product.objects.get(sku="MOSTARDA-ANCIENNE-MAILLE-210")
-    assert ancienne.metadata["gtin_source"] == WEB_UNCONFIRMED
+    assert ancienne.metadata["gtin_source"] == OWNER_PACKAGE
     assert "gtin_source" not in Product.objects.get(sku=DIJON).metadata
+
+
+def test_a_embalagem_troca_a_origem_da_web(catalog):
+    """O GTIN já estava certo; só a origem muda quando o dono lê o pote."""
+    apply_grocery(apply=True)
+    ancienne = Product.objects.get(sku="MOSTARDA-ANCIENNE-MAILLE-210")
+    ancienne.metadata = {**ancienne.metadata, "gtin_source": WEB_UNCONFIRMED}
+    ancienne.save()
+
+    report = apply_grocery(apply=True)
+
+    assert Product.objects.get(sku="MOSTARDA-ANCIENNE-MAILLE-210").metadata["gtin_source"] == OWNER_PACKAGE
+    assert ("MOSTARDA-ANCIENNE-MAILLE-210", [f"origem do GTIN: {OWNER_PACKAGE}"]) in report["updated"]
 
 
 def test_caixa_presente_e_produto_da_casa_so_no_pdv(catalog):
