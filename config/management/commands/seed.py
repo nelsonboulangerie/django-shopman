@@ -6080,10 +6080,17 @@ class Command(BaseCommand):
             "notifications": _remote_notifications,
         }
         _marketplace_config = {
-            # stale_new_alert < hold_ttl_minutes (20 < 30): o operador é cutucado
-            # ENQUANTO a reserva de estoque ainda vale, não no exato minuto em que
-            # ela expira (senão o alerta chega tarde demais para ser útil).
-            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 20},
+            # O iFood cancela o pedido que ninguém confirma em 8 minutos (SLA da
+            # doc; medido a 8min10s em 19/09/2026, seis pedidos seguidos). O card
+            # conta esse prazo a partir do `createdAt` deles, e o alerta de pedido
+            # esquecido tem de tocar ANTES: com 20 ele tocava doze minutos depois
+            # de o pedido já ter sido recolhido, sobre algo que não dava mais para
+            # salvar. Cinco deixa três minutos para o operador agir.
+            "confirmation": {
+                "mode": "manual",
+                "stale_new_alert_minutes": 5,
+                "external_sla_minutes": 8,
+            },
             "payment": {"method": "external", "timing": "external"},
             # Marketplace: o pedido já foi comitado e PAGO no iFood. Não rejeitar
             # localmente por estoque/listing — aceitar e deixar o operador tratar
