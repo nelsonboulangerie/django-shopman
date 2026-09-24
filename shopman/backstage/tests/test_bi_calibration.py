@@ -306,7 +306,9 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # SKU que não existe não conta nada — é linha morta, não curadoria perdida.
     # ⚠️ E 155 → 148 em 24/09/2026: saíram os sete placeholders da despensa
     # (MT, QP, CX, BK, GR, LN, THL), todos etiquetados `leva`.
-    assert ProductConsumptionTag.objects.count() == 148  # ver a conta acima
+    # ⚠️ E 148 → 147 no mesmo dia: saiu a Cream Soda do dia (CV), etiquetada
+    # `bebida-preparada` ("era só uma ideia").
+    assert ProductConsumptionTag.objects.count() == 147  # ver a conta acima
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -344,7 +346,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 148
+    assert ProductConsumptionTag.objects.count() == 147
     assert SeatingSpot.objects.count() == 17
 
 
