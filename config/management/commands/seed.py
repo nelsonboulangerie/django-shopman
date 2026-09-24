@@ -442,9 +442,9 @@ PESO_MASSA_CRUA_G = {
     "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
     # Focaccia: 400 g de massa crua na grande e 110 g na pequena, TODAS (dono,
-    # 24/09/2026); a cobertura soma por cima. Os de alecrim e cebola roxa só
-    # trocaram a massa — a cobertura deles ele ainda vai conferir.
-    "FOA": 406, "FOB": 714, "FOC": 445, "FOAP": 115, "FOBP": 195, "FOCP": 124,
+    # 24/09/2026); a cobertura e a finalização somam por cima. A de cebola roxa
+    # só trocou a massa — a cobertura dela ele pesa na próxima montagem.
+    "FOA": 416, "FOB": 728, "FOC": 445, "FOAP": 119, "FOBP": 203, "FOCP": 124,
     "CRP": 36, "CN": 82, "BRRSN": 68, "BRCH": 42, "COC": 60,
     "CHLH": 300, "BRNT": 240, "URS": 110, "PORQ": 110, "BRBBP": 32,
     "BICH": 100, "MA": 110, "CRPQ": 90, "FFGO": 130, "FFGOP": 80,
@@ -1882,7 +1882,7 @@ class Command(BaseCommand):
             ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto — o clássico parisiense", 1800, "un", 0, True,
              unsplash("photo-1753798130695-3c060be80e83"), 250, "Melhor consumido na hora"),
             # ── Padaria · Doces ──
-            ("PERDU", "Pain Perdu", "Fatia de brioche dourada na chapa, calda e toque de canela", 1800, "un", 0, True,
+            ("PERDU", "Pain Perdu", "Fatia de brioche banhada no creme e dourada, com caramelo salgado, chantilly e flor de sal", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
             ("MELSA", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
@@ -2016,15 +2016,15 @@ class Command(BaseCommand):
             ("BGGP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
              f"{IMG}/be.webp", 150, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
-             f"{IMG}/foa.webp", 355, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foa.webp", 365, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOB", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             f"{IMG}/cbt.webp", 630, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cbt.webp", 640, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
              f"{IMG}/foc.webp", 390, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOAP", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
-             f"{IMG}/mif.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mif.webp", 105, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOBP", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
-             f"{IMG}/micbt.webp", 170, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/micbt.webp", 180, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOCP", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
              f"{IMG}/mifoc.webp", 110, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CRPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
@@ -2848,7 +2848,7 @@ class Command(BaseCommand):
             },
             "PERDU": {
                 "ingredients_text": (
-                    "Brioche da casa, ovos, leite, açúcar e canela, dourado na chapa. CONTÉM: glúten, leite e ovos."
+                    "Brioche da casa banhado em creme (leite, nata, ovos, açúcar e baunilha), dourado na manteiga, com caramelo salgado, chantilly e flor de sal. CONTÉM: glúten, leite e ovos."
                 ),
                 "nutrition_facts": nutrition(180, 1, 420.0, 48.0, 22.0, 11.0, 20.0, 11.0, 1.5, 320.0),
             },
@@ -3588,11 +3588,14 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("1"),
                 "items": [
-                    # 400 g de massa (dono, 24/09) + 4 g de alecrim + 2 g de sal
-                    # grosso = 406 g crus por focaccia, ~355 g assados.
+                    # Dono, 24/09: 400 g de massa e, na finalização, 12 g de
+                    # azeite, 4 g de sal grosso e 0,1 g de alecrim. O alecrim fica
+                    # FORA da ficha: a linha grava em quilo com três casas (1 g), e
+                    # a baixa de estoque não converte unidade — 0,1 g arredondado
+                    # para 1 g baixaria dez vezes o que vai na peça.
                     ("MASSA-CIABATTA", Decimal("0.400")),
-                    ("ALECRIM-FRESCO", Decimal("0.004")),
-                    ("SAL-GROSSO", Decimal("0.002"))
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.012")),
+                    ("SAL-GROSSO", Decimal("0.004")),
                 ],
             },
             {
@@ -3736,8 +3739,8 @@ class Command(BaseCommand):
                 # A ficha da casa (Maysa, 10/10/2022), na escala dela: 1 kg de
                 # frango rende 2,94 kg de recheio. O «caldo» é o da panela de
                 # pressão da receita anterior, guardado congelado — no estoque é
-                # água; a ficha dela o pesa em 1,04 kg. O milho vem «1 lt» e
-                # escorrido: lido como 1 kg (pergunta aberta ao dono). A folha de
+                # água; a ficha dela o pesa em 1,04 kg. O milho é «1 lt» = UMA
+                # LATA, ~170 g escorrida (dono, 24/09). O frango é sassami. A folha de
                 # louro do cozimento (0,34 g) fica fora: não cabe na precisão de
                 # grama da ficha, e custo e rótulo não a sentem.
                 "ref": "recheio-frango",
@@ -3747,7 +3750,7 @@ class Command(BaseCommand):
                 "items": [
                     ("AGUA-FILTRADA", Decimal("1.040")),
                     ("FRANGO", Decimal("1.000")),
-                    ("MILHO-VERDE-CONSERVA", Decimal("1.000")),
+                    ("MILHO-VERDE-CONSERVA", Decimal("0.170")),
                     ("CEBOLA-BRANCA", Decimal("0.760"), Decimal("0.85")),
                     ("TOMATE", Decimal("0.760"), Decimal("0.63")),   # sem sementes
                     ("OLEO-SOJA", Decimal("0.200")),
@@ -3827,18 +3830,19 @@ class Command(BaseCommand):
             },
             {
                 # A base do pain perdu = o «Creme Pain Perdu» da ficha da casa
-                # (Maysa, 10/10/2022), que rende 0,762 kg; aqui ×2,5. A baunilha
-                # dela são «2 gotas, ok! (não em peso)» — fica fora até ter
-                # peso (pergunta aberta ao dono); custo e rótulo não a sentem.
+                # (Maysa, 10/10/2022), que rende 0,762 kg com 2 gotas de
+                # baunilha. Aqui ×8, porque é a escala em que a baunilha cabe na
+                # ficha: 16 gotas = 1 g, pesadas pelo dono (24/09/2026).
                 "ref": "creme-leite-ovos",
                 "name": "Creme de Leite e Ovos",
                 "output_sku": "CREME-LEITE-OVOS",
-                "batch_size": Decimal("1.9"),
+                "batch_size": Decimal("6.08"),
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("1.000")),
-                    ("NATA-FRESCA", Decimal("0.375")),
-                    ("OVOS", Decimal("0.275")),
-                    ("ACUCAR-CRISTAL", Decimal("0.250")),
+                    ("LEITE-INTEGRAL-A", Decimal("3.200")),
+                    ("NATA-FRESCA", Decimal("1.200")),
+                    ("OVOS", Decimal("0.880")),
+                    ("ACUCAR-CRISTAL", Decimal("0.800")),
+                    ("BAUNILHA-EXTRATO-NATURAL", Decimal("0.001")),   # 16 gotas
                 ],
             },
             {
@@ -3994,11 +3998,14 @@ class Command(BaseCommand):
                 "items": [
                     # A «proporção da CBT grande» do dono (24/09): 200 g de
                     # cebola, 38 de bacon, 40 de queijo e 2 folhas de louro, sobre
-                    # 400 g de massa. O queijo e o sal vão na montagem.
+                    # 400 g de massa. O queijo vai na montagem; o sal é o grosso da
+                    # finalização.
                     ("MASSA-CIABATTA", Decimal("0.400")),
                     ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.272")),
                     ("QUEIJO-COLONIAL", Decimal("0.040")),
-                    ("SAL-REFINADO", Decimal("0.002")),
+                    # Finalização (dono, 24/09): 12 g de azeite e 4 g de sal grosso.
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.012")),
+                    ("SAL-GROSSO", Decimal("0.004")),
                 ],
             },
             {
@@ -4017,9 +4024,12 @@ class Command(BaseCommand):
                 "output_sku": "FOAP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.110")),  # 110 g/un (dono, 24/09)
-                    ("ALECRIM-FRESCO", Decimal("0.004")),         # 4 g/un
-                    ("SAL-GROSSO", Decimal("0.001")),      # 1 g/un
+                    # Dono, 24/09: 110 g de massa, 8 g de azeite, 1 g de sal grosso
+                    # e 0,05 g de alecrim — que fica fora pelo mesmo motivo da
+                    # grande (abaixo de 1 g a ficha não grava sem inflar a baixa).
+                    ("MASSA-CIABATTA", Decimal("0.110")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.008")),
+                    ("SAL-GROSSO", Decimal("0.001")),
                 ],
             },
             {
@@ -4033,7 +4043,8 @@ class Command(BaseCommand):
                     ("MASSA-CIABATTA", Decimal("0.110")),
                     ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.068")),
                     ("QUEIJO-COLONIAL", Decimal("0.016")),
-                    ("SAL-REFINADO", Decimal("0.001")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.008")),   # finalização
+                    ("SAL-GROSSO", Decimal("0.001")),
                 ],
             },
             {
@@ -4239,8 +4250,8 @@ class Command(BaseCommand):
             # complet vai salada e ovo. O resto do croque é o da ficha da casa
             # (Croque / Tartine, Maysa 10/10/2022): pão CAMPAGNE fatiado fino,
             # bechamel, gouda ralado grosso (95% de aproveitamento), presunto e
-            # parmesão ralado fino. ⚠️ A fatia dela é «1 unidade» sem peso: os
-            # 110 g são os do pão de forma que ela substitui — pergunta aberta.
+            # parmesão ralado fino. ⚠️ A fatia é ~60 g (dono, 24/09) — A CONFIRMAR
+            # na balança.
             #
             # ⚠️ O consumo automático na VENDA destes itens NÃO EXISTE ainda: a
             # ficha nasce pronta para ele, e o insumo entra pela compra e nunca
@@ -4272,7 +4283,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CPG", Decimal("0.110")),
+                    ("CPG", Decimal("0.060")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("0.070")),
                     ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
                     ("PRESUNTO-CASA", Decimal("0.050")),
@@ -4287,7 +4298,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CPG", Decimal("0.110")),
+                    ("CPG", Decimal("0.060")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("0.070")),
                     ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
                     ("PRESUNTO-CASA", Decimal("0.050")),
@@ -4302,7 +4313,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CPG", Decimal("0.110")),
+                    ("CPG", Decimal("0.060")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("0.070")),
                     ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
                     ("PRESUNTO-CASA", Decimal("0.050")),
@@ -4571,7 +4582,8 @@ class Command(BaseCommand):
             "QUEIJO-GOUDA": {"label": "Queijo gouda", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 413, "carbohydrates_g": 0.4, "sugars_g": 0.4, "proteins_g": 30, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 714}},
             "REQUEIJAO-CORTE": {"label": "Requeijão de corte artesanal", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 260, "carbohydrates_g": 3.0, "sugars_g": 2.5, "proteins_g": 12, "total_fat_g": 22, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 520}},
             "SALSICHA-VIENNA": {"label": "Salsicha vienna artesanal", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 290, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 13, "total_fat_g": 25, "saturated_fat_g": 9, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1050}},
-            "FRANGO": {"label": "Frango (sobrecoxa desossada)", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 165, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 26, "total_fat_g": 6.5, "saturated_fat_g": 1.8, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 85}},
+            # Sassami (filé interno do peito), não sobrecoxa — dono, 24/09/2026.
+            "FRANGO": {"label": "Frango (sassami)", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 120, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 23, "total_fat_g": 2.6, "saturated_fat_g": 0.6, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 65}},
             "MILHO-VERDE-CONSERVA": {"label": "Milho verde em conserva", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 98, "carbohydrates_g": 17, "sugars_g": 3.0, "proteins_g": 3.2, "total_fat_g": 2.4, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 4.6, "sodium_mg": 230}},
             "BACON": {"label": "Bacon fatiado fino", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 541, "carbohydrates_g": 1.4, "sugars_g": 0, "proteins_g": 37, "total_fat_g": 42, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1717}},
             "SALSINHA-DESIDRATADA": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
@@ -4805,6 +4817,10 @@ class Command(BaseCommand):
             # FRESCAS = 3,4 g. A ficha da casa anotava «5 folhas = 1 g», e as
             # tabelas dão 0,2–0,3 g — números da folha seca.
             "LOURO": ("folhas", Decimal("0.00034"), Source.HOUSE_SCALE),
+            # Pesadas pelo dono (24/09/2026): 16 gotas = 1 g (0,0625 g) e 10
+            # gotas = 0,5 g (0,05 g). Ele mandou ficar com a de mais folga —
+            # melhor achar que usa mais do que está usando.
+            "BAUNILHA-EXTRATO-NATURAL": ("gotas", Decimal("0.000063"), Source.HOUSE_SCALE),
         }
         for sku, (label, factor, source) in counting_conversions.items():
             material = Material.objects.filter(sku=sku).first()

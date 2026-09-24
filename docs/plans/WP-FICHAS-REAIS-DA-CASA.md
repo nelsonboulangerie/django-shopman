@@ -119,8 +119,10 @@ genérico. A revisão assinada no Admin continua obrigatória.
   e da de cebola roxa ele ainda vai conferir.
 - **A salada ganhou o vinagrete**, na proporção da guarnição dela (30 g em 80 g).
   Por isso o vinagrete saiu dos croques como linha própria.
-- **Abaixo de 1 g fica fora**: a folha de louro do frango (0,34 g) e a baunilha em
-  gotas do creme do pain perdu. A ficha grava em quilo com três casas.
+- **Abaixo de 1 g fica fora**: a folha de louro do frango (0,34 g) e o alecrim da
+  finalização das focaccias (0,1 g e 0,05 g). A ficha grava em quilo com três
+  casas, e a baixa de estoque não converte unidade. A baunilha do creme do pain
+  perdu entrou quando ele a pesou (16 gotas = 1 g), com a ficha em ×8.
 
 **Ficam de fora, com o motivo:**
 
@@ -133,9 +135,9 @@ genérico. A revisão assinada no Admin continua obrigatória.
   `Material` quando a ficha entrar.)
 - **Tapenade (`TPND`) e cranberry no vinho.** A ficha do cranberry não diz quanto
   rende depois de reduzido, e sem isso a tapenade não fecha a conta de massa.
-- **Ratatouille.** O catálogo vende um «Patê de Ratatouille» (`RTAT`). A ficha
-  dela é de legumes em cubos, envasados inteiros. Falta ele dizer se é a mesma
-  coisa.
+- **Ratatouille.** É receita válida da casa, e o «Patê de Ratatouille» (`RTAT`)
+  é feito com ela, mais nata e outros detalhes (dono, 24/09). **Cobrar dele a
+  receita do patê**: ela entra junto, com o ratatouille como pré-preparo.
 - **Geleias de morango e de laranja, manteigas de mel, bacon e alho, creme de
   caramelo, creme de morango, dijonese e torradas.** Nenhum produto do catálogo
   as consome. Entram quando o produto entrar, e não antes: ficha sem
