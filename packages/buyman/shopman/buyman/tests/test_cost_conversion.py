@@ -181,3 +181,27 @@ class TestRecusaDeConversaoIncoerente:
             SupplierMaterialCost.objects.create(
                 supplier=moinho, material=ovos, conversion=saco_25, cost_q=2400,
             )
+
+
+class TestInsumoEmGramaSeLePorQuilo:
+    """Base em grama (ADR-024, emenda de 24/09/2026): o centavo por grama zera."""
+
+    def test_farinha_em_grama_mostra_reais_por_quilo(self, moinho):
+        farinha_g = Material.objects.create(sku="FARINHA-G", name="Farinha", unit="g")
+        saco = MaterialConversion.objects.create(
+            material=farinha_g, label="saco 25 kg", to_base_factor=Decimal("25000"),
+        )
+        cost = SupplierMaterialCost.objects.create(
+            supplier=moinho, material=farinha_g, conversion=saco, cost_q=10000,
+        )
+        # R$ 100,00 o saco: 0,4 centavo por grama — o inteiro por grama é zero,
+        # e é por isso que a tela não o usa.
+        assert cost.cost_per_base_unit == Decimal("0.4")
+        assert cost.cost_per_base_unit_q == 0
+        assert cost.cost_per_display_unit_q() == (400, "kg")
+
+    def test_insumo_em_kg_continua_por_quilo(self, farinha, moinho, saco_25):
+        cost = SupplierMaterialCost.objects.create(
+            supplier=moinho, material=farinha, conversion=saco_25, cost_q=18000,
+        )
+        assert cost.cost_per_display_unit_q() == (720, "kg")
