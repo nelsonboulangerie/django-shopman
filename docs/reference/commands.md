@@ -23,6 +23,7 @@
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Conta (padrão) ou, com `--apply`, apaga o IP bruto vencido das provas de consentimento — manual, fora do worker |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
@@ -660,6 +661,40 @@ python manage.py auth_cleanup --days 7
 ```
 
 **Recomendação:** Executar via cron diariamente.
+
+---
+
+### purge_consent_ip
+
+**App:** `shopman.guestman` (app label: `guestman`)
+**Arquivo:** `packages/guestman/shopman/guestman/management/commands/purge_consent_ip.py`
+
+Aplica o prazo R11 da [matriz de retenção](../governance/data-retention-schedule.md)
+à prova de consentimento: apaga só o IP bruto coletado há mais do que o prazo.
+Finalidade, versão e texto apresentados, hashes, decisão, origem e instante
+continuam — a prova segue demonstrando a escolha, só sem o IP.
+
+O prazo conta da **coleta**: na trilha, o `occurred_at` do evento; na situação
+atual, o do evento que ela aponta (`last_event_ref`), com `updated_at` como
+segunda porta para linha legada sem evento. O `data_retention` conta R11 pelo
+mesmo serviço, então o inventário e o comando dão o mesmo número.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--days` | `SHOPMAN_CONSENT_IP_RETENTION_DAYS` (`90`) | Prazo do IP; sempre entre 1 e 90 (acima de 90 vira 90) |
+| `--apply` | — | Apaga de fato. Sem ela o comando só conta e não altera nada |
+
+```bash
+# Simulação (padrão): só contagens, sem dado pessoal na saída
+python manage.py purge_consent_ip
+
+# Apagar — em produção, só com a palavra do dono (gate humano de R11)
+python manage.py purge_consent_ip --apply
+```
+
+**Não é agendado.** Fica fora do `maintenance_worker` de propósito: a página
+pública de privacidade diz que hoje nada é apagado sozinho. Agendar pede
+decisão do dono e, antes, a nova versão da página.
 
 ---
 

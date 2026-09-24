@@ -1367,6 +1367,14 @@ SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
     os.environ.get("SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", "12")
 )
 
+# IP bruto da prova de consentimento (R11): no máximo 90 dias. O teto é
+# irredutível por configuração; um prazo menor continua permitido. Só vale
+# quando alguém roda `purge_consent_ip --apply` à mão — nada o agenda.
+SHOPMAN_CONSENT_IP_RETENTION_DAYS = min(
+    90,
+    max(1, _env_int("SHOPMAN_CONSENT_IP_RETENTION_DAYS", 90)),
+)
+
 # ── Concierge multicanal (venda conversacional) ──────────────────────
 #
 # O atendente que vende pelo chat. A LÍNGUA é do modelo; o DINHEIRO é do código:
