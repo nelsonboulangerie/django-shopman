@@ -21,7 +21,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def farinha():
-    return Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg")
+    return Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg")
 
 
 @pytest.fixture

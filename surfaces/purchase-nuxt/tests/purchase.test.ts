@@ -38,7 +38,7 @@ import {
 } from "~/presentation/purchase";
 
 const farinha: Material = {
-  sku: "FARINHA-T65",
+  sku: "FARINHA-NOVARA-T55",
   name: "Farinha T65",
   unit: "kg",
   shelfLifeDays: 180,
@@ -66,7 +66,7 @@ const ovos: Material = {
 // Insumo pesado em kg e comprado em pacote: e nesse par que os dois eixos da
 // NF-e brigam, e onde 10 unidades viravam 10 kg.
 const fermento: Material = {
-  sku: "FERMENTO-BIOLOGICO",
+  sku: "FERMENTO-BIOLOGICO-FRESCO",
   name: "Fermento biológico",
   unit: "kg",
   shelfLifeDays: null,
@@ -126,7 +126,7 @@ const suppliers: Supplier[] = [
 const conversions: MaterialConversion[] = [
   {
     id: "saco-25",
-    materialSku: "FARINHA-T65",
+    materialSku: "FARINHA-NOVARA-T55",
     supplierRef: "SUP-MOINHO",
     label: "saco 25 kg",
     toBaseFactor: 25,
@@ -135,7 +135,7 @@ const conversions: MaterialConversion[] = [
   },
   {
     id: "saco-20",
-    materialSku: "FARINHA-T65",
+    materialSku: "FARINHA-NOVARA-T55",
     supplierRef: "SUP-COOP",
     label: "saco 20 kg",
     toBaseFactor: 20,
@@ -148,7 +148,7 @@ describe("purchase presentation", () => {
   it("deriva custo por unidade-base a partir da unidade de compra", () => {
     const cost: SupplierMaterialCost = {
       id: "cost-1",
-      materialSku: "FARINHA-T65",
+      materialSku: "FARINHA-NOVARA-T55",
       supplierRef: "SUP-MOINHO",
       conversionId: "saco-25",
       costQ: 18000,
@@ -170,7 +170,7 @@ describe("purchase presentation", () => {
     const costs: SupplierMaterialCost[] = [
       {
         id: "moinho",
-        materialSku: "FARINHA-T65",
+        materialSku: "FARINHA-NOVARA-T55",
         supplierRef: "SUP-MOINHO",
         conversionId: "saco-25",
         costQ: 18000,
@@ -179,7 +179,7 @@ describe("purchase presentation", () => {
       },
       {
         id: "coop",
-        materialSku: "FARINHA-T65",
+        materialSku: "FARINHA-NOVARA-T55",
         supplierRef: "SUP-COOP",
         conversionId: "saco-20",
         costQ: 15200,
@@ -297,7 +297,7 @@ describe("purchase presentation", () => {
     const line: ReceiptLine = {
       id: "nfe-1",
       materialSku: "",
-      suggestedMaterialSku: "FARINHA-T65",
+      suggestedMaterialSku: "FARINHA-NOVARA-T55",
       suggestionScore: 90,
       conversionId: null,
       requiresConversion: true,
@@ -312,7 +312,7 @@ describe("purchase presentation", () => {
 
     expect(preview?.line.materialSku).toBe("");
     expect(preview?.suggestion).toEqual({
-      sku: "FARINHA-T65",
+      sku: "FARINHA-NOVARA-T55",
       name: "Farinha T65",
       scorePercent: 90,
     });
@@ -327,8 +327,8 @@ describe("purchase presentation", () => {
   it("some com a sugestão e libera o bloqueio quando o operador aceita ou troca o insumo", () => {
     const accepted: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FARINHA-T65",
-      suggestedMaterialSku: "FARINHA-T65",
+      materialSku: "FARINHA-NOVARA-T55",
+      suggestedMaterialSku: "FARINHA-NOVARA-T55",
       suggestionScore: 90,
       conversionId: "saco-25",
       purchaseQty: 2,
@@ -349,7 +349,7 @@ describe("purchase presentation", () => {
   it("bloqueia linha importada que ainda precisa de conversao", () => {
     const line: ReceiptLine = {
       id: "nfe-2",
-      materialSku: "FARINHA-T65",
+      materialSku: "FARINHA-NOVARA-T55",
       conversionId: null,
       requiresConversion: true,
       purchaseQty: 2,
@@ -394,7 +394,7 @@ describe("purchase presentation", () => {
     // sozinha — mas agora o bloqueio vem com o gesto do lado.
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIOLOGICO",
+      materialSku: "FERMENTO-BIOLOGICO-FRESCO",
       conversionId: null,
       requiresConversion: true,
       conversionSuggestion: {
@@ -431,7 +431,7 @@ describe("purchase presentation", () => {
   it("libera a linha assim que a conversao declarada entra", () => {
     const declared: MaterialConversion = {
       id: "pacote-500",
-      materialSku: "FERMENTO-BIOLOGICO",
+      materialSku: "FERMENTO-BIOLOGICO-FRESCO",
       supplierRef: "SUP-MOINHO",
       label: "un 500 g",
       toBaseFactor: 0.5,
@@ -440,7 +440,7 @@ describe("purchase presentation", () => {
     };
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIOLOGICO",
+      materialSku: "FERMENTO-BIOLOGICO-FRESCO",
       conversionId: "pacote-500",
       requiresConversion: false,
       purchaseQty: 10,
@@ -463,7 +463,7 @@ describe("purchase presentation", () => {
   it("avisa quando a NF discorda da conversao ja escolhida, sem travar a entrada", () => {
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FARINHA-T65",
+      materialSku: "FARINHA-NOVARA-T55",
       conversionId: "saco-25",
       requiresConversion: false,
       conversionSuggestion: {
@@ -497,7 +497,7 @@ describe("purchase presentation", () => {
     // gesto de terminar acusando divergencia consigo mesmo.
     const declared: MaterialConversion = {
       id: "un-500",
-      materialSku: "FERMENTO-BIOLOGICO",
+      materialSku: "FERMENTO-BIOLOGICO-FRESCO",
       supplierRef: "SUP-MOINHO",
       label: "un 500 g",
       toBaseFactor: 0.5,
@@ -506,7 +506,7 @@ describe("purchase presentation", () => {
     };
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIOLOGICO",
+      materialSku: "FERMENTO-BIOLOGICO-FRESCO",
       conversionId: "un-500",
       requiresConversion: false,
       conversionSuggestion: {
@@ -533,7 +533,7 @@ describe("purchase presentation", () => {
   it("ignora sugestao de conversao com fator invalido", () => {
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIOLOGICO",
+      materialSku: "FERMENTO-BIOLOGICO-FRESCO",
       conversionId: null,
       requiresConversion: true,
       conversionSuggestion: {
@@ -582,7 +582,7 @@ describe("purchase presentation", () => {
     const semInsumo: ReceiptLine = {
       id: "nfe-1",
       materialSku: "",
-      suggestedMaterialSku: "FARINHA-T65",
+      suggestedMaterialSku: "FARINHA-NOVARA-T55",
       suggestionScore: 100,
       conversionId: null,
       requiresConversion: true,
@@ -602,7 +602,7 @@ describe("purchase presentation", () => {
     expect(receiptLinePreview(semInsumo, "invoice", [farinha], [])?.purchaseUnitLabel).toBe("SC");
 
     // Insumo aceito, conversao ainda pendente: continua sendo a unidade da nota.
-    const comInsumo = { ...semInsumo, materialSku: "FARINHA-T65" };
+    const comInsumo = { ...semInsumo, materialSku: "FARINHA-NOVARA-T55" };
     expect(receiptLinePreview(comInsumo, "invoice", [farinha], [])?.purchaseUnitLabel).toBe("SC");
 
     // Conversao escolhida: passa a valer o vocabulario em que o operador conta.
@@ -644,7 +644,7 @@ describe("purchase presentation", () => {
     // quem procura o que falta. O resumo tem de bastar para a conferencia de olho.
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FARINHA-T65",
+      materialSku: "FARINHA-NOVARA-T55",
       conversionId: "saco-25",
       requiresConversion: false,
       purchaseQty: 4,
@@ -668,7 +668,7 @@ describe("purchase presentation", () => {
   it("entrada na propria unidade-base nao repete a unidade no resumo", () => {
     const line: ReceiptLine = {
       id: "line-sal",
-      materialSku: "FARINHA-T65",
+      materialSku: "FARINHA-NOVARA-T55",
       conversionId: null,
       requiresConversion: false,
       purchaseQty: 12,
@@ -974,7 +974,7 @@ describe("parseMoneyInput — a tela e o servidor lendo o mesmo número", () => 
 
 describe("contagem de insumos", () => {
   const farinhaCount: CountItem = {
-    sku: "FARINHA-T65",
+    sku: "FARINHA-NOVARA-T55",
     name: "Farinha T65",
     unit: "kg",
     category: "Farinhas",
@@ -1019,15 +1019,15 @@ describe("contagem de insumos", () => {
     expect(empty.ready).toBe(false);
 
     const pendingReason = countSummary(
-      countRows([farinhaCount, ovosCount], { "FARINHA-T65": "10" }, {}),
+      countRows([farinhaCount, ovosCount], { "FARINHA-NOVARA-T55": "10" }, {}),
     );
     expect(pendingReason).toEqual({ filled: 1, divergent: 1, missingReason: 1, ready: false });
 
     const ready = countSummary(
       countRows(
         [farinhaCount, ovosCount],
-        { "FARINHA-T65": "10", OVOS: "16" },
-        { "FARINHA-T65": "Quebra na produção" },
+        { "FARINHA-NOVARA-T55": "10", OVOS: "16" },
+        { "FARINHA-NOVARA-T55": "Quebra na produção" },
       ),
     );
     expect(ready).toEqual({ filled: 2, divergent: 1, missingReason: 0, ready: true });
@@ -1036,11 +1036,11 @@ describe("contagem de insumos", () => {
   it("payload leva so as linhas contadas, com quantidade numerica", () => {
     const rows = countRows(
       [farinhaCount, ovosCount],
-      { "FARINHA-T65": "10,5" },
-      { "FARINHA-T65": "  Quebra na produção  " },
+      { "FARINHA-NOVARA-T55": "10,5" },
+      { "FARINHA-NOVARA-T55": "  Quebra na produção  " },
     );
     expect(countConfirmPayload(rows)).toEqual({
-      counts: [{ materialSku: "FARINHA-T65", countedQty: 10.5, reason: "Quebra na produção" }],
+      counts: [{ materialSku: "FARINHA-NOVARA-T55", countedQty: 10.5, reason: "Quebra na produção" }],
     });
   });
 
@@ -1186,7 +1186,7 @@ describe("reorderBlockers", () => {
   });
 
   it("conta os insumos sem custo preferencial e manda para Custos", () => {
-    const comConsumo: Material = { ...semConsumo, sku: "FARINHA-T45", dailyUse: 9, suggestedQty: 0 };
+    const comConsumo: Material = { ...semConsumo, sku: "FARINHA-BAGATELLE-T45", dailyUse: 9, suggestedQty: 0 };
     const blockers = reorderBlockers([semConsumo, comConsumo], []);
     const custo = blockers.find((item) => item.key === "no-preferred-cost");
     expect(custo).toBeDefined();
@@ -1218,20 +1218,20 @@ describe("reorderBlockers", () => {
 // ---------------------------------------------------------------------------
 // costBatchPayload — a tabela de preços do fornecedor vira um POST
 // ---------------------------------------------------------------------------
-const TODOS = ["CAFE-GRAO", "FARINHA-T45", "ACUCAR"];
+const TODOS = ["CAFE-TAMURA-CHOCOMELO", "FARINHA-BAGATELLE-T45", "ACUCAR-CRISTAL"];
 
 describe("costBatchPayload", () => {
   it("manda só as linhas preenchidas", () => {
     const payload = costBatchPayload(
       "SUP-TAMURA",
-      { "CAFE-GRAO": "45,00", "FARINHA-T45": "", ACUCAR: "   " },
+      { "CAFE-TAMURA-CHOCOMELO": "45,00", "FARINHA-BAGATELLE-T45": "", "ACUCAR-CRISTAL": "   " },
       {},
       TODOS,
     );
     expect(payload).toEqual({
       supplierRef: "SUP-TAMURA",
       makePreferred: false,
-      costs: [{ materialSku: "CAFE-GRAO", costInput: "45,00", conversionId: null }],
+      costs: [{ materialSku: "CAFE-TAMURA-CHOCOMELO", costInput: "45,00", conversionId: null }],
     });
   });
 
@@ -1240,32 +1240,32 @@ describe("costBatchPayload", () => {
   it("não manda linha que o filtro escondeu", () => {
     const payload = costBatchPayload(
       "SUP-TAMURA",
-      { "CAFE-GRAO": "45,00", "FARINHA-T45": "3,20" },
+      { "CAFE-TAMURA-CHOCOMELO": "45,00", "FARINHA-BAGATELLE-T45": "3,20" },
       {},
-      ["CAFE-GRAO"],
+      ["CAFE-TAMURA-CHOCOMELO"],
     );
-    expect(payload.costs.map((cost) => cost.materialSku)).toEqual(["CAFE-GRAO"]);
+    expect(payload.costs.map((cost) => cost.materialSku)).toEqual(["CAFE-TAMURA-CHOCOMELO"]);
   });
 
   // `is_preferred` alimenta o custeio de receita. O servidor já promove o
   // primeiro custo de um insumo; pedir promoção explícita repontaria o custo
   // canônico de dezenas de insumos num gesto de "atualizar tabela".
   it("não pede a promoção do custo padrão", () => {
-    expect(costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, {}, TODOS).makePreferred).toBe(false);
+    expect(costBatchPayload("SUP-TAMURA", { "CAFE-TAMURA-CHOCOMELO": "45,00" }, {}, TODOS).makePreferred).toBe(false);
   });
 
   it("leva a unidade de compra escolhida na linha", () => {
-    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, { "CAFE-GRAO": "7" }, TODOS);
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-TAMURA-CHOCOMELO": "45,00" }, { "CAFE-TAMURA-CHOCOMELO": "7" }, TODOS);
     expect(payload.costs[0]!.conversionId).toBe("7");
   });
 
   it("ignora conversão de linha que não foi preenchida", () => {
-    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "" }, { "CAFE-GRAO": "7" }, TODOS);
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-TAMURA-CHOCOMELO": "" }, { "CAFE-TAMURA-CHOCOMELO": "7" }, TODOS);
     expect(payload.costs).toEqual([]);
   });
 
   it("apara o espaço em volta do valor digitado", () => {
-    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "  45,00 " }, {}, TODOS);
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-TAMURA-CHOCOMELO": "  45,00 " }, {}, TODOS);
     expect(payload.costs[0]!.costInput).toBe("45,00");
   });
 });
@@ -1278,13 +1278,13 @@ describe("costBatchLineErrors", () => {
         code: "cost_batch_invalid",
         lines: [
           { index: 1, materialSku: "NAO-EXISTE", field: "materialSku", detail: "Insumo não encontrado." },
-          { index: 4, materialSku: "SAL", field: "costInput", detail: "Informe um valor maior que zero." },
+          { index: 4, materialSku: "SAL-REFINADO", field: "costInput", detail: "Informe um valor maior que zero." },
         ],
       },
     };
     expect(costBatchLineErrors(data)).toEqual({
       "NAO-EXISTE": "Insumo não encontrado.",
-      SAL: "Informe um valor maior que zero.",
+      "SAL-REFINADO": "Informe um valor maior que zero.",
     });
   });
 
@@ -1296,7 +1296,7 @@ describe("costBatchLineErrors", () => {
   });
 
   it("descarta linha malformada em vez de virar undefined na tela", () => {
-    const data = { error: { lines: [{ index: 0 }, { materialSku: "SAL", detail: "Valor inválido." }] } };
-    expect(costBatchLineErrors(data)).toEqual({ SAL: "Valor inválido." });
+    const data = { error: { lines: [{ index: 0 }, { materialSku: "SAL-REFINADO", detail: "Valor inválido." }] } };
+    expect(costBatchLineErrors(data)).toEqual({ "SAL-REFINADO": "Valor inválido." });
   });
 });

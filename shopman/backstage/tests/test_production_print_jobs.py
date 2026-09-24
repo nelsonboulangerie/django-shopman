@@ -55,14 +55,14 @@ def preparation():
     )
     RecipeItem.objects.create(
         recipe=recipe,
-        input_sku="SAL",
+        input_sku="SAL-REFINADO",
         quantity=D("102"),
         unit="g",
         sort_order=2,
     )
     RecipeItem.objects.create(
         recipe=recipe,
-        input_sku="LEITE",
+        input_sku="LEITE-INTEGRAL-A",
         quantity=D("0.250"),
         unit="L",
         sort_order=3,
@@ -538,7 +538,7 @@ def test_ambiguous_blind_code_fails_closed(preparation):
         output_sku="SEGUNDO-PREPARO",
         batch_size=D("1"),
     )
-    RecipeItem.objects.create(recipe=other, input_sku="ACUCAR", quantity=D("100"), unit="g")
+    RecipeItem.objects.create(recipe=other, input_sku="ACUCAR-CRISTAL", quantity=D("100"), unit="g")
     craft.plan(other, D("1"), date=date.today())
     projection = build_production_weighing(selected_date=date.today())
     first, second = projection.tickets

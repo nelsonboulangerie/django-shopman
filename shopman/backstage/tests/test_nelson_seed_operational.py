@@ -113,10 +113,22 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.buyman.models import Material
 
     # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
-    # 26/08) + a mostarda Dijon de food service, que entrou na curadoria da
-    # lista em 23/09 no lugar do `MT` da ficha do Vinagrete.
-    assert Material.objects.count() == 57
-    farinha = Material.objects.get(sku="FARINHA-T65")
+    # 26/08) + a mostarda Dijon de food service, que entrou no lugar do `MT` da
+    # ficha do Vinagrete + o SEGUNDO café: `CAFE-GRAO` era genérico e escondia
+    # dois blends de dois fornecedores (dono, 24/09).
+    assert Material.objects.count() == 58
+    # A divisão do café não é cosmética: são dois fornecedores, e um deles vem
+    # direto do produtor. Quem usa cada um vem da ficha, não do nome.
+    assert Material.objects.get(sku="CAFE-ORFEU-CLASSICO").metadata["supplier"] == "orfeu"
+    assert Material.objects.get(sku="CAFE-TAMURA-CHOCOMELO").metadata["supplier"] == "tamura"
+    assert set(
+        RecipeItem.objects.filter(input_sku="CAFE-ORFEU-CLASSICO").values_list(
+            "recipe__ref", flat=True
+        )
+    ) == {"espresso"}, "só o espresso puro leva o Orfeu"
+    assert RecipeItem.objects.filter(input_sku="CAFE-TAMURA-CHOCOMELO").count() == 6
+    assert not Material.objects.filter(sku="CAFE-GRAO").exists()
+    farinha = Material.objects.get(sku="FARINHA-NOVARA-T55")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
     # A água do filtro é AGUA-FILTRADA e fica (dele, 23/09: "Agua pode ser
@@ -128,11 +140,11 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert not Material.objects.filter(sku="AGUA").exists()
     assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
     assert not Product.objects.filter(sku="AGUA").exists()
-    assert Material.objects.get(sku="FERMENTO-NATURAL").shelf_life_days == 7
+    assert Material.objects.get(sku="LEVAIN-LIQUIDO").shelf_life_days == 7
     # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
     # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
     # derivada na tela de preparo, nunca gravada como verdade.
-    for sku in ("OVOS", "LIMAO", "CANELA", "ALECRIM"):
+    for sku in ("OVOS", "LIMAO-SICILIANO", "CANELA-PO", "ALECRIM-FRESCO"):
         assert Material.objects.get(sku=sku).unit == "kg", sku
     weighed = {
         m.sku: m.unit
@@ -146,7 +158,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # no perfil, mas agora como ponte do RECEBIMENTO (a nota fala em litro), não
     # da produção diária. O invariante da troca vive em
     # test_seed_liquid_base_unit.py.
-    for sku in ("AGUA-FILTRADA", "LEITE", "AZEITE"):
+    for sku in ("AGUA-FILTRADA", "LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM"):
         material = Material.objects.get(sku=sku)
         assert material.unit == "kg", sku
         assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku
@@ -161,7 +173,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert ovo.is_approximate is True
     assert ovo.supplier_id is None
     assert ovo.to_base_factor == Decimal("0.050000")
-    assert MaterialConversion.objects.filter(material__sku="LIMAO").exists()
+    assert MaterialConversion.objects.filter(material__sku="LIMAO-SICILIANO").exists()
 
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
     # de outra receita, ex. MASSA-*) ou produto. Sem inputs órfãos pós-rename.
@@ -179,11 +191,11 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.stockman.models import Quant
 
     warehouse = Position.objects.get(ref="deposito")
-    assert Quant.objects.filter(sku="FARINHA-T65", position=warehouse).exists()
+    assert Quant.objects.filter(sku="FARINHA-NOVARA-T55", position=warehouse).exists()
     # O saldo de abertura não é mais um 500 chapado: deriva do plano do dia ×
     # cobertura de compra e chega em SACAS fechadas de 25 kg (dono, 26/08).
     # O invariante é o mecanismo, não o número — o número muda com o plano.
-    farinha_abertura = stock_service.available("FARINHA-T65", position=warehouse)
+    farinha_abertura = stock_service.available("FARINHA-NOVARA-T55", position=warehouse)
     assert farinha_abertura > 0
     assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
     assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
@@ -302,10 +314,10 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
 
     # E a prova pelo comportamento: o ciclo do ``maintenance_worker`` logo após
     # um reseed não pode mover um grama de insumo antigo.
-    flour_before = stock_service.available("FARINHA-T65")
+    flour_before = stock_service.available("FARINHA-NOVARA-T55")
     moves_before = Move.objects.count()
     call_command("sweep_unrealized_production", "--minutes", "1", stdout=StringIO())
-    assert stock_service.available("FARINHA-T65") == flour_before
+    assert stock_service.available("FARINHA-NOVARA-T55") == flour_before
     assert Move.objects.count() == moves_before
 
     # Mise en place: toda receita do plano que consome massa/recheio precisa

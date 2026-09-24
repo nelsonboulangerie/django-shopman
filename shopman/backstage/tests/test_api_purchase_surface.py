@@ -78,7 +78,7 @@ def position(db):
 @pytest.fixture
 def material(db):
     return Material.objects.create(
-        sku="FARINHA-T65",
+        sku="FARINHA-NOVARA-T55",
         name="Farinha T65",
         unit="kg",
         shelf_life_days=180,
@@ -133,7 +133,7 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
 
     assert response.status_code == 200
     purchase = response.json()["purchase"]
-    assert purchase["materials"][0]["sku"] == "FARINHA-T65"
+    assert purchase["materials"][0]["sku"] == "FARINHA-NOVARA-T55"
     assert purchase["materials"][0]["stockOnHand"] == 12.0
     assert purchase["materials"][0]["recipes"] == ["Baguete"]
     assert purchase["suppliers"][0]["ref"] == "moinho-sp"
@@ -944,7 +944,7 @@ def test_declare_conversion_refuses_a_blank_label(client, purchase_operator, mat
 def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client, purchase_operator, supplier):
     """Ponta a ponta: o caso do fermento chega na tela como sugestão, não como erro mudo."""
     Material.objects.create(
-        sku="FERMENTO-BIOLOGICO",
+        sku="FERMENTO-BIOLOGICO-FRESCO",
         name="Fermento biologico",
         unit="kg",
         metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
@@ -986,7 +986,7 @@ def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client,
 
     assert response.status_code == 200
     line = response.json()["purchase"]["activeReceipt"]["lines"][0]
-    assert line["materialSku"] == "FERMENTO-BIOLOGICO"
+    assert line["materialSku"] == "FERMENTO-BIOLOGICO-FRESCO"
     assert line["purchaseQty"] == 10.0
     assert line["invoiceUnit"] == "UN"
     assert line["requiresConversion"] is True
@@ -1002,7 +1002,7 @@ def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client,
 @pytest.mark.django_db
 def test_receipt_in_the_base_unit_stamps_no_bridge(client, purchase_operator, supplier, position):
     """Sem conversao no meio nao ha ponte a registrar — e uma chave `null` fingiria que ha."""
-    sal = Material.objects.create(sku="SAL", name="Sal marinho", unit="kg")
+    sal = Material.objects.create(sku="SAL-REFINADO", name="Sal marinho", unit="kg")
     client.force_login(purchase_operator)
 
     response = client.post(
@@ -1078,7 +1078,7 @@ def test_stock_that_crossed_an_approximate_bridge_carries_the_tilde(
     rows = {row["sku"]: row for row in board.json()["purchase"]["materials"]}
     assert rows["OVOS"]["stockIsApproximate"] is True
     # O insumo que entrou na propria base nao ganha enfeite: numero exato e exato.
-    assert rows["FARINHA-T65"]["stockIsApproximate"] is False
+    assert rows["FARINHA-NOVARA-T55"]["stockIsApproximate"] is False
 
 
 @pytest.mark.django_db
@@ -1090,7 +1090,7 @@ def test_declare_conversion_derives_the_factor_from_the_invoice_axes(client, pur
     unidade-base para converter PARA. Escolhido o insumo, o par da nota volta e
     o servidor deriva, com a mesma fisica do adapter.
     """
-    manteiga = Material.objects.create(sku="MANTEIGA-FRANCESA", name="Manteiga francesa", unit="kg")
+    manteiga = Material.objects.create(sku="MANTEIGA-PRESIDENT-SEM-SAL", name="Manteiga francesa", unit="kg")
     client.force_login(purchase_operator)
 
     response = client.post(
@@ -1175,7 +1175,10 @@ def test_supplier_lot_from_the_note_becomes_the_stock_batch(
 
     assert response.status_code == 200
     batch = Batch.objects.get(sku=material.sku)
-    assert batch.ref == "FARINHAT65-LL2408A"
+    # O SKU entra no ref do lote SEM separador e truncado em 18 — ver
+    # `_batch_ref`. O rename da curadoria atravessa aqui, e este é o único lugar
+    # onde ele aparece assim; o regex de token não o alcança.
+    assert batch.ref == "FARINHANOVARAT55-LL2408A"
     assert str(batch.expiry_date) == "2027-02-25"
     assert batch.supplier == supplier.name
 
@@ -1236,18 +1239,18 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
     solicitação de compra": sem consumo medido nenhum insumo é sugerido, e sem
     custo preferencial a sugestão não vira pedido.
     """
-    Material.objects.create(sku="ALECRIM", name="Alecrim", unit="g")
+    Material.objects.create(sku="ALECRIM-FRESCO", name="Alecrim", unit="g")
     client.force_login(purchase_operator)
 
     # Sem mínimo e sem consumo, não há o que pedir.
     board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
-    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM")
+    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM-FRESCO")
     assert alecrim["suggestedQty"] == 0
 
     assert (
         client.post(
             reverse("api-backstage-purchase-min-stock"),
-            data={"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]},
+            data={"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "500"}]},
             content_type="application/json",
         ).status_code
         == 200
@@ -1258,7 +1261,7 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
             data={
                 "supplierRef": supplier.ref,
                 "makePreferred": True,
-                "costs": [{"materialSku": "ALECRIM", "costInput": "6,50"}],
+                "costs": [{"materialSku": "ALECRIM-FRESCO", "costInput": "6,50"}],
             },
             content_type="application/json",
         ).status_code
@@ -1266,13 +1269,13 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
     )
 
     board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
-    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM")
+    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM-FRESCO")
     assert alecrim["suggestedQty"] == 500
 
     # E agora a solicitação sai, em vez de "Defina o custo padrão e o
     # fornecedor antes de enviar o pedido."
     response = client.post(
-        reverse("api-backstage-purchase-request-send", args=["ALECRIM"]),
+        reverse("api-backstage-purchase-request-send", args=["ALECRIM-FRESCO"]),
         data={},
         content_type="application/json",
     )
@@ -1294,7 +1297,7 @@ def test_cost_batch_requires_operate_purchase(client, material, supplier):
 
 @pytest.mark.django_db
 def test_cost_batch_saves_many_and_returns_projection(client, purchase_operator, material, supplier):
-    outro = Material.objects.create(sku="SAL", name="Sal", unit="kg")
+    outro = Material.objects.create(sku="SAL-REFINADO", name="Sal", unit="kg")
     client.force_login(purchase_operator)
 
     response = client.post(

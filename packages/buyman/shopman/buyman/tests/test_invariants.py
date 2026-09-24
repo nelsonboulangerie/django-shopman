@@ -15,7 +15,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def farinha():
-    return Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg")
+    return Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg")
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ class TestPromocaoAtomicaDoPreferencial:
         assert SupplierMaterialCost.objects.filter(material=farinha, is_preferred=True).count() == 1
 
     def test_a_demissao_nao_atravessa_para_outro_insumo(self, farinha, moinho, cooperativa):
-        centeio = Material.objects.create(sku="FARINHA-CENTEIO", name="Farinha de centeio", unit="kg")
+        centeio = Material.objects.create(sku="FARINHA-CENTEIO-INTEGRAL-ORGANICA", name="Farinha de centeio", unit="kg")
         do_centeio = SupplierMaterialCost.objects.create(
             supplier=moinho, material=centeio, cost_q=700, is_preferred=True,
         )
@@ -89,7 +89,7 @@ class TestPromocaoAtomicaDoPreferencial:
 class TestPreferencialNaoApontaParaAposentado:
     def test_insumo_inativo_recusa_preferencial(self, moinho):
         aposentado = Material.objects.create(
-            sku="MALTE", name="Malte", unit="kg", is_active=False,
+            sku="MALTE-EXTRATO", name="Malte", unit="kg", is_active=False,
         )
         with pytest.raises(ValidationError) as exc:
             SupplierMaterialCost.objects.create(

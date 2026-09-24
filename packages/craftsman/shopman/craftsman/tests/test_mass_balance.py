@@ -74,7 +74,7 @@ def test_volume_travels_by_the_declared_density():
     )
     RecipeItem.objects.create(
         recipe=recipe,
-        input_sku="AZEITE",
+        input_sku="AZEITE-EXTRAVIRGEM",
         quantity=Decimal("3.000"),
         unit="L",
         meta={"density_g_per_ml": 0.91},

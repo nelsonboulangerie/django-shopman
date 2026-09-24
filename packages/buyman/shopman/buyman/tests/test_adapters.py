@@ -10,8 +10,8 @@ class TestBuymanCatalogBackend:
     def test_get_product_resolves_material(self):
         from shopman.buyman.adapters.catalog_backend import BuymanCatalogBackend
 
-        Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg")
-        info = BuymanCatalogBackend().get_product("FARINHA-T65")
+        Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg")
+        info = BuymanCatalogBackend().get_product("FARINHA-NOVARA-T55")
         assert info is not None
         assert info.unit == "kg"
         assert info.is_bundle is False
@@ -31,9 +31,9 @@ class TestMaterialSkuValidator:
         from shopman.buyman.adapters.sku_validator import MaterialSkuValidator
 
         Material.objects.create(
-            sku="FERMENTO-NATURAL", name="Levain", unit="kg", shelf_life_days=7,
+            sku="LEVAIN-LIQUIDO", name="Levain", unit="kg", shelf_life_days=7,
         )
-        info = MaterialSkuValidator().get_sku_info("FERMENTO-NATURAL")
+        info = MaterialSkuValidator().get_sku_info("LEVAIN-LIQUIDO")
         assert info is not None
         assert info.unit == "kg"
         assert info.is_sellable is False
@@ -44,9 +44,9 @@ class TestMaterialSkuValidator:
         pytest.importorskip("shopman.stockman")
         from shopman.buyman.adapters.sku_validator import MaterialSkuValidator
 
-        Material.objects.create(sku="SAL", name="Sal", unit="kg")
+        Material.objects.create(sku="SAL-REFINADO", name="Sal", unit="kg")
         v = MaterialSkuValidator()
-        assert v.validate_sku("SAL").valid is True
+        assert v.validate_sku("SAL-REFINADO").valid is True
         assert v.validate_sku("NOPE").valid is False
 
     def test_as_tres_portas_respondem_a_mesma_coisa(self):
@@ -58,14 +58,14 @@ class TestMaterialSkuValidator:
         from shopman.buyman.adapters.sku_validator import MaterialSkuValidator
 
         Material.objects.create(
-            sku="CHOCOLATE-70", name="Chocolate amargo 70%", unit="kg",
+            sku="CHOCOLATE-GOTAS-MEIOAMARGO", name="Chocolate amargo 70%", unit="kg",
             shelf_life_days=365, metadata={"diet": "vegan"},
         )
         v = MaterialSkuValidator()
 
-        singular = v.get_sku_info("CHOCOLATE-70")
-        plural = v.get_sku_infos(["CHOCOLATE-70"])["CHOCOLATE-70"]
-        found = next(i for i in v.search_skus("CHOCOLATE") if i.sku == "CHOCOLATE-70")
+        singular = v.get_sku_info("CHOCOLATE-GOTAS-MEIOAMARGO")
+        plural = v.get_sku_infos(["CHOCOLATE-GOTAS-MEIOAMARGO"])["CHOCOLATE-GOTAS-MEIOAMARGO"]
+        found = next(i for i in v.search_skus("CHOCOLATE") if i.sku == "CHOCOLATE-GOTAS-MEIOAMARGO")
 
         assert singular == plural == found
         assert v.get_sku_infos(["NOPE"]) == {"NOPE": None}
