@@ -28,6 +28,11 @@ import pytest
 
 SEED = pathlib.Path(__file__).resolve().parents[3] / "config/management/commands/seed.py"
 
+#: O seed grava em GRAMA desde 24/09/2026 (a unidade-base da casa, ADR-024 emendada).
+#: As tabelas abaixo são registro histórico e ficam em kg: a leitura converte.
+GRAMAS_POR_QUILO = Decimal("1000")
+PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-", "manteiga-")
+
 #: As 42 fichas que rendem UNIDADE, como estavam escritas por lote antes do
 #: WP-FICHA-DE-PRODUTO-E-PROMESSA: (rendimento, {insumo: quantidade}).
 #:
@@ -45,7 +50,7 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     # 400 g crus em toda grande e 110 g em toda pequena; a CBT ganhou a
     # proporção dele (queijo e sal na montagem). Linha atualizada no mesmo lote de
     # antes (é ele que dá a régua da capacidade), não conta.
-    "focaccia-dia": ("8", {"MASSA-CIABATTA": "3.200", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.032"}),
+    "focaccia-dia": ("8", {"MASSA-CIABATTA": "3.200", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.032", "ALECRIM-FRESCO": "0.0008"}),
     "shokupan": ("12", {"MASSA-FORMA": "4.800"}),
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
@@ -63,7 +68,7 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "pita": ("24", {"MASSA-PITA": "0.720"}),
     "focaccia-cebola-bacon-tomilho": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-BACON-TOMILHO": "1.632", "QUEIJO-COLONIAL": "0.240", "AZEITE-EXTRAVIRGEM": "0.072", "SAL-GROSSO": "0.024"}),
     "focaccia-cebola-roxa": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-AZAPAS": "0.270"}),
-    "mini-focaccia-alecrim": ("12", {"MASSA-CIABATTA": "1.320", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.012"}),
+    "mini-focaccia-alecrim": ("12", {"MASSA-CIABATTA": "1.320", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.012", "ALECRIM-FRESCO": "0.0006"}),
     "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.816", "QUEIJO-COLONIAL": "0.192", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.012"}),
     "mini-focaccia-cebola-roxa": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-AZAPAS": "0.168"}),
     "croissant-mini": ("24", {"MASSA-CROISSANT": "0.864"}),
@@ -108,12 +113,12 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "creme-limao": ("3", "3.405", 8),
     "massa-butter": ("8.5", "8.898", 7),
     "massa-pita": ("8.2", "8.387", 6),
-    "recheio-frango": ("2.94", "4.100", 9),
+    "recheio-frango": ("2.94", "4.10034", 10),
     "recheio-cebola-bacon-tomilho": ("2.717", "2.717", 6),
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
     "molho-bechamel": ("2.835", "4.077", 10),
     "creme-chocolate": ("2.925", "2.925", 3),
-    "creme-leite-ovos": ("6.08", "6.081", 5),
+    "creme-leite-ovos": ("1.9", "1.900313", 5),
     # Pré-preparos que nasceram com as fichas da casa (24/09/2026).
     "molho-caramelo": ("2.1", "2.532", 4),
     "manteiga-wasabi": ("1.035", "1.035", 2),
@@ -188,8 +193,12 @@ def fichas(arvore):
         }
         itens = {}
         for tupla in campos["items"].elts:
-            itens[tupla.elts[0].value] = _decimal_literal(tupla.elts[1])
-        saida[campos["ref"].value] = (_decimal_literal(campos["batch_size"]), itens)
+            itens[tupla.elts[0].value] = _decimal_literal(tupla.elts[1]) / GRAMAS_POR_QUILO
+        ref = campos["ref"].value
+        rendimento = _decimal_literal(campos["batch_size"])
+        if ref.startswith(PREP_PREFIXES):
+            rendimento /= GRAMAS_POR_QUILO
+        saida[ref] = (rendimento, itens)
     return saida
 
 
@@ -238,14 +247,18 @@ class TestFichaPorUnidade:
                     f"{ref}/{sku}: fornada de {FORNADA} consumia {antes} e passou a consumir {depois}"
                 )
 
-    def test_a_peca_por_unidade_sai_em_grama_redonda(self, fichas):
-        """Nada de 0,2799 kg: a reexpressão dividiu exato, sem resto escondido."""
+    def test_a_peca_por_unidade_sai_em_miligrama_redondo(self, fichas):
+        """Nada de 0,2799 g: a reexpressão dividiu exato, sem resto escondido.
+
+        Era grama redondo até 24/09/2026; o alecrim de 0,1 g da focaccia (dono)
+        é o motivo de a base ter virado o grama, e a régua desceu com ela.
+        """
         for ref in LOTE_ANTIGO:
             _rendimento, itens = fichas[ref]
             for sku, quantidade in itens.items():
-                gramas = quantidade * 1000
-                assert gramas == gramas.to_integral_value(), f"{ref}/{sku} não fecha em grama inteira"
-                assert gramas > 0, f"{ref}/{sku} zerou"
+                miligramas = quantidade * 1_000_000
+                assert miligramas == miligramas.to_integral_value(), f"{ref}/{sku} não fecha em miligrama"
+                assert miligramas > 0, f"{ref}/{sku} zerou"
 
     def test_as_formulas_em_kg_nao_mudaram(self, fichas):
         for ref, (rendimento, soma, linhas) in FORMULA_EM_KG.items():
@@ -288,7 +301,9 @@ class TestCapacidadeProvisoria:
             rendimento, _itens = fichas[ref]
             if ref in RENDIMENTO_ANTES_DA_FICHA_DA_CASA:
                 rendimento = Decimal(RENDIMENTO_ANTES_DA_FICHA_DA_CASA[ref])
-            assert capacidade[ref] == int(rendimento * 3), f"{ref}: a capacidade absoluta mudou"
+            # Fórmula conta capacidade em gramas/dia desde 24/09; a régua é em kg.
+            atual = Decimal(capacidade[ref]) / GRAMAS_POR_QUILO if ref in FORMULA_EM_KG else capacidade[ref]
+            assert atual == int(rendimento * 3), f"{ref}: a capacidade absoluta mudou"
 
     def test_a_capacidade_nao_e_mais_derivada_do_rendimento(self, arvore):
         """Baguete a 75/dia com rendimento 1: a conta velha daria 3."""

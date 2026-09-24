@@ -114,8 +114,8 @@ NASCIDAS_EM_KG = {
     ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
     # Montagens (fatia B): o creme do pain perdu é o da ficha dela, e o
     # caramelo e o chantilly chegaram com ela.
-    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("3.200"),
-    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("1.200"),
+    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("1.000"),
+    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.375"),
     ("molho-caramelo", "NATA-FRESCA"): Decimal("1.200"),
     ("pain-perdu", "NATA-FRESCA"): Decimal("0.025"),
     # O azeite da finalização das focaccias (dono, 24/09/2026).
@@ -166,7 +166,8 @@ def _liquidos_declarados_no_seed() -> dict[tuple[str, str], Decimal]:
             for item in campos["items"].elts:
                 sku = _literal(item.elts[0])
                 if sku in DENSIDADES:
-                    declaradas[(ref, sku)] = Decimal(_literal(item.elts[1]))
+                    # O seed grava em grama desde 24/09/2026; o registro é em kg.
+                    declaradas[(ref, sku)] = Decimal(_literal(item.elts[1])) / 1000
     assert declaradas, "recipes_data não foi encontrado no fonte do seed"
     return declaradas
 
@@ -223,9 +224,9 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     for sku, densidade in DENSIDADES.items():
         material = Material.objects.get(sku=sku)
         assert Decimal(str(material.metadata["density_g_per_ml"])) == densidade, sku
-        assert material.unit == "kg", sku
+        assert material.unit == "g", sku
 
-    # A base é a unidade do momento da verdade, e a casa pesa tudo (R1).
+    # A base é a unidade do momento da verdade, e a casa pesa tudo (R1), em grama.
     assert sorted(Material.objects.filter(unit="l").values_list("sku", flat=True)) == []
 
     # `RecipeItem.clean` já obrigaria; o teste diz por quê. Item em `L` para
@@ -234,7 +235,7 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     itens = RecipeItem.objects.filter(input_sku__in=DENSIDADES)
     assert itens.count() == len(QUANTIDADES_EM_LITRO) + len(NASCIDAS_EM_KG)
     for item in itens.select_related("recipe"):
-        assert item.unit == "kg", f"{item.recipe.ref}/{item.input_sku}: {item.unit}"
+        assert item.unit == "g", f"{item.recipe.ref}/{item.input_sku}: {item.unit}"
         item.full_clean()
 
     # Misturar não cria matéria: `Recipe.clean` recusa quem rende mais do que
@@ -252,7 +253,7 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     # e limões, aparecem em unidades inteiras: ``(≈ 17 un.)`` e ``(≈ 2 un.)``.
     for sku in COMPRADOS_EM_LITRO:
         conversao = MaterialConversion.objects.get(material__sku=sku, label="litros")
-        assert conversao.to_base_factor == DENSIDADES[sku], sku
+        assert conversao.to_base_factor == DENSIDADES[sku] * 1000, sku  # g por litro
         assert conversao.is_approximate is True, sku
         assert conversao.supplier_id is None, sku
         assert conversao.is_active is True, sku
@@ -262,4 +263,4 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     # `density_g_per_ml` devolvia `None` e calava o invariante da ficha inteira.
     leite = RecipeItem.objects.filter(input_sku="LEITE-INTEGRAL-A").first()
     leite.meta = {}
-    assert _item_mass_in_kg(leite) == leite.quantity
+    assert _item_mass_in_kg(leite) == leite.quantity / 1000
