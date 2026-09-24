@@ -1113,6 +1113,8 @@ NÃO é chave de política: é computado da mediana do histórico real (Directiv
 | `purchase.min_lead_time_days` | `int` | Piso do prazo de entrega quando não há histórico nem cadastro. Default `1` |
 | `purchase.lead_time_history_days` | `int` | Janela do histórico pedido→entrega usada na mediana. Default `120` |
 | `purchase.lead_time_max_days` | `int` | Amostras acima disso são descartadas como ruído. Default `45` |
+| `purchase.resale_markup_pct` | `int` (%) | Markup padrão da revenda, sobre o CUSTO: preço sugerido = custo × (1 + markup/100). 50 ⇒ ×1,5 (margem 33%); 150 ⇒ ×2,5. Sugere o preço ao ligar "Permitir revenda" no Compras (pré-preenchido, editável), arredondado para cima até o real inteiro. Default `50` (dono, 24/09/2026). Fonte: `shop/resale_markup.py` |
+| `purchase.resale_markup_by_collection` | `dict[str, int]` | Markup por categoria: `{ref da coleção: %}`. A categoria é a coleção principal do produto; item que ainda não se vende usa a coleção onde "Permitir revenda" o põe (`mercearia`). Ausente = padrão. Editado no Admin (página Compras) como `mercearia: 60; frios: 80`, com o código conferido |
 
 Derivados por insumo (expostos na projection `materials`): `leadTimeDays`,
 `replenishAtDays` (= lead + revisão + segurança; limiar do selo "Reposição" e

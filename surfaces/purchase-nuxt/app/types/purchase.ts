@@ -44,6 +44,17 @@ export interface Material {
   roles?: SkuRoles;
   /** Preço de venda do mesmo SKU; `null` quando a casa não o vende. */
   salePriceQ?: number | null;
+  /** O preço que "Permitir revenda" propõe; ausente sem custo conhecido. */
+  saleSuggestion?: SaleSuggestion | null;
+}
+
+/** custo × (1 + markup), para cima até o real inteiro — ver `shop/resale_markup.py`. */
+export interface SaleSuggestion {
+  priceQ: number;
+  costQ: number;
+  markupPct: number;
+  /** Categoria cujo markup valeu; vazio = padrão da loja. */
+  markupCategory: string;
 }
 
 /**

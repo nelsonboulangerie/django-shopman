@@ -37,6 +37,21 @@ class SkuRolesProjection:
 
 
 @dataclass(frozen=True)
+class SaleSuggestionProjection:
+    """O preço que "Permitir revenda" propõe: custo × (1 + markup), para cima até o real.
+
+    Só existe quando o custo é conhecido (``shop/resale_markup.py``). A tela
+    pré-preenche e mostra de onde veio; quem decide é o operador.
+    """
+
+    priceQ: int
+    costQ: int
+    markupPct: int
+    #: Nome da categoria cujo markup valeu; vazio = padrão da loja.
+    markupCategory: str
+
+
+@dataclass(frozen=True)
 class MaterialProjection:
     sku: str
     name: str
@@ -58,6 +73,8 @@ class MaterialProjection:
     roles: SkuRolesProjection
     #: Preço de venda do cadastro de venda do mesmo SKU; ``None`` quando não se vende.
     salePriceQ: int | None
+    #: Sugestão para "Permitir revenda"; ``None`` sem custo conhecido ou se já se vende.
+    saleSuggestion: SaleSuggestionProjection | None
 
 
 @dataclass(frozen=True)
@@ -228,6 +245,9 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     approximate_stock = _approximate_stock_skus(material_rows, policy=policy)
     roles = sku_roles_map(skus)
     sale_prices = _sale_price_map(skus)
+    sale_suggestions = _sale_suggestions(
+        [sku for sku in skus if not (roles.get(sku) and (roles[sku].sellable or roles[sku].produced))]
+    )
 
     suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
     materials = tuple(
@@ -241,6 +261,7 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             policy=policy,
             roles=roles.get(material.sku, SkuRoles()),
             sale_price_q=sale_prices.get(material.sku),
+            sale_suggestion=sale_suggestions.get(material.sku),
         )
         for material in material_rows
     )
@@ -341,6 +362,7 @@ def _material_projection(
     policy: dict[str, int],
     roles: SkuRoles,
     sale_price_q: int | None,
+    sale_suggestion: SaleSuggestionProjection | None = None,
 ) -> MaterialProjection:
     meta = _purchase_meta(material)
     replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
@@ -383,7 +405,38 @@ def _material_projection(
             usedInRecipe=roles.used_in_recipe,
         ),
         salePriceQ=sale_price_q,
+        saleSuggestion=sale_suggestion,
     )
+
+
+def _sale_suggestions(skus: list[str]) -> dict[str, SaleSuggestionProjection]:
+    """Sugestão de preço para cada SKU que ainda não se vende e tem custo."""
+    from shopman.shop.resale_markup import (
+        RESALE_COLLECTION_REF,
+        primary_collections_map,
+        resolve_resale_markup,
+        suggested_price_q,
+        unit_costs_map,
+    )
+
+    costs = unit_costs_map(skus)
+    if not costs:
+        return {}
+    markup = resolve_resale_markup()
+    collections = primary_collections_map(costs)
+    Collection = apps.get_model("offerman", "Collection")
+    names = dict(Collection.objects.values_list("ref", "name"))
+    suggestions = {}
+    for sku, cost_q in costs.items():
+        ref = collections.get(sku, (RESALE_COLLECTION_REF, ""))[0]
+        pct, source_ref = markup.pct_for(ref)
+        suggestions[sku] = SaleSuggestionProjection(
+            priceQ=suggested_price_q(cost_q, pct),
+            costQ=cost_q,
+            markupPct=pct,
+            markupCategory=names.get(source_ref, source_ref) if source_ref else "",
+        )
+    return suggestions
 
 
 def _sale_price_map(skus: list[str]) -> dict[str, int]:
