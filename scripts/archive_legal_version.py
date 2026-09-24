@@ -6,7 +6,7 @@ Uso (depois que o deploy da versão nova subiu):
     python scripts/archive_legal_version.py                      # site de produção
     python scripts/archive_legal_version.py --origin http://127.0.0.1:3000
 
-Lê `/privacy` e `/terms` já renderizados, confere que a página mostra a mesma
+Lê `/privacidade` e `/termos` já renderizados, confere que a página mostra a mesma
 data de `LEGAL_UPDATED_AT` (em `shopman/storefront/presentation/legal.py`), e
 grava `surfaces/storefront-nuxt/public/documentos-legais/<privacidade|termos>/<LEGAL_VERSION>.html`.
 No fim imprime a linha a colar em `LEGAL_ARCHIVE`.
@@ -37,8 +37,8 @@ ARCHIVE_DIR = ROOT / "surfaces/storefront-nuxt/public/documentos-legais"
 DEFAULT_ORIGIN = "https://www.nelsonboulangerie.com.br"
 
 DOCUMENTS = {
-    "privacy": {"path": "/privacy", "segment": "privacidade", "title": "Política de privacidade"},
-    "terms": {"path": "/terms", "segment": "termos", "title": "Termos de uso"},
+    "privacy": {"path": "/privacidade", "segment": "privacidade", "title": "Política de privacidade"},
+    "terms": {"path": "/termos", "segment": "termos", "title": "Termos de uso"},
 }
 
 # Só a estrutura do documento sobrevive; classe, `data-*` e script ficam para trás.
