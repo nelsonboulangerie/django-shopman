@@ -61,7 +61,8 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert resolved["cfop"] == "5102"
         assert resolved["icms_situacao_tributaria"] == "102"
     # A Mercearia real nasce no seed pela mesma tabela do `apply_grocery_catalog`:
-    # vendável no PDV, fora de todo canal remoto (sem foto), marcada como revenda.
+    # vendável no PDV, fora de todo canal remoto (sem foto), com cadastro de compra do mesmo SKU.
+    from shopman.buyman.models import Material
     from shopman.offerman.models import ListingItem
 
     from config.management.commands.apply_grocery_catalog import GROCERY, LEFT_OUT
@@ -72,7 +73,8 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for sku, product in grocery.items():
         refs = set(ListingItem.objects.filter(product=product).values_list("listing__ref", flat=True))
         assert refs == {"pdv"}, (sku, refs)
-        assert product.metadata["purchase"]["resale"] is True
+        assert "purchase" not in product.metadata
+        assert Material.objects.get(sku=sku).unit == product.unit
         assert not from_metadata(product.metadata).errors(), sku
         assert product.collection_items.filter(collection__ref="mercearia").exists()
     rtat = Product.objects.get(sku="RTAT")
@@ -153,7 +155,16 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # dois blends de dois fornecedores (dono, 24/09) + 13 que as fichas reais
     # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA) + 4
     # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
-    assert Material.objects.count() == 75
+    # Os insumos (sem cadastro de venda) seguem 75; a revenda soma o cadastro de
+    # compra do mesmo SKU — um por item de `RESALE` e da Mercearia.
+    from config.management.commands.apply_grocery_catalog import GROCERY
+    from config.management.commands.apply_product_brands import RESALE
+
+    vendaveis = set(Product.objects.values_list("sku", flat=True))
+    assert Material.objects.exclude(sku__in=vendaveis).count() == 75
+    assert set(Material.objects.filter(sku__in=vendaveis).values_list("sku", flat=True)) == (
+        set(RESALE) | {item.sku for item in GROCERY}
+    )
     # A divisão do café não é cosmética: são dois fornecedores, e um deles vem
     # direto do produtor. Quem usa cada um vem da ficha, não do nome.
     assert Material.objects.get(sku="CAFE-ORFEU-CLASSICO").metadata["supplier"] == "orfeu"

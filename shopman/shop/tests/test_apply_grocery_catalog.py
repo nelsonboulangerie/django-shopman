@@ -11,6 +11,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from shopman.buyman.models import Material
 from shopman.fiscalman.classification import from_metadata, resolve_fiscal_item
 from shopman.offerman import get_social_attributes
 from shopman.offerman.contrib.social.schema import _gtin_is_valid
@@ -77,7 +78,10 @@ def test_cria_a_revenda_so_no_pdv(catalog):
     )
     assert dijon.is_sellable and not dijon.is_published
     assert dijon.metadata["fiscal"] == {"profile": "own_production", "ncm": "21033021", "unit": "UN"}
-    assert dijon.metadata["purchase"] == {"resale": True}
+    assert "purchase" not in dijon.metadata
+    # Comprável: o cadastro de compra do MESMO SKU, na mesma unidade.
+    compra = Material.objects.get(sku=DIJON)
+    assert (compra.name, compra.unit, compra.is_active) == (dijon.name, "un", True)
     social = get_social_attributes(dijon)
     assert (social.brand, social.gtin) == ("Maille", "3036810201280")
     assert dijon.collection_items.get().collection.ref == "mercearia"
