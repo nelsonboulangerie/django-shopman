@@ -221,8 +221,15 @@ def test_os_placeholders_reais_batem_com_o_seed():
 # ── A quilo, caixas presente e GTIN da web ────────────────────────────────
 
 
-def test_queijo_a_quilo_nasce_cadastrado_sem_gtin_e_fora_da_venda_sem_preco(catalog):
+def _sem_preco(monkeypatch):
+    """O Vale do Testo como era antes do preço: a quilo, preço zero."""
+    queijo = next(i for i in GROCERY if i.sku == VALE_DO_TESTO)
+    monkeypatch.setattr(command, "GROCERY", (replace(queijo, price_q=0),))
+
+
+def test_queijo_a_quilo_sem_preco_fica_cadastrado_e_fora_da_venda(catalog, monkeypatch):
     """Preço zero não vende (dono, 24/09): cadastrado, sim; vendável, não."""
+    _sem_preco(monkeypatch)
     report = apply_grocery(apply=True)
 
     queijo = Product.objects.get(sku=VALE_DO_TESTO)
@@ -235,7 +242,8 @@ def test_queijo_a_quilo_nasce_cadastrado_sem_gtin_e_fora_da_venda_sem_preco(cata
     assert [sku for sku, _ in report["no_price"]] == [VALE_DO_TESTO]
 
 
-def test_item_sem_preco_que_estava_a_venda_sai_da_venda(catalog):
+def test_item_sem_preco_que_estava_a_venda_sai_da_venda(catalog, monkeypatch):
+    _sem_preco(monkeypatch)
     apply_grocery(apply=True)
     Product.objects.filter(sku=VALE_DO_TESTO).update(is_sellable=True)
     ListingItem.objects.filter(product__sku=VALE_DO_TESTO).update(is_sellable=True)
@@ -245,6 +253,66 @@ def test_item_sem_preco_que_estava_a_venda_sai_da_venda(catalog):
     assert not Product.objects.get(sku=VALE_DO_TESTO).is_sellable
     assert not ListingItem.objects.get(product__sku=VALE_DO_TESTO).is_sellable
     assert (VALE_DO_TESTO, ["venda: desligada até ter preço"]) in report["updated"]
+
+
+def test_o_preco_do_quilo_e_a_conta_do_custo_corrigido(catalog):
+    """R$ 140,07 (set/2025) × IPCA-Queijo out/25–ago/26 × 1,5, para cima: R$ 219."""
+    price = command.VALE_DO_TESTO_PRICE
+    assert price.cost_q == 14007
+    assert price.corrected_cost_q == 14547
+    assert price.price_q == 21900
+    queijo = next(i for i in GROCERY if i.sku == VALE_DO_TESTO)
+    assert queijo.price_q == price.price_q
+
+
+def test_queijo_a_quilo_nasce_vendavel_a_219_o_quilo(catalog):
+    apply_grocery(apply=True)
+
+    queijo = Product.objects.get(sku=VALE_DO_TESTO)
+    assert (queijo.unit, queijo.base_price_q, queijo.is_sellable) == ("kg", 21900, True)
+    item = ListingItem.objects.get(product=queijo)
+    assert (item.listing.ref, item.price_q, item.is_sellable) == ("pdv", 21900, True)
+
+
+def test_o_preco_que_chega_devolve_a_venda(catalog, monkeypatch):
+    with monkeypatch.context() as m:
+        _sem_preco(m)
+        apply_grocery(apply=True)
+    assert not Product.objects.get(sku=VALE_DO_TESTO).is_sellable
+
+    report = apply_grocery(apply=True)
+
+    queijo = Product.objects.get(sku=VALE_DO_TESTO)
+    assert (queijo.base_price_q, queijo.is_sellable) == (21900, True)
+    item = ListingItem.objects.get(product=queijo)
+    assert (item.price_q, item.is_sellable) == (21900, True)
+    assert not any(field == "base_price_q" for sku, field, *_ in report["conflicts"] if sku == VALE_DO_TESTO)
+
+
+def test_o_custo_do_fornecedor_fica_no_cadastro_de_compra_com_a_origem(catalog):
+    from shopman.buyman.models import SupplierMaterialCost
+
+    apply_grocery(apply=True)
+
+    cost = SupplierMaterialCost.objects.get(material__sku=VALE_DO_TESTO)
+    assert (cost.supplier.ref, cost.cost_q, cost.is_preferred) == ("pomerode", 14007, True)
+    origin = Material.objects.get(sku=VALE_DO_TESTO).metadata["purchase"]["cost_origin"]
+    assert origin == {"cost_q": 14007, "date": "2025-09-05", "source": "dono, 2025 (NF Pomerode 145675)",
+                      "supplier": "pomerode"}
+    assert apply_grocery(apply=True)["updated"] == []
+
+
+def test_latas_kanfa_com_o_peso_confirmado(catalog):
+    for sku in ("CHA-NAMASTE-KANFA-L70", "CHA-ACONCHEGO-KANFA-L50"):
+        Product.objects.create(sku=sku, name=sku, unit="un", base_price_q=7300, unit_weight_g=60,
+                               metadata={"fiscal": {"profile": "own_production", "ncm": "09022000", "unit": "UN"}})
+
+    apply_grocery(apply=True)
+
+    assert Product.objects.get(sku="CHA-NAMASTE-KANFA-L70").unit_weight_g == 70
+    assert Product.objects.get(sku="CHA-ACONCHEGO-KANFA-L50").unit_weight_g == 50
+    vital = Product.objects.get(sku="CHA-VITAL-KANFA-L70")
+    assert (vital.name, vital.unit_weight_g) == ("Vital Chai Kãnfa — Lata 70g", 70)
 
 
 def test_frutas_vermelhas_se_acham_por_4_frutas(catalog):
