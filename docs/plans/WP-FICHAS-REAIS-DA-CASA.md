@@ -100,6 +100,45 @@ ratatouille e salmoura.
 aba `Insumos` da planilha viva (pernil, sal de cura, amido, cravo, zimbro, louro,
 mel, pólen, os quatro da ratatouille, …).
 
+### Estado do F2 (24/09/2026)
+
+**Importadas** (fatia A, molhos e recheios): bechamel, vinagrete, recheio cebola
+bacon tomilho, recheio citron (`creme-limao`), recheio de frango, creme de
+chocolate e salada. **Fatia B, montagens:** Jambon-Beurre, queijo quente, os três
+croques e o pain perdu, com os pré-preparos que eles pedem (manteiga de wasabi,
+cebolas assadas, caramelo salgado e o creme do pain perdu). O «Rend. %» entra
+como aproveitamento da linha, e as validades da ficha dela substituem o exemplo
+genérico. A revisão assinada no Admin continua obrigatória.
+
+**Decisões de leitura** (cada uma está escrita no comentário da ficha):
+
+- **A quantidade por peça fica com a balança dele, não com a ficha de 2017.** A
+  focaccia grande recebe 80 g de recheio (`PESO_MASSA_CRUA_G`, 26/08). A ficha
+  dela punha ~310 g. Da ficha entra a proporção.
+- **A salada ganhou o vinagrete**, na proporção da guarnição dela (30 g em 80 g).
+  Por isso o vinagrete saiu dos croques como linha própria.
+- **Abaixo de 1 g fica fora**: a folha de louro do frango (0,34 g) e a baunilha em
+  gotas do creme do pain perdu. A ficha grava em quilo com três casas.
+
+**Ficam de fora, com o motivo:**
+
+- **Presunto cozido.** A ficha é clara, mas a salmoura (3,65 kg, com 0,43 kg de
+  sal) é **descartada** depois das 72 h. A derivação nutricional contaria todo esse
+  sal no produto, e o rótulo do croque e do Jambon-Beurre passaria a mentir para
+  cima em sódio. Falta um número que ninguém tem: quanto da salmoura fica na peça.
+  Até ele existir, o `PRESUNTO-CASA` segue como insumo de produção própria, com o
+  perfil de hoje. (A sessão de insumos já concordou que ele deixe de ser
+  `Material` quando a ficha entrar.)
+- **Tapenade (`TPND`) e cranberry no vinho.** A ficha do cranberry não diz quanto
+  rende depois de reduzido, e sem isso a tapenade não fecha a conta de massa.
+- **Ratatouille.** O catálogo vende um «Patê de Ratatouille» (`RTAT`). A ficha
+  dela é de legumes em cubos, envasados inteiros. Falta ele dizer se é a mesma
+  coisa.
+- **Geleias de morango e de laranja, manteigas de mel, bacon e alho, creme de
+  caramelo, creme de morango, dijonese e torradas.** Nenhum produto do catálogo
+  as consome. Entram quando o produto entrar, e não antes: ficha sem
+  consumidor não vira custo, rótulo nem fornada.
+
 ## O que a planilha dela respondeu sozinha
 
 - **Wasabi é pasta.** Há o registro do teste com pó em 30/08/2023, reprovado por
