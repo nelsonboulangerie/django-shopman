@@ -80,19 +80,63 @@ NCM_REVISADO: tuple[tuple[str, str, str], ...] = (
     ("SDLA", "22029900", "22021000 é o código do refrigerante em embalagem"),
 )
 
+#: CEST de quem a casa faz, pelo NCM (Anexo XVII do Conv. ICMS 142/2018; a
+#: lei manda informá-lo mesmo sem ST, e o CEST não muda a tributação). É a
+#: prática da casa — a planilha de produtos do Yooga já saía com 17.062.00 nos
+#: pães de 1905.90.90 —, conferida contra o Anexo em 24/09/2026:
+#:
+#: - 1905.90.90 → 17.062.00 "Outros pães, exceto o classificado no CEST
+#:   17.062.03" (pães, folhados, doces, salgados de forno, caixas presente);
+#: - 1905.90.10 → 17.060.00 "Outros pães de forma" — ⚠️ o seed põe baguetes e
+#:   ciabattas no 1905.90.10; a casa as emitia no 1905.90.90 (17.062.00). Fica
+#:   o CEST que o Anexo dá ao NCM de hoje; se o NCM mudar, o CEST acompanha;
+#: - 2005.99.00 → 17.092.00 (Ratatouille, Tapenade: hortícolas preparados).
+#:
+#: As bebidas preparadas (2202.99.00) ficam SEM CEST de propósito — ver AVISOS.
+#: Só preenche CEST vazio: CEST já escrito é curadoria de alguém.
+HOUSE_CEST_BY_NCM: dict[str, str] = {
+    "19059090": "1706200",
+    "19059010": "1706000",
+    "20059900": "1709200",
+}
+
+
 #: O que o comando repete toda vez, para não virar silêncio. Não é pergunta
 #: pendente: é o contorno da decisão, que muda se a casa mudar de prática.
 AVISOS: tuple[str, ...] = (
     "CEST vazio (decisão dele, 23/09): os CEST do 2202.99.00 — 17.113.00 chá, "
     "17.114.00 café, 17.115.00 leite/cacau — descrevem o INDUSTRIALIZADO pronto "
     "para beber, que circula com substituição tributária. O que a casa prepara "
-    "no balcão não é esse produto, e o perfil do catálogo é own_production.",
+    "no balcão não é esse produto, e o perfil do catálogo é o sem ST.",
     "⚠️ O dia em que a casa ENGARRAFAR a soda para vender, a conta muda: aí há "
     "embalagem primária destinada ao consumidor final, o NCM passa a ser o "
     "2202.10.00 e a casa vira FABRICANTE de bebida açucarada — contribuinte do "
     "Imposto Seletivo na primeira operação, sem crédito a aproveitar. Servida no "
     "copo, nada disso acontece.",
 )
+
+
+def house_cest_for(ncm: str) -> str:
+    return HOUSE_CEST_BY_NCM.get(ncm, "")
+
+
+def fill_house_cest() -> list[tuple[str, str, str]]:
+    """Grava o CEST pelo NCM onde ele está vazio. Devolve ``(sku, ncm, cest)``."""
+    from shopman.offerman.models import Product
+
+    filled: list[tuple[str, str, str]] = []
+    for product in Product.objects.filter(metadata__fiscal__ncm__in=list(HOUSE_CEST_BY_NCM)).order_by("sku"):
+        metadata = dict(product.metadata or {})
+        fiscal = dict(metadata.get("fiscal") or {})
+        if fiscal.get("cest"):
+            continue
+        cest = house_cest_for(fiscal.get("ncm") or "")
+        fiscal["cest"] = cest
+        metadata["fiscal"] = fiscal
+        product.metadata = metadata
+        product.save(update_fields=["metadata"])
+        filled.append((product.sku, fiscal["ncm"], cest))
+    return filled
 
 
 class Command(BaseCommand):
@@ -117,6 +161,7 @@ class Command(BaseCommand):
 
         trocas: list[tuple[str, str, str, str, str]] = []
         ausentes: list[str] = []
+        cests: list[tuple[str, str, str]] = []
         with transaction.atomic():
             for sku, ncm, porque in NCM_REVISADO:
                 produto = produtos.get(sku)
@@ -132,6 +177,7 @@ class Command(BaseCommand):
                 produto.metadata = metadata
                 produto.save(update_fields=["metadata"])
                 trocas.append((sku, produto.name, atual or "(vazio)", ncm, porque))
+            cests = fill_house_cest()
             if not apply:
                 transaction.set_rollback(True)
 
@@ -143,6 +189,11 @@ class Command(BaseCommand):
                 out.write(f"           {porque}")
         else:
             out.write(self.style.SUCCESS("\nNada a revisar: todos já estão no NCM revisado."))
+
+        if cests:
+            out.write(self.style.SUCCESS(f"\n{verbo}: CEST em {len(cests)} produto(s) da casa."))
+            for sku, ncm, cest in cests:
+                out.write(f"  {sku:8s} NCM {ncm} → CEST {cest}")
 
         if ausentes:
             out.write(f"\n{len(ausentes)} fora do catálogo deste banco: {', '.join(sorted(ausentes))}")

@@ -28,18 +28,18 @@ def test_fiscal_fieldset_present():
 def test_form_initial_reads_metadata():
     product = Product.objects.create(
         sku="PAO-BRIDGE", name="Pão", base_price_q=500,
-        metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
+        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
     )
     form = FiscalProductAdminForm(instance=product)
-    assert form.fields["fiscal_profile"].initial == "own_production"
+    assert form.fields["fiscal_profile"].initial == "standard"
     assert form.fields["fiscal_ncm"].initial == "19059010"
     assert form.fields["fiscal_cest"].initial == ""
 
 
-def test_form_rejects_cest_on_own_production():
-    cleaned = {"fiscal_profile": "own_production", "fiscal_ncm": "19059010", "fiscal_cest": "0300700"}
-    classification_errors = _classification_errors(cleaned)
-    assert any("CEST não se aplica" in e for e in classification_errors)
+def test_form_accepts_cest_without_st():
+    """O CEST identifica a mercadoria em qualquer perfil (Conv. ICMS 142/2018)."""
+    cleaned = {"fiscal_profile": "standard", "fiscal_ncm": "19059090", "fiscal_cest": "1706200"}
+    assert _classification_errors(cleaned) == []
 
 
 def _classification_errors(cleaned):
@@ -64,11 +64,11 @@ def test_every_cfop_voice_says_the_same_thing():
     docs/reference/fiscal-cfop-5101-vs-5102.md.
     """
     from django.conf import settings
-    from shopman.fiscalman.classification import OWN_PRODUCTION
+    from shopman.fiscalman.classification import STANDARD
 
     decided_internal, decided_interstate = "5102", "6102"
 
-    assert (OWN_PRODUCTION.cfop_internal, OWN_PRODUCTION.cfop_interstate) == (
+    assert (STANDARD.cfop_internal, STANDARD.cfop_interstate) == (
         decided_internal,
         decided_interstate,
     )

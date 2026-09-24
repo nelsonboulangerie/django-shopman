@@ -235,7 +235,7 @@ def _sale_metadata(material) -> dict:
         metadata = set_social_attributes(metadata, ProductSocialAttributes(brand=brand, gtin=gtin))
     ncm = str(source.get("ncm") or "").strip()
     if ncm:
-        metadata["fiscal"] = {"profile": "own_production", "ncm": ncm, "unit": "UN"}
+        metadata["fiscal"] = {"profile": "standard", "ncm": ncm, "unit": "UN"}
     return metadata
 
 

@@ -660,12 +660,6 @@ def accept_fields(product, names, *, replace=(), user=None) -> AcceptResult:
             if not _CEST_RE.match(str(value)):
                 result.refused[name] = "CEST deve ter 7 dígitos."
                 continue
-            if fiscal.get("profile") != "resale":
-                result.refused[name] = (
-                    "CEST só vale no perfil fiscal Revenda (com ST). "
-                    "Escolha o perfil na aba Fiscal e aceite de novo."
-                )
-                continue
             fiscal["cest"] = str(value)
             meta["fiscal"] = fiscal
         elif name == "fiscal_unit":

@@ -70,6 +70,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.management.commands.apply_fiscal_ncm import house_cest_for
 from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
 from config.management.commands.apply_search_presence import (
@@ -2387,7 +2388,7 @@ class Command(BaseCommand):
         # NCM por produto (validar com o contador — ver docs/plans/FISCALMAN-PLAN.md).
         # CFOP/CSOSN/origem/PIS/COFINS NÃO vivem aqui: são resolvidos na emissão
         # pelo perfil fiscal (Fiscalman), a partir de `profile`. Todo o catálogo
-        # atual é não-ST (perfil own_production → CFOP 5102/CSOSN 102, sem CEST).
+        # atual é não-ST (perfil standard → CFOP 5102/CSOSN 102; o CEST é do produto).
         breads = {
             "TRADI", "BGG", "MIB", "FENDU", "TABAT",
             "CPG", "CPX", "CI", "FORMA", "KUP", "TRABB", "BRBB", "HOL",
@@ -2448,8 +2449,8 @@ class Command(BaseCommand):
             #    cada um com ficha apontando para `CHA-BLEU`, `CHA-CHAI`… NCM
             #    2202.99.00, que é bebida pronta.
             #
-            # O perfil deles é `resale_common` (revenda sem ST, 102/5102, com o
-            # CEST 17.097.00): quem o grava é o `apply_grocery_catalog`, que o
+            # O perfil deles é `standard` (sem ST, 102/5102) com o CEST
+            # 17.097.00: quem o grava é o `apply_grocery_catalog`, que o
             # seed chama logo depois do catálogo — a mesma tabela do banco
             # vivo. Chá em folhas está fora da ST do PR; o CEST vai no
             # documento pelo Conv. ICMS 142/2018. Ser comprado pronto é outro
@@ -2463,11 +2464,11 @@ class Command(BaseCommand):
         }
 
         def fiscal_metadata_for_sku(sku: str) -> dict:
-            return {
-                "profile": "own_production",
-                "ncm": fiscal_ncm_by_sku.get(sku, fiscal_ncm_by_sku["default"]),
-                "unit": "UN",
-            }
+            ncm = fiscal_ncm_by_sku.get(sku, fiscal_ncm_by_sku["default"])
+            # O CEST da casa sai do NCM (a mesma tabela do `apply_fiscal_ncm`);
+            # a revenda ganha o dela no `apply_grocery_catalog`.
+            cest = house_cest_for(ncm)
+            return {"profile": "standard", "ncm": ncm, "unit": "UN", **({"cest": cest} if cest else {})}
 
         # ⚠️ Voltaram do Yooga com código e preço reais, mas SEM ficha: alergênicos,
         # informação nutricional, dieta, porção e ingredientes são dado da casa —

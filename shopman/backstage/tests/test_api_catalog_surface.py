@@ -891,7 +891,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "allows_next_day_sale", "made_to_order", "ready_from",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
-        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources",
+        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_warnings", "field_sources",
         # somente-leitura: selos do SKU (Comprável · Vendável · Produzido · Usado em receita)
         "roles",
     }
@@ -899,7 +899,7 @@ def test_product_detail_get_shape(client, operator, catalog):
     assert product["base_price_q"] == 4500
     assert product["primary_collection"] == "doces"
     assert set(product["fiscal"]) == {"profile", "ncm", "cest", "unit"}
-    assert {p["key"] for p in product["fiscal_profiles"]} == {"own_production", "resale_common", "resale"}
+    assert {p["key"] for p in product["fiscal_profiles"]} == {"standard", "tax_substitution"}
 
 
 def test_product_detail_get_unknown_sku(client, operator, catalog):
@@ -1086,7 +1086,7 @@ def test_product_detail_patch_social_rejects_bad_gtin(client, operator, catalog)
 
 def test_product_detail_patch_fiscal(client, operator, catalog):
     client.force_login(operator)
-    resp = _patch(client, "PAO", {"fiscal": {"profile": "own_production", "ncm": "19059090"}})
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "standard", "ncm": "19059090"}})
     assert resp.status_code == 200
     assert resp.json()["product"]["fiscal"]["ncm"] == "19059090"
 
@@ -1099,30 +1099,41 @@ def test_product_detail_patch_fiscal_rejects_short_ncm(client, operator, catalog
     assert _patch(client, "PAO", {"fiscal": {"ncm": "123"}}).status_code == 400
 
 
-def test_product_detail_patch_fiscal_rejects_cest_on_own_production(client, operator, catalog):
-    """CEST não se aplica a fabricação própria — o perfil decide, não o operador."""
+def test_product_detail_patch_fiscal_rejects_malformed_cest(client, operator, catalog):
     client.force_login(operator)
     resp = _patch(client, "PAO", {
-        "fiscal": {"profile": "own_production", "ncm": "19059090", "cest": "1234567"},
+        "fiscal": {"profile": "standard", "ncm": "19059090", "cest": "17.062"},
     })
     assert resp.status_code == 400
 
 
-def test_product_detail_patch_fiscal_requires_cest_on_resale(client, operator, catalog):
+def test_product_detail_patch_fiscal_requires_cest_with_tax_substitution(client, operator, catalog):
     client.force_login(operator)
-    resp = _patch(client, "PAO", {"fiscal": {"profile": "resale", "ncm": "19059090"}})
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "tax_substitution", "ncm": "19059090"}})
     assert resp.status_code == 400
 
 
-def test_product_detail_patch_fiscal_resale_common_keeps_the_cest(client, operator, catalog):
-    """Revenda sem ST leva o CEST (Conv. ICMS 142/2018), com os códigos de 102/5102."""
+def test_product_detail_patch_fiscal_keeps_the_cest_without_st(client, operator, catalog):
+    """O CEST é atributo do produto: sem ST ele também vai (Conv. ICMS 142/2018)."""
     client.force_login(operator)
     resp = _patch(client, "PAO", {
-        "fiscal": {"profile": "resale_common", "ncm": "04069020", "cest": "1702400"},
+        "fiscal": {"profile": "standard", "ncm": "04069020", "cest": "1702400"},
     })
     assert resp.status_code == 200
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].metadata["fiscal"]["cest"] == "1702400"
+    # Queijo (0406) com CEST de queijo: nenhum aviso.
+    assert resp.json()["product"]["fiscal_warnings"] == []
+
+
+def test_product_detail_warns_when_cest_does_not_match_the_ncm(client, operator, catalog):
+    """CEST incompatível com o NCM é aviso, não bloqueio: salva e avisa."""
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {
+        "fiscal": {"profile": "standard", "ncm": "21039099", "cest": "1709200"},
+    })
+    assert resp.status_code == 200
+    assert any("2005" in w for w in resp.json()["product"]["fiscal_warnings"])
 
 
 def test_product_detail_patches_the_declared_ready_time(client, operator, catalog):

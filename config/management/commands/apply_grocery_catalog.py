@@ -20,16 +20,17 @@ oficial do catálogo, ``gtin_is_valid``). Quem falta alguma dessas fica em
 
 - Unidade ``un`` e perfil fiscal **por item**, com o CEST do Anexo XVII do
   Conv. ICMS 142/2018 (ver :data:`FISCAL_NOTES`):
-    * ``resale_common`` (102/5102 + CEST) — revenda fora da ST do PR: queijo,
+    * ``standard`` (102/5102) — revenda fora da ST do PR: queijo,
       manteiga, azeite, geleia, picles, presunto, chá em folhas. O CEST vai no
       documento porque o Conv. 142/2018 (cl. 20ª, I; cl. 3ª para o Simples) o
       exige para item listado "ainda que a operação não esteja sujeita ao
       regime de ST";
-    * ``resale`` (500/5405 + CEST) — revenda NA ST do PR (RICMS/PR, Anexo IX,
+    * ``tax_substitution`` (500/5405) — revenda NA ST do PR (RICMS/PR, Anexo IX,
       art. 118): mostarda preparada (17.038.00) e os cremes de queijo como
-      "requeijão e similares" (17.023.00). ⚠️ Interpretação: confirmar com o
-      contador — se a compra NÃO veio com ST retida, é 102.
-  Produto que ainda está no perfil antigo (``own_production`` sem CEST) é
+      "requeijão e similares" (17.023.00). É a prática da casa (o Yooga já
+      emitia esses itens com 500/5405); o que divergir, a próxima NF-e de
+      compra mostra (a conferência fiscal do recebimento).
+  Produto que ainda está sem CEST no perfil sem ST (como a Mercearia nasceu) é
   reclassificado; qualquer outra classificação já curada fica, e sai no
   relatório como divergência.
 - Marca e GTIN em ``metadata['social']`` (o que o feed e a página declaram) e
@@ -111,8 +112,8 @@ class GroceryItem:
     #: De onde veio o GTIN, quando NÃO foi da NF-e. Vai para
     #: ``metadata['gtin_source']``: quem lê sabe se é conferido ou palpite.
     gtin_source: str = ""
-    #: Perfil fiscal: ``resale_common`` (sem ST) ou ``resale`` (na ST do PR).
-    profile: str = "resale_common"
+    #: Perfil fiscal: ``standard`` (sem ST) ou ``tax_substitution`` (na ST do PR).
+    profile: str = "standard"
 
 
 #: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
@@ -144,14 +145,14 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "7898655520041", "20019000", "1709000", 320, ("relish", "pepino", "conserva")),
     # ── Cremes de queijo Pomerode ──
     GroceryItem("CREME-GORGONZOLA-POMERODE-90", "Creme de Gorgonzola Pomerode 90g", 2600, "Pomerode",
-                "7898361661236", "04063000", "1702300", 90, ("queijo", "creme", "gorgonzola"), profile="resale"),
+                "7898361661236", "04063000", "1702300", 90, ("queijo", "creme", "gorgonzola"), profile="tax_substitution"),
     GroceryItem("CREME-PARMESAO-POMERODE-90", "Creme de Parmesão Kraeuterkaese Pomerode 90g", 2600,
-                "Pomerode", "7898361661014", "04063000", "1702300", 90, ("queijo", "creme", "parmesao"), profile="resale"),
+                "Pomerode", "7898361661014", "04063000", "1702300", 90, ("queijo", "creme", "parmesao"), profile="tax_substitution"),
     # GTIN da web: Empório Varanda, Cosmos (lista do NCM 0406.30.00) e Santa
     # Helena; mesmo prefixo dos irmãos.
     GroceryItem("CREME-BRIE-POMERODE-90", "Creme de Brie Pomerode 90g", 2600, "Pomerode",
                 "7898361662103", "04063000", "1702300", 90, ("queijo", "creme", "brie"),
-                gtin_source=WEB_UNCONFIRMED, profile="resale"),
+                gtin_source=WEB_UNCONFIRMED, profile="tax_substitution"),
     # Vendido POR PESO: a peça chega da Pomerode com peso diferente a cada
     # vez. O preço do quilo é a conta de :data:`VALE_DO_TESTO_PRICE`: custo de
     # 2025 corrigido pelo IPCA do queijo, mais o markup da mercearia.
@@ -192,14 +193,14 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini")),
     # ── Mostardas Maille ──
     GroceryItem("MOSTARDA-MEL-MAILLE-215", "Mostarda com Mel Maille 215g", 4200, "Maille",
-                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="resale"),
+                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="tax_substitution"),
     GroceryItem("MOSTARDA-DIJON-MAILLE-215", "Mostarda Dijon Maille 215g", 3500, "Maille",
-                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="resale"),
+                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="tax_substitution"),
     # A embalagem (lida pelo dono em 24/09) confirma o 3036810207589 que
     # Auchan PT, Covabra e Open Food Facts davam; o Cosmos (…7558) errava.
     GroceryItem("MOSTARDA-ANCIENNE-MAILLE-210", "Mostarda à l'Ancienne Maille 210g", 4200, "Maille",
                 "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
-                gtin_source=OWNER_PACKAGE, profile="resale"),
+                gtin_source=OWNER_PACKAGE, profile="tax_substitution"),
     # ── Mirante ──
     # 120 g e R$ 26 (dono, 24/09). GTIN-12 602883466111 (a embalagem traz
     # 0602883466111), guardado como os outros Mirante.
@@ -317,15 +318,17 @@ FISCAL_NOTES: dict[str, str] = {
     ),
     "csosn_500": (
         "Item na ST comprado com ST retida sai com CSOSN 500/CFOP 5405; com 102, o ICMS "
-        "entraria de novo no DAS. Interpretação — confirmar com o contador."
+        "entraria de novo no DAS. Decisão (dono, 24/09): a prática da casa — o Yooga já "
+        "emitia mostardas e cremes Pomerode com 500/5405; a próxima NF-e de compra confirma."
     ),
     "creme_de_queijo": (
-        "0406.30 (queijo fundido) → 17.023.00 (requeijão e similares, na ST do PR). "
-        "Alternativa defensável: 17.024.00 (queijos, fora da ST). Contador decide."
+        "0406.30 (queijo fundido) → 17.023.00 (requeijão e similares, na ST do PR), "
+        "como a casa já praticava (1702300 no Yooga). A alternativa seria 17.024.00."
     ),
     "churrasquinho": (
-        "2103.90.99 (outros molhos) não está no Anexo XVII: sem CEST. Se o contador "
-        "enxergar condimento (2103.90.21/.91), vira 17.035.00 e ST."
+        "2103.90.99 (outros molhos) não está no Anexo XVII: sem CEST. O Yooga usava "
+        "1709200, que é do 2005 — incoerente. Se a NF-e de compra trouxer 2103.90.91 "
+        "(molho de pimenta), vira 17.035.00 e ST."
     ),
 }
 
@@ -337,7 +340,7 @@ class SeedResaleFiscal:
     sku: str
     ncm: str
     cest: str
-    profile: str = "resale_common"
+    profile: str = "standard"
     #: Peso líquido confirmado pelo dono (latas, 24/09). ``None`` = não mexe.
     weight_g: int | None = None
 
@@ -487,7 +490,7 @@ def _wanted_fiscal(profile: str, ncm: str, cest: str, unit: str) -> dict:
 def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
     """Garante a classificação da tabela. Devolve as linhas do que mudou.
 
-    Vazio ou no perfil antigo (``own_production`` sem CEST, que é como a
+    Vazio ou sem CEST no perfil sem ST (``standard``, que é como a
     Mercearia nasceu antes do CEST) → a tabela manda. Qualquer outra coisa é
     curadoria de alguém: fica, e a divergência sai no relatório.
     """
@@ -495,7 +498,7 @@ def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
     current = dict(metadata.get("fiscal") or {})
     if all((current.get(k) or "") == (wanted.get(k) or "") for k in ("profile", "ncm", "cest", "unit")):
         return []
-    legacy = not current or (current.get("profile", "own_production") == "own_production"
+    legacy = not current or (current.get("profile", "standard") == "standard"
                              and not current.get("cest"))
     if not legacy:
         for field in ("profile", "ncm", "cest"):
@@ -522,7 +525,7 @@ def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int
             is_published=False, is_sellable=True,
             availability_policy=AvailabilityPolicy.PLANNED_OK,
         )
-        product.metadata = {"fiscal": {"profile": "own_production", "ncm": ncm, "unit": unit.upper()}}
+        product.metadata = {"fiscal": {"profile": "standard", "ncm": ncm, "unit": unit.upper()}}
         return product
     for field, value in (("name", name), ("base_price_q", price_q), ("unit", unit)):
         have = getattr(product, field)
@@ -624,6 +627,11 @@ def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
     product = _get_or_build(box.sku, box.name, box.price_q, unit="un", weight_g=None, ncm=box.ncm,
                             report=report)
     if product.pk is None:
+        from config.management.commands.apply_fiscal_ncm import house_cest_for
+
+        cest = house_cest_for(box.ncm)
+        if cest:
+            product.metadata["fiscal"]["cest"] = cest
         product.save()
         report["created"].append(box)
     product.keywords.add(COLLECTION_REF, "presente", "caixa")

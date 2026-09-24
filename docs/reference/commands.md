@@ -162,8 +162,8 @@ python manage.py apply_grocery_catalog --apply    # grava
 ```
 
 Cada item nasce vendável e despublicado (ficha da embalagem por preencher),
-perfil fiscal `own_production` (revenda comum, CFOP 5102 — o CEST da nota fica
-na tabela e não é gravado), marca e GTIN em `metadata.social`,
+perfil fiscal por item (`standard` 102/5102 ou `tax_substitution` 500/5405) com
+o CEST do Anexo do Conv. ICMS 142/2018, marca e GTIN em `metadata.social`,
 o cadastro de compra do mesmo SKU (`buyman.Material`) e coleção `mercearia`. **Listagem: PDV
 sempre; loja online, WhatsApp e iFood só com foto** — sem foto, o item sai do
 canal remoto. Quem não tem dado suficiente fica em `LEFT_OUT`, com o motivo.

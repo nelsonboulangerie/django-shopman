@@ -82,11 +82,12 @@ vende:
 - `17.114.00` — bebidas prontas à base de café
 - `17.115.00` — bebidas prontas à base de soja, leite ou cacau
 
-**Mas CEST é endereço de substituição tributária**, e a ST alcança o
-industrializado pronto para beber que circula na cadeia — a garrafa, a lata.
-O que a casa prepara no balcão não é esse produto, e o perfil fiscal do
-catálogo é `own_production` (CFOP 5102 / CSOSN 102, sem ST). Preencher um CEST
-ali declararia uma ST que não existe.
+**Mas o CEST identifica a mercadoria listada no Anexo**, e os do 2202.99.00
+descrevem o industrializado pronto para beber que circula na cadeia — a
+garrafa, a lata. O que a casa prepara no balcão não é esse produto (perfil
+`standard`, CFOP 5102 / CSOSN 102, sem ST), então não há CEST a informar.
+(Revisto em 24/09/2026: o CEST não declara ST — quem declara é o perfil —, mas
+a conclusão fica, porque a mercadoria não é a do Anexo.)
 
 **Decisão do dono (23/09):** *"se não for útil CEST nas bebidas preparadas,
 deixa sem"*. Fica vazio. O contador confirma quando revisar.
@@ -142,7 +143,7 @@ fora.
 
   ⚠️ **E não há pergunta de perfil aqui — eu cheguei a levantar uma, e estava
   errado.** O eixo do `FiscalProfile` é **ST × não-ST**, não "quem fabricou":
-  `own_production` é, na letra do código, *"fabricação própria **+ revenda
+  o perfil sem ST (hoje `standard`) é *"fabricação própria **+ revenda
   comum**"*, e é a parametrização que o contador já fez (SEFA-PR). Chá seco é
   revenda comum; a ST no segmento de bebida alcança refrigerante, água e
   industrializado. Ser comprado pronto é outro eixo — é o cadastro de compra

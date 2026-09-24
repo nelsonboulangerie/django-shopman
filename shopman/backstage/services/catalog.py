@@ -471,6 +471,12 @@ def _nutrition_payload(product) -> dict:
     return asdict(facts) if facts is not None else asdict(NutritionFacts())
 
 
+def _fiscal_warnings(product) -> list[str]:
+    from shopman.fiscalman.classification import from_metadata
+
+    return from_metadata(product.metadata).warnings()
+
+
 def _fiscal_payload(product) -> dict:
     from dataclasses import asdict
 
@@ -484,7 +490,7 @@ def _fiscal_profile_choices() -> list[dict]:
     from shopman.fiscalman.classification import FISCAL_PROFILES
 
     return [
-        {"key": p.key, "name": p.name, "requires_cest": p.requires_cest, "carries_cest": p.carries_cest}
+        {"key": p.key, "name": p.name, "requires_cest": p.requires_cest}
         for p in FISCAL_PROFILES.values()
     ]
 
@@ -546,6 +552,9 @@ def _detail_payload(product) -> dict:
         "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
+        # Avisos (não bloqueiam): o CEST conferido contra o NCM pela tabela do
+        # Anexo do Conv. ICMS 142/2018 (``fiscalman.cest_table``).
+        "fiscal_warnings": _fiscal_warnings(product),
         # Selos derivados do SKU (Comprável · Vendável · Produzido · Usado em
         # receita) — somente leitura; o gesto de compra é ``set_purchasable``.
         "roles": _roles_payload(product.sku),
@@ -595,7 +604,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources", "roles"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_warnings", "field_sources", "roles"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():

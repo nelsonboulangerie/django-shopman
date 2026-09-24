@@ -53,7 +53,7 @@ def order_with_item(db):
     Product.objects.create(
         sku="PAO-1",
         name="Pão",
-        metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
+        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
     )
     order = Order.objects.create(
         ref="ORD-FISCAL-BUILD-1", channel_ref="pdv", status=Order.Status.COMPLETED, total_q=1000

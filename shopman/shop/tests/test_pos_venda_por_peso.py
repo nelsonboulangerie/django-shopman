@@ -113,7 +113,7 @@ class _Counter:
         self.queijo = Product.objects.create(
             sku=QUEIJO, name="Queijo Vale do Testo", unit="kg", base_price_q=price_q,
             is_published=True, is_sellable=True,
-            metadata={"fiscal": {"profile": "resale", "ncm": "04069090", "unit": "UN"}},
+            metadata={"fiscal": {"profile": "tax_substitution", "ncm": "04069090", "unit": "UN"}},
         )
         Product.objects.create(sku="PAO", name="Pão", base_price_q=1200, is_published=True, is_sellable=True)
         self.operator = get_user_model().objects.create_user(username="marina", password="x")

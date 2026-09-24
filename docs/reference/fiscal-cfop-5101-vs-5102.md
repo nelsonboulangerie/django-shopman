@@ -26,8 +26,8 @@ e não 5101.
    registrava: *"O contador classifica 'alimentação em geral, salgados, doces'
    como comercialização (5102/102), não produção própria (5101)."*
 
-O perfil `own_production` cobre **fabricação própria + revenda comum** de
-propósito (pães, salgados, doces, bebidas preparadas). Um CFOP único para os dois
+O perfil `standard` (sem ST) cobre **fabricação própria + revenda comum** de
+propósito (pães, salgados, doces, bebidas preparadas, mercearia fora da ST). Um CFOP único para os dois
 é exatamente a simplificação que a decisão adota.
 
 ## Referência da tabela CFOP
@@ -36,7 +36,7 @@ propósito (pães, salgados, doces, bebidas preparadas). Um CFOP único para os 
 |------|-----------|
 | 5101 | Venda de produção do **estabelecimento** (o vendedor industrializou) |
 | **5102** | Venda de mercadoria **adquirida ou recebida de terceiros** — **o nosso** |
-| 5405 | Venda de mercadoria adquirida de terceiros, **sujeita a ST**, na condição de contribuinte substituído (perfil `resale`) |
+| 5405 | Venda de mercadoria adquirida de terceiros, **sujeita a ST**, na condição de contribuinte substituído (perfil `tax_substitution`) |
 
 Interestadual é a mesma família com prefixo 6 (6101/**6102**/6405).
 
@@ -64,7 +64,7 @@ para o sistema emitir.
 
 **Se o contador discordar** (ou seja, se ele apontar que a Nelson deve emitir
 5101), o conserto é pequeno e está inteiro na tabela acima: trocar o valor no
-perfil `own_production` (`cfop_internal`/`cfop_interstate`), no `help_text` do
+perfil `standard` (`cfop_internal`/`cfop_interstate`), no `help_text` do
 Admin e no default do deployment, atualizar esta seção com a nova razão e a data,
 e ajustar a linha da tabela de perfis em
 [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md) §2. Nenhuma migração,

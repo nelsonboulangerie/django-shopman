@@ -9,7 +9,7 @@ from django.test import override_settings
 
 # Bloco fiscal como o Fiscalman entrega (``resolve_fiscal_item``): o adapter não
 # adivinha campo tributário nenhum — ausente, ele recusa nominalmente.
-FISCAL_OWN_PRODUCTION = {
+FISCAL_STANDARD = {
     "ncm": "19059090",
     "cfop": "5102",
     "icms_origem": "0",
@@ -65,7 +65,7 @@ def test_focus_nfe_emit_maps_nfce_payload_to_homologation_endpoint():
                 "unit": "un",
                 "unit_price_q": 500,
                 "total_q": 1000,
-                "fiscal": FISCAL_OWN_PRODUCTION,
+                "fiscal": FISCAL_STANDARD,
             }],
             customer={"name": "Ana", "tax_id": "123.456.789-09"},
             payment={"method": "pix", "amount_q": 1000},
@@ -148,7 +148,7 @@ def test_focus_nfe_emit_uses_shop_document_as_emitente_fallback():
                 "qty": "1",
                 "unit_price_q": 1000,
                 "total_q": 1000,
-                "fiscal": FISCAL_OWN_PRODUCTION,
+                "fiscal": FISCAL_STANDARD,
             }],
             customer={},
             payment={"method": "cash", "amount_q": 1000},
@@ -242,7 +242,7 @@ def test_focus_nfe_fee_without_delivery_fact_is_rejected():
                 {
                     "sku": "SKU-1", "name": "Pao", "qty": "2", "unit": "un",
                     "unit_price_q": 500, "total_q": 1000,
-                    "fiscal": FISCAL_OWN_PRODUCTION,
+                    "fiscal": FISCAL_STANDARD,
                 },
                 {
                     # Taxa de entrega do POS/web: sem NCM, não pode virar item.
@@ -271,7 +271,7 @@ def test_focus_nfe_rejects_invalid_cpf_before_http():
             items=[{
                 "sku": "SKU-1", "name": "Pao", "qty": "1", "unit": "un",
                 "unit_price_q": 500, "total_q": 500,
-                "fiscal": FISCAL_OWN_PRODUCTION,
+                "fiscal": FISCAL_STANDARD,
             }],
             customer={"name": "Ana", "tax_id": "123.456.789-00"},  # dígito errado
             payment={"method": "cash", "amount_q": 500},
@@ -318,7 +318,7 @@ def test_focus_nfe_home_delivery_freight_with_identified_recipient():
             items=[
                 {"sku": "SKU-1", "name": "Pao", "qty": "2", "unit": "un",
                  "unit_price_q": 500, "total_q": 1000,
-                 "fiscal": FISCAL_OWN_PRODUCTION},
+                 "fiscal": FISCAL_STANDARD},
                 {"sku": "__DELIVERY_FEE__", "name": "Taxa de entrega", "qty": "1",
                  "unit": "UN", "unit_price_q": 600, "total_q": 600,
                  "meta": {"type": "delivery_fee"}, "fiscal": {}},
@@ -353,7 +353,7 @@ def test_map_item_vuncom_times_qty_equals_vprod_after_distributed_discount():
     # qty=2, total cobrado 999 (após desconto), unit_price_q floor = 499 → 499×2=998≠999.
     item = {
         "sku": "PAO", "name": "Pão", "qty": 2, "unit_price_q": 499, "total_q": 999,
-        "fiscal": FISCAL_OWN_PRODUCTION,
+        "fiscal": FISCAL_STANDARD,
     }
     mapped = _map_item(1, item, {})
     vuncom = Decimal(mapped["valor_unitario_comercial"])
@@ -369,7 +369,7 @@ def test_map_item_keeps_two_decimals_when_evenly_divisible():
 
     item = {
         "sku": "PAO", "name": "Pão", "qty": 2, "unit_price_q": 500, "total_q": 1000,
-        "fiscal": FISCAL_OWN_PRODUCTION,
+        "fiscal": FISCAL_STANDARD,
     }
     mapped = _map_item(1, item, {})
     assert mapped["valor_unitario_comercial"] == "5.00"
@@ -398,7 +398,7 @@ def test_map_item_keeps_two_decimals_when_evenly_divisible():
 def test_focus_nfe_refuses_item_missing_a_tax_field_by_name(missing_key, expected):
     from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
 
-    fiscal = {k: v for k, v in FISCAL_OWN_PRODUCTION.items() if k != missing_key}
+    fiscal = {k: v for k, v in FISCAL_STANDARD.items() if k != missing_key}
 
     with patch("shopman.shop.adapters.fiscal_focusnfe._request") as request:
         result = FocusNFeBackend().emit(
@@ -424,7 +424,7 @@ def test_focus_nfe_emits_the_profile_pis_cofins_cst_and_never_07():
 
     mapped = _map_item(1, {
         "sku": "PAO", "name": "Pao", "qty": "1",
-        "unit_price_q": 1000, "total_q": 1000, "fiscal": FISCAL_OWN_PRODUCTION,
+        "unit_price_q": 1000, "total_q": 1000, "fiscal": FISCAL_STANDARD,
     }, _settings())
 
     assert mapped["pis_situacao_tributaria"] == "99"
@@ -438,7 +438,7 @@ _DELIVERY_ADDRESS = {"route": "Rua X", "street_number": "1", "neighborhood": "Ja
 
 def _delivery_input(fee_q=0):
     items = [{"sku": "SKU-1", "name": "Pao", "qty": "2", "unit": "un",
-              "unit_price_q": 500, "total_q": 1000, "fiscal": FISCAL_OWN_PRODUCTION}]
+              "unit_price_q": 500, "total_q": 1000, "fiscal": FISCAL_STANDARD}]
     if fee_q:
         items.append({"sku": "__DELIVERY_FEE__", "name": "Taxa de entrega", "qty": "1", "unit": "UN",
                       "unit_price_q": fee_q, "total_q": fee_q, "meta": {"type": "delivery_fee"}, "fiscal": {}})

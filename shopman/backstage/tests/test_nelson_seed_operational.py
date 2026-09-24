@@ -54,7 +54,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for sku in ("TRADI", "SP", "MDLN"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
-        assert fiscal["profile"] == "own_production"
+        assert fiscal["profile"] == "standard"
         assert fiscal["ncm"]
         # CFOP/CSOSN são resolvidos do perfil fiscal na emissão (NFC-e intraestadual).
         resolved = resolve_fiscal_item(from_metadata(metadata))

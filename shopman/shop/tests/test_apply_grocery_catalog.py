@@ -60,14 +60,14 @@ def test_a_tabela_so_tem_item_vendavel_sem_mentir():
             assert gtin_is_valid(item.gtin), item.sku
         # Revenda: sem ST (102/5102) ou na ST do PR (500/5405), sempre com o CEST
         # do Anexo XVII quando o NCM tem um.
-        assert item.profile in {"resale_common", "resale"}, item.sku
+        assert item.profile in {"standard", "tax_substitution"}, item.sku
         fiscal = {"profile": item.profile, "ncm": item.ncm, "unit": item.unit.upper()}
         if item.cest:
             fiscal["cest"] = item.cest
         classification = from_metadata({"fiscal": fiscal})
         assert not classification.errors(), item.sku
         resolved = resolve_fiscal_item(classification)
-        expected = ("5405", "500") if item.profile == "resale" else ("5102", "102")
+        expected = ("5405", "500") if item.profile == "tax_substitution" else ("5102", "102")
         assert (resolved["cfop"], resolved["icms_situacao_tributaria"]) == expected, item.sku
         assert resolved.get("cest", "") == item.cest, item.sku
 
@@ -100,7 +100,7 @@ def test_cria_a_revenda_so_no_pdv(catalog):
     )
     assert dijon.is_sellable and not dijon.is_published
     # Mostarda preparada está na ST do PR (17.038.00): revenda com ST.
-    assert dijon.metadata["fiscal"] == {"profile": "resale", "ncm": "21033021", "unit": "UN", "cest": "1703800"}
+    assert dijon.metadata["fiscal"] == {"profile": "tax_substitution", "ncm": "21033021", "unit": "UN", "cest": "1703800"}
     assert "purchase" not in dijon.metadata
     # Comprável: o cadastro de compra do MESMO SKU, na mesma unidade.
     compra = Material.objects.get(sku=DIJON)
@@ -305,7 +305,7 @@ def test_o_custo_do_fornecedor_fica_no_cadastro_de_compra_com_a_origem(catalog):
 def test_latas_kanfa_com_o_peso_confirmado(catalog):
     for sku in ("CHA-NAMASTE-KANFA-L70", "CHA-ACONCHEGO-KANFA-L50"):
         Product.objects.create(sku=sku, name=sku, unit="un", base_price_q=7300, unit_weight_g=60,
-                               metadata={"fiscal": {"profile": "own_production", "ncm": "09022000", "unit": "UN"}})
+                               metadata={"fiscal": {"profile": "standard", "ncm": "09022000", "unit": "UN"}})
 
     apply_grocery(apply=True)
 
@@ -419,19 +419,19 @@ def test_item_a_quilo_nao_vai_para_canal_remoto_nem_com_foto(catalog):
 
 
 def test_mercearia_no_perfil_antigo_e_reclassificada(catalog):
-    """Quem nasceu `own_production` sem CEST (a Mercearia de antes) ganha o da tabela."""
+    """Quem está sem CEST no perfil sem ST (a Mercearia de antes) ganha o da tabela."""
     queijo = Product.objects.create(
         sku="QUEIJO-BRIE-ILEDEFRANCE-25", name="Queijo Mini Brie Ile de France 25g", unit="un",
-        base_price_q=1000, metadata={"fiscal": {"profile": "own_production", "ncm": "04069030", "unit": "UN"}},
+        base_price_q=1000, metadata={"fiscal": {"profile": "standard", "ncm": "04069030", "unit": "UN"}},
     )
 
     report = apply_grocery(apply=True)
 
     queijo.refresh_from_db()
     assert queijo.metadata["fiscal"] == {
-        "profile": "resale_common", "ncm": "04069030", "unit": "UN", "cest": "1702400",
+        "profile": "standard", "ncm": "04069030", "unit": "UN", "cest": "1702400",
     }
-    assert any(sku == queijo.sku and "fiscal: perfil resale_common" in lines[0]
+    assert any(sku == queijo.sku and "fiscal: perfil standard" in lines[0]
                for sku, lines in report["updated"])
 
 
@@ -439,28 +439,46 @@ def test_classificacao_curada_fica_e_sai_como_divergencia(catalog):
     Product.objects.create(
         sku="MANTEIGA-SAL-PRESIDENT-200", name="Manteiga Extra com Sal Président 200g", unit="un",
         base_price_q=1500,
-        metadata={"fiscal": {"profile": "resale", "ncm": "04051000", "unit": "UN", "cest": "1702500"}},
+        metadata={"fiscal": {"profile": "tax_substitution", "ncm": "04051000", "unit": "UN", "cest": "1702500"}},
     )
 
     report = apply_grocery(apply=True)
 
     manteiga = Product.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200")
-    assert manteiga.metadata["fiscal"]["profile"] == "resale"
-    assert ("MANTEIGA-SAL-PRESIDENT-200", "profile", "resale", "resale_common") in report["conflicts"]
+    assert manteiga.metadata["fiscal"]["profile"] == "tax_substitution"
+    assert ("MANTEIGA-SAL-PRESIDENT-200", "profile", "tax_substitution", "standard") in report["conflicts"]
 
 
 def test_chas_kanfa_do_seed_ganham_ncm_da_nota_e_cest(catalog):
     cha = Product.objects.create(
         sku="CHA-MAMA-KANFA-P50", name="Mama Chai Kãnfa — Pouch 50g", unit="un", base_price_q=6000,
-        metadata={"fiscal": {"profile": "own_production", "ncm": "09022000", "unit": "UN"}},
+        metadata={"fiscal": {"profile": "standard", "ncm": "09022000", "unit": "UN"}},
     )
 
     apply_grocery(apply=True)
 
     cha.refresh_from_db()
-    assert cha.metadata["fiscal"] == {"profile": "resale_common", "ncm": "09021000", "unit": "UN", "cest": "1709700"}
+    assert cha.metadata["fiscal"] == {"profile": "standard", "ncm": "09021000", "unit": "UN", "cest": "1709700"}
 
 
 def test_cada_perfil_fiscal_tem_nota_com_fonte():
     assert {"obrigacao", "st_no_pr", "csosn_500"} <= set(command.FISCAL_NOTES)
     assert "CV142_18" in command.FISCAL_NOTES["obrigacao"]
+
+
+def test_todo_cest_da_mercearia_bate_com_o_ncm_no_anexo():
+    """O CEST da tabela nunca contradiz o NCM (a tabela do Anexo do Conv. 142/2018)."""
+    for item in GROCERY:
+        classification = from_metadata({"fiscal": {"profile": item.profile, "ncm": item.ncm, "cest": item.cest}})
+        assert classification.warnings() == [], item.sku
+    for entry in command.SEED_RESALE_FISCAL:
+        classification = from_metadata({"fiscal": {"profile": entry.profile, "ncm": entry.ncm, "cest": entry.cest}})
+        assert classification.warnings() == [], entry.sku
+
+
+def test_caixa_presente_nasce_com_o_cest_dos_paes(catalog):
+    apply_grocery(apply=True)
+
+    assert Product.objects.get(sku="DIJON").metadata["fiscal"] == {
+        "profile": "standard", "ncm": "19059090", "unit": "UN", "cest": "1706200",
+    }
