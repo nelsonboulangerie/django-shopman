@@ -15,6 +15,7 @@ import {
   pixAwaiting,
   resolveFiscalState,
   saleResultTitle,
+  saleResultTone,
 } from "~/presentation/saleResult";
 import { formatBRL } from "~/utils/posIntent";
 
@@ -54,6 +55,34 @@ describe("saleResultTitle — o obrigado é nominal quando há cliente", () => {
   it("sem cliente, a confirmação seca", () => {
     expect(saleResultTitle("")).toBe("Venda concluída");
     expect(saleResultTitle("   ")).toBe("Venda concluída");
+  });
+});
+
+describe("PIX pendente NÃO veste cara de venda concluída", () => {
+  // ⚠️ O defeito: `paymentFailed` só era verdadeiro com "error"/"unavailable",
+  // e o Pix PENDENTE — QR na tela, polling vivo, dinheiro nenhum na conta —
+  // passava por sucesso: check verde, "Venda concluída" em corpo 3xl e o nome
+  // do cliente no vocativo, enquanto o CTA da mesma tela já dizia "Nova venda
+  // mesmo assim". O operador entregava o pão e ia atender o próximo.
+  it("com o polling vivo, o título espera — e não agradece", () => {
+    expect(saleResultTitle("Maria da Silva", pixProof(), "polling")).toBe("Aguardando Pix");
+    expect(saleResultTitle("", pixProof(), "polling")).toBe("Aguardando Pix");
+  });
+
+  it("confirmado, a MESMA tela assenta e o obrigado nominal entra", () => {
+    expect(saleResultTitle("Maria da Silva", pixProof(), "paid")).toBe("Venda concluída. Obrigado, Maria!");
+  });
+
+  it("o selo verde é afirmação sobre o dinheiro: três estados, um verde só", () => {
+    expect(saleResultTone(pixProof(), "polling")).toBe("awaiting");
+    expect(saleResultTone(pixProof(), "paid")).toBe("settled");
+    expect(saleResultTone(null, "idle")).toBe("settled");
+    expect(saleResultTone({ ...pixProof(), status: "error" }, "idle")).toBe("failed");
+  });
+
+  it("cartão com prova não espera Pix nenhum", () => {
+    expect(saleResultTone(cardProof(), "polling")).toBe("settled");
+    expect(saleResultTitle("Ana", cardProof(), "polling")).toBe("Venda concluída. Obrigado, Ana!");
   });
 });
 
@@ -230,6 +259,6 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(fiscalStateLabel("queued")).toBe("NFC-e na fila");
     expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e aguarda o pagamento");
     expect(fiscalStateLabel("failed")).toBe("NFC-e falhou");
-    expect(fiscalStateLabel("not_expected")).toBe("Sem NFC-e");
+    expect(fiscalStateLabel("not_expected")).toBe("Emissão não estabelecida");
   });
 });

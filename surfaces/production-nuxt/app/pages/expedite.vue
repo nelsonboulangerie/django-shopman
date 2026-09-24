@@ -155,7 +155,7 @@ async function confirmQuality(order: QCOrderCardProjection) {
   if (!reviewAvailable(order)) return;
   if (
     !window.confirm(
-      `Confirmar a qualidade da fornada de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
+      `Confirmar a qualidade do lote de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
     )
   )
     return;
@@ -256,7 +256,7 @@ const screenInitialPartition = computed(() =>
 );
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
-  if (!order) return selectedRecipe.value ? "Fornada avulsa" : "";
+  if (!order) return selectedRecipe.value ? "Lote avulso" : "";
   const bits = [
     order.output_sku,
     showPosition.value ? order.position_ref : "",
@@ -464,14 +464,14 @@ function onTimerKeydown(event: KeyboardEvent) {
       @confirm="onConfirm($event)"
     />
 
-    <!-- Painel de fornadas do dia. -->
+    <!-- Painel de lotes do dia. -->
     <div v-else class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4">
       <div class="flex items-center justify-between gap-3">
         <!-- Data: mesmo padrão de chips das outras telas do backstage. -->
         <div
           class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
-          aria-label="Data das fornadas"
+          aria-label="Data dos lotes"
         >
           <!-- Data em segmento compacto: duas escolhas e o calendário ocupam um único controle. -->
           <button
@@ -499,7 +499,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               v-model="selectedDate"
               type="date"
               class="absolute inset-0 cursor-pointer opacity-0"
-              aria-label="Escolher a data das fornadas"
+              aria-label="Escolher a data dos lotes"
             />
           </label>
         </div>
@@ -531,7 +531,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               "
             >
               <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
-              Fornada avulsa
+              Lote avulso
             </UiButton>
           </UiPopoverContent>
         </UiPopover>
@@ -561,8 +561,8 @@ function onTimerKeydown(event: KeyboardEvent) {
           <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
           {{
             kiosk.previous_open_count === 1
-              ? "fornada aberta"
-              : "fornadas abertas"
+              ? "lote aberto"
+              : "lotes abertos"
           }}
           de dias anteriores. Toque para ver.
         </span>
@@ -578,7 +578,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         v-else-if="kiosk && !kiosk.orders.length"
         class="py-10 text-center text-muted-foreground"
       >
-        Nenhuma fornada planejada para hoje.
+        Nenhum lote planejado para hoje.
       </p>
 
       <div class="grid gap-2">
@@ -665,7 +665,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             }"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"
-            :aria-label="`Confirmar conclusão da fornada de ${order.recipe_name}`"
+            :aria-label="`Finalizar o lote de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
             <span class="text-xl font-semibold leading-none tabular-nums"
@@ -674,7 +674,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             <span
               class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground"
               >{{
-                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Confirmar"
+                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
               }}</span
             >
           </button>
@@ -730,7 +730,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               size="sm"
               :disabled="submitting"
               :aria-busy="submitting"
-              :aria-label="`Confirmar qualidade da fornada de ${order.recipe_name}`"
+              :aria-label="`Confirmar qualidade do lote de ${order.recipe_name}`"
               @click="confirmQuality(order)"
             >
               <Icon name="lucide:badge-check" class="size-3.5" />
@@ -741,7 +741,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               type="button"
               variant="outline"
               size="sm"
-              :aria-label="`Corrigir qualidade da fornada de ${order.recipe_name}`"
+              :aria-label="`Corrigir qualidade do lote de ${order.recipe_name}`"
               @click="openCorrection(order)"
             >
               <Icon name="lucide:shield-check" class="size-3.5" />
@@ -752,15 +752,15 @@ function onTimerKeydown(event: KeyboardEvent) {
       </div>
     </div>
 
-    <!-- Fornada avulsa: lista de receitas, nasce sem previsto. -->
+    <!-- Lote avulso: lista de receitas, nasce sem previsto. -->
     <UiSheet
       :open="recipePickerOpen"
       @update:open="(v: boolean) => (recipePickerOpen = v)"
     >
-      <UiSheetContent side="bottom" title="Fornada avulsa">
+      <UiSheetContent side="bottom" title="Lote avulso">
         <template #content>
           <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
-            <!-- Receitas são tiles de escolha para criar a fornada avulsa, não CTAs repetidos. -->
+            <!-- Receitas são tiles de escolha para criar o lote avulso, não CTAs repetidos. -->
             <button
               v-for="recipe in kiosk?.recipes ?? []"
               :key="recipe.pk"

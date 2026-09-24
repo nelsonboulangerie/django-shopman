@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { Ref } from "vue";
 // Formulário de campanha — "que evento vira o quê, para quem, onde".
 //
 // Apresentacional: o pai é dono do fetch e da escrita; aqui mora só o estado do
@@ -91,22 +90,7 @@ const alerts = ref(false);
 const boughtOn = ref(false);
 const boughtDays = ref(90);
 const vipFirstMinutes = ref(0);
-// ⚠️ Os três interruptores abaixo NÃO guardam estado próprio: eles leem e escrevem o
-// número, porque o número é a verdade que o servidor recebe. Um booleano paralelo
-// criaria o estado "ligado com zero minutos", que não quer dizer nada e que o contrato
-// não sabe representar. Desligar zera; ligar devolve um padrão útil.
-function toggleMinutos(alvo: Ref<number>, padrao: number) {
-  return computed({
-    get: () => alvo.value > 0,
-    set: (ligado: boolean) => {
-      alvo.value = ligado ? padrao : 0;
-    },
-  });
-}
 const preferredHourWindowHours = ref(0);
-const vipFirstEnabled = toggleMinutos(vipFirstMinutes, 15);
-const expiresEnabled = toggleMinutos(expiresAfterMinutes, 60);
-const preferredHourEnabled = toggleMinutos(preferredHourWindowHours, 2);
 const audienceMatch = ref<"any" | "all">("any");
 const selectedPriceTiers = ref<string[]>([]);
 const selectedTags = ref<string[]>([]);
@@ -149,7 +133,7 @@ const DRAFT_LABELS = {
 const TRIGGER_FILTER_LABELS: Record<string, string> = {
   collections: "coleções",
   skus: "produtos",
-  quality_min: "qualidade mínima da fornada",
+  quality_min: "qualidade mínima do lote",
   quality_min_share: "parcela mínima na qualidade",
   max_remaining: "estoque máximo restante",
 };
@@ -676,7 +660,7 @@ function submit() {
         id="rule-name"
         v-model="name"
         type="text"
-        placeholder="Fornada de pães → redes"
+        placeholder="Lote de pães → redes"
       />
     </div>
 
@@ -755,7 +739,7 @@ function submit() {
         </option>
       </UiNativeSelect>
       <p class="mt-1 text-xs text-muted-foreground">
-        Com oferta, o link abre a loja com a sacola montada.
+        Com oferta, quem toca no link já recebe a sacola montada.
       </p>
     </div>
 
@@ -833,23 +817,20 @@ function submit() {
           <p class="text-xs text-muted-foreground">
             {{ onceResolution.detail }}
           </p>
-          <div class="mt-1 flex flex-wrap gap-3 text-xs">
-            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
-            <label
+          <UiRadioGroup
+            v-model="onceFold"
+            label="Qual das duas ocorrências"
+            orientation="horizontal"
+            class="mt-1 text-xs"
+          >
+            <UiRadio
               v-for="(candidate, index) in onceResolution.candidates"
               :key="candidate.instant"
-              class="flex items-center gap-1.5"
-            >
-              <input
-                v-model="onceFold"
-                type="radio"
-                :value="index === 0 ? 'earlier' : 'later'"
-              />
-              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{
-                candidate.offset
-              }})
-            </label>
-          </div>
+              :value="index === 0 ? 'earlier' : 'later'"
+              variant="inline"
+              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
+            />
+          </UiRadioGroup>
         </fieldset>
         <p
           v-if="
@@ -862,7 +843,7 @@ function submit() {
           · UTC{{ onceResolution.candidate.offset }}.
         </p>
         <p class="mt-1 text-xs text-muted-foreground">
-          Dispara uma vez e não se repete.
+          Dispara uma única vez. Depois disso a campanha não volta sozinha.
         </p>
       </div>
 
@@ -884,26 +865,27 @@ function submit() {
 
         <div>
           <p class="mb-1 text-xs font-medium text-muted-foreground">Nos dias</p>
-          <div class="flex flex-wrap gap-1.5">
-            <!-- Botões de dia permanecem nativos para expor o estado múltiplo com aria-pressed. -->
-            <button
+          <!-- ⚠️ A grade REFLUI para caber, em vez de o chip encolher. Sete dias lado a
+               lado a 44px não cabem numa tela de 320 (7×44 + 6 de folga passa dos 232px
+               que sobram ao lado do rail), e a saída fácil seria um degrau denso de
+               36px — que é exatamente a dívida que a cópia antiga do kit carregava. Em
+               quatro colunas cabem: 4×44 + 3×6 = 194px. Acima do `sm`, os sete voltam
+               para a mesma linha.
+               `grid` em vez de `flex-wrap` porque as colunas iguais mantêm o alvo de
+               toque previsível: a mão procura posição, não largura de palavra. -->
+          <div class="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
+            <UiToggleChip
               v-for="(label, day) in WEEKDAY_LABELS"
               :key="label"
-              type="button"
-              :aria-pressed="weekdays.includes(day)"
-              class="rounded-md border px-2.5 py-1 text-xs font-medium capitalize transition"
-              :class="
-                weekdays.includes(day)
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleWeekday(day)"
+              :model-value="weekdays.includes(day)"
+              class="capitalize"
+              @update:model-value="toggleWeekday(day)"
             >
               {{ label }}
-            </button>
+            </UiToggleChip>
           </div>
           <p class="mt-1 text-xs text-muted-foreground">
-            Sem nenhum dia marcado, dispara todos os dias.
+            Nenhum dia marcado quer dizer todos os dias.
           </p>
         </div>
 
@@ -963,34 +945,31 @@ function submit() {
 
     <fieldset>
       <legend class="mb-1 text-xs font-medium text-muted-foreground">
-        Entregar por
+        Disparado via
       </legend>
-      <div class="flex flex-wrap gap-1.5">
-        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos.
-             ⚠️ A pílula já conta o estado da plataforma ("não publica", "não verificada"):
-             antes, as quatro apareciam iguais e a recusa só vinha depois de aprovar. -->
-        <label
+      <!-- ⚠️ `UiToggleChip` do kit, e não `UiCheckbox`: o checkbox desenha um quadrado
+           com rótulo ao lado, e o que está aqui é uma pílula cuja caixa inteira acende.
+           O vazio que esta tela registrava em comentário agora tem peça.
+           ⚠️ A pílula conta o estado da plataforma ANTES do clique: as quatro
+           apareciam iguais e a recusa só vinha depois de aprovar. -->
+      <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
+           Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
+           numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
+           não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
+           tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
+           de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
+      <div class="grid gap-1.5 sm:flex sm:flex-wrap">
+        <UiToggleChip
           v-for="option in platformOptions"
           :key="option.value"
-          class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-          :class="[
-            platforms.includes(option.value)
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:bg-muted',
-            readinessPillClass(readinessNote(option).tone),
-          ]"
+          :model-value="platforms.includes(option.value)"
+          :class="readinessPillClass(readinessNote(option).tone)"
           :data-readiness="readinessNote(option).tone"
+          @update:model-value="togglePlatform(option.value)"
         >
-          <input
-            type="checkbox"
-            class="sr-only"
-            :aria-label="option.label"
-            :checked="platforms.includes(option.value)"
-            @change="togglePlatform(option.value)"
-          />
           {{ option.label }}
           <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
-        </label>
+        </UiToggleChip>
       </div>
       <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
            mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
@@ -1004,7 +983,7 @@ function submit() {
         >
           {{ note.text }}
           <template v-if="note.tone !== 'limited'">
-            A campanha pode ser salva; a plataforma só não publica enquanto não ficar pronta.
+            A campanha pode ser salva assim mesmo.
             <NuxtLink to="/platforms" class="font-semibold underline">
               Ver em Plataformas
             </NuxtLink>
@@ -1012,7 +991,9 @@ function submit() {
         </li>
       </ul>
       <p class="mt-1.5 text-xs text-muted-foreground">
-        Instagram, Facebook e Google publicam uma postagem por plataforma. WhatsApp envia uma mensagem por pessoa.
+        Instagram, Facebook e Google criam uma postagem pública por plataforma.
+        WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
+        Instagram ainda não fazem parte deste app.
       </p>
     </fieldset>
 
@@ -1024,46 +1005,23 @@ function submit() {
         Público alvo
       </legend>
       <div class="space-y-2.5">
-        <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="favorites"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          Quem favoritou o produto
-        </label>
+        <UiCheckbox v-model="favorites" label="Quem favoritou o produto" />
         <!-- ⚠️ O rótulo dizia "me avise quando sair do forno" e a regra pega TODA a
              fila de avisos do produto — inclusive quem espera reposição de um item de
              prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
              o gestor não tem como (nem por que) separar os dois aqui. -->
-        <label class="flex items-start gap-2 text-sm">
-          <input
-            v-model="alerts"
-            type="checkbox"
-            class="mt-0.5 size-4 rounded border-border"
-          />
-          <span>
-            Quem pediu "me avise" deste produto
-            <span class="block text-xs text-muted-foreground">
-              Quem pediu para ser avisado quando este produto voltar.
-            </span>
-          </span>
-        </label>
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label class="flex items-center gap-2">
-            <input
-              v-model="boughtOn"
-              type="checkbox"
-              class="size-4 rounded border-border"
-            />
-            Quem comprou nos últimos
-          </label>
-          <!-- ⚠️ O número e a unidade andam JUNTOS. Soltos no wrap do pai, o "dias"
-               caía sozinho na linha de baixo e o campo ficava sem unidade — medido na
-               tela, em 390px. Um número sem unidade não é dado, é adivinhação. -->
-          <span class="inline-flex shrink-0 items-center gap-2">
+        <UiCheckbox
+          v-model="alerts"
+          label="Quem pediu &quot;me avise&quot; deste produto"
+          description="A fila do sino da loja: fornada para pão, reposição para o resto."
+        />
+        <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
+             soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de
+             baixo e o campo ficava sem dizer de quê era o número. Quebrar é esperado
+             num celular; quebrar ENTRE o número e a unidade é o defeito. -->
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UiCheckbox v-model="boughtOn" label="Quem comprou nos últimos" />
+          <span class="inline-flex items-center gap-2">
             <input
               v-model.number="boughtDays"
               type="number"
@@ -1076,32 +1034,26 @@ function submit() {
             <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
           </span>
         </div>
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <!-- ⚠️ Era um número solto com "(0 = todo mundo junto)" ao lado. Zero que
-             significa "desligado" é código secreto: obriga o gestor a decorar o que o
-             campo faz quando está vazio. O interruptor DIZ, e o número só existe
-             quando ele muda alguma coisa. -->
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="vipFirstEnabled"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          <span>Melhores clientes recebem antes</span>
-        </label>
-        <div
-          v-if="vipFirstEnabled"
-          class="flex flex-wrap items-center gap-2 pl-6 text-sm"
-        >
-          <input
-            id="rule-vip"
-            v-model.number="vipFirstMinutes"
-            type="number"
-            min="1"
-            max="120"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-          />
-          <label for="rule-vip">minutos antes dos outros</label>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <label for="rule-vip">VIPs recebem</label>
+          <span class="inline-flex items-center gap-2">
+            <input
+              id="rule-vip"
+              v-model.number="vipFirstMinutes"
+              type="number"
+              min="0"
+              max="120"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span>minutos antes</span>
+          </span>
+          <!-- D5: "(0 = todo mundo junto)" obrigava a decorar o que o campo faz
+               vazio. A frase agora descreve o valor que ESTÁ na tela. -->
+          <span class="text-xs text-muted-foreground">{{
+            vipFirstMinutes > 0
+              ? "Os VIPs recebem primeiro; o restante da lista recebe depois desse intervalo."
+              : "Todo mundo recebe junto."
+          }}</span>
         </div>
 
         <div class="border-t border-border pt-3">
@@ -1116,8 +1068,8 @@ function submit() {
             v-model="audienceMatch"
             class="w-auto"
           >
-            <option value="any">Qualquer uma</option>
-            <option value="all">Todas</option>
+            <option value="any">Atender a qualquer um</option>
+            <option value="all">Atender a todos</option>
           </UiNativeSelect>
         </div>
 
@@ -1127,23 +1079,19 @@ function submit() {
           >
             Etiquetas
           </legend>
+          <!-- ⚠️ Estes três grupos acendiam em `bg-primary` SÓLIDO, escrito à mão em
+               cada um. Sólido é do botão primário; o padrão único de seleção da casa é
+               contorno + tint levíssimo, e é o que o primitivo traz. Eram a mesma peça
+               copiada três vezes, com o alvo de toque em literal e sem ARIA de escolha. -->
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="tag in tags"
               :key="tag.value"
-              type="button"
-              :aria-pressed="selectedTags.includes(tag.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedTags.includes(tag.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedTags, tag.value)"
+              :model-value="selectedTags.includes(tag.value)"
+              @update:model-value="toggleChoice(selectedTags, tag.value)"
             >
               {{ tag.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
@@ -1154,22 +1102,14 @@ function submit() {
             Faixa de preço
           </legend>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="tier in priceTiers"
               :key="tier.value"
-              type="button"
-              :aria-pressed="selectedPriceTiers.includes(tier.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedPriceTiers.includes(tier.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedPriceTiers, tier.value)"
+              :model-value="selectedPriceTiers.includes(tier.value)"
+              @update:model-value="toggleChoice(selectedPriceTiers, tier.value)"
             >
               {{ tier.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
@@ -1180,44 +1120,26 @@ function submit() {
             Comportamento de compra
           </legend>
           <div class="flex flex-wrap gap-1.5">
-            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-            <button
+            <UiToggleChip
               v-for="segment in rfmSegments"
               :key="segment.value"
-              type="button"
-              :aria-pressed="selectedRfmSegments.includes(segment.value)"
-              class="rounded-full border px-2.5 py-1 text-xs transition"
-              :class="
-                selectedRfmSegments.includes(segment.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:bg-muted'
-              "
-              @click="toggleChoice(selectedRfmSegments, segment.value)"
+              :model-value="selectedRfmSegments.includes(segment.value)"
+              @update:model-value="toggleChoice(selectedRfmSegments, segment.value)"
             >
               {{ segment.label }}
-            </button>
+            </UiToggleChip>
           </div>
         </fieldset>
 
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="birthdayToday"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          Aniversariantes de hoje
-        </label>
+        <UiCheckbox v-model="birthdayToday" label="Aniversariantes de hoje" />
 
-        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <label class="flex items-center gap-2">
-            <input
-              v-model="churnRiskOn"
-              type="checkbox"
-              class="size-4 rounded border-border"
-            />
-            Risco de não voltar a partir de
-          </label>
+        <!-- Este número não tem unidade (é uma fração de 0 a 1), então não há par
+             para manter junto: quebrar aqui não deixa nada órfão. -->
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UiCheckbox
+            v-model="churnRiskOn"
+            label="Risco de não voltar a partir de"
+          />
           <input
             v-model.number="churnRiskMin"
             type="number"
@@ -1230,27 +1152,26 @@ function submit() {
           />
         </div>
 
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            v-model="preferredHourEnabled"
-            type="checkbox"
-            class="size-4 rounded border-border"
-          />
-          <span>Respeitar o horário em que cada um costuma comprar</span>
-        </label>
-        <div
-          v-if="preferredHourEnabled"
-          class="flex flex-wrap items-center gap-2 pl-6 text-sm"
-        >
-          <input
-            id="rule-preferred-window"
-            v-model.number="preferredHourWindowHours"
-            type="number"
-            min="1"
-            max="12"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-          />
-          <label for="rule-preferred-window">horas de folga em volta</label>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <label for="rule-preferred-window"
+            >Respeitar horário preferido em uma janela de</label
+          >
+          <span class="inline-flex items-center gap-2">
+            <input
+              id="rule-preferred-window"
+              v-model.number="preferredHourWindowHours"
+              type="number"
+              min="0"
+              max="12"
+              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span>horas</span>
+          </span>
+          <span class="text-xs text-muted-foreground">{{
+            preferredHourWindowHours > 0
+              ? "Quem costuma comprar dentro dessa janela recebe na hora de sempre; os demais recebem agora."
+              : "O horário preferido de cada pessoa não é considerado: todos recebem agora."
+          }}</span>
         </div>
 
         <p
@@ -1263,7 +1184,8 @@ function submit() {
         </p>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">
-        Só entra quem aceitou receber novidades no WhatsApp.
+        Só quem aceitou receber novidades entra na conta. Assinatura de alerta
+        por produto já é um aceite daquele produto.
       </p>
     </fieldset>
 
@@ -1271,53 +1193,39 @@ function submit() {
       v-else
       class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Estas postagens vão para o público geral da plataforma, sem lista de contatos.
+      Estas publicações vão para o público geral das plataformas. A lista de
+      contatos só é usada quando o WhatsApp está selecionado.
     </p>
 
-    <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
     <div class="space-y-2.5">
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="requiresApproval"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        Revisar antes de publicar
-      </label>
+      <UiCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
+      <!-- ⚠️ "sai sozinho" não dizia o ato, e o ato depende do destino: mensagem se
+           envia, postagem se publica, e o genérico dos dois é disparar. Aqui a
+           campanha pode ter os dois, então o genérico é o verbo honesto. -->
       <p v-if="!requiresApproval" class="pl-6 text-xs text-warning">
-        Sem revisão, o anúncio é disparado assim que o gatilho acontecer.
+        Sem revisão, o anúncio é disparado assim que o evento acontecer, sem
+        passar por você.
       </p>
-      <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
-      <label v-if="requiresApproval" class="flex items-center gap-2 text-sm">
-        <input
-          v-model="expiresEnabled"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        <span>O anúncio expira se ninguém decidir</span>
-      </label>
-      <div
-        v-if="requiresApproval && expiresEnabled"
-        class="flex flex-wrap items-center gap-2 pl-6 text-sm"
-      >
-        <input
-          id="rule-expiry"
-          v-model.number="expiresAfterMinutes"
-          type="number"
-          min="1"
-          max="1440"
-          class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
-        />
-        <label for="rule-expiry">minutos para decidir</label>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <label for="rule-expiry">O anúncio aguarda revisão por</label>
+        <span class="inline-flex items-center gap-2">
+          <input
+            id="rule-expiry"
+            v-model.number="expiresAfterMinutes"
+            type="number"
+            min="0"
+            max="1440"
+            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+          />
+          <span>minutos</span>
+        </span>
+        <span class="text-xs text-muted-foreground">{{
+          expiresAfterMinutes > 0
+            ? "Sem revisão até lá, o anúncio caduca e nada é disparado."
+            : "O anúncio espera a revisão sem prazo: não caduca sozinho."
+        }}</span>
       </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="isActive"
-          type="checkbox"
-          class="size-4 rounded border-border"
-        />
-        Campanha ligada
-      </label>
+      <UiCheckbox v-model="isActive" label="Campanha ligada" />
     </div>
 
     <div class="flex items-center gap-2 pt-1">

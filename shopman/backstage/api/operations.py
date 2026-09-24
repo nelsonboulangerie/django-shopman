@@ -1631,7 +1631,7 @@ class OrderDetailView(OperationalObservationMixin, APIView):
         # A reconciliação contra webhook perdido nasceu só no acompanhamento do
         # cliente, e isso deixou a verdade do Gestor pendurada no navegador de
         # outra pessoa: cliente que paga e fecha a aba (ou paga em outro
-        # aparelho) some do circuito, e o card fica em "Aguardando pagamento…"
+        # dispositivo) some do circuito, e o card fica em "Aguardando pagamento…"
         # sem que exista, na loja, um gesto capaz de resolver. O worker resgata
         # em minutos; abrir o pedido resolve agora.
         #
@@ -1707,6 +1707,15 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
                 if prepare is not None:
                     refusal = prepare()
                     if refusal is not None:
+                        # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
+                        # aplicou nada, e a tela precisa saber disso para liberar a
+                        # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
+                        # motivos) parecia "talvez gravou", o recibo dizia
+                        # "desconhecido" e a tela prendia a intenção até o F5 — foi
+                        # assim que um cancelamento travou na homologação de 21/09.
+                        if isinstance(refusal.data, dict):
+                            refusal.data.setdefault("outcome", "not_applied")
+                            refusal.data.setdefault("intention", key)
                         return refusal
                 result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
         except RemoteMutationConflict as exc:
@@ -1793,6 +1802,9 @@ class OrderAdvanceView(_OrderActionBase):
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
             return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
         equipment = sorted(set(equipment))
+        trip_ref = body.get("trip_ref") or ""
+        if not isinstance(trip_ref, str):
+            return Response({"detail": "A saída deve ser a referência de um pedido."}, status=400)
         change_out = body.get("change_out")
         if change_out is not None:
             from shopman.backstage.services.exceptions import POSError
@@ -1804,14 +1816,14 @@ class OrderAdvanceView(_OrderActionBase):
                 return Response({"detail": str(exc)}, status=400)
         else:
             change_q = None
-        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q})
+        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q, **({"trip_ref": trip_ref} if trip_ref else {})})
 
         def execute():
             try:
                 orders_service.advance_order(
                     order, actor=_actor(request), operator=request.user,
                     change_out_raw=None if change_out is None else str(change_out),
-                    equipment=equipment, expected_revision=base, target_status=target,
+                    equipment=equipment, expected_revision=base, target_status=target, trip_ref=trip_ref,
                 )
             except orders_service.OrderChangeOutRequired as exc:
                 return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
@@ -2100,6 +2112,27 @@ class OrderEquipmentBackView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Courier came back: close the whole trip (delivery, cash, change and card machine)",
+        responses={200: OpenApiResponse(description="Trip closed.")},
+    ),
+)
+class OrderCourierBackView(_OrderActionBase):
+    intention_operation = "courier-back"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+
+        def execute(base):
+            return {"closed": orders_service.courier_returned(order, actor=_actor(request), expected_revision=base)}
+
+        return self._context_response(request, order, "courier-back", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Requeue fiscal (NFC-e) emission for an order",
         responses={200: OpenApiResponse(description="Fiscal emission requeued.")},
     ),
@@ -2376,6 +2409,65 @@ class OrderTicketEscposView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
+        summary="Courier ticket bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="Courier ticket payload.")},
+    ),
+)
+class CourierTicketEscposView(APIView):
+    """A via do ENTREGADOR de um pedido — o único papel do trio que sai da casa.
+
+    Rota separada da filipeta de propósito: são dois papéis com destinatários
+    diferentes, e quem imprime escolhe qual. O carimbo de 2ª via também é
+    próprio (``courier_ticket_printed_at``) — a ficha já ter ido para o painel
+    não faz da primeira via do entregador uma segunda.
+
+    ⚠️ **Qual via sai não é escolha de quem chama.** Identificada ou Anônima é
+    decisão da configuração do canal, com um piso que ela não fura quando a
+    entrega é de terceiro (``order_helpers.courier_ticket_variant``). Um
+    parâmetro de rota aqui seria exatamente a porta pela qual o endereço do
+    cliente sairia num papel de parceiro de entrega. A resposta DIZ qual via
+    saiu (``variant``), para a tela poder nomear o papel que o operador pegou.
+
+    Mesma permissão da filipeta (``shop.manage_orders``): quem despacha é quem
+    cuida da fila.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services import order_ticket as tickets
+        from shopman.shop.services.order_helpers import courier_ticket_variant
+
+        order = Order.objects.filter(ref=ref).prefetch_related("items").first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        reprint = _stamp_first_print(ref, "courier_ticket_printed_at")
+        payload = tickets.courier_ticket_bytes(order, reprint=reprint)
+        variant = courier_ticket_variant(order)
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"via-do-entregador:{ref}",
+                "variant": variant,
+                "variant_label": (
+                    "Via do entregador — Identificada"
+                    if variant == "identified"
+                    else "Via do entregador — Anônima"
+                ),
+                "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
         summary="Orders committed within a period (order-ticket batch preview)",
         responses={200: OpenApiResponse(description="Orders in the period, panel-ordered.")},
     ),
@@ -2552,6 +2644,58 @@ class POSResendFiscalEmailView(APIView):
         if not ok:
             return Response({"detail": message}, status=502)
         return Response({"ok": True, "detail": message})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Issue the NFC-e the emission rule skipped (manager-approved, from the POS recent sales)",
+        responses={
+            200: OpenApiResponse(description="Emission queued."),
+            404: OpenApiResponse(description="Order not found."),
+            409: OpenApiResponse(description="Refused: already issued, cancelled, too old, payment pending or fiscal not configured."),
+            422: OpenApiResponse(description="Manager approval missing or invalid."),
+        },
+    ),
+)
+class POSEmitFiscalView(APIView):
+    """Emissão avulsa da NFC-e — a venda que a regra da casa não emitiu.
+
+    A regra padrão emite só a pedido; quando o cliente volta pedindo a nota, o
+    balcão emite por aqui. Sempre sob o desafio gerencial (crachá ou PIN, o
+    MESMO ``validate_manager_override`` do cancelamento), e quem assina é o
+    aprovador que o validador devolveu, nunca o nome do corpo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(ref=ref, channel_ref=POS_CHANNEL_REF).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                request.data.get("manager_approval"),
+                operator_username=_username(request),
+                action="emit_fiscal",
+                message="A emissão avulsa da NFC-e exige a autorização de um gerente.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        try:
+            orders_service.emit_fiscal_on_demand(
+                order, actor=_actor_pos(request), approved_by_username=approver.get_username(),
+            )
+        except OrderError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response({
+            "ok": True,
+            "order_ref": order.ref,
+            "detail": f"NFC-e de {order.ref} na fila. A nota sai com a data e a hora de agora.",
+        })
 
 
 @extend_schema_view(
@@ -2966,7 +3110,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda da fornada. "
+                                "A quantidade total deve incluir toda perda do lote. "
                                 "Classifique o déficit em partition com um motivo de qualidade."
                             )
                         }

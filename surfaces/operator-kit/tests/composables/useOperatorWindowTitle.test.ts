@@ -55,9 +55,9 @@ describe("useOperatorWindowTitle", () => {
   });
 
   it("cai no rótulo passado quando o app não declara a capability", async () => {
-    const { state, wrapper } = await mountWithTitle("Central", "Central");
-    expect(state.appName).toBe("Central");
-    await vi.waitFor(() => expect(document.title).toBe("Central"));
+    const { state, wrapper } = await mountWithTitle("Shopman Apps", "Shopman Apps");
+    expect(state.appName).toBe("Shopman Apps");
+    await vi.waitFor(() => expect(document.title).toBe("Shopman Apps"));
     wrapper.unmount();
   });
 

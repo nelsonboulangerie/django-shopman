@@ -27,13 +27,18 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
 
     from shopman.backstage.projections.bi_payments import payment_method_label
     from shopman.backstage.services.payments import iter_order_payments
+    from shopman.shop.services.order_helpers import exclude_test_orders
     from shopman.shop.services.payment_provenance import exclude_provider_simulated_orders
 
     excluded = _excluded_statuses()
     sales: list[CanonicalSale] = []
     cancelled = 0
-    rows = exclude_provider_simulated_orders(
-        Order.objects.filter(created_at__range=window)
+    # O pedido de teste do marketplace sai INTEIRO, não vira contagem de
+    # cancelado: ele não é venda que a casa perdeu, é venda que nunca existiu.
+    # O filtro de confirmação simulada ao lado só olha
+    # ``data.payment.confirmation_mode``, chave que o iFood nunca grava.
+    rows = exclude_test_orders(
+        exclude_provider_simulated_orders(Order.objects.filter(created_at__range=window))
     ).values_list(
         "id", "ref", "created_at", "total_q", "channel_ref", "status", "data"
     )

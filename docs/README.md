@@ -80,6 +80,7 @@ Guias de domínio seguem a estrutura: Conceitos → Modelos → Serviços → Pr
 | [WhatsApp Access Link](guides/whatsapp-access-link.md) | auth | Login WhatsApp-first por access link (`NB-XxXx`) |
 | [Concierge de WhatsApp](guides/whatsapp-concierge.md) | `shopman/storefront/concierge` | Pedido por conversa no WhatsApp: env, flow no ManyChat, transcrições no Admin, kill switch |
 | [Storefront backend surface](guides/storefront_backend_surface.md) | `shopman/storefront` | API headless + projections da loja |
+| [Cidade aproximada do dispositivo](guides/geolite2-city.md) | `shopman/shop/services/ip_location.py` | Base GeoLite2 local na imagem, limiar de confiança de 50 km, chave de build e a atualização que NÃO é automática |
 | [Backstage realtime](guides/backstage-realtime.md) | `shopman/backstage` | SSE, canais nomeados e fallback de polling |
 | [Backstage accessibility](guides/backstage-accessibility.md) | superfícies operador | Acessibilidade das telas de operador |
 | [Operations](guides/operations.md) | operação | Rotinas operacionais do dia a dia |
@@ -116,6 +117,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Contrato da superfície Marketing](reference/marketing-surface-contract.md) | Ownership, rotas verificadas, plataformas, capabilities, flags, probes e estado de rollout |
 | [ManyChat Conversation Projection](reference/manychat-conversation-projection.md) | Contrato conversacional derivado de tracking, payment e channel policy canônicos |
 | [Remote Mutation Contract](reference/remote-mutation-contract.md) | Mutations remotas idempotentes sobre services canônicos |
+| [Omotenashi Copy](reference/omotenashi-copy.md) | Critérios da linguagem de UI: a definição, o teste de uma frase, os oito defeitos nomeados, as travas e a ordem da varredura |
 | [Filtro de Design de Superfícies](reference/design-surface-filter.md) | Checklist transversal para UI: tipografia, ícones, espaçamento, contraste, foco, responsividade e estados |
 
 ---

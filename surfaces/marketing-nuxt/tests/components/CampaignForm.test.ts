@@ -16,7 +16,7 @@ beforeAll(() => {
 beforeEach(() => window.localStorage.clear());
 
 const TRIGGERS = [
-  { value: "production_finished", label: "fornada pronta" },
+  { value: "production_finished", label: "lote pronto" },
   { value: "schedule", label: "Agendado" },
 ];
 const PLATFORMS = [
@@ -126,13 +126,15 @@ describe("CampaignForm — natureza de cada saída", () => {
   it("não confunde postagem pública com mensagem direta", () => {
     const text = form(makeRule()).text();
 
-    expect(text).toContain("Entregar por");
-    expect(text).toContain("publicam uma postagem por plataforma");
-    expect(text).toContain("WhatsApp envia uma mensagem por pessoa");
-    // ⚠️ A terceira frase ("Mensagens diretas do Instagram ainda não fazem parte deste
-    // app") saiu: dizer o que o sistema NÃO faz, no meio de um formulário, é nota de
-    // rodapé de engenheiro lida por quem só quer escolher onde o anúncio sai.
-    expect(text).not.toContain("ainda não fazem parte");
+    // ⚠️ O MESMO rótulo do cartão de revisão. Eram dois nomes para o mesmo conceito —
+    // o cartão dizia uma coisa, o formulário outra —, e "por" ainda é ambíguo entre
+    // agente e meio: "disparado por Pablo" e "disparado por Instagram" leem igual.
+    expect(text).toContain("Disparado via");
+    expect(text).toContain("uma postagem pública por plataforma");
+    expect(text).toContain("WhatsApp envia uma mensagem por pessoa elegível");
+    expect(text).toContain(
+      "Mensagens diretas do Instagram ainda não fazem parte deste app",
+    );
   });
 
   it("só pede público quando há mensagem direta por WhatsApp", () => {
@@ -141,11 +143,11 @@ describe("CampaignForm — natureza de cada saída", () => {
 
     expect(direct.text()).toContain("Público alvo");
     expect(direct.text()).not.toContain(
-      "Estas postagens vão para o público geral",
+      "Estas publicações vão para o público geral",
     );
     expect(publicOnly.text()).not.toContain("Público alvo");
     expect(publicOnly.text()).toContain(
-      "Estas postagens vão para o público geral",
+      "Estas publicações vão para o público geral",
     );
   });
 });
@@ -180,9 +182,12 @@ describe("CampaignForm — quando disparar", () => {
   it("manda só os dias marcados", async () => {
     const wrapper = form(makeRule());
 
+    // Os dias são `UiToggleChip`: `role="checkbox"` com `aria-checked`, e não botão
+    // com `aria-pressed` — marcar dia é marcar item, não apertar botão que fica
+    // apertado.
     const days = wrapper
-      .findAll("button[aria-pressed]")
-      .filter((b) => ["sex", "sáb"].includes(b.text()));
+      .findAll('[role="checkbox"]')
+      .filter((chip) => ["sex", "sáb"].includes(chip.text()));
     for (const day of days) await day.trigger("click");
     await wrapper.find("form").trigger("submit");
 
@@ -278,8 +283,8 @@ describe("CampaignForm — quando disparar", () => {
       (wrapper.find('input[type="time"]').element as HTMLInputElement).value,
     ).toBe("06:00");
     const marked = wrapper
-      .findAll('button[aria-pressed="true"]')
-      .map((b) => b.text());
+      .findAll('[role="checkbox"][aria-checked="true"]')
+      .map((chip) => chip.text());
     expect(marked).toContain("seg");
   });
 
@@ -473,11 +478,14 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect(
       (restored.find("#rule-name").element as HTMLInputElement).value,
     ).toBe("Campanha em revisão");
+    // O chip é `role="checkbox"` com `aria-checked`, e não um botão com
+    // `aria-pressed`: escolher etiqueta é marcar item, não apertar um botão que fica
+    // apertado. O leitor de tela diz "marcada", que é o que a pessoa está fazendo.
     expect(
       restored
-        .findAll("button")
-        .find((button) => button.text() === "Sem glúten")!
-        .attributes("aria-pressed"),
+        .findAll('[role="checkbox"]')
+        .find((chip) => chip.text() === "Sem glúten")!
+        .attributes("aria-checked"),
     ).toBe("true");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
@@ -526,6 +534,56 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect((other.find("#rule-name").element as HTMLInputElement).value).toBe(
       "Campanha seis",
     );
+  });
+});
+
+describe("CampaignForm — as escolhas são peças do kit", () => {
+  // ⚠️ Os sete checkboxes e o rádio desta tela eram o controle nativo do browser com
+  // uma tinta do Tailwind por cima: desenho do sistema operacional no meio do desenho
+  // da casa, diferente em cada dispositivo, e sem o alvo de toque de 44 px que quem
+  // atende balcão precisa com uma mão só. Este teste prende a semântica que o
+  // primitivo garante — `role="checkbox"` com `aria-checked` — e prova que o valor
+  // marcado ainda chega ao payload.
+  it("marca o público por role=checkbox, e a marca chega ao envio", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    const birthday = wrapper
+      .findAll('[role="checkbox"]')
+      .find((box) => box.text().includes("Aniversariantes de hoje"))!;
+
+    expect(birthday.attributes("aria-checked")).toBe("false");
+    await birthday.trigger("click");
+    expect(birthday.attributes("aria-checked")).toBe("true");
+
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(
+      (payload.audience_rules as Record<string, unknown>).birthday_today,
+    ).toBe(true);
+  });
+
+  // ⚠️ A pílula de plataforma é um `UiToggleChip`, não um `UiCheckbox`: ela é um chip
+  // cuja caixa inteira acende e que ainda carrega o estado da plataforma. Era um
+  // `<input type="checkbox" class="sr-only">` embrulhado num `<label>` pintado —
+  // semântica escondida num lugar, alvo de toque noutro.
+  it("a pílula de plataforma é um chip com ARIA de escolha, e marcar chega ao envio", async () => {
+    const wrapper = form(makeRule({ platforms: [] }));
+
+    expect(wrapper.find('input[type="checkbox"].sr-only').exists()).toBe(false);
+    const pill = wrapper
+      .findAll('[role="checkbox"]')
+      .find((chip) => chip.text().includes("WhatsApp"))!;
+    expect(pill.attributes("aria-checked")).toBe("false");
+
+    await pill.trigger("click");
+    expect(pill.attributes("aria-checked")).toBe("true");
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.platforms).toContain("whatsapp");
   });
 });
 
@@ -619,9 +677,9 @@ describe("CampaignForm — a voz do gestor", () => {
     );
     // A escolhida ganha a frase completa; a não escolhida não faz barulho.
     expect(text).toContain(
-      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
     );
-    expect(text).toContain("A campanha pode ser salva");
+    expect(text).toContain("A campanha pode ser salva assim mesmo.");
     expect(text).not.toContain("Não foi possível verificar o transporte");
 
     await wrapper.find("form").trigger("submit");

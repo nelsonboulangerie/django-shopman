@@ -91,7 +91,7 @@ function props(overrides: Record<string, unknown> = {}) {
 // Os quatro rótulos que o botão principal assume. "Tentar de novo" entrou quando
 // a revisão que falha deixou de girar para sempre e virou a própria saída.
 const cta = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
-  w.findAll("button").find((b) => /Validar|Autorizar|Atualizando|Tentar de novo/.test(b.text()));
+  w.findAll("button").find((b) => /Validar|Pedir autorização|Atualizando|Tentar de novo/.test(b.text()));
 
 // A FAIXA ÚNICA DE AVISOS, no topo da coluna do valor: o bloqueio primeiro (com
 // o toque que resolve), depois as consequências, depois as ressalvas da review.
@@ -244,7 +244,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
     expect(button.attributes("disabled")).toBeDefined();
   });
 
-  it("aprovação de gerente pendente → 'Autorizar e validar' NÃO finaliza direto", async () => {
+  it("aprovação de gerente pendente → 'Pedir autorização' NÃO finaliza direto", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         paymentCovered: true,
@@ -254,7 +254,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
       }),
     });
     const button = cta(wrapper)!;
-    expect(button.text()).toContain("Autorizar");
+    expect(button.text()).toContain("Pedir autorização");
     await button.trigger("click");
     expect(wrapper.emitted("submit")).toBeUndefined(); // abre o diálogo de autorização
   });
@@ -749,7 +749,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   it("a bobina e o troco do entregador deixaram de ser legenda de campo", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
         receiptChannels: ["print"],
         fulfillmentType: "delivery",
         paymentCollection: "on_delivery",
@@ -780,7 +780,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
 
     const explicitoFalso = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: false },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: false }, receipt_channels: [] },
         receiptChannels: ["print"],
       }),
     });
@@ -789,12 +789,50 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
 
     const comPalavra = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
         receiptChannels: ["print"],
       }),
     });
     expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
     comPalavra.unmount();
+  });
+
+  // A palavra do servidor mora em `capabilities`, ao lado de
+  // `supports_fiscal_document`. A tela a lia no TOPO do contrato, onde ela
+  // nunca vem: a faixa dizia ao operador que o papel NÃO pedia a nota, com a
+  // regra do servidor emitindo. No topo, ela não conta.
+  it("a promessa lê `capabilities.receipt_requests_emission`, não o topo do contrato", async () => {
+    const noTopo = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(noTopo).text()).not.toContain("imprime sozinha");
+    noTopo.unmount();
+  });
+
+  // "Por e-mail?" pede a nota como "Impressa?" e "CPF na nota?": a faixa diz.
+  it("pedir por e-mail também promete a nota", async () => {
+    const soEmail = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["email"],
+        receiptEmail: "cliente@example.org",
+      }),
+    });
+    expect(avisos(soEmail).text()).toContain("Pedir por e-mail já pede a nota — o e-mail sai assim que autorizar.");
+    soEmail.unmount();
+
+    const osDois = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["print", "email"],
+        receiptEmail: "cliente@example.org",
+      }),
+    });
+    expect(avisos(osDois).text()).toContain("Papel e e-mail já pedem a nota");
+    osDois.unmount();
   });
 
   it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {
@@ -820,16 +858,20 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   });
 
   it("gerente exigido: o aviso explica, mas NÃO duplica o botão que autoriza", async () => {
-    // O caminho É o Validar, que neste estado se chama "Autorizar e validar".
-    // Um segundo botão faria o mesmo gesto — o mais delicado da tela — em dois
-    // lugares, e nenhum dos dois seria o óbvio.
+    // O caminho É o botão do rodapé, que neste estado se chama "Pedir
+    // autorização". Um segundo botão faria o mesmo gesto — o mais delicado da
+    // tela — em dois lugares, e nenhum dos dois seria o óbvio.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({ review: review({ requires_manager_approval: true }) }),
     });
     expect(avisos(wrapper).text()).toContain("Esta venda precisa de um gerente.");
     // a faixa não ganha um segundo botão de autorizar
     expect(avisos(wrapper).findAll("button")).toHaveLength(0);
-    expect(cta(wrapper)!.text()).toContain("Autorizar e validar");
+    // ⚠️ O botão ABRE o teclado do gerente: ele não autoriza nem valida, e não
+    // pode prometer nenhum dos dois. Só o último passo — o gerente digitando o
+    // PIN — diz o verbo do ato.
+    expect(cta(wrapper)!.text()).toContain("Pedir autorização");
+    expect(cta(wrapper)!.text()).not.toContain("Autorizar e validar");
   });
 
   it("sem pendência nenhuma, a faixa só carrega consequência", async () => {

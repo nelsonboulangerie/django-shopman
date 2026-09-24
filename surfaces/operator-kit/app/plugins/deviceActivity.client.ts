@@ -1,7 +1,7 @@
-// Registra no relógio do APARELHO (`utils/deviceActivity.ts`) todo toque real em
+// Registra no relógio do DISPOSITIVO (`utils/deviceActivity.ts`) todo toque real em
 // qualquer app de operador. Plugin da layer: vale para todos os apps que fazem
 // `extends` do kit sem que nenhum precise montar nada — é o que permite ao PDV
-// travar só quando o aparelho inteiro ficou ocioso, e não quando só ele ficou.
+// travar só quando o dispositivo inteiro ficou ocioso, e não quando só ele ficou.
 //
 // Escuta na fase de CAPTURE: um componente que chama `stopPropagation` (numpad,
 // menu, drawer) não pode esconder do relógio que alguém está ali.

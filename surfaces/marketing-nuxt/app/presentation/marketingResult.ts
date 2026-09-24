@@ -74,7 +74,7 @@ export function deliveryStatePresentation(
     not_started: {
       label: "A entrega ainda não começou",
       detail:
-        "Enquanto nenhuma faixa iniciar, o cancelamento ainda pode ser possível.",
+        "Enquanto nenhuma plataforma tiver começado, o cancelamento ainda pode ser possível.",
       tone: "quiet",
       icon: "lucide:clock-3",
     },
@@ -101,7 +101,7 @@ export function deliveryStatePresentation(
     completed_with_failures: {
       label: "Entrega parcial — precisa de atenção",
       detail:
-        "Parte saiu e parte falhou. O sucesso de uma plataforma não esconde as outras.",
+        "Parte foi disparada e parte falhou. O sucesso de uma plataforma não esconde as outras.",
       tone: "danger",
       icon: "lucide:triangle-alert",
     },
@@ -115,7 +115,7 @@ export function deliveryStatePresentation(
     cancelled: {
       label: "Entrega cancelada",
       detail:
-        "As faixas que ainda não tinham começado foram preservadas sem envio.",
+        "As plataformas que ainda não tinham começado não enviaram nada.",
       tone: "quiet",
       icon: "lucide:circle-slash",
     },
@@ -128,7 +128,7 @@ export function deliveryStatePresentation(
     legacy_untracked: {
       label: "Resultado antigo sem rastreamento completo",
       detail:
-        "Este anúncio é anterior ao ledger por destino; não inferimos sucesso sem prova.",
+        "Não guardamos o resultado dele por plataforma. O que aconteceu na época não dá para conferir aqui.",
       tone: "attention",
       icon: "lucide:archive",
     },
@@ -188,7 +188,7 @@ export function platformDeliveryLabel(
 }
 
 export function platformSwitchedOffNote(platformRef: string): string {
-  return `${platformResultLabel(platformRef)} está desligado neste ambiente: os destinos na fila só podem sair depois que a operação ligar a plataforma.`;
+  return `${platformResultLabel(platformRef)} está desligado neste ambiente: o que está na fila só é disparado depois que a operação ligar a plataforma.`;
 }
 
 function pluralizeCountLabel(label: string): string {
@@ -216,7 +216,7 @@ export function recoveryActionLabel(
 ): string {
   const count = action.eligible_count;
   if (action.kind === "retry_failed_delivery") {
-    return `Tentar novamente ${formatCount(count)} ${count === 1 ? "falha" : "falhas"}`;
+    return `Tentar de novo ${formatCount(count)} ${count === 1 ? "falha" : "falhas"}`;
   }
   if (action.kind === "reconcile_unknown_delivery") {
     return `Consultar ${formatCount(count)} ${count === 1 ? "resultado incerto" : "resultados incertos"}`;
@@ -237,7 +237,7 @@ export function recoveryActionExplanation(
     return "Pergunta ao provedor o que aconteceu. Não reenvia nada.";
   }
   if (action.kind === "cancel_announcement") {
-    return "Cancela somente faixas que ainda não começaram. Uma entrega iniciada nunca é apresentada como desfeita.";
+    return "Cancela somente as plataformas que ainda não começaram. O que já começou segue até o fim.";
   }
   return "A consequência será revalidada pelo servidor antes de confirmar.";
 }
@@ -300,7 +300,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
   if (receipt.kind === "cancel") {
     return {
       title: "Cancelamento registrado",
-      detail: `${formatCount(count)} ${count === 1 ? "faixa que não tinha começado foi cancelada" : "faixas que não tinham começado foram canceladas"}.`,
+      detail: `${formatCount(count)} ${count === 1 ? "plataforma que não tinha começado não enviou nada" : "plataformas que não tinham começado não enviaram nada"}.`,
     };
   }
   if (receipt.kind === "approve") {
@@ -320,7 +320,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
     return {
       title: "Novo horário registrado",
       detail:
-        "As faixas ainda não iniciadas usam o instante guardado neste comprovante.",
+        "As plataformas que ainda não começaram usam o horário guardado neste comprovante.",
     };
   }
   return {
@@ -401,7 +401,7 @@ export function marketingLoadError(error: unknown): {
   return {
     title: "Não foi possível carregar o resultado",
     detail:
-      "Pode ser uma interrupção de rede ou do serviço. O app não transforma essa falha em lista vazia.",
+      "Pode ser a rede. Isto não quer dizer que não há nada.",
     canRetry: true,
   };
 }
@@ -421,12 +421,34 @@ function errorStatus(error: unknown): number {
 /** WhatsApp é mensagem direta; o resto do catálogo é postagem pública. */
 const DIRECT_MESSAGE_PLATFORM = "whatsapp";
 
+/** Quanto do disparo já está preparado, na grandeza da plataforma.
+ *
+ * ⚠️ A fração só quer dizer alguma coisa quando o denominador é GENTE. No mural ela
+ * era sempre "1/1 destinos preparados" — e mandava o gestor procurar o sentido de
+ * "destino" num lugar onde só existe um mural. No WhatsApp ela lia "37/40", e o 40 é
+ * gente: a mesma palavra, dois mundos, um ao lado do outro na mesma lista.
+ */
+export function platformFanoutSummary(platform: {
+  platform_ref: string;
+  fanout_materialized: number;
+  fanout_expected: number;
+}): string {
+  const done = Math.max(0, Math.trunc(platform.fanout_materialized || 0));
+  const total = Math.max(0, Math.trunc(platform.fanout_expected || 0));
+  if (platform.platform_ref !== DIRECT_MESSAGE_PLATFORM) {
+    return done > 0 ? "postagem preparada" : "postagem ainda não preparada";
+  }
+  return `${formatCount(done)} de ${formatCount(total)} ${
+    total === 1 ? "pessoa na lista" : "pessoas na lista"
+  }`;
+}
+
 /**
  * A linha que explica por que o gestor caiu direto na revisão.
  *
  * O disparo leva a tela até aqui sem escala. Quem chega precisa saber, numa frase, que
- * este anúncio nasceu do toque que ele acabou de dar e que NADA saiu ainda — a mesma
- * promessa que antes vivia no painel de sucesso do disparo.
+ * este anúncio nasceu do toque que ele acabou de dar e que NADA FOI DISPARADO ainda —
+ * a mesma promessa que antes vivia no painel de sucesso do disparo.
  *
  * Publicação pública conta destinos por plataforma; mensagem direta conta pessoas.
  * Misturar os dois números diria ao gestor que o mural tem público de gente.
@@ -451,7 +473,7 @@ export function announcementDispatchNotice(input: {
       }. Nada foi publicado ainda.`
     : `${formatCount(audienceCount)} ${
         audienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis"
-      }. Nada saiu ainda.`;
+      }. Nada foi disparado ainda.`;
   return {
     title: "Este anúncio acabou de ser criado pelo seu disparo",
     detail,
@@ -474,6 +496,9 @@ export function decisionOutcomeNotice(input: {
   includesDirectMessage: boolean;
   includesPublicPost: boolean;
   scheduledSummary?: string;
+  /** A entrega já assentou? Enquanto não, o título fica no gerúndio: dizer "Enviado"
+   *  com as mensagens ainda na fila é afirmar um ato irreversível que não aconteceu. */
+  settled?: boolean;
 }): { title: string; detail: string; tone: ResultTone; icon: string } {
   if (input.action === "reject") {
     return {
@@ -488,30 +513,42 @@ export function decisionOutcomeNotice(input: {
     const when = (input.scheduledSummary || "").trim();
     return {
       title: when ? `Agendado para ${when}` : "Agendado",
-      detail: "Nada sai antes disso. O resultado aparece abaixo.",
+      detail: "Nada é disparado antes disso. O resultado aparece abaixo.",
       tone: "quiet",
       icon: "lucide:calendar-clock",
     };
   }
+  // ⚠️ O título nomeia o ato, e o ato leva minutos: "Enviar agora" quer dizer "na
+  // próxima passada". Enquanto a entrega não assenta, o título fica no gerúndio e o
+  // detalhe carrega a promessa; quando assenta, a MESMA faixa vira o particípio — aí
+  // é verdade. Antes, a faixa dizia "Enviado" em verde e a linha de baixo, na mesma
+  // caixa, dizia "Mensagens na fila": o gestor fechava o app com a conclusão errada.
+  const settled = input.settled === true;
   if (input.includesDirectMessage && input.includesPublicPost) {
     return {
-      title: "Disparado",
-      detail: "Mensagens e postagem na fila. Cada confirmação aparece abaixo.",
+      title: settled ? "Disparado" : "Disparando",
+      detail: settled
+        ? "Mensagens e postagem foram disparadas. O resultado por plataforma está abaixo."
+        : "Mensagens e postagem na fila. Cada confirmação aparece aqui embaixo.",
       tone: "ok",
       icon: "lucide:send",
     };
   }
   if (input.includesDirectMessage) {
     return {
-      title: "Enviado",
-      detail: "Mensagens na fila. Cada confirmação aparece abaixo.",
+      title: settled ? "Enviado" : "Enviando",
+      detail: settled
+        ? "As mensagens foram enviadas. O resultado por pessoa está abaixo."
+        : "As mensagens entraram na fila. Cada confirmação aparece aqui embaixo.",
       tone: "ok",
       icon: "lucide:send",
     };
   }
   return {
-    title: "Publicado",
-    detail: "Postagem na fila. A confirmação aparece abaixo.",
+    title: settled ? "Publicado" : "Publicando",
+    detail: settled
+      ? "A postagem foi publicada. O resultado está abaixo."
+      : "A postagem entrou na fila. A confirmação aparece aqui embaixo.",
     tone: "ok",
     icon: "lucide:megaphone",
   };

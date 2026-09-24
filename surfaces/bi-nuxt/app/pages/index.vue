@@ -98,7 +98,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
     <template v-else-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
-          label="Fornadas fechadas"
+          label="Lotes fechados"
           :value="formatInt(report.batches_finished)"
           :delta="delta(report.batches_finished, report.previous.batches_finished)"
         />
@@ -146,7 +146,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Tempo de forno por forno</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Fornadas sem posição declarada ficam de fora deste corte</p>
+          <p class="mb-3 text-xs text-muted-foreground">Lotes sem posição declarada ficam de fora deste corte</p>
           <ChartHBarList v-if="report.oven_time_by_oven.length" :rows="ovenRows(report.oven_time_by_oven)" />
           <p v-else class="text-sm text-muted-foreground">Nenhuma medição com forno atribuído no período.</p>
         </section>

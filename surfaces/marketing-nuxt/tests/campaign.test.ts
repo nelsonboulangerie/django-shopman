@@ -69,14 +69,14 @@ describe("audienceSummary", () => {
         alerts_count: 3,
         total: 43,
       }),
-    ).toBe("12 favoritos, 28 recompra, 3 alertas = 43 clientes");
+    ).toBe("12 favoritos, 28 recompraram, 3 alertas = 43 clientes");
   });
 
   it("uses the backend total instead of summing the parts", () => {
-    // Quem favoritou E recompra é uma pessoa só: somar (12+28) mentiria pra cima.
+    // Quem favoritou E recomprou é uma pessoa só: somar (12+28) mentiria pra cima.
     expect(
       audienceSummary({ favorites_count: 12, bought_count: 28, total: 30 }),
-    ).toBe("12 favoritos, 28 recompra = 30 clientes");
+    ).toBe("12 favoritos, 28 recompraram = 30 clientes");
   });
 
   it("omits sources that resolved to nobody", () => {
@@ -159,7 +159,7 @@ describe("exclusionNotes", () => {
 
   it("never turns a new server reason into silence", () => {
     expect(exclusionNotes({ some_new_gate: 2 })).toEqual([
-      '2 pessoas fora por "some_new_gate"',
+      "2 pessoas fora por um motivo novo (some_new_gate) — avise quem cuida do sistema",
     ]);
   });
 

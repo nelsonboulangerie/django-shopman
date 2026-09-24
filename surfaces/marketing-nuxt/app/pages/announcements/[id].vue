@@ -163,6 +163,9 @@ const decisionNotice = computed(() => {
     scheduledSummary: outcome.scheduledFor
       ? scheduleSummary(outcome.scheduledFor, shopTimezone.value)
       : "",
+    // O mesmo estado que encerra o acompanhamento é o que deixa a faixa trocar o
+    // gerúndio pelo particípio. Enquanto não assentar, "Enviado" seria mentira.
+    settled: deliverySettled(resultAnnouncement.value?.delivery),
   });
 });
 
@@ -370,8 +373,7 @@ useHead({ title: "Anúncio" });
     >
       <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        O rascunho e a intenção foram preservados. Retome para receber uma nova
-        conferência do servidor.
+        Seu texto e sua escolha estão guardados. Retome para confirmar de novo.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
         <UiButton
@@ -436,8 +438,7 @@ useHead({ title: "Anúncio" });
           </p>
           <template v-else-if="trackingExhausted">
             <p class="mt-2 text-sm opacity-90">
-              O registro de entrega ainda não respondeu. Não vamos inferir
-              sucesso sem ele: pode ser só demora da fila.
+              Ainda não sabemos se foi disparado. Provavelmente é a fila.
             </p>
             <UiButton
               type="button"
@@ -446,7 +447,7 @@ useHead({ title: "Anúncio" });
               @click="trackDeliveryUntilSettled"
             >
               <Icon name="lucide:refresh-cw" class="size-4" />
-              Conferir de novo
+              Atualizar
             </UiButton>
           </template>
         </div>
@@ -477,7 +478,7 @@ useHead({ title: "Anúncio" });
         @click="refreshAll"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar novamente
+        Tentar de novo
       </UiButton>
       <NuxtLink
         v-else
@@ -597,8 +598,7 @@ useHead({ title: "Anúncio" });
           O conteúdo abriu, mas o resultado de entrega não.
         </p>
         <p class="mt-1 text-muted-foreground">
-          Não vamos inferir sucesso enquanto o registro de entrega não
-          responder. O comprovante preservado continua abaixo quando existir.
+          Ainda não sabemos o que foi disparado. O comprovante continua abaixo.
         </p>
         <UiButton
           type="button"
@@ -606,7 +606,7 @@ useHead({ title: "Anúncio" });
           class="mt-2"
           @click="refreshResult()"
         >
-          Tentar carregar o resultado
+          Tentar de novo
         </UiButton>
       </div>
       <AnnouncementResultPanel
@@ -678,6 +678,7 @@ useHead({ title: "Anúncio" });
       :error="decisionError"
       :shop-timezone="shopTimezone"
       :image-url="announcement ? outgoingImageUrl(announcement) : ''"
+      :platform-content="announcement?.platform_content || {}"
       @confirm="confirmServerDecision"
       @cancel="cancelServerDecision"
     />

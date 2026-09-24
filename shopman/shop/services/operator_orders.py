@@ -98,7 +98,7 @@ _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
         "Encomenda para uma data futura. O preparo abre no dia combinado."
     ),
     AdvanceBlock.WAITLIST_FERMATA: (
-        "Reserva na fila da fornada. O preparo abre quando o lote sair."
+        "Reserva na fila do lote. O preparo abre quando ele sair."
     ),
 }
 
@@ -292,6 +292,17 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
     return AdvanceBlock.NONE
 
 
+def gestor_advance_block(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> AdvanceBlock:
+    """O bloqueio visto do Gestor: maquininha ocupada NÃO trava o botão de saída.
+
+    No Gestor, o diálogo de saída resolve a falta de maquininha ali mesmo (diz
+    onde elas estão e oferece "Entregador voltou"). A reserva continua exigida
+    sob lock por ``delivery_devices.allocate``; o KDS segue com o bloqueio.
+    """
+    bloqueio = advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)
+    return AdvanceBlock.NONE if bloqueio == AdvanceBlock.DEVICE_UNAVAILABLE else bloqueio
+
+
 def advance_block_message(bloqueio: AdvanceBlock) -> str:
     """A frase que o operador lê para um código de bloqueio."""
     return _ADVANCE_BLOCK_MESSAGES.get(bloqueio, "")
@@ -313,8 +324,14 @@ def advance_order(
     expected_revision: str | None = None,
     target_status: str | None = None,
     expected_courier_id: str | None = None,
+    trip_ref: str | None = None,
 ) -> str:
     """Advance an order through the operator lifecycle.
+
+    ``trip_ref``: o pedido sai na MESMA saída de outro pedido já despachado
+    (o entregador leva os dois). A saída é identificada pelo pedido que a abriu,
+    e a maquininha que já está nela é compartilhada: pedido de cartão que entra
+    numa saída com maquininha não reserva outra.
 
     No despacho de uma entrega paga em dinheiro, o troco que o entregador leva
     sai da gaveta AQUI (``courier_out`` no turno de quem despacha, mesma
@@ -334,7 +351,8 @@ def advance_order(
     if target_status is not None and target_status != next_status_for(order):
         raise OrderStateConflict("A etapa solicitada não é mais a próxima ação deste pedido.")
     payment_service.lock_order_payment(order)
-    blocked = advance_block_reason(order)
+    # A maquininha é decidida abaixo, sob lock (reserva ou saída compartilhada).
+    blocked = advance_block_message(gestor_advance_block(order))
     if blocked:
         raise ValueError(blocked)
     next_status = next_status_for(order)
@@ -350,27 +368,39 @@ def advance_order(
             raise ValueError("O troco levado não pode ser negativo.")
         if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
             raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
-        taken = _clean_equipment(order, equipment)
         from shopman.shop.adapters import delivery_devices
 
-        device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
-        if device:
-            taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
+        trip = _open_trip(trip_ref, order) if trip_ref else ""
+        shared = trip_machine(trip) if trip else None
+        wants_machine = delivery_devices.needs_card_machine(order) or any(
+            str(ref).startswith(delivery_devices.reference_prefix()) for ref in (equipment or []))
+        if shared and wants_machine:
+            # A maquininha já está nesta saída: o pedido entra nela, sem reserva nova.
+            taken, device_fields = ["card_machine"], shared
+        else:
+            taken = _clean_equipment(order, equipment)
+            device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
+            device_fields = {"device_ref": str(device.ref), "device_label": device.label} if device else {}
+            if device:
+                taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
     else:
-        taken = []
+        taken, trip, device_fields = [], "", {}
 
     with transaction.atomic():
-        if taken:
-            # Custódia do aparelho (maquininha): o despacho registra o que saiu;
+        if taken or trip:
+            # Custódia da maquininha: o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
             # dinheiro, então não vai ao livro do caixa.
             data = dict(order.data or {})
             data["dispatch"] = {
                 **dict(data.get("dispatch") or {}),
-                "equipment": taken,
-                **({"device_ref": str(device.ref), "device_label": device.label} if device else {}),
-                "equipment_out_at": timezone_now_iso(),
-                "equipment_out_by": actor,
+                **({"trip_ref": trip} if trip else {}),
+                **({
+                    "equipment": taken,
+                    **device_fields,
+                    "equipment_out_at": timezone_now_iso(),
+                    "equipment_out_by": actor,
+                } if taken else {}),
             }
             order.data = data
             order.save(update_fields=["data", "updated_at"])
@@ -386,7 +416,7 @@ def advance_order(
             cash_ledger.record(
                 "courier_out",
                 shift=cash_shift,
-                operator=_user_for_actor(actor) or cash_shift.operator,
+                operator=_user_for_actor(actor) or cash_shift.opened_by,
                 amount_q=-change_out,
                 order_ref=order.ref,
                 payload={
@@ -426,7 +456,7 @@ class CourierChange:
         return self.out_q > 0 and self.back_q is None
 
 
-# ── Aparelho que sai com o entregador (maquininha) ─────────────────────────
+# ── Maquininha que sai com o entregador ───────────────────────────────────
 
 
 def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:
@@ -486,7 +516,11 @@ def equipment_custody(order: Order) -> EquipmentCustody:
 
 @transaction.atomic
 def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str | None = None) -> EquipmentCustody:
-    """O entregador devolveu a maquininha: fecha a custódia no pedido que o levou."""
+    """O entregador devolveu a maquininha: fecha a custódia no pedido que o levou.
+
+    A maquininha é UMA por saída: quando ela voltou, voltou para todos os
+    pedidos da mesma saída (``dispatch.trip_ref``), e a custódia fecha em todos.
+    """
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
     if expected_revision is not None and operational_revision(order, field="equipment") != expected_revision:
@@ -498,7 +532,26 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
         raise ValueError("A maquininha deste pedido já voltou.")
     from shopman.shop.adapters.delivery_devices import release
 
-    release(order)
+    device_ref = ((order.data or {}).get("dispatch") or {}).get("device_ref")
+    same_machine = [order] + [
+        member for member in _locked_trip_members(order) if member.pk != order.pk and equipment_custody(member).pending
+        and ((member.data or {}).get("dispatch") or {}).get("device_ref") == device_ref
+    ] if device_ref else [order]
+    # Quem segura a maquininha libera por último: os que a compartilham não têm vínculo próprio.
+    for member in sorted(same_machine, key=lambda m: _holds_device(m)):
+        release(member)
+        _stamp_equipment_back(member, actor=actor)
+    return equipment_custody(order)
+
+
+def _holds_device(order: Order) -> bool:
+    from shopman.shop.adapters.delivery_devices import holds_device
+
+    return holds_device(order)
+
+
+def _stamp_equipment_back(order: Order, *, actor: str) -> None:
+    custody = equipment_custody(order)
     data = dict(order.data or {})
     data["dispatch"] = {
         **dict(data.get("dispatch") or {}),
@@ -508,7 +561,180 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
     order.data = data
     order.save(update_fields=["data", "updated_at"])
     order.emit_event(event_type="equipment_returned", actor=actor, payload={"equipment": list(custody.equipment)})
-    return equipment_custody(order)
+
+
+# ── A saída: um entregador, uma maquininha, um ou mais pedidos ───────────
+
+
+def machine_phrase(label: str) -> str:
+    """"maquininha Azul" (ou "maquininha", sem identificação), em minúscula para meio de frase."""
+    label = str(label or "").strip()
+    if not label:
+        return "maquininha"
+    if label.lower().startswith("maquininha"):
+        return label[0].lower() + label[1:]
+    return f"maquininha {label}"
+
+
+def short_ref(ref: str) -> str:
+    """O número que o card mostra em destaque (o que vem depois do último hífen)."""
+    return str(ref).rsplit("-", 1)[-1]
+
+
+def trip_id(order: Order) -> str:
+    """A saída deste pedido: o ref do pedido que a abriu (ele mesmo, se saiu sozinho)."""
+    return str(((order.data or {}).get("dispatch") or {}).get("trip_ref") or order.ref)
+
+
+def trip_members(order: Order) -> list[Order]:
+    """Os pedidos que saíram juntos com este (inclui ele), na ordem de criação."""
+    from django.db.models import Q
+
+    tid = trip_id(order)
+    members = list(Order.objects.filter(Q(ref=tid) | Q(data__dispatch__trip_ref=tid)).order_by("pk"))
+    return members if any(m.pk == order.pk for m in members) else [order, *members]
+
+
+def _locked_trip_members(order: Order) -> list[Order]:
+    members = trip_members(order)
+    locked = list(Order.objects.select_for_update().filter(pk__in=[m.pk for m in members]).order_by("pk"))
+    return locked
+
+
+def _open_trip(trip_ref: str, order: Order) -> str:
+    """Valida que a saída de ``trip_ref`` ainda está na rua e devolve o id dela."""
+    anchor = Order.objects.filter(ref=str(trip_ref)).first()
+    if (
+        anchor is None or anchor.pk == order.pk or trip_id(anchor) != anchor.ref
+        or get_fulfillment_type(anchor) != "delivery"
+        or anchor.status not in (Order.Status.DISPATCHED, Order.Status.DELIVERED)
+        or ((anchor.data or {}).get("dispatch") or {}).get("courier_back_at")
+    ):
+        raise ValueError(f"A saída do pedido {trip_ref} não está mais na rua. Despache este pedido numa saída nova.")
+    return anchor.ref
+
+
+def trip_machine(tid: str) -> dict | None:
+    """A maquininha identificada que está na rua com esta saída, se houver."""
+    from django.db.models import Q
+
+    for member in Order.objects.filter(Q(ref=tid) | Q(data__dispatch__trip_ref=tid)).order_by("pk"):
+        dispatch = (member.data or {}).get("dispatch") or {}
+        if dispatch.get("device_ref") and equipment_custody(member).pending:
+            return {"device_ref": str(dispatch["device_ref"]), "device_label": str(dispatch.get("device_label") or "")}
+    return None
+
+
+def _cod_pending(order: Order) -> bool:
+    """Pagamento na porta ainda não acertado no balcão."""
+    payment = (order.data or {}).get("payment") or {}
+    return (
+        get_fulfillment_type(order) == "delivery"
+        and payment.get("collection") == "on_delivery"
+        and payment.get("method") in {"cash", "credit", "debit", "mixed"}
+        and not payment.get("cod_settled_at")
+    )
+
+
+def must_come_back(order: Order) -> bool:
+    """O entregador tem algo a devolver por este pedido: maquininha, dinheiro ou troco."""
+    return equipment_custody(order).pending or _cod_pending(order) or courier_change(order).pending
+
+
+def _trip_open(order: Order) -> bool:
+    return (
+        get_fulfillment_type(order) == "delivery"
+        and order.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED)
+        and not ((order.data or {}).get("dispatch") or {}).get("courier_back_at")
+    )
+
+
+def courier_return_members(order: Order) -> list[Order]:
+    """Os pedidos que "Entregador voltou" fecha a partir deste; vazio se não há o que voltar."""
+    if not _trip_open(order):
+        return []
+    members = [m for m in trip_members(order) if _trip_open(m)]
+    return members if any(must_come_back(m) for m in members) else []
+
+
+def trip_revision(order: Order) -> str:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "trip": trip_id(order), "members": [
+        [m.ref, m.status, (m.data or {}).get("payment"), (m.data or {}).get("dispatch")] for m in trip_members(order)]})
+
+
+@dataclass(frozen=True)
+class CourierReturn:
+    """O que a mão do operador deve receber quando o entregador volta."""
+
+    orders: tuple[str, ...] = ()
+    machine: str = ""
+    cash_q: int = 0
+    cash_parts: tuple[tuple[str, int], ...] = ()  # (pedido, venda em espécie)
+    change_q: int = 0
+
+
+def courier_return(order: Order) -> CourierReturn:
+    members = courier_return_members(order)
+    if not members:
+        return CourierReturn()
+    machine = ""
+    for member in members:
+        custody = equipment_custody(member)
+        if custody.pending:
+            label = str(((member.data or {}).get("dispatch") or {}).get("device_label") or "")
+            machine = machine or label or "maquininha"
+    parts = tuple((m.ref, cash_due_on_delivery_q(m)) for m in members if _cod_pending(m) and cash_due_on_delivery_q(m) > 0)
+    change_q = sum(courier_change(m).out_q for m in members if courier_change(m).pending)
+    return CourierReturn(
+        orders=tuple(m.ref for m in members), machine=machine,
+        cash_q=sum(q for _, q in parts) + change_q, cash_parts=parts, change_q=change_q,
+    )
+
+
+@transaction.atomic
+def courier_returned(order: Order, *, actor: str, cash_shift=None, expected_revision: str | None = None) -> list[str]:
+    """"Entregador voltou": fecha a saída inteira num gesto só.
+
+    Para cada pedido da saída: entregue (se ainda estava na rua), pagamento da
+    porta acertado com o troco integral de volta (``settle_delivery_cash``),
+    maquininha devolvida (``mark_equipment_returned``) e pedido concluído
+    quando nada mais o segura. Diferença de valor não passa por aqui: é o
+    acerto à mão, no pedido.
+    """
+    if cash_shift is not None:
+        type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and trip_revision(order) != expected_revision:
+        raise OrderStateConflict("A saída mudou. Confira o que voltou antes de fechar.")
+    members = courier_return_members(order)
+    if not members:
+        raise ValueError("Esta saída já foi fechada.")
+    _locked_trip_members(order)
+    closed = []
+    for member in members:
+        member.refresh_from_db()
+        if member.status == Order.Status.DISPATCHED:
+            advance_order(member, actor=actor)
+            member.refresh_from_db()
+        if _cod_pending(member):
+            change = courier_change(member)
+            settle_delivery_cash(member, cash_shift=cash_shift, actor=actor,
+                                 change_back_q=change.out_q if change.pending else None)
+            member.refresh_from_db()
+        if equipment_custody(member).pending:
+            mark_equipment_returned(member, actor=actor)
+            member.refresh_from_db()
+        data = dict(member.data or {})
+        data["dispatch"] = {**dict(data.get("dispatch") or {}), "courier_back_at": timezone_now_iso(), "courier_back_by": actor}
+        member.data = data
+        member.save(update_fields=["data", "updated_at"])
+        if member.status == Order.Status.DELIVERED and advance_block(member) == AdvanceBlock.NONE:
+            advance_order(member, actor=actor)
+        closed.append(member.ref)
+    return closed
 
 
 def equipment_out(*, channel_ref: str | None = None) -> list[tuple[str, Order]]:
@@ -531,23 +757,41 @@ def _change_for_q(order: Order) -> int:
         return 0
 
 
+def cash_due_on_delivery_q(order: Order) -> int:
+    """Quanto desta entrega será recebido em ESPÉCIE na porta, em centavos.
+
+    A parcela em dinheiro está nas LINHAS (``payment.tenders``) quando elas
+    existem; só na ausência delas o método do topo responde pelo pedido
+    inteiro. Perguntar ao topo primeiro deixava o pedido de marketplace de
+    fora: lá o método é ``external`` — quem precifica e concilia é o iFood — e
+    a parcela em dinheiro aparece apenas na linha.
+
+    Não desconta acerto já feito: quem cuida disso é quem pergunta.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if get_fulfillment_type(order) != "delivery" or payment.get("collection") != "on_delivery":
+        return 0
+    tenders = payment.get("tenders") or []
+    if tenders:
+        return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") == "cash")
+    if payment.get("method") not in {"cash", "mixed"}:
+        return 0
+    return int(order.total_q or 0)
+
+
 def change_out_suggested_q(order: Order) -> int:
-    """Quanto de troco a loja sugere que o entregador leve: ``change_for_q − total``.
+    """Quanto de troco a loja sugere que o entregador leve: ``change_for_q − parcela em dinheiro``.
 
     Só enquanto é entrega em dinheiro na porta ainda não acertada; zero quando o
     cliente não pediu troco, pediu abaixo do total (erro de digitação) ou o
     dinheiro já entrou.
     """
     payment = (order.data or {}).get("payment") or {}
-    if get_fulfillment_type(order) != "delivery":
-        return 0
-    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
-        return 0
     if payment.get("cod_settled_at"):
         return 0
-    cash_due = sum(int(t.get("amount_q") or 0) for t in payment.get("tenders") or [] if t.get("method") == "cash")
-    if not payment.get("tenders"):
-        cash_due = int(order.total_q or 0)
+    cash_due = cash_due_on_delivery_q(order)
+    if cash_due <= 0:
+        return 0
     return max(0, _change_for_q(order) - cash_due)
 
 
@@ -819,7 +1063,7 @@ def settle_delivery_cash(
 
     from shopman.payman import PaymentService
 
-    receiver = _user_for_actor(actor) or cash_shift.operator
+    receiver = _user_for_actor(actor) or cash_shift.opened_by
 
     tenders = [dict(t) for t in payment.get("tenders") or []]
     if not tenders:
@@ -1152,7 +1396,12 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             "completed": "Marcar como Retirado" if order.status == "ready" else "Concluir",
         }
         target = next_status_for(order)
-        reason = advance_block_reason(order, waitlist_state=waitlist_state, payment_reads=payment_reads) if authorized else permission_reason
+        if target == Order.Status.DISPATCHED:
+            from shopman.shop.adapters.delivery_devices import needs_card_machine
+
+            if needs_card_machine(order):
+                labels["dispatched"] = "Saiu com a maquininha"
+        reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)) if authorized else permission_reason
         actions.append(Action(
             ref="advance", kind="mutation", label=labels[target], priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",
@@ -1167,6 +1416,15 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             ref=ref, kind="mutation", label=label, enabled=authorized,
             reason="" if authorized else permission_reason, method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field=field)},
+        ))
+    # "Entregador voltou": um gesto fecha a saída inteira (entrega, dinheiro,
+    # troco e maquininha). Só existe quando o entregador tem algo a devolver.
+    if order.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED) and courier_return_members(order):
+        actions.append(Action(
+            ref="courier-back", kind="mutation", label="Entregador voltou", priority="primary",
+            enabled=authorized, reason="" if authorized else permission_reason,
+            method="POST", idempotency="required", confirmation={"required": True},
+            payload_schema={"expected_actor_id": actor_id, "base_revision": trip_revision(order)},
         ))
     custody = equipment_custody(order)
     if custody.equipment:

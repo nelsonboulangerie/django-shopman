@@ -2,7 +2,7 @@
 // Cabeçalho das telas de receitas — irmão do ProductionHeader (mesmo lugar, mesmo
 // desenho: RailToggle + eyebrow + título + busca + atualizar), SEM as abas do fluxo
 // do dia: o inventário de receitas não é etapa da fornada, é conhecimento da casa.
-// O que é comum (Central, operador/travar, tema) mora no OperatorRail à esquerda.
+// O que é comum (Shopman Apps, operador/travar, tema) mora no OperatorRail à esquerda.
 defineProps<{
   title: string;
   /** Linha pequena sob o título (kind, SKU, versão) — opcional. */

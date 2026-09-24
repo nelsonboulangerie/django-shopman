@@ -103,7 +103,7 @@ useHead({ title: "Modelos" });
             :disabled="loading"
             @click="load()"
           >
-            {{ loading ? "Carregando…" : "Tentar novamente" }}
+            {{ loading ? "Carregando…" : "Tentar de novo" }}
           </UiButton>
         </div>
       </div>
@@ -128,7 +128,7 @@ useHead({ title: "Modelos" });
       />
       <p class="mt-3 font-semibold">Nenhum modelo ainda</p>
       <p class="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        O modelo é o texto que sai para o cliente. Sem pelo menos um, não há
+        O modelo é o texto que o cliente recebe. Sem pelo menos um, não há
         como criar campanha.
       </p>
       <UiButton
@@ -202,12 +202,12 @@ useHead({ title: "Modelos" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{
             editing ? "Editar modelo" : "Novo modelo"
           }}</UiSheetTitle>
           <UiSheetDescription>
-            O texto que sai para o cliente. As variáveis são substituídas no
+            O texto que o cliente recebe. As variáveis são substituídas no
             envio.
           </UiSheetDescription>
         </UiSheetHeader>
@@ -249,7 +249,7 @@ useHead({ title: "Modelos" });
             alteração foi feita.
           </UiDialogDescription>
           <UiDialogDescription v-else>
-            O modelo será removido. Nada do que já saiu muda.
+            O modelo será removido. Nada do que já foi disparado muda.
           </UiDialogDescription>
         </UiDialogHeader>
         <ul

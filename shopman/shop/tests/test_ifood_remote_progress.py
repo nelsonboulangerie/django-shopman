@@ -96,26 +96,33 @@ def test_remote_event_before_placed_can_retry_after_materialization(code, initia
 
 @pytest.mark.parametrize("initial", ["new", "accepted", "preparing"])
 def test_dsp_before_local_readiness_does_not_invent_preparation(initial):
+    """O entregador do iFood retirou antes de a cozinha marcar "Pronto": o fato
+    é gravado e reconhecido, e o pedido local fica onde está — nada de preparo
+    ou saída inventados. Quando a cozinha marcar, a reconciliação aplica."""
     order = _order(initial)
     event = _event("DSP")
-    with patch.object(ifood_events, "acknowledge") as ack:
-        assert ifood_events.process_events([event])["failed"] == 1
-    ack.assert_not_called()
+    with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
+        assert ifood_events.process_events([event])["ingested"] == 1
+    ack.assert_called_once()
     order.refresh_from_db()
     assert order.status == initial
-    assert "remote_dispatched" not in order.data["ifood"]
+    assert order.data["ifood"]["remote_dispatched"]
     assert not order.events.exists()
     assert not order.fulfillments.exists()
-    assert _claim_status(event) == "failed"
+    assert _claim_status(event) == "done"
 
 
-def test_dsp_for_pickup_is_not_acknowledged_as_dispatch():
+def test_dsp_for_pickup_is_recorded_but_never_dispatches():
+    """Retirada não "sai para entrega": o fato é guardado (e reconhecido, para o
+    iFood não reentregar para sempre), mas nunca vira transição."""
     order = _order("ready", "pickup")
-    with patch.object(ifood_events, "acknowledge") as ack:
-        assert ifood_events.process_events([_event("DSP")])["failed"] == 1
-    ack.assert_not_called()
+    with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
+        assert ifood_events.process_events([_event("DSP")])["deduped"] == 1
+    ack.assert_called_once()
     order.refresh_from_db()
     assert order.status == "ready"
+    assert order.data["ifood"]["remote_dispatched"]
+    assert not order.events.exists()
 
 
 @pytest.mark.parametrize("code,status", [("CFM", "preparing"), ("DSP", "delivered"), ("CFM", "cancelled"), ("DSP", "completed")])

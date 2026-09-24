@@ -254,7 +254,7 @@ class NotificationSendHandler:
             template = context.get("template") or event
         context = _enrich_system_context(template, context)
 
-        fallback_recipient = getattr(settings, "SHOPMAN_OPERATOR_EMAIL", None) or getattr(
+        fallback_recipient = getattr(settings, "SHOPMAN_ALERT_EMAIL", None) or getattr(
             settings, "DEFAULT_FROM_EMAIL", "admin@shopman.local"
         )
         recipient = str(payload.get("recipient") or fallback_recipient)

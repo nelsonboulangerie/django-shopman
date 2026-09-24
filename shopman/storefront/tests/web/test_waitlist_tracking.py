@@ -148,7 +148,7 @@ class TestTheBoardTellsWaitingApartFromStuck:
         card = build_order_card(_fermata_order("T-6"))
 
         assert card.waitlist_state == waitlist.FERMATA
-        assert card.waitlist_label == "Na fila da fornada"
+        assert card.waitlist_label == "Na fila do lote"
         assert card.waitlist_deadline_iso == ""
 
     def test_the_open_window_shows_the_customers_clock_to_the_operator(self):

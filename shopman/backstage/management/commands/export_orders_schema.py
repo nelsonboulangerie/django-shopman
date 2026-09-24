@@ -37,12 +37,21 @@ from shopman.backstage.projections.catalog_bindings import (
     CatalogReviewItem,
     CatalogSnapshotSummary,
 )
+from shopman.backstage.projections.channel_health import (
+    ChannelHealthBoardProjection,
+    ChannelHealthItem,
+    ChannelHealthLink,
+    ChannelHealthProjection,
+)
 from shopman.backstage.projections.feeds import (
     CatalogChannelProjection,
+    ChannelPeriodOption,
+    ChannelSwitchProjection,
     CollectionOptionProjection,
     FeedBoardProjection,
     FeedCollectionRef,
     FeedProjection,
+    ManagerOptionProjection,
 )
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
 from shopman.backstage.projections.order_queue import (
@@ -75,10 +84,17 @@ CONTRACT_DATACLASSES = (
     CatalogReviewItem,
     CatalogBindingReviewProjection,
     FeedCollectionRef,
+    ChannelPeriodOption,
+    ChannelSwitchProjection,
+    ManagerOptionProjection,
     FeedProjection,
     CatalogChannelProjection,
     CollectionOptionProjection,
     FeedBoardProjection,
+    ChannelHealthItem,
+    ChannelHealthLink,
+    ChannelHealthProjection,
+    ChannelHealthBoardProjection,
     OrderItemProjection,
     TimelineEventProjection,
     AwaitingWorkOrderProjection,
@@ -101,7 +117,7 @@ def render_orders_contract_ts() -> str:
     return render_contract_module(
         source=(
             "shopman/backstage/projections/order_queue.py"
-            " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py"
+            " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

@@ -73,12 +73,40 @@ def test_o_dono_audita_e_o_gerente_nao(elenco):
     assert "Dono" in [g.name for g in elenco["admin"].groups.all()]
 
 
-def test_todos_tem_pin_para_destravar_a_superficie(elenco):
+def test_todo_operador_de_balcao_tem_pin_e_o_superusuario_nao(elenco):
+    """O superusuário destrava por PIN (`backstage.services.operator._eligible`),
+    mas não recebe o PIN de dev: um 1234 na conta do dono seria o PIN que o
+    balcão inteiro conhece. Ele cadastra o próprio.
+    """
     from shopman.doorman.models import PinCredential
 
-    for user in elenco.values():
+    for username, user in elenco.items():
+        if user.is_superuser:
+            assert not PinCredential.objects.filter(user=user).exists(), username
+            continue
         cred = PinCredential.objects.get(user=user)
         assert cred.verify(setup_operators.DEV_PIN)
+
+
+def test_rodada_nova_preserva_o_pin_que_o_superusuario_cadastrou():
+    """O comando é idempotente e roda de rotina: se apagasse o PIN do dono, cada
+    rodada desfaria o cadastro dele. E também não o troca pelo de dev."""
+    from shopman.doorman.models import PinCredential
+
+    admin = get_user_model().objects.create_user(
+        username="admin", password="forte", is_staff=True, is_superuser=True
+    )
+    PinCredential.set_for(admin, "8642")
+    cred = PinCredential.objects.get(user=admin)
+    cred.set_badge("abcdef012345")
+    cred.save(update_fields=["badge_hash"])
+
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    cred = PinCredential.objects.get(user=admin)
+    assert cred.verify("8642")
+    assert not cred.verify(setup_operators.DEV_PIN)
+    assert PinCredential.resolve_by_badge("abcdef012345") == admin
 
 
 def test_quem_inicia_dispositivo_tem_senha_e_o_balcao_so_PIN(elenco):
@@ -166,15 +194,18 @@ def test_permissao_avulsa_antiga_e_LIMPA(elenco):
 # ── Crachá ────────────────────────────────────────────────────────────────
 
 
-def test_todos_saem_com_cracha_emitido(elenco):
+def test_todo_operador_de_balcao_sai_com_cracha_emitido(elenco):
     """A máquina de ler crachá estava pronta; faltava CRACHÁ.
 
     Sem token emitido, passar o leitor não acha ninguém — e a tela parece
-    quebrada quando o que falta é o cadastro.
+    quebrada quando o que falta é o cadastro. O superusuário fica de fora: o
+    comando não dá credencial de dev a ele, o dono cadastra a dele.
     """
     from shopman.doorman.models import PinCredential
 
     for username, user in elenco.items():
+        if user.is_superuser:
+            continue
         cred = PinCredential.objects.get(user=user)
         assert cred.badge_hash, f"{username} sem crachá"
 

@@ -16,7 +16,7 @@ const {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
-const centralLink = computed(() => appLinkAttrsFor(hubUrl));
+const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
 useOperatorWindowTitle();
 
@@ -48,7 +48,7 @@ watch(sessionState, async (next, previous) => {
       <template v-if="sessionState === 'authenticated'">
         <div class="sticky top-0 flex h-screen shrink-0 print:hidden">
           <OperatorRail
-            :central-url="hubUrl"
+            :hub-url="hubUrl"
             :operator-name="operator?.name"
             @lock="lock"
           />
@@ -80,7 +80,7 @@ watch(sessionState, async (next, previous) => {
             class="mt-4"
             @click="refreshSession()"
           >
-            Tentar novamente
+            Tentar de novo
           </UiButton>
         </div>
       </main>
@@ -112,19 +112,18 @@ watch(sessionState, async (next, previous) => {
             Seu acesso não inclui Marketing
           </h1>
           <p class="mt-1 text-sm text-muted-foreground">
-            Entrar novamente não amplia permissões. Peça a um responsável o
-            acesso
-            <span class="font-mono">shop.view_marketing</span>.
+            Entrar de novo não resolve. Peça a um responsável o acesso ao
+            Marketing.
           </p>
-          <!-- Mesma regra do ícone da Central no rail: instalado, a Central abre na
+          <!-- Mesma regra do ícone do Shopman Apps no rail: instalado, ele abre na
                janela DELA (ver operator-kit/app/presentation/appLaunch.ts). -->
           <a
             :href="hubUrl"
-            :target="centralLink.target"
-            :rel="centralLink.rel"
+            :target="hubLink.target"
+            :rel="hubLink.rel"
             class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
           >
-            Voltar à Central
+            Voltar ao Shopman Apps
           </a>
         </div>
       </main>

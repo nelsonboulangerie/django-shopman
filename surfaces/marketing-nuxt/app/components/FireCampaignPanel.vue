@@ -290,22 +290,29 @@ watch(
     </p>
 
     <div v-if="needsProduct">
-      <label
-        for="fire-product"
+      <!-- ⚠️ `UiSelect`, não o select do sistema: o catálogo da padaria passa de doze
+           itens com folga, e acima disso ninguém varre a lista com o olho — é para isso
+           que o primitivo traz busca (e ela ignora acento).
+           ⚠️ O rótulo é um `<span id>` com `labelledBy`, NUNCA um `<label>`: um
+           `<label>` sem `for` adota o botão que abre e reencaminha para ele todo clique
+           que caia em parte não interativa, inclusive o véu de fechar — o painel
+           fechava e reabria no mesmo gesto. Isto é memória de um defeito pago no
+           recebimento do Compras. -->
+      <span
+        id="fire-product-label"
         class="mb-1 block text-xs font-medium text-muted-foreground"
       >
         Produto desta ocorrência
-      </label>
-      <UiNativeSelect id="fire-product" v-model="productSku" required>
-        <option value="">Escolha o produto</option>
-        <option
-          v-for="product in products ?? []"
-          :key="product.value"
-          :value="product.value"
-        >
-          {{ product.label }}
-        </option>
-      </UiNativeSelect>
+      </span>
+      <UiSelect
+        :model-value="productSku"
+        :options="products ?? []"
+        labelled-by="fire-product-label"
+        placeholder="Escolha o produto"
+        search-placeholder="Buscar produto"
+        empty-text="Nenhum produto com esse nome"
+        @update:model-value="productSku = String($event)"
+      />
       <p
         v-if="(products ?? []).length"
         class="mt-1 text-xs text-muted-foreground"
@@ -337,8 +344,10 @@ watch(
                 : "postagens públicas"
             }}
           </p>
+          <!-- "Uma em cada plataforma" deixava o leitor completar o sujeito: uma o
+               quê? A frase nomeia a coisa contada e o gesto que não acontece. -->
           <p class="mt-1 text-xs text-muted-foreground">
-            Uma em cada plataforma. Não escolhe contatos.
+            Uma postagem por plataforma. Não seleciona contatos.
           </p>
         </div>
       </div>
@@ -349,53 +358,31 @@ watch(
         Público alvo
       </legend>
 
-      <!-- Rádios nativos tornam explícita a escolha exclusiva entre público salvo e escolha avulsa. -->
-      <label
-        class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
-      >
-        <input
-          v-model="useSaved"
-          type="radio"
-          :value="true"
-          class="mt-0.5"
-          name="audience-mode"
-        />
-        <span>
-          <span class="block text-sm font-medium">O público da campanha</span>
-          <span class="block text-xs text-muted-foreground">
+      <!-- Escolha exclusiva pelo primitivo da casa: seta anda entre as duas, uma
+           parada de tabulação só, alvo de 44 px. -->
+      <UiRadioGroup v-model="useSaved" label="Público alvo">
+        <UiRadio :value="true" label="O público da campanha">
+          <template #description>
             {{
               rule
                 ? audienceRulesSummary(rule.audience_rules, audienceLabels)
                 : ""
             }}
-          </span>
-          <span
-            v-if="savedAudienceEmpty"
-            class="mt-1 block text-xs text-warning"
-          >
-            Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
-            edite a campanha para dar um público a ela.
-          </span>
-        </span>
-      </label>
-
-      <label
-        class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
-      >
-        <input
-          v-model="useSaved"
-          type="radio"
+            <span
+              v-if="savedAudienceEmpty"
+              class="mt-1 block text-warning"
+            >
+              Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
+              edite a campanha para dar um público a ela.
+            </span>
+          </template>
+        </UiRadio>
+        <UiRadio
           :value="false"
-          class="mt-0.5"
-          name="audience-mode"
+          label="Escolher agora"
+          description="Vale só para este disparo. A campanha continua como está."
         />
-        <span>
-          <span class="block text-sm font-medium">Escolher agora</span>
-          <span class="block text-xs text-muted-foreground">
-            Vale só para este disparo. A campanha continua como está.
-          </span>
-        </span>
-      </label>
+      </UiRadioGroup>
     </fieldset>
 
     <div
@@ -485,48 +472,23 @@ watch(
         </div>
       </fieldset>
 
-      <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="winBack"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Quem está sumindo
-          <span class="block text-xs text-muted-foreground">
-            Clientes com risco alto de não voltar.
-          </span>
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="winBack"
+        label="Quem está sumindo"
+        description="Clientes com risco alto de não voltar."
+      />
 
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="birthday"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Aniversariantes de hoje
-          <span class="block text-xs text-muted-foreground"
-            >Só quem tem data cadastrada.</span
-          >
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="birthday"
+        label="Aniversariantes de hoje"
+        description="Só quem tem data cadastrada."
+      />
 
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="vipFirst"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Avisar os melhores clientes 15 min antes
-          <span class="block text-xs text-muted-foreground">
-            Vantagem, não exclusão: todos recebem.
-          </span>
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="vipFirst"
+        label="Avisar os melhores clientes 15 min antes"
+        description="Vantagem, não exclusão: todos recebem."
+      />
 
       <p v-if="nothingChosen" class="text-xs text-muted-foreground">
         Escolha pelo menos um grupo acima para ver quantas pessoas recebem.
@@ -665,7 +627,7 @@ watch(
         class="mt-3"
         @click="measureAgain"
       >
-        Contar novamente
+        Tentar de novo
       </UiButton>
 
       <!-- O zero da fila de "me avise" precisa dizer QUAL zero é: ninguém pediu, ou
@@ -679,7 +641,7 @@ watch(
       v-if="!publicOnly"
       class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Sem consentimento de WhatsApp, fica de fora.
+      Quem não deu consentimento para o WhatsApp não recebe.
     </p>
 
     <p v-if="error" class="text-sm text-destructive" role="alert">

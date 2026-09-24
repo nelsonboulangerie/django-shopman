@@ -158,7 +158,7 @@ class ProductDetailProjection:
     is_bundle: bool
     components: tuple[ComponentProjection, ...]
 
-    # Unit weight (spec próxima ao preço — "~250g a unidade")
+    # Unit weight (spec próxima ao preço — "peça de ~250 g")
     unit_weight_label: str | None
     approx_dimensions_label: str | None
 
@@ -176,6 +176,12 @@ class ProductDetailProjection:
     # SEO/search-facing product facts
     seo_description: str
     seo_keywords: tuple[str, ...]
+    # Identidade comercial do Catálogo do Gestor — a mesma do feed Google/Meta.
+    # Vazio = não informado; a PDP não completa com a marca da loja.
+    brand: str
+    gtin: str
+    mpn: str
+    item_condition: str
 
     # Breadcrumb
     breadcrumb_category: CategoryProjection | None
@@ -324,6 +330,7 @@ def build_product_detail(
         conservation=conservation,
     )
     seo_keywords = _seo_keywords(product, allergen=allergen)
+    identity = catalog_context.commercial_identity(product)
 
     gallery = _gallery(product)
 
@@ -380,6 +387,10 @@ def build_product_detail(
         nutrition=nutrition,
         seo_description=seo_description,
         seo_keywords=seo_keywords,
+        brand=identity.brand,
+        gtin=identity.gtin,
+        mpn=identity.mpn,
+        item_condition=identity.condition,
         breadcrumb_category=breadcrumb_category,
         cross_sell=cross_sell,
         cross_sell_heading=_cross_sell_heading(),
@@ -560,7 +571,9 @@ def _food_safety_notice() -> str:
 
 
 def _unit_weight_label(product: Any) -> str | None:
-    return f"~{product.unit_weight_g}g a unidade" if product.unit_weight_g else None
+    # Ver `catalog._unit_weight_label`: o rótulo diz de quem é o peso, porque ao lado
+    # do preço dois números sem conector admitem "R$ 18,00 POR 500 g".
+    return f"peça de ~{product.unit_weight_g} g" if product.unit_weight_g else None
 
 
 def _approx_dimensions_label(product: Any) -> str | None:

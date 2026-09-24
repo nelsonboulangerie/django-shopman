@@ -39,6 +39,12 @@ const props = defineProps<{
   scheduleLabel: string;
   /** O pedido é para outro dia — muda o ícone e o realce do botão. */
   scheduled: boolean;
+  /** Há linha JÁ DISPARADA para a cozinha nesta comanda. Liberar a comanda
+   *  cancela os tickets no KDS (`clear_pos_tab` → `cancel_tickets_for_session`),
+   *  e o aviso precisa dizer isso: quem lê "descarta este atendimento" pensa em
+   *  apagar itens de uma tela, e o que acontece é um ticket sumindo do fogão
+   *  com alguém de mão na massa. */
+  hasFiredItems?: boolean;
   /** O horário escolhido virou impossível (item lançado depois da escolha). */
   scheduleConflict?: boolean;
   scheduleConflictReason?: string;
@@ -319,7 +325,13 @@ function runClear() {
         <UiDialogHeader>
           <UiDialogTitle>Liberar comanda?</UiDialogTitle>
           <UiDialogDescription>
-            Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.
+            <template v-if="hasFiredItems">
+              Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha
+              é cancelado — avise quem está lá dentro. Não dá para desfazer.
+            </template>
+            <template v-else>
+              Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.
+            </template>
           </UiDialogDescription>
         </UiDialogHeader>
         <UiDialogFooter class="gap-2">

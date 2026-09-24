@@ -125,3 +125,28 @@ it.each([401, 403, 404, 409, 502])("erro GET %s sem prova not_applied conserva i
   await expect(client.checkPath("ORDER:notes", "/api/v1/backstage/orders/ORDER/notes/")).rejects.toBeDefined();
   expect(env.states.get("orders-local-intentions")?.value["ORDER:notes"]).toEqual(previous);
 });
+
+describe("recusa declarada pelo servidor não prende a intenção", () => {
+  // 21/09/2026: o iFood recusou na borda a leitura dos motivos no meio de um
+  // cancelamento. O 503 parecia "talvez gravou", o recibo dizia "desconhecido" e
+  // toda tentativa seguinte caía em "há uma gravação anterior" até o F5.
+  it("503 com outcome not_applied libera: a próxima tentativa sai de verdade", async () => {
+    const client = useOrderIntention();
+    env.fetchMock.mockRejectedValueOnce({ status: 503, data: { outcome: "not_applied", detail: "Não foi possível consultar os motivos do iFood." } });
+    await expect(client.execute("ORDER", "cancel", action, { reason: "cliente desistiu" })).rejects.toBeTruthy();
+    // Nenhuma consulta de recibo: o servidor já disse que nada foi aplicado.
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
+    expect(await client.execute("ORDER", "cancel", action, { reason: "outro motivo" })).toBe(true);
+    const retry = env.fetchMock.mock.calls[1]![1];
+    expect(retry.method).toBe("POST");
+    expect(retry.body.reason).toBe("outro motivo");
+  });
+
+  it("5xx sem a declaração continua consultando o recibo, como antes", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ outcome: "applied" });
+    expect(await useOrderIntention().execute("ORDER", "cancel", action, {})).toBe(true);
+    expect(env.fetchMock.mock.calls[1]![1].query.idempotency_key).toBeTruthy();
+  });
+});

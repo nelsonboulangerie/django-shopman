@@ -162,11 +162,11 @@ class PwaCopyProjection:
     install_message: CopyEntryProjection
     install_cta: CopyEntryProjection
     install_dismiss_cta: CopyEntryProjection
-    ios_title: CopyEntryProjection
-    ios_message: CopyEntryProjection
-    ios_share_step: CopyEntryProjection
-    ios_add_step: CopyEntryProjection
-    ios_done_cta: CopyEntryProjection
+    # O caminho manual (iOS, Firefox do Android, Safari do macOS) tem título e botão
+    # próprios; os PASSOS não vêm daqui — são fato de plataforma, escritos no cliente
+    # por `installPlan()`, que conhece o navegador de quem está lendo.
+    manual_title: CopyEntryProjection
+    manual_done_cta: CopyEntryProjection
     update_title: CopyEntryProjection
     update_cta: CopyEntryProjection
 
@@ -308,12 +308,15 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         if cart_has_items is not None
         else origin_channel == "whatsapp" and _request_cart_has_items(request)
     )
+    from shopman.shop.projections.channel_state import accepting_orders
+
     notices = _home_notices(
         shop_status=shop_status,
         omotenashi=omotenashi,
         origin_channel=origin_channel,
         cart_has_items=notice_cart_has_items,
         whatsapp_url=public_config.whatsapp_url,
+        ordering_off=not accepting_orders(STOREFRONT_CHANNEL_REF),
     )
 
     return HomeProjection(
@@ -348,8 +351,30 @@ def _home_notices(
     origin_channel: str | None,
     cart_has_items: bool,
     whatsapp_url: str,
+    ordering_off: bool = False,
 ) -> tuple[HomeNoticeProjection, ...]:
     notices: list[HomeNoticeProjection] = []
+
+    if ordering_off:
+        # Loja online desligada no Gestor. O cardápio segue aberto para consulta;
+        # quem ia pedir precisa saber ANTES de montar a sacola, não no último botão.
+        notices.append(HomeNoticeProjection(
+            ref="ordering_off",
+            tone="warning",
+            title="A loja online não está recebendo pedidos agora",
+            message="O cardápio continua aqui para você consultar.",
+            priority="contextual",
+            actions=(
+                (Action(
+                    ref="contact_whatsapp",
+                    kind="external",
+                    label="Falar no WhatsApp",
+                    href=whatsapp_url,
+                    priority="quiet",
+                    idempotency="none",
+                ),) if whatsapp_url else ()
+            ),
+        ))
 
     status_message = (shop_status.message or "").strip()
     if status_message:
@@ -484,11 +509,8 @@ def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
         install_message=_copy_entry("PWA_INSTALL_MESSAGE", omotenashi=omotenashi),
         install_cta=_copy_entry("PWA_INSTALL_CTA", omotenashi=omotenashi),
         install_dismiss_cta=_copy_entry("PWA_INSTALL_DISMISS_CTA", omotenashi=omotenashi),
-        ios_title=_copy_entry("PWA_IOS_TITLE", omotenashi=omotenashi),
-        ios_message=_copy_entry("PWA_IOS_MESSAGE", omotenashi=omotenashi),
-        ios_share_step=_copy_entry("PWA_IOS_SHARE_STEP", omotenashi=omotenashi),
-        ios_add_step=_copy_entry("PWA_IOS_ADD_STEP", omotenashi=omotenashi),
-        ios_done_cta=_copy_entry("PWA_IOS_DONE_CTA", omotenashi=omotenashi),
+        manual_title=_copy_entry("PWA_MANUAL_TITLE", omotenashi=omotenashi),
+        manual_done_cta=_copy_entry("PWA_MANUAL_DONE_CTA", omotenashi=omotenashi),
         update_title=_copy_entry("PWA_UPDATE_TITLE", omotenashi=omotenashi),
         update_cta=_copy_entry("PWA_UPDATE_CTA", omotenashi=omotenashi),
     )

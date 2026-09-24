@@ -40,7 +40,7 @@ const badge = computed(() => tileBadge(props.item))
       <UiBadge v-if="badge && item.availability !== 'unavailable'" :variant="badge.variant" class="mt-2 font-normal">{{ badge.label }}</UiBadge>
       <DietaryWarningBadges :warnings="item.dietary_warnings" class="mt-2" />
       <p class="mt-2 flex flex-wrap items-baseline gap-x-2">
-        <span v-if="item.original_price_display" class="shop-meta line-through">{{ item.original_price_display }}</span>
+        <span v-if="item.original_price_display" class="shop-meta">antes <span class="line-through">{{ item.original_price_display }}</span></span>
         <span class="shop-price">{{ item.price_display }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
       </p>

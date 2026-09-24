@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Preview fiel: uma resposta batch usa um único snapshot factual para todos os canais.
 // Epoch + AbortController impedem que uma resposta antiga substitua o texto mais recente.
+import { scenesFromDraftArtifacts } from "~/presentation/simulatedPreview";
+
 const props = defineProps<{
   body: string;
   /** SKU da ocorrência real. Vazio usa somente a amostra do formulário. */
@@ -251,6 +253,23 @@ const factTime = computed(() => {
 const shortHash = computed(
   () => selected.value?.artifact_hash.slice(0, 8) || "",
 );
+
+/** ⚠️ Fonte do retrato grande NESTA tela: o RASCUNHO corrente, já resolvido pelo
+ *  servidor nesta mesma resposta. É o ponto — aqui o gestor está editando, e o que ele
+ *  precisa ver em tamanho real é o efeito da edição que está fazendo agora. A caixa de
+ *  confirmação faz o oposto, e por um motivo igualmente explícito: lá o retrato sai do
+ *  corpo congelado do comando.
+ *
+ *  Nenhuma chamada a mais: os artefatos já estão aqui. Abrir a prévia grande não pede
+ *  nada ao servidor. */
+const simulatedScenes = computed(() =>
+  preview.value
+    ? scenesFromDraftArtifacts({
+        previews: preview.value.previews,
+        platformLabels: props.platformLabels,
+      })
+    : [],
+);
 </script>
 
 <template>
@@ -259,25 +278,33 @@ const shortHash = computed(
     :aria-busy="pending"
     aria-labelledby="announcement-preview-title"
   >
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <!-- ⚠️ Cabeçalho, corpo e RODAPÉ. O que o gestor veio ver é o conteúdo; o resto é
+         procedência (de qual modelo saiu, de que produto é o exemplo, de quando são os
+         dados) e procedência se lê depois, não antes. Antes disso tudo dividia a
+         primeira linha com o título, e o botão que abre o tamanho real ficava no meio
+         da frase — ele é a ação do cartão e mora no canto, onde a mão procura. -->
+    <div class="flex items-center gap-2">
       <p
         id="announcement-preview-title"
         class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
       >
-        Prévia fiel
+        Prévia
       </p>
       <Icon
         v-if="pending"
         name="lucide:loader-circle"
         class="size-3 animate-spin text-muted-foreground motion-reduce:animate-none"
       />
-      <span
-        v-if="preview?.sample"
-        class="ml-auto text-xs text-muted-foreground"
-        :title="preview.sku"
-      >
-        Exemplo com {{ preview.product_name || preview.sku }}
-      </span>
+      <!-- O olho abre o mesmo conteúdo em tamanho real, no lugar onde a pessoa vai
+           ver. Aqui, enquanto ainda dá para mexer: descobrir um enquadramento ruim só
+           na hora do disparo custa voltar uma tela. -->
+      <!-- A margem negativa deixa o alvo de toque com os 44px inteiros sem engordar a
+           linha do cabeçalho: no menor mobile, cada 20px a mais empurra a decisão para
+           fora da dobra. -->
+      <AnnouncementSimulatedPreview
+        :scenes="simulatedScenes"
+        trigger-class="-my-3 ml-auto"
+      />
     </div>
 
     <p
@@ -319,7 +346,7 @@ const shortHash = computed(
         @click="retry"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar novamente
+        Tentar de novo
       </UiButton>
       <UiButton
         v-else-if="problem.repairHref"
@@ -333,17 +360,6 @@ const shortHash = computed(
     </div>
 
     <template v-else-if="preview && artifact">
-      <div
-        class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-      >
-        <span v-if="factTime" :title="preview.facts.as_of"
-          >Dados conferidos às {{ factTime }}</span
-        >
-        <span v-if="shortHash" :title="selected?.artifact_hash"
-          >Versão {{ shortHash }}</span
-        >
-      </div>
-
       <div
         v-if="Object.keys(preview.previews).length > 1"
         class="mt-3 flex flex-wrap gap-1.5"
@@ -360,7 +376,7 @@ const shortHash = computed(
           :class="
             platform === activePlatform
               ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border bg-background text-muted-foreground'
+              : 'border-border bg-card text-muted-foreground'
           "
           :aria-selected="platform === activePlatform"
           :data-platform="platform"
@@ -372,11 +388,10 @@ const shortHash = computed(
 
       <p
         v-if="preview.ai_writes"
-        class="mt-3 flex items-start gap-1.5 rounded-md bg-background px-2 py-1.5 text-xs text-muted-foreground"
+        class="mt-3 flex items-start gap-1.5 rounded-md bg-card px-2 py-1.5 text-xs text-muted-foreground"
       >
         <Icon name="lucide:sparkles" class="mt-0.5 size-3.5 shrink-0" />
-        A IA ainda pode sugerir outro texto; qualquer sugestão precisa de nova
-        prévia e revisão.
+        Se você usar uma sugestão da IA, a prévia refaz.
       </p>
 
       <div v-if="isWhatsapp" class="mt-3" role="tabpanel">
@@ -384,7 +399,7 @@ const shortHash = computed(
           {{ platformLabel }}
         </p>
         <div
-          class="max-w-[18rem] overflow-hidden rounded-lg rounded-tl-none bg-background shadow-sm"
+          class="max-w-[18rem] overflow-hidden rounded-lg rounded-tl-none bg-card shadow-sm"
         >
           <img
             v-if="artifact.image_url"
@@ -402,15 +417,6 @@ const shortHash = computed(
             </p>
           </div>
         </div>
-        <p v-if="whatsappTemplate" class="mt-1.5 text-xs text-muted-foreground">
-          Modelo aprovado: {{ whatsappTemplate }}. Os campos técnicos exibidos
-          pertencem à mesma versão do artefato.
-        </p>
-        <p v-if="selected?.flow" class="mt-1.5 text-xs text-muted-foreground">
-          Fluxo conferido: {{ selected.flow.name }} · configuração v{{
-            selected.flow.version
-          }}. Esta é a versão selada para aprovação e envio.
-        </p>
       </div>
 
       <div v-else-if="isInstagramStory" class="mt-3" role="tabpanel">
@@ -418,7 +424,7 @@ const shortHash = computed(
           Story do Instagram
         </p>
         <div
-          class="aspect-[9/16] w-full max-w-[14rem] overflow-hidden rounded-xl border border-border bg-background"
+          class="aspect-[9/16] w-full max-w-[14rem] overflow-hidden rounded-xl border border-border bg-card"
         >
           <img
             :src="artifact.image_url"
@@ -427,7 +433,7 @@ const shortHash = computed(
           />
         </div>
         <div
-          class="mt-2 rounded-md bg-background px-3 py-2 text-xs text-muted-foreground"
+          class="mt-2 rounded-md bg-card px-3 py-2 text-xs text-muted-foreground"
         >
           <p class="font-medium text-foreground">O que será publicado</p>
           <p>A imagem vertical acima, como Story público e efêmero.</p>
@@ -449,7 +455,7 @@ const shortHash = computed(
           >
         </p>
         <div
-          class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-background"
+          class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-card"
         >
           <img
             v-if="artifact.image_url"
@@ -483,14 +489,58 @@ const shortHash = computed(
         <span>
           Sem valor nesta amostra:
           <span class="font-mono">{{ emptyFields.join(", ") }}</span
-          >. Campos por destinatário serão resolvidos apenas na etapa protegida
-          de envio.
+          >. Aqui é um exemplo: cada pessoa recebe o nome dela.
         </span>
       </p>
 
+      <!-- ⚠️ Uma frase só não servia aqui: "sairá sem imagem" valia para mensagem e
+           para postagem ao mesmo tempo, e os dois atos são diferentes — mensagem se
+           envia e não se apaga, postagem se publica e se apaga. A prévia já sabe em
+           qual plataforma está (`isWhatsapp`), então diz o ato pelo nome. -->
       <p v-if="!artifact.image_url" class="mt-2 text-xs text-muted-foreground">
-        Esta plataforma sairá sem imagem nesta versão.
+        {{
+          isWhatsapp
+            ? "A mensagem é enviada sem foto."
+            : "A postagem é publicada sem foto."
+        }}
       </p>
+
+      <!-- RODAPÉ: procedência, toda junta e DEPOIS do conteúdo — de qual modelo saiu,
+           de que produto é o exemplo, de quando são os dados. Espalhada (uma linha no
+           cabeçalho, outra sob a bolha, outra no canto) ela disputava a atenção com o
+           que o gestor veio ver, e nenhuma das três ficava fácil de achar.
+           O hash do artefato continua fora da tela: ninguém confere oito dígitos
+           hexadecimais no balcão. Ele vive no `title`, para quem precisa correlacionar
+           com o comprovante. -->
+      <dl
+        v-if="whatsappTemplate || selected?.flow || preview.sample || factTime"
+        class="mt-3 space-y-0.5 border-t border-border/60 pt-2 text-xs text-muted-foreground"
+      >
+        <div v-if="whatsappTemplate" class="flex gap-1">
+          <dt>Modelo aprovado:</dt>
+          <dd class="min-w-0 truncate" :title="whatsappTemplate">
+            {{ whatsappTemplate }}
+          </dd>
+        </div>
+        <div v-if="selected?.flow" class="flex gap-1">
+          <dt>Fluxo do WhatsApp:</dt>
+          <dd class="min-w-0 truncate">{{ selected.flow.name }}</dd>
+        </div>
+        <div v-if="preview.sample" class="flex gap-1">
+          <dt>Exemplo com:</dt>
+          <dd class="min-w-0 truncate" :title="preview.sku">
+            {{ preview.product_name || preview.sku }}
+          </dd>
+        </div>
+        <div v-if="factTime" class="flex gap-1">
+          <dt>Dados conferidos às:</dt>
+          <dd
+            :title="`Dados de ${preview.facts.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
+          >
+            {{ factTime }}
+          </dd>
+        </div>
+      </dl>
     </template>
 
     <div
@@ -500,7 +550,7 @@ const shortHash = computed(
     >
       A resposta não trouxe a plataforma escolhida.
       <UiButton type="button" variant="link" class="ml-1" @click="retry">
-        Revalidar
+        Tentar de novo
       </UiButton>
     </div>
   </aside>

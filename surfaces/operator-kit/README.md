@@ -2,7 +2,7 @@
 
 Fundação comum das oito superfícies de operador: `pos-nuxt`, `orders-nuxt`,
 `kds-nuxt`, `production-nuxt`, `purchase-nuxt`, `marketing-nuxt`, `bi-nuxt` e a
-Central de Apps (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
+Shopman Apps (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
 do design system sem absorver regras específicas de cada domínio.
 
 **Última verificação dos consumidores:** 2026-09-10, contra os oito
@@ -41,6 +41,7 @@ O layer contribui, via auto-import do Nuxt:
 | `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
 | `server/utils/operatorSecurity.ts` | `operatorResponseHeaders`, `applyPrivateNoStore` | política testável de headers e preservação de `Vary` no BFF |
 | `server/utils/eventStream.ts` | `proxyEventStream` | streaming SSE same-origin do eventstream do Django |
+| `app/utils/resilientEventSource.ts` | `openResilientEventSource` | o lado do browser: EventSource que se recria com backoff (2 s → 60 s) depois de um não-200 na reconexão (502 de deploy) ou de um `stream-error` (canal recusado), e avisa a reabertura para o chamador refazer o fetch canônico |
 | `server/routes/health/live.get.ts` | — | `/health/live`: processo/BFF vivo, sem chamar o Django — é o health check da plataforma |
 | `server/routes/health/ready.get.ts` | — | `/health/ready`: BFF + `/health/ready/` do Django (smoke e diagnóstico, nunca health check da plataforma) |
 | `server/utils/healthProbe.ts` | `ProbeRateLimiter`, `checkDjangoReadiness`, `respondHealthLive`, `respondHealthReady` | corpo pobre (`ok`/`fail`), `no-store` e limitador em memória dos probes |
@@ -48,8 +49,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
 | `app/components/OfflineBanner.vue` | `<OfflineBanner>` | aviso calmo de conexão (colocar no layout raiz) |
 | `app/plugins/errorReporter.client.ts` | — | captura erro não-tratado → telemetria (inerte em dev) |
-| `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do APARELHO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
-| `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do aparelho, não só a dele |
+| `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do DISPOSITIVO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
+| `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do dispositivo, não só a dele |
 | `app/types/operator.ts` | `OperatorCard`, `OperatorSession`, … | espelho TS da API operator/session\|eligible\|unlock\|lock |
 | `app/presentation/operatorLock.ts` | `isLocked`, `buildUnlockPayload`, … | transforms puros do lock (sem I/O) |
 | `app/composables/useOperatorLock.ts` | `useOperatorLock` | read/write do lock de operador (PIN/crachá) via proxy |
@@ -76,7 +77,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
-| `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por aparelho (Screen Orientation API): item "Travar giro" no `OperatorRail` só em aparelho de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
+| `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -118,7 +119,7 @@ Rótulo, descrição, símbolo, cor e frase de instalação de cada app de opera
 abre, se a tela fica acesa, o que ele recebe por push e quais atalhos o SO oferece.
 
 Estavam escritos em seis lugares (`nuxt.config`, `package.json`, `tools/pwa-gate`,
-`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — a Central com ícone ardósia e barra
+`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — o Shopman Apps com ícone ardósia e barra
 de título vinho, o Gestor com dois nomes, a Cozinha com três. Ver `PWA_ICONS.md` para a
 tabela e para a regra "a barra de título é a cor do ícone".
 
@@ -167,14 +168,14 @@ A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem c
 separador, `nuxt.config` sem rótulo/cor/ícone reescritos, título começando pelo `name`,
 nenhum título com hífen de separador, nenhum `document.title` cru, nenhum `app-label` nem
 caminho de ícone escrito à mão, e a barra de título na cor do ícone). Do lado do Django,
-`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles da Central com
+`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles do Shopman Apps com
 os mesmos nomes.
 
 ### Convite de instalação: o COMO é comum, o QUÊ é de cada app
 
 `<OperatorPwaInstallInvite>` diz `"Instale {artigo} {rótulo}"` e, embaixo, a frase
 `install` do próprio app ("Abra a fila de pedidos direto da tela inicial deste
-aparelho."). O caminho do iOS (Compartilhar → Adicionar à Tela de Início) é o mesmo em
+dispositivo."). O caminho do iOS (Compartilhar → Adicionar à Tela de Início) é o mesmo em
 todo app e fica no componente. Os oito diziam **"Instale Shopman"** — o componente lia
 `manifest.name`, chave que o manifesto resolvido não tem, e caía no nome da marca — com
 "Abra o caixa direto da tela inicial" embaixo, no B.I., na Cozinha e no Marketing.
@@ -212,13 +213,13 @@ destino. Sem `noopener`, abriria uma janela solta do navegador.
 E o manifesto de todo app de operador declara `launch_handler: { client_mode:
 "focus-existing" }`: chegar num app que **já está aberto** traz a janela dele para a
 frente e descarta o URL. `navigate-existing` recarregaria o PDV com venda na mão só
-porque alguém tocou no atalho da Central — a mesma regra do `useOperatorReloadHold`.
+porque alguém tocou no atalho do Shopman Apps — a mesma regra do `useOperatorReloadHold`.
 
-Os dois lados do caminho usam a mesma peça: o ícone da Central no `OperatorRail` de cada
-app, e os tiles da Central (`hub-nuxt`, `tileLinkAttrs`).
+Os dois lados do caminho usam a mesma peça: o ícone do Shopman Apps no `OperatorRail` de
+cada app, e os tiles do Shopman Apps (`hub-nuxt`, `tileLinkAttrs`).
 
 **O que foi recusado:** `scope_extensions` (declarar as origens irmãs como extensão do
-escopo) tira a tarja, mas pelo motivo errado — passaria a rodar a Central *dentro* da
+escopo) tira a tarja, mas pelo motivo errado — passaria a rodar o Shopman Apps *dentro* da
 janela do PDV, e o título e a cor continuariam sendo os do PDV. É exatamente o sintoma
 que se quer eliminar.
 
@@ -257,7 +258,7 @@ watchEffect(() => {
 Quem declara a rota segura é o app, em `definePwaCapability({ idleReloadPaths })`:
 `"*"` no KDS (nenhuma tela dele tem rascunho), `"/board"` na Produção (preserva os
 editores de receita), `"/"` no PDV (**só a raiz** — `/session` tem contagem digitada e
-`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Central,
+`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Shopman Apps,
 Gestor, Compras, B.I., Marketing) mantém só o aviso.
 
 ⚠️ **`skipWaiting` vale para a ORIGEM inteira.** Quem aplica não recarrega só a si: o
@@ -288,6 +289,50 @@ com `app`, `trigger` (`prompt` | `idle`), `from_version` e `to_version`.
 do push); `/manifest.webmanifest` com `public, max-age=3600` — ele não decide versão de
 código. O roteador por Host (`surfaces/operator-router`) repassa tudo intacto, e cada
 host serve o SEU worker; a trava está em `operator-router/test/router.test.mjs`.
+
+## Barra de seções (`<OperatorAppBar>`)
+
+O cabeçalho que fica no topo do CONTEÚDO — não é o rail. Ele carrega o `RailToggle`, a
+navegação de seções do app e um cluster de ações à direita.
+
+```vue
+<OperatorAppBar :sections="sections" label="Seções do Gestor">
+  <template #end><NotificationBell /></template>
+</OperatorAppBar>
+```
+
+`sections` é uma lista de `OperatorSection` (`app/presentation/appBar.ts`):
+
+| campo | serve para |
+|---|---|
+| `key` | identidade da seção — é o que o app compara e o que o teste nomeia |
+| `label` · `icon` | o que aparece na aba (ícone `lucide:*`) |
+| `to` | rota da seção. **Sem `to`, a aba vira botão** e a barra emite `select` — é como o Compras funciona, porque a seção dele é estado (`useState`), não rota |
+| `match` | outras rotas que PERTENCEM à seção (`/channels` dentro de Canais, `/templates` dentro de Campanhas) |
+| `attention` | aviso curto ao lado do rótulo ("1 desligado"). Ausente = estado normal, sem ruído |
+| `shortcut` | a tecla que leva à seção, ENSINADA na própria aba e anunciada em `aria-keyshortcuts` |
+
+A seção ativa sai da rota por `activeSectionKey()`, que é pura e tem teste: vence o
+prefixo mais longo, `/` não é prefixo de ninguém, barra final e query não mudam nada, e
+rota desconhecida cai na seção raiz — a barra nunca fica sem nenhuma aba acesa, porque
+"nenhuma acesa" é a tela dizendo que o operador está em lugar nenhum.
+
+**Por que isto virou peça da layer.** Quatro apps desenhavam a mesma barra à mão e, na
+medição de 22/09/2026, "a mesma" já não era a mesma: `min-h-control` (44px) no Gestor,
+`h-11` no Marketing e **`h-8`** no B.I. e no Compras — metade do alvo de toque que o
+token `--spacing-control` define para a casa, numa barra usada com a mão ocupada. O
+`chipClass(active)` do B.I. e o do Compras eram cópia byte a byte. E a aba ativa só era
+trazida para dentro da área visível no Marketing — onde o defeito tinha aparecido de
+verdade: a 390px cabem duas abas e meia, e em `/platforms` a seção ativa nascia fora da
+tela, então o gestor lia a barra e concluía que estava no Painel. Agora isso vale para
+todos, junto com o `aria-current="page"` e a remedida depois de `document.fonts.ready`.
+
+**Cabeçalhos ainda não convertidos** — PDV, Cozinha, Produção e Hub — carregam estado
+próprio (comanda editável, relógio e dia operacional, progresso do dia, saudação). Não
+são deriva: são cabeçalhos ricos, e a conversão é WP próprio.
+`tests/guardrails.appBar.test.ts` guarda a lista deles e impede que ela CRESÇA em
+silêncio — arquivo novo com `<header>` + `<RailToggle>` reprova até alguém adicioná-lo
+de propósito, escrevendo por quê.
 
 ## Próximo foco (`useNextFocus`)
 
@@ -344,15 +389,28 @@ Contrato:
 - **O fim só conta ACIMA do obstáculo.** O observador encolhe a área pelo que flutua na
   base (`data-focus-obstruction`, o mesmo fato que o próximo foco lê). Sem isso a dica
   some com conteúdo ainda escondido atrás do card.
-- A dica flutua logo acima do obstáculo, com degradê por baixo: sem ele a pílula boia
-  sobre um texto qualquer e vira artefato.
-- Decorativa: `aria-hidden`, sem captura de clique. **O que a impede de se ler como
-  botão é a translucidez, não o tamanho**: fundo sólido com sombra vira chip clicável
-  em qualquer medida. Com o fundo a 33% e sem sombra, o que sobra é o chevron, e o
-  círculo só o separa do conteúdo — por isso ela pôde crescer de 28 para 48, encostando
-  no alvo de toque sem se ler como controle. Sobre o degradê ela rende pouco (fundo da mesma
-  cor); trabalha nas bordas e onde há contraste atrás, que é o caso do operador.
-- `prefers-reduced-motion`: a dica fica **parada**, não some.
+- **O degradê ENCOSTA no obstáculo; quem recua é o chevron.** A base da dica se apoia
+  no topo do que flutua, e a folga de `HINT_GAP` (12px) mora no recuo interno do
+  desenho. Enquanto ela morava no posicionamento, a lavagem parava 12px acima do card
+  e sobrava uma faixa de conteúdo cru entre os dois — a dica prometia dissolver e
+  largava o texto legível justo na borda. A pílula não se mexeu; só o degradê desceu.
+- **O chevron LEVA ATÉ O FIM.** Era decorativo e inerte; virou botão por decisão do
+  Pablo, porque já parecia tocável e não era — quem tentava não recebia nada, que é
+  pior do que não convidar. O destino é o próprio sentinela, alinhado pela borda de
+  baixo, e é o `scroll-margin-bottom` dele (igual ao obstáculo) que faz o fim parar
+  ACIMA do card em vez de atrás — o mesmo truque do `scroll-margin-top` do próximo
+  foco, do outro lado da tela.
+- **Só o chevron captura o toque.** A faixa teleportada cobre a largura inteira da
+  tela: `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
+  `aria-hidden` — ele é desenho.
+- **O que a impede de se ler como botão gordo é a translucidez, não o tamanho**: fundo
+  sólido com sombra vira chip pesado em qualquer medida. Com o fundo a 33% e sem
+  sombra, o que sobra é o chevron, e o círculo só o separa do conteúdo — por isso ela
+  pôde crescer de 28 para 48, que é o alvo de toque. Sobre o degradê ela rende pouco
+  (fundo da mesma cor); trabalha nas bordas e onde há contraste atrás, que é o caso do
+  operador.
+- `prefers-reduced-motion`: a dica fica **parada**, não some — e o toque salta para o
+  fim de uma vez, sem deslizar.
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
 tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como
@@ -368,6 +426,143 @@ as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerS
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
+
+## Primitivos de escolha (`UiCheckbox`, `UiRadioGroup`/`UiRadio`, `UiSelect`)
+
+Até 18/09/2026 **todo** checkbox e **todo** rádio das nove superfícies era o controle
+nativo do browser com uma tinta do Tailwind por cima (`size-4 rounded border-border`,
+às vezes um `accent-color`): o desenho vinha do sistema operacional, mudava de dispositivo
+para dispositivo no meio do desenho da casa, e não tinha estado **indeterminado** — que é
+o que falta para um "marcar todos" honesto. O select com busca existia UMA vez,
+escondido no Compras como `MaterialPicker`.
+
+Agora os três vivem aqui, com nome global `Ui<Nome>`, e o `MaterialPicker` foi
+**promovido** (não reescrito) a `UiSelect`.
+
+```html
+<UiCheckbox v-model="birthday" label="Aniversariantes de hoje"
+            description="Só quem tem data cadastrada." />
+
+<!-- "marcar todos" honesto: `mixed` quando só parte das linhas está marcada -->
+<UiCheckbox :model-value="allSelected" :indeterminate="someSelected && !allSelected"
+            aria-label="Selecionar todos" @update:model-value="toggleAll" />
+
+<UiRadioGroup v-model="useSaved" label="Para quem">
+  <UiRadio :value="true" label="O público da campanha" description="…" />
+  <UiRadio :value="false" label="Escolher agora" variant="inline" />
+</UiRadioGroup>
+<!-- ou, sem escrever um filho por item -->
+<UiRadioGroup v-model="format" :options="formatOptions" label="Formato" />
+
+<UiSelect :options="templateOptions" :model-value="current"
+          labelled-by="rotulo-do-campo" placeholder="Sem modelo"
+          @update:model-value="choose" />
+```
+
+Contrato:
+
+- **Alvo de toque de 44 px pelo token** (`min-h-control`/`h-control`/`size-control`),
+  nunca literal. `UiCheckbox` sem rótulo vira um quadrado de 44 px; com rótulo, a linha
+  inteira é o alvo. Quem atende balcão está com uma mão só e o celular na outra.
+- **ARIA de verdade, não `<input>` pintado**: `role="checkbox"` com
+  `aria-checked="true|false|mixed"`, `role="radiogroup"`/`role="radio"`,
+  `aria-haspopup="listbox"` + `role="listbox"` + `aria-activedescendant`.
+- **Uma parada de tabulação por grupo de rádio** (a escolhida, ou a primeira
+  utilizável). A seta anda, pula opção desabilitada e dá a volta; Home/End vão às
+  pontas. Sem isso o Tab passearia por cada opção, que é o erro clássico.
+- **Foco por `outline`, não por `ring`.** Anel de foco feito de `box-shadow` some no
+  modo de alto contraste do sistema, e quem depende dele fica sem foco visível.
+- **Clicar num checkbox indeterminado MARCA tudo.** Sair de "alguns" para "nenhum"
+  desfaria o que o operador já escolheu; ele clica o mestre para alcançar o todo.
+
+Do `UiSelect`, três coisas que valem a leitura:
+
+- **Limiar de busca: `SEARCH_THRESHOLD = 12`** (`app/presentation/choice.ts`). Acima
+  dele a lista ganha campo de busca; abaixo, degrada para lista simples. O número é
+  medido, não chutado: o maior vocabulário FIXO da casa tem 10 itens (`ROLE_OPTIONS` do
+  Produção, filtro de desfecho do Histórico), e busca em cima de dez opções escritas no
+  código é obstáculo; do outro lado estão as listas reclamadas — os modelos aprovados
+  da Meta, os 41 exemplos do Explorar no B.I., os 56 insumos do Compras. O app pode
+  forçar (`:searchable="true|false"`) ou mover o limiar (`:search-threshold`).
+- **A busca ignora acento** e casa por rótulo, detalhe (`hint`) e palavras-chave
+  invisíveis (`keywords` — o `ns` do fluxo, o SKU da etiqueta), com termos soltos em
+  qualquer ordem. A contagem vai para uma região viva (`role="status"`).
+- ⚠️ **Nunca envolva o `UiSelect` num `<label>`.** Um `<label>` sem `for` adota o botão
+  que abre e reencaminha para ele todo clique que caia em parte não interativa —
+  inclusive o véu de fechar. O painel fechava e reabria no mesmo gesto. Rotule com um
+  `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
+  Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
+
+O `UiNativeSelect` ao lado **continua sendo a peça certa** para lista curta e fixa: no
+celular ele abre a roda do sistema, que é ótima. O `UiSelect` é para lista longa.
+
+### `UiToggleChip` — escolha múltipla desenhada como pílula
+
+```html
+<UiToggleChip v-model="semGluten" label="Sem glúten" />
+
+<!-- com ícone e estado ao lado do nome, via slot -->
+<UiToggleChip
+  :model-value="platforms.includes('whatsapp')"
+  @update:model-value="togglePlatform('whatsapp')"
+>
+  <Icon name="lucide:message-circle" class="size-3.5" />
+  WhatsApp <span class="text-xs">· limitada</span>
+</UiToggleChip>
+```
+
+⚠️ **Não é apelido do `UiCheckbox` e não é o `UiFilterChip`.** As três se parecem e
+fazem trabalhos diferentes:
+
+| Peça | Ofício | Como acende |
+|---|---|---|
+| `UiCheckbox` | marcar item numa lista vertical | quadrado que enche de `primary` |
+| `UiToggleChip` | marcar item onde cabem vários na linha | contorno `primary` + tint |
+| `UiFilterChip` | **filtrar** uma lista (chrome, sem valor de formulário) | `bg-primary` sólido |
+
+O chip é `role="checkbox"` com `aria-checked`, como o `UiCheckbox` — escolher plataforma
+é marcar item, não apertar um botão que fica apertado. Um grupo de chips mora dentro de
+um `<fieldset>` com `<legend>` ou de um `role="group"` com nome.
+
+**Não há degrau denso, e é de propósito.** O alvo de 44 px (`min-h-control`) é o piso do
+kit, e o `h-9` de 36 px é justamente a dívida que a cópia do Marketing carregava —
+`kitOwnership.guardrails.test.ts` recusa altura literal em primitivo. Grade que não cabe
+a 44 px não vira exceção aqui: ela **reflui**. Os sete dias da semana do Marketing eram o
+caso difícil e viraram quatro colunas no celular, sete a partir do `sm`.
+
+### ⚠️ `aria-pressed` não é sinal de chip — e quase nunca é
+
+Ao procurar consumidores para este primitivo, varri as 30 ocorrências de `aria-pressed`
+nas superfícies de operador esperando encontrar chips escritos à mão. **Nenhuma era.** O
+que existe, medido:
+
+- **~17 são escolha EXCLUSIVA** vestida de `aria-pressed` — modo do numpad, tipo de
+  entrega, modo de venda, coleção de pagamento, data (hoje/amanhã), paginação, filtro de
+  tipo, aba de modo. São controles segmentados: o leitor de tela diz *"pressionado"* onde
+  a pessoa está **escolhendo um entre N**. Pedem um `UiSegmentedControl` ou um
+  `UiRadioGroup` com variante inline — nenhum dos dois existe hoje, e o conserto atravessa
+  três apps. **É WP próprio, não conversão de passagem.**
+- **~6 são seleção de LINHA ou CARTÃO** (comanda em lote, pedidos): o alvo é a linha
+  inteira, não uma pílula. Alguns pedem `UiCheckbox`; chip não serve.
+- **2 são botão booleano solto** (desconto ligado, dividir conta ativo): não estão num
+  grupo de escolha.
+- **1 parecia chip e não é**: as cédulas e moedas do troco no PDV. A forma É a informação
+  — cédula retangular, moeda redonda — e o marcado é um **anel**, não um tom, "porque sob
+  a luz do balcão dois tons da mesma cor viram um só". Converter apagaria três decisões
+  deliberadas.
+
+Moral: `aria-pressed` num `<button>` é o que se escreve quando não há primitivo, seja
+qual for o gesto. **Contar ocorrências superestima o trabalho**; ler uma a uma é o que
+diz o que existe.
+
+`tests/kitOwnership.guardrails.test.ts` recusa que qualquer app volte a ter cópia
+própria de `Ui/Checkbox.vue`, `Ui/Radio.vue`, `Ui/RadioGroup.vue`, `Ui/Select.vue`,
+`Ui/ToggleChip.vue` ou um `MaterialPicker` — duas implementações vivas é como uma garantia se perde em silêncio.
+`tests/guardrails.a11y.test.ts` varre as nove superfícies e recusa botão de ícone puro
+sem nome acessível (a peça canônica é o `UiIconButton`, que EXIGE `label`).
+
+O inventário do que ainda falta converter, app por app, está em
+[`docs/primitivos-de-escolha-inventario.md`](docs/primitivos-de-escolha-inventario.md).
 
 ## Base de CSS (`operator-base.css`)
 
@@ -450,3 +645,32 @@ Duas consequências que valem a leitura:
   no kit os `Ui*.vue` são planos (`app/components/UiNativeSelect.vue`) e escritos aqui.
   O glob da base não os alcança, e isso é deliberado: `@typescript-eslint/no-explicit-any`
   continua **erro** neles.
+
+## Versões: o kit segue os irmãos, com UMA exceção declarada
+
+A regra do ecossistema (decisão do dono, 18/09/2026) é **a mesma versão em todos os
+apps, e a mais recente estável**. O `scripts/check_surface_versions.py` cobra isso em
+todo PR, conferindo faixa (`package.json`) **e** versão travada (`package-lock.json`)
+de cada pacote declarado por dois ou mais apps de `surfaces/`.
+
+O kit tem **uma** divergência autorizada, e ela está escrita no `EXCEPTIONS` do próprio
+guard — não vale como exceção o que não estiver lá:
+
+- **`@iconify-json/lucide` com pino EXATO (`1.2.133`, sem `^`).** O kit define o
+  conjunto de ícones que os nove apps herdam por `extends`. Faixa aberta na layer
+  deixaria o mesmo nome de ícone resolver para arquivos diferentes em apps diferentes
+  na mesma leva — o kit não é um consumidor a mais, é a origem do conjunto.
+
+⚠️ **O pino exato tem um preço, e ele está medido.** Pino sem `^` tira o kit dos grupos
+do Dependabot: eles passam a cobrir 9 diretórios em vez de 10, e é daí que saem os PRs
+parciais (o #723 é o caso). Duas consequências práticas:
+
+1. **Subir o `@iconify-json/lucide` do kit é passo MANUAL.** Ninguém vai abrir esse PR
+   por você.
+2. **A versão do kit nunca pode ficar ABAIXO da dos apps.** O guard trata isso como
+   falha, de propósito: exceção autoriza *divergir*, não *ficar para trás*. Um app
+   excetuado que envelhece atrás dos irmãos é a deriva usando a exceção como
+   esconderijo.
+
+Qualquer outra divergência do kit é deriva, não decisão — alinhe pelo
+`python scripts/check_surface_versions.py --fix` seguido de `npm install`.

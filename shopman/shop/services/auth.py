@@ -302,6 +302,10 @@ def request_code_error_message(auth_result) -> str:
         ErrorCode.RATE_LIMIT: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
         ErrorCode.COOLDOWN: "Aguarde antes de solicitar um novo código.",
         ErrorCode.IP_RATE_LIMIT: "Muitas tentativas deste local. Tente mais tarde.",
+        ErrorCode.TOO_MANY_FAILURES: (
+            "Muitos códigos incorretos para este número. Por segurança, "
+            "novos códigos ficam suspensos por até 24 horas."
+        ),
     }
     return error_map.get(
         auth_result.error_code,
@@ -314,6 +318,7 @@ def request_code_partial_error_message(auth_result) -> str:
         "Too many attempts. Please wait a few minutes.": "Muitas tentativas. Aguarde alguns minutos.",
         "Please wait before requesting a new code.": "Aguarde antes de solicitar um novo código.",
         "Too many attempts from this location.": "Muitas tentativas deste local.",
+        "Too many incorrect codes for this target.": "Muitos códigos incorretos para este número.",
         "Failed to send code.": "Falha ao enviar código.",
         "Error sending code.": "Erro ao enviar código.",
     }

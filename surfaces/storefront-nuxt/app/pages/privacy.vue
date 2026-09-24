@@ -1,38 +1,40 @@
 <script setup lang="ts">
 // Política de privacidade da loja.
 //
-// A loja coleta nome, telefone e endereço desde o primeiro pedido e não dizia,
-// em lugar nenhum, o que faz com eles: a varredura de 20/08 não achou uma
-// ocorrência de "Privacidade", "Termos", "LGPD", "cookie" ou "CNPJ" no site
-// inteiro. O art. 9º da LGPD exige informar; o Decreto 7.962/2013 exige CNPJ e
-// endereço visíveis no comércio eletrônico.
+// ⚠️ A LISTA DE OPERADORES E A DATA NÃO MORAM AQUI. Elas vêm de
+// `/api/v1/storefront/legal/`, que as deriva de `shopman/shop/privacy_inventory.py` —
+// o mesmo lugar que decide o tráfego de verdade.
 //
-// ⚠️ ESTE TEXTO PRECISA DO AVAL DO DONO antes do go-live. Ele descreve o que o
-// sistema REALMENTE faz hoje — foi escrito a partir do código, não de modelo.
+// O motivo é uma falha medida em 23/09/2026: o texto anterior dizia "Hoje são estes, e
+// é a lista inteira" e **cinco terceiros já recebiam dado de cliente sem estar nela**,
+// um deles recebendo o IP do titular em HTTP puro. Ninguém errou de propósito — a lista
+// era uma cópia da verdade, e cópia não sabe que a verdade mudou. Aqui ela virou vista.
 //
-// As quatro pendências de 20/08 foram fechadas em 21/08, três com FATO e uma com
-// o mínimo legal:
-//   1. ✅ prazo de guarda: 5 anos para pedido e nota (prazo fiscal em lei), e o
-//      resto apagado na exclusão. É o MÍNIMO legal — se a Nelson quiser guardar
-//      menos do resto, ou mais, é trocar este parágrafo.
-//   2. ✅ fornecedores: nomeados a partir do código (Efí, Stripe, ManyChat,
-//      Comtele, Focus NFe, Google Maps, iFood). A Meta NÃO entra: o posting de
-//      anúncio (F13b) não foi implementado, então nenhum dado de cliente sai
-//      para lá hoje. Se a F13b entrar, ESTA LISTA MUDA JUNTO.
-//   3. ✅ encarregado: o canal é o e-mail da loja, que a página já mostra e que
-//      vem do cadastro. Se a Nelson nomear um DPO com contato próprio, trocar.
-//   4. ✅ razão social: é a da Nelson, a mesma que emite a NFC-e, e vem do
-//      cadastro — nunca escrita à mão aqui.
-// Os dados do estabelecimento (CNPJ, endereço, e-mail) vêm do cadastro da loja,
-// nunca escritos à mão aqui.
+// Na mesma medição: a página prometia "quando esta política mudar, a data no topo muda
+// junto", e o `terms.vue` tinha sido editado em 28/08 e em 22/09 com a data parada em
+// 20/08. Agora a data vem da versão do documento, e `tests/legalVersion.test.ts` reprova
+// quem mexer no texto sem mexer na versão.
+//
+// O que continua escrito à mão aqui é o que só uma pessoa pode decidir: o que a loja
+// guarda, por quê, por quanto tempo e o que o cliente pode fazer. Cada afirmação abaixo
+// foi conferida contra o código em 23/09/2026.
+import type { LegalProjection } from '~/types/shopman'
+
 const session = useShopSession()
 const shop = computed(() => session.shop.value)
+const marca = computed(() => shop.value?.brand_name || 'a loja')
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
-const updatedAt = '20 de agosto de 2026'
 
+const apiPath = useShopmanApiPath()
+const { data } = await useFetch<{ legal: LegalProjection }>(apiPath('/api/v1/storefront/legal/'), {
+  key: 'legal'
+})
+const legal = computed(() => data.value?.legal)
+
+useCanonical()
 useSeoMeta({
   title: 'Política de privacidade',
-  description: 'O que a loja coleta, por que coleta e como você apaga ou exporta os seus dados.'
+  description: 'O que a loja guarda, por que guarda, com quem divide e como você apaga ou exporta os seus dados.'
 })
 </script>
 
@@ -47,7 +49,7 @@ useSeoMeta({
     <div class="shop-container shop-stack-block max-w-3xl">
       <div>
         <h1 class="shop-title">Política de privacidade</h1>
-        <p class="shop-muted">Atualizada em {{ updatedAt }}.</p>
+        <p v-if="legal" class="shop-muted">Atualizada em {{ legal.updated_at }}.</p>
       </div>
 
       <section class="space-y-2">
@@ -59,30 +61,48 @@ useSeoMeta({
           <span v-for="line in addressLinesList" :key="line" class="block">{{ line }}</span>
         </p>
         <p v-if="shop?.email" class="text-sm leading-6">
-          Fale com a gente sobre privacidade por
+          Para qualquer pedido sobre os seus dados, escreva para
           <NuxtLink :to="`mailto:${shop.email}`" class="underline underline-offset-2">{{ shop.email }}</NuxtLink>.
+          A resposta sai em até 15 dias, que é o prazo da LGPD.
         </p>
       </section>
 
       <section class="space-y-2">
-        <h2 class="shop-heading">O que a gente guarda</h2>
+        <h2 class="shop-heading">O que {{ marca }} guarda</h2>
         <ul class="list-disc space-y-1 pl-4 text-sm leading-6">
-          <li><strong>Telefone.</strong> É o seu login aqui: a gente confirma por código ou por link no WhatsApp, e não usa senha.</li>
+          <li><strong>Telefone.</strong> É o seu login: a confirmação vem por código ou por link no WhatsApp, e não existe senha.</li>
           <li><strong>Nome.</strong> Para chamar você pelo nome no balcão e no recado do pedido.</li>
-          <li><strong>E-mail.</strong> Opcional, para segunda via e recado quando o WhatsApp não vai.</li>
-          <li><strong>Endereço de entrega.</strong> Só quando você pede entrega. Guardamos os endereços que você salva na conta.</li>
-          <li><strong>O que você comprou.</strong> Itens, valores, datas, forma de pagamento e o que você escreveu como observação.</li>
-          <li><strong>Aparelhos confiáveis.</strong> Um registro do navegador em que você escolheu não pedir código de novo.</li>
+          <li><strong>E-mail.</strong> Opcional, para segunda via e para o recado quando o WhatsApp não vai.</li>
+          <li><strong>Endereço de entrega.</strong> Só quando você pede entrega, e os endereços que você salva na conta.</li>
+          <li><strong>CPF.</strong> Só se você pedir CPF na nota. Ele vai para a nota fiscal e fica nela.</li>
+          <li><strong>O que você comprou.</strong> Itens, valores, datas, forma de pagamento e o que você escreveu como observação ou avaliação.</li>
+          <li>
+            <strong>Aparelhos confiáveis.</strong> Quando você escolhe não pedir código de novo naquele
+            aparelho, ficam guardados o navegador, a data e o <strong>endereço de IP</strong> daquele
+            acesso. Na tela de Segurança você vê o navegador, a data e — quando dá para dizer com
+            honestidade — a cidade aproximada daquele acesso. Essa cidade é calculada <strong>aqui
+            dentro</strong>, por uma base que a loja guarda no próprio servidor: o seu IP não é
+            enviado a ninguém para isso, e a cidade não fica gravada. O IP fica guardado e sai na
+            cópia dos seus dados.
+          </li>
+          <li><strong>Endereço de IP</strong> também no envio de código, na declaração de maioridade e no aceite de cada canal de mensagem. É a prova de quando e de onde a escolha foi feita.</li>
           <li><strong>Avaliação e favoritos</strong>, quando você usa.</li>
         </ul>
         <p class="text-sm leading-6">
-          A gente não guarda senha e não guarda número de cartão: o pagamento acontece dentro do
-          serviço do gateway, e a loja recebe só a confirmação.
+          {{ marca }} <strong>não guarda senha</strong> e <strong>não guarda número de cartão</strong>.
+          O cartão você digita na tela da própria empresa que processa o pagamento; a loja recebe só
+          a confirmação de que o pagamento entrou.
+        </p>
+        <p class="text-sm leading-6">
+          Enquanto você preenche o checkout, o rascunho — nome, telefone, endereço e recado — fica
+          guardado <strong>no seu próprio navegador por seis horas</strong>, para você não perder o
+          que digitou se a página fechar. Ele não vai para a loja antes de você enviar o pedido, e
+          sai do navegador quando você sai da conta.
         </p>
       </section>
 
       <section class="space-y-2">
-        <h2 class="shop-heading">Por que a gente pode guardar</h2>
+        <h2 class="shop-heading">Por que {{ marca }} pode guardar</h2>
         <ul class="list-disc space-y-1 pl-4 text-sm leading-6">
           <li>
             <strong>Para entregar a sua compra</strong> (execução de contrato, art. 7º V da LGPD). É o que
@@ -93,51 +113,71 @@ useSeoMeta({
             prazo de guarda definido pelo fisco.
           </li>
           <li>
-            <strong>Com o seu consentimento</strong> (art. 7º I), e só ele, para novidade e promoção. Você
-            liga e desliga cada canal em
+            <strong>Com o seu consentimento</strong> (art. 7º I) para novidade e promoção. Você liga e
+            desliga cada canal em
             <NuxtLink to="/conta/preferencias" class="underline underline-offset-2">Preferências</NuxtLink>,
             quando quiser.
+          </li>
+          <li>
+            <strong>Porque você pediu para ser avisado</strong> de um produto específico. O aviso de
+            "voltou ao estoque" vai mesmo sem o consentimento geral de novidades — ele é o próprio
+            pedido que você fez —, e para de ir se você desligar as mensagens.
           </li>
         </ul>
       </section>
 
       <section class="space-y-2">
-        <h2 class="shop-heading">Com quem a gente divide</h2>
+        <h2 class="shop-heading">Com quem {{ marca }} divide</h2>
         <p class="text-sm leading-6">
-          Só com quem precisa para o pedido acontecer, e só o necessário. Hoje são estes, e é a
-          lista inteira: <strong>Efí</strong> e <strong>Stripe</strong> processam o pagamento;
-          <strong>ManyChat</strong> entrega a mensagem no WhatsApp e <strong>Comtele</strong> no SMS;
-          <strong>Focus NFe</strong> transmite a nota para a Secretaria da Fazenda;
-          <strong>Google Maps</strong> completa o endereço quando você busca;
-          <strong>iFood</strong>, quando o pedido chega por lá; e o entregador, quando a entrega é
-          terceirizada.
+          Só com quem precisa para o pedido acontecer, e só o necessário. Esta lista sai da própria
+          configuração da loja: quando um serviço entra ou sai, ela muda junto.
+        </p>
+        <ul v-if="legal?.processors?.length" class="list-disc space-y-1 pl-4 text-sm leading-6">
+          <li v-for="p in legal.processors" :key="p.name">
+            <strong>{{ p.name }}</strong> {{ p.role }}. Recebe {{ p.shares }}.
+          </li>
+        </ul>
+        <p class="text-sm leading-6">
+          Fora dessa lista, a loja não divide nada: não vende os seus dados, não cede lista para
+          terceiro e não manda o seu cadastro para rede social nem para plataforma de anúncio.
         </p>
         <p class="text-sm leading-6">
-          A gente não vende os seus dados, não cede lista para terceiro nenhum e não manda o seu
-          cadastro para rede social ou plataforma de anúncio.
+          O navegador também carrega a fonte da marca direto do <strong>Google Fonts</strong>, que
+          nesse momento enxerga o seu endereço de IP. Isso acontece em qualquer página da loja.
         </p>
       </section>
 
       <section class="space-y-2">
-        <h2 class="shop-heading">Por quanto tempo a gente guarda</h2>
+        <h2 class="shop-heading">Por quanto tempo {{ marca }} guarda</h2>
         <p class="text-sm leading-6">
-          O pedido e a nota ficam <strong>cinco anos</strong>. Não é escolha nossa: documento fiscal
-          tem prazo de guarda na lei, e ele vale mesmo depois de você apagar a conta.
+          O pedido e a nota ficam guardados pelo <strong>prazo fiscal</strong>, que não é escolha da
+          loja: documento fiscal tem prazo de guarda em lei, e ele vale mesmo depois de você apagar
+          a conta. <strong>A nota emitida com o seu CPF continua com ele</strong> — é o documento que
+          o fisco exige.
+        </p>
+        <p class="text-sm leading-6">
+          Hoje esse descarte é feito por pedido, e não automaticamente: não existe um expurgo que
+          rode sozinho ao fim do prazo. Quando passar a existir, esta página muda.
         </p>
         <p class="text-sm leading-6">
           O resto vai embora quando você pede. Ao excluir a conta, o seu nome, telefone, e-mail,
-          endereços e preferências são apagados na hora, e os pedidos antigos passam a não apontar
-          mais para você: viram registro de venda sem dono. Se alguma parte da exclusão falhar, a
-          tela avisa e a gente é chamado — a gente não diz "pronto" pela metade.
+          endereços e preferências são apagados, e os pedidos antigos deixam de apontar para você.
+          Se alguma parte da exclusão falhar, a tela avisa e a equipe é chamada — a loja não diz
+          "pronto" pela metade.
         </p>
       </section>
 
       <section class="space-y-2">
-        <h2 class="shop-heading">Cookies</h2>
+        <h2 class="shop-heading">Cookies e o que fica no seu navegador</h2>
         <p class="text-sm leading-6">
-          A loja usa cookie para duas coisas: manter a sua sacola entre uma tela e outra e manter
-          você logado. Não há cookie de publicidade nem de rastreamento de terceiro. Apagar os
-          cookies do navegador esvazia a sacola e desconecta a conta.
+          A loja grava três cookies, e todos servem para a loja funcionar: a sua sessão, a proteção
+          contra pedido forjado e, se você escolher, a marca do aparelho confiável.
+          <strong>Não há cookie de publicidade nem de rastreamento de terceiro.</strong>
+        </p>
+        <p class="text-sm leading-6">
+          Além deles, ficam no seu navegador o rascunho do checkout (seis horas, descrito acima) e
+          pequenas marcas do que você já dispensou, como o convite de instalar o aplicativo. Apagar
+          os dados do site no navegador tira tudo isso e desconecta a conta.
         </p>
       </section>
 
@@ -146,26 +186,37 @@ useSeoMeta({
         <p class="text-sm leading-6">
           Em
           <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Segurança e dados</NuxtLink>
-          você baixa uma cópia de tudo que a loja tem sobre você e pode excluir a conta na hora, sem
-          pedir para ninguém.
+          você baixa uma cópia dos seus dados e exclui a conta. A própria tela diz se falta algum
+          passo antes de excluir, e qual.
         </p>
         <p class="text-sm leading-6">
-          Ao excluir, a gente apaga o seu nome, telefone, e-mail, endereços e o perfil de compra,
-          inclusive dentro dos pedidos antigos. O registro da compra em si continua sem nada que
-          identifique você (itens, valores e datas), porque a lei fiscal manda guardar a venda.
+          A cópia traz o que a loja guarda sobre você: cadastro, endereços, pedidos, preferências,
+          acessos e avaliações. Se quiser algo que não veio nela, peça pelo e-mail acima — a loja
+          responde dentro do prazo da LGPD.
         </p>
         <p class="text-sm leading-6">
-          Você também pode corrigir o que está errado em
+          Ao excluir, o seu nome, telefone, e-mail, endereços e o perfil de compra são apagados,
+          inclusive dentro dos pedidos antigos. O registro da compra continua (itens, valores e
+          datas), porque a lei fiscal manda guardar a venda.
+        </p>
+        <p class="text-sm leading-6">
+          Você também corrige o que está errado em
           <NuxtLink to="/conta/perfil" class="underline underline-offset-2">Perfil</NuxtLink>
-          e desligar qualquer canal de mensagem em
+          e desliga qualquer canal de mensagem em
           <NuxtLink to="/conta/preferencias" class="underline underline-offset-2">Preferências</NuxtLink>.
+        </p>
+        <p v-if="shop?.email" class="text-sm leading-6">
+          Se você deixou só o telefone para ser avisado de um produto, sem criar conta, escreva para
+          <NuxtLink :to="`mailto:${shop.email}`" class="underline underline-offset-2">{{ shop.email }}</NuxtLink>
+          e o número sai do aviso.
         </p>
       </section>
 
       <section class="space-y-2">
         <h2 class="shop-heading">Mudanças nesta página</h2>
         <p class="text-sm leading-6">
-          Quando esta política mudar, a data no topo muda junto. Vale a versão publicada aqui.
+          A data no topo é a versão publicada deste texto, e ela muda junto com ele — não é digitada
+          à mão. Vale sempre a versão que está aqui.
         </p>
       </section>
     </div>

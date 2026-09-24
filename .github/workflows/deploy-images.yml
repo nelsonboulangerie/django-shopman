@@ -326,7 +326,12 @@ jobs:
       needs.build-push.result != 'failure' &&
       needs.build-push.result != 'cancelled'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # A guarda repergunta ao registry quando a primeira leitura diverge (até 4
+    # vezes, 60 s entre elas), porque listagem lida logo depois de um push já
+    # veio no estado anterior a ele. Só o caminho ruim paga isso, mas estourar o
+    # relógio seria vermelho pela mesma classe que a repergunta existe para
+    # remover.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:

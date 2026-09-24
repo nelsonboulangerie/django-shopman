@@ -113,7 +113,7 @@ async function saveProfile(body: Record<string, unknown>) {
       method: "POST", credentials: "include", body,
     });
   } catch {
-    toast.error("Falha ao salvar a preferência do cliente.");
+    toast.error("A preferência do cliente não foi salva. O cadastro segue como estava. Tente de novo.");
   } finally {
     profileSaving.value = false;
   }

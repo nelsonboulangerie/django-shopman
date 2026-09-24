@@ -1,6 +1,6 @@
-"""A Central e as superfícies chamam cada app pelo MESMO nome.
+"""O Shopman Apps e as superfícies chamam cada app pelo MESMO nome.
 
-O dono viu um app com dois nomes: o tile da Central dizia "Gestor de Pedidos", a barra
+O dono viu um app com dois nomes: o tile do launcher dizia "Gestor de Pedidos", a barra
 de título da janela dizia "Gestor"; a Cozinha era "Cozinha" no rail e "KDS" no título.
 A identidade canônica passou a viver em `surfaces/operator-kit/app-identity.json` — é
 dela que saem manifesto, barra de título, ícone e rail.
@@ -19,12 +19,14 @@ from pathlib import Path
 import pytest
 
 from shopman.backstage.projections.hub import _REGISTRY
+from shopman.shop.models.push_subscription import PushSurface
+from shopman.shop.services.operator_capacity import SERVICE_LABELS
 
 IDENTITY_PATH = (
     Path(__file__).resolve().parents[3] / "surfaces" / "operator-kit" / "app-identity.json"
 )
 
-# `ref` do tile na Central → chave do app na identidade das superfícies. A Loja não
+# `ref` do tile no launcher → chave do app na identidade das superfícies. A Loja não
 # entra: é superfície de cliente, fora da família de operador.
 TILE_TO_APP = {
     "pos": "pos",
@@ -61,9 +63,9 @@ def test_tile_fallback_icon_matches_surface(tile_ref: str, app: str) -> None:
 
 
 def test_every_operator_app_has_a_tile() -> None:
-    """Superfície nova sem tile é app que ninguém acha; a Central é o único launcher."""
+    """Superfície nova sem tile é app que ninguém acha; o Shopman Apps é o único launcher."""
     identity = _identity()
-    # A Central é o próprio launcher: não tem tile dentro de si.
+    # O Shopman Apps é o próprio launcher: não tem tile dentro de si.
     expected = {app for app in identity if app != "hub"}
     assert set(TILE_TO_APP.values()) == expected
 
@@ -74,3 +76,17 @@ def test_no_tile_label_uses_a_hyphen_as_separator() -> None:
 
     offenders = [spec.label for spec in _REGISTRY if re.search(r"\s[-–—|]\s", spec.label)]
     assert offenders == []
+
+
+def test_the_launcher_has_one_name_on_both_sides() -> None:
+    """O launcher tem UM nome — inclusive nas telas do Django que falam dele.
+
+    O nome vivia em três lugares do lado Python (o rótulo do serviço na capacidade, a
+    superfície de push, e a própria tela) sem nada que os comparasse; bastava consertar
+    um para os outros dois envelhecerem calados. O lado TS já lê tudo do
+    `app-identity.json`; aqui a string é repetida por necessidade, então é o CI que
+    compara.
+    """
+    name = _identity()["hub"]["label"]
+    assert SERVICE_LABELS["hub"] == name
+    assert PushSurface.HUB.label == name

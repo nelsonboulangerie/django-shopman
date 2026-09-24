@@ -58,6 +58,23 @@ const instagramFormats = computed(
     ],
 );
 
+// O detalhe de cada formato é da CASA, não do servidor: a capacidade que vem da
+// plataforma diz quais formatos existem, e a recomendação diz qual é o nosso
+// padrão e por quê.
+const FORMAT_HINTS: Record<string, string> = {
+  story:
+    "Efêmero e urgente: é o padrão para lotes e oportunidades do momento.",
+  feed: "Permanente. Só será usado quando você escolher esta opção.",
+};
+
+const instagramFormatOptions = computed(() =>
+  instagramFormats.value.map((format) => ({
+    value: format.ref,
+    label: `${format.label}${format.ref === "story" ? " — recomendado" : ""}`,
+    hint: FORMAT_HINTS[format.ref],
+  })),
+);
+
 const IMAGE_SOURCES = [
   { value: "product", label: "Foto do produto" },
   { value: "gallery", label: "Galeria do produto" },
@@ -362,9 +379,7 @@ function submit() {
         v-else-if="imageSource === 'product' && instagramFormat === 'story'"
         class="mt-2 text-xs text-muted-foreground"
       >
-        O Story usará a foto do produto, que precisa estar em JPEG. Se o produto
-        estiver sem foto, a aprovação será bloqueada antes de qualquer
-        publicação.
+        Usa a foto do produto, em JPEG. Produto sem foto não dá para aprovar.
       </p>
     </div>
 
@@ -372,47 +387,14 @@ function submit() {
       <legend class="px-1 text-xs font-medium text-muted-foreground">
         Formato no Instagram
       </legend>
-      <div class="grid gap-2 sm:grid-cols-2">
-        <label
-          v-for="format in instagramFormats"
-          :key="format.ref"
-          class="flex cursor-pointer items-start gap-2 rounded-md border p-3"
-          :class="
-            instagramFormat === format.ref
-              ? 'border-primary bg-primary/5'
-              : 'border-border'
-          "
-        >
-          <input
-            v-model="instagramFormat"
-            type="radio"
-            :value="format.ref"
-            class="mt-1"
-          />
-          <span class="text-sm">
-            <span class="block font-medium">
-              {{ format.label
-              }}{{ format.ref === "story" ? " — recomendado" : "" }}
-            </span>
-            <span
-              v-if="format.ref === 'story'"
-              class="block text-xs text-muted-foreground"
-            >
-              Efêmero e urgente: é o padrão para fornadas e oportunidades do
-              momento.
-            </span>
-            <span
-              v-else-if="format.ref === 'feed'"
-              class="block text-xs text-muted-foreground"
-            >
-              Permanente. Só será usado quando você escolher esta opção.
-            </span>
-          </span>
-        </label>
-      </div>
+      <UiRadioGroup
+        v-model="instagramFormat"
+        label="Formato no Instagram"
+        :options="instagramFormatOptions"
+        class="sm:grid-flow-col sm:auto-cols-fr"
+      />
       <p class="mt-2 text-xs text-muted-foreground">
-        O sistema nunca troca Stories por Feed sozinho. Facebook usa publicação
-        na página; Google usa atualização padrão do estabelecimento.
+        Facebook publica na página; Google, uma atualização do estabelecimento.
       </p>
     </fieldset>
 
@@ -424,21 +406,11 @@ function submit() {
       <legend class="px-1 text-xs font-medium text-muted-foreground">
         Sugestão de texto
       </legend>
-      <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
-      <label class="flex items-start gap-2 text-sm">
-        <input
-          v-model="useAi"
-          type="checkbox"
-          class="mt-0.5 size-4 rounded border-border"
-        />
-        <span>
-          Oferecer “Sugerir texto” durante a revisão
-          <span class="block text-xs text-muted-foreground">
-            A sugestão aparece ao lado do texto e só entra no rascunho se alguém
-            escolher usar. Nunca publica sozinha.
-          </span>
-        </span>
-      </label>
+      <UiCheckbox
+        v-model="useAi"
+        label="Oferecer “Sugerir texto” durante a revisão"
+        description="A sugestão aparece ao lado do texto e só entra no rascunho se alguém escolher usar. Nunca publica sozinha."
+      />
       <div v-if="useAi" class="mt-3">
         <label
           for="tpl-ai"
@@ -453,21 +425,13 @@ function submit() {
           class="resize-y"
         />
         <p class="mt-1 text-xs text-muted-foreground">
-          Não inclua preço, validade, estoque, link ou dados pessoais: esses
-          fatos continuam sob controle do sistema.
+          Não escreva preço, validade, estoque nem link — o sistema põe os
+          atuais.
         </p>
       </div>
     </fieldset>
 
-    <!-- Checkbox permanece nativo porque não há primitivo compartilhado de seleção binária. -->
-    <label class="flex items-center gap-2 text-sm">
-      <input
-        v-model="isActive"
-        type="checkbox"
-        class="size-4 rounded border-border"
-      />
-      Ativo
-    </label>
+    <UiCheckbox v-model="isActive" label="Ativo" />
 
     <div class="flex items-center justify-end gap-2">
       <UiButton type="button" variant="outline" @click="emit('cancel')">

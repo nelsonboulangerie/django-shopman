@@ -27,7 +27,7 @@ export interface OrientationLockResult {
 }
 
 /**
- * Trava de giro da tela por aparelho — o manifesto deixa o app girar (`orientation:
+ * Trava de giro da tela por dispositivo — o manifesto deixa o app girar (`orientation:
  * "any"`) e o operador decide, no rail, travar na orientação em que o tablet está.
  *
  * A Screen Orientation API só trava de verdade em app instalado (display standalone/
@@ -36,7 +36,7 @@ export interface OrientationLockResult {
  * estado + cópia curta para o operador ("use o bloqueio de rotação do sistema") — o
  * rail nunca mostra "travado" sem o navegador ter confirmado.
  *
- * A preferência mora no `localStorage` do aparelho (a trava é do tablet, não do
+ * A preferência mora no `localStorage` do dispositivo (a trava é do tablet, não do
  * operador) e é reaplicada no boot do app instalado por quem pede `{ restore: true }`
  * (o `OperatorPwaRuntime`, uma vez por app). O navegador solta a trava ao recarregar e
  * ao sair de tela cheia; por isso o restore também escuta `visibilitychange` e
@@ -66,7 +66,7 @@ export function useOrientationLock(options: { restore?: boolean } = {}) {
     return isInstalledDisplay() || Boolean(document.fullscreenElement);
   }
 
-  /** Só aparelho de toque gira: um PC sem tela sensível não ganha o controle. */
+  /** Só dispositivo de toque gira: um PC sem tela sensível não ganha o controle. */
   function detectAvailability() {
     available.value = Boolean(orientationApi()) && (navigator.maxTouchPoints || 0) > 0;
   }
@@ -110,13 +110,13 @@ export function useOrientationLock(options: { restore?: boolean } = {}) {
     }
   }
 
-  /** Trava na orientação em que o aparelho está agora e guarda a escolha. */
+  /** Trava na orientação em que o dispositivo está agora e guarda a escolha. */
   async function lock(): Promise<OrientationLockResult> {
     if (!import.meta.client) return { ok: false, status: status.value, message: "" };
     const family = orientationFamily(orientationApi()?.type)
       || (window.innerHeight > window.innerWidth ? "portrait" : "landscape");
     const result = await apply(family);
-    // Só a trava CONFIRMADA vira preferência — nada de reabrir "travado" um aparelho
+    // Só a trava CONFIRMADA vira preferência — nada de reabrir "travado" um dispositivo
     // que nunca deixou travar.
     if (result.ok) writePreference(family);
     return result;
@@ -139,7 +139,7 @@ export function useOrientationLock(options: { restore?: boolean } = {}) {
   }
 
   /**
-   * Reaplica a preferência do aparelho — calado: no boot ninguém pediu nada, então a
+   * Reaplica a preferência do dispositivo — calado: no boot ninguém pediu nada, então a
    * recusa não vira aviso (e a preferência fica para a próxima abertura instalada).
    */
   async function restore(): Promise<boolean> {

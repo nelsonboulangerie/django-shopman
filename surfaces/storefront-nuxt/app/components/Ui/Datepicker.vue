@@ -1,7 +1,11 @@
 <template>
   <ClientOnly>
+    <!-- `locale` fixo: sem ele, num aparelho configurado em inglês o cliente escolhe a
+         data lendo "October 2026 / Sun Mon Tue" ao lado do `Intl.DateTimeFormat('pt-BR')`
+         que formata a MESMA data em português três centímetros acima. -->
     <VDatePicker
       ref="datepickerRef"
+      locale="pt-BR"
       :trim-weeks="props.trimWeeks || true"
       :is-dark="isDark"
       v-bind="$attrs"

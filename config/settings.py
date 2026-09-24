@@ -544,6 +544,88 @@ WHITENOISE_MANIFEST_STRICT = os.environ.get(
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 MEDIA_URL = "/media/"
 
+# ── Cidade aproximada do dispositivo (base LOCAL, sem terceiro) ─────────
+# A tela "Segurança e dados" da loja escreve "Próximo a Londrina, PR · Brasil" ao lado do
+# dispositivo confiável, para a pessoa reconhecer o acesso. Até 23/09/2026 esse rótulo vinha
+# do `ip-api.com`, com o IP do titular saindo da casa em HTTP puro; a PR #991 removeu a
+# chamada e esta é a volta do rótulo SEM terceiro — base GeoLite2-City lida do disco.
+#
+# Vazio (o default fora da imagem) = desligado, e a tela simplesmente não mostra a linha.
+# Isso é de propósito: desenvolvimento e CI não baixam a base, e um rótulo de cidade não
+# vale uma dependência de build para quem só quer rodar a suíte.
+GEOIP_CITY_DATABASE_PATH = os.environ.get(
+    "GEOIP_CITY_DATABASE_PATH",
+    os.path.join(BASE_DIR, "data", "GeoLite2-City.mmdb"),
+)
+
+# O raio de precisão, em km, acima do qual a leitura NÃO vira rótulo. A base devolve o
+# raio junto com a resposta; acima do limiar a linha fica só com navegador e data.
+#
+# ⚠️ 50 não é preferência, é medição. Agrupando por ligação simples as 300 cidades
+# brasileiras com mais blocos de IP (base DB-IP Lite 2026-09, 14.345.887 redes lidas,
+# 9.901 cidades distintas), o grupo de Londrina — a cidade da frase escolhida pelo dono —
+# contém SÓ Londrina até 50 km. A 80 km ele passa a conter Maringá (80 km) e Sarandi
+# (74 km): a partir daí "Próximo a Londrina" pode estar nomeando a cidade errada. A 150 km
+# o país inteiro colapsa num grupo só de 187 âncoras e 1.580 km de diâmetro.
+#
+# O efeito colateral é o desejado: IP de saída de operadora de celular costuma vir com
+# raio de 100 km para cima e é descartado aqui, que é exatamente o caso em que o rótulo
+# mentiria. Em celular a linha fica só com navegador e data.
+GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = _env_int("GEOIP_CITY_MAX_ACCURACY_RADIUS_KM", 50)
+
+# ── A base envelhece, e envelhecer CALADO é o defeito ────────────────────────
+#
+# A GeoLite2 não se atualiza sozinha: ela entra na imagem no build e só troca quando
+# alguém bumpa o `GEOLITE2_SNAPSHOT` do Dockerfile. O problema não é a base velha em si —
+# é que ela **responde errado em silêncio**. Um bloco de IP que mudou de operadora
+# continua nomeando a cidade antiga, com raio de precisão bom, e a tela escreve
+# "Próximo a X" com a mesma autoridade de uma leitura correta. Raio ruim a casa já
+# descarta; data ruim não tinha quem percebesse.
+#
+# Todo `.mmdb` carrega a data em que foi construído (`metadata().build_epoch`), e são
+# estes dois números que a transformam em sinal. Ver `shopman/shop/services/ip_location.py`
+# e `docs/guides/geolite2-city.md`.
+
+# Passando daqui, o operador é avisado (OperatorAlert `geoip_database_stale`), com o gesto
+# escrito. A tela continua mostrando a cidade.
+#
+# ⚠️ 21 dias = TRÊS publicações perdidas. A MaxMind republica a GeoLite2-City toda terça,
+# então 7 dias é o chão físico (abaixo disso não existe base mais nova) e avisar em 7 seria
+# gritar sobre uma semana corrida. A casa já aprendeu essa lição por escrito no
+# `check_integration_drift`: alerta que dispara sobre o normal "ensina a ignorar o
+# vermelho". Três publicações seguidas sem bump não é semana corrida — é ninguém cuidando.
+GEOIP_CITY_STALE_ALERT_DAYS = _env_int("GEOIP_CITY_STALE_ALERT_DAYS", 21)
+
+# Passando daqui, a cidade DEIXA DE APARECER. A linha volta a ser só navegador e data.
+#
+# ⚠️ 90 dias é o ponto em que o alerta comprovadamente não funcionou: entre 21 e 90 cabem
+# ~10 avisos semanais, e se nenhum virou bump, o deployment esqueceu que isto existe. A
+# diferença entre "atrasado" e "abandonado" é o que este número separa.
+#
+# É largo de propósito, e o custo de ser largo é real: a linha existe para a pessoa
+# responder "fui eu que entrei?", e calar cedo demais mataria o rótulo na prática — como o
+# bump é manual, um limiar curto deixaria a tela permanentemente muda. Mas depois de um
+# trimestre inteiro, "Próximo a X" errado é pior que ausência: a cidade errada faz o
+# titular responder "não fui eu" sobre o PRÓPRIO acesso, que é o oposto exato da função
+# da linha.
+#
+# ⚠️ O que NÃO foi medido, e por quê: a taxa de realocação de bloco entre operadoras
+# exigiria comparar DUAS edições da base, e a segunda é um download que não foi feito.
+# O que foi medido é a EXPOSIÇÃO — o tamanho do alvo. Nas 234.511 redes IPv4 brasileiras
+# da DB-IP Lite 2026-09 (14.345.887 redes lidas, 88.123.296 endereços brasileiros):
+#
+#     /24 ................ 49,71% das redes
+#     /23 ................ 10,34%
+#     /22 .................. 3,79%
+#     /22 ou menor ....... 97,87% das redes (62,04% dos endereços)
+#     /16 ou maior ........ 0,09% das redes (23,72% dos endereços)
+#
+# Ou seja: o espaço brasileiro é dominado por alocações PEQUENAS, que são exatamente as
+# que trocam de mão entre operadoras — metade das redes é um /24 sozinho. "Bloco de IP
+# muda de dono" não é hipótese remota aqui, é a forma do espaço. Isso justifica existir um
+# limiar; a largura dele continua sendo julgamento, e está escrito acima.
+GEOIP_CITY_MAX_AGE_DAYS = _env_int("GEOIP_CITY_MAX_AGE_DAYS", 90)
+
 # ── Google Maps ──────────────────────────────────────────────────────
 # A chave do navegador aparece, por natureza, no bootstrap do Maps JS e deve ser
 # limitada por referer + APIs. A chave de servidor nunca é projetada para o
@@ -670,6 +752,13 @@ SHOPMAN_IFOOD = {
     "cancellation_default_code": os.environ.get("IFOOD_CANCELLATION_CODE", ""),
     # iFood requires a non-empty `reason` alongside the code (400 otherwise).
     "cancellation_default_reason": os.environ.get("IFOOD_CANCELLATION_REASON", "Problemas de sistema na loja"),
+    # Módulo Merchant: o Shopman como fonte única de "loja aberta" no iFood — grava
+    # o horário semanal (PUT opening-hours), vira feriado/fechamento do calendário
+    # em interrupção, deixa o gestor pausar a loja no iFood e confere o status do
+    # iFood contra o da casa (OperatorAlert quando divergem). DESLIGADO por padrão:
+    # enquanto estiver desligado, quem manda no horário do iFood é o Portal do
+    # Parceiro, como sempre foi. Ver shopman/shop/services/ifood_merchant.py.
+    "merchant_sync_enabled": _env_bool("IFOOD_MERCHANT_SYNC", False),
     # Webhook push (WP-5, optional): HMAC-SHA256 secret for X-IFood-Signature.
     # Defaults to client_secret (per plan). Set from the portal's webhook section
     # if iFood provisions a distinct signing secret.
@@ -964,7 +1053,7 @@ UNFOLD = {
         {
             "models": ["shop.qualitydefect", "shop.qualitygrade"],
             "items": [
-                {"title": "Defeitos de fornada", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
+                {"title": "Defeitos de lote", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
                 {"title": "Graus de qualidade", "link": reverse_lazy("admin:shop_qualitygrade_changelist")},
             ],
         },
@@ -999,12 +1088,33 @@ UNFOLD = {
 
 # ── Email ──────────────────────────────────────────────────────────
 
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+# ⚠️ O SETTING mudou de nome; a VARIÁVEL DE AMBIENTE não.
+#
+# O Django 6.1 deprecou todos os `EMAIL_*` e o Django 7 os remove — quem fica é
+# `MAILERS`. A migração é tudo-ou-nada, e o Django faz questão disso:
+#
+#   1. declarar `MAILERS` junto de qualquer `EMAIL_*` levanta
+#      `ImproperlyConfigured` já na carga do settings;
+#   2. com `MAILERS` definido, ler `settings.EMAIL_BACKEND` levanta
+#      `AttributeError` — e `getattr(settings, "EMAIL_BACKEND", "")` passa a
+#      devolver o default CALADO, que é fail-open no canal de e-mail;
+#   3. `override_settings(EMAIL_BACKEND=...)` deixa de valer.
+#
+# Por isso nenhum `EMAIL_*` sobra no código: quem lê a configuração resolvida é
+# `shopman.shop.mailers.default_mailer()`, o leitor único da casa.
+#
+# ⚠️ Os NOMES das variáveis de ambiente continuam `EMAIL_BACKEND`, `EMAIL_HOST`,
+# `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` e
+# `EMAIL_TIMEOUT`. Eles são o contrato do spec de deploy
+# (`.do/app.subdomains.yaml`, `.do/app.alpha-subdomains.yaml`) e do runbook
+# `conferir-spec-digitalocean.md` — ambiente vivo, não mecânica de repositório.
+# O que se renomeou aqui foi o setting do Django, e só.
+_EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+_EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+_EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+_EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
+_EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+_EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # ⚠️ O default é DELIBERADAMENTE não-entregável, e não deve ser "consertado"
 # para um domínio real. `.local` é TLD reservado a mDNS (RFC 6762): sem DNS
 # público, sem SPF, sem DMARC. `notification_email.is_available()` reconhece
@@ -1034,7 +1144,80 @@ VAPID_TIMEOUT_SECONDS = _env_int("VAPID_TIMEOUT_SECONDS", 10)
 # ocupa o worker de directives por dois minutos, e o que era "e-mail não saiu"
 # vira "a fila de directives parou". Quinze segundos são folgados para um SMTP
 # que funciona e curtos o bastante para um que não existe.
-EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+_EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+
+
+# Teto de espera do botão "testar envio" do Admin. É mais curto que o do worker
+# de propósito: ali há alguém olhando a tela, e um gestor não espera quinze
+# segundos por um clique sem achar que travou.
+_EMAIL_TIMEOUT_DIAGNOSTICO = 10
+
+
+def _mailer_options(backend: str, *, timeout: int | None = None) -> dict:
+    """As `OPTIONS` que ESTE backend aceita.
+
+    ⚠️ Não dá para mandar o mesmo bloco para todo backend. No mundo dos settings
+    antigos o backend de console simplesmente ignorava o host; em `MAILERS`, uma
+    option que o backend não conhece levanta `InvalidMailer` ("Unknown
+    options ...") — o `BaseEmailBackend` reporta em vez de engolir.
+
+    `host` vai como string mesmo quando vazia, e de propósito: `None` levantaria
+    `InvalidMailer` na construção do mailer, trocando o estado que a casa já
+    trata ("SMTP sem host não entrega, a cadeia segue para SMS") por uma exceção
+    em quem só queria perguntar se o canal está de pé.
+    """
+    if "smtp" not in backend.lower():
+        return {}
+    return {
+        "host": _EMAIL_HOST,
+        "port": _EMAIL_PORT,
+        "use_tls": _EMAIL_USE_TLS,
+        "username": _EMAIL_HOST_USER,
+        "password": _EMAIL_HOST_PASSWORD,
+        "timeout": _EMAIL_TIMEOUT if timeout is None else timeout,
+    }
+
+
+# Dois aliases, mesmo transporte, tetos de espera diferentes.
+#
+# O alias `diagnostics` existe porque a alternativa deixou de existir: o botão
+# de teste do Admin pedia a conexão com `get_connection(timeout=...)`, e tanto
+# o `get_connection()` quanto o argumento `connection=` do `EmailMessage` são
+# deprecados no Django 6.1. Em `MAILERS`, "o mesmo servidor com outro teto" é
+# um alias — e o efeito colateral é bom: os dois tetos passam a morar lado a
+# lado, num lugar só, em vez de um em settings e o outro numa constante de view.
+MAILERS = {
+    "default": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": _mailer_options(_EMAIL_BACKEND),
+    },
+    "diagnostics": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": _mailer_options(_EMAIL_BACKEND, timeout=_EMAIL_TIMEOUT_DIAGNOSTICO),
+    },
+}
+
+# `mail.E001` silenciado — a régua é do Django, a política é da casa.
+#
+# O check nasceu junto com `MAILERS` e reprova o `check --deploy` com ERRO
+# quando o backend `default` é de desenvolvimento (console/locmem/dummy/file).
+# A casa já responde a essa mesma pergunta, e responde melhor: a prontidão
+# `otp_delivery` distingue "e-mail inerte" de "nenhum canal entrega", e só o
+# segundo é erro. A decisão está escrita em
+# `backstage/services/integration_readiness.py`: o SMS é o canal de OTP por si,
+# o WhatsApp não faz OTP, e e-mail não configurado "não é pendência, é o
+# desenho". Deixar o `mail.E001` de pé colocaria o Django reprovando o deploy
+# por uma escolha deliberada — e um painel que fica vermelho por escolha da
+# casa ensina a ignorar o vermelho que importa.
+#
+# ⚠️ Silenciar aqui NÃO deixa o canal mudo. Quem grita continua gritando, e em
+# três lugares: `notification_email.is_available()` devolve `False` e a cadeia
+# segue para SMS/WhatsApp; a projeção de diagnóstico diz na tela POR QUE não
+# entrega; e a prontidão lista a perna que falta.
+SILENCED_SYSTEM_CHECKS = [
+    *globals().get("SILENCED_SYSTEM_CHECKS", []),
+    "mail.E001",
+]
 
 # ── REST Framework ─────────────────────────────────────────────────
 
@@ -1149,6 +1332,27 @@ AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
 AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
 
+# Piloto do de-para do B.I. (`benchmark_alias_matchers`): TypeSafe Jev contra o
+# fuzzy de hoje e o LLM acima. Só o comando de piloto lê isto; sem chave, o Jev
+# fica fora do placar e o resto roda.
+JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
+JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
+JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
+
+# Piloto de intenções da mensageria (INTENT-PILOT-PLAN). Texto de cliente, mesmo
+# redigido, só sai da casa para os provedores desta lista — credencial sozinha
+# nunca liga provedor (a regra do Marketing). `anthropic` está aprovado pelo dono
+# em 23/09/2026 (já recebe o texto cru quando o concierge atende); `typesafe` (Jev)
+# é fornecedor novo e só entra quando ele decidir, pondo o nome aqui pelo ambiente.
+SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
+    value.strip().lower()
+    for value in os.environ.get("SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", "anthropic").split(",")
+    if value.strip()
+)
+# O ciclo automático do piloto no `maintenance_worker` (sorteia, pré-rotula, mede).
+# Sem mensagem observada ele não faz nada; desligar é só pôr false.
+SHOPMAN_INTENT_PILOT_ENABLED = _env_bool("SHOPMAN_INTENT_PILOT_ENABLED", True)
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must
@@ -1255,9 +1459,12 @@ SHOPMAN_CONCIERGE = {
                         "CONCIERGE_OBSERVATION_NOTICE_VERSION", ""
                     ),
                     # O service converte e valida. Preservar o valor cru faz um
-                    # typo falhar fechado em vez de virar silenciosamente 7 dias.
+                    # typo falhar fechado em vez de virar silenciosamente 30 dias.
+                    # 30 (o teto aceito) durante o aprendizado, por decisão do dono
+                    # em 23/09/2026; depois encurta. Mudar o valor vale também para
+                    # o que já foi guardado (``align_observation_retention``).
                     "retention_days": os.environ.get(
-                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "7"
+                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "30"
                     ),
                     "allow_all_subjects": _env_bool(
                         "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS", False
@@ -1456,7 +1663,8 @@ SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES = int(os.environ.get("SHOPMAN_UNHANDL
 
 # Integrações cujo estado degradado é DECISÃO REGISTRADA deste deployment, e
 # não desvio. Provedor listado aqui (pelo `provider` da prontidão: `focus_nfe`,
-# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery`) nunca passa de
+# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery` e, com Compras ligada,
+# `purchase_nfe`) nunca passa de
 # `warning` no check_integration_drift e usa a janela longa — lembrete semanal
 # em vez de crítico diário. Existe para a instância que se declara `production`
 # e mantém, de propósito, a NFC-e em homologação: um alerta que grita todo dia
@@ -1540,9 +1748,11 @@ SHOPMAN_PURCHASE_NFE = {
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500"))
 SHOPMAN_ACCOUNTING_BACKEND = None
 
-# Operator email for backend notifications (order alerts, etc.).
-# Falls back to DEFAULT_FROM_EMAIL if None.
-SHOPMAN_OPERATOR_EMAIL = os.environ.get("SHOPMAN_OPERATOR_EMAIL", "").strip() or None
+# Endereço que recebe os alertas críticos e as notificações de sistema (sem
+# pedido): o dono/gestor, não o operador de balcão. Sem ele, o alerta crítico
+# por e-mail termina num aviso de log e a notificação de sistema cai no
+# DEFAULT_FROM_EMAIL.
+SHOPMAN_ALERT_EMAIL = os.environ.get("SHOPMAN_ALERT_EMAIL", "").strip() or None
 
 # Retenção da trilha de acessos de operador (SignInEvent), em dias.
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
@@ -1648,6 +1858,9 @@ SHOPMAN_MARKETING_MEDIA_HOSTS = tuple(
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
 DOORMAN["ACCESS_LINK_ENTRY_URL"] = SHOPMAN_STOREFRONT_BASE_URL
+# A página de link inválido do doorman aponta para `doorman:code-request`, rota
+# que o deployment não monta (config/urls.py): a entrada de login é a da loja.
+DOORMAN["TEMPLATE_ACCESS_LINK_INVALID"] = "shop/access_link_invalid.html"
 
 # Ref of the Channel used for POS/counter orders.
 SHOPMAN_POS_CHANNEL_REF = os.environ.get("SHOPMAN_POS_CHANNEL_REF", "pdv")
@@ -1684,11 +1897,11 @@ SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
-# "Marketing" some da Central, sem link morto.
+# "Marketing" some do Shopman Apps, sem link morto.
 SHOPMAN_MARKETING_BASE_URL = (os.environ.get("SHOPMAN_MARKETING_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do B.I. (surfaces/bi-nuxt) — app Nuxt dedicado, publicado em
-# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some da Central,
+# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some do Shopman Apps,
 # sem link morto.
 SHOPMAN_BI_BASE_URL = (os.environ.get("SHOPMAN_BI_BASE_URL") or "").strip().rstrip("/")
 
@@ -1746,9 +1959,9 @@ SHOPMAN_ADMIN_HOST = (
     (os.environ.get("SHOPMAN_ADMIN_HOST", "")).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
 )
 
-# URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
+# URLs das superfícies para o Shopman Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
-# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
+# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha o Shopman Apps de graça, sem
 # env vars novas. Vazio ⇒ o tile some do launcher (nunca link morto); só em DEBUG o
 # launcher cai nos defaults de dev (127.0.0.1:PORT) de `projections/hub.py`. O tile Loja
 # abre a loja do cliente (storefront, mesma base dos links de cliente).

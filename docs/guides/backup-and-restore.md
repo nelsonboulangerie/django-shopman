@@ -14,8 +14,14 @@ O dado do Shopman tem duas naturezas, e cada uma tem a rede certa:
 
 Os clusters `shopman-headless-postgres` (prod) e `shopman-staging-postgres`
 (alpha) são *managed databases* da DO: backup diário automático com retenção de
-7 dias e point-in-time recovery. Não há nada a instalar — mas há duas
-obrigações operacionais que **nenhum código cumpre por nós**:
+7 dias e point-in-time recovery de 7 dias
+([docs da DO](https://docs.digitalocean.com/products/databases/postgresql/how-to/restore-from-backups/)).
+O procedimento inteiro desta camada — o que a janela cobre e o que não cobre,
+o que fazer antes de um deploy com migração destrutiva, como ensaiar um
+restore e quanto custa — está em
+[docs/runbooks/backup-e-restore.md](../runbooks/backup-e-restore.md).
+Não há nada a instalar — mas há duas obrigações operacionais que **nenhum
+código cumpre por nós**:
 
 ```bash
 doctl databases list
@@ -23,8 +29,9 @@ doctl databases backups <database-id>
 ```
 
 1. **Conferir que os backups existem** (comando acima, de tempos em tempos).
-2. **Testar um restore antes do go-live** (restore para um cluster novo,
-   apontar um app de teste, abrir o Admin). Item aberto em
+2. **Testar um restore antes do go-live** — passo a passo, conferências e
+   descarte do cluster em
+   [backup-e-restore.md §3](../runbooks/backup-e-restore.md). Item aberto em
    `docs/runbooks/security-readiness.md`. Um backup nunca testado é uma
    esperança, não um backup.
 

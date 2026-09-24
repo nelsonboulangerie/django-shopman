@@ -124,3 +124,73 @@ def operation_summary(order) -> tuple[str, ...]:
         if reason:
             lines.append(reason)
     return tuple(lines)
+
+
+# ── O que cabe no CARD ─────────────────────────────────────────────────────────
+# As funções acima montam a evidência COMPLETA, e é isso que o detalhe precisa.
+# No card elas viravam doze linhas para um pedido de dois itens: o desdobramento
+# por bandeira, o CEP, o responsável pela entrega e três linhas de janela. Nada
+# disso ajuda a escolher qual pedido pegar — e o card do iFood ficava com o dobro
+# da altura do card do PDV, quebrando a leitura em varredura da fila.
+
+
+def pickup_code(order) -> str:
+    """O código que o cliente diz no balcão. Vai ao card com rótulo próprio.
+
+    Sem rótulo ele competia com o número do pedido — dois números de quatro
+    dígitos, e o exibido era justamente o que o iFood não usa para nomear nada.
+    """
+    if order.channel_ref != "ifood":
+        return ""
+    return str(((order.data or {}).get("ifood") or {}).get("pickup_code") or "").strip()
+
+
+def schedule_label(order) -> str:
+    """O agendamento em UMA linha: "Agendado · Hoje 21:09–22:09".
+
+    Vazio quando o pedido é imediato. A data só aparece quando não é hoje — em
+    pedido para hoje ela é ruído, e quem lê a fila já sabe que dia é.
+    """
+    if order.channel_ref != "ifood":
+        return ""
+    facts = (order.data or {}).get("ifood") or {}
+    if str(facts.get("order_timing") or "").upper() != "SCHEDULED":
+        return ""
+
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    schedule = facts.get("schedule") if isinstance(facts.get("schedule"), dict) else {}
+
+    def _local(key):
+        try:
+            dt = parse_datetime(str(schedule.get(key) or ""))
+        except (ValueError, TypeError):
+            return None
+        return timezone.localtime(dt) if dt is not None and timezone.is_aware(dt) else None
+
+    start, end = _local("delivery_start_at"), _local("delivery_end_at")
+    if start is None:
+        return "Agendado"
+    today = timezone.localdate()
+    day = "Hoje" if start.date() == today else start.strftime("%d/%m")
+    window = f"{start:%H:%M}–{end:%H:%M}" if end is not None else f"a partir de {start:%H:%M}"
+    return f"Agendado · {day} {window}"
+
+
+def remote_ahead_label(order) -> str:
+    """O iFood já passou deste ponto — dito como instrução, não como segundo status.
+
+    O card mostra o status LOCAL ("Em preparo"). Quando o iFood está à frente, uma
+    linha só diz o que ele já sabe e o que falta fazer aqui. Sem ela, o pedido
+    1416 seguia "Em preparo" um minuto depois de encerrado no iFood (21/09/2026) e
+    parecia pedir trabalho que ninguém precisava mais.
+    """
+    if order.channel_ref != "ifood" or order.status in {"completed", "cancelled", "returned"}:
+        return ""
+    facts = (order.data or {}).get("ifood") or {}
+    if facts.get("remote_concluded"):
+        return "Concluído no iFood · Finalize aqui"
+    if facts.get("remote_dispatched") and order.status in {"new", "accepted", "preparing"}:
+        return "Retirado pelo entregador do iFood · Marque Pronto"
+    return ""

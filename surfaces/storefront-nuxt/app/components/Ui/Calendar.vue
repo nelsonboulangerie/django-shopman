@@ -1,8 +1,10 @@
 <template>
   <ClientOnly>
+    <!-- Ver `Ui/Datepicker.vue`: `locale` fixo em pt-BR, pelo mesmo motivo. -->
     <VCalendar
       v-bind="{ ...forwarded, ...$attrs }"
       ref="calendarRef"
+      locale="pt-BR"
       :attributes="props.attributes"
       :trim-weeks="props.trimWeeks || true"
       :is-dark="isDark"

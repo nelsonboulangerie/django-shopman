@@ -536,3 +536,60 @@ def test_subject_cleanup_is_available_before_retention(capsys):
 
 def test_retention_cleanup_is_part_of_the_periodic_worker():
     assert "cleanup_concierge_observations" in MAINTENANCE_COMMANDS
+
+
+def _retention(settings, days):
+    config = deepcopy(CONFIG)
+    config["connections"][CONNECTION_KEY]["options"]["observation"]["retention_days"] = days
+    settings.SHOPMAN_CONCIERGE = config
+
+
+def test_retention_follows_the_current_policy_for_what_is_already_kept(settings):
+    # Decisão do dono em 23/09/2026: guardar mais durante o aprendizado, encurtar depois.
+    assert _post().json()["status"] == "observed"
+    message = ConversationMessage.objects.get()
+    captured_at = message.created_at
+
+    _retention(settings, 30)
+    assert service.align_observation_retention() == 1
+    message.refresh_from_db()
+    assert message.retention_until == captured_at + timedelta(days=30)
+    assert service.align_observation_retention() == 0  # idempotente
+
+    _retention(settings, 3)
+    service.align_observation_retention()
+    message.refresh_from_db()
+    assert message.retention_until == captured_at + timedelta(days=3)
+    assert service.purge_observations(now=captured_at + timedelta(days=4))["messages"] == 1
+
+
+def test_invalid_policy_never_moves_the_deadline(settings):
+    assert _post().json()["status"] == "observed"
+    before = ConversationMessage.objects.get().retention_until
+    _retention(settings, 90)  # fora do teto aceito: falha fechado
+    assert service.align_observation_retention() == 0
+    assert ConversationMessage.objects.get().retention_until == before
+
+
+def test_realignment_never_touches_the_operational_transcript(settings):
+    conversation = Conversation.objects.create(customer_name="Atendimento")
+    binding = ConversationBinding.objects.create(
+        conversation=conversation, provider="manychat", account="mc-account",
+        transport_channel="whatsapp", subject="operacional", connection_key=CONNECTION_KEY,
+    )
+    ConversationMessage.objects.create(
+        conversation=conversation, binding=binding, role=ConversationMessage.Role.USER,
+        kind=ConversationMessage.Kind.INBOUND, text="quero pão",
+    )
+    _retention(settings, 30)
+    assert service.align_observation_retention() == 0
+    assert ConversationMessage.objects.get().retention_until is None
+
+
+def test_periodic_cleanup_realigns_before_purging(settings, capsys):
+    assert _post().json()["status"] == "observed"
+    _retention(settings, 30)
+    call_command("cleanup_concierge_observations")
+    assert json.loads(capsys.readouterr().out) == {
+        "bindings": 0, "conversations": 0, "messages": 0, "realigned": 1,
+    }

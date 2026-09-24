@@ -161,3 +161,25 @@ export function filterByDimensions(
   const targets = projectionRefs(surfaces);
   return rows.filter((row) => matchesFilters(row, targets, filters));
 }
+
+// ── recorte vindo da URL ───────────────────────────────────────────────────────
+// O checklist de um canal manda para cá já recortado ("3 produtos recusados pelo
+// iFood → Ver e corrigir" abre `/catalog?surface=ifood&sync=error`). Só entram os
+// valores que a dimensão conhece: parâmetro torto não vira filtro que zera a tela.
+const QUERY_DIMENSIONS: Record<string, { id: string; values?: readonly string[] }> = {
+  surface: { id: FILTER_SURFACE },
+  sync: { id: FILTER_SYNC, values: SYNC_OPTIONS.map((o) => o.value) },
+};
+
+export function filtersFromQuery(query: Record<string, unknown>): ActiveFilters {
+  const filters: ActiveFilters = {};
+  for (const [param, { id, values }] of Object.entries(QUERY_DIMENSIONS)) {
+    const raw = query[param];
+    const picked = (Array.isArray(raw) ? raw : [raw])
+      .flatMap((value) => (typeof value === "string" ? value.split(",") : []))
+      .map((value) => value.trim())
+      .filter((value) => value && (!values || values.includes(value)));
+    if (picked.length) filters[id] = [...new Set(picked)];
+  }
+  return filters;
+}

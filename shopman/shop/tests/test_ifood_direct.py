@@ -471,10 +471,14 @@ def test_action_for_status_mapping():
     from shopman.shop.services import ifood_callbacks
 
     assert ifood_callbacks.action_for_status("accepted") == "confirm"
+    assert ifood_callbacks.action_for_status("preparing") == "startPreparation"
     assert ifood_callbacks.action_for_status("ready") == "readyToPickup"
     assert ifood_callbacks.action_for_status("dispatched") == "dispatch"
     assert ifood_callbacks.action_for_status("cancelled") == "requestCancellation"
-    assert ifood_callbacks.action_for_status("preparing") is None
+    # `completed` fecha pelo lado DELES (evento CON) — a loja nunca empurra
+    # conclusão, então continua sem ação. `preparing` deixou de estar nesta
+    # linha em 19/09/2026: ele tem `startPreparation` desde então.
+    assert ifood_callbacks.action_for_status("completed") is None
 
 
 @override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
@@ -621,7 +625,8 @@ def test_fetch_cancellation_reasons(fake_headers):
 def test_send_for_status_unmapped_returns_false():
     from shopman.shop.services import ifood_callbacks
 
-    assert ifood_callbacks.send_for_status("o1", "preparing") is False
+    # Status local sem ação no iFood: a conclusão é decisão DELES (evento CON).
+    assert ifood_callbacks.send_for_status("o1", "completed") is False
 
 
 def test_status_handler_raises_transient_on_callback_error(db):
@@ -701,7 +706,7 @@ def test_events_webhook_valid_signature_processes(db):
             HTTP_X_IFOOD_SIGNATURE=_sign(raw),
         )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     mock_proc.assert_called_once_with(events)
 
 
@@ -743,8 +748,196 @@ def test_events_webhook_accepts_single_event_object(db):
             EVENTS_URL, data=raw, content_type="application/json",
             HTTP_X_IFOOD_SIGNATURE=_sign(raw),
         )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     mock_proc.assert_called_once_with([event])
+
+
+# ── Contrato de resposta: o status HTTP é o ack ──────────────────────────────────
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_processing_failure_is_not_acked(db):
+    """Falha de processamento NÃO pode devolver 2xx.
+
+    No push não existe ack separado: um 2xx encerra a entrega e o evento se
+    perde para sempre. O 500 é o que faz o iFood reentregar.
+    """
+    from rest_framework.test import APIClient
+
+    events = [{"id": "e1", "fullCode": "PLACED", "orderId": "o1"}]
+    raw = json.dumps(events).encode()
+    summary = {"polled": 1, "ingested": 0, "deduped": 0, "ignored": 0, "failed": 1, "acked": True}
+
+    with patch("shopman.shop.services.ifood_events.process_events", return_value=summary):
+        resp = APIClient().post(
+            EVENTS_URL, data=raw, content_type="application/json",
+            HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["error_code"] == "processing_failed"
+    assert resp.json()["failed"] == 1
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_unexpected_error_is_not_acked(db):
+    """Exceção inesperada também vira 500 — nunca um 2xx que consome a entrega."""
+    from rest_framework.test import APIClient
+
+    raw = json.dumps([{"id": "e1", "fullCode": "PLACED", "orderId": "o1"}]).encode()
+
+    with patch(
+        "shopman.shop.services.ifood_events.process_events",
+        side_effect=RuntimeError("boom"),
+    ):
+        resp = APIClient().post(
+            EVENTS_URL, data=raw, content_type="application/json",
+            HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["error_code"] == "processing_failed"
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_partial_failure_still_refuses_to_ack(db):
+    """Um evento ingerido e outro falho ainda é 500: o lote inteiro reentrega."""
+    from rest_framework.test import APIClient
+
+    events = [
+        {"id": "e1", "fullCode": "PLACED", "orderId": "o1"},
+        {"id": "e2", "fullCode": "PLACED", "orderId": "o2"},
+    ]
+    raw = json.dumps(events).encode()
+    summary = {"polled": 2, "ingested": 1, "deduped": 0, "ignored": 0, "failed": 1, "acked": True}
+
+    with patch("shopman.shop.services.ifood_events.process_events", return_value=summary):
+        resp = APIClient().post(
+            EVENTS_URL, data=raw, content_type="application/json",
+            HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+        )
+
+    assert resp.status_code == 500
+
+
+# ── Presença (KEEPALIVE) ─────────────────────────────────────────────────────────
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_keepalive_answers_202_without_processing(db):
+    """KEEPALIVE é sonda de presença: responde 202 e não vira evento de pedido."""
+    from rest_framework.test import APIClient
+
+    event = {
+        "id": "a38ba215-f949-4b2c-982a-0582a9d0c10e",
+        "code": "KEEPALIVE",
+        "fullCode": "KEEPALIVE",
+    }
+    raw = json.dumps(event).encode()
+
+    with patch("shopman.shop.services.ifood_events.process_events") as mock_proc:
+        resp = APIClient().post(
+            EVENTS_URL, data=raw, content_type="application/json",
+            HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+        )
+
+    assert resp.status_code == 202
+    mock_proc.assert_not_called()
+    # Sem merchantIds na sonda, corpo vazio: o iFood lê como "todos online".
+    assert resp.json() == {}
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_keepalive_declares_only_the_configured_merchant(db):
+    """A resposta lista só o merchant da casa; os outros ficam de fora."""
+    from rest_framework.test import APIClient
+
+    event = {
+        "id": "keepalive-1",
+        "fullCode": "KEEPALIVE",
+        "merchantIds": ["outra-loja", "merchant-abc"],
+    }
+    raw = json.dumps(event).encode()
+
+    resp = APIClient().post(
+        EVENTS_URL, data=raw, content_type="application/json",
+        HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+    )
+
+    assert resp.status_code == 202
+    assert resp.json() == {"merchantIds": ["merchant-abc"]}
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_keepalive_for_another_merchant_declares_nobody(db):
+    """Sonda que não inclui a nossa loja não autoriza afirmar presença alheia."""
+    from rest_framework.test import APIClient
+
+    event = {"id": "keepalive-2", "fullCode": "KEEPALIVE", "merchantIds": ["outra-loja"]}
+    raw = json.dumps(event).encode()
+
+    resp = APIClient().post(
+        EVENTS_URL, data=raw, content_type="application/json",
+        HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+    )
+
+    assert resp.status_code == 202
+    assert resp.json() == {"merchantIds": []}
+
+
+@override_settings(SHOPMAN_IFOOD={**WEBHOOK_CFG, "merchant_id": ""})
+def test_events_webhook_keepalive_without_configured_merchant_echoes_request(db):
+    """Sem merchant_id local, devolver o pedido é melhor que derrubar a loja."""
+    from rest_framework.test import APIClient
+
+    event = {"id": "keepalive-3", "fullCode": "KEEPALIVE", "merchantIds": ["loja-x"]}
+    raw = json.dumps(event).encode()
+
+    resp = APIClient().post(
+        EVENTS_URL, data=raw, content_type="application/json",
+        HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+    )
+
+    assert resp.status_code == 202
+    assert resp.json() == {"merchantIds": ["loja-x"]}
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_keepalive_still_requires_a_valid_signature(db):
+    """Presença não é porta dos fundos: sonda sem assinatura válida é 401."""
+    from rest_framework.test import APIClient
+
+    raw = json.dumps({"id": "keepalive-4", "fullCode": "KEEPALIVE"}).encode()
+    resp = APIClient().post(
+        EVENTS_URL, data=raw, content_type="application/json",
+        HTTP_X_IFOOD_SIGNATURE="deadbeef",
+    )
+
+    assert resp.status_code == 401
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_mixed_batch_processes_orders_and_answers_presence(db):
+    """Lote misto: o evento de pedido processa, a presença responde."""
+    from rest_framework.test import APIClient
+
+    order_event = {"id": "e1", "fullCode": "PLACED", "orderId": "o1"}
+    keepalive = {"id": "k1", "fullCode": "KEEPALIVE", "merchantIds": ["merchant-abc"]}
+    raw = json.dumps([order_event, keepalive]).encode()
+    summary = {"polled": 1, "ingested": 1, "deduped": 0, "ignored": 0, "failed": 0, "acked": True}
+
+    with patch(
+        "shopman.shop.services.ifood_events.process_events", return_value=summary
+    ) as mock_proc:
+        resp = APIClient().post(
+            EVENTS_URL, data=raw, content_type="application/json",
+            HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+        )
+
+    assert resp.status_code == 202
+    # O KEEPALIVE não entra no process_events; só o evento de pedido entra.
+    mock_proc.assert_called_once_with([order_event])
+    assert resp.json() == {"merchantIds": ["merchant-abc"]}
 
 
 def test_process_events_reflects_ifood_cancellation(db):

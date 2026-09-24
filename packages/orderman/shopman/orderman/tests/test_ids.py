@@ -51,3 +51,46 @@ def test_generate_order_ref_retries_past_collision(monkeypatch):
 
     ref = generate_order_ref(channel_ref="web", business_date=date(2026, 5, 4))
     assert ref == "WEB-260504-B22"
+
+
+# ── Sufixo do canal ────────────────────────────────────────────────────────────
+# O marketplace já batizou o pedido, e é esse número que o cliente, o portal e o
+# suporte falam. Adotá-lo evita a tradução de cabeça que o operador fazia.
+
+
+def test_preferred_suffix_becomes_the_ref_when_free():
+    ref = generate_order_ref(channel_ref="ifood", business_date=date(2026, 9, 19), preferred_suffix="4994")
+
+    assert ref == "IFOOD-260919-4994"
+
+
+def test_preferred_suffix_falls_back_to_random_when_taken():
+    from shopman.orderman.models import Order
+
+    Order.objects.create(ref="IFOOD-260919-4994", channel_ref="ifood", status=Order.Status.NEW)
+
+    ref = generate_order_ref(channel_ref="ifood", business_date=date(2026, 9, 19), preferred_suffix="4994")
+
+    assert ref != "IFOOD-260919-4994"
+    assert re.fullmatch(r"IFOOD-260919-[A-Z]\d{2}", ref)
+
+
+@pytest.mark.parametrize("suffix", ["", "   ", "X", "4994/../etc", "a b", "TOOLONGSUFFIX", "49 94"])
+def test_unusable_preferred_suffix_falls_back_to_random(suffix):
+    """O ref é lido em voz alta, digitado na busca e impresso: só entra o que serve."""
+    ref = generate_order_ref(channel_ref="ifood", business_date=date(2026, 9, 19), preferred_suffix=suffix)
+
+    assert re.fullmatch(r"IFOOD-260919-[A-Z]\d{2}", ref)
+
+
+def test_preferred_suffix_is_uppercased():
+    ref = generate_order_ref(channel_ref="ifood", business_date=date(2026, 9, 19), preferred_suffix="ab12")
+
+    assert ref == "IFOOD-260919-AB12"
+
+
+def test_house_channels_keep_the_random_suffix_untouched():
+    """A exceção é do marketplace. Quem chama sem o argumento não muda em nada."""
+    for channel in ("pdv", "web", "delivery"):
+        ref = generate_order_ref(channel_ref=channel, business_date=date(2026, 9, 19))
+        assert re.fullmatch(rf"{channel.upper()}-260919-[A-Z]\d{{2}}", ref)

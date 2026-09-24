@@ -2,7 +2,7 @@
 
 O bridge copia first_name/last_name do cliente para o Django User no login; a
 anonimização precisa alcançá-los e revogar os dispositivos confiáveis, senão o
-nome do cliente sobrevive no auth e os aparelhos seguem confiados.
+nome do cliente sobrevive no auth e os dispositivos seguem confiados.
 """
 
 from __future__ import annotations

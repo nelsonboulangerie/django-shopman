@@ -16,7 +16,6 @@ import { compactUnitWeightLabel } from '~/utils/display'
 const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
-const session = useShopSession()
 const sku = computed(() => String(route.params.sku || ''))
 const { setFromServer, qtyForSku } = useCartState()
 
@@ -27,9 +26,24 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
 
 // SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
 // não uma página-fantasma 200 indexável. Falhas de rede seguem no retry inline.
+//
+// Antes do 404, uma pergunta: este código já foi um produto nosso? Se foi, a
+// resposta honesta é 410 ("não existe mais") com a prateleira de onde ele saiu
+// — ver `useRetiredProduct`.
 if (error.value?.statusCode === 404) {
+  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), sku.value)
+  if (retired) {
+    throw createError({
+      statusCode: 410,
+      statusMessage: 'Este item saiu do cardápio',
+      fatal: true,
+      data: retired
+    })
+  }
   throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
 }
+// Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.
+requireContentOnSsr(error.value, !!data.value?.product, 'Produto')
 
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
@@ -52,7 +66,14 @@ const badge = computed(() => product.value ? tileBadge(product.value) : null)
 // (AVAILABILITY-PLAN §2) e vive nas superfícies de operador.
 const unavailableReason = computed(() => {
   if (!product.value || product.value.can_add_to_cart) return ''
-  return product.value.availability_label || 'Este item não está disponível agora.'
+  return product.value.availability_label || 'Não está no cardápio de hoje.'
+})
+// Nem comprar nem avisar: o botão "Indisponível" é um botão morto, e a palavra já está
+// na etiqueta da foto. No lugar dele, uma saída de verdade — a seção de onde o item veio.
+const deadEnd = computed(() => !!product.value && !product.value.can_add_to_cart && !product.value.is_notifiable)
+const similarItemsTo = computed(() => {
+  const ref = product.value?.breadcrumb_category?.ref
+  return ref ? `/menu?secao=${encodeURIComponent(ref)}` : '/menu'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
 // Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
@@ -115,8 +136,7 @@ useHead({
           innerHTML: jsonLdText(productJsonLd({
             product: product.value,
             origin: requestUrl.origin,
-            url: canonicalUrl.value,
-            brandName: session.shop.value?.brand_name || ''
+            url: canonicalUrl.value
           }))
         },
         {
@@ -286,8 +306,9 @@ useHead({
 
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <p v-if="product.original_price_display" class="shop-meta line-through">
-                  {{ product.original_price_display }}
+                <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
+                <p v-if="product.original_price_display" class="shop-meta">
+                  antes <span class="line-through">{{ product.original_price_display }}</span>
                 </p>
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <p class="shop-price-strong">{{ product.price_display }}</p>
@@ -298,13 +319,14 @@ useHead({
               </div>
               <div class="hidden md:block">
                 <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" />
+                <UiButton v-else-if="deadEnd" variant="outline" :to="similarItemsTo">Ver itens parecidos</UiButton>
                 <CartQuantityAction
                   v-else
                   :meta="meta"
                   :qty="currentQty"
                   :disabled="!product.can_add_to_cart"
                   :max-qty="product.available_qty ?? product.max_qty"
-                  :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
+                  add-label="Adicionar"
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
               </div>
@@ -332,7 +354,7 @@ useHead({
                 </UiAccordionContent>
               </UiAccordionItem>
               <UiAccordionItem v-if="nutrition" value="nutrition">
-                <UiAccordionTrigger>Nutricional</UiAccordionTrigger>
+                <UiAccordionTrigger>Informação nutricional</UiAccordionTrigger>
                 <UiAccordionContent>
                   <div class="space-y-1 shop-body">
                     <p v-if="nutrition.serving" class="pb-1 shop-meta">Porção: {{ nutrition.serving }}</p>
@@ -347,11 +369,15 @@ useHead({
                         <span v-if="row.pdv != null" class="ml-2 shop-meta tabular-nums">{{ row.pdv }}% VD</span>
                       </span>
                     </div>
+                    <!-- "% VD" é sigla de rótulo de embalagem: quem não a decorou fica
+                         sem saber de que porcentagem se trata. -->
+                    <p class="pt-2 shop-meta">% VD: percentual do valor diário de referência.</p>
                   </div>
                 </UiAccordionContent>
               </UiAccordionItem>
               <UiAccordionItem v-if="product.conservation?.has_any || product.unit_weight_label || product.approx_dimensions_label" value="care">
-                <UiAccordionTrigger>Conservação</UiAccordionTrigger>
+                <!-- Peso e dimensões não são conservação: o rótulo nomeia as duas coisas. -->
+                <UiAccordionTrigger>Conservação e medidas</UiAccordionTrigger>
                 <UiAccordionContent>
                   <div class="space-y-2 shop-muted">
                     <p v-if="product.conservation?.shelf_life_label">{{ product.conservation.shelf_life_label }}</p>
@@ -391,13 +417,14 @@ useHead({
               <p v-if="unavailableReason" class="mt-1 text-xs text-ink-foreground/70">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />
+            <UiButton v-else-if="deadEnd" variant="outline" size="sm" :to="similarItemsTo">Ver itens parecidos</UiButton>
             <CartQuantityAction
               v-else
               :meta="meta"
               :qty="currentQty"
               :disabled="!product.can_add_to_cart"
               :max-qty="product.available_qty ?? product.max_qty"
-              :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
+              add-label="Adicionar"
               tone="inverted"
             />
           </div>

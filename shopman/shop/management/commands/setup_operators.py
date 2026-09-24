@@ -169,8 +169,15 @@ class Command(BaseCommand):
                 # "por que essa pessoa consegue fazer isso?".
                 user.user_permissions.clear()
                 user.groups.set([grupos[n] for n in nomes_de_grupo])
-                PinCredential.set_for(user, DEV_PIN)
-                self._emitir_cracha(user, username)
+                # O superusuário destrava por PIN e crachá como qualquer
+                # operador (`backstage.services.operator._eligible`), mas NÃO
+                # recebe o PIN de dev daqui: seria o mesmo 1234 que todo o
+                # balcão conhece. O dono cadastra o dele. E o comando também
+                # não apaga o PIN que já existe: é idempotente e roda de rotina,
+                # e cada rodada apagaria o PIN que o dono cadastrou.
+                if not superuser:
+                    PinCredential.set_for(user, DEV_PIN)
+                    self._emitir_cracha(user, username)
 
                 herdadas, avisos = self._absorver(user, absorve)
 
@@ -185,10 +192,11 @@ class Command(BaseCommand):
                 for aviso in avisos:
                     self.stdout.write(aviso)
 
-        self.stdout.write(self.style.SUCCESS(f"setup_operators: OK (PIN {DEV_PIN} para todos)"))
+        self.stdout.write(self.style.SUCCESS(f"setup_operators: OK (PIN {DEV_PIN} para todos, menos o superusuário, que cadastra o próprio)"))
         self.stdout.write("  Crachás de dev (imprima em Operadores → Crachá do operador):")
-        for username, *_ in CAST:
-            self.stdout.write(f"    {username}: {dev_badge(username)}")
+        for username, _first, _last, _grupos, superuser, *_ in CAST:
+            if not superuser:
+                self.stdout.write(f"    {username}: {dev_badge(username)}")
         self.stdout.write(
             "  ⚠️  Não dá para testar digitando nem colando, e isso é de propósito:\n"
             "      a tela exige hexadecimais com menos de 120ms entre teclas: dedo\n"

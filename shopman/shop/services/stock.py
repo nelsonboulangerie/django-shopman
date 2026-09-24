@@ -32,7 +32,7 @@ from django.utils import timezone
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.services import lead_time as lead_time_service
-from shopman.shop.services.order_helpers import get_commitment_date
+from shopman.shop.services.order_helpers import get_commitment_date, is_test_order
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,14 @@ def hold(order, *, require_all: bool = False) -> None:
       Encomenda com Quant planejado da data segue valendo (o hold ancora no
       plano e o gate nem dispara); venda imediata de estoque de hoje idem.
     """
+    # Pedido de teste de marketplace (homologação) não reserva: a reserva sai
+    # do estoque de venda da padaria e pode derrubar o cliente real que compra
+    # o mesmo pão no mesmo minuto. Sem hold aqui, o fulfill adiante também não
+    # tem o que baixar.
+    if is_test_order(order):
+        logger.info("stock.hold: pedido de teste order=%s — reserva suprimida", order.ref)
+        return
+
     if "hold_ids" in (order.data or {}):
         logger.info("stock.hold: skip (holds já criados) order=%s", order.ref)
         return
@@ -107,6 +115,14 @@ def hold(order, *, require_all: bool = False) -> None:
 
     adapter = get_adapter("stock")
     hold_ids: list[dict] = []
+    # Só a venda já consumada fora (``payment.timing == "external"``: balcão,
+    # marketplace pago) e só para hoje: encomenda não tirou pão de ninguém.
+    cede_cart_holds = (
+        not require_all
+        and adopt_session_holds
+        and _sale_consummated_outside(order)
+    )
+    ceded_holds: list[dict] = []
 
     # Prior availability decisions (from _check_availability at on_commit).
     # Keyed by item SKU. Empty for channels that skip the availability gate (e.g. POS).
@@ -125,7 +141,7 @@ def hold(order, *, require_all: bool = False) -> None:
         # Existing reservations secure quantity, not permission to sell. Recheck
         # the current offering before adopting them (including the bundle root).
         if require_all:
-            _require_current_sellability(adapter, item, sku, qty)
+            _require_current_sellability(adapter, item, sku, qty, channel_ref=getattr(order, "channel_ref", None))
 
         # Expand bundles into components
         components = _expand_if_bundle(sku, qty)
@@ -134,7 +150,7 @@ def hold(order, *, require_all: bool = False) -> None:
             comp_sku = comp["sku"]
             comp_qty = Decimal(str(comp["qty"]))
             if require_all and comp_sku != sku:
-                _require_current_sellability(adapter, item, comp_sku, comp_qty)
+                _require_current_sellability(adapter, item, comp_sku, comp_qty, channel_ref=getattr(order, "channel_ref", None))
 
             # SKUs not tracked by Stockman need no hold — skip silently.
             # Exceção (canal gated): SKU fora do CATÁLOGO não pode virar
@@ -161,7 +177,19 @@ def hold(order, *, require_all: bool = False) -> None:
             else:
                 adopted_pairs, unmet_qty = [], comp_qty
             for hid, hqty in adopted_pairs:
-                _retag_hold_for_order(hid, order.ref)
+                if not _retag_hold_for_order(hid, order.ref):
+                    # A reserva deixou de valer entre a leitura da sacola e a
+                    # adoção: venceu, ou cedeu a uma venda de balcão no mesmo
+                    # instante (``reserve_ceding_cart_holds``). Registrá-la
+                    # daria ao pedido uma reserva morta — pedido pago sem
+                    # baixa. O que ela cobria volta a faltar e segue o
+                    # caminho de sempre: nova reserva ou "esgotou".
+                    logger.info(
+                        "stock.hold: hold da sacola perdido na adoção order=%s hold=%s qty=%s",
+                        order.ref, hid, hqty,
+                    )
+                    unmet_qty += hqty
+                    continue
                 hold_ids.append(
                     {"sku": comp_sku, "hold_id": hid, "qty": float(hqty)}
                 )
@@ -186,15 +214,26 @@ def hold(order, *, require_all: bool = False) -> None:
             # channel_ref aplica o escopo de POSIÇÕES do canal (excluded_positions,
             # posições staff-only). apply_safety_margin=False: a margem é buffer
             # de vitrine — um pedido JÁ commitado pode consumi-la.
+            # O dono é o PEDIDO desde já: vale o mesmo backstop longo do hold
+            # adotado da sacola (``_retag_hold_for_order``). Com o TTL de
+            # carrinho (30 min) a reserva vencia no meio de um PIX lento ou de
+            # uma confirmação manual, o sweep a soltava, e o ``fulfill`` falhava
+            # sem re-reservar (``hold_ids`` já existe) — pão vendido duas vezes.
+            # Reserva sem prazo (fornada/demanda) segue sem prazo: o adapter
+            # zera ``expires_at`` dela.
+            order_hold_kwargs = {
+                "reference": f"order:{order.ref}",
+                "target_date": target_date,
+                "channel_ref": getattr(order, "channel_ref", None),
+                "ttl_minutes": _ORDER_HOLD_BACKSTOP_HOURS * 60,
+                "apply_safety_margin": False,
+                "priority": _ORDER_HOLD_PRIORITY,
+            }
             result = adapter.create_hold(
                 sku=comp_sku,
                 qty=unmet_qty,
-                reference=f"order:{order.ref}",
-                target_date=target_date,
-                channel_ref=getattr(order, "channel_ref", None),
-                apply_safety_margin=False,
                 allow_demand=comp_allow_demand,
-                priority=_ORDER_HOLD_PRIORITY,
+                **order_hold_kwargs,
             )
             if not result.get("success"):
                 logger.warning(
@@ -220,10 +259,47 @@ def hold(order, *, require_all: bool = False) -> None:
                         {"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True}
                     )
                     continue
-                _alert_hold_gap(
-                    order, comp_sku, unmet_qty,
-                    "lead_time" if lead_time_earliest is not None else result.get("error_code"),
-                )
+                # Caminho brando (pedido já consumado fora: PDV, iFood). A
+                # reserva é 1:1 por quant e desconta as sacolas alheias; o que
+                # não cabe INTEIRO numa reserva ainda pode caber em pedaços.
+                # Reservar o que existe livre garante a baixa dele no
+                # ``fulfill`` — sem isso, 3 pedidos com 2 livres baixavam 0.
+                # O alerta fica só para o resto.
+                #
+                # Venda consumada de hoje (balcão, marketplace pago) vale mais
+                # que sacola: se o livre não basta, cedem as reservas de
+                # CARRINHO — as mais novas primeiro, só o que falta. Reserva de
+                # pedido não cede; o que nem assim couber é venda acima do
+                # estoque de verdade e vira o alerta abaixo.
+                if cede_cart_holds:
+                    parts, ceded = adapter.reserve_ceding_cart_holds(
+                        sku=comp_sku,
+                        qty=unmet_qty,
+                        beneficiary=f"order:{order.ref}",
+                        exclude_references=(session_key,) if session_key else (),
+                        **order_hold_kwargs,
+                    )
+                    for entry in ceded:
+                        ceded_holds.append({"sku": comp_sku, **entry})
+                else:
+                    parts = adapter.create_holds_up_to(
+                        sku=comp_sku, qty=unmet_qty, **order_hold_kwargs,
+                    )
+                for part_id, part_qty in parts:
+                    hold_ids.append({
+                        "sku": comp_sku,
+                        "hold_id": part_id,
+                        "qty": float(part_qty),
+                    })
+                    unmet_qty -= part_qty
+                if unmet_qty > 0:
+                    # O saldo do Stockman vem com 3 casas: "1×", não "1.000×".
+                    if unmet_qty == unmet_qty.to_integral_value():
+                        unmet_qty = unmet_qty.quantize(Decimal("1"))
+                    _alert_hold_gap(
+                        order, comp_sku, unmet_qty,
+                        "lead_time" if lead_time_earliest is not None else result.get("error_code"),
+                    )
                 continue
 
             hold_ids.append({
@@ -241,6 +317,9 @@ def hold(order, *, require_all: bool = False) -> None:
         adapter.release_holds(leftover_ids)
 
     order.data["hold_ids"] = hold_ids
+    if ceded_holds:
+        # Trilha para o operador: de quais sacolas saiu o que esta venda levou.
+        order.data["stock_ceded_holds"] = ceded_holds
     order.save(update_fields=["data", "updated_at"])
 
     logger.info("stock.hold: %d holds for order %s", len(hold_ids), order.ref)
@@ -261,6 +340,14 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
 
     SYNC — must complete before notifying client.
     """
+    # Pedido de teste de marketplace: a baixa tiraria pão de verdade da
+    # prateleira para uma venda que nunca aconteceu. O gate está aqui, e não só
+    # na ausência de hold, porque a baixa é o efeito irreversível — se um hold
+    # existir por qualquer caminho, ele não vira saída de estoque.
+    if is_test_order(order):
+        logger.info("stock.fulfill: pedido de teste order=%s — baixa suprimida", order.ref)
+        return
+
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
@@ -374,6 +461,13 @@ def revert(order) -> None:
 
     SYNC — devolução ao estoque.
     """
+    # Pedido de teste de marketplace: ``revert`` não depende de hold — percorre
+    # os itens e CREDITA o estoque. Numa devolução de pedido de teste, isso
+    # inventaria pão que a casa nunca produziu.
+    if is_test_order(order):
+        logger.info("stock.revert: pedido de teste order=%s — devolução suprimida", order.ref)
+        return
+
     adapter = get_adapter("stock")
     if not adapter:
         return
@@ -430,9 +524,18 @@ def _sku_known_to_catalog(sku: str) -> bool:
 
 
 
-def _require_current_sellability(adapter, item: dict, sku: str, qty) -> None:
+def _require_current_sellability(adapter, item: dict, sku: str, qty, *, channel_ref: str | None) -> None:
     # Unknown SKUs retain the channel's explicit allow_untracked policy below.
     if _sku_known_to_catalog(sku) and adapter.get_availability(sku).get("is_paused") is True:
+        raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
+    # O ``is_paused`` do Stockman só enxerga a pausa GLOBAL (Product). A pausa
+    # POR CANAL mora no ListingItem do canal — a mesma régua de
+    # ``availability.decide``. Só a pausa explícita recusa: canal sem listing
+    # (PDV) e SKU fora do listing (componente de combo) seguem como estavam.
+    from shopman.shop.services.availability import _sku_in_channel_listing
+
+    listing_item = _sku_in_channel_listing(sku, channel_ref)
+    if isinstance(listing_item, dict) and not listing_item.get("is_sellable", True):
         raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
 
 
@@ -619,8 +722,11 @@ _ORDER_HOLD_BACKSTOP_HOURS = 48
 _ORDER_HOLD_PRIORITY = 0
 
 
-def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
+def _retag_hold_for_order(hold_id: str, order_ref: str) -> bool:
     """Update Hold.metadata.reference from session_key to order ref.
+
+    Devolve ``False`` quando o hold já não está ativo (venceu ou cedeu) — o
+    chamador não pode contá-lo como reserva do pedido.
 
     This is bookkeeping so the hold can be discovered later via
     `release_holds_for_reference("order:<ref>")` if needed.
@@ -640,11 +746,13 @@ def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
     from datetime import timedelta
 
     adapter = get_adapter("stock")
-    adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY)
+    if not adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY):
+        return False
     if _is_fermata_hold(hold_id):
-        return
+        return True
     backstop = timezone.now() + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
     adapter.extend_hold(hold_id, expires_at=backstop)
+    return True
 
 
 def _is_fermata_hold(hold_id: str) -> bool:
@@ -672,6 +780,25 @@ def _is_fermata_hold(hold_id: str) -> bool:
     if hold is None:
         return False
     return hold.expires_at is None and waitlist.is_waitlist_hold(hold)
+
+
+def _sale_consummated_outside(order) -> bool:
+    """O pedido é venda já consumada fora (``payment.timing == "external"``)?
+
+    O mesmo critério do ``lifecycle.secure_stock`` para não recusar a venda:
+    balcão (o pão saiu pela porta) e marketplace (pago lá). Config ilegível
+    responde ``False``: sem certeza, nenhuma sacola alheia é tocada.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        return ChannelConfig.for_channel(order.channel_ref).payment.timing == "external"
+    except Exception:
+        logger.warning(
+            "stock._sale_consummated_outside: config lookup failed channel=%s",
+            getattr(order, "channel_ref", None),
+        )
+        return False
 
 
 def _channel_allows_preorder(order) -> bool:

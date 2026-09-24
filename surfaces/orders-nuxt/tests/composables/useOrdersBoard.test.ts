@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import { fixtureActions } from "../support/orderActions";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
@@ -416,6 +416,10 @@ describe("GESTOR_ALERT — o som escolhido pelo dono", () => {
   // os números por gosto, mas o que quebraria o som em silêncio se alguém
   // mexesse sem ouvir.
 
+  it("toca um terço mais baixo que o 0,6 original — pedido do dono", () => {
+    expect(GESTOR_ALERT.volume).toBeCloseTo(0.6 * (2 / 3), 5);
+  });
+
   it("as notas se SOBREPÕEM — é acorde, não melodia", () => {
     const [primeira, segunda] = GESTOR_ALERT.notes;
     // A segunda entra ANTES da primeira acabar: é isso que faz as duas soarem
@@ -582,4 +586,151 @@ it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
     vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
     vi.useRealTimers();
   }
+});
+
+describe("useOrdersBoard — o aviso de pedido novo insiste até o operador reconhecer", () => {
+  // O kit real toca e conta a reprodução; aqui `startAlert` simula o primeiro
+  // bipe que SAIU pelo alto-falante (playbackCount sobe), ou o bloqueado pelo
+  // autoplay (não sobe).
+  async function mountWithTreatableOrder(audible: boolean) {
+    env.reset();
+    vi.useFakeTimers();
+    const data = ref({
+      queue: { ...emptyZone(), intake: [{ ref: "WEB-NOVO", can_confirm: true } as never], total_count: 1 },
+    });
+    const playbackCount = ref(0);
+    const startAlert = vi.fn(() => { if (audible) playbackCount.value += 1; });
+    const stopAlert = vi.fn();
+    const storage = new Map<string, string>();
+    const windowListeners = new Map<string, () => void>();
+    let mounted!: () => void;
+    let unmount!: () => void;
+    vi.stubGlobal("useFetch", () => ({ data, pending: ref(false), error: ref(null), refresh: env.refresh }));
+    vi.stubGlobal("useAlertSound", () => ({
+      soundOn: ref(true),
+      soundBlocked: ref(!audible),
+      alerting: ref(false),
+      playbackCount,
+      toggleSound: vi.fn(),
+      activateSound: vi.fn(async () => true),
+      startAlert,
+      stopAlert,
+    }));
+    vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+    vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+    vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn(), title: "Pedidos", visibilityState: "visible" });
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn((name: string, handler: () => void) => windowListeners.set(name, handler)),
+      removeEventListener: vi.fn(),
+    });
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+    });
+    vi.stubGlobal("EventSource", vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() }; }));
+    vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+    const board = useOrdersBoard();
+    mounted();
+    await vi.advanceTimersByTimeAsync(0);
+    return { board, startAlert, stopAlert, storage, windowListeners, unmount: () => unmount() };
+  }
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("o primeiro bipe que soou NÃO cala a repetição nem marca o pedido como visto", async () => {
+    const view = await mountWithTreatableOrder(true);
+    try {
+      expect(view.startAlert).toHaveBeenCalledTimes(1);
+      expect(view.stopAlert).not.toHaveBeenCalled();
+      expect(view.board.attentionPending.value).toBe(true);
+      expect(view.storage.get(gestorAttentionStorageKey("2026-09-16"))).toBeUndefined();
+    } finally { view.unmount(); }
+  });
+
+  it("um toque na tela depois de o aviso ter soado reconhece: cala e guarda como visto", async () => {
+    const view = await mountWithTreatableOrder(true);
+    try {
+      view.windowListeners.get("pointerdown")!();
+      expect(view.stopAlert).toHaveBeenCalled();
+      expect(view.board.attentionPending.value).toBe(false);
+      expect(JSON.parse(view.storage.get(gestorAttentionStorageKey("2026-09-16"))!)).toEqual(["WEB-NOVO"]);
+    } finally { view.unmount(); }
+  });
+
+  it("o toque que só destrava o autoplay (nada soou ainda) não reconhece", async () => {
+    const view = await mountWithTreatableOrder(false);
+    try {
+      view.windowListeners.get("pointerdown")!();
+      expect(view.stopAlert).not.toHaveBeenCalled();
+      expect(view.board.attentionPending.value).toBe(true);
+    } finally { view.unmount(); }
+  });
+
+  it("o Ciente reconhece mesmo sem som", async () => {
+    const view = await mountWithTreatableOrder(false);
+    try {
+      view.board.acknowledgeAttention();
+      expect(view.stopAlert).toHaveBeenCalled();
+      expect(view.board.attentionPending.value).toBe(false);
+    } finally { view.unmount(); }
+  });
+});
+
+/** EventSource de mentira: `failForGood` é a reconexão que recebeu 502 (CLOSED). */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  listeners = new Map<string, Array<() => void>>();
+  close = vi.fn(() => { this.readyState = 2; });
+  constructor(public url: string) { FakeEventSource.instances.push(this); }
+  addEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), handler]);
+  }
+  emit(name: string) { for (const handler of this.listeners.get(name) ?? []) handler(); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  failForGood() { this.readyState = 2; this.onerror?.(); }
+}
+
+/** Monta o composable com lifecycle e browser mínimos, e devolve o desmontar. */
+async function withMountedBrowser<T>(build: () => T): Promise<{ value: T; unmount: () => void }> {
+  const mounts: Array<() => void> = [];
+  const unmounts: Array<() => void> = [];
+  FakeEventSource.instances = [];
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounts.push(callback); });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmounts.push(callback); });
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { ...listeners, title: "", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  const value = build();
+  mounts.forEach((callback) => callback());
+  return { value, unmount: () => unmounts.forEach((callback) => callback()) };
+}
+
+describe("useOrdersBoard — SSE do Gestor", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("recria o stream depois do 502 de deploy e a bolinha volta a \"ao vivo\"", async () => {
+    env.reset();
+    vi.useFakeTimers();
+    vi.stubGlobal("useFetch", () => ({ data: ref({ queue: emptyZone() }), pending: ref(false), error: ref(null), refresh: env.refresh }));
+    vi.stubGlobal("useAlertSound", () => ({
+      soundOn: ref(true), soundBlocked: ref(false), alerting: ref(false), playbackCount: ref(0),
+      toggleSound: vi.fn(), activateSound: vi.fn(async () => true), startAlert: vi.fn(), stopAlert: vi.fn(),
+    }));
+    const { value: board, unmount } = await withMountedBrowser(() => useOrdersBoard());
+    try {
+      FakeEventSource.instances[0]!.open();
+      expect(board.realtime.value).toBe("live");
+      FakeEventSource.instances[0]!.failForGood();
+      expect(board.realtime.value).toBe("polling");
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      FakeEventSource.instances[1]!.open();
+      expect(board.realtime.value).toBe("live");
+    } finally { unmount(); }
+  });
 });

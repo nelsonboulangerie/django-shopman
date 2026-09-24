@@ -1,94 +1,85 @@
 <script setup lang="ts">
-// An expedition (dispatch) board card — alinhado à gramática do card de preparo:
-// código herói, superfície neutra (cor só onde tem significado; aqui não há SLA, e
-// despacho/balcão é distinguido pelo ÍCONE, não por cor), meta enxuta e a ação
-// principal em neutro INVERTIDO (despachar/entregar). Densidade-aware.
+// An expedition (dispatch) board card. A moldura é a comum dos cards do KDS
+// (KdsCardIdentity + KdsCardButton + `cardScale`): margem em volta, código herói
+// sob uma linha de chamada, um elemento à direita, o ato escrito num botão
+// DENTRO da moldura. Superfície neutra (cor só onde tem significado; aqui não há
+// SLA, e despacho/balcão é distinguido pelo ÍCONE, não por cor), e a ação
+// principal em neutro INVERTIDO (despachar/entregar).
 import type { KDSExpeditionCardProjection } from "~/types/kds";
-import type { KDSDensity } from "~/components/KdsTicketCard.vue";
-import { lucideIcon, splitRef } from "~/presentation/board";
+import {
+  cardScale,
+  lucideIcon,
+  shortDateLabel,
+  splitRef,
+  type KDSDensity,
+} from "~/presentation/board";
+import KdsCardButton from "~/components/KdsCardButton.vue";
+import KdsCardIdentity from "~/components/KdsCardIdentity.vue";
+import KdsTestOrderBanner from "~/components/KdsTestOrderBanner.vue";
 
 const props = withDefaults(
-  defineProps<{ card: KDSExpeditionCardProjection; density?: KDSDensity }>(),
-  { density: "cozy" },
+  defineProps<{
+    card: KDSExpeditionCardProjection;
+    density?: KDSDensity;
+    /** Data de serviço do quadro (ISO) — a prévia precisa DIZER a data. */
+    serviceDate?: string;
+  }>(),
+  { density: "cozy", serviceDate: "" },
 );
 defineEmits<{ action: [action: "dispatch" | "complete"] }>();
 
 const ref_ = computed(() => splitRef(props.card.order_ref));
+const scheduledDate = computed(() =>
+  props.serviceDate ? shortDateLabel(props.serviceDate) : "",
+);
 // Bloqueio do servidor (payment_gate), já resolvido na projection: quando há
 // rótulo, a ação de saída NÃO é oferecida.
 const blocked = computed(() => Boolean(props.card.advance_block_label));
 // Conferência de itens na expedição: colapsado por padrão (board scannable),
 // expande pra conferir o que entregar/despachar.
 const showItems = ref(false);
-const d = computed(
-  () =>
-    ({
-      compact: {
-        code: "text-xl",
-        inset: "px-3",
-        padT: "pt-3",
-        padB: "pb-3",
-        fin: "h-10",
-      },
-      cozy: {
-        code: "text-3xl",
-        inset: "px-4",
-        padT: "pt-4",
-        padB: "pb-4",
-        fin: "h-11",
-      },
-      roomy: {
-        code: "text-4xl",
-        inset: "px-5",
-        padT: "pt-5",
-        padB: "pb-5",
-        fin: "h-12",
-      },
-    })[props.density],
-);
+const d = computed(() => cardScale(props.density));
 </script>
 
 <template>
   <article
-    class="flex w-full flex-col gap-3 overflow-hidden rounded-md border bg-card shadow-sm"
-    :class="[d.inset, d.padT, d.padB]"
+    class="flex w-full flex-col overflow-hidden rounded-md border bg-card shadow-sm"
+    :class="[d.inset, d.padT, d.padB, d.gap]"
   >
+    <!-- Pedido de teste da homologação do iFood: a Expedição é o card do PEDIDO,
+         não do ticket, então ele chega aqui mesmo sem passar pela cozinha — e é
+         aqui que alguém entregaria a sacola. O aviso vem antes do código. -->
+    <KdsTestOrderBanner
+      v-if="card.test_order_label"
+      :label="card.test_order_label"
+      forbids="não entregar"
+    />
+
     <!-- identidade: código herói + badge neutro de despacho/balcão -->
-    <div class="flex items-start justify-between gap-2.5">
-      <div class="min-w-0">
-        <div
-          class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+    <KdsCardIdentity
+      :code="ref_.code"
+      :code-class="d.code"
+      :channel-icon="card.channel_icon"
+      :overline="card.fulfillment_label"
+    >
+      <p
+        v-if="card.customer_name"
+        class="mt-1.5 truncate text-sm font-medium text-foreground/80"
+      >
+        {{ card.customer_name }}
+      </p>
+      <template #aside>
+        <span
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold"
         >
           <Icon
-            v-if="card.channel_icon"
-            :name="`lucide:${lucideIcon(card.channel_icon)}`"
-            class="size-3.5 shrink-0"
+            :name="`lucide:${lucideIcon(card.fulfillment_icon)}`"
+            class="size-4 shrink-0"
           />
-          <span class="truncate">{{ card.fulfillment_label }}</span>
-        </div>
-        <p
-          class="whitespace-nowrap font-extrabold tracking-tight tabular-nums leading-none"
-          :class="d.code"
-        >
-          {{ ref_.code }}
-        </p>
-        <p
-          v-if="card.customer_name"
-          class="mt-1.5 truncate text-sm font-medium text-foreground/80"
-        >
-          {{ card.customer_name }}
-        </p>
-      </div>
-      <span
-        class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold"
-      >
-        <Icon
-          :name="`lucide:${lucideIcon(card.fulfillment_icon)}`"
-          class="size-4 shrink-0"
-        />
-        {{ card.is_delivery ? "Despacho" : "Balcão" }}
-      </span>
-    </div>
+          {{ card.is_delivery ? "Entrega" : "Retirada" }}
+        </span>
+      </template>
+    </KdsCardIdentity>
 
     <!-- meta: VOLUMES em destaque (o que conferir/entregar) + linhas · total -->
     <div class="flex items-end justify-between gap-3">
@@ -148,44 +139,34 @@ const d = computed(
          segundo significado na mesma cor apaga os dois. Dinheiro na entrega NÃO
          cai aqui: é venda legítima que se paga na porta. -->
     <div v-if="card.is_scheduled" class="mt-auto" data-testid="expedition-scheduled">
-      <button
-        type="button"
-        disabled
-        class="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border font-semibold text-muted-foreground opacity-60"
-        :class="d.fin"
-      >
-        <Icon name="lucide:calendar-clock" class="size-4 shrink-0" />
-        Prévia · libera na data
-      </button>
+      <KdsCardButton
+        tone="inert"
+        icon="lucide:calendar-clock"
+        :label="`Prévia${scheduledDate ? ` · começa em ${scheduledDate}` : ''}`"
+        :size-class="d.action"
+      />
     </div>
     <div v-else-if="blocked" class="mt-auto" data-testid="expedition-blocked">
-      <button
-        type="button"
-        disabled
-        class="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border font-semibold text-muted-foreground opacity-60"
-        :class="d.fin"
-      >
-        <Icon name="lucide:clock" class="size-4 shrink-0" />
-        {{ card.advance_block_label }}
-      </button>
+      <KdsCardButton
+        tone="inert"
+        icon="lucide:clock"
+        :label="card.advance_block_label"
+        :size-class="d.action"
+      />
       <p class="mt-1.5 text-xs leading-snug text-muted-foreground">
         {{ card.advance_block_reason }}
       </p>
     </div>
 
     <!-- ação principal: neutro invertido -->
-    <button
+    <KdsCardButton
       v-else
-      type="button"
-      class="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-foreground font-semibold text-background transition hover:bg-foreground/90 active:scale-[0.99]"
-      :class="d.fin"
+      class="mt-auto"
+      tone="confirm"
+      :icon="`lucide:${lucideIcon(card.fulfillment_icon)}`"
+      :label="card.is_delivery ? 'Despachar pedido' : 'Entregar pedido'"
+      :size-class="d.action"
       @click="$emit('action', card.is_delivery ? 'dispatch' : 'complete')"
-    >
-      <Icon
-        :name="`lucide:${lucideIcon(card.fulfillment_icon)}`"
-        class="size-4 shrink-0"
-      />
-      {{ card.is_delivery ? "Despachar pedido" : "Entregar pedido" }}
-    </button>
+    />
   </article>
 </template>

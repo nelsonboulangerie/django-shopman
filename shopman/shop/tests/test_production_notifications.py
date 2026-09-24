@@ -298,8 +298,12 @@ class TestSystemNotificationDelivery:
         # fornecedor, não a configuração do SMTP). O default da suíte é o backend
         # de console, que passou a se declarar indisponível de propósito: ele
         # imprime em stdout e devolvia sucesso, curto-circuitando SMS e WhatsApp.
-        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-        settings.EMAIL_HOST = "smtp.exemplo.test"
+        settings.MAILERS = {
+            "default": {
+                "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+                "OPTIONS": {"host": "smtp.exemplo.test"},
+            }
+        }
         # ...e um REMETENTE entregável. `is_available` também recusa domínio
         # reservado (`.local`, `example.*`), que é o default de `settings.py`:
         # SMTP de pé com remetente que não existe no DNS é o mesmo fail-open,

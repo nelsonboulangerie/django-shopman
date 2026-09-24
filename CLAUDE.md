@@ -68,6 +68,24 @@ diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
   seguimento).
 - **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
   O que ficou de fora se diz com nome e motivo.
+- **Tarefa sugerida (o "chip") abre uma SESSÃO NOVA — e sessão nova não sabe o que
+  já existe.** Medido em 19/09/2026: um chip de tarefa sugerida abriu a segunda
+  sessão do mesmo trabalho de retratos do Marketing, e saíram **três PRs (#869,
+  #870, #871) para uma correção só** — nenhum deles sabia dos outros, e dois foram
+  fechados à mão depois. No mesmo dia o pedido chegou de novo ao dono, já com o
+  trabalho verde no `main`. O chip serve para o que **ainda não tem dono**, e
+  atrapalha em tudo que já tem.
+  - **Antes de sugerir:** confira se a frente já tem PR aberto ou sessão viva
+    (`gh pr list`, `git branch -r`, a lista de sessões). Se já tem, **não sugira** —
+    escreva no PR que existe, que é onde o dono olha.
+  - **Antes de aceitar** um chip que chegou: a mesma conferência, antes de abrir.
+    Chip que duplica PR aberto se **dispensa**, não se abre.
+  - **Sugestão que ficou obsoleta se retira**, em vez de esperar um toque que vai
+    refazer trabalho pronto.
+  - Retrato/baseline tem uma trava a mais: **só regera quem tem o browser da CI.**
+    Baseline gravada com outra versão do Chromium (1194 quando o Playwright do app
+    pede 1243, por exemplo) passa no local e reprova na CI. Esse trabalho vive numa
+    sessão só — nunca em duas.
 
 ## ⛔ A ESTEIRA: aprovado vira commit, push, PR e fila — no mesmo turno
 
@@ -182,7 +200,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 
 surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
-├── hub-nuxt/          Central de Apps do operador (:3001)                  → api./backstage
+├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
 ├── kds-nuxt/          cozinha (KDS, :3003)                                 → api./backstage
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
@@ -262,17 +280,51 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
   - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
-- **"dispositivo", nunca "aparelho".** O objeto que o operador segura — tablet, celular,
-  terminal, o que recebe aviso e guarda confiança — se chama **dispositivo** em toda
-  superfície de operador e em todo texto de tela do Admin. ⚠️ Duas ressalvas que são
-  regra, não exceção: a **maquininha de cartão tem nome próprio** (o entregador leva uma
-  *maquininha*, não um dispositivo) e o **Storefront fica de fora** por concessão
-  explícita do dono — é superfície de cliente final, com voz própria. A regra vale para
-  STRING (o que chega a alguém), não para comentário e docstring. Trava:
-  `shopman/backstage/tests/test_vocabulario_de_tela.py`, varredura por AST sobre 1.083
-  arquivos. Esta regra não estava escrita em lugar nenhum até 17/09/2026, e foi por isso
-  que 104 arquivos derivaram e o convite de instalação dos oito apps nasceu errado.
+- **Só existem duas palavras: "dispositivo" e "maquininha". "Aparelho" não é nenhuma
+  delas.** O objeto que o operador segura — tablet, celular, PC, terminal, o que recebe
+  aviso e guarda confiança — se chama **dispositivo**; o que o entregador leva para
+  receber cartão é a **maquininha**, que tem nome próprio e não é um dispositivo.
+  ⚠️ **A regra é da palavra, não do canal**: desde 18/09/2026 vale para string, template,
+  comentário, docstring e nome de teste — o dono disse "não usamos o termo aparelho", e
+  isso inclui o que só o programador lê. ⚠️ **O Storefront fica de fora, e é decisão
+  escrita, não herança**: a loja diz *aparelho* ao cliente, autorizado pelo dono e
+  reafirmado por ele na mesma conversa ("pode manter assim só lá: aparelho") — superfície
+  de cliente final tem voz própria, e quem escreve para o cliente não herda o vocabulário
+  de quem escreve para o balcão. A exenção é da superfície inteira: meia superfície com
+  duas palavras é pior que qualquer uma das duas. Trocar mecanicamente também não serve:
+  onde o objeto é a maquininha, a palavra é *maquininha* — leia a linha e escolha. Duas
+  travas, uma por metade do sistema:
+  `shopman/backstage/tests/test_vocabulario_de_tela.py` (1.951 `.py` de `shopman`,
+  `packages` e `config`; fora dela, migração porque é história, e a voz da loja
+  — `shopman/storefront/`, `shop/omotenashi/`) e
+  `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts` (1.073 arquivos dos oito
+  apps de operador + a layer + o router). Esta regra não estava escrita em lugar nenhum
+  até 17/09/2026, e foi por isso que 104 arquivos derivaram e o convite de instalação dos
+  oito apps nasceu errado; a varredura manual que a consertou deixou para trás justamente
+  uma string de tela, no arquivo que ela mesma editou — daí as travas.
+- **Copy de UI: primeiro inequívoco, depois curto.** Omotenashi na linguagem é precisão
+  semântica e clareza inequívoca — não é coloquialidade, simploriedade nem brevidade a
+  qualquer custo. O teste é um só: *o leitor precisou completar sentido, escolher entre
+  duas leituras, ou lembrar de algo que a tela não mostra?* Curto vem depois, e só até
+  onde não custe exatidão. Os oito defeitos com nome (rótulo que mente · verbo genérico ·
+  frase incompleta · grandezas somadas · zero como código secreto · nota de rodapé do
+  engenheiro · jargão e colisão · prolixo), com antes/depois reais e a ordem da varredura,
+  em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
+- **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
+  as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
+  `scripts/check_surface_versions.py` (`make test-surface-versions`, job no
+  `surfaces-gate.yml`), que confere **faixa** (`package.json`) **e versão travada**
+  (`package-lock.json`) — o `npm ci` do CI e do deploy instala o lock, e em 19/09/2026 o
+  `@nuxt/test-utils` tinha faixa idêntica nos dez apps e três versões travadas diferentes.
+  A referência é a versão **mais alta** presente, nunca a mais comum: por maioria o guard
+  mandaria rebaixar `@nuxt/eslint` e `@nuxt/icon` — alinhados e velhos, o oposto do que foi
+  decidido. ⚠️ Superfície nova entra em TRÊS lugares: `.github/dependabot.yml` (cadência),
+  `surfaces-gate.yml` (teste) e `SURFACES` no Makefile. Faltar no primeiro não acusa nada e
+  envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente desde que nasceu e
+  atrasado em 16 pacotes de uma vez. Exceção existe, mas é **declarada com motivo** no
+  `EXCEPTIONS` do guard (hoje uma: o pino exato do `operator-kit`), e nunca autoriza ficar
+  para trás.
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
   - **HTMX**: toda comunicação com servidor (GET, POST, polling, swaps). Incluindo `hx-on::before-request`/`after-request` para estados visuais de loading atrelados a requests.
   - **Alpine.js**: todo estado local na tela (abrir/fechar, toggles, dropdowns, modals, steppers, validação client-side, contadores, masks).

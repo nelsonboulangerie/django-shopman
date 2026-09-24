@@ -1,4 +1,4 @@
-"""OperatorHubProjection — a Central de Apps (launcher pós-login).
+"""OperatorHubProjection — o Shopman Apps (launcher pós-login, e a home do Shopman).
 
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
 (PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
@@ -88,7 +88,7 @@ class _AppSpec:
 # divergirem. A Loja fica de fora: é superfície de cliente, com marca própria.
 #
 # O nome Lucide é o FALLBACK do tile:
-# a Central mostra o PNG da família PWA (`surfaces/operator-kit/PWA_ICONS.md`) e só
+# o Shopman Apps mostra o PNG da família PWA (`surfaces/operator-kit/PWA_ICONS.md`) e só
 # cai no Lucide quando a imagem não carrega — por isso os nomes seguem a família
 # (Produção usa `tabler:baguette` no PNG; o fallback fica em `croissant`, único
 # símbolo próximo que existe no Lucide).
@@ -102,16 +102,16 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     # Admin — nenhuma das duas é o gate do app.
     #
     # Errava nos dois sentidos. O gerente concede `operate_production` a um padeiro
-    # novo; ele abre a Central e a grade vem VAZIA, dizendo "nenhum app liberado —
+    # novo; ele abre o Shopman Apps e a grade vem VAZIA, dizendo "nenhum app liberado —
     # fale com o gerente" — enquanto `prod.boulangerie.com.br` abre normalmente. E
     # quem tem só `view_production_planned` VIA o tile e levava 403 ao clicar.
     #
     # Ninguém no ar hoje é afetado (Cozinha e Gerente têm as duas permissões), mas
     # qualquer grant customizado cai nele na hora — que é o caso normal quando entra
     # gente nova.
-    _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_operate_production),
+    _AppSpec("production", "Produção", "Produção e lotes", "croissant", "launch", can_operate_production),
     _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package", "launch", can_operate_purchase),
-    _AppSpec("marketing", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_campaigns),
+    _AppSpec("marketing", "Marketing", "Divulgar o lote", "megaphone", "launch", can_manage_campaigns),
     _AppSpec("bi", "B.I.", "Números da operação", "chart-no-axes-combined", "launch", can_view_bi),
     _AppSpec("loja", "Loja online", "Abrir a loja do cliente", "store", "external", is_superuser),
 )

@@ -33,7 +33,7 @@ test.describe('smoke — páginas e navegação', () => {
     const body = await bodyText(page)
     expect(body).toContain('R$ 13,00')
     // abas informativas
-    for (const tab of ['Ingredientes e restrições', 'Nutricional', 'Conservação']) {
+    for (const tab of ['Ingredientes e restrições', 'Informação nutricional', 'Conservação e medidas']) {
       await page.locator('button').filter({ hasText: tab }).first().click()
       await page.waitForTimeout(400)
     }

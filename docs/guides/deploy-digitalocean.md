@@ -32,7 +32,11 @@ Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 
 - `web`: Daphne ASGI em `config.asgi:application`;
 - `directive-worker`: `python manage.py process_directives --watch`;
-- `release`: job `PRE_DEPLOY` com `check --deploy` e migrations;
+- `release`: job `PRE_DEPLOY` com `check --deploy`, `migration_safety` e
+  migrations. O `migration_safety` roda ANTES do `migrate` e, pós-`go-live-v1`,
+  RECUSA o deploy quando ha migracao destrutiva pendente sem ponto de
+  restauracao declarado em `SHOPMAN_MIGRATION_BACKUP_REF`
+  ([backup-e-restore](../runbooks/backup-e-restore.md));
 - `postgres`: PostgreSQL 16 gerenciado (`shopman-staging-postgres`);
 - `cache`: Valkey 8 gerenciado (`shopman-staging-cache`), exposto ao Django via `REDIS_URL`;
 - pagamentos em staging técnico via `payment_mock` para Pix e cartão, com

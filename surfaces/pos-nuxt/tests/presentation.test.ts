@@ -90,7 +90,7 @@ import {
   kitchenLineState,
   unfiredCount,
 } from "../app/presentation/kitchen";
-import { pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
+import { countUnits, pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
 import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
@@ -248,6 +248,39 @@ describe("presentation/catalog — grid shaping", () => {
     expect(filterProducts(products, { query: "cafe" }).map((p) => p.sku)).toEqual(["CAFE"]);
     expect(filterProducts(products, { query: "croiss" }).map((p) => p.sku)).toEqual(["CROISSANT"]);
     expect(filterProducts(products, {}).length).toBe(3);
+  });
+
+  it("o leitor de código de barras acha o produto pelo GTIN", () => {
+    // O leitor é um teclado: ele DIGITA os dígitos no campo de busca e manda
+    // Enter. Sem o GTIN no índice, bipar o pote de geleia não achava nada.
+    const products = [
+      product({ sku: "PAO-FRANCES", name: "Pão Francês", collection_ref: "paes" }),
+      product({
+        sku: "STDALFOUR-GELEIA-FIGO-284",
+        name: "Geleia de Figo St. Dalfour 284g",
+        collection_ref: "mercearia",
+        gtin: "0084380959042",
+      }),
+    ];
+
+    expect(filterProducts(products, { query: "0084380959042" }).map((p) => p.sku)).toEqual([
+      "STDALFOUR-GELEIA-FIGO-284",
+    ]);
+    // Código de barras casa INTEIRO: pedaço de código não vira produto errado.
+    expect(filterProducts(products, { query: "008438" })).toEqual([]);
+  });
+
+  it("o produto bipado vem na frente do que só contém os dígitos no nome", () => {
+    const products = [
+      product({ sku: "VALE-084", name: "Vale 0084380959042", collection_ref: "doces" }),
+      product({ sku: "GELEIA", name: "Geleia", collection_ref: "mercearia", gtin: "0084380959042" }),
+    ];
+
+    // O Enter que o leitor manda em seguida pega o PRIMEIRO da lista.
+    expect(filterProducts(products, { query: "0084380959042" }).map((p) => p.sku)).toEqual([
+      "GELEIA",
+      "VALE-084",
+    ]);
   });
 
   it("acha produto sem acento e prioriza início de palavra", () => {
@@ -1026,6 +1059,24 @@ describe("presentation/selection — multi-select batch shaping", () => {
     expect([...toggleSelected(b, "L1")].sort()).toEqual(["L2"]);
     // original set is untouched (new Set each time)
     expect([...a]).toEqual(["L1"]);
+  });
+
+  // ⚠️ ITEM é unidade em todo o PDV: três croissants numa linha são três
+  // itens. `count` conta LINHAS e é grandeza interna (quantos `line_id`s
+  // viajam); quem vai à tela é `units`. O carrinho dizia "2 itens" onde o
+  // pagamento, o quadro de comandas e a tela do cliente diziam "4".
+  it("units conta ITENS (Σ qty) e count conta linhas — nunca se trocam", () => {
+    const comQtd = [
+      cartItem({ sku: "CROISSANT", line_id: "L1", qty: 3 }),
+      cartItem({ sku: "CAFE", line_id: "L2", qty: 1 }),
+    ];
+    expect(countUnits(comQtd)).toBe(4);
+    const view = selectionView(comQtd, new Set(["L1", "L2"]));
+    expect(view.units).toBe(4);
+    expect(view.count).toBe(2);
+    // marcar só a linha dos três croissants seleciona TRÊS itens
+    expect(selectionView(comQtd, new Set(["L1"])).units).toBe(3);
+    expect(countUnits([])).toBe(0);
   });
 
   it("shapes the batch toolbar: counts, firable vs unfirable line_ids", () => {

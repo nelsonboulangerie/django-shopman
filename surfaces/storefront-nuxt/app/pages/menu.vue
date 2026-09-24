@@ -22,6 +22,8 @@ const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('
 })
 await siteSeoReady
 
+requireContentOnSsr(error.value, !!data.value?.catalog, 'Cardápio')
+
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
 }, { immediate: true })
@@ -172,6 +174,38 @@ function selectSection (value: string | number | undefined) {
       queueActiveSectionSync()
     }, 900)
   })
+}
+
+// O /menu não tem campo de texto — a busca é overlay. O vazio daqui é SEMPRE filtro
+// (pílulas ou a chave de preferências), então ele não pode pedir "outro termo" nem
+// dizer "nada por aqui": o cardápio tem itens, o filtro é que não casou. E o controle
+// que resolve é nomeado, com o botão dentro do próprio vazio.
+// Desligado, "o que você marcou" não diz onde foi marcado — e a tela não mostra a lista.
+// Ligado com zero, "0 itens ocultos" fazia o controle parecer quebrado no instante em
+// que ele está funcionando.
+const dietaryFilterHint = computed(() => {
+  if (!dietaryFilterOn.value) return 'Esconder itens que conflitam com suas restrições. Ver quais em Conta › Preferências.'
+  if (!hiddenByDietaryCount.value) return 'Nenhum item do cardápio conflita com suas restrições.'
+  return hiddenByDietaryCount.value === 1
+    ? '1 item escondido por conflitar com suas restrições.'
+    : `${hiddenByDietaryCount.value} itens escondidos por conflitarem com suas restrições.`
+})
+
+const menuFilterEmptyCopy = computed(() => (
+  dietaryFilterOn.value && !hasAppliedFilters.value
+    ? {
+        title: 'Nenhum item compatível nesta seção',
+        message: 'Todos os itens desta seção conflitam com suas preferências. Desligue o filtro para vê-los.'
+      }
+    : {
+        title: 'Nenhum item com esses filtros',
+        message: 'Limpe os filtros para ver o cardápio inteiro.'
+      }
+))
+
+function clearAllMenuFilters () {
+  dietaryFilterOn.value = false
+  clearMenuFilters()
 }
 
 function clearMenuFilters () {
@@ -458,11 +492,7 @@ useHead({
             >
               <div class="min-w-0">
                 <p class="shop-body font-semibold">Só compatível com minhas preferências</p>
-                <p class="shop-meta">
-                  {{ dietaryFilterOn
-                    ? `${hiddenByDietaryCount} ${hiddenByDietaryCount === 1 ? 'item oculto' : 'itens ocultos'} pelas suas preferências`
-                    : 'Esconder itens que conflitam com o que você marcou.' }}
-                </p>
+                <p class="shop-meta">{{ dietaryFilterHint }}</p>
               </div>
               <UiSwitch v-model="dietaryFilterOn" aria-label="Só compatível com minhas preferências" />
             </div>
@@ -516,11 +546,11 @@ useHead({
                 <Icon name="lucide:search-x" />
               </UiEmptyMedia>
               <UiEmptyHeader>
-                <UiEmptyTitle>{{ catalog.search_empty_state?.title || 'Nada por aqui' }}</UiEmptyTitle>
-                <UiEmptyDescription>{{ catalog.search_empty_state?.message || 'Não encontramos esse item. Tente outro termo ou veja o cardápio completo.' }}</UiEmptyDescription>
+                <UiEmptyTitle>{{ menuFilterEmptyCopy.title }}</UiEmptyTitle>
+                <UiEmptyDescription>{{ menuFilterEmptyCopy.message }}</UiEmptyDescription>
               </UiEmptyHeader>
-              <div v-if="catalog.search_empty_state?.cta_href && catalog.search_empty_state?.cta_label" class="flex justify-center">
-                <UiButton :to="catalog.search_empty_state.cta_href" variant="outline">{{ catalog.search_empty_state.cta_label }}</UiButton>
+              <div class="flex justify-center">
+                <UiButton variant="outline" data-menu-empty-clear @click="clearAllMenuFilters">Limpar filtros</UiButton>
               </div>
             </UiEmpty>
           </section>

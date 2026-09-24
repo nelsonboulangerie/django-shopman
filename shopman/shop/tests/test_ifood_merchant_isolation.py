@@ -5,15 +5,18 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import override_settings
 
-from shopman.shop.services import ifood_events
+from shopman.shop.services import ifood_events, ifood_http
 
 
 @override_settings(SHOPMAN_IFOOD={"merchant_id": "test-store"})
 def test_rejected_merchant_filter_never_retries_without_it():
-    response = MagicMock(status_code=400, text="Invalid merchant filter")
+    # O transporte agora passa por `ifood_http`; a garantia sob teste é a mesma:
+    # um 400 no filtro de merchant NUNCA vira uma segunda consulta sem o filtro.
+    response = MagicMock(status_code=400, text="Invalid merchant filter", headers={})
     with (
-        patch.object(ifood_events.ifood_auth, "authorized_headers", return_value={"Authorization": "Bearer test"}),
-        patch.object(ifood_events.requests, "get", return_value=response) as get,
+        patch.object(ifood_http.ifood_auth, "authorized_headers",
+                     side_effect=lambda extra=None: {"Authorization": "Bearer test", **(extra or {})}),
+        patch.object(ifood_http.requests, "get", return_value=response) as get,
     ):
         assert ifood_events.poll() == []
 

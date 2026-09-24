@@ -46,7 +46,7 @@ const presentation = computed(() => {
       icon: "lucide:refresh-cw",
       title: "Esta versão precisa ser atualizada",
       detail:
-        "Recarregue a página para usar o contrato atual. Nenhuma decisão foi enviada por esta tela.",
+        "Recarregue a página para carregar a versão nova do Marketing. Nada foi enviado por esta tela.",
       retry: true,
     };
   if (status.value === 503)
@@ -124,7 +124,7 @@ useHead({ title: presentation.value.title });
           type="button"
           @click="clearError({ redirect: route.fullPath })"
         >
-          Tentar novamente
+          Tentar de novo
         </UiButton>
       </div>
     </section>

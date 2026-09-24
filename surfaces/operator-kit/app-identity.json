@@ -7,13 +7,13 @@
   },
   "apps": {
     "hub": {
-      "label": "Central",
-      "description": "Central dos aplicativos de operação.",
+      "label": "Shopman Apps",
+      "description": "Todos os aplicativos da operação, num lugar só.",
       "symbol": "lucide:layout-grid",
       "fallbackIcon": "layout-grid",
       "color": "#34373B",
-      "article": "a",
-      "install": "Abra a Central direto da tela inicial deste dispositivo."
+      "article": "o",
+      "install": "Abra todos os aplicativos da operação direto da tela inicial deste dispositivo."
     },
     "pos": {
       "label": "PDV",
@@ -45,7 +45,7 @@
     },
     "production": {
       "label": "Produção",
-      "description": "Planejamento, preparo e fornadas.",
+      "description": "Planejamento, preparo e lotes.",
       "symbol": "tabler:baguette",
       "fallbackIcon": "croissant",
       "color": "#B9781B",

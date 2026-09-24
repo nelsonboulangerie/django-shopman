@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { PendingMarketingDecision } from "~/composables/useMarketingDecisionCommand";
 import type { PendingCampaignFireCommand } from "~/composables/useCampaignFireCommand";
-import { formatCount } from "~/presentation/campaign";
 import {
   deliveryActionLabel,
   includesDirectMessage,
   includesPublicPost,
+  reachLines,
 } from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
+import { scenesFromFrozenCommand } from "~/presentation/simulatedPreview";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
 const props = defineProps<{
@@ -18,6 +19,11 @@ const props = defineProps<{
   /** A imagem do anúncio que está sendo decidido, quando existe. O texto vem do
    *  próprio comando; a imagem não, porque o servidor congela o artefato por hash. */
   imageUrl?: string;
+  /** O conteúdo por plataforma do anúncio decidido. Pelo mesmo motivo da imagem: o
+   *  formato público (`story`, `feed`, `standard`) não é editável no card e não viaja
+   *  no corpo do comando, mas é ele que diz qual retrato a prévia em tamanho real
+   *  precisa mostrar. */
+  platformContent?: Record<string, Record<string, unknown>>;
 }>();
 
 const emit = defineEmits<{
@@ -69,9 +75,6 @@ const title = computed(() => {
 
 const isFire = computed(() => props.command?.action === "fire");
 const challengePlatforms = computed(() => challenge.value?.platforms ?? []);
-const publicPlatforms = computed(() =>
-  challengePlatforms.value.filter((platform) => platform !== "whatsapp"),
-);
 const includesDirectMessages = computed(() =>
   includesDirectMessage(challengePlatforms.value),
 );
@@ -80,7 +83,7 @@ const hasPublicPost = computed(() =>
 );
 
 /** Este é o último botão do caminho e o único que faz alguma coisa sair. Os anteriores
- *  levam a algum lugar e dizem o lugar ("Revisar anúncio", "Visualizar consequência");
+ *  levam a algum lugar ("Revisar anúncio" leva à revisão, "Continuar" leva a esta caixa);
  *  este diz o ato, e o ato tem verbo próprio por destino — enviar, publicar, ou o
  *  genérico disparar quando o anúncio faz os dois. */
 const confirmLabel = computed(() => {
@@ -112,32 +115,63 @@ const outgoing = computed(() => {
   return text || tags.length || props.imageUrl ? { text, tags } : null;
 });
 
-/** Uma linha por destino, e cada linha diz a grandeza daquele destino: mensagem conta
- *  PESSOAS, postagem conta a si mesma.
+/** O mesmo conteúdo do resumo acima, agora em tamanho real e no lugar onde a pessoa vai
+ *  ver — o botão do olho abre por cima desta caixa.
  *
- *  ⚠️ As plataformas de mural não se juntam numa linha só. "Instagram, Facebook · 1
- *  postagem em cada" obriga o leitor a distribuir o "1" entre as duas, e com uma
- *  plataforma sozinha o "em cada" fica sem complemento e não quer dizer nada. Uma
- *  linha por plataforma diz o mesmo sem pedir interpretação. */
-const reachLines = computed(() => {
-  const lines: string[] = [];
-  if (includesDirectMessages.value) {
-    const count = challenge.value?.audience_count ?? 0;
-    lines.push(
-      `WhatsApp · ${formatCount(count)} ${count === 1 ? "pessoa" : "pessoas"}`,
-    );
-  }
-  for (const platform of publicPlatforms.value) {
-    lines.push(`${platformResultLabel(platform)} · 1 postagem`);
-  }
-  return lines;
-});
+ *  ⚠️ Fonte do retrato AQUI: o corpo CONGELADO do comando, o mesmo do resumo. É o que o
+ *  servidor vai publicar. Ler do anúncio na tela retrataria uma edição posterior que não
+ *  foi selada, e essa é exatamente a diferença que esta caixa existe para não deixar
+ *  passar. Na tela de edição a fonte é o rascunho corrente, e lá isso é o certo.
+ *
+ *  ⚠️ Zero chamada ao servidor: tudo o que o retrato precisa já chegou. Quem só quer
+ *  confirmar não paga nada por esta prévia existir. */
+const simulatedScenes = computed(() =>
+  props.command?.action !== "approve" || !outgoing.value
+    ? []
+    : scenesFromFrozenCommand({
+        frozenBody: props.command?.body as Record<string, unknown> | undefined,
+        platforms: challengePlatforms.value,
+        platformLabels: Object.fromEntries(
+          challengePlatforms.value.map((platform) => [
+            platform,
+            platformResultLabel(platform),
+          ]),
+        ),
+        platformContent: props.platformContent,
+        imageUrl: props.imageUrl,
+      }),
+);
+
+/** Uma linha por destino, cada uma na sua grandeza. A regra mora em
+ *  `presentation/marketingDelivery`, porque o diálogo de recuperação precisa da mesma
+ *  — e era lá que ela faltava. */
+const reach = computed(() =>
+  reachLines({
+    platforms: challengePlatforms.value,
+    audienceCount: challenge.value?.audience_count ?? 0,
+  }),
+);
 
 /** Postagem sem foto é um fato que só aparece depois de publicada, quando já não tem
  *  conserto. Se o disparo tem mural e não tem imagem, a caixa diz isso ANTES. */
 const missingImageForPost = computed(
   () => hasPublicPost.value && !props.imageUrl,
 );
+
+/** O que acontece depois do botão, quando o disparo tem hora marcada.
+ *
+ * "Sai sozinho na hora marcada" não dizia o ato: o sistema não sai, ele envia, publica
+ * ou dispara. O verbo vem do destino, igual ao do botão — e a segunda frase existe
+ * porque o medo real de quem agenda é precisar voltar aqui para confirmar de novo. */
+const scheduledOutcomeNote = computed(() => {
+  const subject =
+    includesDirectMessages.value && hasPublicPost.value
+      ? "o anúncio é disparado"
+      : includesDirectMessages.value
+        ? "a mensagem é enviada"
+        : "a postagem é publicada";
+  return `Depois de confirmar, ${subject} na hora marcada. Você não precisa voltar aqui.`;
+});
 
 function submit() {
   if (!ready.value) return;
@@ -163,12 +197,14 @@ function submit() {
         <!-- Uma linha. A descrição diz o que acontece DEPOIS do botão, e nada mais:
              quem está aqui já decidiu, só quer conferir antes de não poder voltar. -->
         <UiDialogDescription>
-          <template v-if="isFire">Nada sai agora; vai para revisão.</template>
+          <template v-if="isFire">
+            Nada é disparado agora. O anúncio vai para revisão.
+          </template>
           <template v-else-if="command?.action === 'reject'">
             Não vai para lugar nenhum e não volta para a fila.
           </template>
           <template v-else-if="challenge?.scheduled_for">
-            Depois de confirmar, sai sozinho na hora marcada.
+            {{ scheduledOutcomeNote }}
           </template>
           <template v-else>Depois de confirmar, não tem desfazer.</template>
         </UiDialogDescription>
@@ -194,7 +230,7 @@ function submit() {
             <Icon name="lucide:image-off" class="size-5" />
             <span class="text-[10px] font-medium leading-none">Sem foto</span>
           </div>
-          <div class="min-w-0 text-sm">
+          <div class="min-w-0 flex-1 text-sm">
             <p v-if="outgoing.text" class="max-h-28 overflow-y-auto whitespace-pre-line">
               {{ outgoing.text }}
             </p>
@@ -202,11 +238,18 @@ function submit() {
               {{ outgoing.tags.join(" ") }}
             </p>
           </div>
+          <!-- O mesmo resumo, em tamanho real e no lugar onde a pessoa vai ver. A
+               miniatura continua respondendo "é este anúncio?" de relance; o olho
+               responde "o enquadramento está certo?" sem tirar ninguém daqui. -->
+          <AnnouncementSimulatedPreview
+            :scenes="simulatedScenes"
+            trigger-class="-my-1 shrink-0 self-start"
+          />
         </div>
 
         <ul class="space-y-0.5 text-sm font-medium" aria-label="Para quem vai">
-          <li v-for="line in reachLines" :key="line">{{ line }}</li>
-          <li v-if="!reachLines.length" class="text-muted-foreground">
+          <li v-for="line in reach" :key="line">{{ line }}</li>
+          <li v-if="!reach.length" class="text-muted-foreground">
             Nenhuma plataforma
           </li>
         </ul>
@@ -227,10 +270,15 @@ function submit() {
           class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
           role="alert"
         >
-          <p class="font-semibold">Este volume exige duas pessoas.</p>
+          <!-- ⚠️ `dual_control` deixa o confirmar morto PARA SEMPRE nesta caixa. O
+               texto antigo explicava o desenho do gate e não dizia o gesto — botão
+               apagado com frase que não resolve é o mesmo que botão apagado sem frase.
+               Esta termina no que fazer, e é a MESMA do painel de resultado, que tinha
+               uma segunda redação para o mesmo estado. -->
+          <p class="font-semibold">Este disparo precisa de duas pessoas.</p>
           <p class="mt-1 text-muted-foreground">
-            A confirmação independente continua obrigatória; esta sessão não
-            substitui o segundo controle.
+            Você já fez a sua parte. Peça a outra pessoa com acesso ao Marketing
+            para abrir este mesmo anúncio e confirmar. Nada é disparado até lá.
           </p>
         </div>
 
@@ -314,7 +362,16 @@ function submit() {
         >
           {{ isFire ? "Voltar sem criar" : "Voltar sem confirmar" }}
         </UiButton>
-        <UiButton type="button" :disabled="!ready" @click="submit">
+        <!-- Com duplo controle o confirmar nunca liga; no lugar dele vai o gesto que
+             existe, que é fechar a caixa. -->
+        <UiButton
+          v-if="challenge?.dual_control"
+          type="button"
+          @click="emit('cancel')"
+        >
+          Entendi
+        </UiButton>
+        <UiButton v-else type="button" :disabled="!ready" @click="submit">
           {{ confirmLabel }}
         </UiButton>
       </UiDialogFooter>

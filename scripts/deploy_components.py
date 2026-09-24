@@ -103,6 +103,31 @@ GROUP_SHARED_PATHS = (
     "surfaces/Dockerfile.operator-group",
 )
 
+#: O que mora na árvore de uma surface e NUNCA chega à imagem. Prefixo `!`.
+#:
+#: O estágio final do `Dockerfile.surface` copia só
+#: `/repo/surfaces/${SURFACE}/.output`, e o do `Dockerfile.operator-group` copia
+#: só o `.output` de cada app — teste e documentação ficam no estágio de build e
+#: morrem lá. Sem isto, mexer em 6 PNG de baseline do Marketing sujava o grupo
+#: `operator-office` inteiro e publicava uma imagem byte a byte idêntica à
+#: anterior, como em 18/09/2026 (`#863`).
+#:
+#: ⚠️ Errar aqui para o lado de excluir demais é o defeito de 17/09: mudança
+#: real que não vira imagem. Por isso a lista é só o que comprovadamente não
+#: entra no `.output` — diretório de teste e prosa. Config de build
+#: (`nuxt.config.ts`, `package.json`, `tsconfig.json`) fica de fora da exclusão.
+#:
+#: ⚠️ Config de TESTE (`playwright.*.config.ts`, `vitest.config.ts`,
+#: `eslint.config.mjs`) também fica de fora, e isso foi MEDIDO, não esquecido:
+#: 73 commits do histórico tocaram esses arquivos e só **2** não tocaram mais
+#: nada de `surfaces/` — os outros 71 vinham com código e publicariam de todo
+#: jeito. Excluí-los pouparia dois builds na vida do projeto e custaria glob de
+#: verdade em `matches`, que esta casa recusa de propósito. Se um dia o número
+#: mudar, meça de novo antes de mexer.
+SURFACE_TEST_PATHS = ("tests/**", "README.md")
+KIT_TEST_PATHS = ("tests/**", "docs/**", "README.md", "PWA_ICONS.md")
+ROUTER_TEST_PATHS = ("test/**", "README.md")
+
 
 def load_groups(groups_json: Path = GROUPS_JSON) -> dict[str, list[str]]:
     """Grupos de operador lidos de `groups.json` — a MESMA lista do launcher."""
@@ -123,13 +148,28 @@ def component_paths(groups: dict[str, list[str]]) -> dict[str, tuple[str, ...]]:
     operator_surfaces = [s for members in groups.values() for s in members]
     surfaces = ["storefront-nuxt", *operator_surfaces]
 
+    kit = tuple(f"!surfaces/operator-kit/{x}" for x in KIT_TEST_PATHS)
+    router = tuple(f"!surfaces/operator-router/{x}" for x in ROUTER_TEST_PATHS)
+
     paths: dict[str, tuple[str, ...]] = {"web": WEB_PATHS}
     for surface in surfaces:
-        paths[surface] = (f"surfaces/{surface}/**", *SURFACE_SHARED_PATHS)
+        paths[surface] = (
+            f"surfaces/{surface}/**",
+            *SURFACE_SHARED_PATHS,
+            *(f"!surfaces/{surface}/{x}" for x in SURFACE_TEST_PATHS),
+            *kit,
+        )
     for group, members in groups.items():
         paths[group] = (
             *GROUP_SHARED_PATHS,
             *(f"surfaces/{member}/**" for member in members),
+            *kit,
+            *router,
+            *(
+                f"!surfaces/{member}/{x}"
+                for member in members
+                for x in SURFACE_TEST_PATHS
+            ),
         )
     return paths
 
@@ -146,6 +186,26 @@ def matches(path: str, pattern: str) -> bool:
     return path == pattern
 
 
+def split_patterns(patterns: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    """(o que obriga a publicar, o que comprovadamente não chega à imagem)."""
+    positivos = [p for p in patterns if not p.startswith("!")]
+    negativos = [p[1:] for p in patterns if p.startswith("!")]
+    return positivos, negativos
+
+
+def touches(path: str, patterns: tuple[str, ...]) -> bool:
+    """O arquivo obriga a republicar o componente?
+
+    A negativa manda: `surfaces/marketing-nuxt/tests/x.png` casa o prefixo da
+    surface e casa a exclusão, e o que decide é a exclusão — aquele arquivo não
+    existe dentro da imagem.
+    """
+    positivos, negativos = split_patterns(patterns)
+    if any(matches(path, p) for p in negativos):
+        return False
+    return any(matches(path, p) for p in positivos)
+
+
 def components_for(
     changed: list[str], paths: dict[str, tuple[str, ...]]
 ) -> list[str]:
@@ -153,8 +213,13 @@ def components_for(
     return [
         name
         for name, patterns in paths.items()
-        if any(matches(f, p) for f in changed for p in patterns)
+        if any(touches(f, patterns) for f in changed)
     ]
+
+
+def _sem_glob(pattern: str) -> str:
+    """`x/**` → `x`, que é como o git entende "tudo sob este diretório"."""
+    return pattern[:-3] if pattern.endswith("/**") else pattern
 
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
@@ -187,7 +252,12 @@ def last_commit_touching(
 
     É o sha que o registry DEVERIA estar servindo para aquele componente.
     """
-    pathspec = [p[:-3] if p.endswith("/**") else p for p in patterns]
+    positivos, negativos = split_patterns(patterns)
+    pathspec = [_sem_glob(p) for p in positivos]
+    # `:(exclude)` é a mesma exclusão de `touches`, dita em pathspec de git —
+    # sem isto o `esperado` do confronto com o registry apontaria um commit que
+    # só mexeu em teste, e que imagem nenhuma poderia conter.
+    pathspec += [f":(exclude){_sem_glob(p)}" for p in negativos]
     result = _git(
         "log", "-1", "--format=%H", ref, "--", *pathspec, cwd=cwd
     )

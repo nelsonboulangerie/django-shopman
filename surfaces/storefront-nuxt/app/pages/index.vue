@@ -29,6 +29,8 @@ watch(() => data.value, value => {
   setFromServer(value?.cart)
 }, { immediate: true })
 
+requireContentOnSsr(error.value, !!data.value?.home, 'Loja')
+
 const home = computed(() => data.value?.home || null)
 const featured = computed(() => home.value?.featured_items || [])
 const sectionsCopy = computed(() => home.value?.sections_copy || null)
@@ -60,7 +62,11 @@ const operationalStatus = computed(() => {
   } as const
 })
 const quickReorderItems = computed(() => home.value?.last_order_items.slice(0, 3) || [])
+// Sem ação de repetir disponível, o card não pode perguntar "quer repetir?" e responder
+// "ver histórico": pergunta e botão têm de ser a mesma coisa. E o gesto tem UM nome na
+// home inteira — "Repetir pedido", o mesmo do slide do hero.
 const quickReorderTitle = computed(() => {
+  if (!reorderAction.value) return 'Seus pedidos anteriores'
   const name = home.value?.omotenashi.customer_name
   return `Quer repetir seu último pedido${name ? `, ${name}` : ''}?`
 })
@@ -73,7 +79,7 @@ const visitAddressLines = computed(() => addressLines(home.value?.shop.full_addr
 const whatsappUrl = computed(() => home.value?.public_config.whatsapp_url || '')
 // Fundo do CTA de ajuda: ambiente (interior da padaria), não foto de produto —
 // produto fica nos cards/cardápio; aqui o tom é de acolhimento/lugar.
-const whatsappImage = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1200&q=80'
+const whatsappImage = '/img/home/facade1.webp'
 
 // A home mais útil para quem voltou com pedido em andamento é o próprio
 // pedido: banner com prioridade sobre o hero (silencioso para anônimos).
@@ -93,7 +99,8 @@ onMounted(async () => {
 
 async function handleReorder (action: Action | null) {
   if (!action) {
-    await navigateTo('/conta')
+    // O botão diz "Ver meus pedidos": o destino é a lista, não a raiz da Conta.
+    await navigateTo('/conta/pedidos')
     return
   }
   try {
@@ -239,7 +246,8 @@ useHead({
               :reorder-action="reorderAction"
               :reorder-loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
               :status-open="operationalStatus.isOpen"
-              closed-cta-label="Montar pedido"
+              :status-label="operationalStatus.label"
+              closed-cta-label="Montar pedido para depois"
               @reorder="handleReorder"
             />
 
@@ -305,7 +313,7 @@ useHead({
                       <span>{{ item.name }}</span>
                     </li>
                   </ul>
-                  <p v-else class="shop-muted">Seu pedido anterior volta à sacola para revisão.</p>
+                  <p v-else class="shop-muted">Os itens voltam para a sacola; você confere antes de finalizar.</p>
                 </div>
                 <UiButton
                   icon="lucide:shopping-bag"
@@ -313,7 +321,7 @@ useHead({
                   class="w-full sm:w-fit"
                   @click="handleReorder(reorderAction)"
                 >
-                  {{ reorderAction?.label || 'Ver histórico' }}
+                  {{ reorderAction ? 'Repetir pedido' : 'Ver meus pedidos' }}
                 </UiButton>
               </UiCardContent>
             </div>
@@ -357,8 +365,8 @@ useHead({
           <div class="flex flex-col overflow-hidden rounded-lg border bg-card" data-home-path-online>
             <UiAspectRatio :ratio="16 / 9" class="bg-muted">
               <img
-                src="https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=900&q=80"
-                alt="Cesta com pães artesanais variados"
+                src="/img/home/baguette.webp"
+                alt="Baguetes em fermentação sobre pano de linho, antes do forno"
                 loading="lazy"
                 decoding="async"
                 class="size-full object-cover"
@@ -384,8 +392,8 @@ useHead({
           <div class="flex flex-col overflow-hidden rounded-lg border bg-card" data-home-path-visit>
             <UiAspectRatio :ratio="16 / 9" class="bg-muted">
               <img
-                src="https://images.unsplash.com/photo-1517433670267-08bbd4be890f?auto=format&fit=crop&w=900&q=80"
-                alt="Vitrine de padaria com pães expostos"
+                src="/img/home/selfservice.webp"
+                alt="Balcão da padaria com pães e doces do dia"
                 loading="lazy"
                 decoding="async"
                 class="size-full object-cover"

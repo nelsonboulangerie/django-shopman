@@ -2,6 +2,7 @@
 
 from .admin_two_factor import AdminTwoFactorEnrollment
 from .alerts import OperatorAlert
+from .alias_benchmark import AliasBenchmarkReport
 from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
 from .bi_alerts import BIAlertEvent, BIAlertRule
 from .bi_scenario import BIScenarioReport
@@ -38,10 +39,12 @@ from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .seating import SeatingSpot, SpotKind
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
+from .timer_tag import TimerTag, TimerTagOrigin
 
 __all__ = [
     "AdminTwoFactorEnrollment",
     "OperatorAlert",
+    "AliasBenchmarkReport",
     "AliasStatus",
     "BIAlertEvent",
     "BIAlertRule",
@@ -88,6 +91,8 @@ __all__ = [
     "SignInMethod",
     "SignInOutcome",
     "SpotKind",
+    "TimerTag",
+    "TimerTagOrigin",
     "OutageReason",
     "ShelfOutage",
 ]

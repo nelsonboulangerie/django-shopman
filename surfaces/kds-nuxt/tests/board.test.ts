@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   allDayCounts,
+  cardScale,
+  fulfillmentLabel,
   boardView,
   elapsedLabel,
   isExpeditionCard,
   KDS_UNDO_WINDOW_MS,
   additionTicketPks,
-  ticketTapAction,
+  nextTicketPk,
+  shortDateLabel,
+  ticketAction,
   lucideIcon,
   slaPercent,
   sortByUrgency,
@@ -111,7 +115,7 @@ describe("kds board presentation", () => {
     expect(view.blockedRefs.has("PDV-1")).toBe(true);
   });
 
-  it("hides tickets inside the undo window and recounts from what is on screen", () => {
+  it("mantém o card na grade durante a janela de desfazer, mas fora do trabalho", () => {
     const board: KDSBoardProjection = {
       instance_ref: "cafes",
       instance_name: "Cafés",
@@ -127,10 +131,26 @@ describe("kds board presentation", () => {
       recent_done: [],
     };
     const view = boardView(board, new Set([2]));
-    expect(view.cards.map((c) => c.pk)).toEqual([1]);
+    // O card continua desenhado — é ele que carrega o "Desfazer", no lugar onde o
+    // dedo acabou de tocar. O que ele deixa de ser é trabalho.
+    expect(view.cards.map((c) => c.pk)).toEqual([1, 2]);
+    expect(view.finishingPks.has(2)).toBe(true);
     expect(view.total).toBe(1);
     expect(view.counts.in_progress).toBe(0);
     expect(view.counts.pending).toBe(1);
+    // O "a fazer" conta só quem ainda é trabalho: metade do que contaria com os dois.
+    const withoutWindow = boardView(board);
+    const allDayTotal = (v: typeof view) => v.allDay.reduce((sum, e) => sum + e.qty, 0);
+    expect(allDayTotal(view)).toBe(allDayTotal(withoutWindow) / 2);
+    expect(view.nextPk).toBe(1); // nunca aponta para quem está saindo
+  });
+
+  it("o próximo pula agendado e quem está saindo", () => {
+    const scheduled = ticket({ pk: 5, is_scheduled: true, status: "scheduled" });
+    const live = ticket({ pk: 6, status: "pending" });
+    expect(nextTicketPk([scheduled, live], false)).toBe(6);
+    expect(nextTicketPk([scheduled], false)).toBeNull();
+    expect(nextTicketPk([live], true)).toBeNull(); // expedição não tem "próximo"
   });
 
   it("formats elapsed compactly — seconds only in the first minute, then whole minutes", () => {
@@ -177,6 +197,14 @@ describe("kds board presentation", () => {
     expect(toneNextSurface("late")).toContain("red");
     expect(toneNextSurface("warning")).toContain("amber");
     expect(toneNextSurface("ok")).not.toMatch(/red|amber|green/);
+  });
+
+  it("destaque do próximo é borda + tint: ring fica reservado ao foco de teclado", () => {
+    // Canon do kit (operator-base.css, "SELEÇÃO / ATIVO").
+    for (const tone of ["late", "warning", "ok"] as const) {
+      expect(toneNextSurface(tone)).not.toContain("ring");
+      expect(toneNextSurface(tone)).toContain("border-");
+    }
   });
 
   it("auto-sorts prep tickets by urgency (late first, then oldest)", () => {
@@ -262,30 +290,63 @@ it("soma quantidades decimais sem concatenar strings nem arredondar unidades", (
   expect(allDayCounts([first, second])).toEqual([{ name: "Pão", qty: 0.3 }]);
 });
 
-describe("o toque no cabeçalho do card", () => {
+describe("o botão do card", () => {
   const armed = { armed: true, blocked: false };
 
-  it("pendente → inicia; em preparo e armado → finaliza", () => {
-    expect(ticketTapAction(ticket({ status: "pending" }), armed)).toBe("start");
-    expect(ticketTapAction(ticket({ status: "in_progress" }), armed)).toBe("finish");
+  it("o rótulo é o ATO, e ele muda com o estado do pedido", () => {
+    expect(ticketAction(ticket({ status: "pending" }), armed)).toMatchObject({
+      kind: "start",
+      label: "Iniciar preparo",
+      enabled: true,
+    });
+    expect(ticketAction(ticket({ status: "in_progress" }), armed)).toMatchObject({
+      kind: "finish",
+      label: "Finalizar preparo",
+      enabled: true,
+    });
   });
 
-  it("recém-iniciado ainda não finaliza: o toque duplo não conclui o pedido", () => {
-    expect(
-      ticketTapAction(ticket({ status: "in_progress" }), { armed: false, blocked: false }),
-    ).toBe("none");
+  it("recém-iniciado ainda não finaliza: o rótulo não pisca, só o toque não passa", () => {
+    const justStarted = ticketAction(ticket({ status: "in_progress" }), {
+      armed: false,
+      blocked: false,
+    });
+    expect(justStarted.kind).toBe("finish");
+    expect(justStarted.label).toBe("Finalizar preparo");
+    expect(justStarted.enabled).toBe(false);
   });
 
-  it("item cancelado sem Ciente trava o finalizar, mas não o iniciar", () => {
+  it("item cancelado trava o finalizar e diz PARA ONDE ir, mas não trava o iniciar", () => {
     const blocked = { armed: true, blocked: true };
-    expect(ticketTapAction(ticket({ status: "in_progress" }), blocked)).toBe("blocked");
-    expect(ticketTapAction(ticket({ status: "pending" }), blocked)).toBe("start");
+    const stuck = ticketAction(ticket({ status: "in_progress" }), blocked);
+    expect(stuck.kind).toBe("blocked");
+    expect(stuck.label).toContain("cartão vermelho");
+    expect(ticketAction(ticket({ status: "pending" }), blocked).kind).toBe("start");
   });
 
-  it("encomenda futura não reage ao toque", () => {
+  it("dentro da janela, o botão é o Desfazer — e ele ganha de qualquer outro estado", () => {
     expect(
-      ticketTapAction(ticket({ status: "scheduled", is_scheduled: true }), armed),
-    ).toBe("none");
+      ticketAction(ticket({ status: "in_progress" }), { ...armed, finishing: true }),
+    ).toMatchObject({ kind: "undo", label: "Desfazer", enabled: true });
+    expect(
+      ticketAction(ticket({ status: "in_progress" }), {
+        armed: true,
+        blocked: true,
+        finishing: true,
+      }).kind,
+    ).toBe("undo");
+  });
+
+  it("encomenda futura não tem botão: prévia não age", () => {
+    const preview = ticketAction(ticket({ status: "scheduled", is_scheduled: true }), armed);
+    expect(preview.kind).toBe("none");
+    expect(preview.label).toBe("");
+  });
+
+  it("a data da prévia sai da ISO sem passar por fuso horário", () => {
+    expect(shortDateLabel("2026-09-19")).toBe("19/09");
+    expect(shortDateLabel("2026-01-01")).toBe("01/01");
+    expect(shortDateLabel("")).toBe("");
   });
 
   it("a janela de desfazer é curta o bastante para não segurar a cozinha", () => {
@@ -306,5 +367,20 @@ describe("ticket adicional do mesmo pedido", () => {
     const done = ticket({ pk: 3, order_ref: "PDV-7", status: "done" });
     const extra = ticket({ pk: 9, order_ref: "PDV-7" });
     expect([...additionTicketPks([extra], [done])]).toEqual([9]);
+  });
+});
+
+describe("moldura comum dos cards", () => {
+  it("uma escala só para estação e expedição, e o botão nunca abaixo de h-11", () => {
+    expect(cardScale("compact").action).toContain("h-11");
+    expect(cardScale("cozy").action).toContain("h-11");
+    expect(cardScale("roomy").action).toContain("h-14");
+    expect(cardScale("compact").code).toBe("text-xl");
+    expect(cardScale("roomy").code).toBe("text-4xl");
+  });
+
+  it("Entrega/Retirada sai do ícone do ticket, com a palavra da expedição", () => {
+    expect(fulfillmentLabel("local_shipping")).toBe("Entrega");
+    expect(fulfillmentLabel("storefront")).toBe("Retirada");
   });
 });

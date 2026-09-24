@@ -32,6 +32,7 @@ import type {
 } from "~/types/pos";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
+import { ordersQueueUrl } from "~/presentation/crossAppLinks";
 import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
@@ -56,6 +57,7 @@ import {
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
+import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
   receiptContactChecked,
@@ -626,10 +628,16 @@ const pixProviderTestExceeded = computed(() =>
 const pixProviderTestMixed = computed(() =>
   hasPixProviderTestTender.value && (splitActive.value || hasNonPixTender.value),
 );
+const pixProviderTestLimitDisplay = computed(() => pixProviderTest.value?.max_amount_display || "R$ 10,00");
 const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
-  "Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. "
+  `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}. `
   + "Para continuar, troque a forma de pagamento ou ajuste os itens do pedido."
 ));
+// Dentro do limite o aviso só informa: a frase do contrato manda trocar a forma,
+// e isso ao lado de "está dentro do limite" obriga o operador a escolher uma leitura.
+const pixProviderTestWithinLimitMessage = computed(() =>
+  `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}.`,
+);
 /** Dá para dividir a conta AGORA? O link cobra a venda inteira, então ele fecha
  *  a porta — a não ser que a divisão já esteja armada, e aí o modal é por onde
  *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
@@ -706,7 +714,11 @@ const ctaLabel = computed(() => {
   // própria saída. Girar para sempre é a tela mentindo sobre o que está fazendo.
   if (props.reviewFailed) return "Tentar de novo";
   if (needsReview.value) return "Atualizando…";
-  return needsAuth.value ? "Autorizar e validar" : "Validar";
+  // ⚠️ Este botão NÃO autoriza nem valida: ele abre o teclado do gerente
+  // (`onCta` → `managerAuthOpen = true`). Quem conclui é o gerente digitando o
+  // PIN, que é, corretamente, o último passo — e só o último passo diz o verbo
+  // do ato. Dizia "Autorizar e validar" e entregava uma terceira coisa.
+  return needsAuth.value ? "Pedir autorização" : "Validar";
 });
 // O QUE SEGURA O BOTÃO — na ordem em que o operador resolve, em três partes:
 // a frase (curta, é o que ele lê de longe), o porquê (miúdo, é o que ele DIZ ao
@@ -776,19 +788,30 @@ const ctaBlock = computed<{
   if (props.paymentTenders.some((t) => blockedForDelivery(t.method))) {
     return {
       message: "Esta forma exige pagamento antecipado.",
-      hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
+      // ⚠️ NÃO cite o rótulo do seletor aqui: no modo encomenda — que é onde
+      // este aviso aparece — ele se chama "No balcão", e a frase mandava
+      // procurar um "Receber no caixa" que não existe na tela. Descreve-se o
+      // efeito, que vale nos dois modos.
+      hint: "Troque a linha por dinheiro ou cartão na maquininha, ou cobre agora, antes de o pedido sair.",
     };
   }
   // A Efí de homologação não confirma valores maiores nem Pix misto. Vem cedo
   // porque é uma limitação do instrumento já escolhido, independente dos
   // demais dados do pedido — o aviso precisa estar presente enquanto o Pix está.
   if (pixProviderTestMixed.value) {
+    // "Ajustar itens" não desfaz a combinação, então não é saída aqui. Pix
+    // sozinho só é saída quando o total cabe no teto.
+    const pixAloneFits = !exceedsPaymentConstraint(props.paymentTotalQ, pixProviderTest.value);
+    const pixAlone = splitActive.value
+      ? "Desfaça a divisão para usar Pix sozinho no total"
+      : "Use Pix sozinho no total";
     return {
       message: "Pix não pode ser combinado nem dividido durante os testes da Efí.",
-      hint: "Remova o Pix e escolha outra forma para esta divisão.",
+      hint: pixAloneFits
+        ? `${pixAlone}, ou remova o Pix e escolha outra forma.`
+        : "Remova o Pix e escolha outra forma.",
       actions: [
         { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
-        { label: "Ajustar itens", run: returnToCart },
       ],
     };
   }
@@ -890,10 +913,27 @@ type CheckoutNotice = {
   tone?: "block" | "warn";
   action?: CheckoutAction;
   actions?: CheckoutAction[];
+  /** Saída para OUTRO app de operador. Ver `noticeLink` logo abaixo. */
+  link?: { href: string; label: string };
 };
 
 function noticeActions(note: CheckoutNotice): CheckoutAction[] {
   return note.actions || (note.action ? [note.action] : []);
+}
+
+// "Registre o recebimento NO GESTOR" citava o app vizinho e não levava, com o
+// `ordersUrl` já no `runtimeConfig`. O pedido ainda não existe aqui (este é o
+// checkout, antes do commit), então não há `order_ref` para apontar: o destino
+// honesto é a FILA do Gestor, e o rótulo promete a fila.
+const workspaceRuntimeConfig = useRuntimeConfig();
+const ordersQueueHref = computed(() =>
+  ordersQueueUrl(String(workspaceRuntimeConfig.public.ordersUrl || "")),
+);
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
+function noticeLink(): { href: string; label: string } | undefined {
+  return ordersQueueHref.value
+    ? { href: ordersQueueHref.value, label: "Abrir a fila do Gestor" }
+    : undefined;
 }
 
 // AVISOS — o bloqueio primeiro, depois as consequências, depois as ressalvas.
@@ -906,9 +946,9 @@ const notices = computed<CheckoutNotice[]>(() => {
   const block = ctaBlock.value;
   if (block) notes.push({ key: "block", tone: "block", icon: "lucide:triangle-alert", ...block });
   else if (needsAuth.value) {
-    // Sem botão próprio de propósito: o caminho É o Validar, que neste estado se
-    // chama "Autorizar e validar". Um segundo botão fazendo o mesmo gesto
-    // duplicaria a ação mais delicada da tela — a que chama um gerente.
+    // Sem botão próprio de propósito: o caminho É o botão do rodapé, que neste
+    // estado se chama "Pedir autorização". Um segundo botão fazendo o mesmo
+    // gesto duplicaria a ação mais delicada da tela — a que chama um gerente.
     notes.push({
       key: "auth",
       tone: "block",
@@ -930,7 +970,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       key: "pix-provider-test",
       tone: "warn",
       icon: "lucide:flask-conical",
-      message: pixProviderTestMessage.value,
+      message: pixProviderTestWithinLimitMessage.value,
       hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
     });
   }
@@ -964,6 +1004,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       message: props.fulfillmentType === "pickup"
         ? "Dinheiro pendente. Registre o recebimento no Gestor antes de concluir a retirada."
         : "Dinheiro pendente. O troco calculado será separado no despacho.",
+      link: props.fulfillmentType === "pickup" ? noticeLink() : undefined,
     });
   }
   if (onDelivery.value && machineTenders.value.length) {
@@ -973,28 +1014,24 @@ const notices = computed<CheckoutNotice[]>(() => {
       message: props.fulfillmentType === "pickup"
         ? "Passe o cartão na retirada e registre o recebimento no Gestor antes de concluir o pedido."
         : "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega.",
+      link: props.fulfillmentType === "pickup" ? noticeLink() : undefined,
     });
   }
-  if (wantsPrintedReceipt.value) {
-    // AGORA A FRASE PODE DIZER QUE A NOTA SAI. Não existe DANFE sem NFC-e
-    // autorizada — o papel é o espelho da nota —, então pedir papel é pedir a
-    // nota, e a regra fiscal do servidor lê este canal e emite. Antes o toggle
-    // não decidia nada: dinheiro sem CPF ligava "Impressa?", não gerava nota
-    // nenhuma e nada saía na bobina, calado.
-    //
-    // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
-    // SEFAZ. Prometer o instante seria a segunda mentira.
-    //
-    // ⚠️ Mas só quando o CONTRATO diz que pedir papel pede a nota
-    // (`receipt_requests_emission`). Sem essa palavra do servidor, a bobina só
-    // sai quando outra regra emitir (CPF, cartão, Pix) — e prometer "imprime
-    // sozinha" num dinheiro sem CPF seria a mentira de sempre com outra frase.
+  // PEDIR O COMPROVANTE É PEDIR A NOTA — papel ou e-mail, como o CPF. Não
+  // existe DANFE nem XML sem NFC-e autorizada, e a regra fiscal do servidor lê
+  // estes canais e emite. A frase só promete quando o CONTRATO confirma
+  // (`capabilities.receipt_requests_emission`); a redação mora em
+  // `presentation/receiptRequest.ts`.
+  const receiptNote = receiptRequestNote({
+    print: wantsPrintedReceipt.value,
+    email: wantsEmailReceipt.value,
+    emits: receiptRequestEmits(props.checkoutContract),
+  });
+  if (receiptNote) {
     notes.push({
-      key: "print",
-      icon: "lucide:printer",
-      message: props.checkoutContract?.receipt_requests_emission
-        ? "Pedir papel já pede a nota — imprime sozinha assim que autorizar."
-        : "A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).",
+      key: "receipt",
+      icon: wantsPrintedReceipt.value ? "lucide:printer" : "lucide:mail",
+      message: receiptNote,
     });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
@@ -1308,7 +1345,7 @@ defineExpose({
                  seleção de fato mora.
 
                  Na entrega, as linhas são cobranças pendentes; a confirmação
-                 ocorre no acerto do Gestor, separada da devolução do aparelho. -->
+                 ocorre no acerto do Gestor, separada da devolução do dispositivo. -->
             <button
               v-for="method in injectableMethods"
               :key="method.ref"
@@ -1480,9 +1517,22 @@ defineExpose({
               <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
             </span>
             <div
-              v-if="noticeActions(note).length"
+              v-if="noticeActions(note).length || note.link"
               class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"
             >
+              <!-- A menção ao app vizinho vira porta. Ver `noticeLink()`. -->
+              <UiButton
+                v-if="note.link"
+                size="lg"
+                variant="outline"
+                class="h-11 w-full shrink-0 gap-1.5 sm:w-auto"
+                :href="note.link.href"
+                v-bind="crossAppAttrs(note.link.href)"
+                data-notice-app-link
+              >
+                <Icon name="lucide:external-link" class="size-4" />
+                {{ note.link.label }}
+              </UiButton>
               <UiButton
                 v-for="action in noticeActions(note)"
                 :key="action.label"
@@ -2100,7 +2150,7 @@ defineExpose({
           <p v-if="review" class="text-center text-sm text-muted-foreground">
             Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
           </p>
-          <UiButton class="w-full" @click="discountSheetOpen = false">Concluir</UiButton>
+          <UiButton class="w-full" @click="discountSheetOpen = false">Voltar ao pagamento</UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

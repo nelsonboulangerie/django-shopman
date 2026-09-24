@@ -60,7 +60,7 @@ def recall_ticket(*, ticket_pk: int, actor: str):
     _ensure_ticket_due(ticket)
     try:
         reopened = kds_core.reopen_ticket(ticket, actor=actor)
-    except kds_core.FutureWorkBlocked as exc:
+    except (kds_core.FutureWorkBlocked, kds_core.TicketRecallBlocked) as exc:
         raise KDSError(str(exc)) from exc
     if not reopened:
         raise KDSError("Ticket não está concluído.")

@@ -255,13 +255,15 @@ export function useDrawerLock({ drawer, actions, action }: DrawerLockDeps) {
       await release();
     } catch (error) {
       const code = httpErrorCode(error);
-      const message = httpErrorMessage(error, "Falha ao liberar a gaveta.");
+      const causa = httpErrorMessage(error, "A gaveta não foi liberada.");
       if (code === "manager_approval_required" || code === "manager_approval_invalid") {
-        managerError.value = message;
+        // Sem saída acrescentada: o diálogo de autorização segue aberto e É a
+        // saída. Mandar "tente de novo" aqui é mandar refazer o que está à mão.
+        managerError.value = causa;
         void logAttempt("denied");
         return;
       }
-      toast.error(message);
+      toast.error(`${causa} Ela segue travada. Tente de novo.`);
     } finally {
       busy.value = false;
     }

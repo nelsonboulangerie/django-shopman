@@ -69,7 +69,7 @@ def test_handler_delivers_redacted_payload_and_records_success(notification, sub
     directive = _directive(notification)
 
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(directive)
+        NotificationPushHandler().handle(message=directive, ctx={})
 
     call = webpush.call_args.kwargs
     payload = json.loads(call["data"])
@@ -98,7 +98,7 @@ def test_financial_payload_is_title_only_and_unsafe_url_is_removed(owner, subscr
     directive = _directive(notification)
 
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(directive)
+        NotificationPushHandler().handle(message=directive, ctx={})
 
     payload = json.loads(webpush.call_args.kwargs["data"])
     assert payload["body"] == ""
@@ -121,7 +121,7 @@ def test_transport_session_never_follows_redirects():
 @override_settings(SHOPMAN_MARKETING_BASE_URL="https://mkt.example.test")
 def test_category_link_targets_its_configured_surface(notification, subscription):
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(_directive(notification))
+        NotificationPushHandler().handle(message=_directive(notification), ctx={})
     payload = json.loads(webpush.call_args.kwargs["data"])
     assert payload["action_url"] == "https://mkt.example.test/announcements/7#review"
 
@@ -135,7 +135,7 @@ def test_gone_endpoint_is_disabled(notification, subscription, status_code):
         "shopman.shop.handlers.notification_push.webpush",
         side_effect=WebPushException("gone", response=response),
     ):
-        NotificationPushHandler().handle(_directive(notification))
+        NotificationPushHandler().handle(message=_directive(notification), ctx={})
     subscription.refresh_from_db()
     assert subscription.disabled_at is not None
     assert subscription.failures == 1
@@ -152,7 +152,7 @@ def test_gone_endpoint_is_disabled(notification, subscription, status_code):
 def test_transient_transport_failure_requests_retry(notification, subscription, error):
     with patch("shopman.shop.handlers.notification_push.webpush", side_effect=error):
         with pytest.raises(DirectiveTransientError):
-            NotificationPushHandler().handle(_directive(notification))
+            NotificationPushHandler().handle(message=_directive(notification), ctx={})
     subscription.refresh_from_db()
     assert subscription.failures == 1
     assert subscription.disabled_at is None
@@ -164,7 +164,7 @@ def test_stored_non_provider_endpoint_is_disabled_without_transport(notification
     subscription.save(update_fields=["endpoint"])
 
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(_directive(notification))
+        NotificationPushHandler().handle(message=_directive(notification), ctx={})
 
     webpush.assert_not_called()
     subscription.refresh_from_db()
@@ -177,7 +177,7 @@ def test_irrelevant_subscription_is_skipped_but_success_timestamp_is_not_a_recei
     subscription.categories = ["order"]
     subscription.save(update_fields=["categories"])
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(_directive(notification))
+        NotificationPushHandler().handle(message=_directive(notification), ctx={})
         webpush.assert_not_called()
 
     subscription.categories = ["campaign"]
@@ -185,7 +185,7 @@ def test_irrelevant_subscription_is_skipped_but_success_timestamp_is_not_a_recei
     subscription.last_success_at = timezone.now()
     subscription.save(update_fields=["categories", "last_success_at"])
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(duplicate)
+        NotificationPushHandler().handle(message=duplicate, ctx={})
         webpush.assert_called_once()
 
 
@@ -206,8 +206,8 @@ def test_newer_delivery_cannot_hide_an_older_pending_notification(owner, subscri
     )
 
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
-        NotificationPushHandler().handle(_directive(newer))
-        NotificationPushHandler().handle(older_directive)
+        NotificationPushHandler().handle(message=_directive(newer), ctx={})
+        NotificationPushHandler().handle(message=older_directive, ctx={})
 
     assert [json.loads(call.kwargs["data"])["title"] for call in webpush.call_args_list] == ["B", "A"]
 
@@ -231,10 +231,10 @@ def test_partial_failure_retries_every_device_at_least_once(owner, notification,
         side_effect=[None, busy],
     ):
         with pytest.raises(DirectiveTransientError):
-            NotificationPushHandler().handle(directive)
+            NotificationPushHandler().handle(message=directive, ctx={})
 
     with patch("shopman.shop.handlers.notification_push.webpush") as retry:
-        NotificationPushHandler().handle(directive)
+        NotificationPushHandler().handle(message=directive, ctx={})
     assert retry.call_count == 2
 
 
@@ -246,23 +246,23 @@ def test_ambiguous_lost_response_is_retried_instead_of_marked_delivered(notifica
         side_effect=requests.ConnectionError("response lost"),
     ):
         with pytest.raises(DirectiveTransientError):
-            NotificationPushHandler().handle(directive)
+            NotificationPushHandler().handle(message=directive, ctx={})
 
     with patch("shopman.shop.handlers.notification_push.webpush") as retry:
-        NotificationPushHandler().handle(directive)
+        NotificationPushHandler().handle(message=directive, ctx={})
     retry.assert_called_once()
 
 
 def test_missing_vapid_is_terminal(notification, subscription):
     with override_settings(VAPID_PRIVATE_KEY="", VAPID_PUBLIC_KEY="", VAPID_CLAIMS_EMAIL=""):
         with pytest.raises(DirectiveTerminalError, match="VAPID"):
-            NotificationPushHandler().handle(_directive(notification))
+            NotificationPushHandler().handle(message=_directive(notification), ctx={})
 
 
 def test_invalid_payload_is_terminal():
     directive = Directive.objects.create(topic="notification.push", payload={})
     with pytest.raises(DirectiveTerminalError, match="notification_id"):
-        NotificationPushHandler().handle(directive)
+        NotificationPushHandler().handle(message=directive, ctx={})
 
 
 @VAPID

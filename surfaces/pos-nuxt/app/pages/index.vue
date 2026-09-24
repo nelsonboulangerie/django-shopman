@@ -5,7 +5,7 @@ import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
+import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -26,6 +26,9 @@ const runtimeConfig = useRuntimeConfig();
 const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
 // Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
+// Link de um app de operador para OUTRO: instalado, o destino tem janela
+// própria. Quem decide `target`/`rel` é o kit — nunca um `_blank` escrito à mão.
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
 const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
@@ -85,8 +88,7 @@ const {
   managerApprovalError,
   customerFocusNonce,
   result,
-  closeOutcomeUncertain,
-  closeGuardPending,
+  closeGuardNotice,
   restoreUncertainClose,
   acknowledgeUncertainClose,
   pendingPixOrderRef,
@@ -279,8 +281,13 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 const screenTitle = computed(() => {
   // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
   // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
-  // abaixo — e é a barra que fica na periferia da visão do operador.
-  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : result.value.salesMode === "order" ? "Encomenda registrada" : "Venda concluída";
+  // abaixo — e é a barra que fica na periferia da visão do operador. Mesma
+  // razão para o Pix pendente: o dinheiro ainda não entrou.
+  if (result.value) {
+    if (paymentFailed(result.value.payment)) return "Cobrança não criada";
+    if (result.value.salesMode === "order") return "Encomenda registrada";
+    return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
+  }
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -319,7 +326,7 @@ async function printReceipt() {
       if (outcome.status === "printed") return;
       toast.warning(`A impressora do balcão não respondeu: ${outcome.detail || "sem detalhe"}. O recibo saiu pelo diálogo do navegador.`);
     } catch (error) {
-      toast.warning(`${httpErrorMessage(error, "Falha ao compor o recibo no servidor.")} O recibo saiu pelo diálogo do navegador.`);
+      toast.warning(`${httpErrorMessage(error, "O servidor não montou o recibo para a bobina.")} O recibo saiu pelo diálogo do navegador.`);
     } finally {
       printingReceipt.value = false;
     }
@@ -416,7 +423,9 @@ async function printDanfe() {
     danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
-    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."));
+    // Fragmento: entra dentro de "A DANFE não saiu na bobina: …", e é o
+    // `danfeFallbackToast` que traz a saída (ver a nota dele logo abaixo).
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"));
   } finally {
     printingDanfe.value = false;
   }
@@ -821,10 +830,10 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 function restoreUncertainCloseFromStorage() {
-  restoreUncertainClose();
+  void restoreUncertainClose();
 }
 onMounted(() => {
-  restoreUncertainClose();
+  void restoreUncertainClose();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
 });
@@ -908,6 +917,7 @@ onBeforeUnmount(() => {
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :scheduled="scheduleChipActive"
+          :has-fired-items="cart.items.some((item) => item.fired)"
           :customer-required="customerRequiredForSchedule"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
@@ -968,18 +978,33 @@ onBeforeUnmount(() => {
       </header>
 
       <UiAlert
-        v-if="closeOutcomeUncertain"
+        v-if="closeGuardNotice"
         variant="destructive"
         icon="lucide:triangle-alert"
         class="mx-4 mt-3 shrink-0"
         role="alert"
       >
-        <UiAlertTitle>{{ closeGuardPending ? 'Cobrança em processamento ou interrompida' : 'Resultado da cobrança não confirmado' }}</UiAlertTitle>
+        <UiAlertTitle>{{ closeGuardNotice.title }}</UiAlertTitle>
         <UiAlertDescription class="gap-3">
-          <p>{{ closeGuardPending ? 'Não libere enquanto a cobrança estiver processando. Se a aba anterior caiu, confira pedido e pagamento antes de reconciliar.' : 'Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados.' }} Este bloqueio permanece mesmo se a página for recarregada.</p>
+          <p>{{ closeGuardNotice.body }}</p>
           <div class="flex flex-wrap gap-2">
             <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
-            <UiButton size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
+            <!-- O corpo dizia "confira no Gestor" e não levava. Agora leva: a
+                 fila, porque o que está em dúvida é se o pedido nasceu — não há
+                 `ref` para apontar. -->
+            <UiButton
+              v-if="closeGuardNotice.link"
+              variant="outline"
+              size="sm"
+              class="gap-1.5"
+              :href="closeGuardNotice.link.href"
+              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
+              data-close-guard-orders-link
+            >
+              <Icon name="lucide:external-link" class="size-4" />
+              {{ closeGuardNotice.link.label }}
+            </UiButton>
+            <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
           </div>
         </UiAlertDescription>
       </UiAlert>
@@ -1289,8 +1314,8 @@ onBeforeUnmount(() => {
           <UiDialogTitle>Você conferiu pedido e pagamento?</UiDialogTitle>
           <UiDialogDescription>Verifique primeiro em Últimas vendas ou no Gestor. Liberar sem conferir pode repetir uma cobrança cujo resultado não chegou a esta tela.</UiDialogDescription>
         </UiDialogHeader>
-        <label class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm">
-          <UiSwitch v-model="uncertainCloseReviewed" class="mt-0.5" />
+        <label class="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm">
+          <UiSwitch v-model="uncertainCloseReviewed" />
           <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
         </label>
         <UiDialogFooter class="gap-2">

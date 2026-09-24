@@ -59,6 +59,11 @@ class POSProductProjection:
     collection_color: str = ""
     collection_icon: str = ""
     image_url: str = ""
+    # Código de barras da embalagem (``metadata['social']['gtin']``), para o
+    # leitor do balcão. O leitor DIGITA no campo de busca: sem o código no
+    # índice, bipar um pote de geleia não achava nada. Vazio no que a casa faz
+    # — pão não tem código de barras.
+    gtin: str = ""
     # Esgotado de verdade no escopo do canal do PDV (stockman, leitura em lote).
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
     # da grade faria o operador procurar um botão que "sumiu".
@@ -1140,6 +1145,16 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="none",
         ),
         Action(
+            ref="emit_fiscal",
+            kind="mutation",
+            label="Estabelecer emissão da NFC-e",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",
+            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
+            idempotency="none",
+        ),
+        Action(
             ref="open_cash_shift",
             kind="mutation",
             label="Abrir caixa",
@@ -2114,8 +2129,15 @@ def _product_projection(product: Product, price_q: int, *, sold_out: bool = Fals
         collection_color=str(meta.get("color") or ""),
         collection_icon=str(meta.get("icon") or ""),
         image_url=product.image_url or "",
+        gtin=_product_gtin(product),
         sold_out=sold_out,
     )
+
+
+def _product_gtin(product: Product) -> str:
+    metadata = product.metadata if isinstance(product.metadata, dict) else {}
+    social = metadata.get("social")
+    return str(social.get("gtin") or "") if isinstance(social, dict) else ""
 
 
 def _sold_out_skus(skus: list[str]) -> set[str]:
@@ -2712,9 +2734,16 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
 
     from shopman.backstage.projections.order_queue import _fiscal_status
     from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
+    from shopman.shop.services import fiscal as fiscal_service
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
+    # A emissão avulsa pode valer por mais dias que a lista (Admin → PDV e
+    # alertas): a lista alcança o prazo, senão a venda sumiria antes de vencer.
+    late_days = fiscal_service.late_emission_days()
+    if late_days:
+        first_day = timezone.localdate() - timezone.timedelta(days=late_days)
+        since = min(since, timezone.make_aware(timezone.datetime.combine(first_day, timezone.datetime.min.time())))
     orders = (
         Order.objects.filter(channel_ref=POS_CHANNEL_REF, created_at__gte=since)
         .prefetch_related("items")
@@ -2752,6 +2781,9 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             "can_print_danfe": bool(data.get("nfce_access_key")),
             "can_resend_email": bool(data.get("nfce_access_key")),
             "can_requeue_fiscal": fiscal_status == "failed",
+            # Emissão avulsa: a regra da casa não emitiu, e o gerente pode mandar
+            # emitir. O MESMO predicado que o endpoint impõe de novo, na trava.
+            "can_emit_fiscal": not fiscal_service.issue_override_refusal(order, state=fiscal_state),
             # A correção sobrevive à saída da tela de resultado: a lista anuncia
             # o desfazer para a venda ainda DENTRO da janela — o mesmo predicado
             # que o cancel impõe (`recent_sale_cancellable`).

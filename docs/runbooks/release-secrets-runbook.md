@@ -108,6 +108,11 @@ https://api.<dominio>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>
 O header `X-Efi-Webhook-Token` continua aceito, para dev local e para um proxy
 futuro que consiga injetá-lo.
 
+**O cadastro é automático:** o job `release` roda `python manage.py efi_webhook --soft`,
+que confere o webhook da chave na Efí e recadastra se a URL divergir (inclusive
+depois de rotacionar o token). Ver `docs/reference/commands.md#efi_webhook`. A URL
+que ele cadastra já leva o `&ignorar=` descrito abaixo.
+
 ⚠️ **A verificar no primeiro cadastro: a Efí acrescenta `/pix` ao fim da URL
 registrada.** A doc de webhooks dela documenta o parâmetro `ignorar=` justamente
 para suprimir esse append (exemplo oficial:
@@ -284,9 +289,9 @@ Apple (`*.push.apple.com`) e Microsoft (`*.notify.windows.com`), repete essa
 validação imediatamente antes do envio e não segue redirects. Um endpoint
 legado fora dessa allowlist é desativado sem I/O.
 
-A entrega externa é **at-least-once**. `last_success_at` mede saúde do aparelho,
+A entrega externa é **at-least-once**. `last_success_at` mede saúde do dispositivo,
 mas não é recibo por mensagem: após timeout, resposta perdida ou falha parcial,
-o retry tenta novamente todos os aparelhos elegíveis. Isso pode repetir um
+o retry tenta novamente todos os dispositivos elegíveis. Isso pode repetir um
 aviso, mas nunca permite que o sucesso de uma mensagem mais nova apague uma
 mensagem anterior ainda pendente.
 
@@ -295,7 +300,7 @@ Rotacionar o par invalida todas as assinaturas existentes. A ordem segura é:
 1. gerar e guardar o novo par no cofre;
 2. atualizar o trio no `web` e no `directive-worker`, e a pública nos apps;
 3. executar `python manage.py disable_push_subscriptions --confirm-vapid-rotation`;
-4. publicar todos os componentes e confirmar que cada aparelho oferece nova ativação.
+4. publicar todos os componentes e confirmar que cada dispositivo oferece nova ativação.
 
 Nunca preserve endpoints antigos depois da rotação nem exponha
 `VAPID_PRIVATE_KEY` em variável `NUXT_PUBLIC_*`.

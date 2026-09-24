@@ -43,6 +43,13 @@ const assembled = ref(false)
 const intention = ref('')
 /** Sacola já tinha itens: quem decide somar ou trocar é o cliente, não nós. */
 const conflict = ref(false)
+/**
+ * Trocar chama `claim('replace')`, que executa `CartService.clear_items`: apaga uma
+ * sacola montada à mão, e não se desfaz. A porta da recompra já nomeia a consequência
+ * e pede aceite explícito (`REORDER_CONFLICT_REPLACE_*`); esta diz o mesmo, com as
+ * mesmas palavras — um ato destrutivo não pode avisar por uma porta só.
+ */
+const replaceAcknowledged = ref(false)
 
 async function claim (mode?: 'append' | 'replace') {
   const resource = `offer:${offerRef.value}:${mode || 'default'}`
@@ -50,6 +57,7 @@ async function claim (mode?: 'append' | 'replace') {
   pending.value = true
   problem.value = ''
   conflict.value = false
+  replaceAcknowledged.value = false
   try {
     const response = await $fetch<ClaimResponse>(
       apiPath(`/api/v1/offers/${encodeURIComponent(offerRef.value)}/claim/`),
@@ -108,15 +116,27 @@ useSeoMeta({ title: 'Sua oferta', robots: 'noindex, nofollow' })
           <header>
             <h1 class="shop-title">Você já tem itens na sacola</h1>
             <p class="mt-2 shop-muted">
-              Podemos somar a oferta ao que já está lá, ou começar uma sacola nova conosco.
+              Somar mantém o que você já escolheu. Trocar apaga os itens de agora e deixa só os da oferta.
             </p>
           </header>
           <div class="shop-stack-tight">
             <UiButton size="lg" class="w-full justify-center" @click="claim('append')">
               Somar à minha sacola
             </UiButton>
-            <UiButton size="lg" variant="outline" class="w-full justify-center" @click="claim('replace')">
-              Começar uma sacola nova
+            <UiField orientation="horizontal" class="text-left">
+              <UiFieldContent>
+                <UiFieldLabel for="offer-replace-ack">Entendo que os itens atuais serão removidos.</UiFieldLabel>
+              </UiFieldContent>
+              <UiCheckbox id="offer-replace-ack" v-model="replaceAcknowledged" />
+            </UiField>
+            <UiButton
+              size="lg"
+              variant="outline"
+              class="w-full justify-center"
+              :disabled="!replaceAcknowledged"
+              @click="claim('replace')"
+            >
+              Trocar: deixar só a oferta
             </UiButton>
             <UiButton variant="ghost" size="sm" class="w-full justify-center" to="/sacola">
               Ver minha sacola

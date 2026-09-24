@@ -346,7 +346,7 @@ def _sheet(ref, name, output_sku, batch, items, *, unit="kg"):
 @pytest.fixture
 def seeded_sheets():
     """As fichas do seed: levain 1:1:1, pasta autolisada 1000/700 e a Tradição que as consome."""
-    levain = _sheet("creme-levain", "Levain", "LEVAIN", "5", [("FERMENTO-NAT", "1.7"), ("FARINHA-T65", "1.7"), ("AGUA-FILTRADA", "1.7")])
+    levain = _sheet("creme-levain", "Levain", "LEVAIN", "5", [("FERMENTO-NATURAL", "1.7"), ("FARINHA-T65", "1.7"), ("AGUA-FILTRADA", "1.7")])
     pasta = _sheet("massa-pasta-autolizada", "Pasta Autolizada", "PASTA-AUTOLIZADA", "8.4", [("FARINHA-T65", "5"), ("AGUA-FILTRADA", "3.5")])
     tradicao = _sheet("massa-tradicao", "Massa Tradição", "MASSA-TRADICAO", "10",
                       [("PASTA-AUTOLIZADA", "8.4"), ("LEVAIN", "1.5"), ("SAL", "0.1")])
@@ -382,10 +382,10 @@ class TestBootstrap:
         assert items["FARINHA-T65"]["role"] == "flour"
         assert items["FARINHA-T65"]["unit"] == "g"
         assert items["AGUA-FILTRADA"]["quantity"] == "3958.824"
-        assert items["FERMENTO-NAT"]["quantity"] == "500"
+        assert items["FERMENTO-NATURAL"]["quantity"] == "500"
         # A cultura (fermento natural) não é fermento biológico: fica fora da
         # métrica de fermento e da faixa de 0,5 a 3%.
-        assert items["FERMENTO-NAT"]["role"] == "other"
+        assert items["FERMENTO-NATURAL"]["role"] == "other"
         assert items["SAL"]["quantity"] == "100"
 
         parts = {part["sku"]: part for part in formula["parts"]}
@@ -429,11 +429,11 @@ class TestBootstrap:
         assert RecipeEntry.objects.count() == 0
 
     def test_kind_by_name(self):
-        croissant = _sheet("massa-croissant", "Massa Croissant", "MASSA-CROISSANT", "9", [("FARINHA-T55", "5"), ("MANTEIGA-FR", "4")])
+        croissant = _sheet("massa-croissant", "Massa Croissant", "MASSA-CROISSANT", "9", [("FARINHA-T55", "5"), ("MANTEIGA-FRANCESA", "4")])
         assert recipe_book.bootstrap_entry_from_recipe(croissant).kind == "viennoiserie"
         cream = _sheet("creme-confeiteiro", "Creme de Confeiteiro", "CREME-CONF", "2", [("LEITE", "1.5"), ("ACUCAR", "0.5")])
         assert recipe_book.bootstrap_entry_from_recipe(cream).kind == "cream"
-        cookie = _sheet("biscoito-manteiga", "Biscoito de Manteiga", "BISCOITO-MANTEIGA", "1", [("FARINHA-T55", "0.6"), ("MANTEIGA-FR", "0.4")])
+        cookie = _sheet("biscoito-manteiga", "Biscoito de Manteiga", "BISCOITO-MANTEIGA", "1", [("FARINHA-T55", "0.6"), ("MANTEIGA-FRANCESA", "0.4")])
         assert recipe_book.bootstrap_entry_from_recipe(cookie).kind == "cookie"
 
     def test_a_piece_keeps_the_sheet_it_declares_instead_of_a_made_up_formula(self, seeded_sheets):
@@ -480,15 +480,15 @@ class TestBootstrap:
         """O pain au chocolat é 80 g de folhada + 20 g de bâton, não uma fórmula."""
         _, _, _tradicao = seeded_sheets
         folhada = _sheet("massa-croissant", "Massa Croissant", "MASSA-CROISSANT", "9",
-                         [("FARINHA-T45", "4.8"), ("MANTEIGA-FR", "2.4"), ("AGUA-FILTRADA", "1.8")])
+                         [("FARINHA-T45", "4.8"), ("MANTEIGA-FRANCESA", "2.4"), ("AGUA-FILTRADA", "1.8")])
         recipe_book.bootstrap_entry_from_recipe(folhada)
         peca = _sheet("pain-chocolat", "Pain au Chocolat", "PC", "1",
-                      [("MASSA-CROISSANT", "0.080"), ("BATON-CHOCOLATE", "0.020")], unit="un")
+                      [("MASSA-CROISSANT", "0.080"), ("CHOCOLATE-BATON", "0.020")], unit="un")
 
         formula = recipe_book.bootstrap_entry_from_recipe(peca).current_version.formula
         assert formula["parts"] == []
         assert {item["sku"]: item["quantity"] for item in formula["items"]} == {
-            "MASSA-CROISSANT": "80", "BATON-CHOCOLATE": "20",
+            "MASSA-CROISSANT": "80", "CHOCOLATE-BATON": "20",
         }
 
     def test_a_formula_that_yields_mass_still_dissolves_its_parts(self, seeded_sheets):

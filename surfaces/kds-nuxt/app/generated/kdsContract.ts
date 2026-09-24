@@ -33,6 +33,7 @@ export interface KDSTicketProjection {
   completed_at_display: string;
   kitchen_note: string;
   customer_note: string;
+  test_order_label: string;
 }
 
 /** An order card in the expedition (dispatch) board. */
@@ -52,6 +53,7 @@ export interface KDSExpeditionCardProjection {
   is_expedition: boolean;
   advance_block_label: string;
   advance_block_reason: string;
+  test_order_label: string;
 }
 
 /** A KDS instance in the index (station selector). */
@@ -60,7 +62,7 @@ export interface KDSInstanceSummaryProjection {
   name: string;
   type: string;
   type_display: string;
-  pending_count: number;
+  active_count: number;
 }
 
 /** Top-level read model for a KDS display. */

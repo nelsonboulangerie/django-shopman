@@ -37,7 +37,7 @@ import logging
 from collections import defaultdict
 from datetime import timedelta
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -74,6 +74,10 @@ class Command(BaseCommand):
             help="Recalcula mesmo com a tabela fresca.",
         )
         parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument(
+            "--allow-partial", action="store_true",
+            help="Grava mesmo se uma fonte de cesta falhar no meio. Só com o motivo na mão.",
+        )
 
     def handle(self, *args, **options):
         from shopman.shop.adapters import baskets as basket_source
@@ -110,7 +114,8 @@ class Command(BaseCommand):
         baskets_read = 0
         baskets_skipped = 0
 
-        for basket in basket_source.all_baskets(since=since):
+        failures: list[str] = []
+        for basket in basket_source.all_baskets(since=since, failures=failures):
             if len(basket.skus) > MAX_BASKET_SIZE:
                 baskets_skipped += 1
                 continue
@@ -128,6 +133,15 @@ class Command(BaseCommand):
                 for b in skus[i + 1:]:
                     pair_weight[(a, b)] += weight
                     pair_count[(a, b)] += 1
+
+        if failures and not options["allow_partial"]:
+            raise CommandError(
+                f"{len(failures)} fonte(s) de cesta não entregaram tudo: {', '.join(failures)}. "
+                f"Li {baskets_read} cesta(s), e não sei quantas faltaram — gravar isso seria "
+                "trocar a tabela boa por uma que só PARECE completa. Veja o traceback no log. "
+                "Causa comum: cursor de servidor contra pool em modo transação — ligue "
+                "DATABASE_DISABLE_SERVER_SIDE_CURSORS=true. Para gravar assim mesmo: --allow-partial."
+            )
 
         if not total_weight:
             self.stdout.write(self.style.WARNING(

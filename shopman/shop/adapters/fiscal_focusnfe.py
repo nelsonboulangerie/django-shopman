@@ -59,6 +59,16 @@ class FocusNFePayloadError(ValueError):
 class FocusNFeBackend:
     """FiscalBackend implementation for Focus NFe NFC-e emission."""
 
+    @property
+    def is_homologation(self) -> bool:
+        """A nota vai para a homologação da Focus (sem valor fiscal)?
+
+        Lido do MESMO destino que o ``emit`` usa (``_base_url``): um
+        ``base_url`` apontado para produção vence o rótulo do ambiente. É o que
+        a porta fiscal pergunta antes de emitir para pagamento simulado.
+        """
+        return _base_url(_get_config()) == HOMOLOGATION_URL
+
     def emit(
         self,
         *,

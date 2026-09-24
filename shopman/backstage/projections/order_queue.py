@@ -72,6 +72,52 @@ NEXT_ACTION_LABELS: dict[str, str] = {
 
 READY_DELIVERY_LABEL = "Marcar saída para entrega"
 
+# Pedido de teste da homologação do iFood: ele entra pelo polling como qualquer
+# outro e precisa ser aceito e concluído (é isso que o iFood valida do lado
+# dele), mas nada na casa se move por causa dele. Até hoje a única pista na tela
+# era o nome do item vir "NÃO ENTREGAR" — defesa humana em horário de movimento.
+# O rótulo é do CRACHÁ (cabe na linha de selos do card); o aviso é a frase
+# inteira, que diz o que fazer e o que a casa desligou.
+TEST_ORDER_LABEL = "Pedido de teste do iFood"
+TEST_ORDER_NOTICE = (
+    "Pedido de teste do iFood: avance as etapas normalmente, mas não produza "
+    "nem entregue nada. Ele não reserva estoque, não vai para a cozinha, não "
+    "emite nota fiscal e não avisa o cliente."
+)
+
+
+#: O rótulo do pagamento capturado por SIMULAÇÃO (``payment_mock``, Efí
+#: homologação, Stripe em chave de teste). "Pago" ali era rótulo que mente: o
+#: operador entregava confiando num dinheiro que nunca entrou.
+SIMULATED_PAYMENT_LABEL = "Pagamento simulado, sem dinheiro"
+
+
+def _order_payment_status_label(order, payment_status: str) -> str:
+    """O rótulo do pagamento no card e no detalhe — uma função para os dois."""
+    if order.channel_ref == "ifood":
+        return {"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(
+            payment_status, "Pagamento não informado"
+        )
+    from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+    if payment_status in _PAYMENT_COMPLETE and is_simulated_order_payment(order):
+        return SIMULATED_PAYMENT_LABEL
+    return payment_status_label(payment_status)
+
+
+def _test_order_label(order) -> str:
+    """O crachá de pedido de teste, ou vazio quando o pedido é de verdade."""
+    from shopman.shop.services.order_helpers import is_test_order
+
+    return TEST_ORDER_LABEL if is_test_order(order) else ""
+
+
+def _test_order_notice(order) -> str:
+    """A frase inteira do pedido de teste, ou vazia quando o pedido é de verdade."""
+    from shopman.shop.services.order_helpers import is_test_order
+
+    return TEST_ORDER_NOTICE if is_test_order(order) else ""
+
 
 # ── Projections ────────────────────────────────────────────────────────
 
@@ -97,6 +143,9 @@ class EquipmentOptionProjection:
     label: str
     enabled: bool = True
     reason: str = ""
+    # Pedido com o qual a maquininha está na rua (vazio quando livre): o despacho
+    # diz onde ela está e oferece "Entregador voltou" daquele pedido.
+    order_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -181,6 +230,11 @@ class OrderCardProjection:
     # countdown para o cliente não ficar no escuro sobre o prazo.
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""  # "confirm" | "cancel" — ação do directive ao vencer
+    # Número que o CANAL deu ao pedido (``displayId`` do iFood). Desde que o ref
+    # adota esse número (``IFOOD-260919-4994``), o card já o mostra em destaque e
+    # este campo fica VAZIO — ele só se preenche quando o ref divergiu: colisão no
+    # dia, ou pedido criado antes dessa mudança. Aí o card exibe, e a busca acha.
+    channel_display_id: str = ""
     # Corrida externa (Machine): letra crua + label p/ badge no board. Vazios
     # quando não há corrida registrada no pedido.
     courier_status: str = ""
@@ -205,7 +259,7 @@ class OrderCardProjection:
     change_back_pending: bool = False
     change_back_q: int = 0
     change_label: str = ""
-    # Aparelho que saiu com o entregador (maquininha): custódia no pedido
+    # Maquininha que saiu com o entregador: custódia no pedido
     # (``Order.data.dispatch``), não no caixa. ``equipment_options`` é o que o
     # canal permite levar (o despacho pergunta só quando há opção);
     # ``equipment_out`` o que saiu; ``equipment_back_pending`` enquanto não voltou.
@@ -213,6 +267,15 @@ class OrderCardProjection:
     equipment_out: tuple[str, ...] = ()
     equipment_label: str = ""
     equipment_back_pending: bool = False
+    # A saída pede maquininha (pagamento com cartão na porta): o botão de saída
+    # vira "Saiu com a maquininha" e o sistema escolhe a livre.
+    dispatch_needs_machine: bool = False
+    # Outros pedidos que saíram junto com este (mesma saída, mesma maquininha).
+    trip_with: tuple[str, ...] = ()
+    # "Entregador voltou": pedidos que o gesto fecha e o que a mão do operador
+    # deve receber ("Maquininha Azul", "R$ 100,00 em dinheiro: ...").
+    courier_return_orders: tuple[str, ...] = ()
+    courier_return_lines: tuple[str, ...] = ()
     # Fila de espera (WP-P2E): o pedido que espera fornada não está parado por
     # descuido, e o que tem janela de confirmação aberta tem relógio correndo do
     # lado do CLIENTE. Sem o selo os dois se parecem com "pedido travado" no
@@ -222,9 +285,23 @@ class OrderCardProjection:
     waitlist_deadline_iso: str = ""
     waitlist_label: str = ""
     ifood_cancellation_notice: str = ""
-    ifood_payment_summary: tuple[str, ...] = ()
-    ifood_operation_summary: tuple[str, ...] = ()
+    # O card NÃO recebe ``payment_summary``/``operation_summary``: eles montam a
+    # evidência COMPLETA (bandeira, CEP, responsável pela entrega, três linhas de
+    # janela) e são do DETALHE. No card viravam doze linhas para um pedido de dois
+    # itens — o dobro da altura do card do PDV, na mesma coluna, e a fila deixava
+    # de ser varredura. Ficam só os dois fatos que decidem algo de relance.
+    ifood_pickup_code: str = ""
+    ifood_schedule_label: str = ""
+    # O iFood à frente do estado local (concluiu, ou o entregador dele já retirou):
+    # uma linha escrita como instrução. Vazia no caso normal.
+    ifood_remote_ahead_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
+    # operável como qualquer outro e por isso tem de dizer, na tela, que é de
+    # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
+    # frase inteira. Vazios no pedido de verdade.
+    test_order_label: str = ""
+    test_order_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -297,6 +374,12 @@ class OperatorOrderProjection:
     customer_phone: str
     customer_phone_uri: str
     customer_whatsapp_url: str
+    # Pedido de marketplace: o iFood não entrega o telefone do cliente, entrega o
+    # 0800 da central dele + um localizador com validade. É por onde se fala com a
+    # pessoa POR VOZ, discando os dois. Vazios quando o telefone é do cliente.
+    customer_relay_phone: str
+    customer_relay_code: str
+    customer_relay_expires_at: str
     customer_email: str
     # Ref do Customer no cadastro, quando o pedido está ligado a um. É o que
     # deixa a tela oferecer "abrir cadastro" no Admin — hoje o único lugar onde
@@ -374,7 +457,7 @@ class OperatorOrderProjection:
     change_back_pending: bool = False
     change_back_q: int = 0
     change_label: str = ""
-    # Aparelho que saiu com o entregador (maquininha): custódia no pedido
+    # Maquininha que saiu com o entregador: custódia no pedido
     # (``Order.data.dispatch``), não no caixa. ``equipment_options`` é o que o
     # canal permite levar (o despacho pergunta só quando há opção);
     # ``equipment_out`` o que saiu; ``equipment_back_pending`` enquanto não voltou.
@@ -382,6 +465,15 @@ class OperatorOrderProjection:
     equipment_out: tuple[str, ...] = ()
     equipment_label: str = ""
     equipment_back_pending: bool = False
+    # A saída pede maquininha (pagamento com cartão na porta): o botão de saída
+    # vira "Saiu com a maquininha" e o sistema escolhe a livre.
+    dispatch_needs_machine: bool = False
+    # Outros pedidos que saíram junto com este (mesma saída, mesma maquininha).
+    trip_with: tuple[str, ...] = ()
+    # "Entregador voltou": pedidos que o gesto fecha e o que a mão do operador
+    # deve receber ("Maquininha Azul", "R$ 100,00 em dinheiro: ...").
+    courier_return_orders: tuple[str, ...] = ()
+    courier_return_lines: tuple[str, ...] = ()
     # Link de pagamento do pedido remoto (WP-PAGAMENTO, frente 5). O botão
     # "Reenviar link" só existe quando o servidor vai aceitar o gesto
     # (``notification.payment_link_resend_refusal``): forma ``link`` com URL,
@@ -391,10 +483,23 @@ class OperatorOrderProjection:
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
+    # Quem pode dar a segunda assinatura (nome + ``username``, nada além) — a MESMA
+    # lista do PDV (``pos._manager_cards``). Sem ela o diálogo canônico caía no
+    # campo livre e o gerente tinha de DIGITAR o próprio nome no meio de um
+    # cancelamento com o relógio do iFood correndo; nome digitado erra, e o
+    # servidor resolve a assinatura por ``username``. Exclui quem opera: a
+    # segunda assinatura existe para haver duas pessoas.
+    managers: tuple[dict[str, str], ...] = ()
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
+    # operável como qualquer outro e por isso tem de dizer, na tela, que é de
+    # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
+    # frase inteira. Vazios no pedido de verdade.
+    test_order_label: str = ""
+    test_order_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -433,7 +538,7 @@ class TwoZoneQueueProjection:
     # devolve o pedido ao fluxo normal.
     preorders: tuple[OrderCardProjection, ...] = ()
     preorders_count: int = 0
-    # Aparelhos na rua (saíram com o entregador e não voltaram), para o quadro
+    # Maquininhas na rua (saíram com o entregador e não voltaram), para o quadro
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
@@ -523,6 +628,13 @@ def _cancel_capability(order: Order, user) -> dict:
     }
 
 
+def _approver_options(user) -> tuple[dict[str, str], ...]:
+    """A lista do PDV para o diálogo de gerente do Gestor — uma fonte só."""
+    from shopman.backstage.projections.pos import _manager_cards
+
+    return _manager_cards(user)
+
+
 def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     """Build the expanded detail projection for a single order."""
     items = tuple(
@@ -554,7 +666,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     is_delivery = _is_delivery(order)
     delivery_address, delivery_instructions = _delivery_address(order)
-    bloqueio = operator_orders.advance_block(order)
+    bloqueio = operator_orders.gestor_advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
 
     cancel_capability = _cancel_capability(order, user)
@@ -626,12 +738,15 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         customer_note=str(order.data.get("order_notes", "") or ""),
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
+        managers=_approver_options(user),
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
         ifood_negotiations=negotiations(order, user=user),
+        test_order_label=_test_order_label(order),
+        test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
+        payment_status_label=_order_payment_status_label(order, payment_status),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
         **cancel_capability,
@@ -1114,6 +1229,26 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 # ── Internals ──────────────────────────────────────────────────────────
 
 
+def _channel_display_id(order) -> str:
+    """O número do canal, SÓ quando o ref não o carrega — senão seria dizer duas vezes."""
+    display_id = str(((order.data or {}).get("ifood") or {}).get("display_id") or "").strip()
+    if not display_id:
+        return ""
+    return "" if str(order.ref or "").upper().endswith(f"-{display_id.upper()}") else display_id
+
+
+def _external_deadline(order) -> tuple[str, str] | None:
+    """Prazo do marketplace (ISO, ação) enquanto o pedido ainda espera confirmação.
+
+    Gravado na ingestão em ``data.ifood.confirm_by``. Vencido, quem cancela é o
+    marketplace — daí a ação ser ``cancel``, igual ao timer de ``auto_cancel``.
+    """
+    if order.status != "new":
+        return None
+    confirm_by = str(((order.data or {}).get("ifood") or {}).get("confirm_by") or "").strip()
+    return (confirm_by, "cancel") if confirm_by else None
+
+
 def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
     """{order_ref: (expires_at_iso, action)} dos timers de confirmação pendentes.
 
@@ -1160,7 +1295,7 @@ def _commitment_date_display(commitment) -> str:
 
 
 _WAITLIST_LABELS = {
-    "fermata": "Na fila da fornada",
+    "fermata": "Na fila do lote",
     "confirming": "Aguardando o cliente confirmar",
     "confirmed": "Confirmado pelo cliente",
     "released": "Vaga liberada",
@@ -1244,7 +1379,7 @@ def _build_card(
     )
 
     batch_state = waitlist_states.get(order.ref) if waitlist_states is not None else None
-    bloqueio = operator_orders.advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
+    bloqueio = operator_orders.gestor_advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
@@ -1300,11 +1435,14 @@ def _build_card(
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
-        ifood_payment_summary=ifood_projection.payment_summary(order),
-        ifood_operation_summary=ifood_projection.operation_summary(order),
+        ifood_pickup_code=ifood_projection.pickup_code(order),
+        ifood_schedule_label=ifood_projection.schedule_label(order),
+        ifood_remote_ahead_label=ifood_projection.remote_ahead_label(order),
         ifood_negotiations=negotiations(order, user=user),
+        test_order_label=_test_order_label(order),
+        test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
+        payment_status_label=_order_payment_status_label(order, payment_status),
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
         advance_block_label=advance_block_label(bloqueio),
@@ -1319,8 +1457,11 @@ def _build_card(
         gift_has_recipient=bool((recipient or {}).get("name")),
         assigned_operator=str((order.data.get("assignment") or {}).get("operator_name") or ""),
         awaiting_work_orders=_awaiting_work_orders(order),
-        confirmation_deadline_iso=deadline[0] if deadline else "",
-        confirmation_action=deadline[1] if deadline else "",
+        # Directive agendada (canais da casa) ou prazo do marketplace (iFood): o card
+        # conta um prazo só, porque para quem opera a pergunta é uma só — quanto falta.
+        confirmation_deadline_iso=(deadline or _external_deadline(order) or ("", ""))[0],
+        confirmation_action=(deadline or _external_deadline(order) or ("", ""))[1],
+        channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
         courier_status_label=COURIER_STATUS_LABELS.get(_card_courier_status(order), ""),
         is_preorder=is_preorder,
@@ -1334,7 +1475,7 @@ def _build_card(
     )
 
 
-#: Rótulo pt-BR dos aparelhos (a ref é contrato do canal; o texto é da tela).
+#: Rótulo pt-BR do equipamento (a ref é contrato do canal; o texto é da tela).
 EQUIPMENT_LABELS = {"card_machine": "Maquininha"}
 
 
@@ -1357,19 +1498,50 @@ def _equipment_fields(order: Order, *, channel_config=None) -> dict:
         options += tuple(EquipmentOptionProjection(
             ref=PREFIX + str(device.ref), label=device.label,
             enabled=device.active and device.current_order_id is None,
-            reason=(f"Em trânsito no pedido {device.current_order.ref}" if device.current_order_id else "Inativa" if not device.active else ""),
-        ) for device in devices)
+            reason=(f"Na rua com o pedido {_short_ref(device.current_order.ref)}" if device.current_order_id else "Inativa" if not device.active else ""),
+            order_ref=device.current_order.ref if device.current_order_id else "",
+        ) for device in devices if device.active or device.current_order_id)
     custody = operator_orders.equipment_custody(order)
+    # O card diz o que saiu, enquanto não voltou; depois, nada (zero não é informação).
     label = ""
-    if custody.equipment:
-        names = (order.data or {}).get("dispatch", {}).get("device_label") or ", ".join(_equipment_label(ref) for ref in custody.equipment)
-        label = f"Entregador levou {names.lower()}" if custody.pending else f"{names} voltou"
+    if custody.pending:
+        label = f"Saiu com a {machine_phrase((order.data or {}).get('dispatch', {}).get('device_label') or '')}"
+    from shopman.shop.adapters.delivery_devices import needs_card_machine
+
     return {
         "equipment_options": options,
         "equipment_out": custody.equipment,
         "equipment_label": label,
         "equipment_back_pending": custody.pending,
+        "dispatch_needs_machine": operator_orders.next_status_for(order) == "dispatched" and needs_card_machine(order),
+        **_trip_fields(order),
     }
+
+
+machine_phrase = operator_orders.machine_phrase
+_short_ref = operator_orders.short_ref
+
+
+def _trip_fields(order: Order) -> dict:
+    """A saída deste pedido: com quem saiu junto e o que "Entregador voltou" deve conferir."""
+    if order.status not in ("dispatched", "delivered"):
+        return {}
+    others = tuple(m.ref for m in operator_orders.trip_members(order) if m.pk != order.pk)
+    back = operator_orders.courier_return(order)
+    lines: list[str] = []
+    if back.machine:
+        phrase = machine_phrase(back.machine)
+        lines.append(phrase[0].upper() + phrase[1:])
+    if back.cash_q:
+        many = len(back.orders) > 1
+        parts = [f"{_money(q)} do pedido{' ' + _short_ref(ref) if many else ''}" for ref, q in back.cash_parts]
+        if back.change_q:
+            parts.append(f"{_money(back.change_q)} de troco")
+        if len(parts) > 1:
+            lines.append(f"{_money(back.cash_q)} em dinheiro: {' + '.join(parts)}")
+        else:
+            lines.append(f"{_money(back.change_q)} de troco" if back.change_q else f"{_money(back.cash_q)} em dinheiro")
+    return {"trip_with": others, "courier_return_orders": back.orders, "courier_return_lines": tuple(lines)}
 
 
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:
@@ -1402,7 +1574,9 @@ def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | No
     if not _is_delivery(order):
         return {}
     payment = order.data.get("payment") or {}
-    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
+    # Quem diz que há dinheiro na porta é a parcela em espécie, não o método do
+    # topo: no pedido iFood o topo é `external` e a parcela mora na linha.
+    if operator_orders.cash_due_on_delivery_q(order) <= 0:
         return {}
     if by_order is None:
         change = operator_orders.courier_change(order)
@@ -1535,7 +1709,11 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
     # Pago é pago, em qualquer canal ou meio: verde primeiro. Uma captura
     # registrada (pix/cartão) vale para qualquer canal (web, whatsapp, pdv).
     if payment_status in _PAYMENT_COMPLETE:
-        return "success"
+        from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+        # Simulado não é verde: o pill não pode dizer "dinheiro garantido" ao
+        # lado de um rótulo que diz "sem dinheiro".
+        return "warning" if is_simulated_order_payment(order) else "success"
     # Marketplace / "pago online": o pedido chega pré-pago (iFood comita só o que
     # já foi pago), então o dinheiro está garantido — verde, mesmo sem captura nossa.
     if method == "external":
@@ -1564,7 +1742,7 @@ _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
-    operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando a fornada…",
+    operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando o lote…",
 }
 
 
@@ -1727,7 +1905,7 @@ _FISCAL_PILL = {
     "failed": ("failed", "NFC-e falhou"),
     "queued": ("pending", "NFC-e na fila"),
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
-    "not_expected": ("not_requested", "Fiscal não solicitado"),
+    "not_expected": ("not_requested", "Emissão não estabelecida"),
 }
 
 
@@ -1824,21 +2002,78 @@ def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
             phone_raw = phone_raw or str(getattr(customer, "phone", "") or "").strip()
             email = str(getattr(customer, "email", "") or "").strip()
 
+    from shopman.shop.services.notification import customer_phone_is_platform_relay
+
+    if phone_raw and customer_phone_is_platform_relay(order):
+        return {**_relay_contact(phone_raw, customer_data), "customer_email": email, "customer_ref": customer_ref}
+
     e164 = normalize_phone(phone_raw) if phone_raw else ""
     digits = e164.lstrip("+")
     return {
         "customer_phone": _format_customer_display(phone_raw) if phone_raw else "",
         "customer_phone_uri": f"tel:{e164}" if e164 else "",
         "customer_whatsapp_url": f"https://wa.me/{digits}" if digits else "",
+        "customer_relay_phone": "",
+        "customer_relay_code": "",
+        "customer_relay_expires_at": "",
         "customer_email": email,
         "customer_ref": customer_ref,
     }
+
+
+def _relay_contact(phone_raw: str, customer_data: dict) -> dict[str, str]:
+    """O caminho de voz que o iFood deixa: 0800 da central + localizador.
+
+    Não é o telefone do cliente. Medido em 21/09/2026: o detalhe oferecia
+    "WhatsApp" para o 0800 da central e "Ligar" para ele sem o código — a
+    ligação caía na central, não na pessoa. O relé é só voz (sem WhatsApp), e a
+    ligação só completa com o localizador, que vence.
+    """
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    digits = "".join(ch for ch in phone_raw if ch.isdigit())
+    code = str(customer_data.get("phone_localizer") or "").strip()
+    expires_raw = str(customer_data.get("phone_localizer_expiration") or "").strip()
+    try:
+        expires = parse_datetime(expires_raw) if expires_raw else None
+    except (TypeError, ValueError):
+        expires = None
+    expired = expires is not None and timezone.is_aware(expires) and expires <= timezone.now()
+    usable = bool(digits and code and not expired)
+    return {
+        "customer_phone": "",          # não é o número da pessoa; não se exibe como se fosse
+        "customer_whatsapp_url": "",   # relé é voz: WhatsApp para a central não existe
+        # Vírgula = pausa na discagem (iOS e Android): disca a central e, quando
+        # ela atende, digita o localizador. Sem código válido, sem botão.
+        "customer_phone_uri": f"tel:{digits},{code}" if usable else "",
+        "customer_relay_phone": phone_raw,
+        "customer_relay_code": code if not expired else "",
+        "customer_relay_expires_at": expires.isoformat() if expires is not None else "",
+    }
+
+
+# O iFood entrega o nome do cliente MASCARADO em pedido de teste — 32 asteriscos,
+# não um campo vazio. Medido no alpha em 19/09/2026: ``customer_name`` chegava como
+# "********************************" e o card imprimia isso na linha do cliente,
+# onde parece defeito de renderização e ocupa o lugar do dado que importa. Máscara
+# não é nome: quem lê precisa saber que NÃO HÁ nome para chamar, e de quem é a
+# decisão de ocultar. Nome de verdade, inclusive abreviado ("Marina A."), passa.
+_MASKED_NAME_CHARS = set("*·•.…-_ ")
+_MASKED_NAME_LABEL = "Nome oculto pelo iFood"
+
+
+def _is_masked_name(label: str) -> bool:
+    """Um rótulo feito só de caracteres de máscara não identifica ninguém."""
+    return bool(label) and set(label) <= _MASKED_NAME_CHARS and any(ch in "*·•…" for ch in label)
 
 
 def _format_customer_display(value: str) -> str:
     label = (value or "").strip()
     if not label:
         return ""
+    if _is_masked_name(label):
+        return _MASKED_NAME_LABEL
 
     digits = "".join(ch for ch in label if ch.isdigit())
     if not digits:

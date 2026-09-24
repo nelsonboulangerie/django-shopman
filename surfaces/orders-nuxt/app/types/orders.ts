@@ -1,3 +1,4 @@
+import type { ManagerOption } from "../../../operator-kit/app/types/manager";
 import type { ReadMetadata } from "./readMetadata";
 // Order contract types. The structural shapes come from the generated mirror
 // (app/generated/ordersContract.ts — source of truth:
@@ -65,9 +66,11 @@ export interface CustomerProfileProjection extends CustomerProfileContract {
   segment_tone: "success" | "warning" | "";
 }
 
-export interface OperatorOrderProjection extends OperatorOrderContract {
+export interface OperatorOrderProjection extends Omit<OperatorOrderContract, "managers"> {
   courier: CourierBlock | null;
   customer_profile: CustomerProfileProjection | null;
+  /** Quem pode dar a segunda assinatura — a mesma lista do PDV (nome + username). */
+  managers: ManagerOption[];
 }
 
 export interface TwoZoneQueueProjection extends TwoZoneQueueContract {

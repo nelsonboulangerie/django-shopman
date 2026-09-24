@@ -135,15 +135,18 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("tira o card da grade na hora e só POSTa quando a janela fecha", async () => {
+  it("tira o card do TRABALHO na hora, mas o deixa na grade, e só POSTa quando a janela fecha", async () => {
     env.fetchData.value = board();
     const { finalize, view } = useKdsBoard("bancada");
     finalize(1);
-    expect(view.value?.cards).toHaveLength(0);
-    expect(env.sonner.success).toHaveBeenCalledWith(
-      "Pedido 0007 finalizado",
-      expect.objectContaining({ action: expect.objectContaining({ label: "Desfazer" }) }),
-    );
+    // O card fica desenhado: é ele que carrega o "Desfazer", onde o dedo tocou.
+    expect(view.value?.cards).toHaveLength(1);
+    expect(view.value?.finishingPks.has(1)).toBe(true);
+    expect(view.value?.total).toBe(0);
+    expect(view.value?.nextPk).toBeNull();
+    // Sem toast: o aviso no topo da tela não se alcança com a mão ocupada, e dois
+    // caminhos para o mesmo desfazer é um caminho a mais para errar.
+    expect(env.sonner.success).not.toHaveBeenCalled();
     await flushPromises();
     expect(env.fetchMock).not.toHaveBeenCalled();
 
@@ -155,27 +158,29 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
     );
   });
 
-  it("Desfazer devolve o card e nada vai ao servidor", async () => {
+  it("Desfazer devolve o card ao trabalho e nada vai ao servidor", async () => {
     env.fetchData.value = board();
-    const { finalize, view } = useKdsBoard("bancada");
+    const { finalize, undoFinish, view } = useKdsBoard("bancada");
     finalize(1);
-    const [, options] = env.sonner.success.mock.calls[0]!;
-    options.action.onClick();
+    undoFinish(1);
     expect(view.value?.cards).toHaveLength(1);
+    expect(view.value?.finishingPks.has(1)).toBe(false);
+    expect(view.value?.total).toBe(1);
     vi.advanceTimersByTime(10_000);
     await flushPromises();
     expect(env.fetchMock).not.toHaveBeenCalled();
   });
 
-  it("um refresh durante a janela não traz o card de volta", () => {
+  it("um refresh durante a janela não devolve o card ao trabalho", () => {
     env.fetchData.value = board();
     const { finalize, view } = useKdsBoard("bancada");
     finalize(1);
     env.fetchData.value = board(); // poll/SSE trouxe o servidor, que ainda o tem aberto
-    expect(view.value?.cards).toHaveLength(0);
+    expect(view.value?.finishingPks.has(1)).toBe(true);
+    expect(view.value?.total).toBe(0);
   });
 
-  it("recusa do servidor devolve o card e avisa", async () => {
+  it("recusa do servidor devolve o card ao trabalho e avisa", async () => {
     env.fetchData.value = board();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Há item cancelado" } });
     const { finalize, view } = useKdsBoard("bancada");
@@ -183,6 +188,7 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
     vi.advanceTimersByTime(5000);
     await flushPromises();
     expect(view.value?.cards).toHaveLength(1);
+    expect(view.value?.finishingPks.has(1)).toBe(false);
     expect(env.sonner.error).toHaveBeenCalled();
   });
 });
@@ -347,5 +353,58 @@ describe("KDS_ALERT — a fanfarra escolhida pelo dono", () => {
     for (const chave of ["partials", "filters", "space", "wave", "shape", "attack"]) {
       expect(KDS_ALERT).not.toHaveProperty(chave);
     }
+  });
+});
+
+/** EventSource de mentira: `failForGood` é a reconexão que recebeu 502 (CLOSED). */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  listeners = new Map<string, Array<() => void>>();
+  close = vi.fn(() => { this.readyState = 2; });
+  constructor(public url: string) { FakeEventSource.instances.push(this); }
+  addEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), handler]);
+  }
+  emit(name: string) { for (const handler of this.listeners.get(name) ?? []) handler(); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  failForGood() { this.readyState = 2; this.onerror?.(); }
+}
+
+/** Monta o composable com lifecycle e browser mínimos, e devolve o desmontar. */
+async function withMountedBrowser<T>(build: () => T): Promise<{ value: T; unmount: () => void }> {
+  const mounts: Array<() => void> = [];
+  const unmounts: Array<() => void> = [];
+  FakeEventSource.instances = [];
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounts.push(callback); });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmounts.push(callback); });
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { ...listeners, title: "", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  const value = build();
+  mounts.forEach((callback) => callback());
+  return { value, unmount: () => unmounts.forEach((callback) => callback()) };
+}
+
+describe("useKdsBoard — SSE da estação", () => {
+  beforeEach(() => { env.reset(); vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("recria o stream depois do 502 de deploy e refaz a leitura na reabertura", async () => {
+    const { unmount } = await withMountedBrowser(() => useKdsBoard("forno"));
+    try {
+      expect(FakeEventSource.instances[0]!.url).toBe("/sse/kds/forno");
+      FakeEventSource.instances[0]!.open();
+      FakeEventSource.instances[0]!.failForGood();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      env.refresh.mockClear();
+      FakeEventSource.instances[1]!.open();
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
   });
 });

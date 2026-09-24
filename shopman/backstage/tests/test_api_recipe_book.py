@@ -68,7 +68,7 @@ def materials(db):
         ("AGUA-FILTRADA", "Água filtrada", "l"),
         ("LEITE", "Leite integral", "l"),
         ("SAL", "Sal", "kg"),
-        ("MANTEIGA-FR", "Manteiga francesa", "kg"),
+        ("MANTEIGA-FRANCESA", "Manteiga francesa", "kg"),
     ]
     return {sku: Material.objects.create(sku=sku, name=name, unit=unit) for sku, name, unit in rows}
 
@@ -480,7 +480,7 @@ def test_standardize_to_the_house_basis(client, editor):
     assert body["lens"]["standardized"] is True
     assert body["lens"]["anchor_total_display"] == "1 kg"
 
-    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "parts": []}
+    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "parts": []}
     refused = _post(client, reverse("api-backstage-recipes-standardize"), {"formula": without_flour})
     assert refused.status_code == 400
     assert refused.json()["field"] == "anchor"

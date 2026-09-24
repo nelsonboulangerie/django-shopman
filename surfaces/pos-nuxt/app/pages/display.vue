@@ -13,7 +13,7 @@
 import type { CustomerDisplayPhase } from "~/types/customerDisplay";
 
 // Toque nesta janela é de quem COMPRA, não de operador presente: não alimenta o
-// relógio de atividade do aparelho (plugin do operator-kit) e, portanto, não
+// relógio de atividade do dispositivo (plugin do operator-kit) e, portanto, não
 // segura a trava do caixa.
 definePageMeta({ operatorActivity: false });
 

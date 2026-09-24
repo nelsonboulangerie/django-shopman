@@ -90,7 +90,7 @@ describe("convenção: identificador em inglês — dívida nomeada, e ela só e
         `Identificador é em inglês; comentário e cópia de tela continuam em português.\n` +
         `Onde:\n  ${where.join("\n  ")}`,
     ).toBeLessThanOrEqual(BASELINE);
-  });
+  }, 30_000);
 
   it(`o baseline acompanha a limpeza — se caiu, desça o número`, () => {
     const { total } = ptDeclarations();
@@ -99,5 +99,5 @@ describe("convenção: identificador em inglês — dívida nomeada, e ela só e
       `A dívida caiu para ${total}. Baixe BASELINE para ${total} neste arquivo — ` +
         `catraca que não aperta deixa a dívida voltar sem ninguém ver.`,
     ).toBeGreaterThanOrEqual(BASELINE);
-  });
+  }, 30_000);
 });

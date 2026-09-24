@@ -87,14 +87,26 @@ export function resolveFiscalState(
   return response.fiscal_expected ? "queued" : "not_expected";
 }
 
-/** O rótulo curto do estado da NFC-e — chip das Últimas vendas e da tela de resultado. */
+/**
+ * O rótulo curto do estado da NFC-e — chip das Últimas vendas e da tela de resultado.
+ *
+ * ⚠️ `not_expected` é o COMPORTAMENTO PADRÃO da casa (nota só quando pedem: nota,
+ * CPF ou comprovante), não um defeito. Um rótulo de ausência lê como falta — o
+ * operador veria uma venda normal marcada como se algo tivesse dado errado.
+ * "Emissão não estabelecida" (escolha do Pablo) diz o fato sem alarme: a regra
+ * não estabeleceu nota para esta venda. NÃO "revogada" — no vocabulário fiscal
+ * isso é nota que existiu e foi desfeita, rótulo que mente. O mesmo texto da
+ * pill do Gestor de Pedidos (`order_queue._FISCAL_PILL`); o alarme fica com quem merece (`failed`), e o chip
+ * continua neutro (`not_requested` em `PosRecentSales`). Se o cliente voltar
+ * pedindo, a emissão avulsa sai da mesma lista, com gerente.
+ */
 export function fiscalStateLabel(state: PosFiscalState): string {
   switch (state) {
     case "authorized": return "NFC-e autorizada";
     case "queued": return "NFC-e na fila";
     case "awaiting_payment": return "NFC-e aguarda o pagamento";
     case "failed": return "NFC-e falhou";
-    default: return "Sem NFC-e";
+    default: return "Emissão não estabelecida";
   }
 }
 
@@ -129,14 +141,47 @@ export function courierChangeLine(courierChangeQ: number | undefined): string {
   return courierChangeQ && courierChangeQ > 0 ? `Troco a separar: ${formatBRL(courierChangeQ)}` : "";
 }
 
-/** Com cliente vinculado o obrigado é nominal (frase completa, com ponto e
- *  maiúscula); sem, a confirmação seca. */
-export function saleResultTitle(customerName: string, payment: PaymentProofView | null = null): string {
+/**
+ * O TÍTULO SEGUE O ESTADO DO DINHEIRO — e o selo segue o título.
+ *
+ * ⚠️ "Venda concluída" e o obrigado nominal são AFIRMAÇÃO sobre o dinheiro.
+ * O Pix pendente — QR na tela, polling vivo, nada na conta — passava por aqui
+ * como sucesso: check verde, título em corpo 3xl e o nome do cliente no
+ * vocativo, enquanto o próprio CTA da tela já dizia "Nova venda mesmo assim".
+ * O operador entregava o pão e ia atender o próximo.
+ *
+ * Com cliente vinculado o obrigado é nominal (frase completa, com ponto e
+ * maiúscula); sem, a confirmação seca. Agradecer por um pagamento que não
+ * chegou é a parte que mais convence o operador de que ele chegou — por isso o
+ * vocativo só existe no estado assentado.
+ */
+export function saleResultTitle(
+  customerName: string,
+  payment: PaymentProofView | null = null,
+  pixStatus: PixPollStatus = "idle",
+): string {
   // Cobrança falhada não recebe frase de despedida: a venda existe, o dinheiro
   // não entrou, e o título é a primeira coisa que o operador lê.
   if (paymentFailed(payment)) return "Venda registrada, cobrança não criada";
+  if (pixAwaiting(payment, pixStatus)) return "Aguardando Pix";
   const nome = firstName(customerName);
   return nome ? `Venda concluída. Obrigado, ${nome}!` : "Venda concluída";
+}
+
+/**
+ * O SELO da tela de resultado, em três estados — nunca dois.
+ *
+ * `settled` é o único que acende verde, porque o verde é a afirmação de que o
+ * dinheiro entrou. `awaiting` é neutro (a venda existe, a cobrança está de pé,
+ * a confirmação não chegou) e `failed` é o alarme de sempre.
+ */
+export function saleResultTone(
+  payment: PaymentProofView | null,
+  pixStatus: PixPollStatus,
+): "failed" | "awaiting" | "settled" {
+  if (paymentFailed(payment)) return "failed";
+  if (pixAwaiting(payment, pixStatus)) return "awaiting";
+  return "settled";
 }
 
 /**

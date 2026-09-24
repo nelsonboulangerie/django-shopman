@@ -1,17 +1,30 @@
 <script setup lang="ts">
-// Feeds — o lado DISPLAY do cardápio. Um feed empurra um recorte de coleções
-// PARA FORA (📺 menuboard na TV, 🛰 Google/Meta) sem transacionar. No backend é
-// um ``Channel`` com ``commerce_policy=display`` (ADR-018).
-// Aqui o operador liga/pausa, escolhe quais coleções cada um exibe, configura a
-// rotação de páginas da TV e abre/prevê a saída. A ORDEM das coleções é global
-// (reordenável no Catálogo).
-import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
+// Canais — venda (loja online, WhatsApp, iFood, PDV) e exibição (📺 menuboard na
+// TV, 🛰 Google/Meta). Todo card tem a mesma estrutura: CABEÇALHO com o toggle
+// "Ativo", CORPO com o estado, RODAPÉ com as ações. O toggle é o mesmo em todos:
+// abre o modal de período + motivo + gerente (`ChannelSwitchDialog`).
+// Nos feeds o operador também escolhe as coleções e a rotação de páginas da TV, e
+// abre/prevê a saída. A ORDEM das coleções é global (reordenável no Catálogo).
+import type { ChannelSwitchProjection, CollectionOptionProjection, FeedProjection } from "~/types/feeds";
+import { IFOOD_CHANNEL_REF } from "~/presentation/ifoodStore";
 
-const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
+const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, switchChannel, setCollections, setRotation } = useFeedBoard();
 const catalogChannels = computed(() => board.value?.catalog_channels ?? []);
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
+// O checklist vivo de cada canal (o que falta, e o botão que resolve).
+const { healthOf } = useChannelHealth();
+
+// O aviso da fila de Pedidos chega aqui com `?focus=<ref>`: o card daquele canal —
+// onde mora o toggle — vai para a linha de foco assim que a leitura o traz.
+const route = useRoute();
+const focusKey = computed(() => {
+  const wanted = typeof route.query.focus === "string" ? route.query.focus : "";
+  const known = [...catalogChannels.value, ...feeds.value].some((channel) => channel.ref === wanted);
+  return wanted && known ? wanted : null;
+});
+useNextFocus(focusKey);
 
 // saída servida pelo Django (menuboard/feed), não pelo host do Gestor.
 const runtimeConfig = useRuntimeConfig();
@@ -20,9 +33,23 @@ const outputHref = (sc: FeedProjection) => `${djangoBase}${sc.output_path}`;
 // o Admin é porta humana e tem host próprio — não é a mesma base da saída.
 const adminBase = runtimeConfig.public.adminBaseUrl as string;
 
-function toggleActive(sc: FeedProjection) {
-  setActive(sc.ref, !sc.is_active);
+// O toggle não liga nem desliga direto: abre o modal (período, motivo, gerente).
+// O interruptor segue mostrando o estado do servidor até o gesto ser confirmado.
+const switchRef = ref<string | null>(null);
+const switchTarget = computed<ChannelSwitchProjection | null>(() => {
+  if (!switchRef.value) return null;
+  return feeds.value.find((feed) => feed.ref === switchRef.value)?.switch
+    ?? catalogChannels.value.find((channel) => channel.ref === switchRef.value)?.switch
+    ?? null;
+});
+function openSwitch(ref_: string) {
+  switchRef.value = ref_;
 }
+const submitSwitch = (request: Parameters<typeof switchChannel>[1], approval?: Record<string, string>) =>
+  switchChannel(switchRef.value!, request, approval);
+const switchTone = (sw: ChannelSwitchProjection | null | undefined) => (sw?.closed_by_shop ? "muted" : "success");
+const switchLabel = (name: string, sw: ChannelSwitchProjection | null | undefined) =>
+  sw?.is_active ? `${name}: ligado. Desligar…` : `${name}: desligado. Ligar…`;
 
 // Rascunhos pertencem ao feed e à pessoa (a página é remontada na troca de identidade).
 const actionFor = (sc: FeedProjection, field: string) => sc.actions.find((action) => action.ref === field);
@@ -117,7 +144,7 @@ useHead({ title: "Canais" });
       <p v-if="errorMsg" role="alert" class="mb-3 text-sm text-destructive">{{ errorMsg }}</p>
       <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
         Não foi possível atualizar os feeds. {{ board ? "Exibindo a última leitura disponível." : "Tente atualizar para consultar os feeds." }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar novamente</button>
+        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
       </div>
       <!-- skeleton -->
       <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -128,11 +155,13 @@ useHead({ title: "Canais" });
         <h2 class="text-sm font-semibold sm:col-span-2 xl:col-span-3">Feeds e telas</h2>
         <article
           v-for="sc in feeds" :key="sc.ref"
-          class="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition"
-          :class="sc.is_active ? '' : 'opacity-70'"
+          class="flex scroll-mt-4 flex-col gap-3 rounded-xl border border-border bg-card p-4 outline-none transition"
+          :data-channel-card="sc.ref"
+          :data-focus-target="sc.ref"
+          :class="sc.is_active ? '' : 'opacity-80'"
         >
-          <!-- header: tipo + nome + switch ativo -->
-          <div class="flex items-start gap-3">
+          <!-- cabeçalho: tipo + nome + toggle "Ativo" -->
+          <div class="flex items-start gap-3" data-card-header>
             <span class="grid size-9 shrink-0 place-items-center rounded-md border bg-muted/40 text-foreground">
               <Icon :name="`lucide:${sc.kind_icon}`" class="size-4" />
             </span>
@@ -140,22 +169,21 @@ useHead({ title: "Canais" });
               <p class="truncate font-medium text-foreground">{{ sc.name }}</p>
               <p class="text-xs text-muted-foreground">{{ sc.kind_label }}</p>
             </div>
-            <button
-              type="button" role="switch" :aria-checked="sc.is_active"
-              class="inline-flex size-control shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-              :disabled="isBusy(sc.ref) || !actionFor(sc, 'active')?.enabled"
-              :aria-label="sc.is_active ? 'Pausar feed' : 'Ativar feed'"
-              :title="sc.is_active ? 'Ativo — clique para pausar' : 'Pausado — clique para ativar'"
-              @click="toggleActive(sc)"
-            >
-              <span class="inline-flex h-5 w-9 items-center rounded-full transition-colors" :class="sc.is_active ? 'bg-success' : 'bg-muted-foreground/30'">
-                <span class="inline-block size-4 rounded-full bg-white shadow-sm transition-transform" :class="sc.is_active ? 'translate-x-4' : 'translate-x-0.5'"></span>
-              </span>
-            </button>
+            <UiSwitch
+              v-if="sc.switch"
+              :tone="switchTone(sc.switch)"
+              :model-value="sc.switch.is_active"
+              :disabled="isBusy(sc.ref) || !sc.switch.enabled"
+              :aria-label="switchLabel(sc.name, sc.switch)"
+              :title="sc.switch.enabled ? switchLabel(sc.name, sc.switch) : sc.switch.disabled_reason"
+              data-channel-switch
+              @update:model-value="openSwitch(sc.ref)"
+            />
           </div>
+          <ChannelSwitchState v-if="sc.switch" :sw="sc.switch" />
 
-          <!-- coleções exibidas -->
-          <div class="flex min-h-8 flex-wrap items-center gap-1.5">
+          <!-- corpo: coleções exibidas -->
+          <div class="flex min-h-8 flex-wrap items-center gap-1.5" data-card-body>
             <span
               v-for="c in sc.collections" :key="c.ref"
               class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
@@ -167,8 +195,10 @@ useHead({ title: "Canais" });
             <span v-if="!sc.collections.length" class="text-xs text-muted-foreground/70">Nenhuma coleção — nada a exibir.</span>
           </div>
 
-          <!-- ações -->
-          <div class="mt-auto flex items-center gap-1.5 border-t border-border pt-3">
+          <ChannelHealthChecklist :health="healthOf(sc.ref)" @choose-collections="openEdit(sc)" />
+
+          <!-- rodapé: ações -->
+          <div class="mt-auto flex items-center gap-1.5 border-t border-border pt-3" data-card-footer>
             <UiPopover :open="editRef === sc.ref" @update:open="(v) => { if (!v) editRef = null; else openEdit(sc); }">
               <UiPopoverTrigger as-child>
                 <button type="button" :disabled="!actionFor(sc, 'collections')?.enabled" :title="actionFor(sc, 'collections')?.reason" class="min-h-control min-w-control inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent">
@@ -194,7 +224,7 @@ useHead({ title: "Canais" });
                 </div>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete collectionDrafts[sc.ref]; editRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || collectionConflict(sc) || !actionFor(sc, 'collections')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Aplicar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || collectionConflict(sc) || !actionFor(sc, 'collections')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Salvar coleções</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>
@@ -241,7 +271,7 @@ useHead({ title: "Canais" });
                 <p class="mt-2 text-xs text-muted-foreground/70">Zere os dois para mostrar tudo numa tela só, sem rotação.</p>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete rotationDrafts[sc.ref]; rotationRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Aplicar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Salvar rotação</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>
@@ -264,20 +294,61 @@ useHead({ title: "Canais" });
       </div>
       <section v-if="!loading && catalogChannels.length" class="mt-6 space-y-3" aria-label="Canais de venda">
         <h2 class="text-sm font-semibold">Canais de venda</h2>
-        <p class="text-xs text-muted-foreground">Últimos registros locais de envio. Não representam o estado atual da loja na plataforma.</p>
+        <p class="text-xs text-muted-foreground">
+          Envio de produtos: o que a casa registrou ao mandar o catálogo a cada canal.
+        </p>
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <article v-for="channel in catalogChannels" :key="channel.ref" class="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h3 class="font-medium">{{ channel.name }}</h3>
-            <p class="text-sm text-muted-foreground">{{ channel.diagnostic }}</p>
-            <p v-if="channel.observed" class="text-xs tabular-nums">
-              {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
-            </p>
-            <p v-else class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
-            <NuxtLink :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`" class="mr-2 inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Revisar vínculos</NuxtLink>
-            <NuxtLink :to="channel.catalog_path" class="inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Ver produtos no Catálogo</NuxtLink>
+          <article
+            v-for="channel in catalogChannels" :key="channel.ref"
+            class="flex scroll-mt-4 flex-col gap-3 rounded-xl border border-border bg-card p-4 outline-none transition"
+            :class="channel.is_active ? '' : 'opacity-80'"
+            :data-focus-target="channel.ref"
+            :data-channel-card="channel.ref"
+          >
+            <!-- cabeçalho: nome + toggle "Ativo" -->
+            <div class="flex items-start gap-3" data-card-header>
+              <h3 class="min-w-0 flex-1 truncate font-medium">{{ channel.name }}</h3>
+              <UiSwitch
+                v-if="channel.switch"
+                :tone="switchTone(channel.switch)"
+                :model-value="channel.switch.is_active"
+                :disabled="isBusy(channel.ref) || !channel.switch.enabled"
+                :aria-label="switchLabel(channel.name, channel.switch)"
+                :title="channel.switch.enabled ? switchLabel(channel.name, channel.switch) : channel.switch.disabled_reason"
+                data-channel-switch
+                @update:model-value="openSwitch(channel.ref)"
+              />
+            </div>
+            <!-- corpo: estado do canal e do envio de produtos -->
+            <div class="flex flex-col gap-2" data-card-body>
+              <ChannelSwitchState v-if="channel.switch" :sw="channel.switch" />
+              <p class="text-sm text-muted-foreground">{{ channel.diagnostic }}</p>
+              <ChannelHealthChecklist :health="healthOf(channel.ref)" />
+              <!-- com checklist, a contagem crua sai: o que pede ação já está nele -->
+              <p v-if="channel.observed && !healthOf(channel.ref)" class="text-xs tabular-nums">
+                Envio de produtos: {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
+              </p>
+              <p v-else-if="!healthOf(channel.ref)" class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
+              <IFoodChannelStore v-if="channel.ref === IFOOD_CHANNEL_REF" />
+            </div>
+            <!-- rodapé: ações -->
+            <div class="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-3" data-card-footer>
+              <NuxtLink :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`" class="inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Revisar vínculos</NuxtLink>
+              <NuxtLink :to="channel.catalog_path" class="inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Ver produtos no Catálogo</NuxtLink>
+            </div>
           </article>
         </div>
       </section>
     </section>
+
+    <ChannelSwitchDialog
+      :open="Boolean(switchTarget)"
+      :sw="switchTarget"
+      :managers="board?.managers ?? []"
+      :viewer-name="board?.viewer_name ?? ''"
+      :busy="Boolean(switchRef && isBusy(switchRef))"
+      :submit="submitSwitch"
+      @update:open="(value: boolean) => { if (!value) switchRef = null; }"
+    />
   </main>
 </template>

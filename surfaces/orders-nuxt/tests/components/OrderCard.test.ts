@@ -41,8 +41,9 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     payment_method: "cash",
     payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
-    ifood_payment_summary: [],
-    ifood_operation_summary: [],
+    ifood_pickup_code: "",
+    ifood_schedule_label: "",
+    ifood_remote_ahead_label: "",
     ifood_negotiations: [],
     payment_status: "pending",
     payment_pending: true,
@@ -205,16 +206,31 @@ describe("OrderCard iFood", () => {
       advance_block_label: "Aguardando iFood",
       advance_block_reason: notice,
       ifood_cancellation_notice: notice,
-      ifood_payment_summary: ["Pago no iFood: R$ 10,00", "Cobrar na entrega: R$ 5,00"],
     }) });
     expect(w.get("[data-ifood-cancellation]").text()).toBe(notice);
-    expect(w.findAll("[data-ifood-payment]").map((line) => line.text())).toEqual([
-      "Pago no iFood: R$ 10,00", "Cobrar na entrega: R$ 5,00",
-    ]);
+    // O desdobramento por bandeira é do detalhe: no card ele empurrava a decisão
+    // para baixo da dobra sem ajudar a decidir nada.
+    expect(w.find("[data-ifood-payment]").exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
     const blocked = w.findAll("button").find((button) => button.text().includes("Aguardando iFood"));
     expect(blocked?.attributes("disabled")).toBeDefined();
     expect(w.findAll("button").some((button) => button.text().includes("Iniciar preparo"))).toBe(false);
+  });
+});
+
+describe("pedido de teste da homologação", () => {
+  it("abre o card com o aviso, antes do código", () => {
+    const label = "Pedido de teste do iFood";
+    const notice = "Pedido de teste do iFood: avance as etapas normalmente, mas não produza nem entregue nada.";
+    const w = mountCard({ card: card({ channel_ref: "ifood", test_order_label: label, test_order_notice: notice }) });
+    const aviso = w.get("[data-test-order-notice]");
+    expect(aviso.text()).toContain(label);
+    expect(aviso.text()).toContain("não produza nem entregue");
+  });
+
+  it("não marca nada num pedido de verdade", () => {
+    const w = mountCard({ card: card({ channel_ref: "ifood" }) });
+    expect(w.find("[data-test-order-notice]").exists()).toBe(false);
   });
 });
 
@@ -225,4 +241,27 @@ it("links negotiations on a completed order without batch or fulfillment actions
   expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
   expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
   expect(w.findAll("button")).toHaveLength(0);
+});
+
+describe("iFood à frente do estado local", () => {
+  // 21/09: o 1416 seguia "Em preparo" um minuto depois de encerrado no iFood.
+  it("mostra a instrução quando o iFood já concluiu", () => {
+    const w = mountCard({ card: card({ channel_ref: "ifood", ifood_remote_ahead_label: "Concluído no iFood · Finalize aqui" }) });
+    expect(w.get("[data-ifood-remote-ahead]").text()).toBe("Concluído no iFood · Finalize aqui");
+  });
+  it("não mostra nada no caso normal", () => {
+    const w = mountCard({ card: card({ channel_ref: "ifood" }) });
+    expect(w.find("[data-ifood-remote-ahead]").exists()).toBe(false);
+  });
+});
+
+describe("OrderCard — maquininha na rua", () => {
+  it("o único sinal é a linha do card: com que maquininha saiu e com quem foi junto", () => {
+    const w = mountCard({ card: card({ status: "dispatched", equipment_label: "Saiu com a maquininha Azul", trip_with: ["DLV-0418"], equipment_back_pending: true }) });
+    expect(w.get("[data-equipment-label]").text()).toBe("Saiu com a maquininha Azul · junto com 0418");
+    expect(w.text()).not.toContain("Entregador levou");
+  });
+  it("sem maquininha na rua, nada", () => {
+    expect(mountCard({ card: card() }).find("[data-equipment-label]").exists()).toBe(false);
+  });
 });

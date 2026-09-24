@@ -60,8 +60,8 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=6',
-    manifestHref: '/manifest.webmanifest?v=6',
+    manifestUrl: '/manifest.webmanifest?v=7',
+    manifestHref: '/manifest.webmanifest?v=7',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
@@ -176,7 +176,7 @@ try {
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
   check(manifestResponse.headers.get('cache-control') === profile.manifestCache, `manifesto usa cache esperado (${profile.manifestCache})`)
-  // O manifesto do storefront é o MESMO para todo aparelho (#784): esconder o
+  // O manifesto do storefront é o MESMO para todo dispositivo (#784): esconder o
   // `maskable` do macOS deixava o ícone do Dock ~24% maior que os vizinhos.
   if (profile.storefront) check(!/user-agent/i.test(manifestResponse.headers.get('vary') || ''), 'manifesto não varia por dispositivo')
   const manifest = await manifestResponse.json()
@@ -186,7 +186,7 @@ try {
     check(field in manifest, `manifesto contém ${field}`)
   }
   // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
-  const assetVersion = profile.storefront ? '6' : '3'
+  const assetVersion = profile.storefront ? '7' : '3'
   check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
   if (profile.storefront) {
@@ -223,7 +223,13 @@ try {
   check(swResponse.ok, 'service worker responde 200')
   check(swResponse.headers.get('cache-control') === 'no-cache, no-store, must-revalidate', 'service worker nunca fica imutável')
 
-  const documentResponse = await fetch(`${baseUrl}/`, { headers: { 'x-forwarded-proto': 'https' } })
+  // Accept de navegador, porque o que se mede aqui e o DOCUMENTO. Sem ele o
+  // Nitro responde JSON quando a home nao renderiza (a previa sobe sem backend,
+  // e desde `useContentGuard` isso e um 503), e o JSON vem com a CSP dura do
+  // framework -- o gate acusava a loja por uma pagina que nenhum navegador pede.
+  const documentResponse = await fetch(`${baseUrl}/`, {
+    headers: { 'x-forwarded-proto': 'https', accept: 'text/html,application/xhtml+xml' }
+  })
   const document = await documentResponse.text()
   const csp = documentResponse.headers.get('content-security-policy') || ''
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')

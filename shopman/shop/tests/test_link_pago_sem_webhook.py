@@ -17,13 +17,18 @@ from shopman.shop.services import notification
 
 
 def _order(*, phone, handle_type="", handle_ref=""):
+    # `channel_ref` não é enfeite: resolver destinatário passa a perguntar ao
+    # canal se o telefone que ele entrega é do cliente ou um relé da plataforma
+    # (`notification.customer_contact_phone`). O PDV entrega o do cliente.
     return SimpleNamespace(
         data={"customer": {"phone": phone, "email": "x@y.z"}},
+        channel_ref="pdv",
         handle_type=handle_type,
         handle_ref=handle_ref,
     )
 
 
+@pytest.mark.django_db
 class TestWhatsAppRecebeTelefoneComMais:
     """Dígitos puros são `subscriber_id`; telefone vai em E.164 com o "+".
 

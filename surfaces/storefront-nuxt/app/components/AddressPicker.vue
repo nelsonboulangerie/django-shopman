@@ -95,6 +95,11 @@ const query = ref('')
 const searching = ref(false)
 const suggestions = ref<PickerSuggestion[]>([])
 const searchOpen = ref(false)
+// A busca que não acha nada precisa DIZER. Sem isto, a lista fecha, a tela fica
+// idêntica, e quem digitou o CEP conclui que a loja não atende o endereço dele —
+// que é a conclusão mais cara possível. Vive aqui, e não em `saveIssue`, porque
+// `saveIssue` só é renderizado no modo `form`.
+const searchIssue = ref('')
 
 const locating = ref(false)
 const geoIssue = ref('')
@@ -221,6 +226,7 @@ function resetDraft () {
   fieldErrors.value = {}
   acceptedLine.value = ''
   saveIssue.value = ''
+  searchIssue.value = ''
   geoCandidate.value = null
   geoIssue.value = ''
   query.value = ''
@@ -257,9 +263,11 @@ async function runSearch (value: string) {
   if (trimmed.length < 3) {
     suggestions.value = []
     searchOpen.value = false
+    searchIssue.value = ''
     return
   }
   searching.value = true
+  searchIssue.value = ''
   let results: PickerSuggestion[] = []
   try {
     if (maps.enabled.value && !isCep) results = await placesSuggestions(trimmed)
@@ -272,6 +280,11 @@ async function runSearch (value: string) {
     if (seq === searchSeq) {
       suggestions.value = results
       searchOpen.value = results.length > 0
+      searchIssue.value = results.length
+        ? ''
+        : isCep
+          ? 'Não achamos esse CEP. Confira os números — ou toque em "Preencher manualmente" e escreva o endereço.'
+          : 'Nenhum endereço com esse nome. Tente a rua com o número, ou o CEP. Se preferir, preencha manualmente.'
       searching.value = false
     }
   }
@@ -326,6 +339,7 @@ async function viaCepSuggestion (value: string): Promise<PickerSuggestion | null
 
 async function acceptSuggestion (suggestion: PickerSuggestion) {
   searchOpen.value = false
+  searchIssue.value = ''
   if (suggestion.kind === 'cep' && suggestion.cepPartial) {
     applyPartial(suggestion.cepPartial)
     return
@@ -347,7 +361,9 @@ async function acceptSuggestion (suggestion: PickerSuggestion) {
       longitude
     }))
   } catch {
-    saveIssue.value = 'Não foi possível carregar este endereço. Tente outra busca.'
+    // `applyPartial` não chegou a rodar, então `mode` continua 'search' — e o
+    // `saveIssue` só aparece no modo `form`. A recusa vai para o card da busca.
+    searchIssue.value = 'Não deu para abrir este endereço. Escolha outro resultado da lista, ou toque em "Preencher manualmente".'
   } finally {
     searching.value = false
   }
@@ -386,11 +402,14 @@ function backToSearch () {
 
 async function locateMe () {
   if (!import.meta.client || !navigator.geolocation) {
-    geoIssue.value = 'Geolocalização não está disponível neste aparelho.'
+    // Quem não informa a posição é o navegador (ou o contexto inseguro), não o
+    // aparelho: acusar o telefone manda o cliente procurar defeito onde não há.
+    geoIssue.value = 'Este navegador não informa sua localização. Busque pela rua ou pelo CEP aqui em cima.'
     return
   }
   locating.value = true
   geoIssue.value = ''
+  searchIssue.value = ''
   geoCandidate.value = null
   // Some a busca digitada e suas sugestões: a resposta agora é o candidato
   // de localização — duas respostas na tela ao mesmo tempo confundem.
@@ -412,7 +431,14 @@ async function locateMe () {
     })
     geoCandidate.value = mergeReverseGeocode(emptyAddressDraft(), result)
   } catch (e) {
-    geoIssue.value = errorDetail(e, 'Não foi possível resolver sua localização.')
+    // Três causas, três gestos diferentes: uma frase só mandaria o cliente tentar
+    // o que não resolve o caso dele.
+    const code = (e as GeolocationPositionError | undefined)?.code
+    geoIssue.value = code === 1
+      ? 'Você não liberou a localização para a loja. Dá para liberar nas configurações do navegador — ou buscar pela rua ou pelo CEP aqui em cima.'
+      : code === 3
+        ? 'Demorou demais para achar você. Tente de novo, ou busque pela rua ou pelo CEP aqui em cima.'
+        : errorDetail(e, 'Não conseguimos achar onde você está. Busque pela rua ou pelo CEP aqui em cima.')
   } finally {
     locating.value = false
   }
@@ -702,6 +728,7 @@ function onLabelResolved () {
             </UiButton>
           </li>
         </ul>
+        <p v-if="searchIssue" class="text-sm text-destructive" data-address-search-issue>{{ searchIssue }}</p>
         <p v-if="geoIssue" class="text-sm text-destructive">{{ geoIssue }}</p>
 
         <UiButton

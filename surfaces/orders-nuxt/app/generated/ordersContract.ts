@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -153,7 +153,39 @@ export interface FeedCollectionRef {
   exists: boolean;
 }
 
-/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = ()) */
+/** ChannelPeriodOption(key: 'str', label: 'str', enabled: 'bool', reason: 'str' = '') */
+export interface ChannelPeriodOption {
+  key: string;
+  label: string;
+  enabled: boolean;
+  reason: string;
+}
+
+/** O toggle "Ativo" de um card — o mesmo em canal de venda e de exibição. */
+export interface ChannelSwitchProjection {
+  is_active: boolean;
+  state_line: string;
+  closed_by_shop: string;
+  scheduled_line: string;
+  title: string;
+  consequence: string;
+  periods: ChannelPeriodOption[];
+  reasons: string[];
+  reason_required: boolean;
+  enabled: boolean;
+  disabled_reason: string;
+  base_revision: string;
+  expected_actor_id: number | null;
+  requires_manager_approval: boolean;
+}
+
+/** ManagerOptionProjection(username: 'str', name: 'str') */
+export interface ManagerOptionProjection {
+  username: string;
+  name: string;
+}
+
+/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = (), switch: 'ChannelSwitchProjection | None' = None) */
 export interface FeedProjection {
   ref: string;
   name: string;
@@ -167,9 +199,10 @@ export interface FeedProjection {
   rotate_seconds: number;
   items_per_page: number;
   actions: Action[];
+  switch: ChannelSwitchProjection | null;
 }
 
-/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog') */
+/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog', is_active: 'bool' = True, switch: 'ChannelSwitchProjection | None' = None) */
 export interface CatalogChannelProjection {
   ref: string;
   name: string;
@@ -182,6 +215,8 @@ export interface CatalogChannelProjection {
   skipped: number;
   observed: number;
   catalog_path: string;
+  is_active: boolean;
+  switch: ChannelSwitchProjection | null;
 }
 
 /** CollectionOptionProjection(ref: 'str', name: 'str', product_count: 'int') */
@@ -191,11 +226,45 @@ export interface CollectionOptionProjection {
   product_count: number;
 }
 
-/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = ()) */
+/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = (), managers: 'tuple[ManagerOptionProjection, ...]' = (), viewer_name: 'str' = '') */
 export interface FeedBoardProjection {
   feeds: FeedProjection[];
   all_collections: CollectionOptionProjection[];
   catalog_channels: CatalogChannelProjection[];
+  managers: ManagerOptionProjection[];
+  viewer_name: string;
+}
+
+/** ChannelHealthItem(key: 'str', state: 'str', label: 'str', hint: 'str' = '', action_label: 'str' = '', action_target: 'str' = '', action_path: 'str' = '') */
+export interface ChannelHealthItem {
+  key: string;
+  state: string;
+  label: string;
+  hint: string;
+  action_label: string;
+  action_target: string;
+  action_path: string;
+}
+
+/** ChannelHealthLink(label: 'str', target: 'str', path: 'str') */
+export interface ChannelHealthLink {
+  label: string;
+  target: string;
+  path: string;
+}
+
+/** ChannelHealthProjection(ref: 'str', ready: 'bool', summary: 'str', items: 'tuple[ChannelHealthItem, ...]', preview: 'tuple[ChannelHealthLink, ...]' = ()) */
+export interface ChannelHealthProjection {
+  ref: string;
+  ready: boolean;
+  summary: string;
+  items: ChannelHealthItem[];
+  preview: ChannelHealthLink[];
+}
+
+/** ChannelHealthBoardProjection(channels: 'tuple[ChannelHealthProjection, ...]') */
+export interface ChannelHealthBoardProjection {
+  channels: ChannelHealthProjection[];
 }
 
 /** One line item as displayed on order tracking or confirmation. */
@@ -233,6 +302,7 @@ export interface EquipmentOptionProjection {
   label: string;
   enabled: boolean;
   reason: string;
+  order_ref: string;
 }
 
 /** Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou. */
@@ -311,6 +381,7 @@ export interface OrderCardProjection {
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  channel_display_id: string;
   courier_status: string;
   courier_status_label: string;
   is_preorder: boolean;
@@ -326,13 +397,20 @@ export interface OrderCardProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  dispatch_needs_machine: boolean;
+  trip_with: string[];
+  courier_return_orders: string[];
+  courier_return_lines: string[];
   waitlist_state: string;
   waitlist_deadline_iso: string;
   waitlist_label: string;
   ifood_cancellation_notice: string;
-  ifood_payment_summary: string[];
-  ifood_operation_summary: string[];
+  ifood_pickup_code: string;
+  ifood_schedule_label: string;
+  ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
+  test_order_label: string;
+  test_order_notice: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -347,6 +425,9 @@ export interface OperatorOrderProjection {
   customer_phone: string;
   customer_phone_uri: string;
   customer_whatsapp_url: string;
+  customer_relay_phone: string;
+  customer_relay_code: string;
+  customer_relay_expires_at: string;
   customer_email: string;
   customer_ref: string;
   channel_ref: string;
@@ -397,12 +478,19 @@ export interface OperatorOrderProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  dispatch_needs_machine: boolean;
+  trip_with: string[];
+  courier_return_orders: string[];
+  courier_return_lines: string[];
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  managers: Record<string, string>[];
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_negotiations: IFoodNegotiationProjection[];
+  test_order_label: string;
+  test_order_notice: string;
 }
 
 /** Top-level read model for the operator order queue. */

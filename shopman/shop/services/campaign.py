@@ -998,7 +998,7 @@ def preview(
     """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
 
     Variável desconhecida bloqueia a prévia e aponta o campo antes de o conteúdo chegar à
-    aprovação. O operador corrige no mesmo contexto, sem descobrir o erro no aparelho.
+    aprovação. O operador corrige no mesmo contexto, sem descobrir o erro no dispositivo.
 
     ⚠️ **Mesmo resolvedor do envio, de propósito.** Se a prévia tivesse a própria montagem,
     ela concordaria com o envio hoje e divergiria no primeiro ajuste — e uma prévia que mente
@@ -1126,7 +1126,7 @@ def preview_platforms(
         "sample": not bool((sku or "").strip()),
         "product_name": variables["product_name"],
         # Os campos discretos que o template aprovado recebe. O operador vê os valores
-        # usados sem precisar conferir o aparelho ou memorizar o contexto do evento.
+        # usados sem precisar conferir o dispositivo ou memorizar o contexto do evento.
         "fields": {
             key: variables[key]
             for key in (

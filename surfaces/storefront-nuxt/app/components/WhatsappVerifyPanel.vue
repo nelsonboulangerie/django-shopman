@@ -53,7 +53,9 @@ async function copyMessage () {
     useSonner.success('Mensagem copiada. Envie no nosso WhatsApp.')
     setTimeout(() => { codeCopied.value = false }, 2500)
   } catch {
-    // Clipboard indisponível: a mensagem continua visível para digitar.
+    // Clipboard indisponível: a mensagem continua visível para digitar — mas quem tocou
+    // em "Copiar" e não viu nada acontecer conclui que o botão está quebrado.
+    useSonner.info('Seu navegador não deixou copiar. A mensagem está aí em cima para você digitar.')
   }
 }
 </script>

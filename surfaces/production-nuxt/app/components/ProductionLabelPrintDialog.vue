@@ -686,7 +686,7 @@ function close() {
             :disabled="!printing.isOnline.value"
             @click="retry"
           >
-            Tentar novamente
+            Tentar de novo
           </UiButton>
           <UiButton
             v-if="showReprint"

@@ -6,7 +6,7 @@ interface HeroSlide {
   eyebrow?: string
   titleLines: string[]
   description?: string
-  imageUrl: string | null
+  image: { phone: string, wide: string } | null
   imageAlt: string
   primaryLabel: string
   primaryIcon: string
@@ -22,6 +22,7 @@ const props = defineProps<{
   reorderAction: Action | null
   reorderLoading?: boolean
   statusOpen: boolean
+  statusLabel?: string
   closedCtaLabel?: string
 }>()
 
@@ -29,14 +30,19 @@ const emit = defineEmits<{
   reorder: [action: Action | null]
 }>()
 
-// Mesmas fotos do hero da home Django (shopman/storefront/templates/storefront/
-// home.html) — pareadas por slide para comparação direta de composição.
-// Não é theming/marca: é o conjunto neutro de referência da padaria.
-const HERO_IMAGE_URLS = {
-  greeting: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1600&q=80',
-  order: 'https://images.unsplash.com/photo-1517433670267-08bbd4be890f?auto=format&fit=crop&w=1600&q=80',
-  reorder: 'https://images.unsplash.com/photo-1568254183919-78a4f43a2877?auto=format&fit=crop&w=1600&q=80',
-  handmade: 'https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=1600&q=80'
+// Fotos DA CASA (o dono escolheu uma a uma em 23/09/2026, vendo cada
+// candidata neste enquadramento). Eram de banco de imagem — padaria de outra
+// gente na vitrine da nossa.
+//
+// Duas por slide, e não é capricho: o herói é uma faixa larga no computador e
+// quase a tela inteira, em pé, no celular. Uma foto só perde metade do assunto
+// num dos dois. O `<picture>` deixa o navegador baixar SÓ a que couber, então
+// a segunda não custa peso.
+const HERO_IMAGES = {
+  greeting: { phone: '/img/home/facade6.webp', wide: '/img/home/facade2.webp' },
+  order: { phone: '/img/home/selfservice.webp', wide: '/img/home/selfservice.webp' },
+  reorder: { phone: '/img/home/facade4.webp', wide: '/img/home/interior.webp' },
+  handmade: { phone: '/img/home/baguette.webp', wide: '/img/home/baguette.webp' }
 } as const
 
 const menuTo = computed(() => props.primaryAction?.href || '/menu')
@@ -128,6 +134,13 @@ const slides = computed<HeroSlide[]>(() => {
   const customerName = omo.customer_name?.trim()
   const description = shopDescription()
   const menuLabel = (!props.statusOpen && props.closedCtaLabel) || titleOf(copy.menu_cta, 'Ver cardápio')
+  // Loja fechada: o rótulo do hero era a ÚNICA pista do estado, e convidava a montar
+  // pedido sem dizer que a loja estava fechada — o cliente só descobria no checkout,
+  // com a sacola pronta. O selo de estado existe, mas vive lá embaixo, no card
+  // "visite a loja". Aqui ele sobe para o topo, que é o que a pessoa lê.
+  const closedEyebrow = props.statusOpen
+    ? undefined
+    : `${props.statusLabel ? `${props.statusLabel}. ` : ''}Você monta agora e finaliza quando abrirmos.`
   const handmadeTitle = `${titleOf(copy.handmade_title_prefix, 'Feito à mão,')} ${titleOf(copy.handmade_title_suffix, 'todo dia')}`
   const greetingTitle = sentence(omo.greeting_with_name || handmadeTitle)
   const list: HeroSlide[] = []
@@ -135,9 +148,13 @@ const slides = computed<HeroSlide[]>(() => {
   if (omo.is_birthday) {
     list.push({
       ref: 'birthday',
-      titleLines: [`${titleOf(copy.birthday_heading, 'Um cuidado especial hoje')}${customerName ? `, ${customerName}` : ''}!`],
+      // "Um cuidado especial hoje" anunciava um cuidado e não dizia qual — e o botão
+      // abaixo leva ao cardápio de sempre. Calor sem promessa vazia é o que vale aqui.
+      // O "!" final é do TEMPLATE: o registro já traz "Feliz aniversário!", e concatenar
+      // produzia "Feliz aniversário!, Nome!".
+      titleLines: [`${titleOf(copy.birthday_heading, 'Feliz aniversário').replace(/!+$/, '')}${customerName ? `, ${customerName}` : ''}!`],
       description: messageOf(copy.birthday_sub, description),
-      imageUrl: HERO_IMAGE_URLS.greeting,
+      image: HERO_IMAGES.greeting,
       imageAlt: shop.brand_name,
       primaryLabel: titleOf(copy.birthday_cta, titleOf(copy.menu_cta, 'Ver cardápio')),
       primaryIcon: 'lucide:gift',
@@ -147,7 +164,7 @@ const slides = computed<HeroSlide[]>(() => {
     list.push({
       ref: 'greeting',
       titleLines: [greetingTitle],
-      imageUrl: HERO_IMAGE_URLS.greeting,
+      image: HERO_IMAGES.greeting,
       imageAlt: shop.brand_name,
       primaryLabel: menuLabel,
       primaryIcon: 'lucide:utensils',
@@ -162,7 +179,7 @@ const slides = computed<HeroSlide[]>(() => {
       titleOf(copy.order_title_suffix, shop.tagline)
     ],
     description: messageOf(copy.order_subtitle, description),
-    imageUrl: HERO_IMAGE_URLS.order,
+    image: HERO_IMAGES.order,
     imageAlt: shop.brand_name,
     primaryLabel: (!props.statusOpen && props.closedCtaLabel) || props.primaryAction?.label || menuLabel,
     primaryIcon: 'lucide:utensils',
@@ -176,8 +193,10 @@ const slides = computed<HeroSlide[]>(() => {
         titleOf(copy.reorder_title_prefix, 'Quer repetir seu'),
         `${titleOf(copy.reorder_title_suffix, 'último pedido')}${customerName ? `, ${customerName}` : ''}?`
       ],
-      description: messageOf(copy.reorder_subtitle, 'Com um toque, seu favorito volta à sacola.'),
-      imageUrl: HERO_IMAGE_URLS.reorder,
+      // "favorito" é conceito próprio da loja (o coração, a seção "Seus favoritos"):
+      // usá-lo para o último pedido faz o cliente procurar onde ele marcou.
+      description: messageOf(copy.reorder_subtitle, 'Os itens do seu último pedido voltam para a sacola.'),
+      image: HERO_IMAGES.reorder,
       imageAlt: shop.brand_name,
       primaryLabel: 'Repetir pedido',
       primaryIcon: 'lucide:rotate-ccw',
@@ -187,7 +206,7 @@ const slides = computed<HeroSlide[]>(() => {
     list.push({
       ref: 'greeting-return',
       titleLines: [greetingTitle],
-      imageUrl: HERO_IMAGE_URLS.reorder,
+      image: HERO_IMAGES.reorder,
       imageAlt: shop.brand_name,
       primaryLabel: menuLabel,
       primaryIcon: 'lucide:utensils',
@@ -202,14 +221,14 @@ const slides = computed<HeroSlide[]>(() => {
       titleOf(copy.handmade_title_suffix, 'todo dia')
     ],
     description: messageOf(copy.handmade_subtitle, 'Do forno para a sua mesa.'),
-    imageUrl: HERO_IMAGE_URLS.handmade,
+    image: HERO_IMAGES.handmade,
     imageAlt: shop.brand_name,
     primaryLabel: menuLabel,
     primaryIcon: 'lucide:utensils',
     primaryTo: menuTo.value
   })
 
-  return list
+  return closedEyebrow ? list.map(slide => ({ ...slide, eyebrow: slide.eyebrow || closedEyebrow })) : list
 })
 const activeSlide = computed(() => slides.value[activeIndex.value] || slides.value[0])
 const heroTitleLabel = computed(() => activeSlide.value?.titleLines.join(' ') || '')
@@ -258,17 +277,19 @@ onBeforeUnmount(() => {
            enter/leave do Vue a orfanar elementos durante autoplay/HMR). -->
       <div class="absolute inset-0 bg-muted">
         <template v-for="(slide, index) in slides" :key="slide.ref">
-          <img
-            v-if="slide.imageUrl"
-            :src="slide.imageUrl"
-            :alt="index === activeIndex ? slide.imageAlt : ''"
-            :fetchpriority="index === 0 ? 'high' : undefined"
-            :loading="index === 0 ? 'eager' : 'lazy'"
-            decoding="async"
-            aria-hidden="true"
-            class="absolute inset-0 size-full object-cover transition-opacity duration-[900ms] ease-out motion-reduce:transition-none"
-            :class="index === activeIndex ? 'opacity-100' : 'opacity-0'"
-          >
+          <picture v-if="slide.image">
+            <source media="(min-width: 640px)" :srcset="slide.image.wide">
+            <img
+              :src="slide.image.phone"
+              :alt="index === activeIndex ? slide.imageAlt : ''"
+              :fetchpriority="index === 0 ? 'high' : undefined"
+              :loading="index === 0 ? 'eager' : 'lazy'"
+              decoding="async"
+              aria-hidden="true"
+              class="absolute inset-0 size-full object-cover transition-opacity duration-[900ms] ease-out motion-reduce:transition-none"
+              :class="index === activeIndex ? 'opacity-100' : 'opacity-0'"
+            >
+          </picture>
         </template>
       </div>
       <div class="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,.78),rgba(0,0,0,.42),rgba(0,0,0,.14))]" />
@@ -278,7 +299,11 @@ onBeforeUnmount(() => {
       <div class="relative z-10 flex h-full flex-col justify-end px-6 pb-10 pt-8 text-center text-white sm:px-8 sm:pb-14 sm:pt-12 lg:px-10">
         <Transition name="hero-text" mode="out-in">
           <div :key="activeSlide.ref" class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center">
-            <p v-if="activeSlide.eyebrow" class="text-sm font-semibold uppercase tracking-wide text-white/80">{{ activeSlide.eyebrow }}</p>
+            <p
+              v-if="activeSlide.eyebrow"
+              class="text-sm font-semibold text-white/80"
+              :class="statusOpen ? 'uppercase tracking-wide' : ''"
+            >{{ activeSlide.eyebrow }}</p>
             <h1 class="shop-display mt-2 [text-shadow:0_2px_18px_rgba(0,0,0,0.45)]" :aria-label="heroTitleLabel">
               <span v-for="line in activeSlide.titleLines" :key="line" class="block" aria-hidden="true">
                 {{ line }}

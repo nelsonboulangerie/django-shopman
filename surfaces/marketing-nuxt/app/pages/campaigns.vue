@@ -232,7 +232,8 @@ function close() {
   editingPk.value = null;
 }
 
-/** Disparar agora: a campanha manual, sem esperar evento da padaria. */
+/** Abre "Definir público" — a campanha manual, sem esperar evento da padaria. Daqui
+ *  nada é disparado: o painel cria um anúncio e leva à revisão. */
 function openFire(rule: Campaign) {
   cancelFireCommand();
   fireError.value = "";
@@ -420,8 +421,8 @@ useHead({ title: "Campanhas" });
       />
       <p class="mt-2 font-semibold">Nenhuma campanha ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Uma campanha liga um evento da padaria a um anúncio. Comece pela
-        fornada.
+        Uma campanha liga um evento da padaria a um anúncio. Comece pelo
+        lote.
       </p>
       <UiButton
         type="button"
@@ -506,7 +507,7 @@ useHead({ title: "Campanhas" });
           class="mt-2"
           @click="refresh()"
         >
-          Tentar atualizar
+          Atualizar
         </UiButton>
       </div>
 
@@ -541,26 +542,14 @@ useHead({ title: "Campanhas" });
         :key="rule.pk"
         class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
       >
-        <!-- Liga/desliga permanece nativo porque expõe role=switch e estado aria-checked. -->
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="rule.is_active"
+        <!-- Liga/desliga é o <UiSwitch> do kit: mesmo role=switch e mesmo
+             aria-checked que esta página escrevia à mão, e agora o alvo de 44 px
+             vem do token, não de um `size-11` que esta tela precisava lembrar. -->
+        <UiSwitch
+          :model-value="rule.is_active"
           :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
-          class="-ml-2 grid size-11 shrink-0 place-items-center rounded-md"
-          @click="toggle(rule)"
-        >
-          <span
-            aria-hidden="true"
-            class="flex h-5 w-9 items-center rounded-full transition-colors"
-            :class="rule.is_active ? 'bg-primary' : 'bg-muted-foreground/30'"
-          >
-            <span
-              class="size-4 rounded-full bg-white shadow transition-transform"
-              :class="rule.is_active ? 'translate-x-4' : 'translate-x-0.5'"
-            ></span>
-          </span>
-        </button>
+          @update:model-value="toggle(rule)"
+        />
 
         <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
         <button
@@ -588,7 +577,7 @@ useHead({ title: "Campanhas" });
             class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
           >
             <span class="text-muted-foreground">
-              Saiu {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
+              Disparou {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
               {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
             </span>
             <span v-if="rule.failed_count" class="text-destructive">
@@ -628,14 +617,19 @@ useHead({ title: "Campanhas" });
           >
             Automática
           </span>
-          <!-- Disparar não espera o evento: fica ao lado da campanha, mas só ativo
-               quando ela está ligada — disparar campanha desligada é engano. -->
+          <!-- ⚠️ Este botão NÃO dispara: ele abre "Definir público", e é o painel que
+               cria um anúncio para a revisão. Por isso o rótulo visível e o nome
+               acessível falam em PREPARAR — a mesma palavra que a razão do botão
+               desabilitado já usava, dois centímetros abaixo.
+               E o rótulo é o mesmo nos dois estados: rótulo que vira adjetivo descreve
+               o botão em vez do que ele faz, e manda o gestor procurar na linha o que
+               está indisponível. Quem explica o bloqueio é a frase de baixo. -->
           <UiButton
             type="button"
             :disabled="!fireAction(rule)?.enabled"
             :aria-label="
               fireAction(rule)?.enabled
-                ? `Disparar a campanha ${rule.name} agora`
+                ? `Preparar o disparo da campanha ${rule.name}`
                 : `${fireState(rule).reason} Campanha ${rule.name}`
             "
             variant="outline"
@@ -643,7 +637,7 @@ useHead({ title: "Campanhas" });
             @click="openFire(rule)"
           >
             <Icon name="lucide:send" class="size-3.5" />
-            {{ fireAction(rule)?.enabled ? "Disparar" : "Indisponível" }}
+            Preparar disparo
           </UiButton>
           <Icon
             name="lucide:chevron-right"
@@ -707,7 +701,7 @@ useHead({ title: "Campanhas" });
       <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
            rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>{{
             editing ? "Editar campanha" : "Nova campanha"
           }}</UiSheetTitle>
@@ -748,7 +742,7 @@ useHead({ title: "Campanhas" });
       "
     >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
+        <UiSheetHeader class="border-b border-border pr-14">
           <UiSheetTitle>Definir público</UiSheetTitle>
           <UiSheetDescription>
             {{ firing?.name }} — escolha o público. O texto vem do modelo e o

@@ -9,10 +9,10 @@ import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "
 import {
   boardView,
   KDS_UNDO_WINDOW_MS,
-  splitRef,
   type KDSBoardView,
 } from "~/presentation/board";
 import type { Ref } from "vue";
+import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
 
 /**
  * O aviso de ticket novo do KDS — a FANFARRA.
@@ -94,9 +94,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   });
 
   const board = computed<KDSBoardProjection | null>(() => data.value?.board ?? null);
-  // Finalizados dentro da janela de "Desfazer": já saíram da grade, o servidor
-  // ainda os tem abertos. A view os esconde, então o poll e o SSE não os trazem
-  // de volta enquanto a janela está aberta.
+  // Finalizados dentro da janela de "Desfazer": o servidor ainda os tem abertos,
+  // e a grade também — apagados, no mesmo lugar, com o "Desfazer" ali. A view os
+  // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
+  // trabalho enquanto a janela está aberta.
   const finishing = ref<Set<number>>(new Set());
   const view = computed<KDSBoardView | null>(() =>
     board.value ? boardView(board.value, finishing.value) : null,
@@ -117,7 +118,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     KDS_ALERT,
   );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: EventSource | null = null;
+  let source: ResilientEventSource | null = null;
   let attentionReady = false;
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
@@ -207,17 +208,16 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/kds/[ref].ts) faz streaming do
     // eventstream do Django, em dev e em prod — nada de gate por origem.
-    const url = ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL);
-    try {
-      source = new EventSource(url, { withCredentials: true });
-      // django-eventstream pushes named events; any of them means "refetch".
-      const onPush = () => { refresh(); };
-      ["message", "backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"]
-        .forEach((name) => source!.addEventListener(name, onPush));
-      source.onerror = () => { /* EventSource auto-reconnects; poll covers gaps. */ };
-    } catch {
-      source = null; // SSE unavailable → polling carries it.
-    }
+    // django-eventstream pushes named events; any of them means "refetch".
+    // Depois do 502 de deploy o EventSource cru ficava CLOSED e a cozinha só
+    // via ticket novo no poll de 15 s até recarregar; o do kit se recria, e a
+    // reabertura refaz a leitura para cobrir o que passou no meio.
+    source = openResilientEventSource({
+      url: ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL),
+      events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
+      onEvent: () => { refresh(); },
+      onOpen: (reconnected) => { if (reconnected) refresh(); },
+    });
   }
 
   let removeVisibilityListeners: (() => void) | null = null;
@@ -232,8 +232,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
     // (keepalive), em vez de sumir com a aba.
     const onVisible = () => {
-      if (document.visibilityState === "visible") refresh();
-      else flushFinishes();
+      if (document.visibilityState === "visible") {
+        refresh();
+        source?.reconnectNow();
+      } else flushFinishes();
     };
     const onPageHide = () => flushFinishes();
     document.addEventListener("visibilitychange", onVisible);
@@ -317,9 +319,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       });
   }
 
-  // Segundo toque: finalizar — com janela de "Desfazer". O card sai da grade na
-  // hora; o POST só sai quando a janela fecha (ou o tablet dorme). Assim um toque
-  // errado não vira "pedido pronto" avisado ao cliente.
+  // Segundo toque: finalizar — com janela de "Desfazer". O POST só sai quando a
+  // janela fecha (ou o tablet dorme), então um toque errado não vira "pedido
+  // pronto" avisado ao cliente. O aviso e o desfazer vivem NO CARD, que fica no
+  // lugar por 5 s: um toast no topo da tela não se alcança com a mão ocupada.
   const finishTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   function releaseFinish(pk: number) {
@@ -364,10 +367,6 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (!t || t.is_scheduled) return;
     finishing.value = new Set(finishing.value).add(pk);
     finishTimers.set(pk, setTimeout(() => commitFinish(pk), KDS_UNDO_WINDOW_MS));
-    useSonner.success(`Pedido ${splitRef(t.order_ref).code} finalizado`, {
-      duration: KDS_UNDO_WINDOW_MS,
-      action: { label: "Desfazer", onClick: () => undoFinish(pk) },
-    });
   };
   const expedite = (pk: number, action: "dispatch" | "complete") => {
     if (readOnly.value) return;

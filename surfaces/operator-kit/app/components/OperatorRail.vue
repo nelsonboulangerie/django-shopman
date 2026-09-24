@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Rail de operador CANÔNICO — a espinha vertical em `bg-rail` (token próprio do chrome,
 // de marca: disciplina de ERP) que TODAS as superfícies de operador adotam. É o portador
-// nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Produção/Central. Segura o que é
-// COMUM (voltar à Central, capacidade do serviço, operador/travar, tema, e o que o app
+// nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Produção e na home. Segura o que é
+// COMUM (voltar ao Shopman Apps, capacidade do serviço, operador/travar, tema, e o que o app
 // puser em #status); o específico de cada app entra pelos slots (#nav = funções;
 // #status = saúde/conexão).
 //
@@ -11,6 +11,10 @@
 // rótulo). A nav de SEÇÃO de cada app (abas do Gestor, visões do Produção) NÃO vive aqui —
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
 import { computed, ref } from "vue";
+import { OPERATOR_APPS } from "../../appIdentity";
+
+/** O nome da home sai da identidade canônica, como o nome de qualquer app. */
+const HUB_LABEL = OPERATOR_APPS.hub.label;
 
 interface OperatorRailIdentity { label: string; icon: string; iconSrc: string }
 
@@ -24,8 +28,8 @@ const props = defineProps<{
   appIconSrc?: string;
   /** Rótulo do app. Omitido → vem da identidade canônica. */
   appLabel?: string;
-  /** URL da Central (launcher). Omitido na própria Central → some o item. */
-  centralUrl?: string;
+  /** URL do Shopman Apps (a home). Omitida na própria home → some o item. */
+  hubUrl?: string;
   /** Operador ativo — mostra o item de travar/trocar; emite `lock` ao acionar. */
   operatorName?: string;
 }>();
@@ -42,10 +46,10 @@ const emit = defineEmits<{ lock: [] }>();
 
 const { state, isCollapsed, isExtended } = useRailState();
 
-// Voltar à Central é ir para OUTRA origem (`central.<zona>`). No app instalado isso
-// precisa acontecer na janela da Central, não dentro desta — ver `presentation/appLaunch.ts`.
+// Voltar ao Shopman Apps é ir para OUTRA origem (`central.<zona>`). No app instalado isso
+// precisa acontecer na janela dele, não dentro desta — ver `presentation/appLaunch.ts`.
 const { attrsFor } = useOperatorAppLink();
-const centralLink = computed(() => attrsFor(props.centralUrl || ""));
+const hubLink = computed(() => attrsFor(props.hubUrl || ""));
 
 const colorMode = useColorMode();
 function toggleTheme() {
@@ -53,8 +57,8 @@ function toggleTheme() {
 }
 const themeLabel = computed(() => (colorMode.value === "dark" ? "Tema claro" : "Tema escuro"));
 
-// Trava de giro (tablets): só aparece em aparelho de toque com a API; a recusa do
-// aparelho é dita ao operador, nunca fingida como travada.
+// Trava de giro (tablets): só aparece em dispositivo de toque com a API; a recusa do
+// dispositivo é dita ao operador, nunca fingida como travada.
 const orientation = useOrientationLock();
 const orientationLabel = computed(() => (orientation.isLocked.value ? "Liberar giro" : "Travar giro"));
 const orientationAriaLabel = computed(() => {
@@ -90,16 +94,16 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
     :aria-label="`Barra do app ${label}`"
     :data-rail-state="state"
   >
-    <!-- Identidade + voltar à Central (padrão Odoo): o ícone forte do app é também o
-         atalho pra Central — no hover/foco vira uma seta "voltar". Na própria Central
-         (sem centralUrl) é identidade pura, sem atalho. -->
+    <!-- Identidade + volta para a home (padrão Odoo): o ícone forte do app é também o
+         atalho pro Shopman Apps — no hover/foco vira uma seta "voltar". Na própria home
+         (sem hubUrl) é identidade pura, sem atalho. -->
     <component
-      :is="centralUrl ? 'a' : 'div'"
-      :href="centralUrl"
-      :target="centralUrl ? centralLink.target : undefined"
-      :rel="centralUrl ? centralLink.rel : undefined"
-      :aria-label="centralUrl ? 'Voltar à Central de Apps' : undefined"
-      :title="centralUrl ? 'Voltar à Central de Apps' : undefined"
+      :is="hubUrl ? 'a' : 'div'"
+      :href="hubUrl"
+      :target="hubUrl ? hubLink.target : undefined"
+      :rel="hubUrl ? hubLink.rel : undefined"
+      :aria-label="hubUrl ? `Voltar ao ${HUB_LABEL}` : undefined"
+      :title="hubUrl ? `Voltar ao ${HUB_LABEL}` : undefined"
       class="group mb-1 flex items-center gap-2"
       :class="isExtended ? 'w-full' : ''"
     >
@@ -110,14 +114,14 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
         class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md transition"
         :class="[
           showAppImage ? '' : 'bg-rail-foreground/15',
-          centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : '',
+          hubUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : '',
         ]"
       >
         <img
           v-if="showAppImage"
           :src="iconSrc"
           class="size-11 rounded-md"
-          :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
+          :class="hubUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
           alt=""
           decoding="async"
           @error="appIconBroken = true"
@@ -126,18 +130,18 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
           v-else
           :name="appIconName"
           class="size-5"
-          :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
+          :class="hubUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
         />
         <Icon
-          v-if="centralUrl"
+          v-if="hubUrl"
           name="lucide:arrow-left"
           class="hidden size-5 group-hover:block group-focus-visible:block"
         />
       </span>
       <span v-if="isExtended" class="truncate text-sm font-semibold">
-        <template v-if="centralUrl">
+        <template v-if="hubUrl">
           <span class="group-hover:hidden group-focus-visible:hidden">{{ label }}</span>
-          <span class="hidden group-hover:inline group-focus-visible:inline">Central</span>
+          <span class="hidden group-hover:inline group-focus-visible:inline">{{ HUB_LABEL }}</span>
         </template>
         <template v-else>{{ label }}</template>
       </span>

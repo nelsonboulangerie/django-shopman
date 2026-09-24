@@ -278,7 +278,7 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("Imediata");
     expect(wrapper.text()).toContain("Estado da entrega");
     expect(wrapper.text()).toContain("Próxima ação");
-    expect(wrapper.text()).toContain("Tentar novamente 1 falha");
+    expect(wrapper.text()).toContain("Tentar de novo 1 falha");
     expect(wrapper.text()).toContain("Fuso e horário permitido");
     expect(wrapper.text()).toContain("Horário de São Paulo");
     expect(wrapper.text()).toContain(
@@ -432,7 +432,7 @@ describe("AnnouncementResultPanel", () => {
     const wrapper = panel();
     const actionButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Tentar novamente 1 falha"))!;
+      .find((button) => button.text().includes("Tentar de novo 1 falha"))!;
 
     await Promise.all([
       actionButton.trigger("click"),
@@ -441,9 +441,12 @@ describe("AnnouncementResultPanel", () => {
     await flushPromises();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain("PUBLICAR 1");
-    expect(wrapper.text()).toContain("Destinos elegíveis");
-    expect(wrapper.text()).toContain("1 destino");
-    expect(wrapper.text()).toContain("Plataformas afetadas");
+    // ⚠️ Este é o diálogo onde o gestor autoriza REENVIO, e ele contava um número só
+    // chamado "destinos": ali a diferença entre 37 pessoas e um mural repetido 37
+    // vezes é a diferença entre um disparo e um acidente.
+    expect(wrapper.text()).toContain("O que isto alcança");
+    expect(wrapper.text()).toContain("WhatsApp · 1 pessoa");
+    expect(wrapper.text()).not.toMatch(/Destinos elegíveis|Plataformas afetadas/);
     expect(
       (wrapper.find("#recovery-username").element as HTMLInputElement).value,
     ).toBe("admin");
@@ -496,7 +499,7 @@ describe("AnnouncementResultPanel", () => {
 
     expect(wrapper.text()).toContain("Somente consulta — nada será reenviado");
     expect(wrapper.text()).toContain("O sistema apenas pergunta ao provedor");
-    expect(wrapper.text()).toContain("Plataformas afetadas");
+    expect(wrapper.text()).toContain("O que isto alcança");
     expect(wrapper.text()).toContain("WhatsApp");
     expect(wrapper.text()).toContain("Código de 6 dígitos do autenticador");
     const confirmButton = wrapper

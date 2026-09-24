@@ -6,6 +6,8 @@
 // balcão precisa a qualquer hora: imprimir a DANFE na bobina (via agente do
 // balcão), reenviar por e-mail (o Focus entrega) e reprocessar falha. As ações
 // seguem o FATO (a nota existe), nunca o toggle que o operador marcou na venda.
+// E um quarto, de exceção: emitir a nota que a regra da casa não emitiu (o
+// cliente voltou pedindo), sempre com a autorização de um gerente.
 import type { PosFiscalState, POSPaymentDeliveryProjection, POSProjection } from "~/types/pos";
 import { toast } from "vue-sonner";
 
@@ -30,6 +32,9 @@ interface RecentSale {
   can_print_danfe: boolean;
   can_resend_email: boolean;
   can_requeue_fiscal: boolean;
+  /** A regra da casa não emitiu e a emissão avulsa pode sair (o servidor decide
+   *  e impõe de novo). Opcional: backend anterior não manda. */
+  can_emit_fiscal?: boolean;
   /** Ainda dentro da janela do desfazer (o servidor decide e impõe). */
   can_cancel: boolean;
   payment_delivery?: POSPaymentDeliveryProjection;
@@ -65,7 +70,10 @@ async function load() {
     );
     sales.value = response.sales || [];
   } catch {
-    toast.error("Falha ao carregar as últimas vendas.");
+    // A lista se repõe sozinha: enquanto o painel está aberto, um poll de 5s
+    // refaz esta chamada. A saída diz isso em vez de pedir um gesto que o
+    // operador não precisa dar.
+    toast.error("A lista das últimas vendas não carregou. Ela tenta sozinha a cada poucos segundos; feche e reabra o painel para forçar.");
   } finally {
     loading.value = false;
   }
@@ -199,15 +207,64 @@ async function requeueFiscal(sale: RecentSale) {
     toast.success(`Emissão de ${sale.order_ref} reenfileirada.`);
     await load();
   } catch (error) {
-    toast.error(messageOf(error));
+    toast.error(`${messageOf(error)} A emissão não foi reenfileirada. Atualize a lista e confira a situação da nota antes de repetir.`);
   } finally {
     busyRef.value = "";
   }
 }
 
+// Emissão avulsa: a venda não pediu nota, o cliente voltou pedindo. Exceção
+// auditada — o MESMO diálogo de gerente das outras exceções do PDV
+// (`OperatorManagerAuth`, crachá ou PIN), e quem assina fica gravado no pedido.
+// O erro fica INLINE no diálogo (PIN errado se corrige ali); recusa de negócio
+// (venda antiga, nota já em andamento) fecha o diálogo e vira toast.
+const emitTargetRef = ref("");
+const emitDialogOpen = ref(false);
+const emitBusy = ref(false);
+const emitError = ref("");
+
+function openEmitFiscal(sale: RecentSale) {
+  emitTargetRef.value = sale.order_ref;
+  emitError.value = "";
+  emitDialogOpen.value = true;
+}
+
+async function submitEmitFiscal(aprovacao: Record<string, string>) {
+  const orderRef = emitTargetRef.value;
+  if (!orderRef || emitBusy.value) return;
+  emitBusy.value = true;
+  emitError.value = "";
+  try {
+    const response = await $fetch<{ detail?: string }>(
+      apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/emit-fiscal/`),
+      { method: "POST", credentials: "include", body: { manager_approval: aprovacao } },
+    );
+    emitDialogOpen.value = false;
+    emitTargetRef.value = "";
+    toast.success(response?.detail || `NFC-e de ${orderRef} na fila.`);
+    await load();
+  } catch (error) {
+    const failure = httpError(error);
+    const data = failure.data as { detail?: string; error?: { field?: string; message?: string; recovery?: string } } | null;
+    if (data?.error?.field === "manager_approval") {
+      emitError.value = data.error.recovery || data.error.message || messageOf(error);
+    } else {
+      emitDialogOpen.value = false;
+      // Nota fiscal não ganha "tente de novo": a emissão é assíncrona e a lista é
+      // quem diz se ela saiu. Conferir primeiro é o gesto certo aqui.
+      toast.error(`${data?.detail || messageOf(error)} A nota não foi emitida. Confira a venda na lista antes de pedir de novo.`);
+    }
+  } finally {
+    emitBusy.value = false;
+  }
+}
+
 function messageOf(error: unknown): string {
   const data = (error as { data?: { detail?: string } } | null)?.data;
-  return data?.detail || (error instanceof Error ? error.message : "Falha na ação.");
+  // Último recurso de CAUSA, quando o servidor não mandou `detail` e o erro não
+  // é um `Error`: aqui realmente não se sabe o que houve, e inventar um motivo
+  // seria pior. A saída é de quem chama — as três chamadas abaixo a trazem.
+  return data?.detail || (error instanceof Error ? error.message : "Não deu para concluir a ação.");
 }
 
 // Cancelar venda DESTA lista: a correção sobrevive à saída da tela de
@@ -288,7 +345,7 @@ function fiscalChipClass(status: string): string {
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balcão</p>
           <h2 class="text-lg font-semibold text-foreground">Últimas vendas</h2>
         </div>
-        <UiButton type="button" variant="outline" size="sm" :disabled="loading" @click="load">
+        <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
           <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
         </UiButton>
       </div>
@@ -328,7 +385,7 @@ function fiscalChipClass(status: string): string {
               {{ sale.payment_delivery.notice }}
             </p>
 
-            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal || sale.can_cancel || sale.payment_delivery?.action" class="mt-2 flex flex-wrap items-center gap-2">
+            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal || sale.can_emit_fiscal || sale.can_cancel || sale.payment_delivery?.action" class="mt-2 flex flex-wrap items-center gap-2">
               <!-- Recibo não fiscal: qualquer venda reimprime, a qualquer hora.
                    Só aparece onde há agente; a bobina é o único transporte da
                    reimpressão (o diálogo do navegador só existe na venda viva). -->
@@ -367,7 +424,10 @@ function fiscalChipClass(status: string): string {
                 @click="openEmailPrompt(sale)"
               >
                 <Icon name="lucide:mail" class="size-3.5" />
-                {{ sale.email_sent ? "Reenviar e-mail" : "Enviar e-mail" }}
+                <!-- ⚠️ Este botão só ABRE o campo de e-mail. Quem envia é o
+                     "Enviar" que aparece ali dentro — dizia "Enviar e-mail" e
+                     não enviava nada. -->
+                {{ sale.email_sent ? "E-mail da nota (já enviada)" : "E-mail da nota" }}
               </UiButton>
               <UiButton
                 v-if="sale.can_requeue_fiscal"
@@ -377,7 +437,28 @@ function fiscalChipClass(status: string): string {
                 @click="requeueFiscal(sale)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-3.5" />
-                Reprocessar nota
+                <!-- Sem reticências: o toque reenfileira na hora, não abre nada.
+                     A emissão FOI tentada e falhou (`can_requeue_fiscal` é
+                     `fiscal_status == "failed"`), então "de novo" é verdade — e o
+                     objeto vai no rótulo porque ao lado há outras três ações. -->
+                Tentar a emissão de novo
+              </UiButton>
+              <!-- Emissão avulsa: a regra da casa não emitiu. Botão NEUTRO — não
+                   há nada errado com a venda; o gerente é pedido no toque. -->
+              <UiButton
+                v-if="sale.can_emit_fiscal"
+                type="button" variant="outline" size="xs" class="gap-1"
+                :disabled="busyRef === sale.order_ref || emitBusy"
+                data-action="emit-fiscal"
+                @click="openEmitFiscal(sale)"
+              >
+                <Icon name="lucide:file-plus" class="size-3.5" />
+                <!-- Par do chip "Emissão não estabelecida" (escolha do Pablo).
+                     Reticências: o toque abre a autorização do gerente. Não é
+                     "Tentar novamente" (nunca houve tentativa) nem "Solicitar
+                     autorização" (a mesma tela já pede a autorização do
+                     GERENTE: a palavra teria dois sentidos no mesmo toque). -->
+                Estabelecer emissão…
               </UiButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->
@@ -442,5 +523,16 @@ function fiscalChipClass(status: string): string {
     :managers="pos?.managers"
     @confirm="(username, pin) => submitCancel({ username, pin })"
     @confirm-badge="(badge) => submitCancel({ badge })"
+  />
+
+  <!-- Emissão avulsa da NFC-e: o mesmo diálogo de gerente das outras exceções. -->
+  <OperatorManagerAuth
+    v-model:open="emitDialogOpen"
+    action="emit_fiscal"
+    :managers="pos?.managers || []"
+    :busy="emitBusy"
+    :error="emitError"
+    @authorize="(username, pin) => submitEmitFiscal({ username, pin })"
+    @authorize-badge="(badge) => submitEmitFiscal({ badge })"
   />
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Fechamento de uma única fornada. Os quatro botões são buckets de qualidade
+// Fechamento de um único lote. Os quatro botões são buckets de qualidade
 // disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
 // nos demais graus nem em Perda.
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
@@ -25,7 +25,7 @@ const props = withDefaults(
     title: string;
     subtitle: string;
     planned: number | null;
-    /** A fornada real que entrou no forno (declarada no start); null sem start. */
+    /** O lote real que entrou no forno (declarado no start); null sem start. */
     started: number | null;
     grades: QCGradeProjection[];
     defects: QCDefectProjection[];
@@ -116,7 +116,7 @@ watch(
 );
 
 // Com âncora, Normal é saldo e não exige digitação. Sem âncora, o padrão é um
-// bucket editável como os demais para que uma fornada avulsa possa ser fechada.
+// bucket editável como os demais para que um lote avulso possa ser fechado.
 const activeTarget = ref<QuantityTarget | null>(
   anchor.anchor === null && defaultRef.value
     ? { kind: "grade", gradeRef: defaultRef.value }
@@ -422,7 +422,7 @@ function fixOvershoot() {
 function onConfirm() {
   if (props.submitting || submitLatched.value) return;
   if (total.value <= 0) {
-    useSonner.warning("Informe a quantidade produzida ou a perda da fornada.");
+    useSonner.warning("Informe a quantidade produzida ou a perda do lote.");
     return;
   }
   const questions = pendingQuestions();
@@ -754,10 +754,10 @@ const fieldCard =
         submitting || submitLatched
           ? mode === "correct"
             ? "Salvando correção…"
-            : "Fechando a fornada…"
+            : "Finalizando o lote…"
           : mode === "correct"
             ? "Salvar correção"
-            : "Confirmar"
+            : "Finalizar"
       }}
     </UiButton>
 
@@ -780,7 +780,7 @@ const fieldCard =
           >
             <label class="grid gap-1.5 text-sm">
               <span class="font-medium">
-                Por que a contagem ficou acima da fornada iniciada?
+                Por que a contagem ficou acima do lote iniciado?
               </span>
               <UiTextarea
                 v-model="overshootReason"
@@ -788,7 +788,7 @@ const fieldCard =
                 :maxlength="500"
                 required
                 class="bg-background"
-                aria-label="Motivo da quantidade acima da fornada produzida"
+                aria-label="Motivo da quantidade acima do lote produzido"
                 placeholder="Ex.: contagem conferida e unidades menores que o padrão"
               />
             </label>

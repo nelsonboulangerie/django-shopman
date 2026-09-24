@@ -71,6 +71,10 @@ const canSubmit = computed(() => canSubmitMove({
   busy: props.busy,
 }));
 
+// O rodapé diz o verbo do modo selecionado — o dicionário da comanda é
+// dividir · transferir · juntar, e nada além disso.
+const submitLabel = computed(() => modes.value.find((option) => option.ref === mode.value)?.label || "Mover itens");
+
 function submit() {
   const payload = buildMovePayload({
     mode: mode.value,
@@ -87,7 +91,12 @@ function submit() {
   <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
     <UiDialogContent class="sm:max-w-md">
       <UiDialogHeader>
-        <UiDialogTitle>Transferir · #{{ tabDisplay || "comanda" }}</UiDialogTitle>
+        <!-- ⚠️ O título NÃO pode ser um dos três modos: "Transferir" era ao
+             mesmo tempo o nome da caixa e o nome de um dos botões dentro
+             dela, e quem escolhia "Dividir" lia "Transferir" no topo. A
+             comanda é o assunto; os verbos são dela (dividir, transferir,
+             juntar) e moram nos botões. -->
+        <UiDialogTitle>Comanda #{{ tabDisplay || "atual" }}</UiDialogTitle>
         <UiDialogDescription v-if="showPriceNote">
           O preço de cada item é mantido como foi cobrado nesta comanda.
         </UiDialogDescription>
@@ -107,11 +116,11 @@ function submit() {
       </div>
 
       <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-        Move todos os itens desta comanda para a comanda escolhida e libera esta.
+        Junta todos os itens desta comanda na comanda escolhida e libera esta.
       </p>
 
       <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
-           baixo — sem isto o botão 'Transferir' parecia morto. -->
+           baixo — sem isto o botão do rodapé parecia morto. -->
       <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
         <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
         Preparando a comanda…
@@ -153,7 +162,9 @@ function submit() {
 
       <UiDialogFooter>
         <UiButton variant="outline" :disabled="busy" @click="$emit('update:open', false)">Cancelar</UiButton>
-        <UiButton :disabled="!canSubmit" :loading="busy" @click="submit">Mover</UiButton>
+        <!-- O botão repete o modo escolhido. Dizia "Mover" — um quarto verbo
+             para um gesto que já tinha três nomes na mesma caixa. -->
+        <UiButton :disabled="!canSubmit" :loading="busy" @click="submit">{{ submitLabel }}</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

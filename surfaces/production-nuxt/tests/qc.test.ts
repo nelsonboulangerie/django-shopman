@@ -94,7 +94,7 @@ describe("a âncora do fechamento (o que entrou no forno É o previsto daqui)", 
     expect(ovenAnchor(10, 10)).toEqual({ anchor: 10 });
   });
 
-  it("fornada avulsa: sem previsto e sem started, sem âncora", () => {
+  it("lote avulso: sem previsto e sem started, sem âncora", () => {
     expect(ovenAnchor(null, null)).toEqual({ anchor: null });
   });
 
@@ -103,7 +103,7 @@ describe("a âncora do fechamento (o que entrou no forno É o previsto daqui)", 
   });
 });
 
-describe("a aritmética subtrativa (QC-FORNADA §4)", () => {
+describe("a aritmética subtrativa do lote (§4 da nota de QC)", () => {
   it("a tela nasce com tudo a preço cheio", () => {
     const state = initialState(40, "standard");
     expect(state.fullQty).toBe(40);
@@ -121,7 +121,7 @@ describe("a aritmética subtrativa (QC-FORNADA §4)", () => {
     expect(lossQty(state)).toBe(0);
   });
 
-  it("não mexeu em nada: o padrão vira a fornada inteira, e o preço cheio cede", () => {
+  it("não mexeu em nada: o padrão vira o lote inteiro, e o preço cheio cede", () => {
     let state = initialState(40, "standard");
     state = applyDiscountGrade(state, "minimal");
     expect(state.discountQty).toBe(40);
@@ -143,7 +143,7 @@ describe("a aritmética subtrativa (QC-FORNADA §4)", () => {
 });
 
 describe("Confirmar sempre ativo: as perguntas que faltam", () => {
-  it("fornada limpa não pergunta nada", () => {
+  it("lote limpo não pergunta nada", () => {
     const state = initialState(40, "standard");
     expect(pendingQuestions(state)).toEqual([]);
   });
@@ -180,7 +180,7 @@ describe("Confirmar sempre ativo: as perguntas que faltam", () => {
     expect(pendingQuestions(state)).toEqual([]);
   });
 
-  it("fornada avulsa não tem previsto, logo não há acima-do-previsto", () => {
+  it("lote avulso não tem previsto, logo não há acima-do-previsto", () => {
     let state = initialState(null, "standard");
     state = { ...state, fullQty: 999, fullTouched: true };
     expect(pendingQuestions(state)).toEqual([]);

@@ -93,6 +93,18 @@ _DOCUMENT_RE = re.compile(
     r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})(?!\d)"
 )
 _URL_RE = re.compile(r"https?://[^\s<>\]\[\"']+")
+# Referência de recusa do edge do Akamai (ex.: `Reference #18.1f9ab259.1758275496.3d4e5f6a`).
+# Um dos segmentos é um timestamp Unix — dez dígitos seguidos, que o regex de
+# telefone captura e substitui por `[phone]`. É referência técnica, não dado de
+# pessoa, e é exatamente o que o suporte do iFood usa para achar a regra que
+# bloqueou: mutilada, ela não serve para nada. Fica protegida durante a redação
+# e volta inteira depois — ver `shopman/shop/services/ifood_http.py`.
+# Casa a FORMA da referência (`18.1f9ab259.1758275496.3d4e5f6a`), não as palavras
+# em volta: ela aparece ora como `Reference #…` na página do Akamai, ora como
+# `referencia=…` no nosso log. Os dois segmentos hexadecimais são o que separa
+# essa referência de um telefone — nenhuma corrida de dígitos sozinha casa aqui.
+_EDGE_REFERENCE_RE = re.compile(r"\b\d{1,3}\.[0-9a-f]{4,}\.\d{9,11}\.[0-9a-f]{4,}\b")
+_EDGE_REFERENCE_SLOT = "\x00ref{}\x00"
 
 
 def redact_text(value: str) -> str:
@@ -108,8 +120,22 @@ def redact_text(value: str) -> str:
     text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
     text = _PERSONAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
     text = _EMAIL_RE.sub("[email]", text)
+    # A referência do edge sai de cena antes dos regex de telefone/documento e
+    # volta inteira no fim: o timestamp Unix dela é uma corrida de dez dígitos,
+    # que o regex de telefone captura por forma. Guardar o trecho é mais seguro
+    # que afrouxar o regex — nenhuma outra corrida de dígitos ganha passagem.
+    guardadas: list[str] = []
+
+    def _guardar(match: re.Match) -> str:
+        guardadas.append(match.group(0))
+        return _EDGE_REFERENCE_SLOT.format(len(guardadas) - 1)
+
+    text = _EDGE_REFERENCE_RE.sub(_guardar, text)
     text = _PHONE_RE.sub("[phone]", text)
-    return _DOCUMENT_RE.sub("[document]", text)
+    text = _DOCUMENT_RE.sub("[document]", text)
+    for index, original in enumerate(guardadas):
+        text = text.replace(_EDGE_REFERENCE_SLOT.format(index), original)
+    return text
 
 
 def strip_url_query(value: str) -> str:

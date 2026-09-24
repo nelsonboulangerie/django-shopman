@@ -37,7 +37,13 @@ class AuthCustomerMiddleware(MiddlewareMixin):
         try:
             from .models import CustomerUser
 
-            link = CustomerUser.objects.filter(user=user).select_related().first()
+            # Sem `select_related`, e de propósito: o único campo lido aqui é
+            # `customer_id`, que é `UUIDField` (o vínculo com o Guestman é por
+            # UUID, não por FK). A única FK do modelo é `user` — que já está em
+            # mãos, porque é o filtro da consulta. Não há relação para trazer
+            # junto: o JOIN seria pago para recarregar o objeto que o chamador
+            # acabou de passar.
+            link = CustomerUser.objects.filter(user=user).first()
             if link is None:
                 setattr(user, _CACHE_ATTR, None)
                 return None

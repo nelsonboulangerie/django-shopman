@@ -25,7 +25,7 @@ export default defineNuxtConfig({
       // Uma estação autônoma (o painel de parede, sem ninguém para digitar PIN)
       // só tem a conta dela resolvida sob `/api/v1/backstage/production/`. O
       // cookie de estação é nomeado por terminal, mas vale em
-      // `.boulangerie.com.br` inteiro: o mesmo aparelho, aberto no PDV, leva a
+      // `.boulangerie.com.br` inteiro: o mesmo dispositivo, aberto no PDV, leva a
       // confiança junto. A antessala compartilhada fica de fora do corte de
       // propósito — se ela resolvesse o painel, o balcão com o mesmo cookie
       // leria "destravado" com o nome dele e a pessoa perderia a tela de PIN.
@@ -53,7 +53,7 @@ export default defineNuxtConfig({
       push: { surfaceRef: "production", categories: ["production", "system"] },
       shortcuts: [
         { name: "Plano", shortName: "Plano", url: "/plan" },
-        { name: "Fornadas", shortName: "Fornadas", url: "/board" },
+        { name: "Lotes", shortName: "Lotes", url: "/board" },
       ],
     }),
     "@nuxtjs/color-mode",

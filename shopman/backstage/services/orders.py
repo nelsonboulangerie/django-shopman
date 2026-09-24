@@ -42,7 +42,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None, trip_ref: str | None = None):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -75,7 +75,7 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
     try:
         return operator_orders.advance_order(
             order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
-            expected_revision=expected_revision, target_status=target_status,
+            expected_revision=expected_revision, target_status=target_status, trip_ref=trip_ref or None,
         )
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
@@ -182,6 +182,31 @@ def settle_delivery_cash(
         raise OrderError(str(exc)) from exc
 
 
+def courier_returned(order, *, actor: str, expected_revision=None):
+    """"Entregador voltou": fecha a saída inteira. O acerto entra no turno ABERTO de quem recebe."""
+    from shopman.cashman.exceptions import CashError
+
+    from shopman.backstage.services import pos as pos_service
+    from shopman.backstage.services.exceptions import POSError, POSTerminalAmbiguous
+
+    needs_shift = any(operator_orders._cod_pending(m) for m in operator_orders.courier_return_members(order))
+    try:
+        shift = pos_service.current_shift(strict=True) if needs_shift else None
+    except POSTerminalAmbiguous as exc:
+        raise OrderConflict(str(exc)) from exc
+    except POSError as exc:
+        raise OrderError(str(exc) or "Abra um turno de caixa para receber a entrega.") from exc
+    try:
+        return operator_orders.courier_returned(order, actor=actor, cash_shift=shift,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}))
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except CashError as exc:
+        raise OrderError(exc.message) from exc
+    except (ValueError, InvalidTransition) as exc:
+        raise OrderError(str(exc)) from exc
+
+
 def mark_equipment_returned(order, *, actor: str, expected_revision=None):
     """O entregador devolveu a maquininha que levou neste pedido."""
     try:
@@ -254,13 +279,78 @@ def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
         directive.error_code = ""
         directive.last_error = ""
         directive.available_at = timezone.now()
-        directive.save(update_fields=["payload", "status", "error_code", "last_error", "available_at", "updated_at"])
+        # O reprocesso reabre a janela de retry inteira. Sem isto, a directive
+        # que esgotou as tentativas voltava com ``attempts`` no teto: um
+        # transiente a mais (Focus ainda instável) e ela morria de novo, sem
+        # espera nenhuma. Volta para 1, não para 0: a tentativa que falhou
+        # conta como a primeira, e o handler só consulta o Focus antes de
+        # re-POSTar a partir da segunda (``attempts > 1``) — um POST anterior
+        # pode ter autorizado a nota com a resposta perdida.
+        directive.attempts = 1
+        directive.save(update_fields=["payload", "status", "error_code", "last_error", "available_at", "attempts", "updated_at"])
     else:
         fiscal.emit(order)
     current = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
     if current is None or current.status not in {"queued", "running"}:
         raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
     order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE, "previous_error": previous_error})
+    return current
+
+
+@transaction.atomic
+def emit_fiscal_on_demand(order, *, actor: str, approved_by_username: str):
+    """Emite a NFC-e que a regra da casa NÃO emitiu — emissão avulsa, com gerente.
+
+    O desafio gerencial acontece ANTES (na view, por ``validate_manager_override``)
+    e quem chega aqui é o aprovador VERIFICADO. A autorização fica gravada em
+    ``Order.data["fiscal"]["issue_override"]`` e é ela que faz o
+    ``emission_resolver`` dizer sim — para este pedido e só para ele. A emissão
+    em si é o caminho de sempre (``fiscal.emit`` → Directive ``fiscal.emit_nfce``).
+
+    Tudo na mesma transação: se a Directive não nasce (sem backend, pagamento
+    abaixo do total), a autorização some junto e o pedido não fica com uma
+    exceção gravada que não produziu nota nenhuma.
+    """
+    from django.utils import timezone
+    from shopman.orderman.models import Directive, Order
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+    from shopman.shop.services import fiscal
+
+    if not approved_by_username:
+        raise OrderError("A emissão avulsa exige a autorização de um gerente.")
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    refusal = fiscal.issue_override_refusal(order)
+    if refusal:
+        raise OrderError(refusal)
+
+    data = dict(order.data or {})
+    fiscal_data = dict(data.get("fiscal") or {})
+    authorized_at = timezone.now().isoformat()
+    fiscal_data[fiscal.ISSUE_OVERRIDE_KEY] = {
+        "approved_by": approved_by_username,
+        "requested_by": actor,
+        "at": authorized_at,
+    }
+    data["fiscal"] = fiscal_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+    fiscal.emit(order)
+    current = (
+        Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if current is None or current.status not in {"queued", "running"}:
+        raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
+    order.emit_event(
+        event_type="fiscal_issue_override",
+        actor=actor,
+        payload={"topic": FISCAL_EMIT_NFCE, "approved_by": approved_by_username, "at": authorized_at},
+    )
     return current
 
 

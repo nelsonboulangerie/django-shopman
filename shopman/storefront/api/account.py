@@ -124,12 +124,15 @@ def _fmt_dt(value) -> str:
 def _serialize_device(device: dict) -> dict:
     return {
         "id": device.get("id"),
-        "label": device.get("label") or "Dispositivo",
+        "label": device.get("label") or "Aparelho",
         "created_at": device.get("created_at").isoformat() if device.get("created_at") else None,
         "created_at_display": _fmt_dt(device.get("created_at")),
         "last_used_at": device.get("last_used_at").isoformat() if device.get("last_used_at") else None,
         "last_used_at_display": _fmt_dt(device.get("last_used_at")) or "Ainda não usado novamente",
-        "location": device.get("location") or "",
+        # "Londrina, PR · Brasil", ou vazio quando a leitura não foi confiável o bastante
+        # para nomear a cidade. Vazio é resposta legítima e frequente — ver
+        # `shopman/shop/services/ip_location.py`. Calculado na hora, nunca gravado.
+        "approximate_city": device.get("approximate_city") or "",
         "is_current": bool(device.get("is_current")),
     }
 
@@ -1026,7 +1029,7 @@ class MarketingPromptView(APIView):
 
 
 def _devices_copy() -> dict:
-    """Copy da tela de Segurança/dispositivos, resolvida do registro omotenashi
+    """Copy da tela de Segurança/aparelhos, resolvida do registro omotenashi
     (configurável no Admin). Fonte única — o Vue consome, sem hardcode."""
     def title(key: str, fb: str) -> str:
         return resolve_copy(key, moment="*", audience="*").title or fb
@@ -1035,21 +1038,31 @@ def _devices_copy() -> dict:
         return resolve_copy(key, moment="*", audience="*").message or fb
 
     return {
-        "page_message": message("ACCOUNT_TRUSTED_DEVICES_MESSAGE", "Verifique os dispositivos confiáveis e controle seus dados pessoais."),
-        "empty_title": title("DEVICE_LIST_EMPTY", "Nenhum dispositivo confiável"),
-        "empty_message": message("DEVICE_LIST_EMPTY", "Quando você optar por confiar neste dispositivo no login, ele aparecerá aqui."),
-        "current_badge": title("DEVICE_LIST_CURRENT", "Este dispositivo"),
+        "page_message": message("ACCOUNT_TRUSTED_DEVICES_MESSAGE", "Verifique os aparelhos confiáveis e controle seus dados pessoais."),
+        "empty_title": title("DEVICE_LIST_EMPTY", "Nenhum aparelho confiável"),
+        "empty_message": message("DEVICE_LIST_EMPTY", "Quando você optar por confiar neste aparelho no login, ele aparecerá aqui."),
+        "current_badge": title("DEVICE_LIST_CURRENT", "Este aparelho"),
+        # ⚠️ Este prefixo nasceu junto com a saída do rótulo de cidade (23/09/2026). Sem ele
+        # a linha do aparelho vira "22/09/2026 às 14:30 · Registrado em 20/09/2026": duas
+        # datas, e a primeira sem dizer do que é. Quem pergunta "fui eu que entrei?" está
+        # justamente lendo essa primeira data.
+        "last_used_prefix": message("DEVICE_LIST_LAST_USED_PREFIX", "Último uso em"),
+        # ⚠️ "Próximo a" é escolha do dono (23/09/2026), não economia de palavra: ele
+        # comunica que a localização é aproximada sem precisar de nota de rodapé ao lado.
+        # A leitura vem de base local e já foi filtrada por confiança antes de chegar
+        # aqui — quem escrever outra coisa neste campo tem de manter essa promessa.
+        "near_prefix": message("DEVICE_LIST_NEAR_PREFIX", "Próximo a"),
         "registered_prefix": message("DEVICE_LIST_REGISTERED_PREFIX", "Registrado em"),
         "revoke_cta": title("DEVICE_REVOKE_CTA", "Remover"),
-        "revoke_all_cta": title("DEVICE_REVOKE_ALL_CTA", "Remover todos os dispositivos"),
-        "revoke_confirm": message("DEVICE_REVOKE_CONFIRM", "Remover este dispositivo?"),
-        "revoke_all_confirm": message("DEVICE_REVOKE_ALL_CONFIRM", "Remover todos os dispositivos?"),
-        "unknown_label": title("DEVICE_LIST_UNKNOWN", "Dispositivo desconhecido"),
+        "revoke_all_cta": title("DEVICE_REVOKE_ALL_CTA", "Remover todos os aparelhos"),
+        "revoke_confirm": message("DEVICE_REVOKE_CONFIRM", "Remover este aparelho?"),
+        "revoke_all_confirm": message("DEVICE_REVOKE_ALL_CONFIRM", "Remover todos os aparelhos?"),
+        "unknown_label": title("DEVICE_LIST_UNKNOWN", "Aparelho desconhecido"),
         # A frase promete o que o sistema faz desde a correção do LOTE 6: a
         # anonimização alcança o PEDIDO (handle_ref, data e snapshot), não só o
         # cadastro. Antes disso ela era declaração falsa ao titular no gesto do
         # art. 18 da LGPD, e o telefone continuava nos 29 pedidos do titular.
-        "delete_warning": message("ACCOUNT_DELETE_WARNING", "Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo."),
+        "delete_warning": message("ACCOUNT_DELETE_WARNING", "Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste aparelho."),
     }
 
 
@@ -1469,16 +1482,6 @@ class AccountDeleteView(APIView):
                 ),
                 "marketing_delivery_in_flight": (
                     "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
-                ),
-                "manychat_unlink_required": (
-                    "Esta conta ainda está vinculada ao atendimento pelo ManyChat. "
-                    "Peça à equipe para desvincular essa integração antes de excluir a conta; "
-                    "assim ela não recria seus dados depois da exclusão."
-                ),
-                "manychat_reconciliation_pending": (
-                    "Uma verificação com o ManyChat ainda precisa ser concluída. "
-                    "Peça à equipe para conferir essa integração e tente excluir a conta novamente; "
-                    "assim não confirmamos a exclusão enquanto o provedor pode ter aceitado dados."
                 ),
             }
             return Response(

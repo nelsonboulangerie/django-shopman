@@ -12,14 +12,42 @@ import logging
 from shopman.shop import directives
 from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
+from shopman.shop.services.order_helpers import is_test_order
 
 logger = logging.getLogger(__name__)
 
 
 def _default_emission_decision(order) -> bool:
-    """Fallback quando não há resolver configurado: emite se o operador optou por emitir
-    (``order.data['fiscal']['issue_document']``)."""
-    return bool(((order.data or {}).get("fiscal") or {}).get("issue_document"))
+    """Fallback quando não há resolver configurado (ou ele quebrou): emite quando
+    a venda PEDIU a nota — CPF na nota, papel ou e-mail (``on_request_or_tax_id``).
+    Um resolver quebrado não pode ser a razão de a promessa do balcão morrer."""
+    from shopman.shop.fiscal_resolvers import on_request_or_tax_id
+
+    return bool(on_request_or_tax_id(order))
+
+
+def _fiscal_backend_is_homologation() -> bool:
+    """O backend fiscal declara que emite em homologação (nota sem valor fiscal)?
+
+    Backend que não declara é tratado como PRODUÇÃO: falha fechado. Errar para
+    "é produção" custa uma nota de teste que não sai; errar para o outro lado
+    custa uma NFC-e de verdade sobre dinheiro que não existe.
+    """
+    backend = fiscal_pool.get_backend()
+    return getattr(backend, "is_homologation", False) is True
+
+
+def simulated_payment_blocks_emission(order) -> bool:
+    """A venda foi paga por simulação e a nota seria de PRODUÇÃO?
+
+    A marca é a mesma régua que tira o pagamento simulado da receita
+    (``payment_provenance``): simulador local, Efí homologação, Stripe em chave
+    de teste. Em homologação a nota sai — não tem valor fiscal, e é assim que o
+    alpha exercita a emissão do Pix simulado. Em produção, nunca.
+    """
+    from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+    return is_simulated_order_payment(order) and not _fiscal_backend_is_homologation()
 
 
 def emission_resolver(order) -> bool:
@@ -37,6 +65,19 @@ def emission_resolver(order) -> bool:
     """
     from django.conf import settings
 
+    # Pagamento SIMULADO nunca vira nota de verdade — nem com a emissão avulsa do
+    # gerente. Vem antes do override de propósito: nota de produção é documento
+    # da Receita sobre uma venda que recebeu dinheiro, e aqui nenhum entrou.
+    if simulated_payment_blocks_emission(order):
+        return False
+
+    # A emissão avulsa autorizada pelo gerente (Últimas vendas do PDV) passa POR
+    # CIMA da regra — é exatamente para isso que ela existe. Só um escritor grava
+    # a chave (``backstage.services.orders.emit_fiscal_on_demand``), depois do
+    # desafio gerencial; nenhuma outra porta a toca.
+    if issue_override(order):
+        return True
+
     raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
     paths = [p.strip() for p in str(raw).split(",") if p.strip()]
     if not paths:
@@ -52,6 +93,96 @@ def emission_resolver(order) -> bool:
         return _default_emission_decision(order)
 
 
+# ── Emissão avulsa (a regra da casa disse não; o gerente disse sim) ──────
+#
+# A regra padrão emite só quando pedem (nota, CPF ou comprovante). O cliente que
+# volta ao balcão meia hora depois pedindo a nota não tinha como ser atendido:
+# a regra já tinha decidido. A emissão avulsa é a exceção auditada — sempre com
+# o desafio gerencial, e com quem autorizou gravado no pedido.
+
+#: Chave em ``Order.data["fiscal"]``. Ver docs/reference/data-schemas.md.
+ISSUE_OVERRIDE_KEY = "issue_override"
+
+#: Chave em ``Shop.defaults["pos"]``: quantos dias DEPOIS do dia da venda a
+#: emissão avulsa ainda vale. ``0`` (e ausente) = só no MESMO dia de operação.
+#: Editada no Admin (Configurações da loja → PDV e alertas).
+LATE_EMISSION_DAYS_KEY = "late_fiscal_emission_days"
+
+
+def late_emission_days() -> int:
+    """Dias além do dia da venda em que a emissão avulsa ainda vale (``0`` = mesmo dia).
+
+    A nota sai com a data e a hora da EMISSÃO (``data_emissao`` do adapter é o
+    agora), não da venda — quanto mais longe da venda, mais a nota descola dela.
+    Por isso o padrão é o mesmo dia, e esticar é decisão da loja, no Admin.
+    Valor ilegível cai no padrão seguro (mesmo dia), nunca em "sem limite".
+    """
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        pos_cfg = (shop.defaults.get("pos") or {}) if shop and isinstance(shop.defaults, dict) else {}
+        raw = pos_cfg.get(LATE_EMISSION_DAYS_KEY)
+        return max(0, int(raw)) if raw is not None else 0
+    except (TypeError, ValueError):
+        logger.warning("fiscal.late_emission_days: valor ilegível em Shop.defaults; usando o mesmo dia")
+        return 0
+
+
+def late_emission_rule_text(days: int) -> str:
+    """A regra por extenso, para a recusa dizer o que vale — não só que não vale."""
+    if days <= 0:
+        return "Só dá para emitir nota de venda do mesmo dia."
+    return f"Só dá para emitir nota de venda de até {days} dia{'s' if days > 1 else ''} atrás."
+
+
+def issue_override(order) -> dict:
+    """A autorização gravada da emissão avulsa, ou ``{}``."""
+    value = ((order.data or {}).get("fiscal") or {}).get(ISSUE_OVERRIDE_KEY)
+    return value if isinstance(value, dict) and value.get("approved_by") else {}
+
+
+def issue_override_refusal(order, *, state: str | None = None) -> str:
+    """Por que a emissão avulsa NÃO pode sair para este pedido — ``""`` quando pode.
+
+    Uma função só para a lista (que decide se mostra o botão) e para o serviço
+    (que decide de novo, dentro da trava): botão que aparece e endpoint que
+    recusa é rótulo que mente.
+
+    Só serve para a nota que a regra NÃO emitiu (``not_expected``). Falha tem o
+    seu caminho (reprocessar); nota na fila ou esperando o pagamento já vai sair.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    data = order.data or {}
+    if data.get("nfce_access_key"):
+        return "A NFC-e desta venda já foi autorizada."
+    if str(order.status) in ("cancelled", "returned"):
+        return "Venda cancelada ou devolvida não emite NFC-e."
+    if is_test_order(order):
+        return "Pedido de teste não emite NFC-e."
+    if simulated_payment_blocks_emission(order):
+        return "Pagamento simulado não emite NFC-e: nenhum dinheiro entrou."
+    if not fiscal_pool.get_backend():
+        return "A emissão de NFC-e não está configurada nesta loja."
+    if order.created_at:
+        # Dia de OPERAÇÃO, pelo relógio da loja (TIME_ZONE), não UTC nem 24 h
+        # corridas: a venda das 23h e a nota das 0h10 são dias diferentes.
+        days = late_emission_days()
+        sale_day = timezone.localtime(order.created_at).date()
+        if (timezone.localdate() - sale_day).days > days:
+            return late_emission_rule_text(days)
+    if state is None:
+        state = fiscal_state(order)
+    if state != FISCAL_STATE_NOT_EXPECTED:
+        return "Esta venda já tem NFC-e em andamento."
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return "O pagamento desta venda ainda não confirmou. A nota só sai depois."
+    return ""
+
+
 def emit(order) -> None:
     """
     Schedule NFC-e emission for the order.
@@ -61,6 +192,15 @@ def emit(order) -> None:
 
     ASYNC — retry-safe.
     """
+    # Pedido de teste de marketplace: nota fiscal é documento da Receita sobre
+    # uma venda que não existiu. Hoje a emissão não dispara por acidente
+    # (``method="external"`` derruba os resolvers), mas o payload de teste traz
+    # CPF e o operador tem o botão "enviar nota" — o gate fica aqui, no único
+    # caminho por onde a emissão nasce, e não na sorte da configuração.
+    if is_test_order(order):
+        logger.info("fiscal.emit: pedido de teste order=%s — emissão suprimida", order.ref)
+        return
+
     if not fiscal_pool.get_backend():
         return
 
@@ -96,6 +236,7 @@ def build_emission_payload(order) -> dict:
     payment.setdefault("amount_q", order.total_q)
     if _payment_below_total(payment, order):
         raise ValueError("Pagamento fiscal abaixo do total do pedido. Corrija antes de reprocessar.")
+    payment = _payment_net_of_change(payment, int(order.total_q or 0))
     delivery = None
     if data.get("fulfillment_type") == "delivery":
         delivery = {"address": dict(data.get("delivery_address_structured") or {})}
@@ -121,6 +262,42 @@ def _declared_payment_q(payment: dict) -> int:
     return max(0, int(payment.get("amount_q") or 0))
 
 
+def _payment_net_of_change(payment: dict, total_q: int) -> dict:
+    """O pagamento que a NOTA declara: o dinheiro entra líquido do troco.
+
+    Numa venda mista com troco (crédito 10,00 + dinheiro 5,00 numa venda de
+    13,00), os ``tenders`` gravados no commit são o que veio na mão. O PDV só
+    acerta o troco no ``settle`` (``pos._reconcile_order_payment_to_total``),
+    DEPOIS dos ``on_commit`` do commit — e a venda de balcão chega a COMPLETED
+    ali mesmo, com o ``on_completed`` pedindo a nota antes do acerto. O pedido
+    de nota que vem depois, já com o valor certo, cai no dedupe ``nfce:{ref}``.
+    Declarar 15,00 contra 13,00 de produtos, sem ``valor_troco``, a SEFAZ recusa.
+
+    Por isso a nota não depende da ordem: o excedente sobre o total sai das
+    linhas de DINHEIRO (a única forma que gera troco; a maquininha capturou o
+    valor inteiro), da última para a primeira — a mesma regra do acerto do PDV.
+    Excedente que o dinheiro não cobre não é troco: fica como está, e a recusa
+    continua ruidosa. Pagamento já acertado passa intocado.
+    """
+    tenders = [dict(t) for t in payment.get("tenders") or [] if isinstance(t, dict)]
+    excess_q = _declared_payment_q(payment) - total_q
+    if not tenders or excess_q <= 0:
+        return payment
+    cash = [t for t in reversed(tenders) if str(t.get("method") or "").lower() == "cash"]
+    if sum(max(0, int(t.get("amount_q") or 0)) for t in cash) < excess_q:
+        return payment
+    for tender in cash:
+        take_q = min(excess_q, max(0, int(tender.get("amount_q") or 0)))
+        tender["amount_q"] = int(tender.get("amount_q") or 0) - take_q
+        excess_q -= take_q
+        if not excess_q:
+            break
+    net = dict(payment)
+    net["tenders"] = tenders
+    net["amount_q"] = total_q
+    return net
+
+
 def _payment_below_total(payment: dict, order) -> bool:
     """O pagamento gravado ficou ABAIXO do total do pedido?
 
@@ -130,9 +307,10 @@ def _payment_below_total(payment: dict, order) -> bool:
     ``_reconcile_order_payment_to_total`` do PDV) não vira erro: vira um
     **desconto que não houve** dentro de um XML válido, subdeclarando a venda.
 
-    Só o lado de baixo é guardado aqui. Pagamento ACIMA do total gera
-    ``valor_total > valor_produtos`` sem desconto, e a própria SEFAZ recusa —
-    falha ruidosa não precisa de guarda nossa.
+    Só o lado de baixo é guardado aqui. Pagamento ACIMA do total por troco em
+    dinheiro é acertado na montagem (``_payment_net_of_change``); o excedente
+    que não é troco gera ``valor_total > valor_produtos`` sem desconto, e a
+    própria SEFAZ recusa — falha ruidosa não precisa de guarda nossa.
     """
     return 0 < _declared_payment_q(payment) < int(order.total_q or 0)
 
@@ -219,6 +397,7 @@ def cancel(order) -> None:
         return
 
     if not (order.data or {}).get("nfce_access_key"):
+        _verify_failed_emission(order)
         return
 
     if (order.data or {}).get("nfce_cancelled"):
@@ -230,6 +409,36 @@ def cancel(order) -> None:
     )
 
     logger.info("fiscal.cancel: queued for order %s", order.ref)
+
+
+def _verify_failed_emission(order) -> None:
+    """Venda desfeita sem chave, mas com emissão que já tentou: a nota pode existir.
+
+    Uma emissão que parou em ``failed`` depois de um POST (timeout pós-emissão,
+    janela de retry esgotada) pode ter deixado a nota AUTORIZADA na SEFAZ sem
+    que a resposta chegasse. Sem chave, não há o que cancelar — e ninguém mais
+    olharia. A directive volta para a fila com ``attempts=1``: o handler vê o
+    pedido desfeito, só CONSULTA o Focus pela referência (nunca POSTa) e, se a
+    nota existir, grava a chave e enfileira o cancelamento.
+
+    Directive viva (``queued``/``running``) não precisa disto: o próprio
+    handler faz a mesma consulta quando o pedido chega desfeito.
+    """
+    from django.utils import timezone
+    from shopman.orderman.models import Directive
+
+    directive = (
+        Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if directive is None or directive.status != "failed" or int(directive.attempts or 0) < 1:
+        return
+    directive.status = "queued"
+    directive.attempts = 1
+    directive.available_at = timezone.now()
+    directive.save(update_fields=["status", "attempts", "available_at", "updated_at"])
+    logger.info("fiscal.cancel: emissão falha de %s reaberta para consulta", order.ref)
 
 
 def _fiscal_customer(data: dict) -> dict:
@@ -376,6 +585,7 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
 
 #: Resolvers com os quais "pedir papel já pede a nota" é verdade.
 _RECEIPT_REQUEST_RESOLVERS = frozenset({
+    "shopman.shop.fiscal_resolvers.on_request_or_tax_id",
     "shopman.shop.fiscal_resolvers.on_requested_receipt",
     "shopman.shop.fiscal_resolvers.always",
 })
@@ -384,9 +594,11 @@ _RECEIPT_REQUEST_RESOLVERS = frozenset({
 def receipt_request_emits() -> bool:
     """Pedir o comprovante (papel ou e-mail) faz a NFC-e sair?
 
-    Só é verdade quando ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` carrega o resolver
-    de comprovante (``on_requested_receipt``) — ou ``always``. A env do
-    deployment sobrescreve o default do código, então a frase do balcão
+    É verdade quando ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` carrega um resolver
+    que lê o pedido de comprovante (``on_request_or_tax_id``, que é a base de
+    toda configuração, ``on_requested_receipt`` ou ``always``) — e também sem
+    resolver nenhum, porque o fallback é o mesmo ``on_request_or_tax_id``. A env
+    do deployment sobrescreve o default do código, então a frase do balcão
     ("imprime sozinha assim que autorizar") tem que perguntar aqui, nunca ao
     default.
     """
@@ -394,6 +606,8 @@ def receipt_request_emits() -> bool:
 
     raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
     paths = {p.strip() for p in str(raw).split(",") if p.strip()}
+    if not paths:
+        return True
     return bool(paths & _RECEIPT_REQUEST_RESOLVERS)
 
 

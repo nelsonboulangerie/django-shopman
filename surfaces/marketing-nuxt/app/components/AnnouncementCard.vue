@@ -30,7 +30,10 @@ import {
   platformsSummary,
   vipSummary,
 } from "~/presentation/campaign";
-import { includesDirectMessage } from "~/presentation/marketingDelivery";
+import {
+  includesDirectMessage,
+  outgoingImageUrl,
+} from "~/presentation/marketingDelivery";
 import {
   platformReadinessNote,
   readinessByPlatform,
@@ -236,12 +239,16 @@ const DRAFT_LABELS = {
   body: "Texto",
   hashtags: "Hashtags",
   platforms: "Plataformas",
-  scheduling: "Modo de entrega",
+  scheduling: "Agendamento",
   publish_at: "Data e hora",
   publish_fold: "Ocorrência do horário",
 };
 
 /** Nome do produto quando o catálogo o deu; o SKU só como último recurso. */
+/** A foto que realmente vai com o anúncio. Ver o aviso no template: o campo do topo
+ *  quase sempre está vazio, e a imagem mora no conteúdo por plataforma. */
+const outgoingImage = computed(() => outgoingImageUrl(props.announcement));
+
 const productLabel = computed(() => {
   const sku = props.announcement.sku;
   if (!sku) return "";
@@ -269,6 +276,10 @@ function describeDraftValue(field: string, value: unknown): string | undefined {
   if (field === "platforms" && Array.isArray(value)) {
     return platformsSummary(value.map(String), platformLabels.value);
   }
+  // ⚠️ Booleano cru no aviso de conflito lia "Agendamento — Versão atual: não · Seu
+  // rascunho: sim", que não quer dizer nada. A porta para traduzir já existia; só
+  // estava servindo a plataforma e mais ninguém.
+  if (field === "scheduling") return value ? "agendado" : "disparar agora";
   return undefined;
 }
 
@@ -319,11 +330,6 @@ const canPublish = computed(
     platforms.value.length > 0,
 );
 const hasDirectMessage = computed(() => includesDirectMessage(platforms.value));
-// ⚠️ Este botão NÃO entrega: ele abre a caixa que mostra a consequência, e é lá que a
-// entrega acontece. Enquanto ele dizia "Entregar agora", o caminho tinha dois botões
-// prometendo a mesma coisa e só um cumprindo — e quem toca no primeiro e vê aparecer
-// mais uma tela aprende que a tela mente. O nome do botão é o destino dele.
-const REVIEW_CONSEQUENCE_LABEL = "Visualizar consequência";
 const nowFallsInQuietHours = computed(
   () =>
     hasDirectMessage.value &&
@@ -392,9 +398,11 @@ function schedule() {
   );
 }
 
-function toggleScheduling() {
-  scheduling.value = !scheduling.value;
-  if (!scheduling.value || publishAt.value) return;
+/** Ligar "Agendado" já traz um horário sugerido — quem escolheu agendar não deve
+ *  encontrar um campo vazio e ter que inventar a hora do zero. */
+function openScheduling() {
+  scheduling.value = true;
+  if (publishAt.value) return;
   publishAt.value = suggestedScheduleLocal({
     timeZone: timezoneName.value,
     suggestedAt: props.announcement.scheduled_for,
@@ -463,20 +471,35 @@ function askToReject() {
       @discard="draft.discard()"
     />
 
-    <div class="flex flex-col gap-4 p-4 sm:flex-row">
-      <!-- Foto do produto: o announcement é visual antes de ser texto -->
-      <div class="shrink-0">
+    <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
+      <!-- Foto do produto: o anúncio é visual antes de ser texto.
+           ⚠️ A foto NÃO mora em `announcement.image_url` — esse campo é o óbvio e quase
+           sempre está vazio. A imagem de verdade está no conteúdo POR PLATAFORMA
+           (`platform_content.instagram.image_url`), porque cada mural tem o seu
+           formato. Lendo só o campo do topo, o cartão mostrava o quadrado vazio em
+           anúncio que TEM foto — e o gestor aprovava achando que ia sair sem imagem.
+           `outgoingImageUrl()` é a mesma função que a caixa de confirmação usa; a
+           armadilha já estava documentada lá e o cartão tinha caído nela.
+           Largura cheia no celular; no desktop volta ao quadrado.
+           ⚠️ O alinhamento com os campos ao lado sai do RÓTULO, não de margem
+           calculada: a foto ganhou o dela, no mesmo estilo de "Texto do anúncio", e aí
+           as duas colunas começam na mesma linha de base sozinhas. Antes o quadrado
+           nascia colado no topo do cartão e os campos nasciam abaixo dos rótulos
+           deles — desencontro de uma linha, que não se conserta com número mágico. -->
+      <div class="w-full shrink-0 sm:w-32">
+        <p class="mb-1 block text-xs font-medium text-muted-foreground">Foto</p>
         <img
-          v-if="announcement.image_url"
-          :src="announcement.image_url"
+          v-if="outgoingImage"
+          :src="outgoingImage"
           :alt="`Foto de ${productLabel || 'produto'}`"
-          class="size-32 rounded-lg border border-border object-cover"
+          class="h-40 w-full rounded-lg border border-border object-cover sm:size-32"
         />
         <div
           v-else
-          class="grid size-32 place-items-center rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground"
+          class="grid h-40 w-full place-content-center justify-items-center gap-1 rounded-lg border border-dashed border-border bg-muted/40 text-xs text-muted-foreground sm:size-32"
         >
           <Icon name="lucide:image-off" class="size-6" />
+          Sem foto
         </div>
       </div>
 
@@ -544,11 +567,6 @@ function askToReject() {
                   Usar muda só este rascunho. Nada é publicado.
                 </p>
               </div>
-              <span
-                class="rounded-full bg-background px-2 py-1 text-[11px] text-muted-foreground"
-              >
-                Política {{ suggestion.policy_version }}
-              </span>
             </div>
             <div class="grid gap-2 sm:grid-cols-2">
               <div class="rounded-md border border-border bg-background p-2">
@@ -579,7 +597,7 @@ function askToReject() {
               </div>
             </div>
             <div v-if="suggestion.facts.length" class="text-xs">
-              <p class="font-semibold">Fatos canônicos usados</p>
+              <p class="font-semibold">Dados usados</p>
               <ul class="mt-1 flex flex-wrap gap-1.5">
                 <li
                   v-for="fact in suggestion.facts"
@@ -654,35 +672,36 @@ function askToReject() {
         <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
         <fieldset>
           <legend class="mb-1 text-xs font-medium text-muted-foreground">
-            Entregar por
+            Disparado via
           </legend>
-          <div class="flex flex-wrap gap-1.5">
-            <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
-                 quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
-            <label
+          <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
+               Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
+               numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
+               não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
+               tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
+               de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
+          <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
+               quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
+          <div class="grid gap-1.5 sm:flex sm:flex-wrap">
+          <!-- ⚠️ `UiToggleChip` do kit: escolha múltipla desenhada como pílula, que é
+               o que estas sempre foram. Antes era um `<input type="checkbox">` `sr-only`
+               embrulhado num `<label>` pintado — semântica escondida num lugar, alvo de
+               toque noutro, e o desenho da seleção escrito à mão em cada tela.
+               O estado da plataforma ("não publica", "não verificada") continua na
+               pílula, passado como classe: ele conta ANTES do clique, e era por não
+               contar que a recusa só chegava depois de aprovar. -->
+            <UiToggleChip
               v-for="option in platformOptions"
               :key="option.value"
-              class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-              :class="[
-                platforms.includes(option.value)
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-muted',
-                readinessPillClass(readinessNote(option).tone),
-              ]"
+              :model-value="platforms.includes(option.value)"
+              :class="readinessPillClass(readinessNote(option).tone)"
               :data-readiness="readinessNote(option).tone"
+              @update:model-value="togglePlatform(option.value)"
             >
-              <!-- Checkbox nativo sr-only preserva a semântica enquanto a pílula amplia o alvo visual. -->
-              <input
-                type="checkbox"
-                class="sr-only"
-                :aria-label="option.label"
-                :checked="platforms.includes(option.value)"
-                @change="togglePlatform(option.value)"
-              />
               <Icon :name="platformIcon(option.value)" class="size-3.5" />
               {{ option.label }}
               <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
-            </label>
+            </UiToggleChip>
           </div>
           <p
             v-if="platforms.length === 0"
@@ -736,13 +755,14 @@ function askToReject() {
             {{ vip }}
           </p>
         </div>
+        <!-- ⚠️ "Postagem pública. Não escolhe contatos." — a MESMA frase que o painel
+             de disparo já usa. Eram quinze palavras dizendo isso, e metade delas em
+             "publicação", que é o termo do ciclo anterior: o nome do resultado público
+             nesta casa é POSTAGEM. -->
         <div v-else class="rounded-lg bg-muted/50 px-3 py-2 text-sm">
           <p class="flex items-center gap-1.5">
             <Icon name="lucide:globe-2" class="size-4 text-muted-foreground" />
-            <span>Publicação para o público geral da plataforma</span>
-          </p>
-          <p class="mt-0.5 pl-6 text-xs text-muted-foreground">
-            Não usa lista de contatos nem envia mensagem direta.
+            <span>Postagem pública. Não escolhe contatos.</span>
           </p>
         </div>
       </div>
@@ -754,80 +774,76 @@ function askToReject() {
     >
       <div class="w-full">
         <p class="text-xs text-muted-foreground">
-          Aprovar sela esta versão. Agora, ou na hora que você marcar.
+          O texto que você conferir na próxima tela é o que será disparado —
+          agora ou na hora que você marcar.
         </p>
       </div>
 
-      <!-- ⚠️ "Agendar (recomendado)" era fixo, a qualquer hora, e "recomendado" sem
-           porquê é ruído. Só é recomendado quando o agora cai no silêncio do WhatsApp
-           (20–08h), e aí a frase de baixo diz o motivo; fora dele, entregar agora é
-           o gesto primário. -->
-      <UiButton
-        type="button"
-        data-testid="schedule-recommended"
-        :aria-expanded="scheduling"
-        :variant="scheduleRecommended ? 'default' : 'outline'"
-        @click="toggleScheduling"
-      >
-        <Icon name="lucide:clock" class="size-4" />
-        {{
-          scheduling
-            ? "Fechar agendamento"
-            : scheduleRecommended
-              ? "Agendar (recomendado)"
-              : "Agendar"
-        }}
-      </UiButton>
-
-      <UiButton
-        type="button"
-        data-testid="publish-now"
-        :disabled="!canPublishNow"
-        :variant="scheduleRecommended ? 'outline' : 'default'"
-        @click="publishNow"
-      >
-        <Icon
-          :name="busy ? 'line-md:loading-loop' : 'lucide:send'"
-          class="size-4"
-        />
-        {{ REVIEW_CONSEQUENCE_LABEL }}
-      </UiButton>
-
-      <UiButton
-        type="button"
-        :disabled="busy"
-        variant="outline"
-        class="ml-auto text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-        @click="askToReject"
-      >
-        <Icon name="lucide:trash-2" class="size-4" />
-        Recusar
-      </UiButton>
-
-      <p
-        v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
-        class="w-full text-xs font-medium text-sky-700 dark:text-sky-300"
-        role="status"
-      >
-        Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem
-        sai deste computador.
-      </p>
-      <p
-        v-else-if="nowFallsInQuietHours"
-        class="w-full text-xs font-medium text-warning"
-        role="status"
-      >
-        Agendar é o recomendado agora: o WhatsApp está em silêncio das 20:00 às
-        08:00 ({{ timezoneName }}). O próximo horário permitido já vem
-        preenchido.
-      </p>
-      <p
-        v-else-if="expired"
-        class="w-full text-xs font-medium text-destructive"
-        role="alert"
-      >
-        O prazo terminou. Atualize os fatos antes de publicar.
-      </p>
+      <!-- ⚠️ "Quando" é ATRIBUTO do disparo, não destino. Era um botão "Agendar" que
+           não agendava — abria o seletor de hora —, ao lado de "Recusar", que decide o
+           destino da coisa. Botão é para caminho; atributo é para campo. Com o quando
+           virando campo, a decisão desta tela fica binária de verdade: segue ou não
+           segue. Quem agenda é o botão final da caixa, onde o ato acontece. -->
+      <div class="w-full space-y-1.5">
+        <!-- ⚠️ "Envio" era o nome de metade dos casos: este cartão pode carregar
+             WhatsApp e mural ao mesmo tempo, e mural não se envia, se publica. O
+             genérico da casa cobre os dois. -->
+        <span class="text-xs font-medium text-muted-foreground">Disparo</span>
+        <div
+          role="group"
+          aria-label="Disparo"
+          class="flex gap-1 rounded-lg bg-muted p-1"
+        >
+          <button
+            type="button"
+            data-testid="delivery-now"
+            :aria-pressed="!scheduling"
+            class="min-h-11 flex-1 basis-0 rounded-md text-sm transition"
+            :class="
+              scheduling
+                ? 'font-medium text-muted-foreground'
+                : 'bg-card font-semibold shadow-sm'
+            "
+            @click="scheduling = false"
+          >
+            Imediato
+          </button>
+          <button
+            type="button"
+            data-testid="delivery-scheduled"
+            :aria-pressed="scheduling"
+            class="min-h-11 flex-1 basis-0 rounded-md text-sm transition"
+            :class="
+              scheduling
+                ? 'bg-card font-semibold shadow-sm'
+                : 'font-medium text-muted-foreground'
+            "
+            @click="openScheduling"
+          >
+            Agendado
+          </button>
+        </div>
+        <!-- ⚠️ Os dois avisos moram aqui, colados na escolha de hora, porque é aqui
+             que o fato muda o que dá para escolher. Eles CONTAM o fato e dizem o que
+             está disponível; não mandam agendar — a decisão é do gestor. -->
+        <p
+          v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
+          class="text-xs font-medium text-sky-700 dark:text-sky-300"
+          role="status"
+        >
+          Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem
+          é enviada deste computador.
+        </p>
+        <p
+          v-else-if="scheduleRecommended"
+          class="text-xs font-medium text-warning"
+          role="status"
+        >
+          O WhatsApp está em silêncio das 20:00 às 08:00 ({{ timezoneName }}).
+          Envio imediato fica indisponível até as 08:00. Em Agendado, o próximo
+          horário permitido já vem preenchido.
+        </p>
+      </div>
 
       <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->
       <div v-if="scheduling" class="w-full space-y-2 pt-2">
@@ -835,7 +851,7 @@ function askToReject() {
           <label
             :for="`when-${announcement.pk}`"
             class="text-xs font-medium text-muted-foreground"
-            >Entregar em</label
+            >Disparar em</label
           >
           <UiInput
             :id="`when-${announcement.pk}`"
@@ -847,19 +863,6 @@ function askToReject() {
           <span class="text-xs font-semibold text-muted-foreground">{{
             timezoneName
           }}</span>
-          <!-- Mesmo texto do botão de cima, porque os dois abrem a mesma caixa; o
-               nome acessível distingue, já que "Visualizar consequência" duas vezes
-               num card deixa quem usa leitor de tela sem saber qual é qual. -->
-          <UiButton
-            type="button"
-            data-testid="schedule-submit"
-            :disabled="!canSchedule"
-            :aria-label="`${REVIEW_CONSEQUENCE_LABEL} do agendamento`"
-            @click="schedule"
-          >
-            <Icon name="lucide:calendar-check" class="size-4" />
-            {{ REVIEW_CONSEQUENCE_LABEL }}
-          </UiButton>
         </div>
         <p
           v-if="
@@ -878,7 +881,7 @@ function askToReject() {
             class="ml-1"
             @click="useNextAllowedTime"
           >
-            Usar 08:00
+            Usar o próximo horário permitido
           </UiButton>
         </p>
         <fieldset
@@ -891,23 +894,20 @@ function askToReject() {
           <p class="text-xs text-muted-foreground">
             {{ scheduleResolution.detail }}
           </p>
-          <div class="mt-1 flex flex-wrap gap-3 text-xs">
-            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
-            <label
+          <UiRadioGroup
+            v-model="publishFold"
+            label="Qual das duas ocorrências"
+            orientation="horizontal"
+            class="mt-1 text-xs"
+          >
+            <UiRadio
               v-for="(candidate, index) in scheduleResolution.candidates"
               :key="candidate.instant"
-              class="flex items-center gap-1.5"
-            >
-              <input
-                v-model="publishFold"
-                type="radio"
-                :value="index === 0 ? 'earlier' : 'later'"
-              />
-              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{
-                candidate.offset
-              }})
-            </label>
-          </div>
+              :value="index === 0 ? 'earlier' : 'later'"
+              variant="inline"
+              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
+            />
+          </UiRadioGroup>
         </fieldset>
         <p
           v-if="schedulePreview && scheduleResolution.ok"
@@ -922,6 +922,49 @@ function askToReject() {
               : "WhatsApp respeita 20:00–08:00."
           }}
         </p>
+      </div>
+
+      <!-- ⚠️ Recusar ANTES de Continuar, os dois da mesma largura: pedido do dono. E
+           "Continuar" não promete o disparo, porque não dispara — leva à caixa onde o
+           ato acontece e lá o botão se chama pelo nome (Enviar/Publicar/Disparar/
+           Agendar). Um botão só, porque a decisão desta tela virou binária quando o
+           "quando" saiu de botão e virou campo. -->
+      <p
+        v-if="expired"
+        class="w-full text-xs font-medium text-destructive"
+        role="alert"
+      >
+        O prazo deste anúncio venceu — preço e estoque já podem ter mudado.
+        <NuxtLink to="/campaigns" class="font-semibold underline">
+          Prepare um disparo novo em Campanhas.
+        </NuxtLink>
+      </p>
+
+      <div class="flex w-full gap-2 pt-1">
+        <UiButton
+          type="button"
+          :disabled="busy"
+          variant="outline"
+          class="min-h-11 flex-1 basis-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          @click="askToReject"
+        >
+          <Icon name="lucide:trash-2" class="size-4" />
+          Recusar
+        </UiButton>
+
+        <UiButton
+          type="button"
+          data-testid="publish-now"
+          :disabled="scheduling ? !canSchedule : !canPublishNow"
+          class="min-h-11 flex-1 basis-0"
+          @click="scheduling ? schedule() : publishNow()"
+        >
+          <Icon
+            :name="busy ? 'line-md:loading-loop' : 'lucide:arrow-right'"
+            class="size-4"
+          />
+          Continuar
+        </UiButton>
       </div>
     </footer>
   </article>

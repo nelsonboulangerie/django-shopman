@@ -20,6 +20,14 @@ beforeEach(() => {
       lockHeld = true;
       return Promise.resolve(callback({ name, mode: "exclusive" })).finally(() => { lockHeld = false; });
     },
+    // Um nome só é travado nesta suíte; `query` responde quem segura agora,
+    // como o navegador faz, sem pegar a trava.
+    query(): Promise<{ held: TestLock[]; pending: TestLock[] }> {
+      return Promise.resolve({
+        held: lockHeld ? [{ name: "shopman:pos:close-sale", mode: "exclusive" }] : [],
+        pending: [],
+      });
+    },
   };
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => values.get(key) ?? null,

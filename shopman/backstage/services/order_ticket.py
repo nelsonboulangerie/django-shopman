@@ -176,6 +176,25 @@ def ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     )
 
 
+def courier_ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
+    """Os bytes da VIA DO ENTREGADOR — o papel que sai pela porta.
+
+    Irmã de :func:`ticket_bytes`, e a diferença está no destinatário: a ficha é
+    da casa (painel de parede, cozinha, balcão) e a via é de quem leva. Por isso
+    ela não carrega o QR de acompanhamento — esse endereço é da página do
+    CLIENTE, e a via é o único papel do trio que sai da casa na mão de um
+    terceiro.
+
+    Qual das duas vias sai (Identificada ou Anônima) é decisão de configuração
+    do canal, resolvida por ``order_helpers.courier_ticket_variant``; o leiaute
+    tem dono em ``receipt_escpos.courier_ticket``. Aqui só se resolve o nome da
+    loja, como em :func:`ticket_bytes`.
+    """
+    from shopman.backstage.services.receipt_escpos import courier_ticket
+
+    return courier_ticket(order, shop_name=shop_name or shop_display_name(), reprint=reprint)
+
+
 def preview_rows(orders: list) -> list[dict]:
     """A lista que a tela mostra ANTES de mandar imprimir.
 

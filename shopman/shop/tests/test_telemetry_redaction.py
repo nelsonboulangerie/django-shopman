@@ -6,7 +6,7 @@ import time
 from datetime import UTC, datetime
 
 from shopman.shop.logging import JsonLogFormatter, PrivacySafeFormatter
-from shopman.shop.telemetry_redaction import REDACTED, redact_observability_value
+from shopman.shop.telemetry_redaction import REDACTED, redact_observability_value, redact_text
 
 
 def test_recursive_redaction_keeps_safe_technical_refs_only():
@@ -173,3 +173,23 @@ def test_human_formatter_redacts_extra_and_exception_without_mutating_record():
     assert "CUS-PRIVATE" not in rendered
     assert "123.456.789-10" not in rendered
     assert record.args == ("customer_ref=CUS-PRIVATE",)
+
+
+def test_referencia_do_edge_sobrevive_a_redacao():
+    """O timestamp Unix da referência do Akamai tem forma de telefone.
+
+    Ele é o que o suporte do iFood usa para achar a regra que bloqueou o
+    polling; redigido, o chamado volta sem resposta. Ver `ifood_http`.
+    """
+    texto = "ifood_http.poll: recusa=edge referencia=Reference #18.1f9ab259.1758275496.3d4e5f6a"
+    saida = redact_text(texto)
+    assert "18.1f9ab259.1758275496.3d4e5f6a" in saida
+    assert "[phone]" not in saida
+
+
+def test_a_excecao_da_referencia_nao_abre_passagem_para_telefone():
+    """A guarda é da referência, não de qualquer corrida de dígitos."""
+    assert "[phone]" in redact_text("contato 11 98765-4321")
+    assert "[phone]" in redact_text("Reference #18.abc concluída; ligar para 11987654321")
+    # A forma protegida é a da referência inteira; um trecho parecido não passa.
+    assert "[phone]" in redact_text("pedido 18.1f9ab259 e telefone 11987654321")
