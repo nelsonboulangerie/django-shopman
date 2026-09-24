@@ -8,11 +8,13 @@ export interface SitemapUrl {
 
 // Páginas de conteúdo fixas. /faq responde perguntas que as pessoas fazem ao
 // Google ("tem entrega?", "abre domingo?"); privacidade e termos existem por lei
-// e ficam no fim da fila.
+// e ficam no fim da fila, junto de /shopman-marketing, a página que o Google pede
+// como página inicial do app na tela de consentimento OAuth.
 const STATIC_PAGES: ReadonlyArray<{ path: string, priority: string }> = [
   { path: '/faq', priority: '0.6' },
   { path: '/privacy', priority: '0.2' },
-  { path: '/terms', priority: '0.2' }
+  { path: '/terms', priority: '0.2' },
+  { path: '/shopman-marketing', priority: '0.2' }
 ]
 
 function escapeXml (value: string): string {
