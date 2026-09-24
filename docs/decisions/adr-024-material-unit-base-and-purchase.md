@@ -13,6 +13,22 @@
 > Django Shopman. Super simples, super robusto, super elegante! Flexível, mas à
 > prova de falhas, sem gambiarra."*
 
+> ⚠️ **Emenda de 2026-09-24: o insumo pesado conta em GRAMA, não em kg.** Palavras do
+> dono: *"a medida base, é a que trabalhamos na balança no dia a dia, é grama."* A R1
+> continua a mesma regra (a base é a unidade do momento da verdade); o que mudou foi a
+> resposta, porque a balança da casa fala em grama. O motivo imediato: em kg com três
+> casas, o piso da ficha era 1 g, e 0,1 g de alecrim, 0,34 g de louro e gotas de
+> baunilha não cabiam.
+>
+> **O motivo pelo qual esta ADR tinha descartado o grama continua de pé, e passa a ser
+> regra:** centavo inteiro por grama perde precisão (farinha a R$ 4/kg = 0,4 centavo/g,
+> que arredonda para zero). Então **nada consome centavo inteiro por grama**. O custo
+> guardado continua por unidade de COMPRA (`cost_q` do saco, do pacote), a conta segue
+> em `Decimal` (`cost_per_base_unit`), e a exibição de insumo pesado fala em **R$/kg**.
+> O SKU que a casa **revende por peso** fica em kg: compra e venda do mesmo SKU falam a
+> mesma unidade (`units_agree`). Execução: [WP-UNIDADE-BASE-GRAMA](../plans/WP-UNIDADE-BASE-GRAMA.md).
+> Onde o texto abaixo diz "se é pesado, `kg`", leia `g`.
+
 ---
 
 ## Contexto
