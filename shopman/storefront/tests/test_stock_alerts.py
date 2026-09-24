@@ -227,7 +227,7 @@ def test_subscribe_race_with_ineligible_old_writer_fails_closed_without_500():
 
 
 def test_subscribe_rejects_ambiguous_mobile_without_creating_subscription():
-    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9840-4900", adult_declared=True) is None
+    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9812-3456", adult_declared=True) is None
     assert not StockAlertSubscription.objects.filter(sku="SKU-AMBIGUOUS").exists()
 
 
@@ -1019,7 +1019,7 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
 
 def test_endpoint_anonymous_does_not_normalize_or_persist_typed_phone(client):
     p = _publish(sku="SKU-LEGACY-PHONE")
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})
+    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9812-3456"})
     assert resp.status_code == 401
     assert resp.json()["auth_required"] is True
     assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()

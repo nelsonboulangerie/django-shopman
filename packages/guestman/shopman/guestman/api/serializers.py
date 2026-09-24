@@ -66,7 +66,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         ]
 
     def get_phone_display(self, obj) -> str:
-        """Formata telefone E.164 para exibição: +5543984049009 → (43) 98404-9009"""
+        """Formata telefone E.164 para exibição: +5543981234567 → (43) 98123-4567"""
         phone = obj.phone or ""
         if phone.startswith("+55") and len(phone) == 14:
             # +55 DD 9XXXX XXXX

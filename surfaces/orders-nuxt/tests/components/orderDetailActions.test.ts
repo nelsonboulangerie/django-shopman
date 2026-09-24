@@ -438,18 +438,18 @@ describe("detalhe do pedido — falar com o cliente", () => {
   it("com telefone: oferece WhatsApp e ligação apontando para o número certo", () => {
     const tela = abrir(
       order({
-        customer_phone: "(43) 98404-9009",
-        customer_phone_uri: "tel:+5543984049009",
-        customer_whatsapp_url: "https://wa.me/5543984049009",
+        customer_phone: "(43) 98123-4567",
+        customer_phone_uri: "tel:+5543981234567",
+        customer_whatsapp_url: "https://wa.me/5543981234567",
       }),
     );
 
     expect(tela.find("[data-customer-contact]").exists()).toBe(true);
     expect(tela.find("[data-contact-whatsapp]").attributes("href")).toBe(
-      "https://wa.me/5543984049009",
+      "https://wa.me/5543981234567",
     );
-    expect(tela.find("[data-contact-phone]").attributes("href")).toBe("tel:+5543984049009");
-    expect(tela.find("[data-customer-phone]").text()).toContain("(43) 98404-9009");
+    expect(tela.find("[data-contact-phone]").attributes("href")).toBe("tel:+5543981234567");
+    expect(tela.find("[data-customer-phone]").text()).toContain("(43) 98123-4567");
   });
 
   it("com e-mail: oferece mailto", () => {
@@ -479,10 +479,10 @@ describe("detalhe do pedido — falar com o cliente", () => {
   it("telefone anônimo (o nome JÁ é o número) não é repetido ao lado de si mesmo", () => {
     const tela = abrir(
       order({
-        customer_name: "(43) 98404-9009",
-        customer_phone: "(43) 98404-9009",
-        customer_phone_uri: "tel:+5543984049009",
-        customer_whatsapp_url: "https://wa.me/5543984049009",
+        customer_name: "(43) 98123-4567",
+        customer_phone: "(43) 98123-4567",
+        customer_phone_uri: "tel:+5543981234567",
+        customer_whatsapp_url: "https://wa.me/5543981234567",
       }),
     );
 

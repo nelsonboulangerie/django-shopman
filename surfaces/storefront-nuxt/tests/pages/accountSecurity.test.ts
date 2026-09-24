@@ -222,7 +222,7 @@ beforeEach(async () => {
   const { useShopSession } = await import('~/composables/useShopSession')
   const session = useShopSession()
   session.reset()
-  session.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', customer_phone: '+5543984049009' })
+  session.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', customer_phone: '+5543981234567' })
 })
 
 afterEach(() => {

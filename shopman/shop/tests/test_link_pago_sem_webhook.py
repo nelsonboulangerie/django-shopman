@@ -32,21 +32,21 @@ def _order(*, phone, handle_type="", handle_ref=""):
 class TestWhatsAppRecebeTelefoneComMais:
     """Dígitos puros são `subscriber_id`; telefone vai em E.164 com o "+".
 
-    O PDV grava "5543984049009" e o adapter tomava isso por subscriber_id —
+    O PDV grava "5543981234567" e o adapter tomava isso por subscriber_id —
     ManyChat: "Subscriber does not exist", cadeia caindo para o e-mail.
     """
 
     def test_telefone_do_pdv_sem_mais_vira_e164(self):
-        assert notification._resolve_recipient(_order(phone="5543984049009"), "manychat") == "+5543984049009"
+        assert notification._resolve_recipient(_order(phone="5543981234567"), "manychat") == "+5543981234567"
 
     def test_telefone_com_mais_continua_igual(self):
-        assert notification._resolve_recipient(_order(phone="+5543984049009"), "manychat") == "+5543984049009"
+        assert notification._resolve_recipient(_order(phone="+5543981234567"), "manychat") == "+5543981234567"
 
     def test_telefone_formatado_e_normalizado(self):
-        assert notification._resolve_recipient(_order(phone="(43) 98404-9009"), "manychat") == "+5543984049009"
+        assert notification._resolve_recipient(_order(phone="(43) 98123-4567"), "manychat") == "+5543981234567"
 
     def test_subscriber_id_do_manychat_continua_puro(self):
-        order = _order(phone="5543984049009", handle_type="manychat", handle_ref="123456789")
+        order = _order(phone="5543981234567", handle_type="manychat", handle_ref="123456789")
         assert notification._resolve_recipient(order, "manychat") == "123456789"
 
     def test_sem_telefone_nao_ha_destinatario(self):
@@ -57,9 +57,9 @@ class TestWhatsAppRecebeTelefoneComMais:
 
         config = {"api_token": "t", "resolver": "shopman.shop.tests.test_adapters._manychat_test_resolver"}
         # Com o "+", o adapter delega ao resolver (que aqui devolve 123456);
-        # sem o "+", ele devolvia int("5543984049009") como se fosse subscriber.
+        # sem o "+", ele devolvia int("5543981234567") como se fosse subscriber.
         assert mc._resolve_subscriber("+5543999998888", config) == 123456
-        assert mc._resolve_subscriber("5543984049009", config) == 5543984049009
+        assert mc._resolve_subscriber("5543981234567", config) == 5543981234567
 
 
 @pytest.mark.django_db

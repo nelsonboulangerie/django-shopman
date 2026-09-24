@@ -61,7 +61,7 @@ def _field_payloads(calls) -> dict[str, str]:
 
 def test_the_fields_go_before_the_flow(calls, with_flow, monkeypatch):
     """⚠️ Ordem importa: gravar depois do envio preencheria a mensagem SEGUINTE."""
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"})
+    mc.send("+5543981234567", "order_accepted", {"product_name": "Croissant"})
 
     endpoints = _endpoints(calls)
     assert endpoints[-1].endswith("sendFlow")
@@ -71,7 +71,7 @@ def test_the_fields_go_before_the_flow(calls, with_flow, monkeypatch):
 def test_the_product_name_reaches_the_template(calls, with_flow):
     """O caso concreto: sem isto, "O ___ que você pediu chegou"."""
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {"product_name": "Croissant", "cta": "Garanta o seu:", "action_url": "/p/cro"},
     )
@@ -84,7 +84,7 @@ def test_the_product_name_reaches_the_template(calls, with_flow):
 def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
     """⚠️ Contexto inteiro no perfil do cliente vazaria estado interno para o marketing."""
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {"product_name": "Croissant", "session_key": "abc123", "sku": "CRO-001"},
     )
@@ -98,7 +98,7 @@ def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
 def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(calls, with_flow):
     capability = "https://shop.example/gerenciar-aviso#opaque-capability"
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {
             "management_url": capability,
@@ -114,7 +114,7 @@ def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(ca
 def test_empty_values_are_not_written(calls, with_flow):
     """`deadline_note` vazio é o caso normal do "me avise": não sobrescreve com nada."""
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {"product_name": "Croissant", "deadline_note": "", "reserve_note": "   "},
     )
@@ -138,13 +138,13 @@ def test_a_field_that_does_not_exist_does_not_block_the_alert(with_flow, monkeyp
     monkeypatch.setattr(mc, "_get_config", lambda: {"api_token": "tok", "flow_map": {}})
     monkeypatch.setattr(mc, "_resolve_subscriber", lambda *a, **k: "sub-1")
 
-    assert mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"}) is True
+    assert mc.send("+5543981234567", "order_accepted", {"product_name": "Croissant"}) is True
     assert any(e.endswith("sendFlow") for e in seen)
 
 
 def test_without_a_flow_nothing_is_pushed(calls, db):
     """Sem template aprovado o texto é nosso (`sendContent`): campo não tem função."""
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"})
+    mc.send("+5543981234567", "order_accepted", {"product_name": "Croissant"})
 
     endpoints = _endpoints(calls)
     assert endpoints == ["/sending/sendContent"]
@@ -159,14 +159,14 @@ def test_the_quantity_is_the_real_one(calls, with_flow):
     A quantidade sai da MESMA checagem de disponibilidade que libera o alerta, então o
     "ainda tenho X unidades" é o que a loja pode honrar naquele instante.
     """
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Baguete", "available_qty": "12"})
+    mc.send("+5543981234567", "order_accepted", {"product_name": "Baguete", "available_qty": "12"})
 
     assert _field_payloads(calls)["available_qty"] == "12"
 
 
 def test_an_unknown_quantity_says_nothing(calls, with_flow):
     """Canal que não sabe contar não inventa número: o campo não é gravado."""
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Baguete", "available_qty": ""})
+    mc.send("+5543981234567", "order_accepted", {"product_name": "Baguete", "available_qty": ""})
 
     assert "available_qty" not in _field_payloads(calls)
 
@@ -208,7 +208,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
         lambda **kw: seen.append(kw.get("context") or {}) or type("R", (), {"success": True})(),
     )
 
-    recipient = type("R", (), {"phone": "+5543984049009", "first_name": "Pablo"})()
+    recipient = type("R", (), {"phone": "+5543981234567", "first_name": "Pablo"})()
     content = {
         "body": "Saiu do forno",
         "variables": {
@@ -328,7 +328,7 @@ def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_
     ele que sai: a CTA continua resolvendo, sem a chave junto.
     """
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {
             "action_url": "https://loja.example.com/a?t=segredo-de-login",
@@ -347,7 +347,7 @@ def test_a_caller_that_forgets_the_common_link_still_does_not_leak(calls, with_f
     Botão em branco é o lado seguro de "gravar a chave de login do cliente num SaaS".
     """
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {"action_url": "https://loja.example.com/a?t=segredo-de-login"},
     )
@@ -375,7 +375,7 @@ def test_the_order_links_do_not_leak_either(calls, with_order_flow):
     liga o canal. A regra é do VALOR, não do nome da chave.
     """
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {
             "order_ref": "NB-1042",
@@ -402,7 +402,7 @@ def test_the_public_twin_never_travels_on_its_own(calls, with_order_flow):
     um dia mapearia o errado no ManyChat.
     """
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {
             "order_ref": "NB-1042",

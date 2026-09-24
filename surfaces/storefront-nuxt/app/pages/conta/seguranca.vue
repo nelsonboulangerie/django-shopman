@@ -877,7 +877,7 @@ useSeoMeta({ title: 'Segurança e dados' })
                 type="tel"
                 inputmode="numeric"
                 autocomplete="tel-national"
-                placeholder="(43) 98404-9009"
+                placeholder="(43) 98123-4567"
                 :maxlength="16"
                 @input="onPhoneChangeInput"
               />
