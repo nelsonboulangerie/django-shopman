@@ -428,7 +428,10 @@ def material_opening_targets() -> dict[str, Decimal]:
 PESO_MASSA_CRUA_G = {
     "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
-    "FOA": 420, "FOB": 680, "FOC": 540, "FOAP": 110, "FOBP": 180, "FOCP": 160,
+    # Focaccia: 400 g de massa crua na grande e 110 g na pequena, TODAS (dono,
+    # 24/09/2026); a cobertura soma por cima. Os de alecrim e cebola roxa só
+    # trocaram a massa — a cobertura deles ele ainda vai conferir.
+    "FOA": 406, "FOB": 714, "FOC": 445, "FOAP": 115, "FOBP": 195, "FOCP": 124,
     "CRP": 36, "CN": 82, "BRRSN": 68, "BRCH": 42, "COC": 60,
     "CHLH": 300, "BRNT": 240, "URS": 110, "PORQ": 110, "BRBBP": 32,
     "BICH": 100, "MA": 110, "CRPQ": 90, "FFGO": 130, "FFGOP": 80,
@@ -2013,17 +2016,17 @@ class Command(BaseCommand):
             ("BGGP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
              f"{IMG}/be.webp", 150, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
-             f"{IMG}/foa.webp", 370, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foa.webp", 355, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOB", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             f"{IMG}/cbt.webp", 600, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cbt.webp", 630, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
-             f"{IMG}/foc.webp", 475, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foc.webp", 390, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOAP", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
-             f"{IMG}/mif.webp", 95, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mif.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOBP", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
-             f"{IMG}/micbt.webp", 160, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/micbt.webp", 170, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOCP", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
-             f"{IMG}/mifoc.webp", 140, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mifoc.webp", 110, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CRPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
              f"{IMG}/cpq.webp", 80, "Servir quente, imediatamente"),
             ("FFGO", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
@@ -3664,8 +3667,8 @@ class Command(BaseCommand):
                     ("ACUCAR-REFINADO", Decimal("0.865")),
                     ("OVOS", Decimal("0.375")),
                     ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.375")),
-                    ("LIMAO-TAHITI", Decimal("0.280"), Decimal("40")),     # suco
-                    ("LIMAO-SICILIANO", Decimal("0.200"), Decimal("40")),  # suco + raspas
+                    ("LIMAO-TAHITI", Decimal("0.280"), Decimal("0.40")),     # suco
+                    ("LIMAO-SICILIANO", Decimal("0.200"), Decimal("0.40")),  # suco + raspas
                     ("AMIDO-MILHO", Decimal("0.160")),
                     ("FARINHA-ANACONDA-PREMIUM", Decimal("0.025")),
                 ],
@@ -3708,9 +3711,9 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("1"),
                 "items": [
-                    # 414 g de massa + 4 g de alecrim + 2 g de sal grosso =
-                    # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
-                    ("MASSA-CIABATTA", Decimal("0.414")),
+                    # 400 g de massa (dono, 24/09) + 4 g de alecrim + 2 g de sal
+                    # grosso = 406 g crus por focaccia, ~355 g assados.
+                    ("MASSA-CIABATTA", Decimal("0.400")),
                     ("ALECRIM-FRESCO", Decimal("0.004")),
                     ("SAL-GROSSO", Decimal("0.002"))
                 ],
@@ -3868,8 +3871,8 @@ class Command(BaseCommand):
                     ("AGUA-FILTRADA", Decimal("1.040")),
                     ("FRANGO", Decimal("1.000")),
                     ("MILHO-VERDE-CONSERVA", Decimal("1.000")),
-                    ("CEBOLA-BRANCA", Decimal("0.760"), Decimal("85")),
-                    ("TOMATE", Decimal("0.760"), Decimal("63")),   # sem sementes
+                    ("CEBOLA-BRANCA", Decimal("0.760"), Decimal("0.85")),
+                    ("TOMATE", Decimal("0.760"), Decimal("0.63")),   # sem sementes
                     ("OLEO-SOJA", Decimal("0.200")),
                     ("FARINHA-ANACONDA-PREMIUM", Decimal("0.120")),
                     ("SAL-REFINADO", Decimal("0.030")),
@@ -3877,26 +3880,21 @@ class Command(BaseCommand):
                 ],
             },
             {
-                # A proporção é a da ficha da casa (Maysa, focaccia grande, ×10);
-                # a QUANTIDADE por focaccia continua a que o dono pesou em 26/08
-                # (80 g na grande, 22 g na mini — PESO_MASSA_CRUA_G). A ficha de
-                # 2017 punha ~310 g numa grande: a peça mudou desde então, e a
-                # balança dele é a medida mais nova.
-                # Cebola BRANCA (dono, 24/09); o bacon cai de 1/3 para ~11% do
-                # recheio. Sal e queijo entram na montagem, sobre a massa — estão
-                # aqui porque a ficha da peça consome o recheio inteiro.
-                # Louro: 2 folhas por focaccia, a 0,34 g cada (pesadas pelo dono).
+                # Dez focaccias grandes pela «proporção da CBT grande» do dono
+                # (24/09/2026): 200 g de cebola BRANCA, 38 de bacon e 2 folhas de
+                # louro (0,34 g cada, pesadas por ele). Azeite, tomilho e pimenta
+                # vêm da ficha da casa (Maysa). Sal e queijo colonial NÃO entram
+                # aqui: vão na montagem, sobre a massa — estão na ficha da peça.
+                # A mini leva a mesma mistura em 1/4 (50 g de cebola, 10 de bacon).
                 "ref": "recheio-cebola-bacon-tomilho",
                 "name": "Recheio de Cebola, Bacon e Tomilho",
                 "output_sku": "RECHEIO-CEBOLA-BACON-TOMILHO",
-                "batch_size": Decimal("3.107"),
+                "batch_size": Decimal("2.717"),
                 "items": [
-                    ("CEBOLA-BRANCA", Decimal("2.000"), Decimal("84")),
-                    ("QUEIJO-COLONIAL", Decimal("0.400")),
-                    ("BACON", Decimal("0.350")),
+                    ("CEBOLA-BRANCA", Decimal("2.000"), Decimal("0.84")),
+                    ("BACON", Decimal("0.380")),
                     ("AZEITE-EXTRAVIRGEM", Decimal("0.300")),
-                    ("SAL-REFINADO", Decimal("0.020")),
-                    ("TOMILHO-FRESCO", Decimal("0.020"), Decimal("60")),  # só folhas
+                    ("TOMILHO-FRESCO", Decimal("0.020"), Decimal("0.60")),  # só folhas
                     ("PIMENTA-PRETA", Decimal("0.010")),
                     ("LOURO", Decimal("0.007")),                          # 20 folhas
                 ],
@@ -4068,8 +4066,13 @@ class Command(BaseCommand):
                 "output_sku": "FOB",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.600")),                  # 600 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.080")),   # 80 g/un
+                    # A «proporção da CBT grande» do dono (24/09): 200 g de
+                    # cebola, 38 de bacon, 40 de queijo e 2 folhas de louro, sobre
+                    # 400 g de massa. O queijo e o sal vão na montagem.
+                    ("MASSA-CIABATTA", Decimal("0.400")),
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.272")),
+                    ("QUEIJO-COLONIAL", Decimal("0.040")),
+                    ("SAL-REFINADO", Decimal("0.002")),
                 ],
             },
             {
@@ -4078,7 +4081,7 @@ class Command(BaseCommand):
                 "output_sku": "FOC",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.495")),          # 495 g/un
+                    ("MASSA-CIABATTA", Decimal("0.400")),          # 400 g/un (dono, 24/09)
                     ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.045")),   # 45 g/un
                 ],
             },
@@ -4088,7 +4091,7 @@ class Command(BaseCommand):
                 "output_sku": "FOAP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
+                    ("MASSA-CIABATTA", Decimal("0.110")),  # 110 g/un (dono, 24/09)
                     ("ALECRIM-FRESCO", Decimal("0.004")),         # 4 g/un
                     ("SAL-GROSSO", Decimal("0.001")),      # 1 g/un
                 ],
@@ -4099,8 +4102,12 @@ class Command(BaseCommand):
                 "output_sku": "FOBP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.158")),                 # 158 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.022")),   # 22 g/un
+                    # «Proporção da CBT pequena» (dono, 24/09): 50 g de cebola,
+                    # 10 de bacon, 16 de queijo, 1 folha de louro, sobre 110 g.
+                    ("MASSA-CIABATTA", Decimal("0.110")),
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.068")),
+                    ("QUEIJO-COLONIAL", Decimal("0.016")),
+                    ("SAL-REFINADO", Decimal("0.001")),
                 ],
             },
             {
@@ -4109,7 +4116,7 @@ class Command(BaseCommand):
                 "output_sku": "FOCP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.146")),          # 146 g/un
+                    ("MASSA-CIABATTA", Decimal("0.110")),          # 110 g/un (dono, 24/09)
                     ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.014")),   # 14 g/un
                 ],
             },
@@ -5013,8 +5020,8 @@ class Command(BaseCommand):
             )
             RecipeItem.objects.filter(recipe=recipe).delete()
             # Linha = (insumo, quantidade LÍQUIDA) ou (insumo, líquida,
-            # aproveitamento %). O terceiro número é o «Rend. %» da ficha da
-            # casa: cebola 84, tomilho só folhas 60, suco de limão 40. A bruta,
+            # rendimento). O terceiro número é o «Rend. %» da ficha da casa, em
+            # fração: cebola 0,84, tomilho só folhas 0,60, suco de limão 0,40. A bruta,
             # que sai do estoque, é derivada — nunca escrita aqui.
             for input_sku, qty, *usable in rd["items"]:
                 meta = INGREDIENT_PROFILES.get(input_sku, {})
@@ -5022,7 +5029,7 @@ class Command(BaseCommand):
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
-                    usable_pct=usable[0] if usable else Decimal("100"),
+                    usable_factor=usable[0] if usable else Decimal("1"),
                     unit=_recipe_item_unit(input_sku),
                     meta=meta,
                 )

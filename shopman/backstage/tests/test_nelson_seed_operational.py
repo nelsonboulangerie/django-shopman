@@ -121,7 +121,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     cebola = RecipeItem.objects.get(
         recipe__ref="recheio-cebola-bacon-tomilho", input_sku="CEBOLA-BRANCA"
     )
-    assert cebola.usable_pct == Decimal("84")
+    assert cebola.usable_factor == Decimal("0.84")
     assert cebola.gross_quantity > cebola.quantity
 
     # Buyman Material master (WP-B4): insumos viram Material first-class (sku sem

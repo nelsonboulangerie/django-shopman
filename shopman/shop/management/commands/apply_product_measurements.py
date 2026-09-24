@@ -66,9 +66,11 @@ MEASUREMENTS: dict[str, dict[str, object]] = {
     "MDLN": {"unit_weight_g": 25},
     "BICH": {"unit_weight_g": 90},
     "CN": {"unit_weight_g": 72},
-    "FOA": {"unit_weight_g": 370},
-    "FOB": {"unit_weight_g": 600},
-    "FOC": {"unit_weight_g": 475},
+    # Focaccias: massa crua de 400 g em todas as grandes (dono, 24/09/2026);
+    # assado re-estimado a ~12% de perda, a conferir na balança.
+    "FOA": {"unit_weight_g": 355},
+    "FOB": {"unit_weight_g": 630},
+    "FOC": {"unit_weight_g": 390},
 }
 
 # `approx_dimensions` segue chave solta do metadata (é do catálogo);
