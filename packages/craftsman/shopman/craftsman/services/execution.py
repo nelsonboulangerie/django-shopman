@@ -42,24 +42,24 @@ def _yield_meta(origem: dict, net_qty) -> dict:
     porque um `meta` que repete o óbvio em toda linha de toda fornada é ruído
     com custo de armazenamento.
 
+    Não tolera ausência nem valor ilegível: quem chega aqui já passou pela
+    recusa de `gross_quantity`, e engolir um valor quebrado devolvendo `{}` faria
+    a linha perder o carimbo de aproximada sem ninguém saber.
+
     ⚠️ A bruta atravessou uma equivalência física com incerteza (ADR-024 §R3), e
     é por isso que a líquida viaja junto: a tela de separação mostra "0,238 kg
     (≈ 0,200 limpos)" em vez de um número que parece exato, e a auditoria sabe
     de onde a bruta saiu.
     """
-    pct = origem.get("usable_pct")
-    if pct in (None, ""):
-        return {}
-    try:
-        if Decimal(str(pct)) >= Decimal("100"):
-            return {}
-    except Exception:  # noqa: BLE001 — valor ilegível não vira meta silencioso
+    pct = origem["usable_pct"]
+    if Decimal(str(pct)) >= Decimal("100"):
         return {}
     return {
         "net_quantity": str(net_qty),
         "usable_pct": str(pct),
         "approximate": True,
     }
+
 
 def _mapping_item(value, *, field: str) -> dict:
     if not isinstance(value, dict):
@@ -392,14 +392,24 @@ class CraftExecution:
             requirements = []
 
             for item_data in recipe_item_data:
-                # O que se REQUER e o que se CONSOME é a bruta: a casca da
-                # cebola sai do estoque e não entra no produto. `quantity` (a
-                # líquida) fica no `meta` do item, porque é dela que saem rótulo
-                # e massa da peça — e porque um snapshot antigo, sem a bruta,
-                # precisa cair na líquida sem mudar de número.
-                req_qty = Decimal(
-                    item_data.get("gross_quantity") or item_data["quantity"]
-                ) * coefficient
+                # O que se REQUER e o que se CONSOME é a BRUTA: a casca da cebola
+                # sai do estoque e não entra no produto. A líquida (`quantity`)
+                # segue no `meta` do item, porque é dela que saem rótulo e massa
+                # da peça.
+                #
+                # Sem `gross_quantity` o comando PARA. Cair na líquida seria
+                # debitar menos insumo do que o padeiro usa — exatamente o
+                # defeito que `_validate_mass_balance` foi escrito para pegar, e
+                # o pior tipo: silencioso. Antes do go-live não há BOM congelado
+                # a preservar, então a ausência é defeito e se trata como tal.
+                if "gross_quantity" not in item_data:
+                    raise CraftError(
+                        "INVALID_PAYLOAD",
+                        field="_recipe_snapshot.items.gross_quantity",
+                        item_ref=item_data["input_sku"],
+                        work_order=order.ref,
+                    )
+                req_qty = Decimal(item_data["gross_quantity"]) * coefficient
                 net_qty = Decimal(item_data["quantity"]) * coefficient
                 requirements.append(
                     {
@@ -407,7 +417,7 @@ class CraftExecution:
                         "quantity": req_qty,
                         "unit": item_data["unit"],
                         "net_quantity": net_qty,
-                        "usable_pct": item_data.get("usable_pct"),
+                        "usable_pct": item_data["usable_pct"],
                     }
                 )
                 all_items.append(

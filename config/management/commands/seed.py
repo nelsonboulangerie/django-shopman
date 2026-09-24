@@ -5222,14 +5222,10 @@ class Command(BaseCommand):
             total = max(0, min(23 * 60 + 59, hour_min[0] * 60 + hour_min[1] + minutes))
             return total // 60, total % 60
 
-        def recipe_snapshot(recipe: Recipe) -> dict:
-            return {
-                "batch_size": str(recipe.batch_size),
-                "items": [
-                    {"input_sku": item.input_sku, "quantity": str(item.quantity), "unit": item.unit}
-                    for item in recipe.items.filter(is_optional=False).order_by("sort_order")
-                ],
-            }
+        # O congelado do BOM tem UMA montagem só, no Craftsman. A cópia que
+        # morava aqui perdeu a seção `production` e depois o aproveitamento do
+        # insumo, e ninguém viu até o `finish` recusar.
+        from shopman.craftsman.services.scheduling import build_recipe_snapshot as recipe_snapshot
 
         def reset_ledger(work_order: WorkOrder) -> None:
             work_order.events.all().delete()

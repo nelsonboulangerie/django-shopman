@@ -30,7 +30,11 @@ def _ficha(ref="recheio-cebola", rende="2.700", **meta) -> Recipe:
 
 
 def test_sem_declarar_nada_a_bruta_e_a_liquida():
-    """Default 100% é o comportamento de antes deste campo — migração no-op."""
+    """100% é o valor VERDADEIRO de quase todo insumo: farinha e sal não têm casca.
+
+    O default não está aqui para preservar o que já existe — é o que a ficha diz
+    quando nada se perde no preparo.
+    """
     ficha = _ficha()
     item = RecipeItem.objects.create(
         recipe=ficha, input_sku="CEBOLA-ROXA", quantity=Decimal("1.800"), unit="kg",
@@ -143,28 +147,29 @@ def test_a_fornada_consome_a_BRUTA_e_guarda_a_liquida_no_meta():
     assert consumo.meta["approximate"] is True, "ADR-024 R3: o ≈ não se dissolve"
 
 
-def test_snapshot_ANTIGO_sem_a_bruta_cai_na_liquida():
-    """Fornada planejada antes deste campo não pode mudar de número no meio.
+def test_snapshot_SEM_a_bruta_faz_o_finish_PARAR():
+    """Antes do go-live não há BOM congelado a preservar — ausência é defeito.
 
-    O `_recipe_snapshot` existe justamente para o `finish` usar a ficha como ela
-    era; uma fornada em voo tem de terminar com os números com que começou.
+    A tentação seria cair na líquida "para não quebrar fornada antiga". Isso
+    debitaria menos insumo do que o padeiro usa, que é exatamente o defeito que
+    `_validate_mass_balance` existe para pegar — e calado, que é o pior tipo.
     """
+    from shopman.craftsman import CraftError
+
     ficha = _ficha(rende="1.000")
     RecipeItem.objects.create(
         recipe=ficha, input_sku="CEBOLA-ROXA", quantity=Decimal("0.200"), unit="kg",
         usable_pct=Decimal("84.00"),
     )
     wo = _fornada(ficha, "1.000")
-    # Reescreve o snapshot na forma antiga, sem a bruta nem o aproveitamento.
     wo.meta["_recipe_snapshot"]["items"] = [
         {"input_sku": "CEBOLA-ROXA", "quantity": "0.200", "unit": "kg"}
     ]
     wo.save(update_fields=["meta"])
 
-    craft.finish(wo, Decimal("1.000"))
-    consumo = wo.items.get(kind=WorkOrderItem.Kind.CONSUMPTION, item_ref="CEBOLA-ROXA")
-    assert consumo.quantity == Decimal("0.200")
-    assert consumo.meta == {}, "sem aproveitamento declarado, nenhum rastro a deixar"
+    with pytest.raises(CraftError) as erro:
+        craft.finish(wo, Decimal("1.000"))
+    assert "gross_quantity" in str(erro.value.data)
 
 
 def test_aproveitamento_de_100_nao_deixa_rastro_no_meta():
@@ -176,3 +181,40 @@ def test_aproveitamento_de_100_nao_deixa_rastro_no_meta():
     wo = _fornada(ficha, "1.000")
     craft.finish(wo, Decimal("1.000"))
     assert wo.items.get(kind=WorkOrderItem.Kind.CONSUMPTION).meta == {}
+
+
+# -------------------------------------------- o congelado tem uma fonte só
+
+
+def test_o_snapshot_do_seed_e_o_do_plano_sao_o_MESMO():
+    """Duas montagens do mesmo congelado divergem sempre — é só questão de tempo.
+
+    O `seed` tinha a própria cópia: nasceu sem a seção `production` e, quando o
+    aproveitamento entrou, nasceu sem `gross_quantity`. Quem descobriu foi a
+    recusa do `finish`, depois de a CI ficar verde escondendo o buraco — porque
+    o fallback que eu tinha escrito caía na líquida em silêncio.
+
+    Este teste cobra a forma, não o chamador: qualquer campo novo que entre pelo
+    plano e não pelo seed reprova aqui.
+    """
+    from shopman.craftsman.services.scheduling import build_recipe_snapshot
+
+    ficha = _ficha()
+    RecipeItem.objects.create(
+        recipe=ficha, input_sku="CEBOLA-ROXA", quantity=Decimal("0.200"), unit="kg",
+        usable_pct=Decimal("84.00"),
+    )
+    do_plano = _fornada(ficha).meta["_recipe_snapshot"]
+    assert build_recipe_snapshot(ficha) == do_plano
+
+
+def test_o_congelado_declara_todas_as_chaves_que_o_finish_exige():
+    """A recusa do `finish` cobra `gross_quantity`; a prova nasce aqui."""
+    from shopman.craftsman.services.scheduling import build_recipe_snapshot
+
+    ficha = _ficha()
+    RecipeItem.objects.create(
+        recipe=ficha, input_sku="CEBOLA-ROXA", quantity=Decimal("0.200"), unit="kg",
+    )
+    item = build_recipe_snapshot(ficha)["items"][0]
+    assert set(item) == {"input_sku", "quantity", "gross_quantity", "usable_pct", "unit"}

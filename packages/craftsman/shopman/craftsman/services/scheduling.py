@@ -51,6 +51,40 @@ def _next_seq(order):
     return max_seq + 1
 
 
+def build_recipe_snapshot(recipe) -> dict:
+    """Congela a ficha como ela é AGORA, para o `finish` usá-la como ela ERA.
+
+    ⚠️ **Fonte única, e por uma cicatriz.** O `seed` tinha a própria cópia disto,
+    e ela envelheceu em silêncio: nasceu sem a seção `production` e, quando o
+    aproveitamento entrou no `RecipeItem`, nasceu sem `gross_quantity` também.
+    Quem descobriu foi a recusa do `finish`, não uma revisão. Duas montagens do
+    mesmo congelado divergem sempre — é só questão de qual campo entra primeiro.
+
+    `quantity` é a LÍQUIDA, como na ficha; `gross_quantity` é o que sai do
+    estoque. As duas viajam porque a ficha pode ganhar perda declarada entre o
+    plano e a fornada, e a fornada tem de terminar com o número com que começou.
+    """
+    return {
+        "batch_size": str(recipe.batch_size),
+        "version_ref": (recipe.meta or {}).get("version_ref", ""),
+        "items": [
+            {
+                "input_sku": ri.input_sku,
+                "quantity": str(ri.quantity),
+                "gross_quantity": str(ri.gross_quantity),
+                "usable_pct": str(ri.usable_pct),
+                "unit": ri.unit,
+            }
+            for ri in recipe.items.filter(is_optional=False).order_by("sort_order")
+        ],
+        "production": {
+            "requires_batch_tracking": bool((recipe.meta or {}).get("requires_batch_tracking")),
+            "shelf_life_days": (recipe.meta or {}).get("shelf_life_days"),
+            "steps": list((recipe.meta or {}).get("steps") or recipe.steps or []),
+        },
+    }
+
+
 class CraftPlanning:
     """Plan and adjust operations."""
 
@@ -147,32 +181,7 @@ class CraftPlanning:
             if key in kwargs:
                 wo_kwargs[key] = kwargs[key]
 
-        # Freeze BOM into meta._recipe_snapshot
-        snapshot = {
-            "batch_size": str(recipe.batch_size),
-            "version_ref": (recipe.meta or {}).get("version_ref", ""),
-            # `quantity` é a LÍQUIDA, como na ficha; `gross_quantity` é o que
-            # sai do estoque. As duas viajam no snapshot porque o congelamento
-            # existe para que o `finish` use a ficha COMO ERA — e o
-            # aproveitamento é parte dela. Snapshot antigo não tem a bruta, e o
-            # `finish` cai na líquida, que é o comportamento de antes deste
-            # campo: nenhuma fornada em voo muda de número.
-            "items": [
-                {
-                    "input_sku": ri.input_sku,
-                    "quantity": str(ri.quantity),
-                    "gross_quantity": str(ri.gross_quantity),
-                    "usable_pct": str(ri.usable_pct),
-                    "unit": ri.unit,
-                }
-                for ri in recipe.items.filter(is_optional=False).order_by("sort_order")
-            ],
-            "production": {
-                "requires_batch_tracking": bool((recipe.meta or {}).get("requires_batch_tracking")),
-                "shelf_life_days": (recipe.meta or {}).get("shelf_life_days"),
-                "steps": list((recipe.meta or {}).get("steps") or recipe.steps or []),
-            },
-        }
+        snapshot = build_recipe_snapshot(recipe)
         user_meta = wo_kwargs.get("meta", {})
         wo_kwargs["meta"] = {**user_meta, "_recipe_snapshot": snapshot}
 
