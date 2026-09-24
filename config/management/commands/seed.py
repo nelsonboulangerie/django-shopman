@@ -418,6 +418,15 @@ def material_opening_targets() -> dict[str, Decimal]:
         else:
             dias = Decimal("21")
         demanda = daily.get(sku, Decimal("0")) * dias
+        if material.unit != "g":
+            # Insumo que não se pesa na base da casa — a revenda contada em
+            # unidade (o pote de geleia), o que a casa vende a quilo, um órfão em
+            # litro. O piso é na unidade DELE: 5 potes, nunca 5000. Medido em
+            # 24/09/2026 num ensaio contra a cópia do alpha, onde o piso em grama
+            # plantou 5000 unidades de cada item da Mercearia.
+            piso = Decimal("2") if fresco else Decimal("5")
+            targets[sku] = max(demanda, piso).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+            continue
         piso = PISO_ESPECIARIA_G.get(sku) or (Decimal("2000") if fresco else Decimal("5000"))
         quantidade = max(demanda, piso)
         pacote = PACOTE_G.get(sku)
@@ -1722,14 +1731,18 @@ class Command(BaseCommand):
         # Terminal é config assinada por gente, como a curadoria de de-paras acima:
         # que ESPÉCIE de estação é o dispositivo (`station`), o que o PDV mostra
         # (`default_fulfillment_type`, `favorite_collection_refs`, `auto_lock_seconds`)
-        # e o hardware do balcão. Nada disso é dado de seed. O flush precisa apagar
-        # (o turno pendura aqui por FK), então fotografa por `ref` e
-        # `_restore_terminal_config` devolve depois que o seed recria.
+        # e o hardware do balcão. Nada disso é dado de seed — e por isso o flush
+        # NÃO apaga o terminal. O turno, que pendurava nele por FK, já saiu acima.
         #
-        # ⚠️ Sem isto o reseed levava tudo em silêncio: o seed replanta só `hardware`,
-        # e só no `pdv-main` que o `Terminal.default()` recria — um totem some inteiro.
-        # O `station` era o pior, porque volta para ATENDIDA: o totem passa a exigir um
-        # PIN que não há ninguém para digitar, e nada na tela diz por quê.
+        # ⚠️ Apagar também não é possível num banco que já roda: a credencial do
+        # agente de impressão (`PrintAgentCredential`) e o trabalho de impressão
+        # (`PrintJob`) apontam para o terminal com PROTECT. Medido em 24/09/2026 num
+        # ensaio contra a cópia do alpha: o `delete()` estourava `ProtectedError` com
+        # metade do banco já apagada — o flush não é transacional. E a credencial é de
+        # um dispositivo de verdade: apagá-la desligaria a impressora do balcão.
+        #
+        # A fotografia continua: `_restore_terminal_config` devolve a config da loja
+        # por cima do que a fase dinâmica do seed replanta no `pdv-main`.
         self._terminal_config = {
             t.ref: {
                 "label": t.label,
@@ -1740,7 +1753,6 @@ class Command(BaseCommand):
             }
             for t in CashTerminal.objects.all()
         }
-        CashTerminal.objects.all().delete()
 
         # Day closing
         DayClosing.objects.all().delete()
