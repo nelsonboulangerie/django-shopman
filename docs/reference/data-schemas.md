@@ -1350,6 +1350,7 @@ Perfil do insumo (nutrição TACO/USDA por 100 g, alergênicos, `diet`,
 | `gtin` | `str` | admin (Buyman) | `shop/services/sku_records.start_selling` · `shop/adapters/purchase_invoice_nfe._material_by_catalog_gtin` | Código de barras da embalagem. Vai para `Product.metadata.social.gtin` quando o item passa a ser vendido ("Permitir revenda"), e casa a linha da NF-e sem de-para (sugestão pelo código, junto com o `social.gtin` do produto do mesmo SKU). |
 | `ncm` | `str` | admin (Buyman) | `shop/services/sku_records.start_selling` | NCM da nota do fornecedor. Vira `Product.metadata.fiscal` (perfil `own_production`) ao ligar a venda. |
 | `image_url` | `str` URL | admin (Buyman) | `shop/services/sku_records.start_selling` | Foto de referência. Com ela o item entra também nos canais remotos; sem ela, só no PDV. |
+| `opens_into` | `{sku: str, quantity: str decimal, shelf_life_days?: int}` | admin (Buyman) | `shop/services/package_opening.py` (fechamento da fornada e guardrail de insumo) | **A embalagem se abre em outro insumo.** O tablete de manteiga 200 g (`un`, que também se revende) abre em `quantity` (0.200) do insumo `sku` (`MANTEIGA-COM-SAL`, `kg`), que é o que a ficha usa. A produção abre UMA embalagem por vez, só quando o aberto não basta, e nunca da vitrine. `shelf_life_days` = validade depois de aberta (vira lote do aberto, sem passar da validade da embalagem). O aberto não tem cadastro de venda: a revenda nunca o vende. |
 | `alt_suppliers` | `list[str]` | seed/admin (Buyman) | telas de compra | Fornecedores alternativos (ex.: Anaconda para as farinhas Embramex). |
 | `supplier_note` | `str` | seed | telas de compra | Nota quando não há fornecedor (ex.: "produção própria (jambon blanc da casa)"). |
 
@@ -1880,6 +1881,7 @@ quem confirmou, de qual NF, com que preço — mais **uma** estruturada:
 | `purchase_invoice_access_key` | `str` | chave de 44 dígitos da NF-e (vazio no modo manual) |
 | `purchase_receipt_note` · `purchase_line_note` | `str` | ressalva geral e ocorrência da linha |
 | `purchase_line_id` · `purchase_material_sku` | `str` | rastro da linha do rascunho |
+| `opened_from_sku` · `opened_from_batch` | `str` | abertura de embalagem (`shop/services/package_opening.open_package`): de que SKU/lote fechado veio o aberto. Movimento `make`, par da saída de 1 un da embalagem |
 | `purchase_qty` · `purchase_base_qty` | `str` (Decimal) | quantidade **na unidade de compra** e **na unidade-base** — é o par que prova a conversão |
 | `purchase_total_cost_q` · `purchase_unit_cost_q` | `int` (centavos) | valor da linha e custo por unidade de compra |
 | `converted_via` | `{label: str, factor: str, approximate: bool}` | **a ponte que a quantidade atravessou** — ver abaixo |

@@ -43,9 +43,13 @@ class InventoryAvailabilityBackend:
         from shopman.stockman import stock
         from shopman.stockman.models import Position
 
+        from shopman.shop.services.package_opening import openable_content
+
         on_hand = stock.available(sku)
-        if get_setting("CONSUME_FROM_SALEABLE_POSITIONS"):
-            return on_hand
-        for position in Position.objects.filter(is_saleable=True):
-            on_hand -= stock.available(sku, position=position)
-        return max(on_hand, 0)
+        if not get_setting("CONSUME_FROM_SALEABLE_POSITIONS"):
+            for position in Position.objects.filter(is_saleable=True):
+                on_hand -= stock.available(sku, position=position)
+            on_hand = max(on_hand, 0)
+        # O que ainda está fechado na embalagem também serve: o fechamento da
+        # fornada abre o necessário (``shop/services/package_opening.py``).
+        return on_hand + openable_content(sku)
