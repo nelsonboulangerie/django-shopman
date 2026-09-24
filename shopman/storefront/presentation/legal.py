@@ -45,6 +45,53 @@ LEGAL_VERSION = "2026-09-24"
 LEGAL_UPDATED_AT = "24 de setembro de 2026"
 
 
+#: Cópias permanentes das versões publicadas: versão → SHA-256 de cada arquivo em
+#: `surfaces/storefront-nuxt/public/legal/<privacy|terms>/<versão>.html`.
+#:
+#: A página viva muda; o pedido precisa continuar apontando para o texto que valia
+#: quando foi feito. Por isso cada versão vira um ARQUIVO NOVO, que nunca é reescrito
+#: (`scripts/check_legal_archive.py` reprova alteração ou remoção no CI), e o
+#: checkout grava no pedido a versão, a URL e o hash (`order_legal_snapshot`).
+#:
+#: ⚠️ Arquivar vem DEPOIS do deploy, e não junto da troca de texto: a lista de
+#: operadores sai da configuração do ambiente (`privacy_inventory`), então só a
+#: página publicada mostra o que o cliente leu. Trocou `LEGAL_VERSION`? Depois que o
+#: deploy subir, rode `python scripts/archive_legal_version.py` e cole aqui a linha
+#: que ele imprime. Até lá, o pedido grava versão e URL, sem hash, e diz
+#: `archived: False` — é lacuna declarada, não prova inventada.
+LEGAL_ARCHIVE: dict[str, dict[str, str]] = {
+    "2026-09-24": {
+        "privacy": "cdfdde12a9817d1941f5bece934b1d4abfb6d5e337653567ad202a176c9815aa",
+        "terms": "f3dbb90e983fe586bb4022345837a448a86016230eec0bd9ad157d329f2da778",
+    },
+}
+
+LEGAL_ARCHIVE_KINDS = ("privacy", "terms")
+
+
+def legal_archive_path(kind: str, version: str) -> str:
+    """URL pública (relativa à loja) da cópia permanente de uma versão."""
+    if kind not in LEGAL_ARCHIVE_KINDS:
+        raise ValueError(f"documento legal desconhecido: {kind!r}")
+    return f"/legal/{kind}/{version}.html"
+
+
+def order_legal_snapshot(version: str = LEGAL_VERSION) -> dict:
+    """O que o pedido guarda sobre os documentos que valiam no momento do checkout.
+
+    Vai para `Session.data["legal"]` e, pelo commit, para `Order.snapshot["data"]`
+    — a parte selada do pedido, que não muda depois. Versão e URL sempre; o SHA-256
+    só quando a versão já foi arquivada (ver `LEGAL_ARCHIVE`).
+    """
+    hashes = LEGAL_ARCHIVE.get(version)
+    snapshot: dict = {"version": version, "archived": hashes is not None}
+    for kind in LEGAL_ARCHIVE_KINDS:
+        snapshot[f"{kind}_url"] = legal_archive_path(kind, version)
+        if hashes is not None:
+            snapshot[f"{kind}_sha256"] = hashes[kind]
+    return snapshot
+
+
 def _project(processor: Processor) -> ProcessorProjection:
     return ProcessorProjection(name=processor.name, role=processor.role, shares=processor.shares)
 

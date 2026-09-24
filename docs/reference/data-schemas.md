@@ -49,6 +49,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `recipient` | `dict` | CheckoutView, API (`set_data`) | CommitService, KDS/expedição | Destinatário do presente: `{name, phone}`. **Não** é identidade (não vira Customer) nem sobrescreve o comprador. Integridade garantida por `intents.gift.build_gift_data` (nunca parcial). **Obrigatório só na ENTREGA**; em retirada ("embalar para presente") é opcional/omitido |
 | `gift_message` | `string` | CheckoutView, API (`set_data`) | CommitService | Mensagem do presente para o destinatário. **Separada** de `order_notes` (operacional/cozinha). Opcional; só presente quando informada |
 | `gift_hide_values` | `bool` | CheckoutView, API (`set_data`) | CommitService, nota/etiqueta, KDS | `True` para ocultar valores na nota/etiqueta do presente. Só presente quando `True` (ausência = mostrar valores) |
+| `legal` | `dict` | CheckoutView do storefront (`presentation.legal.order_legal_snapshot`, via `set_data`) | ninguém edita; chega selado em `Order.snapshot["data"]["legal"]` (NÃO é copiado para `Order.data`) | Quais Termos e Privacidade valiam quando o pedido foi feito: `{version: "AAAA-MM-DD", archived: bool, privacy_url, terms_url, privacy_sha256?, terms_sha256?}`. URL = cópia permanente em `/legal/<privacy\|terms>/<versão>.html` (append-only, `scripts/check_legal_archive.py`). Os `*_sha256` só existem com `archived: true` — a versão é arquivada depois do deploy, porque a lista de operadores depende do ambiente. Sem PII |
 | `customer_rating` | `dict` | `OrderRateView` (storefront tracking) | `OrderAdmin` (coluna + detalhe), dashboard do Admin (média móvel + comentários), alerta `low_rating` (nota ≤2) | Avaliação do pedido pelo cliente: `{rating, comment, submitted_at, source}`. Só presente após o cliente avaliar. Loop fechado (RATING-LOOP-PLAN): a loja lê a nota no Admin e é avisada em nota baixa. Ver [[project_customer_rating_intent]] |
 
 ### Chaves de sistema (geridas pelo Core)
@@ -461,7 +462,7 @@ Escrito uma única vez por `CommitService._do_commit()`.
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
 | `items` | `list[dict]` | hooks._build_directive_payload (stock.hold), customers.OrderingOrderHistoryBackend | Itens da sessão: `[{line_id, sku, name, qty, unit_price_q, line_total_q, meta}]`. Campos extras no topo da linha NÃO sobrevivem ao `Session._normalize_items` (whitelist) — flag contextual de linha vive em `meta` |
-| `data` | `dict` | handlers/customer.py (fallback), hooks (stock.commit holds) | Cópia integral de `session.data` no momento do commit |
+| `data` | `dict` | handlers/customer.py (fallback), hooks (stock.commit holds) | Cópia integral de `session.data` no momento do commit — inclui `legal` (versão/URL/SHA-256 dos documentos legais vigentes; ver Session.data) |
 | `pricing` | `dict` | customers.OrderingOrderHistoryBackend | Pricing da sessão: `{total_q, subtotal_q, discount_q, ...}` |
 | `rev` | `int` | hooks._build_directive_payload (stock.hold) | Revisão da sessão no commit |
 | `seed` | `string` | seed | QA/auditoria | Marcador de origem para dados demo. Não usado em lógica de negócio |

@@ -18,6 +18,7 @@ from shopman.shop.services import sessions as session_service
 from shopman.storefront.api import clean_name
 from shopman.storefront.cart import CHANNEL_REF
 from shopman.storefront.identity import knows_only_the_number
+from shopman.storefront.presentation.legal import order_legal_snapshot
 from shopman.storefront.services import orders as order_service
 
 from .serializers import (
@@ -382,6 +383,10 @@ class CheckoutView(APIView):
             # Omotenashi: lembrar escolhas é o default; toggle desmarcado → False.
             # (Endereço novo é salvo sempre, independente disto.)
             "save_as_default": validated_data.get("save_as_default", True),
+            # Qual versão de Termos e Privacidade valia neste pedido, com a URL da
+            # cópia permanente (e o SHA-256, se já arquivada). Vai para a parte
+            # SELADA do pedido: a página viva muda, o pedido não.
+            "legal": order_legal_snapshot(),
         }
         if notes:
             checkout_data["order_notes"] = notes

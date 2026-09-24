@@ -100,6 +100,12 @@ jobs:
       - name: "ADR-015: migrations append-only + DEPRECATED com prazo"
         run: .venv/bin/python scripts/check_adr015.py
 
+      # O arquivo de Termos/Privacidade é o que o pedido cita (URL + SHA-256):
+      # versão publicada nunca é reescrita nem removida, só ganha irmã nova.
+      # Mesma base de diff do gate ADR-015 acima (checkout raso aguenta).
+      - name: Arquivo legal é append-only
+        run: .venv/bin/python scripts/check_legal_archive.py
+
       # `makemigrations --check` valida o GRAFO; ele não prova que as migrações
       # APLICAM em ordem sobre um banco vazio. A distinção não é teórica: duas
       # colisões de número aconteceram em 18/08, e o que provou nas duas vezes
