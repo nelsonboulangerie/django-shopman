@@ -20,6 +20,7 @@ import random
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
+from unittest import mock
 
 from django.conf import settings
 
@@ -10181,6 +10182,11 @@ class Command(BaseCommand):
         Os pedidos de QA continuam onde estão; estes só somam o movimento que
         uma casa em operação teria. Vão em lote, sem passar pelo lifecycle:
         aqui interessa a série de vendas, não o ciclo do pedido.
+
+        A venda por Pix/cartão ganha o pagamento que o PDV registra no Payman
+        (atestado no terminal, ``PaymentService.settle``). Sem ele, a
+        conciliação diária achava um ``digital_order_missing_intent`` por venda
+        e mandava ``payment_reconciliation_failed`` ao gestor todo dia.
         """
         from shopman.orderman.models import OrderItem
 
@@ -10189,6 +10195,7 @@ class Command(BaseCommand):
             return 0
 
         Order.objects.filter(ref__startswith="BIV-").delete()
+        PaymentIntent.objects.filter(order_ref__startswith="BIV-").delete()
         today = timezone.localdate()
         rng = random.Random(20260821)
         contexts = {
@@ -10208,7 +10215,8 @@ class Command(BaseCommand):
                 day, context, offset=offset, days=self.BI_LONG_DAYS, rng=rng
             )
             price_factor = self._bi_price_factor(offset=offset, days=self.BI_LONG_DAYS)
-            orders, lines_by_ref = [], {}
+            orders, lines_by_ref, intents = [], {}, []
+            sold_at = self._at(day, 11)
             for index in range(count):
                 # Convenção de ref da casa: PREFIXO-aammdd-sufixo (há teste cobrando).
                 ref = f"BIV-{day:%y%m%d}-{index}"
@@ -10219,12 +10227,26 @@ class Command(BaseCommand):
                     )
                 ]
                 total_q = sum(unit * qty for _p, qty, unit in lines)
+                data = self._bi_native_payment(day, total_q, rng)
+                method = data["payment"]["method"]
+                if method in (PaymentIntent.Method.PIX, PaymentIntent.Method.CARD):
+                    intent_ref = f"PI-{ref}"
+                    data["payment"]["intent_ref"] = intent_ref
+                    intents.append(
+                        PaymentIntent(
+                            ref=intent_ref, order_ref=ref, method=method,
+                            status=PaymentIntent.Status.CAPTURED, amount_q=total_q,
+                            gateway="", gateway_id="",
+                            gateway_data={"asserted_at_terminal": True},
+                            captured_at=sold_at,
+                        )
+                    )
                 orders.append(
                     Order(
                         ref=ref, channel_ref="pdv", session_key=f"seed-{ref}",
                         status=Order.Status.COMPLETED,
                         total_q=total_q,
-                        data=self._bi_native_payment(day, total_q, rng),
+                        data=data,
                         snapshot={"seed": "nelson", "source": "bi_native_volume"},
                     )
                 )
@@ -10246,10 +10268,21 @@ class Command(BaseCommand):
                 ],
                 batch_size=500,
             )
+            # A transação é imutável (nem ``update`` passa): a data da venda entra
+            # no próprio insert, com o relógio do ``auto_now_add`` na hora dela.
+            with mock.patch("django.utils.timezone.now", return_value=sold_at):
+                PaymentIntent.objects.bulk_create(intents, batch_size=500)
+                PaymentTransaction.objects.bulk_create(
+                    [
+                        PaymentTransaction(
+                            intent=intent, type=PaymentTransaction.Type.CAPTURE, amount_q=intent.amount_q,
+                        )
+                        for intent in PaymentIntent.objects.filter(order_ref__startswith=f"BIV-{day:%y%m%d}-")
+                    ],
+                    batch_size=500,
+                )
             # created_at é auto_now_add: só depois do insert dá para datar.
-            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(
-                created_at=self._at(day, 11)
-            )
+            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(created_at=sold_at)
             created += len(orders)
         return created
 
