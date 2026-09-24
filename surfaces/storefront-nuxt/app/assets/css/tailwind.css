@@ -506,6 +506,18 @@
     padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
   }
 
+  /* ── Superfície Faubourg: card rosé DENTRO de um card claro ────────────────
+   * Primeiro consumidor: o login (envio manual do WhatsApp e o formulário do SMS).
+   * O texto secundário não pode herdar o `--muted-foreground` do corpo: no tema
+   * neutro ele dá 3,97:1 sobre o Faubourg-200 (reprova AA). Aqui ele é o próprio
+   * texto misturado ao fundo — 6,0:1 na marca Nelson, 9,2:1 no neutro, 7,9:1 no
+   * escuro (onde o Faubourg vira o fundo da página, um card rebaixado). */
+  .shop-surface-faubourg {
+    background-color: var(--shop-bottomnav);
+    color: var(--foreground);
+    --muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));
+  }
+
   /* ── Dock: o card de ação que fica preso acima da navegação ─────────────────
    * `sticky bottom-20` NÃO cumpre isso, e a diferença só aparece rolando. Um
    * elemento sticky gruda na base da tela apenas enquanto o CONTAINER dele

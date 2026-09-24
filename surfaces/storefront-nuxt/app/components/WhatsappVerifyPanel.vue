@@ -63,7 +63,7 @@ async function copyMessage () {
 <template>
   <section class="shop-stack-block" data-login-whatsapp aria-live="polite">
     <template v-if="status === 'error'">
-      <div class="rounded-lg border bg-bottomnav p-4 shop-stack-block">
+      <div class="rounded-lg border bg-card p-4 shop-stack-block">
         <UiAlert variant="destructive">
           <UiAlertTitle>Não consegui gerar seu link agora</UiAlertTitle>
           <UiAlertDescription>Tente novamente ou use o SMS.</UiAlertDescription>
@@ -77,8 +77,14 @@ async function copyMessage () {
     <template v-else>
       <!-- Bloco 1 — a ação: abrir o WhatsApp com a mensagem pronta e enviar. O lampejo
            lidera (o que vai acontecer); o rodapé reassegura (prático, seguro, sem senha). -->
+      <!-- CARTÃO PRINCIPAL CLARO (dono, 23/09). Era Faubourg inteiro, e o envio
+           manual era só um rodapé atrás de uma linha fina — tudo no mesmo tom. Agora
+           o cartão é a superfície clara do corpo (`bg-card`) e o envio manual é um
+           cartão Faubourg DENTRO dele: o mesmo caminho, feito à mão, com borda
+           própria. Alinhamento: o bloco de chamada (lampejo, CTA, nota) é centrado;
+           o cartão manual é instrução e campo, então é todo à esquerda. -->
       <div
-        class="rounded-lg border bg-bottomnav p-4 shop-stack-block"
+        class="rounded-lg border bg-card p-4 shop-stack-block"
         data-login-whatsapp-open
         :aria-busy="isStarting && !canOpenWhatsApp"
       >
@@ -119,13 +125,15 @@ async function copyMessage () {
              A mensagem continua VISÍVEL, e não escondida atrás de um "mostrar
              mais": quem desconfia de botão precisa ver o que vai enviar na hora
              de decidir. O peso cai pela cor e pelo tamanho, nunca pela ausência. -->
-        <div v-if="manualMessage" class="-mx-4 border-t px-4 pt-4 shop-stack-micro" data-login-whatsapp-manual>
+        <div v-if="manualMessage" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
           <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
           <p class="shop-meta">
             {{ manualIntro }}
             <span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>.
           </p>
-          <div class="flex items-center gap-2 rounded-md bg-background py-1 pr-1 pl-3">
+          <!-- `bg-card`, não `bg-background`: sobre o Faubourg o canvas creme some
+               (245 233 194 contra 245 231 221) e a mensagem perde a moldura. -->
+          <div class="flex items-center gap-2 rounded-md border bg-card py-1 pr-1 pl-3">
             <span class="min-w-0 flex-1 truncate font-mono text-base tracking-wider text-muted-foreground">{{ manualMessage }}</span>
             <UiButton
               type="button"
@@ -143,6 +151,7 @@ async function copyMessage () {
             variant="link"
             size="sm"
             icon="lucide:external-link"
+            class="justify-start px-0"
             :disabled="!chatLink"
           >
             Abrir WhatsApp
