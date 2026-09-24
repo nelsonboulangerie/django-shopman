@@ -23,7 +23,7 @@ from shopman.backstage.services import purchase as purchase_service
 
 CHAVE = "41260812345678000190550010000012341000123459"
 ST_KEY = next(k for k, p in FISCAL_PROFILES.items() if p.csosn == "500")
-SEM_ST_KEY = next(k for k, p in FISCAL_PROFILES.items() if p.csosn != "500" and p.carries_cest)
+SEM_ST_KEY = next(k for k, p in FISCAL_PROFILES.items() if p.csosn != "500")
 TIPO = purchase_service.FISCAL_DIVERGENCE_ALERT_TYPE
 
 

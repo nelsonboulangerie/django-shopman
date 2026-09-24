@@ -12,7 +12,7 @@ from shopman.fiscalman.classification import FISCAL_PROFILES
 from shopman.shop.services.invoice_fiscal_check import check_invoice_fiscal, invoice_has_st
 
 ST_KEY = next(k for k, p in FISCAL_PROFILES.items() if p.csosn == "500")
-SEM_ST_KEY = next(k for k, p in FISCAL_PROFILES.items() if p.csosn != "500" and p.carries_cest)
+SEM_ST_KEY = next(k for k, p in FISCAL_PROFILES.items() if p.csosn != "500")
 
 
 def _meta(profile: str, *, ncm: str = "21069090", cest: str = "") -> dict:

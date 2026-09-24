@@ -11,8 +11,7 @@ sugestão (NCM/CEST no rascunho de ``product_enrichment``) e quem levanta o
 aviso é o recebimento do Compras (``backstage/services/purchase.py``); quem
 aceita é gente, campo a campo, no Admin.
 
-⚠️ Não depende das CHAVES dos perfis fiscais (``own_production``, ``resale``…),
-que estão para ser renomeadas/fundidas. "O cadastro é ST" é o perfil que emite
+⚠️ Não depende das CHAVES dos perfis fiscais, que já foram renomeadas uma vez. "O cadastro é ST" é o perfil que emite
 com CSOSN 500 (ou exige CEST); "a nota é ST" sai do CST/CSOSN do item e do valor
 de ST que ele declara.
 """
@@ -185,11 +184,8 @@ def _st_profile() -> FiscalProfile | None:
 
 
 def _resale_without_st_profile() -> FiscalProfile | None:
-    """O perfil de revenda sem ST: não emite ST, mas carrega CEST."""
-    return next(
-        (p for p in FISCAL_PROFILES.values() if not catalog_has_st(p) and getattr(p, "carries_cest", False)),
-        None,
-    )
+    """O perfil sem ST (o CEST é do produto, em qualquer perfil)."""
+    return next((p for p in FISCAL_PROFILES.values() if not catalog_has_st(p)), None)
 
 
 def _icms_code_label(*, icms_cst: str, icms_csosn: str) -> str:
