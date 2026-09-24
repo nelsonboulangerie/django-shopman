@@ -1457,6 +1457,13 @@ describe('surface UX guardrails', () => {
       .map(file => relative(root, join(root, file)))
     expect(gutterOffenders).toEqual([])
   })
+
+  // /privacy e /terms viraram /privacidade e /termos em 24/09/2026, sem 301
+  // (pré-go-live, o Google reindexa). Link para o endereço antigo é 404.
+  it('nenhum link da loja aponta para /privacy ou /terms', () => {
+    const offenders = surfaceVueFiles.filter(file => /["'`]\/(privacy|terms)(?=[#?"'`])/.test(read(file)))
+    expect(offenders).toEqual([])
+  })
 })
 
 describe('environment ribbon', () => {

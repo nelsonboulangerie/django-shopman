@@ -68,11 +68,21 @@ def _constant(name: str) -> str:
     return match.group(1)
 
 
-class _LegalExtractor(HTMLParser):
-    """Recorta título, data e corpo do `<LegalDocument>` renderizado."""
+def archive_path(kind: str, version: str) -> str:
+    return f"/documentos-legais/{DOCUMENTS[kind]['segment']}/{version}.html"
 
-    def __init__(self) -> None:
+
+class _LegalExtractor(HTMLParser):
+    """Recorta título, data e corpo do `<LegalDocument>` renderizado.
+
+    Link de um documento para o outro (os termos citam a política) vira link para a
+    cópia IRMÃ da mesma versão: o texto arquivado não pode depender de uma rota viva,
+    que muda de endereço ou de conteúdo. Só a nota do topo aponta para a página viva.
+    """
+
+    def __init__(self, version: str) -> None:
         super().__init__(convert_charrefs=True)
+        self.sibling_links = {spec["path"]: archive_path(kind, version) for kind, spec in DOCUMENTS.items()}
         self.out: list[str] = []
         self.depth = 0  # >0 enquanto dentro de um trecho capturado
         self.stack: list[str] = []
@@ -123,6 +133,10 @@ class _LegalExtractor(HTMLParser):
                 continue
             if name == "href" and (value or "").startswith(CF_EMAIL_HREF):
                 value = "mailto:" + _cloudflare_email(value[len(CF_EMAIL_HREF):])
+            elif name == "href":
+                path, hash_sign, fragment = (value or "").partition("#")
+                if path in self.sibling_links:
+                    value = self.sibling_links[path] + hash_sign + fragment
             cleaned.append(f' {name}="{escape(value or "", quote=True)}"')
         if tag == "span" and "block" in classes:
             # Linha de endereço: na página é `class="block"`; aqui vira linha própria.
@@ -182,7 +196,7 @@ def _fetch(url: str) -> str:
 
 def render_archive(*, kind: str, version: str, source_url: str, page_html: str) -> tuple[str, str]:
     """Devolve (html arquivado, data lida na página)."""
-    parser = _LegalExtractor()
+    parser = _LegalExtractor(version)
     parser.feed(page_html)
     body = re.sub(r"\n{2,}", "\n", "".join(parser.out)).strip()
     meta = " ".join(" ".join(parser.meta_text).split())

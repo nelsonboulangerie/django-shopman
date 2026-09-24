@@ -9,8 +9,8 @@ já estava resolvida de outro jeito no `main`, e a outra metade contrariava deci
 
 ## Contexto
 
-As páginas `/privacidade` e `/termos` (até 24/09/2026 `/privacy` e `/terms`, que respondem
-301) têm versão desde 23/09/2026: `LEGAL_VERSION` em
+As páginas `/privacidade` e `/termos` (até 24/09/2026 `/privacy` e `/terms`, sem 301: pré-go-live
+o Google reindexa) têm versão desde 23/09/2026: `LEGAL_VERSION` em
 `shopman/storefront/presentation/legal.py`, cobrada por `tests/legalVersion.test.ts`. Mas a
 página é viva. Quando o texto muda, o que o cliente leu antes deixa de existir em qualquer
 lugar, e o pedido não guardava nem qual versão valia no dia.
@@ -35,6 +35,11 @@ rodou, não a que o cliente leu.
    `scripts/archive_legal_version.py` (só GET público). Ele confere que a página mostra a data de
    `LEGAL_UPDATED_AT`, recorta o documento, desfaz a ofuscação de e-mail do Cloudflare e recusa
    sobrescrever. O hash de cada arquivo vai para `LEGAL_ARCHIVE` em `legal.py`.
+   Link de um documento para o outro vira link para a cópia **irmã da mesma versão**
+   (`/documentos-legais/privacidade/<versão>.html`); só a nota do topo aponta para a página
+   viva. A cópia `2026-09-24` é anterior a essa regra: foi tirada quando as páginas moravam em
+   `/privacy` e `/terms`, que deixaram de existir sem 301, e seus links levam a 404. Ela não
+   se reescreve, porque pedidos já guardam o SHA-256 dos bytes dela.
 3. **O checkout grava a citação na parte selada do pedido.** `CheckoutView` põe
    `order_legal_snapshot()` em `Session.data["legal"]`; o commit copia `session.data` inteira
    para `Order.snapshot["data"]`, que é imutável. Não entra em `Order.data` (que handlers
