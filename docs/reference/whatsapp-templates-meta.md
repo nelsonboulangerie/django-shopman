@@ -16,15 +16,25 @@ o caminho direto não compra nada e custa uma migração.
 Três templates têm botão de URL e os três apontavam para lugar nenhum. O que se descobriu
 ao medir contra o código, e o que ficou decidido:
 
-> **17/09/2026:** o site passou para `https://www.nelsonboulangerie.com.br`. Os templates já
-> aprovados com botão em `menu.` continuam funcionando: no cardápio antigo, `/pedido/...`
-> redireciona para o `www.` com o mesmo caminho. Template novo nasce com `www.`.
+**1. A base da loja é `https://www.nelsonboulangerie.com.br`.** Conferido no spec **vivo**
+do `shopman-nelson` em 24/09/2026: `SHOPMAN_STOREFRONT_BASE_URL` e `SHOPMAN_DOMAIN` dizem
+os dois `https://www.nelsonboulangerie.com.br`, e `.do/app.alpha-subdomains.yaml` no repo
+acompanha. **Todo template novo nasce com `www.`.**
 
-**1. A base da loja é `https://menu.nelsonboulangerie.com.br`.** É o valor de
-`SHOPMAN_STOREFRONT_BASE_URL` no spec **vivo** do `shopman-nelson`. O doc escrevia o apex.
-
-> `.do/app.alpha-subdomains.yaml` acompanha o domínio definitivo
-> `https://menu.nelsonboulangerie.com.br`; `alpha.*` continua aposentado.
+> ⚠️ O doc escreveu `menu.` até 24/09, e por duas vezes: o apex antes do corte de 01/09, o
+> `menu.` depois dele. O site passou para `www.` em 17/09 e o parágrafo não acompanhou —
+> ficou uma nota de rodapé dizendo `www.` por cima de um item dizendo `menu.`. Como o
+> prefixo é **fixo dentro do template aprovado**, errá-lo não é edição de uma linha: é um
+> ciclo de re-submissão à Meta, vezes os **oito** templates cujo botão usa o prefixo fixo
+> (o nono, o `link_pagamento_enviado`, leva a URL da cobrança e não depende disto). Antes
+> de submeter o primeiro botão, confira o spec vivo — não este parágrafo:
+>
+> ```
+> doctl apps spec get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f | grep -A2 STOREFRONT_BASE_URL
+> ```
+>
+> `alpha.*` continua aposentado. Nenhum template foi aprovado com `menu.` — quando este
+> doc foi escrito não havia nenhum aprovado, e não há até hoje.
 
 **2. `/pedido/{ref}/pagar` não existe.** O único caminho é `/pedido/{ref}`
 (`storefront_links.path_order_tracking`). Acompanhar e pagar são a MESMA tela: o Pix e o
@@ -49,7 +59,7 @@ qualquer pessoa com acesso à conta e utilizável enquanto o cliente não clicas
 Todos os botões de URL usam **um só prefixo fixo**, com a ref no fim:
 
 ```
-https://menu.nelsonboulangerie.com.br/pedido/{{1}}
+https://www.nelsonboulangerie.com.br/pedido/{{1}}
 ```
 
 A variável `{{1}}` do botão mapeia para o campo personalizado **`order_ref`** — não para
@@ -106,7 +116,7 @@ pergunta aberta. Não há template de OTP a submeter.
 ## Utility — cliente
 
 Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **Utility**.
-Onde há botão, ele é sempre `https://menu.nelsonboulangerie.com.br/pedido/{{1}}`,
+Onde há botão, ele é sempre `https://www.nelsonboulangerie.com.br/pedido/{{1}}`,
 com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_recebido` — evento `order_received`
