@@ -78,7 +78,7 @@ export function anchorLabel(kind: string): string {
 }
 
 export const UNIT_OPTIONS: readonly FormulaUnit[] = ["g", "kg", "ml", "L", "un"] as const;
-export const YIELD_UNIT_OPTIONS: readonly string[] = ["kg", "g", "un", "L", "ml"] as const;
+export const YIELD_UNIT_OPTIONS: readonly string[] = ["g", "kg", "un", "L", "ml"] as const;
 
 /** Padrão da casa: a âncora soma 1000 g (§3). */
 export const HOUSE_BASIS_G = 1000;
