@@ -2063,7 +2063,7 @@ class Command(BaseCommand):
             "CV": ["soda", "torneira", "artesanal", "bebida", "frio", "do-dia"],
             "SDLA": ["soda", "laranja", "torneira", "artesanal", "bebida", "frio"],
             "FORMA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
-            "KUP": ["pao", "japones", "escuro", "macio"],
+            "KUP": ["pao", "japones", "escuro", "macio", "kuropan"],
             "COE": ["pao-doce", "bichinho", "criancas", "do-dia"],
             "CQCOM": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
             "QJQT": ["lanche", "sanduiche", "queijo", "shokupan", "quente"],
@@ -2516,7 +2516,10 @@ class Command(BaseCommand):
         # portão de completude lá embaixo é justamente quem cobra isso, e ele
         # está certo. Publicar é um passo do gestor, depois de preencher a ficha.
         sem_ficha = {
-            # Os 41 seguem todos aqui, mesmo os que herdaram ficha dos "do dia".
+            # Seguem todos aqui, mesmo os que herdaram ficha dos "do dia". O Chá
+            # Hibisco e o Chá Tônica saíram em 24/09: têm ingredientes, tabela
+            # nutricional e alergênicos declarados (nenhum) no próprio seed, e o
+            # dono pediu "bebidas no catálogo".
             # Dois portões cobram, e os dois têm razão: o de completude quer
             # alergênicos e tabela nutricional (as fichas de "Folhado do dia" e
             # "Focaccia do dia" nunca tiveram as duas últimas — o que existia foi
@@ -2527,7 +2530,7 @@ class Command(BaseCommand):
             "CHA-INTUICAO-KANFA-L70", "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-L70",
             "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
             "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
-            "DELI", "HOD", "CHHIB", "CTFV",
+            "DELI", "HOD",
             "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
             "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
             "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
@@ -2618,7 +2621,7 @@ class Command(BaseCommand):
         sells_without_stock_skus = [
             "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
-            "FRAP", "VIEN",
+            "FRAP", "VIEN", "CHHIB", "CTFV",
             "CV", "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
             "QJQT", "JB",             "PERDU"         ]
@@ -2637,7 +2640,7 @@ class Command(BaseCommand):
         made_to_order_skus = [
             "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
-            "FRAP", "VIEN",
+            "FRAP", "VIEN", "CHHIB", "CTFV",
             "CV", "SDLA",
             "CQMO", "CQMA", "CQCOM",
             "QJQT", "JB",             "PERDU"         ]
@@ -3169,7 +3172,11 @@ class Command(BaseCommand):
                 # voltaram do Yooga (18/08)
                 "FFGOP", "HOD", "HODP", "DELI", "JO",
                 # Também folhados (a massa é a categoria principal deles).
-                "FFGO", "CRPQ"],
+                "FFGO", "CRPQ",
+                # Focaccia mora em Rústicos (a massa) e também é Salgados
+                # (dono, 24/09: "Focaccias são Salgados") — como já estava no
+                # alpha.
+                "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP"],
             "doces": ["PERDU", "MELSA", "MDLN",                 # voltaram do Yooga (18/08)
                 "MA",
                 # Recheados: doces de sabor, folhados/brioche de massa — e a massa
@@ -3177,10 +3184,10 @@ class Command(BaseCommand):
                 "PCHOC", "CRP", "CN", "BICH", "BRRSN",
                 # Os pães doces de Macios (dono, 24/09: "Brioche Chocolat é Doce
                 # sim. E tem mais opções que provavelmente deveriam estar em
-                # doces"). Macios continua a casa deles; Doces é a segunda.
-                # Ficaram de fora, por dúvida: Cornet (recheio do dia), Melonpan
-                # e Kuro Pan ("levemente doce/adocicado").
-                "BRCH", "COC", "COE", "URS", "PORQ"],
+                # doces"; e depois: "esses são todos doces", Cornet e Melonpan
+                # incluídos). Macios continua a casa deles; Doces é a segunda.
+                # O Kuro Pan NÃO: fica só em Macios (dono, 24/09).
+                "BRCH", "COC", "COE", "URS", "PORQ", "CO", "MELON"],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
             "mercearia": [
