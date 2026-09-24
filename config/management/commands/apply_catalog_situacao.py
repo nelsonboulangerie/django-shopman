@@ -52,6 +52,15 @@ EXCLUIR: tuple[tuple[str, str], ...] = (
     ("TABUA", "era ideia, não virou produto"),
     ("COMBO-PETIT-DEJ", "era ideia, não virou produto"),
     ("GL", "placeholder de sabor indefinido; no lugar nascem os dois minis reais"),
+    # Placeholders da despensa do Cardápio 2027 (decisão do dono, 24/09/2026).
+    # O que os substitui nasce pelo `apply_grocery_catalog`.
+    ("MT", "placeholder; no lugar entra o trio Maille (Dijon, com Mel e, com GTIN, à l'Ancienne)"),
+    ("QP", "placeholder; no lugar entram os cremes Pomerode e o Queijo Vale do Testo"),
+    ("CX", "placeholder; a casa não vende cornichons"),
+    ("BK", "placeholder; o frio real da mercearia é o Presunto Cru"),
+    ("GR", "placeholder; a casa não revende café"),
+    ("LN", "placeholder; no lugar entram as quatro caixas presente"),
+    ("THL", "placeholder; os chás Kãnfa em lata e pouch são o chá para levar"),
 )
 
 #: Sai da loja, o cadastro fica. Coluna `Situação = despublicar`.

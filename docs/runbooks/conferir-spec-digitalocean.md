@@ -25,7 +25,8 @@ incluíam:
 - **a emissão fiscal inteira** — `SHOPMAN_FISCAL_ADAPTER`, `FOCUS_NFE_TOKEN`.
 - **o NF-e de Compras com o certificado e-CNPJ** —
   `PURCHASE_NFE_CERTIFICATE_PFX_BASE64` e sua senha. O certificado A1 é o
-  arquivo que você não tem outra cópia à mão. ⚠️ Vence em **10/09/2026**.
+  arquivo que você não tem outra cópia à mão. Já foi renovado (o
+  anterior vencia em 10/09/2026).
 
 Este PR fechou o buraco: as chaves entraram nos dois specs. Mas a armadilha
 volta a armar sozinha toda vez que alguém acrescentar uma env pelo painel — que

@@ -65,7 +65,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.buyman.models import Material
     from shopman.offerman.models import ListingItem
 
-    from config.management.commands.apply_grocery_catalog import GROCERY, LEFT_OUT
+    from config.management.commands.apply_grocery_catalog import GIFT_BOXES, GROCERY, LEFT_OUT
 
     grocery = {p.sku: p for p in Product.objects.filter(sku__in=[i.sku for i in GROCERY])}
     assert set(grocery) == {i.sku for i in GROCERY}
@@ -77,6 +77,12 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert Material.objects.get(sku=sku).unit == product.unit
         assert not from_metadata(product.metadata).errors(), sku
         assert product.collection_items.filter(collection__ref="mercearia").exists()
+    # Os placeholders da despensa saíram (dono, 24/09); as caixas presente entram.
+    assert not Product.objects.filter(sku__in=("MT", "QP", "CX", "BK", "GR", "LN", "THL")).exists()
+    for box in GIFT_BOXES:
+        caixa = Product.objects.get(sku=box.sku)
+        assert caixa.metadata["social"]["brand"] == "Nelson Boulangerie"
+        assert set(ListingItem.objects.filter(product=caixa).values_list("listing__ref", flat=True)) == {"pdv"}
     rtat = Product.objects.get(sku="RTAT")
     assert (rtat.name, rtat.base_price_q) == ("Ratatouille 90g", 1800)
     assert "price_tbd" not in rtat.metadata

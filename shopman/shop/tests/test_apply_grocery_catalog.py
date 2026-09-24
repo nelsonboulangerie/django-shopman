@@ -19,13 +19,16 @@ from shopman.offerman.models import Collection, Listing, ListingItem, Product
 
 from config.management.commands import apply_grocery_catalog as command
 from config.management.commands.apply_grocery_catalog import (
+    GIFT_BOXES,
     GROCERY,
     LEFT_OUT,
     REAL_PLACEHOLDERS,
+    WEB_UNCONFIRMED,
     apply_grocery,
 )
 
 DIJON = "MOSTARDA-DIJON-MAILLE-215"
+VALE_DO_TESTO = "QUEIJO-VALEDOTESTO-POMERODE"
 
 
 @pytest.fixture
@@ -47,10 +50,15 @@ def test_a_tabela_so_tem_item_vendavel_sem_mentir():
     assert len(skus) == len(set(skus))
     assert not set(skus) & set(LEFT_OUT)
     for item in GROCERY:
-        assert item.price_q > 0, item.sku
-        assert gtin_is_valid(item.gtin), item.sku
+        if item.unit == "kg":
+            # A quilo: sem GTIN de embalagem (a balança imprime código interno).
+            assert item.gtin == "" and item.weight_g is None, item.sku
+        else:
+            assert item.unit == "un", item.sku
+            assert item.price_q > 0, item.sku
+            assert gtin_is_valid(item.gtin), item.sku
         # Perfil de revenda comum: NCM de 8 dígitos e SEM CEST gravado.
-        metadata = {"fiscal": {"profile": "own_production", "ncm": item.ncm, "unit": "UN"}}
+        metadata = {"fiscal": {"profile": "own_production", "ncm": item.ncm, "unit": item.unit.upper()}}
         assert not from_metadata(metadata).errors(), item.sku
         assert resolve_fiscal_item(from_metadata(metadata))["cfop"] == "5102"
 
@@ -62,8 +70,13 @@ def test_a_tabela_nao_repete_sku_que_o_seed_ja_semeia():
     from config.management.commands import seed
 
     source = inspect.getsource(seed.Command._seed_catalog)
-    for item in GROCERY:
+    for item in (*GROCERY, *GIFT_BOXES):
         assert f'"{item.sku}"' not in source, item.sku
+
+
+def test_gtin_repetido_nao_entra_em_dois_produtos():
+    gtins = [item.gtin for item in GROCERY if item.gtin]
+    assert len(gtins) == len(set(gtins))
 
 
 # ── O comando ─────────────────────────────────────────────────────────────
@@ -193,3 +206,103 @@ def test_os_placeholders_reais_batem_com_o_seed():
     source = inspect.getsource(seed.Command._seed_catalog)
     for real in REAL_PLACEHOLDERS:
         assert f'("{real.sku}", "{real.name}"' in source, real.sku
+
+
+# ── A quilo, caixas presente e GTIN da web ────────────────────────────────
+
+
+def test_queijo_a_quilo_nasce_sem_gtin_e_vendavel_sem_preco(catalog):
+    """Falta de preço não trava: o PDV cobra o valor da etiqueta (dono, 24/09)."""
+    report = apply_grocery(apply=True)
+
+    queijo = Product.objects.get(sku=VALE_DO_TESTO)
+    assert (queijo.unit, queijo.base_price_q, queijo.unit_weight_g) == ("kg", 0, None)
+    assert queijo.is_sellable
+    assert get_social_attributes(queijo).gtin == ""
+    assert queijo.metadata["fiscal"]["unit"] == "KG"
+    # Sem preço do quilo, o valor da etiqueta é o preço da linha (#1059).
+    assert queijo.metadata["price_from_label"] is True
+    item = ListingItem.objects.get(product=queijo)
+    assert item.listing.ref == "pdv" and item.is_sellable
+    assert [sku for sku, _ in report["no_price"]] == [VALE_DO_TESTO]
+
+
+def test_item_a_quilo_com_gtin_e_recusado(catalog, monkeypatch):
+    queijo = next(i for i in GROCERY if i.sku == VALE_DO_TESTO)
+    monkeypatch.setattr(command, "GROCERY", (replace(queijo, gtin="2000000000008"),))
+
+    report = apply_grocery(apply=True)
+
+    assert report["refused"] == [(VALE_DO_TESTO, "item a quilo não leva GTIN de embalagem")]
+
+
+def test_gtin_da_web_fica_marcado_como_a_conferir(catalog):
+    apply_grocery(apply=True)
+
+    ancienne = Product.objects.get(sku="MOSTARDA-ANCIENNE-MAILLE-210")
+    assert ancienne.metadata["gtin_source"] == WEB_UNCONFIRMED
+    assert "gtin_source" not in Product.objects.get(sku=DIJON).metadata
+
+
+def test_caixa_presente_e_produto_da_casa_so_no_pdv(catalog):
+    apply_grocery(apply=True)
+
+    for box in GIFT_BOXES:
+        caixa = Product.objects.get(sku=box.sku)
+        assert (caixa.name, caixa.base_price_q) == (box.name, box.price_q)
+        assert caixa.is_sellable and not caixa.is_published
+        assert "purchase" not in caixa.metadata
+        assert get_social_attributes(caixa).gtin == ""
+        assert _refs(box.sku) == {"pdv"}
+
+
+# ── A venda antiga do Yooga volta ao produto ──────────────────────────────
+
+
+def test_os_nomes_do_yooga_apontam_para_skus_da_tabela():
+    known = {item.sku for item in GROCERY} | {box.sku for box in GIFT_BOXES}
+    assert set(command.YOOGA_NAMES.values()) <= known
+
+
+def test_de_para_do_yooga_volta_ao_produto_real(catalog):
+    from shopman.backstage.models import ProductAlias
+
+    qp = Product.objects.create(sku="QP", name="Queijo Pomerode", unit="un", base_price_q=3200)
+    outro = Product.objects.create(sku="CRO", name="Croissant", unit="un", base_price_q=1000)
+    solto = ProductAlias.objects.create(source="yooga", external_name="Mostarda Dijon Maille 215g", status="confirmed")
+    no_placeholder = ProductAlias.objects.create(
+        source="yooga", external_name="Queijo Vale do Testo Pomerode  3m", status="confirmed", product=qp,
+    )
+    curado = ProductAlias.objects.create(
+        source="yooga", external_name="Caixa Presente Nice", status="confirmed", product=outro,
+    )
+
+    report = apply_grocery(apply=True)
+
+    solto.refresh_from_db()
+    no_placeholder.refresh_from_db()
+    curado.refresh_from_db()
+    assert solto.product.sku == DIJON
+    assert no_placeholder.product.sku == VALE_DO_TESTO
+    assert curado.product == outro  # curadoria de alguém: fica
+    assert len(report["aliases"]) == 2
+    assert apply_grocery(apply=True)["aliases"] == []
+
+
+def test_item_a_quilo_nao_vai_para_canal_remoto_nem_com_foto(catalog):
+    """O carrinho online só aceita unidade inteira: quem pesa é o balcão."""
+    apply_grocery(apply=True)
+    queijo = Product.objects.get(sku=VALE_DO_TESTO)
+    Product.objects.filter(pk=queijo.pk).update(image_url="https://img.example.com/queijo.webp")
+    ListingItem.objects.create(listing=Listing.objects.get(ref="web"), product=queijo, price_q=0)
+
+    report = apply_grocery(apply=True)
+
+    assert _refs(VALE_DO_TESTO) == {"pdv"}
+    assert (VALE_DO_TESTO, "web") in report["unlisted"]
+
+
+def test_item_com_preco_nao_leva_a_chave_da_etiqueta(catalog):
+    apply_grocery(apply=True)
+
+    assert "price_from_label" not in Product.objects.get(sku=DIJON).metadata
