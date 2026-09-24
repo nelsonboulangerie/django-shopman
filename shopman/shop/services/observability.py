@@ -165,6 +165,7 @@ def record_webhook_failure(
 _INTEGRATION_PROVIDER_LABELS = {
     "google_geocoding": "Google Geocoding",
     "fiscal": "Nota fiscal (NFC-e)",
+    "comtele_sms": "SMS de login (Comtele)",
 }
 
 

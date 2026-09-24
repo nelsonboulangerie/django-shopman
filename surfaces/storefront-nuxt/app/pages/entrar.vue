@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
 
@@ -10,6 +10,7 @@ interface RequestCodeResponse {
   delivery_label: string
   dev_console_hint: boolean
   code_expires_at?: string
+  resend_after_seconds?: number
   debug_otp_code?: string
   debug_otp_expires_at?: string
 }
@@ -57,6 +58,7 @@ const verified = ref(false)
 const welcomeNeeded = ref(false)
 const welcomeName = ref('')
 const lastSentAtMs = ref<number | null>(null)
+const resendWindow = ref(resendWindowMs(null))
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 
 const codeExpiresAt = ref('')
@@ -165,7 +167,7 @@ const phonePlaceholder = computed(() => phoneRegion.value === 'INTL' ? '+1 202 5
 const phoneAutocomplete = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'tel-national')
 const phoneInputMode = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'numeric')
 const regionToggleLabel = computed(() => phoneRegion.value === 'INTL' ? 'Usar número do Brasil' : 'Usar número internacional')
-const resendState = computed(() => resendCooldown(lastSentAtMs.value, nowMs.value))
+const resendState = computed(() => resendCooldown(lastSentAtMs.value, nowMs.value, resendWindow.value))
 const debugOtpValidUntil = computed(() => otpValidUntilDisplay(debugOtpExpiresAt.value))
 const debugOtpDigits = computed(() => debugOtpCode.value.split(''))
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
@@ -279,6 +281,7 @@ function applyCodeDelivery (response: RequestCodeResponse, method: AuthDeliveryM
   debugOtpExpiresAt.value = response.debug_otp_expires_at || ''
   showDebugOtp.value = true
   lastDeliveryMethod.value = method
+  resendWindow.value = resendWindowMs(response.resend_after_seconds)
   lastSentAtMs.value = Date.now()
 }
 

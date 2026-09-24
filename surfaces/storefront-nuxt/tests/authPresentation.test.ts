@@ -11,6 +11,7 @@ import {
   otpValidUntilDisplay,
   isMarketingPromptRouteExcluded,
   resendCooldown,
+  resendWindowMs,
   welcomeNameValue
 } from '../app/presentation/auth'
 
@@ -61,13 +62,30 @@ describe('resendCooldown', () => {
 
   it('counts down whole seconds while the cooldown runs', () => {
     const sentAt = 10_000
-    expect(resendCooldown(sentAt, sentAt + 1)).toEqual({ ready: false, remainingSeconds: 30 })
-    expect(resendCooldown(sentAt, sentAt + 12_400)).toEqual({ ready: false, remainingSeconds: 18 })
+    expect(resendCooldown(sentAt, sentAt + 1)).toEqual({ ready: false, remainingSeconds: 60 })
+    expect(resendCooldown(sentAt, sentAt + 12_400)).toEqual({ ready: false, remainingSeconds: 48 })
   })
 
   it('releases exactly after the cooldown window', () => {
     const sentAt = 10_000
     expect(resendCooldown(sentAt, sentAt + RESEND_COOLDOWN_MS)).toEqual({ ready: true, remainingSeconds: 0 })
+  })
+
+  // O botão não pode liberar antes de o servidor aceitar: eram 30 s aqui contra
+  // 60 s do gate G11, e o "Reenviar" dos 30-59 s voltava "Aguarde".
+  it('follows the window the server declares', () => {
+    const sentAt = 10_000
+    const window = resendWindowMs(90)
+    expect(window).toBe(90_000)
+    expect(resendCooldown(sentAt, sentAt + 60_000, window)).toEqual({ ready: false, remainingSeconds: 30 })
+    expect(resendCooldown(sentAt, sentAt + 90_000, window)).toEqual({ ready: true, remainingSeconds: 0 })
+  })
+
+  it('falls back to the doorman default when the server omits the window', () => {
+    expect(resendWindowMs(undefined)).toBe(RESEND_COOLDOWN_MS)
+    expect(resendWindowMs(null)).toBe(RESEND_COOLDOWN_MS)
+    expect(resendWindowMs(Number.NaN)).toBe(RESEND_COOLDOWN_MS)
+    expect(RESEND_COOLDOWN_MS).toBe(60_000)
   })
 })
 

@@ -295,6 +295,16 @@ def contact_verify_error_message(result: ContactVerifyResult) -> str:
     return mensagem
 
 
+def code_resend_cooldown_seconds() -> int:
+    """Segundos entre dois envios de código para o mesmo número (gate G11 do doorman).
+
+    Fonte única para a tela: o botão "Reenviar" libera quando o servidor aceita.
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    return max(0, int(doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS))
+
+
 def request_code_error_message(auth_result) -> str:
     from shopman.doorman.error_codes import ErrorCode
 
@@ -305,6 +315,14 @@ def request_code_error_message(auth_result) -> str:
         ErrorCode.TOO_MANY_FAILURES: (
             "Muitos códigos incorretos para este número. Por segurança, "
             "novos códigos ficam suspensos por até 24 horas."
+        ),
+        # A falha foi NOSSA (ou do provedor), não do número: mandar o cliente
+        # "verificar o número" era um rótulo que mente, e ele repetia o mesmo
+        # número até desistir. A saída real é tentar de novo ou entrar pelo
+        # WhatsApp, que não depende de SMS.
+        ErrorCode.SEND_FAILED: (
+            "Não conseguimos enviar o código agora. Tente de novo em instantes "
+            "ou entre pelo WhatsApp."
         ),
     }
     return error_map.get(
