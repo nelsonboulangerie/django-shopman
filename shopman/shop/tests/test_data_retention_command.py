@@ -86,6 +86,9 @@ def test_data_retention_does_not_register_new_maintenance_jobs() -> None:
     }
 
     assert "data_retention" not in command_names
+    # O comando existe (guestman, manual, simulação por padrão), mas agendar é
+    # gate humano: a página de privacidade diz que hoje nada é apagado sozinho.
+    # Colocá-lo aqui faria um deploy apagar IPs de produção — o defeito do #614.
     assert "purge_consent_ip" not in command_names
 
 
@@ -187,6 +190,29 @@ def test_data_retention_counts_expired_code_without_deleting_it() -> None:
     assert r10["counts"]["codigos_vencidos"] == 1
     assert code.target_value not in raw
     assert VerificationCode.objects.filter(pk=code.pk).exists()
+
+
+@pytest.mark.django_db
+def test_r11_counts_by_collection_like_purge_consent_ip_without_redacting() -> None:
+    from shopman.guestman.contrib.consent.service import ConsentService
+
+    customer = Customer.objects.create(ref="RETENTION-R11", first_name="Ana")
+    ConsentService.grant_consent(
+        customer.ref,
+        "email",
+        ip_address="192.0.2.30",
+        occurred_at=timezone.now() - timedelta(days=91),
+    )
+    # A reconstrução avança `updated_at`, mas o IP continua sendo o da coleta.
+    ConsentService.rebuild_current_state(customer.ref, "email")
+
+    payload, raw = _run_json()
+
+    r11 = next(row for row in payload["rules"] if row["rule"] == "R11")
+    assert r11["counts"]["projecoes_com_ip_vencido"] == 1
+    assert r11["counts"]["eventos_com_ip_vencido"] == 1
+    assert "192.0.2.30" not in raw
+    assert CommunicationConsent.objects.get(customer=customer).ip_address == "192.0.2.30"
 
 
 @pytest.mark.django_db

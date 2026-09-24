@@ -23,7 +23,11 @@ migration, job ou caminho de descarte.
 - R06 exclui recibos ligados a destinos ainda pendentes, repetíveis ou
   desconhecidos; aceite do provedor não é resultado final do concierge;
 - arquivos legais permanentes são inventário, com `candidates=0`;
-- `data_retention` e `purge_consent_ip` não entram no worker.
+- `data_retention` e `purge_consent_ip` não entram no worker. O
+  `purge_consent_ip` existe como comando manual, simulação por padrão; o
+  primeiro `--apply` em produção e qualquer agendamento pedem gate humano
+  separado, e agendar exige antes atualizar a página de privacidade, que hoje
+  promete descarte só sob pedido.
 
 ## Grafo real
 
