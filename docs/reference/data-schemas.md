@@ -1370,6 +1370,7 @@ achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
 | `purchase.request_channel` | `str` | `_queue_supplier_purchase_request` | auditoria | Canal do despacho (`email`/`sms`/`whatsapp`/`console`). |
 | `purchase.request_recipient` | `str` | `_queue_supplier_purchase_request` | auditoria | Endereço/telefone que recebeu. |
 | `purchase.request_contact_name` | `str` | `_queue_supplier_purchase_request` | auditoria | Nome da pessoa (`SupplierContact`) a quem o pedido foi endereçado. Vazio = caiu na central da empresa, e a mensagem cumprimentou a casa, não uma pessoa. |
+| `purchase.cost_origin` | `{cost_q: int, date: str ISO, source: str, supplier: str ref}` | `manage.py apply_grocery_catalog` (tabela `SUPPLIER_COSTS`) | quem audita o custo | **De onde veio o custo do fornecedor** gravado em `SupplierMaterialCost` quando ele não veio de uma NF-e lida pelo Compras (ex.: o dono lembrando o que pagou em 2025). O custo em si mora no `SupplierMaterialCost`; aqui fica a data e a fonte. |
 | `purchase.request_dedupe_key` | `str` | `_queue_supplier_purchase_request` | `create_deduped` | Chave de idempotência da directive de notificação; inclui o `cost_q` para que mudança de preço gere novo pedido. |
 
 ---
