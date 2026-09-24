@@ -9,12 +9,11 @@ set -euo pipefail
 # `web`: as variáveis de ambiente são as dele, e nada aqui toca no spec.
 
 # 0) Trava: sem o #1089 no ar, o flush quebra no terminal com meio banco apagado.
-python -c "
-import inspect
-from config.management.commands import seed
-fonte = inspect.getsource(seed)
-assert 'PrintAgentCredential' in fonte and 'if material.unit != \"g\":' in fonte, 'imagem sem o #1089: espere o deploy'
-"
+#    Lê o FONTE (grep): importar o seed sem o Django carregado estoura
+#    AppRegistryNotReady — foi o que a primeira tentativa no alpha fez, em 24/09.
+grep -q 'PrintAgentCredential' config/management/commands/seed.py \
+  && grep -q 'if material.unit != "g":' config/management/commands/seed.py \
+  || { echo "imagem sem o #1089: espere o deploy"; exit 1; }
 
 # 1) Curadoria dos nomes dos insumos (28 renomeações, o café vira dois).
 python manage.py apply_material_skus --apply | tail -3
