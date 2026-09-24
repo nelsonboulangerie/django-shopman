@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from shopman.offerman.models import Listing, ListingItem, Product
+from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 
 from shopman.shop.models import ProductAffinity, RuleConfig
 from shopman.shop.projections.suggestions import COMPLEMENT, suggest
@@ -456,8 +456,13 @@ def test_the_seeded_pairings_are_the_ones_the_owner_dictated():
         (p["when"]["attr"], p["when"]["value"])
         for p in params["pairings"]
     }
-    assert pairs == {("natureza", "comida"), ("sabor", "doce"), ("temperatura", "quente")}
+    assert pairs == {
+        ("natureza", "comida"), ("sabor", "doce"), ("temperatura", "quente"),
+        # 23/09: o espelho de "doce pede café" — quem leva a bebida ganha o doce.
+        ("natureza", "bebida"),
+    }
     assert params["affinity_weight"] == 3
+    assert params["distinct_from_cart"] == ["natureza", "sabor"]
     assert params["price"] == "below_cart_average"
 
 
@@ -496,3 +501,154 @@ def test_the_seeded_rule_offers_a_drink_to_someone_carrying_bread(listing):
 
     assert [s.sku for s in found] == ["CAFE"]
     assert found[0].reasons == ("pairing:natureza=comida→natureza=bebida",)
+
+
+# --- adicional é complemento, não substituto (dono, 23/09) -----------------
+
+
+def _in_collection(product, ref):
+    collection, _ = Collection.objects.get_or_create(ref=ref, defaults={"name": ref})
+    CollectionItem.objects.create(collection=collection, product=product, is_primary=True)
+    return product
+
+
+def _croque_menu(listing):
+    """O cardápio do caso real, com os atributos que o `propose_product_attributes`
+    deriva das coleções (salgados → comida/salgado/quente)."""
+    madame = _in_collection(_product(
+        "CQMA", "Croque Madame", price_q=2800, listing=listing,
+        natureza="comida", sabor="salgado", temperatura="quente",
+    ), "salgados")
+    monsieur = _in_collection(_product(
+        "CQMO", "Croque Monsieur", price_q=2400, listing=listing,
+        natureza="comida", sabor="salgado", temperatura="quente",
+    ), "salgados")
+    complet = _in_collection(_product(
+        "CQCOM", "Croque Complet", price_q=3000, listing=listing,
+        natureza="comida", sabor="salgado", temperatura="quente",
+    ), "salgados")
+    suco = _in_collection(_product(
+        "SUCO", "Suco de laranja", price_q=1200, listing=listing,
+        natureza="bebida", temperatura="gelado",
+    ), "bebidas-geladas")
+    cafe = _in_collection(_product(
+        "CAFE", "Café coado", price_q=700, listing=listing,
+        natureza="bebida", temperatura="quente",
+    ), "bebidas-quentes")
+    return madame, monsieur, complet, suco, cafe
+
+
+def test_a_croque_in_the_cart_gets_a_drink_and_never_another_croque(listing):
+    """O caso do dono: 2 Croque Madame na sacola sugeriram Croque Monsieur.
+
+    Com a regra REAL (a da migração) e o histórico do jeito que ele é: quem
+    pede um croque para a mesa pede o outro, então o lift do par é alto — mais
+    alto que o da bebida. Mesmo assim o croque não é adicional: é o mesmo
+    prato, da mesma coleção. O que se oferece junto de um prato é a bebida.
+    """
+    _croque_menu(listing)
+    _affinity("CQMA", "CQMO", 9.0, count=40)
+    _affinity("CQMA", "CQCOM", 6.0, count=25)
+    _affinity("CQMA", "SUCO", 1.4, count=30)
+
+    found = suggest(COMPLEMENT, cart_skus={"CQMA"}, channel_ref=CHANNEL, limit=5)
+    skus = [s.sku for s in found]
+
+    assert skus, "a sacola com croque tem de receber alguma sugestão"
+    assert skus[0] in {"SUCO", "CAFE"}, f"esperava uma bebida no topo, veio {skus}"
+    assert not {"CQMO", "CQCOM"} & set(skus), f"croque sugerindo croque: {skus}"
+    # A gelada ganha: comida → bebida (3) e quente → gelado (2), e o histórico
+    # a confirma.
+    assert skus[0] == "SUCO"
+    assert "pairing:natureza=comida→natureza=bebida" in found[0].reasons
+
+
+def test_a_bebida_without_any_history_still_reaches_the_croque(listing):
+    """O pareamento acha a bebida mesmo quando a afinidade enche a fila.
+
+    Antes o pareamento só avaliava a vaga que a afinidade deixasse, e em ordem
+    alfabética de SKU — com 40 parceiros no histórico, a bebida nunca era vista.
+    """
+    _croque_menu(listing)
+    for i in range(60):
+        _product(f"A{i:02d}", f"Parceiro {i}", listing=listing)
+        _affinity("CQMA", f"A{i:02d}", 1.5, count=5)
+
+    found = suggest(COMPLEMENT, cart_skus={"CQMA"}, channel_ref=CHANNEL)
+    assert [s.sku for s in found] == ["SUCO"]
+
+
+def test_same_role_is_excluded_even_across_collections(listing):
+    """Pão rústico e pão macio moram em coleções diferentes e são o mesmo papel."""
+    _in_collection(_product("BAG", "Baguete", listing=listing,
+                            natureza="comida", sabor="neutro"), "rusticos")
+    _in_collection(_product("BRIOCHE", "Pão de forma", listing=listing,
+                            natureza="comida", sabor="neutro"), "macios")
+    _affinity("BAG", "BRIOCHE", 8.0)
+
+    assert suggest(COMPLEMENT, cart_skus={"BAG"}, channel_ref=CHANNEL) == ()
+
+
+def test_missing_attributes_never_exclude_by_themselves(listing):
+    """Atributo em branco é ausência de dado, não igualdade."""
+    _no_rule()
+    _product("PAO", "Pão", listing=listing)
+    _product("CAFE", "Café", listing=listing)
+    _affinity("PAO", "CAFE", 4.0)
+    _rule({"affinity_weight": 3, "distinct_from_cart": ["natureza", "sabor"]})
+
+    assert [s.sku for s in suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL)] == ["CAFE"]
+
+
+def test_a_pairing_outranks_affinity_alone(listing):
+    """O pareamento é a regra da casa; a afinidade ordena dentro dele."""
+    _product("PAO", "Pão", listing=listing, natureza="comida", sabor="neutro")
+    _product("DOCE", "Bolo", listing=listing, natureza="comida", sabor="doce")
+    _product("CAFE", "Café", listing=listing, natureza="bebida", temperatura="quente")
+    _affinity("PAO", "DOCE", 12.0)
+    _affinity("PAO", "CAFE", 1.2)
+    _rule({
+        "pairings": [{
+            "when": {"attr": "natureza", "value": "comida"},
+            "suggest": {"attr": "natureza", "value": "bebida"}, "weight": 3,
+        }],
+        "affinity_weight": 3,
+    })
+
+    found = suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL, limit=2)
+    assert [s.sku for s in found] == ["CAFE", "DOCE"]
+
+
+def test_being_cheaper_is_not_a_reason_by_itself(listing):
+    """Preço é preferência: sozinho, faria de todo item mais barato uma sugestão."""
+    _product("CQMA", "Croque Madame", price_q=2800, listing=listing, sabor="salgado")
+    _product("PAOZINHO", "Pãozinho", price_q=300, listing=listing)
+    # Um pareamento que não casa com nada: antes, só por existir, ele abria a
+    # fila para o catálogo inteiro, e o "mais barato" virava motivo sozinho.
+    _rule({
+        "pairings": [
+            {"when": {"attr": "sabor", "value": "doce"}, "suggest": {"tag": "café"}, "weight": 2},
+        ],
+        "price": "below_cart_average",
+    })
+
+    assert suggest(COMPLEMENT, cart_skus={"CQMA"}, channel_ref=CHANNEL) == ()
+
+
+def test_the_seeded_rule_offers_something_sweet_to_someone_carrying_coffee(listing):
+    """O espelho de "doce pede café", com a regra REAL."""
+    _in_collection(_product("CAFE", "Café", listing=listing,
+                            natureza="bebida", temperatura="quente"), "bebidas-quentes")
+    _in_collection(_product("CAPPU", "Cappuccino", listing=listing,
+                            natureza="bebida", temperatura="quente"), "bebidas-quentes")
+    _in_collection(_product("MAD", "Madeleine", listing=listing,
+                            natureza="comida", sabor="doce"), "doces")
+    _affinity("CAFE", "CAPPU", 5.0)
+
+    found = suggest(COMPLEMENT, cart_skus={"CAFE"}, channel_ref=CHANNEL, limit=3)
+    assert [s.sku for s in found] == ["MAD"]
+
+
+def test_distinct_from_cart_refuses_an_attribute_that_does_not_exist():
+    with pytest.raises(SuggestionRuleError, match="sabour"):
+        ComplementRule.validate_params({"distinct_from_cart": ["sabour"]})
