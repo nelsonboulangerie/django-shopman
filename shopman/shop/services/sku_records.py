@@ -208,7 +208,7 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
 
 def _sale_metadata(material) -> dict:
     """O que o cadastro de compra já sabe e o de venda precisa: marca, GTIN, NCM."""
-    from shopman.offerman.contrib.social.schema import ProductSocialAttributes, set_social_attributes
+    from shopman.offerman import ProductSocialAttributes, set_social_attributes
 
     source = material.metadata if isinstance(material.metadata, dict) else {}
     metadata: dict = {}
