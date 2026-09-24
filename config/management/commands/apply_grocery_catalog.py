@@ -152,8 +152,8 @@ LEFT_OUT: dict[str, str] = {
     "CHURRASQUINHO-PIMENTA-MIRANTE-120": "sem GTIN: ler o código de barras da embalagem",
     "CREME-BRIE-POMERODE-90": "sem GTIN: ler o código de barras da embalagem",
     "MOSTARDA-ANCIENNE-MAILLE-210": "sem GTIN: ler o código de barras da embalagem",
-    "CHA-CHALOSOFIA-KANFA-L50": "sem GTIN: não apareceu em NF-e nem na loja da Kãnfa; ler a lata",
-    "CHA-VITAL-KANFA-L60": "sem GTIN: não apareceu em NF-e nem na loja da Kãnfa; ler a lata",
+    "CHA-CHALOSOFIA-KANFA-L50": "sem GTIN: não apareceu em nenhuma NF-e lida; ler o código de barras da lata",
+    "CHA-VITAL-KANFA-L60": "sem GTIN: não apareceu em nenhuma NF-e lida; ler o código de barras da lata",
     "CHA-INTUICAO-KANFA-F250": "é INSUMO (lata de serviço do chá do bule), não produto de prateleira",
 }
 
@@ -364,10 +364,9 @@ class Command(BaseCommand):
     def handle(self, *args, apply: bool = False, **options):
         report = apply_grocery(apply=apply)
         out = self.stdout
-        verb = "Criado" if apply else "Criaria"
-
         if report["created"]:
-            out.write(self.style.SUCCESS(f"\n{verb}s {len(report['created'])} produto(s) de Mercearia:"))
+            verb = "Criados" if apply else "Criaria"
+            out.write(self.style.SUCCESS(f"\n{verb} {len(report['created'])} produto(s) de Mercearia:"))
             for item in report["created"]:
                 out.write(f"  {item.sku:38s} {item.name[:44]:44s} R$ {item.price_q / 100:6.2f}  {item.gtin}")
         for sku, lines in report["updated"]:
