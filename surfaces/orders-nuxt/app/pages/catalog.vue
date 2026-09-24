@@ -16,13 +16,14 @@ import type {
   CollectionProjection,
   ProductDetailPatch,
   ProductDetailProjection,
+  SkuRoles,
   SurfaceCellProjection,
 } from "~/types/catalog";
 
 const collectionRef = ref("");
 const {
   readMetadata, realtime, matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice,
-  resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
+  resync, fetchProductDetail, saveProductDetail, setPurchasable, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
 
@@ -384,6 +385,7 @@ function selectCollection(next: string) {
   collectionRef.value = next;
 }
 let detailRequest = 0;
+const detailRoles = ref<SkuRoles | null>(null);
 async function openDetail(row: CatalogRowProjection, tab = "geral") {
   const request = ++detailRequest;
   menuOpen.value = null;
@@ -393,13 +395,17 @@ async function openDetail(row: CatalogRowProjection, tab = "geral") {
   detailLoading.value = true;
   try {
     const result = await fetchProductDetail(row.sku);
-    if (request === detailRequest && detailSku.value === row.sku) detail.value = result;
+    if (request === detailRequest && detailSku.value === row.sku) {
+      detail.value = result;
+      detailRoles.value = result?.roles ?? null;
+    }
   } finally {
     if (request === detailRequest) detailLoading.value = false;
   }
 }
 function closeDetail() {
   detailRequest++;
+  detailRoles.value = null;
   detailSku.value = null;
   detail.value = null;
   detailDirty.value = false;
@@ -410,6 +416,16 @@ async function saveDetail(patch: ProductDetailPatch) {
   const request = detailRequest;
   const ok = await saveProductDetail(sku, patch);
   if (ok && sku === detailSku.value && request === detailRequest) closeDetail();
+}
+
+async function togglePurchasable(enabled: boolean) {
+  if (!detailSku.value) return;
+  const sku = detailSku.value;
+  const request = detailRequest;
+  const product = await setPurchasable(sku, enabled);
+  // Só os selos mudam, e moram fora de `detail`: trocar o detalhe reidrataria o
+  // painel e apagaria o rascunho que o gestor ainda não salvou.
+  if (product && sku === detailSku.value && request === detailRequest) detailRoles.value = product.roles ?? null;
 }
 
 function reviewProductConflict(keepDraft: boolean) {
@@ -948,6 +964,8 @@ useHead({ title: "Catálogo" });
       :detail="detail"
       :loading="detailLoading"
       :busy="detailSku !== null && isBusy(detailKey(detailSku))"
+      :roles="detailRoles"
+      :purchase-busy="detailSku !== null && isBusy(`purchase@${detailSku}`)"
       :assist="detailAssist.assist"
       :assist-busy="detailAssist.assistBusy"
       :initial-tab="detailTab"
@@ -957,6 +975,7 @@ useHead({ title: "Catálogo" });
       @dirty-change="detailDirty = $event"
       @update:open="(v) => { if (!v) closeDetail(); }"
       @save="saveDetail"
+      @set-purchasable="togglePurchasable"
     />
 
     <!-- lightbox: foto ampliada (clique em qualquer lugar fecha) -->

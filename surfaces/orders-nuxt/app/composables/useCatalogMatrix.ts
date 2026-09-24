@@ -322,6 +322,32 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     }
   }
 
+  // "Comprado pronto": liga/desliga o cadastro de compra do MESMO SKU. Gesto
+  // próprio, fora do rascunho do painel — vale na hora, como o interruptor que é.
+  // Devolve o detalhe novo (com os selos) ou null na recusa ("é produzido aqui").
+  async function setPurchasable(sku: string, enabled: boolean): Promise<ProductDetailProjection | null> {
+    const key = `purchase@${sku}`;
+    if (busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const res = await $fetch<{ product: ProductDetailProjection; message: string }>(
+        `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/purchase/`,
+        { method: "POST", body: { enabled } },
+      );
+      useSonner.success(res.message);
+      return res.product;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Não foi possível mudar a compra deste produto.");
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
   // ── assist de IA (sugestão por campo) ──────────────────────────────────────
   // Pede uma sugestão para UM campo e devolve o texto — não grava nada: quem
   // persiste é o salvar do painel, depois de o operador aceitar. Sem chave no
@@ -400,7 +426,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   return { readMetadata,
     realtime,
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
-    setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
+    setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail, setPurchasable,
     reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,
   };
 }
