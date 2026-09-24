@@ -46,7 +46,7 @@ LEGAL_UPDATED_AT = "24 de setembro de 2026"
 
 
 #: Cópias permanentes das versões publicadas: versão → SHA-256 de cada arquivo em
-#: `surfaces/storefront-nuxt/public/legal/<privacy|terms>/<versão>.html`.
+#: `surfaces/storefront-nuxt/public/documentos-legais/<privacidade|termos>/<versão>.html`.
 #:
 #: A página viva muda; o pedido precisa continuar apontando para o texto que valia
 #: quando foi feito. Por isso cada versão vira um ARQUIVO NOVO, que nunca é reescrito
@@ -68,12 +68,16 @@ LEGAL_ARCHIVE: dict[str, dict[str, str]] = {
 
 LEGAL_ARCHIVE_KINDS = ("privacy", "terms")
 
+#: O caminho é da loja, e a loja fala português com o cliente: a URL citada no pedido
+#: é `/documentos-legais/privacidade/…` e `/documentos-legais/termos/…`.
+LEGAL_ARCHIVE_SEGMENTS = {"privacy": "privacidade", "terms": "termos"}
+
 
 def legal_archive_path(kind: str, version: str) -> str:
     """URL pública (relativa à loja) da cópia permanente de uma versão."""
     if kind not in LEGAL_ARCHIVE_KINDS:
         raise ValueError(f"documento legal desconhecido: {kind!r}")
-    return f"/legal/{kind}/{version}.html"
+    return f"/documentos-legais/{LEGAL_ARCHIVE_SEGMENTS[kind]}/{version}.html"
 
 
 def order_legal_snapshot(version: str = LEGAL_VERSION) -> dict:

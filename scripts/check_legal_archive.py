@@ -15,10 +15,10 @@ from pathlib import Path
 from check_adr015 import _git, resolve_diff_base
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE_PREFIX = "surfaces/storefront-nuxt/public/legal/"
+ARCHIVE_PREFIX = "surfaces/storefront-nuxt/public/documentos-legais/"
 ARCHIVE_NAME = re.compile(
-    r"^surfaces/storefront-nuxt/public/legal/"
-    r"(?:privacy|terms)/\d{4}-\d{2}-\d{2}\.html$"
+    r"^surfaces/storefront-nuxt/public/documentos-legais/"
+    r"(?:privacidade|termos)/\d{4}-\d{2}-\d{2}\.html$"
 )
 
 
@@ -36,7 +36,7 @@ def classify_archive_changes(name_status_lines: list[str]) -> list[tuple[str, st
             if not status.startswith("A"):
                 violations.append((status, path, "versão existente não pode ser alterada ou removida"))
             elif not ARCHIVE_NAME.fullmatch(path):
-                violations.append((status, path, "use privacy/AAAA-MM-DD.html ou terms/AAAA-MM-DD.html"))
+                violations.append((status, path, "use privacidade/AAAA-MM-DD.html ou termos/AAAA-MM-DD.html"))
     return violations
 
 

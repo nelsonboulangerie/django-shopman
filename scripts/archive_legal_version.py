@@ -8,7 +8,7 @@ Uso (depois que o deploy da versão nova subiu):
 
 Lê `/privacy` e `/terms` já renderizados, confere que a página mostra a mesma
 data de `LEGAL_UPDATED_AT` (em `shopman/storefront/presentation/legal.py`), e
-grava `surfaces/storefront-nuxt/public/legal/<privacy|terms>/<LEGAL_VERSION>.html`.
+grava `surfaces/storefront-nuxt/public/documentos-legais/<privacidade|termos>/<LEGAL_VERSION>.html`.
 No fim imprime a linha a colar em `LEGAL_ARCHIVE`.
 
 Por que da página publicada, e não do `.vue`: a lista de operadores sai da
@@ -33,12 +33,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGAL_PY = ROOT / "shopman/storefront/presentation/legal.py"
-ARCHIVE_DIR = ROOT / "surfaces/storefront-nuxt/public/legal"
+ARCHIVE_DIR = ROOT / "surfaces/storefront-nuxt/public/documentos-legais"
 DEFAULT_ORIGIN = "https://www.nelsonboulangerie.com.br"
 
 DOCUMENTS = {
-    "privacy": {"path": "/privacy", "title": "Política de privacidade"},
-    "terms": {"path": "/terms", "title": "Termos de uso"},
+    "privacy": {"path": "/privacy", "segment": "privacidade", "title": "Política de privacidade"},
+    "terms": {"path": "/terms", "segment": "termos", "title": "Termos de uso"},
 }
 
 # Só a estrutura do documento sobrevive; classe, `data-*` e script ficam para trás.
@@ -241,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rendered: dict[str, str] = {}
     for kind, spec in DOCUMENTS.items():
-        target = ARCHIVE_DIR / kind / f"{version}.html"
+        target = ARCHIVE_DIR / spec["segment"] / f"{version}.html"
         if target.exists():
             print(f"ERRO: {target.relative_to(ROOT)} já existe — versão arquivada não se reescreve.")
             return 1
@@ -259,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
 
     hashes = {}
     for kind, document in rendered.items():
-        target = ARCHIVE_DIR / kind / f"{version}.html"
+        target = ARCHIVE_DIR / DOCUMENTS[kind]["segment"] / f"{version}.html"
         target.parent.mkdir(parents=True, exist_ok=True)
         data = document.encode("utf-8")
         target.write_bytes(data)

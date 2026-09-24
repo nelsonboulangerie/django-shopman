@@ -22,10 +22,14 @@ rodou, não a que o cliente leu.
 ## Decisão
 
 1. **Cada versão publicada vira arquivo permanente** em
-   `surfaces/storefront-nuxt/public/legal/<privacy|terms>/<AAAA-MM-DD>.html`, servido em
-   `/legal/privacy/<versão>.html` e `/legal/terms/<versão>.html`. URL em inglês, como todo o
-   sistema. O arquivo nunca é reescrito nem apagado: `scripts/check_legal_archive.py` reprova
-   `M`/`D` nesse diretório no Runtime Gate. Corrigir texto publicado é versão nova.
+   `surfaces/storefront-nuxt/public/documentos-legais/<privacidade|termos>/<AAAA-MM-DD>.html`,
+   servido em `/documentos-legais/privacidade/<versão>.html` e
+   `/documentos-legais/termos/<versão>.html`. A URL é em português porque é da loja, e a loja
+   fala português com o cliente (as rotas dela são `/conta`, `/sacola`, `/finalizar`…); a regra
+   "URL é em inglês" do CLAUDE.md vale para operador, Admin e API. Os identificadores no código
+   seguem em inglês (`privacy_url`, `terms_sha256`). O arquivo nunca é reescrito nem apagado:
+   `scripts/check_legal_archive.py` reprova `M`/`D` nesse diretório no Runtime Gate. Corrigir
+   texto publicado é versão nova.
 2. **A cópia é tirada da página publicada**, depois do deploy, por
    `scripts/archive_legal_version.py` (só GET público). Ele confere que a página mostra a data de
    `LEGAL_UPDATED_AT`, recorta o documento, desfaz a ofuscação de e-mail do Cloudflare e recusa
@@ -44,8 +48,6 @@ Formato: `{version, archived, privacy_url, terms_url, privacy_sha256?, terms_sha
 
 ## O que ficou de fora do #614, e por quê
 
-- **Rotas `/privacidade` e `/termos` como canônicas:** contrariam a regra "URL é em inglês"
-  (CLAUDE.md). O `main` serve `/privacy` e `/terms`.
 - **Frase de aceite no botão do checkout:** os Termos aprovados pelo dono em 24/09 (§2) dizem
   que o aceite acontece no primeiro acesso, junto da declaração de maioridade. Pôr outra
   frase de aceite no checkout muda o modelo de aceite. É decisão de produto/jurídica, não

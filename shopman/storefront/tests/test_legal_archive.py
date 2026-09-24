@@ -63,7 +63,7 @@ def test_no_archived_file_is_orphan():
     }
     on_disk = {
         str(path.relative_to(PUBLIC))
-        for path in (PUBLIC / "legal").rglob("*")
+        for path in (PUBLIC / "documentos-legais").rglob("*")
         if path.is_file()
     }
     assert on_disk == declared
@@ -90,9 +90,9 @@ def test_snapshot_of_an_archived_version_carries_url_and_hash():
     assert snapshot == {
         "version": version,
         "archived": True,
-        "privacy_url": f"/legal/privacy/{version}.html",
+        "privacy_url": f"/documentos-legais/privacidade/{version}.html",
         "privacy_sha256": LEGAL_ARCHIVE[version]["privacy"],
-        "terms_url": f"/legal/terms/{version}.html",
+        "terms_url": f"/documentos-legais/termos/{version}.html",
         "terms_sha256": LEGAL_ARCHIVE[version]["terms"],
     }
 
@@ -103,8 +103,8 @@ def test_snapshot_of_a_version_not_yet_archived_says_so_and_invents_no_hash():
     assert snapshot == {
         "version": "2099-01-01",
         "archived": False,
-        "privacy_url": "/legal/privacy/2099-01-01.html",
-        "terms_url": "/legal/terms/2099-01-01.html",
+        "privacy_url": "/documentos-legais/privacidade/2099-01-01.html",
+        "terms_url": "/documentos-legais/termos/2099-01-01.html",
     }
 
 
@@ -174,15 +174,15 @@ def test_checkout_seals_the_legal_versions_in_force_into_the_order(client):
 def test_gate_accepts_a_new_version_as_a_new_file():
     gate = _load_script("check_legal_archive")
     assert gate.classify_archive_changes(
-        ["A\tsurfaces/storefront-nuxt/public/legal/terms/2026-10-01.html"]
+        ["A\tsurfaces/storefront-nuxt/public/documentos-legais/termos/2026-10-01.html"]
     ) == []
 
 
 def test_gate_refuses_rewriting_or_removing_a_published_version():
     gate = _load_script("check_legal_archive")
     lines = [
-        "M\tsurfaces/storefront-nuxt/public/legal/terms/2026-09-24.html",
-        "D\tsurfaces/storefront-nuxt/public/legal/privacy/2026-09-24.html",
+        "M\tsurfaces/storefront-nuxt/public/documentos-legais/termos/2026-09-24.html",
+        "D\tsurfaces/storefront-nuxt/public/documentos-legais/privacidade/2026-09-24.html",
     ]
     assert [status for status, _path, _reason in gate.classify_archive_changes(lines)] == ["M", "D"]
 
@@ -190,7 +190,7 @@ def test_gate_refuses_rewriting_or_removing_a_published_version():
 def test_gate_refuses_an_ambiguous_name():
     gate = _load_script("check_legal_archive")
     violations = gate.classify_archive_changes(
-        ["A\tsurfaces/storefront-nuxt/public/legal/terms/atual.html"]
+        ["A\tsurfaces/storefront-nuxt/public/documentos-legais/termos/atual.html"]
     )
     assert [status for status, _path, _reason in violations] == ["A"]
 
