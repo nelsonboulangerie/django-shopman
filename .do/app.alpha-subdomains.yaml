@@ -599,12 +599,13 @@ envs:
 - key: SENTRY_DSN
   scope: RUN_TIME
   type: SECRET
-# Quem recebe os alertas críticos por e-mail (PR #943). Pessoal por ora, a
-# pedido do Pablo (22/09/2026) — trocar por alias do domínio oficial antes do
-# go-live.
+# Quem recebe os alertas críticos por e-mail (PR #943). É o grupo
+# ti@boulangerie.com.br do Google Workspace (24/09/2026): aceita remetente
+# externo e entrega a quem for membro — trocar quem recebe é mexer no grupo,
+# não no app.
 - key: SHOPMAN_ALERT_EMAIL
   scope: RUN_TIME
-  value: 'pablondrina@gmail.com'
+  value: 'ti@boulangerie.com.br'
   type: GENERAL
 
 # ── E-mail (SMTP) ─────────────────────────────────────────────────────
