@@ -51,8 +51,11 @@ peso diferente. Unidade ``kg``, sem GTIN (a etiqueta da balança é EAN interno
 prefixo 2) e preço por quilo **quando alguma fonte o tiver** — hoje nenhuma
 tem, e o relatório repete a pergunta a cada execução. A falta de preço NÃO
 trava o cadastro nem a venda (dono, 24/09): a casa já pesa e etiqueta à mão, e
-o operador digita o valor da etiqueta no PDV — essa mecânica é de outra frente
-(``docs/plans/WP-VENDA-POR-PESO.md``).
+o operador digita o valor da etiqueta no PDV. Por isso o item a quilo sem
+preço leva ``metadata['price_from_label'] = True`` — sem essa chave o PDV
+recusa a venda em vez de cobrar R$ 0,00 (#1059, ``WP-VENDA-POR-PESO.md``). E
+item a quilo **nunca** entra em canal remoto, com ou sem foto: o carrinho
+online só aceita unidade inteira.
 
 **GTIN da web** (``gtin_source``): quando o código veio de pesquisa (duas
 fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
@@ -301,7 +304,7 @@ def _metadata(product) -> dict:
 
 
 def _sync_listings(product, price_q: int, report: dict) -> None:
-    """PDV sempre; canal remoto só com foto (``sku_records.sync_sale_listings``)."""
+    """PDV sempre; canal remoto só com foto e nunca a quilo (``sku_records.sync_sale_listings``)."""
     from django.core.exceptions import ValidationError
 
     try:
@@ -565,7 +568,7 @@ class Command(BaseCommand):
             for name, before, after in report["aliases"]:
                 out.write(f"    {name[:46]:46s} {before} → {after}")
         for sku, ref in report["unlisted"]:
-            out.write(self.style.WARNING(f"  {sku:38s} sai de {ref}: sem foto não se vende de longe"))
+            out.write(self.style.WARNING(f"  {sku:38s} sai de {ref}: sem foto (ou a quilo) não se vende de longe"))
         for sku, field, have, want in report["conflicts"]:
             out.write(self.style.WARNING(f"  {sku:38s} {field} já é {have!r} (a tabela diz {want!r}) — mantido"))
         for sku, reason in report["no_price"]:

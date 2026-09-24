@@ -171,7 +171,8 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
     """PDV sempre; canal remoto só com foto. Devolve ``(listados, deslistados)``.
 
     Sem foto, nenhum item fica em canal onde o cliente decide pela imagem: ele
-    sai de lá. Com ``reactivate``, o item que já estava listado mas pausado
+    sai de lá. Item vendido a quilo (``unit="kg"``) também sai, com ou sem
+    foto: o carrinho online só aceita unidade inteira, e quem pesa é o balcão. Com ``reactivate``, o item que já estava listado mas pausado
     volta a vender, com o preço dado — é o gesto de quem ligou a venda.
     """
     from shopman.offerman.models import Listing, ListingItem
@@ -180,7 +181,8 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
     listings = {lst.ref: lst for lst in Listing.objects.filter(ref__in=(POS_LISTING, *remote))}
     if POS_LISTING not in listings:
         raise ValidationError("A listagem do PDV (`pdv`) não existe neste banco: onde a casa venderia?")
-    wanted = [POS_LISTING] + ([ref for ref in remote if ref in listings] if product.image_url else [])
+    remote_ok = bool(product.image_url) and product.unit != "kg"
+    wanted = [POS_LISTING] + ([ref for ref in remote if ref in listings] if remote_ok else [])
     listed: list[str] = []
     for ref in wanted:
         item, created = ListingItem.objects.get_or_create(
@@ -196,7 +198,7 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
             item.save()
             listed.append(ref)
     unlisted: list[str] = []
-    if not product.image_url:
+    if not remote_ok:
         removed = ListingItem.objects.filter(product=product, listing__ref__in=remote)
         unlisted = list(removed.values_list("listing__ref", flat=True))
         removed.delete()

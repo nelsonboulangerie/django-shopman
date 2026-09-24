@@ -220,6 +220,8 @@ def test_queijo_a_quilo_nasce_sem_gtin_e_vendavel_sem_preco(catalog):
     assert queijo.is_sellable
     assert get_social_attributes(queijo).gtin == ""
     assert queijo.metadata["fiscal"]["unit"] == "KG"
+    # Sem preço do quilo, o valor da etiqueta é o preço da linha (#1059).
+    assert queijo.metadata["price_from_label"] is True
     item = ListingItem.objects.get(product=queijo)
     assert item.listing.ref == "pdv" and item.is_sellable
     assert [sku for sku, _ in report["no_price"]] == [VALE_DO_TESTO]
@@ -285,3 +287,22 @@ def test_de_para_do_yooga_volta_ao_produto_real(catalog):
     assert curado.product == outro  # curadoria de alguém: fica
     assert len(report["aliases"]) == 2
     assert apply_grocery(apply=True)["aliases"] == []
+
+
+def test_item_a_quilo_nao_vai_para_canal_remoto_nem_com_foto(catalog):
+    """O carrinho online só aceita unidade inteira: quem pesa é o balcão."""
+    apply_grocery(apply=True)
+    queijo = Product.objects.get(sku=VALE_DO_TESTO)
+    Product.objects.filter(pk=queijo.pk).update(image_url="https://img.example.com/queijo.webp")
+    ListingItem.objects.create(listing=Listing.objects.get(ref="web"), product=queijo, price_q=0)
+
+    report = apply_grocery(apply=True)
+
+    assert _refs(VALE_DO_TESTO) == {"pdv"}
+    assert (VALE_DO_TESTO, "web") in report["unlisted"]
+
+
+def test_item_com_preco_nao_leva_a_chave_da_etiqueta(catalog):
+    apply_grocery(apply=True)
+
+    assert "price_from_label" not in Product.objects.get(sku=DIJON).metadata
