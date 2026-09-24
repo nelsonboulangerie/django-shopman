@@ -265,7 +265,8 @@ também exige o opt-in geral de saída externa.
 
 A página inicial do app OAuth do Google (tela de consentimento) é a página pública
 `/shopman-marketing` do Storefront, que diz o que a ferramenta faz e o que ela acessa
-no Google; a política de privacidade e os termos são `/privacy` e `/terms`.
+no Google; a política de privacidade e os termos são `/privacidade` e `/termos`
+(`/privacy` e `/terms` respondem 301 para elas).
 
 TikTok ainda não integra o catálogo selecionável. O adapter Direct Post de foto é
 somente uma fronteira testável e inerte: token estático serve no máximo a canário

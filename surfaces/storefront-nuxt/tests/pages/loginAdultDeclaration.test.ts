@@ -39,7 +39,7 @@ function expectDeclaration (page: any) {
   const note = declaration(page)
   expect(note.exists()).toBe(true)
   expect(note.text().replace(/\s+/g, ' ').trim()).toBe(LOGIN_ADULT_DECLARATION)
-  expect(note.find('a').attributes('href')).toBe('/terms')
+  expect(note.find('a').attributes('href')).toBe('/termos')
 }
 
 describe('login — a declaração de maioridade em toda porta de entrada', () => {

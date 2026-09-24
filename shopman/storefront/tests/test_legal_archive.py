@@ -27,6 +27,13 @@ from shopman.storefront.presentation.legal import (
 ROOT = Path(__file__).resolve().parents[3]
 PUBLIC = ROOT / "surfaces/storefront-nuxt/public"
 SCRIPTS = ROOT / "scripts"
+LEGAL_REDIRECTS_TS = ROOT / "surfaces/storefront-nuxt/server/utils/legalRedirects.ts"
+
+#: A página viva de cada documento. A cópia de 2026-09-24 foi tirada quando ela
+#: ainda morava em /privacy e /terms; esses endereços respondem 301 para sempre
+#: (`legalRedirects.ts`), então o link da cópia continua chegando à página viva.
+LIVE_PAGE = {"privacy": "/privacidade", "terms": "/termos"}
+LEGACY_LIVE_PAGE = {"privacy": "/privacy", "terms": "/terms"}
 
 
 def _load_script(name: str):
@@ -69,13 +76,24 @@ def test_no_archived_file_is_orphan():
     assert on_disk == declared
 
 
+def test_the_live_page_address_of_older_copies_still_answers():
+    """Link antigo numa cópia imutável só continua valendo se o 301 existir."""
+    redirects = LEGAL_REDIRECTS_TS.read_text(encoding="utf-8")
+    for kind in LEGAL_ARCHIVE_KINDS:
+        assert f"'{LEGACY_LIVE_PAGE[kind]}': '{LIVE_PAGE[kind]}'" in redirects, kind
+
+
+def test_the_archiver_reads_the_live_page_where_it_lives():
+    documents = _load_script("archive_legal_version").DOCUMENTS
+    assert {kind: spec["path"] for kind, spec in documents.items()} == LIVE_PAGE
+
 def test_archive_is_the_published_text_of_its_own_version():
     """A cópia diz a versão dela e aponta para a página viva — nunca para outra cópia."""
     for version in LEGAL_ARCHIVE:
         for kind in LEGAL_ARCHIVE_KINDS:
             html = (PUBLIC / legal_archive_path(kind, version).removeprefix("/")).read_text()
             assert f"versão {version}" in html
-            assert f'href="/{kind}"' in html
+            assert f'href="{LIVE_PAGE[kind]}"' in html or f'href="{LEGACY_LIVE_PAGE[kind]}"' in html
             # O Cloudflare ofusca e-mail no HTML servido; a cópia guarda o endereço lido.
             assert "email-protection" not in html
             assert "<script" not in html

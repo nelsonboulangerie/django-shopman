@@ -9,7 +9,8 @@ já estava resolvida de outro jeito no `main`, e a outra metade contrariava deci
 
 ## Contexto
 
-As páginas `/privacy` e `/terms` têm versão desde 23/09/2026: `LEGAL_VERSION` em
+As páginas `/privacidade` e `/termos` (até 24/09/2026 `/privacy` e `/terms`, que respondem
+301) têm versão desde 23/09/2026: `LEGAL_VERSION` em
 `shopman/storefront/presentation/legal.py`, cobrada por `tests/legalVersion.test.ts`. Mas a
 página é viva. Quando o texto muda, o que o cliente leu antes deixa de existir em qualquer
 lugar, e o pedido não guardava nem qual versão valia no dia.

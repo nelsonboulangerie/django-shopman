@@ -767,7 +767,7 @@ describe('surface UX guardrails', () => {
     for (const source of [login, access]) {
       expect(source).toContain('data-login-adult-declaration')
       expect(source).toContain('LOGIN_ADULT_DECLARATION_LEAD')
-      expect(source).toContain('to="/terms"')
+      expect(source).toContain('to="/termos"')
       expect(templateOnly(source)).not.toMatch(/\b18\b|\banos\b|\badult[oa]s?\b/i)
     }
     // Device trust e ajuda continuam server-driven/editorial.

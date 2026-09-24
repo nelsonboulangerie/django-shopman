@@ -750,7 +750,7 @@ useSeoMeta({
              a autenticação carimba o cadastro, e a versão carimbada representa
              exatamente esta frase. -->
         <p v-if="step !== 'welcome'" class="shop-meta" data-login-adult-declaration>
-          {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
+          {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/termos" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
         </p>
 
         <!-- AJUDA = cartão TRANSPARENTE (dono, 23/09): contorno, raio e respiro de

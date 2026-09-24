@@ -11,7 +11,7 @@
 //   a equipe pode dispensá-la numa campanha automática. Por isso "por padrão".
 //
 // Não é documento legal: não usa `LegalDocument` e não entra na versão de
-// `tests/legalVersion.test.ts`. As regras de dado vivem em /privacy e /terms.
+// `tests/legalVersion.test.ts`. As regras de dado vivem em /privacidade e /termos.
 const session = useShopSession()
 const shop = computed(() => session.shop.value)
 const brandName = computed(() => shop.value?.brand_name || 'a loja')
@@ -76,10 +76,10 @@ useSeoMeta({
       <section class="space-y-2">
         <h2 class="shop-heading">Privacidade e contato</h2>
         <div class="flex flex-col gap-2 sm:flex-row">
-          <UiButton to="/privacy" variant="outline" icon="lucide:shield-check">
+          <UiButton to="/privacidade" variant="outline" icon="lucide:shield-check">
             Política de privacidade
           </UiButton>
-          <UiButton to="/terms" variant="outline" icon="lucide:file-text">
+          <UiButton to="/termos" variant="outline" icon="lucide:file-text">
             Termos de uso
           </UiButton>
         </div>

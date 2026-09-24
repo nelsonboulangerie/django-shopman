@@ -9,16 +9,16 @@ import { describe, expect, it } from 'vitest'
 //   morar num lugar só.
 // - Nada de acordeão: texto legal é lido de ponta a ponta, é o que o cliente
 //   aceita ao entrar, e a âncora de uma cláusula tem que abrir a cláusula.
-// - Cada seção tem âncora própria, única e em inglês (URL é em inglês, e o
-//   fragmento é parte da URL que se compartilha).
+// - Cada seção tem âncora própria, única e estável: o fragmento é parte da URL
+//   que se compartilha, e a cópia arquivada de cada versão guarda o mesmo id.
 
 const root = resolve(__dirname, '..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 const templateOf = (fonte: string) => fonte.slice(fonte.indexOf('<template>'))
 
 const PAGES = {
-  'app/pages/privacy.vue': ['controller', 'data-we-keep', 'legal-basis', 'sharing', 'retention', 'cookies', 'your-rights', 'changes'],
-  'app/pages/terms.vue': ['seller', 'eligibility-and-acceptance', 'price-and-availability', 'order-confirmation', 'payment', 'pickup-and-delivery', 'cancellation', 'ifood-orders', 'your-account']
+  'app/pages/privacidade.vue': ['controller', 'data-we-keep', 'legal-basis', 'sharing', 'retention', 'cookies', 'your-rights', 'changes'],
+  'app/pages/termos.vue': ['seller', 'eligibility-and-acceptance', 'price-and-availability', 'order-confirmation', 'payment', 'pickup-and-delivery', 'cancellation', 'ifood-orders', 'your-account']
 } as const
 
 describe('páginas legais — a forma', () => {

@@ -4,8 +4,8 @@
 // (`#title`) e não uma prop: ele fica no template da página, junto do resto do
 // texto que a trava de versão confere (tests/legalVersion.test.ts).
 //
-// O `id` é a âncora pública (`/privacy#sharing`): em inglês, como toda URL da
-// casa, e estável — link compartilhado aponta para ele.
+// O `id` é a âncora pública (`/privacidade#sharing`) e é estável: link
+// compartilhado aponta para ele, e a cópia arquivada de cada versão guarda o mesmo id.
 defineProps<{ id: string }>()
 </script>
 

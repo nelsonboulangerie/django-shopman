@@ -3,8 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 // A página que o Google pede como "página inicial do app" na tela de consentimento
-// OAuth. Ela aponta para as páginas legais, e as URLs são em inglês: /privacy e
-// /terms. O #614 apontava para /privacidade e /termos, que não existem.
+// OAuth. Ela aponta para as páginas legais da loja, que falam português com o
+// cliente: /privacidade e /termos. /privacy e /terms só existem como 301.
 const source = readFileSync(
   fileURLToPath(new URL('../app/pages/shopman-marketing.vue', import.meta.url)),
   'utf8'
@@ -12,10 +12,10 @@ const source = readFileSync(
 
 describe('página pública do Shopman Marketing', () => {
   it('aponta para a política de privacidade e os termos nas URLs que existem', () => {
-    expect(source).toContain('to="/privacy"')
-    expect(source).toContain('to="/terms"')
-    expect(source).not.toContain('/privacidade')
-    expect(source).not.toContain('/termos')
+    expect(source).toContain('to="/privacidade"')
+    expect(source).toContain('to="/termos"')
+    expect(source).not.toContain('/privacy')
+    expect(source).not.toContain('/terms')
   })
 
   it('diz o que acessa no Google, pelo nome que o Google usa', () => {

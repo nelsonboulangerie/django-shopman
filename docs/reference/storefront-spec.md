@@ -200,7 +200,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   Preferências.
 - **Declaração de maioridade no login:** a nota ao lado do botão de entrar — "Ao continuar, você confirma
   que é maior de idade e aceita os Termos de uso." (frase fixa em `presentation/auth.ts`, link para
-  `/terms`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
+  `/termos`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
   aparelho reconhecido, access link `/a`). Toda autenticação bem-sucedida (`verify-code`, `device-check`,
   `auth/access`, `passkey/login`) carimba `Customer.metadata.adult_declaration`
   (`account.record_adult_declaration`, versão `login-terms-pt-BR-v1`, idempotente: a primeira fica). É a

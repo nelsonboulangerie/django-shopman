@@ -4,7 +4,7 @@ import { sitemapUrls, sitemapXml } from '../utils/sitemap'
 
 // sitemap.xml domain-aware, alimentado pelo catálogo real (Django). Inclui a
 // home, o cardápio, cada coleção estática (/colecao/<ref>), cada PDP
-// (/produto/<sku>) e as páginas de conteúdo (/faq, /privacy, /terms). As
+// (/produto/<sku>) e as páginas de conteúdo (/faq, /privacidade, /termos). As
 // variantes de filtro (?filtro=/?secao=) NÃO entram — elas canonicalizam para
 // /menu (anti-duplicate).
 export default defineEventHandler(async (event) => {
