@@ -19,6 +19,14 @@
 //      bastava não ter entrado em preparo;
 //   3. o iFood: pedido feito lá segue a política do iFood, e o cliente de lá nunca vê
 //      esta página. Dizer isso é mais honesto do que silenciar.
+//
+// Reescrita de 24/09/2026 (frases curtas, um assunto por parágrafo), com UMA mudança
+// de mérito, pedida pelo dono: o produto errado ou com problema deixou de dar ao
+// cliente a escolha livre entre receber de novo e ter o valor devolvido. Agora ele
+// avisa com foto, a loja analisa e resolve — e o limite é o CDC (art. 18): a loja
+// pode conferir o vício e sanear, nunca negar troca/restituição; crédito só se o
+// cliente preferir. "De preferência no mesmo dia" é pedido, não prazo: o prazo legal
+// para reclamar de vício aparente em produto não durável é de 30 dias (art. 26, I).
 import type { LegalProjection } from '~/types/shopman'
 
 const session = useShopSession()
@@ -72,99 +80,104 @@ useSeoMeta({
     <LegalSection id="eligibility-and-acceptance">
       <template #title>Quem pode comprar, e o que você aceita ao entrar</template>
       <p>
-        A conta é para <strong>maiores de 18 anos</strong>. Ao entrar, você declara que é maior de
-        idade e aceita estes termos — a declaração fica registrada com a data e a versão do texto
-        que estava no ar naquele momento.
+        A conta é para <strong>maiores de 18 anos</strong>. No primeiro acesso, você declara que é
+        maior de idade e aceita estes termos, e a loja registra essa declaração com a data.
       </p>
       <p>
-        Quando estes termos mudarem, a data no topo muda junto, e a próxima entrada registra a
-        versão nova. Vale sempre a versão publicada aqui.
+        Quando estes termos mudarem, a data no topo da página muda junto. Vale sempre a versão
+        publicada aqui.
       </p>
     </LegalSection>
 
     <LegalSection id="price-and-availability">
       <template #title>Preço e disponibilidade</template>
       <p>
-        O preço do cardápio é o preço cobrado, com os descontos já aplicados no total antes de
-        você confirmar. Pão é feito no dia: um item pode acabar entre o momento em que você monta
-        a sacola e o momento em que {{ marca }} confere o pedido. Se acabar, a loja fala com você
-        pelo WhatsApp do pedido, e você escolhe trocar ou cancelar, sem custo.
+        O preço do cardápio é o preço cobrado. Os descontos já aparecem no total, antes de você
+        confirmar.
+      </p>
+      <p>
+        O pão é feito no dia e pode acabar antes de {{ marca }} conferir o seu pedido. Se acabar, a
+        loja fala com você pelo WhatsApp do pedido, e você escolhe trocar ou cancelar, sem custo.
       </p>
     </LegalSection>
 
     <LegalSection id="order-confirmation">
       <template #title>Como o pedido é confirmado</template>
       <p>
-        Ao enviar o pedido, o acompanhamento mostra o estado real: pagamento pendente, confirmação
-        da loja, reserva em fila de espera, preparo, retirada ou entrega. Quando houver prazo, a
-        própria tela do pedido informa o tempo e o que acontece quando ele vence.
+        Depois que você envia o pedido, a tela de acompanhamento mostra em que etapa ele está:
+        pagamento pendente, confirmação da loja, fila de espera, preparo, retirada ou entrega. Se
+        houver prazo, a tela mostra quanto tempo falta e o que acontece quando ele vence.
       </p>
     </LegalSection>
 
     <LegalSection id="payment">
       <template #title>Pagamento</template>
       <p>
-        O pagamento é feito na tela da própria empresa que processa a cobrança — é ela quem recebe
-        o número do cartão. <strong>{{ marca }} não recebe nem guarda o número do seu cartão</strong>,
-        só a confirmação de que o pagamento entrou.
+        Você digita o cartão na tela da empresa que processa a cobrança.
+        <strong>{{ marca }} não recebe nem guarda o número do seu cartão</strong>, só a confirmação
+        do pagamento.
       </p>
       <p v-if="legal?.processors?.length">
-        Quem processa hoje está nomeado, com o que cada um recebe, na
+        Quem processa hoje, e o que recebe, está na
         <NuxtLink to="/privacy">política de privacidade</NuxtLink>.
       </p>
       <p>
-        O Pix tem prazo para pagar, e o prazo está escrito na tela do pedido: passou o prazo sem
-        pagamento, o pedido é cancelado e nada é cobrado.
+        O Pix tem prazo, e a tela do pedido mostra qual é. Se o prazo passar sem pagamento, o pedido
+        é cancelado e nada é cobrado.
       </p>
     </LegalSection>
 
     <LegalSection id="pickup-and-delivery">
       <template #title>Retirada e entrega</template>
       <p>
-        Na retirada, {{ marca }} avisa quando o pedido está pronto e guarda até o fim do expediente
-        do dia combinado. Na entrega, a taxa aparece no total antes de você confirmar e depende do
-        endereço; endereço fora da área atendida é recusado no próprio checkout, antes de qualquer
-        cobrança.
+        <strong>Retirada:</strong> {{ marca }} avisa quando o pedido fica pronto e guarda até o fim
+        do expediente do dia combinado.
+      </p>
+      <p>
+        <strong>Entrega:</strong> a taxa depende do endereço e aparece no total antes de você
+        confirmar. Endereço fora da área atendida é recusado no checkout, antes de qualquer cobrança.
       </p>
     </LegalSection>
 
     <LegalSection id="cancellation">
       <template #title>Cancelamento, troca e devolução</template>
       <p>
-        <strong>Pedido ainda não pago:</strong> você cancela sozinho pelo acompanhamento, enquanto
-        o botão estiver lá.
+        <strong>Pedido não pago:</strong> você cancela pela tela de acompanhamento, enquanto o botão
+        aparecer.
       </p>
       <p>
-        <strong>Pedido já pago:</strong> o cancelamento vira uma solicitação com número de
-        protocolo, e {{ marca }} responde pelo WhatsApp do pedido. O dinheiro só volta depois que
-        a loja confirma — é a forma de garantir que a devolução não aconteça duas vezes.
+        <strong>Pedido pago:</strong> o cancelamento vira uma solicitação com número de protocolo, e
+        {{ marca }} responde pelo WhatsApp do pedido. O dinheiro volta depois que a loja confirma,
+        para que a devolução não aconteça duas vezes.
       </p>
       <p>
-        Alimento em preparo ou já assado não volta para a prateleira. Se algo chegar errado ou fora
-        do padrão, avise <strong>no mesmo dia da retirada ou da entrega</strong>, pelo WhatsApp do
-        pedido: você escolhe entre receber o item de novo ou ter o valor devolvido.
+        Alimento em preparo ou já assado não volta para a prateleira.
+      </p>
+      <p>
+        <strong>Produto errado ou com problema:</strong> avise pelo WhatsApp do pedido, de
+        preferência no mesmo dia da retirada ou da entrega, e mande uma foto. A loja analisa e
+        resolve com a troca do produto ou a devolução do valor, conforme o caso, ou com crédito na
+        loja, se você preferir. Vale sempre o Código de Defesa do Consumidor.
       </p>
     </LegalSection>
 
     <LegalSection id="ifood-orders">
       <template #title>Pedido feito pelo iFood</template>
       <p>
-        Quando o pedido chega pelo iFood, quem intermedeia a venda é o iFood: prazo, cancelamento
-        e devolução seguem a política dele, no aplicativo dele. Estes termos valem para o pedido
-        feito aqui na loja.
+        Pedido feito no iFood segue a política do iFood para prazo, cancelamento e devolução. Estes
+        termos valem para pedidos feitos nesta loja.
       </p>
     </LegalSection>
 
     <LegalSection id="your-account">
       <template #title>Sua conta</template>
       <p>
-        A conta é identificada pelo seu telefone, e o acesso é por código ou link enviado a ele.
-        Não compartilhe esse link: quem tiver o link entra na sua conta. Você encerra a conta
-        quando quiser em
-        <NuxtLink to="/conta/seguranca">Segurança e dados</NuxtLink>.
+        A sua conta é o seu telefone: você entra com um código ou um link enviado a ele.
+        <strong>Não compartilhe o link</strong>, porque quem tiver o link entra na sua conta.
       </p>
       <p>
-        O tratamento dos seus dados está descrito na
+        Você encerra a conta quando quiser, em
+        <NuxtLink to="/conta/seguranca">Segurança e dados</NuxtLink>. O uso dos seus dados está na
         <NuxtLink to="/privacy">política de privacidade</NuxtLink>.
       </p>
     </LegalSection>

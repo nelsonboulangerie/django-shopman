@@ -41,8 +41,8 @@ class LegalProjection:
 #: A versão vigente dos documentos legais. **Mexeu no texto de `privacy.vue` ou de
 #: `terms.vue`? Mexa aqui.** `surfaces/storefront-nuxt/tests/legalVersion.test.ts`
 #: reprova se um mudar sem o outro — foi a promessa quebrada que originou a trava.
-LEGAL_VERSION = "2026-09-23"
-LEGAL_UPDATED_AT = "23 de setembro de 2026"
+LEGAL_VERSION = "2026-09-24"
+LEGAL_UPDATED_AT = "24 de setembro de 2026"
 
 
 def _project(processor: Processor) -> ProcessorProjection:
