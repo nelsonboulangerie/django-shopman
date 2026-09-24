@@ -197,6 +197,30 @@ já tem como relógio. Quem sabe quanto custa o cálculo é o comando.
 **`reasons` não vai para o cliente.** Fica na projection do `shop`, para o Admin
 explicar e o B.I. medir. Na tela de quem compra, é só um convite.
 
+## Adicional é complemento, não substituto (23/09/2026)
+
+O dono pôs 2 Croque Madame na sacola e recebeu "Que tal adicionar? Croque
+Monsieur". Três portas do motor, todas em `shop/projections/suggestions.py`:
+
+1. **Nada excluía o mesmo papel.** Os três croques moram em `salgados` e têm
+   os mesmos atributos (comida/salgado/quente). Agora a **coleção primária
+   igual** à de um item da sacola é portão (definição de complemento, não
+   configurável), e `distinct_from_cart` (default `["natureza", "sabor"]`) é
+   portão configurável: mesmos valores em todos = mesmo papel. Atributo em
+   branco nunca exclui.
+2. **Afinidade sem teto passava por cima do pareamento.** Quem pede um croque
+   para a mesa pede o outro: lift alto, `3×(lift−1)` contra `comida → bebida`
+   peso 3. Agora **o pareamento vem primeiro na ordem**; a afinidade ordena
+   dentro dele e só fala sozinha quando nenhum pareamento casa.
+3. **O pareamento não via a bebida.** A fila do pareamento só ganhava a vaga
+   que a afinidade deixasse, em ordem alfabética de SKU. Agora ela é o
+   catálogo que de fato casa algum pareamento, por peso. E preço deixou de ser
+   motivo sozinho ("mais barato" fazia de qualquer item uma sugestão).
+
+Default novo, a confirmar com o dono: `natureza=bebida → sabor=doce` (peso 2),
+o espelho de "doce pede café". Migração `0069` troca a regra no ar só se ela
+ainda é a da `0030`; se o gestor mexeu, só acrescenta o portão.
+
 ## Referências
 
 - [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md) (a sugestão no chat é uma por conversa; desligada até F1)
