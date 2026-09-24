@@ -217,6 +217,28 @@ def test_bought_respects_the_window(db):
     assert audience.resolve({"bought_skus": ["CROISSANT"], "bought_within_days": 30}).total == 0
 
 
+def test_bought_skips_a_customer_absorbed_by_a_merge(db):
+    """Unificar cadastros deixa o absorvido inativo, e o insight dele fica.
+
+    Os outros públicos já filtravam ``is_active``; "comprou nos últimos X dias" lia
+    o ``CustomerInsight`` direto e deixava o cadastro absorvido entrar na regra. O
+    consentimento (que também filtra ativo) o barrava depois, então a mensagem não
+    saía, mas o resumo mentia: a regra contava gente a mais e o gestor lia
+    "sem consentimento" sobre um cadastro que já não existe como pessoa.
+    """
+    kept = _customer("+5543999990015", ref="CLI-KEPT")
+    _bought(kept, "CROISSANT", days_ago=5)
+    absorbed = _customer("+5543999990016", ref="CLI-ABSORBED")
+    _bought(absorbed, "CROISSANT", days_ago=5)
+    absorbed.is_active = False
+    absorbed.save(update_fields=["is_active"])
+
+    result = audience.resolve({"bought_skus": ["CROISSANT"], "bought_within_days": 30})
+    assert [r.phone for r in result.general] == [kept.phone]
+    assert result.counts["bought_chosen_count"] == 1
+    assert "missing_consent" not in result.excluded_by_reason
+
+
 def test_bought_collections_resolve_through_offerman(db):
     """Coleção é REGRA, não lista — resolver pelo offerman é o que faz a inteligente valer."""
     coll = Collection.objects.create(ref="macios", name="Macios", is_active=True)
