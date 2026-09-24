@@ -891,14 +891,15 @@ def test_product_detail_get_shape(client, operator, catalog):
         "allows_next_day_sale", "made_to_order", "ready_from",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
-        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_warnings", "field_sources",
+        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources",
         # somente-leitura: selos do SKU (Comprável · Vendável · Produzido · Usado em receita)
         "roles",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
     assert product["primary_collection"] == "doces"
-    assert set(product["fiscal"]) == {"profile", "ncm", "cest", "unit"}
+    assert set(product["fiscal"]) == {"profile", "ncm", "cest", "unit", "origin"}
+    assert {o["key"] for o in product["fiscal_origins"]} == {str(n) for n in range(9)}
     assert {p["key"] for p in product["fiscal_profiles"]} == {"standard", "tax_substitution"}
 
 
@@ -1124,6 +1125,17 @@ def test_product_detail_patch_fiscal_keeps_the_cest_without_st(client, operator,
     assert catalog["pao"].metadata["fiscal"]["cest"] == "1702400"
     # Queijo (0406) com CEST de queijo: nenhum aviso.
     assert resp.json()["product"]["fiscal_warnings"] == []
+
+
+def test_product_detail_patch_fiscal_origin(client, operator, catalog):
+    """A origem é do produto: importado comprado no Brasil sai com 2."""
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "standard", "ncm": "04051000", "origin": "2"}})
+    assert resp.status_code == 200
+    assert resp.json()["product"]["fiscal"]["origin"] == "2"
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["fiscal"]["origin"] == "2"
+    assert _patch(client, "PAO", {"fiscal": {"origin": "9"}}).status_code == 400
 
 
 def test_product_detail_warns_when_cest_does_not_match_the_ncm(client, operator, catalog):

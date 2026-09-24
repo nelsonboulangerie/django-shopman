@@ -114,6 +114,9 @@ class GroceryItem:
     gtin_source: str = ""
     #: Perfil fiscal: ``standard`` (sem ST) ou ``tax_substitution`` (na ST do PR).
     profile: str = "standard"
+    #: Origem da mercadoria (``orig`` do ICMS). ``2`` = importado comprado de
+    #: distribuidor no Brasil.
+    origin: str = "0"
 
 
 #: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
@@ -121,6 +124,13 @@ class GroceryItem:
 WEB_UNCONFIRMED = "web, a confirmar na embalagem"
 #: O GTIN que o dono leu na embalagem — a fonte que decide.
 OWNER_PACKAGE = "embalagem, dono, 24/09"
+
+
+#: Origem 2 — "estrangeira, adquirida no mercado interno": o importado que a
+#: casa compra de distribuidor no Brasil (Président, Ile de France, Maille,
+#: St. Dalfour). Dono, 24/09/2026; a próxima NF-e de compra confere o ``orig``
+#: do fornecedor (conferência fiscal do recebimento).
+IMPORTED_BOUGHT_HERE = "2"
 
 
 #: Revenda real da Mercearia. Nome e preço: Yooga (preço mais praticado);
@@ -166,41 +176,41 @@ GROCERY: tuple[GroceryItem, ...] = (
     #   francês diz quatro frutas, o brasileiro diz frutas vermelhas (dono,
     #   24/09). Um produto só; "4 frutas" entra como palavra de busca.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-284", "Geleia Damasco St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380957543", "20079910", "1709400", 284, ("geleia", "damasco", "fruta")),
+                "084380957543", "20079910", "1709400", 284, ("geleia", "damasco", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FIGO-STDALFOUR-284", "Geleia Figo St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380959042", "20079910", "1709400", 284, ("geleia", "figo", "fruta")),
+                "084380959042", "20079910", "1709400", 284, ("geleia", "figo", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-284", "Geleia Frutas Vermelhas St. Dalfour 284g", 4200,
-                "St. Dalfour", "084380957840", "20079910", "1709400", 284, ("geleia", "frutas vermelhas", "4 frutas", "fruta")),
+                "St. Dalfour", "084380957840", "20079910", "1709400", 284, ("geleia", "frutas vermelhas", "4 frutas", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-LARANJA-STDALFOUR-284", "Geleia Laranja St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380957949", "20079100", "1709400", 284, ("geleia", "laranja", "fruta")),
+                "084380957949", "20079100", "1709400", 284, ("geleia", "laranja", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-LIMAO-STDALFOUR-284", "Geleia Limão St. Dalfour 284g", 4200, "St. Dalfour",
-                "810019371295", "20079100", "1709400", 284, ("geleia", "limao", "fruta")),
+                "810019371295", "20079100", "1709400", 284, ("geleia", "limao", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-MORANGO-STDALFOUR-284", "Geleia Morango St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380957444", "20079910", "1709400", 284, ("geleia", "morango", "fruta")),
+                "084380957444", "20079910", "1709400", 284, ("geleia", "morango", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     # Os dois minis nascem no lugar do `GL` (placeholder de sabor indefinido,
     # que o dono mandou sair em 22/09 — ver `apply_catalog_decisions`). O NCM do
     # de damasco veio da nota como 2007.99.90 e sem CEST; o de frutas
     # vermelhas, como os potes grandes.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-28", "Mini Geleia Damasco St. Dalfour 28g", 900, "St. Dalfour",
-                "084380980428", "20079990", "1709400", 28, ("geleia", "damasco", "fruta", "mini")),
+                "084380980428", "20079990", "1709400", 28, ("geleia", "damasco", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-28", "Mini Geleia Frutas Vermelhas St. Dalfour 28g", 900,
                 "St. Dalfour", "084380980626", "20079910", "1709400", 28,
-                ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini")),
+                ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Laticínios ──
     GroceryItem("MANTEIGA-SAL-PRESIDENT-200", "Manteiga Extra com Sal Président 200g", 1500, "Président",
-                "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal")),
+                "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("QUEIJO-BRIE-ILEDEFRANCE-25", "Queijo Mini Brie Ile de France 25g", 1000, "Ile de France",
-                "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini")),
+                "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Mostardas Maille ──
     GroceryItem("MOSTARDA-MEL-MAILLE-215", "Mostarda com Mel Maille 215g", 4200, "Maille",
-                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="tax_substitution"),
+                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="tax_substitution", origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("MOSTARDA-DIJON-MAILLE-215", "Mostarda Dijon Maille 215g", 3500, "Maille",
-                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="tax_substitution"),
+                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="tax_substitution", origin=IMPORTED_BOUGHT_HERE),
     # A embalagem (lida pelo dono em 24/09) confirma o 3036810207589 que
     # Auchan PT, Covabra e Open Food Facts davam; o Cosmos (…7558) errava.
     GroceryItem("MOSTARDA-ANCIENNE-MAILLE-210", "Mostarda à l'Ancienne Maille 210g", 4200, "Maille",
                 "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
-                gtin_source=OWNER_PACKAGE, profile="tax_substitution"),
+                gtin_source=OWNER_PACKAGE, profile="tax_substitution", origin=IMPORTED_BOUGHT_HERE),
     # ── Mirante ──
     # 120 g e R$ 26 (dono, 24/09). GTIN-12 602883466111 (a embalagem traz
     # 0602883466111), guardado como os outros Mirante.
@@ -343,6 +353,7 @@ class SeedResaleFiscal:
     profile: str = "standard"
     #: Peso líquido confirmado pelo dono (latas, 24/09). ``None`` = não mexe.
     weight_g: int | None = None
+    origin: str = "0"
 
 
 #: Os chás Kãnfa voltam ao NCM da NF-e (0902.10.00, chá verde em embalagem
@@ -359,7 +370,7 @@ SEED_RESALE_FISCAL: tuple[SeedResaleFiscal, ...] = (
         "CHA-ACONCHEGO-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-INTIMIDADE-KANFA-P50",
         "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
     )),
-    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400"),
+    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400", origin=IMPORTED_BOUGHT_HERE),
     # Água mineral está na ST do PR, e a casa a faturava com 500/5405 e o CEST
     # 03.005.00 (água em embalagem plástica até 500 ml — Anexo III do Conv.
     # 142/2018; se a garrafa de 310 ml for de VIDRO, o CEST é 03.001.00).
@@ -487,8 +498,12 @@ def _ensure_collection(product, collection) -> None:
     )
 
 
-def _wanted_fiscal(profile: str, ncm: str, cest: str, unit: str) -> dict:
-    return {"profile": profile, "ncm": ncm, "unit": unit.upper(), **({"cest": cest} if cest else {})}
+def _wanted_fiscal(profile: str, ncm: str, cest: str, unit: str, origin: str = "0") -> dict:
+    return {
+        "profile": profile, "ncm": ncm, "unit": unit.upper(),
+        **({"cest": cest} if cest else {}),
+        **({"origin": origin} if origin != "0" else {}),
+    }
 
 
 def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
@@ -500,21 +515,28 @@ def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
     """
     metadata = _metadata(product)
     current = dict(metadata.get("fiscal") or {})
-    if all((current.get(k) or "") == (wanted.get(k) or "") for k in ("profile", "ncm", "cest", "unit")):
-        return []
+    lines: list[str] = []
+    # A origem ausente é o "0" padrão, não uma curadoria: a tabela a preenche.
+    if wanted.get("origin") and "origin" not in current:
+        current["origin"] = wanted["origin"]
+        metadata["fiscal"] = current
+        product.metadata = metadata
+        lines.append(f"origem: → {wanted['origin']}")
+    if all((current.get(k) or "") == (wanted.get(k) or "") for k in ("profile", "ncm", "cest", "unit", "origin")):
+        return lines
     legacy = not current or (current.get("profile", "standard") == "standard"
                              and not current.get("cest"))
     if not legacy:
-        for field in ("profile", "ncm", "cest"):
+        for field in ("profile", "ncm", "cest", "origin"):
             if (current.get(field) or "") != (wanted.get(field) or ""):
                 report["conflicts"].append((product.sku, field, current.get(field) or "", wanted.get(field) or ""))
-        return []
+        return lines
     metadata["fiscal"] = {**{k: v for k, v in current.items() if k != "cest"}, **wanted}
     product.metadata = metadata
     parts = [f"perfil {wanted['profile']}", f"ncm {wanted['ncm']}"]
     if wanted.get("cest"):
         parts.append(f"cest {wanted['cest']}")
-    return ["fiscal: " + ", ".join(parts)]
+    return [*lines, "fiscal: " + ", ".join(parts)]
 
 
 def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int | None,
@@ -571,7 +593,7 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     lines: list[str] = []
     metadata = _metadata(product)
     product.metadata = metadata
-    fiscal_lines = _sync_fiscal(product, _wanted_fiscal(item.profile, item.ncm, item.cest, item.unit), report)
+    fiscal_lines = _sync_fiscal(product, _wanted_fiscal(item.profile, item.ncm, item.cest, item.unit, item.origin), report)
     if not is_new:
         lines.extend(fiscal_lines)
     metadata = _metadata(product)
@@ -713,7 +735,7 @@ def _apply_seed_resale_fiscal(entry: SeedResaleFiscal, report: dict) -> None:
     if product is None:
         report["missing"].append(entry.sku)
         return
-    lines = _sync_fiscal(product, _wanted_fiscal(entry.profile, entry.ncm, entry.cest, "UN"), report)
+    lines = _sync_fiscal(product, _wanted_fiscal(entry.profile, entry.ncm, entry.cest, "UN", entry.origin), report)
     if entry.weight_g is not None and product.unit_weight_g != entry.weight_g:
         lines.append(f"peso: {product.unit_weight_g} g → {entry.weight_g} g")
         product.unit_weight_g = entry.weight_g

@@ -471,6 +471,13 @@ def _nutrition_payload(product) -> dict:
     return asdict(facts) if facts is not None else asdict(NutritionFacts())
 
 
+def _fiscal_origin_choices() -> list[dict]:
+    """Origens da mercadoria — a tabela do fiscalman é a fonte, não o Nuxt."""
+    from shopman.fiscalman.classification import ORIGINS
+
+    return [{"key": key, "name": name} for key, name in ORIGINS.items()]
+
+
 def _fiscal_warnings(product) -> list[str]:
     from shopman.fiscalman.classification import from_metadata
 
@@ -552,6 +559,7 @@ def _detail_payload(product) -> dict:
         "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
+        "fiscal_origins": _fiscal_origin_choices(),
         # Avisos (não bloqueiam): o CEST conferido contra o NCM pela tabela do
         # Anexo do Conv. ICMS 142/2018 (``fiscalman.cest_table``).
         "fiscal_warnings": _fiscal_warnings(product),
@@ -604,7 +612,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_warnings", "field_sources", "roles"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
@@ -847,6 +855,7 @@ def _apply_fiscal(product, raw) -> None:
         ncm=str(merged.get("ncm") or "").strip(),
         cest=str(merged.get("cest") or "").strip(),
         unit=str(merged.get("unit") or "UN").strip() or "UN",
+        origin=str(merged.get("origin") or "0").strip() or "0",
     )
 
     metadata = dict(product.metadata or {})

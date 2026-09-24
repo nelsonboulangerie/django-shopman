@@ -111,6 +111,22 @@ class TestResolveFiscalItem:
         assert item["icms_situacao_tributaria"] == "500"
         assert item["cest"] == "0300700"
 
+    def test_origin_is_the_products(self):
+        """O importado comprado de distribuidor no Brasil sai com origem 2."""
+        c = ProductFiscalClassification(profile="standard", ncm="04051000", cest="1702500", origin="2")
+        assert resolve_fiscal_item(c)["icms_origem"] == "2"
+        assert to_metadata_fiscal(c)["origin"] == "2"
+        assert from_metadata({"fiscal": to_metadata_fiscal(c)}).origin == "2"
+
+    def test_national_origin_is_the_default_and_is_not_stored(self):
+        c = ProductFiscalClassification(profile="standard", ncm="19059090")
+        assert c.origin == "0"
+        assert "origin" not in to_metadata_fiscal(c)
+
+    def test_unknown_origin_is_an_error(self):
+        c = ProductFiscalClassification(profile="standard", ncm="19059090", origin="9")
+        assert "Origem da mercadoria deve ser um código de 0 a 8." in c.errors()
+
     def test_tax_substitution_interstate_uses_6405(self):
         c = ProductFiscalClassification(profile="tax_substitution", ncm="22021000", cest="0300700")
         assert resolve_fiscal_item(c, interstate=True)["cfop"] == "6405"
