@@ -65,6 +65,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [020](adr-020-campaign-announces-it-does-not-sell.md) | Campanha anuncia, não vende |
 | [009](adr-009-whatsapp-via-manychat.md) | WhatsApp via ManyChat: vendor lock-in consciente |
 | [026](adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md) | Concierge de WhatsApp: a língua é do modelo, o dinheiro é do código |
+| [034](adr-034-legal-archive-cited-by-the-order.md) | O pedido cita a versão de Termos e Privacidade que valia, numa cópia permanente que não muda |
 
 ## B.I. e operação continuada
 
