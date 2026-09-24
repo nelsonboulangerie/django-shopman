@@ -113,7 +113,11 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
     "molho-bechamel": ("2.835", "4.077", 10),
     "creme-chocolate": ("2.925", "2.925", 3),
-    "creme-leite-ovos": ("2", "2.076", 4),
+    "creme-leite-ovos": ("1.9", "1.900", 4),
+    # Pré-preparos que nasceram com as fichas da casa (24/09/2026).
+    "molho-caramelo": ("2.1", "2.532", 4),
+    "manteiga-wasabi": ("1.035", "1.035", 2),
+    "recheio-cebolas-assadas": ("1.47", "3.657", 6),
     "salada-da-casa": ("1.6", "1.600", 5),
     "vinagrete-frances": ("0.825", "0.825", 7),
 }
@@ -131,7 +135,12 @@ RENDIMENTO_ANTES_DA_FICHA_DA_CASA: dict[str, str] = {
     "creme-chocolate": "2.9",
     "salada-da-casa": "1.8",
     "vinagrete-frances": "0.9",
+    "creme-leite-ovos": "2",
 }
+
+#: Fichas que NASCERAM com a ficha da casa: não há rendimento de antes, e a
+#: capacidade é a declarada na tabela — um lote por dia, dito como tal.
+NASCIDAS_DA_FICHA_DA_CASA = frozenset({"molho-caramelo", "manteiga-wasabi", "recheio-cebolas-assadas"})
 
 #: Montagem e bebida: ficha inativa (não é fornada), que já nascia por unidade.
 MONTAGEM_E_BEBIDA = frozenset({
@@ -275,7 +284,7 @@ class TestCapacidadeProvisoria:
 
     def test_a_capacidade_da_formula_e_da_montagem_e_a_mesma_de_antes(self, fichas, capacidade):
         """A régua é o rendimento de antes; onde a receita mudou, o registrado."""
-        for ref in set(FORMULA_EM_KG) | MONTAGEM_E_BEBIDA:
+        for ref in (set(FORMULA_EM_KG) | MONTAGEM_E_BEBIDA) - NASCIDAS_DA_FICHA_DA_CASA:
             rendimento, _itens = fichas[ref]
             if ref in RENDIMENTO_ANTES_DA_FICHA_DA_CASA:
                 rendimento = Decimal(RENDIMENTO_ANTES_DA_FICHA_DA_CASA[ref])

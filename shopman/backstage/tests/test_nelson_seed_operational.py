@@ -132,8 +132,9 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # 26/08) + a mostarda Dijon de food service, que entrou no lugar do `MT` da
     # ficha do Vinagrete + o SEGUNDO café: `CAFE-GRAO` era genérico e escondia
     # dois blends de dois fornecedores (dono, 24/09) + 13 que as fichas reais
-    # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA).
-    assert Material.objects.count() == 71
+    # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA) + 4
+    # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
+    assert Material.objects.count() == 75
     # A divisão do café não é cosmética: são dois fornecedores, e um deles vem
     # direto do produtor. Quem usa cada um vem da ficha, não do nome.
     assert Material.objects.get(sku="CAFE-ORFEU-CLASSICO").metadata["supplier"] == "orfeu"
