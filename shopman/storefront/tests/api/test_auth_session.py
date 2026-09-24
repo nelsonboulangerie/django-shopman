@@ -766,3 +766,46 @@ def test_auth_request_code_does_not_send_to_invented_mobile(monkeypatch, client)
     }, content_type="application/json")
     assert response.status_code == 400
     send.assert_not_called()
+
+
+def test_a_espera_do_reenviar_vem_do_gate_do_servidor(monkeypatch, settings, client: Client):
+    """O botão "Reenviar" libera quando o SERVIDOR aceita, não num número da tela.
+
+    A tela tinha 30 s cravados e o doorman cobra ACCESS_CODE_COOLDOWN_SECONDS
+    (60): o reenvio entre 30 e 59 s voltava "Aguarde antes de solicitar um novo
+    código" de um botão que a própria tela tinha liberado.
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    _armar(monkeypatch, settings, token="")
+    monkeypatch.setattr(doorman_settings, "ACCESS_CODE_COOLDOWN_SECONDS", 75)
+
+    data = _pedir_codigo(client).json()
+
+    assert data["resend_after_seconds"] == 75
+
+
+def test_falha_de_envio_nao_culpa_o_numero_e_oferece_saida(monkeypatch, settings, client: Client):
+    """Quando o SMS não sai, o problema é do envio, não do número digitado.
+
+    "Verifique o número" mandava o cliente repetir o mesmo número até desistir;
+    a saída real é tentar de novo ou entrar pelo WhatsApp (na mesma tela).
+    """
+    from shopman.doorman.error_codes import ErrorCode
+
+    from shopman.storefront.api import auth as auth_api
+
+    _armar(monkeypatch, settings, token="")
+    monkeypatch.setattr(
+        auth_api.auth_service, "request_code",
+        lambda *, phone, delivery_method, ip_address: SimpleNamespace(
+            success=False, error="Failed to send code.", error_code=ErrorCode.SEND_FAILED,
+        ),
+    )
+
+    response = _pedir_codigo(client)
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "Verifique o número" not in detail
+    assert "WhatsApp" in detail

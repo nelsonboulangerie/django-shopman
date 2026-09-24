@@ -546,6 +546,12 @@ class RequestCodeView(APIView):
             "phone": phone,
             # Timeout transparente: a validade do código é pública (o código não).
             "code_expires_at": getattr(auth_result, "expires_at", None) or "",
+            # A espera do "Reenviar" vem do MESMO número que o servidor cobra
+            # (G11). A tela tinha 30 s cravados e o doorman cobra 60: quem achava
+            # o SMS demorado e tocava "Reenviar" entre 30 e 59 s levava
+            # "Aguarde antes de solicitar um novo código" de um botão que a
+            # própria tela tinha liberado.
+            "resend_after_seconds": auth_service.code_resend_cooldown_seconds(),
             **_delivery_response(actual_method),
             **_debug_otp_response(auth_result, request),
         })
