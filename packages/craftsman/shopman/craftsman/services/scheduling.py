@@ -72,7 +72,7 @@ def build_recipe_snapshot(recipe) -> dict:
                 "input_sku": ri.input_sku,
                 "quantity": str(ri.quantity),
                 "gross_quantity": str(ri.gross_quantity),
-                "usable_pct": str(ri.usable_pct),
+                "usable_factor": str(ri.usable_factor),
                 "unit": ri.unit,
             }
             for ri in recipe.items.filter(is_optional=False).order_by("sort_order")

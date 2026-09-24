@@ -38,7 +38,7 @@ def _required_ref(value, *, field: str) -> str:
 def _yield_meta(origem: dict, net_qty) -> dict:
     """O que a linha precisa carregar quando houve aproveitamento declarado.
 
-    Só grava quando há algo a dizer: aproveitamento de 100% não deixa rastro,
+    Só grava quando há algo a dizer: aproveitamento de 1 não deixa rastro,
     porque um `meta` que repete o óbvio em toda linha de toda fornada é ruído
     com custo de armazenamento.
 
@@ -51,12 +51,12 @@ def _yield_meta(origem: dict, net_qty) -> dict:
     (≈ 0,200 limpos)" em vez de um número que parece exato, e a auditoria sabe
     de onde a bruta saiu.
     """
-    pct = origem["usable_pct"]
-    if Decimal(str(pct)) >= Decimal("100"):
+    fator = origem["usable_factor"]
+    if Decimal(str(fator)) >= Decimal("1"):
         return {}
     return {
         "net_quantity": str(net_qty),
-        "usable_pct": str(pct),
+        "usable_factor": str(fator),
         "approximate": True,
     }
 
@@ -380,7 +380,7 @@ class CraftExecution:
                         "input_sku": ri.input_sku,
                         "quantity": str(ri.quantity),
                         "gross_quantity": str(ri.gross_quantity),
-                        "usable_pct": str(ri.usable_pct),
+                        "usable_factor": str(ri.usable_factor),
                         "unit": ri.unit,
                     }
                     for ri in recipe.items.filter(is_optional=False).order_by("sort_order")
@@ -417,7 +417,7 @@ class CraftExecution:
                         "quantity": req_qty,
                         "unit": item_data["unit"],
                         "net_quantity": net_qty,
-                        "usable_pct": item_data["usable_pct"],
+                        "usable_factor": item_data["usable_factor"],
                     }
                 )
                 all_items.append(
