@@ -63,6 +63,7 @@
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
+| [`apply_grocery_catalog`](#apply_grocery_catalog) | config | Seed | Cria a revenda real da Mercearia (PDV; canal remoto só com foto) e troca os placeholders que já têm produto real |
 | [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
 | [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
@@ -143,6 +144,29 @@ python manage.py apply_product_brands --sku QC   # um SKU só
 Só preenche campo **vazio**: marca ou GTIN que o Gestor já curou fica como
 está e sai no relatório como divergência. Revenda nunca recebe a marca da loja,
 e SKU sem fabricante confirmado fica fora da tabela. Idempotente.
+
+---
+
+
+### apply_grocery_catalog
+
+Traz a Mercearia real da planilha consolidada do dono: cria a revenda que tem
+nome, marca, embalagem, preço > 0, NCM e GTIN válido pelo dígito verificador
+GS1, e troca nome/preço dos placeholders que já viraram produto real (RTAT,
+TPND, Camembert). É a MESMA tabela que o `seed` aplica num banco novo.
+
+```bash
+python manage.py apply_grocery_catalog            # ensaio: executa e desfaz
+python manage.py apply_grocery_catalog --apply    # grava
+```
+
+Cada item nasce vendável e despublicado (ficha da embalagem por preencher),
+perfil fiscal `own_production` (revenda comum, CFOP 5102 — o CEST da nota fica
+na tabela e não é gravado), marca e GTIN em `metadata.social`,
+`metadata.purchase.resale = true` e coleção `mercearia`. **Listagem: PDV
+sempre; loja online, WhatsApp e iFood só com foto** — sem foto, o item sai do
+canal remoto. Quem não tem dado suficiente fica em `LEFT_OUT`, com o motivo.
+Nome/preço que o Gestor já mexeu fica e sai como divergência. Idempotente.
 
 ---
 

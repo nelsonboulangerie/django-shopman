@@ -70,6 +70,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
 from config.management.commands.apply_search_presence import (
     BRAND_PROFILES,
@@ -890,6 +891,10 @@ class Command(BaseCommand):
         # Marca da casa nos feitos aqui, do fabricante na revenda: a mesma
         # tabela que o `apply_product_brands` aplica num banco que já roda.
         apply_brands(apply=True)
+        # A revenda real da Mercearia (planilha consolidada): a mesma tabela que o
+        # `apply_grocery_catalog` aplica num banco que já roda. Nasce só no PDV —
+        # canal remoto pede foto.
+        apply_grocery(apply=True)
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
@@ -1870,14 +1875,16 @@ class Command(BaseCommand):
              unsplash("photo-1638324396220-432156cd9303"), 200, "Conservar refrigerado após aberto"),
             ("BK", "Bacon da Casa", "Bacon curado e defumado na casa (peça)", 2200, "un", 15, True,
              unsplash("photo-1766406838572-915da0343519"), 200, "Conservar refrigerado"),
-            ("TPND", "Tapenade", "Pasta provençal de azeitonas da casa", 2400, "un", 15, True,
-             unsplash("photo-1750874695064-f851719d1858"), 170, "Conservar refrigerado após aberto"),
-            ("RTAT", "Patê de Ratatouille", "Patê vegetal da casa", 2400, "un", 15, True,
-             unsplash("photo-1777891257519-84d59a502ca1"), 170, "Conservar refrigerado após aberto"),
+            # RTAT, TPND e o Camembert já são o produto real do Yooga (nome e
+            # preço); o `apply_grocery_catalog` faz a mesma troca num banco vivo.
+            ("TPND", "Tapenade Azeitonas Pretas 100g", "Pasta provençal de azeitonas da casa", 2900, "un", 15, True,
+             unsplash("photo-1750874695064-f851719d1858"), 100, "Conservar refrigerado após aberto"),
+            ("RTAT", "Ratatouille 90g", "Patê vegetal da casa", 1800, "un", 15, True,
+             unsplash("photo-1777891257519-84d59a502ca1"), 90, "Conservar refrigerado após aberto"),
             ("CX", "Cornichons", "Picles franceses em conserva", 2800, "un", 90, True,
              unsplash("photo-1774456567094-726973275d34"), 200, "Conservar refrigerado após aberto"),
-            ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Camembert", "Queijo camembert de leite de vaca", 3800, "un", 20, True,
-             unsplash("photo-1624806992066-5ffcf7ca186b"), 250, "Conservar refrigerado"),
+            ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Queijo Camembert Ile de France 125g", "Queijo camembert de leite de vaca", 4000, "un", 20, True,
+             unsplash("photo-1624806992066-5ffcf7ca186b"), 125, "Conservar refrigerado"),
             ("QP", "Queijo Pomerode", "Queijo colonial artesanal de Pomerode", 3200, "un", 30, True,
              unsplash("photo-1756922245026-934ff1648d79"), 300, "Conservar refrigerado"),
             ("GR", "Café em Grão (250g)", "O grão da casa, torra artesanal", 4200, "un", 90, True,
@@ -2371,13 +2378,13 @@ class Command(BaseCommand):
             "TPND": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
-                "serves": "pote 170 g",
+                "serves": "pote 100 g",
                 "approx_dimensions": "pote de vidro",
             },
             "RTAT": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
-                "serves": "pote 170 g",
+                "serves": "pote 90 g",
                 "approx_dimensions": "pote de vidro",
             },
             "CX": {
@@ -2389,7 +2396,7 @@ class Command(BaseCommand):
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "allergens": ["leite"],
                 "dietary_info": [],
-                "serves": "aprox. 250 g",
+                "serves": "peça de 125 g",
                 "approx_dimensions": "caixa redonda",
             },
             "QP": {
@@ -2921,13 +2928,13 @@ class Command(BaseCommand):
                 "ingredients_text": (
                     "Azeitonas pretas, alcaparras, azeite extra virgem e ervas."
                 ),
-                "nutrition_facts": nutrition(20, 8, 45.0, 1.0, 0.2, 0.4, 4.5, 0.7, 0.6, 180.0),
+                "nutrition_facts": nutrition(20, 5, 45.0, 1.0, 0.2, 0.4, 4.5, 0.7, 0.6, 180.0),
             },
             "RTAT": {
                 "ingredients_text": (
                     "Berinjela, abobrinha, tomate, pimentão, cebola, azeite e ervas."
                 ),
-                "nutrition_facts": nutrition(20, 8, 25.0, 2.5, 1.2, 0.5, 1.5, 0.2, 0.8, 95.0),
+                "nutrition_facts": nutrition(20, 4, 25.0, 2.5, 1.2, 0.5, 1.5, 0.2, 0.8, 95.0),
             },
             "CX": {
                 "ingredients_text": (
@@ -2939,7 +2946,7 @@ class Command(BaseCommand):
                 "ingredients_text": (
                     "Leite de vaca pasteurizado, fermento lático, coalho e sal. CONTÉM: leite."
                 ),
-                "nutrition_facts": nutrition(30, 8, 90.0, 0.2, 0.2, 6.0, 7.0, 4.5, 0.0, 240.0),
+                "nutrition_facts": nutrition(30, 4, 90.0, 0.2, 0.2, 6.0, 7.0, 4.5, 0.0, 240.0),
             },
             "QP": {
                 "ingredients_text": (
@@ -3038,11 +3045,8 @@ class Command(BaseCommand):
             products[pack_sku] = pack
 
         # Mercearia: preços provisórios até a lista do Pablo (rastreável no Admin).
-        mercearia_tbd_skus = [
-            "MT", "BK", "TPND", "RTAT",
-            "CX", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
-            "GR", "THL", "LN"
-        ]
+        # RTAT, TPND e o Camembert saíram daqui: o preço deles já é o do Yooga.
+        mercearia_tbd_skus = ["MT", "BK", "CX", "QP", "GR", "THL", "LN"]
         for sku in mercearia_tbd_skus:
             p = products[sku]
             p.metadata["price_tbd"] = True

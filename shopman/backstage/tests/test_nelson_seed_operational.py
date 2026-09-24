@@ -60,6 +60,25 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         resolved = resolve_fiscal_item(from_metadata(metadata))
         assert resolved["cfop"] == "5102"
         assert resolved["icms_situacao_tributaria"] == "102"
+    # A Mercearia real nasce no seed pela mesma tabela do `apply_grocery_catalog`:
+    # vendável no PDV, fora de todo canal remoto (sem foto), marcada como revenda.
+    from shopman.offerman.models import ListingItem
+
+    from config.management.commands.apply_grocery_catalog import GROCERY, LEFT_OUT
+
+    grocery = {p.sku: p for p in Product.objects.filter(sku__in=[i.sku for i in GROCERY])}
+    assert set(grocery) == {i.sku for i in GROCERY}
+    assert not Product.objects.filter(sku__in=LEFT_OUT).exists()
+    for sku, product in grocery.items():
+        refs = set(ListingItem.objects.filter(product=product).values_list("listing__ref", flat=True))
+        assert refs == {"pdv"}, (sku, refs)
+        assert product.metadata["purchase"]["resale"] is True
+        assert not from_metadata(product.metadata).errors(), sku
+        assert product.collection_items.filter(collection__ref="mercearia").exists()
+    rtat = Product.objects.get(sku="RTAT")
+    assert (rtat.name, rtat.base_price_q) == ("Ratatouille 90g", 1800)
+    assert "price_tbd" not in rtat.metadata
+
     croissant_history = [
         item
         for item in OrderItem.objects.filter(sku="CRO").select_related("order")
