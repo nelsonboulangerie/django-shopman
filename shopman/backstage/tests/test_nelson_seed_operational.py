@@ -476,6 +476,29 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert OperatorAlert.objects.filter(type="payment_after_cancel", severity="critical", acknowledged=False).exists()
     # (alerta stale_new_order + webhook:ifood saíram junto com o edge iFood parado — Entrada vazia)
     assert IdempotencyKey.objects.filter(scope="webhook:efi-pix", status="done").exists()
+    # A cobrança Pix semeada nasce no gateway do adapter em uso, e a Efí com o
+    # ambiente de origem: o estorno do pedido cancelado não pode cair na trava
+    # de ambiente (``payment_reconciliation_failed`` crítico a cada reseed).
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.services.payment import _gateway_for_adapter
+
+    pix_gateway = _gateway_for_adapter(get_adapter("payment", method="pix")) or "mock"
+    # (``gateway=""`` é o Pix de balcão atestado no terminal: não passa por gateway.)
+    pix_intents = PaymentIntent.objects.filter(method=PaymentIntent.Method.PIX).exclude(gateway="")
+    assert set(pix_intents.values_list("gateway", flat=True)) == {pix_gateway}
+    if pix_gateway == "efi":
+        assert not pix_intents.filter(gateway_data__provider_environment__isnull=True).exists()
+    assert not OperatorAlert.objects.filter(type="payment_reconciliation_failed").exists()
+    # O volume nativo do B.I. (BIV-*) registra no Payman a venda por Pix/cartão,
+    # como o PDV: a conciliação diária não acha venda digital sem pagamento.
+    from shopman.backstage.services.financial_reconciliation import build_financial_reconciliation
+
+    biv_days = sorted({d.date() for d in Order.objects.filter(ref__startswith="BIV-").values_list("created_at", flat=True)})
+    assert biv_days
+    for day in biv_days[-3:]:
+        report = build_financial_reconciliation(reconciliation_date=day)
+        missing = [i.order_ref for i in report.issues if i.code == "digital_order_missing_intent"]
+        assert not [ref for ref in missing if ref.startswith("BIV-")], (day, missing[:5])
 
     low_attention = Customer.objects.get(ref="CLI-001")
     assert low_attention.metadata["seed_persona"] == "low_attention"

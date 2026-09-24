@@ -20,6 +20,7 @@ import random
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
+from unittest import mock
 
 from django.conf import settings
 
@@ -6734,7 +6735,7 @@ class Command(BaseCommand):
                 pending,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.PENDING,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-pending",
                 expires_at=now + timedelta(minutes=6),
             )
@@ -6765,7 +6766,7 @@ class Command(BaseCommand):
                 expired,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.PENDING,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-expired",
                 expires_at=now - timedelta(minutes=3),
             )
@@ -6797,7 +6798,7 @@ class Command(BaseCommand):
                 late_paid,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.CAPTURED,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-after-cancel",
                 captured_at=now - timedelta(minutes=5),
             )
@@ -6920,6 +6921,27 @@ class Command(BaseCommand):
         )
         return order
 
+    def _pix_gateway(self) -> str:
+        """Gateway do adapter de Pix EM USO — a cobrança semeada nasce como ele a criaria.
+
+        O seed gravava ``efi`` fixo. Num ambiente com o Pix simulado (o alpha),
+        o estorno de um pedido cancelado ia para o caminho da Efí com uma cobrança
+        que nunca existiu lá, a trava de ambiente recusava e o Gestor recebia
+        ``payment_reconciliation_failed`` crítico a cada reseed.
+        """
+        from shopman.shop.adapters import get_adapter
+        from shopman.shop.services.payment import _gateway_for_adapter
+
+        return _gateway_for_adapter(get_adapter("payment", method="pix")) or "mock"
+
+    @staticmethod
+    def _pix_gateway_data(gateway: str) -> dict:
+        """Cobrança Efí carrega o ambiente de origem, como o adapter grava."""
+        if gateway != "efi":
+            return {}
+        sandbox = (getattr(settings, "SHOPMAN_EFI", {}) or {}).get("sandbox", True)
+        return {"provider_environment": "sandbox" if sandbox else "production"}
+
     def _attach_edge_payment_intent(
         self,
         order: Order,
@@ -6938,6 +6960,7 @@ class Command(BaseCommand):
             status=status,
             amount_q=order.total_q,
             gateway=gateway,
+            gateway_data=self._pix_gateway_data(gateway),
             gateway_id=f"{gateway_id}-{order.ref}",
             expires_at=expires_at,
             captured_at=captured_at,
@@ -7219,7 +7242,7 @@ class Command(BaseCommand):
             paid_pix,
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.CAPTURED,
-            gateway="efi",
+            gateway=self._pix_gateway(),
             gateway_id="seed-qa-pix-captured",
             captured_at=paid_pix.created_at + timedelta(minutes=3),
         )
@@ -7265,7 +7288,8 @@ class Command(BaseCommand):
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.REFUNDED,
             amount_q=returned.total_q,
-            gateway="efi",
+            gateway=self._pix_gateway(),
+            gateway_data=self._pix_gateway_data(self._pix_gateway()),
             gateway_id=f"seed-qa-refunded-{returned.ref}",
             captured_at=returned.created_at + timedelta(minutes=5),
         )
@@ -7316,7 +7340,7 @@ class Command(BaseCommand):
             pix_pending,
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.PENDING,
-            gateway="efi",
+            gateway=self._pix_gateway(),
             gateway_id="seed-qa-pix-pending",
             expires_at=timezone.now() + timedelta(minutes=8),
         )
@@ -7846,7 +7870,7 @@ class Command(BaseCommand):
                 continue
 
             method = PaymentIntent.Method.PIX if i % 10 < 7 else PaymentIntent.Method.CARD
-            gateway = "efi" if method == PaymentIntent.Method.PIX else "stripe"
+            gateway = self._pix_gateway() if method == PaymentIntent.Method.PIX else "stripe"
             intent_ref = f"PI-{uuid.uuid4().hex[:12].upper()}"
 
             intent = PaymentIntent(
@@ -7856,6 +7880,7 @@ class Command(BaseCommand):
                 status=PaymentIntent.Status.CAPTURED,
                 amount_q=order.total_q,
                 gateway=gateway,
+                gateway_data=self._pix_gateway_data(gateway),
                 gateway_id=f"gw-{uuid.uuid4().hex[:16]}",
                 captured_at=order.created_at + timedelta(minutes=5),
             )
@@ -10181,6 +10206,11 @@ class Command(BaseCommand):
         Os pedidos de QA continuam onde estão; estes só somam o movimento que
         uma casa em operação teria. Vão em lote, sem passar pelo lifecycle:
         aqui interessa a série de vendas, não o ciclo do pedido.
+
+        A venda por Pix/cartão ganha o pagamento que o PDV registra no Payman
+        (atestado no terminal, ``PaymentService.settle``). Sem ele, a
+        conciliação diária achava um ``digital_order_missing_intent`` por venda
+        e mandava ``payment_reconciliation_failed`` ao gestor todo dia.
         """
         from shopman.orderman.models import OrderItem
 
@@ -10189,6 +10219,7 @@ class Command(BaseCommand):
             return 0
 
         Order.objects.filter(ref__startswith="BIV-").delete()
+        PaymentIntent.objects.filter(order_ref__startswith="BIV-").delete()
         today = timezone.localdate()
         rng = random.Random(20260821)
         contexts = {
@@ -10208,7 +10239,8 @@ class Command(BaseCommand):
                 day, context, offset=offset, days=self.BI_LONG_DAYS, rng=rng
             )
             price_factor = self._bi_price_factor(offset=offset, days=self.BI_LONG_DAYS)
-            orders, lines_by_ref = [], {}
+            orders, lines_by_ref, intents = [], {}, []
+            sold_at = self._at(day, 11)
             for index in range(count):
                 # Convenção de ref da casa: PREFIXO-aammdd-sufixo (há teste cobrando).
                 ref = f"BIV-{day:%y%m%d}-{index}"
@@ -10219,12 +10251,26 @@ class Command(BaseCommand):
                     )
                 ]
                 total_q = sum(unit * qty for _p, qty, unit in lines)
+                data = self._bi_native_payment(day, total_q, rng)
+                method = data["payment"]["method"]
+                if method in (PaymentIntent.Method.PIX, PaymentIntent.Method.CARD):
+                    intent_ref = f"PI-{ref}"
+                    data["payment"]["intent_ref"] = intent_ref
+                    intents.append(
+                        PaymentIntent(
+                            ref=intent_ref, order_ref=ref, method=method,
+                            status=PaymentIntent.Status.CAPTURED, amount_q=total_q,
+                            gateway="", gateway_id="",
+                            gateway_data={"asserted_at_terminal": True},
+                            captured_at=sold_at,
+                        )
+                    )
                 orders.append(
                     Order(
                         ref=ref, channel_ref="pdv", session_key=f"seed-{ref}",
                         status=Order.Status.COMPLETED,
                         total_q=total_q,
-                        data=self._bi_native_payment(day, total_q, rng),
+                        data=data,
                         snapshot={"seed": "nelson", "source": "bi_native_volume"},
                     )
                 )
@@ -10246,10 +10292,21 @@ class Command(BaseCommand):
                 ],
                 batch_size=500,
             )
+            # A transação é imutável (nem ``update`` passa): a data da venda entra
+            # no próprio insert, com o relógio do ``auto_now_add`` na hora dela.
+            with mock.patch("django.utils.timezone.now", return_value=sold_at):
+                PaymentIntent.objects.bulk_create(intents, batch_size=500)
+                PaymentTransaction.objects.bulk_create(
+                    [
+                        PaymentTransaction(
+                            intent=intent, type=PaymentTransaction.Type.CAPTURE, amount_q=intent.amount_q,
+                        )
+                        for intent in PaymentIntent.objects.filter(order_ref__startswith=f"BIV-{day:%y%m%d}-")
+                    ],
+                    batch_size=500,
+                )
             # created_at é auto_now_add: só depois do insert dá para datar.
-            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(
-                created_at=self._at(day, 11)
-            )
+            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(created_at=sold_at)
             created += len(orders)
         return created
 
