@@ -41,6 +41,7 @@ O layer contribui, via auto-import do Nuxt:
 | `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
 | `server/utils/operatorSecurity.ts` | `operatorResponseHeaders`, `applyPrivateNoStore` | política testável de headers e preservação de `Vary` no BFF |
 | `server/utils/eventStream.ts` | `proxyEventStream` | streaming SSE same-origin do eventstream do Django |
+| `app/utils/resilientEventSource.ts` | `openResilientEventSource` | o lado do browser: EventSource que se recria com backoff (2 s → 60 s) depois de um não-200 na reconexão (502 de deploy) ou de um `stream-error` (canal recusado), e avisa a reabertura para o chamador refazer o fetch canônico |
 | `server/routes/health/live.get.ts` | — | `/health/live`: processo/BFF vivo, sem chamar o Django — é o health check da plataforma |
 | `server/routes/health/ready.get.ts` | — | `/health/ready`: BFF + `/health/ready/` do Django (smoke e diagnóstico, nunca health check da plataforma) |
 | `server/utils/healthProbe.ts` | `ProbeRateLimiter`, `checkDjangoReadiness`, `respondHealthLive`, `respondHealthReady` | corpo pobre (`ok`/`fail`), `no-store` e limitador em memória dos probes |
@@ -288,6 +289,50 @@ com `app`, `trigger` (`prompt` | `idle`), `from_version` e `to_version`.
 do push); `/manifest.webmanifest` com `public, max-age=3600` — ele não decide versão de
 código. O roteador por Host (`surfaces/operator-router`) repassa tudo intacto, e cada
 host serve o SEU worker; a trava está em `operator-router/test/router.test.mjs`.
+
+## Barra de seções (`<OperatorAppBar>`)
+
+O cabeçalho que fica no topo do CONTEÚDO — não é o rail. Ele carrega o `RailToggle`, a
+navegação de seções do app e um cluster de ações à direita.
+
+```vue
+<OperatorAppBar :sections="sections" label="Seções do Gestor">
+  <template #end><NotificationBell /></template>
+</OperatorAppBar>
+```
+
+`sections` é uma lista de `OperatorSection` (`app/presentation/appBar.ts`):
+
+| campo | serve para |
+|---|---|
+| `key` | identidade da seção — é o que o app compara e o que o teste nomeia |
+| `label` · `icon` | o que aparece na aba (ícone `lucide:*`) |
+| `to` | rota da seção. **Sem `to`, a aba vira botão** e a barra emite `select` — é como o Compras funciona, porque a seção dele é estado (`useState`), não rota |
+| `match` | outras rotas que PERTENCEM à seção (`/channels` dentro de Canais, `/templates` dentro de Campanhas) |
+| `attention` | aviso curto ao lado do rótulo ("1 desligado"). Ausente = estado normal, sem ruído |
+| `shortcut` | a tecla que leva à seção, ENSINADA na própria aba e anunciada em `aria-keyshortcuts` |
+
+A seção ativa sai da rota por `activeSectionKey()`, que é pura e tem teste: vence o
+prefixo mais longo, `/` não é prefixo de ninguém, barra final e query não mudam nada, e
+rota desconhecida cai na seção raiz — a barra nunca fica sem nenhuma aba acesa, porque
+"nenhuma acesa" é a tela dizendo que o operador está em lugar nenhum.
+
+**Por que isto virou peça da layer.** Quatro apps desenhavam a mesma barra à mão e, na
+medição de 22/09/2026, "a mesma" já não era a mesma: `min-h-control` (44px) no Gestor,
+`h-11` no Marketing e **`h-8`** no B.I. e no Compras — metade do alvo de toque que o
+token `--spacing-control` define para a casa, numa barra usada com a mão ocupada. O
+`chipClass(active)` do B.I. e o do Compras eram cópia byte a byte. E a aba ativa só era
+trazida para dentro da área visível no Marketing — onde o defeito tinha aparecido de
+verdade: a 390px cabem duas abas e meia, e em `/platforms` a seção ativa nascia fora da
+tela, então o gestor lia a barra e concluía que estava no Painel. Agora isso vale para
+todos, junto com o `aria-current="page"` e a remedida depois de `document.fonts.ready`.
+
+**Cabeçalhos ainda não convertidos** — PDV, Cozinha, Produção e Hub — carregam estado
+próprio (comanda editável, relógio e dia operacional, progresso do dia, saudação). Não
+são deriva: são cabeçalhos ricos, e a conversão é WP próprio.
+`tests/guardrails.appBar.test.ts` guarda a lista deles e impede que ela CRESÇA em
+silêncio — arquivo novo com `<header>` + `<RailToggle>` reprova até alguém adicioná-lo
+de propósito, escrevendo por quê.
 
 ## Próximo foco (`useNextFocus`)
 

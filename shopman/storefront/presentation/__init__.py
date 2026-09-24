@@ -44,6 +44,7 @@ from .home import (
     ShopStatusProjection,
     build_home,
 )
+from .legal import LegalProjection, ProcessorProjection, build_legal
 from .order_history import (
     OrderHistoryProjection,
     build_order_history,
@@ -89,6 +90,9 @@ __all__ = [
     "CustomerProfileProjection",
     "DiscountLineProjection",
     "FomoBadge",
+    "LegalProjection",
+    "ProcessorProjection",
+    "build_legal",
     "FAQItemProjection",
     "SiteProjection",
     "HomeHeroCopyProjection",

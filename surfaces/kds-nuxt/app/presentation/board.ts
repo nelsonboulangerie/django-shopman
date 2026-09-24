@@ -165,6 +165,43 @@ export function ticketAction(
   };
 }
 
+// ── A moldura comum dos cards ───────────────────────────────────────────────
+// Estação e expedição são o MESMO card com funções diferentes: a mesma margem
+// em volta, o mesmo ritmo entre os blocos, o mesmo código herói e o mesmo botão
+// na base. Uma escala só, para as duas telas não derivarem de novo.
+
+export type KDSDensity = "compact" | "cozy" | "roomy";
+
+export interface KDSCardScale {
+  /** Tamanho do código herói (papéis do canon: title → display). */
+  code: string;
+  /** Margem lateral, do topo e da base da moldura. */
+  inset: string;
+  padT: string;
+  padB: string;
+  /** Ritmo vertical entre os blocos do card. */
+  gap: string;
+  /** Altura + corpo do botão da base. Escada do canon do kit (operator-base.css,
+   *  "ALTURAS DE CONTROLE"): nunca abaixo de h-11, porque é o alvo de toque. */
+  action: string;
+}
+
+const CARD_SCALE: Record<KDSDensity, KDSCardScale> = {
+  compact: { code: "text-xl", inset: "px-3", padT: "pt-3", padB: "pb-3", gap: "gap-2.5", action: "h-11 text-sm" },
+  cozy: { code: "text-3xl", inset: "px-4", padT: "pt-4", padB: "pb-4", gap: "gap-3", action: "h-11 text-base" },
+  roomy: { code: "text-4xl", inset: "px-5", padT: "pt-5", padB: "pb-5", gap: "gap-3.5", action: "h-14 text-lg" },
+};
+
+export function cardScale(density: KDSDensity): KDSCardScale {
+  return CARD_SCALE[density];
+}
+
+/** "Entrega" ou "Retirada" — a mesma palavra que a expedição recebe pronta da
+ *  projection (`fulfillment_label`), derivada aqui do ícone que o ticket traz. */
+export function fulfillmentLabel(fulfillmentIcon: string): string {
+  return fulfillmentIcon === "local_shipping" ? "Entrega" : "Retirada";
+}
+
 /** Dia/mês de uma data ISO ("2026-09-19" → "19/09"). O card agendado precisa
  *  DIZER a data: "libera na data" obriga o operador a lembrar do seletor que
  *  está no topo do cabeçalho, longe do card e de um minuto atrás. Fatiar a

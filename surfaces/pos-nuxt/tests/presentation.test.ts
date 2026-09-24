@@ -250,6 +250,39 @@ describe("presentation/catalog — grid shaping", () => {
     expect(filterProducts(products, {}).length).toBe(3);
   });
 
+  it("o leitor de código de barras acha o produto pelo GTIN", () => {
+    // O leitor é um teclado: ele DIGITA os dígitos no campo de busca e manda
+    // Enter. Sem o GTIN no índice, bipar o pote de geleia não achava nada.
+    const products = [
+      product({ sku: "PAO-FRANCES", name: "Pão Francês", collection_ref: "paes" }),
+      product({
+        sku: "STDALFOUR-GELEIA-FIGO-284",
+        name: "Geleia de Figo St. Dalfour 284g",
+        collection_ref: "mercearia",
+        gtin: "0084380959042",
+      }),
+    ];
+
+    expect(filterProducts(products, { query: "0084380959042" }).map((p) => p.sku)).toEqual([
+      "STDALFOUR-GELEIA-FIGO-284",
+    ]);
+    // Código de barras casa INTEIRO: pedaço de código não vira produto errado.
+    expect(filterProducts(products, { query: "008438" })).toEqual([]);
+  });
+
+  it("o produto bipado vem na frente do que só contém os dígitos no nome", () => {
+    const products = [
+      product({ sku: "VALE-084", name: "Vale 0084380959042", collection_ref: "doces" }),
+      product({ sku: "GELEIA", name: "Geleia", collection_ref: "mercearia", gtin: "0084380959042" }),
+    ];
+
+    // O Enter que o leitor manda em seguida pega o PRIMEIRO da lista.
+    expect(filterProducts(products, { query: "0084380959042" }).map((p) => p.sku)).toEqual([
+      "GELEIA",
+      "VALE-084",
+    ]);
+  });
+
   it("acha produto sem acento e prioriza início de palavra", () => {
     const products = [
       product({ sku: "TRUFA-PAPAIA", name: "Trufa de Papaia", collection_ref: "doces" }),

@@ -29,6 +29,8 @@ watch(() => data.value, value => {
   setFromServer(value?.cart)
 }, { immediate: true })
 
+requireContentOnSsr(error.value, !!data.value?.home, 'Loja')
+
 const home = computed(() => data.value?.home || null)
 const featured = computed(() => home.value?.featured_items || [])
 const sectionsCopy = computed(() => home.value?.sections_copy || null)
@@ -77,7 +79,7 @@ const visitAddressLines = computed(() => addressLines(home.value?.shop.full_addr
 const whatsappUrl = computed(() => home.value?.public_config.whatsapp_url || '')
 // Fundo do CTA de ajuda: ambiente (interior da padaria), não foto de produto —
 // produto fica nos cards/cardápio; aqui o tom é de acolhimento/lugar.
-const whatsappImage = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1200&q=80'
+const whatsappImage = '/img/home/facade1.webp'
 
 // A home mais útil para quem voltou com pedido em andamento é o próprio
 // pedido: banner com prioridade sobre o hero (silencioso para anônimos).
@@ -363,8 +365,8 @@ useHead({
           <div class="flex flex-col overflow-hidden rounded-lg border bg-card" data-home-path-online>
             <UiAspectRatio :ratio="16 / 9" class="bg-muted">
               <img
-                src="https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=900&q=80"
-                alt="Cesta com pães artesanais variados"
+                src="/img/home/baguette.webp"
+                alt="Baguetes em fermentação sobre pano de linho, antes do forno"
                 loading="lazy"
                 decoding="async"
                 class="size-full object-cover"
@@ -390,8 +392,8 @@ useHead({
           <div class="flex flex-col overflow-hidden rounded-lg border bg-card" data-home-path-visit>
             <UiAspectRatio :ratio="16 / 9" class="bg-muted">
               <img
-                src="https://images.unsplash.com/photo-1517433670267-08bbd4be890f?auto=format&fit=crop&w=900&q=80"
-                alt="Vitrine de padaria com pães expostos"
+                src="/img/home/selfservice.webp"
+                alt="Balcão da padaria com pães e doces do dia"
                 loading="lazy"
                 decoding="async"
                 class="size-full object-cover"

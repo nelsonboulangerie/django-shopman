@@ -127,7 +127,16 @@ def create_intent(
     from shopman.orderman.models import Directive
     from shopman.payman import PaymentService
 
-    metadata = metadata or {}
+    from shopman.shop.services.payment_provenance import LOCAL_MOCK_ENVIRONMENT, provenance_stamp
+
+    # ⚠️ SIMULADO NA ORIGEM. O intent do simulador é capturável de propósito (o
+    # botão "Simular pagamento" e o auto-confirm existem para o roteiro de teste
+    # percorrer o pós-pagamento), mas nenhum real entra. Sem esta marca, o
+    # fechamento, o livro do turno, o B.I. e a conciliação contavam o Pix que
+    # ninguém pagou como receita — a mesma régua que já tirava a Efí homologação.
+    # A marca vai no ``gateway_data`` antes de qualquer confirmação, e
+    # ``payment._persist_intent`` a copia para ``Order.data["payment"]``.
+    metadata = {**(metadata or {}), **provenance_stamp(environment=LOCAL_MOCK_ENVIRONMENT, simulated=True)}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
     pix_timeout = config.get("pix_timeout_minutes", 30)
     if method == "pix":

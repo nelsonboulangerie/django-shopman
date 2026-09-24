@@ -138,6 +138,124 @@ def test_cancelled_order_never_emits(order):
     assert backend.emit_calls == 0
 
 
+# ── venda desfeita com a emissão em retry: a nota pode estar autorizada ──────
+
+
+@pytest.fixture
+def fiscal_backend_configured(settings):
+    """``fiscal.cancel`` só age com backend configurado — como em produção,
+    onde o handler só existe porque há backend."""
+    from shopman.shop.fiscal import fiscal_pool
+
+    settings.SHOPMAN_FISCAL_ADAPTER = "shopman.shop.tests.test_fiscal_handlers.FakeBackend"
+    fiscal_pool.reset()
+    yield
+    fiscal_pool.reset()
+
+
+def _cancel_directives(order):
+    return Directive.objects.filter(topic="fiscal.cancel_nfce", payload__order_ref=order.ref)
+
+
+def test_undone_sale_in_retry_adopts_authorized_note_and_queues_its_cancellation(order, fiscal_backend_configured):
+    """O POST anterior deu timeout e a nota saiu; a venda foi desfeita no meio.
+
+    Antes: Terminal sem consultar — nota válida na SEFAZ, sem chave no pedido
+    e sem cancelamento (``fiscal.cancel`` não age sem a chave).
+    """
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+    backend = FakeBackend(emit_result=AUTHORIZED, query_result=AUTHORIZED)
+
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=2), ctx={})
+
+    assert backend.emit_calls == 0  # pedido desfeito nunca POSTa
+    assert backend.query_calls == 1
+    order.refresh_from_db()
+    assert order.data["nfce_access_key"] == AUTHORIZED.access_key
+    assert _cancel_directives(order).count() == 1
+
+
+def test_undone_sale_with_note_still_processing_keeps_asking(order, fiscal_backend_configured):
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+    processing = FiscalDocumentResult(success=False, status="processing", error_code="focus_nfe_processing")
+    backend = FakeBackend(query_result=processing)
+
+    with pytest.raises(DirectiveTransientError):
+        NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=2), ctx={})
+    assert backend.emit_calls == 0
+    assert not _cancel_directives(order).exists()
+
+
+def test_undone_sale_without_note_is_refused_without_posting(order, fiscal_backend_configured):
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+    backend = FakeBackend(query_result=_error("focus_nfe_http_404"))
+
+    with pytest.raises(DirectiveTerminalError):
+        NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=2), ctx={})
+    assert backend.emit_calls == 0
+    assert not _cancel_directives(order).exists()
+
+
+def test_sale_undone_while_post_in_flight_gets_its_note_cancelled(order, fiscal_backend_configured):
+    """O cancel commitou com o POST em voo: ``_on_cancelled`` não viu chave, e a
+    nota que chega depois precisa pedir o próprio cancelamento."""
+
+    class UndoneMidFlight(FakeBackend):
+        def emit(self, **kwargs):
+            Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+            return super().emit(**kwargs)
+
+    backend = UndoneMidFlight(emit_result=AUTHORIZED)
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=1), ctx={})
+
+    order.refresh_from_db()
+    assert order.data["nfce_access_key"] == AUTHORIZED.access_key
+    assert _cancel_directives(order).count() == 1
+
+
+def test_cancel_reopens_failed_emission_for_a_query(order, fiscal_backend_configured):
+    """Emissão que parou em ``failed`` depois de POSTar pode ter deixado nota:
+    desfazer a venda reabre a directive — só para consultar, nunca para POSTar."""
+    from shopman.shop.services import fiscal
+
+    failed = _emit_directive(order, attempts=8)
+    failed.status = "failed"
+    failed.save(update_fields=["status"])
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+
+    fiscal.cancel(order)
+
+    failed.refresh_from_db()
+    assert failed.status == "queued"
+    assert failed.attempts == 1
+
+    # O claim do dispatcher leva attempts a 2: o handler consulta e adota.
+    failed.attempts = 2
+    backend = FakeBackend(emit_result=AUTHORIZED, query_result=AUTHORIZED)
+    NFCeEmitHandler(backend).handle(message=failed, ctx={})
+    assert backend.emit_calls == 0
+    assert _cancel_directives(order).count() == 1
+
+
+def test_cancel_leaves_emission_that_never_tried_alone(order, fiscal_backend_configured):
+    from shopman.shop.services import fiscal
+
+    never = _emit_directive(order, attempts=0)
+    never.status = "failed"
+    never.save(update_fields=["status"])
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+
+    fiscal.cancel(order)
+
+    never.refresh_from_db()
+    assert never.status == "failed"
+
+
 def test_existing_access_key_is_noop(order):
     order.data["nfce_access_key"] = "existing"
     order.save(update_fields=["data"])
@@ -328,3 +446,37 @@ def test_invalid_delivery_payload_is_terminal_and_visible_to_operator(order):
     alert = OperatorAlert.objects.get(type="integration_failed")
     assert order.ref in alert.message
     assert reason in alert.message
+
+
+# ── alerta de emissão falha: ruído x risco de nota órfã ──────────────────────
+
+
+def _failed_emit(order, *, attempts):
+    directive = _emit_directive(order)
+    Directive.objects.filter(pk=directive.pk).update(status="failed", attempts=attempts)
+    directive.refresh_from_db()
+    return directive
+
+
+def test_sale_undone_before_first_attempt_does_not_page_the_operator(order):
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+
+    NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=1))
+
+    assert not OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()
+
+
+def test_sale_undone_after_a_post_still_pages_the_operator(order):
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+
+    NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=2))
+
+    assert OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()
+
+
+def test_live_order_failing_on_first_attempt_still_pages_the_operator(order):
+    NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=1))
+
+    assert OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()

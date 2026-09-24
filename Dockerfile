@@ -17,6 +17,41 @@ RUN addgroup --system shopman \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Base de cidade (GeoLite2-City) ───────────────────────────────────────────
+# Fica ANTES do código de propósito: a layer só refaz quando o script ou o snapshot
+# mudam, e não a cada commit. Sem isso, cada deploy rebaixaria 60 MB.
+#
+# ⚠️ ESTE VALOR É O QUE TROCA A BASE. A MaxMind republica toda terça; a imagem só rebaixa
+# quando a layer é invalidada, e com o cache do builder isso pode não acontecer por meses.
+# Bumpar aqui (a data da edição) é o gesto — e o valor serve também de registro de quando a
+# base foi trocada pela última vez. O script NÃO lê este ARG.
+#
+# Desde 23/09/2026 o esquecimento tem duas redes, porque base velha **responde errado em
+# silêncio**: um bloco de IP realocado entre operadoras segue nomeando a cidade antiga, com
+# raio de precisão bom, e a tela escreve a frase com a confiança de sempre.
+#   1. `.github/workflows/geolite2-refresh.yml` — às quartas, abre PR bumpando esta linha
+#      quando ela passa de 21 dias. Não precisa da MAXMIND_LICENSE_KEY.
+#   2. `check_geoip_freshness` — no ciclo do maintenance_worker, avisa o operador aos 21
+#      dias e, aos 90, a cidade deixa de aparecer na tela.
+# Ver docs/guides/geolite2-city.md.
+ARG GEOLITE2_SNAPSHOT=2026-09
+
+# ⚠️ A chave entra por `ARG`, e NÃO pelo segredo de BuildKit (`--mount=type=secret`), que
+# seria a forma tecnicamente melhor. O motivo é escrito para não ser "corrigido" depois: o
+# App Platform do DigitalOcean constrói com builder próprio, e não foi possível provar
+# aqui que ele aceita segredo de BuildKit. Se não aceitar, o Dockerfile deixa de construir
+# — e derrubar o deploy inteiro por causa de um rótulo de cidade é troca péssima.
+# O que isso custa: a chave fica legível no histórico da imagem. É uma chave de licença de
+# base PÚBLICA, revogável no painel da MaxMind, sem acesso a dado de cliente — mas se um
+# dia esta imagem for para registry de terceiro, rotacione.
+# O `scripts/fetch-geolite2.sh` também lê `/run/secrets/maxmind_license_key`, para quem
+# construir à mão com BuildKit e preferir o caminho melhor.
+ARG MAXMIND_LICENSE_KEY=""
+
+COPY scripts/fetch-geolite2.sh ./scripts/fetch-geolite2.sh
+RUN GEOLITE2_SNAPSHOT="${GEOLITE2_SNAPSHOT}" \
+    ./scripts/fetch-geolite2.sh /app/data/GeoLite2-City.mmdb
+
 COPY pyproject.toml constraints.txt README.md manage.py ./
 
 # As dependências pinadas instalam ANTES de copiar o código: qualquer mudança

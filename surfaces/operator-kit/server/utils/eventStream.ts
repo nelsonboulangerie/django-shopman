@@ -17,8 +17,10 @@ import { applyOperatorSecurityHeaders } from "./securityHeaders";
 // no proxy — em dev e em prod, o EventSource conecta no próprio host do app.
 // Diferente do proxyDjangoApi (que bufferiza), SSE é corpo infinito — precisa
 // de `fetch` nativo devolvendo o ReadableStream. Se o Django recusar (403/404
-// p/ não-autorizado), propagamos o status para o EventSource falhar de vez
-// (não reconecta) e a página seguir no fallback (poll).
+// p/ não-autorizado) ou cair (502), propagamos o status: o EventSource cru
+// fecha de vez, e quem o recria com backoff (teto de 60 s) é o cliente
+// (`openResilientEventSource`, app/utils/resilientEventSource.ts); o poll segura
+// a página no meio tempo.
 //
 // Mesmo transporte do storefront (server/utils/eventStream.ts de lá) — ver
 // ADR-016 (SSE-first): push por SSE em cima de um fetch canônico que continua

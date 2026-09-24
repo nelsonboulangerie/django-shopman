@@ -19,13 +19,15 @@ def context(client, django_user_model):
     Shop.objects.create(name="Synthetic feed lab")
     user = django_user_model.objects.create_user(username="feed-intention", is_staff=True)
     user.user_permissions.add(Permission.objects.get(codename="manage_catalog", content_type__app_label="shop"))
+    # Gerente: o toggle só pede confirmação (a assinatura de outro gerente é outro teste).
+    user.user_permissions.add(Permission.objects.get(codename="adjust_shift", content_type__app_label="cashman"))
     client.force_login(user)
     Collection.objects.create(ref="bread", name="Bread")
     channel = display_channel("lab-tv", "Lab TV", collections=[], prices_from="web")
     return user, channel
 
 
-@pytest.mark.parametrize("field,inputs", [("active", {"is_active": False}), ("collections", {"collections": ["bread"]}), ("rotation", {"rotate_seconds": 10, "items_per_page": 8})])
+@pytest.mark.parametrize("field,inputs", [("collections", {"collections": ["bread"]}), ("rotation", {"rotate_seconds": 10, "items_per_page": 8})])
 def test_feed_receipt_replays_same_intention(client, context, field, inputs):
     user, channel = context
     url = f"/api/v1/backstage/feeds/{field}/"
@@ -38,6 +40,23 @@ def test_feed_receipt_replays_same_intention(client, context, field, inputs):
     receipt = client.get(url, {"ref": channel.ref, "idempotency_key": "feed-intention"})
     assert receipt.json()["outcome"] == "applied"
     conflict = client.post(url, {**body, "base_revision": "different"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY="feed-intention")
+    assert conflict.status_code == 409
+
+
+def test_switch_receipt_replays_same_intention(client, context):
+    from shopman.shop.services import channel_switch
+
+    user, channel = context
+    url = "/api/v1/backstage/feeds/switch/"
+    body = {"ref": channel.ref, "expected_actor_id": user.pk, "base_revision": channel_switch.revision(channel),
+            "is_active": False, "period": "open", "reason": "Férias"}
+    first = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="switch-intention")
+    assert first.status_code == 200, first.content
+    second = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="switch-intention")
+    assert second.status_code == 200
+    assert second.json()["replayed"]
+    assert client.get(url, {"ref": channel.ref, "idempotency_key": "switch-intention"}).json()["outcome"] == "applied"
+    conflict = client.post(url, {**body, "base_revision": "different"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY="switch-intention")
     assert conflict.status_code == 409
 
 
@@ -63,7 +82,7 @@ def test_other_field_does_not_invalidate_draft_but_same_field_does(context):
 
 def test_feed_legacy_writer_cannot_bypass_receipt(client, context):
     _user, channel = context
-    response = client.post("/api/v1/backstage/feeds/active/", {"ref": channel.ref, "is_active": False}, content_type="application/json")
+    response = client.post("/api/v1/backstage/feeds/switch/", {"ref": channel.ref, "is_active": False, "period": "open", "reason": "Férias"}, content_type="application/json")
     assert response.status_code == 400
     channel.refresh_from_db()
     assert channel.is_active
@@ -122,13 +141,15 @@ def test_failed_local_publication_rolls_back_feed_and_receipt(client, context, m
 
     user, channel = context
 
-    def fail_after_save(_ref):
+    from shopman.shop.services import channel_switch
+
+    def fail_after_save(*_args, **_kwargs):
         raise RuntimeError("Synthetic failure before commit")
 
-    monkeypatch.setattr(feeds, "_notify", fail_after_save)
+    monkeypatch.setattr(channel_switch, "_apply_effects", fail_after_save)
     with pytest.raises(RuntimeError, match="Synthetic failure"):
-        client.post("/api/v1/backstage/feeds/active/", {"ref": channel.ref, "is_active": False,
-            "expected_actor_id": user.pk, "base_revision": feeds.revision(channel, "active")},
+        client.post("/api/v1/backstage/feeds/switch/", {"ref": channel.ref, "is_active": False, "period": "open",
+            "reason": "Férias", "expected_actor_id": user.pk, "base_revision": channel_switch.revision(channel)},
             content_type="application/json", HTTP_IDEMPOTENCY_KEY="failed-feed")
     channel.refresh_from_db()
     assert channel.is_active

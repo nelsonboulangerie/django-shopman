@@ -20,7 +20,7 @@
 
 ### Como o Pablo liga (sem código)
 1. Admin → Channel `capability=feed`, `content.source=collection`, `content.collection=<ref>`.
-2. Definir `SHOPMAN_STOREFRONT_URL` (base dos `g:link`) no deployment; verificar o domínio.
+2. `SHOPMAN_STOREFRONT_BASE_URL` (a mesma base de todos os links de cliente) é a base dos `g:link`; vazia, o feed responde 404 em vez de apontar para o host da API.
 3. **Google Merchant Center**: Produtos → Fontes → busca agendada → `https://<dom>/feed/<ref>.xml`.
 4. **Meta Commerce Manager**: Catálogo → Fontes → feed agendado → `https://<dom>/feed/<ref>.xml?platform=meta`.
 

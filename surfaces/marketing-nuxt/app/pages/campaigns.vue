@@ -421,8 +421,8 @@ useHead({ title: "Campanhas" });
       />
       <p class="mt-2 font-semibold">Nenhuma campanha ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Uma campanha liga um evento da padaria a um anúncio. Comece pela
-        fornada.
+        Uma campanha liga um evento da padaria a um anúncio. Comece pelo
+        lote.
       </p>
       <UiButton
         type="button"

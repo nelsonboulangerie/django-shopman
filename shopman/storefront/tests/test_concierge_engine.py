@@ -1037,6 +1037,36 @@ def test_run_agent_keeps_language_intelligence_but_hides_mutations_without_autho
     assert not Session.objects.exists()
 
 
+def test_run_agent_stops_offering_orders_when_the_channel_is_switched_off(conversation):
+    """WhatsApp desligado no Gestor: o concierge responde, mas não oferece pedido.
+
+    Com autoridade comercial plena (telefone verificado), o turno mesmo assim sai
+    só com as ferramentas de consulta e com a frase de que os pedidos por aqui
+    estão pausados. Antes, desligar o canal não chegava à conversa: o concierge
+    montava a sacola e só o commit recusava, no último passo.
+    """
+    from shopman.shop.services import channel_switch
+
+    _create_inbound(conversation, "quero pedir pão", "agent-channel-off")
+    conversation = _claim_conversation(conversation)
+    conversation._limited_event_assurance = True
+    conversation._commercial_authority = True
+    channel_switch.request_switch(CHANNEL, False, period="open", reason="Loja cheia", actor=None)
+    client = ScriptedClient(_response(_text("Os pedidos por aqui estão pausados agora."), stop_reason="end_turn"))
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+
+    names = {spec["name"] for spec in client.requests[0]["tools"]}
+    assert names == set(tools.LIMITED_AUTHORITY_TOOL_NAMES)
+    assert "place_order" not in names
+    assert "estão desligados agora pela loja" in client.requests[0]["system"][1]["text"]
+
+
 LEAK_TAG = "<" + "/antml:parameter>"
 LEAK_NAME = 'name="search_storefront">'
 

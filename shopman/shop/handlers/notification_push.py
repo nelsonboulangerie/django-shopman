@@ -49,7 +49,7 @@ class _NoRedirectPushSession(Session):
 class NotificationPushHandler:
     topic = NOTIFICATION_PUSH
 
-    def handle(self, message: Directive) -> None:
+    def handle(self, *, message: Directive, ctx: dict) -> None:
         notification_id = (message.payload or {}).get("notification_id")
         if not isinstance(notification_id, int) or isinstance(notification_id, bool):
             raise DirectiveTerminalError("notification.push exige notification_id inteiro")

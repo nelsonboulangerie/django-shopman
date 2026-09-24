@@ -412,7 +412,7 @@ useHead({ title: "Painel" });
           name="lucide:coffee"
           class="mx-auto size-8 text-muted-foreground"
         />
-        <p class="mt-2 font-semibold">Nada esperando por você</p>
+        <p class="mt-2 font-semibold">Nenhum anúncio aguardando decisão</p>
         <p class="mt-1 text-sm text-muted-foreground">
           <!-- ⚠️ Dizia "quando uma fornada terminar", e fornada é UM dos gatilhos: há
                estoque baixo, produto novo, hora marcada e o disparo na mão. Copy que nomeia

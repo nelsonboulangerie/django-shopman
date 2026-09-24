@@ -49,7 +49,7 @@ class IFoodStatusCallbackHandler:
         }
         if order is not None:
             context = ifood_callbacks.workflow_context(order)
-            if status in {"accepted", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
+            if status in {"accepted", "preparing", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
                 # A delayed progress callback cannot reopen a completed order.
                 # Keep legacy cancellation requests on their separate path.
                 return
@@ -84,11 +84,26 @@ class IFoodStatusCallbackHandler:
 
 
 def on_order_status_changed(sender, order, event_type, actor, **kwargs) -> None:
-    """Enqueue an iFood callback when an iFood-channel order changes status."""
+    """Pedido do iFood mudou de status: avisa o iFood e aplica o que ele já disse.
+
+    Duas coisas, nesta ordem. O aviso (se couber) sai primeiro; depois a
+    reconciliação leva o pedido até onde os fatos do iFood já autorizam — é ela
+    que fecha, por exemplo, o pedido cujo CON chegou com a cozinha ainda em
+    preparo, no momento em que ele finalmente sai.
+    """
     if event_type != "status_changed":
         return
     if getattr(order, "channel_ref", "") != ifood_ingest.IFOOD_CHANNEL_REF:
         return
+    try:
+        _enqueue_callback(order, actor)
+    finally:
+        from shopman.shop.services import ifood_events
+
+        ifood_events.reconcile_remote(order)
+
+
+def _enqueue_callback(order, actor) -> None:
     # Cancelamento que ORIGINOU no iFood (evento CAN refletido): não chamamos
     # requestCancellation de volta para quem já cancelou. Decisão de negócio —
     # o silêncio dela custou vinte minutos de diagnóstico em 19/09/2026.
@@ -100,7 +115,7 @@ def on_order_status_changed(sender, order, event_type, actor, **kwargs) -> None:
         )
         return
     remote = (order.data or {}).get("ifood") or {}
-    remote_markers = ",".join(m for m in ("remote_confirmed", "remote_dispatched") if remote.get(m)) or "none"
+    remote_markers = ",".join(m for m in ("remote_confirmed", "remote_dispatched", "remote_concluded") if remote.get(m)) or "none"
     # Transição que o PRÓPRIO iFood nos informou (ator remoto CFM/DSP): ecoar de
     # volta seria devolver ao marketplace o que veio dele. Separado da evidência
     # persistida logo abaixo porque saber QUAL dos dois fechou é o diagnóstico.

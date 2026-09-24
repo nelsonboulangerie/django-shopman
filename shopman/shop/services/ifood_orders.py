@@ -119,29 +119,25 @@ def _map_customer(customer: dict) -> dict:
     - ``segmentation`` — a Super-Segmentação do iFood. ⚠️ A documentação do
       iFood diz que é dado confidencial: não vai para o cliente nem para
       terceiros. Fica no snapshot para leitura interna (B.I.).
-
-    ``phone.number`` é "telefone do cliente OU o 0800 do iFood", e o
-    ``localizer`` é o código que se digita nesse 0800 para chegar ao cliente.
-    A presença do localizador é o sinal de que o número é RELÉ, e não da
-    pessoa — quem apresenta o pedido ao operador lê isso em
-    ``backstage/projections/ifood.contact_relay``.
     """
     phone = customer.get("phone") or {}
     if isinstance(phone, dict):
         # iFood masks the number and gives a call localizer to reach the customer.
         number = phone.get("number", "")
         localizer = phone.get("localizer", "")
-        localizer_expires_at = phone.get("localizerExpiration", "")
+        # O localizador VENCE: depois disso a central não repassa a ligação, e
+        # oferecer o código na tela seria mandar o operador discar para o nada.
+        localizer_expiration = phone.get("localizerExpiration", "")
     else:
         number = str(phone)
         localizer = ""
-        localizer_expires_at = ""
+        localizer_expiration = ""
     return {
         "name": customer.get("name", ""),
         "ifood_customer_id": str(customer.get("id") or ""),
         "phone": number,
         "phone_localizer": localizer,
-        "phone_localizer_expires_at": str(localizer_expires_at or ""),
+        "phone_localizer_expiration": localizer_expiration,
         "document": customer.get("documentNumber", ""),
         "document_type": customer.get("documentType", ""),
         "orders_count_on_merchant": _orders_count(customer.get("ordersCountOnMerchant")),

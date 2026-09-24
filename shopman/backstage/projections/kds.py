@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.db.models import Q, Sum
@@ -277,9 +277,15 @@ def build_kds_board(instance_ref: str, *, service_date: date | None = None) -> K
         ticket for ticket in cancelled_all
         if _source_matches_service_date(sources[ticket.pk], selected_date=selected_date, today=today)
     ]
+    from shopman.shop.services import kds as kds_core
+
+    # A lista de concluídos existe só para o "desfazer finalização": ticket de
+    # pedido que já saiu da cozinha (despachado, concluído, cancelado) não entra,
+    # porque o servidor recusaria o desfazer (``recall_block_reason``).
     done = [
         ticket for ticket in done_all
         if _source_matches_service_date(sources[ticket.pk], selected_date=selected_date, today=today)
+        and not kds_core.recall_block_reason(sources[ticket.pk])
     ]
 
     future_view = selected_date > today
@@ -360,6 +366,13 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     """
     from shopman.orderman.models import Session
 
+    # O painel é do DIA: pedido de outro dia que ficou aberto (esquecido em
+    # "pronto", ticket nunca finalizado) não é chamada para o cliente do salão,
+    # e encomenda de amanhã também não. O dia do pedido é a data do compromisso
+    # quando há, senão o dia em que ele nasceu — pelo relógio da loja
+    # (``localdate``), o mesmo do quadro do KDS. Mais recentes primeiro.
+    today = timezone.localdate()
+    day_start = timezone.make_aware(datetime.combine(today, time.min))
     fetch = max(limit * 2, limit)
     orders_qs = (
         Order.objects.filter(
@@ -369,7 +382,8 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
                 Order.Status.READY,
             ]
         )
-        .order_by("ready_at", "updated_at", "created_at")[:fetch]
+        .filter(Q(data__delivery_date=today.isoformat()) | Q(created_at__gte=day_start))
+        .order_by("-ready_at", "-updated_at", "-created_at")[:fetch]
     )
 
     preparing: list[KDSCustomerOrderProjection] = []
@@ -379,6 +393,8 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     for order in orders_qs:
         if order.session_key:
             committed_session_keys.add(order.session_key)
+        if (get_commitment_date(order) or timezone.localdate(order.created_at)) != today:
+            continue
         if get_fulfillment_type(order) == "delivery":
             continue
         projection = KDSCustomerOrderProjection(
@@ -393,7 +409,7 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
             preparing.append(projection)
 
     # Pre-commit POS comandas fired to the kitchen but not yet paid (open Sessions).
-    sessions_qs = Session.objects.filter(state="open").order_by("-updated_at")[:fetch]
+    sessions_qs = Session.objects.filter(state="open", updated_at__gte=day_start).order_by("-updated_at")[:fetch]
     for session in sessions_qs:
         if session.session_key in committed_session_keys:
             continue  # already surfaced as its committed Order (dedup on payment)
@@ -727,6 +743,20 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
     )
 
     bloqueio = operator_orders.advance_block(order)
+    block_label = advance_block_label(bloqueio)
+    block_reason = operator_orders.advance_block_message(bloqueio)
+    if not block_label and not is_scheduled:
+        # O que só o Gestor sabe perguntar no despacho (troco da gaveta,
+        # maquininha): o card diz ANTES do toque, com a mesma frase que o
+        # servidor devolveria (``expedition_block_reason``).
+        from shopman.shop.services import kds as kds_core
+
+        gestor_only = kds_core.expedition_block_reason(
+            order, action="dispatch" if is_delivery else "complete"
+        )
+        if gestor_only:
+            block_label = "Despachar pelo Gestor" if is_delivery else "Entregar pelo Gestor"
+            block_reason = gestor_only
 
     return KDSExpeditionCardProjection(
         pk=order.pk,
@@ -741,8 +771,8 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         total_display=_money(order.total_q),
         items=item_projections,
         is_scheduled=is_scheduled,
-        advance_block_label=advance_block_label(bloqueio),
-        advance_block_reason=operator_orders.advance_block_message(bloqueio),
+        advance_block_label=block_label,
+        advance_block_reason=block_reason,
         test_order_label=_test_order_label(order),
     )
 

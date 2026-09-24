@@ -21,34 +21,45 @@ from shopman.shop.adapters import notification_email
 pytestmark = pytest.mark.django_db
 
 
+#: Os cenários montam `MAILERS` inteiro em vez de mexer em `EMAIL_*`: o Django
+#: 6.1 deprecou aqueles settings e, com `MAILERS` definido, `override_settings`
+#: neles não vale mais. `OPTIONS` só vai preenchida para SMTP — uma option que o
+#: backend não conhece levanta `InvalidMailer`.
+def _mailers(backend: str, **options) -> dict:
+    return {"default": {"BACKEND": backend, "OPTIONS": options}}
+
+
 class TestCanalInerteDizQueEstaInerte:
     def test_console_nao_esta_disponivel(self, settings):
         """O default do Django, e o que o alpha roda hoje."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-        settings.EMAIL_HOST = ""
+        settings.MAILERS = _mailers(
+            "django.core.mail.backends.console.EmailBackend"
+        )
 
         assert notification_email.is_available() is False
 
     def test_locmem_nao_esta_disponivel(self, settings):
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+        settings.MAILERS = _mailers("django.core.mail.backends.locmem.EmailBackend")
 
         assert notification_email.is_available() is False
 
     def test_dummy_nao_esta_disponivel(self, settings):
-        settings.EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
+        settings.MAILERS = _mailers("django.core.mail.backends.dummy.EmailBackend")
 
         assert notification_email.is_available() is False
 
     def test_smtp_SEM_host_nao_esta_disponivel(self, settings):
         """Backend real sem host não fala com ninguém — falha na conexão."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-        settings.EMAIL_HOST = ""
+        settings.MAILERS = _mailers(
+            "django.core.mail.backends.smtp.EmailBackend", host=""
+        )
 
         assert notification_email.is_available() is False
 
     def test_smtp_COM_host_E_remetente_real_esta_disponivel(self, settings):
-        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-        settings.EMAIL_HOST = "smtp.sendgrid.net"
+        settings.MAILERS = _mailers(
+            "django.core.mail.backends.smtp.EmailBackend", host="smtp.sendgrid.net"
+        )
         settings.DEFAULT_FROM_EMAIL = "nelson@boulangerie.com.br"
 
         assert notification_email.is_available() is True
@@ -68,8 +79,9 @@ class TestRemetenteQueNaoSaiDaCasa:
     """
 
     def _smtp_de_pe(self, settings):
-        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-        settings.EMAIL_HOST = "smtp.sendgrid.net"
+        settings.MAILERS = _mailers(
+            "django.core.mail.backends.smtp.EmailBackend", host="smtp.sendgrid.net"
+        )
 
     def test_dominio_local_nao_esta_disponivel(self, settings):
         self._smtp_de_pe(settings)
@@ -105,8 +117,7 @@ def test_o_console_deixa_de_curto_circuitar_a_cadeia(settings):
     """
     from shopman.shop.notifications import get_backend
 
-    settings.EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-    settings.EMAIL_HOST = ""
+    settings.MAILERS = _mailers("django.core.mail.backends.console.EmailBackend")
 
     backend = get_backend("email")
     assert backend is not None

@@ -126,95 +126,71 @@ def operation_summary(order) -> tuple[str, ...]:
     return tuple(lines)
 
 
-def is_intermediated_contact(order) -> bool:
-    """O contato do cliente neste pedido passa pelo marketplace, não é direto.
+# ── O que cabe no CARD ─────────────────────────────────────────────────────────
+# As funções acima montam a evidência COMPLETA, e é isso que o detalhe precisa.
+# No card elas viravam doze linhas para um pedido de dois itens: o desdobramento
+# por bandeira, o CEP, o responsável pela entrega e três linhas de janela. Nada
+# disso ajuda a escolher qual pedido pegar — e o card do iFood ficava com o dobro
+# da altura do card do PDV, quebrando a leitura em varredura da fila.
 
-    Canal intermediado é canal em que a loja NÃO tem o número da pessoa: o que
-    chega no pedido é o telefone da central do iFood. Enquanto for assim, a
-    tela do operador não pode oferecer mensagem direta — clicar em "WhatsApp"
-    mandava recado para o atendimento do iFood, nunca para o cliente.
+
+def pickup_code(order) -> str:
+    """O código que o cliente diz no balcão. Vai ao card com rótulo próprio.
+
+    Sem rótulo ele competia com o número do pedido — dois números de quatro
+    dígitos, e o exibido era justamente o que o iFood não usa para nomear nada.
     """
-    return (getattr(order, "channel_ref", "") or "") == "ifood"
+    if order.channel_ref != "ifood":
+        return ""
+    return str(((order.data or {}).get("ifood") or {}).get("pickup_code") or "").strip()
 
 
-def contact_relay(order) -> dict[str, str]:
-    """O que o telefone do pedido do iFood realmente é, pronto para a tela.
+def schedule_label(order) -> str:
+    """O agendamento em UMA linha: "Agendado · Hoje 21:09–22:09".
 
-    O iFood documenta ``phone.number`` como "telefone do cliente OU o 0800 do
-    iFood", e manda junto um ``localizer``: o código que se digita nesse 0800
-    para cair na linha da pessoa. **A presença do localizador é o sinal de que
-    o número é um relé de voz**, e não o telefone de ninguém — a ingestão já
-    sabia disso (``ifood_orders._map_customer``) e a apresentação não sabia.
-
-    O localizador tem prazo (``localizerExpiration``), e o iFood ainda para de
-    mandar o bloco ``phone`` três horas depois da entrega. Código vencido não
-    vira botão: a tela diz que venceu e aponta o chat do pedido, que é o
-    caminho que o próprio iFood indica.
-
-    Devolve as três chaves sempre; vazias quando não há relé (pedido de canal
-    próprio, ou pedido do iFood sem localizador).
+    Vazio quando o pedido é imediato. A data só aparece quando não é hoje — em
+    pedido para hoje ela é ruído, e quem lê a fila já sabe que dia é.
     """
-    empty = {"label": "", "code": "", "note": ""}
-    if not is_intermediated_contact(order):
-        return empty
+    if order.channel_ref != "ifood":
+        return ""
+    facts = (order.data or {}).get("ifood") or {}
+    if str(facts.get("order_timing") or "").upper() != "SCHEDULED":
+        return ""
 
-    customer = (order.data or {}).get("customer")
-    customer = customer if isinstance(customer, dict) else {}
-    localizer = str(customer.get("phone_localizer") or "").strip()
-    if not localizer:
-        return empty
-
-    expires_at = _expiration(customer.get("phone_localizer_expires_at"))
-    label = "Central de atendimento do iFood"
-
-    if expires_at is not None and expires_at <= _now():
-        return {
-            "label": label,
-            "code": "",
-            "note": (
-                "Não é o telefone do cliente. O código para falar com ele venceu em "
-                f"{_stamp(expires_at)}; fale pelo chat do pedido no iFood."
-            ),
-        }
-
-    note = (
-        "Não é o telefone do cliente. Ligue para a central e digite o código "
-        "abaixo para falar com ele."
-    )
-    if expires_at is not None:
-        note += f" O código vale até {_stamp(expires_at)}."
-    return {"label": label, "code": localizer, "note": note}
-
-
-def _now():
-    from django.utils import timezone
-
-    return timezone.now()
-
-
-def _expiration(value):
-    """``localizerExpiration`` como datetime com fuso, ou ``None``.
-
-    ``None`` significa "o iFood não disse até quando", e não "venceu": sem
-    prazo o código é apresentado, porque recusá-lo calaria a única forma de
-    falar com o cliente por uma informação que nunca veio.
-    """
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
 
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed = parse_datetime(text)
-    except (ValueError, TypeError):
-        return None
-    if parsed is None or not timezone.is_aware(parsed):
-        return None
-    return parsed
+    schedule = facts.get("schedule") if isinstance(facts.get("schedule"), dict) else {}
+
+    def _local(key):
+        try:
+            dt = parse_datetime(str(schedule.get(key) or ""))
+        except (ValueError, TypeError):
+            return None
+        return timezone.localtime(dt) if dt is not None and timezone.is_aware(dt) else None
+
+    start, end = _local("delivery_start_at"), _local("delivery_end_at")
+    if start is None:
+        return "Agendado"
+    today = timezone.localdate()
+    day = "Hoje" if start.date() == today else start.strftime("%d/%m")
+    window = f"{start:%H:%M}–{end:%H:%M}" if end is not None else f"a partir de {start:%H:%M}"
+    return f"Agendado · {day} {window}"
 
 
-def _stamp(moment) -> str:
-    from django.utils import timezone
+def remote_ahead_label(order) -> str:
+    """O iFood já passou deste ponto — dito como instrução, não como segundo status.
 
-    return timezone.localtime(moment).strftime("%d/%m/%Y às %H:%M")
+    O card mostra o status LOCAL ("Em preparo"). Quando o iFood está à frente, uma
+    linha só diz o que ele já sabe e o que falta fazer aqui. Sem ela, o pedido
+    1416 seguia "Em preparo" um minuto depois de encerrado no iFood (21/09/2026) e
+    parecia pedir trabalho que ninguém precisava mais.
+    """
+    if order.channel_ref != "ifood" or order.status in {"completed", "cancelled", "returned"}:
+        return ""
+    facts = (order.data or {}).get("ifood") or {}
+    if facts.get("remote_concluded"):
+        return "Concluído no iFood · Finalize aqui"
+    if facts.get("remote_dispatched") and order.status in {"new", "accepted", "preparing"}:
+        return "Retirado pelo entregador do iFood · Marque Pronto"
+    return ""

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 // One order card in the board. Glanceable: ref + timer up top, customer + items in
 // the middle, payment/total, then the pre-resolved affordances as buttons. Status
 // color is functional; chrome neutral. Tapping the ref opens the detail page.
@@ -7,7 +6,9 @@ import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
   confirmationRemainingLabel,
+  deadlineTone,
   lucideIcon,
+  onRoadLine,
   splitRef,
   statusTone,
   timerChip,
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>();
 
 const code = computed(() => splitRef(props.card.ref));
+const onRoad = computed(() => onRoadLine(props.card));
 const affordances = computed(() => props.negotiationOnly ? [] : cardAffordances(props.card));
 // Tom do pagamento vem da projeção, não de dedução na tela: dinheiro não é
 // "pago" nem "devendo" — é cobrança fora do site, e verde ali diria que entrou
@@ -55,6 +57,7 @@ const nowMs = useNowTick(() => props.card.server_now_iso);
 const confirmationLeft = computed(() =>
   confirmationRemainingLabel(props.card.confirmation_deadline_iso, nowMs.value),
 );
+const deadlineTone_ = computed(() => deadlineTone(props.card.confirmation_deadline_iso, nowMs.value));
 
 function buttonClass(priority: string): string {
   if (priority === "primary")
@@ -113,6 +116,14 @@ function buttonClass(priority: string): string {
           <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
         </span>
         <span class="block truncate text-lg font-bold leading-tight tabular-nums group-hover:underline">{{ code.code }}</span>
+        <!-- Só quando o ref NÃO carrega o número do canal (colisão no dia, ou pedido
+             anterior a essa mudança). No caso normal o código acima já é ele, e
+             repetir aqui daria dois números para o operador conferir. -->
+        <span
+          v-if="card.channel_display_id"
+          class="block truncate text-xs font-medium tabular-nums text-muted-foreground"
+          data-channel-display-id
+        >iFood #{{ card.channel_display_id }}</span>
       </NuxtLink>
       <button
         v-if="!negotiationOnly"
@@ -126,22 +137,27 @@ function buttonClass(priority: string): string {
         <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
         <span v-if="card.assigned_operator" class="max-w-20 truncate">{{ card.assigned_operator }}</span>
       </button>
+      <!-- Um relógio só. Havendo prazo, ele é o relógio: quanto FALTA decide se o
+           operador pega este pedido agora, e quanto PASSOU não decide nada. Sem
+           prazo (a maioria dos estados), volta a contar o decorrido. -->
       <span
+        v-if="confirmationLeft"
+        class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
+        :class="timerChip(deadlineTone_)"
+        :title="card.confirmation_action === 'cancel' ? 'Cancelado automaticamente se vencer' : 'Confirmado automaticamente se vencer'"
+        role="timer"
+        aria-live="off"
+      >
+        <Icon name="lucide:hourglass" class="size-3" />
+        <span class="sr-only">Restam </span>{{ confirmationLeft }}
+      </span>
+      <span
+        v-else
         class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
         :class="timerChip(tTone)"
       >
         <Icon name="lucide:clock" class="size-3" />
         {{ elapsedLabel(card.elapsed_seconds) }}
-      </span>
-      <span
-        v-if="confirmationLeft"
-        class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-700 dark:text-amber-400"
-        :title="card.confirmation_action === 'cancel' ? 'Cancela automaticamente ao vencer' : 'Confirma automaticamente ao vencer'"
-        role="timer"
-        aria-live="off"
-      >
-        <Icon name="lucide:hourglass" class="size-3" />
-        {{ confirmationLeft }}
       </span>
     </div>
 
@@ -181,15 +197,15 @@ function buttonClass(priority: string): string {
       <Icon name="lucide:coins" class="size-3.5 shrink-0" />
       <span class="truncate">{{ card.change_label }}</span>
     </p>
-    <!-- maquininha que saiu com o entregador: custódia no pedido -->
+    <!-- a maquininha na rua: o único sinal dela no quadro é esta linha, no
+         pedido que a levou ("Saiu com a maquininha Azul · junto com 0418") -->
     <p
-      v-if="card.equipment_label"
-      class="flex items-center gap-1.5 text-xs text-muted-foreground"
-      :class="{ 'font-medium': card.equipment_back_pending }"
+      v-if="onRoad"
+      class="flex items-center gap-1.5 text-xs font-medium"
       data-equipment-label
     >
-      <Icon name="lucide:smartphone-nfc" class="size-3.5 shrink-0" />
-      <span class="truncate">{{ card.equipment_label }}</span>
+      <Icon :name="card.equipment_label ? 'lucide:smartphone-nfc' : 'lucide:bike'" class="size-3.5 shrink-0" />
+      <span class="truncate">{{ onRoad }}</span>
     </p>
 
     <!-- status + payment + total -->
@@ -253,7 +269,40 @@ function buttonClass(priority: string): string {
     <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" class="min-h-control block rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" data-ifood-negotiation-link>
       Negociação iFood · abrir solicitação e conferir prazo
     </NuxtLink>
-    <OrderIFoodSummary :cancellation-notice="card.ifood_cancellation_notice" :payment-summary="card.ifood_payment_summary" :operation-summary="card.ifood_operation_summary" />
+    <!-- O aviso de cancelamento continua: é estado do pedido, não evidência. A
+         evidência completa (bandeira, CEP, responsável pela entrega, janela em
+         três linhas) mora no detalhe — aqui ela fazia o card do iFood ter o dobro
+         da altura do card do PDV, na mesma coluna. -->
+    <p
+      v-if="card.ifood_cancellation_notice"
+      class="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs"
+      role="status"
+      data-ifood-cancellation
+    >{{ card.ifood_cancellation_notice }}</p>
+
+    <!-- O iFood já passou deste ponto: dito como instrução, logo acima do resto,
+         para não parecer um segundo status disputando com o pill. -->
+    <p
+      v-if="card.ifood_remote_ahead_label"
+      class="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium"
+      role="status"
+      data-ifood-remote-ahead
+    >{{ card.ifood_remote_ahead_label }}</p>
+
+    <p v-if="card.ifood_schedule_label" class="text-xs text-muted-foreground" data-ifood-schedule>
+      {{ card.ifood_schedule_label }}
+    </p>
+
+    <!-- Rótulo à vista: sem ele, este quatro dígitos disputava com o número do
+         pedido — e era o único dos dois que aparecia. -->
+    <p
+      v-if="card.ifood_pickup_code"
+      class="flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5"
+      data-ifood-pickup-code
+    >
+      <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código de retirada</span>
+      <span class="ml-auto text-base font-bold tabular-nums">{{ card.ifood_pickup_code }}</span>
+    </p>
 
     <!-- awaiting production -->
     <div v-if="card.awaiting_work_orders.length" class="flex flex-col gap-1">

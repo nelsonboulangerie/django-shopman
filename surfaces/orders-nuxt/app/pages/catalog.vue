@@ -5,7 +5,7 @@
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
-import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
+import { catalogDimensions, filterByDimensions, filtersFromQuery } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
 import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
@@ -62,7 +62,8 @@ const query = ref("");
 // Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
 // fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
 // servidor. Aqui é tudo client-side — a matriz já veio inteira.
-const filters = ref<ActiveFilters>({});
+// Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
+const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
 const searched = computed<CatalogRowProjection[]>(() => filterRows(matrix.value?.rows ?? [], query.value));
 // As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
 // senão marcar uma opção zeraria as contagens das outras.
@@ -560,7 +561,9 @@ useHead({ title: "Catálogo" });
               class="sticky top-0 z-20 w-[114px] border-b border-border bg-card px-2 py-2 text-left align-top"
               :class="firstFeedRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
-              <div class="flex flex-col gap-0.5" :class="{ 'opacity-45': !s.transactional && !s.is_active }">
+              <!-- Canal ou feed desligado não chega aqui: sai das colunas e só a aba
+                   Canais o mostra, para religar. -->
+              <div class="flex flex-col gap-0.5">
                 <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
                   <span class="truncate text-xs">{{ s.short_name }}</span>
@@ -571,14 +574,13 @@ useHead({ title: "Catálogo" });
                     :title="`Abrir ${s.name}`" @click.stop
                   ><Icon name="lucide:external-link" class="size-3" /></a>
                 </span>
-                <!-- Linha 2 só quando há estado a dizer: sync da plataforma ou feed pausado.
-                     O papel da superfície (feed/menuboard) já é dito pelo ícone + title. -->
-                <span v-if="syncBadge(s.sync_status) || (!s.transactional && !s.is_active)" class="flex items-center gap-1">
+                <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
+                     superfície (feed/menuboard) já é dito pelo ícone + title. -->
+                <span v-if="syncBadge(s.sync_status)" class="flex items-center gap-1">
                   <span
-                    v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium leading-tight"
+                    class="truncate text-xs font-medium leading-tight"
                     :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
                   >● {{ syncBadge(s.sync_status)!.label }}</span>
-                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">Pausado</span>
                 </span>
               </div>
             </th>
@@ -643,8 +645,8 @@ useHead({ title: "Catálogo" });
                           'bg-muted text-muted-foreground': rowStatuses[row.sku]?.tone === 'muted',
                         }"
                       >{{ rowStatuses[row.sku]?.label }}</span>
-                      <!-- esgotado que repõe por produção: a próxima fornada reativa sozinha -->
-                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} na fornada</span>
+                      <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
+                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} no lote</span>
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
                       <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">Resta {{ row.stock_qty }}</span>
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
@@ -806,7 +808,7 @@ useHead({ title: "Catálogo" });
                     </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
                       <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
-                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar</button>
+                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar preço</button>
                     </div>
                   </UiPopoverContent>
                 </UiPopover>

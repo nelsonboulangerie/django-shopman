@@ -45,7 +45,7 @@
     },
     "production": {
       "label": "Produção",
-      "description": "Planejamento, preparo e fornadas.",
+      "description": "Planejamento, preparo e lotes.",
       "symbol": "tabler:baguette",
       "fallbackIcon": "croissant",
       "color": "#B9781B",

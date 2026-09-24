@@ -49,21 +49,25 @@ const customerAdminUrl = computed(() => {
   if (!ref_ || !adminBaseUrl) return "";
   return `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(ref_)}`;
 });
+// Até quando o código do iFood leva à pessoa. Depois disso a central não repassa.
+const relayExpiresLabel = computed(() => {
+  const iso = order.value?.customer_relay_expires_at;
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  return `Vale até ${at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+});
 // Há alguma forma de alcançar a pessoa? Sem nenhuma, o bloco não aparece — vale
 // mais uma tela honesta do que uma fileira de botões que não fazem nada.
 const hasCustomerContact = computed(() =>
   Boolean(
     order.value?.customer_phone_uri ||
+      order.value?.customer_relay_phone ||
       order.value?.customer_whatsapp_url ||
       order.value?.customer_email ||
-      order.value?.customer_phone_note ||
       customerAdminUrl.value,
   ),
 );
-// Pedido intermediado: o número do pedido é a central do marketplace, e o
-// jeito de chegar no cliente é ligar lá e digitar um código. A projeção decide
-// (ela conhece o localizador e o prazo dele); aqui só se mostra o que ela diz.
-const contactRelay = computed(() => order.value?.customer_phone_label || "");
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
@@ -314,11 +318,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <div class="grid gap-1 text-sm">
           <p class="flex items-center gap-2">
             <Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}
-            <!-- Sem o relé: aqui o número é da pessoa, e cola ao nome dela. No
-                 pedido intermediado ele desce para o bloco de contato, onde
-                 vem dito de quem é — pendurado no nome do cliente, o 0800 da
-                 central passava por telefone dele. -->
-            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name && !contactRelay" class="text-muted-foreground tabular-nums" data-customer-phone>
+            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name" class="text-muted-foreground tabular-nums" data-customer-phone>
               · {{ order.customer_phone }}
             </span>
           </p>
@@ -347,24 +347,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
              quem abre o detalhe abre justamente quando algo precisa ser dito:
              o item acabou, o endereço não fecha, a entrega vai atrasar. Cada
              botão só existe quando tem para onde levar. -->
-        <div v-if="hasCustomerContact" class="border-t pt-3" data-customer-contact>
-          <!-- O número não é de ninguém: é a central do iFood mais um código
-               que leva até o cliente. Dizer isso ANTES dos botões é o que
-               impede o operador de tratar a central como se fosse a pessoa. -->
-          <p v-if="contactRelay" class="mb-2 flex items-start gap-2 text-sm" data-contact-relay>
-            <Icon name="lucide:phone-forwarded" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <span class="min-w-0">
-              <span class="font-medium">{{ contactRelay }}</span>
-              <span v-if="order.customer_phone" class="tabular-nums"> · {{ order.customer_phone }}</span>
-              <span
-                v-if="order.customer_phone_code"
-                class="ml-1 inline-flex items-center rounded-md border px-1.5 py-0.5 font-medium tabular-nums"
-                data-contact-relay-code
-              >Código {{ order.customer_phone_code }}</span>
-              <span class="block text-muted-foreground">{{ order.customer_phone_note }}</span>
-            </span>
-          </p>
-          <div class="flex flex-wrap gap-2">
+        <div v-if="hasCustomerContact" class="flex flex-wrap gap-2 border-t pt-3" data-customer-contact>
           <a
             v-if="order.customer_whatsapp_url"
             :href="order.customer_whatsapp_url"
@@ -375,13 +358,32 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           >
             <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
           </a>
+          <!-- Pedido do iFood: o número NÃO é do cliente. É o 0800 da central
+               deles + um código que leva até a pessoa, e o código vence. Por
+               isso não há WhatsApp aqui, e o "Ligar" disca os dois de uma vez. -->
+          <div
+            v-if="order.customer_relay_phone"
+            class="flex w-full flex-wrap items-center gap-2 rounded-md bg-muted px-2.5 py-2 text-sm"
+            data-contact-relay
+          >
+            <span class="text-muted-foreground">Falar pelo iFood:</span>
+            <span class="tabular-nums">Central {{ order.customer_relay_phone }}</span>
+            <template v-if="order.customer_relay_code">
+              <span class="text-muted-foreground">·</span>
+              <span class="font-semibold tabular-nums" data-contact-relay-code>Código {{ order.customer_relay_code }}</span>
+              <span v-if="relayExpiresLabel" class="text-xs text-muted-foreground">{{ relayExpiresLabel }}</span>
+            </template>
+            <span v-else class="text-xs text-muted-foreground" data-contact-relay-expired>
+              Código vencido: o iFood não repassa mais a ligação
+            </span>
+          </div>
           <a
             v-if="order.customer_phone_uri"
             :href="order.customer_phone_uri"
             class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-phone
           >
-            <Icon name="lucide:phone" class="size-4" /> {{ contactRelay ? "Ligar para a central" : "Ligar" }}
+            <Icon name="lucide:phone" class="size-4" /> {{ order.customer_relay_phone ? "Ligar pela central" : "Ligar" }}
           </a>
           <a
             v-if="order.customer_email"
@@ -401,7 +403,6 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           >
             <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
           </a>
-          </div>
         </div>
 
         <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
@@ -748,13 +749,15 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
       </UiDialogContent>
     </UiDialog>
 
-    <!-- Segunda assinatura: o mesmo diálogo canônico do PDV. A lista de gerentes
-         vem vazia aqui (o Gestor não carrega a projeção do PDV), e o componente
-         cai no campo livre de propósito — esconder a única porta deixaria o
-         gerente sem saída no meio de um cancelamento. -->
+    <!-- Segunda assinatura: o mesmo diálogo canônico do PDV, com a MESMA lista de
+         gerentes (``managers`` da projeção de detalhe, montada por
+         ``pos._manager_cards``). Selecionar, não digitar: nome digitado erra, e o
+         servidor resolve a assinatura por username. Lista vazia ainda cai no
+         campo livre — é a porta de saída, não o caminho normal. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
       action="cancel_sale"
+      :managers="order?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @update:open="(aberto: boolean) => { if (!aberto) dismissManagerChallenge(); }"

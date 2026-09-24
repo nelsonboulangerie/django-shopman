@@ -17,7 +17,7 @@ from base64 import b64encode
 from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -183,8 +183,19 @@ def _get_access_token() -> str:
             cache.delete(lock_key)
 
 
-def _request(method: str, path: str, payload: dict | None = None) -> dict:
-    """Make authenticated request to Efi API."""
+def _request(
+    method: str,
+    path: str,
+    payload: dict | None = None,
+    *,
+    extra_headers: dict[str, str] | None = None,
+) -> dict:
+    """Make authenticated request to Efi API.
+
+    ``extra_headers`` existe para o cadastro do webhook, que precisa do
+    ``x-skip-mtls-checking`` (ver :func:`register_pix_webhook`). Corpo vazio
+    vira ``{}``: a Efí responde alguns verbos de gestão sem corpo.
+    """
     config = _get_config()
     token = _get_access_token()
 
@@ -193,19 +204,22 @@ def _request(method: str, path: str, payload: dict | None = None) -> dict:
 
     data = json.dumps(payload).encode() if payload else None
 
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    headers.update(extra_headers or {})
     request = Request(
         f"{_get_base_url()}{path}",
         data=data,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
+        headers=headers,
         method=method,
     )
 
     try:
         with urlopen(request, context=context, timeout=30) as response:
-            return json.loads(response.read().decode())
+            body = response.read().decode()
+            return json.loads(body) if body.strip() else {}
     except HTTPError as e:
         error_body = e.read().decode() if e.fp else ""
         # Keep the structured provider body available to recovery policy. Efí
@@ -915,3 +929,47 @@ def check_gateway_status(intent_ref: str) -> str:
     except Exception as e:
         logger.warning("check_gateway_status failed for %s: %s", intent_ref, e)
         return "error"
+
+
+# ── Webhook da chave Pix (gestão) ─────────────────────────────────────
+#
+# A Efí notifica o Pix recebido no webhook cadastrado POR CHAVE
+# (``PUT /v2/webhook/:chave``). Quem cadastra é o comando ``efi_webhook``, que
+# roda no job de release do deploy; estes dois verbos são só o transporte.
+
+
+def _webhook_path(pix_key: str) -> str:
+    # Chave de e-mail tem ``@`` e a de telefone tem ``+``: vai codificada inteira.
+    return f"/v2/webhook/{quote(pix_key, safe='')}"
+
+
+def get_pix_webhook(pix_key: str) -> str | None:
+    """URL cadastrada hoje para a chave, ou ``None`` quando não há webhook.
+
+    A Efí responde 404 (``webhook_nao_encontrado``) para chave sem webhook;
+    qualquer outro erro sobe, porque "não sei" não é "não tem".
+    """
+    try:
+        response = _request("GET", _webhook_path(pix_key))
+    except HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    return str(response.get("webhookUrl") or "").strip() or None
+
+
+def register_pix_webhook(pix_key: str, url: str) -> None:
+    """Cadastra (ou troca) a URL do webhook da chave.
+
+    ``x-skip-mtls-checking: true`` é obrigatório neste deployment: a DO App
+    Platform termina o TLS na borda e não valida certificado de cliente, então
+    o handshake mTLS que a Efí faria no cadastro não tem quem responda. Sem
+    mTLS, a autenticação do webhook é o ``?token=`` da URL (ver o contrato em
+    ``shopman/shop/webhooks/efi.py``).
+    """
+    _request(
+        "PUT",
+        _webhook_path(pix_key),
+        {"webhookUrl": url},
+        extra_headers={"x-skip-mtls-checking": "true"},
+    )

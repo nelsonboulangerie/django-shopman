@@ -1,20 +1,28 @@
 <script setup lang="ts">
-// Cabeçalho de seção do Gestor — mora no topo do CONTEÚDO (não é o rail). Segura o
-// controle do rail (kit) + a navegação de seção própria do Gestor (Pedidos/Catálogo/
-// Feeds). As funções comuns (Shopman Apps, operador, tema) vivem no OperatorRail à
-// esquerda; a nav de seção fica aqui porque precisa de rótulo legível.
-const route = useRoute();
-const section = computed(() =>
-  route.path.startsWith("/catalog") ? "catalog"
-  : (route.path.startsWith("/feeds") || route.path.startsWith("/channels/")) ? "feeds"
-  : "orders",
-);
+// Cabeçalho de seção do Gestor — mora no topo do CONTEÚDO (não é o rail). O desenho da
+// barra, o alvo de toque, o `aria-current` e a revelação da aba ativa vêm do
+// `OperatorAppBar` (kit): eram quatro barras à mão, desenhadas de três jeitos. Aqui
+// fica só o que é do Gestor — quais são as seções e o que vai no cluster da direita.
+// As funções comuns (Shopman Apps, operador, tema) vivem no OperatorRail à esquerda.
+import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
-const tabs = [
-  { to: "/", key: "orders", label: "Pedidos", icon: "lucide:clipboard-list" },
-  { to: "/catalog", key: "catalog", label: "Catálogo", icon: "lucide:book-open" },
-  { to: "/feeds", key: "feeds", label: "Canais", icon: "lucide:monitor-play" },
-] as const;
+// Canal ou feed desligado, pausado ou divergente: um ponto âmbar + "1 desligado" no
+// item Canais. Estado normal não mostra nada.
+const { attention } = useChannelAttention();
+
+const sections = computed<OperatorSection[]>(() => [
+  { key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/" },
+  { key: "catalog", label: "Catálogo", icon: "lucide:book-open", to: "/catalog" },
+  {
+    key: "feeds",
+    label: "Canais",
+    icon: "lucide:monitor-play",
+    to: "/feeds",
+    // `/channels/<ref>` é a mesma seção: quem abre um canal não saiu de Canais.
+    match: ["/channels"],
+    attention: attention.value?.label || undefined,
+  },
+]);
 
 // Porta para o cadastro de clientes. Fica FORA do segmented control de propósito:
 // aquele conjunto é de seções DESTE app, e esta é uma saída para o Admin — que
@@ -28,36 +36,21 @@ const customersUrl = computed(() =>
 </script>
 
 <template>
-  <header class="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2.5 print:hidden">
-    <RailToggle />
-    <div class="h-6 w-px bg-border"></div>
-    <!-- section switcher: um conjunto claro (segmented control); a aba ativa "sobe" -->
-    <nav class="inline-flex w-full shrink-0 items-center gap-0.5 rounded-md bg-muted p-1 sm:w-auto sm:shrink" aria-label="Seções do Gestor">
-      <NuxtLink
-        v-for="t in tabs"
-        :key="t.key"
-        :to="t.to"
-        class="inline-flex min-h-control items-center gap-1.5 rounded-md px-3 text-sm transition-all"
-        :class="section === t.key
-          ? 'bg-card font-semibold text-foreground shadow-sm'
-          : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'"
+  <OperatorAppBar :sections="sections" label="Seções do Gestor">
+    <template #end>
+      <a
+        v-if="customersUrl"
+        :href="customersUrl"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex min-h-control items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        title="Buscar, editar e cadastrar clientes (abre o Admin)"
+        data-customers-link
       >
-        <Icon :name="t.icon" class="size-4" :class="section === t.key ? 'text-foreground' : 'text-muted-foreground'" />
-        <span>{{ t.label }}</span>
-      </NuxtLink>
-    </nav>
-    <a
-      v-if="customersUrl"
-      :href="customersUrl"
-      target="_blank"
-      rel="noopener"
-      class="inline-flex min-h-control items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      title="Buscar, editar e cadastrar clientes (abre o Admin)"
-      data-customers-link
-    >
-      <Icon name="lucide:users" class="size-4" />
-      <span>Clientes</span>
-      <Icon name="lucide:external-link" class="size-3 opacity-60" />
-    </a>
-  </header>
+        <Icon name="lucide:users" class="size-4" />
+        <span>Clientes</span>
+        <Icon name="lucide:external-link" class="size-3 opacity-60" />
+      </a>
+    </template>
+  </OperatorAppBar>
 </template>

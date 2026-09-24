@@ -274,3 +274,57 @@ describe("o mesmo conceito tem um nome só nas duas telas", () => {
     }
   });
 });
+
+describe("faixa é preço; a lane chama-se plataforma", () => {
+  // ⚠️ A colisão do §D7b do `omotenashi-copy.md`, que o §5 listava como dívida viva
+  // ("B1, 5 ocorrências"): "faixa" servia de *lane* de processamento num app onde
+  // **"Faixa de preço"** é conceito de negócio no formulário ao lado. O gestor acabava
+  // de montar um público por faixa de preço e lia "3 faixas que não tinham começado
+  // foram canceladas" — e ninguém desconfia de uma palavra que acabou de aprender no
+  // app. A lane passou a ser nomeada pelo que é: **plataforma**.
+  //
+  // Esta é a razão de a trava existir em vez de uma lista de palavras proibidas: a
+  // palavra não é proibida, o SENTIDO é. "Faixa de preço" fica e é retirada antes da
+  // varredura; o que sobrar em texto de tela é a lane voltando.
+  //
+  // Comentário e docstring seguem livres — a regra é sobre a tela (§5.1: a ampliação
+  // de canal valeu para "aparelho", e o documento diz explicitamente que ela NÃO
+  // generaliza). É por isso que a faixa-banner ("a faixa dizia 'Enviado' em verde"),
+  // que é outro sentido ainda, continua podendo ser escrita para quem lê o código.
+  const PRICE_TIER = /faixa de preço/gi;
+  const LANE = /\bfaixas?\b/i;
+
+  it("nenhum texto de tela chama a plataforma de faixa", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const strip = (text: string) => text.replace(PRICE_TIER, " ");
+
+    const leaks = [
+      ...vueFiles(appRoot).flatMap((path) => {
+        const found = strip(screenText(readFileSync(path, "utf8"))).match(LANE);
+        return found ? [`${path} (tela): ${found[0]}`] : [];
+      }),
+      ...sourceFiles(appRoot, [".ts"])
+        .filter((path) => !path.includes("/generated/"))
+        .flatMap((path) => {
+          const found = strip(
+            codeWithoutComments(readFileSync(path, "utf8")),
+          ).match(LANE);
+          return found ? [`${path} (código): ${found[0]}`] : [];
+        }),
+    ];
+
+    expect(leaks).toEqual([]);
+  });
+
+  // A outra metade da trava: se "Faixa de preço" sumir do formulário, a varredura
+  // acima continuaria verde sem que ninguém percebesse que o conceito de negócio foi
+  // renomeado por engano.
+  it("'Faixa de preço' continua sendo o conceito de negócio no formulário", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const screens = vueFiles(appRoot)
+      .map((path) => screenText(readFileSync(path, "utf8")))
+      .filter((text) => /faixa de preço/i.test(text));
+
+    expect(screens.length).toBeGreaterThan(0);
+  });
+});

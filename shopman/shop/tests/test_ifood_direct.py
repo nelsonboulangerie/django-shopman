@@ -189,7 +189,7 @@ def test_map_order_against_real_captured_order():
     assert payload["customer"]["orders_count_on_merchant"] == 0
     assert payload["customer"]["segmentation"] == "Cliente"
     # O prazo do localizador: sem ele a tela não sabe se o código ainda serve.
-    assert payload["customer"]["phone_localizer_expires_at"] == "2026-07-01T05:55:59.112Z"
+    assert payload["customer"]["phone_localizer_expiration"] == "2026-07-01T05:55:59.112Z"
 
 
 def test_map_customer_distinguishes_no_count_from_zero_orders():
@@ -221,7 +221,7 @@ def test_map_customer_survives_a_string_phone_without_localizer():
         {"id": "x", "customer": {"name": "A", "phone": "+554399"}, "items": []}
     )
     assert payload["customer"]["phone_localizer"] == ""
-    assert payload["customer"]["phone_localizer_expires_at"] == ""
+    assert payload["customer"]["phone_localizer_expiration"] == ""
     assert payload["customer"]["ifood_customer_id"] == ""
 
 
@@ -512,10 +512,14 @@ def test_action_for_status_mapping():
     from shopman.shop.services import ifood_callbacks
 
     assert ifood_callbacks.action_for_status("accepted") == "confirm"
+    assert ifood_callbacks.action_for_status("preparing") == "startPreparation"
     assert ifood_callbacks.action_for_status("ready") == "readyToPickup"
     assert ifood_callbacks.action_for_status("dispatched") == "dispatch"
     assert ifood_callbacks.action_for_status("cancelled") == "requestCancellation"
-    assert ifood_callbacks.action_for_status("preparing") is None
+    # `completed` fecha pelo lado DELES (evento CON) — a loja nunca empurra
+    # conclusão, então continua sem ação. `preparing` deixou de estar nesta
+    # linha em 19/09/2026: ele tem `startPreparation` desde então.
+    assert ifood_callbacks.action_for_status("completed") is None
 
 
 @override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
@@ -662,7 +666,8 @@ def test_fetch_cancellation_reasons(fake_headers):
 def test_send_for_status_unmapped_returns_false():
     from shopman.shop.services import ifood_callbacks
 
-    assert ifood_callbacks.send_for_status("o1", "preparing") is False
+    # Status local sem ação no iFood: a conclusão é decisão DELES (evento CON).
+    assert ifood_callbacks.send_for_status("o1", "completed") is False
 
 
 def test_status_handler_raises_transient_on_callback_error(db):

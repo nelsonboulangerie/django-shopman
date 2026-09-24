@@ -79,6 +79,13 @@ class ChannelConfig:
         # Opt-in para mode=manual: após X minutos em NEW sem decisão do operador,
         # dispara OperatorAlert("stale_new_order"). 0 (default) desabilita.
         # Usado em canais marketplace (iFood) para escalar pedidos esquecidos.
+        external_sla_minutes: int = 0
+        # Prazo que o MARKETPLACE impõe para confirmar, contado da criação do pedido
+        # lá. Não é timer nosso: vencido, quem cancela é o marketplace, e o pedido
+        # some da fila sem a gente fazer nada. O card conta esse prazo para ele ficar
+        # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
+        # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
+        # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
 
     # ── 2. Pagamento ──
 
@@ -236,6 +243,20 @@ class ChannelConfig:
         # Prioridade phone-first (Brasil): manychat (WhatsApp) > sms > email > console
         fallback_chain: list[str] = field(default_factory=lambda: ["sms", "email"])
         routing: dict[str, str] | None = None
+        customer_phone: str = "direct"
+        # De quem é o telefone que chega no pedido por este canal?
+        # "direct" — do próprio cliente; serve para WhatsApp, SMS e aviso automático.
+        # "relay"  — da PLATAFORMA. O marketplace não entrega o número do cliente:
+        #            o iFood devolve um 0800 da central dele mais um localizador,
+        #            e quem liga digita o localizador para cair na pessoa. É canal
+        #            de VOZ, para o operador usar à mão — não é contato do cliente,
+        #            não é nosso para usar em aviso automático, e o pedido conta
+        #            como "sem contato do cliente" mesmo com o campo preenchido.
+        # Por pedido, o sinal é o `phone_localizer` ao lado do número (o próprio
+        # iFood diz que aquilo é relé); a declaração aqui é o que sustenta o
+        # pedido em que a plataforma omitiu o localizador — o número continua
+        # sendo dela. Uma lista de números não serve: o iFood tem mais de um e
+        # eles mudam.
 
     # ── 6. Pricing ──
 
@@ -493,6 +514,10 @@ class ChannelConfig:
             raise ValueError(f"notifications.backend inválido: {self.notifications.backend}")
         if not isinstance(self.notifications.fallback_chain, list):
             raise ValueError("notifications.fallback_chain deve ser uma lista")
+        if self.notifications.customer_phone not in ("direct", "relay"):
+            raise ValueError(
+                f"notifications.customer_phone inválido: {self.notifications.customer_phone}",
+            )
         if self.pricing.policy not in ("internal", "external"):
             raise ValueError(f"pricing.policy inválido: {self.pricing.policy}")
         if self.editing.policy not in ("open", "locked"):

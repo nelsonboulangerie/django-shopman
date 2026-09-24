@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link inválido</title>
+</head>
+<body>
+    {# O template do doorman aponta para `doorman:code-request`, rota que o deployment não monta: a entrada de login é a da loja. #}
+    <h1>Link inválido</h1>
+    <p>{{ error|default:"Este link expirou ou já foi usado." }}</p>
+    <p>Peça um link novo pelo WhatsApp da casa, ou entre pela loja com o seu telefone.</p>
+</body>
+</html>

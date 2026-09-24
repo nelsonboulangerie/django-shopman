@@ -7,6 +7,7 @@ import type {
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptWarningTone,
+  ResaleProduct,
 } from "~/types/purchase";
 import { formatMoney, formatQty, receiptLineLabel, receiptLineStatus, receiptLineStatusBadge } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE } from "~/utils/receiptLineStatus";
@@ -33,6 +34,8 @@ const props = defineProps<{
   /** `null` enquanto nenhum item está aberto — a gaveta não monta formulário vazio. */
   preview: ReceiptLinePreview | null;
   materials: Material[];
+  /** Mercadoria de revenda: a outra metade do que pode chegar numa nota. */
+  resaleProducts?: ResaleProduct[];
   /** Só as conversões do insumo deste item. */
   conversions: MaterialConversion[];
   pending?: boolean;
@@ -45,7 +48,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [open: boolean];
   update: [patch: Partial<ReceiptLine>];
-  selectMaterial: [sku: string];
+  selectItem: [sku: string];
   acceptSuggestion: [];
   selectConversion: [conversionId: string | null];
   acceptConversion: [];
@@ -58,14 +61,23 @@ const emit = defineEmits<{
 // O insumo vira opção genérica do `UiSelect`: o SKU e a unidade seguem
 // pesquisáveis (é o que o operador lê na etiqueta quando o nome não bate), e a
 // categoria entra só na busca, porque na linha ela não caberia.
-const materialOptions = computed(() =>
-  props.materials.map((material) => ({
+const materialOptions = computed(() => [
+  ...props.materials.map((material) => ({
     value: material.sku,
     label: material.name,
     hint: `${material.sku} · conta em ${material.unit}`,
     keywords: material.category,
   })),
-);
+  // A mercadoria de revenda entra na MESMA lista, dita pelo que ela é: o
+  // operador tem uma nota na mão, não duas. A dica diz de onde veio, para o
+  // chá Kãnfa não se confundir com um insumo de mesmo nome.
+  ...(props.resaleProducts ?? []).map((product) => ({
+    value: product.sku,
+    label: product.name,
+    hint: `revenda${product.brand ? ` · ${product.brand}` : ""} · conta em ${product.unit}`,
+    keywords: `revenda ${product.brand} ${product.sku}`,
+  })),
+]);
 
 const label = computed(() => (props.preview ? receiptLineLabel(props.preview) : ""));
 const status = computed(() => (props.preview ? receiptLineStatus(props.preview) : "ready"));
@@ -166,8 +178,8 @@ function onCheck(checked: boolean) {
           data-receipt-field="material"
           class="scroll-mt-4 transition-shadow"
           :class="ring('material')"
-          :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.suggestion)"
-          :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
+          :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.line.productSku && !preview.suggestion)"
+          :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo ou a mercadoria desta linha'"
           :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
         >
           <!-- O rótulo é um `<span>`, NÃO um `<label>`: um `<label>` sem `for`
@@ -178,16 +190,16 @@ function onCheck(checked: boolean) {
                clique. O nome acessível vai por `labelledBy`. A armadilha
                continua valendo: ela mora no docstring do `UiSelect`. -->
           <div>
-            <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Insumo</span>
+            <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Insumo ou mercadoria</span>
             <UiSelect
               class="mt-1"
               :options="materialOptions"
-              :model-value="preview.line.materialSku"
+              :model-value="preview.line.productSku || preview.line.materialSku"
               :labelled-by="`receipt-material-${preview.line.id}`"
-              placeholder="Escolher insumo"
-              search-placeholder="Buscar insumo"
-              :empty-text="`Nenhum insumo com esse nome.`"
-              @update:model-value="emit('selectMaterial', $event)"
+              placeholder="Escolher item"
+              search-placeholder="Buscar insumo ou mercadoria"
+              :empty-text="`Nenhum item com esse nome.`"
+              @update:model-value="emit('selectItem', $event)"
             />
           </div>
           <template v-if="preview.suggestion">

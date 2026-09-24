@@ -66,7 +66,7 @@ const ovos: Material = {
 // Insumo pesado em kg e comprado em pacote: e nesse par que os dois eixos da
 // NF-e brigam, e onde 10 unidades viravam 10 kg.
 const fermento: Material = {
-  sku: "FERMENTO-BIO",
+  sku: "FERMENTO-BIOLOGICO",
   name: "Fermento biológico",
   unit: "kg",
   shelfLifeDays: null,
@@ -287,7 +287,7 @@ describe("purchase presentation", () => {
     expect(preview?.line.invoiceEan).toBe("7891234567895");
     expect(preview?.warnings).toContainEqual({
       key: "missing-material",
-      label: "Escolha o insumo desta linha",
+      label: "Escolha o insumo ou a mercadoria desta linha",
       tone: "block",
     });
     expect(preview?.suggestion).toBeNull();
@@ -394,7 +394,7 @@ describe("purchase presentation", () => {
     // sozinha — mas agora o bloqueio vem com o gesto do lado.
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIO",
+      materialSku: "FERMENTO-BIOLOGICO",
       conversionId: null,
       requiresConversion: true,
       conversionSuggestion: {
@@ -431,7 +431,7 @@ describe("purchase presentation", () => {
   it("libera a linha assim que a conversao declarada entra", () => {
     const declared: MaterialConversion = {
       id: "pacote-500",
-      materialSku: "FERMENTO-BIO",
+      materialSku: "FERMENTO-BIOLOGICO",
       supplierRef: "SUP-MOINHO",
       label: "un 500 g",
       toBaseFactor: 0.5,
@@ -440,7 +440,7 @@ describe("purchase presentation", () => {
     };
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIO",
+      materialSku: "FERMENTO-BIOLOGICO",
       conversionId: "pacote-500",
       requiresConversion: false,
       purchaseQty: 10,
@@ -497,7 +497,7 @@ describe("purchase presentation", () => {
     // gesto de terminar acusando divergencia consigo mesmo.
     const declared: MaterialConversion = {
       id: "un-500",
-      materialSku: "FERMENTO-BIO",
+      materialSku: "FERMENTO-BIOLOGICO",
       supplierRef: "SUP-MOINHO",
       label: "un 500 g",
       toBaseFactor: 0.5,
@@ -506,7 +506,7 @@ describe("purchase presentation", () => {
     };
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIO",
+      materialSku: "FERMENTO-BIOLOGICO",
       conversionId: "un-500",
       requiresConversion: false,
       conversionSuggestion: {
@@ -533,7 +533,7 @@ describe("purchase presentation", () => {
   it("ignora sugestao de conversao com fator invalido", () => {
     const line: ReceiptLine = {
       id: "nfe-1",
-      materialSku: "FERMENTO-BIO",
+      materialSku: "FERMENTO-BIOLOGICO",
       conversionId: null,
       requiresConversion: true,
       conversionSuggestion: {
@@ -634,7 +634,7 @@ describe("purchase presentation", () => {
     expect(preview?.invoiceSummary).toBe("4 SC · 100 KG na NF · cód 7891");
     // Uma instrucao por linha, na propria linha: o painel listava dez pilulas
     // iguais sem dizer de qual item.
-    expect(preview?.nextStep).toBe("Escolha o insumo desta linha");
+    expect(preview?.nextStep).toBe("Escolha o insumo ou a mercadoria desta linha");
     // A ocorrencia e do operador e nasce vazia.
     expect(preview?.line.lineNote).toBe("");
   });

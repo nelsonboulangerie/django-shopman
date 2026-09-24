@@ -3,7 +3,7 @@
 // tela (verificadas endpoint a endpoint):
 //   · telas de OPERADOR (planejamento/preparação/produção/expedição) → rail canônico
 //     (kit) + conteúdo, atrás do gate de operador;
-//   · painel (Fornadas) → KIOSK de operador em tela cheia (a previsão exige
+//   · painel (Lotes) → KIOSK de operador em tela cheia (a previsão exige
 //     backstage.operate_production) — FORA do rail, mas DENTRO do gate;
 // O menuboard paralelo foi aposentado: a TV canônica pertence ao Django, por ref e
 // credencial. D4 definirá refs/cutover; este app não adivinha um destino.

@@ -21,8 +21,20 @@ const OPERATOR_APPS = [
   "bi-nuxt",
 ] as const;
 
-/** Href que sai da própria origem: a URL de outro app de operador. */
-const CROSS_APP_HREF = /:href="(hubUrl|tile\.url)"/;
+/**
+ * Href que sai da própria origem: a URL de outro app de operador.
+ *
+ * A lista cresce quando um app ganha uma travessia nova. Em 22/09/2026 entraram
+ * as do PDV — fechamento do dia → Produção (na ORDEM, não na raiz), trava de
+ * cobrança → fila do Gestor, aviso de recebimento pendente → fila do Gestor.
+ */
+const CROSS_APP_HREF =
+  /:href="(hubUrl|tile\.url|productionGrid|workOrderHref\(row\)|closeGuardNotice\.link\.href|note\.link\.href)"/;
+
+/** O link declara o alvo pela regra do kit — por `:target` ou pelo `v-bind` inteiro. */
+function declaresTarget(tag: string): boolean {
+  return tag.includes(":target=") || /v-bind="[a-zA-Z]*[aA]ttrs(For)?\(/.test(tag);
+}
 
 function vueFiles(dir: string): string[] {
   const out: string[] = [];
@@ -58,15 +70,17 @@ describe("link para outro app de operador", () => {
         for (const match of source.matchAll(new RegExp(CROSS_APP_HREF, "g"))) {
           scanned += 1;
           const tag = enclosingTag(source, match.index ?? 0);
-          if (!tag.includes(":target=")) offenders.push(`${app}: ${file.slice(surfacesDir.length + 1)}`);
+          if (!declaresTarget(tag)) offenders.push(`${app}: ${file.slice(surfacesDir.length + 1)}`);
         }
       }
     }
     expect(offenders, "use useOperatorAppLink().attrsFor(href) e ligue :target/:rel").toEqual([]);
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
-    // Hoje são os tiles do Shopman Apps e o "Voltar ao Shopman Apps" da tela sem acesso do Marketing.
-    expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(2);
+    // Hoje são os tiles do Shopman Apps, o "Voltar ao Shopman Apps" da tela sem
+    // acesso do Marketing e as quatro travessias do PDV (duas para a Produção no
+    // fechamento, a da trava de cobrança e a do aviso de recebimento pendente).
+    expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(7);
   });
 
   it("o próprio rail do kit — a origem do padrão — está em dia", () => {

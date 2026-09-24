@@ -14,6 +14,7 @@ import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
 import { useOperatorAppName } from "../../../operator-kit/app/composables/useOperatorWindowTitle";
 import { windowTitle } from "../../../operator-kit/app/presentation/windowTitle";
+import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
 
 export type { CancellationReason };
 
@@ -36,8 +37,11 @@ export type { CancellationReason };
 //
 // O KDS NÃO usa isto: fica com a tríade padrão do kit, de propósito, para o
 // operador distinguir "pedido tratável" de "ticket novo" só pelo ouvido.
+//
+// Volume 0,4: o dono pediu um terço a menos (21/09/2026) sobre o 0,6 de antes.
+// O ganho é linear, então 0,6 × 2/3 = 0,4 é exatamente "33,3% mais baixo".
 export const GESTOR_ALERT = {
-  volume: 0.6,
+  volume: 0.4,
   wave: "sine" as const,
   shape: "ping" as const,
   attack: 0.022,
@@ -105,7 +109,8 @@ export const gestorAttentionStorageKey = (serviceDay: string) =>
 // Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
 // está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
 // a vida dela, e um toque único já deixou passar pedido de cliente real.
-// O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
+// Quem cala é o operador: o "Ciente", ou um toque/tecla na tela depois que o
+// aviso já soou (presença de quem ouviu). O som tocar não cala nada.
 
 export function useOrdersBoard() {
   const intentions = useOrderIntention();
@@ -157,14 +162,14 @@ export function useOrdersBoard() {
   // acende quando genuinamente vivo ([[feedback_transparent_timeouts]], [[feedback_no_overpromise_tracking]]).
   const realtime = ref<"connecting" | "live" | "polling">("polling");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: EventSource | null = null;
+  let source: ResilientEventSource | null = null;
 
   // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor, mas a
   // VOZ é do Gestor (ver GESTOR_ALERT acima). Aqui o aviso INSISTE
   // (`startAlert`), diferente do KDS: no KDS o operador está de frente para a
   // tela; no Gestor o pedido chega enquanto a loja toca a vida dela, e um
-  // toque único já deixou passar pedido de cliente real. O kit para de repetir
-  // no primeiro toque/tecla — presença cala o aviso.
+  // toque único já deixou passar pedido de cliente real. Quem cala é o gesto
+  // do operador (ver `acknowledgeOnGesture`), nunca a própria reprodução.
   const {
     soundOn,
     soundBlocked,
@@ -181,6 +186,8 @@ export function useOrdersBoard() {
   const attentionPending = ref(false);
   let pendingAttentionRefs = new Set<string>();
   let pendingAttentionDay = "";
+  // O aviso pendente já chegou ao alto-falante ao menos uma vez?
+  let pendingAttentionHeard = false;
 
   function seenTreatableRefs(day: string): Set<string> {
     if (!import.meta.client) return new Set();
@@ -193,7 +200,8 @@ export function useOrdersBoard() {
   }
 
   function rememberPendingTreatableRefs() {
-    if (!import.meta.client) return;
+    // Só roda a partir de evento do browser (Ciente, gesto, reprodução); o
+    // storage já é protegido pelo try/catch abaixo.
     const day = pendingAttentionDay;
     if (!day) return;
     const seen = seenTreatableRefs(day);
@@ -205,6 +213,7 @@ export function useOrdersBoard() {
     }
     pendingAttentionRefs = new Set();
     pendingAttentionDay = "";
+    pendingAttentionHeard = false;
     attentionPending.value = false;
     stopAlert();
     stopTitleAlert();
@@ -286,6 +295,7 @@ export function useOrdersBoard() {
     if (decision.shouldStop) {
       pendingAttentionRefs = new Set();
       pendingAttentionDay = "";
+      pendingAttentionHeard = false;
       attentionPending.value = false;
       stopAlert();
       stopTitleAlert();
@@ -296,16 +306,27 @@ export function useOrdersBoard() {
         [...treatableOrderRefs(queue.value)].filter((ref_) => !seen.has(ref_)),
       );
       pendingAttentionDay = day;
+      pendingAttentionHeard = false;
       attentionPending.value = pendingAttentionRefs.size > 0;
       announceTreatableOrder(decision.firstUnseen);
     }
   }
 
-  // Tentar tocar com autoplay bloqueado não é recibo. Persistimos as refs como
-  // vistas somente quando o kit confirma uma reprodução real, ou no Ciente.
+  // Reprodução real é recibo de que o som SAIU, não de que alguém ouviu. Antes
+  // ela marcava o pedido como visto e parava o aviso: o primeiro bipe calava a
+  // repetição e o título piscando, e o pedido novo soava UMA vez só. Agora ela
+  // só habilita o gesto a reconhecer; tentar tocar com autoplay bloqueado
+  // continua não valendo como recibo.
   watch(playbackCount, (count, previous) => {
-    if (count > previous && attentionPending.value) rememberPendingTreatableRefs();
+    if (count > previous && attentionPending.value) pendingAttentionHeard = true;
   });
+
+  // Toque/tecla na tela depois de o aviso ter soado = o operador está ali e
+  // ouviu. O gesto que destrava o autoplay não conta (ainda não soou): ele faz
+  // o kit tocar, e o próximo gesto (ou o Ciente) reconhece.
+  const acknowledgeOnGesture = () => {
+    if (attentionPending.value && pendingAttentionHeard) rememberPendingTreatableRefs();
+  };
 
   // Uma única régua para SSE, poll, retorno da aba e primeira abertura. Assim
   // a encomenda que virou tratável com a tela fechada não depende de ter havido
@@ -336,38 +357,36 @@ export function useOrdersBoard() {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/orders.ts) faz streaming do
     // eventstream do Django, em dev e em prod — nada de gate por origem.
-    const url = ssePath("/sse/orders", config.app.baseURL);
-    try {
-      realtime.value = "connecting";
-      source = new EventSource(url, { withCredentials: true });
-      // SSE é somente um sinal. A atenção nasce do watch da projection
-      // canônica, compartilhado com poll/primeira abertura.
-      let attentionRefresh: Promise<void> | null = null;
-      let attentionQueued = false;
-      const onPush = () => {
-        attentionQueued = true;
-        if (attentionRefresh) return;
-        attentionRefresh = (async () => {
-          do {
-            attentionQueued = false;
-            await refresh();
-          } while (attentionQueued);
-        })()
-          .catch(() => {})
-          .finally(() => {
-            attentionRefresh = null;
-            // Evento chegado na última microjanela não fica órfão.
-            if (attentionQueued) onPush();
-          });
-      };
-      ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onPush));
-      source.onopen = () => { realtime.value = "live"; refresh(); };
-      // Erro/desconexão → cai pro poll; o EventSource auto-reconecta e o onopen volta a "live".
-      source.onerror = () => { realtime.value = "polling"; };
-    } catch {
-      source = null; // SSE unavailable → polling carries it.
-      realtime.value = "polling";
-    }
+    // SSE é somente um sinal. A atenção nasce do watch da projection
+    // canônica, compartilhado com poll/primeira abertura.
+    let attentionRefresh: Promise<void> | null = null;
+    let attentionQueued = false;
+    const onPush = () => {
+      attentionQueued = true;
+      if (attentionRefresh) return;
+      attentionRefresh = (async () => {
+        do {
+          attentionQueued = false;
+          await refresh();
+        } while (attentionQueued);
+      })()
+        .catch(() => {})
+        .finally(() => {
+          attentionRefresh = null;
+          // Evento chegado na última microjanela não fica órfão.
+          if (attentionQueued) onPush();
+        });
+    };
+    realtime.value = "connecting";
+    // O stream se recria sozinho depois do 502 de deploy (o EventSource cru
+    // ficaria CLOSED e o board, só no poll de 30 s, até alguém recarregar).
+    source = openResilientEventSource({
+      url: ssePath("/sse/orders", config.app.baseURL),
+      events: ["backstage-orders-update"],
+      onEvent: onPush,
+      onOpen: () => { realtime.value = "live"; refresh(); },
+      onDown: () => { realtime.value = "polling"; },
+    });
   }
 
   // SSE conecta só depois do primeiro fetch do board (sessão/canal prontos):
@@ -389,6 +408,7 @@ export function useOrdersBoard() {
     if (document.visibilityState !== "visible") return;
     stopTitleAlert(); // o operador voltou — o título para de gritar
     refresh();
+    source?.reconnectNow();
   };
   onMounted(() => {
     attentionReady = true;
@@ -401,6 +421,8 @@ export function useOrdersBoard() {
     // para um pedido iFood novo esperar quando o tablet acabou de acordar).
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
+    window.addEventListener("pointerdown", acknowledgeOnGesture);
+    window.addEventListener("keydown", acknowledgeOnGesture);
   });
   onBeforeUnmount(() => {
     stopWaitingForRead?.();
@@ -410,6 +432,8 @@ export function useOrdersBoard() {
     stopTitleAlert();
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
+    window.removeEventListener("pointerdown", acknowledgeOnGesture);
+    window.removeEventListener("keydown", acknowledgeOnGesture);
   });
 
   // ── write-side: per-ref in-flight guard + reconcile ──────────────────────
@@ -446,7 +470,7 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
         await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
@@ -484,14 +508,18 @@ export function useOrdersBoard() {
   const confirm = (ref_: string) => act(ref_, "confirm");
   // ``change_out``: troco que o entregador leva da gaveta no despacho (reais);
   // só quando a tela perguntou. O servidor exige o valor quando o pedido pede troco.
-  const advance = (ref_: string, changeOut?: string, equipment?: string[]) => {
+  // ``tripRef``: sai na MESMA saída de outro pedido (mesmo entregador, mesma maquininha).
+  const advance = (ref_: string, changeOut?: string, equipment?: string[], tripRef?: string) => {
     const body: Record<string, unknown> = {};
     if (changeOut !== undefined) body.change_out = changeOut;
     if (equipment && equipment.length) body.equipment = equipment;
+    if (tripRef) body.trip_ref = tripRef;
     return act(ref_, "advance", Object.keys(body).length ? body : undefined);
   };
   // A maquininha voltou com o entregador (pedido que a levou no despacho).
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
+  // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
+  const courierBack = (ref_: string) => act(ref_, "courier-back");
   // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
   // backend calls requestCancellation with a valid code; empty for other channels.
   const reject = (ref_: string, reason: string, cancellation_code = "") =>
@@ -549,7 +577,7 @@ export function useOrdersBoard() {
   return {
     readMetadata, queue, zones, totalCount, preorders, realtime, pending, error,
     refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
-    fetchCancellationReasons, settleCash, equipmentBack, equipmentOut,
+    fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
     equipmentAvailable, assign, unassign, confirmMany, advanceMany,
     soundOn, soundBlocked, alerting, attentionPending, toggleSound,
     activateAttentionSound, acknowledgeAttention,

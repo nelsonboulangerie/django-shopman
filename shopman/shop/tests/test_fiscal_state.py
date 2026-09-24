@@ -162,9 +162,13 @@ def test_a_evidencia_pre_lida_dispensa_a_consulta():
         (f"{ON_REQUEST},{ON_RECEIPT}", True),
         (ON_RECEIPT, True),
         (ALWAYS, True),
-        (ON_REQUEST, False),
+        # A base de toda configuração também lê o pedido de comprovante: papel e
+        # e-mail pedem a nota como o CPF pede, qualquer que seja a env.
+        (ON_REQUEST, True),
         ("shopman.shop.fiscal_resolvers.eletronic_payment", False),
-        ("", False),
+        ("shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement", False),
+        # Sem resolver, o fallback é o mesmo pedido do balcão.
+        ("", True),
     ],
 )
 def test_receipt_request_emits_le_a_env_e_nao_o_default(resolver, expected):

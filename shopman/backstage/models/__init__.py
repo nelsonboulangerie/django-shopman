@@ -2,6 +2,7 @@
 
 from .admin_two_factor import AdminTwoFactorEnrollment
 from .alerts import OperatorAlert
+from .alias_benchmark import AliasBenchmarkReport
 from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
 from .bi_alerts import BIAlertEvent, BIAlertRule
 from .bi_scenario import BIScenarioReport
@@ -43,6 +44,7 @@ from .timer_tag import TimerTag, TimerTagOrigin
 __all__ = [
     "AdminTwoFactorEnrollment",
     "OperatorAlert",
+    "AliasBenchmarkReport",
     "AliasStatus",
     "BIAlertEvent",
     "BIAlertRule",

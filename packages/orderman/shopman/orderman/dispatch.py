@@ -36,6 +36,32 @@ def _backoff_seconds(attempts: int) -> int:
     return 2 ** attempts
 
 
+def retry_policy(handler, attempts: int, default_max_attempts: int = MAX_ATTEMPTS) -> tuple[int, int]:
+    """Teto de tentativas e espera até a próxima, na régua do handler.
+
+    Handler que declara ``retry_delays_seconds`` (fiscal, estorno) tem janela
+    própria; os demais seguem o backoff exponencial com ``default_max_attempts``.
+    Vale para o despacho inline E para o worker (``process_directives``): uma
+    régua por handler, não uma por caminho de execução.
+    """
+    retry_delays = getattr(handler, "retry_delays_seconds", None)
+    if isinstance(retry_delays, (tuple, list)) and retry_delays:
+        index = min(max(attempts, 1) - 1, len(retry_delays) - 1)
+        return len(retry_delays) + 1, int(retry_delays[index])
+    return default_max_attempts, _backoff_seconds(attempts)
+
+
+def notify_terminal_failure(handler, directive) -> None:
+    """Chama ``on_terminal_failure`` do handler, se houver, sem nunca propagar."""
+    terminal_hook = getattr(handler, "on_terminal_failure", None)
+    if not callable(terminal_hook):
+        return
+    try:
+        terminal_hook(message=directive)
+    except Exception:
+        logger.exception("Directive terminal failure observer failed for #%s", directive.pk)
+
+
 def _process_directive(directive) -> None:
     """
     Process a single directive using its registered handler.
@@ -76,13 +102,7 @@ def _process_directive(directive) -> None:
 
     from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 
-    retry_delays = getattr(handler, "retry_delays_seconds", None)
-    if isinstance(retry_delays, (tuple, list)) and retry_delays:
-        max_attempts = len(retry_delays) + 1
-        retry_delay = int(retry_delays[min(directive.attempts - 1, len(retry_delays) - 1)])
-    else:
-        max_attempts = MAX_ATTEMPTS
-        retry_delay = _backoff_seconds(directive.attempts)
+    max_attempts, retry_delay = retry_policy(handler, directive.attempts)
 
     _local.dispatching = True
     try:
@@ -131,12 +151,7 @@ def _process_directive(directive) -> None:
         directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
     finally:
         if directive.status == "failed":
-            terminal_hook = getattr(handler, "on_terminal_failure", None)
-            if callable(terminal_hook):
-                try:
-                    terminal_hook(message=directive)
-                except Exception:
-                    logger.exception("Directive terminal failure observer failed for #%s", directive.pk)
+            notify_terminal_failure(handler, directive)
         _local.dispatching = False
 
 

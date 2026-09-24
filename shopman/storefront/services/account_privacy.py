@@ -19,6 +19,7 @@ from shopman.shop.models import (
     PrivacyRequestReceipt,
     PrivacyRequestState,
 )
+from shopman.shop.services import manychat_erasure
 
 _CONTRACT_VERSION = "account-privacy.v1"
 _HMAC_DOMAIN_VERSION = "shopman-privacy-receipt-hmac.v1"
@@ -53,6 +54,33 @@ class AccountDeletionBlocked(PrivacyRequestError):
     def __init__(self, reason: str):
         self.reason = reason
         super().__init__(reason)
+
+
+class ProviderErasureIncomplete(PrivacyRequestError):
+    """O provedor não confirmou o apagamento — e sem confirmação não há "pronto".
+
+    Deliberadamente NÃO é `AccountDeletionBlocked`: bloqueio é pré-condição que
+    o cliente resolve (conclua o pedido, espere a mensagem sair). Isto aqui é
+    falha nossa com o provedor, e a resposta certa é a mesma de qualquer
+    exclusão incompleta — 503, equipe avisada, tente de novo — nunca um pedido
+    para o cliente ir falar com alguém.
+    """
+
+    code = "account_deletion_incomplete"
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+@dataclass(frozen=True)
+class _ErasurePlan:
+    """O que a fase 1 apurou com o `Customer` travado."""
+
+    subscriber_ids: tuple[str, ...] = ()
+    resolution_pending: bool = False
+    has_footprint: bool = False
+    replayed_outcome: DeletionOutcome | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +169,40 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
     if replayed:
         return DeletionOutcome(receipt_ref=str(receipt.ref), replayed=True)
 
+    # ── Fase 1 — pré-condições e leitura do vínculo, antes de qualquer I/O ──
+    #
+    # Nada acontece no provedor enquanto a exclusão ainda puder ser recusada por
+    # trabalho vivo aqui dentro: limpar o perfil de alguém que continua com a
+    # conta de pé seria meia-exclusão ao contrário.
+    try:
+        plan = _plan_erasure(receipt, customer)
+    except AccountDeletionBlocked:
+        _mark_failed(receipt.pk, stage="precondition", code="account_deletion_blocked")
+        raise
+    if plan.replayed_outcome is not None:
+        return plan.replayed_outcome
+
+    # ── I/O externo, FORA de transação ──
+    #
+    # A intenção durável vai primeiro: se o processo morrer no meio, o marcador
+    # conta que a casa já pode ter mexido no perfil de lá.
+    erasure = manychat_erasure.ErasureOutcome(confirmed=True)
+    if plan.has_footprint:
+        manychat_erasure.mark_intent(customer.pk)
+        erasure = manychat_erasure.run(
+            customer_pk=customer.pk,
+            ids=plan.subscriber_ids,
+            pending=plan.resolution_pending,
+        )
+    if not erasure.confirmed:
+        # Falha fechada: o provedor não confirmou o apagamento, então a casa não
+        # diz "pronto" nem manda o cliente pedir para a equipe. O recibo fica
+        # incompleto, a operação é chamada, e o titular vê "tente de novo".
+        _mark_failed(receipt.pk, stage="provider_erasure", code="account_deletion_incomplete")
+        _alert_failed_receipt(receipt.ref)
+        raise ProviderErasureIncomplete(erasure.reason)
+
+    # ── Fase 2 — readquirir o Customer e finalizar ──
     try:
         with transaction.atomic():
             receipt = PrivacyRequestReceipt.objects.select_for_update().get(pk=receipt.pk)
@@ -185,7 +247,21 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
             if blocker:
                 raise AccountDeletionBlocked(blocker)
 
+            # A pegada é RELIDA com o Customer travado. Entre a fase 1 e aqui,
+            # um writer pode ter vinculado um assinante NOVO — é a corrida que
+            # a matriz descreve: "se o writer vencer, a exclusão espera e
+            # precisa alcançar o efeito recém-criado". O que a limpeza não
+            # alcançou não pode ser declarado apagado.
+            alcancado = set(erasure.subscriber_ids)
+            surgiu = set(manychat_erasure.subscriber_ids(locked_customer)) - alcancado
+            if surgiu or manychat_erasure.resolution_pending(locked_customer):
+                raise ProviderErasureIncomplete("manychat_link_appeared_during_erasure")
+
             _settle_storefront_records(locked_customer)
+            # A lápide nasce JUNTO com a anonimização: se a exclusão rolar para
+            # trás, não pode sobrar lápide recusando o sync de uma conta viva.
+            manychat_erasure.remember(erasure.subscriber_ids)
+            manychat_erasure.clear_intent(locked_customer)
             account_service.anonymize_customer(
                 locked_customer,
                 correlation_ref=str(receipt.ref),
@@ -211,11 +287,18 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
     except AccountDeletionBlocked:
         _mark_failed(receipt.pk, stage="precondition", code="account_deletion_blocked")
         raise
+    except ProviderErasureIncomplete:
+        _mark_failed(receipt.pk, stage="provider_erasure", code="account_deletion_incomplete")
+        _alert_failed_receipt(receipt.ref)
+        raise
     except Exception:
         _mark_failed(receipt.pk, stage="anonymization", code="account_deletion_incomplete")
         _alert_failed_receipt(receipt.ref)
         raise
 
+    # Depois do commit: o que a API do provedor NÃO faz vira tarefa com prazo,
+    # em vez de uma pendência que alguém teria que lembrar sozinho.
+    manychat_erasure.open_operator_task(erasure.subscriber_ids, receipt_ref=receipt.ref)
     return DeletionOutcome(receipt_ref=str(receipt.ref), replayed=False)
 
 
@@ -424,6 +507,73 @@ def _mark_failed(receipt_pk: int, *, stage: str, code: str) -> None:
         )
 
 
+def _plan_erasure(receipt, customer) -> _ErasurePlan:
+    """Fase 1: trava, confere tudo que recusa, e lê o vínculo do provedor.
+
+    Sai sem nenhum efeito externo: a única coisa que esta fase muda é nada.
+    """
+    with transaction.atomic():
+        locked_receipt = PrivacyRequestReceipt.objects.select_for_update().get(pk=receipt.pk)
+        if locked_receipt.state == PrivacyRequestState.COMPLETED:
+            return _ErasurePlan(
+                replayed_outcome=DeletionOutcome(receipt_ref=str(locked_receipt.ref), replayed=True),
+            )
+
+        from shopman.shop.services import account as account_service
+
+        locked_customer = account_service.lock_customer_for_privacy(customer.pk)
+        if not locked_customer.is_active:
+            # Conta já inativa não tem provedor a limpar; a fase 2 decide entre
+            # reproduzir o recibo anterior e recusar, com o código de sempre.
+            return _ErasurePlan()
+
+        blocker = _deletion_blocker(locked_customer)
+        if blocker:
+            raise AccountDeletionBlocked(blocker)
+        in_flight = _storefront_in_flight_blocker(locked_customer)
+        if in_flight:
+            raise AccountDeletionBlocked(in_flight)
+
+        return _ErasurePlan(
+            subscriber_ids=manychat_erasure.subscriber_ids(locked_customer),
+            resolution_pending=manychat_erasure.resolution_pending(locked_customer),
+            has_footprint=manychat_erasure.has_provider_footprint(locked_customer),
+        )
+
+
+def _storefront_in_flight_blocker(customer) -> str:
+    """Gêmeo SÓ DE LEITURA das duas recusas de `_settle_storefront_records`.
+
+    Lá elas moram no meio da revogação da fila, que é onde precisam estar. Aqui
+    elas precisam ser perguntadas ANTES do I/O externo: sem esta pergunta, a
+    casa limparia o perfil no provedor de alguém cuja exclusão ainda vai ser
+    recusada na fase 2, e a pessoa ficaria com a conta de pé e o perfil de lá
+    zerado. A varredura aqui é de propósito mais larga que a de lá — numa
+    pré-condição, errar para o lado de recusar é o lado certo.
+    """
+    from shopman.shop.models import AudienceSnapshotMember, DeliveryTarget
+    from shopman.storefront.models import StockAlertDelivery, StockAlertSubscription
+
+    subscription_ids = list(
+        StockAlertSubscription.objects.filter(customer_ref=customer.ref).values_list("pk", flat=True)
+    )
+    if subscription_ids and StockAlertDelivery.objects.filter(
+        subscription_id__in=subscription_ids,
+        status=StockAlertDelivery.Status.CLAIMED,
+    ).exists():
+        return "stock_alert_delivery_in_flight"
+
+    member_ids = tuple(
+        AudienceSnapshotMember.objects.filter(customer=customer).values_list("pk", flat=True)
+    )
+    if member_ids and DeliveryTarget.objects.filter(
+        member_id__in=member_ids,
+        state=DeliveryTarget.State.SENDING,
+    ).exists():
+        return "marketing_delivery_in_flight"
+    return ""
+
+
 def _settle_storefront_records(customer) -> None:
     """Revoga filas futuras e retém somente prova técnica não identificável."""
 
@@ -529,16 +679,11 @@ def _deletion_blocker(customer) -> str:
     if otp_blocker:
         return otp_blocker
 
-    # Apagar apenas o vínculo local não impede que uma sincronização posterior
-    # do ManyChat reapresente o mesmo assinante e recrie seus dados. Enquanto
-    # não houver uma confirmação de desvínculo/supressão no provedor, recusamos
-    # honestamente a exclusão em vez de emitir um recibo falso de conclusão.
-    # A detecção é por vínculo comprovado — nunca por mera coincidência de
-    # telefone — e acontece com o Customer já protegido pela cerca canônica.
-    manychat_blocker = account_service.privacy_manychat_deletion_blocker(customer)
-    if manychat_blocker:
-        return manychat_blocker
-
+    # O vínculo com o ManyChat NÃO recusa mais a exclusão. Ele deixou de ser
+    # pré-condição e virou trabalho: `manychat_erasure` limpa o perfil de lá,
+    # grava a lápide que impede a ressurreição pelo webhook e abre a tarefa
+    # datada do que a API do provedor não faz. Mandar o cliente "pedir à
+    # equipe" era o oposto do direito que a página promete a ele.
     order_blocker = account_service.privacy_order_deletion_blocker(
         customer.ref,
         customer.phone or "",

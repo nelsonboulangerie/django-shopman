@@ -197,6 +197,14 @@ envs:
 - key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
   scope: RUN_AND_BUILD_TIME
   type: SECRET
+# A chave de licença da MaxMind, usada SÓ no build, para baixar a base GeoLite2-City
+# que escreve "Próximo a Londrina, PR · Brasil" na tela "Segurança e dados" da loja.
+# Sem ela a imagem sobe sem a base e a tela fica só com navegador e data — nada quebra.
+# ⚠️ Como todo SECRET deste arquivo, o VALOR mora cifrado no painel, não aqui. Defina-o
+# no painel ANTES de aplicar o spec. Ver docs/guides/geolite2-city.md.
+- key: MAXMIND_LICENSE_KEY
+  scope: BUILD_TIME
+  type: SECRET
 - key: DJANGO_SETTINGS_MODULE
   scope: RUN_TIME
   value: 'config.settings'
@@ -301,6 +309,11 @@ envs:
   scope: RUN_TIME
   value: '${cache.REDIS_URL}'
   type: GENERAL
+# Pix no SIMULADOR, de volta em 22/09/2026 (~17:20 UTC): a troca para a Efí de
+# testes (#951) subiu e a Efí recusou com 403 já no `release` (`efi_webhook`),
+# provavelmente na autenticação — com isso todo Pix novo falharia ao gerar o QR.
+# Voltar para a Efí só depois de o `efi_webhook` responder OK (credenciais,
+# certificado e escopos de webhook da aplicação conferidos com o Pablo).
 - key: SHOPMAN_PIX_ADAPTER
   scope: RUN_TIME
   value: 'shopman.shop.adapters.payment_mock'
@@ -443,6 +456,13 @@ envs:
   scope: RUN_TIME
   value: 'f36a17d0-e10b-4fdd-a16d-c8ffd866e59b'
   type: GENERAL
+# Shopman é a fonte única de "loja aberta" no iFood (PR #945): horário,
+# calendário e pausa do gestor gravados no módulo Merchant; conferência de
+# status no maintenance-worker. Ligado pelo Pablo em 22/09/2026.
+- key: IFOOD_MERCHANT_SYNC
+  scope: RUN_TIME
+  value: '1'
+  type: GENERAL
 - key: IFOOD_WEBHOOK_TOKEN
   scope: RUN_TIME
   type: SECRET
@@ -544,6 +564,13 @@ envs:
   scope: RUN_TIME
   value: '4605528796186498,4685528796186498,1962036908'
   type: GENERAL
+# Prazo da observação (captura passiva): 30 dias, o teto aceito, durante o
+# aprendizado (decisão do dono, 23/09/2026); depois encurta. O valor novo vale
+# também para o já guardado: cleanup_concierge_observations realinha o prazo.
+- key: CONCIERGE_OBSERVATION_RETENTION_DAYS
+  scope: RUN_TIME
+  value: '30'
+  type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET
@@ -576,6 +603,13 @@ envs:
 - key: SENTRY_DSN
   scope: RUN_TIME
   type: SECRET
+# Quem recebe os alertas críticos por e-mail (PR #943). Pessoal por ora, a
+# pedido do Pablo (22/09/2026) — trocar por alias do domínio oficial antes do
+# go-live.
+- key: SHOPMAN_ALERT_EMAIL
+  scope: RUN_TIME
+  value: 'pablondrina@gmail.com'
+  type: GENERAL
 
 # ── E-mail (SMTP) ─────────────────────────────────────────────────────
 # Sem estas, o EMAIL_BACKEND cai no default `console` do settings.py: o
@@ -1087,8 +1121,17 @@ jobs:
   instance_size_slug: apps-s-1vcpu-0.5gb
   kind: PRE_DEPLOY
   name: release
-  run_command: sh -c 'python manage.py check --deploy && python manage.py migrate
-    --noinput && python manage.py setup_groups && python manage.py bootstrap_whatsapp_channel'
+  # `efi_webhook --soft`: confere o webhook do Pix na Efí e recadastra se divergir
+  # da URL canônica. Falha APARECE no log do release (e no Sentry), mas não
+  # derruba o deploy: webhook fora não justifica segurar a versão inteira.
+  # `migration_safety` roda ANTES do `migrate`: pós-`go-live-v1` ele RECUSA o
+  # deploy quando há migração destrutiva pendente sem ponto de restauração
+  # declarado em SHOPMAN_MIGRATION_BACKUP_REF. Pré-tag ele só relata o plano no
+  # log — o alpha ganha a visibilidade sem ganhar o bloqueio.
+  # Procedimento: docs/runbooks/backup-e-restore.md.
+  run_command: sh -c 'python manage.py check --deploy && python manage.py migration_safety
+    && python manage.py migrate --noinput && python manage.py setup_groups && python
+    manage.py bootstrap_whatsapp_channel && python manage.py efi_webhook --soft'
   image:
     registry_type: DOCR
     repository: shopman

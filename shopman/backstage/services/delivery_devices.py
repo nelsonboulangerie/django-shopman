@@ -48,18 +48,37 @@ def allocate(order, equipment, *, allowed):
     return device
 
 
+def holds_device(order):
+    """Este pedido é o vínculo da maquininha (e não um que a compartilha na mesma saída)."""
+    return DeliveryDevice.objects.filter(current_order=order).exists()
+
+
+def _shares_trip(order, holder):
+    from shopman.shop.services.operator_orders import trip_id
+
+    return holder is not None and trip_id(holder) == trip_id(order)
+
+
 def release(order):
-    """Release only this order's device; legacy generic custody stays generic."""
+    """Release only this order's device; legacy generic custody stays generic.
+
+    Um pedido que COMPARTILHA a maquininha da saída não tem vínculo próprio:
+    quem a libera é o pedido que a segura (ver ``mark_equipment_returned``).
+    """
     from shopman.shop.services.operator_orders import OrderStateConflict
 
-    ref = (order.data or {}).get("dispatch", {}).get("device_ref")
+    dispatch = (order.data or {}).get("dispatch", {})
+    ref = dispatch.get("device_ref")
     if not ref:
         return
-    device = DeliveryDevice.objects.select_for_update().filter(ref=ref, current_order=order).first()
-    if device is None:
-        raise OrderStateConflict("O vínculo da maquininha mudou. Confira a entrega antes de devolver.")
-    device.current_order = None
-    device.save(update_fields=("current_order",))
+    device = DeliveryDevice.objects.select_for_update(of=("self",)).filter(ref=ref).select_related("current_order").first()
+    if device is not None and device.current_order_id == order.pk:
+        device.current_order = None
+        device.save(update_fields=("current_order",))
+        return
+    if device is not None and dispatch.get("trip_ref") and (device.current_order_id is None or _shares_trip(order, device.current_order)):
+        return
+    raise OrderStateConflict("O vínculo da maquininha mudou. Confira a entrega antes de devolver.")
 
 
 def guard_dispatch(sender, instance, raw=False, **kwargs):
@@ -74,5 +93,10 @@ def guard_dispatch(sender, instance, raw=False, **kwargs):
     # No implicit selection/reservation from courier or KDS. The authorized
     # operator chooses at dispatch; alternative entries explain that next action.
     with transaction.atomic():
-        if not DeliveryDevice.objects.select_for_update().filter(current_order=order, active=True).exists():
+        if DeliveryDevice.objects.select_for_update().filter(current_order=order, active=True).exists():
+            return
+        # Saída compartilhada: a maquininha está vinculada a outro pedido da MESMA saída.
+        device_ref = (order.data or {}).get("dispatch", {}).get("device_ref")
+        shared = DeliveryDevice.objects.select_for_update(of=("self",)).select_related("current_order").filter(ref=device_ref, active=True).first() if device_ref else None
+        if not (shared is not None and (order.data or {}).get("dispatch", {}).get("trip_ref") and _shares_trip(order, shared.current_order)):
             raise ValueError("Confirme a maquininha no despacho do Gestor antes de liberar esta entrega.")

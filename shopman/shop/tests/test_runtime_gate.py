@@ -120,3 +120,88 @@ def test_runtime_gate_fails_when_a_test_is_skipped():
         f"parou de reprovar skips.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "Runtime gate failed because tests were skipped" in result.stderr
+
+
+def _run_gate_against(fixture_paths: str, env_extra: dict[str, str] | None = None):
+    """Roda o gate de runtime num subprocesso, como o `make test-runtime` faz."""
+    return subprocess.run(
+        [sys.executable, "scripts/run_runtime_tests.py", "-p", "no:randomly"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        # Herda o ambiente inteiro de propósito — ver a nota longa acima.
+        env={
+            **os.environ,
+            "SHOPMAN_RUNTIME_TEST_PATHS": fixture_paths,
+            "DJANGO_SETTINGS_MODULE": "config.settings",
+            "PYTHONPATH": _subprocess_pythonpath(),
+            **(env_extra or {}),
+        },
+    )
+
+
+def test_runtime_gate_fails_when_a_whole_module_skips_itself_at_collection():
+    """O skip que o SkipCollector NÃO via: o módulo que se pula na coleta.
+
+    ``pytest.skip(..., allow_module_level=True)`` acontece antes de existir
+    teste para reportar, então ele não gera ``pytest_runtest_logreport``
+    nenhum. O pytest imprime ``0 collected, 1 skipped`` e sai com 0, e até
+    23/09/2026 o gate lia esse 0 e dizia verde — justamente o silêncio contra o
+    qual ele foi escrito.
+
+    O arquivo verde ao lado é de propósito: sozinho, o módulo pulado faz o
+    pytest sair com 5 ("nenhum teste coletado") e o gate reprovaria pelo motivo
+    errado, sem provar nada. Com um teste que passa junto, o pytest sai 0 — e só
+    o hook de coleta transforma isso em vermelho.
+    """
+    skipper = ROOT / "scripts" / "_runtime_gate_module_skip_probe_test.py"
+    passer = ROOT / "scripts" / "_runtime_gate_passing_probe_test.py"
+    skipper.write_text(
+        "import pytest\n\n"
+        "pytest.skip('sonda: modulo pulado na coleta', allow_module_level=True)\n\n\n"
+        "def test_nunca_roda():\n    raise AssertionError('inalcancavel')\n",
+        encoding="utf-8",
+    )
+    passer.write_text("def test_passa():\n    pass\n", encoding="utf-8")
+    try:
+        result = _run_gate_against(
+            f"{skipper.relative_to(ROOT)} {passer.relative_to(ROOT)}",
+        )
+    finally:
+        skipper.unlink(missing_ok=True)
+        passer.unlink(missing_ok=True)
+
+    assert result.returncode == 1, (
+        "o gate de runtime deu verde com um MÓDULO inteiro pulado na coleta — "
+        "o arquivo se declara coberto pelo gate e não roda.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "whole modules were skipped at collection" in result.stderr
+    assert "_runtime_gate_module_skip_probe_test.py" in result.stderr, (
+        "o gate reprovou sem NOMEAR o arquivo culpado; sem o nome ninguém acha o defeito"
+    )
+
+
+def test_runtime_gate_fails_when_a_listed_file_collects_nothing():
+    """Rede final: arquivo listado que não entrega teste nenhum reprova.
+
+    O skip de coleta é só um dos caminhos para "listado e morto". Um arquivo
+    que perdeu seus testes num rename, ou cujo conteúdo virou helper, coleta
+    zero sem pular nada — e continua na lista dizendo que está coberto.
+    """
+    empty = ROOT / "scripts" / "_runtime_gate_empty_probe_test.py"
+    passer = ROOT / "scripts" / "_runtime_gate_passing_probe_test.py"
+    empty.write_text("# sonda: arquivo de teste sem teste nenhum\n", encoding="utf-8")
+    passer.write_text("def test_passa():\n    pass\n", encoding="utf-8")
+    try:
+        result = _run_gate_against(f"{empty.relative_to(ROOT)} {passer.relative_to(ROOT)}")
+    finally:
+        empty.unlink(missing_ok=True)
+        passer.unlink(missing_ok=True)
+
+    assert result.returncode == 1, (
+        "o gate de runtime deu verde com um arquivo listado que coletou ZERO testes.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "collected zero tests" in result.stderr
+    assert "_runtime_gate_empty_probe_test.py" in result.stderr

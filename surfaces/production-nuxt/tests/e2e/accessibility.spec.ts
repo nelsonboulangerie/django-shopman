@@ -196,7 +196,7 @@ test("Expedição abre a revisão de QC mantendo contexto", async ({ context, pa
   await context.addCookies([authed]);
   await page.goto("/expedite");
   await page
-    .getByRole("button", { name: "Finalizar a fornada de Pão francês" })
+    .getByRole("button", { name: "Finalizar o lote de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("40 produzidos", { exact: false })).toBeVisible();
@@ -213,7 +213,7 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.install({ time: new Date("2026-09-14T12:00:00-03:00") });
   await page.goto("/board");
-  await expect(page.getByRole("heading", { name: "Fornadas" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lotes" })).toBeVisible();
   expect(
     await page.evaluate(
       () => matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -265,7 +265,7 @@ for (const { route, label, endpoint } of [
   },
   {
     route: "/expedite",
-    label: "Escolher a data das fornadas",
+    label: "Escolher a data dos lotes",
     endpoint: "/production/qc/?",
   },
 ]) {
@@ -362,7 +362,7 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   for (const { route, label } of [
     { route: "/", label: "Escolher outra data" },
     { route: "/board", label: "Escolher outra data" },
-    { route: "/expedite", label: "Escolher a data das fornadas" },
+    { route: "/expedite", label: "Escolher a data dos lotes" },
   ]) {
     await page.goto(route);
     const dateInput = page.getByLabel(label);

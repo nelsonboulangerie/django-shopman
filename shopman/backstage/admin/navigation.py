@@ -154,6 +154,11 @@ def get_sidebar_navigation(request):
             _model_item("Entregas dos avisos", "outbox", "storefront.StockAlertDelivery"),
             # Atendimento conversacional: contexto, vínculos e volta ao concierge.
             _model_item("Conversas do concierge", "chat", "shop.Conversation"),
+            # Intenções das mensagens (INTENT-PILOT-PLAN): o vocabulário e a fila
+            # onde a casa marca o que o cliente quis, para medir classificadores.
+            _model_item("Intenções", "label", "storefront.IntentCategory"),
+            _model_item("Mensagens para rotular", "rule", "storefront.MessageIntentSample"),
+            _model_item("Placar das intenções", "leaderboard", "storefront.IntentPilotReport"),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.
@@ -245,6 +250,8 @@ def get_sidebar_navigation(request):
             _model_item("De-para de produtos", "swap_horiz", "backstage.ProductAlias"),
             _model_item("De-para de categorias", "category", "backstage.CategoryAlias"),
             _model_item("De-para de pagamentos", "payments", "backstage.PaymentMethodAlias"),
+            # Quem acerta o de-para, e a que custo: a medição semanal, só leitura.
+            _model_item("Placar do de-para", "leaderboard", "backstage.AliasBenchmarkReport"),
             # O B.I. avisa: a régua é do gestor, o disparo é trilha.
             _model_item("Alarmes", "notifications_active", "backstage.BIAlertRule"),
             _model_item("Disparos de alarme", "campaign", "backstage.BIAlertEvent"),
