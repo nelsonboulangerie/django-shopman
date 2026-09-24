@@ -5,7 +5,7 @@
  * que também se vende no balcão. O selo só diz o que é verdade.
  */
 import { describe, expect, it } from "vitest";
-import { skuRoleBadges } from "~/presentation/purchase";
+import { resaleCopy, skuRoleBadges } from "~/presentation/purchase";
 
 describe("selos do SKU", () => {
   it("a manteiga que vai na massa e se vende no balcão leva três selos, na ordem", () => {
@@ -22,5 +22,24 @@ describe("selos do SKU", () => {
 
   it("sem papéis vindos do servidor, nenhum selo", () => {
     expect(skuRoleBadges(undefined)).toEqual([]);
+  });
+});
+
+describe("Permitir revenda", () => {
+  it("vendido por peso diz que é só no balcão e pede o preço do quilo", () => {
+    const copy = resaleCopy("kg", "149,90");
+    expect(copy.priceLabel).toBe("Preço por kg (R$)");
+    expect(copy.reach).toBe("Vendido só no balcão, por peso.");
+    expect(copy.ready).toBe(true);
+  });
+
+  it("preço zero ou ilegível não deixa colocar à venda", () => {
+    expect(resaleCopy("un", "0,00").ready).toBe(false);
+    expect(resaleCopy("un", "").ready).toBe(false);
+    expect(resaleCopy("un", "abc").ready).toBe(false);
+  });
+
+  it("por unidade entra no PDV, e na loja online só com foto", () => {
+    expect(resaleCopy("un", "42").reach).toBe("Entra no PDV. Na loja online, só com foto.");
   });
 });

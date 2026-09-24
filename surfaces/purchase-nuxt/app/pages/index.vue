@@ -25,6 +25,7 @@ import {
   receiptOutcomeSummary,
   isApproximateCost,
   purchaseUnitLabel,
+  resaleCopy,
   skuRoleBadges,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
@@ -173,7 +174,7 @@ const baseTabs: { key: PurchaseBaseView; label: string; icon: string }[] = [
   { key: "count", label: "Contagem", icon: "lucide:clipboard-check" },
 ];
 
-// "Vender também" do item aberto: o campo de preço só existe depois do gesto,
+// "Permitir revenda" do item aberto: o campo de preço só existe depois do gesto,
 // e volta fechado quando outro item é aberto.
 const saleOpen = ref(false);
 const salePriceInput = ref("");
@@ -184,6 +185,25 @@ watch(
     salePriceInput.value = "";
   },
 );
+
+// O quadrado mostra o que o servidor diz (ou o formulário aberto): desligar
+// uma revenda ativa é gesto na hora; ligar abre o campo de preço.
+async function onResaleToggle(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const material = selectedMaterial.value;
+  if (!material) return;
+  if (input.checked) {
+    saleOpen.value = true;
+    return;
+  }
+  if (saleOpen.value && !material.roles?.sellable) {
+    saleOpen.value = false;
+    salePriceInput.value = "";
+    return;
+  }
+  input.checked = true;
+  await setSale(material.sku, false);
+}
 
 async function confirmSale() {
   const material = selectedMaterial.value;
@@ -1329,44 +1349,44 @@ onBeforeUnmount(stopInvoiceScanner);
             <div v-for="issue in selectedMaterial.issues" :key="issue.key" class="rounded-md border p-2 text-sm" :class="toneClasses[issue.tone]">{{ issue.label }}</div>
             <p v-if="!selectedMaterial.issues.length" class="rounded-md border border-success/25 bg-success/10 p-2 text-sm text-success">Sem pontos de atenção</p>
           </div>
-          <!-- Vender também: um gesto, que pede só o preço. O cadastro de venda
+          <!-- Permitir revenda: um gesto, que pede só o preço. O cadastro de venda
                nasce com o MESMO SKU (mesmo estoque) e entra no PDV; loja online
                só com foto. Desligar tira da venda sem apagar nada. -->
           <div class="mt-4 border-t border-border pt-4" data-testid="sale-toggle">
             <div class="flex flex-wrap gap-1">
               <span v-for="badge in skuRoleBadges(selectedMaterial.roles)" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{{ badge }}</span>
             </div>
-            <template v-if="selectedMaterial.roles?.sellable">
-              <p class="mt-3 text-sm">
-                À venda no PDV por <span class="font-semibold tabular-nums">{{ formatMoney(selectedMaterial.salePriceQ ?? 0) }}</span> / {{ selectedMaterial.unit }}.
-              </p>
-              <button
-                type="button"
-                class="mt-2 h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
-                :disabled="readonlyFallback || actionPending"
-                @click="setSale(selectedMaterial.sku, false)"
-              >
-                Parar de vender
-              </button>
-            </template>
-            <template v-else-if="!selectedMaterial.roles?.produced">
+            <p v-if="selectedMaterial.roles?.produced && !selectedMaterial.roles?.sellable" class="mt-3 text-xs text-muted-foreground">
+              É produzido aqui: a venda dele é do Catálogo, não do Compras.
+            </p>
+            <template v-else>
               <label class="mt-3 flex items-center gap-2 text-sm font-medium">
-                <input v-model="saleOpen" type="checkbox" class="form-checkbox rounded border-border text-primary" />
-                Vender também
+                <input
+                  type="checkbox" class="form-checkbox rounded border-border text-primary"
+                  :checked="Boolean(selectedMaterial.roles?.sellable) || saleOpen"
+                  :disabled="readonlyFallback || actionPending"
+                  @change="onResaleToggle"
+                />
+                Permitir revenda
               </label>
-              <form v-if="saleOpen" class="mt-2 space-y-2" @submit.prevent="confirmSale()">
+              <p v-if="selectedMaterial.roles?.sellable" class="mt-1 text-sm">
+                <template v-if="selectedMaterial.unit === 'kg'">Vendido só no balcão, por peso:</template>
+                <template v-else>À venda no PDV:</template>
+                <span class="font-semibold tabular-nums">{{ formatMoney(selectedMaterial.salePriceQ ?? 0) }}</span> / {{ selectedMaterial.unit }}.
+              </p>
+              <form v-else-if="saleOpen" class="mt-2 space-y-2" @submit.prevent="confirmSale()">
                 <label class="block">
-                  <span class="block text-xs font-medium text-muted-foreground">Preço de venda (R$ por {{ selectedMaterial.unit }})</span>
+                  <span class="block text-xs font-medium text-muted-foreground">{{ resaleCopy(selectedMaterial.unit, salePriceInput).priceLabel }}</span>
                   <input v-model="salePriceInput" inputmode="decimal" required placeholder="0,00" class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums" />
                 </label>
                 <p v-if="selectedMaterial.preferredBaseCostQ" class="text-xs text-muted-foreground">
                   Custo de compra: {{ formatMoney(selectedMaterial.preferredBaseCostQ) }} / {{ selectedMaterial.unit }}
                 </p>
-                <p class="text-xs text-muted-foreground">Entra no PDV. Na loja online, só depois de ter foto.</p>
+                <p class="text-xs text-muted-foreground">{{ resaleCopy(selectedMaterial.unit, salePriceInput).reach }}</p>
                 <button
                   type="submit"
                   class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                  :disabled="readonlyFallback || actionPending || !salePriceInput.trim()"
+                  :disabled="readonlyFallback || actionPending || !resaleCopy(selectedMaterial.unit, salePriceInput).ready"
                 >
                   Colocar à venda
                 </button>

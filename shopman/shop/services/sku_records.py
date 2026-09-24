@@ -167,13 +167,36 @@ def remote_listing_refs() -> tuple[str, ...]:
     return (getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web"), "whatsapp", "ifood")
 
 
-def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tuple[list[str], list[str]]:
-    """PDV sempre; canal remoto só com foto. Devolve ``(listados, deslistados)``.
+def is_sold_by_weight(unit: str | None) -> bool:
+    """Vendido por peso é ``Product.unit == "kg"`` — o contrato do PDV (WP-VENDA-POR-PESO)."""
+    return normalize(unit) == "kg"
 
-    Sem foto, nenhum item fica em canal onde o cliente decide pela imagem: ele
-    sai de lá. Item vendido a quilo (``unit="kg"``) também sai, com ou sem
-    foto: o carrinho online só aceita unidade inteira, e quem pesa é o balcão. Com ``reactivate``, o item que já estava listado mas pausado
-    volta a vender, com o preço dado — é o gesto de quem ligou a venda.
+
+def sells_remotely(product) -> bool:
+    """O cliente pode comprar isto de longe? Só com foto, e nunca por peso.
+
+    Sem foto ele não decide; por peso, o preço final só existe na balança do
+    balcão — cobrar "o quilo" de quem não viu a peça é prometer o que não se sabe.
+    """
+    return bool(product.image_url) and not is_sold_by_weight(product.unit)
+
+
+def withdraw_from_remote_channels(product) -> list[str]:
+    """Tira o item dos canais remotos. Devolve de quais saiu."""
+    from shopman.offerman.models import ListingItem
+
+    removed = ListingItem.objects.filter(product=product, listing__ref__in=remote_listing_refs())
+    refs = list(removed.values_list("listing__ref", flat=True))
+    removed.delete()
+    return refs
+
+
+def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tuple[list[str], list[str]]:
+    """PDV sempre; canal remoto só com foto e nunca por peso. Devolve ``(listados, deslistados)``.
+
+    Fora da regra (``sells_remotely``), o item sai do canal remoto em que
+    estiver. Com ``reactivate``, o item que já estava listado mas pausado volta
+    a vender, com o preço dado — é o gesto de quem ligou a venda.
     """
     from shopman.offerman.models import Listing, ListingItem
 
@@ -181,8 +204,7 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
     listings = {lst.ref: lst for lst in Listing.objects.filter(ref__in=(POS_LISTING, *remote))}
     if POS_LISTING not in listings:
         raise ValidationError("A listagem do PDV (`pdv`) não existe neste banco: onde a casa venderia?")
-    remote_ok = bool(product.image_url) and product.unit != "kg"
-    wanted = [POS_LISTING] + ([ref for ref in remote if ref in listings] if remote_ok else [])
+    wanted = [POS_LISTING] + ([ref for ref in remote if ref in listings] if sells_remotely(product) else [])
     listed: list[str] = []
     for ref in wanted:
         item, created = ListingItem.objects.get_or_create(
@@ -197,11 +219,7 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
             item.price_q = price_q
             item.save()
             listed.append(ref)
-    unlisted: list[str] = []
-    if not remote_ok:
-        removed = ListingItem.objects.filter(product=product, listing__ref__in=remote)
-        unlisted = list(removed.values_list("listing__ref", flat=True))
-        removed.delete()
+    unlisted = [] if sells_remotely(product) else withdraw_from_remote_channels(product)
     return listed, unlisted
 
 

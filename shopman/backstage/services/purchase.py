@@ -805,13 +805,13 @@ def declare_conversion(payload: dict[str, Any], *, user=None) -> tuple[dict[str,
 
 
 def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[Any, str]:
-    """"Vender também": liga ou desliga a venda do item do Compras, num gesto só.
+    """"Permitir revenda": liga ou desliga a venda do item do Compras, num gesto só.
 
     Ligar pede só o preço e cria (ou religa) o cadastro de venda do MESMO SKU,
     que entra no PDV — ver ``shop/services/sku_records.start_selling``. Desligar
     pausa e deslista, sem apagar. Devolve ``(projeção, mensagem)``.
     """
-    from shopman.shop.services.sku_records import start_selling, stop_selling
+    from shopman.shop.services.sku_records import is_sold_by_weight, start_selling, stop_selling
 
     Material = apps.get_model("buyman", "Material")
     material = Material.objects.filter(sku=material_sku).first()
@@ -825,12 +825,14 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
                 return build_purchase(), f"{material.name} saiu da venda. O cadastro e o histórico ficam."
             price_raw = payload.get("priceInput", payload.get("price_input"))
             price_q = parse_money_input(str(price_raw or ""), field="priceInput") if price_raw not in (None, "") else None
-            start_selling(material, price_q=price_q)
+            product = start_selling(material, price_q=price_q)
     except ValidationError as exc:
         messages = getattr(exc, "message_dict", None) or {}
         field = "priceInput" if "price_q" in messages else "sku"
         text = next(iter(messages.values()), exc.messages)[0] if messages else exc.messages[0]
         raise PurchaseError(text, code="sale_refused", field=field) from exc
+    if is_sold_by_weight(product.unit):
+        return build_purchase(), f"{material.name} está à venda por peso, só no balcão."
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 

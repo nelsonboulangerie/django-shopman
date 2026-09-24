@@ -50,7 +50,7 @@ export interface Material {
  * O que o SKU é: Comprável · Vendável · Produzido · Usado em receita.
  *
  * Um item comprado pode ser insumo E revenda — os dois cadastros têm o mesmo
- * SKU e o mesmo estoque. Vender é decisão explícita ("Vender também").
+ * SKU e o mesmo estoque. Vender é decisão explícita ("Permitir revenda").
  */
 export interface SkuRoles {
   purchasable: boolean;
