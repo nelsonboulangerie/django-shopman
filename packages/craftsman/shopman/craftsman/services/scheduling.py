@@ -151,8 +151,20 @@ class CraftPlanning:
         snapshot = {
             "batch_size": str(recipe.batch_size),
             "version_ref": (recipe.meta or {}).get("version_ref", ""),
+            # `quantity` é a LÍQUIDA, como na ficha; `gross_quantity` é o que
+            # sai do estoque. As duas viajam no snapshot porque o congelamento
+            # existe para que o `finish` use a ficha COMO ERA — e o
+            # aproveitamento é parte dela. Snapshot antigo não tem a bruta, e o
+            # `finish` cai na líquida, que é o comportamento de antes deste
+            # campo: nenhuma fornada em voo muda de número.
             "items": [
-                {"input_sku": ri.input_sku, "quantity": str(ri.quantity), "unit": ri.unit}
+                {
+                    "input_sku": ri.input_sku,
+                    "quantity": str(ri.quantity),
+                    "gross_quantity": str(ri.gross_quantity),
+                    "usable_pct": str(ri.usable_pct),
+                    "unit": ri.unit,
+                }
                 for ri in recipe.items.filter(is_optional=False).order_by("sort_order")
             ],
             "production": {

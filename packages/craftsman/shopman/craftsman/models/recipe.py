@@ -251,7 +251,21 @@ class RecipeItem(models.Model):
         max_digits=12,
         decimal_places=3,
         verbose_name=_("Quantidade"),
-        help_text=_("Quantidade para o rendimento base da ficha técnica."),
+        help_text=_(
+            "Quantidade LÍQUIDA para o rendimento base da ficha técnica: o que "
+            "entra no produto, já limpo. O que sai do estoque é a bruta, "
+            "derivada de `usable_pct`."
+        ),
+    )
+    usable_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("100.00"),
+        verbose_name=_("Aproveitamento (%)"),
+        help_text=_(
+            "Quanto do insumo BRUTO sobra depois de limpar: cebola 84%, tomilho "
+            "só folhas 60%, suco de limão 40%. 100% = nada se perde no preparo."
+        ),
     )
     unit = models.CharField(
         max_length=20,
@@ -289,7 +303,29 @@ class RecipeItem(models.Model):
                 condition=models.Q(unit__in=RECIPE_ITEM_UNIT_VALUES),
                 name="craft_recipeitem_unit_known",
             ),
+            # Aproveitamento fora de (0, 100] não é dado ruim, é dado que faz o
+            # estoque descer errado em silêncio: 0 divide por zero, e acima de
+            # 100 faria a bruta ser MENOR que a líquida — limpar criando matéria.
+            models.CheckConstraint(
+                condition=models.Q(usable_pct__gt=0) & models.Q(usable_pct__lte=100),
+                name="craft_recipeitem_usable_pct_range",
+            ),
         ]
+
+    @property
+    def gross_quantity(self) -> Decimal:
+        """O que sai do ESTOQUE — a líquida dividida pelo aproveitamento.
+
+        Nunca é gravada, e a razão é a ficha: ela declara o que entra no
+        produto. A casca da cebola sai do estoque e não entra no pão, então o
+        rótulo e a massa da peça leem ``quantity``, enquanto o ledger e o custo
+        leem isto.
+
+        ⚠️ É equivalência física com incerteza — a cebola de hoje não rende como
+        a de ontem —, o tipo 3 da ADR-024, cuja R3 manda o número carregar o
+        ``≈`` até a tela. Quem exibe não deve arredondar em silêncio.
+        """
+        return (self.quantity / (self.usable_pct / Decimal("100"))).quantize(Decimal("0.001"))
 
     def clean(self):
         super().clean()
