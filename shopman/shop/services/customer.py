@@ -122,15 +122,38 @@ def _handle_manychat(order):
 
 
 def _handle_ifood(order):
+    """Resolve o cliente de um pedido do iFood pelo ``customer.id`` do iFood.
+
+    A chave de identidade é o ``customer.id`` do payload — o identificador do
+    CLIENTE. Até 19/09/2026 esta função usava ``order.external_ref``, que é o
+    id do PEDIDO: como ele é único por compra, a busca nunca casava e cada
+    pedido criava um ``Customer`` ``IF-*`` novo. Recorrência ficava impossível
+    de apurar e o B.I. contava um cliente por venda.
+
+    ⚠️ O telefone continua fora do cadastro (``phone=""``) de propósito: o
+    ``phone.number`` do iFood costuma ser o 0800 da central deles, não o número
+    da pessoa. Gravá-lo criaria um cadastro com o telefone de um terceiro.
+
+    Chave antiga: a busca pelo id do PEDIDO fica como SEGUNDA tentativa, só
+    leitura. Ela não pode casar cliente errado — o id do pedido pertence a uma
+    compra só —, e cobre a janela em que o pedido criou o ``Customer`` mas
+    perdeu o ``customer_ref`` antes de gravá-lo. Nada é migrado e nenhum
+    ``IF-*`` antigo é apagado: eles seguem ligados aos pedidos que os criaram,
+    e a primeira compra nova de cada pessoa abre o registro estável.
+    """
     adapter = get_adapter("customer")
     customer_data = _get_customer_data(order)
+    ifood_customer_id = _ifood_customer_id(customer_data.get("ifood_customer_id"))
     ifood_order_id = order.external_ref or order.handle_ref
     name = customer_data.get("name", "")
 
-    if not ifood_order_id:
+    identity = ifood_customer_id or ifood_order_id
+    if not identity:
         raise SkipAnonymous()
 
-    customer = adapter.get_customer_by_identifier("ifood", ifood_order_id)
+    customer = adapter.get_customer_by_identifier("ifood", identity)
+    if customer is None and ifood_customer_id and ifood_order_id:
+        customer = adapter.get_customer_by_identifier("ifood", ifood_order_id)
     if customer:
         _maybe_update_name(adapter, customer, name)
         return customer
@@ -139,11 +162,40 @@ def _handle_ifood(order):
     ref = f"IF-{uuid.uuid4().hex[:8].upper()}"
     customer = adapter.create_customer(
         ref=ref, first_name=first_name or "iFood",
-        last_name=last_name or f"#{ifood_order_id[:8]}",
+        last_name=last_name or f"#{identity[:8]}",
         phone="", customer_type="individual", source_system="ifood",
     )
-    adapter.create_identifier(customer["ref"], "ifood", ifood_order_id, is_primary=True)
+    adapter.create_identifier(customer["ref"], "ifood", identity, is_primary=True)
     return customer
+
+
+def _ifood_customer_id(raw) -> str:
+    """O ``customer.id`` do iFood, e só quando ele tem a cara de um UUID.
+
+    A documentação do iFood declara o campo como ``uuid`` e o marca obrigatório
+    — mas em lugar nenhum ela afirma que o valor é o MESMO em pedidos
+    diferentes do mesmo cliente (varredura de 19/09/2026 pelo spec OpenAPI,
+    pelas 12 páginas do módulo Order, pelo changelog e pelo FAQ: zero frases
+    sobre durabilidade). A evidência é indireta e forte — ``ordersCountOnMerchant``
+    é campo OBRIGATÓRIO do schema ``Customer`` e conta os pedidos anteriores
+    desta pessoa nesta loja —, mas não é declaração.
+
+    O risco que sobra não é o id ser por pedido (nesse caso o comportamento
+    volta a ser o de hoje, um cadastro por compra): é o campo trazer um valor
+    SENTINELA repetido — um ``"0"``, um ``"anonymous"`` — que fundiria pessoas
+    diferentes num cadastro só. Exigir a forma de UUID fecha essa porta pelo
+    preço de quatro linhas; valor fora da forma cai na chave antiga, que
+    separa a mais, nunca a menos.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    try:
+        uuid.UUID(text)
+    except (ValueError, AttributeError, TypeError):
+        logger.warning("customer._handle_ifood: customer.id fora da forma de UUID, ignorado")
+        return ""
+    return text
 
 
 def _handle_counter(order):
@@ -307,7 +359,7 @@ def _maybe_update_name(adapter, customer: dict, name: str) -> None:
         first_name, last_name = _split_name(name)
         try:
             adapter.update_customer(customer["ref"], first_name=first_name, last_name=last_name)
-        except Exception:
+        except Exception:  # silêncio-deliberado: preencher nome vazio é oportunista; o pedido e o cliente já estão salvos
             logger.debug("customer.update_name: failed for ref=%s", customer.get("ref"), exc_info=True)
 
 
