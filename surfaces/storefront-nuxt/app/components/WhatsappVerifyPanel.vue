@@ -47,7 +47,7 @@ const chatLink = computed(() => props.waNumber ? `https://wa.me/${props.waNumber
 // `{phone}` marca onde o número entra na frase (a copy é editável no Admin).
 // Sem o marcador, o número vai para o fim — nunca some da instrução.
 const manualIntroParts = computed(() => {
-  const [before, ...rest] = props.manualIntro.split('{phone}')
+  const [before = '', ...rest] = props.manualIntro.split('{phone}')
   if (rest.length) return { before, after: rest.join('') }
   return { before: `${before.trimEnd()} `, after: '.' }
 })
