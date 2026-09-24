@@ -45,7 +45,7 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     # 400 g crus em toda grande e 110 g em toda pequena; a CBT ganhou a
     # proporção dele (queijo e sal na montagem). Linha atualizada no mesmo lote de
     # antes (é ele que dá a régua da capacidade), não conta.
-    "focaccia-dia": ("8", {"MASSA-CIABATTA": "3.200", "ALECRIM-FRESCO": "0.032", "SAL-GROSSO": "0.016"}),
+    "focaccia-dia": ("8", {"MASSA-CIABATTA": "3.200", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.032"}),
     "shokupan": ("12", {"MASSA-FORMA": "4.800"}),
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
@@ -61,10 +61,10 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "baguette-campagne": ("12", {"MASSA-CAMPAGNE": "3.600"}),
     "campagne-redondo": ("10", {"MASSA-CAMPAGNE": "3.400"}),
     "pita": ("24", {"MASSA-PITA": "0.720"}),
-    "focaccia-cebola-bacon-tomilho": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-BACON-TOMILHO": "1.632", "QUEIJO-COLONIAL": "0.240", "SAL-REFINADO": "0.012"}),
+    "focaccia-cebola-bacon-tomilho": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-BACON-TOMILHO": "1.632", "QUEIJO-COLONIAL": "0.240", "AZEITE-EXTRAVIRGEM": "0.072", "SAL-GROSSO": "0.024"}),
     "focaccia-cebola-roxa": ("6", {"MASSA-CIABATTA": "2.400", "RECHEIO-CEBOLA-AZAPAS": "0.270"}),
-    "mini-focaccia-alecrim": ("12", {"MASSA-CIABATTA": "1.320", "ALECRIM-FRESCO": "0.048", "SAL-GROSSO": "0.012"}),
-    "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.816", "QUEIJO-COLONIAL": "0.192", "SAL-REFINADO": "0.012"}),
+    "mini-focaccia-alecrim": ("12", {"MASSA-CIABATTA": "1.320", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.012"}),
+    "mini-focaccia-cebola-bacon-tomilho": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-BACON-TOMILHO": "0.816", "QUEIJO-COLONIAL": "0.192", "AZEITE-EXTRAVIRGEM": "0.096", "SAL-GROSSO": "0.012"}),
     "mini-focaccia-cebola-roxa": ("12", {"MASSA-CIABATTA": "1.320", "RECHEIO-CEBOLA-AZAPAS": "0.168"}),
     "croissant-mini": ("24", {"MASSA-CROISSANT": "0.864"}),
     "pain-aux-raisins": ("12", {"MASSA-BRIOCHE": "0.480", "CREME-BAUNILHA": "0.216", "PASSAS": "0.120"}),
@@ -108,12 +108,12 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "creme-limao": ("3", "3.405", 8),
     "massa-butter": ("8.5", "8.898", 7),
     "massa-pita": ("8.2", "8.387", 6),
-    "recheio-frango": ("2.94", "4.930", 9),
+    "recheio-frango": ("2.94", "4.100", 9),
     "recheio-cebola-bacon-tomilho": ("2.717", "2.717", 6),
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
     "molho-bechamel": ("2.835", "4.077", 10),
     "creme-chocolate": ("2.925", "2.925", 3),
-    "creme-leite-ovos": ("1.9", "1.900", 4),
+    "creme-leite-ovos": ("6.08", "6.081", 5),
     # Pré-preparos que nasceram com as fichas da casa (24/09/2026).
     "molho-caramelo": ("2.1", "2.532", 4),
     "manteiga-wasabi": ("1.035", "1.035", 2),

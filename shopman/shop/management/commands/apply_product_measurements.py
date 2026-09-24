@@ -68,8 +68,8 @@ MEASUREMENTS: dict[str, dict[str, object]] = {
     "CN": {"unit_weight_g": 72},
     # Focaccias: massa crua de 400 g em todas as grandes (dono, 24/09/2026);
     # assado re-estimado a ~12% de perda, a conferir na balança.
-    "FOA": {"unit_weight_g": 355},
-    "FOB": {"unit_weight_g": 630},
+    "FOA": {"unit_weight_g": 365},
+    "FOB": {"unit_weight_g": 640},
     "FOC": {"unit_weight_g": 390},
 }
 

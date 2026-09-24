@@ -114,10 +114,15 @@ NASCIDAS_EM_KG = {
     ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
     # Montagens (fatia B): o creme do pain perdu é o da ficha dela, e o
     # caramelo e o chantilly chegaram com ela.
-    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("1.000"),
-    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.375"),
+    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("3.200"),
+    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("1.200"),
     ("molho-caramelo", "NATA-FRESCA"): Decimal("1.200"),
     ("pain-perdu", "NATA-FRESCA"): Decimal("0.025"),
+    # O azeite da finalização das focaccias (dono, 24/09/2026).
+    ("focaccia-dia", "AZEITE-EXTRAVIRGEM"): Decimal("0.012"),
+    ("focaccia-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.012"),
+    ("mini-focaccia-alecrim", "AZEITE-EXTRAVIRGEM"): Decimal("0.008"),
+    ("mini-focaccia-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.008"),
 }
 
 # O cadastro guarda três casas. Arredondar ali desloca a massa em no máximo meio
