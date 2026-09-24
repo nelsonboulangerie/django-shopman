@@ -53,6 +53,9 @@ class OperatorAlert(models.Model):
         # configuração degradada e esta base está configurada certo; `certificate_expiring`
         # é uma data que vence sozinha e esta só avança quando alguém faz deploy.
         ("geoip_database_stale", "Base de cidade dos dispositivos desatualizada"),
+        # A regra de horário não conseguiu ler a grade ou as datas de fechamento
+        # da loja: os pedidos seguem, mas SEM a conferência de horário.
+        ("shop_calendar_unreadable", "Horário da loja ilegível"),
         ("ifood_schedule_invalid", "Agendamento iFood inválido"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),

@@ -811,7 +811,8 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
     que entra no PDV — ver ``shop/services/sku_records.start_selling``. Desligar
     pausa e deslista, sem apagar. Devolve ``(projeção, mensagem)``.
     """
-    from shopman.shop.services.sku_records import is_sold_by_weight, start_selling, stop_selling
+    from shopman.shop.services.sku_records import start_selling, stop_selling
+    from shopman.shop.services.weighed_sale import is_sold_by_weight
 
     Material = apps.get_model("buyman", "Material")
     material = Material.objects.filter(sku=material_sku).first()

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from shopman.utils.monetary import format_money, monetary_mult
+from shopman.utils.units import normalize
 
 WEIGHT_UNIT = "kg"
 ENTRY_LABEL = "label"
@@ -42,8 +43,13 @@ _QTY_PLACES = Decimal("0.001")
 
 
 def is_sold_by_weight(unit: str | None) -> bool:
-    """O produto é vendido por peso (preço por quilo, quantidade em kg)?"""
-    return str(unit or "").strip().lower() == WEIGHT_UNIT
+    """O produto é vendido por peso (preço por quilo, quantidade em kg)?
+
+    A definição ÚNICA do sistema: o PDV, a NF-e, o cadastro de venda
+    (``sku_records``) e o catálogo do gestor perguntam aqui. Grafia pela tabela de
+    unidades (``"Kg"``, ``"quilo"`` → ``"kg"``).
+    """
+    return normalize(unit) == WEIGHT_UNIT
 
 
 def weight_entry_enabled() -> bool:

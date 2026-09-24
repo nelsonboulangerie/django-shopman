@@ -422,3 +422,13 @@ def test_produto_a_quilo_fica_so_no_balcao():
     assert listed == ["pdv"]
     assert unlisted == ["web"]
     assert list(ListingItem.objects.filter(product=queijo).values_list("listing__ref", flat=True)) == ["pdv"]
+
+
+def test_vendido_por_peso_tem_uma_definicao_so():
+    """O PDV, a NF-e e o cadastro de venda perguntam à MESMA função."""
+    from shopman.shop.services import sku_records
+
+    assert not hasattr(sku_records, "is_sold_by_weight")
+    assert weighed_sale.is_sold_by_weight("Kg") is True
+    assert weighed_sale.is_sold_by_weight("un") is False
+    assert weighed_sale.is_sold_by_weight("") is False
