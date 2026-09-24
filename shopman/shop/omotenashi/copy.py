@@ -1122,13 +1122,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Envie a mensagem pronta: você entra e sua sacola vai junto.",
         )},
     },
-    # Fallback manual (bloco "OU"): título com peso de seção + subtítulo (o número do
-    # WhatsApp é anexado ao subtítulo na tela).
+    # Envio manual (rodapé do cartão do WhatsApp): título + instrução. ``{phone}``
+    # vira o número do WhatsApp da casa, em destaque; sem o marcador, a tela
+    # anexa o número ao fim da frase.
     "LOGIN_WA_MANUAL_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Quer fazer você mesmo?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ou envie você mesmo")},
     },
     "LOGIN_WA_MANUAL_INTRO": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Envie esta mensagem diretamente para o nosso WhatsApp")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Mande a mensagem abaixo para {phone} no WhatsApp.")},
     },
     # Handoff do site expirou: entrou logado, mas a sacola não veio (link do WhatsApp venceu).
     # Aviso gentil, com caminho de volta, sem culpar o cliente.
