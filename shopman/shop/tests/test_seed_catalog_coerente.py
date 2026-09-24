@@ -48,7 +48,7 @@ def catalogo(arvore):
     # preço nem ficha de produto, tem componentes.
     # Nascem fora do products_data, num update_or_create próprio: bundle não
     # tem ficha de produto, tem componentes.
-    skus += ["COMBO-PETIT-DEJ", "HOL4", "BRBB2", "PIT4"]
+    skus += ["HOL4", "BRBB2", "PIT4"]
     return skus
 
 
@@ -126,8 +126,7 @@ def test_o_hifen_no_sku_e_da_revenda(catalogo):
     """
     import re
 
-    # O combo é bundle e nasceu antes das duas convenções; fica nomeado.
-    permitidos = {"COMBO-PETIT-DEJ"}
+    permitidos: set[str] = set()
     revenda = re.compile(r"^[A-Z]+(-[A-Z0-9]+)+-[A-Z]?\d+$")
     fora_de_forma = sorted(
         sku for sku in catalogo
@@ -149,11 +148,17 @@ def test_o_sku_da_casa_e_curto_e_sem_hifen(catalogo):
     )
 
 
-def test_o_bundle_existe_de_verdade(arvore):
-    # O catálogo o acrescenta à mão porque ele nasce fora do products_data;
-    # se o seed parar de criá-lo, os outros testes passariam por engano.
+def test_os_pacotes_existem_de_verdade(arvore):
+    """Os pacotes nascem fora do `products_data`, num caminho próprio.
+
+    Se o seed parar de criá-los, os outros testes passariam por engano. O
+    `COMBO-PETIT-DEJ` estava aqui até 22/09/2026, quando o dono o tirou do
+    catálogo. Ele NÃO era o único bundle: `BRBB2`, `HOL4` e `PIT4` também são
+    `ProductComponent`, e seguem. A diferença é de conteúdo, não de mecanismo —
+    o pacote traz N unidades do MESMO produto; o combo trazia peças diferentes.
+    """
     fonte = SEED.read_text()
-    for sku in ('"COMBO-PETIT-DEJ"', '"HOL4"', '"BRBB2"'):
+    for sku in ('"HOL4"', '"BRBB2"'):
         assert f"sku={sku}" in fonte or f"({sku}," in fonte, f"{sku} sumiu do seed"
 
 

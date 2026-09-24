@@ -187,7 +187,7 @@ PRODUCTION_PLAN = [
     # (dono: 10 a 20% menos). É o único do plano cuja quantidade não vem
     # da média dos XMLs — vem do irmão dele.
     ("bichon", Decimal("25"), (8, 0), (11, 0)),
-    ("madeleine", Decimal("68"), (9, 0), (13, 0)),
+    ("madeleine", Decimal("68"), (9, 0), (13, 0))
 ]
 
 PREP_DAYS_OF_COVER = Decimal("3")
@@ -289,11 +289,9 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "croque-madame":                      3,
     "croque-complet":                     3,
     "jambon-beurre":                      3,
-    "pain-grille":                        3,
     "pain-perdu":                         3,
     "espresso":                           3,
     "espresso-macchiato":                 3,
-    "cafe-coado":                         3,
     "cappuccino":                         3,
     "mochaccino":                         3,
     "mocha":                              3,
@@ -458,15 +456,10 @@ STOCK_VITRINE = {
     "CQCOM": 6,
     "QJQT": 10,
     "JB": 10,
-    "PG": 10,
-    "TABUA": 4,
     # Doces
     "MDLN": 68,
     "PERDU": 8,
     "MELSA": 8,
-    "PU": 10,
-    "TJ": 8,
-    "COMBO-PETIT-DEJ": 8,
     # Bebidas com estoque físico (água engarrafada)
     "AGUA-MINERAL-PRATA-310": 48,
     # Mercearia
@@ -475,7 +468,6 @@ STOCK_VITRINE = {
     "TPND": 8,
     "RTAT": 8,
     "CX": 6,
-    "GL": 24,
     "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": 6,
     "QP": 6,
     "GR": 12,
@@ -495,7 +487,7 @@ LEFTOVER_ITEMS = [
     ("TRABB", 3),
     ("MDLN", 5),
     ("CRO", 3),
-    ("PCHOC", 2),
+    ("PCHOC", 2)
 ]
 
 
@@ -515,8 +507,13 @@ STOREFRONT_STATES = {
     # para simular "esgotado" tornava a própria confirmação inexequível.
     "sold_out": "FENDU",      # esgotado + "me avise" (vendável, sem plano hoje)
     "low_stock": "MELON",     # últimas unidades (≤ limiar)
-    "planned": "PU",       # lista de espera / previsto (sem pronto, com plano)
-    "paused": "TJ",        # pausado pelo operador (is_sellable=False)
+    # O Purin e o Tea Jelly ancoravam estes dois até 23/09/2026, quando saíram
+    # do catálogo. A Tabatière entra no `planned` porque é uma das que o seed
+    # planeja para amanhã. O `paused` precisa estar no catálogo do canal `web`
+    # (o teste lê a vitrine, não a tabela) e NÃO pode ser o Cornet, que já
+    # ancora o `paused_channel` no `qa_scenarios`.
+    "planned": "TABAT",       # lista de espera / previsto (sem pronto, com plano)
+    "paused": "MDLN",         # pausado pelo operador (is_sellable=False)
 }
 
 #: Pronto que caracteriza "últimas unidades" (limiar padrão do canal = 5).
@@ -1183,7 +1180,7 @@ class Command(BaseCommand):
         closed_dates = [
             {"date": _next_occurrence(12, 25), "label": "Natal"},
             {"date": _next_occurrence(12, 31), "label": "Réveillon"},
-            {"date": _next_occurrence(1, 1), "label": "Confraternização Universal"},
+            {"date": _next_occurrence(1, 1), "label": "Confraternização Universal"}
         ]
 
         opening_hours = {
@@ -1292,22 +1289,20 @@ class Command(BaseCommand):
                 # banco já semeado, sem reseed: `apply_search_presence`.
                 "social_links": [
                     "https://wa.me/554333231997",
-                    *BRAND_PROFILES,
+                    *BRAND_PROFILES
                 ],
                 **SEARCH_FIELDS,
                 "cancellation_presets": [
                     "Item indisponível no momento",
                     "Sem um dos ingredientes hoje",
                     "Problema técnico no preparo",
-                    "Fora do horário de atendimento",
-                ],
+                    "Fora do horário de atendimento"],
                 "kitchen_note_tags": [
                     "Bem assado",
                     "Pouco assado",
                     "Sem cebola",
                     "Embalar para presente",
-                    "Cortar ao meio",
-                ],
+                    "Cortar ao meio"],
                 "opening_hours": opening_hours,
                 "defaults": {
                     "menu": {
@@ -1331,7 +1326,7 @@ class Command(BaseCommand):
                     "pickup_slots": [
                         {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
                         {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-                        {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
+                        {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"}
                     ],
                     "pickup_slot_config": {
                         "rounding_minutes": 30,
@@ -1361,7 +1356,7 @@ class Command(BaseCommand):
                             {"name": "bronze", "threshold": 0},
                             {"name": "silver", "threshold": 500},
                             {"name": "gold", "threshold": 2000},
-                            {"name": "platinum", "threshold": 5000},
+                            {"name": "platinum", "threshold": 5000}
                         ],
                     },
                 },
@@ -1421,7 +1416,7 @@ class Command(BaseCommand):
                 "match_value": "862",  # não entregamos nestes CEPs
                 "fee_q": 0,
                 "sort_order": 30,
-            },
+            }
         ]
         created_count = 0
         for data in zones:
@@ -1585,7 +1580,7 @@ class Command(BaseCommand):
             UserNotification,
             Announcement,
             Campaign,
-            AnnouncementTemplate,
+            AnnouncementTemplate
         ]:
             hard_delete(model)
 
@@ -1599,7 +1594,7 @@ class Command(BaseCommand):
             Order,
             SessionItem,
             Session,
-            Channel,
+            Channel
         ]:
             model.objects.all().delete()
 
@@ -1739,7 +1734,7 @@ class Command(BaseCommand):
             Product.history.model,
             ListingItem.history.model,
             RuleConfig.history.model,
-            OmotenashiCopy.history.model,
+            OmotenashiCopy.history.model
         ]:
             model.objects.all().delete()
 
@@ -1779,8 +1774,6 @@ class Command(BaseCommand):
             # ── Bebidas · Quentes ──
             ("SP", "Espresso", "Café espresso puro, grão especial torrado artesanal", 800, "un", None, True,
              unsplash("photo-1508088405209-fbd63b6a4f50"), 40, ""),
-            ("COAD", "Café Coado", "Café coado na hora, grão especial torrado artesanal", 1200, "un", None, True,
-             unsplash("photo-1541469406036-71229832e06e"), 150, ""),
             ("CAP", "Cappuccino", "Espresso com leite vaporizado e espuma cremosa", 1200, "un", None, True,
              unsplash("photo-1506372023823-741c83b836fe"), 180, ""),
             ("CAPMO", "Mochaccino", "Espresso com chocolate da casa e leite vaporizado", 1200, "un", None, True,
@@ -1794,8 +1787,6 @@ class Command(BaseCommand):
             ("CHBLU", "Chá Bleu", "Blend da casa, servido em bule", 1400, "un", None, True,
              unsplash("photo-1582786256312-079c49fb6980"), 400, ""),
             # ── Bebidas · Geladas ──
-            ("CE", "Coffee Float", "Café gelado com sorvete", 1800, "un", None, True,
-             unsplash("photo-1594631661960-34762327295a"), 300, ""),
             ("FRAP", "Frappé", "Batido gelado: café, chocolate ou frutas vermelhas", 1800, "un", None, True,
              unsplash("photo-1719953107038-da34352e407e"), 400, ""),
             ("AGUA-MINERAL-PRATA-310", "Água", "Água mineral, com ou sem gás", 600, "un", None, True,
@@ -1860,10 +1851,6 @@ class Command(BaseCommand):
              unsplash("photo-1528736235302-52922df5c122"), 250, "Servir quente, imediatamente"),
             ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto — o clássico parisiense", 1800, "un", 0, True,
              unsplash("photo-1753798130695-3c060be80e83"), 250, "Melhor consumido na hora"),
-            ("PG", "Pain Grillé", "Fatia grossa na chapa com manteiga da casa", 1600, "un", 0, True,
-             unsplash("photo-1637376516923-e88d431a677d"), 150, "Servir quente, imediatamente"),
-            ("TABUA", "Tábua de Iguarias da Casa", "Charcutaria, queijos e patês da casa, com pães", 5800, "un", 0, True,
-             unsplash("photo-1640618491853-95b2c5041eda"), 500, "Servir na hora"),
             # ── Padaria · Doces ──
             ("PERDU", "Pain Perdu", "Fatia de brioche dourada na chapa, calda e toque de canela", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
@@ -1878,10 +1865,6 @@ class Command(BaseCommand):
             # qualquer produto normal. (O mecanismo já é este: o destino do
             # lote é decidido pela validade; desconto de véspera é marcação
             # explícita, nunca automática.)
-            ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 3, True,
-             unsplash("photo-1752245055475-8b7c3b4756ac"), 150, "Conservar refrigerado. Consumir no dia"),
-            ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 3, True,
-             unsplash("photo-1745236549258-a76c271299f7"), 150, "Conservar refrigerado. Consumir em até 2 dias"),
             # ── Mercearia (preços provisórios — metadata.price_tbd) ──
             ("MT", "Mostarda da Casa", "Mostarda artesanal feita na casa", 1800, "un", 30, True,
              unsplash("photo-1638324396220-432156cd9303"), 200, "Conservar refrigerado após aberto"),
@@ -1893,8 +1876,6 @@ class Command(BaseCommand):
              unsplash("photo-1777891257519-84d59a502ca1"), 170, "Conservar refrigerado após aberto"),
             ("CX", "Cornichons", "Picles franceses em conserva", 2800, "un", 90, True,
              unsplash("photo-1774456567094-726973275d34"), 200, "Conservar refrigerado após aberto"),
-            ("GL", "Geleia St. Dalfour (mini)", "Geleia francesa 100% fruta, pote mini", 1600, "un", 180, True,
-             unsplash("photo-1633084426862-3a8c25aa7ce5"), 28, "Conservar refrigerado após aberto"),
             ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Camembert", "Queijo camembert de leite de vaca", 3800, "un", 20, True,
              unsplash("photo-1624806992066-5ffcf7ca186b"), 250, "Conservar refrigerado"),
             ("QP", "Queijo Pomerode", "Queijo colonial artesanal de Pomerode", 3200, "un", 30, True,
@@ -2038,7 +2019,7 @@ class Command(BaseCommand):
             ("DELI", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
              f"{IMG}/dl.webp", 90, "Servir quente, imediatamente"),
             ("JO", "Caranguejo", "Salgado moldado em caranguejo", 1800, "un", 0, True,
-             f"{IMG}/jo.webp", 35, "Servir quente, imediatamente"),
+             f"{IMG}/jo.webp", 35, "Servir quente, imediatamente")
         ]
 
         # Keywords by product (for find_alternatives and search)
@@ -2071,13 +2052,11 @@ class Command(BaseCommand):
             "TRABB": ["pao", "hamburger", "levain", "individual"],
             "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
             "HOL": ["pao", "hotdog", "manteiga", "salgado"],
-            "COAD": ["cafe", "coado", "filtrado", "bebida", "quente"],
             "CAPMO": ["cafe", "mocha", "chocolate", "leite", "bebida", "quente"],
             "CHCAM": ["cha", "blend", "bule", "bebida", "quente"],
             "CHROU": ["cha", "blend", "bule", "bebida", "quente"],
             "CHSOP": ["cha", "blend", "bule", "bebida", "quente"],
             "CHBLU": ["cha", "blend", "bule", "bebida", "quente"],
-            "CE": ["cafe", "sorvete", "gelado", "bebida", "frio"],
             "FRAP": ["cafe", "frappe", "gelado", "batido", "bebida", "frio"],
             "VIEN": ["cafe", "vienna", "gelado", "bebida", "frio"],
             "AGUA-MINERAL-PRATA-310": ["agua", "mineral", "bebida", "frio"],
@@ -2089,18 +2068,13 @@ class Command(BaseCommand):
             "CQCOM": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
             "QJQT": ["lanche", "sanduiche", "queijo", "shokupan", "quente"],
             "JB": ["lanche", "sanduiche", "frances", "presunto", "manteiga"],
-            "PG": ["torrada", "chapa", "manteiga", "quente"],
-            "TABUA": ["tabua", "charcutaria", "queijo", "pate", "compartilhar"],
             "PERDU": ["doce", "rabanada", "chapa", "frances"],
             "MELSA": ["doce", "frutas", "chantilly", "japones", "gelado"],
-            "PU": ["doce", "pudim", "japones", "sobremesa"],
-            "TJ": ["doce", "gelatina", "cha", "sobremesa"],
             "MT": ["mercearia", "despensa", "mostarda", "artesanal", "pote"],
             "BK": ["mercearia", "despensa", "bacon", "defumado", "artesanal"],
             "TPND": ["mercearia", "despensa", "tapenade", "azeitona", "pote"],
             "RTAT": ["mercearia", "despensa", "pate", "ratatouille", "vegetal", "pote"],
             "CX": ["mercearia", "despensa", "picles", "conserva", "frances"],
-            "GL": ["mercearia", "despensa", "geleia", "fruta", "mini"],
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": ["mercearia", "despensa", "queijo", "camembert", "frances"],
             "QP": ["mercearia", "despensa", "queijo", "colonial", "local"],
             "GR": ["mercearia", "despensa", "cafe", "grao", "torra"],
@@ -2232,12 +2206,6 @@ class Command(BaseCommand):
                 "serves": "1 xícara de 180 ml",
                 "approx_dimensions": "xícara 180 ml",
             },
-            "COAD": {
-                "allergens": [],
-                "dietary_info": ["100% vegetal"],
-                "serves": "1 pessoa",
-                "approx_dimensions": "xícara 180 ml",
-            },
             "CAPMO": {
                 "allergens": ["leite"],
                 "dietary_info": [],
@@ -2277,12 +2245,6 @@ class Command(BaseCommand):
             "CTFV": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
-                "serves": "1 pessoa",
-                "approx_dimensions": "copo 300 ml",
-            },
-            "CE": {
-                "allergens": ["leite"],
-                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
@@ -2382,18 +2344,6 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 16 x 6 cm",
             },
-            "PG": {
-                "allergens": ["glúten", "leite"],
-                "dietary_info": [],
-                "serves": "1 pessoa",
-                "approx_dimensions": "2 fatias grossas",
-            },
-            "TABUA": {
-                "allergens": ["glúten", "leite"],
-                "dietary_info": [],
-                "serves": "2 a 3 pessoas",
-                "approx_dimensions": "tábua com pães da casa",
-            },
             "PERDU": {
                 "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
@@ -2405,18 +2355,6 @@ class Command(BaseCommand):
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
-            },
-            "PU": {
-                "allergens": ["leite", "ovos"],
-                "dietary_info": [],
-                "serves": "1 pessoa",
-                "approx_dimensions": "taça individual",
-            },
-            "TJ": {
-                "allergens": [],
-                "dietary_info": [],
-                "serves": "1 pessoa",
-                "approx_dimensions": "taça individual",
             },
             "MT": {
                 "allergens": ["mostarda"],
@@ -2447,12 +2385,6 @@ class Command(BaseCommand):
                 "dietary_info": ["100% vegetal"],
                 "serves": "vidro 200 g",
                 "approx_dimensions": "vidro em conserva",
-            },
-            "GL": {
-                "allergens": [],
-                "dietary_info": ["100% vegetal"],
-                "serves": "pote 28 g",
-                "approx_dimensions": "pote mini de vidro",
             },
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "allergens": ["leite"],
@@ -2516,10 +2448,9 @@ class Command(BaseCommand):
             # industrializado pronto para beber, que circula com ST. O que a
             # casa prepara não é esse produto.
             **dict.fromkeys(
-                ("SP", "COAD", "CAP", "CAPMO", "FRAP", "VIEN", "SPMC", "CAFL", "MOCHA",
+                ("SP", "CAP", "CAPMO", "FRAP", "VIEN", "SPMC", "CAFL", "MOCHA",
                  # O `CE` sai do catálogo por decisão dele, mas enquanto existe
                  # é bebida preparada como as outras.
-                 "CE",
                  "CHOQ", "CHBLU", "CHCAM", "CHROU", "CHSOP", "SFTCH", "CHHIB", "CTFV",
                  # As sodas da casa entram aqui por decisão dele em 23/09. O
                  # Imposto Seletivo sobre bebida açucarada só alcança o que está
@@ -2539,7 +2470,6 @@ class Command(BaseCommand):
             "TPND": "20059900",
             "RTAT": "20059900",
             "CX": "20011000",
-            "GL": "20079990",
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069020",
             "QP": "04061010",
             "GR": "09012100",
@@ -2670,45 +2600,10 @@ class Command(BaseCommand):
             p.save(update_fields=["metadata"])
             products[sku] = p
 
-        # Bundle: Combo Petit Dejeuner (Croissant + Mini Baguete)
-        combo, _ = Product.objects.update_or_create(
-            sku="COMBO-PETIT-DEJ",
-            defaults={
-                "name": "Combo Petit Déjeuner",
-                "short_description": "Croissant + Mini Baguete (economia de R$ 3,00)",
-                "base_price_q": 1900,
-                "unit": "un",
-                "is_published": True,
-                "is_sellable": True,
-                "availability_policy": AvailabilityPolicy.DEMAND_OK,
-                "image_url": f"{IMG}/ct.webp",
-            },
-        )
-        combo.keywords.add("combo", "cafe-da-manha", "promocao")
-        combo.metadata = {
-            **(combo.metadata if isinstance(combo.metadata, dict) else {}),
-            "approx_dimensions": "1 croissant + 1 mini baguete",
-            "fiscal": {
-                **fiscal_metadata_for_sku("COMBO-PETIT-DEJ"),
-                **(
-                    combo.metadata.get("fiscal", {})
-                    if isinstance(combo.metadata, dict) and isinstance(combo.metadata.get("fiscal"), dict)
-                    else {}
-                ),
-            },
-        }
-        # O bundle declara a própria rotulagem: ele não a herda dos componentes,
-        # e o cliente que compra de longe precisa dela na tela do combo.
-        attributes.set(combo, "alergenos", ["glúten", "leite", "ovos"], save=False)
-        # ⚠️ `dieta` VAZIA, não ausente. O combo leva croissant e café com leite,
-        # então não é `100% vegetal` — e `vegetariano` saiu do vocabulário (a casa
-        # parou de afirmar ausência que não consegue honrar). Lista vazia é a casa
-        # dizendo "conferi e não há o que declarar"; ausente seria "ninguém olhou",
-        # e é essa diferença que a guarda de catálogo completo cobra.
-        attributes.set(combo, "dieta", [], save=False)
-        attributes.set(combo, "porcoes", "1 pessoa", save=False)
-        combo.save(update_fields=["metadata"])
-        products["COMBO-PETIT-DEJ"] = combo
+        # O Combo Petit Déjeuner saiu do catálogo em 22/09/2026, por decisão
+        # do dono ("era ideia, não virou produto"), junto com o Café Coado, o
+        # Coffee Float, o Purin, o Tea Jelly, o Pain Grillé, a Tábua e a geleia
+        # mini. Apagados do alpha em 23/09 pelo `apply_catalog_situacao`.
 
         # ── DUAS listas, porque são DUAS perguntas ──────────────────────────
         #
@@ -2721,14 +2616,12 @@ class Command(BaseCommand):
         #    vitrine acabar, a casa resolve (monta na hora, ou pega outra
         #    garrafa na geladeira).
         sells_without_stock_skus = [
-            "SP", "COAD", "CAP", "CAPMO",
+            "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
-            "CE", "FRAP", "VIEN",
+            "FRAP", "VIEN",
             "CV", "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB", "PG",
-            "PERDU", "TABUA",
-        ]
+            "QJQT", "JB",             "PERDU"         ]
 
         # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
         #    (extraído, montado, gratinado). É sobre o ACABAMENTO, então vale
@@ -2742,14 +2635,12 @@ class Command(BaseCommand):
         #    saía da sacola anunciada como preparada na hora: a mesma confusão
         #    entre política e promessa, agora na camada do dado.
         made_to_order_skus = [
-            "SP", "COAD", "CAP", "CAPMO",
+            "SP", "CAP", "CAPMO",
             "CHCAM", "CHROU", "CHSOP", "CHBLU",
-            "CE", "FRAP", "VIEN",
+            "FRAP", "VIEN",
             "CV", "SDLA",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB", "PG",
-            "PERDU", "TABUA",
-        ]
+            "QJQT", "JB",             "PERDU"         ]
 
         for sku in sells_without_stock_skus:
             product = products.get(sku)
@@ -2892,13 +2783,6 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(290, 1, 700.0, 43.0, 8.0, 34.0, 45.0, 24.0, 2.5, 1260.0),
             },
-            "COMBO-PETIT-DEJ": {
-                "ingredients_text": (
-                    "Composto por Croissant Tradicional e Mini Baguete. "
-                    "CONTÉM: glúten, leite e ovos."
-                ),
-                "nutrition_facts": nutrition(200, 1, 610.0, 74.0, 8.0, 14.0, 27.0, 16.0, 3.2, 620.0),
-            },
             "SP": {
                 "ingredients_text": "Café espresso. PODE CONTER GLÚTEN.",
                 "nutrition_facts": nutrition(40, 1, 2.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
@@ -2909,12 +2793,6 @@ class Command(BaseCommand):
                     "CONTÉM: leite. PODE CONTER GLÚTEN."
                 ),
                 "nutrition_facts": nutrition(180, 1, 105.0, 9.0, 9.0, 6.0, 5.5, 3.4, 0.0, 85.0),
-            },
-            "COAD": {
-                "ingredients_text": (
-                    "Café coado: água filtrada e café em grão da casa."
-                ),
-                "nutrition_facts": nutrition(200, 1, 5.0, 0.8, 0.0, 0.3, 0.0, 0.0, 0.0, 5.0),
             },
             "CAPMO": {
                 "ingredients_text": (
@@ -2957,12 +2835,6 @@ class Command(BaseCommand):
                     "Infusão gelada do blend do dia, levemente adoçada."
                 ),
                 "nutrition_facts": nutrition(300, 1, 40.0, 10.0, 9.0, 0.0, 0.0, 0.0, 0.0, 5.0),
-            },
-            "CE": {
-                "ingredients_text": (
-                    "Café gelado da casa com sorvete de baunilha. CONTÉM: leite."
-                ),
-                "nutrition_facts": nutrition(300, 1, 220.0, 26.0, 22.0, 4.0, 11.0, 7.0, 0.0, 60.0),
             },
             "FRAP": {
                 "ingredients_text": (
@@ -3018,18 +2890,6 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(180, 1, 380.0, 40.0, 5.0, 14.0, 18.0, 7.0, 1.8, 850.0),
             },
-            "PG": {
-                "ingredients_text": (
-                    "Fatias grossas de pão da casa na chapa com manteiga. CONTÉM: glúten e leite."
-                ),
-                "nutrition_facts": nutrition(150, 1, 320.0, 40.0, 4.0, 9.0, 14.0, 8.0, 2.0, 480.0),
-            },
-            "TABUA": {
-                "ingredients_text": (
-                    "Seleção de charcutaria, queijos e patês da casa com pães. CONTÉM: glúten e leite."
-                ),
-                "nutrition_facts": nutrition(100, 5, 320.0, 12.0, 2.0, 16.0, 24.0, 12.0, 1.0, 900.0),
-            },
             "PERDU": {
                 "ingredients_text": (
                     "Brioche da casa, ovos, leite, açúcar e canela, dourado na chapa. CONTÉM: glúten, leite e ovos."
@@ -3041,18 +2901,6 @@ class Command(BaseCommand):
                     "Shokupan da casa, chantilly e frutas frescas. CONTÉM: glúten e leite."
                 ),
                 "nutrition_facts": nutrition(200, 1, 310.0, 38.0, 24.0, 6.0, 15.0, 9.0, 1.5, 180.0),
-            },
-            "PU": {
-                "ingredients_text": (
-                    "Leite, ovos, açúcar e baunilha, com calda de caramelo, chantilly e frutas. CONTÉM: leite e ovos."
-                ),
-                "nutrition_facts": nutrition(150, 1, 260.0, 32.0, 28.0, 6.0, 12.0, 7.0, 0.0, 90.0),
-            },
-            "TJ": {
-                "ingredients_text": (
-                    "Infusão de chá da casa, açúcar e ágar."
-                ),
-                "nutrition_facts": nutrition(150, 1, 90.0, 21.0, 19.0, 1.0, 0.0, 0.0, 0.0, 15.0),
             },
             "MT": {
                 "ingredients_text": (
@@ -3083,12 +2931,6 @@ class Command(BaseCommand):
                     "Pepinos, vinagre, endro e especiarias."
                 ),
                 "nutrition_facts": nutrition(30, 7, 4.0, 0.7, 0.4, 0.2, 0.0, 0.0, 0.3, 240.0),
-            },
-            "GL": {
-                "ingredients_text": (
-                    "Frutas e suco de uva concentrado. 100% fruta."
-                ),
-                "nutrition_facts": nutrition(28, 1, 60.0, 15.0, 14.0, 0.1, 0.0, 0.0, 0.3, 5.0),
             },
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "ingredients_text": (
@@ -3195,8 +3037,8 @@ class Command(BaseCommand):
         # Mercearia: preços provisórios até a lista do Pablo (rastreável no Admin).
         mercearia_tbd_skus = [
             "MT", "BK", "TPND", "RTAT",
-            "CX", "GL", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
-            "GR", "THL", "LN",
+            "CX", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
+            "GR", "THL", "LN"
         ]
         for sku in mercearia_tbd_skus:
             p = products[sku]
@@ -3224,10 +3066,11 @@ class Command(BaseCommand):
             p.metadata["lead_time_hours"] = hours
             p.save(update_fields=["metadata"])
 
-        # Bundle components
-        ProductComponent.objects.filter(parent=combo).delete()
-        ProductComponent.objects.create(parent=combo, component=products["CRO"], qty=Decimal("1"))
-        ProductComponent.objects.create(parent=combo, component=products["MIB"], qty=Decimal("1"))
+        # O Combo Petit Déjeuner saiu em 22/09/2026 e levou junto os componentes
+        # dele. Os OUTROS bundles seguem vivos, montados logo acima: `BRBB2`,
+        # `HOL4` e `PIT4`. A diferença entre eles e o combo não é de mecanismo —
+        # os quatro eram `ProductComponent` —, é de conteúdo: o pacote traz N
+        # unidades do MESMO produto, e o combo trazia peças diferentes.
 
         # Collections — a taxonomia do Cardápio 2027: o copo lidera; `mercearia`
         # e `combos` existem mas ficam fora dos feeds (menu impresso/TVs).
@@ -3243,7 +3086,7 @@ class Command(BaseCommand):
             "salgados",
             "doces",
             "combos",
-            "mercearia",
+            "mercearia"
         ]
         # Limpa também as coleções da taxonomia anterior (refs que saíram).
         CollectionItem.objects.filter(
@@ -3283,20 +3126,18 @@ class Command(BaseCommand):
 
         collection_skus = {
             "bebidas-quentes": [
-                "SP", "COAD", "CAP", "CAPMO",
+                "SP", "CAP", "CAPMO",
                 "CHCAM", "CHROU", "CHSOP", "CHBLU",
                 # voltaram do Yooga (18/08)
-                "SPMC", "CAFL", "CHOQ", "MOCHA",
-            ],
-            "bebidas-geladas": ["CE", "FRAP", "AGUA-MINERAL-PRATA-310",
+                "SPMC", "CAFL", "CHOQ", "MOCHA"],
+            "bebidas-geladas": ["FRAP", "AGUA-MINERAL-PRATA-310",
                 # voltaram do Yooga (18/08)
                 "CHHIB", "CTFV", "VIEN", "CV", "SDLA",
                 # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
                 # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
                 # na mercearia. "Vendemos os pouches e latinhas com o chá seco
                 # para preparar em casa" — dono, 19/08.
-                "SFTCH",
-            ],
+                "SFTCH"],
             "rusticos": [
                 # Vindos da extinta "balcao" (17/08): três pães de casca e o pão
                 # de hambúrguer, que o dono classificou aqui apesar da massa macia.
@@ -3304,8 +3145,7 @@ class Command(BaseCommand):
                 "TRADI", "CPG", "CPX", "CI",
                 "BGG",
                 # voltaram do Yooga (18/08)
-                "BGL", "ITA", "CPBG", "BAT", "CPR", "PIT", "PIT4", "BGGP", "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP",
-            ],
+                "BGL", "ITA", "CPBG", "BAT", "CPR", "PIT", "PIT4", "BGGP", "FOA", "FOB", "FOC", "FOAP", "FOBP", "FOCP"],
             "macios": [
                 # Vindos da extinta "balcao" (17/08): buns em pacote, massa
                 # enriquecida, na mesma família dos pães japoneses daqui.
@@ -3316,8 +3156,7 @@ class Command(BaseCommand):
                 "BRCH", "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP",
                 # PR é BRIOCHE nesta casa, não massa folhada — o nome francês engana
                 # (decisão do dono, 02/09). Por isso mora aqui e não em Folhados.
-                "BRRSN",
-            ],
+                "BRRSN"],
             # FOLHADOS é a família da massa laminada, e a massa manda — não o
             # recheo nem o sabor (dono, 02/09). Por isso o Folhado de Frango sai
             # de Salgados e o Bichon au Citron sai de Doces: os dois são folhado
@@ -3326,32 +3165,27 @@ class Command(BaseCommand):
             "folhados": ["CRO", "PCHOC", "CRP", "CN", "FFGO", "BICH", "CRPQ"],
             "salgados": [
                 "CQMO", "CQMA", "CQCOM",
-                "QJQT", "JB", "PG", "TABUA",
+                "QJQT", "JB",
                 # voltaram do Yooga (18/08)
                 "FFGOP", "HOD", "HODP", "DELI", "JO",
                 # Também folhados (a massa é a categoria principal deles).
-                "FFGO", "CRPQ",
-            ],
-            "doces": ["PERDU", "MELSA", "MDLN", "PU", "TJ",
-                # voltaram do Yooga (18/08)
+                "FFGO", "CRPQ"],
+            "doces": ["PERDU", "MELSA", "MDLN",                 # voltaram do Yooga (18/08)
                 "MA",
                 # Recheados: doces de sabor, folhados/brioche de massa — e a massa
                 # é a categoria principal deles.
-                "PCHOC", "CRP", "CN", "BICH", "BRRSN",
-            ],
+                "PCHOC", "CRP", "CN", "BICH", "BRRSN"],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
-            "combos": ["COMBO-PETIT-DEJ"],
             "mercearia": [
                 "MT", "BK", "TPND", "RTAT",
-                "CX", "GL", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
+                "CX", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
                 "GR", "THL", "LN",
                 # linha Chai Kãnfa (19/08)
                 # A FOLHA seca é mercearia: leva-se para preparar em casa.
                 "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50",
                 "CHA-INTUICAO-KANFA-L70", "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-L70",
-                "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
-            ],
+                "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50"],
         }
         # As coleções rotativas "*-do-dia" morreram em 01/09 (decisão do dono):
         # rotativo é história de VITRINE/fornada (disponibilidade em tempo real),
@@ -3398,7 +3232,7 @@ class Command(BaseCommand):
             # madeleines
             "MDLN",
             # a ciabatta, que é rústica mas sai cedo
-            "CI",
+            "CI"
         ]
         ready_from_by_sku: dict[str, str] = {}
         for sku in PRONTOS_AS_09H:
@@ -3491,7 +3325,7 @@ class Command(BaseCommand):
             ("producao", "Área de Produção", PositionKind.PHYSICAL, False, False),
             ("massa", "Massa", PositionKind.PROCESS, False, True),
             ("molde", "Molde", PositionKind.PROCESS, False, False),
-            ("forno", "Forno", PositionKind.PROCESS, False, False),
+            ("forno", "Forno", PositionKind.PROCESS, False, False)
         ]:
             p, _ = Position.objects.update_or_create(
                 ref=ref,
@@ -3579,7 +3413,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FERMENTO-NATURAL", Decimal("1.700")),
                     ("FARINHA-T65", Decimal("1.700")),
-                    ("AGUA-FILTRADA", Decimal("1.700")),
+                    ("AGUA-FILTRADA", Decimal("1.700"))
                 ],
             },
             {
@@ -3589,7 +3423,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("8.4"),
                 "items": [
                     ("FARINHA-T65", Decimal("5.000")),
-                    ("AGUA-FILTRADA", Decimal("3.500")),
+                    ("AGUA-FILTRADA", Decimal("3.500"))
                 ],
             },
             {
@@ -3600,7 +3434,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1.9"),
                 "items": [
                     ("FARINHA-T55", Decimal("1.000")),
-                    ("AGUA-FILTRADA", Decimal("1.000")),
+                    ("AGUA-FILTRADA", Decimal("1.000"))
                 ],
             },
             {
@@ -3612,7 +3446,7 @@ class Command(BaseCommand):
                     ("PASTA-AUTOLIZADA", Decimal("8.400")),
                     ("LEVAIN", Decimal("1.500")),
                     ("SAL", Decimal("0.100")),
-                    ("MALTE", Decimal("0.020")),
+                    ("MALTE", Decimal("0.020"))
                 ],
             },
             {
@@ -3626,7 +3460,7 @@ class Command(BaseCommand):
                     ("FARINHA-CENTEIO", Decimal("0.600")),
                     ("AGUA-FILTRADA", Decimal("3.500")),
                     ("LEVAIN", Decimal("1.500")),
-                    ("SAL", Decimal("0.100")),
+                    ("SAL", Decimal("0.100"))
                 ],
             },
             {
@@ -3639,7 +3473,7 @@ class Command(BaseCommand):
                     ("AGUA-FILTRADA", Decimal("4.000")),
                     ("LEVAIN", Decimal("1.500")),
                     ("AZEITE", Decimal("0.228")),
-                    ("SAL", Decimal("0.100")),
+                    ("SAL", Decimal("0.100"))
                 ],
             },
             {
@@ -3674,7 +3508,7 @@ class Command(BaseCommand):
                     ("ACUCAR", Decimal("0.450")),
                     ("FERMENTO-BIOLOGICO", Decimal("0.180")),
                     ("SAL", Decimal("0.090")),
-                    ("OVOS", Decimal("0.300")),
+                    ("OVOS", Decimal("0.300"))
                 ],
             },
             {
@@ -3722,7 +3556,7 @@ class Command(BaseCommand):
                     ("FARINHA-T45", Decimal("4.800")),
                     ("MANTEIGA-FRANCESA", Decimal("3.200")),
                     ("AGUA-FILTRADA", Decimal("1.800")),
-                    ("SAL", Decimal("0.090")),
+                    ("SAL", Decimal("0.090"))
                 ],
             },
             {
@@ -3737,7 +3571,7 @@ class Command(BaseCommand):
                     ("MANTEIGA-FRANCESA", Decimal("1.339")),
                     ("OVOS", Decimal("1.228")),
                     ("ACUCAR", Decimal("0.945")),
-                    ("LIMAO", Decimal("0.074")),
+                    ("LIMAO", Decimal("0.074"))
                 ],
             },
             {
@@ -3751,7 +3585,7 @@ class Command(BaseCommand):
                     ("MACA", Decimal("3.800")),
                     ("ACUCAR", Decimal("1.100")),
                     ("CANELA", Decimal("0.060")),
-                    ("LIMAO", Decimal("0.120")),
+                    ("LIMAO", Decimal("0.120"))
                 ],
             },
             {
@@ -3803,7 +3637,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de massa por baguete, para 250 g assados.
-                    ("MASSA-TRADICAO", Decimal("0.280")),
+                    ("MASSA-TRADICAO", Decimal("0.280"))
                 ],
             },
             {
@@ -3815,7 +3649,7 @@ class Command(BaseCommand):
                     # 340 g de massa por campagne, para 300 g assados.
                     # A rodada anterior manteve 820 g supondo pão de campanha
                     # grande; o pão da casa é bem menor que isso.
-                    ("MASSA-CAMPAGNE", Decimal("0.340")),
+                    ("MASSA-CAMPAGNE", Decimal("0.340"))
                 ],
             },
             {
@@ -3825,7 +3659,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 205 g de massa por ciabatta, para 180 g assados.
-                    ("MASSA-CIABATTA", Decimal("0.205")),
+                    ("MASSA-CIABATTA", Decimal("0.205"))
                 ],
             },
             {
@@ -3838,7 +3672,7 @@ class Command(BaseCommand):
                     # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
                     ("MASSA-CIABATTA", Decimal("0.414")),
                     ("ALECRIM", Decimal("0.004")),
-                    ("SAL-GROSSO", Decimal("0.002")),
+                    ("SAL-GROSSO", Decimal("0.002"))
                 ],
             },
             {
@@ -3848,7 +3682,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
-                    ("MASSA-FORMA", Decimal("0.400")),
+                    ("MASSA-FORMA", Decimal("0.400"))
                 ],
             },
             {
@@ -3859,7 +3693,7 @@ class Command(BaseCommand):
                 "items": [
                     # 280 g de Massa Kuropan crus (o chocolate mora na massa),
                     # para 250 g assados.
-                    ("MASSA-KUROPAN", Decimal("0.280")),
+                    ("MASSA-KUROPAN", Decimal("0.280"))
                 ],
             },
             {
@@ -3869,7 +3703,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de massa por croissant, para 70 g assados.
-                    ("MASSA-CROISSANT", Decimal("0.080")),
+                    ("MASSA-CROISSANT", Decimal("0.080"))
                 ],
             },
             {
@@ -3912,7 +3746,7 @@ class Command(BaseCommand):
                     # 62 g de folhada + 20 g de maçã caramelizada = 82 g
                     # crus (dono, 26/08), para ~72 g assados.
                     ("MASSA-FOLHADO", Decimal("0.062")),
-                    ("RECHEIO-MACA", Decimal("0.020")),
+                    ("RECHEIO-MACA", Decimal("0.020"))
                 ],
             },
             {
@@ -3928,7 +3762,7 @@ class Command(BaseCommand):
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
                     # (dono, 26/08), para ~90 g assados.
                     ("MASSA-FOLHADO", Decimal("0.080")),
-                    ("CREME-LIMAO", Decimal("0.020")),
+                    ("CREME-LIMAO", Decimal("0.020"))
                 ],
             },
             {
@@ -3939,7 +3773,7 @@ class Command(BaseCommand):
                 "items": [
                     # 28 g de Massa Madeleine por peça, para 25 g assados —
                     # a massa virou pré-preparo nomeado (dono, 26/08).
-                    ("MASSA-MADELEINE", Decimal("0.028")),
+                    ("MASSA-MADELEINE", Decimal("0.028"))
                 ],
             },
             # ══ Seção 2b (dono, 26/08) — pré-preparos novos ══════════════════
@@ -3975,7 +3809,7 @@ class Command(BaseCommand):
                     ("AZEITE", Decimal("0.137")),
                     ("FERMENTO-BIOLOGICO", Decimal("0.100")),
                     ("SAL", Decimal("0.100")),
-                    ("ACUCAR", Decimal("0.050")),
+                    ("ACUCAR", Decimal("0.050"))
                 ],
             },
             {
@@ -3988,7 +3822,7 @@ class Command(BaseCommand):
                     ("FRANGO", Decimal("3.600")),
                     ("CEBOLA-ROXA", Decimal("0.300")),
                     ("AZEITE", Decimal("0.137")),
-                    ("SAL", Decimal("0.040")),
+                    ("SAL", Decimal("0.040"))
                 ],
             },
             {
@@ -4000,7 +3834,7 @@ class Command(BaseCommand):
                     ("CEBOLA-ROXA", Decimal("1.800")),
                     ("BACON", Decimal("1.000")),
                     ("TOMILHO", Decimal("0.060")),
-                    ("AZEITE", Decimal("0.137")),
+                    ("AZEITE", Decimal("0.137"))
                 ],
             },
             {
@@ -4011,7 +3845,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CEBOLA-ROXA", Decimal("2.200")),
                     ("AZEITONA", Decimal("0.700")),
-                    ("AZEITE", Decimal("0.137")),
+                    ("AZEITE", Decimal("0.137"))
                 ],
             },
             {
@@ -4023,7 +3857,7 @@ class Command(BaseCommand):
                     ("LEITE", Decimal("2.678")),
                     ("MANTEIGA-FRANCESA", Decimal("0.200")),
                     ("FARINHA-T55", Decimal("0.200")),
-                    ("SAL", Decimal("0.020")),
+                    ("SAL", Decimal("0.020"))
                 ],
             },
             {
@@ -4068,7 +3902,7 @@ class Command(BaseCommand):
                     ("CREME-DE-LEITE", Decimal("0.808")),
                     ("LEITE", Decimal("0.618")),
                     ("OVOS", Decimal("0.500")),
-                    ("ACUCAR", Decimal("0.150")),
+                    ("ACUCAR", Decimal("0.150"))
                 ],
             },
             {
@@ -4080,7 +3914,7 @@ class Command(BaseCommand):
                     ("ALFACE-AMERICANA", Decimal("0.700")),
                     ("ALFACE-ROXA", Decimal("0.400")),
                     ("RUCULA", Decimal("0.300")),
-                    ("TOMATE-CEREJA", Decimal("0.500")),
+                    ("TOMATE-CEREJA", Decimal("0.500"))
                 ],
             },
             {
@@ -4098,7 +3932,7 @@ class Command(BaseCommand):
                     ("MOSTARDA-DIJON", Decimal("0.100")),
                     ("LIMAO", Decimal("0.150")),
                     ("SAL", Decimal("0.010")),
-                    ("ACUCAR", Decimal("0.020")),
+                    ("ACUCAR", Decimal("0.020"))
                 ],
             },
             # ══ Seção 2b — fichas dos assados restaurados (crus do dono) ═════
@@ -4435,7 +4269,7 @@ class Command(BaseCommand):
                     ("QUEIJO-GRUYERE", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
                     ("SALADA-DA-CASA", Decimal("0.060")),
-                    ("VINAGRETE-FRANCES", Decimal("0.010")),
+                    ("VINAGRETE-FRANCES", Decimal("0.010"))
                 ],
             },
             {
@@ -4449,7 +4283,7 @@ class Command(BaseCommand):
                     ("PRESUNTO-CASA", Decimal("0.040")),
                     ("QUEIJO-GRUYERE", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
-                    ("OVOS", Decimal("0.050")),
+                    ("OVOS", Decimal("0.050"))
                 ],
             },
             {
@@ -4465,7 +4299,7 @@ class Command(BaseCommand):
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
                     ("OVOS", Decimal("0.050")),
                     ("SALADA-DA-CASA", Decimal("0.060")),
-                    ("VINAGRETE-FRANCES", Decimal("0.010")),
+                    ("VINAGRETE-FRANCES", Decimal("0.010"))
                 ],
             },
             {
@@ -4479,17 +4313,6 @@ class Command(BaseCommand):
                     ("TRADI", Decimal("0.125")),   # meia baguette
                     ("MANTEIGA-FRANCESA", Decimal("0.020")),
                     ("PRESUNTO-CASA", Decimal("0.070")),
-                ],
-            },
-            {
-                "ref": "pain-grille",
-                "name": "Pain Grillé",
-                "output_sku": "PG",
-                "batch_size": Decimal("1"),
-                "is_active": False,
-                "items": [
-                    ("CPG", Decimal("0.120")),  # fatia grossa de campagne
-                    ("MANTEIGA-FRANCESA", Decimal("0.015")),
                 ],
             },
             {
@@ -4525,18 +4348,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.021")),
-                ],
-            },
-            {
-                "ref": "cafe-coado",
-                "name": "Café Coado",
-                "output_sku": "COAD",
-                "batch_size": Decimal("1"),
-                "is_active": False,
-                "items": [
-                    ("CAFE-GRAO", Decimal("0.015")),
-                    ("AGUA-FILTRADA", Decimal("0.200")),
+                    ("LEITE", Decimal("0.021"))
                 ],
             },
             {
@@ -4547,7 +4359,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.155")),
+                    ("LEITE", Decimal("0.155"))
                 ],
             },
             {
@@ -4559,7 +4371,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
                     ("LEITE", Decimal("0.155")),
-                    ("CHOCOLATE-70", Decimal("0.020")),
+                    ("CHOCOLATE-70", Decimal("0.020"))
                 ],
             },
             {
@@ -4571,7 +4383,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
                     ("LEITE", Decimal("0.185")),
-                    ("CHOCOLATE-70", Decimal("0.025")),
+                    ("CHOCOLATE-70", Decimal("0.025"))
                 ],
             },
             {
@@ -4582,7 +4394,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.227")),
+                    ("LEITE", Decimal("0.227"))
                 ],
             },
             {
@@ -4593,7 +4405,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("LEITE", Decimal("0.227")),
-                    ("CHOCOLATE-70", Decimal("0.030")),
+                    ("CHOCOLATE-70", Decimal("0.030"))
                 ],
             },
             {
@@ -4604,7 +4416,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-CAMILLE", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400"))
                 ],
             },
             {
@@ -4615,7 +4427,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-ROUGE", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400"))
                 ],
             },
             {
@@ -4626,7 +4438,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-SOPHIE", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400"))
                 ],
             },
             {
@@ -4637,7 +4449,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-BLEU", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400")),
+                    ("AGUA-FILTRADA", Decimal("0.400"))
                 ],
             },
             {
@@ -4649,7 +4461,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CHA-HIBISCO", Decimal("0.008")),
                     ("ACUCAR", Decimal("0.015")),
-                    ("AGUA-FILTRADA", Decimal("0.300")),
+                    ("AGUA-FILTRADA", Decimal("0.300"))
                 ],
             },
             {
@@ -4662,7 +4474,7 @@ class Command(BaseCommand):
                     ("CHA-CHAI", Decimal("0.008")),
                     ("LIMAO", Decimal("0.020")),
                     ("ACUCAR", Decimal("0.015")),
-                    ("AGUA-FILTRADA", Decimal("0.250")),
+                    ("AGUA-FILTRADA", Decimal("0.250"))
                 ],
             },
             {
@@ -4676,7 +4488,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
                     ("LEITE", Decimal("0.052")),
-                    ("AGUA-FILTRADA", Decimal("0.200")),
+                    ("AGUA-FILTRADA", Decimal("0.200"))
                 ],
             },
             {
@@ -4691,7 +4503,7 @@ class Command(BaseCommand):
                     ("CHA-FRUTAS-VERMELHAS", Decimal("0.008")),
                     ("TONICA-ANTARCTICA", Decimal("1")),
                 ],
-            },
+            }
         ]
 
         # Perfil de insumo (valores aproximados por 100g). Alimenta
@@ -5914,7 +5726,7 @@ class Command(BaseCommand):
             ("CLI-004", "Café", "Parisiense", "business", atacado, "+5543994444444"),
             ("CLI-005", "Ana", "Ferreira", "individual", varejo, "+5543995555555"),
             ("CLI-006", "Carlos", "Silva", "individual", staff_tier, "+5543996666666"),
-            ("CLI-007", "Padaria", "do Bairro", "business", atacado, "+5543997777777"),
+            ("CLI-007", "Padaria", "do Bairro", "business", atacado, "+5543997777777")
         ]
 
         # Conta na casa (WP-10 do CASHMAN-PLAN): os dois clientes de negócio que
@@ -6194,7 +6006,7 @@ class Command(BaseCommand):
             # `shopman/storefront/concierge/`). Canal ATIVO porque existe implementação;
             # desligar é `is_active=False` aqui ou no Admin, e ele some da matriz do
             # Catálogo. A chave da IA em si é `SHOPMAN_CONCIERGE["enabled"]`.
-            ("whatsapp", "WhatsApp", 4, True, _whatsapp_config),
+            ("whatsapp", "WhatsApp", 4, True, _whatsapp_config)
         ]
 
         for ref, name, display_order, is_active, config_data in channels_data:
@@ -6257,7 +6069,7 @@ class Command(BaseCommand):
             ("google-shopping", "Google Shopping", "Google", "google_merchant", web_ref,
              ["rusticos", "macios", "folhados", "salgados", "doces"]),
             ("meta-catalog", "Catálogo Meta", "Meta", "meta_catalog", web_ref,
-             ["rusticos", "macios", "folhados", "salgados", "doces"]),
+             ["rusticos", "macios", "folhados", "salgados", "doces"])
         ]
 
         for ref, name, short_name, fmt, prices_from, collections in channels_data:
@@ -6469,7 +6281,7 @@ class Command(BaseCommand):
             ("preparing", random.randint(5, 15)),
             ("accepted",  random.randint(2, 5)),
             ("accepted",  random.randint(2, 5)),
-            ("ready",      1),
+            ("ready",      1)
         ]
 
         for live_status, minutes_ago in live_specs:
@@ -6754,8 +6566,7 @@ class Command(BaseCommand):
                 "qa_notes": [
                     "tende a clicar duas vezes em confirmar",
                     "abandona pagamento PIX e volta pelo tracking",
-                    "precisa de mensagens curtas e recuperação clara",
-                ],
+                    "precisa de mensagens curtas e recuperação clara"],
             }
             low_attention.save(update_fields=["metadata"])
 
@@ -7121,7 +6932,7 @@ class Command(BaseCommand):
         Order.Status.READY,
         Order.Status.DISPATCHED,
         Order.Status.DELIVERED,
-        Order.Status.COMPLETED,
+        Order.Status.COMPLETED
     ]
 
     def _qa_line(self, product, qty: int, name: str | None = None) -> dict:
@@ -7142,7 +6953,7 @@ class Command(BaseCommand):
             path = [
                 Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING,
                 Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED,
-                Order.Status.RETURNED,
+                Order.Status.RETURNED
             ]
         else:
             idx = self._QA_STATUS_PATH.index(status)
@@ -7415,7 +7226,7 @@ class Command(BaseCommand):
             status=Order.Status.PREPARING,
             items=[
                 self._qa_line(croissant, 2, name="Croissant Tradicional"),
-                self._qa_line(pain, 1, name="Pain au Chocolat"),
+                self._qa_line(pain, 1, name="Pain au Chocolat")
             ],
             data={
                 "fulfillment_type": "pickup",
@@ -7465,7 +7276,7 @@ class Command(BaseCommand):
              {"quantity": "30", "recipe": recipe.ref, "output_sku": recipe.output_sku,
               "target_date": yesterday.isoformat(), "source_ref": source_ref}),
             (WorkOrderEvent.Kind.STARTED, started_at,
-             {"quantity": "30", "operator_ref": "chef:ana", "note": "seed qa: fornada presa"}),
+             {"quantity": "30", "operator_ref": "chef:ana", "note": "seed qa: fornada presa"})
         ]):
             event = WorkOrderEvent.objects.create(
                 work_order=work_order, seq=seq, kind=kind, payload=payload, actor="seed",
@@ -7513,7 +7324,7 @@ class Command(BaseCommand):
             {"line_id": f"L-QA-{fired_tab}-0", "sku": "CRO", "name": "Croissant Tradicional",
              "qty": 2, "unit_price_q": 1300, "line_total_q": 2600},
             {"line_id": f"L-QA-{fired_tab}-1", "sku": "PCHOC", "name": "Pain au Chocolat",
-             "qty": 1, "unit_price_q": 1500, "line_total_q": 1500},
+             "qty": 1, "unit_price_q": 1500, "line_total_q": 1500}
         ]
         session.update_items(lines)
         # Dispara à cozinha: cria KDSTicket(s) para as linhas roteáveis.
@@ -7542,7 +7353,7 @@ class Command(BaseCommand):
             ("00001009", "1009"),
             ("00001010", "1010"),
             ("00001011", "1011"),
-            ("00001012", "1012"),
+            ("00001012", "1012")
         ]
         for ref, label in tabs:
             POSTab.objects.update_or_create(
@@ -7562,16 +7373,16 @@ class Command(BaseCommand):
         for channel_ref, items in [
             ("pdv", [
                 {"line_id": uuid.uuid4().hex[:8], "sku": "CRO", "name": "Croissant Tradicional", "qty": 2, "unit_price_q": 1300, "line_total_q": 2600},
-                {"line_id": uuid.uuid4().hex[:8], "sku": "PCHOC", "name": "Pain au Chocolat", "qty": 1, "unit_price_q": 1500, "line_total_q": 1500},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "PCHOC", "name": "Pain au Chocolat", "qty": 1, "unit_price_q": 1500, "line_total_q": 1500}
             ]),
             ("web", [
                 {"line_id": uuid.uuid4().hex[:8], "sku": "TRADI", "name": "Baguete Francesa", "qty": 3, "unit_price_q": 1300, "line_total_q": 3900},
-                {"line_id": uuid.uuid4().hex[:8], "sku": "FOA", "name": "Focaccia Alecrim", "qty": 1, "unit_price_q": 2800, "line_total_q": 2800},
+                {"line_id": uuid.uuid4().hex[:8], "sku": "FOA", "name": "Focaccia Alecrim", "qty": 1, "unit_price_q": 2800, "line_total_q": 2800}
             ]),
             ("whatsapp", [
                 {"line_id": uuid.uuid4().hex[:8], "sku": "TRADI", "name": "Baguete Francesa", "qty": 10, "unit_price_q": 1300, "line_total_q": 13000},
-                {"line_id": uuid.uuid4().hex[:8], "sku": "CRO", "name": "Croissant Tradicional", "qty": 20, "unit_price_q": 1300, "line_total_q": 26000},
-            ]),
+                {"line_id": uuid.uuid4().hex[:8], "sku": "CRO", "name": "Croissant Tradicional", "qty": 20, "unit_price_q": 1300, "line_total_q": 26000}
+            ])
         ]:
             ch = channels[channel_ref]
             from shopman.shop.config import ChannelConfig
@@ -7627,7 +7438,7 @@ class Command(BaseCommand):
             ("PCHOC", 12),
             ("FORMA", 6),
             ("FOA", 4),
-            ("CI", 8),
+            ("CI", 8)
         ]
 
         for sku, min_qty in alerts_data:
@@ -7702,28 +7513,28 @@ class Command(BaseCommand):
                  "route": "Av. Higienópolis", "street_number": "350", "complement": "Sala 201",
                  "neighborhood": "Higienópolis", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-080",
-                 "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False},
+                 "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False}
             ]),
             ("CLI-002", [
                 {"label": "work", "formatted_address": "Rua Marselha, 191 - Jardim Piza, Londrina - PR, 86041-140",
                  "route": "Rua Marselha", "street_number": "191", "complement": "",
                  "neighborhood": "Jardim Piza", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86041-140",
-                 "latitude": Decimal("-23.2960000"), "longitude": Decimal("-51.1520000"), "is_default": True},
+                 "latitude": Decimal("-23.2960000"), "longitude": Decimal("-51.1520000"), "is_default": True}
             ]),
             ("CLI-003", [
                 {"label": "home", "formatted_address": "Rua Paranaguá, 800, Bl B Apto 5 - Centro, Londrina - PR, 86020-030",
                  "route": "Rua Paranaguá", "street_number": "800", "complement": "Bl B Apto 5",
                  "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-030",
-                 "latitude": Decimal("-23.3080000"), "longitude": Decimal("-51.1595000"), "is_default": True},
+                 "latitude": Decimal("-23.3080000"), "longitude": Decimal("-51.1595000"), "is_default": True}
             ]),
             ("CLI-004", [
                 {"label": "work", "formatted_address": "Av. Madre Leônia Milito, 900 - Bela Suíça, Londrina - PR, 86050-270",
                  "route": "Av. Madre Leônia Milito", "street_number": "900", "complement": "",
                  "neighborhood": "Bela Suíça", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86050-270",
-                 "latitude": Decimal("-23.3040000"), "longitude": Decimal("-51.1630000"), "is_default": True},
+                 "latitude": Decimal("-23.3040000"), "longitude": Decimal("-51.1630000"), "is_default": True}
             ]),
             ("CLI-005", [
                 {"label": "home", "formatted_address": "Rua Santos, 450, Apto 3 - Centro, Londrina - PR, 86020-040",
@@ -7736,22 +7547,22 @@ class Command(BaseCommand):
                  "route": "Rua Pernambuco", "street_number": "120", "complement": "",
                  "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-120",
-                 "latitude": Decimal("-23.3090000"), "longitude": Decimal("-51.1575000"), "is_default": False},
+                 "latitude": Decimal("-23.3090000"), "longitude": Decimal("-51.1575000"), "is_default": False}
             ]),
             ("CLI-006", [
                 {"label": "home", "formatted_address": "Av. Juscelino Kubitschek, 1200 - Ipiranga, Londrina - PR, 86010-540",
                  "route": "Av. Juscelino Kubitschek", "street_number": "1200", "complement": "",
                  "neighborhood": "Ipiranga", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86010-540",
-                 "latitude": Decimal("-23.3150000"), "longitude": Decimal("-51.1500000"), "is_default": True},
+                 "latitude": Decimal("-23.3150000"), "longitude": Decimal("-51.1500000"), "is_default": True}
             ]),
             ("CLI-007", [
                 {"label": "work", "formatted_address": "Av. Ayrton Senna, 600 - Gleba Palhano, Londrina - PR, 86050-460",
                  "route": "Av. Ayrton Senna", "street_number": "600", "complement": "",
                  "neighborhood": "Gleba Palhano", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86050-460",
-                 "latitude": Decimal("-23.3280000"), "longitude": Decimal("-51.1870000"), "is_default": True},
-            ]),
+                 "latitude": Decimal("-23.3280000"), "longitude": Decimal("-51.1870000"), "is_default": True}
+            ])
         ]
 
         count = 0
@@ -8064,7 +7875,7 @@ class Command(BaseCommand):
             ("CLI-002", 200, 4, "atacado", 0),
             ("CLI-003", 120, 3, "regular", 0),
             ("CLI-004", 80, 2, "cafe", 0),
-            ("CLI-005", 45, 1, "novo", 0),
+            ("CLI-005", 45, 1, "novo", 0)
         ]
 
         count = 0
@@ -8144,7 +7955,7 @@ class Command(BaseCommand):
             ("estufa", "Estufa", 60, 10),
             ("descanso", "Descanso", 20, 20),
             ("freezer", "Freezer", 20, 30),
-            ("pausa-cafe", "Pausa-café", 15, 40),
+            ("pausa-cafe", "Pausa-café", 15, 40)
         ]
         for ref, label, minutes, position in catalog:
             TimerTag.objects.update_or_create(
@@ -8513,7 +8324,7 @@ class Command(BaseCommand):
                 "label": "Sugestão de substituto",
                 "params": DEFAULT_SUBSTITUTE_PARAMS,
                 "priority": 101,
-            },
+            }
         ]
 
         count = 0
@@ -8554,7 +8365,7 @@ class Command(BaseCommand):
         self.stdout.write("  💬 Omotenashi copy (overrides de marca)...")
 
         COPY_OVERRIDES = [
-            {"key": "CART_DISCOUNT_LABEL_TIME_WINDOW", "title": "Hora da Xepa"},
+            {"key": "CART_DISCOUNT_LABEL_TIME_WINDOW", "title": "Hora da Xepa"}
         ]
 
         count = 0
@@ -8593,7 +8404,7 @@ class Command(BaseCommand):
             {"sku": "FENDU", "qty_reported": 7, "qty_applied": 7, "qty_discrepancy": 0, "qty_remaining": 7, "qty_kept": 5, "qty_expired": 2, "qty_nonconforming": 0},
             {"sku": "TABAT", "qty_reported": 5, "qty_applied": 5, "qty_discrepancy": 0, "qty_remaining": 5, "qty_kept": 4, "qty_expired": 1, "qty_nonconforming": 0},
             {"sku": "CI", "qty_reported": 4, "qty_applied": 4, "qty_discrepancy": 0, "qty_remaining": 4, "qty_kept": 3, "qty_expired": 1, "qty_nonconforming": 0},
-            {"sku": "TRABB", "qty_reported": 8, "qty_applied": 8, "qty_discrepancy": 0, "qty_remaining": 8, "qty_kept": 6, "qty_expired": 2, "qty_nonconforming": 0},
+            {"sku": "TRABB", "qty_reported": 8, "qty_applied": 8, "qty_discrepancy": 0, "qty_remaining": 8, "qty_kept": 6, "qty_expired": 2, "qty_nonconforming": 0}
         ]
         production_summary = {}
         for work_order in WorkOrder.objects.filter(target_date=yesterday).select_related("recipe"):
@@ -9050,7 +8861,7 @@ class Command(BaseCommand):
                 "evidence_required": OperationEvidence.DOUBLE_CHECK,
                 "expected_role": "produção",
                 "sort_order": 40,
-            },
+            }
         ]
 
         tasks: dict[str, OperationTaskTemplate] = {}
@@ -9070,8 +8881,7 @@ class Command(BaseCommand):
                 [
                     "nelson-opening-cash-count",
                     "nelson-opening-showcase-ready",
-                    "nelson-opening-equipment-safe",
-                ],
+                    "nelson-opening-equipment-safe"],
             ),
             (
                 "nelson-routine",
@@ -9081,8 +8891,7 @@ class Command(BaseCommand):
                     "nelson-routine-tables-clean",
                     "nelson-routine-bathroom-clean",
                     "nelson-routine-showcase-restock",
-                    "nelson-routine-critical-stock",
-                ],
+                    "nelson-routine-critical-stock"],
             ),
             (
                 "nelson-closing",
@@ -9092,9 +8901,8 @@ class Command(BaseCommand):
                     "nelson-closing-cash-closed",
                     "nelson-closing-unsold-blind",
                     "nelson-closing-showcase-clean",
-                    "nelson-closing-equipment-safe",
-                ],
-            ),
+                    "nelson-closing-equipment-safe"],
+            )
         ]
         checklists: dict[str, OperationChecklistTemplate] = {}
         for index, (ref, title, moment, task_refs) in enumerate(checklist_specs, start=1):
@@ -9248,7 +9056,7 @@ class Command(BaseCommand):
             ("rua-interditada", "Rua interditada", "Obra ou bloqueio na porta", True, 50),
             ("chuva-forte", "Chuva forte", "Temporal esvaziou a rua", True, 60),
             ("evento-na-regiao", "Evento na região", "Movimento fora do normal", False, 70),
-            ("equipe-reduzida", "Equipe reduzida", "Faltou gente no turno", True, 80),
+            ("equipe-reduzida", "Equipe reduzida", "Faltou gente no turno", True, 80)
         ]
         for ref, label, hint, afeta, ordem in catalogo:
             OperationEpisodeKind.objects.update_or_create(
@@ -9298,7 +9106,7 @@ class Command(BaseCommand):
              Beverage.NONE, 5, 20),
             ("hibrido", "Híbrido",
              "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID,
-             Beverage.NONE, 50, 30),
+             Beverage.NONE, 50, 30)
         ]
         for ref, label, hint, reading, beverage, weight, position in catalog:
             ConsumptionRole.objects.update_or_create(
@@ -9330,34 +9138,28 @@ class Command(BaseCommand):
             # o B.I. conta bebida por pedido. Preparada = feita na casa; pronta
             # = industrializada. Água é pronta.
             "bebida-preparada": [
-                "CAP", "CHBLU", "CHCAM", "CHROU", "CHSOP", "COAD", "CE",
-                "CV", "SP", "FRAP", "CAPMO",
-                "SDLA",
-            ],
+                "CAP", "CHBLU", "CHCAM", "CHROU", "CHSOP", "CV", "SP", "FRAP", "CAPMO",
+                "SDLA"],
             "bebida-pronta": [
-                "AGUA-MINERAL-PRATA-310",
-            ],
+                "AGUA-MINERAL-PRATA-310"],
             "consome-aqui": [
-                "COMBO-PETIT-DEJ", "CQCOM",
+                "CQCOM",
                 "CQMA", "CQMO",
                 "JB", "MELSA",
-                "PG", "PERDU",
-                "PU", "QJQT", "TABUA", "TJ",
-            ],
+                "PERDU",
+                "QJQT"],
             "leva": [
                 "BK", "TRADI", "BGG",
                 "BRBB", "GR", "CPG",
                 "CPX", "THL", "CX",
                 "KUP", "LN",
                 "MT", "TRABB", "HOL", "HOL4", "BRBB2",
-                "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP", "FORMA",
-            ],
+                "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP", "FORMA"],
             "hibrido": [
                 "COE", "CI", "CO",
-                "CRO", "FENDU", "GL", "MDLN", "MELON",
+                "CRO", "FENDU", "MDLN", "MELON",
                 "MIB", "PCHOC", "RTAT",
-                "TABAT", "TPND",
-            ],
+                "TABAT", "TPND"],
         }
         roles = {role.ref: role for role in ConsumptionRole.objects.all()}
         for role_ref, skus in curated.items():
@@ -9426,11 +9228,11 @@ class Command(BaseCommand):
                 "IFOOD_7b8ad920c82b11eea8170d006",
                 "IFOOD_7a2d5980c82b11eead2087b32",
                 "IFOOD_7ee4ad50c82b11eea051db114",
-                "IFOOD_a8feac8b-0c72-43b6-a067-b9e451585762",
+                "IFOOD_a8feac8b-0c72-43b6-a067-b9e451585762"
             ]),
             "consome-aqui": ("combo do Yooga sem SKU: lanche + refrigerante, come aqui — confirmado pelo dono 18/08/2026", [
                 "nome:Combo Cola + Hotdog", "nome:Combo Citrus + Hotdog",
-                "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut",
+                "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut"
             ]),
         }
         # Segunda rodada (19/08/2026): as 70 propostas que restavam — cafés,
@@ -9443,7 +9245,7 @@ class Command(BaseCommand):
         # reserva de categoria.
         round_two = (
             ("bebida-preparada", "café/chá da casa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
-                "CAP", "SP", "SPMC", "CAFL", "CHOQ", "FRAP", "MOCHA", "CTFV", "CAPMO", "VIEN", "CHHIB", "SFTCH",
+                "CAP", "SP", "SPMC", "CAFL", "CHOQ", "FRAP", "MOCHA", "CTFV", "CAPMO", "VIEN", "CHHIB", "SFTCH"
             ]),
             ("consome-aqui", "prato servido à mesa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "CQMO", "QJQT", "CQMA", "CQCOM", "JB", "PERDU",   # croques, queijo quente, jambon, pain perdu
@@ -9456,11 +9258,11 @@ class Command(BaseCommand):
                 "CHA-INTUICAO-KANFA-P50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50", "CHA-NAMASTE-KANFA-P50", "CHA-INTUICAO-KANFA-L70",
                 "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-L50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50", "CHA-MAMA-KANFA-L70", "CHA-MAMA-KANFA-P50",
                 # pães com SKU do iFood (só entrega)
-                "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9",
+                "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9"
             ]),
             ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
                 "CI", "CIQ", "MCI", "TABAT", "MTB", "FENDU", "MFE", "MIB",
-                "FOBP", "FOAP", "FOCP", "MMICBT", "MMIF",
+                "FOBP", "FOAP", "FOCP", "MMICBT", "MMIF"
             ]),
         )
         entries = [(ref, note, skus) for ref, (note, skus) in historical.items()] + list(round_two)

@@ -51,7 +51,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert not Product.objects.filter(ingredients_text__icontains="não contém glúten").exists(), (
         "o seed não pode contradizer a política da casa: sem segregação, nenhum item afirma ausência de glúten"
     )
-    for sku in ("TRADI", "SP", "COMBO-PETIT-DEJ"):
+    for sku in ("TRADI", "SP", "MDLN"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
         assert fiscal["profile"] == "own_production"

@@ -48,7 +48,7 @@ DENSIDADES = {
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
 COMPRADOS_EM_LITRO = ("LEITE", "AZEITE", "CREME-DE-LEITE")
 
-# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 36 linhas: toda
+# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 35 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
 #
 # ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE")`,
@@ -57,6 +57,12 @@ COMPRADOS_EM_LITRO = ("LEITE", "AZEITE", "CREME-DE-LEITE")
 # então o leite dele não entra mais direto — entra pela base, onde já está
 # contado em `("creme-baunilha", "LEITE")`. Linha que sai daqui sem essa
 # explicação é conversão perdida, e o teste é quem grita.
+#
+# ⚠️ E eram 36 até o fim do mesmo dia. A que saiu depois é
+# `("cafe-coado", "AGUA-FILTRADA")`, e ela saiu porque o PRODUTO saiu: o dono
+# marcou o Café Coado `excluir` na planilha de curadoria ("era ideia, não virou
+# produto"), e a ficha foi junto. Não é conversão desfeita — é ficha que não
+# existe mais.
 QUANTIDADES_EM_LITRO = {
     ("creme-levain", "AGUA-FILTRADA"): Decimal("1.700"),
     ("massa-pasta-autolizada", "AGUA-FILTRADA"): Decimal("3.500"),
@@ -80,7 +86,6 @@ QUANTIDADES_EM_LITRO = {
     ("creme-leite-ovos", "LEITE"): Decimal("0.600"),
     ("vinagrete-frances", "AZEITE"): Decimal("0.700"),
     ("espresso-macchiato", "LEITE"): Decimal("0.020"),
-    ("cafe-coado", "AGUA-FILTRADA"): Decimal("0.200"),
     ("cappuccino", "LEITE"): Decimal("0.150"),
     ("mochaccino", "LEITE"): Decimal("0.150"),
     ("mocha", "LEITE"): Decimal("0.180"),
