@@ -697,8 +697,37 @@ def _build_fiscal_items(order) -> list[dict]:
             "total_q": item.line_total_q,
             "meta": dict(item.meta or {}),
             "fiscal": fiscal,
+            "gtin": _trusted_gtin(metadata),
         })
     return items
+
+
+def _trusted_gtin(metadata: dict) -> str:
+    """GTIN que pode ir para a NFC-e (cEAN/cEANTrib), ou ``""`` quando não há.
+
+    A SEFAZ confere o GTIN contra o Cadastro Centralizado de GTIN (rejeições
+    890/894 da NT 2021.003): um código errado não é dado a mais, é nota
+    recusada no balcão. Por isso a nota só leva GTIN de fonte que decide:
+
+    - dígito verificador GS1 válido (``gtin_is_valid``), E
+    - ``metadata['gtin_source']`` que não comece com ``"web"``. Ausente = o
+      GTIN veio da NF-e de compra (declaração fiscal do fornecedor);
+      ``"embalagem, dono, <data>"`` = lido no produto. ``"web, a confirmar na
+      embalagem"`` é palpite de fontes públicas — fica fora da nota até alguém
+      ler o código na embalagem.
+
+    Produto da casa não tem GTIN. Nos casos sem GTIN confiável o adapter
+    escreve o literal ``"SEM GTIN"``, que é o que o leiaute 4.0 exige.
+    """
+    from shopman.offerman import get_social_attributes, gtin_is_valid
+
+    gtin = get_social_attributes(metadata).gtin.strip()
+    if not gtin or not gtin_is_valid(gtin):
+        return ""
+    source = str(metadata.get("gtin_source") or "").strip().lower()
+    if source.startswith("web"):
+        return ""
+    return gtin
 
 
 def _products_by_sku(skus: list[str]) -> dict[str, object]:

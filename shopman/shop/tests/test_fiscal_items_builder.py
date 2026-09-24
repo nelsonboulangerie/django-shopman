@@ -148,3 +148,58 @@ def test_payment_matching_the_total_emits_normally(order_with_item):
 
     directive = Directive.objects.get(topic="fiscal.emit_nfce")
     assert directive.payload["payment"]["amount_q"] == 1000
+
+
+# ── GTIN da NFC-e: só de fonte que decide ────────────────────────────────────
+#
+# A SEFAZ confere cEAN/cEANTrib contra o Cadastro Centralizado de GTIN: GTIN
+# errado é nota rejeitada. Vai para a nota o GTIN com dígito válido e origem
+# confiável (NF-e de compra ou embalagem); palpite da web sai "SEM GTIN".
+
+VALID_GTIN = "3006670000187"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"social": {"gtin": VALID_GTIN}}, VALID_GTIN),
+        ({"social": {"gtin": VALID_GTIN}, "gtin_source": "embalagem, dono, 24/09"}, VALID_GTIN),
+        ({}, ""),
+        ({"social": {"gtin": VALID_GTIN}, "gtin_source": "web, a confirmar na embalagem"}, ""),
+        ({"social": {"gtin": VALID_GTIN[:-1] + "0"}}, ""),
+    ],
+    ids=["nfe-de-compra", "embalagem", "produto-da-casa", "web-a-confirmar", "digito-invalido"],
+)
+def test_fiscal_item_carries_only_a_trusted_gtin(order_with_item, extra, expected):
+    Product.objects.filter(sku="PAO-1").update(
+        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}, **extra}
+    )
+
+    items = fiscal_service._build_fiscal_items(order_with_item)
+
+    assert items[0]["gtin"] == expected
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"social": {"gtin": VALID_GTIN}}, VALID_GTIN),
+        ({}, "SEM GTIN"),
+        ({"social": {"gtin": VALID_GTIN}, "gtin_source": "web, a confirmar na embalagem"}, "SEM GTIN"),
+        ({"social": {"gtin": VALID_GTIN[:-1] + "0"}}, "SEM GTIN"),
+    ],
+    ids=["gtin-confiavel", "sem-gtin", "web-a-confirmar", "digito-invalido"],
+)
+def test_nfce_item_barcode_fields_follow_the_trust_rule(order_with_item, extra, expected):
+    """Ponta a ponta: catálogo → payload fiscal → item da Focus (cEAN e cEANTrib)."""
+    from shopman.shop.adapters.fiscal_focusnfe import _map_item
+
+    Product.objects.filter(sku="PAO-1").update(
+        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}, **extra}
+    )
+
+    item = fiscal_service._build_fiscal_items(order_with_item)[0]
+    mapped = _map_item(1, item, {})
+
+    assert mapped["codigo_barras_comercial"] == expected
+    assert mapped["codigo_barras_tributavel"] == expected

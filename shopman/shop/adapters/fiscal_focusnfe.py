@@ -417,6 +417,11 @@ def _is_delivery_fee_item(item: dict) -> bool:
 # item não passou pelo dono do schema — e o adapter não é lugar de ter uma
 # segunda opinião fiscal. O adapter já falhava nominalmente por NCM ausente;
 # esta é a mesma doutrina para o resto.
+# Literal do leiaute NF-e/NFC-e 4.0 para cEAN/cEANTrib de produto sem GTIN.
+# Campos na Focus: ``codigo_barras_comercial`` (cEAN) e
+# ``codigo_barras_tributavel`` (cEANTrib) — https://campos.focusnfe.com.br/nfe/ItemNotaFiscalXML.html
+NO_GTIN = "SEM GTIN"
+
 _REQUIRED_TAX_FIELDS = (
     ("icms_origem", ("icms_origem", "origem"), "origem do ICMS", "icms_origem"),
     ("icms_situacao_tributaria", ("icms_situacao_tributaria", "csosn"), "CSOSN", "icms_situacao_tributaria"),
@@ -465,6 +470,7 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
     else:
         unit_price = _money_q(unit_price_q)
     unit = str(_first(fiscal, "unidade_comercial", "unit", default=item.get("unit") or "UN")).upper()
+    barcode = str(item.get("gtin") or "").strip() or NO_GTIN
 
     mapped = {
         "numero_item": str(number),
@@ -483,14 +489,18 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
         "unidade_tributavel": unit,
         "quantidade_tributavel": qty,
         "valor_unitario_tributavel": unit_price,
+        # cEAN e cEANTrib: a casa vende na mesma unidade em que tributa, então
+        # o GTIN é o mesmo nos dois. Só chega aqui GTIN de fonte confiável
+        # (``services.fiscal._trusted_gtin``); sem ele, o leiaute 4.0 exige o
+        # literal "SEM GTIN" nas duas tags.
+        "codigo_barras_comercial": barcode,
+        "codigo_barras_tributavel": barcode,
         **taxes,
     }
 
     optional_map = {
         "cest": "cest",
         "codigo_beneficio_fiscal": "codigo_beneficio_fiscal",
-        "ean": "ean",
-        "codigo_barras_comercial": "codigo_barras_comercial",
     }
     for source, target in optional_map.items():
         value = fiscal.get(source)
