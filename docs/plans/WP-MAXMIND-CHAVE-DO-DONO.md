@@ -81,38 +81,45 @@ No portal da conta, procure a área de **chaves de licença** (costuma aparecer 
 > o nosso build baixa direto. Uma chave comum serve. Se só houver uma opção, use-a: a
 > chave é a mesma coisa; o que muda é o programa que a consome.
 
-### Passo 3 — colar no painel da DigitalOcean
+### Passo 3 — colar no GitHub (e **não** no painel da DigitalOcean)
 
-O nome da variável é exatamente este:
+⚠️ **Corrigido em 23/09/2026, antes de alguém seguir a versão anterior.** A primeira
+redação deste passo mandava colar a chave no painel da DigitalOcean como *Build Time*.
+Não funcionaria, e **sem erro nenhum**: o app vivo (`shopman-nelson`) não é construído
+pela DigitalOcean. A imagem é construída no **GitHub Actions** e só depois vai para o
+registry, de onde a DigitalOcean a puxa pronta. O que fica no painel da DO nunca chega ao
+build. Conferido no spec vivo (`doctl apps spec get`): todos os componentes são
+`image:` do DOCR, nenhum é `dockerfile_path`.
+
+O nome do segredo é exatamente este:
 
 ```
 MAXMIND_LICENSE_KEY
 ```
 
-No painel do App Platform, em **Settings → App-Level Environment Variables**:
+No GitHub, no repositório `nelsonboulangerie/django-shopman`:
+**Settings → Secrets and variables → Actions → New repository secret**.
 
 | campo | valor |
 |---|---|
-| Key | `MAXMIND_LICENSE_KEY` |
-| Value | a chave copiada no passo 2 |
-| Scope | **Build Time** |
-| Type | **Secret** (Encrypt) |
+| Name | `MAXMIND_LICENSE_KEY` |
+| Secret | a chave copiada no passo 2 |
 
-⚠️ **`Build Time` não é detalhe.** A chave é usada quando a imagem é construída, não
-quando ela roda. Se o escopo ficar em *Run Time*, o build não a enxerga e nada acontece —
-sem erro nenhum, que é o jeito mais caro de errar.
+É uma tela só, e não há escopo para escolher: todo segredo de Actions já é lido só
+durante o build. O workflow de deploy já está preparado para ler este nome — só falta o
+valor.
 
-⚠️ **São dois apps.** O `key` já está declarado nos dois specs versionados
-(`.do/app.alpha-subdomains.yaml` e `.do/app.subdomains.yaml`), sem valor — porque valor de
-segredo mora cifrado no painel, nunca no repositório. **Defina em cada app que você quiser
-com a cidade ligada.** Se só o alpha tiver, só o alpha mostra.
+### Passo 4 — reconstruir a imagem do servidor
 
-### Passo 4 — reconstruir
+A chave só entra na imagem no próximo build **da imagem `web`** (a do Django). Cuidado:
+o deploy só reconstrói o que mudou, então o próximo merge no `main` **não basta** se ele
+só mexer em telas Nuxt. O caminho certo:
 
-A chave só entra na imagem no próximo build. Ou:
+- no GitHub, **Actions → Deploy images → Run workflow**, com `components` = `web`
+  (deixe `per_app_images` em `auto`). Leva ~6 min até o ar.
 
-- espere o próximo merge no `main` (todo merge dispara deploy, ~6 min); ou
-- force pelo painel, em **Actions → Force Rebuild and Deploy**.
+Não precisa bump de data nenhum: o valor da chave faz parte da chave de cache da camada
+que baixa a base, então ligar a chave já obriga o build a baixá-la.
 
 ---
 
@@ -122,7 +129,8 @@ A chave só entra na imagem no próximo build. Ou:
 
 ### 4.1 No log do build
 
-Procure por `geolite2`. Com a chave funcionando, aparece a linha de sucesso com o sha256
+No run do **Deploy images** do passo 4, abra o job **`web`**, passo **Build e push**, e
+procure por `geolite2`. Com a chave funcionando, aparece a linha de sucesso com o sha256
 conferido:
 
 ```
@@ -193,7 +201,8 @@ nunca a mesma de outro serviço, para que revogá-la não derrube nada além dis
 | o download, no build | `scripts/fetch-geolite2.sh` |
 | a declaração da chave e da data da base | `Dockerfile` (`ARG MAXMIND_LICENSE_KEY`, `ARG GEOLITE2_SNAPSHOT`) |
 | a leitura da base e o limiar de 50 km | `shopman/shop/services/ip_location.py` |
-| o `key` sem valor nos dois deployments | `.do/app.alpha-subdomains.yaml`, `.do/app.subdomains.yaml` |
+| quem passa a chave ao build do app vivo | `.github/workflows/deploy-images.yml` (segredo `MAXMIND_LICENSE_KEY` do repositório) |
+| o `key` BUILD_TIME, só no spec que a DO constrói sozinha | `.do/app.subdomains.yaml` (o do app vivo, `.do/app.alpha-subdomains.yaml`, não o declara, e diz por quê) |
 | a frase da tela | chave `DEVICE_LIST_NEAR_PREFIX` no Omotenashi (editável no Admin) |
 
 A história de por que a cidade saiu e voltou está no guia: até 23/09/2026 esse rótulo

@@ -197,14 +197,10 @@ envs:
 - key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
   scope: RUN_AND_BUILD_TIME
   type: SECRET
-# A chave de licença da MaxMind, usada SÓ no build, para baixar a base GeoLite2-City
-# que escreve "Próximo a Londrina, PR · Brasil" na tela "Segurança e dados" da loja.
-# Sem ela a imagem sobe sem a base e a tela fica só com navegador e data — nada quebra.
-# ⚠️ Como todo SECRET deste arquivo, o VALOR mora cifrado no painel, não aqui. Defina-o
-# no painel ANTES de aplicar o spec. Ver docs/guides/geolite2-city.md.
-- key: MAXMIND_LICENSE_KEY
-  scope: BUILD_TIME
-  type: SECRET
+# ⚠️ A MAXMIND_LICENSE_KEY (base GeoLite2-City, cidade aproximada na tela "Segurança e
+# dados" da loja) NÃO mora aqui: este app roda imagem pronta do DOCR, construída no GitHub
+# Actions. Env BUILD_TIME neste spec nunca chegaria ao build. A chave é segredo do
+# repositório no GitHub. Ver docs/guides/geolite2-city.md.
 - key: DJANGO_SETTINGS_MODULE
   scope: RUN_TIME
   value: 'config.settings'
