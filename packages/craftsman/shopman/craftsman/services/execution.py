@@ -35,6 +35,32 @@ def _required_ref(value, *, field: str) -> str:
     return ref
 
 
+def _yield_meta(origem: dict, net_qty) -> dict:
+    """O que a linha precisa carregar quando houve aproveitamento declarado.
+
+    Só grava quando há algo a dizer: aproveitamento de 100% não deixa rastro,
+    porque um `meta` que repete o óbvio em toda linha de toda fornada é ruído
+    com custo de armazenamento.
+
+    Não tolera ausência nem valor ilegível: quem chega aqui já passou pela
+    recusa de `gross_quantity`, e engolir um valor quebrado devolvendo `{}` faria
+    a linha perder o carimbo de aproximada sem ninguém saber.
+
+    ⚠️ A bruta atravessou uma equivalência física com incerteza (ADR-024 §R3), e
+    é por isso que a líquida viaja junto: a tela de separação mostra "0,238 kg
+    (≈ 0,200 limpos)" em vez de um número que parece exato, e a auditoria sabe
+    de onde a bruta saiu.
+    """
+    pct = origem["usable_pct"]
+    if Decimal(str(pct)) >= Decimal("100"):
+        return {}
+    return {
+        "net_quantity": str(net_qty),
+        "usable_pct": str(pct),
+        "approximate": True,
+    }
+
+
 def _mapping_item(value, *, field: str) -> dict:
     if not isinstance(value, dict):
         raise CraftError("INVALID_PAYLOAD", field=field)
@@ -350,7 +376,13 @@ class CraftExecution:
             else:
                 coefficient = started_qty / recipe.batch_size
                 recipe_item_data = [
-                    {"input_sku": ri.input_sku, "quantity": str(ri.quantity), "unit": ri.unit}
+                    {
+                        "input_sku": ri.input_sku,
+                        "quantity": str(ri.quantity),
+                        "gross_quantity": str(ri.gross_quantity),
+                        "usable_pct": str(ri.usable_pct),
+                        "unit": ri.unit,
+                    }
                     for ri in recipe.items.filter(is_optional=False).order_by("sort_order")
                 ]
 
@@ -360,12 +392,32 @@ class CraftExecution:
             requirements = []
 
             for item_data in recipe_item_data:
-                req_qty = Decimal(item_data["quantity"]) * coefficient
+                # O que se REQUER e o que se CONSOME é a BRUTA: a casca da cebola
+                # sai do estoque e não entra no produto. A líquida (`quantity`)
+                # segue no `meta` do item, porque é dela que saem rótulo e massa
+                # da peça.
+                #
+                # Sem `gross_quantity` o comando PARA. Cair na líquida seria
+                # debitar menos insumo do que o padeiro usa — exatamente o
+                # defeito que `_validate_mass_balance` foi escrito para pegar, e
+                # o pior tipo: silencioso. Antes do go-live não há BOM congelado
+                # a preservar, então a ausência é defeito e se trata como tal.
+                if "gross_quantity" not in item_data:
+                    raise CraftError(
+                        "INVALID_PAYLOAD",
+                        field="_recipe_snapshot.items.gross_quantity",
+                        item_ref=item_data["input_sku"],
+                        work_order=order.ref,
+                    )
+                req_qty = Decimal(item_data["gross_quantity"]) * coefficient
+                net_qty = Decimal(item_data["quantity"]) * coefficient
                 requirements.append(
                     {
                         "item_ref": item_data["input_sku"],
                         "quantity": req_qty,
                         "unit": item_data["unit"],
+                        "net_quantity": net_qty,
+                        "usable_pct": item_data["usable_pct"],
                     }
                 )
                 all_items.append(
@@ -377,6 +429,7 @@ class CraftExecution:
                         unit=item_data["unit"],
                         recorded_at=now,
                         recorded_by=actor or "",
+                        meta=_yield_meta(item_data, net_qty),
                     )
                 )
 
@@ -401,6 +454,7 @@ class CraftExecution:
                             unit=req["unit"],
                             recorded_at=now,
                             recorded_by=actor or "",
+                            meta=_yield_meta(req, req["net_quantity"]),
                         )
                     )
             else:
