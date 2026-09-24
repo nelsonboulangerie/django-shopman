@@ -44,6 +44,38 @@ useSeoMeta({
       <p v-if="legal">Atualizada em {{ legal.updated_at }}.</p>
     </template>
 
+    <template #summary>
+      <LegalSummary variant="list">
+        <LegalSummaryGroup title="O que a loja guarda?">
+          <LegalSummaryItem to="#data-we-keep" icon="lucide:smartphone">
+            O seu login é o telefone. {{ marca }} <strong>não guarda senha</strong> nem o número do seu cartão.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#cookies" icon="lucide:cookie">
+            <strong>Não há cookie de publicidade</strong> nem de rastreamento de terceiro.
+          </LegalSummaryItem>
+        </LegalSummaryGroup>
+        <LegalSummaryGroup title="Com quem divide, e para quê?">
+          <LegalSummaryItem to="#sharing" icon="lucide:handshake">
+            A loja divide os seus dados só com quem precisa para o pedido acontecer, cada um com nome e com o que recebe. E <strong>não vende</strong> os seus dados.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#legal-basis" icon="lucide:bell">
+            Novidade e promoção só com o seu consentimento, canal por canal, em Preferências.
+          </LegalSummaryItem>
+        </LegalSummaryGroup>
+        <LegalSummaryGroup title="O que você pode fazer?">
+          <LegalSummaryItem to="#your-rights" icon="lucide:download">
+            Você baixa uma cópia dos seus dados e exclui a conta em Segurança e dados.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#retention" icon="lucide:receipt-text">
+            Mesmo com a conta excluída, o pedido e a nota fiscal ficam pelo prazo que a lei fiscal exige.
+          </LegalSummaryItem>
+        </LegalSummaryGroup>
+        <template #disclaimer>
+          Este resumo não substitui a política: vale o texto completo, logo abaixo.
+        </template>
+      </LegalSummary>
+    </template>
+
     <LegalSection id="controller">
       <template #title>Quem trata os seus dados</template>
       <p>

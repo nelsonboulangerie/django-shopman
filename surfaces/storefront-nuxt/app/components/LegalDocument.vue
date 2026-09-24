@@ -10,7 +10,7 @@
 // cabeçalho mudo. Aqui tudo fica aberto; o que resolve o comprimento é o ÍNDICE.
 //
 // O que a moldura dá, e a página não precisa repetir:
-//   - título, data de vigência (slot `#meta`) e breadcrumb;
+//   - título, data de vigência (slot `#meta`), resumo (slot `#summary`) e breadcrumb;
 //   - índice clicável: coluna sticky no desktop, bloco recolhível no celular;
 //   - seções numeradas (contador de CSS: o número não é texto do documento);
 //   - medida de leitura ~65ch e a tipografia do corpo (`.shop-legal*` no tailwind.css);
@@ -24,6 +24,7 @@
 // servidor). Não há segunda lista de títulos para desencontrar da primeira.
 import { Fragment, type VNode } from 'vue'
 import LegalSection from '~/components/LegalSection.vue'
+import { legalGoToKey, legalSectionNumberKey, sectionNumber } from '~/presentation/legal'
 
 const props = defineProps<{ title: string }>()
 const slots = useSlots()
@@ -65,6 +66,11 @@ function goTo (id: string) {
   if (mobileToc.value) mobileToc.value.open = false
 }
 
+// O resumo ("ver §4") pergunta o número pela âncora. A resposta sai da mesma
+// leitura do slot que monta o índice — chamada durante a renderização do item.
+provide(legalSectionNumberKey, anchor => sectionNumber(tocEntries().map(entry => entry.id), anchor))
+provide(legalGoToKey, goTo)
+
 // Quem chega por link (`/terms#cancellation`) cai na seção, abaixo do cabeçalho.
 onMounted(() => {
   const id = decodeURIComponent(location.hash.slice(1))
@@ -100,6 +106,8 @@ onMounted(() => {
             <slot name="meta" />
           </div>
         </header>
+
+        <slot name="summary" />
 
         <details ref="mobileToc" class="group mt-6 rounded-lg border bg-card lg:hidden" data-legal-toc="mobile">
           <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 font-semibold [&::-webkit-details-marker]:hidden">

@@ -39,6 +39,18 @@ describe('páginas legais — a forma', () => {
     })
   }
 
+  for (const [pagina, ancoras] of Object.entries(PAGINAS)) {
+    it(`${pagina}: todo item do resumo aponta uma seção que existe, e o resumo se declara resumo`, () => {
+      const template = templateDe(ler(pagina))
+      const alvos = [...template.matchAll(/<LegalSummaryItem to="#([^"]+)"/g)].map(m => m[1])
+      // 4 a 7 itens: resumo que cresce vira segundo documento.
+      expect(alvos.length).toBeGreaterThanOrEqual(4)
+      expect(alvos.length).toBeLessThanOrEqual(7)
+      for (const alvo of alvos) expect(ancoras as readonly string[]).toContain(alvo)
+      expect(template).toMatch(/<template #disclaimer>\s*Este resumo não substitui/)
+    })
+  }
+
   it('a moldura dá índice, âncora, próximo foco e volta ao topo', () => {
     const moldura = ler('app/components/LegalDocument.vue')
     const secao = ler('app/components/LegalSection.vue')

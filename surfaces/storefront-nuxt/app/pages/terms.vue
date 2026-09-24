@@ -46,6 +46,41 @@ useSeoMeta({
       <p v-if="legal">Atualizados em {{ legal.updated_at }}.</p>
     </template>
 
+    <template #summary>
+      <LegalSummary variant="list">
+        <LegalSummaryGroup title="Quem compra, e por quanto?">
+          <LegalSummaryItem to="#eligibility-and-acceptance" icon="lucide:user-check">
+            A conta é para <strong>maiores de 18 anos</strong>. Ao entrar, você aceita estes termos.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#price-and-availability" icon="lucide:tag">
+            O preço do cardápio é o preço cobrado, com os descontos já no total antes de você confirmar.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#price-and-availability" icon="lucide:croissant">
+            Se um item acabar, a loja fala com você pelo WhatsApp do pedido: trocar ou cancelar, sem custo.
+          </LegalSummaryItem>
+        </LegalSummaryGroup>
+        <LegalSummaryGroup title="Pagamento e cancelamento">
+          <LegalSummaryItem to="#payment" icon="lucide:qr-code">
+            Pix não pago no prazo: o pedido é cancelado e <strong>nada é cobrado</strong>.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#cancellation" icon="lucide:circle-x">
+            Não pago, você cancela sozinho pelo acompanhamento. Já pago, vira solicitação com protocolo, e o dinheiro volta depois que a loja confirma.
+          </LegalSummaryItem>
+        </LegalSummaryGroup>
+        <LegalSummaryGroup title="Se algo der errado">
+          <LegalSummaryItem to="#cancellation" icon="lucide:message-circle">
+            Chegou errado ou fora do padrão? Avise <strong>no mesmo dia</strong>, pelo WhatsApp do pedido: você escolhe receber o item de novo ou ter o valor devolvido.
+          </LegalSummaryItem>
+          <LegalSummaryItem to="#ifood-orders" icon="lucide:store">
+            Pedido feito pelo iFood segue a política do iFood.
+          </LegalSummaryItem>
+        </LegalSummaryGroup>
+        <template #disclaimer>
+          Este resumo não substitui os termos: vale o texto completo, logo abaixo.
+        </template>
+      </LegalSummary>
+    </template>
+
     <LegalSection id="seller">
       <template #title>Quem vende</template>
       <p>
