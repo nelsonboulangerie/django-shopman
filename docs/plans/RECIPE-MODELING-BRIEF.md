@@ -2,7 +2,52 @@
 
 > Documento de passagem para uma sessão de código que vai modelar o manejo de fichas
 > técnicas de panificação. Escrito em 05/09/2026, a partir de uma entrevista com o dono
-> (Pablo / Nelson Boulangerie). **Nada aqui está implementado ainda.**
+> (Pablo / Nelson Boulangerie). Na data, nada estava implementado.
+>
+> ⚠️ **Estado em 24/09/2026: a maior parte foi entregue** pelo inventário de receitas
+> (#488, [`RECIPE-INVENTORY-PLAN`](RECIPE-INVENTORY-PLAN.md),
+> [ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md)). Leia a seção
+> **0** antes do resto: ela diz o que ficou superado e o que continua aberto. O corpo
+> abaixo é o registro da entrevista e fica como está.
+
+## 0. O que o `main` já resolveu, e o que não (24/09/2026)
+
+**Superado — não reabrir:**
+
+| Item do brief | Onde está resolvido |
+|---|---|
+| §4.1 não existe receita base | `RecipeVersion.formula.items` é a base, com toda a farinha; as fichas antigas viram base pelo `bootstrap_recipe_book`, que o `seed` chama |
+| §4.2 declarar a parte por % | `parts[].flour_pct` na `formula`; a quantidade é derivada (`contrib/formula/percentages.py`) |
+| §4.3 mistura final digitada | `final_mix` = base − partes, calculada |
+| "a % mora no vínculo" | resolvido **de outro jeito**: a % mora na parte, dentro da `formula` da versão; o `RecipeItem` publicado recebe só gramas. O efeito pedido (outra massa usa outra % do mesmo levain) se mantém, porque cada versão declara as suas partes |
+| §5 dupla contagem da farinha | `_bom_items` publica partes prontas + mistura final, nunca a base; com teste (`test_percentages.py`, `test_recipe_book.py::test_publish_with_parts_consumes_the_parts_not_their_flour`) |
+| §5 massa velha como teto | parte `old_dough` com `cap_pct`; publicada como linha **opcional** (fora do consumo) com `meta.cap_pct`; `final_mix_at_cap` aplica o `(1 − mv%)` |
+| §7 Q1 base guardada ou projection | **guardada**: a base mora na `RecipeVersion`, publicar escreve o BOM na ficha (ADR-027) |
+| §7 Q2 onde mora o teto | `formula.parts[{kind: "old_dough", cap_pct}]` e, publicada, `RecipeItem.meta` da linha opcional |
+
+**Continua aberto — é o que este brief ainda guarda de útil:**
+
+1. **O saldo de massa velha no planejamento** (`mínimo(sobra, teto)`, sobra =
+   `OUTPUT − CONSUMPTION` do `WorkOrderItem`, resíduo contábil e não medido — §5). Nenhum
+   código calcula esse saldo hoje; é a primeira pendência do §11 do plano.
+2. **A lista de pesagem ainda não é a mistura final.** A pesagem do dia lê ficha ×
+   coeficiente; `final_mix`/`final_mix_at_cap` só aparecem na lente do inventário. É
+   exatamente a primeira das "duas coisas diferentes" do §5.
+3. **O coeficiente francês visível ao padeiro** (§2): o número só é usado por dentro dos
+   cálculos, nenhuma tela o mostra. Com base de 1 kg de farinha, ele é o lote em kg de
+   farinha.
+4. **A pasta autolisada** (§7 Q3): continua `Recipe` com `output_sku=PASTA-AUTOLIZADA`,
+   consumida pela massa como item. O corte do dono segue valendo — **nada de varredura,
+   validade ou posição efêmera** —, mas a pergunta de ela precisar de SKU com estoque não
+   foi respondida.
+5. **Tempos e temperaturas por parte** (§7 Q4): `RecipeVersion.steps` segue `list[str]`.
+6. **O destino "banco vivo pelo cofre"** (§6) depende de o `export_backup`/`import_backup`
+   carregar `RecipeEntry`/`RecipeVersion`, o que ainda não acontece.
+
+As convenções do §2 (base sobre 1 kg de farinha total, `parte` nunca `etapa`, fermento
+biológico não é parte, ficha = massa crua / catálogo = peça assada) e a regra de método
+do §5 (KISS: ver se a operação da casa já anula o problema antes de propor mecanismo)
+continuam valendo integralmente.
 
 ## 1. O modelo do ofício (não invente outro)
 
