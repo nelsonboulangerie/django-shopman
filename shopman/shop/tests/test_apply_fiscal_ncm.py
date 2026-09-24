@@ -231,3 +231,20 @@ def test_nenhum_pao_da_tabela_vai_para_o_1905_90_20():
 
     assert {ncm for _sku, ncm, _porque in BREAD_NCM} == {"19059090"}
     assert "FORMA" not in {sku for sku, _ncm, _porque in BREAD_NCM}
+
+
+
+def test_ncm_corrigido_da_revenda_e_da_despensa_mantem_o_cest():
+    camembert = _product("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020")
+    camembert.metadata = {"fiscal": {**camembert.metadata["fiscal"], "cest": "1702400"}}
+    camembert.save()
+    tapenade = _product("TPND", "20059900")
+    tapenade.metadata = {"fiscal": {**tapenade.metadata["fiscal"], "cest": "1709200"}}
+    tapenade.save()
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    queijo = Product.objects.get(sku="QUEIJO-CAMEMBERT-ILEDEFRANCE-125").metadata["fiscal"]
+    assert (queijo["ncm"], queijo["cest"]) == ("04069030", "1702400")
+    pasta = Product.objects.get(sku="TPND").metadata["fiscal"]
+    assert (pasta["ncm"], pasta["cest"]) == ("20057000", "1709200")

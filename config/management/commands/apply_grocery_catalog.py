@@ -117,6 +117,9 @@ class GroceryItem:
     #: Origem da mercadoria (``orig`` do ICMS). ``2`` = importado comprado de
     #: distribuidor no Brasil.
     origin: str = "0"
+    #: Coleção principal. A mercearia é a casa de quase todos; bebida
+    #: industrializada mora em ``bebidas-geladas``.
+    collection: str = "mercearia"
 
 
 #: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
@@ -127,9 +130,9 @@ OWNER_PACKAGE = "embalagem, dono, 24/09"
 
 
 #: Origem 2 — "estrangeira, adquirida no mercado interno": o importado que a
-#: casa compra de distribuidor no Brasil (Président, Ile de France, Maille,
-#: St. Dalfour). Dono, 24/09/2026; a próxima NF-e de compra confere o ``orig``
-#: do fornecedor (conferência fiscal do recebimento).
+#: casa compra de distribuidor no Brasil (Ile de France, Maille, St. Dalfour).
+#: A manteiga Président é FABRICADA NO BRASIL: origem 0 (dono, 24/09/2026). A
+#: próxima NF-e de compra confere o ``orig`` do fornecedor.
 IMPORTED_BOUGHT_HERE = "2"
 
 
@@ -192,13 +195,13 @@ GROCERY: tuple[GroceryItem, ...] = (
     # de damasco veio da nota como 2007.99.90 e sem CEST; o de frutas
     # vermelhas, como os potes grandes.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-28", "Mini Geleia Damasco St. Dalfour 28g", 900, "St. Dalfour",
-                "084380980428", "20079990", "1709400", 28, ("geleia", "damasco", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
+                "084380980428", "20079910", "1709400", 28, ("geleia", "damasco", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-28", "Mini Geleia Frutas Vermelhas St. Dalfour 28g", 900,
                 "St. Dalfour", "084380980626", "20079910", "1709400", 28,
                 ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Laticínios ──
     GroceryItem("MANTEIGA-SAL-PRESIDENT-200", "Manteiga Extra com Sal Président 200g", 1500, "Président",
-                "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal"), origin=IMPORTED_BOUGHT_HERE),
+                "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal")),
     GroceryItem("QUEIJO-BRIE-ILEDEFRANCE-25", "Queijo Mini Brie Ile de France 25g", 1000, "Ile de France",
                 "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Mostardas Maille ──
@@ -230,6 +233,14 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("CHA-VITAL-KANFA-L70", "Vital Chai Kãnfa — Lata 70g", 7300, "Kãnfa",
                 "7898708850743", "09021000", "1709700", 70, ("cha", "vital", "chai", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
+    # ── Água com gás ──
+    # A Água Prata virou dois SKUs (auditoria de 24/09): a sem gás segue
+    # AGUA-MINERAL-PRATA-310 (a do seed); esta é a com gás. GTIN da
+    # PlanilhaProdutos2024 (dígito conferido), preço da planilha consolidada.
+    # Água mineral está na ST do PR: 500/5405, CEST 03.005.00.
+    GroceryItem("AGUA-GAS-PRATA-310", "Água Mineral com Gás Prata 310ml", 700, "Prata",
+                "7897123884043", "22011000", "0300500", None, ("agua", "mineral", "com gas", "bebida", "frio"),
+                profile="tax_substitution", collection="bebidas-geladas"),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
                 "Vito Bauducci", "7890203650002", "02101900", "1708701", 100, ("presunto", "cru", "fatiado")),
@@ -370,7 +381,7 @@ SEED_RESALE_FISCAL: tuple[SeedResaleFiscal, ...] = (
         "CHA-ACONCHEGO-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-INTIMIDADE-KANFA-P50",
         "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
     )),
-    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400", origin=IMPORTED_BOUGHT_HERE),
+    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069030", "1702400", origin=IMPORTED_BOUGHT_HERE),
     # Água mineral está na ST do PR, e a casa a faturava com 500/5405 e o CEST
     # 03.005.00 (água em embalagem plástica até 500 ml — Anexo III do Conv.
     # 142/2018; se a garrafa de 310 ml for de VIDRO, o CEST é 03.001.00).
@@ -452,6 +463,7 @@ YOOGA_NAMES: dict[str, str] = {
     # parecido"); o placeholder sai e a venda volta para o queijo que ela é.
     "Queijo Vale do Testo Pomerode  3m": "QUEIJO-VALEDOTESTO-POMERODE",
     "Caixa Presente Lille": "LILLE",
+    "Água Mineral Com Gás Prata 310ml": "AGUA-GAS-PRATA-310",
     "Caixa Presente Nice": "NICE",
 }
 
@@ -460,9 +472,17 @@ YOOGA_NAMES: dict[str, str] = {
 #: curadoria de alguém, e fica.
 LEAVING_PLACEHOLDERS: frozenset[str] = frozenset({"MT", "QP", "CX", "BK", "GR", "LN", "THL"})
 
+#: De-para que apontava para um SKU que se dividiu: o nome do Yooga diz a qual
+#: metade a venda pertence (a com gás estava no SKU único da água).
+SPLIT_FROM: dict[str, str] = {
+    "Água Mineral Com Gás Prata 310ml": "AGUA-MINERAL-PRATA-310",
+}
+
 
 REAL_PLACEHOLDERS: tuple[RealPlaceholder, ...] = (
     RealPlaceholder("RTAT", "Patê de Ratatouille", 2400, "Ratatouille 90g", 1800, 90),
+    # A água deixa de ser "com ou sem gás": este SKU é a sem gás.
+    RealPlaceholder("AGUA-MINERAL-PRATA-310", "Água", 600, "Água Mineral Prata 310ml", 600, 310),
     RealPlaceholder("TPND", "Tapenade", 2400, "Tapenade Azeitonas Pretas 100g", 2900, 100),
     RealPlaceholder("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Camembert", 3800,
                     "Queijo Camembert Ile de France 125g", 4000, 125),
@@ -717,8 +737,13 @@ def _link_aliases(report: dict) -> None:
     products = {p.sku: p for p in Product.objects.filter(sku__in=set(YOOGA_NAMES.values()))}
     aliases = ProductAlias.objects.filter(source="yooga", external_name__in=YOOGA_NAMES).filter(
         Q(product__isnull=True) | Q(product__sku__in=LEAVING_PLACEHOLDERS)
+        | Q(product__sku__in=set(SPLIT_FROM.values()), external_name__in=SPLIT_FROM)
     ).select_related("product")
     for alias in aliases:
+        if alias.product_id and alias.product.sku in SPLIT_FROM.values() and (
+            SPLIT_FROM.get(alias.external_name) != alias.product.sku
+        ):
+            continue
         target = products.get(YOOGA_NAMES[alias.external_name])
         if target is None:
             continue
@@ -853,13 +878,16 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
         "refused": [], "no_price": [], "aliases": [], "missing": [],
         "left_out": sorted(LEFT_OUT.items()),
     }
-    collection = Collection.objects.filter(ref=COLLECTION_REF).first()
-    if collection is None:
-        raise CommandError(f"A coleção `{COLLECTION_REF}` não existe neste banco.")
+    refs = {COLLECTION_REF, *(item.collection for item in GROCERY)}
+    collections = {c.ref: c for c in Collection.objects.filter(ref__in=refs)}
+    missing = sorted(refs - set(collections))
+    if missing:
+        raise CommandError(f"Coleção inexistente neste banco: {', '.join(missing)}.")
+    collection = collections[COLLECTION_REF]
 
     with transaction.atomic():
         for item in GROCERY:
-            _apply_item(item, collection, report)
+            _apply_item(item, collections[item.collection], report)
         for box in GIFT_BOXES:
             _apply_gift_box(box, collection, report)
         for real in REAL_PLACEHOLDERS:

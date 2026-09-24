@@ -75,7 +75,9 @@ HOUSE_SKUS: frozenset[str] = frozenset({
 # "CFOP5102"), ou porque o item não apareceu em nenhuma nota lida.
 RESALE: dict[str, dict[str, str]] = {
     "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {"brand": "Ile de France", "gtin": "3161712996108"},  # Camembert 125g
-    "AGUA-MINERAL-PRATA-310": {"brand": "Prata"},  # com e sem gás no mesmo SKU: dois GTINs
+    # Sem gás (a com gás virou SKU próprio, AGUA-GAS-PRATA-310). GTIN da
+    # PlanilhaProdutos2024, dígito verificador conferido.
+    "AGUA-MINERAL-PRATA-310": {"brand": "Prata", "gtin": "7897123883046"},
     # GTIN do pedido de venda 7970 da Kãnfa (My Chai, 30/06/2026), dígito
     # verificador GS1 conferido. Aconchego e Chalosofia vieram com código
     # interno do fabricante, que não é GTIN. As latas de Mama e Namastê são

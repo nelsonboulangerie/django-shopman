@@ -76,7 +76,8 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert "purchase" not in product.metadata
         assert Material.objects.get(sku=sku).unit == product.unit
         assert not from_metadata(product.metadata).errors(), sku
-        assert product.collection_items.filter(collection__ref="mercearia").exists()
+        wanted = next(i.collection for i in GROCERY if i.sku == sku)
+        assert product.collection_items.filter(collection__ref=wanted).exists(), sku
     # Os placeholders da despensa saíram (dono, 24/09); as caixas presente entram.
     assert not Product.objects.filter(sku__in=("MT", "QP", "CX", "BK", "GR", "LN", "THL")).exists()
     for box in GIFT_BOXES:
