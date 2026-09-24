@@ -234,3 +234,105 @@ def open_for_work_order(work_order, *, user=None) -> int:
         ensure_open_stock(sku, needed, reason=f"Fornada {work_order.ref}", user=user)
         for sku, needed in needs.items()
     )
+
+
+# ── Declarar: "Quando aberto, vira" ─────────────────────────────────────────
+
+#: Unidades em que o aberto pode ser medido — o que se pesa ou se mede.
+OPENED_UNITS = ("kg", "g", "l", "ml")
+
+_SIZE_SUFFIX = r"\s*\d+(?:[.,]\d+)?\s*(?:g|kg|ml|l)\s*$"
+
+
+def opened_name_for(package_name: str) -> str:
+    """"Manteiga Extra com Sal Président 200g" → "Manteiga Extra com Sal Président (aberta)"."""
+    import re
+
+    base = re.sub(_SIZE_SUFFIX, "", package_name, flags=re.IGNORECASE).strip() or package_name
+    return f"{base} (aberta)"
+
+
+def suggested_content(package_sku: str, opened_unit: str = "kg") -> Decimal | None:
+    """Conteúdo de uma embalagem na unidade do aberto, pelo peso líquido declarado.
+
+    Vem de ``Product.unit_weight_g`` do cadastro de venda do mesmo SKU (a
+    Mercearia o grava a partir da embalagem). Sem ele, não se sugere nada.
+    """
+    from shopman.offerman.models import Product
+    from shopman.utils.units import UnitError, convert
+
+    grams = Product.objects.filter(sku=package_sku).values_list("unit_weight_g", flat=True).first()
+    if not grams:
+        return None
+    try:
+        return convert(Decimal(grams), "g", opened_unit).normalize()
+    except UnitError:
+        return None
+
+
+def declare_opening(package, *, opened_sku: str = "", create_opened: bool = False, opened_unit: str = "kg",
+                    quantity=None, shelf_life_days=None):
+    """Grava em que a embalagem se abre. Devolve o cadastro do aberto.
+
+    ``create_opened`` cria o insumo aberto a partir da embalagem
+    (``<SKU>-ABERTO``, nome sem o tamanho + "(aberta)"), ou reaproveita o que
+    já existe com esse SKU. A embalagem é contada por unidade; o aberto, pesado
+    ou medido.
+    """
+    from django.core.exceptions import ValidationError
+    from shopman.buyman.models import Material
+
+    from shopman.shop.services.sku_records import is_produced_here
+
+    if package.unit != "un":
+        raise ValidationError({"unit": f"{package.name} é contado em {package.unit}: só embalagem por unidade se abre."})
+    if is_produced_here(package.sku):
+        raise ValidationError({"sku": f"{package.name} é produzido aqui: não é embalagem comprada."})
+    try:
+        content = Decimal(str(quantity).replace(",", "."))
+    except (InvalidOperation, TypeError, ValueError):
+        content = Decimal("0")
+    if not content.is_finite() or content <= 0:
+        raise ValidationError({"quantity": "Informe quanto vem em uma embalagem."})
+    days = None
+    if shelf_life_days not in (None, ""):
+        try:
+            days = int(shelf_life_days)
+        except (TypeError, ValueError):
+            days = -1
+        if days < 0:
+            raise ValidationError({"shelf_life_days": "Validade depois de aberto: um número de dias, 0 ou mais."})
+
+    if create_opened:
+        if opened_unit not in OPENED_UNITS:
+            raise ValidationError({"opened_unit": f"O aberto se mede em {', '.join(OPENED_UNITS)}."})
+        opened = Material.objects.filter(sku=f"{package.sku}-ABERTO").first()
+        if opened is None:
+            opened = Material(sku=f"{package.sku}-ABERTO", name=opened_name_for(package.name), unit=opened_unit)
+            opened.full_clean()
+            opened.save()
+    else:
+        opened = Material.objects.filter(sku=str(opened_sku or "").strip(), is_active=True).first()
+        if opened is None:
+            raise ValidationError({"opened_sku": "Escolha o insumo em que a embalagem vira, ou crie a partir dela."})
+    if opened.sku == package.sku:
+        raise ValidationError({"opened_sku": "A embalagem não se abre nela mesma."})
+    if opened.unit not in OPENED_UNITS:
+        raise ValidationError({"opened_sku": f"{opened.name} é contado em {opened.unit}: o aberto se pesa ou se mede."})
+
+    spec = {"sku": opened.sku, "quantity": str(content)}
+    if days is not None:
+        spec["shelf_life_days"] = days
+    metadata = dict(package.metadata or {})
+    metadata["opens_into"] = spec
+    package.metadata = metadata
+    package.save(update_fields=["metadata", "updated_at"])
+    return opened
+
+
+def clear_opening(package) -> None:
+    """A embalagem deixa de se abrir: some a declaração; o aberto e o estoque ficam."""
+    metadata = dict(package.metadata or {})
+    if metadata.pop("opens_into", None) is not None:
+        package.metadata = metadata
+        package.save(update_fields=["metadata", "updated_at"])

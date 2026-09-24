@@ -1,4 +1,5 @@
 import type {
+  PurchaseOpeningPayload,
   PurchaseView,
   PurchaseBaseView,
   PurchaseRequestStatus,
@@ -458,6 +459,31 @@ export function usePurchaseDesk() {
       return true;
     } catch (err) {
       const message = httpErrorMessage(err, enabled ? "Não foi possível colocar à venda." : "Não foi possível tirar da venda.");
+      actionError.value = message;
+      useSonner.error(message);
+      return false;
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
+  /**
+   * "Quando aberto, vira": diz em que insumo a embalagem se abre. A produção abre
+   * sozinha no fechamento da fornada — aqui só se declara o que vem dentro.
+   */
+  async function setOpening(materialSku: string, payload: PurchaseOpeningPayload): Promise<boolean> {
+    if (!requireBackend("salvar o que a embalagem vira")) return false;
+    if (actionPending.value) return false;
+
+    actionPending.value = true;
+    actionError.value = "";
+    try {
+      const response = await api.setOpening(materialSku, payload);
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      return true;
+    } catch (err) {
+      const message = httpErrorMessage(err, "Não foi possível salvar o que a embalagem vira.");
       actionError.value = message;
       useSonner.error(message);
       return false;
@@ -1105,6 +1131,7 @@ export function usePurchaseDesk() {
     minStockFilledCount,
     setMinStockInput,
     setSale,
+    setOpening,
     clearMinStock,
     saveMinStock,
     supplierSummaries,

@@ -91,6 +91,23 @@ def test_gtin_repetido_nao_entra_em_dois_produtos():
 # ── O comando ─────────────────────────────────────────────────────────────
 
 
+def test_a_manteiga_president_abre_em_insumo_pesado_e_quem_declarou_manda(catalog):
+    call_command("apply_grocery_catalog", "--apply", stdout=StringIO())
+
+    tablete = Material.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200")
+    # Abre no insumo que as fichas já usam: nenhuma ficha precisa mudar.
+    assert tablete.metadata["opens_into"] == {
+        "sku": "MANTEIGA-PRESIDENT-COM-SAL", "quantity": "0.200", "shelf_life_days": 30,
+    }
+    assert Material.objects.get(sku="MANTEIGA-PRESIDENT-COM-SAL").unit == "kg"
+
+    # O que o operador mudar no Compras não é desfeito por rodar de novo.
+    tablete.metadata = {**tablete.metadata, "opens_into": {"sku": "OUTRO", "quantity": "0.2"}}
+    tablete.save()
+    call_command("apply_grocery_catalog", "--apply", stdout=StringIO())
+    assert Material.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200").metadata["opens_into"]["sku"] == "OUTRO"
+
+
 def test_cria_a_revenda_so_no_pdv(catalog):
     call_command("apply_grocery_catalog", "--apply", stdout=StringIO())
 

@@ -804,6 +804,39 @@ def declare_conversion(payload: dict[str, Any], *, user=None) -> tuple[dict[str,
     return build_purchase(), message, str(conversion.pk)
 
 
+def set_opening(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[Any, str]:
+    """"Quando aberto, vira": declara (ou desfaz) em que insumo a embalagem se abre.
+
+    A produção abre sozinha no fechamento da fornada
+    (``shop/services/package_opening.py``); aqui só se diz o que vem dentro.
+    """
+    from shopman.shop.services.package_opening import clear_opening, declare_opening
+
+    Material = apps.get_model("buyman", "Material")
+    package = Material.objects.filter(sku=material_sku).first()
+    if package is None:
+        raise PurchaseError("Item não encontrado no Compras.", code="material_not_found", field="sku", status_code=404)
+    if not _as_flag(payload, "enabled", field="enabled"):
+        clear_opening(package)
+        return build_purchase(), f"{package.name} não se abre mais na produção."
+    try:
+        with transaction.atomic():
+            opened = declare_opening(
+                package,
+                opened_sku=str(payload.get("openedSku") or ""),
+                create_opened=_as_flag(payload, "createOpened", field="createOpened"),
+                opened_unit=str(payload.get("openedUnit") or "kg"),
+                quantity=payload.get("quantity"),
+                shelf_life_days=payload.get("shelfLifeDays"),
+            )
+    except ValidationError as exc:
+        messages = getattr(exc, "message_dict", None) or {}
+        key, texts = next(iter(messages.items())) if messages else ("sku", exc.messages)
+        field = {"quantity": "quantity", "shelf_life_days": "shelfLifeDays", "opened_sku": "openedSku"}.get(key, key)
+        raise PurchaseError(texts[0], code="opening_refused", field=field) from exc
+    return build_purchase(), f"Quando aberto, {package.name} vira {opened.name}."
+
+
 def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[Any, str]:
     """"Permitir revenda": liga ou desliga a venda do item do Compras, num gesto só.
 
