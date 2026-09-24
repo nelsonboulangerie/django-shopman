@@ -278,6 +278,15 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
 - **Zero residuals em renames**: Ao renomear, zerar TUDO (variáveis, strings, comments, docstrings). Nada de `# formerly X`. ⚠️ **Vale até o go-live.** A partir do `git tag go-live-v1`, renames seguem expand-contract — ver [ADR-015](docs/decisions/adr-015-backward-compat-policy-post-prod.md) e [production-upgrades.md](docs/guides/production-upgrades.md).
 - **Zero backward-compat aliases**: Projeto novo, do zero. Não há consumidores externos. Nunca criar aliases tipo `OldName = NewName`. Apagar o nome antigo completamente. ⚠️ **Vale até o go-live.** Depois, aliases temporários são permitidos em janela explícita (1 sprint) com `# DEPRECATED(remove by YYYY-MM-DD)` — ver [ADR-015](docs/decisions/adr-015-backward-compat-policy-post-prod.md).
 - **Offerman = somente produtos vendáveis**: Insumos ficam em Stockman/Craftsman, nunca no Offerman.
+- **Comprável e vendável são dois cadastros do MESMO SKU** (decisão do dono, 24/09/2026).
+  *Comprável* = ter cadastro de compra (`buyman.Material`), mesmo sem fornecedor ainda;
+  *vendável* = decisão estratégica explícita, um produto no catálogo (`offerman.Product`),
+  nunca inferida. A coisa comprada que também se vende (geleia, queijo, chá em lata) tem
+  os dois, com o mesmo SKU, a mesma unidade e **o mesmo estoque** (o ledger indexa por
+  SKU). O porteiro é de coerência, não de colisão: mesmo SKU nos dois lados só com a mesma
+  unidade (`shop/services/sku_namespace.py`, SHOPMAN_W015). O Compras recebe SEMPRE pelo
+  cadastro de compra; SKU com ficha ativa não entra pela compra (é produzido aqui). Não
+  existe marca de "revenda" no produto — `metadata.purchase.resale` morreu em `shop.0073`.
 - **URL é em inglês nas superfícies de operador, no Admin, no SSE do backstage e nas APIs.** Dentro desse perímetro não há exceção por tela.
   - ⚠️ **O Storefront fica de fora, e é decisão escrita do dono (24/09/2026)**: a loja fala português com o cliente, e as rotas dela são `/conta`, `/entrar`, `/sacola`, `/finalizar`, `/produto/<sku>`, `/pedido/<ref>`, `/privacidade`, `/termos`, `/documentos-legais/…`. Mesma lógica da exceção de *aparelho*: superfície de cliente final tem voz própria, e a exceção é da superfície inteira. A API que o Storefront consome (`/api/v1/storefront/…`) é API, e segue em inglês.
   - Apps Nuxt de operador: vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301, bookmarks de kiosk preservados — PR #68.

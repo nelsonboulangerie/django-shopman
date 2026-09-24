@@ -146,8 +146,8 @@ fora.
   `own_production` é, na letra do código, *"fabricação própria **+ revenda
   comum**"*, e é a parametrização que o contador já fez (SEFA-PR). Chá seco é
   revenda comum; a ST no segmento de bebida alcança refrigerante, água e
-  industrializado. O `purchase.resale = true` é outro eixo — ele diz ao Compras
-  que a casa compra pronto.
+  industrializado. Ser comprado pronto é outro eixo — é o cadastro de compra
+  (`buyman.Material`) do mesmo SKU, que deixa o Compras receber a nota.
 
   **O chá da Kãnfa é duas coisas, e o cadastro já as separa:** a folha seca que
   se revende (12 produtos, lata e pouch, NCM 0902.20.00) e a bebida preparada

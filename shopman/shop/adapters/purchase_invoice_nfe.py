@@ -267,12 +267,7 @@ def _extract_proc_nfe_xml(response: Any, *, access_key: str = "") -> str | None:
 
 def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) -> dict[str, Any]:
     material, mapping = _material_for_item(item, supplier=supplier)
-    # Mercadoria de revenda: o de-para aprendido no recebimento anterior aponta
-    # para um produto do catálogo, não para um insumo. Quando aponta, a linha
-    # nasce resolvida do mesmo jeito — e sem conversão, porque revenda chega na
-    # unidade em que se vende.
-    product = None if material else _product_for_item(mapping)
-    suggestion = None if (material or product) else _material_suggestion(item.name)
+    suggestion = None if material else _material_suggestion(item.name)
     conversion = _conversion_for_item(item, material=material, supplier=supplier, mapping=mapping)
     quantity = _line_quantity(item, material=material, conversion=conversion)
     # A conversão é calculada contra o insumo SUGERIDO quando não há um
@@ -291,7 +286,6 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
     return {
         "id": f"nfe-{item.number or index}",
         "materialSku": material.sku if material else "",
-        "productSku": product.sku if product else "",
         "suggestedMaterialSku": suggestion[0].sku if suggestion else "",
         "suggestionScore": suggestion[1] if suggestion else 0,
         "conversionId": str(conversion.pk) if conversion else None,
@@ -752,24 +746,6 @@ def _mapping_material_sku(mapping: Any | None) -> str:
     if not isinstance(mapping, dict):
         return ""
     return str(_first_mapping_value(mapping, "materialSku", "material_sku", "sku", "material") or "").strip()
-
-
-def _product_for_item(mapping: Any | None) -> Any | None:
-    """O produto de revenda que o de-para do fornecedor aponta, se apontar."""
-    if not isinstance(mapping, dict):
-        return None
-    sku = str(_first_mapping_value(mapping, "productSku", "product_sku") or "").strip()
-    if not sku:
-        return None
-    Product = apps.get_model("offerman", "Product")
-    product = Product.objects.filter(sku=sku).first()
-    if product is None:
-        return None
-    metadata = product.metadata if isinstance(product.metadata, dict) else {}
-    purchase = metadata.get("purchase")
-    if not (isinstance(purchase, dict) and purchase.get("resale")):
-        return None
-    return product
 
 
 def _material_by_sku(sku: str) -> Any | None:

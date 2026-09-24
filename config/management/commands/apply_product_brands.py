@@ -18,12 +18,12 @@ conferido, o GTIN do código de barras. Revenda **nunca** leva a marca da loja,
 e o que ninguém confirmou fica fora da tabela: marca e GTIN vazios são "não
 informado", não um palpite.
 
-Toca ``metadata['social']['brand']``, ``metadata['social']['gtin']`` e a marca
-``metadata['purchase']['resale']``, que declara "a casa compra este produto
-pronto" — é o que o Compras oferece na entrada de mercadoria. Não
-sobrescreve valor já preenchido com outra coisa (curadoria feita no Gestor
-vence): a divergência sai no relatório e o SKU fica como está. Sem ``--apply``
-não grava nada.
+Toca ``metadata['social']['brand']`` e ``metadata['social']['gtin']`` e, na
+revenda, garante o **cadastro de compra** do mesmo SKU (``buyman.Material``):
+é ele que torna o item comprável, e é por ele que o Compras recebe a nota
+(ver ``shopman/shop/services/sku_records.py``). Não sobrescreve valor já
+preenchido com outra coisa (curadoria feita no Gestor vence): a divergência sai
+no relatório e o SKU fica como está. Sem ``--apply`` não grava nada.
 
 O ``seed`` chama :func:`apply_brands` logo depois de semear o catálogo, para que
 um banco novo nasça igual ao que este comando deixa num banco vivo.
@@ -38,6 +38,8 @@ from django.db import transaction
 from shopman.offerman import get_social_attributes
 from shopman.offerman.contrib.social.schema import set_social_attributes
 from shopman.offerman.models import Product
+
+from shopman.shop.services.sku_records import ensure_purchase_record
 
 # Feito ou montado aqui. Conferido contra o catálogo vivo do alpha em
 # 22/09/2026. Os chás do bule são preparados aqui com blend Kãnfa: a bebida
@@ -128,21 +130,10 @@ def _house_brand() -> str:
     return brand
 
 
-def _mark_resale(product) -> bool:
-    """Declara ``metadata['purchase']['resale']``. Devolve True se mudou.
+def _lacks_purchase_record(sku: str) -> bool:
+    from shopman.buyman.models import Material
 
-    Sem esta marca o Compras não deixa a linha da nota apontar para o produto:
-    o perfil fiscal ``resale`` fala de substituição tributária, não de "comprado
-    pronto", e a falta de ficha só diz que ninguém cadastrou a ficha.
-    """
-    metadata = dict(product.metadata) if isinstance(product.metadata, dict) else {}
-    purchase = dict(metadata.get("purchase") or {})
-    if purchase.get("resale") is True:
-        return False
-    purchase["resale"] = True
-    metadata["purchase"] = purchase
-    product.metadata = metadata
-    return True
+    return not Material.objects.filter(sku=sku, is_active=True).exists()
 
 
 def apply_brands(*, apply: bool, only_sku: str | None = None) -> dict[str, list]:
@@ -181,10 +172,10 @@ def apply_brands(*, apply: bool, only_sku: str | None = None) -> dict[str, list]
                     continue
                 updates[field] = value
                 lines.append(f"{field}: → {value}")
-            marked = sku in RESALE and _mark_resale(product)
-            if marked:
-                lines.append("compra: mercadoria de revenda")
-            if not updates and not marked:
+            purchasable = sku in RESALE and _lacks_purchase_record(sku)
+            if purchasable:
+                lines.append("compra: cadastro de compra do mesmo SKU")
+            if not updates and not purchasable:
                 continue
             new_attrs = replace(current, **updates) if updates else current
             errors = new_attrs.errors()
@@ -195,7 +186,9 @@ def apply_brands(*, apply: bool, only_sku: str | None = None) -> dict[str, list]
             if apply:
                 if updates:
                     product.metadata = set_social_attributes(product.metadata, new_attrs)
-                product.save(update_fields=["metadata", "updated_at"])
+                    product.save(update_fields=["metadata", "updated_at"])
+                if purchasable:
+                    ensure_purchase_record(product)
     return report
 
 

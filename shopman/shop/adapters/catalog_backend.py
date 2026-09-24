@@ -9,10 +9,12 @@ Wired via CRAFTSMAN["CATALOG_BACKEND"] (config/settings.py). Resolution-only —
 does NOT touch stock availability; essa é a costura do SkuValidator, ligada em
 STOCKMAN["SKU_VALIDATOR"] (ver shopman/shop/adapters/sku_validator.py).
 
-⚠️ Produto e insumo dividem um namespace de SKU só, sem unicidade cruzada no
-banco. Aqui a precedência é do produto — e, quando os dois existem, ela é
-**anunciada** em log de erro em vez de sombrear o insumo em silêncio. O porteiro
-que impede a colisão de nascer está em shopman/shop/services/sku_namespace.py.
+Um SKU pode ter os dois cadastros — o de venda (Product) e o de compra
+(Material) — quando a coisa comprada também se vende. Aí os dois falam a mesma
+unidade (o porteiro de coerência em shopman/shop/services/sku_namespace.py
+garante), e responder o produto ou o insumo dá a mesma unidade para a ficha.
+A precedência é do produto; a incoerência que escapar do porteiro é
+**anunciada** em log de erro em vez de responder uma unidade errada calada.
 """
 
 from __future__ import annotations
@@ -37,18 +39,24 @@ class ComposedCatalogBackend:
         """Resolve a sku as a sellable product first, then as an ingredient.
 
         Caminho frio (validação de ficha técnica, sugestão de produção), então a
-        checagem de colisão custa uma consulta a mais e vale o preço: responder
-        a unidade do produto para um insumo homônimo é erro caro e mudo.
+        conferência de coerência custa uma consulta a mais e vale o preço:
+        responder a unidade do produto quando o cadastro de compra diz outra é
+        erro caro e mudo.
         """
+        from shopman.shop.services.sku_namespace import units_agree
+
         product = self._offerman.get_product(sku)
         ingredient = self._buyman.get_product(sku)
         if product is not None and ingredient is not None:
-            logger.error(
-                "sku_namespace.collision: '%s' existe como produto vendável (unidade %s) "
-                "e como insumo (unidade %s). Respondendo o produto; renomeie um dos dois "
-                "(ver shopman/shop/services/sku_namespace.py).",
-                sku, getattr(product, "unit", "?"), getattr(ingredient, "unit", "?"),
-            )
+            product_unit = getattr(product, "unit", "")
+            ingredient_unit = getattr(ingredient, "unit", "")
+            if not units_agree(product_unit, ingredient_unit):
+                logger.error(
+                    "sku_namespace.incoherent_unit: '%s' tem cadastro de venda em %s e de "
+                    "compra em %s. Respondendo o de venda; acerte a unidade de um dos dois "
+                    "(ver shopman/shop/services/sku_namespace.py).",
+                    sku, product_unit or "?", ingredient_unit or "?",
+                )
         return product or ingredient
 
     def __getattr__(self, name):

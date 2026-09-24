@@ -157,7 +157,7 @@ class Product(models.Model):
         _("vendável"),
         default=True,
         db_index=True,
-        help_text=_("Permite venda estratégica (Não = insumo ou item pausado)"),
+        help_text=_("A casa decidiu vender este SKU (Não = venda pausada). Comprar é outro cadastro, no Compras."),
     )
 
     # Image

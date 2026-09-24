@@ -1293,7 +1293,6 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 | `gallery` | `list[str]` URLs | seed/admin (Offerman) | `storefront/presentation/product_detail._gallery` → `gallery` da PDP (carrossel com swipe, setas e pontos) | Fotos **adicionais** do produto, URLs absolutas na casa das imagens (`public/img/products/` do storefront). A foto **principal** continua sendo `Product.image_url` — ela abre o carrossel; promover uma foto da galeria = copiar a URL dela para `image_url`; não existe flag de principal aqui, de propósito (uma pergunta, um dono). Lista ausente/malformada = PDP de foto única, sem carrossel. |
 | `social` | `dict` (`brand`, `gtin`, `mpn`, `condition`, `google_product_category`, …) | Catálogo do Gestor (painel do produto: Marca, GTIN, Código do fabricante) — schema em `offerman/contrib/social/schema.py` | `shop/views/product_feed.py` (feed Google/Meta) · `shop/projections/catalog_context.commercial_identity` → `brand`/`gtin`/`mpn`/`item_condition` da PDP → JSON-LD `Product` da loja | Identidade comercial do produto. **Uma fonte para o feed e para a página**: o que o Google lê no feed e na landing page tem de concordar. ⚠️ Vazio = não informado; nem o feed nem a PDP completam com a marca da loja, porque a casa também revende (geleia St. Dalfour). |
 | `enrichment` | `dict` | `manage.py fetch_product_enrichment` (rascunho) · ação **Aceitar sugestão de catálogo** no Admin (aceite) | só a ação de aceite; **a loja NUNCA lê este bloco** | Sugestão de catálogo para item de REVENDA, buscada pelo GTIN (`metadata['social']['gtin']`). Duas fontes, uma por campo: **Cosmos** dá foto oficial, nome, marca e NCM; **Open Food Facts** dá alérgeno estruturado — medido em 05/09/2026, 73% dos produtos brasileiros o têm preenchido. Forma: `{status, fetched_at, sources[], suggested{}, notes[]}`, mais `accepted_by`/`accepted_at` depois do aceite. ⚠️ **Nasce `pending` e nunca vira rótulo sozinho.** O OFF é colaborativo e o campo vazio quase nunca significa "não contém": na mesma amostra, **93% dos que não tinham alérgeno marcado TINHAM a lista de ingredientes** — o silêncio é falta de curadoria, e auto-preencher importaria o defeito que a casa combate. A própria Cosmos pede revisão antes do uso. A autoridade é o rótulo físico; isto é rascunho. ⚠️ `suggested.allergens_unmapped` guarda o que o OFF trouxe e a lista da casa não tem (aipo, molusco e tremoço são obrigatórios na UE e não na RDC 26/2015) — **nunca descartado em silêncio**, aparece para quem aceita. |
-| `purchase.resale` | `bool` | `manage.py apply_product_brands` (tabela `RESALE`) · curadoria do Catálogo | `backstage.services.purchase` (entrada do Compras) · `backstage.projections.purchase` (lista da tela) · `shop/adapters/purchase_invoice_nfe.py` (de-para da NF) | **A casa COMPRA este produto pronto** (chá Kãnfa, geleia, queijo). É o que deixa a linha da nota apontar para o produto em vez de um insumo, e o estoque creditado é o do SKU que o cliente leva. ⚠️ Declaração, não inferência: o perfil fiscal `resale` fala de substituição tributária, não de "comprado para revender", e a ausência de ficha diz só que ninguém cadastrou a ficha. Produto com ficha ativa é recusado na entrada — o que o forno faz entra pela Produção. |
 | `derived_from` | `dict` | `shop.services.derived_provenance` (via as três derivações e `record_manual_audit`) | `backstage.projections.product_promise`, `shop.services.unit_weight_from_recipe` (sentinela de escrita) | **De qual versão da ficha veio cada coisa que o catálogo mostra** (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C). Um carimbo por fato — `nutrition`, `dietary`, `unit_weight` — no formato `{source, recipe_ref, version_ref, by, at}`. Ver a tabela abaixo. |
 
 ### `Product.metadata["derived_from"][<fato>]`
@@ -1828,7 +1827,7 @@ O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
   "purchase": {
     "invoice_product_map": {
       "<cProd da NF>": {"materialSku": "FARINHA-T65", "conversionLabel": "saco 25 kg"},
-      "<cProd de revenda>": {"productSku": "INTU_P50", "conversionLabel": ""}
+      "<cProd de revenda>": {"materialSku": "CHA-INTUICAO-KANFA-P50", "conversionLabel": ""}
     }
   }
 }
@@ -1836,12 +1835,13 @@ O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
 
 | Chave | Tipo | Escrito por | Lido por |
 |-------|------|-------------|----------|
-| `invoice_product_map.<cProd>` | `{materialSku: str, conversionLabel: str}` ou `{productSku: str, conversionLabel: ""}` | `backstage/services/purchase.py::confirm_receipt` (toda linha de entrada com NF confirmada com insumo definido e `invoiceProductCode` presente) | `shop/adapters/purchase_invoice_nfe.py` (scan da NF: resolve `materialSku` e a conversão pelo `label`) |
+| `invoice_product_map.<cProd>` | `{materialSku: str, conversionLabel: str}` | `backstage/services/purchase.py::confirm_receipt` (toda linha de entrada com NF confirmada com insumo definido e `invoiceProductCode` presente) | `shop/adapters/purchase_invoice_nfe.py` (scan da NF: resolve `materialSku` e a conversão pelo `label`) |
 
-- `productSku` é mercadoria de **revenda**: a linha aponta para um produto do
-  catálogo, não para um insumo, e nunca leva conversão (revenda chega na unidade
-  em que se vende). O adapter só aceita a entrada se o produto continuar marcado
-  como revenda (`Product.metadata.purchase.resale`).
+- Toda linha aponta para um **cadastro de compra** (`buyman.Material`) —
+  inclusive a mercadoria de revenda: a coisa comprada que também se vende tem
+  cadastro de compra e de venda com **o mesmo SKU**, e o mesmo estoque (ver
+  `shop/services/sku_namespace.py`). A antiga forma `{productSku: …}` foi
+  reescrita para `materialSku` pela migração `shop.0073`.
 - A chave do mapa é o `cProd` do item na NF (o adapter também tenta EAN e
   nome, mas o confirm grava só por `cProd`). `conversionLabel` vazio = linha
   confirmada sem conversão.

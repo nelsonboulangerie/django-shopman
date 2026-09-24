@@ -94,26 +94,8 @@ export interface SupplierMaterialCost {
   updatedAt: string;
 }
 
-/**
- * Mercadoria que a casa compra pronta para vender (chá, geleia, queijo).
- *
- * Vive no catálogo, não na tabela de insumo: é o mesmo pote que o cliente leva.
- * A entrada credita o estoque DESTE sku, para prateleira e venda contarem a
- * mesma coisa.
- */
-export interface ResaleProduct {
-  sku: string;
-  name: string;
-  unit: string;
-  shelfLifeDays: number | null;
-  isActive: boolean;
-  brand: string;
-  stockOnHand: number;
-}
-
 export interface PurchaseProjection {
   materials: Material[];
-  resaleProducts: ResaleProduct[];
   suppliers: Supplier[];
   conversions: MaterialConversion[];
   costs: SupplierMaterialCost[];
@@ -214,9 +196,6 @@ export interface ReceiptConversionSuggestion {
 export interface ReceiptLine {
   id: string;
   materialSku: string;
-  // Mercadoria de revenda. Exclui `materialSku`: a linha aponta para um dos
-  // dois, nunca para os dois.
-  productSku?: string;
   suggestedMaterialSku?: string;
   suggestionScore?: number;
   conversionId: string | null;
@@ -251,12 +230,7 @@ export interface ReceiptLineSuggestion {
 
 export interface ReceiptLinePreview {
   line: ReceiptLine;
-  // O item da linha, já normalizado: insumo, ou a mercadoria de revenda vestida
-  // com a mesma forma, para o resto da tela não precisar saber de qual tabela
-  // ele veio.
   material: Material;
-  // A linha é mercadoria de revenda?
-  isResale: boolean;
   conversion: MaterialConversion | null;
   purchaseUnitLabel: string;
   baseQty: number;

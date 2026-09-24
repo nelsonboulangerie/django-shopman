@@ -2521,7 +2521,8 @@ class Command(BaseCommand):
             # O chá da Kãnfa é DUAS coisas, e o cadastro já as separa:
             #
             # 1. **A folha seca, que se revende** — estes 12, lata e pouch, com
-            #    `purchase.resale = true`. NCM 0902.20.00.
+            #    cadastro de compra do mesmo SKU (o Compras recebe a nota por
+            #    ele — ver `apply_product_brands`). NCM 0902.20.00.
             # 2. **A bebida preparada na hora**, que usa o blend como INSUMO:
             #    `CHBLU`, `CHCAM`, `CHROU`, `CHSOP`, `SFTCH`, `CHHIB`, `CTFV`,
             #    cada um com ficha apontando para `CHA-BLEU`, `CHA-CHAI`… NCM
@@ -2532,8 +2533,8 @@ class Command(BaseCommand):
             # fabricou" (ver fiscalman/classification.py — `own_production` é
             # "fabricação própria **+ revenda comum**"). Chá seco é revenda
             # comum; ST no segmento de bebida alcança refrigerante, água e
-            # industrializado. O `purchase.resale` é outro eixo: ele diz ao
-            # Compras que a casa compra pronto.
+            # industrializado. Ser comprado pronto é outro eixo: é o cadastro
+            # de compra (`buyman.Material`) do mesmo SKU.
             **dict.fromkeys(
                 ("CHA-INTUICAO-KANFA-P50", "CHA-INTUICAO-KANFA-L70", "CHA-ACONCHEGO-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50",
                  "CHA-NAMASTE-KANFA-P50", "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50",

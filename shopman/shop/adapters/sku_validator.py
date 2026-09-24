@@ -7,12 +7,12 @@ Material (Buyman). Implements Stockman's SkuValidator protocol.
 Ligado em STOCKMAN["SKU_VALIDATOR"] (config/settings.py) — é este validador que
 responde disponibilidade e shelf-life de todo sku do sistema.
 
-⚠️ Produto e insumo dividem um namespace de SKU só, sem unicidade cruzada no
-banco, e aqui a precedência é do produto. Diferente do catálogo composto, este
-caminho é QUENTE (disponibilidade da loja), então ele não paga uma consulta extra
-por resolução para detectar colisão: quem impede a colisão de nascer é o porteiro
-em shopman/shop/services/sku_namespace.py (pre_save nos dois modelos), e quem
-denuncia a colisão preexistente é o system check SHOPMAN_W015.
+Um SKU pode ter cadastro de venda (Product) e de compra (Material) ao mesmo
+tempo — a coisa comprada que também se vende —, e aqui a precedência é do
+produto. Diferente do catálogo composto, este caminho é QUENTE (disponibilidade
+da loja), então não paga consulta extra para conferir a unidade: quem impede a
+incoerência de nascer é o porteiro em shopman/shop/services/sku_namespace.py
+(pre_save nos dois modelos), e quem denuncia a preexistente é o SHOPMAN_W015.
 """
 
 from __future__ import annotations
