@@ -218,7 +218,13 @@ export interface ReceiptLine {
   invoiceTaxUnit?: string;
   invoiceTotal?: string;
   invoiceProductCode?: string;
+  // GTIN da unidade (o que vai para a prateleira); o da caixa, quando a NF-e
+  // traz os dois, em invoicePackageEan. Com NCM e CEST, alimentam a sugestao
+  // de catalogo do produto de revenda no recebimento.
   invoiceEan?: string;
+  invoicePackageEan?: string;
+  invoiceNcm?: string;
+  invoiceCest?: string;
   checked: boolean;
 }
 

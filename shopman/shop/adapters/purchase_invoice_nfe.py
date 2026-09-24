@@ -103,6 +103,10 @@ class NFeItem:
     cfop: str
     expiry_date: str
     lot: str
+    #: O OUTRO GTIN da nota, quando ``cEAN`` e ``cEANTrib`` divergem — em geral
+    #: o da caixa. ``ean`` fica com o da unidade (ver :func:`_unit_gtin`).
+    package_ean: str = ""
+    cest: str = ""
 
 
 @dataclass(frozen=True)
@@ -317,7 +321,13 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "invoiceTaxUnit": item.tax_unit if _tax_axis_adds_info(item) else "",
         "invoiceTotal": _money_text(total_value),
         "invoiceProductCode": item.product_code,
+        # GTIN da unidade; o da caixa, quando a nota traz os dois, vem ao lado.
+        # Com NCM e CEST, são a PRIMEIRA fonte da sugestão de catálogo que o
+        # recebimento de revenda grava no produto (product_enrichment).
         "invoiceEan": item.ean,
+        "invoicePackageEan": item.package_ean,
+        "invoiceNcm": item.ncm,
+        "invoiceCest": item.cest,
         "checked": False,
     }
 
@@ -553,10 +563,18 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
     if not unit or quantity <= 0:
         unit, quantity, unit_value = tax_unit, tax_quantity, tax_unit_value
 
+    unit_ean, package_ean = _unit_gtin(
+        commercial=_valid_gtin(_text(prod, "cEAN")) or _valid_gtin(_text(prod, "cBarra")),
+        taxable=_valid_gtin(_text(prod, "cEANTrib")),
+        unit=unit,
+        tax_unit=tax_unit,
+    )
+
     return NFeItem(
         number=str(det.attrib.get("nItem") or index),
         product_code=_text(prod, "cProd"),
-        ean=_valid_gtin(_text(prod, "cEAN") or _text(prod, "cEANTrib") or _text(prod, "cBarra")),
+        ean=unit_ean,
+        package_ean=package_ean,
         name=_text(prod, "xProd"),
         unit=unit,
         quantity=quantity,
@@ -566,10 +584,30 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
         tax_unit_value=tax_unit_value,
         total_value=_decimal(_text(prod, "vProd")),
         ncm=_text(prod, "NCM"),
+        cest=_digits(_text(prod, "CEST")),
         cfop=_text(prod, "CFOP"),
         expiry_date=expiry,
         lot=lot,
     )
+
+
+def _unit_gtin(*, commercial: str, taxable: str, unit: str, tax_unit: str) -> tuple[str, str]:
+    """``(GTIN da unidade, o outro GTIN)`` — qual dos dois vai para a prateleira.
+
+    ``cEAN`` é o GTIN da unidade COMERCIAL (como o fornecedor vendeu: muitas
+    vezes a caixa); ``cEANTrib`` o da unidade TRIBUTÁVEL. Quando divergem e a
+    tributável é contável (UN) e a comercial não é (CX, FD, PCT…), o tributável
+    é o da unidade que a casa revende — o pote, não a caixa de 12. Fora desse
+    caso não há como decidir pela nota: fica o comercial, como sempre foi, e o
+    outro segue ao lado para quem confere a embalagem decidir.
+    """
+    if not taxable or taxable == commercial:
+        return commercial, ""
+    if not commercial:
+        return taxable, ""
+    if _canonical_unit(tax_unit) == "un" and _canonical_unit(unit) != "un":
+        return taxable, commercial
+    return commercial, taxable
 
 
 def _shortest_lot(prod: ET.Element | None) -> tuple[str, str]:
@@ -1089,8 +1127,16 @@ def _valid_access_key(key: str) -> bool:
 
 
 def _valid_gtin(value: str) -> str:
+    """O GTIN, se for um: 8/12/13/14 dígitos com dígito verificador GS1.
+
+    "SEM GTIN", zeros e código interno do fornecedor que caiu no campo errado
+    voltam vazios. O validador é o mesmo do cadastro (``social.schema``): um
+    GTIN que o Admin recusaria não pode entrar pela nota.
+    """
+    from shopman.offerman.contrib.social.schema import _gtin_is_valid
+
     digits = _digits(value)
-    return digits if digits and set(digits) != {"0"} else ""
+    return digits if digits and _gtin_is_valid(digits) else ""
 
 
 def _digits(value: Any) -> str:
@@ -1148,7 +1194,7 @@ def _factor_tokens(conversion: Any, unit: str) -> set[str]:
 
 
 def _item_lookup_keys(item: NFeItem) -> list[str]:
-    return [value for value in (item.product_code, item.ean, item.name) if value]
+    return [value for value in (item.product_code, item.ean, item.package_ean, item.name) if value]
 
 
 def _metadata_scopes(obj: Any) -> list[dict[str, Any]]:

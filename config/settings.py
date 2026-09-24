@@ -933,6 +933,14 @@ SHOPMAN_SMS_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_SMS_ALLOW_IN_DEBUG", False)
 SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG", False)
 SHOPMAN_WHATSAPP_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_WHATSAPP_ALLOW_IN_DEBUG", False)
 SHOPMAN_MACHINE_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_MACHINE_ALLOW_IN_DEBUG", False)
+SHOPMAN_ENRICHMENT_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_ENRICHMENT_ALLOW_IN_DEBUG", False)
+
+# ── Sugestão de catálogo por GTIN (shop.services.product_enrichment) ──
+# Token da API Cosmos (Bluesoft): nome, marca, NCM, peso e foto de referência.
+# VAZIO = Cosmos inerte — a sugestão segue com a NF-e de compra e o Open Food
+# Facts, e a tela diz que a Cosmos ficou de fora. O plano grátis dá 25
+# consultas/dia; o token é segredo e mora no ambiente, nunca no repositório.
+SHOPMAN_COSMOS_TOKEN = os.environ.get("SHOPMAN_COSMOS_TOKEN", "").strip()
 
 # ── OTP Delivery Chain ───────────────────────────────────────────────
 # SMS primário (Twilio), email como fallback. WhatsApp fica mapeado mas FORA da cadeia

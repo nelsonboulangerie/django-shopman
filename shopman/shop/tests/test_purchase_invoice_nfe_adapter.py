@@ -30,6 +30,8 @@ def _nfe_xml(
     tax_quantity: str = "50.0000",
     tax_unit_value: str = "7.2000000000",
     ean: str = "SEM GTIN",
+    tax_ean: str | None = None,
+    cest: str | None = None,
     rastro: str = "",
 ) -> str:
     """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
@@ -41,6 +43,7 @@ def _nfe_xml(
         ""
         if tax_unit is None
         else f"""
+          <cEANTrib>{tax_ean if tax_ean is not None else ean}</cEANTrib>
           <uTrib>{tax_unit}</uTrib>
           <qTrib>{tax_quantity}</qTrib>
           <vUnTrib>{tax_unit_value}</vUnTrib>"""
@@ -69,7 +72,7 @@ def _nfe_xml(
           <cProd>{product_code}</cProd>
           <cEAN>{ean}</cEAN>
           <xProd>{product_name}</xProd>
-          <NCM>11010010</NCM>
+          <NCM>11010010</NCM>{f"<CEST>{cest}</CEST>" if cest else ""}
           <CFOP>5102</CFOP>
           <uCom>{unit}</uCom>
           <qCom>{quantity}</qCom>
@@ -164,6 +167,9 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "invoiceTotal": "360,00",
             "invoiceProductCode": "FAR-25",
             "invoiceEan": "",
+            "invoicePackageEan": "",
+            "invoiceNcm": "11010010",
+            "invoiceCest": "",
             "checked": False,
         }
     ]
@@ -709,3 +715,72 @@ def test_note_without_rastro_leaves_expiry_to_the_operator(supplier, material):
     assert line["expiryDate"] == ""
     assert line["expiryFromInvoice"] is False
     assert line["invoiceLot"] == ""
+
+
+# ── GTIN, CEST e a NF-e como primeira fonte da sugestão de catálogo ──────
+
+
+@pytest.mark.django_db
+def test_gtin_com_digito_verificador_errado_nao_entra(supplier):
+    """Código interno que caiu no campo de GTIN parece GTIN e não é."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="QJO", unit="PC", ean="7898708850300", tax_unit=None),
+        access_key=VALID_ACCESS_KEY,
+    )
+    assert draft["lines"][0]["invoiceEan"] == ""
+
+
+@pytest.mark.django_db
+def test_sem_gtin_continua_vazio(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(ean="SEM GTIN"), access_key=VALID_ACCESS_KEY)
+    assert draft["lines"][0]["invoiceEan"] == ""
+    assert draft["lines"][0]["invoicePackageEan"] == ""
+
+
+@pytest.mark.django_db
+def test_caixa_de_unidades_prefere_o_gtin_tributavel_da_unidade(supplier):
+    """Vendido em CX, tributado em UN: o cEANTrib é o do pote, o cEAN o da caixa."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            product_code="ACON-CX",
+            unit="CX",
+            quantity="1.0000",
+            tax_unit="UN",
+            tax_quantity="12.0000",
+            ean="17898708850306",
+            tax_ean="7898708850309",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert line["invoiceEan"] == "7898708850309"
+    assert line["invoicePackageEan"] == "17898708850306"
+
+
+@pytest.mark.django_db
+def test_gtins_divergentes_sem_eixo_contavel_nao_decidem_pela_nota(supplier):
+    """Sem a caixa→unidade clara, fica o comercial — e o outro não some."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            unit="UN",
+            quantity="4.0000",
+            tax_unit="KG",
+            tax_quantity="2.0000",
+            ean="7898708850309",
+            tax_ean="7891234567895",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert line["invoiceEan"] == "7898708850309"
+    assert line["invoicePackageEan"] == "7891234567895"
+
+
+@pytest.mark.django_db
+def test_cest_e_ncm_da_nota_chegam_a_linha(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(ean="7898708850309", cest="17.046.00"), access_key=VALID_ACCESS_KEY
+    )
+    line = draft["lines"][0]
+    assert line["invoiceNcm"] == "11010010"
+    assert line["invoiceCest"] == "1704600"
