@@ -1035,15 +1035,6 @@ def _scrub_session_event_payload(payload) -> tuple[dict, bool]:
     return clean, changed
 
 
-def _cancellation_alert_operational_message(*, order_ref: str, protocol: str) -> str:
-    """Reconstrói o alerta sem depender de parsing do texto pessoal anterior."""
-    protocol_copy = f" Protocolo {protocol}." if protocol else ""
-    return (
-        f"O cliente solicitou análise de cancelamento do pedido {order_ref}."
-        f"{protocol_copy} Abra o pedido para decidir o cancelamento e eventual estorno."
-    )
-
-
 _GATEWAY_PERSONAL_KEYS = frozenset(
     {
         "billingdetails",
@@ -1120,12 +1111,17 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
 
     matching_orders = _customer_orders(customer_ref, phone)
     matching_order_refs = tuple(matching_orders.values_list("ref", flat=True))
-    cancellation_protocols = dict(
-        OrderEvent.objects.filter(
+    from shopman.shop.services.cancellation_requests import (
+        operational_message as cancellation_operational_message,
+    )
+
+    cancellation_requests = {
+        order_ref: (protocol, bool(before_preparation))
+        for order_ref, protocol, before_preparation in OrderEvent.objects.filter(
             order__ref__in=matching_order_refs,
             type="customer_cancellation_requested",
-        ).values_list("order__ref", "payload__protocol")
-    )
+        ).values_list("order__ref", "payload__protocol", "payload__before_preparation")
+    }
 
     # Só este tipo de alerta carrega texto escrito pelo titular. O prefixo é
     # evidência operacional (pedido + protocolo) e é reconstruído a partir do
@@ -1136,9 +1132,11 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
         order_ref__in=matching_order_refs,
     )
     for alert in cancellation_alerts.only("pk", "order_ref", "message").iterator():
-        message = _cancellation_alert_operational_message(
+        protocol, before_preparation = cancellation_requests.get(alert.order_ref, ("", False))
+        message = cancellation_operational_message(
             order_ref=alert.order_ref,
-            protocol=str(cancellation_protocols.get(alert.order_ref) or ""),
+            protocol=str(protocol or ""),
+            before_preparation=before_preparation,
         )
         if alert.message != message:
             OperatorAlert.objects.filter(pk=alert.pk).update(message=message)

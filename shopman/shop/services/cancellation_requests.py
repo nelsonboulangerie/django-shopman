@@ -22,6 +22,34 @@ EVENT_TYPE = "customer_cancellation_requested"
 ALERT_TYPE = "customer_cancellation_requested"
 TERMINAL_STATUSES = {Order.Status.CANCELLED, Order.Status.RETURNED}
 
+# Termos §7 (versão 2026-09-25): o pedido pago ainda não preparado aceita
+# desistência com devolução do valor inteiro. "Antes do preparo" é o pedido que
+# não chegou a ``preparing`` — e vale o estado NO MOMENTO da solicitação, que o
+# evento grava: se a cozinha começar depois, a promessa já estava feita.
+BEFORE_PREPARATION_STATUSES = frozenset({Order.Status.NEW, Order.Status.ACCEPTED})
+
+
+def operational_message(*, order_ref: str, protocol: str, before_preparation: bool) -> str:
+    """O texto do alerta para o app de Pedidos, só com dado operacional.
+
+    Fonte única: a solicitação escreve com ele, e a anonimização do titular
+    reconstrói com ele (sem o motivo, que é texto pessoal).
+
+    Antes do preparo, o alerta não pede "decisão": diz a regra dos Termos e o
+    gesto que a cumpre. Cancelar pedido pago continua sob a assinatura do
+    gerente (``operator_cancel_policy``); o estorno do Pix ou do cartão sai do
+    próprio cancelamento (``lifecycle._on_cancelled`` → ``payment.refund``).
+    """
+    protocol_copy = f" Protocolo {protocol}." if protocol else ""
+    if before_preparation:
+        action = (
+            "O pedido ainda não estava em preparo: pelos Termos (§7), a desistência vale e o "
+            "valor volta inteiro. Cancele o pedido; o estorno do Pix ou do cartão sai sozinho."
+        )
+    else:
+        action = "Abra o pedido para decidir o cancelamento e eventual estorno."
+    return f"O cliente solicitou análise de cancelamento do pedido {order_ref}.{protocol_copy} {action}"
+
 
 class CancellationRequestUnavailable(Exception):
     """The order already has the requested terminal outcome."""
@@ -60,14 +88,20 @@ def request_cancellation(order: Order, *, reason: str = "") -> CancellationReque
     requested_at = timezone.now()
     protocol = f"SC-{requested_at:%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
     clean_reason = str(reason or "").strip()[:500]
+    before_preparation = locked.status in BEFORE_PREPARATION_STATUSES
     event = locked.emit_event(
         EVENT_TYPE,
         actor="customer:self-service",
-        payload={"protocol": protocol, "reason": clean_reason},
+        payload={
+            "protocol": protocol,
+            "reason": clean_reason,
+            "before_preparation": before_preparation,
+        },
     )
-    message = (
-        f"O cliente solicitou análise de cancelamento do pedido {locked.ref}. "
-        f"Protocolo {protocol}. Abra o pedido para decidir o cancelamento e eventual estorno."
+    message = operational_message(
+        order_ref=locked.ref,
+        protocol=protocol,
+        before_preparation=before_preparation,
     )
     if clean_reason:
         message += f" Motivo informado: {clean_reason}"
