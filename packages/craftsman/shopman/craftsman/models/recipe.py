@@ -254,17 +254,20 @@ class RecipeItem(models.Model):
         help_text=_(
             "Quantidade LÍQUIDA para o rendimento base da ficha técnica: o que "
             "entra no produto, já limpo. O que sai do estoque é a bruta, "
-            "derivada de `usable_pct`."
+            "derivada de `usable_factor`."
         ),
     )
-    usable_pct = models.DecimalField(
+    usable_factor = models.DecimalField(
         max_digits=5,
-        decimal_places=2,
-        default=Decimal("100.00"),
-        verbose_name=_("Aproveitamento (%)"),
+        decimal_places=4,
+        default=Decimal("1"),
+        verbose_name=_("Fator de aproveitamento"),
         help_text=_(
-            "Quanto do insumo BRUTO sobra depois de limpar: cebola 84%, tomilho "
-            "só folhas 60%, suco de limão 40%. 100% = nada se perde no preparo."
+            "Quanto do insumo BRUTO sobra depois de limpar, em FRAÇÃO: cebola "
+            "0,84, tomilho só folhas 0,60, suco de limão 0,40. 1 = nada se perde. "
+            "⚠️ Não confundir com o «fator de correção» da cozinha, que é o "
+            "INVERSO deste (1 ÷ 0,84 = 1,19) — aqui o número é o que sobra, "
+            "nunca o multiplicador de compra."
         ),
     )
     unit = models.CharField(
@@ -303,12 +306,12 @@ class RecipeItem(models.Model):
                 condition=models.Q(unit__in=RECIPE_ITEM_UNIT_VALUES),
                 name="craft_recipeitem_unit_known",
             ),
-            # Aproveitamento fora de (0, 100] não é dado ruim, é dado que faz o
-            # estoque descer errado em silêncio: 0 divide por zero, e acima de
-            # 100 faria a bruta ser MENOR que a líquida — limpar criando matéria.
+            # Aproveitamento fora de (0, 1] não é dado ruim, é dado que faz o
+            # estoque descer errado em silêncio: 0 divide por zero, e acima de 1
+            # faria a bruta ser MENOR que a líquida — limpar criando matéria.
             models.CheckConstraint(
-                condition=models.Q(usable_pct__gt=0) & models.Q(usable_pct__lte=100),
-                name="craft_recipeitem_usable_pct_range",
+                condition=models.Q(usable_factor__gt=0) & models.Q(usable_factor__lte=1),
+                name="craft_recipeitem_usable_factor_range",
             ),
         ]
 
@@ -325,7 +328,22 @@ class RecipeItem(models.Model):
         a de ontem —, o tipo 3 da ADR-024, cuja R3 manda o número carregar o
         ``≈`` até a tela. Quem exibe não deve arredondar em silêncio.
         """
-        return (self.quantity / (self.usable_pct / Decimal("100"))).quantize(Decimal("0.001"))
+        return (self.quantity / self.usable_factor).quantize(Decimal("0.001"))
+
+    @property
+    def correction_factor(self) -> Decimal:
+        """O "fator de correção" como a cozinha o chama — o INVERSO deste campo.
+
+        Existe para a tela poder falar a língua do chef sem que ninguém precise
+        inverter de cabeça, e **só de leitura**: o que se digita e o que o banco
+        guarda é o aproveitamento, porque é o número que a ficha da casa traz
+        (a coluna diz "84%") e porque a faixa dele é fechada em ``(0, 1]``.
+
+        O FC vive em ``[1, ∞)`` — um FC de 10 é legítimo, 90% de perda. Guardar
+        o FC tiraria o limite superior, e aí digitar 0,84 onde se espera 1,19
+        passaria calado. Com o aproveitamento, digitar 1,19 bate na constraint.
+        """
+        return (Decimal("1") / self.usable_factor).quantize(Decimal("0.0001"))
 
     def clean(self):
         super().clean()
