@@ -26,6 +26,7 @@ from .catalog import (
     CatalogCellView,
     CatalogMatrixView,
     CatalogProductDetailView,
+    CatalogProductPurchaseView,
     CatalogProductView,
     CatalogReorderCollectionsView,
     CatalogReorderItemsView,
@@ -219,6 +220,7 @@ from .purchase import (
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
     PurchaseRequestSendView,
+    PurchaseSaleView,
     PurchaseScanInvoiceView,
 )
 from .recipe_book import (
@@ -414,6 +416,11 @@ urlpatterns = [
         PurchaseMinStockView.as_view(),
         name="api-backstage-purchase-min-stock",
     ),
+    path(
+        "purchase/materials/<str:material_sku>/sale/",
+        PurchaseSaleView.as_view(),
+        name="api-backstage-purchase-sale",
+    ),
     # Contagem de insumos — auditoria de estoque, restrita a gestor/dono.
     path("purchase/count/", PurchaseCountView.as_view(), name="api-backstage-purchase-count"),
     path(
@@ -469,6 +476,7 @@ urlpatterns = [
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
     path("catalog/product/<str:sku>/", CatalogProductDetailView.as_view(), name="api-backstage-catalog-product-detail"),
+    path("catalog/product/<str:sku>/purchase/", CatalogProductPurchaseView.as_view(), name="api-backstage-catalog-product-purchase"),
     path("catalog/bulk/", CatalogBulkView.as_view(), name="api-backstage-catalog-bulk"),
     path("catalog/bulk-price/", CatalogBulkPriceView.as_view(), name="api-backstage-catalog-bulk-price"),
     path("catalog/reorder-collections/", CatalogReorderCollectionsView.as_view(), name="api-backstage-catalog-reorder-collections"),

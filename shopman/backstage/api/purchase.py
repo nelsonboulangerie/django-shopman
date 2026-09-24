@@ -171,6 +171,29 @@ class PurchaseMinStockView(APIView):
         )
 
 
+class PurchaseSaleView(APIView):
+    """"Vender também": liga/desliga a venda do item do Compras — ver `set_sale`.
+
+    Decidir vender (e o preço) é poder de catálogo; por isso exige as duas
+    permissões: operar o Compras E gerir o catálogo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("backstage.operate_purchase", "shop.manage_catalog")
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Turn selling on/off for a purchasable item (same SKU)",
+        responses={200: OpenApiResponse(description="Sale record toggled and projection refreshed.")},
+    )
+    def post(self, request, material_sku: str):
+        try:
+            projection, message = purchase_service.set_sale(material_sku, dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message=message)
+
+
 class PurchaseConversionView(APIView):
     """Declarar uma conversão de unidade sem sair do recebimento.
 

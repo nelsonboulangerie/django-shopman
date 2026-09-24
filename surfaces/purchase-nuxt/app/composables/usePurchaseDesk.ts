@@ -436,6 +436,33 @@ export function usePurchaseDesk() {
     }
   }
 
+  /**
+   * "Vender também": um gesto, que pede só o preço ao ligar.
+   *
+   * Devolve `true` quando o servidor aceitou, para a tela fechar o campo de
+   * preço; a recusa (sem preço, "é produzido aqui") vira a mensagem do toast.
+   */
+  async function setSale(materialSku: string, enabled: boolean, priceInput = ""): Promise<boolean> {
+    if (!requireBackend(enabled ? "colocar à venda" : "tirar da venda")) return false;
+    if (actionPending.value) return false;
+
+    actionPending.value = true;
+    actionError.value = "";
+    try {
+      const response = await api.setSale(materialSku, enabled ? { enabled, priceInput } : { enabled });
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      return true;
+    } catch (err) {
+      const message = httpErrorMessage(err, enabled ? "Não foi possível colocar à venda." : "Não foi possível tirar da venda.");
+      actionError.value = message;
+      useSonner.error(message);
+      return false;
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
   function clearCostBatch() {
     batchInputs.value = {};
     batchConversionIds.value = {};
@@ -1074,6 +1101,7 @@ export function usePurchaseDesk() {
     minStockLineErrors,
     minStockFilledCount,
     setMinStockInput,
+    setSale,
     clearMinStock,
     saveMinStock,
     supplierSummaries,

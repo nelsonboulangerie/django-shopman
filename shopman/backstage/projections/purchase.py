@@ -19,10 +19,21 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
+from shopman.shop.services.sku_records import SkuRoles, sku_roles_map
 
 logger = logging.getLogger(__name__)
 
 REQUEST_STATUSES = {"review", "approved", "sent"}
+
+
+@dataclass(frozen=True)
+class SkuRolesProjection:
+    """Os selos do SKU — derivados, nunca guardados (``sku_records.SkuRoles``)."""
+
+    purchasable: bool
+    sellable: bool
+    produced: bool
+    usedInRecipe: bool
 
 
 @dataclass(frozen=True)
@@ -44,6 +55,9 @@ class MaterialProjection:
     replenishAtDays: float
     suggestedQty: float
     stockIsApproximate: bool
+    roles: SkuRolesProjection
+    #: Preço de venda do cadastro de venda do mesmo SKU; ``None`` quando não se vende.
+    salePriceQ: int | None
 
 
 @dataclass(frozen=True)
@@ -207,6 +221,8 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     last_delivery = _last_delivery_map(supplier_refs)
     lead_times = _lead_time_map(skus, policy=policy)
     approximate_stock = _approximate_stock_skus(material_rows, policy=policy)
+    roles = sku_roles_map(skus)
+    sale_prices = _sale_price_map(skus)
 
     suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
     materials = tuple(
@@ -218,6 +234,8 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             lead_time_days=lead_times.get(material.sku, Decimal(policy["min_lead_time_days"])),
             stock_is_approximate=material.sku in approximate_stock,
             policy=policy,
+            roles=roles.get(material.sku, SkuRoles()),
+            sale_price_q=sale_prices.get(material.sku),
         )
         for material in material_rows
     )
@@ -316,6 +334,8 @@ def _material_projection(
     lead_time_days: Decimal,
     stock_is_approximate: bool,
     policy: dict[str, int],
+    roles: SkuRoles,
+    sale_price_q: int | None,
 ) -> MaterialProjection:
     meta = _purchase_meta(material)
     replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
@@ -334,7 +354,7 @@ def _material_projection(
         replenish_at=replenish_at,
         shelf_life_days=material.shelf_life_days,
     )
-    category = _meta_str(meta, "category") or "Insumos"
+    category = _meta_str(meta, "category") or ("Revenda" if roles.sellable else "Insumos")
     return MaterialProjection(
         sku=material.sku,
         name=material.name,
@@ -351,6 +371,21 @@ def _material_projection(
         replenishAtDays=_number(replenish_at),
         suggestedQty=_number(suggested),
         stockIsApproximate=stock_is_approximate,
+        roles=SkuRolesProjection(
+            purchasable=roles.purchasable,
+            sellable=roles.sellable,
+            produced=roles.produced,
+            usedInRecipe=roles.used_in_recipe,
+        ),
+        salePriceQ=sale_price_q,
+    )
+
+
+def _sale_price_map(skus: list[str]) -> dict[str, int]:
+    """Preço de venda dos SKUs que a casa decidiu vender."""
+    Product = apps.get_model("offerman", "Product")
+    return dict(
+        Product.objects.filter(sku__in=skus, is_sellable=True).values_list("sku", "base_price_q")
     )
 
 

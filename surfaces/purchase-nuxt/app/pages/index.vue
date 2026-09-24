@@ -25,6 +25,7 @@ import {
   receiptOutcomeSummary,
   isApproximateCost,
   purchaseUnitLabel,
+  skuRoleBadges,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
@@ -70,6 +71,7 @@ const {
   minStockLineErrors,
   minStockFilledCount,
   setMinStockInput,
+  setSale,
   clearMinStock,
   saveMinStock,
   supplierSummaries,
@@ -170,6 +172,27 @@ const baseTabs: { key: PurchaseBaseView; label: string; icon: string }[] = [
   { key: "costs", label: "Custos", icon: "lucide:calculator" },
   { key: "count", label: "Contagem", icon: "lucide:clipboard-check" },
 ];
+
+// "Vender também" do item aberto: o campo de preço só existe depois do gesto,
+// e volta fechado quando outro item é aberto.
+const saleOpen = ref(false);
+const salePriceInput = ref("");
+watch(
+  () => selectedMaterial.value?.sku,
+  () => {
+    saleOpen.value = false;
+    salePriceInput.value = "";
+  },
+);
+
+async function confirmSale() {
+  const material = selectedMaterial.value;
+  if (!material) return;
+  if (await setSale(material.sku, true, salePriceInput.value)) {
+    saleOpen.value = false;
+    salePriceInput.value = "";
+  }
+}
 
 const countConfirmOpen = ref(false);
 
@@ -1228,6 +1251,9 @@ onBeforeUnmount(stopInvoiceScanner);
                   <td class="px-3 py-2">
                     <button type="button" class="text-left font-semibold hover:underline" @click="selectMaterial(material.sku)">{{ material.name }}</button>
                     <p class="text-xs text-muted-foreground">{{ material.category }} · {{ material.recipes.join(", ") }}</p>
+                    <p v-if="skuRoleBadges(material.roles).length" class="mt-1 flex flex-wrap gap-1">
+                      <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">{{ badge }}</span>
+                    </p>
                   </td>
                   <td class="px-3 py-2 tabular-nums">{{ formatStockOnHand(material) }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ coverageLabel(material.coverageDays) }}</td>
@@ -1302,6 +1328,50 @@ onBeforeUnmount(stopInvoiceScanner);
           <div class="mt-4 space-y-2">
             <div v-for="issue in selectedMaterial.issues" :key="issue.key" class="rounded-md border p-2 text-sm" :class="toneClasses[issue.tone]">{{ issue.label }}</div>
             <p v-if="!selectedMaterial.issues.length" class="rounded-md border border-success/25 bg-success/10 p-2 text-sm text-success">Sem pontos de atenção</p>
+          </div>
+          <!-- Vender também: um gesto, que pede só o preço. O cadastro de venda
+               nasce com o MESMO SKU (mesmo estoque) e entra no PDV; loja online
+               só com foto. Desligar tira da venda sem apagar nada. -->
+          <div class="mt-4 border-t border-border pt-4" data-testid="sale-toggle">
+            <div class="flex flex-wrap gap-1">
+              <span v-for="badge in skuRoleBadges(selectedMaterial.roles)" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{{ badge }}</span>
+            </div>
+            <template v-if="selectedMaterial.roles?.sellable">
+              <p class="mt-3 text-sm">
+                À venda no PDV por <span class="font-semibold tabular-nums">{{ formatMoney(selectedMaterial.salePriceQ ?? 0) }}</span> / {{ selectedMaterial.unit }}.
+              </p>
+              <button
+                type="button"
+                class="mt-2 h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                :disabled="readonlyFallback || actionPending"
+                @click="setSale(selectedMaterial.sku, false)"
+              >
+                Parar de vender
+              </button>
+            </template>
+            <template v-else-if="!selectedMaterial.roles?.produced">
+              <label class="mt-3 flex items-center gap-2 text-sm font-medium">
+                <input v-model="saleOpen" type="checkbox" class="form-checkbox rounded border-border text-primary" />
+                Vender também
+              </label>
+              <form v-if="saleOpen" class="mt-2 space-y-2" @submit.prevent="confirmSale()">
+                <label class="block">
+                  <span class="block text-xs font-medium text-muted-foreground">Preço de venda (R$ por {{ selectedMaterial.unit }})</span>
+                  <input v-model="salePriceInput" inputmode="decimal" required placeholder="0,00" class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums" />
+                </label>
+                <p v-if="selectedMaterial.preferredBaseCostQ" class="text-xs text-muted-foreground">
+                  Custo de compra: {{ formatMoney(selectedMaterial.preferredBaseCostQ) }} / {{ selectedMaterial.unit }}
+                </p>
+                <p class="text-xs text-muted-foreground">Entra no PDV. Na loja online, só depois de ter foto.</p>
+                <button
+                  type="submit"
+                  class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  :disabled="readonlyFallback || actionPending || !salePriceInput.trim()"
+                >
+                  Colocar à venda
+                </button>
+              </form>
+            </template>
           </div>
           <div class="mt-4 border-t border-border pt-4">
             <p class="text-xs font-medium text-muted-foreground">Receitas que consomem</p>

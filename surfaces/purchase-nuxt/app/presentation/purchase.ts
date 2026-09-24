@@ -1,4 +1,5 @@
 import type {
+  SkuRoles,
   CountItem,
   CountRow,
   CountSummary,
@@ -951,4 +952,20 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
   }
 
   return blockers;
+}
+
+/**
+ * Os selos do SKU, na ordem em que o operador pensa: de onde vem, para onde vai.
+ *
+ * Só aparece o que é verdade — selo ausente é "não é", e a tela não escreve
+ * "Não vendável" em cada linha de farinha.
+ */
+export function skuRoleBadges(roles: SkuRoles | undefined): string[] {
+  if (!roles) return [];
+  const badges: string[] = [];
+  if (roles.purchasable) badges.push("Comprável");
+  if (roles.sellable) badges.push("Vendável");
+  if (roles.produced) badges.push("Produzido");
+  if (roles.usedInRecipe) badges.push("Usado em receita");
+  return badges;
 }

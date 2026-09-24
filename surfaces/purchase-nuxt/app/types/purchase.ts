@@ -40,6 +40,28 @@ export interface Material {
   // O saldo atravessou uma ponte aproximada e carrega o "≈" ate a tela
   // (ADR-024, R3). Vem do carimbo `converted_via.approximate` no Move.
   stockIsApproximate?: boolean;
+  /** Selos do SKU, derivados no servidor — nunca guardados à parte. */
+  roles?: SkuRoles;
+  /** Preço de venda do mesmo SKU; `null` quando a casa não o vende. */
+  salePriceQ?: number | null;
+}
+
+/**
+ * O que o SKU é: Comprável · Vendável · Produzido · Usado em receita.
+ *
+ * Um item comprado pode ser insumo E revenda — os dois cadastros têm o mesmo
+ * SKU e o mesmo estoque. Vender é decisão explícita ("Vender também").
+ */
+export interface SkuRoles {
+  purchasable: boolean;
+  sellable: boolean;
+  produced: boolean;
+  usedInRecipe: boolean;
+}
+
+export interface PurchaseSalePayload {
+  enabled: boolean;
+  priceInput?: string;
 }
 
 export interface SupplierContact {
