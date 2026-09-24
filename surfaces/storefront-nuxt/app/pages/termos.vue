@@ -146,12 +146,15 @@ useSeoMeta({
         aparecer.
       </p>
       <p>
-        <strong>Pedido pago:</strong> o cancelamento vira uma solicitação com número de protocolo, e
-        {{ marca }} responde pelo WhatsApp do pedido. O dinheiro volta depois que a loja confirma,
-        para que a devolução não aconteça duas vezes.
+        <strong>Pedido pago, antes do preparo:</strong> você pode desistir pela tela de
+        acompanhamento. A desistência vira uma solicitação com número de protocolo, {{ marca }}
+        responde pelo WhatsApp do pedido e devolve o valor inteiro. O dinheiro volta depois que a
+        loja confirma, para que a devolução não aconteça duas vezes.
       </p>
       <p>
-        Alimento em preparo ou já assado não volta para a prateleira.
+        <strong>Depois que o preparo começa:</strong> o pedido é alimento perecível, feito para
+        você, e não volta para a prateleira. A partir daí não há desistência sem motivo; produto
+        com problema segue a regra abaixo.
       </p>
       <p>
         <strong>Produto errado ou com problema:</strong> avise pelo WhatsApp do pedido, de
