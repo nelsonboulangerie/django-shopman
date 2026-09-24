@@ -246,25 +246,25 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
             <template v-if="kind === 'label'">
               <div class="grid gap-1">
                 <dt class="text-sm text-muted-foreground">Valor da etiqueta</dt>
-                <dd class="text-5xl font-semibold tabular-nums">{{ formatBRL(preview.labelQ ?? 0) }}</dd>
+                <dd class="text-4xl font-bold tabular-nums">{{ formatBRL(preview.labelQ ?? 0) }}</dd>
               </div>
               <div class="grid gap-1">
                 <dt class="text-sm text-muted-foreground">Peso aproximado</dt>
-                <dd class="text-3xl font-medium tabular-nums">≈ {{ kgDisplay(preview.weightG) }}</dd>
+                <dd class="text-3xl font-semibold tabular-nums">≈ {{ kgDisplay(preview.weightG) }}</dd>
               </div>
               <div v-if="preview.gapQ > 0" class="grid gap-1">
                 <dt class="text-sm text-muted-foreground">Cobrado</dt>
-                <dd class="text-2xl font-medium tabular-nums">{{ formatBRL(preview.totalQ) }}</dd>
+                <dd class="text-lg font-semibold tabular-nums">{{ formatBRL(preview.totalQ) }}</dd>
               </div>
             </template>
             <template v-else>
               <div class="grid gap-1">
                 <dt class="text-sm text-muted-foreground">Peso</dt>
-                <dd class="text-3xl font-medium tabular-nums">{{ kgDisplay(preview.weightG) }}</dd>
+                <dd class="text-3xl font-semibold tabular-nums">{{ kgDisplay(preview.weightG) }}</dd>
               </div>
               <div class="grid gap-1">
                 <dt class="text-sm text-muted-foreground">Valor</dt>
-                <dd class="text-5xl font-semibold tabular-nums">{{ formatBRL(preview.totalQ) }}</dd>
+                <dd class="text-4xl font-bold tabular-nums">{{ formatBRL(preview.totalQ) }}</dd>
               </div>
             </template>
           </dl>
