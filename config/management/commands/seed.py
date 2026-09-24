@@ -497,16 +497,9 @@ STOCK_VITRINE = {
     # Bebidas com estoque físico (água engarrafada)
     "AGUA-MINERAL-PRATA-310": 48,
     # Mercearia
-    "MT": 8,
-    "BK": 6,
     "TPND": 8,
     "RTAT": 8,
-    "CX": 6,
     "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": 6,
-    "QP": 6,
-    "GR": 12,
-    "THL": 10,
-    "LN": 8,
 }
 
 # Sobras de ontem no cenário novo: LOTES datados de ontem, na própria vitrine
@@ -921,13 +914,14 @@ class Command(BaseCommand):
         self._seed_delivery_distance_bands()
         self._seed_delivery_zones()
         products = self._seed_catalog()
+        # A revenda real da Mercearia e as caixas presente (planilha consolidada):
+        # a mesma tabela que o `apply_grocery_catalog` aplica num banco que já
+        # roda. Nasce só no PDV — canal remoto pede foto. Vem ANTES das marcas:
+        # a das caixas presente é a da casa, e quem a grava é o `apply_brands`.
+        apply_grocery(apply=True)
         # Marca da casa nos feitos aqui, do fabricante na revenda: a mesma
         # tabela que o `apply_product_brands` aplica num banco que já roda.
         apply_brands(apply=True)
-        # A revenda real da Mercearia (planilha consolidada): a mesma tabela que o
-        # `apply_grocery_catalog` aplica num banco que já roda. Nasce só no PDV —
-        # canal remoto pede foto.
-        apply_grocery(apply=True)
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
@@ -1903,29 +1897,18 @@ class Command(BaseCommand):
             # qualquer produto normal. (O mecanismo já é este: o destino do
             # lote é decidido pela validade; desconto de véspera é marcação
             # explícita, nunca automática.)
-            # ── Mercearia (preços provisórios — metadata.price_tbd) ──
-            ("MT", "Mostarda da Casa", "Mostarda artesanal feita na casa", 1800, "un", 30, True,
-             unsplash("photo-1638324396220-432156cd9303"), 200, "Conservar refrigerado após aberto"),
-            ("BK", "Bacon da Casa", "Bacon curado e defumado na casa (peça)", 2200, "un", 15, True,
-             unsplash("photo-1766406838572-915da0343519"), 200, "Conservar refrigerado"),
+            # ── Mercearia ──
+            # Os placeholders do Cardápio 2027 (MT, BK, CX, QP, GR, THL, LN)
+            # saíram por decisão do dono em 24/09: no lugar deles entram a
+            # revenda real e as caixas presente, pelo `apply_grocery_catalog`.
             # RTAT, TPND e o Camembert já são o produto real do Yooga (nome e
             # preço); o `apply_grocery_catalog` faz a mesma troca num banco vivo.
             ("TPND", "Tapenade Azeitonas Pretas 100g", "Pasta provençal de azeitonas da casa", 2900, "un", 15, True,
              unsplash("photo-1750874695064-f851719d1858"), 100, "Conservar refrigerado após aberto"),
             ("RTAT", "Ratatouille 90g", "Patê vegetal da casa", 1800, "un", 15, True,
              unsplash("photo-1777891257519-84d59a502ca1"), 90, "Conservar refrigerado após aberto"),
-            ("CX", "Cornichons", "Picles franceses em conserva", 2800, "un", 90, True,
-             unsplash("photo-1774456567094-726973275d34"), 200, "Conservar refrigerado após aberto"),
             ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Queijo Camembert Ile de France 125g", "Queijo camembert de leite de vaca", 4000, "un", 20, True,
              unsplash("photo-1624806992066-5ffcf7ca186b"), 125, "Conservar refrigerado"),
-            ("QP", "Queijo Pomerode", "Queijo colonial artesanal de Pomerode", 3200, "un", 30, True,
-             unsplash("photo-1756922245026-934ff1648d79"), 300, "Conservar refrigerado"),
-            ("GR", "Café em Grão (250g)", "O grão da casa, torra artesanal", 4200, "un", 90, True,
-             unsplash("photo-1559056199-641a0ac8b55e"), 250, "Conservar em local seco e fechado"),
-            ("THL", "Chá da Casa (lata)", "Blend da casa em folhas, lata para levar", 4000, "un", 365, True,
-             unsplash("photo-1760602180499-382146d5eb02"), 80, "Conservar em local seco e fechado"),
-            ("LN", "Lata Nelson", "Lata de presente: madeleines sortidas e biscoitos da casa", 8900, "un", 30, True,
-             unsplash("photo-1765850258842-af769210194f"), 400, "Conservar em local seco e fechado"),
             # ── Linha Chai Kãnfa (19/08) ──
             # Marca de terceiro que a casa revendia. Entra pela mesma regra das
             # outras restaurações — o que a casa vendia, existe. Volume baixo
@@ -2110,16 +2093,9 @@ class Command(BaseCommand):
             "JB": ["lanche", "sanduiche", "frances", "presunto", "manteiga"],
             "PERDU": ["doce", "rabanada", "chapa", "frances"],
             "MELSA": ["doce", "frutas", "chantilly", "japones", "gelado"],
-            "MT": ["mercearia", "despensa", "mostarda", "artesanal", "pote"],
-            "BK": ["mercearia", "despensa", "bacon", "defumado", "artesanal"],
             "TPND": ["mercearia", "despensa", "tapenade", "azeitona", "pote"],
             "RTAT": ["mercearia", "despensa", "pate", "ratatouille", "vegetal", "pote"],
-            "CX": ["mercearia", "despensa", "picles", "conserva", "frances"],
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": ["mercearia", "despensa", "queijo", "camembert", "frances"],
-            "QP": ["mercearia", "despensa", "queijo", "colonial", "local"],
-            "GR": ["mercearia", "despensa", "cafe", "grao", "torra"],
-            "THL": ["mercearia", "despensa", "cha", "lata", "presente"],
-            "LN": ["mercearia", "despensa", "presente", "lata", "biscoito", "madeleine"],
         }
 
 
@@ -2396,18 +2372,6 @@ class Command(BaseCommand):
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
-            "MT": {
-                "allergens": ["mostarda"],
-                "dietary_info": ["100% vegetal"],
-                "serves": "pote 200 g",
-                "approx_dimensions": "pote de vidro",
-            },
-            "BK": {
-                "allergens": [],
-                "dietary_info": [],
-                "serves": "peça aprox. 200 g",
-                "approx_dimensions": "embalado a vácuo",
-            },
             "TPND": {
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
@@ -2420,41 +2384,11 @@ class Command(BaseCommand):
                 "serves": "pote 90 g",
                 "approx_dimensions": "pote de vidro",
             },
-            "CX": {
-                "allergens": [],
-                "dietary_info": ["100% vegetal"],
-                "serves": "vidro 200 g",
-                "approx_dimensions": "vidro em conserva",
-            },
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "allergens": ["leite"],
                 "dietary_info": [],
                 "serves": "peça de 125 g",
                 "approx_dimensions": "caixa redonda",
-            },
-            "QP": {
-                "allergens": ["leite"],
-                "dietary_info": [],
-                "serves": "aprox. 300 g",
-                "approx_dimensions": "peça embalada",
-            },
-            "GR": {
-                "allergens": [],
-                "dietary_info": ["100% vegetal"],
-                "serves": "pacote 250 g",
-                "approx_dimensions": "pacote com válvula",
-            },
-            "THL": {
-                "allergens": [],
-                "dietary_info": ["100% vegetal"],
-                "serves": "lata 80 g",
-                "approx_dimensions": "lata decorada",
-            },
-            "LN": {
-                "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": [],
-                "serves": "lata sortida",
-                "approx_dimensions": "lata de presente",
             },
         }
 
@@ -2505,15 +2439,9 @@ class Command(BaseCommand):
             ),
             "AGUA-MINERAL-PRATA-310": "22011000",
             # Mercearia (revenda/produção própria — validar com o contador).
-            "MT": "21033010",
-            "BK": "02101900",
             "TPND": "20059900",
             "RTAT": "20059900",
-            "CX": "20011000",
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069020",
-            "QP": "04061010",
-            "GR": "09012100",
-            "THL": "09022000",
             # ── Linha Chai Kãnfa (19/08) ──
             # ⚠️ Sem isto os 12 cairiam no default de PANIFICAÇÃO (1905.90.90),
             # que é o NCM errado para chá.
@@ -2541,7 +2469,6 @@ class Command(BaseCommand):
                  "CHA-VITAL-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-MAMA-KANFA-L70"),
                 "09022000",
             ),
-            "LN": "19053100",
         }
 
         def fiscal_metadata_for_sku(sku: str) -> dict:
@@ -2946,18 +2873,6 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(200, 1, 310.0, 38.0, 24.0, 6.0, 15.0, 9.0, 1.5, 180.0),
             },
-            "MT": {
-                "ingredients_text": (
-                    "Grãos de mostarda, vinagre, especiarias e sal. CONTÉM: mostarda."
-                ),
-                "nutrition_facts": nutrition(10, 20, 8.0, 0.6, 0.2, 0.5, 0.4, 0.0, 0.2, 120.0),
-            },
-            "BK": {
-                "ingredients_text": (
-                    "Barriga suína curada e defumada na casa, sal e especiarias."
-                ),
-                "nutrition_facts": nutrition(30, 7, 160.0, 0.5, 0.0, 10.0, 13.0, 4.5, 0.0, 580.0),
-            },
             "TPND": {
                 "ingredients_text": (
                     "Azeitonas pretas, alcaparras, azeite extra virgem e ervas."
@@ -2970,41 +2885,11 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(20, 4, 25.0, 2.5, 1.2, 0.5, 1.5, 0.2, 0.8, 95.0),
             },
-            "CX": {
-                "ingredients_text": (
-                    "Pepinos, vinagre, endro e especiarias."
-                ),
-                "nutrition_facts": nutrition(30, 7, 4.0, 0.7, 0.4, 0.2, 0.0, 0.0, 0.3, 240.0),
-            },
             "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": {
                 "ingredients_text": (
                     "Leite de vaca pasteurizado, fermento lático, coalho e sal. CONTÉM: leite."
                 ),
                 "nutrition_facts": nutrition(30, 4, 90.0, 0.2, 0.2, 6.0, 7.0, 4.5, 0.0, 240.0),
-            },
-            "QP": {
-                "ingredients_text": (
-                    "Leite de vaca, fermento lático, coalho e sal. CONTÉM: leite."
-                ),
-                "nutrition_facts": nutrition(30, 10, 110.0, 0.5, 0.3, 7.0, 9.0, 5.5, 0.0, 200.0),
-            },
-            "GR": {
-                "ingredients_text": (
-                    "Café 100% arábica em grão, torra artesanal da casa."
-                ),
-                "nutrition_facts": nutrition(10, 25, 2.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0, 0.0),
-            },
-            "THL": {
-                "ingredients_text": (
-                    "Blend de chás e botânicos da casa em folhas."
-                ),
-                "nutrition_facts": nutrition(2, 40, 1.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
-            },
-            "LN": {
-                "ingredients_text": (
-                    "Madeleines sortidas e biscoitos amanteigados da casa. CONTÉM: glúten, leite e ovos."
-                ),
-                "nutrition_facts": nutrition(40, 10, 190.0, 24.0, 12.0, 2.5, 9.5, 6.0, 0.6, 95.0),
             },
         }
 
@@ -3077,14 +2962,6 @@ class Command(BaseCommand):
                 parent=pack, component=base, defaults={"qty": Decimal(quantidade)}
             )
             products[pack_sku] = pack
-
-        # Mercearia: preços provisórios até a lista do Pablo (rastreável no Admin).
-        # RTAT, TPND e o Camembert saíram daqui: o preço deles já é o do Yooga.
-        mercearia_tbd_skus = ["MT", "BK", "CX", "QP", "GR", "THL", "LN"]
-        for sku in mercearia_tbd_skus:
-            p = products[sku]
-            p.metadata["price_tbd"] = True
-            p.save(update_fields=["metadata"])
 
         # Pães que aguentam o dia seguinte: a VALIDADE diz isso agora
         # (shelf_life_days=1 → o lote vence amanhã e sobrevive ao fechamento
@@ -3229,9 +3106,7 @@ class Command(BaseCommand):
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
             "mercearia": [
-                "MT", "BK", "TPND", "RTAT",
-                "CX", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP",
-                "GR", "THL", "LN",
+                "TPND", "RTAT", "QUEIJO-CAMEMBERT-ILEDEFRANCE-125",
                 # linha Chai Kãnfa (19/08)
                 # A FOLHA seca é mercearia: leva-se para preparar em casa.
                 "CHA-ACONCHEGO-KANFA-L50", "CHA-ACONCHEGO-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50", "CHA-INTIMIDADE-KANFA-P50",
@@ -9392,12 +9267,12 @@ class Command(BaseCommand):
                 "PERDU",
                 "QJQT"],
             "leva": [
-                "BK", "TRADI", "BGG",
-                "BRBB", "GR", "CPG",
-                "CPX", "THL", "CX",
-                "KUP", "LN",
-                "MT", "TRABB", "HOL", "HOL4", "BRBB2",
-                "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "QP", "FORMA"],
+                "TRADI", "BGG",
+                "BRBB", "CPG",
+                "CPX",
+                "KUP",
+                "TRABB", "HOL", "HOL4", "BRBB2",
+                "QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "FORMA"],
             "hibrido": [
                 "COE", "CI", "CO",
                 "CRO", "FENDU", "MDLN", "MELON",

@@ -43,8 +43,8 @@ from shopman.shop.services.sku_records import ensure_purchase_record
 
 # Feito ou montado aqui. Conferido contra o catálogo vivo do alpha em
 # 22/09/2026. Os chás do bule são preparados aqui com blend Kãnfa: a bebida
-# servida é da casa, como o espresso não leva a marca do torrador. Ficam fora
-# porque a casa ainda não faz: Cream Soda (CV), Bacon (BK) e Mostarda (MT).
+# servida é da casa, como o espresso não leva a marca do torrador. Fica fora
+# porque a casa ainda não faz: Cream Soda (CV).
 HOUSE_SKUS: frozenset[str] = frozenset({
     # Pães, viennoiserie, doces e salgados de forno
     "COE", "PORQ", "URS", "BAT", "BGL", "ITA", "BRBB", "BRBB2", "BRCH", "BGG", "BGGP",
@@ -59,6 +59,8 @@ HOUSE_SKUS: frozenset[str] = frozenset({
     "SPMC", "SDLA", "SP", "CHBLU", "CHCAM", "CHROU", "CHSOP",
     # Despensa feita na casa (dono, 22/09)
     "RTAT", "TPND",
+    # Caixas presente montadas aqui (dono, 24/09)
+    "DIJON", "LILLE", "MIMO", "NICE",
 })
 
 # Revenda: marca do fabricante; GTIN só quando o código foi conferido (dígito

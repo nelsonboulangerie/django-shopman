@@ -46,12 +46,26 @@ oficial do catálogo, ``gtin_is_valid``). Quem falta alguma dessas fica em
   contrário também vale: item desta tabela sem foto que estiver num canal
   remoto sai dele.
 
+**Vendido a quilo** (``unit="kg"``): o Queijo Vale do Testo chega em peças de
+peso diferente. Unidade ``kg``, sem GTIN (a etiqueta da balança é EAN interno
+prefixo 2) e preço por quilo **quando alguma fonte o tiver** — hoje nenhuma
+tem, e o relatório repete a pergunta a cada execução. A falta de preço NÃO
+trava o cadastro nem a venda (dono, 24/09): a casa já pesa e etiqueta à mão, e
+o operador digita o valor da etiqueta no PDV — essa mecânica é de outra frente
+(``docs/plans/WP-VENDA-POR-PESO.md``).
+
+**GTIN da web** (``gtin_source``): quando o código veio de pesquisa (duas
+fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
+``metadata['gtin_source'] = "web, a confirmar na embalagem"``.
+
+**Caixas presente** (:data:`GIFT_BOXES`): produto da casa, SKU da casa, sem
+GTIN nem marca de revenda; entram no lugar da ``LN``. Os placeholders que
+saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_situacao``.
+
 **Placeholders da despensa que viram produto real** (:data:`REAL_PLACEHOLDERS`):
 Ratatouille, Tapenade e Camembert tinham nome e preço provisórios do Cardápio
 2027. O comando só troca quando o valor atual ainda é o placeholder — nome ou
-preço que o gestor já mexeu fica, e sai no relatório como divergência. Os
-outros placeholders (MT, QP, CX, BK, GR, LN, THL) esperam decisão do dono e não
-estão aqui.
+preço que o gestor já mexeu fica, e sai no relatório como divergência.
 
 Idempotente: item que já está como a tabela diz não é tocado.
 """
@@ -78,9 +92,22 @@ class GroceryItem:
     ncm: str
     #: CEST da NF-e do fornecedor. NÃO é gravado (ver docstring do módulo).
     cest: str = ""
-    #: Peso líquido da embalagem, em gramas. ``None`` quando ela é em volume.
+    #: Peso líquido da embalagem, em gramas. ``None`` quando ela é em volume
+    #: ou quando o item é vendido a quilo.
     weight_g: int | None = None
     keywords: tuple[str, ...] = ()
+    #: ``un`` = embalagem fechada, com GTIN. ``kg`` = vendido POR PESO: preço
+    #: por quilo, sem GTIN de embalagem (a etiqueta da balança é EAN interno
+    #: prefixo 2, que não é o GTIN do produto).
+    unit: str = "un"
+    #: De onde veio o GTIN, quando NÃO foi da NF-e nem da embalagem. Vai para
+    #: ``metadata['gtin_source']`` para que ninguém o tome por conferido.
+    gtin_source: str = ""
+
+
+#: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
+#: embalagem ainda (lição de 23/09: fontes podem errar juntas).
+WEB_UNCONFIRMED = "web, a confirmar na embalagem"
 
 
 #: Revenda real da Mercearia. Nome e preço: Yooga (preço mais praticado);
@@ -105,7 +132,26 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "7898361661236", "04063000", "1702300", 90, ("queijo", "creme", "gorgonzola")),
     GroceryItem("CREME-PARMESAO-POMERODE-90", "Creme de Parmesão Kraeuterkaese Pomerode 90g", 2600,
                 "Pomerode", "7898361661014", "04063000", "1702300", 90, ("queijo", "creme", "parmesao")),
+    # GTIN da web: Empório Varanda, Cosmos (lista do NCM 0406.30.00) e Santa
+    # Helena; mesmo prefixo dos irmãos.
+    GroceryItem("CREME-BRIE-POMERODE-90", "Creme de Brie Pomerode 90g", 2600, "Pomerode",
+                "7898361662103", "04063000", "1702300", 90, ("queijo", "creme", "brie"),
+                gtin_source=WEB_UNCONFIRMED),
+    # Vendido POR PESO: a peça chega da Pomerode com peso diferente a cada
+    # vez. Preço por quilo nenhuma fonte tem — o Yooga o registrava a R$ 0,00
+    # (34 vendas, todas zeradas, porque o valor saía da etiqueta). Nasce
+    # vendável e sem preço: o operador digita o valor da etiqueta (dono, 24/09).
+    GroceryItem("QUEIJO-VALEDOTESTO-POMERODE", "Queijo Vale do Testo Pomerode 3m", 0, "Pomerode",
+                "", "04069020", "1702400", None, ("queijo", "colonial", "pomerode"), unit="kg"),
     # ── Geleias St. Dalfour ──
+    # ⚠️ Duas perguntas para quem tem o pote na mão (pesquisa de 24/09/2026):
+    # - o 810019371295 do Limão é mesmo St. Dalfour, mas do sabor **Limão &
+    #   Lima** ("Citrons & Citrons Verts"; Empório Itiê e Open Food Facts);
+    # - o 084380957840 das Frutas Vermelhas é, em duas fontes (Covabra e Open
+    #   Food Facts), a **4 Frutas** ("Four Fruits"). Ou o pote que a casa chama
+    #   de Frutas Vermelhas é a 4 Frutas, ou o código está trocado. A 4 Frutas
+    #   não nasce como item próprio enquanto isso não se resolver: dois
+    #   produtos com o mesmo GTIN seria mentir num deles.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-284", "Geleia Damasco St. Dalfour 284g", 4200, "St. Dalfour",
                 "084380957543", "20079910", "1709400", 284, ("geleia", "damasco", "fruta")),
     GroceryItem("GELEIA-FIGO-STDALFOUR-284", "Geleia Figo St. Dalfour 284g", 4200, "St. Dalfour",
@@ -137,6 +183,12 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel")),
     GroceryItem("MOSTARDA-DIJON-MAILLE-215", "Mostarda Dijon Maille 215g", 3500, "Maille",
                 "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon")),
+    # GTIN da web: Auchan PT, Covabra e Open Food Facts dizem 3036810207589; o
+    # Cosmos sozinho diz 3036810207558 (também de dígito válido). A embalagem
+    # decide.
+    GroceryItem("MOSTARDA-ANCIENNE-MAILLE-210", "Mostarda à l'Ancienne Maille 210g", 4200, "Maille",
+                "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
+                gtin_source=WEB_UNCONFIRMED),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
                 "Vito Bauducci", "7890203650002", "02101900", "1707904", 100, ("presunto", "cru", "fatiado")),
@@ -145,12 +197,18 @@ GROCERY: tuple[GroceryItem, ...] = (
 #: Mercearia da planilha que NÃO entra, e por quê. Entra quando o dado faltante
 #: chegar — basta mover a linha para :data:`GROCERY`.
 LEFT_OUT: dict[str, str] = {
-    "QUEIJO-VALEDOTESTO-POMERODE": "preço zerado no Yooga e sem GTIN; sem preço não se vende",
-    "CHURRASQUINHO-PIMENTA-MIRANTE-120": "sem GTIN: ler o código de barras da embalagem",
-    "CREME-BRIE-POMERODE-90": "sem GTIN: ler o código de barras da embalagem",
-    "MOSTARDA-ANCIENNE-MAILLE-210": "sem GTIN: ler o código de barras da embalagem",
-    "CHA-CHALOSOFIA-KANFA-L50": "sem GTIN: não apareceu em nenhuma NF-e lida; ler o código de barras da lata",
-    "CHA-VITAL-KANFA-L60": "sem GTIN: não apareceu em nenhuma NF-e lida; ler o código de barras da lata",
+    "CHURRASQUINHO-PIMENTA-MIRANTE-120": (
+        "sem GTIN: a loja da Mirante vende só 135/190/330 g, sem EAN; ler a embalagem"
+    ),
+    "CHA-CHALOSOFIA-KANFA-L50": (
+        "sem GTIN: a loja da Kãnfa só tem a lata de 70 g, sem código; ler a lata"
+    ),
+    "CHA-VITAL-KANFA-L60": (
+        "GTIN de fonte única: a loja da Kãnfa dá 7898708850743 para a 'Lata 70g'; ler a lata"
+    ),
+    "GELEIA-4FRUTAS-STDALFOUR-284": (
+        "o GTIN dela (084380957840) é o que a planilha dá às Frutas Vermelhas; conferir o pote"
+    ),
     "CHA-INTUICAO-KANFA-F250": "é INSUMO (lata de serviço do chá do bule), não produto de prateleira",
 }
 
@@ -165,6 +223,69 @@ class RealPlaceholder:
     name: str
     price_q: int
     weight_g: int
+
+
+@dataclass(frozen=True)
+class GiftBox:
+    """Caixa presente montada na casa: SKU da casa, sem GTIN, marca da loja."""
+
+    sku: str
+    name: str
+    price_q: int
+    ncm: str
+
+
+#: As quatro caixas presente (planilha consolidada; entram no lugar do `LN`,
+#: decisão do dono em 24/09). Composição ainda indefinida: vendável no PDV,
+#: sem ficha, despublicada na loja. A marca da casa vem do
+#: `apply_product_brands`.
+GIFT_BOXES: tuple[GiftBox, ...] = (
+    GiftBox("DIJON", "Caixa Presente Dijon", 27000, "19059090"),
+    GiftBox("LILLE", "Caixa Presente Lille", 16000, "19059090"),
+    GiftBox("MIMO", "Caixa Presente Mimo", 4000, "19059090"),
+    GiftBox("NICE", "Caixa Presente Nice", 22000, "19059090"),
+)
+
+
+#: Nome no Yooga (``ProductAlias.external_name``, exato — espaço duplo e
+#: grafia de lá inclusos) → SKU. É o que devolve ao produto novo os dois anos
+#: de venda que o B.I. já importou: esses de-paras estavam confirmados e sem
+#: produto, esperando o catálogo ter para onde apontar.
+YOOGA_NAMES: dict[str, str] = {
+    "Azeite Defumado Mirante 250ml": "AZEITE-DEFUMADO-MIRANTE-250",
+    "Azeite Defumado Picante Mirante 250ml": "AZEITE-DEFUMADO-PICANTE-MIRANTE-250",
+    "Berinjela Insalata Duga 320g": "BERINJELA-DUGA-320",
+    "Relish de Abobrinha Duga 320g": "RELISH-ABOBRINHA-DUGA-320",
+    "Relish de Cebola Duga 320g": "RELISH-CEBOLA-DUGA-320",
+    "Relish de Pepino Duga 320g": "RELISH-PEPINO-DUGA-320",
+    "Creme de Brie Pomerode 90g": "CREME-BRIE-POMERODE-90",
+    "Creme de Gorgonzola Pomerode 90g": "CREME-GORGONZOLA-POMERODE-90",
+    "Creme de Parmesão Kraeuterkaese Pomerode 90g": "CREME-PARMESAO-POMERODE-90",
+    "Geléia Damasco St.Dalfour 284g": "GELEIA-DAMASCO-STDALFOUR-284",
+    "Geléia Figo St.Dalfour 284g": "GELEIA-FIGO-STDALFOUR-284",
+    "Geléia Frutas Vermelhas St.Dalfour 284g": "GELEIA-FRUTASVERM-STDALFOUR-284",
+    "Geléia Laranja St.Dalfour 284g": "GELEIA-LARANJA-STDALFOUR-284",
+    "Geléia Limão St.Dalfour 284g": "GELEIA-LIMAO-STDALFOUR-284",
+    "Geléia Morango St.Dalfour 284g": "GELEIA-MORANGO-STDALFOUR-284",
+    "Mini Geléia Damasco St.Dalfour 28g": "GELEIA-DAMASCO-STDALFOUR-28",
+    "Mini Geléia Frutas Vermelhas St.Dalfour 28g": "GELEIA-FRUTASVERM-STDALFOUR-28",
+    "Queijo Mini Brie Ile de France 25g": "QUEIJO-BRIE-ILEDEFRANCE-25",
+    "Mostarda Àl' Ancienne Maille 210g -": "MOSTARDA-ANCIENNE-MAILLE-210",
+    "Mostarda Com Mel Maille 215g": "MOSTARDA-MEL-MAILLE-215",
+    "Mostarda Dijon Maille 215g": "MOSTARDA-DIJON-MAILLE-215",
+    "Mostarda Maille Dijon Originale 215g": "MOSTARDA-DIJON-MAILLE-215",  # nome do iFood
+    "Presunto Cru Fatiado Vito Bauducci 100g": "PRESUNTO-CRU-VITOBAUDUCCI-100",
+    # Este apontava para o placeholder `QP` (curadoria de 19/08, "nome
+    # parecido"); o placeholder sai e a venda volta para o queijo que ela é.
+    "Queijo Vale do Testo Pomerode  3m": "QUEIJO-VALEDOTESTO-POMERODE",
+    "Caixa Presente Lille": "LILLE",
+    "Caixa Presente Nice": "NICE",
+}
+
+#: Placeholders que saem pelo `apply_catalog_situacao`: um de-para que aponta
+#: para eles pode ser reapontado ao produto real. Qualquer outro alvo é
+#: curadoria de alguém, e fica.
+LEAVING_PLACEHOLDERS: frozenset[str] = frozenset({"MT", "QP", "CX", "BK", "GR", "LN", "THL"})
 
 
 REAL_PLACEHOLDERS: tuple[RealPlaceholder, ...] = (
@@ -204,47 +325,82 @@ def _ensure_collection(product, collection) -> None:
     )
 
 
-def _apply_item(item: GroceryItem, collection, report: dict) -> None:
-    from shopman.offerman import get_social_attributes
-    from shopman.offerman.contrib.social.schema import gtin_is_valid, set_social_attributes
+def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int | None,
+                  ncm: str, report: dict):
+    """O produto existente (e as divergências dele com a tabela) ou um novo, não salvo."""
     from shopman.offerman.models import AvailabilityPolicy, Product
 
-    if item.price_q <= 0 or not gtin_is_valid(item.gtin):
-        report["refused"].append((item.sku, "GTIN inválido" if item.price_q > 0 else "sem preço"))
-        return
-
-    product = Product.objects.filter(sku=item.sku).first()
-    lines: list[str] = []
+    product = Product.objects.filter(sku=sku).first()
     if product is None:
         product = Product(
-            sku=item.sku, name=item.name, base_price_q=item.price_q, unit="un",
-            unit_weight_g=item.weight_g, is_published=False, is_sellable=True,
+            sku=sku, name=name, base_price_q=price_q, unit=unit, unit_weight_g=weight_g,
+            is_published=False, is_sellable=True,
             availability_policy=AvailabilityPolicy.PLANNED_OK,
         )
-        product.metadata = {"fiscal": {"profile": "own_production", "ncm": item.ncm, "unit": "UN"}}
-        report["created"].append(item)
-    else:
-        for field, value in (("name", item.name), ("base_price_q", item.price_q)):
-            have = getattr(product, field)
-            if have != value:
-                report["conflicts"].append((item.sku, field, have, value))
+        product.metadata = {"fiscal": {"profile": "own_production", "ncm": ncm, "unit": unit.upper()}}
+        return product
+    for field, value in (("name", name), ("base_price_q", price_q), ("unit", unit)):
+        have = getattr(product, field)
+        if have != value:
+            report["conflicts"].append((sku, field, have, value))
+    fiscal = _metadata(product).get("fiscal") or {}
+    if fiscal.get("ncm") and fiscal["ncm"] != ncm:
+        report["conflicts"].append((sku, "ncm", fiscal["ncm"], ncm))
+    return product
 
+
+def _refusal(item: GroceryItem) -> str:
+    from shopman.offerman.contrib.social.schema import gtin_is_valid
+
+    if item.unit == "kg":
+        # A etiqueta da balança não é GTIN do produto: declará-lo seria mentira.
+        return "item a quilo não leva GTIN de embalagem" if item.gtin else ""
+    if item.price_q <= 0:
+        return "sem preço"
+    if not gtin_is_valid(item.gtin):
+        return "GTIN inválido"
+    return ""
+
+
+def _apply_item(item: GroceryItem, collection, report: dict) -> None:
+    from shopman.offerman import get_social_attributes
+    from shopman.offerman.contrib.social.schema import set_social_attributes
+
+    refusal = _refusal(item)
+    if refusal:
+        report["refused"].append((item.sku, refusal))
+        return
+
+    product = _get_or_build(
+        item.sku, item.name, item.price_q, unit=item.unit, weight_g=item.weight_g, ncm=item.ncm,
+        report=report,
+    )
+    is_new = product.pk is None
+    lines: list[str] = []
     metadata = _metadata(product)
     fiscal = dict(metadata.get("fiscal") or {})
     if not fiscal.get("ncm"):
-        fiscal.update({"profile": fiscal.get("profile") or "own_production", "ncm": item.ncm, "unit": "UN"})
+        fiscal.update({"profile": fiscal.get("profile") or "own_production", "ncm": item.ncm,
+                       "unit": item.unit.upper()})
         lines.append(f"ncm: → {item.ncm}")
-    elif fiscal["ncm"] != item.ncm:
-        report["conflicts"].append((item.sku, "ncm", fiscal["ncm"], item.ncm))
     metadata["fiscal"] = fiscal
 
+    if item.gtin_source and metadata.get("gtin_source") != item.gtin_source:
+        metadata["gtin_source"] = item.gtin_source
+        lines.append(f"origem do GTIN: {item.gtin_source}")
+    if item.unit == "kg" and item.price_q <= 0 and metadata.get("price_from_label") is not True:
+        # Sem preço do quilo, o PDV só vende se o catálogo disser que o valor
+        # da etiqueta da balança É o preço da linha (#1059); sem a chave ele
+        # recusa, e nunca vende a R$ 0,00.
+        metadata["price_from_label"] = True
+        lines.append("preço: o da etiqueta da balança")
     product.metadata = metadata
 
     social = get_social_attributes(product)
     updates = {}
     for field, value in (("brand", item.brand), ("gtin", item.gtin)):
         have = getattr(social, field)
-        if have == value:
+        if have == value or not value:
             continue
         if have:
             report["conflicts"].append((item.sku, field, have, value))
@@ -254,15 +410,30 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     if updates:
         product.metadata = set_social_attributes(product.metadata, replace(social, **updates))
 
-    is_new = product.pk is None
-    if is_new or lines:
+    if is_new:
         product.save()
-        if not is_new:
-            report["updated"].append((item.sku, lines))
+        report["created"].append(item)
+    elif lines:
+        product.save()
+        report["updated"].append((item.sku, lines))
     _material, purchasable = ensure_purchase_record(product)
     if purchasable and not is_new:
         report["updated"].append((item.sku, ["compra: cadastro de compra do mesmo SKU"]))
+    if item.unit == "kg" and product.base_price_q <= 0:
+        report["no_price"].append((item.sku, "a quilo, sem preço por kg em fonte nenhuma: o PDV cobra o da etiqueta"))
     product.keywords.add(COLLECTION_REF, *item.keywords)
+    _ensure_collection(product, collection)
+    _sync_listings(product, product.base_price_q, report)
+
+
+def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
+    """Caixa presente: produto da casa. Sem GTIN, sem marca de revenda."""
+    product = _get_or_build(box.sku, box.name, box.price_q, unit="un", weight_g=None, ncm=box.ncm,
+                            report=report)
+    if product.pk is None:
+        product.save()
+        report["created"].append(box)
+    product.keywords.add(COLLECTION_REF, "presente", "caixa")
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
 
@@ -309,19 +480,42 @@ def _apply_placeholder(real: RealPlaceholder, report: dict) -> None:
     report["updated"].append((real.sku, lines))
 
 
+def _link_aliases(report: dict) -> None:
+    """Aponta o de-para do Yooga (sem produto, ou num placeholder que sai) ao produto real."""
+    from django.db.models import Q
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.models import ProductAlias
+
+    products = {p.sku: p for p in Product.objects.filter(sku__in=set(YOOGA_NAMES.values()))}
+    aliases = ProductAlias.objects.filter(source="yooga", external_name__in=YOOGA_NAMES).filter(
+        Q(product__isnull=True) | Q(product__sku__in=LEAVING_PLACEHOLDERS)
+    ).select_related("product")
+    for alias in aliases:
+        target = products.get(YOOGA_NAMES[alias.external_name])
+        if target is None:
+            continue
+        before = alias.product.sku if alias.product_id else "—"
+        alias.product = target
+        alias.save(update_fields=["product"])
+        report["aliases"].append((alias.external_name, before, target.sku))
+
+
 def apply_grocery(*, apply: bool) -> dict[str, list]:
     """Cria/atualiza a Mercearia real. Sem ``apply``, executa e desfaz.
 
-    Chaves do relatório: ``created`` [GroceryItem], ``updated`` [(sku, linhas)],
+    Chaves do relatório: ``created`` [GroceryItem | GiftBox], ``updated`` [(sku, linhas)],
     ``listed``/``unlisted`` [(sku, listagem)], ``conflicts`` [(sku, campo, atual,
-    tabela)], ``refused`` [(sku, motivo)], ``missing`` [sku], ``left_out``
-    [(sku, motivo)].
+    tabela)], ``refused`` [(sku, motivo)], ``no_price`` [(sku, motivo)],
+    ``aliases`` [(nome no Yooga, antes, depois)],
+    ``missing`` [sku], ``left_out`` [(sku, motivo)].
     """
     from shopman.offerman.models import Collection
 
     report: dict[str, list] = {
         "created": [], "updated": [], "listed": [], "unlisted": [], "conflicts": [],
-        "refused": [], "missing": [], "left_out": sorted(LEFT_OUT.items()),
+        "refused": [], "no_price": [], "aliases": [], "missing": [],
+        "left_out": sorted(LEFT_OUT.items()),
     }
     collection = Collection.objects.filter(ref=COLLECTION_REF).first()
     if collection is None:
@@ -330,8 +524,11 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
     with transaction.atomic():
         for item in GROCERY:
             _apply_item(item, collection, report)
+        for box in GIFT_BOXES:
+            _apply_gift_box(box, collection, report)
         for real in REAL_PLACEHOLDERS:
             _apply_placeholder(real, report)
+        _link_aliases(report)
         if not apply:
             transaction.set_rollback(True)
     return report
@@ -353,7 +550,9 @@ class Command(BaseCommand):
             verb = "Criados" if apply else "Criaria"
             out.write(self.style.SUCCESS(f"\n{verb} {len(report['created'])} produto(s) de Mercearia:"))
             for item in report["created"]:
-                out.write(f"  {item.sku:38s} {item.name[:44]:44s} R$ {item.price_q / 100:6.2f}  {item.gtin}")
+                gtin = getattr(item, "gtin", "") or "—"
+                price = f"R$ {item.price_q / 100:6.2f}" + ("/kg" if getattr(item, "unit", "un") == "kg" else "")
+                out.write(f"  {item.sku:38s} {item.name[:44]:44s} {price:12s} {gtin}")
         for sku, lines in report["updated"]:
             out.write(f"  {sku:38s} {'; '.join(lines)}")
         listed = {}
@@ -361,10 +560,16 @@ class Command(BaseCommand):
             listed.setdefault(ref, []).append(sku)
         for ref, skus in sorted(listed.items()):
             out.write(f"  listagem {ref}: +{len(skus)}")
+        if report["aliases"]:
+            out.write(f"  de-paras do Yooga reapontados (a venda antiga volta ao produto): {len(report['aliases'])}")
+            for name, before, after in report["aliases"]:
+                out.write(f"    {name[:46]:46s} {before} → {after}")
         for sku, ref in report["unlisted"]:
             out.write(self.style.WARNING(f"  {sku:38s} sai de {ref}: sem foto não se vende de longe"))
         for sku, field, have, want in report["conflicts"]:
             out.write(self.style.WARNING(f"  {sku:38s} {field} já é {have!r} (a tabela diz {want!r}) — mantido"))
+        for sku, reason in report["no_price"]:
+            out.write(self.style.WARNING(f"  {sku:38s} {reason}"))
         for sku, reason in report["refused"]:
             out.write(self.style.ERROR(f"  {sku:38s} recusado: {reason}"))
         if report["missing"]:
