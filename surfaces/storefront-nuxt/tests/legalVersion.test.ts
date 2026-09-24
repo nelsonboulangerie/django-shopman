@@ -72,7 +72,8 @@ function resumo (): string {
  * dentro do CDC). Versão nova, resumo novo.
  *
  * 2026-09-24, depois: as páginas passaram de /privacy e /terms para /privacidade e
- * /termos (a loja fala português com o cliente; os caminhos antigos respondem 301).
+ * /termos (a loja fala português com o cliente; os caminhos antigos não redirecionam:
+ * pré-go-live, o Google reindexa).
  * O diff dos dois `.vue` é só o destino dos dois links de termos.vue para a política
  * (`to="/privacy"` → `to="/privacidade"`): mesmo documento, endereço novo. A régua
  * conta destino de link, então o resumo mudou (`23d85fed71300bf0` → `051f28aae9f18c86`);

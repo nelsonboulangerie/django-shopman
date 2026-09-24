@@ -27,13 +27,21 @@ from shopman.storefront.presentation.legal import (
 ROOT = Path(__file__).resolve().parents[3]
 PUBLIC = ROOT / "surfaces/storefront-nuxt/public"
 SCRIPTS = ROOT / "scripts"
-LEGAL_REDIRECTS_TS = ROOT / "surfaces/storefront-nuxt/server/utils/legalRedirects.ts"
 
-#: A página viva de cada documento. A cópia de 2026-09-24 foi tirada quando ela
-#: ainda morava em /privacy e /terms; esses endereços respondem 301 para sempre
-#: (`legalRedirects.ts`), então o link da cópia continua chegando à página viva.
+#: A página viva de cada documento.
 LIVE_PAGE = {"privacy": "/privacidade", "terms": "/termos"}
-LEGACY_LIVE_PAGE = {"privacy": "/privacy", "terms": "/terms"}
+
+#: A cópia de 2026-09-24 foi tirada quando as páginas vivas moravam em /privacy e
+#: /terms, e os links dela apontam para lá. Esses endereços deixaram de existir no
+#: mesmo dia, SEM 301: pré-go-live, o Google reindexa, e redirect só existe quando o
+#: Google exige. Os links dessa cópia levam a 404, e ela fica assim de propósito:
+#: pedidos feitos desde o deploy do #1047 guardam em `Order.snapshot` o SHA-256
+#: destes bytes, e reescrever o arquivo quebraria a prova de todos eles. As versões
+#: seguintes não repetem o problema: o arquivador liga um documento à cópia IRMÃ da
+#: mesma versão, e só a nota do topo aponta para a página viva.
+FROZEN_WITH_PRE_RENAME_LINKS = {
+    "2026-09-24": {"privacy": "/privacy", "terms": "/terms"},
+}
 
 
 def _load_script(name: str):
@@ -76,24 +84,38 @@ def test_no_archived_file_is_orphan():
     assert on_disk == declared
 
 
-def test_the_live_page_address_of_older_copies_still_answers():
-    """Link antigo numa cópia imutável só continua valendo se o 301 existir."""
-    redirects = LEGAL_REDIRECTS_TS.read_text(encoding="utf-8")
-    for kind in LEGAL_ARCHIVE_KINDS:
-        assert f"'{LEGACY_LIVE_PAGE[kind]}': '{LIVE_PAGE[kind]}'" in redirects, kind
-
-
 def test_the_archiver_reads_the_live_page_where_it_lives():
     documents = _load_script("archive_legal_version").DOCUMENTS
     assert {kind: spec["path"] for kind, spec in documents.items()} == LIVE_PAGE
 
+
+def test_the_archiver_links_each_document_to_its_sibling_copy_not_to_a_live_route():
+    """Rota viva muda; a cópia irmã da mesma versão, não. Só a nota do topo é viva."""
+    archiver = _load_script("archive_legal_version")
+    page = (
+        '<header id="legal-top"><h1>Termos de uso</h1>'
+        '<div class="shop-muted">Atualizados em 1 de janeiro de 2099.</div></header>'
+        '<div class="shop-legal"><section id="payment"><h2>Pagamento</h2>'
+        '<p>Veja a <a href="/privacidade#processors">política</a> e a '
+        '<a href="/conta/seguranca">conta</a>.</p></section></div>'
+    )
+    html, _meta = archiver.render_archive(
+        kind="terms", version="2099-01-01", source_url="https://x.test/termos", page_html=page
+    )
+    assert 'href="/documentos-legais/privacidade/2099-01-01.html#processors"' in html
+    assert 'href="/conta/seguranca"' in html
+    assert 'href="/privacidade' not in html
+    assert html.count('href="/termos"') == 1  # a nota do topo: "o texto que vale hoje"
+
+
 def test_archive_is_the_published_text_of_its_own_version():
-    """A cópia diz a versão dela e aponta para a página viva — nunca para outra cópia."""
+    """A cópia diz a versão dela e aponta para a página viva do dia em que foi tirada."""
     for version in LEGAL_ARCHIVE:
+        live_page = FROZEN_WITH_PRE_RENAME_LINKS.get(version, LIVE_PAGE)
         for kind in LEGAL_ARCHIVE_KINDS:
             html = (PUBLIC / legal_archive_path(kind, version).removeprefix("/")).read_text()
             assert f"versão {version}" in html
-            assert f'href="{LIVE_PAGE[kind]}"' in html or f'href="{LEGACY_LIVE_PAGE[kind]}"' in html
+            assert f'href="{live_page[kind]}"' in html
             # O Cloudflare ofusca e-mail no HTML servido; a cópia guarda o endereço lido.
             assert "email-protection" not in html
             assert "<script" not in html
