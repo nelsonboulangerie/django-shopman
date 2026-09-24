@@ -474,12 +474,38 @@ def _handle_voided(work_order, product_ref, date):
     )
 
 
+def consumable_quants(sku: str):
+    """Os quants de onde a ficha pode tirar ``sku``, na ordem em que tira.
+
+    Produção e estoque primeiro; a vitrine (``Position.is_saleable``) fica de
+    fora — o pote exposto para o cliente não é o pote da massa, ainda que o SKU
+    seja o mesmo. Com ``CONSUME_FROM_SALEABLE_POSITIONS`` ligado, a vitrine
+    entra, sempre por último. Dentro de cada grupo: presente antes de futuro.
+    """
+    from django.db.models import Case, F, IntegerField, Value, When
+    from shopman.craftsman.conf import get_setting
+    from shopman.stockman.services.queries import StockQueries
+
+    quants = StockQueries.list_quants(sku, include_empty=False)
+    if not get_setting("CONSUME_FROM_SALEABLE_POSITIONS"):
+        quants = quants.exclude(position__is_saleable=True)
+    return quants.annotate(
+        _shop_window=Case(
+            When(position__is_saleable=True, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+    ).order_by("_shop_window", F("target_date").asc(nulls_first=True), "pk")
+
+
 def _consume_materials(work_order, *, fail_closed: bool):
     """Deduct a finished WorkOrder's ingredients from stock (kind=MAKE).
 
     Reads the persisted CONSUMPTION ``WorkOrderItem`` rows and issues each
     ingredient from available stock — the ingredients-out leg of the production
-    (MAKE) event. Greedy across the ingredient's quants, present stock first.
+    (MAKE) event. Greedy across the ingredient's quants, present stock first,
+    and never from a saleable position (the shop window) unless
+    ``CONSUME_FROM_SALEABLE_POSITIONS`` says so — see :func:`consumable_quants`.
 
     Unexpected issue failures and unapproved shortfalls propagate so the outer
     mutation transaction cannot commit a finished WO with a partial ledger.
@@ -492,12 +518,10 @@ def _consume_materials(work_order, *, fail_closed: bool):
     """
     from decimal import Decimal
 
-    from django.db.models import F
     from shopman.craftsman.models import WorkOrderEvent, WorkOrderItem
     from shopman.stockman.exceptions import StockError
     from shopman.stockman.models.move import Move
     from shopman.stockman.services.movements import StockMovements
-    from shopman.stockman.services.queries import StockQueries
 
     shortfalls = []
     approved_shortage_by_sku: dict[str, Decimal] = {}
@@ -519,10 +543,7 @@ def _consume_materials(work_order, *, fail_closed: bool):
         if remaining <= 0:
             continue
 
-        quants = StockQueries.list_quants(item.item_ref, include_empty=False).order_by(
-            F("target_date").asc(nulls_first=True),
-            "pk",
-        )
+        quants = consumable_quants(item.item_ref)
         for quant in quants:
             if remaining <= 0:
                 break
