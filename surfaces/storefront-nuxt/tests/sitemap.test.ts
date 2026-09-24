@@ -11,8 +11,8 @@ describe('sitemap', () => {
       { loc: 'https://menu.loja.test/produto/PH', priority: '0.8' },
       { loc: 'https://menu.loja.test/produto/CROIS%2001', priority: '0.8' },
       { loc: 'https://menu.loja.test/faq', priority: '0.6' },
-      { loc: 'https://menu.loja.test/privacy', priority: '0.2' },
-      { loc: 'https://menu.loja.test/terms', priority: '0.2' },
+      { loc: 'https://menu.loja.test/privacidade', priority: '0.2' },
+      { loc: 'https://menu.loja.test/termos', priority: '0.2' },
       { loc: 'https://menu.loja.test/shopman-marketing', priority: '0.2' }
     ])
   })
@@ -23,8 +23,8 @@ describe('sitemap', () => {
       'http://localhost:3000/',
       'http://localhost:3000/menu',
       'http://localhost:3000/faq',
-      'http://localhost:3000/privacy',
-      'http://localhost:3000/terms',
+      'http://localhost:3000/privacidade',
+      'http://localhost:3000/termos',
       'http://localhost:3000/shopman-marketing'
     ])
   })

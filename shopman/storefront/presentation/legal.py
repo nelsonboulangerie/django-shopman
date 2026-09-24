@@ -10,7 +10,7 @@ que a trava de `test_privacy_inventory.py` obriga a estar completo — então o 
 para um operador novo chegar à tela passa a ser o mesmo caminho que o faz existir.
 
 ⚠️ A **data** também sai daqui, e pelo mesmo motivo: ela estava cravada no `.vue` e a
-página prometia que mudaria junto com o texto. Não mudou — o `terms.vue` foi editado em
+página prometia que mudaria junto com o texto. Não mudou — a página de termos foi editada em
 28/08 e em 22/09 e a data continuava em 20/08. Prometer o que o código não faz é a
 forma mais cara de mentir, porque parece cuidado.
 """
@@ -38,8 +38,8 @@ class LegalProjection:
     processors: tuple[ProcessorProjection, ...]
 
 
-#: A versão vigente dos documentos legais. **Mexeu no texto de `privacy.vue` ou de
-#: `terms.vue`? Mexa aqui.** `surfaces/storefront-nuxt/tests/legalVersion.test.ts`
+#: A versão vigente dos documentos legais. **Mexeu no texto de `privacidade.vue` ou de
+#: `termos.vue`? Mexa aqui.** `surfaces/storefront-nuxt/tests/legalVersion.test.ts`
 #: reprova se um mudar sem o outro — foi a promessa quebrada que originou a trava.
 LEGAL_VERSION = "2026-09-24"
 LEGAL_UPDATED_AT = "24 de setembro de 2026"

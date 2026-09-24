@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Documento legal — a moldura comum de /privacy e /terms.
+// Documento legal — a moldura comum de /privacidade e /termos.
 //
 // POR QUE NÃO É ACORDEÃO, COMO NA FAQ. Na FAQ cada resposta é independente e o
 // leitor procura UMA. Texto legal é o contrário: é lido (ou deveria poder ser
@@ -65,7 +65,7 @@ function goTo (id: string) {
   if (mobileToc.value) mobileToc.value.open = false
 }
 
-// Quem chega por link (`/terms#cancellation`) cai na seção, abaixo do cabeçalho.
+// Quem chega por link (`/termos#cancellation`) cai na seção, abaixo do cabeçalho.
 onMounted(() => {
   const id = decodeURIComponent(location.hash.slice(1))
   if (id && document.getElementById(id)?.hasAttribute('data-legal-section')) reveal(id)

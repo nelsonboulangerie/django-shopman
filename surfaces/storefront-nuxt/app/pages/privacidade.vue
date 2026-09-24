@@ -11,7 +11,7 @@
 // era uma cópia da verdade, e cópia não sabe que a verdade mudou. Aqui ela virou vista.
 //
 // Na mesma medição: a página prometia "quando esta política mudar, a data no topo muda
-// junto", e o `terms.vue` tinha sido editado em 28/08 e em 22/09 com a data parada em
+// junto", e a página de termos tinha sido editada em 28/08 e em 22/09 com a data parada em
 // 20/08. Agora a data vem da versão do documento, e `tests/legalVersion.test.ts` reprova
 // quem mexer no texto sem mexer na versão.
 //

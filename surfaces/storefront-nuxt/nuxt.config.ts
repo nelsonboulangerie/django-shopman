@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import splashScreens from './pwa-splash-screens.json'
+import { legalRedirectRules } from './server/utils/legalRedirects'
 
 type AppleStartupImage = readonly [number, number, number, 'portrait' | 'landscape']
 
@@ -51,6 +52,8 @@ export default defineNuxtConfig({
   // seguro. Sem esta regra o Nitro serve public/ com cache curto e cada volta à
   // loja rebaixa o catálogo inteiro.
   routeRules: {
+    // /privacy e /terms → /privacidade e /termos (301 permanente; ver o util).
+    ...legalRedirectRules(),
     // Cloudflare Email Address Obfuscation mutates plain email text in the SSR
     // document before Vue hydrates it. The documented no-transform contract is
     // scoped to the home, the only route whose backend FAQ contains plain email.

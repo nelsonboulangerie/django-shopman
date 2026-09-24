@@ -12,8 +12,8 @@ export interface SitemapUrl {
 // como página inicial do app na tela de consentimento OAuth.
 const STATIC_PAGES: ReadonlyArray<{ path: string, priority: string }> = [
   { path: '/faq', priority: '0.6' },
-  { path: '/privacy', priority: '0.2' },
-  { path: '/terms', priority: '0.2' },
+  { path: '/privacidade', priority: '0.2' },
+  { path: '/termos', priority: '0.2' },
   { path: '/shopman-marketing', priority: '0.2' }
 ]
 

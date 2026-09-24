@@ -119,7 +119,7 @@ useSeoMeta({
       </p>
       <p v-if="legal?.processors?.length">
         Quem processa hoje, e o que recebe, está na
-        <NuxtLink to="/privacy">política de privacidade</NuxtLink>.
+        <NuxtLink to="/privacidade">política de privacidade</NuxtLink>.
       </p>
       <p>
         O Pix tem prazo, e a tela do pedido mostra qual é. Se o prazo passar sem pagamento, o pedido
@@ -178,7 +178,7 @@ useSeoMeta({
       <p>
         Você encerra a conta quando quiser, em
         <NuxtLink to="/conta/seguranca">Segurança e dados</NuxtLink>. O uso dos seus dados está na
-        <NuxtLink to="/privacy">política de privacidade</NuxtLink>.
+        <NuxtLink to="/privacidade">política de privacidade</NuxtLink>.
       </p>
     </LegalSection>
   </LegalDocument>

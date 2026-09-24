@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest'
 // ## Por que ela existe
 //
 // A política de privacidade prometia, com estas palavras: *"Quando esta política mudar,
-// a data no topo muda junto"*. Não mudava — a data era uma string cravada no `.vue`. O
-// `terms.vue` foi editado em 28/08/2026 e em 22/09/2026 e continuou anunciando
+// a data no topo muda junto"*. Não mudava — a data era uma string cravada no `.vue`. A
+// página de termos foi editada em 28/08/2026 e em 22/09/2026 e continuou anunciando
 // "20 de agosto de 2026".
 //
 // Prometer o que o código não faz é a forma mais cara de mentir, porque **parece
@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest'
 // Dois gestos conscientes, que é o que faltava.
 
 const raiz = resolve(__dirname, '..')
-const paginas = ['app/pages/privacy.vue', 'app/pages/terms.vue'] as const
+const paginas = ['app/pages/privacidade.vue', 'app/pages/termos.vue'] as const
 
 // Atributo que CARREGA documento: o título (`<LegalDocument title>`), o destino de
 // um link e as condições que ligam ou desligam um trecho. O resto de uma tag —
@@ -62,16 +62,23 @@ function resumo (): string {
 /**
  * Resumo do texto publicado na versão abaixo. Muda junto com ela, nunca sozinho.
  *
- * Mudou em 23/09/2026 SEM a versão mudar, e é a única vez que isso é legítimo: a
- * régua passou a ignorar marcação. O resumo novo foi calculado com a régua nova
- * sobre o texto do `main` ANTES da troca de apresentação e sobre o texto depois
- * dela deram o mesmo valor (`54ef09fa038daa8a`), a prova de que nenhuma palavra mudou.
+ * Pode mudar SEM a versão mudar só quando se prova que nenhuma palavra mudou. Foi
+ * assim duas vezes. Em 23/09/2026 a régua passou a ignorar marcação: calculada sobre
+ * o texto do `main` ANTES da troca de apresentação e sobre o texto depois, ela deu o
+ * mesmo valor (`54ef09fa038daa8a`), a prova de que nenhuma palavra mudou.
  *
  * 2026-09-24: reescrita das duas páginas para ficarem curtas e inequívocas, com uma
  * mudança de mérito no §7 dos termos (produto com problema: a loja analisa e resolve,
  * dentro do CDC). Versão nova, resumo novo.
+ *
+ * 2026-09-24, depois: as páginas passaram de /privacy e /terms para /privacidade e
+ * /termos (a loja fala português com o cliente; os caminhos antigos respondem 301).
+ * O diff dos dois `.vue` é só o destino dos dois links de termos.vue para a política
+ * (`to="/privacy"` → `to="/privacidade"`): mesmo documento, endereço novo. A régua
+ * conta destino de link, então o resumo mudou (`23d85fed71300bf0` → `051f28aae9f18c86`);
+ * a versão não, porque o cliente não lê palavra nova.
  */
-const RESUMO_PUBLICADO = '23d85fed71300bf0'
+const RESUMO_PUBLICADO = '051f28aae9f18c86'
 const VERSAO_PUBLICADA = '2026-09-24'
 
 describe('páginas legais — o relógio', () => {
@@ -95,7 +102,7 @@ describe('páginas legais — o relógio', () => {
   it('o texto publicado é o texto desta versão', () => {
     expect(
       resumo(),
-      'O texto de /privacy ou /terms mudou sem a versão mudar junto.\n' +
+      'O texto de /privacidade ou /termos mudou sem a versão mudar junto.\n' +
       '1) troque LEGAL_VERSION e LEGAL_UPDATED_AT em shopman/storefront/presentation/legal.py;\n' +
       `2) grave aqui RESUMO_PUBLICADO = '${resumo()}'.`
     ).toBe(RESUMO_PUBLICADO)

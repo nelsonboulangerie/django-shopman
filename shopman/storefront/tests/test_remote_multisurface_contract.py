@@ -15,7 +15,7 @@ REMOTE_RUNBOOK = REPO_ROOT / "docs" / "runbooks" / "pedido-remoto-preso.md"
 NUXT_TYPES = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "types" / "shopman.ts"
 NUXT_TRACKING_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "pedido" / "[ref]" / "index.vue"
 NUXT_CHECKOUT_FLOW = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "utils" / "checkoutFlow.ts"
-NUXT_TERMS_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "terms.vue"
+NUXT_TERMS_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "termos.vue"
 NUXT_PAYMENT_BLOCK = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "components" / "PaymentBlock.vue"
 
 ORDER_STATUSES = {
