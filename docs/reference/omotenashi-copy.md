@@ -315,7 +315,8 @@ a explicação do mecanismo, não o que decide.
 Estas quatro regras já estão no [`CLAUDE.md`](../../CLAUDE.md). Este documento aponta para
 elas; reescrevê-las criaria uma segunda fonte que envelhece sozinha.
 
-- **URL em inglês, texto em português.** A convenção é sobre o caminho, não sobre a copy.
+- **URL em inglês, texto em português** — nas superfícies de operador, no Admin e nas APIs.
+  O Storefront fala português também no caminho (`/sacola`, `/privacidade`).
 - **`cpf`, `cnpj`, `cep` em português.** Nome próprio de documento brasileiro.
 - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.**
   O `valor` da Efí é o contrato deles; para dentro vira `amount`.
