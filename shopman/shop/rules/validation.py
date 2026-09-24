@@ -98,7 +98,9 @@ class BusinessHoursRule(BaseRule):
             if shop and shop.opening_hours:
                 return shop.opening_hours
         except Exception:
-            logger.debug("business_hours_rule: could not load shop opening hours", exc_info=True)
+            # Sem grade, a regra conclui "sempre aberto" e o pedido fora de hora
+            # passa sem a marca — degradar é certo (a venda não para), calar não.
+            logger.warning("business_hours_rule: could not load shop opening hours", exc_info=True)
         return None
 
     @staticmethod
@@ -122,7 +124,8 @@ class BusinessHoursRule(BaseRule):
                     dates.extend(value)
             return dates
         except Exception:
-            logger.debug("business_hours_rule: could not load shop closed dates", exc_info=True)
+            # Sem as datas de fechamento, feriado vira dia aberto: grita.
+            logger.warning("business_hours_rule: could not load shop closed dates", exc_info=True)
         return []
 
 

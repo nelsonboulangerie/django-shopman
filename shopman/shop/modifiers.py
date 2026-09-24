@@ -837,7 +837,7 @@ class DiscountModifier:
         if needs_segment:
             try:
                 ctx["customer_segment"] = customer.insight.rfm_segment or ""
-            except ObjectDoesNotExist:
+            except ObjectDoesNotExist:  # silêncio-deliberado: cliente novo ainda sem Insight (RFM roda em lote); casa pela faixa, segmento vazio
                 # Insight (OneToOne) not computed yet — the customer still matches
                 # by tier; the segment stays empty. Degrade quietly, no traceback.
                 logger.debug(
