@@ -183,7 +183,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert RecipeItem.objects.filter(input_sku="CAFE-TAMURA-CHOCOMELO").count() == 6
     assert not Material.objects.filter(sku="CAFE-GRAO").exists()
     farinha = Material.objects.get(sku="FARINHA-NOVARA-T55")
-    assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
+    assert (farinha.unit, farinha.shelf_life_days) == ("g", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
     # A água do filtro é AGUA-FILTRADA e fica (dele, 23/09: "Agua pode ser
     # AGUA-FILTRADA mesmo ok"). O nome nasceu para não colidir com a garrafa que
@@ -195,11 +195,15 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
     assert not Product.objects.filter(sku="AGUA").exists()
     assert Material.objects.get(sku="LEVAIN-LIQUIDO").shelf_life_days == 7
-    # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
-    # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
-    # derivada na tela de preparo, nunca gravada como verdade.
+    # Insumo PESADO tem base de peso, e a base é o GRAMA (ADR-024, emenda de
+    # 24/09/2026 — a unidade da balança da casa): "300 de OVOS" é 300 g de ovo,
+    # não 300 ovos. A ajuda "(≈ 6 un.)" é derivada na tela, nunca gravada.
     for sku in ("OVOS", "LIMAO-SICILIANO", "CANELA-PO", "ALECRIM-FRESCO"):
-        assert Material.objects.get(sku=sku).unit == "kg", sku
+        assert Material.objects.get(sku=sku).unit == "g", sku
+    # E o grama é o que deixa a ficha dizer o que vai na peça: 0,1 g de alecrim.
+    assert RecipeItem.objects.get(
+        recipe__ref="focaccia-dia", input_sku="ALECRIM-FRESCO"
+    ).quantity == Decimal("0.1")
     weighed = {
         m.sku: m.unit
         for m in Material.objects.filter(unit__in=["kg", "g"])
@@ -207,17 +211,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for item in RecipeItem.objects.filter(input_sku__in=weighed):
         assert item.unit == weighed[item.input_sku], f"{item.input_sku}: {item.unit}"
         item.full_clean()  # a unidade da ficha bate com a do catálogo
-    # Líquido também conta em kg desde o WP-BASE-UNIT-LIQUIDS-KG: a casa PESA a
+    # Líquido também conta em peso desde o WP-BASE-UNIT-LIQUIDS-KG: a casa PESA a
     # água, o leite e o azeite, e é isso que a R1 pergunta. A densidade continua
     # no perfil, mas agora como ponte do RECEBIMENTO (a nota fala em litro), não
     # da produção diária. O invariante da troca vive em
     # test_seed_liquid_base_unit.py.
     for sku in ("AGUA-FILTRADA", "LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM"):
         material = Material.objects.get(sku=sku)
-        assert material.unit == "kg", sku
+        assert material.unit == "g", sku
         assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku
         for item in RecipeItem.objects.filter(input_sku=sku):
-            assert item.unit == "kg", f"{sku}: {item.unit}"
+            assert item.unit == "g", f"{sku}: {item.unit}"
             item.full_clean()
     # A equivalência aproximada do que se pesa e se conta: é ela que faz a lista
     # de separação dizer "(≈ 6 un.)" abaixo de "300 g" (ADR-024 §4).
@@ -226,7 +230,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     ovo = MaterialConversion.objects.get(material__sku="OVOS", label="ovos")
     assert ovo.is_approximate is True
     assert ovo.supplier_id is None
-    assert ovo.to_base_factor == Decimal("0.050000")
+    assert ovo.to_base_factor == Decimal("50")
     assert MaterialConversion.objects.filter(material__sku="LIMAO-SICILIANO").exists()
 
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
@@ -251,8 +255,8 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # O invariante é o mecanismo, não o número — o número muda com o plano.
     farinha_abertura = stock_service.available("FARINHA-NOVARA-T55", position=warehouse)
     assert farinha_abertura > 0
-    assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
-    assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
+    assert farinha_abertura % Decimal("25000") == 0, "farinha entra em saca fechada de 25 kg"
+    assert farinha_abertura <= Decimal("625000"), "teto de um pedido: 25 sacas"
 
     suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CRO"])
     assert suggestions

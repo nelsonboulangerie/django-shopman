@@ -239,37 +239,37 @@ PREP_DAYS_OF_COVER = Decimal("3")
 # Ficha nova sem linha aqui quebra o seed de propósito: capacidade sem autor é
 # exatamente o que esta tabela veio desfazer.
 PROVISIONAL_CAPACITY_PER_DAY = {
-    # Fórmulas (saída em kg): a capacidade fala em quilos de massa por dia.
-    "creme-levain":                       15,
-    "massa-pasta-autolizada":             25,
-    "massa-yudane":                       5,
-    "massa-tradicao":                     30,
-    "massa-campagne":                     30,
-    "massa-ciabatta":                     30,
-    "massa-forma":                        24,
-    "massa-croissant":                    27,
-    "massa-brioche":                      24,
-    "massa-kuropan":                      24,
-    "massa-folhado":                      28,
-    "massa-madeleine":                    14,
-    "recheio-maca":                       15,
-    "creme-baunilha":                     15,
-    "creme-limao":                        9,
-    "massa-butter":                       25,
-    "massa-pita":                         24,
-    "recheio-frango":                     9,
-    "recheio-cebola-bacon-tomilho":       8,
-    "recheio-cebola-azapas":              8,
-    "molho-bechamel":                     8,
-    "creme-chocolate":                    8,
-    "creme-leite-ovos":                   6,
-    "salada-da-casa":                     5,
-    "vinagrete-frances":                  2,
+    # Fórmulas (saída em g): a capacidade fala em gramas de massa por dia.
+    "creme-levain":                       15000,
+    "massa-pasta-autolizada":             25000,
+    "massa-yudane":                       5000,
+    "massa-tradicao":                     30000,
+    "massa-campagne":                     30000,
+    "massa-ciabatta":                     30000,
+    "massa-forma":                        24000,
+    "massa-croissant":                    27000,
+    "massa-brioche":                      24000,
+    "massa-kuropan":                      24000,
+    "massa-folhado":                      28000,
+    "massa-madeleine":                    14000,
+    "recheio-maca":                       15000,
+    "creme-baunilha":                     15000,
+    "creme-limao":                        9000,
+    "massa-butter":                       25000,
+    "massa-pita":                         24000,
+    "recheio-frango":                     9000,
+    "recheio-cebola-bacon-tomilho":       8000,
+    "recheio-cebola-azapas":              8000,
+    "molho-bechamel":                     8000,
+    "creme-chocolate":                    8000,
+    "creme-leite-ovos":                   6000,
+    "salada-da-casa":                     5000,
+    "vinagrete-frances":                  2000,
     # Pré-preparos que chegaram com as fichas reais da casa (24/09/2026). Sem
     # número do dono: fica UM lote da ficha por dia, e se diz que é isso.
-    "manteiga-wasabi":                    1,
-    "recheio-cebolas-assadas":            1,
-    "molho-caramelo":                     2,
+    "manteiga-wasabi":                    1000,
+    "recheio-cebolas-assadas":            1000,
+    "molho-caramelo":                     2000,
 
     # Peças (saída em unidade): a capacidade fala em peças por dia.
     "baguete":                            75,
@@ -341,14 +341,16 @@ PROVISIONAL_CAPACITY_PER_DAY = {
 
 # Cobertura de compra da casa (dono, 26/08): embalagem que entra pela porta e
 # teto de um pedido de farinha; fresco é ritmo de compra, não só validade.
-PACOTE_KG = {
-    "FARINHA-NOVARA-T55": 25, "FARINHA-ANACONDA-PREMIUM": 25, "FARINHA-BAGATELLE-T45": 25,
-    "FARINHA-INTEGRAL-ORGANICA": 25, "FARINHA-CENTEIO-INTEGRAL-ORGANICA": 25,
-    "ACUCAR-CRISTAL": 5, "SAL-REFINADO": 1,
+# Em GRAMAS, a unidade-base (24/09/2026): a saca de 25 kg é 25000.
+PACOTE_G = {
+    "FARINHA-NOVARA-T55": 25000, "FARINHA-ANACONDA-PREMIUM": 25000, "FARINHA-BAGATELLE-T45": 25000,
+    "FARINHA-INTEGRAL-ORGANICA": 25000, "FARINHA-CENTEIO-INTEGRAL-ORGANICA": 25000,
+    "ACUCAR-CRISTAL": 5000, "SAL-REFINADO": 1000,
 }
+SACA_G = 25000
 TETO_SACAS_POR_PEDIDO = 25  # dono, 26/08: pedidos de 15 a 25 sacas
 FRESCOS_SEMANAIS = {"MANTEIGA-PRESIDENT-SEM-SAL"}
-PISO_ESPECIARIA_KG = {"CANELA-PO": Decimal("0.5"), "ALECRIM-FRESCO": Decimal("0.5")}
+PISO_ESPECIARIA_G = {"CANELA-PO": Decimal("500"), "ALECRIM-FRESCO": Decimal("500")}
 
 
 def _recipe_maps():
@@ -364,7 +366,7 @@ def _recipe_maps():
 
 
 def prep_daily_needs() -> dict[str, Decimal]:
-    """Kg/dia de CADA pré-preparo que o plano consome — a árvore inteira:
+    """Gramas/dia de CADA pré-preparo que o plano consome — a árvore inteira:
     a massa que o plano consome consome levain/yudane/autolizada por baixo."""
     recipes, by_output, prep_outputs = _recipe_maps()
     needs: dict[str, Decimal] = {}
@@ -416,16 +418,17 @@ def material_opening_targets() -> dict[str, Decimal]:
         else:
             dias = Decimal("21")
         demanda = daily.get(sku, Decimal("0")) * dias
-        piso = PISO_ESPECIARIA_KG.get(sku) or (Decimal("2") if fresco else Decimal("5"))
+        piso = PISO_ESPECIARIA_G.get(sku) or (Decimal("2000") if fresco else Decimal("5000"))
         quantidade = max(demanda, piso)
-        pacote = PACOTE_KG.get(sku)
+        pacote = PACOTE_G.get(sku)
         if pacote:
             volumes = (quantidade / pacote).to_integral_value(rounding=ROUND_CEILING)
-            if pacote == 25:
+            if pacote == SACA_G:
                 volumes = min(volumes, TETO_SACAS_POR_PEDIDO)
             quantidade = volumes * pacote
         else:
-            quantidade = quantidade.quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+            # De 100 em 100 g, como a despensa se conta.
+            quantidade = (quantidade / 100).to_integral_value(rounding=ROUND_CEILING) * 100
         targets[sku] = quantidade
     return targets
 
@@ -3321,21 +3324,21 @@ class Command(BaseCommand):
                 "ref": "creme-levain",
                 "name": "Levain",
                 "output_sku": "LEVAIN",
-                "batch_size": Decimal("5"),
+                "batch_size": Decimal("5000"),
                 "items": [
-                    ("LEVAIN-LIQUIDO", Decimal("1.700")),
-                    ("FARINHA-NOVARA-T55", Decimal("1.700")),
-                    ("AGUA-FILTRADA", Decimal("1.700"))
+                    ("LEVAIN-LIQUIDO", Decimal("1700")),
+                    ("FARINHA-NOVARA-T55", Decimal("1700")),
+                    ("AGUA-FILTRADA", Decimal("1700"))
                 ],
             },
             {
                 "ref": "massa-pasta-autolizada",
                 "name": "Pasta Autolizada",
                 "output_sku": "PASTA-AUTOLIZADA",
-                "batch_size": Decimal("8.4"),
+                "batch_size": Decimal("8400"),
                 "items": [
-                    ("FARINHA-NOVARA-T55", Decimal("5.000")),
-                    ("AGUA-FILTRADA", Decimal("3.500"))
+                    ("FARINHA-NOVARA-T55", Decimal("5000")),
+                    ("AGUA-FILTRADA", Decimal("3500"))
                 ],
             },
             {
@@ -3343,49 +3346,49 @@ class Command(BaseCommand):
                 "ref": "massa-yudane",
                 "name": "Yudane",
                 "output_sku": "YUDANE",
-                "batch_size": Decimal("1.9"),
+                "batch_size": Decimal("1900"),
                 "items": [
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("1.000")),
-                    ("AGUA-FILTRADA", Decimal("1.000"))
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("1000")),
+                    ("AGUA-FILTRADA", Decimal("1000"))
                 ],
             },
             {
                 "ref": "massa-tradicao",
                 "name": "Massa Tradição",
                 "output_sku": "MASSA-TRADICAO",
-                "batch_size": Decimal("10"),
+                "batch_size": Decimal("10000"),
                 "items": [
-                    ("PASTA-AUTOLIZADA", Decimal("8.400")),
-                    ("LEVAIN", Decimal("1.500")),
-                    ("SAL-REFINADO", Decimal("0.100")),
-                    ("MALTE-EXTRATO", Decimal("0.020"))
+                    ("PASTA-AUTOLIZADA", Decimal("8400")),
+                    ("LEVAIN", Decimal("1500")),
+                    ("SAL-REFINADO", Decimal("100")),
+                    ("MALTE-EXTRATO", Decimal("20"))
                 ],
             },
             {
                 "ref": "massa-campagne",
                 "name": "Massa Campagne",
                 "output_sku": "MASSA-CAMPAGNE",
-                "batch_size": Decimal("10"),
+                "batch_size": Decimal("10000"),
                 "items": [
-                    ("FARINHA-NOVARA-T55", Decimal("2.500")),
-                    ("FARINHA-INTEGRAL-ORGANICA", Decimal("2.500")),
-                    ("FARINHA-CENTEIO-INTEGRAL-ORGANICA", Decimal("0.600")),
-                    ("AGUA-FILTRADA", Decimal("3.500")),
-                    ("LEVAIN", Decimal("1.500")),
-                    ("SAL-REFINADO", Decimal("0.100"))
+                    ("FARINHA-NOVARA-T55", Decimal("2500")),
+                    ("FARINHA-INTEGRAL-ORGANICA", Decimal("2500")),
+                    ("FARINHA-CENTEIO-INTEGRAL-ORGANICA", Decimal("600")),
+                    ("AGUA-FILTRADA", Decimal("3500")),
+                    ("LEVAIN", Decimal("1500")),
+                    ("SAL-REFINADO", Decimal("100"))
                 ],
             },
             {
                 "ref": "massa-ciabatta",
                 "name": "Massa Ciabatta",
                 "output_sku": "MASSA-CIABATTA",
-                "batch_size": Decimal("10"),
+                "batch_size": Decimal("10000"),
                 "items": [
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5.000")),
-                    ("AGUA-FILTRADA", Decimal("4.000")),
-                    ("LEVAIN", Decimal("1.500")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.228")),
-                    ("SAL-REFINADO", Decimal("0.100"))
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5000")),
+                    ("AGUA-FILTRADA", Decimal("4000")),
+                    ("LEVAIN", Decimal("1500")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("228")),
+                    ("SAL-REFINADO", Decimal("100"))
                 ],
             },
             {
@@ -3395,16 +3398,16 @@ class Command(BaseCommand):
                 # 8,360 kg de insumo (o leite entra por densidade) rendendo 8 kg
                 # de massa: 4,3% de perda de mistura. Era 10, ou seja +19,6% de
                 # massa nascendo do nada — ver `Recipe._validate_mass_balance`.
-                "batch_size": Decimal("8.2"),
+                "batch_size": Decimal("8200"),
                 "items": [
                     # Com yudane (dono, 26/08) — proposta de bancada.
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("4.400")),
-                    ("YUDANE", Decimal("1.000")),
-                    ("LEITE-INTEGRAL-A", Decimal("1.854")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.700")),
-                    ("ACUCAR-CRISTAL", Decimal("0.350")),
-                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.150")),
-                    ("SAL-REFINADO", Decimal("0.100")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("4400")),
+                    ("YUDANE", Decimal("1000")),
+                    ("LEITE-INTEGRAL-A", Decimal("1854")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("700")),
+                    ("ACUCAR-CRISTAL", Decimal("350")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("150")),
+                    ("SAL-REFINADO", Decimal("100")),
                 ],
             },
             {
@@ -3412,15 +3415,15 @@ class Command(BaseCommand):
                 "name": "Massa Croissant",
                 "output_sku": "MASSA-CROISSANT",
                 # 9,456 kg de insumo → 9 kg de massa (4,8% de perda). Era 10.
-                "batch_size": Decimal("9"),
+                "batch_size": Decimal("9000"),
                 "items": [
-                    ("FARINHA-BAGATELLE-T45", Decimal("4.800")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("2.400")),
-                    ("LEITE-INTEGRAL-A", Decimal("1.236")),
-                    ("ACUCAR-CRISTAL", Decimal("0.450")),
-                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.180")),
-                    ("SAL-REFINADO", Decimal("0.090")),
-                    ("OVOS", Decimal("0.300"))
+                    ("FARINHA-BAGATELLE-T45", Decimal("4800")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("2400")),
+                    ("LEITE-INTEGRAL-A", Decimal("1236")),
+                    ("ACUCAR-CRISTAL", Decimal("450")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("180")),
+                    ("SAL-REFINADO", Decimal("90")),
+                    ("OVOS", Decimal("300"))
                 ],
             },
             {
@@ -3429,14 +3432,14 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-BRIOCHE",
                 # 8,040 kg de insumo → 8 kg de massa (0,5% de perda). Era 10,
                 # o pior dos três: +24,4% de massa saindo do nada.
-                "batch_size": Decimal("8"),
+                "batch_size": Decimal("8000"),
                 "items": [
-                    ("FARINHA-BAGATELLE-T45", Decimal("4.000")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("2.000")),
-                    ("OVOS", Decimal("1.200")),
-                    ("ACUCAR-CRISTAL", Decimal("0.600")),
-                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.160")),
-                    ("SAL-REFINADO", Decimal("0.080")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("4000")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("2000")),
+                    ("OVOS", Decimal("1200")),
+                    ("ACUCAR-CRISTAL", Decimal("600")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("160")),
+                    ("SAL-REFINADO", Decimal("80")),
                 ],
             },
             {
@@ -3445,16 +3448,16 @@ class Command(BaseCommand):
                 "ref": "massa-kuropan",
                 "name": "Massa Kuropan",
                 "output_sku": "MASSA-KUROPAN",
-                "batch_size": Decimal("8.2"),
+                "batch_size": Decimal("8200"),
                 "items": [
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("4.200")),
-                    ("YUDANE", Decimal("1.000")),
-                    ("LEITE-INTEGRAL-A", Decimal("1.854")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.600")),
-                    ("ACUCAR-CRISTAL", Decimal("0.400")),
-                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.400")),
-                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.150")),
-                    ("SAL-REFINADO", Decimal("0.100")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("4200")),
+                    ("YUDANE", Decimal("1000")),
+                    ("LEITE-INTEGRAL-A", Decimal("1854")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("600")),
+                    ("ACUCAR-CRISTAL", Decimal("400")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("400")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("150")),
+                    ("SAL-REFINADO", Decimal("100")),
                 ],
             },
             {
@@ -3463,12 +3466,12 @@ class Command(BaseCommand):
                 "ref": "massa-folhado",
                 "name": "Massa Folhado",
                 "output_sku": "MASSA-FOLHADO",
-                "batch_size": Decimal("9.5"),
+                "batch_size": Decimal("9500"),
                 "items": [
-                    ("FARINHA-BAGATELLE-T45", Decimal("4.800")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("3.200")),
-                    ("AGUA-FILTRADA", Decimal("1.800")),
-                    ("SAL-REFINADO", Decimal("0.090"))
+                    ("FARINHA-BAGATELLE-T45", Decimal("4800")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("3200")),
+                    ("AGUA-FILTRADA", Decimal("1800")),
+                    ("SAL-REFINADO", Decimal("90"))
                 ],
             },
             {
@@ -3477,13 +3480,13 @@ class Command(BaseCommand):
                 "ref": "massa-madeleine",
                 "name": "Massa Madeleine",
                 "output_sku": "MASSA-MADELEINE",
-                "batch_size": Decimal("4.9"),
+                "batch_size": Decimal("4900"),
                 "items": [
-                    ("FARINHA-BAGATELLE-T45", Decimal("1.414")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1.339")),
-                    ("OVOS", Decimal("1.228")),
-                    ("ACUCAR-CRISTAL", Decimal("0.945")),
-                    ("LIMAO-SICILIANO", Decimal("0.074"))
+                    ("FARINHA-BAGATELLE-T45", Decimal("1414")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1339")),
+                    ("OVOS", Decimal("1228")),
+                    ("ACUCAR-CRISTAL", Decimal("945")),
+                    ("LIMAO-SICILIANO", Decimal("74"))
                 ],
             },
             {
@@ -3492,12 +3495,12 @@ class Command(BaseCommand):
                 "ref": "recheio-maca",
                 "name": "Recheio de Maçã & Canela",
                 "output_sku": "RECHEIO-MACA",
-                "batch_size": Decimal("5"),
+                "batch_size": Decimal("5000"),
                 "items": [
-                    ("MACA-FUJI", Decimal("3.800")),
-                    ("ACUCAR-CRISTAL", Decimal("1.100")),
-                    ("CANELA-PO", Decimal("0.060")),
-                    ("LIMAO-SICILIANO", Decimal("0.120"))
+                    ("MACA-FUJI", Decimal("3800")),
+                    ("ACUCAR-CRISTAL", Decimal("1100")),
+                    ("CANELA-PO", Decimal("60")),
+                    ("LIMAO-SICILIANO", Decimal("120"))
                 ],
             },
             {
@@ -3519,13 +3522,13 @@ class Command(BaseCommand):
                 "ref": "creme-baunilha",
                 "name": "Creme de Baunilha",
                 "output_sku": "CREME-BAUNILHA",
-                "batch_size": Decimal("5"),
+                "batch_size": Decimal("5000"),
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("3.502")),
-                    ("ACUCAR-CRISTAL", Decimal("0.800")),
-                    ("OVOS", Decimal("0.500")),
-                    ("FARINHA-BAGATELLE-T45", Decimal("0.300")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.100")),
+                    ("LEITE-INTEGRAL-A", Decimal("3502")),
+                    ("ACUCAR-CRISTAL", Decimal("800")),
+                    ("OVOS", Decimal("500")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("300")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("100")),
                 ],
             },
             {
@@ -3539,16 +3542,16 @@ class Command(BaseCommand):
                 "ref": "creme-limao",
                 "name": "Creme de Limão Siciliano",
                 "output_sku": "CREME-LIMAO",
-                "batch_size": Decimal("3"),
+                "batch_size": Decimal("3000"),
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("1.125")),
-                    ("ACUCAR-REFINADO", Decimal("0.865")),
-                    ("OVOS", Decimal("0.375")),
-                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.375")),
-                    ("LIMAO-TAHITI", Decimal("0.280"), Decimal("0.40")),     # suco
-                    ("LIMAO-SICILIANO", Decimal("0.200"), Decimal("0.40")),  # suco + raspas
-                    ("AMIDO-MILHO", Decimal("0.160")),
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.025")),
+                    ("LEITE-INTEGRAL-A", Decimal("1125")),
+                    ("ACUCAR-REFINADO", Decimal("865")),
+                    ("OVOS", Decimal("375")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("375")),
+                    ("LIMAO-TAHITI", Decimal("280"), Decimal("0.40")),     # suco
+                    ("LIMAO-SICILIANO", Decimal("200"), Decimal("0.40")),  # suco + raspas
+                    ("AMIDO-MILHO", Decimal("160")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("25")),
                 ],
             },
             {
@@ -3558,7 +3561,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de massa por baguete, para 250 g assados.
-                    ("MASSA-TRADICAO", Decimal("0.280"))
+                    ("MASSA-TRADICAO", Decimal("280"))
                 ],
             },
             {
@@ -3570,7 +3573,7 @@ class Command(BaseCommand):
                     # 340 g de massa por campagne, para 300 g assados.
                     # A rodada anterior manteve 820 g supondo pão de campanha
                     # grande; o pão da casa é bem menor que isso.
-                    ("MASSA-CAMPAGNE", Decimal("0.340"))
+                    ("MASSA-CAMPAGNE", Decimal("340"))
                 ],
             },
             {
@@ -3580,7 +3583,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 205 g de massa por ciabatta, para 180 g assados.
-                    ("MASSA-CIABATTA", Decimal("0.205"))
+                    ("MASSA-CIABATTA", Decimal("205"))
                 ],
             },
             {
@@ -3590,13 +3593,11 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # Dono, 24/09: 400 g de massa e, na finalização, 12 g de
-                    # azeite, 4 g de sal grosso e 0,1 g de alecrim. O alecrim fica
-                    # FORA da ficha: a linha grava em quilo com três casas (1 g), e
-                    # a baixa de estoque não converte unidade — 0,1 g arredondado
-                    # para 1 g baixaria dez vezes o que vai na peça.
-                    ("MASSA-CIABATTA", Decimal("0.400")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.012")),
-                    ("SAL-GROSSO", Decimal("0.004")),
+                    # azeite, 4 g de sal grosso e 0,1 g de alecrim.
+                    ("MASSA-CIABATTA", Decimal("400")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("12")),
+                    ("SAL-GROSSO", Decimal("4")),
+                    ("ALECRIM-FRESCO", Decimal("0.1")),
                 ],
             },
             {
@@ -3606,7 +3607,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
-                    ("MASSA-FORMA", Decimal("0.400"))
+                    ("MASSA-FORMA", Decimal("400"))
                 ],
             },
             {
@@ -3617,7 +3618,7 @@ class Command(BaseCommand):
                 "items": [
                     # 280 g de Massa Kuropan crus (o chocolate mora na massa),
                     # para 250 g assados.
-                    ("MASSA-KUROPAN", Decimal("0.280"))
+                    ("MASSA-KUROPAN", Decimal("280"))
                 ],
             },
             {
@@ -3627,7 +3628,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de massa por croissant, para 70 g assados.
-                    ("MASSA-CROISSANT", Decimal("0.080"))
+                    ("MASSA-CROISSANT", Decimal("80"))
                 ],
             },
             {
@@ -3638,8 +3639,8 @@ class Command(BaseCommand):
                 "items": [
                     # 80 g de folhada + 20 g de bâton (os dois bâtons
                     # clássicos) = 100 g crus, para 90 g assados.
-                    ("MASSA-CROISSANT", Decimal("0.080")),
-                    ("CHOCOLATE-BATON-MEIOAMARGO", Decimal("0.020")),
+                    ("MASSA-CROISSANT", Decimal("80")),
+                    ("CHOCOLATE-BATON-MEIOAMARGO", Decimal("20")),
                 ],
             },
             {
@@ -3657,8 +3658,8 @@ class Command(BaseCommand):
                     # Coelhinho de Chocolate e a ficha dizia baunilha — o nome
                     # e a ficha discordavam, e quem decide é quem faz. Os dois
                     # irmãos (ursinho e porquinho) seguem de baunilha.
-                    ("MASSA-BUTTER", Decimal("0.060")),
-                    ("CREME-CHOCOLATE", Decimal("0.040")),
+                    ("MASSA-BUTTER", Decimal("60")),
+                    ("CREME-CHOCOLATE", Decimal("40")),
                 ],
             },
             {
@@ -3669,8 +3670,8 @@ class Command(BaseCommand):
                 "items": [
                     # 62 g de folhada + 20 g de maçã caramelizada = 82 g
                     # crus (dono, 26/08), para ~72 g assados.
-                    ("MASSA-FOLHADO", Decimal("0.062")),
-                    ("RECHEIO-MACA", Decimal("0.020"))
+                    ("MASSA-FOLHADO", Decimal("62")),
+                    ("RECHEIO-MACA", Decimal("20"))
                 ],
             },
             {
@@ -3685,8 +3686,8 @@ class Command(BaseCommand):
                 "items": [
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
                     # (dono, 26/08), para ~90 g assados.
-                    ("MASSA-FOLHADO", Decimal("0.080")),
-                    ("CREME-LIMAO", Decimal("0.020"))
+                    ("MASSA-FOLHADO", Decimal("80")),
+                    ("CREME-LIMAO", Decimal("20"))
                 ],
             },
             {
@@ -3697,7 +3698,7 @@ class Command(BaseCommand):
                 "items": [
                     # 28 g de Massa Madeleine por peça, para 25 g assados —
                     # a massa virou pré-preparo nomeado (dono, 26/08).
-                    ("MASSA-MADELEINE", Decimal("0.028"))
+                    ("MASSA-MADELEINE", Decimal("28"))
                 ],
             },
             # ══ Seção 2b (dono, 26/08) — pré-preparos novos ══════════════════
@@ -3710,15 +3711,15 @@ class Command(BaseCommand):
                 "ref": "massa-butter",
                 "name": "Massa Butter",
                 "output_sku": "MASSA-BUTTER",
-                "batch_size": Decimal("8.5"),
+                "batch_size": Decimal("8500"),
                 "items": [
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5.000")),
-                    ("LEITE-INTEGRAL-A", Decimal("1.648")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1.200")),
-                    ("OVOS", Decimal("0.400")),
-                    ("ACUCAR-CRISTAL", Decimal("0.400")),
-                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.150")),
-                    ("SAL-REFINADO", Decimal("0.100")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5000")),
+                    ("LEITE-INTEGRAL-A", Decimal("1648")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1200")),
+                    ("OVOS", Decimal("400")),
+                    ("ACUCAR-CRISTAL", Decimal("400")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("150")),
+                    ("SAL-REFINADO", Decimal("100")),
                 ],
             },
             {
@@ -3726,14 +3727,14 @@ class Command(BaseCommand):
                 "ref": "massa-pita",
                 "name": "Massa Pita",
                 "output_sku": "MASSA-PITA",
-                "batch_size": Decimal("8.2"),
+                "batch_size": Decimal("8200"),
                 "items": [
-                    ("FARINHA-NOVARA-T55", Decimal("5.000")),
-                    ("AGUA-FILTRADA", Decimal("3.000")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137")),
-                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.100")),
-                    ("SAL-REFINADO", Decimal("0.100")),
-                    ("ACUCAR-CRISTAL", Decimal("0.050"))
+                    ("FARINHA-NOVARA-T55", Decimal("5000")),
+                    ("AGUA-FILTRADA", Decimal("3000")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("137")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("100")),
+                    ("SAL-REFINADO", Decimal("100")),
+                    ("ACUCAR-CRISTAL", Decimal("50"))
                 ],
             },
             {
@@ -3741,23 +3742,23 @@ class Command(BaseCommand):
                 # frango rende 2,94 kg de recheio. O «caldo» é o da panela de
                 # pressão da receita anterior, guardado congelado — no estoque é
                 # água; a ficha dela o pesa em 1,04 kg. O milho é «1 lt» = UMA
-                # LATA, ~170 g escorrida (dono, 24/09). O frango é sassami. A folha de
-                # louro do cozimento (0,34 g) fica fora: não cabe na precisão de
-                # grama da ficha, e custo e rótulo não a sentem.
+                # LATA, ~170 g escorrida (dono, 24/09). O frango é sassami, e
+                # cozinha com uma folha de louro.
                 "ref": "recheio-frango",
                 "name": "Recheio de Frango",
                 "output_sku": "RECHEIO-FRANGO",
-                "batch_size": Decimal("2.94"),
+                "batch_size": Decimal("2940"),
                 "items": [
-                    ("AGUA-FILTRADA", Decimal("1.040")),
-                    ("FRANGO", Decimal("1.000")),
-                    ("MILHO-VERDE-CONSERVA", Decimal("0.170")),
-                    ("CEBOLA-BRANCA", Decimal("0.760"), Decimal("0.85")),
-                    ("TOMATE", Decimal("0.760"), Decimal("0.63")),   # sem sementes
-                    ("OLEO-SOJA", Decimal("0.200")),
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.120")),
-                    ("SAL-REFINADO", Decimal("0.030")),
-                    ("COLORAU", Decimal("0.020")),
+                    ("AGUA-FILTRADA", Decimal("1040")),
+                    ("FRANGO", Decimal("1000")),
+                    ("MILHO-VERDE-CONSERVA", Decimal("170")),
+                    ("CEBOLA-BRANCA", Decimal("760"), Decimal("0.85")),
+                    ("TOMATE", Decimal("760"), Decimal("0.63")),   # sem sementes
+                    ("OLEO-SOJA", Decimal("200")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("120")),
+                    ("SAL-REFINADO", Decimal("30")),
+                    ("COLORAU", Decimal("20")),
+                    ("LOURO", Decimal("0.34")),                       # 1 folha
                 ],
             },
             {
@@ -3770,25 +3771,25 @@ class Command(BaseCommand):
                 "ref": "recheio-cebola-bacon-tomilho",
                 "name": "Recheio de Cebola, Bacon e Tomilho",
                 "output_sku": "RECHEIO-CEBOLA-BACON-TOMILHO",
-                "batch_size": Decimal("2.717"),
+                "batch_size": Decimal("2717"),
                 "items": [
-                    ("CEBOLA-BRANCA", Decimal("2.000"), Decimal("0.84")),
-                    ("BACON", Decimal("0.380")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.300")),
-                    ("TOMILHO-FRESCO", Decimal("0.020"), Decimal("0.60")),  # só folhas
-                    ("PIMENTA-PRETA", Decimal("0.010")),
-                    ("LOURO", Decimal("0.007")),                          # 20 folhas
+                    ("CEBOLA-BRANCA", Decimal("2000"), Decimal("0.84")),
+                    ("BACON", Decimal("380")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("300")),
+                    ("TOMILHO-FRESCO", Decimal("20"), Decimal("0.60")),  # só folhas
+                    ("PIMENTA-PRETA", Decimal("10")),
+                    ("LOURO", Decimal("7")),                          # 20 folhas
                 ],
             },
             {
                 "ref": "recheio-cebola-azapas",
                 "name": "Recheio de Cebola Roxa & Azapas",
                 "output_sku": "RECHEIO-CEBOLA-AZAPAS",
-                "batch_size": Decimal("2.8"),
+                "batch_size": Decimal("2800"),
                 "items": [
-                    ("CEBOLA-ROXA", Decimal("2.200")),
-                    ("AZEITONA-AZAPA", Decimal("0.700")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137"))
+                    ("CEBOLA-ROXA", Decimal("2200")),
+                    ("AZEITONA-AZAPA", Decimal("700")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("137"))
                 ],
             },
             {
@@ -3798,18 +3799,18 @@ class Command(BaseCommand):
                 "ref": "molho-bechamel",
                 "name": "Béchamel",
                 "output_sku": "MOLHO-BECHAMEL",
-                "batch_size": Decimal("2.835"),
+                "batch_size": Decimal("2835"),
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("3.000")),
-                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.348")),
-                    ("NATA-FRESCA", Decimal("0.255")),
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.225")),
-                    ("QUEIJO-PARMESAO", Decimal("0.108")),
-                    ("VINHO-BRANCO-SECO", Decimal("0.105")),
-                    ("TOMILHO-FRESCO", Decimal("0.012")),
-                    ("SAL-REFINADO", Decimal("0.012")),
-                    ("ALECRIM-FRESCO", Decimal("0.006")),
-                    ("LOURO", Decimal("0.006")),
+                    ("LEITE-INTEGRAL-A", Decimal("3000")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("348")),
+                    ("NATA-FRESCA", Decimal("255")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("225")),
+                    ("QUEIJO-PARMESAO", Decimal("108")),
+                    ("VINHO-BRANCO-SECO", Decimal("105")),
+                    ("TOMILHO-FRESCO", Decimal("12")),
+                    ("SAL-REFINADO", Decimal("12")),
+                    ("ALECRIM-FRESCO", Decimal("6")),
+                    ("LOURO", Decimal("6")),
                 ],
             },
             {
@@ -3822,28 +3823,28 @@ class Command(BaseCommand):
                 "ref": "creme-chocolate",
                 "name": "Creme de Chocolate",
                 "output_sku": "CREME-CHOCOLATE",
-                "batch_size": Decimal("2.925"),
+                "batch_size": Decimal("2925"),
                 "items": [
-                    ("CREME-BAUNILHA", Decimal("1.875")),
-                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.806")),
-                    ("CHOCOLATE-GOTAS-AOLEITE", Decimal("0.244")),
+                    ("CREME-BAUNILHA", Decimal("1875")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("806")),
+                    ("CHOCOLATE-GOTAS-AOLEITE", Decimal("244")),
                 ],
             },
             {
                 # A base do pain perdu = o «Creme Pain Perdu» da ficha da casa
-                # (Maysa, 10/10/2022), que rende 0,762 kg com 2 gotas de
-                # baunilha. Aqui ×8, porque é a escala em que a baunilha cabe na
-                # ficha: 16 gotas = 1 g, pesadas pelo dono (24/09/2026).
+                # (Maysa, 10/10/2022), que rende 762 g com 2 gotas de baunilha;
+                # aqui ×2,5. A gota é 0,0625 g, pesada pelo dono (24/09/2026):
+                # 5 gotas = 0,3125 g, arredondado para cima, como ele mandou.
                 "ref": "creme-leite-ovos",
                 "name": "Creme de Leite e Ovos",
                 "output_sku": "CREME-LEITE-OVOS",
-                "batch_size": Decimal("6.08"),
+                "batch_size": Decimal("1900"),
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("3.200")),
-                    ("NATA-FRESCA", Decimal("1.200")),
-                    ("OVOS", Decimal("0.880")),
-                    ("ACUCAR-CRISTAL", Decimal("0.800")),
-                    ("BAUNILHA-EXTRATO-NATURAL", Decimal("0.001")),   # 16 gotas
+                    ("LEITE-INTEGRAL-A", Decimal("1000")),
+                    ("NATA-FRESCA", Decimal("375")),
+                    ("OVOS", Decimal("275")),
+                    ("ACUCAR-CRISTAL", Decimal("250")),
+                    ("BAUNILHA-EXTRATO-NATURAL", Decimal("0.313")),   # 5 gotas
                 ],
             },
             {
@@ -3853,12 +3854,12 @@ class Command(BaseCommand):
                 "ref": "molho-caramelo",
                 "name": "Caramelo Salgado",
                 "output_sku": "MOLHO-CARAMELO",
-                "batch_size": Decimal("2.1"),
+                "batch_size": Decimal("2100"),
                 "items": [
-                    ("ACUCAR-REFINADO", Decimal("1.200")),
-                    ("NATA-FRESCA", Decimal("1.200")),
-                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.120")),
-                    ("SAL-REFINADO", Decimal("0.012")),
+                    ("ACUCAR-REFINADO", Decimal("1200")),
+                    ("NATA-FRESCA", Decimal("1200")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("120")),
+                    ("SAL-REFINADO", Decimal("12")),
                 ],
             },
             {
@@ -3869,10 +3870,10 @@ class Command(BaseCommand):
                 "ref": "manteiga-wasabi",
                 "name": "Manteiga de Wasabi",
                 "output_sku": "MANTEIGA-WASABI",
-                "batch_size": Decimal("1.035"),
+                "batch_size": Decimal("1035"),
                 "items": [
-                    ("MANTEIGA-PRESIDENT-COM-SAL", Decimal("1.000")),
-                    ("WASABI", Decimal("0.035")),
+                    ("MANTEIGA-PRESIDENT-COM-SAL", Decimal("1000")),
+                    ("WASABI", Decimal("35")),
                 ],
             },
             {
@@ -3882,14 +3883,14 @@ class Command(BaseCommand):
                 "ref": "recheio-cebolas-assadas",
                 "name": "Cebolas Assadas",
                 "output_sku": "RECHEIO-CEBOLAS-ASSADAS",
-                "batch_size": Decimal("1.47"),
+                "batch_size": Decimal("1470"),
                 "items": [
-                    ("CEBOLA-BRANCA", Decimal("3.146"), Decimal("0.85")),
-                    ("VINHO-BRANCO-SECO", Decimal("0.410")),
-                    ("ACUCAR-CRISTAL", Decimal("0.040")),
-                    ("SAL-REFINADO", Decimal("0.030")),
-                    ("TOMILHO-FRESCO", Decimal("0.030")),
-                    ("LOURO", Decimal("0.001")),
+                    ("CEBOLA-BRANCA", Decimal("3146"), Decimal("0.85")),
+                    ("VINHO-BRANCO-SECO", Decimal("410")),
+                    ("ACUCAR-CRISTAL", Decimal("40")),
+                    ("SAL-REFINADO", Decimal("30")),
+                    ("TOMILHO-FRESCO", Decimal("30")),
+                    ("LOURO", Decimal("1")),
                 ],
             },
             {
@@ -3901,13 +3902,13 @@ class Command(BaseCommand):
                 "ref": "salada-da-casa",
                 "name": "Salada da Casa",
                 "output_sku": "SALADA-DA-CASA",
-                "batch_size": Decimal("1.6"),
+                "batch_size": Decimal("1600"),
                 "items": [
-                    ("VINAGRETE-FRANCES", Decimal("0.600")),
-                    ("TOMATE-CEREJA", Decimal("0.500")),
-                    ("ALFACE-AMERICANA", Decimal("0.200")),
-                    ("ALFACE-ROXA", Decimal("0.200")),
-                    ("RUCULA", Decimal("0.100")),
+                    ("VINAGRETE-FRANCES", Decimal("600")),
+                    ("TOMATE-CEREJA", Decimal("500")),
+                    ("ALFACE-AMERICANA", Decimal("200")),
+                    ("ALFACE-ROXA", Decimal("200")),
+                    ("RUCULA", Decimal("100")),
                 ],
             },
             {
@@ -3920,15 +3921,15 @@ class Command(BaseCommand):
                 "ref": "vinagrete-frances",
                 "name": "Vinagrete à Francesa",
                 "output_sku": "VINAGRETE-FRANCES",
-                "batch_size": Decimal("0.825"),
+                "batch_size": Decimal("825"),
                 "items": [
-                    ("CEBOLA-BRANCA", Decimal("0.200")),
-                    ("MOSTARDA-DIJON", Decimal("0.200")),
-                    ("VINAGRE-VINHO-TINTO", Decimal("0.150")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.150")),
-                    ("OLEO-GIRASSOL", Decimal("0.100")),
-                    ("SAL-REFINADO", Decimal("0.020")),
-                    ("PIMENTA-PRETA", Decimal("0.005")),
+                    ("CEBOLA-BRANCA", Decimal("200")),
+                    ("MOSTARDA-DIJON", Decimal("200")),
+                    ("VINAGRE-VINHO-TINTO", Decimal("150")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("150")),
+                    ("OLEO-GIRASSOL", Decimal("100")),
+                    ("SAL-REFINADO", Decimal("20")),
+                    ("PIMENTA-PRETA", Decimal("5")),
                 ],
             },
             # ══ Seção 2b — fichas dos assados restaurados (crus do dono) ═════
@@ -3940,14 +3941,14 @@ class Command(BaseCommand):
                 "name": "Baguete Lanche",
                 "output_sku": "BGL",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CIABATTA", Decimal("0.260"))],  # 260 g/un
+                "items": [("MASSA-CIABATTA", Decimal("260"))],  # 260 g/un
             },
             {
                 "ref": "batard",
                 "name": "Bâtard",
                 "output_sku": "BAT",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-TRADICAO", Decimal("0.320"))],  # 320 g/un
+                "items": [("MASSA-TRADICAO", Decimal("320"))],  # 320 g/un
             },
             {
                 # Ciabatta, não tradição (dono, 22/09): as baguetes de gergelim
@@ -3958,8 +3959,8 @@ class Command(BaseCommand):
                 "output_sku": "BGGP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.165")),  # 165 g/un
-                    ("GERGELIM", Decimal("0.005")),        # 5 g/un
+                    ("MASSA-CIABATTA", Decimal("165")),  # 165 g/un
+                    ("GERGELIM", Decimal("5")),        # 5 g/un
                 ],
             },
             {
@@ -3968,28 +3969,28 @@ class Command(BaseCommand):
                 "name": "Italiano Rústico",
                 "output_sku": "ITA",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-TRADICAO", Decimal("0.480"))],  # 480 g/un
+                "items": [("MASSA-TRADICAO", Decimal("480"))],  # 480 g/un
             },
             {
                 "ref": "baguette-campagne",
                 "name": "Baguette Campagne",
                 "output_sku": "CPBG",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CAMPAGNE", Decimal("0.300"))],  # 300 g/un
+                "items": [("MASSA-CAMPAGNE", Decimal("300"))],  # 300 g/un
             },
             {
                 "ref": "campagne-redondo",
                 "name": "Pain de Campagne Redondo",
                 "output_sku": "CPR",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CAMPAGNE", Decimal("0.340"))],  # 340 g/un
+                "items": [("MASSA-CAMPAGNE", Decimal("340"))],  # 340 g/un
             },
             {
                 "ref": "pita",
                 "name": "Pita",
                 "output_sku": "PIT",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-PITA", Decimal("0.030"))],  # 30 g/un
+                "items": [("MASSA-PITA", Decimal("30"))],  # 30 g/un
             },
             {
                 "ref": "focaccia-cebola-bacon-tomilho",
@@ -4001,12 +4002,12 @@ class Command(BaseCommand):
                     # cebola, 38 de bacon, 40 de queijo e 2 folhas de louro, sobre
                     # 400 g de massa. O queijo vai na montagem; o sal é o grosso da
                     # finalização.
-                    ("MASSA-CIABATTA", Decimal("0.400")),
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.272")),
-                    ("QUEIJO-COLONIAL", Decimal("0.040")),
+                    ("MASSA-CIABATTA", Decimal("400")),
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("272")),
+                    ("QUEIJO-COLONIAL", Decimal("40")),
                     # Finalização (dono, 24/09): 12 g de azeite e 4 g de sal grosso.
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.012")),
-                    ("SAL-GROSSO", Decimal("0.004")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("12")),
+                    ("SAL-GROSSO", Decimal("4")),
                 ],
             },
             {
@@ -4015,8 +4016,8 @@ class Command(BaseCommand):
                 "output_sku": "FOC",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.400")),          # 400 g/un (dono, 24/09)
-                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.045")),   # 45 g/un
+                    ("MASSA-CIABATTA", Decimal("400")),          # 400 g/un (dono, 24/09)
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("45")),   # 45 g/un
                 ],
             },
             {
@@ -4026,11 +4027,11 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     # Dono, 24/09: 110 g de massa, 8 g de azeite, 1 g de sal grosso
-                    # e 0,05 g de alecrim — que fica fora pelo mesmo motivo da
-                    # grande (abaixo de 1 g a ficha não grava sem inflar a baixa).
-                    ("MASSA-CIABATTA", Decimal("0.110")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.008")),
-                    ("SAL-GROSSO", Decimal("0.001")),
+                    # e 0,05 g de alecrim.
+                    ("MASSA-CIABATTA", Decimal("110")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("8")),
+                    ("SAL-GROSSO", Decimal("1")),
+                    ("ALECRIM-FRESCO", Decimal("0.05")),
                 ],
             },
             {
@@ -4041,11 +4042,11 @@ class Command(BaseCommand):
                 "items": [
                     # «Proporção da CBT pequena» (dono, 24/09): 50 g de cebola,
                     # 10 de bacon, 16 de queijo, 1 folha de louro, sobre 110 g.
-                    ("MASSA-CIABATTA", Decimal("0.110")),
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.068")),
-                    ("QUEIJO-COLONIAL", Decimal("0.016")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("0.008")),   # finalização
-                    ("SAL-GROSSO", Decimal("0.001")),
+                    ("MASSA-CIABATTA", Decimal("110")),
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("68")),
+                    ("QUEIJO-COLONIAL", Decimal("16")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("8")),   # finalização
+                    ("SAL-GROSSO", Decimal("1")),
                 ],
             },
             {
@@ -4054,8 +4055,8 @@ class Command(BaseCommand):
                 "output_sku": "FOCP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("0.110")),          # 110 g/un (dono, 24/09)
-                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.014")),   # 14 g/un
+                    ("MASSA-CIABATTA", Decimal("110")),          # 110 g/un (dono, 24/09)
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("14")),   # 14 g/un
                 ],
             },
             {
@@ -4063,7 +4064,7 @@ class Command(BaseCommand):
                 "name": "Croissant Mini",
                 "output_sku": "CRP",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CROISSANT", Decimal("0.036"))],  # 36 g/un
+                "items": [("MASSA-CROISSANT", Decimal("36"))],  # 36 g/un
             },
             {
                 # Brioche, não croissant (dono, 22/09): "nosso pain au raisin é de
@@ -4075,9 +4076,9 @@ class Command(BaseCommand):
                 "output_sku": "BRRSN",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.040")),     # 40 g/un
-                    ("CREME-BAUNILHA", Decimal("0.018")),    # 18 g/un
-                    ("PASSAS", Decimal("0.010")),            # 10 g/un
+                    ("MASSA-BRIOCHE", Decimal("40")),     # 40 g/un
+                    ("CREME-BAUNILHA", Decimal("18")),    # 18 g/un
+                    ("PASSAS", Decimal("10")),            # 10 g/un
                 ],
             },
             {
@@ -4086,8 +4087,8 @@ class Command(BaseCommand):
                 "output_sku": "MA",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.080")),  # 80 g/un
-                    ("RECHEIO-MACA", Decimal("0.030")),   # 30 g/un
+                    ("MASSA-FOLHADO", Decimal("80")),  # 80 g/un
+                    ("RECHEIO-MACA", Decimal("30")),   # 30 g/un
                 ],
             },
             {
@@ -4097,9 +4098,9 @@ class Command(BaseCommand):
                 "output_sku": "CRPQ",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.060")),        # 60 g/un
-                    ("PRESUNTO-DEFUMADO", Decimal("0.015")),      # 15 g/un
-                    ("QUEIJO-MINAS-PADRAO", Decimal("0.015")),    # 15 g/un
+                    ("MASSA-CROISSANT", Decimal("60")),        # 60 g/un
+                    ("PRESUNTO-DEFUMADO", Decimal("15")),      # 15 g/un
+                    ("QUEIJO-MINAS-PADRAO", Decimal("15")),    # 15 g/un
                 ],
             },
             {
@@ -4108,8 +4109,8 @@ class Command(BaseCommand):
                 "output_sku": "FFGO",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.095")),   # 95 g/un
-                    ("RECHEIO-FRANGO", Decimal("0.035")),    # 35 g/un
+                    ("MASSA-FOLHADO", Decimal("95")),   # 95 g/un
+                    ("RECHEIO-FRANGO", Decimal("35")),    # 35 g/un
                 ],
             },
             {
@@ -4118,8 +4119,8 @@ class Command(BaseCommand):
                 "output_sku": "FFGOP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.058")),   # 58 g/un
-                    ("RECHEIO-FRANGO", Decimal("0.022")),    # 22 g/un
+                    ("MASSA-FOLHADO", Decimal("58")),   # 58 g/un
+                    ("RECHEIO-FRANGO", Decimal("22")),    # 22 g/un
                 ],
             },
             {
@@ -4130,8 +4131,8 @@ class Command(BaseCommand):
                 "items": [
                     # Butter, como os outros pães-bicho — ele corrigiu em 23/09.
                     # A ficha dizia FORMA; a gramatura não muda.
-                    ("MASSA-BUTTER", Decimal("0.038")),  # 38 g/un
-                    ("GERGELIM", Decimal("0.002")),     # 2 g/un
+                    ("MASSA-BUTTER", Decimal("38")),  # 38 g/un
+                    ("GERGELIM", Decimal("2")),     # 2 g/un
                 ],
             },
             {
@@ -4143,7 +4144,7 @@ class Command(BaseCommand):
                 "output_sku": "KUBB",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-KUROPAN", Decimal("0.090")),  # 90 g/un
+                    ("MASSA-KUROPAN", Decimal("90")),  # 90 g/un
                 ],
             },
             {
@@ -4151,7 +4152,7 @@ class Command(BaseCommand):
                 "name": "Brioche Nanterre",
                 "output_sku": "BRNT",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-BRIOCHE", Decimal("0.240"))],  # 240 g/un
+                "items": [("MASSA-BRIOCHE", Decimal("240"))],  # 240 g/un
             },
             {
                 "ref": "brioche-chocolat",
@@ -4159,8 +4160,8 @@ class Command(BaseCommand):
                 "output_sku": "BRCH",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.034")),      # 34 g/un
-                    ("CHOCOLATE-GOTAS-AOLEITE", Decimal("0.008")),    # 8 g/un
+                    ("MASSA-BRIOCHE", Decimal("34")),      # 34 g/un
+                    ("CHOCOLATE-GOTAS-AOLEITE", Decimal("8")),    # 8 g/un
                 ],
             },
             {
@@ -4169,8 +4170,8 @@ class Command(BaseCommand):
                 "output_sku": "BRBBP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.030")),  # 30 g/un
-                    ("GERGELIM", Decimal("0.002")),       # 2 g/un
+                    ("MASSA-BRIOCHE", Decimal("30")),  # 30 g/un
+                    ("GERGELIM", Decimal("2")),       # 2 g/un
                 ],
             },
             {
@@ -4179,8 +4180,8 @@ class Command(BaseCommand):
                 "output_sku": "URS",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.080")),    # 80 g/un
-                    ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
+                    ("MASSA-BUTTER", Decimal("80")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("30")),   # 30 g/un
                 ],
             },
             {
@@ -4189,8 +4190,8 @@ class Command(BaseCommand):
                 "output_sku": "PORQ",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.080")),    # 80 g/un
-                    ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
+                    ("MASSA-BUTTER", Decimal("80")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("30")),   # 30 g/un
                 ],
             },
             {
@@ -4199,7 +4200,7 @@ class Command(BaseCommand):
                 "name": "Challah",
                 "output_sku": "CHLH",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-BUTTER", Decimal("0.300"))],  # 300 g/un
+                "items": [("MASSA-BUTTER", Decimal("300"))],  # 300 g/un
             },
             {
                 # 60 g de butter + 50 g de salsicha Vienna (Strass) — dono.
@@ -4208,8 +4209,8 @@ class Command(BaseCommand):
                 "output_sku": "HOD",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.060")),       # 60 g/un
-                    ("SALSICHA-VIENNA", Decimal("0.050")),    # 50 g/un
+                    ("MASSA-BUTTER", Decimal("60")),       # 60 g/un
+                    ("SALSICHA-VIENNA", Decimal("50")),    # 50 g/un
                 ],
             },
             {
@@ -4219,8 +4220,8 @@ class Command(BaseCommand):
                 "output_sku": "HODP",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.040")),       # 40 g/un
-                    ("SALSICHA-VIENNA", Decimal("0.025")),    # 25 g/un
+                    ("MASSA-BUTTER", Decimal("40")),       # 40 g/un
+                    ("SALSICHA-VIENNA", Decimal("25")),    # 25 g/un
                 ],
             },
             {
@@ -4229,10 +4230,10 @@ class Command(BaseCommand):
                 "output_sku": "DELI",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.070")),      # 70 g/un
-                    ("MILHO-VERDE-CONSERVA", Decimal("0.020")),       # 20 g/un
-                    ("BACON", Decimal("0.010")),             # 10 g/un
-                    ("SALSINHA-DESIDRATADA", Decimal("0.001")),    # 1 g/un
+                    ("MASSA-BUTTER", Decimal("70")),      # 70 g/un
+                    ("MILHO-VERDE-CONSERVA", Decimal("20")),       # 20 g/un
+                    ("BACON", Decimal("10")),             # 10 g/un
+                    ("SALSINHA-DESIDRATADA", Decimal("1")),    # 1 g/un
                 ],
             },
             {
@@ -4241,8 +4242,8 @@ class Command(BaseCommand):
                 "output_sku": "COC",
                 "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.048")),      # 48 g/un
-                    ("CREME-CHOCOLATE", Decimal("0.012")),   # 12 g/un
+                    ("MASSA-BUTTER", Decimal("48")),      # 48 g/un
+                    ("CREME-CHOCOLATE", Decimal("12")),   # 12 g/un
                 ],
             },
             # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
@@ -4269,12 +4270,12 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FORMA", Decimal("0.110")),
-                    ("REQUEIJAO-CORTE", Decimal("0.040")),
-                    ("QUEIJO-PRATO", Decimal("0.036")),
-                    ("RECHEIO-CEBOLAS-ASSADAS", Decimal("0.035")),
-                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.010")),
-                    ("QUEIJO-PARMESAO", Decimal("0.008")),
+                    ("FORMA", Decimal("110")),
+                    ("REQUEIJAO-CORTE", Decimal("40")),
+                    ("QUEIJO-PRATO", Decimal("36")),
+                    ("RECHEIO-CEBOLAS-ASSADAS", Decimal("35")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("10")),
+                    ("QUEIJO-PARMESAO", Decimal("8")),
                 ],
             },
             {
@@ -4284,12 +4285,12 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CPG", Decimal("0.060")),      # a confirmar
-                    ("MOLHO-BECHAMEL", Decimal("0.070")),
-                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
-                    ("PRESUNTO-CASA", Decimal("0.050")),
-                    ("QUEIJO-PARMESAO", Decimal("0.002")),
-                    ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
+                    ("CPG", Decimal("60")),      # a confirmar
+                    ("MOLHO-BECHAMEL", Decimal("70")),
+                    ("QUEIJO-GOUDA", Decimal("50"), Decimal("0.95")),
+                    ("PRESUNTO-CASA", Decimal("50")),
+                    ("QUEIJO-PARMESAO", Decimal("2")),
+                    ("SALADA-DA-CASA", Decimal("80")),   # já com o vinagrete
                 ],
             },
             {
@@ -4299,12 +4300,12 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CPG", Decimal("0.060")),      # a confirmar
-                    ("MOLHO-BECHAMEL", Decimal("0.070")),
-                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
-                    ("PRESUNTO-CASA", Decimal("0.050")),
-                    ("QUEIJO-PARMESAO", Decimal("0.002")),
-                    ("OVOS", Decimal("0.050"))
+                    ("CPG", Decimal("60")),      # a confirmar
+                    ("MOLHO-BECHAMEL", Decimal("70")),
+                    ("QUEIJO-GOUDA", Decimal("50"), Decimal("0.95")),
+                    ("PRESUNTO-CASA", Decimal("50")),
+                    ("QUEIJO-PARMESAO", Decimal("2")),
+                    ("OVOS", Decimal("50"))
                 ],
             },
             {
@@ -4314,13 +4315,13 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CPG", Decimal("0.060")),      # a confirmar
-                    ("MOLHO-BECHAMEL", Decimal("0.070")),
-                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
-                    ("PRESUNTO-CASA", Decimal("0.050")),
-                    ("QUEIJO-PARMESAO", Decimal("0.002")),
-                    ("OVOS", Decimal("0.050")),
-                    ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
+                    ("CPG", Decimal("60")),      # a confirmar
+                    ("MOLHO-BECHAMEL", Decimal("70")),
+                    ("QUEIJO-GOUDA", Decimal("50"), Decimal("0.95")),
+                    ("PRESUNTO-CASA", Decimal("50")),
+                    ("QUEIJO-PARMESAO", Decimal("2")),
+                    ("OVOS", Decimal("50")),
+                    ("SALADA-DA-CASA", Decimal("80")),   # já com o vinagrete
                 ],
             },
             {
@@ -4333,10 +4334,10 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("BGL", Decimal("0.230")),     # a baguete lanche assada
-                    ("PRESUNTO-CASA", Decimal("0.085")),
-                    ("MANTEIGA-WASABI", Decimal("0.030")),
-                    ("PEPINO-CORNICHO-CONSERVA", Decimal("0.012")),
+                    ("BGL", Decimal("230")),     # a baguete lanche assada
+                    ("PRESUNTO-CASA", Decimal("85")),
+                    ("MANTEIGA-WASABI", Decimal("30")),
+                    ("PEPINO-CORNICHO-CONSERVA", Decimal("12")),
                 ],
             },
             {
@@ -4352,12 +4353,12 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("BRNT", Decimal("0.026")),
-                    ("CREME-LEITE-OVOS", Decimal("0.065")),
-                    ("MOLHO-CARAMELO", Decimal("0.025")),
-                    ("NATA-FRESCA", Decimal("0.025")),     # chantilly
-                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.010")),
-                    ("FLOR-DE-SAL", Decimal("0.001")),
+                    ("BRNT", Decimal("26")),
+                    ("CREME-LEITE-OVOS", Decimal("65")),
+                    ("MOLHO-CARAMELO", Decimal("25")),
+                    ("NATA-FRESCA", Decimal("25")),     # chantilly
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("10")),
+                    ("FLOR-DE-SAL", Decimal("1")),
                 ],
             },
             # ══ Seção 2b — fichas de BEBIDA (is_active=False) ════════════════
@@ -4367,7 +4368,7 @@ class Command(BaseCommand):
                 "output_sku": "SP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
-                "items": [("CAFE-ORFEU-CLASSICO", Decimal("0.018"))],
+                "items": [("CAFE-ORFEU-CLASSICO", Decimal("18"))],
             },
             {
                 "ref": "espresso-macchiato",
@@ -4376,8 +4377,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.021"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
+                    ("LEITE-INTEGRAL-A", Decimal("21"))
                 ],
             },
             {
@@ -4387,8 +4388,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.155"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
+                    ("LEITE-INTEGRAL-A", Decimal("155"))
                 ],
             },
             {
@@ -4398,9 +4399,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.155")),
-                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.020"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
+                    ("LEITE-INTEGRAL-A", Decimal("155")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("20"))
                 ],
             },
             {
@@ -4410,9 +4411,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.185")),
-                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.025"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
+                    ("LEITE-INTEGRAL-A", Decimal("185")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("25"))
                 ],
             },
             {
@@ -4422,8 +4423,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.227"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
+                    ("LEITE-INTEGRAL-A", Decimal("227"))
                 ],
             },
             {
@@ -4433,8 +4434,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("LEITE-INTEGRAL-A", Decimal("0.227")),
-                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.030"))
+                    ("LEITE-INTEGRAL-A", Decimal("227")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("30"))
                 ],
             },
             {
@@ -4444,8 +4445,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-CAMILLE", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400"))
+                    ("CHA-CAMILLE", Decimal("8")),
+                    ("AGUA-FILTRADA", Decimal("400"))
                 ],
             },
             {
@@ -4455,8 +4456,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-ROUGE", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400"))
+                    ("CHA-ROUGE", Decimal("8")),
+                    ("AGUA-FILTRADA", Decimal("400"))
                 ],
             },
             {
@@ -4466,8 +4467,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-SOPHIE", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400"))
+                    ("CHA-SOPHIE", Decimal("8")),
+                    ("AGUA-FILTRADA", Decimal("400"))
                 ],
             },
             {
@@ -4477,8 +4478,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-BLEU", Decimal("0.008")),
-                    ("AGUA-FILTRADA", Decimal("0.400"))
+                    ("CHA-BLEU", Decimal("8")),
+                    ("AGUA-FILTRADA", Decimal("400"))
                 ],
             },
             {
@@ -4488,9 +4489,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-HIBISCO", Decimal("0.008")),
-                    ("ACUCAR-CRISTAL", Decimal("0.015")),
-                    ("AGUA-FILTRADA", Decimal("0.300"))
+                    ("CHA-HIBISCO", Decimal("8")),
+                    ("ACUCAR-CRISTAL", Decimal("15")),
+                    ("AGUA-FILTRADA", Decimal("300"))
                 ],
             },
             {
@@ -4500,10 +4501,10 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-CHAI", Decimal("0.008")),
-                    ("LIMAO-SICILIANO", Decimal("0.020")),
-                    ("ACUCAR-CRISTAL", Decimal("0.015")),
-                    ("AGUA-FILTRADA", Decimal("0.250"))
+                    ("CHA-CHAI", Decimal("8")),
+                    ("LIMAO-SICILIANO", Decimal("20")),
+                    ("ACUCAR-CRISTAL", Decimal("15")),
+                    ("AGUA-FILTRADA", Decimal("250"))
                 ],
             },
             {
@@ -4515,9 +4516,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.052")),
-                    ("AGUA-FILTRADA", Decimal("0.200"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
+                    ("LEITE-INTEGRAL-A", Decimal("52")),
+                    ("AGUA-FILTRADA", Decimal("200"))
                 ],
             },
             {
@@ -4529,8 +4530,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CHA-FRUTAS-VERMELHAS", Decimal("0.008")),
-                    ("TONICA-ANTARCTICA", Decimal("1")),
+                    ("CHA-FRUTAS-VERMELHAS", Decimal("8")),
+                    # ⅓ da lata de 350 ml por bebida (dono, 23/09) ≈ 115 g.
+                    ("TONICA-ANTARCTICA", Decimal("115")),
                 ],
             }
         ]
@@ -4730,46 +4732,46 @@ class Command(BaseCommand):
         # R1 pergunta. A ponte da densidade saiu da produção diária e foi para o
         # recebimento, como uma MaterialConversion "litros" declarada abaixo.
         material_attrs = {
-            "FARINHA-NOVARA-T55": ("kg", 180), "FARINHA-ANACONDA-PREMIUM": ("kg", 180),
-            "FARINHA-BAGATELLE-T45": ("kg", 180), "FARINHA-INTEGRAL-ORGANICA": ("kg", 120),
-            "FARINHA-CENTEIO-INTEGRAL-ORGANICA": ("kg", 120), "MALTE-EXTRATO": ("kg", 365),
-            "ACUCAR-CRISTAL": ("kg", None), "SAL-REFINADO": ("kg", None), "GERGELIM": ("kg", 180),
-            "AGUA-FILTRADA": ("kg", None), "LEITE-INTEGRAL-A": ("kg", 7), "AZEITE-EXTRAVIRGEM": ("kg", 540),
-            "LEVAIN-LIQUIDO": ("kg", 7), "FERMENTO-BIOLOGICO-FRESCO": ("kg", 14),
-            "MANTEIGA-PRESIDENT-SEM-SAL": ("kg", 60), "OVOS": ("kg", 28),
-            "CHOCOLATE-GOTAS-MEIOAMARGO": ("kg", 365), "AZEITONA-AZAPA": ("kg", 180),
-            "CEBOLA-ROXA": ("kg", 30), "MACA-FUJI": ("kg", 30), "LIMAO-SICILIANO": ("kg", 21),
-            "CANELA-PO": ("kg", 365), "ALECRIM-FRESCO": ("kg", 14),
+            "FARINHA-NOVARA-T55": ("g", 180), "FARINHA-ANACONDA-PREMIUM": ("g", 180),
+            "FARINHA-BAGATELLE-T45": ("g", 180), "FARINHA-INTEGRAL-ORGANICA": ("g", 120),
+            "FARINHA-CENTEIO-INTEGRAL-ORGANICA": ("g", 120), "MALTE-EXTRATO": ("g", 365),
+            "ACUCAR-CRISTAL": ("g", None), "SAL-REFINADO": ("g", None), "GERGELIM": ("g", 180),
+            "AGUA-FILTRADA": ("g", None), "LEITE-INTEGRAL-A": ("g", 7), "AZEITE-EXTRAVIRGEM": ("g", 540),
+            "LEVAIN-LIQUIDO": ("g", 7), "FERMENTO-BIOLOGICO-FRESCO": ("g", 14),
+            "MANTEIGA-PRESIDENT-SEM-SAL": ("g", 60), "OVOS": ("g", 28),
+            "CHOCOLATE-GOTAS-MEIOAMARGO": ("g", 365), "AZEITONA-AZAPA": ("g", 180),
+            "CEBOLA-ROXA": ("g", 30), "MACA-FUJI": ("g", 30), "LIMAO-SICILIANO": ("g", 21),
+            "CANELA-PO": ("g", 365), "ALECRIM-FRESCO": ("g", 14),
             # Seção 2b (dono, 26/08)
-            "PRESUNTO-CASA": ("kg", 30), "PRESUNTO-DEFUMADO": ("kg", 30),
-            "QUEIJO-MINAS-PADRAO": ("kg", 30), "QUEIJO-COLONIAL": ("kg", 30),
-            "QUEIJO-PRATO": ("kg", 30), "QUEIJO-PARMESAO": ("kg", 180),
-            "QUEIJO-GOUDA": ("kg", 60), "REQUEIJAO-CORTE": ("kg", 30),
-            "SALSICHA-VIENNA": ("kg", 20), "FRANGO": ("kg", 3),
-            "MILHO-VERDE-CONSERVA": ("kg", 365), "BACON": ("kg", 15),
-            "SALSINHA-DESIDRATADA": ("kg", 365), "TOMILHO-FRESCO": ("kg", 14),
-            "PASSAS": ("kg", 365), "CHOCOLATE-GOTAS-AOLEITE": ("kg", 365),
-            "CHOCOLATE-BATON-MEIOAMARGO": ("kg", 365), "BAUNILHA-EXTRATO-NATURAL": ("kg", 365),
-            "NATA-FRESCA": ("kg", 10),
-            "CAFE-ORFEU-CLASSICO": ("kg", 90), "CAFE-TAMURA-CHOCOMELO": ("kg", 90),
-            "CHA-CAMILLE": ("kg", 365), "CHA-ROUGE": ("kg", 365),
-            "CHA-SOPHIE": ("kg", 365), "CHA-BLEU": ("kg", 365),
-            "CHA-HIBISCO": ("kg", 365), "CHA-CHAI": ("kg", 365),
-            "CHA-FRUTAS-VERMELHAS": ("kg", 365),
-            "TONICA-ANTARCTICA": ("un", 365), "SAL-GROSSO": ("kg", None),
-            "ALFACE-AMERICANA": ("kg", 5), "ALFACE-ROXA": ("kg", 5),
-            "RUCULA": ("kg", 5), "TOMATE-CEREJA": ("kg", 7),
+            "PRESUNTO-CASA": ("g", 30), "PRESUNTO-DEFUMADO": ("g", 30),
+            "QUEIJO-MINAS-PADRAO": ("g", 30), "QUEIJO-COLONIAL": ("g", 30),
+            "QUEIJO-PRATO": ("g", 30), "QUEIJO-PARMESAO": ("g", 180),
+            "QUEIJO-GOUDA": ("g", 60), "REQUEIJAO-CORTE": ("g", 30),
+            "SALSICHA-VIENNA": ("g", 20), "FRANGO": ("g", 3),
+            "MILHO-VERDE-CONSERVA": ("g", 365), "BACON": ("g", 15),
+            "SALSINHA-DESIDRATADA": ("g", 365), "TOMILHO-FRESCO": ("g", 14),
+            "PASSAS": ("g", 365), "CHOCOLATE-GOTAS-AOLEITE": ("g", 365),
+            "CHOCOLATE-BATON-MEIOAMARGO": ("g", 365), "BAUNILHA-EXTRATO-NATURAL": ("g", 365),
+            "NATA-FRESCA": ("g", 10),
+            "CAFE-ORFEU-CLASSICO": ("g", 90), "CAFE-TAMURA-CHOCOMELO": ("g", 90),
+            "CHA-CAMILLE": ("g", 365), "CHA-ROUGE": ("g", 365),
+            "CHA-SOPHIE": ("g", 365), "CHA-BLEU": ("g", 365),
+            "CHA-HIBISCO": ("g", 365), "CHA-CHAI": ("g", 365),
+            "CHA-FRUTAS-VERMELHAS": ("g", 365),
+            "TONICA-ANTARCTICA": ("g", 365), "SAL-GROSSO": ("g", None),
+            "ALFACE-AMERICANA": ("g", 5), "ALFACE-ROXA": ("g", 5),
+            "RUCULA": ("g", 5), "TOMATE-CEREJA": ("g", 7),
             # Sem validade: a Dijon industrializada não é fresca. A embalagem de
             # 1 kg é eixo de COMPRA (MaterialConversion), não unidade-base.
-            "MOSTARDA-DIJON": ("kg", None),
+            "MOSTARDA-DIJON": ("g", None),
             # Fichas reais da casa (F2 do WP-FICHAS-REAIS-DA-CASA)
-            "CEBOLA-BRANCA": ("kg", 30), "TOMATE": ("kg", 7), "LIMAO-TAHITI": ("kg", 21),
-            "LOURO": ("kg", 180), "ACUCAR-REFINADO": ("kg", None), "AMIDO-MILHO": ("kg", 365),
-            "MANTEIGA-EXTRA-SEM-SAL": ("kg", 60), "VINHO-BRANCO-SECO": ("kg", 365),
-            "VINAGRE-VINHO-TINTO": ("kg", None), "OLEO-GIRASSOL": ("kg", 365),
-            "OLEO-SOJA": ("kg", 365), "PIMENTA-PRETA": ("kg", 365), "COLORAU": ("kg", 365),
-            "MANTEIGA-PRESIDENT-COM-SAL": ("kg", 60), "WASABI": ("kg", 365),
-            "PEPINO-CORNICHO-CONSERVA": ("kg", 365), "FLOR-DE-SAL": ("kg", None),
+            "CEBOLA-BRANCA": ("g", 30), "TOMATE": ("g", 7), "LIMAO-TAHITI": ("g", 21),
+            "LOURO": ("g", 180), "ACUCAR-REFINADO": ("g", None), "AMIDO-MILHO": ("g", 365),
+            "MANTEIGA-EXTRA-SEM-SAL": ("g", 60), "VINHO-BRANCO-SECO": ("g", 365),
+            "VINAGRE-VINHO-TINTO": ("g", None), "OLEO-GIRASSOL": ("g", 365),
+            "OLEO-SOJA": ("g", 365), "PIMENTA-PRETA": ("g", 365), "COLORAU": ("g", 365),
+            "MANTEIGA-PRESIDENT-COM-SAL": ("g", 60), "WASABI": ("g", 365),
+            "PEPINO-CORNICHO-CONSERVA": ("g", 365), "FLOR-DE-SAL": ("g", None),
         }
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
@@ -4808,20 +4810,23 @@ class Command(BaseCommand):
         # mesmo no banco — e sem distingui-los não há como saber qual calibrar.
         Source = MaterialConversion.Source
         counting_conversions = {
+            # O fator está em GRAMAS por unidade contada (base g, 24/09/2026).
             # 50 g é o ovo médio do mercado, não uma pesagem da casa.
-            "OVOS": ("ovos", Decimal("0.050"), Source.ESTIMATE),
-            "LIMAO-SICILIANO": ("limões", Decimal("0.100"), Source.ESTIMATE),
+            "OVOS": ("ovos", Decimal("50"), Source.ESTIMATE),
+            "LIMAO-SICILIANO": ("limões", Decimal("100"), Source.ESTIMATE),
             # 50 g/un (dono, 26/08). A mini do hot dog é a MESMA salsicha
             # cortada ao meio — meio insumo, nunca um SKU próprio.
-            "SALSICHA-VIENNA": ("salsichas", Decimal("0.050"), Source.OWNER),
+            "SALSICHA-VIENNA": ("salsichas", Decimal("50"), Source.OWNER),
             # Pesada pelo dono em balança de precisão (24/09/2026): 10 folhas
             # FRESCAS = 3,4 g. A ficha da casa anotava «5 folhas = 1 g», e as
             # tabelas dão 0,2–0,3 g — números da folha seca.
-            "LOURO": ("folhas", Decimal("0.00034"), Source.HOUSE_SCALE),
+            "LOURO": ("folhas", Decimal("0.34"), Source.HOUSE_SCALE),
             # Pesadas pelo dono (24/09/2026): 16 gotas = 1 g (0,0625 g) e 10
             # gotas = 0,5 g (0,05 g). Ele mandou ficar com a de mais folga —
             # melhor achar que usa mais do que está usando.
-            "BAUNILHA-EXTRATO-NATURAL": ("gotas", Decimal("0.000063"), Source.HOUSE_SCALE),
+            "BAUNILHA-EXTRATO-NATURAL": ("gotas", Decimal("0.0625"), Source.HOUSE_SCALE),
+            # Lata de 350 ml (dono, 23/09); a grama sai da densidade de tabela.
+            "TONICA-ANTARCTICA": ("latas", Decimal("350"), Source.ESTIMATE),
         }
         for sku, (label, factor, source) in counting_conversions.items():
             material = Material.objects.filter(sku=sku).first()
@@ -4865,7 +4870,8 @@ class Command(BaseCommand):
         volume_conversions = {
             sku: (
                 "litros",
-                Decimal(str(INGREDIENT_PROFILES[sku]["density_g_per_ml"])),
+                # g/ml × 1000 = gramas por litro: a base é o grama.
+                Decimal(str(INGREDIENT_PROFILES[sku]["density_g_per_ml"])) * 1000,
             )
             for sku in ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
         }
@@ -4886,7 +4892,7 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
-        self.stdout.write(f"  ✅ {len(volume_conversions)} conversões de volume (litro → kg)")
+        self.stdout.write(f"  ✅ {len(volume_conversions)} conversões de volume (litro → g)")
 
         # O saldo de abertura de insumo entra DEPOIS do mise en place (abaixo):
         # ele deriva do plano do dia expandido pelas fichas, que ainda não
@@ -4894,23 +4900,23 @@ class Command(BaseCommand):
         deposito = Position.objects.filter(ref="deposito").first()
 
         def _is_preparation(recipe_ref: str) -> bool:
-            """Pré-preparo (massa, recheio, creme, molho…): sai em quilo, não em unidade."""
+            """Pré-preparo (massa, recheio, creme, molho…): sai em grama, não em unidade."""
             return recipe_ref.startswith(PREP_PREFIXES)
 
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
 
-            Insumo pesado responde `kg`, e desde o WP-BASE-UNIT-LIQUIDS-KG isso
-            inclui os líquidos da casa: a bancada os pesa. Entrada que não é
-            Material (pré-preparo, produto) fica em kg, que é como a massa é
-            medida.
+            Insumo pesado responde `g` — a unidade da balança da casa (dono,
+            24/09/2026; ADR-024, emenda) —, e isso inclui os líquidos: a bancada
+            os pesa. Entrada que não é Material (pré-preparo, produto) também
+            fica em g, que é como a massa é medida.
 
             A função continua respeitando o cadastro em vez de assumir peso: um
             insumo que um dia nasça com base de volume responde `l`, que a ficha
             grafa `L` (`normalize_recipe_item_unit`), e a `density_g_per_ml` do
             perfil o leva até a nutrição, que conta em grama.
             """
-            unit = material_attrs.get(input_sku, ("kg", None))[0]
+            unit = material_attrs.get(input_sku, ("g", None))[0]
             return normalize_recipe_item_unit(unit)
 
         for rd in recipes_data:
@@ -4985,7 +4991,7 @@ class Command(BaseCommand):
                         # a ADR-024 §R4 proíbe. Declarada aqui, é ela que liga o
                         # invariante de massa da ficha (`Recipe.clean`) e impede
                         # que uma massa volte a render mais do que pesa.
-                        **({"output_unit": "kg"} if _is_preparation(rd["ref"]) else {}),
+                        **({"output_unit": "g"} if _is_preparation(rd["ref"]) else {}),
                     },
                 },
             )
