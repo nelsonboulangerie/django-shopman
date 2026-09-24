@@ -68,7 +68,7 @@ NCM_REVISADO: tuple[tuple[str, str, str], ...] = (
     ("SFTCH", "22029900", "09024000 é folha de chá preto a granel, acima de 3 kg"),
     ("CHHIB", "22029900", "19059090 é PRODUTO DE PADARIA (caía no default)"),
     ("CTFV", "22029900", "19059090 é PRODUTO DE PADARIA (caía no default)"),
-    # ── As sodas da casa (decisão dele, 23/09) ───────────────────────────────
+    # ── A soda da casa (decisão dele, 23/09) ─────────────────────────────────
     # Ele leu certo: "a soda cai em preparação de balcão". E o argumento é mais
     # forte do que parecia — o Imposto Seletivo sobre bebida açucarada só
     # alcança o que está em EMBALAGEM PRIMÁRIA, "aquela em contato direto com o
@@ -78,7 +78,6 @@ NCM_REVISADO: tuple[tuple[str, str, str], ...] = (
     # classificação pura — e o que o cliente leva é a mesma bebida preparada que
     # as outras dezessete.
     ("SDLA", "22029900", "22021000 é o código do refrigerante em embalagem"),
-    ("CV", "22029900", "22021000 é o código do refrigerante em embalagem"),
 )
 
 #: O que o comando repete toda vez, para não virar silêncio. Não é pergunta

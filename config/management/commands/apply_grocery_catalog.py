@@ -168,7 +168,7 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("GELEIA-MORANGO-STDALFOUR-284", "Geleia Morango St. Dalfour 284g", 4200, "St. Dalfour",
                 "084380957444", "20079910", "1709400", 284, ("geleia", "morango", "fruta")),
     # Os dois minis nascem no lugar do `GL` (placeholder de sabor indefinido,
-    # que o dono mandou sair em 22/09 — ver `apply_catalog_situacao`). O NCM do
+    # que o dono mandou sair em 22/09 — ver `apply_catalog_decisions`). O NCM do
     # de damasco veio da nota como 2007.99.90 e sem CEST; o de frutas
     # vermelhas, como os potes grandes.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-28", "Mini Geleia Damasco St. Dalfour 28g", 900, "St. Dalfour",

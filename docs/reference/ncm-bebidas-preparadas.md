@@ -70,7 +70,6 @@ Todos passam a **`2202.99.00`**, com **CEST vazio**:
 | `CHSOP` | Chá Sophie | `09024000` | idem |
 | `SFTCH` | Soft Chai Cítrico | `09024000` | idem |
 | `SDLA` | Soda de Laranja | `22021000` | refrigerante em embalagem |
-| `CV` | Cream Soda do dia | `22021000` | refrigerante em embalagem |
 
 ## Duas coisas que eu NÃO decidi
 
@@ -94,7 +93,7 @@ deixa sem"*. Fica vazio. O contador confirma quando revisar.
 
 ### 2. As duas sodas da casa — resolvido em 23/09, e o motivo não é o que eu achava
 
-`SDLA` (Soda de Laranja) e `CV` (Cream Soda) **passaram a `2202.99.00`**, como
+`SDLA` (Soda de Laranja) e `CV` (Cream Soda — que saiu do catálogo em 24/09) **passaram a `2202.99.00`**, como
 as outras. O dono leu certo — *"acho que a soda cai em preparação de balcão"* —
 e o argumento acabou sendo mais forte do que o dele:
 

@@ -43,8 +43,7 @@ from shopman.shop.services.sku_records import ensure_purchase_record
 
 # Feito ou montado aqui. Conferido contra o catálogo vivo do alpha em
 # 22/09/2026. Os chás do bule são preparados aqui com blend Kãnfa: a bebida
-# servida é da casa, como o espresso não leva a marca do torrador. Fica fora
-# porque a casa ainda não faz: Cream Soda (CV).
+# servida é da casa, como o espresso não leva a marca do torrador.
 HOUSE_SKUS: frozenset[str] = frozenset({
     # Pães, viennoiserie, doces e salgados de forno
     "COE", "PORQ", "URS", "BAT", "BGL", "ITA", "BRBB", "BRBB2", "BRCH", "BGG", "BGGP",
