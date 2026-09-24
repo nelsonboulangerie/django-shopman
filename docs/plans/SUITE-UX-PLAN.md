@@ -303,18 +303,29 @@ de regressão visual e o único que precisa de retrato antes/depois.
 
 ---
 
-## 4. O que é decisão do dono, não de quem escreve o código
+## 4. O que era decisão do dono — **respondido em 22/09/2026**
 
-1. **"lote" × "fornada" × "ordem de produção"** — três nomes para a mesma coisa, dois
-   deles no mesmo arquivo (`ProductionStageGrid.vue`). Qual é a palavra da casa?
-2. **"faixa"** no Marketing nomeia faixa de preço e faixa de processamento na mesma tela.
-   Qual das duas muda de nome?
-3. **"Tela do cliente"** nomeia o monitor do balcão (PDV) e o painel de retirada
-   (Cozinha). São dois objetos; falta um segundo nome.
-4. **`RevPASH` e `RFM`** no B.I.: termo técnico que o gestor usa de propósito, ou jargão
-   a traduzir? (Ficaram como estão até a palavra dele.)
-5. **O Hub vira painel com estado?** É mudança de produto, não de layout — muda o que o
-   operador faz ao abrir o dia.
+As cinco foram decididas de uma vez. Ficam aqui com a resposta em vez de sumirem, porque
+esta seção é o que a próxima leitura procura. **Nenhuma se reabre** — o de-para completo, com
+o lugar onde cada uma é cobrada, está em
+[`docs/reference/suite-vocabulary.md`](../reference/suite-vocabulary.md) §1.
+
+1. **"lote" × "fornada" × "ordem de produção"** → **lote**, *"genérico mesmo"*: fornada só
+   serve para o que vai ao forno, e a casa produz coisa que não vai. Nas superfícies de
+   **operador**; a **loja fica com fornada**, e o texto que o **cliente** lê no Marketing
+   também. Cobrado pela trava `guardrails.vocabulary.test.ts`, que varre só texto de tela —
+   comentário sobre o forno continua dizendo a verdade.
+2. **"faixa"** no Marketing → a decisão **já existia** e a pergunta era retrabalho:
+   **"Faixa de preço" fica** (conceito de negócio) e a *lane* de processamento passa a ser
+   nomeada **plataforma**. Está em [`omotenashi-copy.md`](../reference/omotenashi-copy.md)
+   §D7b(b).
+3. **"Tela do cliente"** → fica com o monitor do balcão do **PDV**; o painel público da
+   **Cozinha** vira **"Painel de retirada"**. A rota `/pickup` não muda: URL é em inglês, e
+   isto é sobre o texto da tela.
+4. **`RevPASH` e `RFM`** → **traduzir**, *"jargão a traduzir, com toda certeza"*. Identificador,
+   campo e comentário continuam em inglês, para quem mantém achar a literatura.
+5. **O Hub vira painel com estado** → **sim**, aprovado como útil. Fica como WP neste plano, e
+   depois da varredura de vocabulário, que mexe nos mesmos tiles e nas mesmas projections.
 
 ---
 

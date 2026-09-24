@@ -350,6 +350,13 @@ do resultado — ainda vive em **cinco arquivos** do app (`useCampaignBoard.ts`,
 [contrato do Marketing](marketing-surface-contract.md)), não aqui. Este documento diz como
 fechar um vocabulário; qual é o de cada domínio é do domínio.
 
+Os do **PDV**, da **Produção/KDS** e do **Storefront** estão fechados em
+[`suite-vocabulary.md`](suite-vocabulary.md) — num arquivo só, e não um por contrato, porque
+a colisão **entre** domínios não tem dono num contrato de domínio: "Tela do cliente" nomeava
+dois objetos em dois apps, e o gesto de silenciar um aviso tinha duas palavras, uma por app.
+Lá também está a terceira lei que a medição obrigou a escrever — **quem lê é quem manda na
+palavra** —, que é a que decide os casos em que duas audiências moram no mesmo arquivo.
+
 ---
 
 ## 5. Como isso vira trava

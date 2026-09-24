@@ -1,5 +1,9 @@
 # Storefront — SPEC (engenharia reversa do estado atual)
 
+> **Vocabulário fechado da loja:** em [`suite-vocabulary.md`](suite-vocabulary.md) §5. A loja
+> tem voz própria — diz **sacola** (nunca carrinho), **fornada** e **aparelho**, e nenhum
+> desses três é o que as superfícies de operador dizem.
+
 > **Como ler.** Esta spec foi escrita **a partir do código** (não do desejado): descreve o que o
 > storefront **de fato entrega hoje**, no estado headless (Django sem páginas de cliente; loja Nuxt
 > no apex). A revisão às avessas que a originou já foi **executada**: a seção final
