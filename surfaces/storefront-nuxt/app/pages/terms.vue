@@ -80,12 +80,12 @@ useSeoMeta({
     <LegalSection id="eligibility-and-acceptance">
       <template #title>Quem pode comprar, e o que você aceita ao entrar</template>
       <p>
-        A conta é para <strong>maiores de 18 anos</strong>. Ao entrar, você declara que é maior de
-        idade e aceita estes termos. A declaração fica registrada com a data e a versão deste texto.
+        A conta é para <strong>maiores de 18 anos</strong>. No primeiro acesso, você declara que é
+        maior de idade e aceita estes termos, e a loja registra essa declaração com a data.
       </p>
       <p>
-        Quando estes termos mudarem, a data no topo muda junto, e a próxima entrada registra a
-        versão nova. Vale sempre a versão publicada aqui.
+        Quando estes termos mudarem, a data no topo da página muda junto. Vale sempre a versão
+        publicada aqui.
       </p>
     </LegalSection>
 

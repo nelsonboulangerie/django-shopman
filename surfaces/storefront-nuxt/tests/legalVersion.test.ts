@@ -71,7 +71,7 @@ function resumo (): string {
  * mudança de mérito no §7 dos termos (produto com problema: a loja analisa e resolve,
  * dentro do CDC). Versão nova, resumo novo.
  */
-const RESUMO_PUBLICADO = '05f087b194e46795'
+const RESUMO_PUBLICADO = '23d85fed71300bf0'
 const VERSAO_PUBLICADA = '2026-09-24'
 
 describe('páginas legais — o relógio', () => {
