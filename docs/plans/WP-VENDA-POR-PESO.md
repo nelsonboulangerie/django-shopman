@@ -77,3 +77,26 @@ queijo em peça inteira for decisão de merchandising que a casa quer manter.
 instrumento de medição — precisa ser **aferida pelo Inmetro**, com verificação
 periódica. Quem pesa e etiqueta assume essa obrigação; quando o fornecedor
 pesa, ela é dele.
+
+## Estado (24/09/2026)
+
+Pedido do dono no mesmo dia: *"e se o item com preço por quilo exigir o operador
+digitar o preço manualmente? já pesamos e etiquetamos à mão"*. Entrou o caminho
+**sem balança integrada** — o operador digita o VALOR da etiqueta:
+
+- **F2 feito**: quantidade fracionária de ponta a ponta no PDV (intent, review,
+  sessão, comanda, fire, NFC-e com `uCom = KG`, estoque em kg).
+- **F3 feito no mínimo necessário**: `Product.unit == "kg"` é "vendido por peso" e
+  o MESMO preço do catálogo é o do quilo — sem campo novo. O valor da etiqueta
+  vira PESO (`shop/services/weighed_sale.py`), nunca preço.
+- **Entrada pelo PESO** pronta para quando houver balança, atrás de
+  `Shop.defaults.pos.weighed_weight_entry` (desligada: a tela nem oferece).
+- **Regra geral (decisão do dono)**: nenhum canal vende item com preço zero ou
+  ausente (`rules.validation.PricedItemsRule` no commit + recusa cedo no PDV).
+  Produto a quilo sem preço do quilo não vende até o preço ser cadastrado; dar
+  um item é desconto de 100%, pela régua do desconto.
+- **Canal remoto**: produto a quilo não vai para canal remoto (o carrinho da loja
+  online é inteiro). Para vender online, a saída é um produto de **porção fixa**
+  ("Vale do Testo ~250 g", preço fixo, unidade `un`).
+- **F1 (ler o EAN-13 prefixo 2) continua aberto** — o parser alimenta o mesmo
+  `weighed` que o diálogo.

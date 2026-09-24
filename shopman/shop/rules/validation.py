@@ -126,6 +126,49 @@ class BusinessHoursRule(BaseRule):
         return []
 
 
+class PricedItemsRule(BaseRule):
+    """Nenhum canal vende item com preço zero ou ausente — decisão do dono, 24/09/2026.
+
+    Medido antes da regra: o Yooga vendeu 34 queijos a R$ 0,00 porque o produto
+    não tinha preço e o sistema aceitava. Aqui o preço que conta é o de LISTA da
+    linha (``meta._list_q``, carimbado pelo ``ItemPricingModifier`` antes de
+    qualquer desconto): um desconto de 100% zera o COBRADO e passa — é assim que
+    se dá um item, pela régua de desconto e da permissão —, mas um produto sem
+    preço no catálogo não passa em canal nenhum.
+
+    Registrado sempre (``handlers._register_validators``), fora do ``RuleConfig``:
+    não é política que o Admin desliga. A taxa de entrega é linha de serviço e
+    fica de fora.
+    """
+
+    code = "shop.priced_items"
+    label = "Item sem preço"
+    rule_type = "validator"
+    stage = "commit"
+    default_params = {}
+
+    def validate(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        from shopman.orderman.exceptions import ValidationError as OrderValidationError
+
+        for item in getattr(session, "items", None) or []:
+            meta = item.get("meta") or {}
+            if item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee":
+                continue
+            list_q = meta.get("_list_q")
+            if list_q is None:
+                list_q = item.get("unit_price_q")
+            try:
+                priced = int(list_q or 0) > 0
+            except (TypeError, ValueError):
+                priced = False
+            if not priced:
+                name = str(item.get("name") or item.get("sku") or "item")
+                raise OrderValidationError(
+                    code="price_missing",
+                    message=f"{name} está sem preço no cadastro e não pode ser vendido.",
+                )
+
+
 class DeliveryZoneRule(BaseRule):
     """Gate de entrega no commit — cobertura de zona + pedido mínimo de entrega.
 

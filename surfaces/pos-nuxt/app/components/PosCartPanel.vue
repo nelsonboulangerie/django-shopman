@@ -28,6 +28,7 @@ import {
   unitChargedQ,
 } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
+import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -440,11 +441,16 @@ function commitDiscount() {
 }
 
 // In multi-select the numpad is discount-only (batch quantity is meaningless).
-const numpadCanType = computed(() =>
-  inDiscountMode.value
-    ? discountTargets.value.length > 0
-    : !!activeLineId.value,
-);
+// A peça pesada não tem quantidade digitável: o peso veio da etiqueta, e "2"
+// no teclado viraria 2 kg. Trocar a peça é remover e lançar a outra etiqueta.
+// E o desconto em R$ é POR UNIDADE — na peça pesada seria "por quilo", que
+// ninguém no balcão quer dizer; nela, desconto é em %.
+const numpadCanType = computed(() => {
+  const weighedActive = !!activeItem.value && isWeighedLine(activeItem.value);
+  if (!inDiscountMode.value) return !!activeLineId.value && !weighedActive;
+  if (numpadMode.value === "disc_brl" && !selectMode.value && weighedActive) return false;
+  return discountTargets.value.length > 0;
+});
 // O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
 
 function onDigit(digit: string) {
@@ -511,6 +517,8 @@ watch(selectMode, (on) => {
 
 function bump(lineId: string, emitName: "increment" | "decrement") {
   if (props.loading || props.saving) return;
+  const line = props.items.find((entry) => entry.line_id === lineId);
+  if (line && isWeighedLine(line)) return;
   selectedLineId.value = lineId;
   if (emitName === "decrement") {
     if (qtyOf(lineId) <= 1) {
@@ -809,7 +817,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
             @focus="selectLine(item.line_id)"
             @click="selectLine(item.line_id)"
           >
-            <span class="py-0.5 text-sm font-semibold tabular-nums"
+            <span v-if="isWeighedLine(item)" class="py-0.5 text-sm font-semibold tabular-nums"
+              >{{ lineQtyLabel(item) }}</span
+            >
+            <span v-else class="py-0.5 text-sm font-semibold tabular-nums"
               >{{ item.qty }}
               <span class="font-normal text-muted-foreground">×</span></span
             >
@@ -822,7 +833,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             }}</strong>
             <span
               class="col-start-2 col-end-4 text-xs leading-4 text-muted-foreground"
-              >{{ formatBRL(unitChargedQ(item)) }} cada</span
+              >{{ formatBRL(unitChargedQ(item)) }}{{ isWeighedLine(item) ? "/kg" : " cada" }}</span
             >
             <span
               v-if="item.notes"
@@ -865,7 +876,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
             class="flex w-full items-center justify-between gap-2 px-3 pb-2"
             aria-label="Ajustes do item"
           >
+            <span
+              v-if="isWeighedLine(item)"
+              class="text-xs text-muted-foreground"
+            >Peça pesada: para trocar, remova e lance a outra etiqueta.</span>
             <div
+              v-else
               class="inline-flex items-center overflow-hidden rounded-md border border-primary/20 bg-card"
               role="group"
               :aria-label="`Quantidade de ${item.name}`"

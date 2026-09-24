@@ -30,6 +30,17 @@ export interface POSProductProjection {
   gtin?: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
+  /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
+   *  da etiqueta (ou o peso) em vez de somar uma unidade. */
+  sold_by_weight?: boolean;
+}
+
+/** O que o operador digitou numa linha vendida por peso. `weight_g` é sempre o
+ *  peso resolvido (a quantidade da linha é `weight_g / 1000` kg). */
+export interface POSWeighedEntry {
+  entry: "label" | "weight";
+  label_q?: number;
+  weight_g: number;
 }
 
 export interface POSCollectionProjection {
@@ -492,6 +503,9 @@ export interface POSProjection {
   // Nome fantasia da loja (Shop singleton): a tela do cliente dá as boas-vindas
   // em nome da LOJA, não do terminal.
   shop_name: string;
+  /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
+   *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
+  weighed_weight_entry?: boolean;
 }
 
 export interface POSShiftSummaryProjection {
@@ -556,7 +570,11 @@ export interface POSCartItem {
   sku: string;
   name: string;
   price_q: number;
+  /** Unidades; na linha pesada, quilos (`weight_g / 1000`) — ver `weighed`. */
   qty: number;
+  /** Venda por peso: o que o operador digitou (etiqueta ou peso). A linha
+   *  pesada é sempre UMA peça, e o valor é `peso × preço do quilo`. */
+  weighed?: POSWeighedEntry | null;
   notes: string;
   fired?: boolean;
   /** QUANTAS unidades desta linha foram à cozinha. A linha vai INTEIRA (não

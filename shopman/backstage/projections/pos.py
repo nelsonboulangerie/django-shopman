@@ -12,12 +12,13 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from django.conf import settings
 from django.utils import timezone
 from shopman.offerman.models import Collection, Product
 from shopman.orderman.models import Session
-from shopman.utils.monetary import format_money
+from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.presentation.status import payment_method_label
@@ -32,6 +33,7 @@ from shopman.shop.projections.types import (
     AddressAutocompleteProjection,
     SavedAddressProjection,
 )
+from shopman.shop.services import weighed_sale
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYLOAD_KEYS,
     POS_SALE_INTENT_RECEIPT_CHANNELS,
@@ -68,6 +70,10 @@ class POSProductProjection:
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
     # da grade faria o operador procurar um botão que "sumiu".
     sold_out: bool = False
+    # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
+    # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
+    # uma unidade. Ver ``shop/services/weighed_sale.py``.
+    sold_by_weight: bool = False
 
 
 @dataclass(frozen=True)
@@ -427,6 +433,10 @@ class POSProjection:
     # Nome fantasia da loja (Shop singleton) — a tela do cliente (segundo
     # monitor do balcão) dá as boas-vindas em nome da LOJA, não do terminal.
     shop_name: str = ""
+    # Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta?
+    # Desligado = só valor, e a tela nem mostra a opção. Ver
+    # ``weighed_sale.weight_entry_enabled`` (``Shop.defaults.pos.weighed_weight_entry``).
+    weighed_weight_entry: bool = False
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -567,6 +577,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        weighed_weight_entry=weighed_sale.weight_entry_enabled(),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),
         delivery_slots_canonical=tuple(_delivery_slots_canonical()),
@@ -2120,17 +2131,24 @@ def _product_projection(product: Product, price_q: int, *, sold_out: bool = Fals
     collection = ci.collection if ci else None
     meta = collection.metadata if collection and isinstance(collection.metadata, dict) else {}
 
+    sold_by_weight = weighed_sale.is_sold_by_weight(product.unit)
+    # Sem preço não vende em canal nenhum: o tile diz isso, não "R$ 0,00".
+    if price_q <= 0:
+        price_display = "Sem preço"
+    else:
+        price_display = f"R$ {format_money(price_q)}" + ("/kg" if sold_by_weight else "")
     return POSProductProjection(
         sku=product.sku,
         name=product.name,
         price_q=price_q,
-        price_display=f"R$ {format_money(price_q)}",
+        price_display=price_display,
         collection_ref=collection.ref if collection else "",
         collection_color=str(meta.get("color") or ""),
         collection_icon=str(meta.get("icon") or ""),
         image_url=product.image_url or "",
         gtin=_product_gtin(product),
         sold_out=sold_out,
+        sold_by_weight=sold_by_weight,
     )
 
 
@@ -2200,9 +2218,11 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
     customer = data.get("customer") or {}
     items = session.items or []
     last_touched = _parse_dt(data.get("last_touched_at"), fallback=session.opened_at)
-    item_count = sum(_qty_int(item.get("qty", 1)) for item in items)
+    # Uma peça pesada é UM item no contador (0,312 kg não é "0 itens"), e o
+    # valor dela é peso × preço do quilo sem truncar o peso.
+    item_count = sum(_qty_int(item.get("qty", 1)) or 1 for item in items)
     total_q = sum(
-        _qty_int(item.get("qty", 1)) * int(item.get("unit_price_q", 0))
+        monetary_mult(Decimal(str(weighed_sale.qty_number(item.get("qty", 1)))), int(item.get("unit_price_q", 0)))
         for item in items
     )
     discount_q = int((data.get("manual_discount") or {}).get("discount_q", 0))
@@ -2253,11 +2273,14 @@ def _qty_int(value) -> int:
 def _items_preview(items: list[dict]) -> str:
     preview = []
     for item in items[:2]:
-        qty = _qty_int(item.get("qty", 1))
         name = str(item.get("name") or item.get("sku") or "").strip()
         if not name:
             continue
-        preview.append(f"{qty}x {name}")
+        weighed = (item.get("meta") or {}).get("weighed")
+        if isinstance(weighed, dict) and weighed.get("weight_g"):
+            preview.append(f"{weighed_sale.kg_display(_int_q(weighed['weight_g']))} {name}")
+            continue
+        preview.append(f"{_qty_int(item.get('qty', 1))}x {name}")
     if len(items) > 2:
         preview.append(f"+{len(items) - 2}")
     return " · ".join(preview)
@@ -2499,6 +2522,16 @@ def _tab_line_list_price_q(item: dict, manual_originals: dict[str, int]) -> int:
     return pre_manual + _int_q(auto.get("amount_q"))
 
 
+def _tab_payload_weighed(item: dict) -> dict | None:
+    weighed = (item.get("meta") or {}).get("weighed")
+    if not isinstance(weighed, dict) or weighed.get("entry") not in ("label", "weight"):
+        return None
+    payload = {"entry": weighed["entry"], "weight_g": _int_q(weighed.get("weight_g"))}
+    if weighed.get("label_q") is not None:
+        payload["label_q"] = _int_q(weighed.get("label_q"))
+    return payload
+
+
 def _tab_payload_payment_tenders(payment: dict) -> list[dict]:
     tenders = payment.get("tenders")
     if not isinstance(tenders, list) or not tenders:
@@ -2527,7 +2560,7 @@ def build_open_tab(session: Session) -> dict:
     tab_ref = str(data.get("tab_ref") or session.handle_ref or "")
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
     fired_lines = set(data.get("fired_lines") or [])
-    fired_qty = {str(k): int(v) for k, v in (data.get("fired_qty") or {}).items()}
+    fired_qty = {str(k): weighed_sale.qty_number(v) for k, v in (data.get("fired_qty") or {}).items()}
     kitchen_by_line = _kitchen_status_by_line(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
@@ -2536,7 +2569,11 @@ def build_open_tab(session: Session) -> dict:
             "sku": item["sku"],
             "name": item.get("name", item["sku"]),
             "price_q": _tab_line_display_price_q(item, manual_originals),
-            "qty": int(item.get("qty", 1)),
+            "qty": weighed_sale.qty_number(item.get("qty", 1)),
+            # A linha pesada volta com o que o operador digitou (etiqueta ou
+            # peso): é isso que o PDV reenvia no próximo save, e o servidor
+            # recalcula o peso pelo catálogo. Ausente na venda por unidade.
+            "weighed": _tab_payload_weighed(item),
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
             # QUANTAS unidades desta linha foram para a cozinha. O booleano acima

@@ -335,7 +335,12 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         sku = _text(item.get("sku"), limit=120)
         if not sku:
             raise PosIntentError("item_sku_required", "Item sem SKU no carrinho.", field=f"items.{idx}.sku", focus="search")
-        qty = _positive_int(item.get("qty", 1), f"items.{idx}.qty")
+        weighed = _weighed(item.get("weighed"), f"items.{idx}.weighed")
+        # Linha pesada: a quantidade NÃO vem do navegador. Ela sai do que o
+        # operador tem em mãos (valor da etiqueta ou peso), convertido pelo preço
+        # do quilo do catálogo em ``weighed_sale.apply_to_payload`` — que precisa
+        # do banco e por isso roda no service, logo depois deste parser.
+        qty = 1 if weighed else _positive_int(item.get("qty", 1), f"items.{idx}.qty")
         unit_price_q = _nonnegative_int(item.get("unit_price_q", item.get("price_q", 0)), f"items.{idx}.unit_price_q")
         entry = {
             "sku": sku,
@@ -376,8 +381,49 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         line_discount = _line_discount(item.get("discount"))
         if line_discount:
             entry["discount"] = line_discount
+        if weighed:
+            entry["weighed"] = weighed
         items.append(entry)
     return items
+
+
+def _weighed(raw, field: str) -> dict | None:
+    """O que o operador tem em mãos para a linha vendida por peso.
+
+    ``{"entry": "label", "label_q": 2805}`` — o valor impresso na etiqueta, em
+    centavos (o padrão: é o número maior e mais legível da etiqueta); ou
+    ``{"entry": "weight", "weight_g": 312}`` — o peso, em gramas, só com a entrada
+    por peso ligada na loja. Nunca um preço: o preço do quilo é do catálogo (ver
+    ``shop/services/weighed_sale.py``).
+    """
+    if raw in (None, "", {}):
+        return None
+    if not isinstance(raw, dict):
+        raise PosIntentError("invalid_weighed", "Venda por peso inválida.", field=field, focus="cart")
+    entry = str(raw.get("entry") or "").strip().lower()
+    if entry == "label":
+        label_q = _positive_int_unbounded(raw.get("label_q"), f"{field}.label_q")
+        return {"entry": "label", "label_q": label_q}
+    if entry == "weight":
+        weight_g = _positive_int_unbounded(raw.get("weight_g"), f"{field}.weight_g")
+        return {"entry": "weight", "weight_g": weight_g}
+    raise PosIntentError(
+        "invalid_weighed",
+        "Informe o valor da etiqueta ou o peso.",
+        field=field,
+        focus="cart",
+    )
+
+
+def _positive_int_unbounded(value, field: str) -> int:
+    """Inteiro positivo sem o teto de quantidade (centavos e gramas passam de 9999)."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise PosIntentError("invalid_number", "Número inválido no POS.", field=field, focus="cart") from exc
+    if parsed <= 0:
+        raise PosIntentError("invalid_number", "Informe um valor maior que zero.", field=field, focus="cart")
+    return parsed
 
 
 def _line_discount(raw) -> dict | None:

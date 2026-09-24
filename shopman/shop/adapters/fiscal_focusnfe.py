@@ -455,7 +455,12 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
     # emitir vUnCom com 2 casas faria ``vUnCom × qCom ≠ vProd`` → rejeição SEFAZ.
     # Nesse caso derivamos vUnCom de ``vProd/qCom`` com alta precisão (NFC-e aceita
     # até 10 casas em vUnCom); no caminho comum mantém-se as 2 casas.
-    if raw_qty > 0 and unit_price_q * raw_qty != total_q:
+    #
+    # Venda por peso (qCom 0,312 × vUnCom 89,90 = 28,0488 → vProd 28,05) NÃO é esse
+    # caso: a diferença é só o arredondamento do produto, menos de meio centavo, e
+    # é o que toda balança de supermercado emite — a SEFAZ tolera até R$ 0,01. Aí
+    # vUnCom fica o preço do quilo, que é o que a gôndola e a etiqueta dizem.
+    if raw_qty > 0 and abs(Decimal(unit_price_q) * raw_qty - total_q) > Decimal("0.5"):
         unit_price = _decimal((Decimal(total_q) / Decimal("100")) / raw_qty, places="0.0000000001")
     else:
         unit_price = _money_q(unit_price_q)

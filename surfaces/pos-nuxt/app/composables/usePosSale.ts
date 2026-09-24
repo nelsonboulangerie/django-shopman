@@ -13,6 +13,7 @@ import type {
   POSCustomerSearchResult,
   POSPaymentDeliveryProjection,
   POSProductProjection,
+  POSWeighedEntry,
   POSReceiptIdentityChoice,
   POSProjection,
   POSSaleReviewProjection,
@@ -35,6 +36,7 @@ import {
   resolvePayment,
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
+import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
@@ -755,7 +757,7 @@ export function usePosSale(deps: PosSaleDeps) {
     return raw && typeof raw === "object" ? raw as POSAddressAutocompleteProjection : null;
   });
   const totalDisplay = computed(() => formatBRL(cartTotalQ(cart.items)));
-  const itemCount = computed(() => cart.items.reduce((sum, item) => sum + item.qty, 0));
+  const itemCount = computed(() => cart.items.reduce((sum, item) => sum + lineUnits(item), 0));
   const hasOpenTab = computed(() => Boolean(cart.tabSessionKey));
   const inSaleView = computed(() => !showTabs.value && hasOpenTab.value);
   function goToTabs() {
@@ -1238,9 +1240,24 @@ export function usePosSale(deps: PosSaleDeps) {
    * trava ao INICIAR, nunca no meio: `setQty`, `restoreItem` e os itens
    * seguintes seguem livres, porque venda começada não vira refém.
    */
-  function addProduct(product: POSProductProjection) {
+  /**
+   * O produto vendido por peso que está pedindo a etiqueta (ou o peso). Tocar o
+   * tile de um queijo fracionado não soma "1": abre o diálogo, e só a confirmação
+   * lança a linha — pelo mesmo `addProduct`, com a trava da gaveta e tudo.
+   */
+  const weighedPrompt = ref<POSProductProjection | null>(null);
+
+  function addProduct(product: POSProductProjection, weighed?: POSWeighedEntry) {
     if (!canUseCart.value) {
       requestTabAssociation("cart");
+      return;
+    }
+    // Sem preço no catálogo não entra no pedido — nenhum canal vende preço zero.
+    // O tile já vem inerte; isto cobre o leitor e o "repetir pedido".
+    if (productBlockedLabel({ price_q: product.price_q, sold_out: false })) return;
+    if (product.sold_by_weight && !weighed) {
+      if (orderSetupPending.value) return;
+      weighedPrompt.value = product;
       return;
     }
     // Balcão sem agente não tem trava nenhuma (gaveta de chave): pular o
@@ -1248,10 +1265,20 @@ export function usePosSale(deps: PosSaleDeps) {
     // nunca trava — e evita atravessar um `await` no gesto mais quente do PDV.
     const startsNewSale = drawer.canKick.value && !hasOpenTab.value && !cart.items.length;
     if (startsNewSale) {
-      void drawerLock.guard(async () => pushProduct(product));
+      void drawerLock.guard(async () => pushProduct(product, weighed));
       return;
     }
-    pushProduct(product);
+    pushProduct(product, weighed);
+  }
+
+  /** A confirmação do diálogo de peso: a peça entra como linha própria. */
+  function addWeighedProduct(product: POSProductProjection, weighed: POSWeighedEntry) {
+    weighedPrompt.value = null;
+    addProduct(product, weighed);
+  }
+
+  function cancelWeighedPrompt() {
+    weighedPrompt.value = null;
   }
 
   /**
@@ -1264,13 +1291,28 @@ export function usePosSale(deps: PosSaleDeps) {
    * de uma linha marcada "enviada". A partir daí o toque cria uma linha NOVA,
    * com identidade nova — que é o que a cozinha precisa para receber um ticket.
    */
-  function pushProduct(product: POSProductProjection) {
+  function pushProduct(product: POSProductProjection, weighed?: POSWeighedEntry) {
     if (orderSetupPending.value) return;
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
     review.value = null;
     checkoutMode.value = false;
+    // Cada peça pesada é uma linha: duas etiquetas são duas peças, com pesos
+    // diferentes — somar "mais um" a uma linha de 0,312 kg não quer dizer nada.
+    if (weighed) {
+      cart.items.push({
+        line_id: newLineId(),
+        sku: product.sku,
+        name: product.name,
+        // Preço DO QUILO, o do catálogo. O servidor confirma no save/review.
+        price_q: product.price_q,
+        qty: weighed.weight_g / 1000,
+        weighed,
+        notes: "",
+      });
+      return;
+    }
     const openLine = cart.items.find((item) => item.sku === product.sku && !item.fired);
     if (openLine) {
       openLine.qty += 1;
@@ -2393,6 +2435,12 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function addProductQty(product: POSProductProjection, qty: number) {
+    // Produto por peso não se repete por quantidade: a peça de hoje tem outra
+    // etiqueta. Abre o diálogo uma vez.
+    if (product.sold_by_weight) {
+      addProduct(product);
+      return;
+    }
     for (let idx = 0; idx < Math.max(1, qty); idx += 1) addProduct(product);
   }
 
@@ -2756,6 +2804,7 @@ export function usePosSale(deps: PosSaleDeps) {
             qty: item.qty,
             price_q: item.price_q,
             discountPct: item.discount?.value || 0,
+            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
           })),
           totalDisplay: review.value?.total_display || "",
           payments: cart.paymentTenders.map((tender) => ({
@@ -3305,6 +3354,9 @@ export function usePosSale(deps: PosSaleDeps) {
     tenderAdd,
     tenderExact,
     productQty,
+    weighedPrompt,
+    addWeighedProduct,
+    cancelWeighedPrompt,
     lineQty,
     addProduct,
     setQty,

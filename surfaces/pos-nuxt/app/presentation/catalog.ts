@@ -6,6 +6,7 @@
 // and only rendered here.
 
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
+import { lineUnits } from "~/presentation/weighed";
 
 /**
  * Quanto DESTE PRODUTO já entrou no pedido — o número do selo no card do grid.
@@ -17,7 +18,8 @@ import type { POSCartItem, POSCollectionProjection, POSProductProjection } from 
  * de identidade para agregado se vai sempre.
  */
 export function cartQtyForSku(items: POSCartItem[], sku: string): number {
-  return items.reduce((total, item) => (item.sku === sku ? total + item.qty : total), 0);
+  // Peça pesada conta como UMA no selo (duas peças de queijo = 2, não 0,6 kg).
+  return items.reduce((total, item) => (item.sku === sku ? total + lineUnits(item) : total), 0);
 }
 
 /** Favourites first (Projection-driven), then alphabetical (pt-BR). */
@@ -101,7 +103,7 @@ export function enterTargetProduct(
   query: string,
 ): POSProductProjection | null {
   if (!(query || "").trim()) return null;
-  return filtered.find((product) => !product.sold_out) ?? null;
+  return filtered.find((product) => !product.sold_out && product.price_q > 0) ?? null;
 }
 
 /**

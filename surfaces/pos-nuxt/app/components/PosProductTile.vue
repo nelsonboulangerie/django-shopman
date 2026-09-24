@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { POSProductProjection } from "~/types/pos";
 import { productFallbackIcon, productFallbackStyle } from "~/presentation/catalog";
+import { productBlockedLabel } from "~/presentation/weighed";
 
 const props = defineProps<{
   product: POSProductProjection;
@@ -11,6 +12,10 @@ const props = defineProps<{
 defineEmits<{
   add: [POSProductProjection];
 }>();
+
+// Inerte com selo: esgotado, ou sem preço no catálogo (nenhum canal vende preço zero).
+const blockedLabel = computed(() => productBlockedLabel(props.product) || (props.disabled ? "Esgotado" : ""));
+const inert = computed(() => Boolean(blockedLabel.value));
 
 const hasImage = computed(() => Boolean(props.product.image_url?.trim()));
 
@@ -27,9 +32,9 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
     class="group relative overflow-hidden rounded-md p-0 text-left shadow-none transition hover:border-primary/50 active:translate-y-px"
     :class="[
       qty > 0 ? 'border-primary' : '',
-      disabled ? 'cursor-not-allowed opacity-50 hover:border-border hover:shadow-none active:translate-y-0' : '',
+      inert ? 'cursor-not-allowed opacity-50 hover:border-border hover:shadow-none active:translate-y-0' : '',
     ]"
-    :disabled="disabled"
+    :disabled="inert"
     @click="$emit('add', product)"
   >
     <div class="relative aspect-[4/3] w-full overflow-hidden">
@@ -60,8 +65,9 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
       </UiBadge>
       <!-- Esgotado: selo por cima da imagem; o tile fica visível porém inerte
            (sumir da grade faria o operador procurar um botão que "sumiu"). -->
+      <!-- Sem preço, quem diz é a linha do preço ("Sem preço"); o selo é do esgotado. -->
       <span
-        v-if="disabled"
+        v-if="blockedLabel === 'Esgotado'"
         class="absolute inset-x-0 bottom-0 bg-foreground/70 py-0.5 text-center text-xs font-semibold uppercase tracking-wide text-background"
       >
         Esgotado

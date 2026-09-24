@@ -129,6 +129,24 @@ def _qty_decimal(item: dict) -> Decimal:
     return qty if qty > 0 else Decimal("1")
 
 
+def _qty_json(qty: Decimal) -> int | float:
+    """Quantidade para o registro de transparência (JSON): inteira ou fração de kg."""
+    return int(qty) if qty == qty.to_integral_value() else float(qty)
+
+
+def _record_total_q(record: dict) -> int:
+    """Quanto um registro de desconto tira no total: por unidade × quantidade.
+
+    Com a venda por peso a quantidade pode ser 0,312 kg; ``int(qty)`` fazia o
+    desconto do queijo sumir da transparência (0 × desconto).
+    """
+    try:
+        qty = Decimal(str(record.get("qty", 1)))
+    except (InvalidOperation, TypeError, ValueError):
+        qty = Decimal("1")
+    return monetary_mult(qty, int(record.get("discount_q", 0) or 0))
+
+
 def _list_price_q(item: dict) -> int:
     """Preço de lista (pré-desconto) carimbado; cai no preço atual se ausente."""
     meta = item.get("meta") or {}
@@ -277,7 +295,7 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
         return
     t = prior.get("type")
     sku = item.get("sku", "")
-    qty = int(item.get("qty", 1)) or 1
+    qty = _qty_decimal(item)
     if t in ("promotion", "coupon", "manual"):
         disc = pricing.get("discount") or {}
         if prior.get("scope") == "order":
@@ -316,16 +334,14 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
                 )
             ]
         disc["items"] = kept
-        disc["total_discount_q"] = sum(int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept)
+        disc["total_discount_q"] = sum(_record_total_q(d) for d in kept)
         pricing["discount"] = disc
         if t == "coupon" and pricing.get("coupon"):
-            pricing["coupon"]["discount_q"] = sum(
-                int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept if d.get("type") == "coupon"
-            )
+            pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
     elif t in ("lot_discount", "employee_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
-            new_total = int(entry.get("total_discount_q", 0)) - int(prior.get("amount_q", 0)) * qty
+            new_total = int(entry.get("total_discount_q", 0)) - monetary_mult(qty, int(prior.get("amount_q", 0)))
             if new_total > 0:
                 entry["total_discount_q"] = new_total
             else:
@@ -674,7 +690,7 @@ class DiscountModifier:
             if best_source and best_discount_q > current_disc_q:
                 _reverse_prior_pricing(pricing, item)
                 item["unit_price_q"] = list_q - best_discount_q
-                item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
+                item["line_total_q"] = monetary_mult(_qty_decimal(item), item["unit_price_q"])
 
                 source_type, source_name, source_id = best_source
                 # Fonte durável do desconto vencedor da linha: ``meta._disc`` (para o
@@ -684,7 +700,7 @@ class DiscountModifier:
                 _stamp_disc(item, source_type, best_discount_q, source_name or source_type)
                 modified = True
 
-                qty = int(item.get("qty", 1))
+                qty = _qty_decimal(item)
                 discounts_applied.append({
                     # A LINHA que ganhou o desconto, ao lado do SKU. O registro é
                     # a única fonte que sobrevive ao save (a linha perde campos
@@ -698,10 +714,10 @@ class DiscountModifier:
                     "name": source_name,
                     "original_price_q": price_q,
                     "discount_q": best_discount_q,
-                    "qty": qty,
+                    "qty": _qty_json(qty),
                 })
                 if source_type == "coupon":
-                    total_coupon_discount_q += best_discount_q * qty
+                    total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
         # Order-level FIXED discount (fixed promo / fixed coupon). A fixed value
         # like "R$5 off" is a single per-ORDER discount, never per unit — 6 units
@@ -759,7 +775,7 @@ class DiscountModifier:
         if not session.pricing:
             session.pricing = {}
         session.pricing["discount"] = {
-            "total_discount_q": sum(d["discount_q"] * d["qty"] for d in discounts_applied),
+            "total_discount_q": sum(_record_total_q(d) for d in discounts_applied),
             "items": discounts_applied,
         }
         if coupon_code:

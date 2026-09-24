@@ -680,6 +680,14 @@ def _build_fiscal_items(order) -> list[dict]:
         override = (item.meta or {}).get("fiscal")
         if override:
             fiscal = {**fiscal, **dict(override)}
+        # Vendido por peso, a quantidade da linha É quilo (0,312) e o valor
+        # unitário é o preço do quilo: a unidade comercial não pode ser a "UN"
+        # que a classificação fiscal traz por padrão — a nota diria 0,312
+        # unidade. Não é segunda opinião fiscal: é a unidade da quantidade.
+        from shopman.shop.services.weighed_sale import is_sold_by_weight
+
+        if is_sold_by_weight(getattr(product, "unit", "")):
+            fiscal = {**fiscal, "unit": "KG", "unidade_comercial": "KG"}
         items.append({
             "sku": item.sku,
             "name": item.name,
