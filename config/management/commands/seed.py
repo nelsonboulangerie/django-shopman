@@ -4014,7 +4014,7 @@ class Command(BaseCommand):
                 "output_sku": "RECHEIO-CEBOLAS-ASSADAS",
                 "batch_size": Decimal("1.47"),
                 "items": [
-                    ("CEBOLA-BRANCA", Decimal("3.146"), Decimal("85")),
+                    ("CEBOLA-BRANCA", Decimal("3.146"), Decimal("0.85")),
                     ("VINHO-BRANCO-SECO", Decimal("0.410")),
                     ("ACUCAR-CRISTAL", Decimal("0.040")),
                     ("SAL-REFINADO", Decimal("0.030")),
@@ -4409,7 +4409,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CPG", Decimal("0.110")),
                     ("MOLHO-BECHAMEL", Decimal("0.070")),
-                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("95")),
+                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
                     ("PRESUNTO-CASA", Decimal("0.050")),
                     ("QUEIJO-PARMESAO", Decimal("0.002")),
                     ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
@@ -4424,7 +4424,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CPG", Decimal("0.110")),
                     ("MOLHO-BECHAMEL", Decimal("0.070")),
-                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("95")),
+                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
                     ("PRESUNTO-CASA", Decimal("0.050")),
                     ("QUEIJO-PARMESAO", Decimal("0.002")),
                     ("OVOS", Decimal("0.050"))
@@ -4439,7 +4439,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CPG", Decimal("0.110")),
                     ("MOLHO-BECHAMEL", Decimal("0.070")),
-                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("95")),
+                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
                     ("PRESUNTO-CASA", Decimal("0.050")),
                     ("QUEIJO-PARMESAO", Decimal("0.002")),
                     ("OVOS", Decimal("0.050")),

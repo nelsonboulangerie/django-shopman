@@ -107,14 +107,16 @@ bacon tomilho, recheio citron (`creme-limao`), recheio de frango, creme de
 chocolate e salada. **Fatia B, montagens:** Jambon-Beurre, queijo quente, os três
 croques e o pain perdu, com os pré-preparos que eles pedem (manteiga de wasabi,
 cebolas assadas, caramelo salgado e o creme do pain perdu). O «Rend. %» entra
-como aproveitamento da linha, e as validades da ficha dela substituem o exemplo
+como rendimento da linha (`usable_factor`, em fração), e as validades da ficha dela substituem o exemplo
 genérico. A revisão assinada no Admin continua obrigatória.
 
 **Decisões de leitura** (cada uma está escrita no comentário da ficha):
 
-- **A quantidade por peça fica com a balança dele, não com a ficha de 2017.** A
-  focaccia grande recebe 80 g de recheio (`PESO_MASSA_CRUA_G`, 26/08). A ficha
-  dela punha ~310 g. Da ficha entra a proporção.
+- **As focaccias seguem os números que ele mandou em 24/09:** massa de 400 g crua
+  em toda grande e 110 g em toda pequena, e a proporção da CBT (cebola 200/50,
+  bacon 38/10, queijo 40/16, louro 2/1). Sal e queijo vão na montagem, como a
+  ficha dela manda, e por isso moram na ficha da peça. A cobertura da de alecrim
+  e da de cebola roxa ele ainda vai conferir.
 - **A salada ganhou o vinagrete**, na proporção da guarnição dela (30 g em 80 g).
   Por isso o vinagrete saiu dos croques como linha própria.
 - **Abaixo de 1 g fica fora**: a folha de louro do frango (0,34 g) e a baunilha em
