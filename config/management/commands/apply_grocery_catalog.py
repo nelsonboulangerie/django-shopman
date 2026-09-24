@@ -49,13 +49,11 @@ oficial do catálogo, ``gtin_is_valid``). Quem falta alguma dessas fica em
 **Vendido a quilo** (``unit="kg"``): o Queijo Vale do Testo chega em peças de
 peso diferente. Unidade ``kg``, sem GTIN (a etiqueta da balança é EAN interno
 prefixo 2) e preço por quilo **quando alguma fonte o tiver** — hoje nenhuma
-tem, e o relatório repete a pergunta a cada execução. A falta de preço NÃO
-trava o cadastro nem a venda (dono, 24/09): a casa já pesa e etiqueta à mão, e
-o operador digita o valor da etiqueta no PDV. Por isso o item a quilo sem
-preço leva ``metadata['price_from_label'] = True`` — sem essa chave o PDV
-recusa a venda em vez de cobrar R$ 0,00 (#1059, ``WP-VENDA-POR-PESO.md``). E
-item a quilo **nunca** entra em canal remoto, com ou sem foto: o carrinho
-online só aceita unidade inteira.
+tem, e o relatório repete a pergunta a cada execução. A falta de preço não
+trava o CADASTRO, mas trava a VENDA: item com preço zero não vende (regra do
+dono, 24/09), então ele fica ``is_sellable=False`` — no produto e na listagem —
+até o preço por quilo chegar. E item a quilo **nunca** entra em canal remoto,
+com ou sem foto: o carrinho online só aceita unidade inteira.
 
 **GTIN da web** (``gtin_source``): quando o código veio de pesquisa (duas
 fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
@@ -142,25 +140,23 @@ GROCERY: tuple[GroceryItem, ...] = (
                 gtin_source=WEB_UNCONFIRMED),
     # Vendido POR PESO: a peça chega da Pomerode com peso diferente a cada
     # vez. Preço por quilo nenhuma fonte tem — o Yooga o registrava a R$ 0,00
-    # (34 vendas, todas zeradas, porque o valor saía da etiqueta). Nasce
-    # vendável e sem preço: o operador digita o valor da etiqueta (dono, 24/09).
+    # (34 vendas, todas zeradas). Fica cadastrado e NÃO vendável até o dono
+    # dizer o preço do quilo: preço zero não vende (dono, 24/09).
     GroceryItem("QUEIJO-VALEDOTESTO-POMERODE", "Queijo Vale do Testo Pomerode 3m", 0, "Pomerode",
                 "", "04069020", "1702400", None, ("queijo", "colonial", "pomerode"), unit="kg"),
     # ── Geleias St. Dalfour ──
-    # ⚠️ Duas perguntas para quem tem o pote na mão (pesquisa de 24/09/2026):
     # - o 810019371295 do Limão é mesmo St. Dalfour, mas do sabor **Limão &
-    #   Lima** ("Citrons & Citrons Verts"; Empório Itiê e Open Food Facts);
-    # - o 084380957840 das Frutas Vermelhas é, em duas fontes (Covabra e Open
-    #   Food Facts), a **4 Frutas** ("Four Fruits"). Ou o pote que a casa chama
-    #   de Frutas Vermelhas é a 4 Frutas, ou o código está trocado. A 4 Frutas
-    #   não nasce como item próprio enquanto isso não se resolver: dois
-    #   produtos com o mesmo GTIN seria mentir num deles.
+    #   Lima** ("Citrons & Citrons Verts"; Empório Itiê e Open Food Facts) —
+    #   pergunta para quem tem o pote na mão;
+    # - as Frutas Vermelhas SÃO a "4 Frutas" ("4 fruits", Four Fruits): o
+    #   francês diz quatro frutas, o brasileiro diz frutas vermelhas (dono,
+    #   24/09). Um produto só; "4 frutas" entra como palavra de busca.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-284", "Geleia Damasco St. Dalfour 284g", 4200, "St. Dalfour",
                 "084380957543", "20079910", "1709400", 284, ("geleia", "damasco", "fruta")),
     GroceryItem("GELEIA-FIGO-STDALFOUR-284", "Geleia Figo St. Dalfour 284g", 4200, "St. Dalfour",
                 "084380959042", "20079910", "1709400", 284, ("geleia", "figo", "fruta")),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-284", "Geleia Frutas Vermelhas St. Dalfour 284g", 4200,
-                "St. Dalfour", "084380957840", "20079910", "1709400", 284, ("geleia", "frutas vermelhas", "fruta")),
+                "St. Dalfour", "084380957840", "20079910", "1709400", 284, ("geleia", "frutas vermelhas", "4 frutas", "fruta")),
     GroceryItem("GELEIA-LARANJA-STDALFOUR-284", "Geleia Laranja St. Dalfour 284g", 4200, "St. Dalfour",
                 "084380957949", "20079100", "1709400", 284, ("geleia", "laranja", "fruta")),
     GroceryItem("GELEIA-LIMAO-STDALFOUR-284", "Geleia Limão St. Dalfour 284g", 4200, "St. Dalfour",
@@ -175,7 +171,7 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "084380980428", "20079990", "", 28, ("geleia", "damasco", "fruta", "mini")),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-28", "Mini Geleia Frutas Vermelhas St. Dalfour 28g", 900,
                 "St. Dalfour", "084380980626", "20079910", "1709400", 28,
-                ("geleia", "frutas vermelhas", "fruta", "mini")),
+                ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini")),
     # ── Laticínios ──
     GroceryItem("MANTEIGA-SAL-PRESIDENT-200", "Manteiga Extra com Sal Président 200g", 1500, "Président",
                 "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal")),
@@ -208,9 +204,6 @@ LEFT_OUT: dict[str, str] = {
     ),
     "CHA-VITAL-KANFA-L60": (
         "GTIN de fonte única: a loja da Kãnfa dá 7898708850743 para a 'Lata 70g'; ler a lata"
-    ),
-    "GELEIA-4FRUTAS-STDALFOUR-284": (
-        "o GTIN dela (084380957840) é o que a planilha dá às Frutas Vermelhas; conferir o pote"
     ),
     "CHA-INTUICAO-KANFA-F250": "é INSUMO (lata de serviço do chá do bule), não produto de prateleira",
 }
@@ -368,6 +361,7 @@ def _refusal(item: GroceryItem) -> str:
 def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     from shopman.offerman import get_social_attributes
     from shopman.offerman.contrib.social.schema import set_social_attributes
+    from shopman.offerman.models import ListingItem
 
     refusal = _refusal(item)
     if refusal:
@@ -391,13 +385,12 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     if item.gtin_source and metadata.get("gtin_source") != item.gtin_source:
         metadata["gtin_source"] = item.gtin_source
         lines.append(f"origem do GTIN: {item.gtin_source}")
-    if item.unit == "kg" and item.price_q <= 0 and metadata.get("price_from_label") is not True:
-        # Sem preço do quilo, o PDV só vende se o catálogo disser que o valor
-        # da etiqueta da balança É o preço da linha (#1059); sem a chave ele
-        # recusa, e nunca vende a R$ 0,00.
-        metadata["price_from_label"] = True
-        lines.append("preço: o da etiqueta da balança")
     product.metadata = metadata
+    if product.base_price_q <= 0 and product.is_sellable:
+        # Preço zero não vende (dono, 24/09): cadastrado, sim; vendável, não.
+        product.is_sellable = False
+        if not is_new:
+            lines.append("venda: desligada até ter preço")
 
     social = get_social_attributes(product)
     updates = {}
@@ -422,11 +415,14 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     _material, purchasable = ensure_purchase_record(product)
     if purchasable and not is_new:
         report["updated"].append((item.sku, ["compra: cadastro de compra do mesmo SKU"]))
-    if item.unit == "kg" and product.base_price_q <= 0:
-        report["no_price"].append((item.sku, "a quilo, sem preço por kg em fonte nenhuma: o PDV cobra o da etiqueta"))
+    if product.base_price_q <= 0:
+        report["no_price"].append((item.sku, "sem preço em fonte nenhuma: cadastrado e fora da venda até o dono dizer"))
     product.keywords.add(COLLECTION_REF, *item.keywords)
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
+    if not product.is_sellable:
+        # A grade do PDV lê a LISTAGEM: o produto parado tem de parar lá também.
+        ListingItem.objects.filter(product=product, is_sellable=True).update(is_sellable=False)
 
 
 def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:

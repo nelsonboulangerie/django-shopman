@@ -211,20 +211,39 @@ def test_os_placeholders_reais_batem_com_o_seed():
 # ── A quilo, caixas presente e GTIN da web ────────────────────────────────
 
 
-def test_queijo_a_quilo_nasce_sem_gtin_e_vendavel_sem_preco(catalog):
-    """Falta de preço não trava: o PDV cobra o valor da etiqueta (dono, 24/09)."""
+def test_queijo_a_quilo_nasce_cadastrado_sem_gtin_e_fora_da_venda_sem_preco(catalog):
+    """Preço zero não vende (dono, 24/09): cadastrado, sim; vendável, não."""
     report = apply_grocery(apply=True)
 
     queijo = Product.objects.get(sku=VALE_DO_TESTO)
     assert (queijo.unit, queijo.base_price_q, queijo.unit_weight_g) == ("kg", 0, None)
-    assert queijo.is_sellable
+    assert not queijo.is_sellable
     assert get_social_attributes(queijo).gtin == ""
     assert queijo.metadata["fiscal"]["unit"] == "KG"
-    # Sem preço do quilo, o valor da etiqueta é o preço da linha (#1059).
-    assert queijo.metadata["price_from_label"] is True
     item = ListingItem.objects.get(product=queijo)
-    assert item.listing.ref == "pdv" and item.is_sellable
+    assert item.listing.ref == "pdv" and not item.is_sellable
     assert [sku for sku, _ in report["no_price"]] == [VALE_DO_TESTO]
+
+
+def test_item_sem_preco_que_estava_a_venda_sai_da_venda(catalog):
+    apply_grocery(apply=True)
+    Product.objects.filter(sku=VALE_DO_TESTO).update(is_sellable=True)
+    ListingItem.objects.filter(product__sku=VALE_DO_TESTO).update(is_sellable=True)
+
+    report = apply_grocery(apply=True)
+
+    assert not Product.objects.get(sku=VALE_DO_TESTO).is_sellable
+    assert not ListingItem.objects.get(product__sku=VALE_DO_TESTO).is_sellable
+    assert (VALE_DO_TESTO, ["venda: desligada até ter preço"]) in report["updated"]
+
+
+def test_frutas_vermelhas_se_acham_por_4_frutas(catalog):
+    """"4 fruits" é o nome francês do que o brasileiro chama de frutas vermelhas."""
+    apply_grocery(apply=True)
+
+    for sku in ("GELEIA-FRUTASVERM-STDALFOUR-284", "GELEIA-FRUTASVERM-STDALFOUR-28"):
+        assert "4 frutas" in set(Product.objects.get(sku=sku).keywords.names()), sku
+    assert "GELEIA-4FRUTAS-STDALFOUR-284" not in LEFT_OUT
 
 
 def test_item_a_quilo_com_gtin_e_recusado(catalog, monkeypatch):
@@ -301,8 +320,3 @@ def test_item_a_quilo_nao_vai_para_canal_remoto_nem_com_foto(catalog):
     assert _refs(VALE_DO_TESTO) == {"pdv"}
     assert (VALE_DO_TESTO, "web") in report["unlisted"]
 
-
-def test_item_com_preco_nao_leva_a_chave_da_etiqueta(catalog):
-    apply_grocery(apply=True)
-
-    assert "price_from_label" not in Product.objects.get(sku=DIJON).metadata
