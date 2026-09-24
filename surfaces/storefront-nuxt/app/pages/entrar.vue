@@ -522,9 +522,14 @@ useSeoMeta({
                Dizia "Não consigo usar WhatsApp": pedia que a pessoa declarasse
                uma INCAPACIDADE para receber uma opção, e não dizia SMS em
                lugar nenhum — a palavra só aparecia depois do clique. Agora
-               nomeia o que entrega. Contorno em vez de sólido mantém a
-               hierarquia (um único sólido na tela); `size="lg"` igual ao
-               principal diz que é um caminho de verdade, não um sussurro. -->
+               nomeia o que entrega. `size="lg"` igual ao principal diz que é
+               um caminho de verdade, não um sussurro.
+
+               DOURADO (dono, 23/09). Era contorno, para deixar um único sólido
+               na tela; o dono o quis dourado. As cores separam os dois papéis
+               sem disputa: vinho é a ação da casa (WhatsApp), latão é a
+               alternativa. Branco sobre `--shop-brass` (#8B6B2E) dá 4,95:1 (AA);
+               o texto escuro da marca daria 2,76:1, por isso branco. -->
           <template v-if="!revealPhone">
             <div class="flex items-center gap-3" aria-hidden="true" data-login-or>
               <span class="h-px flex-1 bg-border" />
@@ -533,9 +538,8 @@ useSeoMeta({
             </div>
             <UiButton
               type="button"
-              variant="outline"
               size="lg"
-              class="w-full justify-center"
+              class="w-full justify-center border-transparent bg-brass text-brass-foreground hover:bg-brass/90"
               icon="lucide:smartphone"
               data-login-sms-door
               @click="revealPhone = true"
@@ -544,7 +548,9 @@ useSeoMeta({
             </UiButton>
           </template>
 
-          <form v-else class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">
+          <!-- O cartão que a porta do SMS abre é Faubourg, como o envio manual:
+               os dois são "o outro jeito", e o cartão claro é só o do WhatsApp. -->
+          <form v-else class="shop-surface-faubourg shop-stack-block rounded-lg border p-4" data-login-sms-form @submit.prevent="requestCode('sms', $event)">
             <UiField>
               <div class="flex items-center justify-between gap-3">
                 <UiFieldLabel for="login-phone">Telefone</UiFieldLabel>
@@ -558,7 +564,7 @@ useSeoMeta({
                   {{ regionToggleLabel }}
                 </UiButton>
               </div>
-              <UiInputGroup class="bg-background">
+              <UiInputGroup class="bg-card">
                 <UiInputGroupAddon align="inline-start">
                   <span v-if="phoneRegion === 'BR'" class="font-semibold">+55</span>
                   <Icon v-else name="lucide:globe-2" />
@@ -744,7 +750,11 @@ useSeoMeta({
           {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
         </p>
 
-        <div v-if="supportUrl" class="-mx-4 border-t px-4 pt-4 sm:mx-0 sm:px-0" data-login-support>
+        <!-- AJUDA = cartão TRANSPARENTE (dono, 23/09): contorno, raio e respiro de
+             cartão, sem fundo — é a saída de emergência, não um caminho de entrada,
+             e por isso não compete em cor com os dois cartões de cima. É bloco de
+             chamada: título, frase e botão centrados. -->
+        <div v-if="supportUrl" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
           <p class="shop-item-title font-semibold">{{ supportHeading }}</p>
           <p class="mt-1 shop-muted">Fale com a loja e resolvemos juntos.</p>
           <UiButton

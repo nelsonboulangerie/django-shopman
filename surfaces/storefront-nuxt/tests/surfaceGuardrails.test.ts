@@ -613,7 +613,8 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('wa_glimpse_with_cart')
     expect(login).toContain('const stepTitle')
     expect(login).toContain('const stepDescription')
-    expect(login).toContain('<UiInputGroup class="bg-background">')
+    // Campo claro sobre o cartão Faubourg do SMS (o canvas creme sumiria nele).
+    expect(login).toContain('<UiInputGroup class="bg-card">')
     expect(login).toContain('<UiInputGroupAddon align="inline-start">')
     expect(login).toContain('<UiInputGroupInput')
     expect(login).toContain('name="phone"')
@@ -644,10 +645,20 @@ describe('surface UX guardrails', () => {
     // comentário que explica a troca, e uma asserção que obriga a escrever ao
     // redor dela não está medindo o código. Quem garante que a porta é uma só
     // são os testes de página, que clicam pelo rótulo.
-    // UM ÚNICO SÓLIDO NA TELA: o CTA do WhatsApp. A porta do SMS é contorno no
-    // mesmo tamanho (caminho de verdade, não sussurro) e o envio manual é
-    // rodapé do cartão do WhatsApp — ícone para copiar, link para abrir.
+    // O cartão do WhatsApp é CLARO e o envio manual é um cartão Faubourg dentro
+    // dele — ícone para copiar, link para abrir. A porta do SMS é DOURADA (dono,
+    // 23/09: antes era contorno) e o cartão que ela abre também é Faubourg. A
+    // ajuda é cartão transparente: contorno sem fundo.
     const waPanel = read('app/components/WhatsappVerifyPanel.vue')
+    expect(waPanel).toContain('class="rounded-lg border bg-card p-4 shop-stack-block"')
+    expect(waPanel).not.toContain('bg-bottomnav')
+    expect(waPanel).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-whatsapp-manual/)
+    expect(login).toMatch(/bg-brass text-brass-foreground[^"]*"\s+icon="lucide:smartphone"\s+data-login-sms-door/)
+    expect(login).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-sms-form/)
+    expect(login).toContain('class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
+    // AA do texto secundário sobre o Faubourg não pode depender do tema: a
+    // superfície remapeia o muted a partir do próprio texto.
+    expect(read('app/assets/css/tailwind.css')).toContain('--muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));')
     expect(waPanel).not.toContain('bg-cta text-cta-foreground')
     expect(waPanel).not.toContain('data-login-whatsapp-or')
     expect(waPanel).toContain('size="icon-lg"')
