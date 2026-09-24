@@ -315,10 +315,11 @@ describe("purchase presentation", () => {
       sku: "FARINHA-NOVARA-T55",
       name: "Farinha T65",
       scorePercent: 90,
+      byBarcode: false,
     });
     expect(preview?.warnings).toContainEqual({
       key: "confirm-suggestion",
-      label: "Confirme o insumo sugerido",
+      label: "Confirme o item sugerido",
       tone: "block",
     });
     expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-material");

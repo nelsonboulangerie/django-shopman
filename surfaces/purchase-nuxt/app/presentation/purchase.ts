@@ -201,6 +201,7 @@ export function receiptLineSuggestion(line: ReceiptLine, materials: Material[]):
     sku,
     name: material?.name ?? sku,
     scorePercent: Math.round(line.suggestionScore ?? 0),
+    byBarcode: line.suggestionSource === "gtin",
   };
 }
 
@@ -531,7 +532,7 @@ export function receiptLineWarnings(
   const warnings: ReceiptWarning[] = [];
   if (!material) {
     return line.suggestedMaterialSku ?
-        [{ key: "confirm-suggestion", label: "Confirme o insumo sugerido", tone: "block" }]
+        [{ key: "confirm-suggestion", label: "Confirme o item sugerido", tone: "block" }]
       : [{ key: "missing-material", label: "Escolha o item desta linha", tone: "block" }];
   }
   if (!Number.isFinite(line.purchaseQty) || line.purchaseQty <= 0) {

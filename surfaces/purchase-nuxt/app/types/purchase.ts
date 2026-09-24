@@ -220,6 +220,8 @@ export interface ReceiptLine {
   materialSku: string;
   suggestedMaterialSku?: string;
   suggestionScore?: number;
+  // "gtin": o código de barras da nota casou com o item; "name": parecença do nome.
+  suggestionSource?: "gtin" | "name" | "";
   conversionId: string | null;
   requiresConversion?: boolean;
   conversionSuggestion?: ReceiptConversionSuggestion | null;
@@ -254,6 +256,8 @@ export interface ReceiptLineSuggestion {
   sku: string;
   name: string;
   scorePercent: number;
+  /** O código de barras da nota é o mesmo do item — não é palpite pelo nome. */
+  byBarcode: boolean;
 }
 
 export interface ReceiptLinePreview {

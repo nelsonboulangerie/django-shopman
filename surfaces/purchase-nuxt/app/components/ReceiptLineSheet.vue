@@ -191,7 +191,10 @@ function onCheck(checked: boolean) {
             />
           </div>
           <template v-if="preview.suggestion">
-            <p class="mt-2 text-xs text-muted-foreground">
+            <p v-if="preview.suggestion.byBarcode" class="mt-2 text-xs text-muted-foreground">
+              O código de barras da nota é o de <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span>
+            </p>
+            <p v-else class="mt-2 text-xs text-muted-foreground">
               Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
             </p>
             <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="emit('acceptSuggestion')">
