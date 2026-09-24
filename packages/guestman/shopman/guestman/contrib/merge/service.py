@@ -206,8 +206,9 @@ class MergeService:
         """
         Partially revert a merge within the undo window.
 
-        Moves migrated records back to the source customer and
-        reactivates it. Loyalty is NOT reverted (too complex, manual only).
+        Moves migrated records back to the source customer, reactivates it
+        and recalculates the insights of both participants. Loyalty is NOT
+        reverted (too complex, manual only).
 
         Args:
             audit_id: UUID of the MergeAudit record.
@@ -350,6 +351,15 @@ class MergeService:
 
             # Reactivate source
             Customer.objects.filter(pk=source.pk).update(is_active=True)
+
+            # Os pedidos voltaram ao doador, então os dois agregados mentem:
+            # o sobrevivente ainda conta o histórico que devolveu e o doador
+            # reativado guarda o retrato de antes da unificação. Mesma política
+            # da ida (``merge``): recalcula, e falha não desfaz o undo. Tem de
+            # vir DEPOIS da reativação — ``InsightService.recalculate`` só
+            # enxerga cliente ativo.
+            cls._recalculate_insights(target)
+            cls._recalculate_insights(source)
 
             # Log undo event on target timeline
             cls._log_undo_event(source, target, actor)
@@ -1058,19 +1068,19 @@ class MergeService:
         return True
 
     @classmethod
-    def _recalculate_insights(cls, target: Customer) -> None:
-        """Recalculate insights for the merged target customer."""
+    def _recalculate_insights(cls, customer: Customer) -> None:
+        """Recalcula os insights de um participante (ida e volta da unificação)."""
         try:
             from shopman.guestman.contrib.insights.service import InsightService
 
-            InsightService.recalculate(target.ref)
+            InsightService.recalculate(customer.ref)
         except ImportError:
             logger.warning("Merge optional component unavailable: insights; related operation was not performed")
         except Exception as exc:
             # Non-fatal — insights can be recalculated later
             logger.warning(
                 "Merge: could not recalculate insights for %s: %s",
-                target.ref,
+                customer.ref,
                 exc,
             )
 

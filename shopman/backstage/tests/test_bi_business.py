@@ -339,6 +339,38 @@ def test_customers_reads_insights_without_recalculating(db):
 
 
 @pytest.mark.django_db
+def test_customers_ignores_the_record_absorbed_by_a_merge(db):
+    """O doador de uma unificação é a mesma pessoa do sobrevivente — não conta.
+
+    ``MergeService.merge`` desativa o doador (``is_active=False``) e deixa o
+    ``CustomerInsight`` dele como estava. Antes, esse retrato parado entrava no
+    segmento, no ticket médio, no "em risco", no total e nos novos da semana.
+    """
+    survivor = Customer.objects.create(ref="cli-sobrevivente", first_name="Ana")
+    absorbed = Customer.objects.create(ref="cli-doador", first_name="Ana")
+    CustomerInsight.objects.create(
+        customer=survivor, rfm_segment="champion", average_ticket_q=6000, total_orders=12
+    )
+    CustomerInsight.objects.create(
+        customer=absorbed,
+        rfm_segment="at_risk",
+        average_ticket_q=2000,
+        total_orders=3,
+        churn_risk=Decimal("0.9"),
+    )
+    # O estado exato que a unificação deixa no doador.
+    Customer.objects.filter(pk=absorbed.pk).update(is_active=False)
+
+    report = build_bi_customers()
+    assert report.customers_total == 1
+    assert report.with_insight == 1
+    assert report.at_risk == 0
+    assert report.average_ticket_q == 6000
+    assert {row.segment: row.customers for row in report.segments} == {"champion": 1}
+    assert sum(row.new_customers for row in report.new_by_week) == 1
+
+
+@pytest.mark.django_db
 def test_cash_house_accounts_come_from_payman_and_the_ledger(db):
     """Conta do cliente no B.I.: dívida nova e acerto na janela (Payman), a parte
     em dinheiro por operador (livro, `account_settled`), saldo em aberto de hoje."""
