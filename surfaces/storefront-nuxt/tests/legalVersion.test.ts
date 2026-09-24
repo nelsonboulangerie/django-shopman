@@ -31,7 +31,7 @@ const paginas = ['app/pages/privacy.vue', 'app/pages/terms.vue'] as const
 // Atributo que CARREGA documento: o título (`<LegalDocument title>`), o destino de
 // um link e as condições que ligam ou desligam um trecho. O resto de uma tag —
 // nome, classe, `id` de âncora, `data-*` — é apresentação.
-const ATRIBUTOS_DO_TEXTO = /(?:^|\s)(?::|v-bind:)?(title|to|href|v-if|v-else-if|v-for)="([^"]*)"/g
+const TEXT_ATTRIBUTES = /(?:^|\s)(?::|v-bind:)?(title|to|href|v-if|v-else-if|v-for)="([^"]*)"/g
 
 /**
  * Só o TEXTO que o cliente lê. Comentário, script e marcação mudam sem mudar o
@@ -46,8 +46,8 @@ function textoDaPagina (caminho: string): string {
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<\/?strong>/g, '**')
     .replace(/<li\b/g, ' • <li')
-    .replace(/<[^>]*>/g, tag => ' ' + [...tag.matchAll(ATRIBUTOS_DO_TEXTO)]
-      .map(([, nome, valor]) => (nome === 'title' ? valor : `${nome}=${valor}`))
+    .replace(/<[^>]*>/g, tag => ' ' + [...tag.matchAll(TEXT_ATTRIBUTES)]
+      .map(([, name, value]) => (name === 'title' ? value : `${name}=${value}`))
       .join(' ') + ' ')
     .replace(/\s+/g, ' ')
     .trim()

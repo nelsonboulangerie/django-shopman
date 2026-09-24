@@ -12,45 +12,45 @@ import { describe, expect, it } from 'vitest'
 // - Cada seção tem âncora própria, única e em inglês (URL é em inglês, e o
 //   fragmento é parte da URL que se compartilha).
 
-const raiz = resolve(__dirname, '..')
-const ler = (caminho: string) => readFileSync(resolve(raiz, caminho), 'utf8')
-const templateDe = (fonte: string) => fonte.slice(fonte.indexOf('<template>'))
+const root = resolve(__dirname, '..')
+const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
+const templateOf = (fonte: string) => fonte.slice(fonte.indexOf('<template>'))
 
-const PAGINAS = {
+const PAGES = {
   'app/pages/privacy.vue': ['controller', 'data-we-keep', 'legal-basis', 'sharing', 'retention', 'cookies', 'your-rights', 'changes'],
   'app/pages/terms.vue': ['seller', 'eligibility-and-acceptance', 'price-and-availability', 'order-confirmation', 'payment', 'pickup-and-delivery', 'cancellation', 'ifood-orders', 'your-account']
 } as const
 
 describe('páginas legais — a forma', () => {
-  for (const [pagina, ancoras] of Object.entries(PAGINAS)) {
-    it(`${pagina} usa a moldura comum, sem acordeão, com as âncoras publicadas`, () => {
-      const template = templateDe(ler(pagina))
+  for (const [page, anchors] of Object.entries(PAGES)) {
+    it(`${page} usa a moldura comum, sem acordeão, com as âncoras publicadas`, () => {
+      const template = templateOf(read(page))
       expect(template).toMatch(/<LegalDocument title="[^"]+">/)
       expect(template).not.toMatch(/<details\b|Accordion|Collapsible/)
       // Tipografia é da moldura: a página não reinventa classe de corpo.
       expect(template).not.toContain('text-sm leading-6')
       expect(template).not.toContain('shop-heading')
 
-      const encontradas = [...template.matchAll(/<LegalSection id="([^"]+)">\s*<template #title>/g)].map(m => m[1])
+      const found = [...template.matchAll(/<LegalSection id="([^"]+)">\s*<template #title>/g)].map(m => m[1])
       // Âncora é link compartilhado: renomear quebra quem já mandou o link.
-      expect(encontradas).toEqual([...ancoras])
-      expect(new Set(encontradas).size).toBe(encontradas.length)
-      for (const id of encontradas) expect(id).toMatch(/^[a-z]+(?:-[a-z]+)*$/)
+      expect(found).toEqual([...anchors])
+      expect(new Set(found).size).toBe(found.length)
+      for (const id of found) expect(id).toMatch(/^[a-z]+(?:-[a-z]+)*$/)
     })
   }
 
   it('a moldura dá índice, âncora, próximo foco e volta ao topo', () => {
-    const moldura = ler('app/components/LegalDocument.vue')
-    const secao = ler('app/components/LegalSection.vue')
+    const frame = read('app/components/LegalDocument.vue')
+    const section = read('app/components/LegalSection.vue')
     // O índice sai das próprias seções — nenhuma segunda lista de títulos.
-    expect(moldura).toContain('node.type === LegalSection')
-    expect(moldura).toContain('data-legal-toc="desktop"')
-    expect(moldura).toContain('data-legal-toc="mobile"')
-    expect(moldura).toContain('useNextFocus')
-    expect(moldura).toContain('data-legal-back-to-top')
-    expect(moldura).toContain('<MoreBelow />')
-    expect(moldura).toContain('max-w-[65ch]')
-    expect(secao).toContain(':data-focus-target="id"')
-    expect(secao).toContain('<slot name="title" />')
+    expect(frame).toContain('node.type === LegalSection')
+    expect(frame).toContain('data-legal-toc="desktop"')
+    expect(frame).toContain('data-legal-toc="mobile"')
+    expect(frame).toContain('useNextFocus')
+    expect(frame).toContain('data-legal-back-to-top')
+    expect(frame).toContain('<MoreBelow />')
+    expect(frame).toContain('max-w-[65ch]')
+    expect(section).toContain(':data-focus-target="id"')
+    expect(section).toContain('<slot name="title" />')
   })
 })
