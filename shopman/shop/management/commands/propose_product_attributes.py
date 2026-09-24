@@ -13,8 +13,9 @@ sobrescrito — rodar de novo é seguro.
 A coleção PRIMÁRIA manda. Um croissant recheado é Folhados e também é Doces; a
 primeira aparição é onde ele mora (regra do dono, 02/09) e é dela que a proposta
 sai — senão a ordem alfabética decidiria o sabor do cardápio. A secundária só
-responde o SABOR que a primária deixa em branco (Folhados não diz se o Pain au
-Chocolat é doce; Doces diz), e só quando as secundárias concordam.
+responde o SABOR que a primária deixa em branco ou chama de "neutro" (Folhados
+não diz se o Pain au Chocolat é doce; Macios chama o Brioche Chocolat de
+neutro; Doces diz que os dois são doces), e só quando as secundárias concordam.
 """
 
 from __future__ import annotations
@@ -165,16 +166,18 @@ class Command(BaseCommand):
             )
 
         # O SABOR que a primária não responde, uma secundária responde: o Pain
-        # au Chocolat mora em Folhados e TAMBÉM é Doces (dono, 02/09). Só o
-        # sabor, e só se as secundárias concordam — a primária continua mandando
-        # em natureza e temperatura, e duas respostas diferentes são dúvida, não
-        # dado.
-        if "sabor" not in proposal:
+        # au Chocolat mora em Folhados e TAMBÉM é Doces (dono, 02/09). E
+        # "neutro" é a resposta mais fraca que uma coleção dá — é o palpite de
+        # que pão macio não é doce nem salgado; estar TAMBÉM em Doces é a casa
+        # dizendo que este é (Brioche Chocolat, dono, 24/09). Só o sabor, e só
+        # se as secundárias concordam — a primária continua mandando em
+        # natureza e temperatura, e duas respostas diferentes são dúvida.
+        if proposal.get("sabor") in (None, "neutro"):
             flavors = {
                 (COLLECTION_ATTRIBUTES.get(item.collection.ref) or {}).get("sabor")
                 for item in product.collection_items.all()
                 if not item.is_primary
-            } - {None}
+            } - {None, "neutro"}
             if len(flavors) == 1:
                 proposal["sabor"] = flavors.pop()
 

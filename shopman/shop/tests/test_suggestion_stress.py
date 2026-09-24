@@ -6,8 +6,9 @@ aqui mede o motor contra o cardápio inteiro de uma vez.
 
 **O cardápio** é um recorte fiel do seed (SKU, nome, preço, coleção e
 palavras-chave do `seed.py`), e os atributos saem do MESMO comando que os
-propõe no alpha (`propose_product_attributes`) — inclusive as lacunas reais:
-folhado sem sabor, brioche de chocolate que a coleção chama de neutro.
+propõe no alpha (`propose_product_attributes`) — inclusive a lacuna real do
+croissant, cujo sabor nenhuma coleção responde. Os pães doces de Macios estão
+também em Doces desde 24/09 (dono: "Brioche Chocolat é Doce sim").
 
 **A nota** vem de uma rubrica que NÃO lê os atributos do motor. Cada SKU tem um
 papel "de verdade" (``TRUTH``), o que um atendente vê no balcão, e a rubrica
@@ -66,10 +67,12 @@ CATALOG = [
     ("CPG", "Pain de Campagne", 2200, "rusticos", [], ["pao", "levain"]),
     ("MIB", "Mini Baguete", 900, "rusticos", [], ["pao", "baguete"]),
     ("FORMA", "Shokupan", 2800, "macios", [], ["pao", "forma"]),
-    ("BRCH", "Brioche Chocolat", 1000, "macios", [], []),
+    ("BRCH", "Brioche Chocolat", 1000, "macios", ["doces"], []),
+    ("COC", "Cornet de Chocolate", 900, "macios", ["doces"], []),
     ("CRO", "Croissant", 1300, "folhados", [], ["croissant", "folhado", "manteiga"]),
     ("PCHOC", "Pain au Chocolat", 1500, "folhados", ["doces"], ["croissant", "folhado", "chocolate"]),
     ("FFGO", "Folhado de Frango", 2000, "folhados", ["salgados"], []),
+    ("CRPQ", "Croissant Presunto e Queijo", 1600, "folhados", ["salgados"], []),
     ("CQMO", "Croque Monsieur", 2400, "salgados", [], ["lanche", "sanduiche", "queijo"]),
     ("CQMA", "Croque Madame", 2800, "salgados", [], ["lanche", "sanduiche", "ovo"]),
     ("CQCOM", "Croque Complet", 3000, "salgados", [], ["lanche", "sanduiche", "ovo"]),
@@ -92,15 +95,18 @@ TRUTH = {
     "CE": "bebida_gelada", "FRAP": "bebida_gelada", "AGUA": "bebida_gelada",
     "SDLA": "bebida_gelada", "CHHIB": "bebida_gelada",
     "TRADI": "pao", "CPG": "pao", "MIB": "pao", "FORMA": "pao",
-    "BRCH": "doce", "PCHOC": "doce",
+    "BRCH": "doce", "COC": "doce", "PCHOC": "doce",
     "CRO": "folhado",
-    "FFGO": "salgado",
+    "FFGO": "salgado", "CRPQ": "salgado",
     "CQMO": "salgado", "CQMA": "salgado", "CQCOM": "salgado", "QJQT": "salgado", "JB": "salgado",
     "PERDU": "doce", "MDLN": "doce", "TJ": "doce", "MA": "doce",
     "GL": "acompanhamento", "MT": "acompanhamento", "QP": "acompanhamento",
     "GR": "varejo",
 }
 DRINKS = {"bebida_quente", "bebida_gelada"}
+#: O salgado LEVE que o dono pediu para doce + bebida (24/09): croissant de
+#: presunto e queijo, folhado de frango, queijo-quente.
+LIGHT_SAVORY = {"CRPQ", "FFGO", "QJQT"}
 FOODS = {"pao", "doce", "folhado", "salgado"}
 
 #: O histórico de mesa, adversário de propósito.
@@ -200,6 +206,9 @@ def grade(cart: tuple[str, ...], suggested: str | None, available: set[str]) -> 
         if "salgado" in foods and drinks and "doce" not in foods:
             doce_available = any(TRUTH[s] == "doce" for s in offerable)
             return (1, "calou com doce disponível") if doce_available else (3, "calou: não há doce")
+        if "doce" in foods and drinks and "salgado" not in foods:
+            savory_available = any(TRUTH[s] == "salgado" for s in offerable)
+            return (1, "calou com salgado disponível") if savory_available else (3, "calou: não há salgado")
         return 3, "mesa completa: calar é certo"
 
     k = TRUTH[suggested]
@@ -238,6 +247,11 @@ def grade(cart: tuple[str, ...], suggested: str | None, available: set[str]) -> 
                 return 3, "salgado + bebida → doce"
             return 2, "salgado + bebida → outra comida"
         if "doce" in foods:
+            # Dono, 24/09: 1º um salgado LEVE (completa a mesa), 2º o pão.
+            if k == "salgado":
+                if suggested in LIGHT_SAVORY:
+                    return 3, "doce + bebida → salgado leve"
+                return 2, "doce + bebida → salgado de prato"
             if k == "acompanhamento":
                 return 1, "doce + bebida → acompanhamento"
             return 2, "doce + bebida → um convite a mais"
@@ -333,12 +347,10 @@ def report(rows) -> str:
     return "\n".join(lines)
 
 
-#: Lacunas de DADO do seed, não do motor: o motor só sabe o que o catálogo diz.
-#: O Brioche Chocolat mora só em Macios (→ sabor neutro, como o pão de forma),
-#: sem palavra-chave, e os irmãos recheados dele (Pain aux Raisins, Pain au
-#: Chocolat) estão TAMBÉM em Doces. Nenhum peso conserta isso; a curadoria sim
-#: — ver `test_with_the_data_gap_curated_nothing_is_strange`.
-KNOWN_DATA_GAPS = {"BRCH"}
+#: Lacunas de DADO do seed que o motor não tem como adivinhar. Vazia desde
+#: 24/09: o Brioche Chocolat (e os outros pães doces de Macios) entraram também
+#: em Doces, e o `propose_product_attributes` deixou de chamá-los de neutros.
+KNOWN_DATA_GAPS: set[str] = set()
 
 
 def _write_report(name: str, text: str) -> None:
@@ -358,23 +370,7 @@ def test_the_menu_is_graded_like_a_human_would(menu):
     rows = run_all()
     _write_report("cardápio do seed, como está", report(rows))
 
-    bad = [r for r in rows if r[3] <= 1 and not _touches_a_gap(r)]
-    assert not bad, "sugestão absurda ou estranha:\n" + "\n".join(
-        f"[{n}] {'+'.join(c)} → {t.sku if t else '—'} ({w})" for _, c, t, n, w in bad
-    )
-
-
-def test_with_the_data_gap_curated_nothing_is_strange(menu):
-    """O mesmo cardápio depois de o gestor dizer, no Admin, que o brioche é doce."""
-    from shopman.shop.services import attributes
-
-    brioche = Product.objects.get(sku="BRCH")
-    attributes.set(brioche, "sabor", "doce")
-
-    rows = run_all()
-    _write_report("cardápio com o Brioche Chocolat curado (sabor=doce)", report(rows))
-
-    bad = [r for r in rows if r[3] <= 1]
+    bad = [r for r in rows if r[3] == 0 or (r[3] == 1 and not _touches_a_gap(r))]
     assert not bad, "sugestão absurda ou estranha:\n" + "\n".join(
         f"[{n}] {'+'.join(c)} → {t.sku if t else '—'} ({w})" for _, c, t, n, w in bad
     )
@@ -403,6 +399,13 @@ def test_with_the_data_gap_curated_nothing_is_strange(menu):
         # Salgado + bebida → doce, "claro!".
         (("CQMA", "SDLA"), (), {"doce"}),
         (("JB", "COAD"), (), {"doce"}),
+        # Doce + bebida → o salgado LEVE que completa a mesa (dono, 24/09),
+        # e com mais força se a bebida é gelada.
+        (("MDLN", "SP"), (), {"salgado"}),
+        (("MDLN", "SDLA"), (), {"salgado"}),
+        (("BRCH", "CAP"), (), {"salgado"}),
+        # O folhado salgado completa o folhado doce: Folhados agrupa pela massa.
+        (("PCHOC", "COAD"), (), {"salgado"}),
         # Pão + café → o que se passa no pão, ou o doce.
         (("TRADI", "COAD"), (), {"acompanhamento", "doce"}),
         # Preferência é peso, não filtro: sem gelada, o salgado leva a quente.

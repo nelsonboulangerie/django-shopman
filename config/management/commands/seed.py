@@ -3174,7 +3174,13 @@ class Command(BaseCommand):
                 "MA",
                 # Recheados: doces de sabor, folhados/brioche de massa — e a massa
                 # é a categoria principal deles.
-                "PCHOC", "CRP", "CN", "BICH", "BRRSN"],
+                "PCHOC", "CRP", "CN", "BICH", "BRRSN",
+                # Os pães doces de Macios (dono, 24/09: "Brioche Chocolat é Doce
+                # sim. E tem mais opções que provavelmente deveriam estar em
+                # doces"). Macios continua a casa deles; Doces é a segunda.
+                # Ficaram de fora, por dúvida: Cornet (recheio do dia), Melonpan
+                # e Kuro Pan ("levemente doce/adocicado").
+                "BRCH", "COC", "COE", "URS", "PORQ"],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
             "mercearia": [
