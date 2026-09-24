@@ -70,11 +70,16 @@ fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
 **Caixas presente** (:data:`GIFT_BOXES`): produto da casa, SKU da casa, sem
 GTIN nem marca de revenda; entram no lugar da ``LN``. Caixa presente é **kit**
 (``metadata['kit'] = True``, decisão do dono em 24/09): na NFC-e cada
-componente sai como item próprio, com a tributação dele. Kit sem composição
-(``ProductComponent``) não tem o que pôr na nota, então fica
-``is_sellable=False`` — no produto e na listagem — até o dono definir o que vai
-dentro. Ligar a venda depois de cadastrar a composição é passo do gestor: o
-comando não religa. Os placeholders que
+componente sai como item próprio, com a tributação dele. A caixa tem preço
+próprio (montagem, embalagem especial), maior que a soma dos itens avulsos:
+os itens saem pelo preço avulso e o ágio sai na linha da **embalagem** — a
+caixa física, componente declarado do kit que este comando cria
+(``<SKU>-EMB``, "Caixa Presente <nome> (embalagem)", ``metadata['kit_packaging']``,
+NCM de papelão/cartão configurável por caixa, perfil sem ST, sem GTIN, não
+vendável avulsa, sem estoque obrigatório). Kit sem mercadoria na composição
+(só a caixa) não tem o que pôr na nota, então fica ``is_sellable=False`` — no
+produto e na listagem — até o dono definir o que vai dentro. Ligar a venda
+depois de cadastrar a composição é passo do gestor: o comando não religa. Os placeholders que
 saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_decisions``.
 
 **Placeholders da despensa que viram produto real** (:data:`REAL_PLACEHOLDERS`):
@@ -414,14 +419,36 @@ class RealPlaceholder:
     weight_g: int
 
 
+#: NCM da caixa física, por material (TIPI): 4819.20.00 = caixas e
+#: cartonagens dobráveis de papel ou cartão NÃO ondulado (o padrão); 4819.10.00
+#: = caixas de papel ou cartão ondulado; 4602.19.00 = cesta de vime (obras de
+#: cestaria de outras matérias vegetais).
+PACKAGING_NCM_FOLDING_CARTON = "48192000"
+PACKAGING_NCM_CORRUGATED = "48191000"
+PACKAGING_NCM_WICKER = "46021900"
+
+
 @dataclass(frozen=True)
 class GiftBox:
-    """Caixa presente montada na casa: SKU da casa, sem GTIN, marca da loja."""
+    """Caixa presente montada na casa: SKU da casa, sem GTIN, marca da loja.
+
+    ``packaging_ncm`` é o NCM da caixa física (a embalagem que o cliente leva),
+    configurável por kit conforme o material.
+    """
 
     sku: str
     name: str
     price_q: int
     ncm: str
+    packaging_ncm: str = PACKAGING_NCM_FOLDING_CARTON
+
+    @property
+    def packaging_sku(self) -> str:
+        return f"{self.sku}-EMB"
+
+    @property
+    def packaging_name(self) -> str:
+        return f"{self.name} (embalagem)"
 
 
 #: As quatro caixas presente (planilha consolidada; entram no lugar do `LN`,
@@ -678,10 +705,11 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
 def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
     """Caixa presente: produto da casa, e kit. Sem GTIN, sem marca de revenda.
 
-    Kit sem componentes não vende: a NFC-e abre o kit em um item por
-    componente (``shop/services/fiscal._kit_lines``), e sem composição a nota
-    sairia com o NCM de pão para o que for vinho. Composição não se inventa —
-    quem define é o dono.
+    A caixa física entra na composição como embalagem (:func:`_ensure_packaging`).
+    Kit sem MERCADORIA na composição não vende: a NFC-e abre o kit em um item
+    por componente (``shop/services/fiscal._kit_lines``), e sem os itens a nota
+    sairia só com a caixa. O resto da composição não se inventa — quem define é
+    o dono.
     """
     from shopman.offerman.models import ListingItem
 
@@ -700,8 +728,11 @@ def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
         metadata["kit"] = True
         product.metadata = metadata
         lines.append("kit: marcado")
-    has_components = not is_new and product.components.exists()
-    if not has_components and product.is_sellable:
+    has_goods = not is_new and any(
+        not (pc.component.metadata or {}).get("kit_packaging")
+        for pc in product.components.select_related("component")
+    )
+    if not has_goods and product.is_sellable:
         product.is_sellable = False
         if not is_new:
             lines.append("venda: desligada até ter composição")
@@ -711,14 +742,63 @@ def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
     elif lines:
         product.save()
         report["updated"].append((box.sku, lines))
+    _ensure_packaging(box, product, report)
     product.keywords.add(COLLECTION_REF, "presente", "caixa")
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
     if not product.is_sellable:
         ListingItem.objects.filter(product=product, is_sellable=True).update(is_sellable=False)
-    if not has_components:
+    if not has_goods:
         report["kits_without_components"].append(
             (box.sku, "caixa presente sem composição: fora da venda até o dono definir")
+        )
+
+
+def _ensure_packaging(box: GiftBox, kit, report: dict) -> None:
+    """A caixa física do kit: produto da casa, componente declarado, fora da venda.
+
+    Recebe na NFC-e o ágio do kit (preço do kit − soma avulsa dos itens). Não
+    tem preço próprio (o valor dela é a diferença), não se vende avulsa, não
+    entra em listagem e não tem estoque obrigatório (``demand_ok``; o adapter
+    de catálogo a tira da expansão de disponibilidade e de reserva). NCM de
+    embalagem por material, perfil ``standard`` (sem ST: a embalagem é da
+    casa), sem GTIN.
+    """
+    from shopman.offerman.models import AvailabilityPolicy, Product, ProductComponent
+
+    wanted_fiscal = {"profile": "standard", "ncm": box.packaging_ncm, "unit": "UN"}
+    packaging = Product.objects.filter(sku=box.packaging_sku).first()
+    if packaging is None:
+        packaging = Product.objects.create(
+            sku=box.packaging_sku, name=box.packaging_name, base_price_q=0, unit="un",
+            is_published=False, is_sellable=False,
+            availability_policy=AvailabilityPolicy.DEMAND_OK,
+            metadata={"kit_packaging": True, "fiscal": wanted_fiscal},
+        )
+    else:
+        metadata = _metadata(packaging)
+        have_ncm = (metadata.get("fiscal") or {}).get("ncm")
+        if have_ncm and have_ncm != box.packaging_ncm:
+            report["conflicts"].append((packaging.sku, "ncm", have_ncm, box.packaging_ncm))
+        changed = False
+        if metadata.get("kit_packaging") is not True:
+            metadata["kit_packaging"] = True
+            changed = True
+        if not have_ncm:
+            metadata["fiscal"] = wanted_fiscal
+            changed = True
+        if changed:
+            packaging.metadata = metadata
+            packaging.save(update_fields=["metadata"])
+        if packaging.is_sellable:
+            packaging.is_sellable = False
+            packaging.save(update_fields=["is_sellable"])
+    _link, created = ProductComponent.objects.get_or_create(
+        parent=kit, component=packaging, defaults={"qty": 1}
+    )
+    if created:
+        report["updated"].append(
+            (box.sku, [f"composição: + {packaging.sku} (embalagem, NCM {packaging.metadata['fiscal']['ncm']})"])
         )
 
 

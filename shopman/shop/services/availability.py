@@ -418,6 +418,11 @@ def _expand_if_bundle(sku: str, qty: Decimal) -> list[dict] | None:
         # as simple product (infinite recursion prevention).
         if len(components) == 1 and components[0]["sku"] == sku:
             return None
+        # Kit só com a embalagem (o adapter a tira da expansão): não há
+        # componente a conferir, e o kit responde como produto simples — pela
+        # própria listagem, que é onde a caixa sem composição está parada.
+        if not components:
+            return None
         return components
     except Exception:
         logger.debug("availability._expand_if_bundle degraded; returning None", exc_info=True)

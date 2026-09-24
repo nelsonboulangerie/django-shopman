@@ -612,7 +612,8 @@ def test_caixa_presente_sem_composicao_e_kit_fora_da_venda(catalog):
         assert caixa.metadata["kit"] is True
         assert not caixa.is_sellable
         assert not ListingItem.objects.filter(product=caixa, is_sellable=True).exists()
-        assert not caixa.components.exists()  # composição não se inventa
+        # Só a caixa física na composição; o resto não se inventa.
+        assert [pc.component.sku for pc in caixa.components.all()] == [box.packaging_sku]
         assert (box.sku, "caixa presente sem composição: fora da venda até o dono definir") in (
             report["kits_without_components"]
         )
@@ -651,3 +652,33 @@ def test_o_relatorio_do_comando_lista_a_caixa_sem_composicao(catalog):
     call_command("apply_grocery_catalog", stdout=out)
 
     assert "caixa presente sem composição: fora da venda até o dono definir" in out.getvalue()
+
+
+def test_a_caixa_fisica_e_componente_declarado_do_kit_fora_da_venda(catalog):
+    from config.management.commands.apply_grocery_catalog import PACKAGING_NCM_FOLDING_CARTON
+
+    apply_grocery(apply=True)
+
+    for box in GIFT_BOXES:
+        packaging = Product.objects.get(sku=box.packaging_sku)
+        assert packaging.name == f"{box.name} (embalagem)"
+        assert packaging.metadata["kit_packaging"] is True
+        assert packaging.metadata["fiscal"] == {"profile": "standard", "ncm": PACKAGING_NCM_FOLDING_CARTON, "unit": "UN"}
+        assert not packaging.is_sellable and not packaging.is_published
+        assert packaging.base_price_q == 0
+        assert not ListingItem.objects.filter(product=packaging).exists()
+        assert get_social_attributes(packaging).gtin == ""
+        assert packaging.availability_policy == "demand_ok"
+        resolved = resolve_fiscal_item(from_metadata(packaging.metadata))
+        assert (resolved["cfop"], resolved["icms_situacao_tributaria"]) == ("5102", "102")
+
+
+def test_o_ncm_da_caixa_e_configuravel_por_kit(catalog, monkeypatch):
+    from config.management.commands.apply_grocery_catalog import PACKAGING_NCM_WICKER
+
+    box = replace(GIFT_BOXES[0], packaging_ncm=PACKAGING_NCM_WICKER)
+    monkeypatch.setattr(command, "GIFT_BOXES", (box, *GIFT_BOXES[1:]))
+
+    apply_grocery(apply=True)
+
+    assert Product.objects.get(sku=box.packaging_sku).metadata["fiscal"]["ncm"] == "46021900"

@@ -343,3 +343,105 @@ def test_cada_linha_do_kit_leva_o_gtin_do_seu_componente(gift_box):
     bread, mustard = fiscal_service._build_fiscal_items(order)
 
     assert (bread["gtin"], mustard["gtin"]) == ("", VALID_GTIN)
+
+
+# ── caixa presente com preço próprio: o ágio sai na embalagem ───────────────
+#
+# Os itens saem pelo preço avulso; a diferença (preço do kit − soma avulsa) sai
+# na linha da caixa física. Kit com desconto (soma avulsa ≥ preço do kit) não
+# tem linha de caixa: o preço é rateado entre os itens.
+
+
+@pytest.fixture
+def gift_box_with_packaging(gift_box):
+    from shopman.offerman.models import ProductComponent
+
+    packaging = Product.objects.create(
+        sku="CAIXA-KIT-EMB", name="Caixa Presente (embalagem)", base_price_q=0, is_sellable=False,
+        metadata={"kit_packaging": True, "fiscal": {"profile": "standard", "ncm": "48192000"}},
+    )
+    ProductComponent.objects.create(parent=gift_box, component=packaging, qty=1)
+    return gift_box
+
+
+def test_agio_itens_pelo_preco_avulso_e_a_diferenca_na_embalagem(gift_box_with_packaging):
+    # Kit a R$ 60,00; pão 20,00 + mostarda 30,00 = 50,00 avulsos → caixa 10,00.
+    order = _kit_order("ORD-KIT-AGIO-1", ("CAIXA-KIT", "Caixa Presente", 1, 6000, 6000))
+
+    items = fiscal_service._build_fiscal_items(order)
+
+    assert [(i["sku"], i["total_q"]) for i in items] == [
+        ("PAO-KIT", 2000), ("MOSTARDA-KIT", 3000), ("CAIXA-KIT-EMB", 1000),
+    ]
+    packaging = items[-1]
+    assert packaging["name"] == "Caixa Presente (embalagem)"
+    assert packaging["fiscal"]["ncm"] == "48192000"
+    assert (packaging["fiscal"]["cfop"], packaging["fiscal"]["icms_situacao_tributaria"]) == ("5102", "102")
+    assert packaging["gtin"] == ""
+    assert sum(i["total_q"] for i in items) == 6000
+
+
+def test_agio_com_desconto_da_venda_rateia_entre_todas_as_linhas_inclusive_a_caixa(gift_box_with_packaging):
+    # Lista 60,00, vendido com 10% (54,00): 20/30/10 viram 18/27/9.
+    Channel.objects.get_or_create(ref="pdv", defaults={"name": "PDV"})
+    order = Order.objects.create(ref="ORD-KIT-AGIO-2", channel_ref="pdv", status=Order.Status.COMPLETED, total_q=0)
+    order.items.create(
+        sku="CAIXA-KIT", name="Caixa Presente", qty=1, unit_price_q=5400, line_total_q=5400,
+        meta={"_list_q": 6000, "_disc": {"type": "manual", "amount_q": 600, "label": "10%"}},
+    )
+
+    items = fiscal_service._build_fiscal_items(order)
+
+    assert [i["total_q"] for i in items] == [1800, 2700, 900]
+
+
+def test_agio_com_desconto_que_nao_divide_redondo_fecha_no_centavo(gift_box_with_packaging):
+    Channel.objects.get_or_create(ref="pdv", defaults={"name": "PDV"})
+    order = Order.objects.create(ref="ORD-KIT-AGIO-3", channel_ref="pdv", status=Order.Status.COMPLETED, total_q=0)
+    order.items.create(
+        sku="CAIXA-KIT", name="Caixa Presente", qty=3, unit_price_q=5333, line_total_q=15999,
+        meta={"_list_q": 6000},
+    )
+
+    items = fiscal_service._build_fiscal_items(order)
+
+    # pesos 6000/9000/3000 de 18000; 15999 → 5333, 7999, e o resto 2667 na caixa.
+    assert [i["total_q"] for i in items] == [5333, 7999, 2667]
+    assert sum(i["total_q"] for i in items) == 15999
+    assert [i["qty"] for i in items] == ["3", "3", "3"]
+
+
+def test_kit_com_desconto_nao_tem_linha_de_caixa(gift_box_with_packaging):
+    # Kit a R$ 45,00 < 50,00 avulsos: sem caixa, 45,00 rateado 2:3 entre os itens.
+    order = _kit_order("ORD-KIT-DESC-1", ("CAIXA-KIT", "Caixa Presente", 1, 4500, 4500))
+
+    items = fiscal_service._build_fiscal_items(order)
+
+    assert [(i["sku"], i["total_q"]) for i in items] == [("PAO-KIT", 1800), ("MOSTARDA-KIT", 2700)]
+
+
+def test_kit_com_preco_igual_a_soma_avulsa_nao_tem_linha_de_caixa(gift_box_with_packaging):
+    order = _kit_order("ORD-KIT-DESC-2", ("CAIXA-KIT", "Caixa Presente", 1, 5000, 5000))
+
+    items = fiscal_service._build_fiscal_items(order)
+
+    assert [(i["sku"], i["total_q"]) for i in items] == [("PAO-KIT", 2000), ("MOSTARDA-KIT", 3000)]
+
+
+def test_kit_com_agio_passa_pelo_adapter_focus_e_a_nota_fecha(gift_box_with_packaging):
+    from shopman.shop.adapters.fiscal_focusnfe import _map_item
+
+    order = _kit_order("ORD-KIT-AGIO-4", ("CAIXA-KIT", "Caixa Presente", 1, 6000, 6000))
+    mapped = [_map_item(i, item, {}) for i, item in enumerate(fiscal_service._build_fiscal_items(order), 1)]
+
+    assert [m["codigo_ncm"] for m in mapped] == ["19059090", "21033021", "48192000"]
+    assert [m["cfop"] for m in mapped] == ["5102", "5405", "5102"]
+    assert mapped[-1]["codigo_barras_comercial"] == "SEM GTIN"
+    assert [m["valor_unitario_comercial"] for m in mapped] == ["20.00", "30.00", "10.00"]
+    assert sum(int(round(float(m["valor_bruto"]) * 100)) for m in mapped) == 6000
+
+
+def test_a_embalagem_nao_entra_na_expansao_de_disponibilidade_e_reserva(gift_box_with_packaging):
+    from shopman.shop.adapters.catalog import expand_bundle
+
+    assert [c["sku"] for c in expand_bundle("CAIXA-KIT", 1)] == ["PAO-KIT", "MOSTARDA-KIT"]
