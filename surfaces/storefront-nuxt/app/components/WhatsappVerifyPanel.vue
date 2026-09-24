@@ -26,8 +26,8 @@ const props = withDefaults(defineProps<{
   status: 'idle',
   glimpse: '',
   noPasswordNote: '',
-  manualTitle: 'Quer fazer você mesmo?',
-  manualIntro: 'Envie esta mensagem diretamente para o nosso WhatsApp',
+  manualTitle: 'Ou envie você mesmo',
+  manualIntro: 'Mande a mensagem abaixo para {phone} no WhatsApp.',
   ctaLabel: 'Entrar pelo WhatsApp'
 })
 
@@ -44,6 +44,13 @@ const manualMessage = computed(() => props.message || (props.code ? `#menu ${pro
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
 const chatLink = computed(() => props.waNumber ? `https://wa.me/${props.waNumber}` : '')
+// `{phone}` marca onde o número entra na frase (a copy é editável no Admin).
+// Sem o marcador, o número vai para o fim — nunca some da instrução.
+const manualIntroParts = computed(() => {
+  const [before, ...rest] = props.manualIntro.split('{phone}')
+  if (rest.length) return { before, after: rest.join('') }
+  return { before: `${before.trimEnd()} `, after: '.' }
+})
 
 async function copyMessage () {
   if (!import.meta.client || !manualMessage.value) return
@@ -127,9 +134,8 @@ async function copyMessage () {
              de decidir. O peso cai pela cor e pelo tamanho, nunca pela ausência. -->
         <div v-if="manualMessage" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
           <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
-          <p class="shop-meta">
-            {{ manualIntro }}
-            <span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>.
+          <p class="shop-meta" data-login-whatsapp-manual-intro>
+            {{ manualIntroParts.before }}<span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>{{ manualIntroParts.after }}
           </p>
           <!-- `bg-card`, não `bg-background`: sobre o Faubourg o canvas creme some
                (245 233 194 contra 245 231 221) e a mensagem perde a moldura. -->
