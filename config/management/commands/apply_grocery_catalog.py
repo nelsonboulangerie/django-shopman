@@ -13,7 +13,7 @@ que já roda (este comando) terminem iguais.
 
 **Entra quem tem dado para vender sem mentir**: nome, marca, embalagem, preço
 maior que zero, NCM e GTIN que passa no dígito verificador GS1 (o validador
-oficial do catálogo, ``_gtin_is_valid``). Quem falta alguma dessas fica em
+oficial do catálogo, ``gtin_is_valid``). Quem falta alguma dessas fica em
 :data:`LEFT_OUT`, com o motivo — ausência declarada, não esquecimento.
 
 **Como cada item nasce**
@@ -221,10 +221,10 @@ def _ensure_collection(product, collection) -> None:
 
 def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     from shopman.offerman import get_social_attributes
-    from shopman.offerman.contrib.social.schema import _gtin_is_valid, set_social_attributes
+    from shopman.offerman.contrib.social.schema import gtin_is_valid, set_social_attributes
     from shopman.offerman.models import AvailabilityPolicy, Product
 
-    if item.price_q <= 0 or not _gtin_is_valid(item.gtin):
+    if item.price_q <= 0 or not gtin_is_valid(item.gtin):
         report["refused"].append((item.sku, "GTIN inválido" if item.price_q > 0 else "sem preço"))
         return
 

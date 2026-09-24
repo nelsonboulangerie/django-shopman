@@ -1133,10 +1133,10 @@ def _valid_gtin(value: str) -> str:
     voltam vazios. O validador é o mesmo do cadastro (``social.schema``): um
     GTIN que o Admin recusaria não pode entrar pela nota.
     """
-    from shopman.offerman.contrib.social.schema import _gtin_is_valid
+    from shopman.offerman import gtin_is_valid
 
     digits = _digits(value)
-    return digits if digits and _gtin_is_valid(digits) else ""
+    return digits if digits and gtin_is_valid(digits) else ""
 
 
 def _digits(value: Any) -> str:

@@ -406,9 +406,9 @@ def suggestion_from_invoice(
     Não consulta rede. O GTIN chega já conferido pelo leitor da nota (dígito
     verificador GS1); NCM e CEST só entram no formato certo.
     """
-    from shopman.offerman.contrib.social.schema import _gtin_is_valid
+    from shopman.offerman import gtin_is_valid
 
-    s = EnrichmentSuggestion(gtin=gtin if gtin and _gtin_is_valid(gtin) else "")
+    s = EnrichmentSuggestion(gtin=gtin if gtin and gtin_is_valid(gtin) else "")
     ref = {"source_ref": access_key} if access_key else {}
     if s.gtin:
         detail = ""
@@ -617,11 +617,7 @@ def accept_fields(product, names, *, replace=(), user=None) -> AcceptResult:
     sai de ``fields`` e vai para ``accepted[campo]`` com fonte, data da
     consulta, quem aceitou, quando, e o valor que substituiu (se substituiu).
     """
-    from shopman.offerman.contrib.social.schema import (
-        _gtin_is_valid,
-        get_social_attributes,
-        set_social_attributes,
-    )
+    from shopman.offerman import get_social_attributes, gtin_is_valid, set_social_attributes
     from shopman.offerman.nutrition import NutritionFacts
 
     result = AcceptResult()
@@ -644,7 +640,7 @@ def accept_fields(product, names, *, replace=(), user=None) -> AcceptResult:
 
         fiscal = dict(meta.get("fiscal") or {})
         if name == "gtin":
-            if not _gtin_is_valid(str(value)):
+            if not gtin_is_valid(str(value)):
                 result.refused[name] = "GTIN com dígito verificador inválido."
                 continue
             attrs = dc_replace(get_social_attributes(meta), gtin=str(value))
