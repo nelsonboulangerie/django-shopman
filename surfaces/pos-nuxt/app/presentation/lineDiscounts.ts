@@ -9,6 +9,7 @@
 
 import type { POSCartItem } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import { lineAmountQ } from "~/presentation/weighed";
 
 /** "Liquidação −15%" (ou "Liquidação −R$ 1,95"). "" quando não há desconto automático. */
 export function pricingDiscountBadge(item: POSCartItem): string {
@@ -108,7 +109,9 @@ export function lineDiscountBadge(
  *  o dedo acabou de fazer (tela). Multiplicar os dois não é calcular política.
  */
 export function lineTotalQ(item: POSCartItem): number {
-  return unitChargedQ(item) * item.qty;
+  // Na linha pesada, `peso × preço do quilo` arredondado como o kernel — nunca
+  // `preço × 0,312`, que dá fração de centavo.
+  return lineAmountQ(unitChargedQ(item), item);
 }
 
 /** O que se cobra por UNIDADE. Mesma armadilha do total: `price_q` é restauração. */
@@ -127,7 +130,7 @@ export function lineListTotalDisplay(item: POSCartItem): string {
 
 /** O total de etiqueta da linha, em centavos. 0 quando o servidor não disse. */
 export function lineListTotalQ(item: POSCartItem): number {
-  return typeof item.list_price_q === "number" ? item.list_price_q * item.qty : 0;
+  return typeof item.list_price_q === "number" ? lineAmountQ(item.list_price_q, item) : 0;
 }
 
 /** Quanto esta linha economizou, em centavos. 0 quando não houve desconto. */

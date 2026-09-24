@@ -18,7 +18,7 @@ from django.db.models import Q
 from django.utils import timezone
 from shopman.cashman import services as cash_ledger
 from shopman.orderman.models import Order, Session
-from shopman.utils.monetary import format_money
+from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
@@ -26,6 +26,7 @@ from shopman.shop.models import Channel
 from shopman.shop.services import account as account_service
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import sessions as session_service
+from shopman.shop.services import weighed_sale
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION, PosIntentError, parse_pos_sale_intent
 
@@ -302,6 +303,8 @@ def close_sale(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
+    weighed_sale.apply_to_payload(payload, channel=channel)
+    _refuse_priceless_items(payload, channel=channel)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
     # media o desconto de linha contra o preco JA descontado. Duas consequencias,
@@ -648,6 +651,8 @@ def review_sale(
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     require_receipt_identity_choice(payload)
     channel, _config = _channel_and_config(channel_ref)
+    weighed_sale.apply_to_payload(payload, channel=channel)
+    _refuse_priceless_items(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
         raise ValueError("Abra um POS tab antes de finalizar.")
@@ -780,10 +785,7 @@ def review_sale(
         if _is_delivery_fee_item(item):
             continue
         sku = str(item.get("sku") or "")
-        try:
-            qty = int(item.get("qty", 1))
-        except (TypeError, ValueError):
-            continue
+        qty = _line_qty(item)
         if not sku or qty <= 0:
             continue
         decision = availability.decide(sku, qty, channel_ref=channel.ref)
@@ -1085,6 +1087,7 @@ def save_pos_tab(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
+    weighed_sale.apply_to_payload(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
@@ -1407,7 +1410,7 @@ def _session_to_fire_lines(session: Session) -> list[dict]:
             "line_id": item.get("line_id", ""),
             "sku": item.get("sku", ""),
             "name": item.get("name") or item.get("sku", ""),
-            "qty": int(item.get("qty", 1)),
+            "qty": weighed_sale.qty_number(item.get("qty", 1)),
             "notes": meta.get("notes", ""),
             "meta": meta,
         })
@@ -1516,11 +1519,13 @@ def fire_pos_tab(
     # (o operador reduziu a quantidade de algo que a cozinha já está fazendo).
     # Só conta o que o ledger confirmou — uma linha sem estação de destino não
     # chega à cozinha, e marcá-la aqui acenderia o selo de sobra sem sobra.
-    fired_qty = {str(k): int(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()}
+    fired_qty = {
+        str(k): weighed_sale.qty_number(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()
+    }
     fired_set = set(fired)
     for line in to_fire:
         if line["line_id"] in fired_set:
-            fired_qty[line["line_id"]] = int(line["qty"])
+            fired_qty[line["line_id"]] = weighed_sale.qty_number(line["qty"])
     session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
@@ -1771,7 +1776,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
         op = {
             "op": "add_line",
             "sku": item["sku"],
-            "qty": int(item.get("qty", 1)),
+            # Inteiro na venda por unidade; kg com 3 casas na linha pesada — que
+            # o ``weighed_sale.apply_to_payload`` já resolveu a partir da
+            # etiqueta ou do peso. ``int()`` aqui zerava 0,312 kg em silêncio.
+            "qty": _line_qty(item),
             "unit_price_q": int(item["unit_price_q"]),
         }
         # A identidade da linha VEM DO CLIENTE e é preservada no remove+readd do
@@ -1794,6 +1802,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
             if approved_by:
                 line_discount["approved_by"] = approved_by
             meta["manual_discount"] = line_discount
+        # O que o operador tinha em mãos (etiqueta ou peso) e o que isso virou.
+        # Registro, não preço: o kernel reprecifica a linha pelo catálogo.
+        if isinstance(item.get("weighed"), dict):
+            meta["weighed"] = {**item["weighed"], "by": _bare_username(operator_username)}
         # O preco de ETIQUETA viaja com a linha da comanda, como o modifier
         # de pricing carimba na venda: sem _list_q na sessao, a review fica
         # sem regua para o "maior desconto ganha" e sem preco para carimbar.
@@ -2322,10 +2334,54 @@ def _payload_subtotal_q(payload: dict) -> int:
     subtotal_q = 0
     for item in payload.get("items", []):
         try:
-            subtotal_q += int(item.get("qty", 1)) * int(item.get("unit_price_q", 0))
+            subtotal_q += monetary_mult(Decimal(_line_qty(item)), int(item.get("unit_price_q", 0)))
         except (TypeError, ValueError):
             continue
     return max(0, subtotal_q)
+
+
+def _line_qty(item: dict) -> Decimal | int:
+    """A quantidade da linha sem truncar: ``int`` na venda por unidade, ``Decimal`` na pesada.
+
+    O PDV somava ``int(qty) × preço`` em seis lugares. Com a venda por peso isso
+    virava zero (0,312 kg → 0) e a review prometia R$ 0,00 por um queijo de
+    R$ 28,05. A conta com fração é a do kernel: ``monetary_mult``, meio para cima.
+    """
+    try:
+        qty = Decimal(str(item.get("qty", 1)))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0
+    if not qty.is_finite():
+        return 0
+    return int(qty) if qty == qty.to_integral_value() else qty
+
+
+def _refuse_priceless_items(payload: dict, *, channel) -> None:
+    """O balcão não vende item sem preço no catálogo — e diz qual, antes do caixa.
+
+    A mesma regra do validador de commit (``rules.validation.PricedItemsRule``),
+    que vale para todo canal; aqui ela chega CEDO e com o nome do item, na review,
+    em vez de virar um erro genérico do fechamento. O preço que conta é o do
+    CATÁLOGO (o do navegador é só vitrine): um desconto de 100% não é preço zero,
+    é desconto, e passa pela régua do desconto.
+    """
+    from shopman.shop.handlers.pricing import OffermanPricingBackend
+
+    backend = OffermanPricingBackend()
+    for idx, item in enumerate(payload.get("items") or []):
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        sku = str(item.get("sku") or "")
+        if int(backend.get_price(sku, channel, qty=Decimal(1)) or 0) > 0:
+            continue
+        name = str(item.get("name") or sku)
+        raise PosIntentError(
+            code="price_missing",
+            message=f"{name} está sem preço no cadastro e não pode ser vendido.",
+            field=f"items.{idx}",
+            focus="cart",
+            recovery="Cadastre o preço no catálogo. Para dar o item, use desconto de 100%.",
+        )
 
 
 def _ensure_resolved_prices(payload: dict) -> None:
@@ -2363,12 +2419,12 @@ def _payload_applied_order_discount_q(payload: dict) -> int:
     for item in payload.get("items", []):
         if _is_non_merchandise_line(item):
             continue
-        qty = max(0, int(item.get("qty", 1)))
+        qty = max(0, _line_qty(item))
         if not qty:
             continue
         line_gain_q = _payload_line_discounts_q({"items": [item]})
-        unit_q = max(0, int(item.get("unit_price_q", 0)) - line_gain_q // qty)
-        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": qty * unit_q})
+        unit_q = max(0, int(item.get("unit_price_q", 0)) - int(Decimal(line_gain_q) / Decimal(qty)))
+        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": monetary_mult(Decimal(qty), unit_q)})
     return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
 
 
@@ -2459,9 +2515,9 @@ def _payload_line_discounts_q(payload: dict) -> int:
             continue
         try:
             unit_price_q = int(item.get("unit_price_q", 0))
-            qty = int(item.get("qty", 1))
         except (TypeError, ValueError):
             continue
+        qty = _line_qty(item)
         # Sem etiqueta declarada, a linha não tem desconto automático a bater:
         # etiqueta e preço cobrado são o mesmo número.
         list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
@@ -2478,8 +2534,12 @@ def _payload_line_discounts_q(payload: dict) -> int:
                 int(round(list_price_q * line_discount["value"] / 100)),
                 list_price_q,
             )
-        gain_per_unit = max(0, manual_per_unit - auto_per_unit)
-        total += min(gain_per_unit, unit_price_q) * max(0, qty)
+        gain_per_unit = min(max(0, manual_per_unit - auto_per_unit), unit_price_q)
+        # Por unidade, e o total da linha pela conta do kernel: com quantidade
+        # fracionária (kg) o desconto é a diferença entre os dois totais
+        # arredondados, não ``ganho × qty`` — que dá fração de centavo.
+        line_qty = Decimal(max(0, qty))
+        total += monetary_mult(line_qty, unit_price_q) - monetary_mult(line_qty, unit_price_q - gain_per_unit)
     return total
 
 

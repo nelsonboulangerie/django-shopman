@@ -14,6 +14,7 @@
 
 import type { POSCartItem } from "~/types/pos";
 import type { ActionAffordance } from "~/presentation/actions";
+import { isWeighedLine, lineUnits } from "~/presentation/weighed";
 
 /** Lines already sent to the kitchen. */
 export function firedCount(items: POSCartItem[]): number {
@@ -27,7 +28,10 @@ export function firedCount(items: POSCartItem[]): number {
  * depois (ver `kitchenSurplusQty`), e quem está no fogão não encolheu junto.
  */
 export function firedKitchenQty(items: POSCartItem[]): number {
-  return items.reduce((total, item) => total + (item.fired_qty ?? (item.fired ? item.qty : 0)), 0);
+  return items.reduce(
+    (total, item) => total + (isWeighedLine(item) ? (item.fired ? 1 : 0) : (item.fired_qty ?? (item.fired ? item.qty : 0))),
+    0,
+  );
 }
 
 /** "1 item" / "3 itens" — a unidade em que o balcão fala. */
@@ -70,7 +74,7 @@ export function kitchenHandoffNote(items: POSCartItem[]): string {
  * deixou de existir.
  */
 export function unfiredCount(items: POSCartItem[]): number {
-  return items.reduce((total, item) => total + (item.fired ? 0 : item.qty), 0);
+  return items.reduce((total, item) => total + (item.fired ? 0 : lineUnits(item)), 0);
 }
 
 /** Nada mais a enviar (e há ao menos uma linha). */

@@ -157,6 +157,9 @@ const {
   tenderExact,
   lineQty,
   addProduct,
+  weighedPrompt,
+  addWeighedProduct,
+  cancelWeighedPrompt,
   setQty,
   restoreItem,
   setLineNotes,
@@ -1376,6 +1379,14 @@ onBeforeUnmount(() => {
       :operator-name="activeOperator?.name || ''"
       @confirm="cancelRecentSale"
       @confirm-badge="cancelRecentSaleWithBadge"
+    />
+
+    <!-- Venda por peso: o tile do queijo fracionado pede a etiqueta. -->
+    <PosWeighedEntryDialog
+      :product="weighedPrompt"
+      :weight-entry-enabled="Boolean(pos?.weighed_weight_entry)"
+      @confirm="addWeighedProduct"
+      @cancel="cancelWeighedPrompt"
     />
 
     <PosMoveLinesDialog

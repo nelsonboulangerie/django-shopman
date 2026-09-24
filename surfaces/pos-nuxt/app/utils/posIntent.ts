@@ -1,5 +1,6 @@
 import type { POSCartItem, POSIntentCartState, POSPaymentTenderDraft, Action } from "~/types/pos";
 import { POS_SALE_INTENT_VERSION } from "~/generated/posContract";
+import { lineAmountQ, weighedIntent } from "~/presentation/weighed";
 
 export { POS_SALE_INTENT_VERSION };
 
@@ -12,7 +13,7 @@ export { formatBRL } from "../../../operator-kit/app/utils/money";
 
 
 export function cartTotalQ(items: POSCartItem[]): number {
-  return items.reduce((sum, item) => sum + item.price_q * item.qty, 0);
+  return items.reduce((sum, item) => sum + lineAmountQ(item.price_q, item), 0);
 }
 
 /**
@@ -126,6 +127,9 @@ export function buildPosSaleIntent(
       // prometia abatimento que a venda não dava.
       ...(typeof item.list_price_q === "number" ? { list_price_q: item.list_price_q } : {}),
       notes: item.notes,
+      // Linha pesada: vai o que o operador DIGITOU (etiqueta ou peso). O peso
+      // de verdade e o preço do quilo o servidor resolve pelo catálogo.
+      ...(item.weighed ? { weighed: weighedIntent(item.weighed) } : {}),
       ...(item.discount && item.discount.value > 0
         ? {
             discount: {

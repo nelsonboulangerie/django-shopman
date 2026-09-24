@@ -152,7 +152,8 @@ function action(overrides: Partial<Action> & { ref: string }): Action {
 function product(overrides: Partial<POSProductProjection> & { sku: string }): POSProductProjection {
   return {
     name: overrides.sku,
-    price_q: 0,
+    // Com preço: produto sem preço não vende (a busca pula, o tile fica inerte).
+    price_q: 100,
     price_display: "",
     collection_ref: "",
     collection_color: "",
@@ -329,6 +330,8 @@ describe("presentation/catalog — grid shaping", () => {
     expect(enterTargetProduct(products, "   ")).toBeNull();
     // Sem resultado algum → nada.
     expect(enterTargetProduct([], "xyz")).toBeNull();
+    // Sem preço no catálogo não vende: Enter pula como pula o esgotado.
+    expect(enterTargetProduct([product({ sku: "CAFE", name: "Café", price_q: 0 })], "cafe")).toBeNull();
   });
 
   it("o tile sem foto veste cor e ícone da coleção primária", () => {

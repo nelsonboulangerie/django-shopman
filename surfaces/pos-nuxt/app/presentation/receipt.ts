@@ -8,12 +8,15 @@ import type { POSCartItem, POSPaymentMethodProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import { lineTotalQ } from "~/presentation/lineDiscounts";
 import { methodLabel } from "~/presentation/payment";
+import { kgDisplay, lineAmountQ } from "~/presentation/weighed";
 
 export interface PosReceiptItem {
   name: string;
   qty: number;
   price_q: number;
   discountPct: number;
+  /** Peça pesada: o peso, em gramas. `price_q` é então o preço do quilo. */
+  weightG?: number;
 }
 
 export interface PosReceiptPayment {
@@ -46,6 +49,8 @@ export interface PosReceiptSnapshot {
 export interface ReceiptLineView {
   name: string;
   qty: number;
+  /** "2×" ou "0,312 kg". */
+  qtyLabel: string;
   unitDisplay: string;
   totalDisplay: string;
   discountPct: number;
@@ -68,10 +73,11 @@ export function cashLandedInDrawer(payments: readonly PosReceiptPayment[]): bool
 
 /** Net line total in cents, applying the per-line percentage discount. */
 export function receiptLineTotalQ(item: PosReceiptItem): number {
-  const gross = item.price_q * item.qty;
+  const line = { qty: item.qty, weighed: item.weightG ? { entry: "weight" as const, weight_g: item.weightG } : null };
+  const gross = lineAmountQ(item.price_q, line);
   if (!item.discountPct) return gross;
   const perUnit = Math.min(item.price_q, Math.round((item.price_q * item.discountPct) / 100));
-  return Math.max(0, gross - perUnit * item.qty);
+  return Math.max(0, lineAmountQ(item.price_q - perUnit, line));
 }
 
 /**
@@ -99,7 +105,8 @@ export function receiptLines(snap: PosReceiptSnapshot): ReceiptLineView[] {
   return snap.items.map((item) => ({
     name: item.name,
     qty: item.qty,
-    unitDisplay: formatBRL(item.price_q),
+    qtyLabel: item.weightG ? kgDisplay(item.weightG) : `${item.qty}×`,
+    unitDisplay: formatBRL(item.price_q) + (item.weightG ? "/kg" : ""),
     totalDisplay: formatBRL(receiptLineTotalQ(item)),
     discountPct: item.discountPct,
   }));

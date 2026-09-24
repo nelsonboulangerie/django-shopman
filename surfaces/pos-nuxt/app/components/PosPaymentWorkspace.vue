@@ -49,6 +49,7 @@ import {
   tenderLineView,
 } from "~/presentation/payment";
 import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
+import { lineQtyLabel, lineUnits } from "~/presentation/weighed";
 import {
   lineDiscountBadge,
   lineListTotalDisplay,
@@ -547,6 +548,7 @@ const summaryLines = computed(() =>
     lineId: item.line_id,
     name: item.name,
     qty: item.qty,
+    qtyLabel: lineQtyLabel(item),
     totalDisplay: formatBRL(lineTotalQ(item)),
     /** A etiqueta riscada, quando o que se cobra é menor. "" quando não há. */
     listDisplay: lineListTotalDisplay(item),
@@ -559,7 +561,7 @@ const summaryLines = computed(() =>
 const discountByScope = computed(
   () => !!props.review && (props.review.line_discount_q > 0 || props.review.order_discount_q > 0),
 );
-const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item.qty, 0));
+const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + lineUnits(item), 0));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
@@ -1675,7 +1677,7 @@ defineExpose({
             <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
-                  <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
+                  <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
                   <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
                   <span
                     v-if="line.listDisplay"

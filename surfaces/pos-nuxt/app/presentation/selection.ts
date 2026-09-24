@@ -8,6 +8,7 @@
 // agia sobre a linha errada. No policy here — only derivation from the cart
 // items + the selected set.
 import type { POSCartItem } from "~/types/pos";
+import { lineUnits } from "~/presentation/weighed";
 
 /**
  * ITENS, não linhas — a grandeza que o PDV inteiro fala.
@@ -18,7 +19,8 @@ import type { POSCartItem } from "~/types/pos";
  * conferia em voz alta pelo número errado com o cliente lendo o certo.
  */
 export function countUnits(items: readonly POSCartItem[]): number {
-  return items.reduce((sum, item) => sum + (item.qty || 0), 0);
+  // A peça pesada é UM item (0,312 kg de queijo não é "0 itens").
+  return items.reduce((sum, item) => sum + lineUnits(item), 0);
 }
 
 /** As linhas escolhidas, na ordem da comanda. */

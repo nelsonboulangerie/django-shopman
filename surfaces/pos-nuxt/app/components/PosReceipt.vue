@@ -40,7 +40,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
     <table class="w-full">
       <tbody>
         <tr v-for="(line, idx) in lines" :key="idx" class="align-top">
-          <td class="pr-1 tabular-nums">{{ line.qty }}×</td>
+          <td class="pr-1 tabular-nums">{{ line.qtyLabel }}</td>
           <td class="w-full">
             {{ line.name }}
             <span v-if="line.discountPct" class="block text-[10px]">Desconto −{{ line.discountPct }}%</span>
