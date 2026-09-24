@@ -221,6 +221,60 @@ Default novo, a confirmar com o dono: `natureza=bebida → sabor=doce` (peso 2),
 o espelho de "doce pede café". Migração `0069` troca a regra no ar só se ela
 ainda é a da `0030`; se o gestor mexeu, só acrescenta o portão.
 
+## Os critérios do dono, e o estresse que os mede (23/09/2026, 2ª rodada)
+
+Palavras dele: "a primeira frente de sugestão de complemento deve ser bebida
+com comida e comida com bebida"; bebida quente + doce e bebida gelada + salgado
+"são preferenciais, mas não devem excluir cruzamentos diferentes"; "bebida com
+bebida acho que não"; "se já tem salgado e já tem bebida, oferece um doce,
+claro!"; "um sistema bastante útil e inteligente, não algo desumano ou
+engessado".
+
+| Sacola | Frente (peso 3) | Preferência (soma) |
+|---|---|---|
+| só comida | bebida | salgado → gelada (+2) · doce → quente (+2) · temperatura ambiente (pão, folhado, doce) → quente (+1) |
+| só bebida | comida | quente → doce (+2) · gelada → salgado (+2) |
+| salgado + bebida | doce (3, +1 genérico, +1 "salgado pede doce") | — |
+| comida + bebida | doce (+1) | pão → acompanhamento (+2) |
+| doce + bebida, sem salgado | pão para levar (`sabor=neutro` + `tag: pao`, +1) | **pergunta aberta** |
+| salgado + doce + bebida | nada (a mesa está completa) | — |
+| sem bebida disponível | salgado → doce (+1) | — |
+
+Portões novos: `one_per_cart: [natureza=bebida]` (bebida com bebida, não) e
+**qualquer coleção em comum**, não só a primária (o Pain au Chocolat é Folhados
+e também Doces). Esquema novo: `when` aceita lista (a sacola tem cada uma),
+`when_absent` (a sacola não tem nenhuma), `suggest` aceita lista (o candidato
+é tudo isso). O histórico e o preço **desempatam**: somam no máximo 0,9, abaixo
+do menor degrau entre pesos, então nunca invertem uma preferência.
+
+Saíram: `quente → gelado` (era bebida com bebida) e `doce → tag: café` (a
+palavra-chave do seed é `cafe`, sem acento: o pareamento nunca casou).
+
+`propose_product_attributes`: a coleção secundária responde o **sabor** que a
+primária deixa em branco, quando as secundárias concordam (Pain au Chocolat →
+doce). Natureza e temperatura continuam da primária.
+
+**O estresse** (`shop/tests/test_suggestion_stress.py`): 396 sacolas geradas
+sobre um recorte fiel do seed (32 SKUs, coleções e palavras-chave do
+`seed.py`, atributos pelo próprio `propose_product_attributes`), histórico de
+mesa adversário, casos-limite (tudo esgotado, sem gelada, sem bebida alguma,
+sacola com tudo) e uma nota de atendente por sacola, dada por uma rubrica que
+não lê os atributos do motor (3 ideal · 2 aceitável · 1 estranho · 0 absurdo).
+
+| | 3 | 2 | 1 | 0 | média |
+|---|---|---|---|---|---|
+| antes (`main` com #1029) | 84 | 72 | 0 | 240 | 1,00 |
+| depois, cardápio como está no seed | 287 | 80 | 11 | 18 | 2,61 |
+| depois, Brioche Chocolat curado (`sabor=doce`) | 303 | 93 | 0 | 0 | 2,77 |
+
+Os 29 que sobram (11 com nota 1, 18 com nota 0) são **todos** com o Brioche
+Chocolat: ele mora só em Macios (vira `sabor=neutro`, como o pão de forma), sem
+palavra-chave, enquanto os irmãos recheados (Pain aux Raisins, Pain au Chocolat)
+também estão em Doces. É lacuna de dado, não de peso: com o sabor curado, zero.
+Os 2 que ficam são os cruzamentos quando a preferida está esgotada (o
+"não exclui" dele), a mercearia sozinha e o doce + bebida, que é a pergunta
+aberta.
+
 ## Referências
 
 - [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md) (a sugestão no chat é uma por conversa; desligada até F1)

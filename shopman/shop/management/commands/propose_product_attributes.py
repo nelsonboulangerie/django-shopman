@@ -12,7 +12,9 @@ sobrescrito — rodar de novo é seguro.
 
 A coleção PRIMÁRIA manda. Um croissant recheado é Folhados e também é Doces; a
 primeira aparição é onde ele mora (regra do dono, 02/09) e é dela que a proposta
-sai — senão a ordem alfabética decidiria o sabor do cardápio.
+sai — senão a ordem alfabética decidiria o sabor do cardápio. A secundária só
+responde o SABOR que a primária deixa em branco (Folhados não diz se o Pain au
+Chocolat é doce; Doces diz), e só quando as secundárias concordam.
 """
 
 from __future__ import annotations
@@ -161,5 +163,19 @@ class Command(BaseCommand):
             proposal["natureza"] = (
                 "acompanhamento" if keywords & ACCOMPANIMENT_KEYWORDS else "outro"
             )
+
+        # O SABOR que a primária não responde, uma secundária responde: o Pain
+        # au Chocolat mora em Folhados e TAMBÉM é Doces (dono, 02/09). Só o
+        # sabor, e só se as secundárias concordam — a primária continua mandando
+        # em natureza e temperatura, e duas respostas diferentes são dúvida, não
+        # dado.
+        if "sabor" not in proposal:
+            flavors = {
+                (COLLECTION_ATTRIBUTES.get(item.collection.ref) or {}).get("sabor")
+                for item in product.collection_items.all()
+                if not item.is_primary
+            } - {None}
+            if len(flavors) == 1:
+                proposal["sabor"] = flavors.pop()
 
         return proposal
