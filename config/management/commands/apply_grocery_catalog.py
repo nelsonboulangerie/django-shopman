@@ -101,14 +101,16 @@ class GroceryItem:
     #: por quilo, sem GTIN de embalagem (a etiqueta da balança é EAN interno
     #: prefixo 2, que não é o GTIN do produto).
     unit: str = "un"
-    #: De onde veio o GTIN, quando NÃO foi da NF-e nem da embalagem. Vai para
-    #: ``metadata['gtin_source']`` para que ninguém o tome por conferido.
+    #: De onde veio o GTIN, quando NÃO foi da NF-e. Vai para
+    #: ``metadata['gtin_source']``: quem lê sabe se é conferido ou palpite.
     gtin_source: str = ""
 
 
 #: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
 #: embalagem ainda (lição de 23/09: fontes podem errar juntas).
 WEB_UNCONFIRMED = "web, a confirmar na embalagem"
+#: O GTIN que o dono leu na embalagem — a fonte que decide.
+OWNER_PACKAGE = "embalagem, dono, 24/09"
 
 
 #: Revenda real da Mercearia. Nome e preço: Yooga (preço mais praticado);
@@ -182,12 +184,27 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel")),
     GroceryItem("MOSTARDA-DIJON-MAILLE-215", "Mostarda Dijon Maille 215g", 3500, "Maille",
                 "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon")),
-    # GTIN da web: Auchan PT, Covabra e Open Food Facts dizem 3036810207589; o
-    # Cosmos sozinho diz 3036810207558 (também de dígito válido). A embalagem
-    # decide.
+    # A embalagem (lida pelo dono em 24/09) confirma o 3036810207589 que
+    # Auchan PT, Covabra e Open Food Facts davam; o Cosmos (…7558) errava.
     GroceryItem("MOSTARDA-ANCIENNE-MAILLE-210", "Mostarda à l'Ancienne Maille 210g", 4200, "Maille",
                 "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
-                gtin_source=WEB_UNCONFIRMED),
+                gtin_source=OWNER_PACKAGE),
+    # ── Mirante ──
+    # É de 250 g, não 120 g (dono, lendo a embalagem, 24/09): o "120g" do Yooga
+    # era nome errado. GTIN-12 602883466111 (a embalagem traz 0602883466111),
+    # guardado como os outros Mirante. ⚠️ O preço é o da planilha, que era o do
+    # "120g" — pergunta aberta para o dono.
+    GroceryItem("CHURRASQUINHO-PIMENTA-MIRANTE-250", "Churrasquinho de Pimenta Mirante 250g", 2600,
+                "Mirante", "602883466111", "21039099", "1709200", 250,
+                ("churrasquinho", "pimenta", "conserva"), gtin_source=OWNER_PACKAGE),
+    # ── Chá Kãnfa em lata ──
+    # A lata de Chalosofia (dono, embalagem, 24/09). ⚠️ Na loja da Kãnfa o
+    # 7898708850477 aparece no kit "Lata + Pouch"; a embalagem é quem decide.
+    # O peso é o da planilha (50 g) — o dono não o leu na lata. NCM da NF-e da
+    # Kãnfa (0902.10.00); as irmãs no catálogo ainda estão em 0902.20.00.
+    GroceryItem("CHA-CHALOSOFIA-KANFA-L50", "Chalosofia Kãnfa — Lata 50g", 7300, "Kãnfa",
+                "7898708850477", "09021000", "1709700", 50, ("cha", "chalosofia", "lata", "kanfa"),
+                gtin_source=OWNER_PACKAGE),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
                 "Vito Bauducci", "7890203650002", "02101900", "1707904", 100, ("presunto", "cru", "fatiado")),
@@ -196,14 +213,8 @@ GROCERY: tuple[GroceryItem, ...] = (
 #: Mercearia da planilha que NÃO entra, e por quê. Entra quando o dado faltante
 #: chegar — basta mover a linha para :data:`GROCERY`.
 LEFT_OUT: dict[str, str] = {
-    "CHURRASQUINHO-PIMENTA-MIRANTE-120": (
-        "sem GTIN: a loja da Mirante vende só 135/190/330 g, sem EAN; ler a embalagem"
-    ),
-    "CHA-CHALOSOFIA-KANFA-L50": (
-        "sem GTIN: a loja da Kãnfa só tem a lata de 70 g, sem código; ler a lata"
-    ),
     "CHA-VITAL-KANFA-L60": (
-        "GTIN de fonte única: a loja da Kãnfa dá 7898708850743 para a 'Lata 70g'; ler a lata"
+        "o código lido na lata veio com 11 dígitos (78987088507); é o 7898708850743 da loja da Kãnfa?"
     ),
     "CHA-INTUICAO-KANFA-F250": "é INSUMO (lata de serviço do chá do bule), não produto de prateleira",
 }
@@ -267,6 +278,8 @@ YOOGA_NAMES: dict[str, str] = {
     "Mini Geléia Frutas Vermelhas St.Dalfour 28g": "GELEIA-FRUTASVERM-STDALFOUR-28",
     "Queijo Mini Brie Ile de France 25g": "QUEIJO-BRIE-ILEDEFRANCE-25",
     "Mostarda Àl' Ancienne Maille 210g -": "MOSTARDA-ANCIENNE-MAILLE-210",
+    # O "120g" do Yooga era nome errado: o pote é de 250 g (dono, 24/09).
+    "Churrasquinho de Pimenta Mirante 120g": "CHURRASQUINHO-PIMENTA-MIRANTE-250",
     "Mostarda Com Mel Maille 215g": "MOSTARDA-MEL-MAILLE-215",
     "Mostarda Dijon Maille 215g": "MOSTARDA-DIJON-MAILLE-215",
     "Mostarda Maille Dijon Originale 215g": "MOSTARDA-DIJON-MAILLE-215",  # nome do iFood
