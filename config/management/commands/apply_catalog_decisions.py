@@ -71,6 +71,9 @@ UNPUBLISH: tuple[tuple[str, str], ...] = (
     ("MA", "sai da loja, o produto fica cadastrado"),
     ("PORQ", "sai da loja, o produto fica cadastrado"),
     ("MELICE", "sai da loja, o produto fica cadastrado"),
+    # 24/09: vendeu 34 em 12 meses, contra 1.367 da de bacon. Fica cadastrada.
+    ("FOC", "Focaccia Cebola Roxa quase não sai; o produto fica cadastrado"),
+    ("FOCP", "a mini da Cebola Roxa acompanha a irmã: 16 vendas em 12 meses"),
 )
 
 

@@ -2490,6 +2490,14 @@ class Command(BaseCommand):
         # e do tipo que ninguém inventa. Nascem despublicados de propósito; o
         # portão de completude lá embaixo é justamente quem cobra isso, e ele
         # está certo. Publicar é um passo do gestor, depois de preencher a ficha.
+        # ⚠️ DECISÃO do dono, não consequência de ficha faltando. Estes saem da
+        # loja e FICAM no cadastro, e continuam fora mesmo depois de alguém
+        # preencher a ficha deles — que é o que os distingue do `sem_ficha`
+        # abaixo. A Focaccia Cebola Roxa vendeu 34 em 12 meses (a de bacon,
+        # 1.367) e a mini dela 16; ele decidiu em 24/09 tirá-las da vitrine sem
+        # apagá-las. Ver `apply_catalog_decisions.UNPUBLISH`.
+        fora_da_loja = {"FOC", "FOCP"}
+
         sem_ficha = {
             # Seguem todos aqui, mesmo os que herdaram ficha dos "do dia". O Chá
             # Hibisco e o Chá Tônica saíram em 24/09: têm ingredientes, tabela
@@ -2538,7 +2546,7 @@ class Command(BaseCommand):
                     "base_price_q": price_q,
                     "unit": unit,
                     "shelf_life_days": shelf_life,
-                    "is_published": sku not in sem_ficha,
+                    "is_published": sku not in sem_ficha and sku not in fora_da_loja,
                     "is_sellable": sellable,
                     "availability_policy": AvailabilityPolicy.PLANNED_OK,
                     "image_url": image,
