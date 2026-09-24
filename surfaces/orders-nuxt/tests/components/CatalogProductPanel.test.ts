@@ -60,6 +60,28 @@ it("informa rascunho à página para proteger navegação e descarte", async () 
   expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
 });
 
+describe("Comprado pronto", () => {
+  it("é gesto na hora, fora do rascunho, e o quadrado espera o servidor", async () => {
+    const w = panel();
+    await w.setProps({ roles: { purchasable: false, sellable: true, produced: false, used_in_recipe: true } });
+    const box = w.find('[data-testid="purchase-toggle"] input[type="checkbox"]');
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Vendável");
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Usado em receita");
+    await box.setValue(true);
+    expect(w.emitted("set-purchasable")).toEqual([[true]]);
+    // Ninguém confirmou ainda: o quadrado volta ao que o servidor diz.
+    expect((box.element as HTMLInputElement).checked).toBe(false);
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+  });
+
+  it("o que é produzido aqui não oferece o interruptor", async () => {
+    const w = panel();
+    await w.setProps({ roles: { purchasable: false, sellable: true, produced: true, used_in_recipe: false } });
+    expect(w.find('[data-testid="purchase-toggle"] input[type="checkbox"]').exists()).toBe(false);
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("É produzido aqui");
+  });
+});
+
 it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
   const w = panel();
   await w.setProps({ detail: { ...detail, allergens: ["leite"], field_sources: { allergens: "recipe" } } });

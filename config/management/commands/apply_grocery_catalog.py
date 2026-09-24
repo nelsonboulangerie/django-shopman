@@ -60,16 +60,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from shopman.shop.services.sku_records import ensure_purchase_record
+from shopman.shop.services.sku_records import ensure_purchase_record, sync_sale_listings
 
-STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
-POS_LISTING = "pdv"
-#: Canais onde o cliente compra de longe: só com foto.
-REMOTE_LISTINGS: tuple[str, ...] = (STOREFRONT_REF, "whatsapp", "ifood")
 COLLECTION_REF = "mercearia"
 
 
@@ -185,25 +180,15 @@ def _metadata(product) -> dict:
 
 
 def _sync_listings(product, price_q: int, report: dict) -> None:
-    """PDV sempre; canal remoto só com foto. Preço da listagem = preço da tabela."""
-    from shopman.offerman.models import Listing, ListingItem
+    """PDV sempre; canal remoto só com foto (``sku_records.sync_sale_listings``)."""
+    from django.core.exceptions import ValidationError
 
-    listings = {lst.ref: lst for lst in Listing.objects.filter(ref__in=(POS_LISTING, *REMOTE_LISTINGS))}
-    if POS_LISTING not in listings:
-        raise CommandError("A listagem do PDV (`pdv`) não existe neste banco: onde a casa venderia?")
-    wanted = [POS_LISTING] + ([ref for ref in REMOTE_LISTINGS if ref in listings] if product.image_url else [])
-    for ref in wanted:
-        _item, created = ListingItem.objects.get_or_create(
-            listing=listings[ref], product=product,
-            defaults={"price_q": price_q, "is_published": True, "is_sellable": True},
-        )
-        if created:
-            report["listed"].append((product.sku, ref))
-    if not product.image_url:
-        removed = ListingItem.objects.filter(product=product, listing__ref__in=REMOTE_LISTINGS)
-        for ref in removed.values_list("listing__ref", flat=True):
-            report["unlisted"].append((product.sku, ref))
-        removed.delete()
+    try:
+        listed, unlisted = sync_sale_listings(product, price_q)
+    except ValidationError as exc:
+        raise CommandError(exc.messages[0]) from exc
+    report["listed"].extend((product.sku, ref) for ref in listed)
+    report["unlisted"].extend((product.sku, ref) for ref in unlisted)
 
 
 def _ensure_collection(product, collection) -> None:

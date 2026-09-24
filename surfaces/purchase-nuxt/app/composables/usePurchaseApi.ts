@@ -11,6 +11,7 @@ import type {
   PurchaseReceiptRejectPayload,
   PurchaseRequestActionPayload,
   PurchaseResponse,
+  PurchaseSalePayload,
   PurchaseScanInvoicePayload,
 } from "~/types/purchase";
 
@@ -24,6 +25,8 @@ export const PURCHASE_API_ENDPOINTS = {
   upsertCost: `${PURCHASE_API_BASE}costs/`,
   upsertCostBatch: `${PURCHASE_API_BASE}costs/batch/`,
   setMinStock: `${PURCHASE_API_BASE}materials/min-stock/`,
+  setSale: (materialSku: string) =>
+    `${PURCHASE_API_BASE}materials/${encodeURIComponent(materialSku)}/sale/`,
   declareConversion: `${PURCHASE_API_BASE}conversions/`,
   count: `${PURCHASE_API_BASE}count/`,
   countConfirm: `${PURCHASE_API_BASE}count/confirm/`,
@@ -120,6 +123,14 @@ export function usePurchaseApi() {
     });
   }
 
+  async function setSale(materialSku: string, payload: PurchaseSalePayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.setSale(materialSku), {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
   async function fetchCount() {
     return $fetch<PurchaseCountResponse>(PURCHASE_API_ENDPOINTS.count, fetchOptions());
   }
@@ -143,6 +154,7 @@ export function usePurchaseApi() {
     upsertCost,
     upsertCostBatch,
     setMinStock,
+    setSale,
     declareConversion,
     fetchCount,
     confirmCount,

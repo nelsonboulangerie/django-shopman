@@ -15,6 +15,7 @@ import type {
   ProductDetailPatch,
   ProductEditConflict,
   ProductDetailProjection,
+  SkuRoles,
 } from "~/types/catalog";
 
 const props = defineProps<{
@@ -32,6 +33,9 @@ const props = defineProps<{
   initialTab?: string;
   conflict?: ProductEditConflict | null;
   error?: string;
+  // Selos do SKU e o gesto "Comprado pronto" — fora do rascunho: valem na hora.
+  roles?: SkuRoles | null;
+  purchaseBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -39,7 +43,30 @@ const emit = defineEmits<{
   save: [patch: ProductDetailPatch];
   "review-conflict": [keepDraft: boolean];
   "dirty-change": [dirty: boolean];
+  "set-purchasable": [enabled: boolean];
 }>();
+
+// O interruptor mostra o que o SERVIDOR diz: devolve a marca ao estado atual e
+// deixa o selo novo (ou a recusa) redesenhar. Sem isso a recusa "é produzido
+// aqui" deixaria o quadrado marcado, mentindo.
+function onPurchaseChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const wanted = input.checked;
+  input.checked = Boolean(props.roles?.purchasable);
+  emit("set-purchasable", wanted);
+}
+
+// Comprável · Vendável · Produzido · Usado em receita — só o que é verdade.
+const roleBadges = computed(() => {
+  const roles = props.roles;
+  if (!roles) return [];
+  return [
+    roles.purchasable && "Comprável",
+    roles.sellable && "Vendável",
+    roles.produced && "Produzido",
+    roles.used_in_recipe && "Usado em receita",
+  ].filter((badge): badge is string => Boolean(badge));
+});
 
 const TABS = [
   { id: "geral", label: "Geral" },
@@ -541,6 +568,29 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               <input v-model="draft.allows_next_day_sale" type="checkbox" class="size-4 rounded border-border" />
               Pode ser vendido no dia seguinte
             </label>
+
+            <!-- Comprado pronto: o cadastro de compra do MESMO SKU (mesmo estoque).
+                 Vale na hora, fora do "Salvar" — é interruptor, não rascunho. -->
+            <div class="space-y-2 rounded-lg border border-border p-3" data-testid="purchase-toggle">
+              <p :class="sectionClass">Compra</p>
+              <div v-if="roleBadges.length" class="flex flex-wrap gap-1">
+                <span v-for="badge in roleBadges" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{{ badge }}</span>
+              </div>
+              <p v-if="roles?.produced && !roles?.purchasable" class="text-xs text-muted-foreground">
+                É produzido aqui: o estoque entra pela Produção, não pela compra.
+              </p>
+              <label v-else class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox" class="size-4 rounded border-border"
+                  :checked="Boolean(roles?.purchasable)" :disabled="purchaseBusy || !roles"
+                  @change="onPurchaseChange"
+                />
+                Comprado pronto
+              </label>
+              <p v-if="roles?.purchasable" class="text-xs text-muted-foreground">
+                Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
+              </p>
+            </div>
 
             <div class="space-y-2 rounded-lg border border-border p-3">
               <p :class="sectionClass">Visibilidade</p>

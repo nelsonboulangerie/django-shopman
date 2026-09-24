@@ -546,7 +546,48 @@ def _detail_payload(product) -> dict:
         "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
+        # Selos derivados do SKU (Comprável · Vendável · Produzido · Usado em
+        # receita) — somente leitura; o gesto de compra é ``set_purchasable``.
+        "roles": _roles_payload(product.sku),
     }
+
+
+def _roles_payload(sku: str) -> dict[str, bool]:
+    from shopman.shop.services.sku_records import sku_roles
+
+    roles = sku_roles(sku)
+    return {
+        "purchasable": roles.purchasable,
+        "sellable": roles.sellable,
+        "produced": roles.produced,
+        "used_in_recipe": roles.used_in_recipe,
+    }
+
+
+@transaction.atomic
+def set_purchasable(sku: str, enabled: bool) -> dict:
+    """"Comprado pronto": liga/desliga o cadastro de compra do mesmo SKU.
+
+    Ligar cria (ou reativa) o ``Material`` do SKU, na mesma unidade — e recusa
+    o que tem ficha ativa, porque o que é produzido aqui entra pela Produção.
+    Desligar inativa o cadastro de compra, sem apagar custo nem histórico.
+    """
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.sku_records import ensure_purchase_record, stop_buying
+
+    product = Product.objects.filter(sku=sku).first()
+    if product is None:
+        raise CatalogError(f"Produto '{sku}' não encontrado.")
+    if not enabled:
+        stop_buying(sku)
+    else:
+        try:
+            ensure_purchase_record(product)
+        except ValidationError as exc:
+            raise CatalogError(exc.messages[0]) from exc
+    return _detail_payload(product)
 
 
 
@@ -554,7 +595,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources", "roles"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
