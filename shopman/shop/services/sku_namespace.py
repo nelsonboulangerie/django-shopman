@@ -1,101 +1,128 @@
-"""O namespace de SKU é um só, e o porteiro dele mora aqui.
+"""Um SKU é uma coisa só — e o porteiro da coerência dele mora aqui.
 
 ``offerman.Product.sku`` e ``buyman.Material.sku`` são únicos **cada um na sua
-tabela**; nada no banco impede o mesmo SKU nas duas. Quando isso acontece, todo
-caminho composto do orquestrador resolve o produto primeiro
-(``shopman/shop/adapters/catalog_backend.py``, ``shopman/shop/adapters/sku_validator.py``)
-e o insumo homônimo desaparece sem barulho: a ficha técnica passa a validar
-contra a unidade do produto, a disponibilidade responde pela política de venda —
-e, pior de tudo, o ledger do Stockman é indexado por SKU, então vender a garrafa
-consome a água da massa no mesmo quant.
+tabela**, e o mesmo SKU pode existir nas duas — é assim que se diz que uma
+coisa comprada também se vende (o pote de geleia, o queijo, o chá em lata):
+
+- o ``Material`` é o **cadastro de compra** do SKU (fornecedor, custo,
+  conversão, mínimo, pedido de compra);
+- o ``Product`` é o **cadastro de venda** do mesmo SKU (preço, listagens, foto).
+
+O estoque do Stockman é indexado por SKU, então os dois cadastros contam **o
+mesmo estoque**: o pote que entra pela nota é o pote que sai pelo PDV. Isso só
+fecha se os dois lados falarem **a mesma unidade** — "3" num lado não pode ser
+3 kg e no outro 3 potes. A regra do porteiro é, então, a de coerência:
+
+    mesmo SKU nos dois lados → mesma unidade (normalizada por
+    ``shopman.utils.units``: ``lt`` e ``l`` são a mesma unidade).
+
+Dois SKUs que são coisas diferentes (a água do filtro e a garrafa do balcão)
+têm SKUs diferentes, e esta regra não os alcança: ela não adivinha identidade,
+só recusa a incoerência de quem já disse que é a mesma coisa.
 
 Cores nunca se importam (ADR-001): nem o Buyman conhece o Offerman, nem o
-contrário. A colisão é, portanto, pergunta do **orquestrador** — que já é quem
-compõe os dois lados. O porteiro tem três camadas:
+contrário. A coerência é pergunta do **orquestrador**, que já compõe os dois
+lados. Duas camadas:
 
-1. ``refuse_sku_collision`` ligado em ``pre_save`` dos dois modelos
-   (``shopman/shop/apps.py``): recusa a colisão em **toda** porta (admin, shell,
-   seed, API), não só na do admin.
-2. ``check_sku_namespace_collision`` (``shopman/shop/checks.py``): varre o que já
-   está no banco e grita no boot. Warning, não Error — colisão preexistente não
-   pode trancar o dono para fora do próprio conserto.
-3. ``ComposedCatalogBackend.get_product``: se a colisão existir mesmo assim, a
-   precedência segue determinística (produto) mas é **anunciada** em log de erro.
+1. ``refuse_incoherent_unit`` ligado em ``pre_save`` dos dois modelos
+   (``shopman/shop/apps.py``): recusa em **toda** porta (admin, shell, seed,
+   API) o SKU ou a unidade que, entrando ou mudando, divergir do outro lado.
+2. ``check_sku_namespace_coherence`` (``shopman/shop/checks.py``, SHOPMAN_W015):
+   varre o que já está no banco e grita no boot. Warning, não Error — dado
+   preexistente não pode trancar o dono para fora do próprio conserto.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from django.core.exceptions import ValidationError
+from shopman.utils.units import normalize
 
 
-def _normalize(sku: str | None) -> str:
+def _normalize_sku(sku: str | None) -> str:
     return (sku or "").strip()
 
 
-def find_sku_collisions() -> list[str]:
-    """SKUs que existem ao mesmo tempo como produto vendável e como insumo."""
+def units_agree(first: str | None, second: str | None) -> bool:
+    """Os dois cadastros do mesmo SKU contam na mesma unidade?"""
+    return normalize(first) == normalize(second)
+
+
+@dataclass(frozen=True)
+class SkuIncoherence:
+    """Um SKU com cadastro de venda e de compra em unidades diferentes."""
+
+    sku: str
+    product_unit: str
+    material_unit: str
+
+    def __str__(self) -> str:
+        return f"{self.sku} (venda em {self.product_unit}, compra em {self.material_unit})"
+
+
+def find_sku_incoherences() -> list[SkuIncoherence]:
+    """SKUs com cadastro de venda e de compra que discordam da unidade."""
     from shopman.buyman.models import Material
     from shopman.offerman.models import Product
 
-    material_skus = set(Material.objects.values_list("sku", flat=True))
-    if not material_skus:
+    material_units = dict(Material.objects.values_list("sku", "unit"))
+    if not material_units:
         return []
-    return sorted(
-        Product.objects.filter(sku__in=material_skus).values_list("sku", flat=True)
-    )
+    incoherent = []
+    for sku, unit in Product.objects.filter(sku__in=material_units).values_list("sku", "unit").order_by("sku"):
+        if not units_agree(unit, material_units[sku]):
+            incoherent.append(SkuIncoherence(sku=sku, product_unit=unit, material_unit=material_units[sku]))
+    return incoherent
 
 
-def refuse_sku_collision(instance, *, other_model, other_label: str, field_label: str) -> None:
-    """Recusa um SKU que já pertence ao outro lado do namespace.
+def refuse_incoherent_unit(instance, *, other_model, this_label: str, other_label: str) -> None:
+    """Recusa o SKU (ou a unidade) que diverge do cadastro do outro lado.
 
-    Só olha quando o SKU está **entrando ou mudando**: linha antiga com colisão
-    preexistente continua salvável (é o único jeito de o dono consertá-la), e a
-    varredura do boot é quem cobra o conserto.
+    Só olha quando o SKU ou a unidade estão **entrando ou mudando**: linha
+    antiga já incoerente continua salvável em outros campos (é o único jeito de
+    o dono consertá-la), e a varredura do boot é quem cobra o conserto.
     """
-    sku = _normalize(getattr(instance, "sku", ""))
+    sku = _normalize_sku(getattr(instance, "sku", ""))
     if not sku:
         return
+    unit = getattr(instance, "unit", "")
 
     if instance.pk is not None:
-        previous = (
-            type(instance)
-            .objects.filter(pk=instance.pk)
-            .values_list("sku", flat=True)
-            .first()
-        )
-        if previous is not None and _normalize(previous) == sku:
+        previous = type(instance).objects.filter(pk=instance.pk).values_list("sku", "unit").first()
+        if previous is not None and _normalize_sku(previous[0]) == sku and units_agree(previous[1], unit):
             return
 
-    if not other_model.objects.filter(sku=sku).exists():
+    other_unit = other_model.objects.filter(sku=sku).values_list("unit", flat=True).first()
+    if other_unit is None or units_agree(unit, other_unit):
         return
 
     raise ValidationError({
-        "sku": (
-            f"O SKU '{sku}' já existe como {other_label}. "
-            f"{field_label} e {other_label} dividem um único namespace de SKU — "
-            "o estoque, a ficha técnica e o catálogo indexam por ele. "
-            "Escolha outro SKU."
+        "unit": (
+            f"O SKU '{sku}' já tem {other_label} em '{other_unit}', e aqui a unidade é '{unit}'. "
+            f"{this_label} e {other_label} do mesmo SKU contam o mesmo estoque, "
+            f"então falam a mesma unidade. Use '{other_unit}' aqui, ou corrija o outro lado primeiro."
         )
     })
 
 
-def refuse_material_sku_taken_by_product(sender, instance, **kwargs) -> None:
+def refuse_material_unit_incoherent_with_product(sender, instance, **kwargs) -> None:
     from shopman.offerman.models import Product
 
-    refuse_sku_collision(
+    refuse_incoherent_unit(
         instance,
         other_model=Product,
-        other_label="produto vendável (Offerman)",
-        field_label="Insumo (Buyman)",
+        this_label="O cadastro de compra",
+        other_label="cadastro de venda",
     )
 
 
-def refuse_product_sku_taken_by_material(sender, instance, **kwargs) -> None:
+def refuse_product_unit_incoherent_with_material(sender, instance, **kwargs) -> None:
     from shopman.buyman.models import Material
 
-    refuse_sku_collision(
+    refuse_incoherent_unit(
         instance,
         other_model=Material,
-        other_label="insumo (Buyman)",
-        field_label="Produto vendável (Offerman)",
+        this_label="O cadastro de venda",
+        other_label="cadastro de compra",
     )

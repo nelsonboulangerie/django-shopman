@@ -41,8 +41,9 @@ WP; apareceu ao medir o alpha):
    ocorrências por arquivo: elas NÃO são reescritas aqui.
 4. **Fichas do Craftsman** — ``output_sku``/``input_sku`` entram no cascade; o
    relatório conta quantas linhas cada um arrasta.
-5. **Colisão no namespace compartilhado** com o insumo do Buyman
-   (``shop/services/sku_namespace.py``): alvo que já é produto ou insumo recusa.
+5. **Alvo que já tem outro cadastro**: alvo que já é produto recusa; alvo que
+   já é cadastro de compra também — juntar os dois cadastros num SKU é decisão,
+   não rename (``shop/services/sku_namespace.py``).
 6. **JSON que o cascade não alcança** — payload de evento, ``snapshot`` de
    pedido, ``content`` de anúncio. Quase tudo é história e fica como está; o que
    for estado vivo (anúncio por publicar, pedido aberto) sai nomeado no relatório.
@@ -413,9 +414,10 @@ class Command(BaseCommand):
                 )
             if novo in insumos:
                 recusas.append(
-                    f"{antigo} → {novo}: o código {novo} já é insumo do Buyman. "
-                    "Produto e insumo dividem um namespace só — o estoque indexa por SKU "
-                    "(ver shopman/shop/services/sku_namespace.py)."
+                    f"{antigo} → {novo}: o código {novo} já é cadastro de compra do Buyman. "
+                    "Renomear para ele juntaria os dois cadastros num SKU só — um estoque "
+                    "só. Se são a mesma coisa, isso é decisão: ligue o cadastro de compra "
+                    "no produto (ver shopman/shop/services/sku_records.py)."
                 )
 
         return recusas
@@ -714,15 +716,17 @@ class Command(BaseCommand):
             self.stdout.write(f"  {qs.count():>5}  {rotulo}")
 
     def _secao_namespace(self) -> None:
-        """5) A colisão com o insumo, medida e não suposta."""
-        from shopman.shop.services.sku_namespace import find_sku_collisions
+        """5) SKU com cadastro de venda e de compra em unidades diferentes."""
+        from shopman.shop.services.sku_namespace import find_sku_incoherences
 
-        colisoes = find_sku_collisions()
-        self.stdout.write("\n5) Namespace compartilhado com o insumo do Buyman:")
-        if colisoes:
-            self.stdout.write(self.style.ERROR(f"  {len(colisoes)} colisão(ões): {', '.join(colisoes)}"))
+        incoerentes = find_sku_incoherences()
+        self.stdout.write("\n5) Cadastro de venda e de compra do mesmo SKU:")
+        if incoerentes:
+            self.stdout.write(self.style.ERROR(
+                f"  {len(incoerentes)} com unidade divergente: {'; '.join(str(i) for i in incoerentes)}"
+            ))
         else:
-            self.stdout.write("  zero colisão.")
+            self.stdout.write("  zero unidade divergente.")
 
     def _secao_json(self, antigos: list[str]) -> None:
         """6) O JSON que guarda SKU e que o cascade não alcança."""

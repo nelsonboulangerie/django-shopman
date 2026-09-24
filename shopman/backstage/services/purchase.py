@@ -57,23 +57,17 @@ class PurchaseError(Exception):
 
 @dataclass(frozen=True)
 class ResolvedReceiptLine:
-    """Uma linha conferida do recebimento — de insumo OU de mercadoria de revenda.
+    """Uma linha conferida do recebimento — sempre de um cadastro de compra.
 
-    A entrada nasceu só para insumo (``buyman.Material``), mas a casa também
-    compra pronto para vender: chá Kãnfa, geleia, queijo. Esses vivem no
-    catálogo do Offerman, não na tabela de insumo, e inventar um insumo-sombra
-    para eles criaria dois estoques do mesmo pote, divergentes no primeiro dia.
-
-    Então a linha aponta para um dos dois, nunca para os dois, e o resto do
-    recebimento fala por ``sku`` / ``name`` / ``shelf_life_days``, que ambos
-    têm. O livro de estoque já é agnóstico: a produção credita produto vendável
-    pela mesma função, mudando só o tipo do movimento.
+    Tudo que a casa compra tem ``buyman.Material``: o insumo da massa e também
+    a mercadoria que ela revende (chá, geleia, queijo). Quando a coisa comprada
+    também se vende, o produto do catálogo tem **o mesmo SKU** e o mesmo
+    estoque, então creditar o SKU do Material é creditar a prateleira da venda
+    (ver shopman/shop/services/sku_namespace.py).
     """
 
     line_id: str
     material: Any
-    #: Produto do catálogo, quando a linha é mercadoria de revenda.
-    product: Any
     conversion: Any | None
     purchase_qty: Decimal
     base_qty: Decimal
@@ -86,24 +80,16 @@ class ResolvedReceiptLine:
     checked: bool
 
     @property
-    def is_material(self) -> bool:
-        return self.material is not None
-
-    @property
-    def item(self):
-        return self.material if self.material is not None else self.product
-
-    @property
     def sku(self) -> str:
-        return str(self.item.sku)
+        return str(self.material.sku)
 
     @property
     def name(self) -> str:
-        return str(getattr(self.item, "name", "") or self.sku)
+        return str(self.material.name or self.sku)
 
     @property
     def shelf_life_days(self) -> int | None:
-        return getattr(self.item, "shelf_life_days", None)
+        return self.material.shelf_life_days
 
 
 #: Escopo da trava de recibo na `IdempotencyKey` do orderman.
@@ -320,17 +306,14 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
                 purchase_receipt_note=note,
                 purchase_line_note=line.note,
                 purchase_line_id=line.line_id,
-                **_receipt_item_stamp(line),
+                purchase_material_sku=line.sku,
                 purchase_qty=str(line.purchase_qty),
                 purchase_base_qty=str(line.base_qty),
                 purchase_total_cost_q=line.total_cost_q,
                 purchase_unit_cost_q=line.unit_cost_q,
                 **_converted_via(line),
             )
-            # O custo por fornecedor é tabela de insumo (FK para Material). Na
-            # revenda o custo fica no movimento (`purchase_unit_cost_q`), que é
-            # de onde a margem se calcula; tabela própria é WP à parte.
-            if line.total_cost_q > 0 and line.is_material:
+            if line.total_cost_q > 0:
                 _upsert_supplier_cost(
                     material=line.material,
                     supplier=supplier,
@@ -1247,7 +1230,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
             field=f"lines.{index}.checked",
         )
 
-    material, product = _resolve_receipt_item(raw, index=index)
+    material = _resolve_receipt_material(raw, index=index)
 
     purchase_qty = _decimal(raw.get("purchaseQty", raw.get("purchase_qty")))
     if purchase_qty <= 0:
@@ -1257,23 +1240,13 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
             field=f"lines.{index}.purchaseQty",
         )
 
-    conversion = None
-    if material is not None:
-        conversion = _resolve_conversion(
-            raw.get("conversionId") or raw.get("conversion_id"),
-            material=material,
-            supplier=supplier,
-            field=f"lines.{index}.conversionId",
-        )
-    elif raw.get("conversionId") or raw.get("conversion_id"):
-        # Conversão de unidade de compra é cadastro de insumo (saco → kg).
-        # Mercadoria de revenda chega na unidade em que se vende.
-        raise PurchaseError(
-            "Mercadoria de revenda entra na unidade de venda, sem conversão.",
-            code="conversion_not_for_product",
-            field=f"lines.{index}.conversionId",
-        )
-    if material is not None and bool(raw.get("requiresConversion") or raw.get("requires_conversion")) and conversion is None:
+    conversion = _resolve_conversion(
+        raw.get("conversionId") or raw.get("conversion_id"),
+        material=material,
+        supplier=supplier,
+        field=f"lines.{index}.conversionId",
+    )
+    if bool(raw.get("requiresConversion") or raw.get("requires_conversion")) and conversion is None:
         raise PurchaseError(
             "Defina a conversão da unidade de compra antes de confirmar a entrada.",
             code="conversion_required",
@@ -1286,8 +1259,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
     expiry_date = parse_date(expiry_raw) if expiry_raw else None
     if expiry_raw and expiry_date is None:
         raise PurchaseError("Validade inválida.", code="expiry_invalid", field=f"lines.{index}.expiryDate")
-    item = material if material is not None else product
-    if getattr(item, "shelf_life_days", None) is not None and expiry_date is None:
+    if material.shelf_life_days is not None and expiry_date is None:
         raise PurchaseError(
             "Item perecível precisa de validade para rastrear lote.",
             code="expiry_required",
@@ -1303,7 +1275,6 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
     return ResolvedReceiptLine(
         line_id=str(raw.get("id") or f"line-{index + 1}"),
         material=material,
-        product=product,
         conversion=conversion,
         purchase_qty=purchase_qty,
         base_qty=base_qty,
@@ -1317,86 +1288,40 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
     )
 
 
-def is_resale_product(product) -> bool:
-    """A casa COMPRA este produto pronto?
+def _resolve_receipt_material(raw: dict[str, Any], *, index: int):
+    """O cadastro de compra da linha.
 
-    Marca explícita em ``Product.metadata['purchase']['resale']`` (ver
-    docs/reference/data-schemas.md). Não se infere: o perfil fiscal `resale`
-    quer dizer substituição tributária, não "comprado para revender", e a
-    ausência de ficha diz apenas que ninguém cadastrou a ficha ainda.
-    """
-    metadata = product.metadata if isinstance(product.metadata, dict) else {}
-    purchase = metadata.get("purchase")
-    return bool(isinstance(purchase, dict) and purchase.get("resale"))
-
-
-def _resolve_receipt_item(raw: dict[str, Any], *, index: int):
-    """Devolve ``(material, product)`` — exatamente um deles preenchido.
-
-    Produto feito na casa não entra por aqui: o que o forno produz é creditado
-    pela Produção, e aceitar a mesma peça pelas duas portas dobraria o estoque
-    sem ninguém perceber. O sinal de "a casa faz" é a ficha ativa.
+    O que o forno produz não entra por aqui: o estoque dele é creditado pela
+    Produção, e aceitar a mesma peça pelas duas portas dobraria o estoque sem
+    ninguém perceber. O sinal de "a casa faz" é a ficha ativa com aquele SKU
+    de saída — vale para qualquer SKU, tenha ou não cadastro de venda.
     """
     Material = apps.get_model("buyman", "Material")
-    Product = apps.get_model("offerman", "Product")
     Recipe = apps.get_model("craftsman", "Recipe")
 
     material_sku = str(raw.get("materialSku") or raw.get("material_sku") or "").strip()
-    product_sku = str(raw.get("productSku") or raw.get("product_sku") or "").strip()
-
-    if material_sku and product_sku:
+    if not material_sku:
         raise PurchaseError(
-            "A linha aponta para insumo e para produto ao mesmo tempo; escolha um.",
-            code="receipt_line_ambiguous",
-            field=f"lines.{index}.productSku",
-        )
-    if not material_sku and not product_sku:
-        raise PurchaseError(
-            "Escolha o insumo ou a mercadoria de revenda desta linha.",
+            "Escolha o item do Compras desta linha.",
             code="receipt_item_required",
             field=f"lines.{index}.materialSku",
         )
-
-    if material_sku:
-        material = Material.objects.filter(sku=material_sku).first()
-        if not material:
-            raise PurchaseError("Insumo não encontrado.", code="material_not_found", field=f"lines.{index}.materialSku")
-        if not material.is_active:
-            raise PurchaseError(
-                "Insumo inativo não pode receber entrada.",
-                code="material_inactive",
-                field=f"lines.{index}.materialSku",
-            )
-        return material, None
-
-    product = Product.objects.filter(sku=product_sku).first()
-    if not product:
-        raise PurchaseError("Produto não encontrado.", code="product_not_found", field=f"lines.{index}.productSku")
-    if not is_resale_product(product):
+    material = Material.objects.filter(sku=material_sku).first()
+    if not material:
+        raise PurchaseError("Item não encontrado no Compras.", code="material_not_found", field=f"lines.{index}.materialSku")
+    if not material.is_active:
         raise PurchaseError(
-            f"{product.name} não está marcado como mercadoria de revenda no Catálogo.",
-            code="product_not_resale",
-            field=f"lines.{index}.productSku",
+            f"{material.name} está inativo no Compras e não pode receber entrada.",
+            code="material_inactive",
+            field=f"lines.{index}.materialSku",
         )
-    if Recipe.objects.filter(output_sku=product.sku, is_active=True).exists():
+    if Recipe.objects.filter(output_sku=material.sku, is_active=True).exists():
         raise PurchaseError(
-            f"{product.name} é feito na casa: o estoque dele entra pela Produção, não pela compra.",
-            code="product_is_produced_here",
-            field=f"lines.{index}.productSku",
+            f"{material.name} é produzido aqui: o estoque dele entra pela Produção, não pela compra.",
+            code="material_is_produced_here",
+            field=f"lines.{index}.materialSku",
         )
-    return None, product
-
-
-def _receipt_item_stamp(line: ResolvedReceiptLine) -> dict[str, Any]:
-    """O carimbo de QUEM entrou, no movimento.
-
-    ``purchase_material_sku`` continua existindo para insumo — é o que a
-    trilha antiga lê. Revenda carimba ``purchase_product_sku``, e o
-    discriminador evita adivinhação de quem ler depois.
-    """
-    if line.is_material:
-        return {"purchase_item_kind": "material", "purchase_material_sku": line.sku}
-    return {"purchase_item_kind": "product", "purchase_product_sku": line.sku}
+    return material
 
 
 def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
@@ -1503,14 +1428,10 @@ def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) ->
     freshest truth — but never silently: the swap goes to the structured log.
     """
     learned = {
-        line.invoice_product_code: (
-            {
-                "materialSku": line.sku,
-                "conversionLabel": line.conversion.label if line.conversion else "",
-            }
-            if line.is_material
-            else {"productSku": line.sku, "conversionLabel": ""}
-        )
+        line.invoice_product_code: {
+            "materialSku": line.sku,
+            "conversionLabel": line.conversion.label if line.conversion else "",
+        }
         for line in lines
         if line.invoice_product_code
     }
@@ -1525,8 +1446,8 @@ def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) ->
         current = mapping.get(code)
         if current == entry:
             continue
-        current_sku = _mapped_material_sku(current) or _mapped_product_sku(current)
-        new_sku = entry.get("materialSku") or entry.get("productSku", "")
+        current_sku = _mapped_material_sku(current)
+        new_sku = entry["materialSku"]
         if current_sku and current_sku != new_sku:
             logger.warning(
                 "purchase.invoice_product_map_overwrite",
@@ -1565,14 +1486,6 @@ def _mapped_material_sku(entry: Any) -> str:
         return str(entry).strip()
     if isinstance(entry, dict):
         for key in ("materialSku", "material_sku", "sku", "material"):
-            if entry.get(key):
-                return str(entry[key]).strip()
-    return ""
-
-
-def _mapped_product_sku(entry: Any) -> str:
-    if isinstance(entry, dict):
-        for key in ("productSku", "product_sku"):
             if entry.get(key):
                 return str(entry[key]).strip()
     return ""

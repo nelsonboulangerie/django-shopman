@@ -287,7 +287,7 @@ describe("purchase presentation", () => {
     expect(preview?.line.invoiceEan).toBe("7891234567895");
     expect(preview?.warnings).toContainEqual({
       key: "missing-material",
-      label: "Escolha o insumo ou a mercadoria desta linha",
+      label: "Escolha o item desta linha",
       tone: "block",
     });
     expect(preview?.suggestion).toBeNull();
@@ -634,7 +634,7 @@ describe("purchase presentation", () => {
     expect(preview?.invoiceSummary).toBe("4 SC · 100 KG na NF · cód 7891");
     // Uma instrucao por linha, na propria linha: o painel listava dez pilulas
     // iguais sem dizer de qual item.
-    expect(preview?.nextStep).toBe("Escolha o insumo ou a mercadoria desta linha");
+    expect(preview?.nextStep).toBe("Escolha o item desta linha");
     // A ocorrencia e do operador e nasce vazia.
     expect(preview?.line.lineNote).toBe("");
   });

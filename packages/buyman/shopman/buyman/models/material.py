@@ -4,11 +4,18 @@ from shopman.refs.fields import RefField
 
 
 class Material(models.Model):
-    """Item master de um insumo (material de compra).
+    """O cadastro de compra de um SKU — tudo que a casa compra tem um.
 
-    Metadado canônico de um insumo não-vendável — nome, unidade-base, validade
-    padrão. Distinto do catálogo de venda do Offerman (só produtos vendáveis):
-    aqui mora o lado montante (insumos consumidos na produção).
+    Nome, unidade-base e validade padrão do que chega pela porta dos fundos:
+    a farinha da massa e também o pote de geleia que vai para a prateleira.
+    Ter ``Material`` é o que faz um SKU ser **comprável** (fornecedor, custo,
+    conversão, mínimo e pedido penduram aqui), mesmo antes de ter fornecedor.
+
+    Vender é outra decisão, e mora em outro pacote: quando a coisa comprada
+    também se vende, o catálogo de venda tem um produto com **o mesmo SKU** —
+    e o mesmo estoque, porque o ledger indexa por SKU. Este pacote não conhece o
+    de venda; quem garante que os dois cadastros falem a mesma unidade é o
+    orquestrador que compõe os dois.
     """
 
     class Unit(models.TextChoices):

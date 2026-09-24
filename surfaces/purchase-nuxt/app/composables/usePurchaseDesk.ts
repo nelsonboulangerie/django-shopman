@@ -9,7 +9,6 @@ import type {
   CountItem,
   Material,
   MaterialConversion,
-  ResaleProduct,
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptMode,
@@ -110,10 +109,6 @@ export function usePurchaseDesk() {
   // resposta real chegava o mesmo painel virava 0. Nada mudara nos dados: o
   // primeiro número nunca fora real. Dado inventado não é estado de partida.
   const materials = useState<Material[]>("purchase-materials", () => []);
-  // Mercadoria de revenda: a outra metade do que chega numa nota. Lista curta e
-  // declarada no Catálogo — quem não está marcado como revenda não aparece aqui
-  // nem entra pela compra.
-  const resaleProducts = useState<ResaleProduct[]>("purchase-resale-products", () => []);
   const suppliers = useState<Supplier[]>("purchase-suppliers", () => []);
   const conversions = useState<MaterialConversion[]>("purchase-conversions", () => []);
   const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => []);
@@ -228,9 +223,7 @@ export function usePurchaseDesk() {
   const invoiceStatus = computed(() => invoiceProbe(invoiceInput.value));
   const receiptLinePreviews = computed(() =>
     receiptLines.value
-      .map((line) =>
-        receiptLinePreview(line, receiptMode.value, materials.value, conversions.value, resaleProducts.value),
-      )
+      .map((line) => receiptLinePreview(line, receiptMode.value, materials.value, conversions.value))
       .filter((preview): preview is ReceiptLinePreview => Boolean(preview)),
   );
   // A lista da entrada: uma linha por item, com o estado dela. É por ela que o
@@ -502,7 +495,6 @@ export function usePurchaseDesk() {
 
   const projection = computed<PurchaseProjection>(() => ({
     materials: materials.value,
-    resaleProducts: resaleProducts.value,
     suppliers: suppliers.value,
     conversions: conversions.value,
     costs: costs.value,
@@ -552,15 +544,9 @@ export function usePurchaseDesk() {
         )?.id ?? "";
     }
     receiptLines.value = receiptLines.value.map((line) => {
-      const productSku =
-        line.productSku && resaleProducts.value.some((product) => product.sku === line.productSku) ?
-          line.productSku
-        : "";
-      const materialSku =
-        productSku ? ""
-        : !line.materialSku || materials.value.some((material) => material.sku === line.materialSku) ?
-          line.materialSku
-        : firstMaterialSku;
+      const materialSku = !line.materialSku || materials.value.some((material) => material.sku === line.materialSku) ?
+        line.materialSku
+      : firstMaterialSku;
       const conversionAllowed =
         line.conversionId &&
         conversions.value.some(
@@ -573,11 +559,7 @@ export function usePurchaseDesk() {
       return {
         ...line,
         materialSku,
-        productSku,
-        conversionId:
-          productSku ? null
-          : conversionAllowed ? line.conversionId
-          : defaultReceiptConversionId(materialSku),
+        conversionId: conversionAllowed ? line.conversionId : defaultReceiptConversionId(materialSku),
       };
     });
   }
@@ -589,7 +571,6 @@ export function usePurchaseDesk() {
   // que o operador acabou de receber ou digitar.
   function applyProjection(next: PurchaseProjection, options: { receipt?: boolean } = {}) {
     materials.value = copy(next.materials);
-    resaleProducts.value = copy(next.resaleProducts ?? []);
     suppliers.value = copy(next.suppliers);
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
@@ -723,34 +704,9 @@ export function usePurchaseDesk() {
   function setReceiptLineMaterial(lineId: string, materialSku: string) {
     updateReceiptLine(lineId, {
       materialSku,
-      // Escolher insumo desfaz a escolha de revenda, e vice-versa: a linha
-      // aponta para um só, e deixar o outro preenchido faria o servidor recusar
-      // a entrada inteira por ambiguidade.
-      productSku: "",
       conversionId: defaultReceiptConversionId(materialSku),
       checked: false,
     });
-  }
-
-  function setReceiptLineProduct(lineId: string, productSku: string) {
-    updateReceiptLine(lineId, {
-      productSku,
-      materialSku: "",
-      // Revenda chega na unidade em que se vende: não há embalagem para
-      // converter, e o servidor recusa conversão em linha de produto.
-      conversionId: null,
-      requiresConversion: false,
-      checked: false,
-    });
-  }
-
-  /** A linha aponta para insumo ou para mercadoria? Decide quem a tela acionou. */
-  function setReceiptLineItem(lineId: string, sku: string) {
-    if (resaleProducts.value.some((product) => product.sku === sku)) {
-      setReceiptLineProduct(lineId, sku);
-      return;
-    }
-    setReceiptLineMaterial(lineId, sku);
   }
 
   function acceptReceiptLineSuggestion(lineId: string) {
@@ -1083,7 +1039,6 @@ export function usePurchaseDesk() {
     noteConversionId,
     noteCostInput,
     materials,
-    resaleProducts,
     suppliers,
     conversions,
     costs,
@@ -1162,8 +1117,6 @@ export function usePurchaseDesk() {
     setReceiptMode,
     setReceiptSupplier,
     setReceiptLineMaterial,
-    setReceiptLineProduct,
-    setReceiptLineItem,
     acceptReceiptLineSuggestion,
     acceptReceiptLineConversion,
     acceptReceiptLineInvoiceAxes,

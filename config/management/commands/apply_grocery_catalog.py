@@ -26,9 +26,9 @@ oficial do catálogo, ``_gtin_is_valid``). Quem falta alguma dessas fica em
   gravá-lo declararia uma ST que a casa não pratica hoje. O CEST da nota fica
   na tabela, para quando o contador disser se algum destes é ST.
 - Marca e GTIN em ``metadata['social']`` (o que o feed e a página declaram) e
-  ``metadata['purchase']['resale'] = True`` — é a marca que deixa o Compras
-  apontar a linha da NF-e para o produto (o mecanismo vigente; ver
-  ``apply_product_brands``).
+  o **cadastro de compra** do mesmo SKU (``buyman.Material``): é ele que torna
+  o item comprável, e é por ele que o Compras recebe a NF-e (ver
+  ``shopman/shop/services/sku_records.py``).
 - Coleção ``mercearia``.
 - **Despublicado** (``is_published=False``) e vendável, como os chás Kãnfa:
   alérgenos, tabela nutricional e ingredientes são dado da embalagem, que
@@ -63,6 +63,8 @@ from dataclasses import dataclass, replace
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+
+from shopman.shop.services.sku_records import ensure_purchase_record
 
 STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
 POS_LISTING = "pdv"
@@ -251,11 +253,6 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
         report["conflicts"].append((item.sku, "ncm", fiscal["ncm"], item.ncm))
     metadata["fiscal"] = fiscal
 
-    purchase = dict(metadata.get("purchase") or {})
-    if purchase.get("resale") is not True:
-        purchase["resale"] = True
-        lines.append("compra: mercadoria de revenda")
-    metadata["purchase"] = purchase
     product.metadata = metadata
 
     social = get_social_attributes(product)
@@ -277,6 +274,9 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
         product.save()
         if not is_new:
             report["updated"].append((item.sku, lines))
+    _material, purchasable = ensure_purchase_record(product)
+    if purchasable and not is_new:
+        report["updated"].append((item.sku, ["compra: cadastro de compra do mesmo SKU"]))
     product.keywords.add(COLLECTION_REF, *item.keywords)
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)

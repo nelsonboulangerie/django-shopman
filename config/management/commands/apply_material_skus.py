@@ -35,10 +35,10 @@ Aqui mora a tabela, o ensaio e as recusas.
 
 **O ensaio prova cinco coisas antes de qualquer gravação:**
 
-1. **Colisão no namespace compartilhado.** ``Product.sku`` e ``Material.sku``
-   dividem um endereço só (``shop/services/sku_namespace.py``), e a colisão é
-   recusada em ``pre_save`` nos dois modelos. Alvo que já é produto recusa aqui,
-   antes de o ``pre_save`` estourar no meio da travessia.
+1. **Alvo que já é produto.** ``Product.sku`` e ``Material.sku`` podem ser o
+   mesmo SKU quando a coisa comprada também se vende
+   (``shop/services/sku_namespace.py``) — mas isso é juntar dois cadastros, uma
+   decisão, e rename não decide por ninguém. Alvo que já é produto recusa aqui.
 2. **Campo de SKU único onde os DOIS valores já existem no banco.** A varredura
    é mais larga que a do ``apply_product_skus``: além de ``unique=True``, ela
    olha ``unique_together`` e ``UniqueConstraint``, porque o
@@ -417,10 +417,10 @@ class Command(BaseCommand):
                 continue  # já renomeado ou ausente: o relatório conta como pulado
             if novo in produtos:
                 recusas.append(
-                    f"{antigo} → {novo}: o SKU {novo} já é produto vendável do catálogo. "
-                    "Insumo e produto dividem um namespace só — o ledger indexa por SKU, "
-                    "e vender a garrafa consumiria a água da massa no mesmo quant "
-                    "(ver shopman/shop/services/sku_namespace.py)."
+                    f"{antigo} → {novo}: o SKU {novo} já é produto do catálogo. "
+                    "Renomear para ele juntaria o insumo e o produto num SKU só — um "
+                    "estoque só. Se são a mesma coisa, isso é decisão: ligue o cadastro "
+                    "de compra no produto (ver shopman/shop/services/sku_records.py)."
                 )
             if novo in insumos and novo not in EXCLUSOES:
                 recusas.append(
@@ -742,14 +742,17 @@ class Command(BaseCommand):
             ))
 
     def _secao_namespace(self) -> None:
-        from shopman.shop.services.sku_namespace import find_sku_collisions
+        """5) SKU com cadastro de venda e de compra em unidades diferentes."""
+        from shopman.shop.services.sku_namespace import find_sku_incoherences
 
-        colisoes = find_sku_collisions()
-        self.stdout.write("\n5) Namespace compartilhado com o produto vendável:")
-        if colisoes:
-            self.stdout.write(self.style.ERROR(f"  {len(colisoes)} colisão(ões): {', '.join(colisoes)}"))
+        incoerentes = find_sku_incoherences()
+        self.stdout.write("\n5) Cadastro de venda e de compra do mesmo SKU:")
+        if incoerentes:
+            self.stdout.write(self.style.ERROR(
+                f"  {len(incoerentes)} com unidade divergente: {'; '.join(str(i) for i in incoerentes)}"
+            ))
         else:
-            self.stdout.write("  zero colisão.")
+            self.stdout.write("  zero unidade divergente.")
 
     def _secao_codigo(self, antigos: list[str]) -> None:
         from django.conf import settings
