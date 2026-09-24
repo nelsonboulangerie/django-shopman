@@ -1837,8 +1837,10 @@ class Command(BaseCommand):
             # ── Bebidas · Geladas ──
             ("FRAP", "Frappé", "Batido gelado: café, chocolate ou frutas vermelhas", 1800, "un", None, True,
              unsplash("photo-1719953107038-da34352e407e"), 400, ""),
-            ("AGUA-MINERAL-PRATA-310", "Água", "Água mineral, com ou sem gás", 600, "un", None, True,
-             unsplash("photo-1553564552-02656d6a2390"), 500, ""),
+            # Sem gás; a com gás é outro SKU (outro GTIN), criado pelo
+            # `apply_grocery_catalog` (AGUA-GAS-PRATA-310).
+            ("AGUA-MINERAL-PRATA-310", "Água Mineral Prata 310ml", "Água mineral sem gás", 600, "un", None, True,
+             unsplash("photo-1553564552-02656d6a2390"), 310, ""),
             # ── Bebidas · Especialidades na torneira ──
             ("SDLA", "Soda de Laranja", "Soda artesanal de laranja, feita na casa", 1400, "un", None, True,
              unsplash("photo-1598830853058-3474f6a66003"), 300, ""),
@@ -2287,7 +2289,7 @@ class Command(BaseCommand):
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
-                "approx_dimensions": "garrafa 500 ml",
+                "approx_dimensions": "garrafa 310 ml",
             },
             "SDLA": {
                 "allergens": [],
@@ -2443,9 +2445,9 @@ class Command(BaseCommand):
             ),
             "AGUA-MINERAL-PRATA-310": "22011000",
             # Mercearia (revenda/produção própria — validar com o contador).
-            "TPND": "20059900",
+            "TPND": "20057000",
             "RTAT": "20059900",
-            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069020",
+            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069030",
             # ── Linha Chai Kãnfa (19/08) ──
             # ⚠️ Sem isto os 12 cairiam no default de PANIFICAÇÃO (1905.90.90),
             # que é o NCM errado para chá.

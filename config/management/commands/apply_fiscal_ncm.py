@@ -97,6 +97,7 @@ HOUSE_CEST_BY_NCM: dict[str, str] = {
     "19059090": "1706200",
     "19059010": "1706000",
     "20059900": "1709200",
+    "20057000": "1709200",
 }
 
 
@@ -112,6 +113,17 @@ HOUSE_CEST_BY_NCM: dict[str, str] = {
 #: 1905.90.20 é "biscoitos e bolachas ... cream cracker e água e sal" (17.056.00)
 #: e o 17.053.00 é biscoito de 1905.31.00. Viennoiserie é 1905.90.90; o pão de
 #: forma, 1905.90.10.
+#: NCM corrigido de produto de revenda e da despensa (auditoria do alpha,
+#: 24/09/2026). O CEST continua o mesmo em todos.
+NCM_CORRECTIONS: tuple[tuple[str, str, str], ...] = (
+    ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069030",
+     "Camembert é queijo de massa mole, como o Mini Brie (0406.90.30), não 0406.90.20"),
+    ("GELEIA-DAMASCO-STDALFOUR-28", "20079910",
+     "a mini de damasco é a mesma geleia da de 284 g, no mesmo NCM"),
+    ("TPND", "20057000", "tapenade é azeitona preparada (2005.70.00); o CEST 17.092.00 continua"),
+)
+
+
 BREAD_NCM: tuple[tuple[str, str, str], ...] = tuple(
     (sku, "19059090", "1905.90.10 é pão de forma; este é outro pão (1905.90.90)")
     for sku in (
@@ -175,14 +187,14 @@ class Command(BaseCommand):
 
         produtos = {
             p.sku: p
-            for p in Product.objects.filter(sku__in=[s for s, _n, _p in (*NCM_REVISADO, *BREAD_NCM)])
+            for p in Product.objects.filter(sku__in=[s for s, _n, _p in (*NCM_REVISADO, *BREAD_NCM, *NCM_CORRECTIONS)])
         }
 
         trocas: list[tuple[str, str, str, str, str]] = []
         ausentes: list[str] = []
         cests: list[tuple[str, str, str]] = []
         with transaction.atomic():
-            for sku, ncm, porque in (*NCM_REVISADO, *BREAD_NCM):
+            for sku, ncm, porque in (*NCM_REVISADO, *BREAD_NCM, *NCM_CORRECTIONS):
                 produto = produtos.get(sku)
                 if produto is None:
                     ausentes.append(sku)
