@@ -8829,16 +8829,38 @@ class Command(BaseCommand):
             identification="DEMO-COURIER-READER", defaults={"label": "Maquininha de demonstração"},
         )
         equipment_ref = f"card_machine:{device.ref}"
+        # Entrega a domicílio sai com NFC-e (a cobrança na porta a emite na
+        # conclusão), e a SEFAZ exige CPF e endereço completo do destinatário.
+        # Sem os dois, o seed plantava uma nota recusada e um alerta crítico
+        # ``fiscal_emit_failed`` a cada reseed — defeito que a casa nunca teve.
+        # Por isso o pedido é de telefone pelo PDV (o único lugar que pede o CPF
+        # da nota) e o endereço é o cadastrado do cliente.
+        home = CustomerAddress.objects.filter(customer=customer, is_default=True).first()
+        if home is None:
+            return
+        structured = {
+            "formatted_address": home.formatted_address,
+            "route": home.route,
+            "street_number": home.street_number,
+            "complement": home.complement,
+            "neighborhood": home.neighborhood,
+            "city": home.city,
+            "state_code": home.state_code,
+            "postal_code": home.postal_code,
+        }
         base_data = {
             "customer_ref": customer.ref,
             "customer": {"name": customer.name, "phone": customer.phone or ""},
             "fulfillment_type": "delivery",
-            "delivery_address": "Rua das Flores, 120 - Centro",
+            "delivery_address": home.formatted_address,
+            "delivery_address_structured": {k: v for k, v in structured.items() if v},
+            # CPF sintético de dígito verificador válido: dado de demonstração.
+            "fiscal": {"issue_document": True, "tax_id": "12345678909"},
         }
 
         settled = self._make_qa_order(
             ref="DLV-ACERTADA",
-            channel_ref=STOREFRONT_REF,
+            channel_ref="pdv",
             status=Order.Status.READY,
             items=[self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}},
@@ -8858,7 +8880,7 @@ class Command(BaseCommand):
 
         on_the_road = self._make_qa_order(
             ref="DLV-NARUA",
-            channel_ref=STOREFRONT_REF,
+            channel_ref="pdv",
             status=Order.Status.READY,
             items=[self._qa_line(baguete, 3), self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 10000}},

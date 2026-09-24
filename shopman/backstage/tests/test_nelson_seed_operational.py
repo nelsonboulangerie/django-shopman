@@ -484,6 +484,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert qa_report.ready_count == len(qa_report.checks)
     assert not missing
 
+    # As entregas da casa saem com NFC-e de entrega a domicílio: o payload que o
+    # seed produz passa na mesma validação do adapter (CPF + endereço completo).
+    # Sem isso cada reseed plantava um `fiscal_emit_failed` crítico no Gestor.
+    from shopman.shop.adapters.fiscal_focusnfe import _home_delivery_fields
+    from shopman.shop.services import fiscal
+
+    for ref in ("DLV-ACERTADA", "DLV-NARUA"):
+        payload = fiscal.build_emission_payload(Order.objects.get(ref=ref))
+        assert _home_delivery_fields({}, payload["customer"], payload["delivery"]), ref
+    assert not OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref__startswith="DLV-").exists()
+
 
 @pytest.mark.django_db
 def test_nelson_seed_keeps_the_day_in_order_when_seeded_at_dawn(monkeypatch):
