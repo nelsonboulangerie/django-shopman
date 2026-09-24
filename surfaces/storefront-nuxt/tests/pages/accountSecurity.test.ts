@@ -19,7 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import { setResponseStatus } from 'h3'
+import { getRequestHeaders, setResponseHeader, setResponseStatus } from 'h3'
 
 import SecurityPage from '~/pages/conta/seguranca.vue'
 import type { AccountDeviceProjection } from '~/types/shopman'
@@ -66,9 +66,27 @@ let servedDevices: AccountDeviceProjection[] = []
 let privacyAvailable: boolean | undefined
 let deleteReply: Reply
 let stepUpReply: Reply
+// `null` = o servidor entrega o arquivo; um `Reply` = ele recusa.
+let exportReply: Reply | null = null
 let deleteCalls = 0
+let exportCalls = 0
 let requestCodeCalls = 0
 let assignedUrl = ''
+// A chave de idempotência de cada POST de exclusão, na ordem. Ela existe para a retomada
+// continuar a MESMA solicitação; uma chave nova por tentativa abriria uma segunda.
+let deleteKeys: string[] = []
+// Todo blob que a tela mandou o navegador salvar.
+let savedFiles: Blob[] = []
+
+/** ⚠️ O harness entrega os cabeçalhos com a grafia ORIGINAL, sem normalizar: o
+ * `Idempotency-Key` que a tela manda não é achado por `getRequestHeader(event,
+ * 'idempotency-key')`, e a leitura volta vazia — o que faz uma asserção de "mesma chave"
+ * passar comparando dois nadas. */
+function header (event: unknown, name: string): string {
+  const headers = getRequestHeaders(event as never)
+  const found = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())
+  return String(found?.[1] || '')
+}
 
 function reply (event: unknown, r: Reply) {
   if (r.status && r.status !== 200) setResponseStatus(event as never, r.status)
@@ -91,7 +109,17 @@ registerEndpoint('/api/v1/account/step-up/', {
 })
 registerEndpoint('/api/v1/account/delete/', {
   method: 'POST',
-  handler: (event) => { deleteCalls += 1; return reply(event, deleteReply) }
+  handler: (event) => {
+    deleteCalls += 1
+    deleteKeys.push(header(event, 'Idempotency-Key'))
+    return reply(event, deleteReply)
+  }
+})
+registerEndpoint('/api/v1/account/export/', (event) => {
+  exportCalls += 1
+  if (exportReply) return reply(event, exportReply)
+  setResponseHeader(event, 'content-disposition', 'attachment; filename="shopman-dados-cliente.json"')
+  return { customer: { name: 'Ana' } }
 })
 
 const mounted: Array<{ unmount: () => void }> = []
@@ -136,6 +164,17 @@ async function fillCode () {
   await flushPromises()
 }
 
+/** Do gesto "Exportar meus dados" até o pedido: step-up → código → Confirmar. */
+async function runExport (page: Awaited<ReturnType<typeof openSecurity>>) {
+  await buttonBy(page, 'Exportar meus dados')!.trigger('click')
+  await settle()
+
+  await fillCode()
+
+  await buttonBy(body(), 'Confirmar')!.trigger('click')
+  await settle()
+}
+
 /** Do gesto "Excluir minha conta" até o POST: ack → step-up → código → Confirmar. */
 async function runDeletion (page: Awaited<ReturnType<typeof openSecurity>>) {
   await buttonBy(page, 'Excluir minha conta')!.trigger('click')
@@ -157,18 +196,29 @@ beforeEach(async () => {
   document.cookie = 'csrftoken=testtoken'
   navigateToMock.mockReset()
   deleteCalls = 0
+  exportCalls = 0
   requestCodeCalls = 0
   assignedUrl = ''
+  deleteKeys = []
+  savedFiles = []
   privacyAvailable = true
   deleteReply = { body: { ok: true, receipt_ref: 'rcpt-1', replayed: false } }
   stepUpReply = { body: { ok: true } }
-  // A exportação é uma NAVEGAÇÃO do navegador (download), não um fetch: o que prova
-  // que ela partiu é o endereço que a tela mandou o navegador abrir.
+  exportReply = null
+  // A exportação BUSCA o arquivo e o entrega como blob. O `location.assign` continua
+  // espionado de propósito: ele é o controle NEGATIVO da regressão que esta tela tinha —
+  // navegar levava o titular para fora da tela de Segurança, e a recusa do servidor
+  // aparecia como JSON cru no navegador.
   Object.defineProperty(window, 'location', {
     configurable: true,
     writable: true,
     value: { href: 'http://localhost/conta/seguranca', assign: (url: string) => { assignedUrl = String(url) } }
   })
+  URL.createObjectURL = ((file: Blob) => {
+    savedFiles.push(file)
+    return 'blob:shopman-teste'
+  }) as typeof URL.createObjectURL
+  URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL
   const { useShopSession } = await import('~/composables/useShopSession')
   const session = useShopSession()
   session.reset()
@@ -272,6 +322,46 @@ describe('conta/seguranca — excluir a conta', () => {
     expect(body().text()).toContain(bloqueio)
     expect(navigateToMock).not.toHaveBeenCalled()
   })
+
+  it('retomar depois dos 10 minutos OFERECE confirmar a identidade, e conclui', async () => {
+    // O beco: a tentativa falha, a mensagem convida a voltar depois, e a marca do step-up
+    // vale 600 s. Quem voltava 10 minutos depois e clicava "Continuar" recebia 403 — e a
+    // tela não oferecia jeito NENHUM de confirmar, porque o único caminho para o step-up
+    // era justamente o ramo que a retomada pulava. Todo clique repetia a mesma recusa.
+    const recusa = (
+      'Não conseguimos concluir a exclusão agora. Nenhuma exclusão parcial foi '
+      + 'confirmada, e nossa equipe já foi avisada. Tente novamente em alguns minutos.'
+    )
+    deleteReply = { status: 503, body: { detail: recusa, error: { code: 'account_deletion_incomplete' } } }
+    const page = await openSecurity([device()])
+
+    await runDeletion(page)
+    expect(body().text()).toContain(recusa)
+
+    // 10 minutos depois: a sessão ainda é a mesma, mas a identidade não está mais fresca.
+    deleteReply = {
+      status: 403,
+      body: { detail: 'Confirme sua identidade para continuar.', code: 'step_up_required' }
+    }
+    await buttonBy(body(), 'Continuar')!.trigger('click')
+    await settle()
+
+    expect(deleteCalls).toBe(2)
+    expect(requestCodeCalls).toBe(2) // código novo: a tela reabriu o step-up sozinha
+    expect(body().findAll('input[data-slot="pin-input-input"]')).toHaveLength(6)
+
+    deleteReply = { body: { ok: true, receipt_ref: 'rcpt-1', replayed: false } }
+    await fillCode()
+    await buttonBy(body(), 'Confirmar')!.trigger('click')
+    await settle()
+
+    expect(deleteCalls).toBe(3)
+    expect(navigateToMock).toHaveBeenCalledWith('/')
+    // A retomada continua a MESMA solicitação: chave nova abriria uma segunda exclusão.
+    expect(deleteKeys).toHaveLength(3)
+    expect(new Set(deleteKeys).size).toBe(1)
+    expect(deleteKeys[0]).not.toBe('')
+  })
 })
 
 describe('conta/seguranca — dados e privacidade', () => {
@@ -281,16 +371,67 @@ describe('conta/seguranca — dados e privacidade', () => {
     await buttonBy(page, 'Exportar meus dados')!.trigger('click')
     await flushPromises()
 
-    // O código sai na hora em que o diálogo abre; o download ainda não partiu.
+    // O código sai na hora em que o diálogo abre; o pedido do arquivo ainda não partiu.
     expect(requestCodeCalls).toBe(1)
     expect(body().text()).toContain('Confirme sua identidade')
-    expect(assignedUrl).toBe('')
+    expect(exportCalls).toBe(0)
 
     await fillCode()
     await buttonBy(body(), 'Confirmar')!.trigger('click')
     await settle()
 
-    expect(assignedUrl).toContain('/api/v1/account/export/')
+    expect(exportCalls).toBe(1)
+    // O arquivo é entregue pela própria tela, e não por uma navegação que a substitui.
+    expect(savedFiles).toHaveLength(1)
+    expect(await savedFiles[0]!.text()).toContain('Ana')
+    expect(assignedUrl).toBe('')
+  })
+
+  it('exportação recusada avisa NA TELA, e não larga o titular num JSON cru', async () => {
+    // 503 `account_export_incomplete` — o servidor não conseguiu montar o arquivo, e
+    // escreveu uma frase para o titular ler. Enquanto o download era `location.assign`,
+    // essa frase saía da tela de Segurança e virava JSON no navegador: a página TEM um
+    // alerta feito para isto, e este caminho nunca conseguia preenchê-lo.
+    const recusa = 'Não conseguimos preparar seus dados agora. Tente novamente em alguns minutos.'
+    exportReply = {
+      status: 503,
+      body: { detail: recusa, error: { code: 'account_export_incomplete' }, receipt_ref: 'rcpt-7' }
+    }
+    const page = await openSecurity([device()])
+
+    await runExport(page)
+
+    expect(exportCalls).toBe(1)
+    expect(page.text()).toContain(recusa)
+    expect(page.text()).toContain('Não foi possível exportar')
+    // Nada foi salvo, e a pessoa continua na tela.
+    expect(savedFiles).toHaveLength(0)
+    expect(assignedUrl).toBe('')
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('exportação com identidade expirada oferece confirmar de novo, e então baixa', async () => {
+    // A marca do step-up vale 600 s. Quem deixa a tela aberta e clica depois disso recebe
+    // 403 — e precisa de um caminho de volta, não de uma frase sem gesto.
+    exportReply = {
+      status: 403,
+      body: { detail: 'Confirme sua identidade para continuar.', code: 'step_up_required' }
+    }
+    const page = await openSecurity([device()])
+
+    await runExport(page)
+
+    expect(exportCalls).toBe(1)
+    expect(requestCodeCalls).toBe(2) // código novo: o step-up foi reaberto
+    expect(body().findAll('input[data-slot="pin-input-input"]')).toHaveLength(6)
+
+    exportReply = null
+    await fillCode()
+    await buttonBy(body(), 'Confirmar')!.trigger('click')
+    await settle()
+
+    expect(savedFiles).toHaveLength(1)
+    expect(page.text()).not.toContain('Confirme sua identidade para continuar.')
   })
 
   it('sem recibo assinável, nenhuma das duas ações é oferecida', async () => {
