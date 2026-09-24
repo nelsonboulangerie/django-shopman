@@ -29,7 +29,7 @@ mutante quando a sessão está no principal, e pede confirmação em `Edit`/`Wri
 bloqueia até em modo bypass. Dentro do seu worktree nada é bloqueado. Se a trava te
 barrar, a saída é entrar no worktree, **nunca contornar**.
 
-### Quatro armadilhas do repositório compartilhado
+### Armadilhas do repositório (e do banco) compartilhado
 
 - **`git add` no principal só aceita ARQUIVO nomeado.** `git add -A`, `git add .`,
   `git add -u` e `git add <diretório>` varrem arquivo de outra frente para dentro do seu
@@ -51,6 +51,12 @@ barrar, a saída é entrar no worktree, **nunca contornar**.
 - **PR em `CONFLICTING` não dispara workflow de `pull_request`.** A ausência de check
   parece "ainda não começou" e na verdade é "bloqueado", e você espera por algo que nunca
   vai rodar. A verdade sai em `gh pr view <N> --json mergeable`.
+- **`pg_dump`/`pg_restore` do alpha só pela conexão DIRETA (porta `25060`, banco
+  `shopman`), nunca pelo pool (`25061`, `shopman-staging-pool`).** O pool é PgBouncer em
+  modo transaction: o `pg_dump` deixa `search_path=''` grudado na conexão de servidor, e
+  o próximo cliente a herdá-la (o `directive-worker`) cai com `relation
+  "orderman_directive" does not exist`. Aconteceu três vezes (22/09, 23/09, 24/09), todas
+  logo depois de um agente copiar o banco pelo pool.
 
 E uma sobre testes: **a worktree não testa `packages/*` sozinha.** O `.venv` da raiz tem
 editable installs apontando para a árvore principal, então rodar teste no worktree exige

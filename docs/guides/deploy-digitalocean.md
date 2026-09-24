@@ -112,6 +112,11 @@ ASGI/Daphne ele pode acumular conexões ociosas e causar `remaining connection
 slots are reserved`. Sem pool, use `DATABASE_CONN_MAX_AGE=0`. Com pool em modo
 transaction, mantenha `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`.
 
+O pool é só para a aplicação. **Cópia do banco (`pg_dump`/`pg_restore`) vai pela
+conexão direta** (porta `25060`, banco `shopman`), nunca pelo pool (`25061`): em modo
+transaction o `pg_dump` deixa `search_path=''` numa conexão de servidor que o próximo
+cliente herda, e o `directive-worker` passa a não achar `orderman_directive`.
+
 Para exercitar gateways sandbox reais, adicione também:
 
 ```env
