@@ -53,12 +53,14 @@ def _make_recipe_with_items(sku: str = "PAO", batch_size: Decimal = Decimal("10"
                 "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2,
             },
         },
+        unit="kg",
     )
     RecipeItem.objects.create(
         recipe=recipe,
         input_sku="AGUA",
         quantity=Decimal("0.650"),
         meta={"label": "Água", "nutrition": {"energy_kcal": 0}},
+        unit="kg",
     )
     RecipeItem.objects.create(
         recipe=recipe,
@@ -68,6 +70,7 @@ def _make_recipe_with_items(sku: str = "PAO", batch_size: Decimal = Decimal("10"
             "label": "Sal",
             "nutrition": {"sodium_mg": 38758, "energy_kcal": 0},
         },
+        unit="kg",
     )
     return recipe
 
@@ -237,10 +240,12 @@ class TestFillNutritionFromRecipe:
         RecipeItem.objects.create(
             recipe=massa, input_sku="FARINHA", quantity=Decimal("1.000"),
             meta={"label": "Farinha de trigo T45"},
+            unit="kg",
         )
         RecipeItem.objects.create(
             recipe=massa, input_sku="MANTEIGA", quantity=Decimal("0.200"),
             meta={"label": "Manteiga francesa"},
+            unit="kg",
         )
 
         recheio = Recipe.objects.create(
@@ -250,14 +255,17 @@ class TestFillNutritionFromRecipe:
         RecipeItem.objects.create(
             recipe=recheio, input_sku="ACUCAR-CRISTAL", quantity=Decimal("0.300"),
             meta={"label": "Açúcar"},
+            unit="kg",
         )
         RecipeItem.objects.create(
             recipe=recheio, input_sku="FARINHA", quantity=Decimal("0.100"),
             meta={"label": "Farinha de trigo T45"},
+            unit="kg",
         )
         RecipeItem.objects.create(
             recipe=recheio, input_sku="MANTEIGA", quantity=Decimal("0.050"),
             meta={"label": "Manteiga francesa"},
+            unit="kg",
         )
 
         acabado = Recipe.objects.create(
@@ -266,9 +274,11 @@ class TestFillNutritionFromRecipe:
         )
         RecipeItem.objects.create(
             recipe=acabado, input_sku="MASSA-TESTE", quantity=Decimal("1.000"),
+            unit="kg",
         )
         RecipeItem.objects.create(
             recipe=acabado, input_sku="RECHEIO-TESTE", quantity=Decimal("0.500"),
+            unit="kg",
         )
 
         fill_nutrition_from_recipe(product)
@@ -378,6 +388,7 @@ class TestFillNutritionFromRecipe:
         RecipeItem.objects.create(
             recipe=recipe, input_sku="FARINHA", quantity=Decimal("1.0"),
             meta={"label": "Farinha"},
+            unit="kg",
         )
 
         fill_nutrition_from_recipe(product)
@@ -419,6 +430,7 @@ class TestRecipeSignal:
                 "label": "Farinha",
                 "nutrition": {"energy_kcal": 364, "proteins_g": 10},
             },
+            unit="kg",
         )
         # Touch the recipe to fire the signal after items exist.
         recipe.save()

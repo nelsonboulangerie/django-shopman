@@ -47,6 +47,7 @@ def _item(recipe: Recipe, input_sku: str, *, allergens=None, diet=None, qty="1.0
         meta.update(IngredientDietary(allergens=tuple(allergens or ()), diet=diet or "vegan").to_meta())
     return RecipeItem.objects.create(
         recipe=recipe, input_sku=input_sku, quantity=Decimal(qty), meta=meta,
+        unit="kg",
     )
 
 

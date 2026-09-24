@@ -59,6 +59,7 @@ def _ficha_do_campagne() -> Recipe:
                 "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2,
             },
         },
+        unit="kg",
     )
     return recipe
 

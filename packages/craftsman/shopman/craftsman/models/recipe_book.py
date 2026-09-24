@@ -123,7 +123,8 @@ class RecipeVersion(models.Model):
     yield_unit = models.CharField(
         max_length=5,
         choices=YieldUnit.choices,
-        default=YieldUnit.KILOGRAM,
+        # Grama é a unidade-base da casa (ADR-024, emenda de 24/09/2026).
+        default=YieldUnit.GRAM,
         verbose_name=_("Unidade do rendimento"),
     )
     formula = models.JSONField(default=dict, blank=True, verbose_name=_("Fórmula"))

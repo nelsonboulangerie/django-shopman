@@ -273,7 +273,8 @@ class RecipeItem(models.Model):
     unit = models.CharField(
         max_length=20,
         choices=Unit.choices,
-        default="kg",
+        # Grama é a unidade-base da casa (ADR-024, emenda de 24/09/2026).
+        default="g",
         verbose_name=_("Unidade"),
     )
     sort_order = models.PositiveSmallIntegerField(
