@@ -65,10 +65,14 @@ function resumo (): string {
  * Mudou em 23/09/2026 SEM a versão mudar, e é a única vez que isso é legítimo: a
  * régua passou a ignorar marcação. O resumo novo foi calculado com a régua nova
  * sobre o texto do `main` ANTES da troca de apresentação e sobre o texto depois
- * dela — os dois deram este mesmo valor, que é a prova de que nenhuma palavra mudou.
+ * dela deram o mesmo valor (`54ef09fa038daa8a`), a prova de que nenhuma palavra mudou.
+ *
+ * 2026-09-24: reescrita das duas páginas para ficarem curtas e inequívocas, com uma
+ * mudança de mérito no §7 dos termos (produto com problema: a loja analisa e resolve,
+ * dentro do CDC). Versão nova, resumo novo.
  */
-const RESUMO_PUBLICADO = '54ef09fa038daa8a'
-const VERSAO_PUBLICADA = '2026-09-23'
+const RESUMO_PUBLICADO = '05f087b194e46795'
+const VERSAO_PUBLICADA = '2026-09-24'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {
