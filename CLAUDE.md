@@ -338,7 +338,10 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   onde não custe exatidão. Os oito defeitos com nome (rótulo que mente · verbo genérico ·
   frase incompleta · grandezas somadas · zero como código secreto · nota de rodapé do
   engenheiro · jargão e colisão · prolixo), com antes/depois reais e a ordem da varredura,
-  em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md).
+  em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md). Os vocabulários
+  fechados — objeto, atos e grandezas do PDV, da Produção/KDS e da loja, mais os gestos que
+  têm um nome só nos nove apps e a lista do que já foi decidido e não se reabre — em
+  [docs/reference/suite-vocabulary.md](docs/reference/suite-vocabulary.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
   as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
