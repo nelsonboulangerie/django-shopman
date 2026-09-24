@@ -4715,14 +4715,20 @@ class Command(BaseCommand):
         # aqui reprecifica toda a lista sozinho.
         from shopman.buyman.models import MaterialConversion
 
+        # A procedência do fator vai como DADO, não como comentário: até hoje só
+        # a salsicha dizia de onde veio o número, e dizia aqui, onde a tela não
+        # lê. Fator que a casa nunca pesou e fator que o dono declarou valiam o
+        # mesmo no banco — e sem distingui-los não há como saber qual calibrar.
+        Source = MaterialConversion.Source
         counting_conversions = {
-            "OVOS": ("ovos", Decimal("0.050")),
-            "LIMAO": ("limões", Decimal("0.100")),
+            # 50 g é o ovo médio do mercado, não uma pesagem da casa.
+            "OVOS": ("ovos", Decimal("0.050"), Source.ESTIMATE),
+            "LIMAO": ("limões", Decimal("0.100"), Source.ESTIMATE),
             # 50 g/un (dono, 26/08). A mini do hot dog é a MESMA salsicha
             # cortada ao meio — meio insumo, nunca um SKU próprio.
-            "SALSICHA-VIENNA": ("salsichas", Decimal("0.050")),
+            "SALSICHA-VIENNA": ("salsichas", Decimal("0.050"), Source.OWNER),
         }
-        for sku, (label, factor) in counting_conversions.items():
+        for sku, (label, factor, source) in counting_conversions.items():
             material = Material.objects.filter(sku=sku).first()
             if material is None:
                 continue
@@ -4733,10 +4739,15 @@ class Command(BaseCommand):
                 defaults={
                     "to_base_factor": factor,
                     "kind": MaterialConversion.Kind.APPROXIMATE,
+                    "source": source,
                     "is_active": True,
                 },
             )
-        self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
+        pendentes = sum(1 for *_x, source in counting_conversions.values() if source == Source.ESTIMATE)
+        self.stdout.write(
+            f"  ✅ {len(counting_conversions)} conversões de contagem"
+            + (f" ({pendentes} por calibrar)" if pendentes else "")
+        )
 
         # Equivalências APROXIMADAS de volume: os líquidos contam em kg porque a
         # bancada os pesa, mas a NOTA fala em litro. Sem o fator declarado a
@@ -4774,6 +4785,9 @@ class Command(BaseCommand):
                 defaults={
                     "to_base_factor": factor,
                     "kind": MaterialConversion.Kind.APPROXIMATE,
+                    # Densidade de tabela, não pesagem da casa: leite mais gordo
+                    # pesa diferente, e é por isso que o tipo é aproximado.
+                    "source": Source.ESTIMATE,
                     "is_active": True,
                 },
             )
