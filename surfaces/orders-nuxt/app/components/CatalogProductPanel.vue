@@ -159,7 +159,7 @@ const draft = reactive({
     hashtagsText: "",
     social_caption: "",
   },
-  fiscal: { profile: "own_production", ncm: "", cest: "", unit: "UN" },
+  fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN" },
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
@@ -209,7 +209,7 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.social.social_caption = s?.social_caption ?? "";
 
   const f = detail?.fiscal;
-  draft.fiscal.profile = f?.profile || "own_production";
+  draft.fiscal.profile = f?.profile || "standard";
   draft.fiscal.ncm = f?.ncm ?? "";
   draft.fiscal.cest = f?.cest ?? "";
   draft.fiscal.unit = f?.unit || "UN";
@@ -814,7 +814,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               </label>
             </div>
 
-            <label v-if="activeFiscalProfile?.carries_cest" class="block">
+            <label class="block">
               <span :class="labelClass">CEST</span>
               <input
                 v-model="draft.fiscal.cest" :class="fieldClass" type="text" inputmode="numeric"
@@ -822,12 +822,16 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               />
               <span v-if="cestInvalid" class="mt-1 block text-xs text-destructive">CEST deve ter 7 dígitos.</span>
               <span v-else-if="cestRequired" class="mt-1 block text-xs text-amber-600 dark:text-amber-400">
-                Obrigatório para itens de revenda com substituição tributária.
+                Obrigatório com substituição tributária.
               </span>
+              <span v-else class="mt-1 block text-xs text-muted-foreground">
+                Identificação da mercadoria; a tributação vem do perfil fiscal.
+              </span>
+              <span
+                v-for="warning in props.detail?.fiscal_warnings ?? []" :key="warning"
+                class="mt-1 block text-xs text-amber-600 dark:text-amber-400"
+              >{{ warning }}</span>
             </label>
-            <p v-else class="text-xs text-muted-foreground">
-              CEST não se aplica a fabricação própria.
-            </p>
           </div>
         </template>
       </div>

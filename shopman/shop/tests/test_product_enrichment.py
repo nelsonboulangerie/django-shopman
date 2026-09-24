@@ -219,7 +219,7 @@ def geleia(db):
         name="Geleia de framboesa",
         base_price_q=3900,
         image_url="",
-        metadata={"fiscal": {"profile": "resale", "ncm": "", "unit": "UN"}},
+        metadata={"fiscal": {"profile": "tax_substitution", "ncm": "", "unit": "UN"}},
     )
 
 
@@ -295,19 +295,20 @@ def test_aceitar_nunca_promove_foto_para_a_vitrine(geleia, gestor, monkeypatch):
     assert geleia.metadata["enrichment"]["reference_photo"]["license"] == pe.COSMOS_PHOTO_LICENSE
 
 
-def test_cest_so_entra_no_perfil_de_revenda(geleia, gestor):
+def test_cest_da_nota_entra_em_qualquer_perfil(geleia, gestor):
+    """O CEST identifica a mercadoria; sem ST ele também vai (Conv. ICMS 142/2018)."""
     geleia.metadata = pe.merge_into_metadata(
-        {**geleia.metadata, "fiscal": {"profile": "own_production", "ncm": "20079990"}},
-        pe.suggestion_from_invoice(cest="1704600"),
+        {**geleia.metadata, "fiscal": {"profile": "standard", "ncm": "20079990"}},
+        pe.suggestion_from_invoice(cest="1709400"),
     )
     geleia.save()
 
     result = pe.accept_fields(geleia, ["cest"], user=gestor)
 
     geleia.refresh_from_db()
-    assert "Revenda" in result.refused["cest"]
-    assert "cest" not in geleia.metadata["fiscal"]
-    assert "cest" in pe.pending_fields(geleia)
+    assert "cest" not in result.refused
+    assert geleia.metadata["fiscal"]["cest"] == "1709400"
+    assert geleia.metadata["fiscal"]["profile"] == "standard"
 
 
 def test_gtin_da_nota_entra_no_cadastro_social(geleia, gestor):

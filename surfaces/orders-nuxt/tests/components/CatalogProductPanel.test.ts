@@ -15,7 +15,7 @@ const detail = {
   unit_weight_g: null, shelf_life_days: null, production_cycle_hours: null, is_batch_produced: false,
   allows_next_day_sale: false, serves: "", approx_dimensions: "",
   social: { condition: "new", brand: "", gtin: "", mpn: "", google_product_category: "", tiktok_category_id: "", social_caption: "", hashtags: [] },
-  fiscal: { profile: "own_production", ncm: "", cest: "", unit: "UN" },
+  fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN" },
 } as ProductDetailProjection;
 function panel() {
   return mount(CatalogProductPanel, { props: { open: true, sku: "A", detail, loading: false, busy: false,

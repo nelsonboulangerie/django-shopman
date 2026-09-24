@@ -19,7 +19,7 @@ pytestmark = pytest.mark.django_db
 
 
 def _product(sku: str, ncm: str = "") -> Product:
-    fiscal = {"profile": "own_production", "unit": "UN"}
+    fiscal = {"profile": "standard", "unit": "UN"}
     if ncm:
         fiscal["ncm"] = ncm
     return Product.objects.create(
@@ -78,7 +78,7 @@ def test_preserva_o_resto_do_fiscal():
     call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
 
     fiscal = Product.objects.get(sku="SP").metadata["fiscal"]
-    assert fiscal == {"profile": "own_production", "unit": "UN", "ncm": "22029900"}
+    assert fiscal == {"profile": "standard", "unit": "UN", "ncm": "22029900"}
 
 
 def test_o_aviso_do_engarrafamento_sai_toda_vez():
@@ -148,3 +148,46 @@ def test_o_seed_nasce_com_o_mesmo_codigo():
         assert antigo not in literais, (
             f"o seed ainda cria bebida em {antigo}, que descreve preparação, não bebida pronta"
         )
+
+
+# ── CEST de quem a casa faz ────────────────────────────────────────────────
+
+
+def test_o_cest_da_casa_sai_do_ncm():
+    """Pão de 1905.90.90 leva 17.062.00 — identificação, não tributação."""
+    _product("CRO", "19059090")
+    _product("TRADI", "19059010")
+    _product("RTAT", "20059900")
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    cests = {sku: Product.objects.get(sku=sku).metadata["fiscal"].get("cest") for sku in ("CRO", "TRADI", "RTAT")}
+    assert cests == {"CRO": "1706200", "TRADI": "1706000", "RTAT": "1709200"}
+    assert Product.objects.get(sku="CRO").metadata["fiscal"]["profile"] == "standard"
+
+
+def test_cest_ja_escrito_fica():
+    produto = _product("CRO", "19059090")
+    produto.metadata = {"fiscal": {**produto.metadata["fiscal"], "cest": "1705300"}}
+    produto.save()
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    assert Product.objects.get(sku="CRO").metadata["fiscal"]["cest"] == "1705300"
+
+
+def test_bebida_preparada_segue_sem_cest():
+    _product("SP", "22029900")
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    assert "cest" not in Product.objects.get(sku="SP").metadata["fiscal"]
+
+
+def test_todo_cest_da_casa_bate_com_o_ncm_no_anexo():
+    from shopman.fiscalman.cest_table import cest_ncm_warnings
+
+    from config.management.commands.apply_fiscal_ncm import HOUSE_CEST_BY_NCM
+
+    for ncm, cest in HOUSE_CEST_BY_NCM.items():
+        assert cest_ncm_warnings(ncm, cest) == [], (ncm, cest)

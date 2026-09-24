@@ -133,8 +133,6 @@ export interface FiscalProfileChoice {
   key: string;
   name: string;
   requires_cest: boolean;
-  /** O perfil leva CEST no documento (revenda com ou sem ST). */
-  carries_cest: boolean;
 }
 
 // Detalhe de UM produto — tudo que o painel de produto edita
@@ -176,6 +174,8 @@ export interface ProductDetailProjection {
   readonly dietary_from_recipe: boolean;
   readonly nutrition_auto_filled: boolean;
   readonly fiscal_profiles: FiscalProfileChoice[];
+  /** Avisos do servidor (não bloqueiam): CEST incompatível com o NCM. */
+  readonly fiscal_warnings?: string[];
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
@@ -201,6 +201,7 @@ export type ProductDetailPatch = Partial<
     | "dietary_from_recipe"
     | "nutrition_auto_filled"
     | "fiscal_profiles"
+    | "fiscal_warnings"
     | "roles"
     | "social"
     | "fiscal"

@@ -10,23 +10,25 @@ Design (decisions locked with the owner, 2026-06-28):
 
 - Regime: **Simples Nacional**. Document: **NFC-e (model 65)** intrastate; NF-e
   (model 55) interstate is future scope.
-- Named profiles instead of copying CFOP/CSOSN into every product. The real
-  fiscal axis (per the accountant's parametrization, SEFA-PR) is **ST vs não-ST**:
-    * ``own_production`` — não sujeito a ST, feito na casa (pães, salgados,
-      doces, bebidas preparadas). CSOSN 102, **CFOP 5102/6102**, no CEST.
-    * ``resale_common`` — revenda **sem ST** (mercearia fora do Anexo IX do
-      RICMS/PR: queijo, manteiga, azeite, geleia, picles, chá em folhas).
-      Mesmos códigos do ``own_production`` (102/5102), mas **carrega o CEST**:
-      o Conv. ICMS 142/2018 (cl. 20ª, I; cl. 3ª para o Simples) manda informar
-      o CEST do item listado nos Anexos II a XXVI "ainda que a operação não
-      esteja sujeita ao regime de ST" — e o RICMS/PR (Anexo X, art. 1º, §§ 1º e
-      5º) repete. O CEST é opcional aqui porque nem todo NCM tem um.
-    * ``resale`` — sujeito a ST (refrigerantes, água, mostarda preparada,
-      requeijão e similares). CSOSN 500, CFOP 5405/6405, **CEST required**.
+- Two named profiles instead of copying CFOP/CSOSN into every product. The
+  profile answers ONE question — **tributação: ST ou não** (parametrização do
+  contador, SEFA-PR):
+    * ``standard`` — sem ST: o que a casa faz e a revenda fora do Anexo IX do
+      RICMS/PR (pães, doces, bebidas preparadas, queijo, manteiga, azeite,
+      geleia, chá em folhas). CSOSN 102, **CFOP 5102/6102**.
+    * ``tax_substitution`` — com ST (refrigerante, água, mostarda preparada,
+      requeijão e similares). CSOSN 500, CFOP 5405/6405, e o CEST é obrigatório.
+- **O CEST é atributo do produto, não do perfil.** Ele identifica a mercadoria
+  no catálogo de segmentos do Conv. ICMS 142/2018 — não define tributação — e
+  a lei manda informá-lo sempre que o item estiver listado, "ainda que a
+  operação não esteja sujeita ao regime de ST" (cl. 20ª, I; cl. 3ª para o
+  Simples; RICMS/PR, Anexo X, art. 1º). Então: aceito em qualquer perfil,
+  enviado na NFC-e sempre que presente, obrigatório só com ST, e conferido
+  contra o NCM pela tabela do Anexo como **aviso** (:mod:`.cest_table`).
 - A product carries only what *varies per product*: ``profile`` + ``ncm`` +
-  ``cest`` (resale only) + ``unit``. The profile supplies CFOP/CSOSN/origem and
-  PIS/COFINS CST. ``resolve_fiscal_item`` merges both into the flat dict the
-  fiscal adapter consumes.
+  ``cest`` + ``unit``. The profile supplies CFOP/CSOSN/origem and PIS/COFINS
+  CST. ``resolve_fiscal_item`` merges both into the flat dict the fiscal
+  adapter consumes.
 
 PIS/COFINS CST = ``99`` (outras operações) — conforme a parametrização do contador
 (doc "PROCEDIMENTO E PARAMETRIZAÇÃO", SEFA-PR, Simples Nacional CRT-01).
@@ -70,43 +72,27 @@ class FiscalProfile:
     pis_cst: str = "99"        # Simples (CRT-01): 99 = outras operações (parametrização do contador).
     cofins_cst: str = "99"
     requires_cest: bool = False
-    #: O item pode (e, quando listado no Conv. 142/2018, deve) levar CEST no
-    #: documento, mesmo sem ST. ``requires_cest`` implica este.
-    carries_cest: bool = False
 
 
-OWN_PRODUCTION = FiscalProfile(
-    key="own_production",
-    name="Fabricação própria",
+STANDARD = FiscalProfile(
+    key="standard",
+    name="Sem substituição tributária",
     csosn="102",
     cfop_internal="5102",
     cfop_interstate="6102",
-    requires_cest=False,
 )
 
-RESALE_COMMON = FiscalProfile(
-    key="resale_common",
-    name="Revenda comum (sem ST)",
-    csosn="102",
-    cfop_internal="5102",
-    cfop_interstate="6102",
-    carries_cest=True,
-)
-
-RESALE = FiscalProfile(
-    key="resale",
-    name="Revenda (com ST)",
+TAX_SUBSTITUTION = FiscalProfile(
+    key="tax_substitution",
+    name="Com substituição tributária (ST)",
     csosn="500",
     cfop_internal="5405",
     cfop_interstate="6405",
     requires_cest=True,
-    carries_cest=True,
 )
 
-FISCAL_PROFILES: dict[str, FiscalProfile] = {
-    p.key: p for p in (OWN_PRODUCTION, RESALE_COMMON, RESALE)
-}
-DEFAULT_PROFILE_KEY = OWN_PRODUCTION.key
+FISCAL_PROFILES: dict[str, FiscalProfile] = {p.key: p for p in (STANDARD, TAX_SUBSTITUTION)}
+DEFAULT_PROFILE_KEY = STANDARD.key
 
 
 @dataclass(frozen=True)
@@ -135,14 +121,19 @@ class ProductFiscalClassification:
         problems: list[str] = []
         if not NCM_RE.match(self.ncm or ""):
             problems.append("NCM deve ter 8 dígitos.")
-        if profile.requires_cest:
-            if not CEST_RE.match(self.cest or ""):
-                problems.append("CEST (7 dígitos) é obrigatório para itens de revenda/ST.")
-        elif self.cest and not profile.carries_cest:
-            problems.append("CEST não se aplica a fabricação própria — deixe vazio.")
-        elif self.cest and not CEST_RE.match(self.cest):
+        if self.cest and not CEST_RE.match(self.cest):
             problems.append("CEST deve ter 7 dígitos.")
+        elif profile.requires_cest and not self.cest:
+            problems.append("CEST (7 dígitos) é obrigatório com substituição tributária.")
         return problems
+
+    def warnings(self) -> list[str]:
+        """Avisos que não impedem salvar nem emitir: o CEST contra o NCM."""
+        from .cest_table import cest_ncm_warnings
+
+        if self.cest and not CEST_RE.match(self.cest):
+            return []
+        return cest_ncm_warnings(self.ncm, self.cest)
 
     @property
     def is_valid(self) -> bool:
@@ -218,6 +209,6 @@ def resolve_fiscal_item(
         "pis_situacao_tributaria": profile.pis_cst,
         "cofins_situacao_tributaria": profile.cofins_cst,
     }
-    if profile.carries_cest and classification.cest:
+    if classification.cest:
         item["cest"] = classification.cest
     return item

@@ -1687,7 +1687,7 @@ class TestFiscalService:
 
         Product.objects.create(
             sku="PAO-FISCAL", name="Pão", base_price_q=500,
-            metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
+            metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
         )
         order = _make_order(items_list=[_make_item(sku="PAO-FISCAL")])
 
@@ -1705,7 +1705,7 @@ class TestFiscalService:
 
         Product.objects.create(
             sku="PAO-OV", name="Pão", base_price_q=500,
-            metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
+            metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
         )
         order = _make_order(
             items_list=[_make_item(sku="PAO-OV", meta={"fiscal": {"ncm": "99999999"}})]

@@ -11,16 +11,21 @@
 - **Simples Nacional — CRT-01.** Documento emitido: **NFC-e (modelo 65)**, intraestadual (PR).
 - NF-e (modelo 55) interestadual: fora de escopo hoje (venda a consumidor de outro estado é rara).
 
-## 2. Perfis fiscais (eixo real: ST vs não-ST)
+## 2. Perfis fiscais (o perfil responde só: tem ST ou não)
 
-Os parâmetros que dependem da operação vivem em 3 perfis nomeados (`shopman/fiscalman/classification.py`);
-por produto guarda-se só `profile` + `ncm` + `cest` (em `Product.metadata["fiscal"]`).
+Os parâmetros que dependem da operação vivem em 2 perfis nomeados (`shopman/fiscalman/classification.py`);
+por produto guarda-se `profile` + `ncm` + `cest` + `unit` (em `Product.metadata["fiscal"]`).
 
-| Perfil | Aplica a | CSOSN | CFOP interno | CFOP interest. | Origem | CEST | PIS CST | COFINS CST |
-|---|---|---|---|---|---|---|---|---|
-| `own_production` (não-ST) | feito na casa: pães, salgados, doces, bebidas preparadas, caixas presente | **102** | **5102** | 6102 | 0 | — | **99** | **99** |
-| `resale_common` (não-ST) | revenda fora da ST do PR: queijo, manteiga, azeite, geleia, picles, presunto cru, chá em folhas | **102** | **5102** | 6102 | 0 | **informado quando o NCM tem** | **99** | **99** |
-| `resale` (ST) | revenda sujeita a ST no PR: refrigerantes, água, mostarda preparada, cremes de queijo (requeijão e similares) | **500** | **5405** | 6405 | 0 | **obrigatório** | **99** | **99** |
+| Perfil | Aplica a | CSOSN | CFOP interno | CFOP interest. | Origem | PIS CST | COFINS CST |
+|---|---|---|---|---|---|---|---|
+| `standard` (sem ST) | o que a casa faz (pães, salgados, doces, bebidas preparadas, caixas presente) e a revenda fora da ST do PR (queijo, manteiga, azeite, geleia, picles, presunto cru, chá em folhas) | **102** | **5102** | 6102 | 0 | **99** | **99** |
+| `tax_substitution` (com ST) | revenda sujeita a ST no PR: refrigerantes, água, mostarda preparada, cremes de queijo (requeijão e similares) | **500** | **5405** | 6405 | 0 | **99** | **99** |
+
+**O CEST é atributo do produto, não do perfil** (decisão do dono, 24/09/2026). Ele identifica a
+mercadoria no catálogo de segmentos do Conv. ICMS 142/2018 e não define tributação — quem define é
+o CSOSN/CFOP do perfil. É aceito em qualquer perfil, vai na NFC-e sempre que presente, é
+obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
+(`fiscalman/cest_table.py`) como **aviso**, nunca bloqueio.
 
 - O contador classifica "alimentação em geral, salgados, doces" como **comercialização (5102/102)**,
   não produção própria (5101). Sob Simples o CFOP não altera o imposto (recolhido no DAS).
@@ -30,14 +35,20 @@ por produto guarda-se só `profile` + `ncm` + `cest` (em `Product.metadata["fisc
   esteja sujeita ao regime de substituição tributária"
   ([CV142_18](https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18)); o RICMS/PR
   repete no Anexo X, art. 1º, §§ 1º e 5º. A SEFAZ não rejeita CSOSN 102 sem CEST (a rejeição 806 é
-  só para CST/CSOSN de ST), mas a obrigação existe — daí o perfil `resale_common`.
+  só para CST/CSOSN de ST), mas a obrigação existe — daí o CEST valer em qualquer perfil.
 - **O que está na ST do PR** (RICMS/PR, Anexo IX, art. 118): mostarda preparada 2103.30.21
   (17.038.00), condimentos 2103.90.21/.91 (17.035.00), requeijão e similares (17.023.00). Saíram em
   1º/11/2019 (Decreto 2.673/2019): azeite, geleias/doces (2007), picles (2001). Fora: queijos 0406,
   manteiga, presunto cru.
-- ⚠️ **Confirmar com o contador:** item na ST comprado com ST retida sai com CSOSN 500/5405 (com 102
-  o ICMS entraria de novo no DAS); o creme de queijo 0406.30 como 17.023.00 (na ST) ou 17.024.00
-  (queijo, fora); a berinjela em óleo como 2005.99.00 (a nota traz 2103.90.99, sem CEST).
+- **Decidido pela prática da casa (dono, 24/09/2026)** — a planilha de produtos do Yooga mostra o que
+  o contador já aplicava: mostardas e cremes Pomerode com ST (500/5405), creme de queijo 17.023.00.
+  Berinjela e churrasquinho: a casa usava 2103.90.99 + 17.092.00, incoerente com o Anexo; fica a
+  correção (berinjela 2005.99.00 + 17.092.00; churrasquinho sem CEST). O que sobrar, **a próxima
+  NF-e de compra confirma**: o recebimento compara NCM/CEST/ST do fornecedor com o cadastro e avisa.
+- **Produção própria:** 1905.90.90 → 17.062.00 (a casa já usava), 1905.90.10 → 17.060.00 ("outros
+  pães de forma" — ⚠️ a casa emitia as baguetes no 1905.90.90), 2005.99.00 → 17.092.00. Bebida
+  preparada no balcão (2202.99.00) segue sem CEST: o Anexo descreve o industrializado pronto para
+  beber, e não é isso que a casa vende. Tabela em `apply_fiscal_ncm.HOUSE_CEST_BY_NCM`.
 - A tabela por item mora em `config/management/commands/apply_grocery_catalog.py` (`GROCERY`,
   `SEED_RESALE_FISCAL`, `FISCAL_NOTES`).
 
