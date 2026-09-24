@@ -10,7 +10,7 @@ from django.test import override_settings
 from shopman.shop.adapters import otp_sms_comtele as comtele
 
 _CFG = {
-    "api_key": "1bf12b60-0fa9-433b-a294-932266ca27bb",
+    "api_key": "chave-ficticia-de-teste-comtele",
     "route": "17",
     "tag": "shopman-otp",
     "code_message": "",
@@ -58,7 +58,7 @@ def test_sends_with_x_api_key_header_and_json_body():
 
     assert ok is True
     assert captured["url"] == "https://api.comtele.com.br/messages/sms/send"
-    assert captured["key"] == "1bf12b60-0fa9-433b-a294-932266ca27bb"
+    assert captured["key"] == "chave-ficticia-de-teste-comtele"
     assert captured["ctype"] == "application/json"
     body = captured["body"]
     assert body["receivers"] == ["5543999990000"]  # array, digits only
