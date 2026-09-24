@@ -276,3 +276,41 @@ def test_a_varredura_de_colisao_enxerga_o_quant_e_nao_so_o_campo_unico():
 
     assert any("stockman.Quant" in a for a in achados), achados
     assert any("buyman.Material" in a for a in achados), achados
+
+
+# ------------------------------------- o SKU atravessa o ref do lote truncado
+
+
+def test_os_skus_curados_nao_colidem_no_ref_do_lote():
+    """`Batch.ref` é chave GLOBAL, e o SKU entra nele truncado em 18 sem hífen.
+
+    `_batch_ref` monta `<SKU sem separador, 18 chars>-L<lote do fornecedor>`
+    porque o número do fornecedor só é único dentro do produto dele. Se dois
+    insumos truncarem para o mesmo prefixo, duas entradas com o mesmo lote no
+    mesmo dia disputam o mesmo `ref`.
+
+    ⚠️ Os SKUs curados passam por UM caractere: `MANTEIGA-PRESIDENT-COM-SAL` e
+    `MANTEIGA-PRESIDENT-SEM-SAL` viram `MANTEIGAPRESIDENTC` e
+    `MANTEIGAPRESIDENTS`. A próxima manteiga President — com ervas, com flor de
+    sal — colidiria, e o sintoma apareceria só no recebimento, com o entregador
+    esperando.
+    """
+    import re
+
+    from config.management.commands.apply_material_skus import CRIACOES, DIVISOES, RENOMEACOES
+
+    curados = (
+        [novo for _antigo, novo, _quem in RENOMEACOES]
+        + [c["sku"] for c in CRIACOES]
+        + [d["herda"] for d in DIVISOES]
+        + [d["nasce"]["sku"] for d in DIVISOES]
+    )
+    prefixos: dict[str, str] = {}
+    for sku in curados:
+        chave = re.sub(r"[^A-Z0-9]+", "", sku.upper())[:18]
+        anterior = prefixos.get(chave)
+        assert anterior is None, (
+            f"{sku} e {anterior} viram o mesmo ref de lote ({chave}): "
+            "duas entradas com o mesmo lote do fornecedor no mesmo dia colidiriam"
+        )
+        prefixos[chave] = sku

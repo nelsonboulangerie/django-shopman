@@ -1175,7 +1175,10 @@ def test_supplier_lot_from_the_note_becomes_the_stock_batch(
 
     assert response.status_code == 200
     batch = Batch.objects.get(sku=material.sku)
-    assert batch.ref == "FARINHAT65-LL2408A"
+    # O SKU entra no ref do lote SEM separador e truncado em 18 — ver
+    # `_batch_ref`. O rename da curadoria atravessa aqui, e este é o único lugar
+    # onde ele aparece assim; o regex de token não o alcança.
+    assert batch.ref == "FARINHANOVARAT55-LL2408A"
     assert str(batch.expiry_date) == "2027-02-25"
     assert batch.supplier == supplier.name
 
