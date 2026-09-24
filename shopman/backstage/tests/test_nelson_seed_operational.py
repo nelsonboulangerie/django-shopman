@@ -113,17 +113,22 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.buyman.models import Material
 
     # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
-    # 26/08): queijos, presuntos, salsicha Vienna, frango, milho, bacon, café
-    # em grão, blends de chá, tônica, folhas da salada…
-    assert Material.objects.count() == 56
+    # 26/08) + a mostarda Dijon de food service, que entrou na curadoria da
+    # lista em 23/09 no lugar do `MT` da ficha do Vinagrete.
+    assert Material.objects.count() == 57
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
-    # A água da massa é AGUA-FILTRADA: AGUA é a garrafa que se vende no balcão, e
-    # produto e insumo dividem um namespace de SKU só (shop/services/sku_namespace.py).
+    # A água do filtro é AGUA-FILTRADA e fica (dele, 23/09: "Agua pode ser
+    # AGUA-FILTRADA mesmo ok"). O nome nasceu para não colidir com a garrafa que
+    # se vende, e a garrafa já saiu do código `AGUA` — produto e insumo dividem
+    # um namespace de SKU só (shop/services/sku_namespace.py), e o ledger indexa
+    # por ele.
     assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
     assert not Material.objects.filter(sku="AGUA").exists()
-    assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
+    assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
+    assert not Product.objects.filter(sku="AGUA").exists()
+    assert Material.objects.get(sku="FERMENTO-NATURAL").shelf_life_days == 7
     # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
     # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
     # derivada na tela de preparo, nunca gravada como verdade.
@@ -600,11 +605,13 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
         assert any(verify_operator_pin(u, "1234", required_perm=perm) for u in operators), (
             f"PIN 1234 não destrava {perm}"
         )
-        assert all(not u.is_superuser for u in operators)
 
-    # O superusuário NÃO destrava por PIN: não é operador de balcão, e a sessão
-    # que sairia do PIN herdaria `has_perm` sempre True. Ele entra por senha.
+    # O seed não dá o PIN de dev ao superusuário (o 1234 que o balcão inteiro
+    # conhece): ele não aparece na lista nem destrava com esse PIN até cadastrar
+    # o próprio. O destrave em si aceita superusuário — ver `_eligible`.
     admin = User.objects.get(username="admin")
+    for perm in ("cashman.operate_pos", "backstage.operate_kds", "backstage.operate_production"):
+        assert admin not in eligible_operators(perm=perm)
     assert not verify_operator_pin(admin, "1234", required_perm="cashman.operate_pos")
     assert not verify_operator_pin(admin, "1234", required_perm=None)
 

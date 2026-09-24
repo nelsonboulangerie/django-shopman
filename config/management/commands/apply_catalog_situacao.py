@@ -29,9 +29,11 @@ O que **não** se desata, porque é história: `OrderItem.sku` e
 `HistoricalSaleItem.sku` guardam o código como texto. O pedido antigo continua
 dizendo o que vendeu.
 
-⚠️ **A URL vira 410, não 301.** Produto apagado não tem para onde redirecionar;
-quem cuida disso é a sessão de URL/SEO, e `sku_history.retired_skus()` já os
-deixa de fora do mapa de redirect de propósito.
+⚠️ **A URL vira 410, não 301.** Produto apagado não tem para onde redirecionar:
+o comando grava a lápide (`shop.services.retired_urls.record`) no mesmo
+``atomic()`` e antes do delete, com as coleções de onde ele saiu, e a loja
+responde "saiu do cardápio" em vez de 404 mudo. `sku_history.retired_skus()`
+os deixa de fora do mapa de redirect de propósito.
 """
 
 from __future__ import annotations
@@ -74,6 +76,7 @@ class Command(BaseCommand):
         from shopman.offerman.models import Product, ProductComponent
 
         from shopman.backstage.models import ProductAlias
+        from shopman.shop.services.retired_urls import record as record_retired
 
         apply = options["apply"]
         out = self.stdout
@@ -113,7 +116,7 @@ class Command(BaseCommand):
                 produto.save(update_fields=["is_published"])
                 despublicados.append((sku, produto.name))
 
-            for sku, _motivo in EXCLUIR:
+            for sku, motivo in EXCLUIR:
                 produto = alvos.get(sku)
                 if produto is None:
                     ausentes.append(sku)
@@ -122,6 +125,14 @@ class Command(BaseCommand):
                 # B.I. continua lendo a venda antiga pelo nome da origem.
                 soltos = ProductAlias.objects.filter(product=produto).update(product=None)
                 vinculos = self._soltar_bindings(produto)
+                # A lápide nasce ANTES do delete: o vínculo com a coleção é
+                # CASCADE, e depois dele a prateleira de origem não existe mais
+                # em lugar nenhum (ver `shop.services.retired_urls`).
+                prateleiras = list(
+                    produto.collection_items.order_by("-is_primary", "pk")
+                    .values_list("collection__ref", flat=True)
+                )
+                record_retired(sku=sku, collection_refs=prateleiras, note=motivo)
                 nome = produto.name
                 produto.delete()
                 apagados.append((sku, nome, soltos, vinculos))
@@ -150,8 +161,8 @@ class Command(BaseCommand):
             out.write(f"\n{len(ausentes)} já não estão no catálogo: {', '.join(sorted(set(ausentes)))}")
 
         out.write(self.style.WARNING(
-            "\n⚠️  Produto apagado não tem destino de redirect: a URL dele é 410, não 301. "
-            "`sku_history.retired_skus()` já os deixa fora do mapa de propósito."
+            "\n⚠️  Produto apagado não tem destino de redirect: a URL dele é 410, não 301, "
+            "e a lápide com as coleções de origem foi gravada junto do delete."
         ))
         if not apply:
             out.write(self.style.WARNING("\n(ensaio: executado e desfeito, nada gravado. Para gravar: --apply)"))

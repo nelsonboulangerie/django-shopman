@@ -29,6 +29,7 @@ from shopman.storefront.presentation import (
     build_catalog_items_for_skus,
     build_checkout,
     build_home,
+    build_legal,
     build_product_detail,
     build_reorder_conflict,
     build_site,
@@ -289,6 +290,21 @@ class StorefrontHomeView(APIView):
         responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
     ),
 )
+class StorefrontLegalView(APIView):
+    """GET /api/v1/storefront/legal/ — o que as páginas de Termos e Privacidade AFIRMAM.
+
+    A lista de operadores e a data saem daqui, e não do `.vue`, porque texto que copia a
+    verdade envelhece em silêncio: em 23/09/2026 cinco terceiros já recebiam dado de
+    cliente sem constar da lista que a página chamava de "a lista inteira".
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response({"legal": projection_data(build_legal())})
+
+
 class StorefrontSiteView(APIView):
     """GET /api/v1/storefront/site/ — o que busca e cartão de link precisam saber."""
 
@@ -305,6 +321,89 @@ class StorefrontSiteView(APIView):
             raise Http404
         site = build_site(shop=shop, channel_ref=STOREFRONT_CHANNEL_REF)
         return Response({"site": projection_data(site)})
+
+
+def _gone_products() -> dict:
+    """{sku apagado: {"collection": ref, "collection_name": nome}} — o 410 da loja.
+
+    Produto apagado nao deixa rastro no banco, e o 404 mentiria por omissao:
+    diria "nunca existiu" sobre um endereco que o Google indexou. A lapide
+    (``RetiredProduct``) guarda que existiu e de que prateleiras ele saiu.
+
+    Sai a PRIMEIRA coleccao que ainda existe e ainda tem produto publicado. A
+    prateleira vazia nao vira destino: a colecao "Combos" ficou sem nenhum item
+    quando o combo saiu, em 23/09/2026.
+
+    A lapide vale enquanto o SKU nao EXISTIR no catalogo — e existir aqui inclui
+    o despublicado. Codigo pode renascer fora da vitrine (a geleia `GL` sai hoje
+    e volta como dois produtos), e dizer "nao existe mais" sobre algo que existe
+    seria mentira: para esse a resposta e o 404, que e reversivel.
+    """
+    from shopman.shop.models import RetiredProduct
+    from shopman.shop.projections import catalog_context
+
+    def primeira_viva(refs):
+        for ref in refs:
+            colecao = catalog_context.get_active_collection(ref)
+            if colecao is None:
+                continue
+            if catalog_context.filter_by_collection(catalog_context.published_products(), ref).exists():
+                return ref, colecao.name
+        return "", ""
+
+    existentes = frozenset(catalog_context.products_queryset().values_list("sku", flat=True))
+    saida = {}
+    for lapide in RetiredProduct.objects.all():
+        if lapide.sku in existentes:
+            continue
+        ref, nome = primeira_viva(lapide.refs)
+        saida[lapide.sku] = {"collection": ref, "collection_name": nome}
+    return saida
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Retired product codes and where they went",
+        responses={200: OpenApiResponse(description="{'redirects': {sku aposentado: sku de hoje}}")},
+    ),
+)
+class StorefrontSkuRedirectsView(APIView):
+    """GET /api/v1/storefront/sku-redirects/ — o que a loja precisa para dar 301.
+
+    A URL do produto é o SKU, e o catálogo trocou de código duas vezes
+    (``CROISSANT`` → ``CT`` → ``CRO``). Sem este mapa, endereço que o Google
+    indexou vira 404 e a página recomeça do zero na busca.
+
+    Só sai o código que chega a produto VIVO (``retired_skus``): quem não chega
+    não tem destino honesto, e mandar a pessoa para outro 404 é pior que dizer
+    que não existe.
+
+    Público e sem sessão, como o resto do que a loja mostra a quem não entrou. O
+    ``Cache-Control`` é curto de propósito: rename é raro, mas quando acontece a
+    loja tem de acompanhar no mesmo dia.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from shopman.shop.projections import catalog_context
+        from shopman.shop.services.sku_history import retired_skus
+
+        # "Existe" para a LOJA e "existe" para o catalogo nao sao a mesma coisa:
+        # produto despublicado continua no catalogo (o `MIB` saiu da vitrine em
+        # 23/09/2026 e fica para a encomenda do restaurante), mas a loja responde
+        # 404 nele. Passar o catalogo inteiro como destino mandaria `MINI-BAGUETE`
+        # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
+        # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
+        published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
+        response = Response({
+            "redirects": retired_skus(published),
+            "gone": _gone_products(),
+        })
+        response["Cache-Control"] = "public, max-age=300"
+        return response
 
 
 @extend_schema_view(

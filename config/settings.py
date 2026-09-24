@@ -573,6 +573,59 @@ GEOIP_CITY_DATABASE_PATH = os.environ.get(
 # mentiria. Em celular a linha fica só com navegador e data.
 GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = _env_int("GEOIP_CITY_MAX_ACCURACY_RADIUS_KM", 50)
 
+# ── A base envelhece, e envelhecer CALADO é o defeito ────────────────────────
+#
+# A GeoLite2 não se atualiza sozinha: ela entra na imagem no build e só troca quando
+# alguém bumpa o `GEOLITE2_SNAPSHOT` do Dockerfile. O problema não é a base velha em si —
+# é que ela **responde errado em silêncio**. Um bloco de IP que mudou de operadora
+# continua nomeando a cidade antiga, com raio de precisão bom, e a tela escreve
+# "Próximo a X" com a mesma autoridade de uma leitura correta. Raio ruim a casa já
+# descarta; data ruim não tinha quem percebesse.
+#
+# Todo `.mmdb` carrega a data em que foi construído (`metadata().build_epoch`), e são
+# estes dois números que a transformam em sinal. Ver `shopman/shop/services/ip_location.py`
+# e `docs/guides/geolite2-city.md`.
+
+# Passando daqui, o operador é avisado (OperatorAlert `geoip_database_stale`), com o gesto
+# escrito. A tela continua mostrando a cidade.
+#
+# ⚠️ 21 dias = TRÊS publicações perdidas. A MaxMind republica a GeoLite2-City toda terça,
+# então 7 dias é o chão físico (abaixo disso não existe base mais nova) e avisar em 7 seria
+# gritar sobre uma semana corrida. A casa já aprendeu essa lição por escrito no
+# `check_integration_drift`: alerta que dispara sobre o normal "ensina a ignorar o
+# vermelho". Três publicações seguidas sem bump não é semana corrida — é ninguém cuidando.
+GEOIP_CITY_STALE_ALERT_DAYS = _env_int("GEOIP_CITY_STALE_ALERT_DAYS", 21)
+
+# Passando daqui, a cidade DEIXA DE APARECER. A linha volta a ser só navegador e data.
+#
+# ⚠️ 90 dias é o ponto em que o alerta comprovadamente não funcionou: entre 21 e 90 cabem
+# ~10 avisos semanais, e se nenhum virou bump, o deployment esqueceu que isto existe. A
+# diferença entre "atrasado" e "abandonado" é o que este número separa.
+#
+# É largo de propósito, e o custo de ser largo é real: a linha existe para a pessoa
+# responder "fui eu que entrei?", e calar cedo demais mataria o rótulo na prática — como o
+# bump é manual, um limiar curto deixaria a tela permanentemente muda. Mas depois de um
+# trimestre inteiro, "Próximo a X" errado é pior que ausência: a cidade errada faz o
+# titular responder "não fui eu" sobre o PRÓPRIO acesso, que é o oposto exato da função
+# da linha.
+#
+# ⚠️ O que NÃO foi medido, e por quê: a taxa de realocação de bloco entre operadoras
+# exigiria comparar DUAS edições da base, e a segunda é um download que não foi feito.
+# O que foi medido é a EXPOSIÇÃO — o tamanho do alvo. Nas 234.511 redes IPv4 brasileiras
+# da DB-IP Lite 2026-09 (14.345.887 redes lidas, 88.123.296 endereços brasileiros):
+#
+#     /24 ................ 49,71% das redes
+#     /23 ................ 10,34%
+#     /22 .................. 3,79%
+#     /22 ou menor ....... 97,87% das redes (62,04% dos endereços)
+#     /16 ou maior ........ 0,09% das redes (23,72% dos endereços)
+#
+# Ou seja: o espaço brasileiro é dominado por alocações PEQUENAS, que são exatamente as
+# que trocam de mão entre operadoras — metade das redes é um /24 sozinho. "Bloco de IP
+# muda de dono" não é hipótese remota aqui, é a forma do espaço. Isso justifica existir um
+# limiar; a largura dele continua sendo julgamento, e está escrito acima.
+GEOIP_CITY_MAX_AGE_DAYS = _env_int("GEOIP_CITY_MAX_AGE_DAYS", 90)
+
 # ── Google Maps ──────────────────────────────────────────────────────
 # A chave do navegador aparece, por natureza, no bootstrap do Maps JS e deve ser
 # limitada por referer + APIs. A chave de servidor nunca é projetada para o
@@ -1286,6 +1339,20 @@ JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
 JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
 JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
 
+# Piloto de intenções da mensageria (INTENT-PILOT-PLAN). Texto de cliente, mesmo
+# redigido, só sai da casa para os provedores desta lista — credencial sozinha
+# nunca liga provedor (a regra do Marketing). `anthropic` está aprovado pelo dono
+# em 23/09/2026 (já recebe o texto cru quando o concierge atende); `typesafe` (Jev)
+# é fornecedor novo e só entra quando ele decidir, pondo o nome aqui pelo ambiente.
+SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
+    value.strip().lower()
+    for value in os.environ.get("SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", "anthropic").split(",")
+    if value.strip()
+)
+# O ciclo automático do piloto no `maintenance_worker` (sorteia, pré-rotula, mede).
+# Sem mensagem observada ele não faz nada; desligar é só pôr false.
+SHOPMAN_INTENT_PILOT_ENABLED = _env_bool("SHOPMAN_INTENT_PILOT_ENABLED", True)
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must
@@ -1392,9 +1459,12 @@ SHOPMAN_CONCIERGE = {
                         "CONCIERGE_OBSERVATION_NOTICE_VERSION", ""
                     ),
                     # O service converte e valida. Preservar o valor cru faz um
-                    # typo falhar fechado em vez de virar silenciosamente 7 dias.
+                    # typo falhar fechado em vez de virar silenciosamente 30 dias.
+                    # 30 (o teto aceito) durante o aprendizado, por decisão do dono
+                    # em 23/09/2026; depois encurta. Mudar o valor vale também para
+                    # o que já foi guardado (``align_observation_retention``).
                     "retention_days": os.environ.get(
-                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "7"
+                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "30"
                     ),
                     "allow_all_subjects": _env_bool(
                         "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS", False

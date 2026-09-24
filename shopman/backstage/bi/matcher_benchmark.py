@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from django.conf import settings
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
+from shopman.shop.services.ai_pricing import Price
 
 logger = logging.getLogger(__name__)
 
@@ -232,17 +233,6 @@ def parse_jev_response(payload: dict, *, question: str) -> tuple[str, float, int
 _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
 
 
-# US$ por milhão de tokens (entrada, saída), preço público de 24/06/2026. Só o
-# default do placar: ``--llm-price-in/--llm-price-out`` sobrescrevem, e modelo
-# fora da tabela sai com custo zerado e aviso.
-LLM_PRICES = {
-    "claude-haiku-4-5": (1.00, 5.00),
-    "claude-sonnet-5": (2.00, 10.00),
-    "claude-opus-5": (5.00, 25.00),
-    "claude-opus-5-5": (4.00, 20.00),
-}
-
-
 class LLMMatcher:
     """Um modelo da Anthropic (credencial de ``AI_ASSIST_*``) respondendo a escolha em JSON.
 
@@ -377,17 +367,6 @@ class EmbeddingMatcher:
 
 
 @dataclass
-class Price:
-    """US$ por milhão de tokens."""
-
-    input_per_m: float = 0.0
-    output_per_m: float = 0.0
-
-    def cost(self, input_tokens: int, output_tokens: int) -> float:
-        return (input_tokens * self.input_per_m + output_tokens * self.output_per_m) / 1_000_000
-
-
-@dataclass
 class Scoreboard:
     matcher: str
     price: Price
@@ -449,7 +428,7 @@ def run(
     shortlist_size: int = DEFAULT_SHORTLIST,
     accept_at: float = 0.9,
 ) -> BenchmarkResult:
-    """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para o piloto."""
+    """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para a medição."""
     boards = [Scoreboard(matcher=m.name, price=prices.get(m.name, Price()), accept_at=accept_at) for m in matchers]
     for matcher in matchers:
         if hasattr(matcher, "prepare"):
@@ -476,3 +455,123 @@ def run(
         cases_with_product=cases_with_product,
         boards=boards,
     )
+
+
+# ── Relatório e medição automática ──────────────────────────────────────────
+
+
+def _pct(value) -> str:
+    return "—" if value is None else f"{value:.0%}"
+
+
+def render_report(result: BenchmarkResult, *, source: str, accept_at: float) -> str:
+    """O placar em texto corrido, um bloco por concorrente — o mesmo no console e no Admin."""
+    with_product = result.cases_with_product
+    coverage = result.shortlist_hits / with_product if with_product else None
+    lines = [
+        f"{result.cases} de-paras confirmados de '{source}' ({with_product} com produto, "
+        f"{result.cases - with_product} fora do catálogo).",
+        f"O produto certo estava entre os {result.shortlist_size} mais parecidos em {_pct(coverage)} dos casos "
+        "— é o teto de acerto de Jev e LLM, que escolhem só entre eles.",
+        "",
+    ]
+    for board in result.boards:
+        p50, p95 = board.latency(0.5), board.latency(0.95)
+        per_thousand = board.cost_usd / board.total * 1000 if board.total else 0.0
+        latency = "—" if p50 is None else f"{p50:.0f} ms típico, {p95:.0f} ms no pior caso"
+        lines.append(f"■ {board.matcher}")
+        lines.append(
+            f"  acertou: {board.correct} de {board.total} ({_pct(board.correct / board.total if board.total else None)})"
+        )
+        lines.append(
+            f"  aceitaria sozinho (confiança ≥ {accept_at:g}): {board.accepted}, "
+            f"dos quais errados: {board.accepted_wrong}"
+        )
+        lines.append(f"  tempo: {latency} · custo: US$ {per_thousand:.4f} por 1.000 itens")
+        if board.errors:
+            first = next(row[5] for row in board.rows if row[5])
+            lines.append(f"  falhas: {board.errors} (a primeira: {first})")
+        lines.append("")
+    lines.append(
+        "\"Dos quais errados\" é o erro que passaria sem ninguém ver: o número que decide se um "
+        "concorrente pode confirmar sozinho. Critério em docs/plans/BI-JEV-PILOT.md."
+    )
+    return "\n".join(lines)
+
+
+#: O que a medição automática põe no placar: o barato e o forte.
+DEFAULT_LLM_MODELS = ("claude-haiku-4-5", "claude-opus-5")
+MIN_CONFIRMED_TO_MEASURE = 20
+MEASURE_EVERY_DAYS = 7
+
+
+def build_matchers(names, *, llm_models=None, min_score: int = DEFAULT_MIN_SCORE,
+                   embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+                   min_similarity: float = DEFAULT_MIN_SIMILARITY):
+    """(concorrentes montados, [(nome, motivo)] dos que ficaram de fora)."""
+    matchers, skipped = [], []
+    for name in names:
+        try:
+            if name == "fuzzy":
+                matchers.append(FuzzyMatcher(min_score=min_score))
+            elif name == "jev":
+                matchers.append(JevMatcher())
+            elif name == "llm":
+                for model in llm_models or [None]:
+                    matchers.append(LLMMatcher(model=model))
+            elif name == "embed":
+                matchers.append(EmbeddingMatcher(model=embedding_model, min_similarity=min_similarity))
+            else:
+                raise ValueError(f"concorrente desconhecido: {name}")
+        except MatcherNotConfigured as exc:
+            skipped.append((name, str(exc)))
+    return matchers, skipped
+
+
+def prices_for(matchers, *, llm_price_in=None, llm_price_out=None, jev_price_in=0.042, jev_price_out=0.0):
+    """({nome: Price}, [modelos sem preço na tabela])."""
+    from shopman.shop.services.ai_pricing import LLM_PRICES
+
+    prices, unpriced = {"jev": Price(jev_price_in, jev_price_out)}, []
+    for matcher in matchers:
+        if isinstance(matcher, LLMMatcher):
+            table_in, table_out = LLM_PRICES.get(matcher.model, (None, None))
+            price_in = llm_price_in if llm_price_in is not None else table_in
+            price_out = llm_price_out if llm_price_out is not None else table_out
+            if price_in is None or price_out is None:
+                unpriced.append(matcher.model)
+            prices[matcher.name] = Price(price_in or 0.0, price_out or 0.0)
+    return prices, unpriced
+
+
+def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: float = 0.9):
+    """Mede e guarda o placar (``AliasBenchmarkReport``) quando há gabarito e o último está velho.
+
+    Devolve ``(relatório ou None, motivo)``. Só nome de produto sai da casa;
+    concorrente sem credencial ou pacote fica de fora e o placar diz por quê.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.backstage.models import AliasBenchmarkReport
+
+    cases = gold_cases(source)
+    if len(cases) < MIN_CONFIRMED_TO_MEASURE and not force:
+        return None, f"gabarito com {len(cases)} de {MIN_CONFIRMED_TO_MEASURE} de-paras confirmados"
+    if not cases:
+        return None, "gabarito vazio"
+    last = AliasBenchmarkReport.objects.filter(source=source).order_by("-created_at").first()
+    if last and not force and timezone.now() - last.created_at < timedelta(days=MEASURE_EVERY_DAYS):
+        return None, f"último placar de {last.created_at:%d/%m}; o próximo sai em até {MEASURE_EVERY_DAYS} dias"
+    matchers, skipped = build_matchers(("fuzzy", "embed", "llm", "jev"), llm_models=list(DEFAULT_LLM_MODELS))
+    prices, _unpriced = prices_for(matchers)
+    result = run(cases, load_catalog(), matchers, prices=prices, accept_at=accept_at)
+    report = AliasBenchmarkReport.objects.create(
+        source=source,
+        cases=result.cases,
+        contenders=", ".join(board.matcher for board in result.boards)[:240],
+        skipped="\n".join(f"{name}: {reason}" for name, reason in skipped),
+        report=render_report(result, source=source, accept_at=accept_at),
+    )
+    return report, "medido"

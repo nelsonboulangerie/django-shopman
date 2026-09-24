@@ -15,6 +15,9 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 
 const exportPending = ref(false)
 const privacyIssue = ref('')
+// O título do alerta diz QUAL das duas ações falhou. "Privacidade" sozinho era rótulo de
+// seção servindo de manchete de erro: quem lê não sabe se perdeu o download ou a exclusão.
+const privacyIssueTitle = ref('')
 const deleteAccountOpen = ref(false)
 const deleteAccountAcknowledged = ref(false)
 const deleteAccountPending = ref(false)
@@ -35,6 +38,10 @@ const stepUpSent = ref(false)
 const stepUpIssue = ref('')
 let pendingStepUpAction: null | (() => void | Promise<void>) = null
 let pendingStepUpPurpose: 'export' | 'delete' = 'export'
+// A marca do step-up vale 10 minutos, e quem volta depois disso encontra um 403. UMA
+// retomada por gesto: se o servidor recusar a identidade logo após a pessoa confirmar o
+// código, o problema é outro e a tela tem de DIZER, em vez de pedir código para sempre.
+let stepUpResumed = false
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
@@ -129,19 +136,153 @@ const devicesCopy = computed(() => devicesResponse.value?.copy || {
   delete_warning: 'Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste aparelho.'
 })
 
+// ── Falhas de privacidade: a recusa do servidor tem de chegar DENTRO da tela ─────────
+//
+// As duas ações desta seção falham com o dialeto `{detail, field, errors}` da casa, mais
+// um código: 403 `step_up_required` (identidade expirou), 503 `account_export_incomplete`
+// / `privacy_receipt_unavailable`, 409 `account_deletion_blocked`. Cada uma dessas frases
+// foi escrita para o titular ler — e só serve se ela couber num alerta da tela.
+const EXPORT_FILENAME = 'shopman-dados-cliente.json'
+
+/** Arquivo binário, reconhecido pelo que ele SABE FAZER e não por `instanceof`.
+ *
+ * ⚠️ O `Blob` que chega do fetch pode vir de outro realm (o do runtime, não o do
+ * documento): `x instanceof Blob` devolve `false` para um blob perfeitamente válido,
+ * e o caminho de erro some sem barulho.
+ */
+function isBlobLike (value: unknown): value is Blob {
+  return !!value
+    && typeof (value as Blob).text === 'function'
+    && typeof (value as Blob).size === 'number'
+}
+
+/** O corpo do erro do ofetch, já decodificado — inclusive quando vem como Blob.
+ *
+ * ⚠️ Com `responseType: 'blob'`, o ofetch entrega o corpo do ERRO também como Blob: o
+ * `{detail}` em português viraria binário e a tela cairia no texto genérico, perdendo
+ * justamente a frase que diz o que aconteceu.
+ */
+async function privacyErrorBody (e: unknown): Promise<Record<string, unknown> | null> {
+  const raw = (e as { data?: unknown } | null)?.data
+  if (isBlobLike(raw)) {
+    try {
+      return JSON.parse(await raw.text()) as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+  return raw && typeof raw === 'object' ? raw as Record<string, unknown> : null
+}
+
+/** O código da recusa. O 403 do step-up manda `code` na raiz; os 5xx/409 mandam em `error.code`. */
+function privacyErrorCode (body: Record<string, unknown> | null): string {
+  if (!body) return ''
+  if (typeof body.code === 'string') return body.code
+  const nested = body.error
+  if (nested && typeof nested === 'object' && typeof (nested as { code?: unknown }).code === 'string') {
+    return (nested as { code: string }).code
+  }
+  return ''
+}
+
+function privacyErrorDetail (body: Record<string, unknown> | null, fallback: string): string {
+  const detail = body?.detail
+  return typeof detail === 'string' && detail.trim() ? detail : fallback
+}
+
+/** Falhou: ou a tela reabre o step-up e RETOMA a ação, ou ela diz o que houve.
+ *
+ * Nunca as duas, e nunca nenhuma — sair da tela sem resposta é o que esta função existe
+ * para impedir.
+ */
+async function handlePrivacyFailure (
+  e: unknown,
+  purpose: 'export' | 'delete',
+  resume: () => void | Promise<void>,
+  title: string,
+  fallback: string
+): Promise<void> {
+  const body = await privacyErrorBody(e)
+  if (privacyErrorCode(body) === 'step_up_required' && !stepUpResumed) {
+    stepUpResumed = true
+    privacyIssue.value = ''
+    privacyIssueTitle.value = ''
+    await requireStepUp(purpose, resume)
+    return
+  }
+  privacyIssueTitle.value = title
+  privacyIssue.value = privacyErrorDetail(body, fallback)
+}
+
+function exportFilename (disposition: string | null): string {
+  const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(disposition || '')
+  const raw = match?.[1]?.trim()
+  if (!raw) return EXPORT_FILENAME
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+function saveExportArtifact (artifact: Blob, filename: string) {
+  const url = URL.createObjectURL(artifact)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  // Revogar no mesmo tick cancelaria o salvamento antes de o navegador começar a gravar.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+// O download é um FETCH, e não uma navegação. `window.location.assign` trocava a página:
+// quando o servidor recusava (503 com recibo, 403 de identidade), o titular saía da tela
+// de Segurança e encarava o JSON cru do erro no navegador — com o alerta desta mesma tela,
+// feito exatamente para isso, vazio atrás dele. Buscando o arquivo, a recusa volta como
+// erro tratável e o "preparando" dura o que o pedido durar, em vez de um cronômetro fixo
+// de 1 segundo que mentia sobre o estado.
 async function exportData () {
   if (!import.meta.client || exportPending.value) return
   exportPending.value = true
   privacyIssue.value = ''
+  privacyIssueTitle.value = ''
   try {
-    window.location.assign(apiPath('/api/v1/account/export/'))
+    const response = await $fetch.raw<Blob>(apiPath('/api/v1/account/export/'), {
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+      responseType: 'blob',
+      // ⚠️ O ofetch repete GET sozinho em 503 (e o 503 daqui é justamente o de exportação
+      // incompleta). Cada repetição abre um recibo de privacidade novo, sem ninguém pedir.
+      retry: 0
+    })
+    const artifact = response._data
+    if (!isBlobLike(artifact)) {
+      privacyIssueTitle.value = 'Não foi possível exportar'
+      privacyIssue.value = 'Seus dados não vieram completos, e nada foi baixado. Tente de novo em alguns minutos.'
+      return
+    }
+    saveExportArtifact(artifact, exportFilename(response.headers.get('content-disposition')))
+  } catch (e) {
+    await handlePrivacyFailure(
+      e,
+      'export',
+      exportData,
+      'Não foi possível exportar',
+      // Rede caída não tem `detail`: a frase diz o que aconteceu, que nada foi baixado, e
+      // que repetir é seguro — exportar não altera nada na conta.
+      'Não conseguimos preparar seus dados agora, e nada foi baixado. Tente de novo em alguns minutos.'
+    )
   } finally {
-    setTimeout(() => { exportPending.value = false }, 1000)
+    exportPending.value = false
   }
 }
 
 function askDeleteAccount () {
   privacyIssue.value = ''
+  privacyIssueTitle.value = ''
   deleteAccountAcknowledged.value = false
   if (import.meta.client && !deleteAccountIdempotencyKey.value) {
     deleteAccountIdempotencyKey.value = sessionStorage.getItem(deleteIntentStorageKey) || crypto.randomUUID()
@@ -161,6 +302,7 @@ async function deleteAccount () {
   if (!deleteAccountAcknowledged.value || deleteAccountPending.value) return
   deleteAccountPending.value = true
   privacyIssue.value = ''
+  privacyIssueTitle.value = ''
   try {
     await $fetch(apiPath('/api/v1/account/delete/'), {
       method: 'POST',
@@ -177,8 +319,22 @@ async function deleteAccount () {
     deleteAccountOpen.value = false
     await navigateTo('/')
   } catch (e) {
-    privacyIssue.value = errorDetail(e, 'Não foi possível excluir a conta agora.')
-    deleteAccountOpen.value = true
+    // A chave de idempotência NÃO é descartada aqui: é ela que faz a retomada continuar a
+    // mesma solicitação em vez de abrir uma segunda.
+    await handlePrivacyFailure(
+      e,
+      'delete',
+      deleteAccount,
+      'Não foi possível excluir',
+      // Sem `detail` (rede caída), a casa não sabe se o servidor chegou a concluir — então
+      // NÃO afirma que a conta continua como estava. Diz o que tem: a confirmação não
+      // voltou, e repetir é seguro porque a tentativa seguinte continua a MESMA
+      // solicitação. "Tente de novo" só se escreve onde repetir não duplica efeito.
+      'Não recebemos a confirmação da exclusão. Tente de novo em alguns minutos: a nova tentativa continua esta mesma solicitação e não exclui duas vezes.'
+    )
+    // Se a tela abriu o step-up, a vez é dele: dois diálogos empilhados escondem o campo
+    // do código atrás do aviso.
+    if (!stepUpOpen.value) deleteAccountOpen.value = true
   } finally {
     deleteAccountPending.value = false
   }
@@ -372,7 +528,9 @@ async function confirmPhoneChange () {
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
 function startExport () {
   privacyIssue.value = ''
+  privacyIssueTitle.value = ''
   if (!privacyRequestsAvailable.value) return
+  stepUpResumed = false
   void requireStepUp('export', exportData)
 }
 
@@ -380,6 +538,12 @@ function startExport () {
 function confirmDeleteAccount () {
   if (!privacyRequestsAvailable.value) return
   deleteAccountOpen.value = false
+  stepUpResumed = false
+  // Retomada de uma tentativa que falhou: a marca do step-up pode estar viva (vale 10
+  // minutos), e pedir um código novo à toa é atrito. Tenta direto com a MESMA chave de
+  // idempotência — e, se o servidor responder que a identidade expirou, `deleteAccount`
+  // reabre o step-up e retoma daí. Antes, este ramo era um beco: o único caminho para
+  // confirmar identidade era o que ele pulava, e todo clique repetia a mesma recusa.
   if (privacyIssue.value && deleteAccountIdempotencyKey.value) {
     void deleteAccount()
     return
@@ -600,7 +764,7 @@ useSeoMeta({ title: 'Segurança e dados' })
           <p class="mt-1 shop-muted">Baixe uma cópia dos seus dados ou encerre sua conta.</p>
         </div>
         <UiAlert v-if="privacyIssue" variant="destructive">
-          <UiAlertTitle>Privacidade</UiAlertTitle>
+          <UiAlertTitle>{{ privacyIssueTitle || 'Não foi possível concluir' }}</UiAlertTitle>
           <UiAlertDescription>{{ privacyIssue }}</UiAlertDescription>
         </UiAlert>
         <UiAlert v-if="!privacyRequestsAvailable">

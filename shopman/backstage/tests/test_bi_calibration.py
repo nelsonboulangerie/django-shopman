@@ -299,7 +299,12 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # `ProductAlias` que traduz o código do Yooga para eles. Que as duas
     # curadorias CONCORDEM onde se encontram é o que test_seed_catalog_coerente
     # fixa, lendo o seed como dado.
-    assert ProductConsumptionTag.objects.count() == 163  # ver a conta acima
+    # ⚠️ Eram 163 até 23/09/2026. Saíram 8 etiquetas porque saíram 8 produtos:
+    # o dono marcou `excluir` na planilha de curadoria o Café Coado, o Coffee
+    # Float, o Purin, o Tea Jelly, o Pain Grillé, a Tábua, o Combo Petit
+    # Déjeuner e a geleia mini ("era ideia, não virou produto"). Etiqueta de
+    # SKU que não existe não conta nada — é linha morta, não curadoria perdida.
+    assert ProductConsumptionTag.objects.count() == 155  # ver a conta acima
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -337,7 +342,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 163
+    assert ProductConsumptionTag.objects.count() == 155
     assert SeatingSpot.objects.count() == 17
 
 

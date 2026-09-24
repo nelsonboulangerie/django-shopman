@@ -43,6 +43,11 @@
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
+| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
+| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
+| [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
+| [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
+| [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
 | [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
 | [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
@@ -57,6 +62,7 @@
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
+| [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
 
 ---
 
@@ -135,6 +141,47 @@ python manage.py apply_product_brands --sku QC   # um SKU só
 Só preenche campo **vazio**: marca ou GTIN que o Gestor já curou fica como
 está e sai no relatório como divergência. Revenda nunca recebe a marca da loja,
 e SKU sem fabricante confirmado fica fora da tabela. Idempotente.
+
+---
+
+
+### apply_material_skus
+
+Aplica a curadoria da lista de insumos (`WP-INSUMOS-DA-VIDA-REAL`) num banco que
+já roda: renomeia insumo arrastando a ficha técnica e o ledger, cria o insumo que
+falta, e reaponta a linha de ficha que citava um SKU de **produto**. Espelha, do
+lado do Buyman, o que o `apply_product_skus` faz no catálogo.
+
+```bash
+python manage.py apply_material_skus                    # ensaio: executa e desfaz
+python manage.py apply_material_skus --apply            # grava
+python manage.py apply_material_skus --sku MANTEIGA-FR  # um só, pelo SKU de hoje
+```
+
+Não mexe em unidade-base, custo, conversão de compra nem GTIN — esses são outros
+WPs, e todos assumem que a lista está certa. Idempotente.
+
+**Duas ordens de problema, e elas não param igual.** *Recusa* diz que a tabela
+está errada (dois insumos no mesmo endereço, alvo que já é produto vendável) e aí
+**nada** é gravado. *Impedimento* diz que o mundo trava uma frente: ela para
+nomeada e o resto segue.
+
+⚠️ **O ledger é o impedimento vivo.** `Move` recusa `delete()`/`update()` e a FK
+para o quant é `PROTECT`, então o quant de um insumo que teve qualquer movimento
+— nem que seja o saldo de abertura do seed — **não sai do banco**. É o que segura
+o insumo órfão `AGUA`: para ele sair de verdade o caminho é o `seed --flush`, e
+reseed pede a palavra do dono.
+
+A varredura de colisão olha `unique_together` e `UniqueConstraint`, e não só
+`unique=True`, porque `unique_quant_coordinate` é
+`(sku, position, target_date, batch)` com `NULLS NOT DISTINCT`: dois insumos no
+mesmo depósito com `target_date` nulo colidem de verdade. Foi isso que travou o
+`AGUA-FILTRADA → AGUA` enquanto esse par existiu — ele saiu da tabela em 23/09,
+por decisão do dono.
+
+⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
+próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
+cobra; quem as troca é o commit.
 
 ---
 
@@ -1071,7 +1118,7 @@ do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
 **Propósito:** Piloto do de-para de produto ([BI-JEV-PILOT](../plans/BI-JEV-PILOT.md)). Mede três
 concorrentes contra os `ProductAlias` **confirmados**: `fuzzy` (o `suggest_aliases` de hoje), `jev`
 (TypeSafe Jev, `JEV_API_KEY`), `llm:<modelo>` (um por `--llm-model`, com a credencial de
-`AI_ASSIST_*`; preço da tabela `LLM_PRICES`) e `embed` (embeddings locais via `fastembed`, que não
+`AI_ASSIST_*`; preço da tabela `LLM_PRICES`, em `shopman/shop/services/ai_pricing.py`) e `embed` (embeddings locais via `fastembed`, que não
 está na imagem: `pip install fastembed` no console antes). Não grava alias.
 
 **Uso:**
@@ -1085,6 +1132,61 @@ desses errados; latência p50/p95; tokens; custo total e por 1.000 itens; falhas
 mesmos `--shortlist` candidatos do fuzzy mais a opção "nenhum destes"; a cobertura dessa lista é o
 teto deles e sai no relatório. O `embed` procura no catálogo inteiro (corte `--min-similarity`). Concorrente sem credencial fica de fora (ou falha, se pedido por
 `--matcher`). Gabarito vazio falha com o caminho para confirmar no Admin.
+
+### run_intent_pilot
+
+**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/INTENT-PILOT-PLAN.md)),
+e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
+por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
+`AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana.
+`--measure-now` força o placar. `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+
+### run_alias_benchmark
+
+**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. Roda no
+`maintenance_worker`: com pelo menos 20 `ProductAlias` confirmados e o último placar com mais de 7
+dias, mede `fuzzy`, `llm:claude-haiku-4-5`, `llm:claude-opus-5` e, quando disponíveis, `embed` e
+`jev`, e grava `AliasBenchmarkReport` (Admin → B.I. → Placar do de-para, só leitura, só agregado).
+Concorrente sem credencial ou pacote fica de fora e o placar diz por quê. `--now` força.
+
+### setup_intent_categories
+
+**Propósito:** Cria as doze intenções do piloto (pedido, dúvida de produto, horário/endereço/entrega,
+status do pedido, encomenda especial, como funciona a casa, reclamação, alergia, falar com uma
+pessoa, vaga de emprego, parceria ou divulgação, proposta de fornecedor). Idempotente; cria só as
+referências que faltam e nunca sobrescreve o que foi editado no Admin (Clientes → Intenções). O
+ciclo automático já faz isto; o comando é para ambiente novo.
+
+### sample_intent_messages
+
+**Propósito:** Sorteia mensagens de clientes (`ConversationMessage` de entrada, com texto) para o
+gabarito do piloto. Cria `MessageIntentSample` "a rotular"; não copia texto e nunca repete uma
+mensagem já sorteada.
+
+**Uso:**
+```bash
+python manage.py sample_intent_messages --limit 200 [--days 90] [--min-chars 3]
+```
+
+### benchmark_intent_classifiers
+
+**Propósito:** Mede `regex` (a transferência de hoje), `embed` (embeddings locais, `fastembed`),
+`llm:<modelo>` e `jev` contra as mensagens conferidas. Placar de conjunto (uma mensagem pode ter
+várias intenções): conjunto exato, exato nas mensagens com 2+ intenções, precisão, cobertura, F1,
+cobertura das sensíveis, cobertura por intenção, latência, custo por 1.000 mensagens. Não grava.
+
+**Uso:**
+```bash
+python manage.py benchmark_intent_classifiers --csv /tmp/intencoes.csv
+python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --llm-model claude-sonnet-5
+```
+
+**Comportamento:** todos recebem o texto **redigido** (`redact_observation_text`). `llm` e `jev`
+mandam esse texto para fora e só entram se o provedor estiver em
+`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (default `anthropic`, decisão do dono em 23/09; `typesafe`
+fora); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
+texto de cliente, só o número da amostra.
 
 ### refresh_bi_daily_series
 

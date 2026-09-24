@@ -21,13 +21,19 @@ RUN addgroup --system shopman \
 # Fica ANTES do código de propósito: a layer só refaz quando o script ou o snapshot
 # mudam, e não a cada commit. Sem isso, cada deploy rebaixaria 60 MB.
 #
-# ⚠️ NÃO HÁ ATUALIZAÇÃO AUTOMÁTICA, e isto é dito com todas as letras porque o contrário
-# se supõe. A MaxMind republica a base toda terça; esta imagem só rebaixa quando a layer
-# é invalidada, e com o cache do builder isso pode não acontecer por meses. Para forçar,
-# bump no `GEOLITE2_SNAPSHOT` abaixo — é a data da edição que se quer, e serve também de
-# registro de quando a base da imagem foi trocada pela última vez. Base velha não produz
-# rótulo errado com frequência (o filtro por raio continua valendo), mas uma faixa de IP
-# realocada entre operadoras pode nomear a cidade antiga. Ver docs/guides/geolite2-city.md.
+# ⚠️ ESTE VALOR É O QUE TROCA A BASE. A MaxMind republica toda terça; a imagem só rebaixa
+# quando a layer é invalidada, e com o cache do builder isso pode não acontecer por meses.
+# Bumpar aqui (a data da edição) é o gesto — e o valor serve também de registro de quando a
+# base foi trocada pela última vez. O script NÃO lê este ARG.
+#
+# Desde 23/09/2026 o esquecimento tem duas redes, porque base velha **responde errado em
+# silêncio**: um bloco de IP realocado entre operadoras segue nomeando a cidade antiga, com
+# raio de precisão bom, e a tela escreve a frase com a confiança de sempre.
+#   1. `.github/workflows/geolite2-refresh.yml` — às quartas, abre PR bumpando esta linha
+#      quando ela passa de 21 dias. Não precisa da MAXMIND_LICENSE_KEY.
+#   2. `check_geoip_freshness` — no ciclo do maintenance_worker, avisa o operador aos 21
+#      dias e, aos 90, a cidade deixa de aparecer na tela.
+# Ver docs/guides/geolite2-city.md.
 ARG GEOLITE2_SNAPSHOT=2026-09
 
 # ⚠️ A chave entra por `ARG`, e NÃO pelo segredo de BuildKit (`--mount=type=secret`), que

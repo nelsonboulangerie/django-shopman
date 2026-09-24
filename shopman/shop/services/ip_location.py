@@ -44,6 +44,24 @@ chave passa a ser parte do deploy (`MAXMIND_LICENSE_KEY`, segredo de build). Ver
 Ver `GEOIP_CITY_MAX_ACCURACY_RADIUS_KM` em `config/settings.py`: o número sai da distância
 medida entre cidades brasileiras vizinhas, não de preferência.
 
+## A base envelhece, e envelhecer calado era o buraco
+
+A GeoLite2 entra na imagem no build e **não se atualiza sozinha**. Isso, por si, seria
+só atraso. O que faz disto um defeito é a FORMA de falhar: base velha não erra alto —
+ela responde errado em silêncio. Um bloco de IP que mudou de operadora continua nomeando
+a cidade antiga, com raio de precisão bom, passando por todos os filtros abaixo, e a tela
+escreve "Próximo a X" com a autoridade de sempre.
+
+Todo `.mmdb` carrega a data em que foi construído. `database_freshness()` a transforma em
+dois gestos, com os limiares em `config/settings.py`:
+
+- `GEOIP_CITY_STALE_ALERT_DAYS` (21 d, três publicações perdidas) — o operador é avisado
+  por `OperatorAlert`, com o gesto escrito. A tela segue mostrando.
+- `GEOIP_CITY_MAX_AGE_DAYS` (90 d) — a cidade **some**. Volta a ser navegador e data.
+
+Quem grita é `shopman/backstage/management/commands/check_geoip_freshness.py`, no ciclo do
+`maintenance_worker`. O raciocínio dos dois números está nos comentários dos settings.
+
 ## Falha fechado, sempre
 
 Base ausente, IP privado, leitura sem cidade, sem sigla de estado, sem raio, ou com raio
@@ -55,6 +73,7 @@ errada: se o campo não vier, não há linha.
 
 from __future__ import annotations
 
+import datetime
 import ipaddress
 import logging
 import threading
@@ -68,6 +87,12 @@ logger = logging.getLogger(__name__)
 _reader = None
 _reader_resolved = False
 _reader_lock = threading.Lock()
+
+#: A data em que a MaxMind CONSTRUIU a base que está aberta, em segundos. Lida uma vez,
+#: junto com o leitor, porque é metadado do arquivo mapeado e não muda enquanto ele viver.
+#: `None` significa "não deu para saber", e isso NÃO é o mesmo que "nova" — ver
+#: `database_freshness`, que trata o desconhecido como velho.
+_build_epoch = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +131,18 @@ def _max_radius_km() -> int:
     return int(getattr(settings, "GEOIP_CITY_MAX_ACCURACY_RADIUS_KM", 0) or 0)
 
 
+def _stale_alert_days() -> int:
+    from django.conf import settings
+
+    return int(getattr(settings, "GEOIP_CITY_STALE_ALERT_DAYS", 0) or 0)
+
+
+def _max_age_days() -> int:
+    from django.conf import settings
+
+    return int(getattr(settings, "GEOIP_CITY_MAX_AGE_DAYS", 0) or 0)
+
+
 def _get_reader():
     """Abre a base UMA vez e reaproveita — a lista de dispositivos não pode abrir por linha.
 
@@ -114,7 +151,7 @@ def _get_reader():
     Reabrir por dispositivo traria de volta, em forma de I/O, exatamente o custo por dispositivo
     que a chamada de rede tinha.
     """
-    global _reader, _reader_resolved
+    global _reader, _reader_resolved, _build_epoch
 
     if _reader_resolved:
         return _reader
@@ -150,14 +187,37 @@ def _get_reader():
             # que responde muito mais coisa que a cidade.
             logger.exception("geoip_city_database_unreadable path=%s", path)
             _reader = None
+        else:
+            # A data de construção entra JUNTO com o leitor, e não na primeira pergunta
+            # sobre frescor: ela é metadado do arquivo mapeado, não muda enquanto ele
+            # viver, e ler por dispositivo da lista traria de volta o custo por dispositivo
+            # que este módulo inteiro existe para não ter.
+            _build_epoch = _read_build_epoch(_reader)
 
         _reader_resolved = True
         return _reader
 
 
+def _read_build_epoch(reader) -> int | None:
+    """Quando a MaxMind construiu esta base. O formato `.mmdb` obriga o campo.
+
+    ⚠️ O `except` aqui GRITA, ao contrário do irmão que engole a base ausente. Base
+    ausente é degradação prevista (dev, CI) e não há o que consertar; base presente cujo
+    `build_epoch` não se lê é anomalia de formato — e é justamente o número que decide se
+    a cidade ainda pode ir para a tela. Perder esse número em silêncio devolveria o
+    projeto ao defeito que ele veio corrigir.
+    """
+    try:
+        epoch = int(reader.metadata().build_epoch)
+    except Exception:
+        logger.exception("geoip_city_build_epoch_unreadable")
+        return None
+    return epoch if epoch > 0 else None
+
+
 def reset_reader_cache() -> None:
     """Esquece a base aberta. Existe para os TESTES, que trocam o caminho por fixture."""
-    global _reader, _reader_resolved
+    global _reader, _reader_resolved, _build_epoch
 
     with _reader_lock:
         if _reader is not None:
@@ -173,6 +233,70 @@ def reset_reader_cache() -> None:
                 logger.debug("geoip_city_reader_close_failed", exc_info=True)
         _reader = None
         _reader_resolved = False
+        _build_epoch = None
+
+
+@dataclass(frozen=True)
+class DatabaseFreshness:
+    """A idade da base aberta, e as duas decisões que saem dela.
+
+    Existe porque base velha é a única forma de erro que este módulo não sabia enxergar.
+    Todo o resto falha alto: base ausente não abre, base corrompida levanta, raio ruim é
+    descartado. A base velha abre, lê e responde — errado, com a mesma confiança de uma
+    correta. Um bloco de IP que mudou de operadora nomeia a cidade antiga e passa por
+    todos os filtros existentes.
+    """
+
+    #: Há base aberta? `False` em dev e na CI, que não baixam o arquivo.
+    present: bool
+    #: Quando a MaxMind construiu a base. `None` = presente mas sem data legível.
+    built_at: datetime.datetime | None
+    #: Dias completos desde a construção. `None` quando `built_at` é `None`.
+    age_days: int | None
+    #: Passou do limiar de AVISO: o operador precisa saber, a tela segue mostrando.
+    stale: bool
+    #: Passou do limiar de EXIBIÇÃO: a cidade não vai mais para a tela.
+    too_old_to_show: bool
+
+
+def database_freshness() -> DatabaseFreshness:
+    """Quão velha está a base — a pergunta que o alerta e a tela fazem.
+
+    ⚠️ **Data ilegível conta como velha.** A ausência do `build_epoch` não devolve
+    "provavelmente nova": devolve `too_old_to_show`. É a mesma regra do raio ausente
+    algumas linhas abaixo, e pela mesma razão — mostrar uma cidade cuja confiabilidade não
+    se pôde conferir É um palpite, e este módulo não dá palpite. O formato `.mmdb` obriga o
+    campo, então chegar aqui já é anomalia; herdar dela um rótulo confiante seria trocar um
+    defeito visível por um invisível.
+
+    Base AUSENTE não é base velha: não há idade, não há o que bumpar, e a tela já degrada
+    sozinha. Por isso `stale=False` — alertar "base desatualizada" onde não há base
+    mandaria o operador atrás de um problema que não existe.
+    """
+    reader = _get_reader()
+    if reader is None:
+        return DatabaseFreshness(
+            present=False, built_at=None, age_days=None, stale=False, too_old_to_show=False
+        )
+
+    if _build_epoch is None:
+        return DatabaseFreshness(
+            present=True, built_at=None, age_days=None, stale=True, too_old_to_show=True
+        )
+
+    built_at = datetime.datetime.fromtimestamp(_build_epoch, datetime.UTC)
+    age_days = (datetime.datetime.now(datetime.UTC) - built_at).days
+    alert_days = _stale_alert_days()
+    max_days = _max_age_days()
+    return DatabaseFreshness(
+        present=True,
+        built_at=built_at,
+        age_days=age_days,
+        # Limiar zerado desliga a trava, e isso é deliberado: é como a casa desliga um
+        # guardrail pela env sem editar código, do mesmo jeito que o raio faz acima.
+        stale=bool(alert_days > 0 and age_days >= alert_days),
+        too_old_to_show=bool(max_days > 0 and age_days >= max_days),
+    )
 
 
 def _is_worth_asking(ip: str) -> bool:
@@ -213,6 +337,14 @@ def approximate_city(ip: str | None) -> ApproximateCity | None:
 
     reader = _get_reader()
     if reader is None:
+        return None
+
+    if database_freshness().too_old_to_show:
+        # ⚠️ Mesma régua que fez a cidade calar onde o raio é ruim, aplicada ao tempo.
+        # Depois de um trimestre sem troca, "Próximo a Londrina" pode estar nomeando o
+        # dono ANTERIOR do bloco de IP — e a linha existe para a pessoa responder "fui eu
+        # que entrei?". Cidade errada faz ela responder "não fui eu" sobre o próprio
+        # acesso, que é pior do que não ter linha nenhuma.
         return None
 
     try:

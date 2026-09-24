@@ -22,6 +22,8 @@ const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('
 })
 await siteSeoReady
 
+requireContentOnSsr(error.value, !!data.value?.catalog, 'Cardápio')
+
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
 }, { immediate: true })

@@ -45,7 +45,7 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "shokupan": ("12", {"MASSA-FORMA": "4.800"}),
     "kuro-pan": ("8", {"MASSA-KUROPAN": "2.240"}),
     "croissant": ("48", {"MASSA-CROISSANT": "3.840"}),
-    "pain-chocolat": ("36", {"MASSA-CROISSANT": "2.880", "BATON-CHOCOLATE": "0.720"}),
+    "pain-chocolat": ("36", {"MASSA-CROISSANT": "2.880", "CHOCOLATE-BATON": "0.720"}),
     "coelhinho": ("16", {"MASSA-BUTTER": "0.960", "CREME-CHOCOLATE": "0.640"}),
     "folhado-dia": ("12", {"MASSA-FOLHADO": "0.744", "RECHEIO-MACA": "0.240"}),
     "bichon": ("12", {"MASSA-FOLHADO": "0.960", "CREME-LIMAO": "0.240"}),
@@ -72,14 +72,14 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "caranguejo": ("16", {"MASSA-BUTTER": "0.608", "GERGELIM": "0.032"}),
     "kuro-pan-burger": ("12", {"MASSA-KUROPAN": "1.080"}),
     "brioche-nanterre": ("8", {"MASSA-BRIOCHE": "1.920"}),
-    "brioche-chocolat": ("24", {"MASSA-BRIOCHE": "0.816", "GOTAS-CHOCOLATE": "0.192"}),
+    "brioche-chocolat": ("24", {"MASSA-BRIOCHE": "0.816", "CHOCOLATE-GOTAS": "0.192"}),
     "mini-brioche-bun-gergelim": ("24", {"MASSA-BRIOCHE": "0.720", "GERGELIM": "0.048"}),
     "ursinho": ("12", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.360"}),
     "porquinho": ("12", {"MASSA-BUTTER": "0.960", "CREME-BAUNILHA": "0.360"}),
     "challah": ("8", {"MASSA-BUTTER": "2.400"}),
     "hot-dog-vienna": ("12", {"MASSA-BUTTER": "0.720", "SALSICHA-VIENNA": "0.600"}),
     "mini-hot-dog-vienna": ("12", {"MASSA-BUTTER": "0.480", "SALSICHA-VIENNA": "0.300"}),
-    "deli-milho-bacon": ("12", {"MASSA-BUTTER": "0.840", "MILHO-VERDE": "0.240", "BACON": "0.120", "SALSINHA-DESID": "0.012"}),
+    "deli-milho-bacon": ("12", {"MASSA-BUTTER": "0.840", "MILHO-VERDE": "0.240", "BACON": "0.120", "SALSINHA-DESIDRATADA": "0.012"}),
     "cornet-chocolate": ("12", {"MASSA-BUTTER": "0.576", "CREME-CHOCOLATE": "0.144"}),
 }
 
@@ -108,7 +108,9 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "recheio-cebola-bacon-tomilho": ("2.7", "2.997", 4),
     "recheio-cebola-azapas": ("2.8", "3.037", 3),
     "molho-bechamel": ("2.9", "3.098", 4),
-    "creme-chocolate": ("2.9", "3.095", 4),
+    # Duas linhas desde 23/09 (base + chocolate), com a MESMA soma: os três
+    # insumos que faziam as vezes da base viraram o CREME-BAUNILHA que ela é.
+    "creme-chocolate": ("2.9", "3.095", 2),
     "creme-leite-ovos": ("2", "2.076", 4),
     "salada-da-casa": ("1.8", "1.900", 4),
     "vinagrete-frances": ("0.9", "0.917", 5),

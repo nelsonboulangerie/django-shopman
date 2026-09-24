@@ -22,9 +22,12 @@ mudar o formato, o que falha é o código de produção, e não estes testes —
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from shopman.shop.services import ip_location
+from shopman.shop.tests.mmdb_fixtures import mmdb_minimo
 
 
 @pytest.fixture(autouse=True)
@@ -49,24 +52,56 @@ def _registro(*, radius=20, city="Londrina", uf="PR", country="Brasil"):
     return registro
 
 
-class _BaseFalsa:
-    """Um leitor de base que conta quantas vezes foi consultado."""
+class _MetadadosFalsos:
+    """Só o campo que a trava de idade usa — é o contrato inteiro que ela precisa."""
 
-    def __init__(self, registro=None):
+    def __init__(self, build_epoch: int):
+        self.build_epoch = build_epoch
+
+
+class _BaseFalsa:
+    """Um leitor de base que conta quantas vezes foi consultado.
+
+    ⚠️ Ele responde `metadata()` e `close()` porque o leitor de VERDADE responde. Os
+    testes que exercitam o `_get_reader` real (a abertura única, por exemplo) passam por
+    esses dois métodos, e um falso que não os tem faria esses testes medirem o caminho de
+    erro achando que medem o caminho bom.
+    """
+
+    def __init__(self, registro=None, *, build_epoch: int | None = None):
         self.registro = registro
         self.consultas: list[str] = []
+        self.build_epoch = (
+            build_epoch
+            if build_epoch is not None
+            else int(datetime.datetime.now(datetime.UTC).timestamp())
+        )
+        self.fechado = False
 
     def get(self, ip):
         self.consultas.append(ip)
         return self.registro
 
+    def metadata(self):
+        return _MetadadosFalsos(self.build_epoch)
+
+    def close(self):
+        self.fechado = True
+
 
 @pytest.fixture
 def base(monkeypatch):
-    """Instala uma base falsa e conta quantas VEZES ela foi aberta."""
+    """Instala uma base falsa, com IDADE, e conta quantas VEZES ela foi aberta.
+
+    ⚠️ A base falsa nasce **recém-construída**, e o default importa: trocar o leitor por
+    um falso pula o `_get_reader` de verdade, que é quem lê a data do arquivo. Sem cravar
+    a data aqui, toda base falsa teria idade desconhecida — e idade desconhecida conta
+    como velha, o que faria a suíte inteira testar o caminho errado achando que testa o
+    certo. `idade_dias` é o que os testes de envelhecimento giram.
+    """
     aberturas = []
 
-    def _instalar(registro=None):
+    def _instalar(registro=None, *, idade_dias: int = 0, sem_data: bool = False):
         falsa = _BaseFalsa(registro)
 
         def _abrir():
@@ -74,6 +109,13 @@ def base(monkeypatch):
             return falsa
 
         monkeypatch.setattr(ip_location, "_get_reader", _abrir)
+        epoch = None
+        if not sem_data:
+            construida = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+                days=idade_dias
+            )
+            epoch = int(construida.timestamp())
+        monkeypatch.setattr(ip_location, "_build_epoch", epoch)
         falsa.aberturas = aberturas
         return falsa
 
@@ -320,3 +362,145 @@ def test_o_modulo_nao_importa_cliente_http():
 
     with pytest.raises(ImportError):
         __import__("geoip2")
+
+
+# ── A base envelhece, e envelhecer calado era o buraco ───────────────────────
+#
+# Estes prendem a quarta promessa, que é a mais escorregadia das quatro: as três de cima
+# falham ALTO (não abre, levanta, descarta). Esta falha BAIXO — a base velha abre, lê e
+# responde errado com raio bom e a confiança de sempre. Se estes testes caírem, o defeito
+# que volta não aparece em log nenhum.
+
+
+def _limiares(settings, *, avisar=21, esconder=90):
+    settings.GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = 50
+    settings.GEOIP_CITY_STALE_ALERT_DAYS = avisar
+    settings.GEOIP_CITY_MAX_AGE_DAYS = esconder
+
+
+def test_base_dentro_do_prazo_mostra_a_cidade(base, settings):
+    """O caso de controle: sem ele, um teste de envelhecimento que passa não prova nada."""
+    _limiares(settings)
+    base(_registro(radius=20), idade_dias=3)
+
+    lida = ip_location.approximate_city("200.150.100.50")
+
+    assert lida is not None and lida.label == "Londrina, PR · Brasil"
+
+
+def test_base_velha_demais_nao_mostra_cidade(base, settings):
+    """Passado o limiar largo, a cidade some — mesmo com a leitura perfeita.
+
+    ⚠️ O registro aqui é BOM: raio de 20 km, cidade, sigla e país todos presentes. É esse
+    o ponto — nenhum filtro existente reprovaria esta leitura. A única coisa errada com
+    ela é a idade da base, e antes desta trava isso não era "errado" em lugar nenhum.
+    """
+    _limiares(settings)
+    base(_registro(radius=20), idade_dias=91)
+
+    assert ip_location.approximate_city("200.150.100.50") is None
+
+
+def test_a_borda_do_limiar_de_exibicao_e_inclusiva(base, settings):
+    """Exatamente no limiar já esconde; um dia antes ainda mostra.
+
+    A borda é escrita porque `>` e `>=` são a mesma linha para quem lê rápido, e a
+    diferença entre elas é um dia inteiro de cidade possivelmente errada na tela.
+    """
+    _limiares(settings, esconder=90)
+
+    base(_registro(radius=20), idade_dias=89)
+    assert ip_location.approximate_city("200.150.100.50") is not None
+
+    base(_registro(radius=20), idade_dias=90)
+    assert ip_location.approximate_city("200.150.100.50") is None
+
+
+def test_data_ilegivel_conta_como_velha(base, settings):
+    """Base presente sem data legível não vira "provavelmente nova". Vira velha.
+
+    É a mesma regra do raio ausente: mostrar uma cidade cuja confiabilidade não se pôde
+    conferir É um palpite, e este módulo não dá palpite.
+    """
+    _limiares(settings)
+    base(_registro(radius=20), sem_data=True)
+
+    assert ip_location.approximate_city("200.150.100.50") is None
+
+    frescor = ip_location.database_freshness()
+    assert frescor.present is True
+    assert frescor.age_days is None
+    assert frescor.too_old_to_show is True
+
+
+def test_a_faixa_do_aviso_ainda_mostra_a_cidade(base, settings):
+    """Entre os dois limiares: o operador é avisado e a tela CONTINUA mostrando.
+
+    As duas faixas existem para não ter só um botão. Se o aviso já apagasse a linha, a
+    cidade morreria aos 21 dias na prática — porque o bump é manual — e o rótulo viraria
+    enfeite permanentemente mudo.
+    """
+    _limiares(settings)
+    base(_registro(radius=20), idade_dias=30)
+
+    assert ip_location.approximate_city("200.150.100.50") is not None
+
+    frescor = ip_location.database_freshness()
+    assert frescor.stale is True
+    assert frescor.too_old_to_show is False
+    assert frescor.age_days == 30
+
+
+def test_base_ausente_nao_e_base_velha(settings, tmp_path):
+    """Sem base não há idade, não há o que bumpar, e não há alerta a dar.
+
+    Ausência é o estado previsto em dev, na CI e em imagem construída sem chave da
+    MaxMind. Marcar isso como `stale` mandaria o operador atrás de um problema que não
+    existe todo dia, até ele aprender a ignorar o tipo de alerta inteiro.
+    """
+    _limiares(settings)
+    settings.GEOIP_CITY_DATABASE_PATH = str(tmp_path / "nao-existe.mmdb")
+
+    frescor = ip_location.database_freshness()
+
+    assert frescor.present is False
+    assert frescor.stale is False
+    assert frescor.too_old_to_show is False
+    assert frescor.age_days is None
+
+
+def test_limiar_zerado_desliga_a_trava(base, settings):
+    """Zero desliga, como o raio faz — é assim que a casa solta um guardrail pela env."""
+    _limiares(settings, avisar=0, esconder=0)
+    base(_registro(radius=20), idade_dias=4000)
+
+    assert ip_location.approximate_city("200.150.100.50") is not None
+    frescor = ip_location.database_freshness()
+    assert frescor.stale is False and frescor.too_old_to_show is False
+
+
+def test_a_data_sai_da_base_de_VERDADE(settings, tmp_path):
+    """Exercita o `maxminddb` REAL: a data que o arquivo carrega é a data que lemos.
+
+    ⚠️ Os testes acima trocam o leitor por um falso, o que é certo para a regra de idade e
+    errado para esta pergunta: `metadata().build_epoch` continua existindo e continua
+    sendo segundos desde 1970? Toda a trava de envelhecimento pendura nessa única chamada.
+    Se uma versão nova do `maxminddb` mudar a API, o que falha em produção é a proteção
+    inteira — em silêncio, que é exatamente o modo de falhar que esta frente veio matar.
+
+    O arquivo abaixo é um `.mmdb` mínimo mas VÁLIDO, montado byte a byte (árvore vazia,
+    separador de 16 bytes, marcador e o mapa de metadados). Ele não responde consulta
+    nenhuma — e não precisa: a pergunta aqui é só a data.
+    """
+    _limiares(settings)
+    construida = datetime.datetime(2026, 2, 4, tzinfo=datetime.UTC)
+    arquivo = tmp_path / "GeoLite2-City.mmdb"
+    arquivo.write_bytes(mmdb_minimo(int(construida.timestamp())))
+    settings.GEOIP_CITY_DATABASE_PATH = str(arquivo)
+
+    frescor = ip_location.database_freshness()
+
+    assert frescor.present is True
+    assert frescor.built_at == construida
+    esperado = (datetime.datetime.now(datetime.UTC) - construida).days
+    assert frescor.age_days == esperado

@@ -1990,11 +1990,6 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
         user = user_model.objects.get(username=username, is_active=True, is_staff=True)
     except user_model.DoesNotExist:
         return None
-    # Superusuário não assina por PIN de balcão (ver
-    # `backstage.services.operator._eligible`): `has_perm` dele é sempre True, e o
-    # PIN é a credencial curta digitada à vista da fila.
-    if user.is_superuser:
-        return None
     if not user.has_perm("cashman.adjust_shift"):
         return None
     operator = _bare_username(operator_username)
@@ -2038,7 +2033,7 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
     from shopman.doorman.models import PinCredential
 
     user = PinCredential.resolve_by_badge(badge)
-    if user is None or not user.is_active or not user.is_staff or user.is_superuser:
+    if user is None or not user.is_active or not user.is_staff:
         return None
     if not user.has_perm("cashman.adjust_shift"):
         return None
