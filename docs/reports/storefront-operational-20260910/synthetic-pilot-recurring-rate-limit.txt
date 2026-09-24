@@ -112,7 +112,7 @@ E           - button "Usar número internacional"
 E           - group:
 E             - group: "+55"
 E             - textbox "Telefone":
-E               - /placeholder: (43) 98404-9009
+E               - /placeholder: (43) 98123-4567
 E               - text: (43) 99184-0001
 E           - paragraph: Enviamos um código por SMS para este número.
 E         - button "Receber por SMS"

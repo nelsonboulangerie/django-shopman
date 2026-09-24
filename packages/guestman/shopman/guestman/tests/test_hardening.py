@@ -320,13 +320,13 @@ class TestPhoneNormalization:
     """ContactPoint phone normalization with international numbers."""
 
     def test_manychat_brazilian_number_fixed(self, db, customer):
-        """Manychat bug: +43984049009 (missing 55) -> +5543984049009."""
+        """Manychat bug: +43981234567 (missing 55) -> +5543981234567."""
         from shopman.guestman.models import ContactPoint
 
         cp = ContactPoint(
             customer=customer,
             type="whatsapp",
-            value_normalized="+43984049009",
+            value_normalized="+43981234567",
         )
         cp.save()
         cp.refresh_from_db()

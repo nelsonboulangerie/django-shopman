@@ -55,7 +55,7 @@ const profileCopy = computed(() => profile.value?.copy ?? {
   missing_value: 'Não informado'
 })
 
-// Telefone para leitura: "+55 (43) 98404-9009" em vez do E.164 cru.
+// Telefone para leitura: "+55 (43) 98123-4567" em vez do E.164 cru.
 const phoneDisplayLabel = computed(() =>
   displayE164Phone(profile.value?.phone || session.customerPhone.value || '') || 'Telefone confirmado'
 )

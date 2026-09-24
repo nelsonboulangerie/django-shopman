@@ -39,7 +39,20 @@
 - [ ] **Gateways em modo PRODUÇÃO**: EFI (Pix) cert+creds de prod, Stripe live keys, iFood prod. (Hoje staging = sandbox/test.)
 - [ ] `ADMIN_PASSWORD` forte (≥12, não-trivial) p/ o bootstrap do superuser de prod (em prod NÃO usar `admin/admin`).
 - [ ] Notificação: ManyChat token de prod, EmailSender de prod.
-- [ ] 🔴 **BLOQUEIO — rotacionar a chave de API da Comtele (vazou).** O repositório é
+- [x] ✅ **RESOLVIDO em 24/09/2026 — chave da Comtele rotacionada.** O dono criou a
+      chave nova, trocou `COMTELE_API_KEY` na DO e apagou a antiga. Provas (sem SMS):
+      o deploy `f25973a7` ("app spec updated") ficou `ACTIVE` às 08:08Z com
+      `COMTELE_API_KEY` presente como SECRET; a chave **antiga** agora leva `401` em
+      `GET api.comtele.com.br/routes` (em 02/09 dava `200`), igual a uma chave
+      inventada. ⚠️ **Falta 1 login por SMS de prova** com a chave nova: até lá, nenhum
+      envio passou por ela (zero códigos e zero alertas "SMS de login (Comtele)" desde
+      a troca). O histórico do git **não** foi reescrito, por decisão: com a chave
+      revogada o ganho é nulo, e o force-push quebraria os branches e PRs abertos de
+      outras sessões.
+
+      Registro do bloqueio, mantido como histórico e roteiro para a próxima rotação:
+
+      🔴 **BLOQUEIO — rotacionar a chave de API da Comtele (vazou).** O repositório é
       **público**. A chave (a única da conta, a que manda o SMS do login) foi publicada
       em **30/06/2026** em dois commits: `cefff8f8e` (valor inteiro em
       `docs/plans/GO-LIVE-SMS-WHATSAPP-STATUS.md`) e `4469773ab` (valor de fixture em

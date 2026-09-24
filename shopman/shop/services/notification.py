@@ -853,7 +853,7 @@ def _resolve_recipient(order, backend_name: str = "") -> str | None:
         # ⚠️ O telefone vai em E.164 COM o "+". O contrato do adapter (e do
         # resolver do guestman) é: dígitos puros = `subscriber_id` do ManyChat;
         # "+55…" = telefone a resolver. O PDV grava o telefone sem o "+"
-        # ("5543984049009"), e o adapter o tomava por subscriber_id — o ManyChat
+        # ("5543981234567"), e o adapter o tomava por subscriber_id — o ManyChat
         # respondia "Subscriber does not exist", a cadeia caía para o e-mail, e
         # um cliente COM WhatsApp cadastrado nunca recebia o link por lá.
         return _manychat_phone(customer_contact_phone(order))

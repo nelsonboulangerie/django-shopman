@@ -9,7 +9,7 @@ reais do F15. Nada de feature nova — foco em robustez, consistência e experi�
 
 ## P1: Telefone — Validação Robusta
 
-**Problema**: iOS autofill envia `(043) 98404-9009` (zero no DDD). O `normalize_phone`
+**Problema**: iOS autofill envia `(043) 98123-4567` (zero no DDD). O `normalize_phone`
 do Core converte corretamente, mas em algum ponto do fluxo o matching falha — sistema
 trata como número diferente. Cliente pode acabar com dois cadastros.
 
@@ -19,7 +19,7 @@ trata como número diferente. Cliente pode acabar com dois cadastros.
 - Garantir que TODA comparação usa `normalize_phone` ANTES de comparar.
 - Se o Customer.phone armazena formato diferente do ContactPoint.value_normalized,
   alinhar.
-- Teste: `(043) 98404-9009` e `(43) 98404-9009` devem resolver para o MESMO customer.
+- Teste: `(043) 98123-4567` e `(43) 98123-4567` devem resolver para o MESMO customer.
 
 ---
 

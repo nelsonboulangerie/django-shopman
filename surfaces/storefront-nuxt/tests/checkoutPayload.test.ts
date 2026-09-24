@@ -3,7 +3,7 @@ import { buildCheckoutPayload, type CheckoutFormState } from '../app/utils/check
 
 const deliveryState: CheckoutFormState = {
   name: '  Maria Silva ',
-  phone: ' 55 43 98404-9009 ',
+  phone: ' 55 43 98123-4567 ',
   fulfillment_type: 'delivery',
   saved_address_id: 12,
   delivery_address: ' Rua das Flores, 10 ',
@@ -40,7 +40,7 @@ describe('checkout payload contract', () => {
     expect(payload).toMatchObject({
       idempotency_key: 'checkout-fixed',
       name: 'Maria Silva',
-      phone: '55 43 98404-9009',
+      phone: '55 43 98123-4567',
       fulfillment_type: 'delivery',
       saved_address_id: 12,
       delivery_address: 'Rua das Flores, 10',
