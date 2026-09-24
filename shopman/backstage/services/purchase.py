@@ -87,6 +87,12 @@ class ResolvedReceiptLine:
     invoice_ncm: str = ""
     invoice_cest: str = ""
     invoice_unit: str = ""
+    #: Grupo ICMS do item na nota (CST do regime normal ou CSOSN do Simples) e
+    #: o valor de ST em centavos — o que diz se o item chegou com ST. O
+    #: recebimento confere isso contra o perfil fiscal do produto.
+    invoice_icms_cst: str = ""
+    invoice_icms_csosn: str = ""
+    invoice_st_value_q: int = 0
 
     @property
     def sku(self) -> str:
@@ -1368,7 +1374,21 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         # O eixo tributável só vem quando diz algo diferente do comercial.
         invoice_unit=_raw_text(raw, "invoiceTaxUnit", "invoice_tax_unit")
         or _raw_text(raw, "invoiceUnit", "invoice_unit"),
+        invoice_icms_cst=_raw_text(raw, "invoiceIcmsCst", "invoice_icms_cst"),
+        invoice_icms_csosn=_raw_text(raw, "invoiceIcmsCsosn", "invoice_icms_csosn"),
+        invoice_st_value_q=_raw_int(raw, "invoiceStValueQ", "invoice_st_value_q"),
     )
+
+
+def _raw_int(raw: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        try:
+            value = int(Decimal(str(raw.get(key) or 0)))
+        except (InvalidOperation, ValueError):
+            continue
+        if value:
+            return max(value, 0)
+    return 0
 
 
 def _raw_text(raw: dict[str, Any], *keys: str) -> str:
@@ -1509,6 +1529,10 @@ def _upsert_supplier_cost(*, material, supplier, conversion, cost_q: int, make_p
         raise PurchaseError(str(exc), code="cost_validation_failed", field="costInput") from exc
 
 
+#: O aviso de que a NF-e de compra discorda do cadastro fiscal do produto.
+FISCAL_DIVERGENCE_ALERT_TYPE = "purchase_invoice_fiscal_divergence"
+
+
 def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_key: str) -> None:
     """A NF-e é a PRIMEIRA fonte da sugestão de catálogo da mercadoria de revenda.
 
@@ -1519,20 +1543,42 @@ def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_k
     fica de fora até o WP de insumos decidir se o GTIN é do material ou da
     oferta do fornecedor.
 
+    A mesma nota CONFERE o cadastro fiscal (``shop/services/invoice_fiscal_check``):
+    NCM ou CEST diferentes vão para o rascunho com o porquê em ``detail``, e
+    qualquer divergência — inclusive ST na nota × perfil sem ST, e o inverso —
+    levanta um ``OperatorAlert``. O cadastro não muda sozinho: decisão do dono
+    (24/09/2026), "pendências que sobrarem confirmamos nas próximas NFs".
+
     Sugestão é conveniência: se falhar, a entrada de estoque não cai — mas
     grita no log, porque rascunho que some calado é pergunta que ninguém faz.
     """
+    from shopman.shop.services.invoice_fiscal_check import check_invoice_fiscal
     from shopman.shop.services.product_enrichment import suggest_from_invoice
 
     Product = apps.get_model("offerman", "Product")
     for line in lines:
-        if not (line.invoice_ean or line.invoice_ncm or line.invoice_cest):
+        if not (
+            line.invoice_ean
+            or line.invoice_ncm
+            or line.invoice_cest
+            or line.invoice_icms_cst
+            or line.invoice_icms_csosn
+            or line.invoice_st_value_q
+        ):
             continue
         product = Product.objects.filter(sku=line.sku).first()
         if product is None:
             continue
         try:
             with transaction.atomic():
+                divergences = check_invoice_fiscal(
+                    metadata=product.metadata,
+                    ncm=line.invoice_ncm,
+                    cest=line.invoice_cest,
+                    icms_cst=line.invoice_icms_cst,
+                    icms_csosn=line.invoice_icms_csosn,
+                    st_value_q=line.invoice_st_value_q,
+                )
                 suggest_from_invoice(
                     product,
                     gtin=line.invoice_ean,
@@ -1541,12 +1587,42 @@ def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_k
                     cest=line.invoice_cest,
                     unit=line.invoice_unit,
                     access_key=invoice_key,
+                    details={d.field: d.message for d in divergences},
                 )
+                if divergences:
+                    _alert_fiscal_divergence(product=product, divergences=divergences, invoice_key=invoice_key)
         except Exception:
             logger.exception(
                 "purchase.catalog_suggestion_failed",
                 extra={"product": line.sku, "invoice_key_suffix": invoice_key[-8:]},
             )
+
+
+def _alert_fiscal_divergence(*, product, divergences, invoice_key: str) -> None:
+    """Um aviso por produto e por conjunto de divergências — a próxima NF igual não repete.
+
+    A chave da nota vai no FIM da mensagem: o começo (produto + divergências) é
+    o que identifica o aviso, e uma segunda nota que diz a mesma coisa enquanto
+    o primeiro aviso segue aberto não levanta outro.
+    """
+    from shopman.backstage.models import OperatorAlert
+    from shopman.backstage.services.alerts import create_alert
+
+    core = (
+        f"NF-e de compra diverge do cadastro fiscal de {product.name} ({product.sku}): "
+        + " ".join(d.message for d in divergences)
+    )
+    if OperatorAlert.objects.filter(
+        type=FISCAL_DIVERGENCE_ALERT_TYPE, resolved_at__isnull=True, message__startswith=core
+    ).exists():
+        return
+    tail = " Nada mudou no cadastro."
+    if any(d.field in ("ncm", "cest") for d in divergences):
+        tail += " NCM/CEST da nota ficaram como sugestão na ficha do produto (Revisar sugestão do GTIN)."
+    if any(d.field == "st" for d in divergences):
+        tail += " O perfil fiscal se troca na aba Fiscal do produto."
+    suffix = f" (NF-e …{invoice_key[-9:]})" if invoice_key else ""
+    create_alert(type=FISCAL_DIVERGENCE_ALERT_TYPE, message=core + tail + suffix)
 
 
 def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) -> None:
