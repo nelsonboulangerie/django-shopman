@@ -104,7 +104,7 @@ def supplier(db):
             "purchase": {
                 "invoice_product_map": {
                     "FAR-25": {
-                        "materialSku": "FARINHA-T65",
+                        "materialSku": "FARINHA-NOVARA-T55",
                         "conversionLabel": "saco 25 kg",
                     }
                 }
@@ -116,7 +116,7 @@ def supplier(db):
 @pytest.fixture
 def material(db):
     return Material.objects.create(
-        sku="FARINHA-T65",
+        sku="FARINHA-NOVARA-T55",
         name="Farinha T65",
         unit="kg",
         shelf_life_days=180,
@@ -215,7 +215,7 @@ def test_material_name_inside_long_distributor_description_is_suggested(supplier
     virgem" pontua 85,5 no WRatio (redutor de comprimento) — abaixo de 87.
     A cobertura de tokens reconhece o insumo contido na descrição.
     """
-    Material.objects.create(sku="AZEITE", name="Azeite extra virgem", unit="l")
+    Material.objects.create(sku="AZEITE-EXTRAVIRGEM", name="Azeite extra virgem", unit="l")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="AZ-500", product_name="AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML", unit="UN"),
@@ -224,13 +224,13 @@ def test_material_name_inside_long_distributor_description_is_suggested(supplier
 
     line = draft["lines"][0]
     assert line["materialSku"] == ""
-    assert line["suggestedMaterialSku"] == "AZEITE"
+    assert line["suggestedMaterialSku"] == "AZEITE-EXTRAVIRGEM"
     assert line["suggestionScore"] == 100
 
 
 @pytest.mark.django_db
 def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
-    Material.objects.create(sku="FERMENTO-BIOLOGICO", name="Fermento biológico", unit="g")
+    Material.objects.create(sku="FERMENTO-BIOLOGICO-FRESCO", name="Fermento biológico", unit="g")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="FERM-500", product_name="FERM BIOL SECO INST FLEISCHMANN 500G", unit="UN"),
@@ -239,13 +239,13 @@ def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
 
     line = draft["lines"][0]
     assert line["materialSku"] == ""
-    assert line["suggestedMaterialSku"] == "FERMENTO-BIOLOGICO"
+    assert line["suggestedMaterialSku"] == "FERMENTO-BIOLOGICO-FRESCO"
     assert line["suggestionScore"] == 100
 
 
 @pytest.mark.django_db
 def test_single_token_material_never_matches_by_character_overlap(supplier):
-    Material.objects.create(sku="SAL", name="Sal", unit="kg")
+    Material.objects.create(sku="SAL-REFINADO", name="Sal", unit="kg")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="SGD-50", product_name="SALGADINHO DE MILHO 50G", unit="UN"),
@@ -264,7 +264,7 @@ def test_tie_between_generic_and_specific_material_prefers_the_specific(supplier
     Material.objects.create(sku="AZEITE-EV", name="Azeite extra virgem", unit="l")
 
     draft = parse_nfe_xml_to_purchase_draft(
-        _nfe_xml(product_code="AZ-500", product_name="AZEITE DE OLIVA EXTRA VIRGEM 500ML", unit="UN"),
+        _nfe_xml(product_code="AZ-500", product_name="AZEITE-EXTRAVIRGEM DE OLIVA EXTRA VIRGEM 500ML", unit="UN"),
         access_key=VALID_ACCESS_KEY,
     )
 
@@ -424,7 +424,7 @@ def test_doczip_within_the_cap_still_decodes():
 def fermento(db):
     """Insumo pesado em kg — e comprado em pacote. E onde os dois eixos brigam."""
     return Material.objects.create(
-        sku="FERMENTO-BIOLOGICO",
+        sku="FERMENTO-BIOLOGICO-FRESCO",
         name="Fermento biologico",
         unit="kg",
         metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
@@ -628,7 +628,7 @@ def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
     """O mesmo item, agora com insumo: o par da nota vira "Caixa 5 kg"."""
     from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
 
-    manteiga = Material.objects.create(sku="MANTEIGA-FRANCESA", name="Manteiga francesa", unit="kg")
+    manteiga = Material.objects.create(sku="MANTEIGA-PRESIDENT-SEM-SAL", name="Manteiga francesa", unit="kg")
 
     suggestion = conversion_from_invoice_axes(
         material=manteiga,

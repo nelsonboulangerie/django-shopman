@@ -7,12 +7,12 @@ pytestmark = pytest.mark.django_db
 
 class TestMaterial:
     def test_basics_and_perishable(self):
-        m = Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg", shelf_life_days=180)
-        assert str(m).startswith("FARINHA-T65")
+        m = Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg", shelf_life_days=180)
+        assert str(m).startswith("FARINHA-NOVARA-T55")
         assert m.is_perishable is True
 
     def test_non_perishable_when_no_shelf_life(self):
-        m = Material.objects.create(sku="SAL", name="Sal", unit="kg")
+        m = Material.objects.create(sku="SAL-REFINADO", name="Sal", unit="kg")
         assert m.is_perishable is False
 
     def test_sku_unique(self):
@@ -24,7 +24,7 @@ class TestMaterial:
 class TestSupplierMaterialCost:
     def test_cost_per_pair_unique(self):
         s = Supplier.objects.create(ref="moinho", name="Moinho SP")
-        m = Material.objects.create(sku="FARINHA-T65", name="Farinha")
+        m = Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha")
         SupplierMaterialCost.objects.create(supplier=s, material=m, cost_q=350)
         with pytest.raises(IntegrityError), transaction.atomic():
             SupplierMaterialCost.objects.create(supplier=s, material=m, cost_q=400)

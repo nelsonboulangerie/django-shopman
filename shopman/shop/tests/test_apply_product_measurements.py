@@ -50,7 +50,7 @@ def _ficha_do_campagne() -> Recipe:
         batch_size=Decimal("10"), is_active=True,
     )
     RecipeItem.objects.create(
-        recipe=recipe, input_sku="FARINHA-T65", quantity=Decimal("3.400"),
+        recipe=recipe, input_sku="FARINHA-NOVARA-T55", quantity=Decimal("3.400"),
         meta={
             "label": "Farinha de trigo T65",
             "nutrition": {

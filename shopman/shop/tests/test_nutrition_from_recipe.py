@@ -62,7 +62,7 @@ def _make_recipe_with_items(sku: str = "PAO", batch_size: Decimal = Decimal("10"
     )
     RecipeItem.objects.create(
         recipe=recipe,
-        input_sku="SAL",
+        input_sku="SAL-REFINADO",
         quantity=Decimal("0.010"),
         meta={
             "label": "Sal",
@@ -168,7 +168,7 @@ class TestFillNutritionFromRecipe:
         )
         RecipeItem.objects.create(
             recipe=recipe,
-            input_sku="AZEITE",
+            input_sku="AZEITE-EXTRAVIRGEM",
             quantity=Decimal("1"),
             unit="L",
             meta={
@@ -219,7 +219,7 @@ class TestFillNutritionFromRecipe:
         fill_nutrition_from_recipe(product)
         product.refresh_from_db()
 
-        # Order: FARINHA (1.000) > AGUA (0.650) > SAL (0.010)
+        # Order: FARINHA (1.000) > AGUA (0.650) > SAL-REFINADO (0.010)
         text = product.ingredients_text
         assert text.index("Farinha") < text.index("Água") < text.index("Sal")
 
@@ -248,7 +248,7 @@ class TestFillNutritionFromRecipe:
             batch_size=Decimal("1"), is_active=True,
         )
         RecipeItem.objects.create(
-            recipe=recheio, input_sku="ACUCAR", quantity=Decimal("0.300"),
+            recipe=recheio, input_sku="ACUCAR-CRISTAL", quantity=Decimal("0.300"),
             meta={"label": "Açúcar"},
         )
         RecipeItem.objects.create(
@@ -321,7 +321,7 @@ class TestFillNutritionFromRecipe:
             meta={"label": "Farinha"},
         )
         RecipeItem.objects.create(
-            recipe=recipe, input_sku="SAL", quantity=Decimal("0.010"), unit="kg",
+            recipe=recipe, input_sku="SAL-REFINADO", quantity=Decimal("0.010"), unit="kg",
             meta={"label": "Sal"},
         )
 

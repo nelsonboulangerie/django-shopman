@@ -310,13 +310,13 @@ PROVISIONAL_CAPACITY_PER_DAY = {
 # Cobertura de compra da casa (dono, 26/08): embalagem que entra pela porta e
 # teto de um pedido de farinha; fresco é ritmo de compra, não só validade.
 PACOTE_KG = {
-    "FARINHA-T65": 25, "FARINHA-T55": 25, "FARINHA-T45": 25,
-    "FARINHA-INTEGRAL": 25, "FARINHA-CENTEIO": 25,
-    "ACUCAR": 5, "SAL": 1,
+    "FARINHA-NOVARA-T55": 25, "FARINHA-ANACONDA-PREMIUM": 25, "FARINHA-BAGATELLE-T45": 25,
+    "FARINHA-INTEGRAL-ORGANICA": 25, "FARINHA-CENTEIO-INTEGRAL-ORGANICA": 25,
+    "ACUCAR-CRISTAL": 5, "SAL-REFINADO": 1,
 }
 TETO_SACAS_POR_PEDIDO = 25  # dono, 26/08: pedidos de 15 a 25 sacas
-FRESCOS_SEMANAIS = {"MANTEIGA-FRANCESA"}
-PISO_ESPECIARIA_KG = {"CANELA": Decimal("0.5"), "ALECRIM": Decimal("0.5")}
+FRESCOS_SEMANAIS = {"MANTEIGA-PRESIDENT-SEM-SAL"}
+PISO_ESPECIARIA_KG = {"CANELA-PO": Decimal("0.5"), "ALECRIM-FRESCO": Decimal("0.5")}
 
 
 def _recipe_maps():
@@ -3405,14 +3405,14 @@ class Command(BaseCommand):
             # ── Bases (dono, 26/08: "Levain, Pasta Autolizada, Yudane" são
             # pré-preparos de verdade). Composições PROPOSTAS para a bancada.
             {
-                # Alimentação 1:1:1 sobre a cultura (FERMENTO-NATURAL).
+                # Alimentação 1:1:1 sobre a cultura (LEVAIN-LIQUIDO).
                 "ref": "creme-levain",
                 "name": "Levain",
                 "output_sku": "LEVAIN",
                 "batch_size": Decimal("5"),
                 "items": [
-                    ("FERMENTO-NATURAL", Decimal("1.700")),
-                    ("FARINHA-T65", Decimal("1.700")),
+                    ("LEVAIN-LIQUIDO", Decimal("1.700")),
+                    ("FARINHA-NOVARA-T55", Decimal("1.700")),
                     ("AGUA-FILTRADA", Decimal("1.700"))
                 ],
             },
@@ -3422,7 +3422,7 @@ class Command(BaseCommand):
                 "output_sku": "PASTA-AUTOLIZADA",
                 "batch_size": Decimal("8.4"),
                 "items": [
-                    ("FARINHA-T65", Decimal("5.000")),
+                    ("FARINHA-NOVARA-T55", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("3.500"))
                 ],
             },
@@ -3433,7 +3433,7 @@ class Command(BaseCommand):
                 "output_sku": "YUDANE",
                 "batch_size": Decimal("1.9"),
                 "items": [
-                    ("FARINHA-T55", Decimal("1.000")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("1.000")),
                     ("AGUA-FILTRADA", Decimal("1.000"))
                 ],
             },
@@ -3445,8 +3445,8 @@ class Command(BaseCommand):
                 "items": [
                     ("PASTA-AUTOLIZADA", Decimal("8.400")),
                     ("LEVAIN", Decimal("1.500")),
-                    ("SAL", Decimal("0.100")),
-                    ("MALTE", Decimal("0.020"))
+                    ("SAL-REFINADO", Decimal("0.100")),
+                    ("MALTE-EXTRATO", Decimal("0.020"))
                 ],
             },
             {
@@ -3455,12 +3455,12 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-CAMPAGNE",
                 "batch_size": Decimal("10"),
                 "items": [
-                    ("FARINHA-T65", Decimal("2.500")),
-                    ("FARINHA-INTEGRAL", Decimal("2.500")),
-                    ("FARINHA-CENTEIO", Decimal("0.600")),
+                    ("FARINHA-NOVARA-T55", Decimal("2.500")),
+                    ("FARINHA-INTEGRAL-ORGANICA", Decimal("2.500")),
+                    ("FARINHA-CENTEIO-INTEGRAL-ORGANICA", Decimal("0.600")),
                     ("AGUA-FILTRADA", Decimal("3.500")),
                     ("LEVAIN", Decimal("1.500")),
-                    ("SAL", Decimal("0.100"))
+                    ("SAL-REFINADO", Decimal("0.100"))
                 ],
             },
             {
@@ -3469,11 +3469,11 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-CIABATTA",
                 "batch_size": Decimal("10"),
                 "items": [
-                    ("FARINHA-T55", Decimal("5.000")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("4.000")),
                     ("LEVAIN", Decimal("1.500")),
-                    ("AZEITE", Decimal("0.228")),
-                    ("SAL", Decimal("0.100"))
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.228")),
+                    ("SAL-REFINADO", Decimal("0.100"))
                 ],
             },
             {
@@ -3486,13 +3486,13 @@ class Command(BaseCommand):
                 "batch_size": Decimal("8.2"),
                 "items": [
                     # Com yudane (dono, 26/08) — proposta de bancada.
-                    ("FARINHA-T55", Decimal("4.400")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("4.400")),
                     ("YUDANE", Decimal("1.000")),
-                    ("LEITE", Decimal("1.854")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.700")),
-                    ("ACUCAR", Decimal("0.350")),
-                    ("FERMENTO-BIOLOGICO", Decimal("0.150")),
-                    ("SAL", Decimal("0.100")),
+                    ("LEITE-INTEGRAL-A", Decimal("1.854")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.700")),
+                    ("ACUCAR-CRISTAL", Decimal("0.350")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.150")),
+                    ("SAL-REFINADO", Decimal("0.100")),
                 ],
             },
             {
@@ -3502,12 +3502,12 @@ class Command(BaseCommand):
                 # 9,456 kg de insumo → 9 kg de massa (4,8% de perda). Era 10.
                 "batch_size": Decimal("9"),
                 "items": [
-                    ("FARINHA-T45", Decimal("4.800")),
-                    ("MANTEIGA-FRANCESA", Decimal("2.400")),
-                    ("LEITE", Decimal("1.236")),
-                    ("ACUCAR", Decimal("0.450")),
-                    ("FERMENTO-BIOLOGICO", Decimal("0.180")),
-                    ("SAL", Decimal("0.090")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("4.800")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("2.400")),
+                    ("LEITE-INTEGRAL-A", Decimal("1.236")),
+                    ("ACUCAR-CRISTAL", Decimal("0.450")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.180")),
+                    ("SAL-REFINADO", Decimal("0.090")),
                     ("OVOS", Decimal("0.300"))
                 ],
             },
@@ -3519,12 +3519,12 @@ class Command(BaseCommand):
                 # o pior dos três: +24,4% de massa saindo do nada.
                 "batch_size": Decimal("8"),
                 "items": [
-                    ("FARINHA-T45", Decimal("4.000")),
-                    ("MANTEIGA-FRANCESA", Decimal("2.000")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("4.000")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("2.000")),
                     ("OVOS", Decimal("1.200")),
-                    ("ACUCAR", Decimal("0.600")),
-                    ("FERMENTO-BIOLOGICO", Decimal("0.160")),
-                    ("SAL", Decimal("0.080")),
+                    ("ACUCAR-CRISTAL", Decimal("0.600")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.160")),
+                    ("SAL-REFINADO", Decimal("0.080")),
                 ],
             },
             {
@@ -3535,14 +3535,14 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-KUROPAN",
                 "batch_size": Decimal("8.2"),
                 "items": [
-                    ("FARINHA-T55", Decimal("4.200")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("4.200")),
                     ("YUDANE", Decimal("1.000")),
-                    ("LEITE", Decimal("1.854")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.600")),
-                    ("ACUCAR", Decimal("0.400")),
-                    ("CHOCOLATE-70", Decimal("0.400")),
-                    ("FERMENTO-BIOLOGICO", Decimal("0.150")),
-                    ("SAL", Decimal("0.100")),
+                    ("LEITE-INTEGRAL-A", Decimal("1.854")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.600")),
+                    ("ACUCAR-CRISTAL", Decimal("0.400")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.400")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.150")),
+                    ("SAL-REFINADO", Decimal("0.100")),
                 ],
             },
             {
@@ -3553,10 +3553,10 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-FOLHADO",
                 "batch_size": Decimal("9.5"),
                 "items": [
-                    ("FARINHA-T45", Decimal("4.800")),
-                    ("MANTEIGA-FRANCESA", Decimal("3.200")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("4.800")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("3.200")),
                     ("AGUA-FILTRADA", Decimal("1.800")),
-                    ("SAL", Decimal("0.090"))
+                    ("SAL-REFINADO", Decimal("0.090"))
                 ],
             },
             {
@@ -3567,11 +3567,11 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-MADELEINE",
                 "batch_size": Decimal("4.9"),
                 "items": [
-                    ("FARINHA-T45", Decimal("1.414")),
-                    ("MANTEIGA-FRANCESA", Decimal("1.339")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("1.414")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1.339")),
                     ("OVOS", Decimal("1.228")),
-                    ("ACUCAR", Decimal("0.945")),
-                    ("LIMAO", Decimal("0.074"))
+                    ("ACUCAR-CRISTAL", Decimal("0.945")),
+                    ("LIMAO-SICILIANO", Decimal("0.074"))
                 ],
             },
             {
@@ -3582,10 +3582,10 @@ class Command(BaseCommand):
                 "output_sku": "RECHEIO-MACA",
                 "batch_size": Decimal("5"),
                 "items": [
-                    ("MACA", Decimal("3.800")),
-                    ("ACUCAR", Decimal("1.100")),
-                    ("CANELA", Decimal("0.060")),
-                    ("LIMAO", Decimal("0.120"))
+                    ("MACA-FUJI", Decimal("3.800")),
+                    ("ACUCAR-CRISTAL", Decimal("1.100")),
+                    ("CANELA-PO", Decimal("0.060")),
+                    ("LIMAO-SICILIANO", Decimal("0.120"))
                 ],
             },
             {
@@ -3609,11 +3609,11 @@ class Command(BaseCommand):
                 "output_sku": "CREME-BAUNILHA",
                 "batch_size": Decimal("5"),
                 "items": [
-                    ("LEITE", Decimal("3.502")),
-                    ("ACUCAR", Decimal("0.800")),
+                    ("LEITE-INTEGRAL-A", Decimal("3.502")),
+                    ("ACUCAR-CRISTAL", Decimal("0.800")),
                     ("OVOS", Decimal("0.500")),
-                    ("FARINHA-T45", Decimal("0.300")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.100")),
+                    ("FARINHA-BAGATELLE-T45", Decimal("0.300")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.100")),
                 ],
             },
             {
@@ -3625,9 +3625,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("3"),
                 "items": [
                     ("OVOS", Decimal("1.000")),
-                    ("ACUCAR", Decimal("0.950")),
-                    ("LIMAO", Decimal("0.700")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.400")),
+                    ("ACUCAR-CRISTAL", Decimal("0.950")),
+                    ("LIMAO-SICILIANO", Decimal("0.700")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.400")),
                 ],
             },
             {
@@ -3671,7 +3671,7 @@ class Command(BaseCommand):
                     # 414 g de massa + 4 g de alecrim + 2 g de sal grosso =
                     # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
                     ("MASSA-CIABATTA", Decimal("0.414")),
-                    ("ALECRIM", Decimal("0.004")),
+                    ("ALECRIM-FRESCO", Decimal("0.004")),
                     ("SAL-GROSSO", Decimal("0.002"))
                 ],
             },
@@ -3715,7 +3715,7 @@ class Command(BaseCommand):
                     # 80 g de folhada + 20 g de bâton (os dois bâtons
                     # clássicos) = 100 g crus, para 90 g assados.
                     ("MASSA-CROISSANT", Decimal("0.080")),
-                    ("CHOCOLATE-BATON", Decimal("0.020")),
+                    ("CHOCOLATE-BATON-MEIOAMARGO", Decimal("0.020")),
                 ],
             },
             {
@@ -3788,13 +3788,13 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-BUTTER",
                 "batch_size": Decimal("8.5"),
                 "items": [
-                    ("FARINHA-T55", Decimal("5.000")),
-                    ("LEITE", Decimal("1.648")),
-                    ("MANTEIGA-FRANCESA", Decimal("1.200")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5.000")),
+                    ("LEITE-INTEGRAL-A", Decimal("1.648")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1.200")),
                     ("OVOS", Decimal("0.400")),
-                    ("ACUCAR", Decimal("0.400")),
-                    ("FERMENTO-BIOLOGICO", Decimal("0.150")),
-                    ("SAL", Decimal("0.100")),
+                    ("ACUCAR-CRISTAL", Decimal("0.400")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.150")),
+                    ("SAL-REFINADO", Decimal("0.100")),
                 ],
             },
             {
@@ -3804,12 +3804,12 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-PITA",
                 "batch_size": Decimal("8.2"),
                 "items": [
-                    ("FARINHA-T65", Decimal("5.000")),
+                    ("FARINHA-NOVARA-T55", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("3.000")),
-                    ("AZEITE", Decimal("0.137")),
-                    ("FERMENTO-BIOLOGICO", Decimal("0.100")),
-                    ("SAL", Decimal("0.100")),
-                    ("ACUCAR", Decimal("0.050"))
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137")),
+                    ("FERMENTO-BIOLOGICO-FRESCO", Decimal("0.100")),
+                    ("SAL-REFINADO", Decimal("0.100")),
+                    ("ACUCAR-CRISTAL", Decimal("0.050"))
                 ],
             },
             {
@@ -3821,8 +3821,8 @@ class Command(BaseCommand):
                 "items": [
                     ("FRANGO", Decimal("3.600")),
                     ("CEBOLA-ROXA", Decimal("0.300")),
-                    ("AZEITE", Decimal("0.137")),
-                    ("SAL", Decimal("0.040"))
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137")),
+                    ("SAL-REFINADO", Decimal("0.040"))
                 ],
             },
             {
@@ -3833,8 +3833,8 @@ class Command(BaseCommand):
                 "items": [
                     ("CEBOLA-ROXA", Decimal("1.800")),
                     ("BACON", Decimal("1.000")),
-                    ("TOMILHO", Decimal("0.060")),
-                    ("AZEITE", Decimal("0.137"))
+                    ("TOMILHO-FRESCO", Decimal("0.060")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137"))
                 ],
             },
             {
@@ -3844,8 +3844,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("2.8"),
                 "items": [
                     ("CEBOLA-ROXA", Decimal("2.200")),
-                    ("AZEITONA", Decimal("0.700")),
-                    ("AZEITE", Decimal("0.137"))
+                    ("AZEITONA-AZAPA", Decimal("0.700")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.137"))
                 ],
             },
             {
@@ -3854,10 +3854,10 @@ class Command(BaseCommand):
                 "output_sku": "MOLHO-BECHAMEL",
                 "batch_size": Decimal("2.9"),
                 "items": [
-                    ("LEITE", Decimal("2.678")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.200")),
-                    ("FARINHA-T55", Decimal("0.200")),
-                    ("SAL", Decimal("0.020"))
+                    ("LEITE-INTEGRAL-A", Decimal("2.678")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.200")),
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("0.200")),
+                    ("SAL-REFINADO", Decimal("0.020"))
                 ],
             },
             {
@@ -3889,7 +3889,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("2.9"),
                 "items": [
                     ("CREME-BAUNILHA", Decimal("1.895")),
-                    ("CHOCOLATE-70", Decimal("1.200")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("1.200")),
                 ],
             },
             {
@@ -3899,10 +3899,10 @@ class Command(BaseCommand):
                 "output_sku": "CREME-LEITE-OVOS",
                 "batch_size": Decimal("2"),
                 "items": [
-                    ("CREME-DE-LEITE", Decimal("0.808")),
-                    ("LEITE", Decimal("0.618")),
+                    ("NATA-FRESCA", Decimal("0.808")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.618")),
                     ("OVOS", Decimal("0.500")),
-                    ("ACUCAR", Decimal("0.150"))
+                    ("ACUCAR-CRISTAL", Decimal("0.150"))
                 ],
             },
             {
@@ -3924,15 +3924,15 @@ class Command(BaseCommand):
                 "output_sku": "VINAGRETE-FRANCES",
                 "batch_size": Decimal("0.9"),
                 "items": [
-                    ("AZEITE", Decimal("0.637")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("0.637")),
                     # Era `MT`, o SKU do PRODUTO Mostarda da Casa: a ficha
                     # apontava para o catálogo de venda, não para um insumo. A
                     # mostarda que entra aqui é a Beaufor Dijon de food service
                     # (dele, 22/09/2026) — ver WP-INSUMOS-DA-VIDA-REAL.
                     ("MOSTARDA-DIJON", Decimal("0.100")),
-                    ("LIMAO", Decimal("0.150")),
-                    ("SAL", Decimal("0.010")),
-                    ("ACUCAR", Decimal("0.020"))
+                    ("LIMAO-SICILIANO", Decimal("0.150")),
+                    ("SAL-REFINADO", Decimal("0.010")),
+                    ("ACUCAR-CRISTAL", Decimal("0.020"))
                 ],
             },
             # ══ Seção 2b — fichas dos assados restaurados (crus do dono) ═════
@@ -4022,7 +4022,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
-                    ("ALECRIM", Decimal("0.004")),         # 4 g/un
+                    ("ALECRIM-FRESCO", Decimal("0.004")),         # 4 g/un
                     ("SAL-GROSSO", Decimal("0.001")),      # 1 g/un
                 ],
             },
@@ -4148,7 +4148,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BRIOCHE", Decimal("0.034")),      # 34 g/un
-                    ("CHOCOLATE-GOTAS", Decimal("0.008")),    # 8 g/un
+                    ("CHOCOLATE-GOTAS-AOLEITE", Decimal("0.008")),    # 8 g/un
                 ],
             },
             {
@@ -4218,7 +4218,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [
                     ("MASSA-BUTTER", Decimal("0.070")),      # 70 g/un
-                    ("MILHO-VERDE", Decimal("0.020")),       # 20 g/un
+                    ("MILHO-VERDE-CONSERVA", Decimal("0.020")),       # 20 g/un
                     ("BACON", Decimal("0.010")),             # 10 g/un
                     ("SALSINHA-DESIDRATADA", Decimal("0.001")),    # 1 g/un
                 ],
@@ -4254,7 +4254,7 @@ class Command(BaseCommand):
                     ("QUEIJO-PRATO", Decimal("0.040")),
                     ("REQUEIJAO-CORTE", Decimal("0.030")),
                     ("QUEIJO-PARMESAO", Decimal("0.015")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.010")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.010")),
                 ],
             },
             {
@@ -4266,7 +4266,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FORMA", Decimal("0.110")),
                     ("PRESUNTO-CASA", Decimal("0.040")),
-                    ("QUEIJO-GRUYERE", Decimal("0.060")),
+                    ("QUEIJO-GOUDA", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
                     ("SALADA-DA-CASA", Decimal("0.060")),
                     ("VINAGRETE-FRANCES", Decimal("0.010"))
@@ -4281,7 +4281,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FORMA", Decimal("0.110")),
                     ("PRESUNTO-CASA", Decimal("0.040")),
-                    ("QUEIJO-GRUYERE", Decimal("0.060")),
+                    ("QUEIJO-GOUDA", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
                     ("OVOS", Decimal("0.050"))
                 ],
@@ -4295,7 +4295,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FORMA", Decimal("0.110")),
                     ("PRESUNTO-CASA", Decimal("0.040")),
-                    ("QUEIJO-GRUYERE", Decimal("0.060")),
+                    ("QUEIJO-GOUDA", Decimal("0.060")),
                     ("MOLHO-BECHAMEL", Decimal("0.030")),
                     ("OVOS", Decimal("0.050")),
                     ("SALADA-DA-CASA", Decimal("0.060")),
@@ -4311,7 +4311,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("TRADI", Decimal("0.125")),   # meia baguette
-                    ("MANTEIGA-FRANCESA", Decimal("0.020")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.020")),
                     ("PRESUNTO-CASA", Decimal("0.070")),
                 ],
             },
@@ -4326,9 +4326,9 @@ class Command(BaseCommand):
                 "items": [
                     ("BRNT", Decimal("0.026")),
                     ("CREME-LEITE-OVOS", Decimal("0.060")),
-                    ("ACUCAR", Decimal("0.010")),
-                    ("MANTEIGA-FRANCESA", Decimal("0.010")),
-                    ("CANELA", Decimal("0.001")),
+                    ("ACUCAR-CRISTAL", Decimal("0.010")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.010")),
+                    ("CANELA-PO", Decimal("0.001")),
                 ],
             },
             # ══ Seção 2b — fichas de BEBIDA (is_active=False) ════════════════
@@ -4338,7 +4338,7 @@ class Command(BaseCommand):
                 "output_sku": "SP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
-                "items": [("CAFE-GRAO", Decimal("0.018"))],
+                "items": [("CAFE-ORFEU-CLASSICO", Decimal("0.018"))],
             },
             {
                 "ref": "espresso-macchiato",
@@ -4347,8 +4347,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.021"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.021"))
                 ],
             },
             {
@@ -4358,8 +4358,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.155"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.155"))
                 ],
             },
             {
@@ -4369,9 +4369,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.155")),
-                    ("CHOCOLATE-70", Decimal("0.020"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.155")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.020"))
                 ],
             },
             {
@@ -4381,9 +4381,9 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.185")),
-                    ("CHOCOLATE-70", Decimal("0.025"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.185")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.025"))
                 ],
             },
             {
@@ -4393,8 +4393,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.227"))
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.227"))
                 ],
             },
             {
@@ -4404,8 +4404,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("LEITE", Decimal("0.227")),
-                    ("CHOCOLATE-70", Decimal("0.030"))
+                    ("LEITE-INTEGRAL-A", Decimal("0.227")),
+                    ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("0.030"))
                 ],
             },
             {
@@ -4460,7 +4460,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-HIBISCO", Decimal("0.008")),
-                    ("ACUCAR", Decimal("0.015")),
+                    ("ACUCAR-CRISTAL", Decimal("0.015")),
                     ("AGUA-FILTRADA", Decimal("0.300"))
                 ],
             },
@@ -4472,8 +4472,8 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CHA-CHAI", Decimal("0.008")),
-                    ("LIMAO", Decimal("0.020")),
-                    ("ACUCAR", Decimal("0.015")),
+                    ("LIMAO-SICILIANO", Decimal("0.020")),
+                    ("ACUCAR-CRISTAL", Decimal("0.015")),
                     ("AGUA-FILTRADA", Decimal("0.250"))
                 ],
             },
@@ -4486,8 +4486,8 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.052")),
+                    ("CAFE-TAMURA-CHOCOMELO", Decimal("0.018")),
+                    ("LEITE-INTEGRAL-A", Decimal("0.052")),
                     ("AGUA-FILTRADA", Decimal("0.200"))
                 ],
             },
@@ -4518,29 +4518,29 @@ class Command(BaseCommand):
         # item ficaria de fora da soma — ADR-024 (a ponte é declarada, nunca
         # deduzida) e shopman/shop/services/nutrition_from_recipe.py.
         INGREDIENT_PROFILES = {
-            "FARINHA-T65":  {"label": "Farinha de trigo T65",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
-            "FARINHA-T55":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
-            "FARINHA-T45":  {"label": "Farinha de trigo T45",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
-            "FARINHA-INTEGRAL":  {"label": "Farinha de trigo integral", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 340, "carbohydrates_g": 72, "sugars_g": 0.4, "proteins_g": 13, "total_fat_g": 2.5, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 10.7, "sodium_mg": 2}},
-            "FARINHA-CENTEIO":      {"label": "Farinha de centeio",     "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 338, "carbohydrates_g": 76, "sugars_g": 1.0, "proteins_g": 10, "total_fat_g": 1.7, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 15.0, "sodium_mg": 2}},
+            "FARINHA-NOVARA-T55":  {"label": "Farinha de trigo T65",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-ANACONDA-PREMIUM":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-BAGATELLE-T45":  {"label": "Farinha de trigo T45",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-INTEGRAL-ORGANICA":  {"label": "Farinha de trigo integral", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 340, "carbohydrates_g": 72, "sugars_g": 0.4, "proteins_g": 13, "total_fat_g": 2.5, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 10.7, "sodium_mg": 2}},
+            "FARINHA-CENTEIO-INTEGRAL-ORGANICA":      {"label": "Farinha de centeio",     "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 338, "carbohydrates_g": 76, "sugars_g": 1.0, "proteins_g": 10, "total_fat_g": 1.7, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 15.0, "sodium_mg": 2}},
             "AGUA-FILTRADA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
-            "FERMENTO-NATURAL": {"label": "Fermento natural (levain)", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 220, "carbohydrates_g": 45, "sugars_g": 0.5, "proteins_g": 7,  "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.8,  "sodium_mg": 5}},
-            "FERMENTO-BIOLOGICO": {"label": "Fermento biológico",     "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 105, "carbohydrates_g": 12, "sugars_g": 0,   "proteins_g": 13, "total_fat_g": 1.5, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 8.1,  "sodium_mg": 30}},
-            "SAL":          {"label": "Sal marinho",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
-            "ACUCAR":       {"label": "Açúcar",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 387, "carbohydrates_g": 100, "sugars_g": 100, "proteins_g": 0, "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 1}},
-            "MANTEIGA-FRANCESA":  {"label": "Manteiga francesa",      "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51,  "trans_fat_g": 3.3, "fiber_g": 0,  "sodium_mg": 11}},
-            "LEITE":        {"label": "Leite integral",         "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.03, "nutrition": {"energy_kcal": 61,  "carbohydrates_g": 4.8, "sugars_g": 4.8, "proteins_g": 3.2, "total_fat_g": 3.3, "saturated_fat_g": 1.9, "trans_fat_g": 0.1, "fiber_g": 0,  "sodium_mg": 40}},
+            "LEVAIN-LIQUIDO": {"label": "Fermento natural (levain)", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 220, "carbohydrates_g": 45, "sugars_g": 0.5, "proteins_g": 7,  "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.8,  "sodium_mg": 5}},
+            "FERMENTO-BIOLOGICO-FRESCO": {"label": "Fermento biológico",     "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 105, "carbohydrates_g": 12, "sugars_g": 0,   "proteins_g": 13, "total_fat_g": 1.5, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 8.1,  "sodium_mg": 30}},
+            "SAL-REFINADO":          {"label": "Sal marinho",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
+            "ACUCAR-CRISTAL":       {"label": "Açúcar",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 387, "carbohydrates_g": 100, "sugars_g": 100, "proteins_g": 0, "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 1}},
+            "MANTEIGA-PRESIDENT-SEM-SAL":  {"label": "Manteiga francesa",      "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51,  "trans_fat_g": 3.3, "fiber_g": 0,  "sodium_mg": 11}},
+            "LEITE-INTEGRAL-A":        {"label": "Leite integral",         "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.03, "nutrition": {"energy_kcal": 61,  "carbohydrates_g": 4.8, "sugars_g": 4.8, "proteins_g": 3.2, "total_fat_g": 3.3, "saturated_fat_g": 1.9, "trans_fat_g": 0.1, "fiber_g": 0,  "sodium_mg": 40}},
             "OVOS":         {"label": "Ovos",                   "allergens": ["ovos"], "diet": "vegetarian", "nutrition": {"energy_kcal": 155, "carbohydrates_g": 1.1, "sugars_g": 1.1, "proteins_g": 13,  "total_fat_g": 11,  "saturated_fat_g": 3.3, "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 124}},
-            "AZEITE":       {"label": "Azeite extra virgem",    "allergens": [], "diet": "vegan", "density_g_per_ml": 0.91, "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0,   "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 100, "saturated_fat_g": 14,  "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 2}},
-            "MALTE":        {"label": "Malte",                  "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 78, "sugars_g": 60,  "proteins_g": 10, "total_fat_g": 1.8, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 7,  "sodium_mg": 23}},
-            "CHOCOLATE-70": {"label": "Chocolate amargo 70%",   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 598, "carbohydrates_g": 46, "sugars_g": 24,  "proteins_g": 7.8, "total_fat_g": 43, "saturated_fat_g": 24,  "trans_fat_g": 0,   "fiber_g": 11, "sodium_mg": 20}},
+            "AZEITE-EXTRAVIRGEM":       {"label": "Azeite extra virgem",    "allergens": [], "diet": "vegan", "density_g_per_ml": 0.91, "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0,   "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 100, "saturated_fat_g": 14,  "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 2}},
+            "MALTE-EXTRATO":        {"label": "Malte",                  "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 78, "sugars_g": 60,  "proteins_g": 10, "total_fat_g": 1.8, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 7,  "sodium_mg": 23}},
+            "CHOCOLATE-GOTAS-MEIOAMARGO": {"label": "Chocolate amargo 70%",   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 598, "carbohydrates_g": 46, "sugars_g": 24,  "proteins_g": 7.8, "total_fat_g": 43, "saturated_fat_g": 24,  "trans_fat_g": 0,   "fiber_g": 11, "sodium_mg": 20}},
             "CEBOLA-ROXA":  {"label": "Cebola roxa",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 40,  "carbohydrates_g": 9,   "sugars_g": 4.2, "proteins_g": 1.1, "total_fat_g": 0.1, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 1.7, "sodium_mg": 4}},
-            "AZEITONA":     {"label": "Azeitona azapa",       "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 115, "carbohydrates_g": 6.3, "sugars_g": 0,   "proteins_g": 0.8, "total_fat_g": 10.7, "saturated_fat_g": 1.4, "trans_fat_g": 0,  "fiber_g": 3.2, "sodium_mg": 735}},
-            "ALECRIM":      {"label": "Alecrim",                "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 131, "carbohydrates_g": 21, "sugars_g": 0,   "proteins_g": 3.3, "total_fat_g": 5.9, "saturated_fat_g": 2.8, "trans_fat_g": 0,   "fiber_g": 14, "sodium_mg": 26}},
+            "AZEITONA-AZAPA":     {"label": "Azeitona azapa",       "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 115, "carbohydrates_g": 6.3, "sugars_g": 0,   "proteins_g": 0.8, "total_fat_g": 10.7, "saturated_fat_g": 1.4, "trans_fat_g": 0,  "fiber_g": 3.2, "sodium_mg": 735}},
+            "ALECRIM-FRESCO":      {"label": "Alecrim",                "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 131, "carbohydrates_g": 21, "sugars_g": 0,   "proteins_g": 3.3, "total_fat_g": 5.9, "saturated_fat_g": 2.8, "trans_fat_g": 0,   "fiber_g": 14, "sodium_mg": 26}},
             "GERGELIM":     {"label": "Gergelim",               "allergens": ["gergelim"], "diet": "vegan", "nutrition": {"energy_kcal": 573, "carbohydrates_g": 23, "sugars_g": 0.3, "proteins_g": 18,  "total_fat_g": 50, "saturated_fat_g": 7,   "trans_fat_g": 0,   "fiber_g": 12, "sodium_mg": 11}},
-            "MACA":         {"label": "Maçã",                   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 52,  "carbohydrates_g": 14, "sugars_g": 10,  "proteins_g": 0.3, "total_fat_g": 0.2, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.4, "sodium_mg": 1}},
-            "CANELA":       {"label": "Canela",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 247, "carbohydrates_g": 81, "sugars_g": 2.2, "proteins_g": 4,   "total_fat_g": 1.2, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 53, "sodium_mg": 10}},
-            "LIMAO":        {"label": "Limão siciliano",                  "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 29,  "carbohydrates_g": 9,  "sugars_g": 2.5, "proteins_g": 1.1, "total_fat_g": 0.3, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.8, "sodium_mg": 2}},
+            "MACA-FUJI":         {"label": "Maçã",                   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 52,  "carbohydrates_g": 14, "sugars_g": 10,  "proteins_g": 0.3, "total_fat_g": 0.2, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.4, "sodium_mg": 1}},
+            "CANELA-PO":       {"label": "Canela",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 247, "carbohydrates_g": 81, "sugars_g": 2.2, "proteins_g": 4,   "total_fat_g": 1.2, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 53, "sodium_mg": 10}},
+            "LIMAO-SICILIANO":        {"label": "Limão siciliano",                  "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 29,  "carbohydrates_g": 9,  "sugars_g": 2.5, "proteins_g": 1.1, "total_fat_g": 0.3, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.8, "sodium_mg": 2}},
             # ── Seção 2b (dono, 26/08): insumos dos salgados, montados e bebidas ──
             # Fornecedores reais na Seção 3: Deleite, President, JR Ovos, São
             # Martinho, Strass, Embramex, France Panificação, Paullinia, Luglio,
@@ -4551,20 +4551,25 @@ class Command(BaseCommand):
             "QUEIJO-COLONIAL": {"label": "Queijo colonial", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 24, "total_fat_g": 29, "saturated_fat_g": 18, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 620}},
             "QUEIJO-PRATO": {"label": "Queijo prato", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 1.9, "sugars_g": 1.0, "proteins_g": 23, "total_fat_g": 29, "saturated_fat_g": 17, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 580}},
             "QUEIJO-PARMESAO": {"label": "Queijo parmesão", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 453, "carbohydrates_g": 1.7, "sugars_g": 0.8, "proteins_g": 36, "total_fat_g": 34, "saturated_fat_g": 20, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1200}},
-            "QUEIJO-GRUYERE": {"label": "Queijo gruyère", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 413, "carbohydrates_g": 0.4, "sugars_g": 0.4, "proteins_g": 30, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 714}},
+            "QUEIJO-GOUDA": {"label": "Queijo gruyère", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 413, "carbohydrates_g": 0.4, "sugars_g": 0.4, "proteins_g": 30, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 714}},
             "REQUEIJAO-CORTE": {"label": "Requeijão de corte artesanal", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 260, "carbohydrates_g": 3.0, "sugars_g": 2.5, "proteins_g": 12, "total_fat_g": 22, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 520}},
             "SALSICHA-VIENNA": {"label": "Salsicha vienna artesanal", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 290, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 13, "total_fat_g": 25, "saturated_fat_g": 9, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1050}},
             "FRANGO": {"label": "Frango (sobrecoxa desossada)", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 165, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 26, "total_fat_g": 6.5, "saturated_fat_g": 1.8, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 85}},
-            "MILHO-VERDE": {"label": "Milho verde em conserva", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 98, "carbohydrates_g": 17, "sugars_g": 3.0, "proteins_g": 3.2, "total_fat_g": 2.4, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 4.6, "sodium_mg": 230}},
+            "MILHO-VERDE-CONSERVA": {"label": "Milho verde em conserva", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 98, "carbohydrates_g": 17, "sugars_g": 3.0, "proteins_g": 3.2, "total_fat_g": 2.4, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 4.6, "sodium_mg": 230}},
             "BACON": {"label": "Bacon fatiado fino", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 541, "carbohydrates_g": 1.4, "sugars_g": 0, "proteins_g": 37, "total_fat_g": 42, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1717}},
             "SALSINHA-DESIDRATADA": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
-            "TOMILHO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
+            "TOMILHO-FRESCO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
             "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
-            "CHOCOLATE-GOTAS": {"label": "Gotas de chocolate", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 480, "carbohydrates_g": 60, "sugars_g": 47, "proteins_g": 4.2, "total_fat_g": 24, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 6, "sodium_mg": 11}},
-            "CHOCOLATE-BATON": {"label": "Bâton de chocolate meio amargo", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 540, "carbohydrates_g": 57, "sugars_g": 45, "proteins_g": 5.0, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 7, "sodium_mg": 15}},
-            "BAUNILHA": {"label": "Baunilha (fava/pasta)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 288, "carbohydrates_g": 13, "sugars_g": 13, "proteins_g": 0.1, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 9}},
-            "CREME-DE-LEITE": {"label": "Creme de leite fresco", "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.01, "nutrition": {"energy_kcal": 292, "carbohydrates_g": 3.7, "sugars_g": 3.0, "proteins_g": 2.6, "total_fat_g": 30, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 27}},
-            "CAFE-GRAO": {"label": "Café em grão da casa", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 2, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0.3, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 2}},
+            "CHOCOLATE-GOTAS-AOLEITE": {"label": "Gotas de chocolate", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 480, "carbohydrates_g": 60, "sugars_g": 47, "proteins_g": 4.2, "total_fat_g": 24, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 6, "sodium_mg": 11}},
+            "CHOCOLATE-BATON-MEIOAMARGO": {"label": "Bâton de chocolate meio amargo", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 540, "carbohydrates_g": 57, "sugars_g": 45, "proteins_g": 5.0, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 7, "sodium_mg": 15}},
+            "BAUNILHA-EXTRATO-NATURAL": {"label": "Baunilha (fava/pasta)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 288, "carbohydrates_g": 13, "sugars_g": 13, "proteins_g": 0.1, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 9}},
+            "NATA-FRESCA": {"label": "Creme de leite fresco", "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.01, "nutrition": {"energy_kcal": 292, "carbohydrates_g": 3.7, "sugars_g": 3.0, "proteins_g": 2.6, "total_fat_g": 30, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 27}},
+            # São DOIS cafés, e o `CAFE-GRAO` genérico escondia isso (dono,
+            # 24/09/2026): o Orfeu Clássico fica no espresso puro e o Chocomelo
+            # da Tamura nas seis bebidas com leite. Mesma nutrição — é café
+            # torrado dos dois lados; o que difere é o blend e de quem se compra.
+            "CAFE-ORFEU-CLASSICO": {"label": "Café Orfeu Clássico em grão", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 2, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0.3, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 2}},
+            "CAFE-TAMURA-CHOCOMELO": {"label": "Café Tamura Chocomelo em grão", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 2, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0.3, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 2}},
             "CHA-CAMILLE": {"label": "Blend Camille (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
             "CHA-ROUGE": {"label": "Blend Rouge (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
             "CHA-SOPHIE": {"label": "Blend Sophie (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
@@ -4617,6 +4622,10 @@ class Command(BaseCommand):
             "anaconda": "Anaconda",
             "espaco-gastronomico": "Espaço Gastronômico",
             "alto-alegre": "Alto Alegre",
+            # Direto do produtor, sem distribuidor (dono, 24/09/2026) — ao
+            # contrário do Chocomelo, que vem pela Tamura.
+            "orfeu": "Orfeu Cafés Especiais",
+            "tamura": "INDUSTRIA E COMERCIO DE PRODUTOS ALIMENTICIOS TAMURA LTDA",
         }
         for ref, nome in SUPPLIERS.items():
             Supplier.objects.update_or_create(ref=ref, defaults={"name": nome, "is_active": True})
@@ -4625,20 +4634,24 @@ class Command(BaseCommand):
         # insumo → (fornecedor, marca, alternativos). O que não está aqui ou é
         # produção própria ou o dono ainda não declarou fornecedor.
         SUPPLIER_BY_MATERIAL = {
-            "LEITE": ("deleite", "Leite A integral Deleite", []),
-            "MANTEIGA-FRANCESA": ("president", "President", []),
+            "LEITE-INTEGRAL-A": ("deleite", "Leite A integral Deleite", []),
+            "MANTEIGA-PRESIDENT-SEM-SAL": ("president", "President", []),
             "OVOS": ("jr-ovos", "JR Ovos", []),
             "BACON": ("sao-martinho", "São Martinho", []),
             "SALSICHA-VIENNA": ("strass", "Strass", []),
             "PRESUNTO-DEFUMADO": ("strass", "Strass", []),
-            "FARINHA-T65": ("embramex", "Novara/Pasini", ["anaconda"]),
-            "FARINHA-T55": ("embramex", "Novara/Pasini", ["anaconda"]),
-            "FARINHA-T45": ("france-panificacao", "Foricher", []),
-            "FARINHA-INTEGRAL": ("paullinia", "Integral orgânica Paullinia", []),
-            "FARINHA-CENTEIO": ("paullinia", "Centeio orgânico Paullinia", []),
-            "AZEITE": ("espaco-gastronomico", "Luglio", []),
-            "ACUCAR": ("alto-alegre", "Cristal/Refinado Alto Alegre", []),
-            # SAL: sem marca fixa (dono) — sem vínculo de propósito.
+            "FARINHA-NOVARA-T55": ("embramex", "Novara/Pasini", ["anaconda"]),
+            "FARINHA-ANACONDA-PREMIUM": ("embramex", "Novara/Pasini", ["anaconda"]),
+            "FARINHA-BAGATELLE-T45": ("france-panificacao", "Foricher", []),
+            "FARINHA-INTEGRAL-ORGANICA": ("paullinia", "Integral orgânica Paullinia", []),
+            "FARINHA-CENTEIO-INTEGRAL-ORGANICA": ("paullinia", "Centeio orgânico Paullinia", []),
+            "AZEITE-EXTRAVIRGEM": ("espaco-gastronomico", "Luglio", []),
+            "ACUCAR-CRISTAL": ("alto-alegre", "Alto Alegre", []),
+            "CAFE-ORFEU-CLASSICO": ("orfeu", "Orfeu Clássico", []),
+            "CAFE-TAMURA-CHOCOMELO": ("tamura", "Chocomelo", []),
+            # «Precioso», premiado, produzido na região (dono, 24/09/2026).
+            "QUEIJO-PARMESAO": (None, "Precioso", []),
+            # SAL-REFINADO: sem marca fixa (dono) — sem vínculo de propósito.
         }
 
         # A unidade aqui é a UNIDADE-BASE: aquela em que o livro conta o insumo no
@@ -4653,27 +4666,28 @@ class Command(BaseCommand):
         # R1 pergunta. A ponte da densidade saiu da produção diária e foi para o
         # recebimento, como uma MaterialConversion "litros" declarada abaixo.
         material_attrs = {
-            "FARINHA-T65": ("kg", 180), "FARINHA-T55": ("kg", 180),
-            "FARINHA-T45": ("kg", 180), "FARINHA-INTEGRAL": ("kg", 120),
-            "FARINHA-CENTEIO": ("kg", 120), "MALTE": ("kg", 365),
-            "ACUCAR": ("kg", None), "SAL": ("kg", None), "GERGELIM": ("kg", 180),
-            "AGUA-FILTRADA": ("kg", None), "LEITE": ("kg", 7), "AZEITE": ("kg", 540),
-            "FERMENTO-NATURAL": ("kg", 7), "FERMENTO-BIOLOGICO": ("kg", 14),
-            "MANTEIGA-FRANCESA": ("kg", 60), "OVOS": ("kg", 28),
-            "CHOCOLATE-70": ("kg", 365), "AZEITONA": ("kg", 180),
-            "CEBOLA-ROXA": ("kg", 30), "MACA": ("kg", 30), "LIMAO": ("kg", 21),
-            "CANELA": ("kg", 365), "ALECRIM": ("kg", 14),
+            "FARINHA-NOVARA-T55": ("kg", 180), "FARINHA-ANACONDA-PREMIUM": ("kg", 180),
+            "FARINHA-BAGATELLE-T45": ("kg", 180), "FARINHA-INTEGRAL-ORGANICA": ("kg", 120),
+            "FARINHA-CENTEIO-INTEGRAL-ORGANICA": ("kg", 120), "MALTE-EXTRATO": ("kg", 365),
+            "ACUCAR-CRISTAL": ("kg", None), "SAL-REFINADO": ("kg", None), "GERGELIM": ("kg", 180),
+            "AGUA-FILTRADA": ("kg", None), "LEITE-INTEGRAL-A": ("kg", 7), "AZEITE-EXTRAVIRGEM": ("kg", 540),
+            "LEVAIN-LIQUIDO": ("kg", 7), "FERMENTO-BIOLOGICO-FRESCO": ("kg", 14),
+            "MANTEIGA-PRESIDENT-SEM-SAL": ("kg", 60), "OVOS": ("kg", 28),
+            "CHOCOLATE-GOTAS-MEIOAMARGO": ("kg", 365), "AZEITONA-AZAPA": ("kg", 180),
+            "CEBOLA-ROXA": ("kg", 30), "MACA-FUJI": ("kg", 30), "LIMAO-SICILIANO": ("kg", 21),
+            "CANELA-PO": ("kg", 365), "ALECRIM-FRESCO": ("kg", 14),
             # Seção 2b (dono, 26/08)
             "PRESUNTO-CASA": ("kg", 30), "PRESUNTO-DEFUMADO": ("kg", 30),
             "QUEIJO-MINAS-PADRAO": ("kg", 30), "QUEIJO-COLONIAL": ("kg", 30),
             "QUEIJO-PRATO": ("kg", 30), "QUEIJO-PARMESAO": ("kg", 180),
-            "QUEIJO-GRUYERE": ("kg", 60), "REQUEIJAO-CORTE": ("kg", 30),
+            "QUEIJO-GOUDA": ("kg", 60), "REQUEIJAO-CORTE": ("kg", 30),
             "SALSICHA-VIENNA": ("kg", 20), "FRANGO": ("kg", 3),
-            "MILHO-VERDE": ("kg", 365), "BACON": ("kg", 15),
-            "SALSINHA-DESIDRATADA": ("kg", 365), "TOMILHO": ("kg", 14),
-            "PASSAS": ("kg", 365), "CHOCOLATE-GOTAS": ("kg", 365),
-            "CHOCOLATE-BATON": ("kg", 365), "BAUNILHA": ("kg", 365),
-            "CREME-DE-LEITE": ("kg", 10), "CAFE-GRAO": ("kg", 90),
+            "MILHO-VERDE-CONSERVA": ("kg", 365), "BACON": ("kg", 15),
+            "SALSINHA-DESIDRATADA": ("kg", 365), "TOMILHO-FRESCO": ("kg", 14),
+            "PASSAS": ("kg", 365), "CHOCOLATE-GOTAS-AOLEITE": ("kg", 365),
+            "CHOCOLATE-BATON-MEIOAMARGO": ("kg", 365), "BAUNILHA-EXTRATO-NATURAL": ("kg", 365),
+            "NATA-FRESCA": ("kg", 10),
+            "CAFE-ORFEU-CLASSICO": ("kg", 90), "CAFE-TAMURA-CHOCOMELO": ("kg", 90),
             "CHA-CAMILLE": ("kg", 365), "CHA-ROUGE": ("kg", 365),
             "CHA-SOPHIE": ("kg", 365), "CHA-BLEU": ("kg", 365),
             "CHA-HIBISCO": ("kg", 365), "CHA-CHAI": ("kg", 365),
@@ -4691,7 +4705,8 @@ class Command(BaseCommand):
             fornecedor = SUPPLIER_BY_MATERIAL.get(sku)
             if fornecedor:
                 supplier_ref, marca, alternativos = fornecedor
-                metadata["supplier"] = supplier_ref
+                if supplier_ref:
+                    metadata["supplier"] = supplier_ref
                 metadata["brand"] = marca
                 if alternativos:
                     metadata["alt_suppliers"] = alternativos
@@ -4717,7 +4732,7 @@ class Command(BaseCommand):
 
         counting_conversions = {
             "OVOS": ("ovos", Decimal("0.050")),
-            "LIMAO": ("limões", Decimal("0.100")),
+            "LIMAO-SICILIANO": ("limões", Decimal("0.100")),
             # 50 g/un (dono, 26/08). A mini do hot dog é a MESMA salsicha
             # cortada ao meio — meio insumo, nunca um SKU próprio.
             "SALSICHA-VIENNA": ("salsichas", Decimal("0.050")),
@@ -4761,7 +4776,7 @@ class Command(BaseCommand):
                 "litros",
                 Decimal(str(INGREDIENT_PROFILES[sku]["density_g_per_ml"])),
             )
-            for sku in ("LEITE", "AZEITE", "CREME-DE-LEITE")
+            for sku in ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
         }
         for sku, (label, factor) in volume_conversions.items():
             material = Material.objects.filter(sku=sku).first()

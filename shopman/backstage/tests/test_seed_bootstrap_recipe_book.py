@@ -32,11 +32,11 @@ def _sheet(ref, name, output_sku, batch, items, *, unit="kg", steps=()):
 
 
 def test_bootstrap_over_sheets_shaped_like_the_seed():
-    _sheet("creme-levain", "Levain", "LEVAIN", "5", [("FERMENTO-NATURAL", "1.7"), ("FARINHA-T65", "1.7"), ("AGUA-FILTRADA", "1.7")])
-    _sheet("massa-pasta-autolizada", "Pasta Autolizada", "PASTA-AUTOLIZADA", "8.4", [("FARINHA-T65", "5"), ("AGUA-FILTRADA", "3.5")])
+    _sheet("creme-levain", "Levain", "LEVAIN", "5", [("LEVAIN-LIQUIDO", "1.7"), ("FARINHA-NOVARA-T55", "1.7"), ("AGUA-FILTRADA", "1.7")])
+    _sheet("massa-pasta-autolizada", "Pasta Autolizada", "PASTA-AUTOLIZADA", "8.4", [("FARINHA-NOVARA-T55", "5"), ("AGUA-FILTRADA", "3.5")])
     _sheet(
         "massa-tradicao", "Massa Tradição", "MASSA-TRADICAO", "10",
-        [("PASTA-AUTOLIZADA", "8.4"), ("LEVAIN", "1.5"), ("SAL", "0.1")],
+        [("PASTA-AUTOLIZADA", "8.4"), ("LEVAIN", "1.5"), ("SAL-REFINADO", "0.1")],
         steps=("Pesagem", "Mistura", "Fermentação"),
     )
 
@@ -59,7 +59,7 @@ def test_bootstrap_over_sheets_shaped_like_the_seed():
     assert version.steps == ("Pesagem", "Mistura", "Fermentação")
     assert {part.entry_ref for part in version.lens.parts} == {"creme-levain", "massa-pasta-autolizada"}
     assert all(part.has_formula for part in version.lens.parts)
-    assert {item.sku for item in version.lens.bom} == {"PASTA-AUTOLIZADA", "LEVAIN", "SAL"}
+    assert {item.sku for item in version.lens.bom} == {"PASTA-AUTOLIZADA", "LEVAIN", "SAL-REFINADO"}
 
     # Idempotente: rodar de novo não duplica nem toca a ficha.
     call_command("bootstrap_recipe_book", stdout=StringIO())
@@ -74,10 +74,10 @@ def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
     massa como se fosse dela, com "farinha pré-fermentada 100%" e avisos de
     padaria que eram artefato da dissolução, não fato da peça.
     """
-    _sheet("creme-levain", "Levain", "LEVAIN", "5", [("FERMENTO-NATURAL", "1.7"), ("FARINHA-T65", "1.7"), ("AGUA-FILTRADA", "1.7")])
-    _sheet("massa-pasta-autolizada", "Pasta Autolizada", "PASTA-AUTOLIZADA", "8.4", [("FARINHA-T65", "5"), ("AGUA-FILTRADA", "3.5")])
+    _sheet("creme-levain", "Levain", "LEVAIN", "5", [("LEVAIN-LIQUIDO", "1.7"), ("FARINHA-NOVARA-T55", "1.7"), ("AGUA-FILTRADA", "1.7")])
+    _sheet("massa-pasta-autolizada", "Pasta Autolizada", "PASTA-AUTOLIZADA", "8.4", [("FARINHA-NOVARA-T55", "5"), ("AGUA-FILTRADA", "3.5")])
     _sheet("massa-tradicao", "Massa Tradição", "MASSA-TRADICAO", "10",
-           [("PASTA-AUTOLIZADA", "8.4"), ("LEVAIN", "1.5"), ("SAL", "0.1")])
+           [("PASTA-AUTOLIZADA", "8.4"), ("LEVAIN", "1.5"), ("SAL-REFINADO", "0.1")])
     _sheet("baguete", "Baguette de Tradition", "BF", "1", [("MASSA-TRADICAO", "0.280")], unit="un")
 
     call_command("bootstrap_recipe_book", stdout=StringIO())

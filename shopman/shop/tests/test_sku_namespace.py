@@ -53,19 +53,19 @@ def _material_behind_the_guard(**kwargs) -> Material:
 
 class TestPorteiroDeSku:
     def test_insumo_recusa_sku_que_ja_e_produto(self):
-        Product.objects.create(sku="CANELA", name="Canela em pó (varejo)", unit="un", base_price_q=1200)
+        Product.objects.create(sku="CANELA-PO", name="Canela em pó (varejo)", unit="un", base_price_q=1200)
         with pytest.raises(ValidationError) as exc:
-            Material.objects.create(sku="CANELA", name="Canela", unit="g")
-        assert "CANELA" in str(exc.value)
+            Material.objects.create(sku="CANELA-PO", name="Canela", unit="g")
+        assert "CANELA-PO" in str(exc.value)
 
     def test_produto_recusa_sku_que_ja_e_insumo(self):
-        Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg")
+        Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg")
         with pytest.raises(ValidationError) as exc:
-            Product.objects.create(sku="FARINHA-T65", name="Farinha T65 (pacote)", unit="un", base_price_q=1800)
-        assert "FARINHA-T65" in str(exc.value)
+            Product.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65 (pacote)", unit="un", base_price_q=1800)
+        assert "FARINHA-NOVARA-T55" in str(exc.value)
 
     def test_sku_livre_passa_dos_dois_lados(self):
-        Material.objects.create(sku="FERMENTO-NATURAL", name="Levain", unit="kg")
+        Material.objects.create(sku="LEVAIN-LIQUIDO", name="Levain", unit="kg")
         product = Product.objects.create(sku="CROISSANT", name="Croissant", unit="un", base_price_q=800)
         assert product.pk is not None
 
@@ -80,10 +80,10 @@ class TestPorteiroDeSku:
         assert Material.objects.get(pk=material.pk).name == "Água filtrada"
 
     def test_renomear_para_sku_ocupado_e_recusado(self):
-        Product.objects.create(sku="MALTE", name="Malte (varejo)", unit="un", base_price_q=900)
+        Product.objects.create(sku="MALTE-EXTRATO", name="Malte (varejo)", unit="un", base_price_q=900)
         material = Material.objects.create(sku="MALTE-BR", name="Malte", unit="kg")
 
-        material.sku = "MALTE"
+        material.sku = "MALTE-EXTRATO"
         with pytest.raises(ValidationError):
             material.save()
 
@@ -113,7 +113,7 @@ class TestVarreduraDeColisoes:
         from shopman.shop.checks import check_sku_namespace_collision
 
         Product.objects.create(sku="CROISSANT", name="Croissant", unit="un", base_price_q=800)
-        Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg")
+        Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg")
 
         assert check_sku_namespace_collision(None) == []
 
@@ -137,11 +137,11 @@ class TestCatalogoCompostoNaoSombreiaEmSilencio:
         from shopman.shop.adapters.catalog_backend import ComposedCatalogBackend
 
         Product.objects.create(sku="CROISSANT", name="Croissant", unit="un", base_price_q=800)
-        Material.objects.create(sku="FARINHA-T65", name="Farinha T65", unit="kg")
+        Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha T65", unit="kg")
 
         with _capture_catalog_logs(caplog):
             backend = ComposedCatalogBackend()
             assert backend.get_product("CROISSANT").unit == "un"
-            assert backend.get_product("FARINHA-T65").unit == "kg"
+            assert backend.get_product("FARINHA-NOVARA-T55").unit == "kg"
 
         assert caplog.records == []

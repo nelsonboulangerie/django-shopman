@@ -91,7 +91,7 @@ def test_o_ensaio_nao_grava():
     saida = _rodar()
     assert "ensaio" in saida
     assert Material.objects.filter(sku="MANTEIGA-FR").exists()
-    assert not Material.objects.filter(sku="MANTEIGA-FRANCESA").exists()
+    assert not Material.objects.filter(sku="MANTEIGA-PRESIDENT-SEM-SAL").exists()
 
 
 def test_o_apply_troca_o_sku_e_arrasta_a_ficha():
@@ -106,9 +106,9 @@ def test_o_apply_troca_o_sku_e_arrasta_a_ficha():
 
     _rodar(apply=True, sku="MANTEIGA-FR")
 
-    assert Material.objects.filter(sku="MANTEIGA-FRANCESA").exists()
+    assert Material.objects.filter(sku="MANTEIGA-PRESIDENT-SEM-SAL").exists()
     assert not Material.objects.filter(sku="MANTEIGA-FR").exists()
-    assert RecipeItem.objects.get(recipe=receita).input_sku == "MANTEIGA-FRANCESA"
+    assert RecipeItem.objects.get(recipe=receita).input_sku == "MANTEIGA-PRESIDENT-SEM-SAL"
 
 
 def test_rodar_de_novo_nao_faz_nada():
@@ -116,7 +116,7 @@ def test_rodar_de_novo_nao_faz_nada():
     _rodar(apply=True, sku="MANTEIGA-FR")
     saida = _rodar(apply=True, sku="MANTEIGA-FR")
     assert "sem insumo no cadastro" in saida
-    assert Material.objects.filter(sku="MANTEIGA-FRANCESA").count() == 1
+    assert Material.objects.filter(sku="MANTEIGA-PRESIDENT-SEM-SAL").count() == 1
 
 
 def test_o_insumo_que_falta_nasce_e_a_ficha_deixa_de_apontar_para_o_produto():
@@ -152,7 +152,7 @@ def test_recusa_fechada_quando_o_alvo_ja_e_produto_vendavel():
     """Insumo e produto dividem um namespace só — o ledger indexa por SKU."""
     _insumo("MANTEIGA-FR", "Manteiga francesa")
     Product.objects.create(
-        sku="MANTEIGA-FRANCESA", name="Manteiga Francesa", unit="un", base_price_q=3000,
+        sku="MANTEIGA-PRESIDENT-SEM-SAL", name="Manteiga Francesa", unit="un", base_price_q=3000,
     )
 
     with pytest.raises(CommandError, match="Nada foi gravado"):
@@ -212,7 +212,7 @@ def test_o_ledger_imutavel_impede_a_exclusao_e_a_frente_para_sozinha():
     assert Material.objects.filter(sku=orfao).exists(), "o órfão não podia sair"
     assert Material.objects.filter(sku="AGUA-FILTRADA").exists(), "o rename não podia passar"
     assert "imutável" in saida and "seed --flush" in saida
-    assert Material.objects.filter(sku="MANTEIGA-FRANCESA").exists(), (
+    assert Material.objects.filter(sku="MANTEIGA-PRESIDENT-SEM-SAL").exists(), (
         "impedimento para UMA frente, não recusa para a tabela inteira"
     )
 

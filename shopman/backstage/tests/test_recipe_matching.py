@@ -29,13 +29,13 @@ LEVAIN = IngredientCandidate(sku="LEVAIN", name="Levain", unit="kg", role="yeast
 @pytest.fixture
 def materials():
     rows = [
-        ("FARINHA-T55", "Farinha de trigo T55", "kg"),
-        ("FARINHA-INTEGRAL", "Farinha de trigo integral", "kg"),
+        ("FARINHA-ANACONDA-PREMIUM", "Farinha de trigo T55", "kg"),
+        ("FARINHA-INTEGRAL-ORGANICA", "Farinha de trigo integral", "kg"),
         ("AGUA-FILTRADA", "Água filtrada", "l"),
-        ("MANTEIGA-FRANCESA", "Manteiga francesa", "kg"),
+        ("MANTEIGA-PRESIDENT-SEM-SAL", "Manteiga francesa", "kg"),
         ("OVOS", "Ovos", "kg"),
-        ("SAL", "Sal", "kg"),
-        ("FERMENTO-BIOLOGICO", "Fermento biológico", "kg"),
+        ("SAL-REFINADO", "Sal", "kg"),
+        ("FERMENTO-BIOLOGICO-FRESCO", "Fermento biológico", "kg"),
     ]
     created = {sku: Material.objects.create(sku=sku, name=name, unit=unit) for sku, name, unit in rows}
     Material.objects.create(sku="FARINHA-VELHA", name="Farinha de trigo antiga", unit="kg", is_active=False)
@@ -48,7 +48,7 @@ def materials():
 def test_french_flour_with_its_type_lands_on_the_right_sku(materials):
     ranked = candidates_for("farine T55")
 
-    assert ranked[0].sku == "FARINHA-T55"
+    assert ranked[0].sku == "FARINHA-ANACONDA-PREMIUM"
     assert ranked[0].score >= 90
     assert ranked[0].unit == "kg"
     assert ranked[0].role == "flour"
@@ -70,7 +70,7 @@ def test_a_qualifier_does_not_pull_the_wrong_ingredient(materials):
     match = best_match("manteiga sem sal")
 
     assert match is not None
-    assert match.sku == "MANTEIGA-FRANCESA"
+    assert match.sku == "MANTEIGA-PRESIDENT-SEM-SAL"
 
 
 def test_an_extra_option_the_module_does_not_know_can_win(materials):
@@ -94,11 +94,36 @@ def test_liquid_unit_is_spelled_the_way_the_ficha_spells_it(materials):
 
 
 def test_ties_prefer_the_shorter_name(materials):
-    """"far" cabe em todas as farinhas; a mais curta é a genérica, e a genérica é a aposta segura."""
-    ranked = candidates_for("far")
+    """Empatou no score, ganha o nome mais curto — a genérica é a aposta segura.
 
-    assert ranked[0].sku == "FARINHA-T55"
+    O termo era "far" até 24/09/2026, e ele parou de empatar quando a curadoria
+    trocou `FARINHA-T55` por `FARINHA-ANACONDA-PREMIUM`: o WRatio penaliza a
+    diferença de comprimento, e com SKU longo um prefixo de três letras deixa de
+    casar parelho. A propriedade não mudou — o exemplo é que envelheceu.
+    """
+    ranked = candidates_for("farinha de trigo")
+
+    assert ranked[0].sku == "FARINHA-ANACONDA-PREMIUM"
     assert ranked[0].score == ranked[1].score
+    assert len(ranked[0].name) < len(ranked[1].name)
+
+
+def test_sku_longo_encurta_o_alcance_do_prefixo_curto(materials):
+    """⚠️ Efeito colateral medido da curadoria, e ele é do buscador, não do SKU.
+
+    Com SKUs curtos, "far" trazia as duas farinhas no topo. Com os curados, a
+    segunda farinha (60) cai ABAIXO da manteiga (68), porque o WRatio compara
+    comprimento. Quem digita três letras no Compras vê isso.
+
+    Não é defeito a consertar às pressas — é o preço de o SKU dizer a marca —,
+    mas é comportamento que mudou, e um teste que o nomeia impede que ele volte
+    a surpreender alguém.
+    """
+    ranked = [c.sku for c in candidates_for("far")]
+    assert ranked[0] == "FARINHA-ANACONDA-PREMIUM"
+    assert ranked[1] != "FARINHA-INTEGRAL-ORGANICA", (
+        "a segunda farinha deixou de vir em segundo com prefixo de três letras"
+    )
 
 
 def test_without_any_material_nothing_explodes():
@@ -129,7 +154,7 @@ def test_an_inactive_material_never_shows_up(materials):
 
 
 def test_a_typed_prefix_ranks_like_a_match(materials):
-    assert search_ingredients("ferm")[0].sku == "FERMENTO-BIOLOGICO"
+    assert search_ingredients("ferm")[0].sku == "FERMENTO-BIOLOGICO-FRESCO"
 
 
 # ── Normalização, sinônimos e papel (puros) ─────────────────────────────────
@@ -164,16 +189,16 @@ def test_normalization_drops_latin_accents_but_keeps_japanese_letters():
 @pytest.mark.parametrize(
     ("name", "sku", "role"),
     [
-        ("Farinha de trigo T55", "FARINHA-T55", "flour"),
+        ("Farinha de trigo T55", "FARINHA-ANACONDA-PREMIUM", "flour"),
         ("Água filtrada", "AGUA-FILTRADA", "liquid"),
-        ("Sal marinho", "SAL", "salt"),
+        ("Sal marinho", "SAL-REFINADO", "salt"),
         ("Salsicha vienna", "SALSICHA-VIENNA", "inclusion"),
-        ("Manteiga francesa", "MANTEIGA-FRANCESA", "fat"),
-        ("Creme de leite fresco", "CREME-DE-LEITE", "dairy"),
-        ("Fermento natural (levain)", "FERMENTO-NATURAL", "yeast"),
+        ("Manteiga francesa", "MANTEIGA-PRESIDENT-SEM-SAL", "fat"),
+        ("Creme de leite fresco", "NATA-FRESCA", "dairy"),
+        ("Fermento natural (levain)", "LEVAIN-LIQUIDO", "yeast"),
         ("Ovos", "OVOS", "egg"),
-        ("Gotas de chocolate", "CHOCOLATE-GOTAS", "inclusion"),
-        ("Malte", "MALTE", "sugar"),
+        ("Gotas de chocolate", "CHOCOLATE-GOTAS-AOLEITE", "inclusion"),
+        ("Malte", "MALTE-EXTRATO", "sugar"),
         ("Cebola roxa", "CEBOLA-ROXA", "inclusion"),
         ("Coisa nenhuma", "X", "other"),
     ],

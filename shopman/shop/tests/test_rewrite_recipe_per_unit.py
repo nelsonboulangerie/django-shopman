@@ -45,7 +45,7 @@ def massa(db):
         ref="massa-tradicao", name="Massa Tradição", output_sku="MASSA-TRADICAO",
         batch_size=Decimal("10"), meta={"output_unit": "kg"},
     )
-    RecipeItem.objects.create(recipe=ficha, input_sku="FARINHA-T65", quantity=Decimal("6.000"), unit="kg")
+    RecipeItem.objects.create(recipe=ficha, input_sku="FARINHA-NOVARA-T55", quantity=Decimal("6.000"), unit="kg")
     RecipeItem.objects.create(recipe=ficha, input_sku="AGUA-FILTRADA", quantity=Decimal("4.100"), unit="kg")
     return ficha
 
@@ -86,7 +86,7 @@ class TestReexpressao:
         call_command("rewrite_recipe_per_unit", "--apply")
         massa.refresh_from_db()
         assert massa.batch_size == Decimal("10.000")
-        assert massa.items.get(input_sku="FARINHA-T65").quantity == Decimal("6.000")
+        assert massa.items.get(input_sku="FARINHA-NOVARA-T55").quantity == Decimal("6.000")
         assert massa.items.get(input_sku="AGUA-FILTRADA").quantity == Decimal("4.100")
 
     def test_recorta_por_ref(self, baguete):

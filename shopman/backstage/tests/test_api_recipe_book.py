@@ -63,12 +63,12 @@ def editor(shop):
 @pytest.fixture
 def materials(db):
     rows = [
-        ("FARINHA-T55", "Farinha de trigo T55", "kg"),
-        ("FARINHA-T65", "Farinha de trigo T65", "kg"),
+        ("FARINHA-ANACONDA-PREMIUM", "Farinha de trigo T55", "kg"),
+        ("FARINHA-NOVARA-T55", "Farinha de trigo T65", "kg"),
         ("AGUA-FILTRADA", "Água filtrada", "l"),
-        ("LEITE", "Leite integral", "l"),
-        ("SAL", "Sal", "kg"),
-        ("MANTEIGA-FRANCESA", "Manteiga francesa", "kg"),
+        ("LEITE-INTEGRAL-A", "Leite integral", "l"),
+        ("SAL-REFINADO", "Sal", "kg"),
+        ("MANTEIGA-PRESIDENT-SEM-SAL", "Manteiga francesa", "kg"),
     ]
     return {sku: Material.objects.create(sku=sku, name=name, unit=unit) for sku, name, unit in rows}
 
@@ -79,9 +79,9 @@ def flour_formula(*, water=700, flour=1000, parts=None):
         "basis_g": None,
         "standardized": False,
         "items": [
-            {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": flour, "unit": "g"},
+            {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": flour, "unit": "g"},
             {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
-            {"sku": "SAL", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
+            {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
         "parts": parts or [],
     }
@@ -117,7 +117,7 @@ def published_levain(db):
         formula={
             "anchor": {"kind": "flour"},
             "items": [
-                {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
+                {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
                 {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "ml"},
             ],
             "parts": [],
@@ -244,7 +244,7 @@ def test_create_entry_with_a_first_draft(client, editor, materials):
     assert version["yield_display"] == "1,7 kg"
     assert version["lens"]["is_bakery"] is True
     assert version["formula"]["basis_g"] is None
-    assert version["origin"]["items"][0]["sku"] == "FARINHA-T55"
+    assert version["origin"]["items"][0]["sku"] == "FARINHA-ANACONDA-PREMIUM"
 
     stored = RecipeEntry.objects.get(ref="pao-de-campanha")
     assert stored.versions.count() == 1
@@ -390,7 +390,7 @@ def test_publish_writes_the_sheet_and_the_list_shows_it(client, editor, entry):
     recipe = Recipe.objects.get(ref="massa-tradicao")
     assert recipe.output_sku == "MASSA-TRADICAO"
     assert recipe.meta["version_ref"] == "massa-tradicao@1"
-    assert {item.input_sku for item in recipe.items.all()} == {"FARINHA-T55", "AGUA-FILTRADA", "SAL"}
+    assert {item.input_sku for item in recipe.items.all()} == {"FARINHA-ANACONDA-PREMIUM", "AGUA-FILTRADA", "SAL-REFINADO"}
     assert RecipeVersion.objects.get(entry=entry, number=1).meta["published_by"] == "recipes-editor"
 
     (card,) = client.get(LIST_URL).json()["book"]["entries"]
@@ -445,9 +445,9 @@ def test_lens_preview(client, editor, published_levain):
     assert lens["parts"][0]["has_formula"] is True
     assert lens["parts"][0]["kind_label"] == "Pré-fermento"
     assert {item["sku"]: item["quantity_display"] for item in lens["final_mix"]} == {
-        "FARINHA-T55": "800 g", "AGUA-FILTRADA": "500 g", "SAL": "20 g",
+        "FARINHA-ANACONDA-PREMIUM": "800 g", "AGUA-FILTRADA": "500 g", "SAL-REFINADO": "20 g",
     }
-    assert [item["sku"] for item in lens["bom"]] == ["FARINHA-T55", "AGUA-FILTRADA", "SAL", "LEVAIN"]
+    assert [item["sku"] for item in lens["bom"]] == ["FARINHA-ANACONDA-PREMIUM", "AGUA-FILTRADA", "SAL-REFINADO", "LEVAIN"]
     prefermented = next(m for m in lens["metrics"] if m["code"] == "prefermented_flour_pct")
     assert prefermented["value_display"] == "20%"
     assert prefermented["tone"] == "ok"
@@ -503,7 +503,7 @@ def test_compare_two_versions(client, viewer, entry):
     assert water["delta_display"] == "+50 g"
     assert water["delta_pct_display"] == "+5%"
     assert water["tone"] == "ok"
-    flour = next(row for row in compare["rows"] if row["sku"] == "FARINHA-T55")
+    flour = next(row for row in compare["rows"] if row["sku"] == "FARINHA-ANACONDA-PREMIUM")
     assert flour["tone"] == "muted"
     metrics = {metric["label"]: metric for metric in compare["metrics"]}
     assert metrics["Hidratação"]["delta_display"] == "+5%"
@@ -545,7 +545,7 @@ def test_ingredient_options_mix_materials_and_parts(client, viewer, materials, p
     assert part == {"sku": "LEVAIN", "name": "Levain", "unit": "g", "role": "other", "is_part": True, "entry_ref": "creme-levain"}
 
     flours = client.get(url, {"q": "farinha"}).json()["options"]
-    assert {option["sku"] for option in flours} >= {"FARINHA-T55", "FARINHA-T65"}
+    assert {option["sku"] for option in flours} >= {"FARINHA-ANACONDA-PREMIUM", "FARINHA-NOVARA-T55"}
     assert all(option["is_part"] is False for option in flours)
 
     everything = client.get(url).json()["options"]
@@ -630,12 +630,12 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
 
     items = {item["name"]: item for item in draft["items"]}
     flour = items["Farinha de trigo T65"]
-    assert flour["sku"] == "FARINHA-T65"
+    assert flour["sku"] == "FARINHA-NOVARA-T55"
     assert flour["role"] == "flour"
     assert flour["quantity"] == "1"
     assert flour["unit"] == "kg"
     assert flour["match_confidence"].endswith("%")
-    assert flour["candidates"][0]["sku"] == "FARINHA-T65"
+    assert flour["candidates"][0]["sku"] == "FARINHA-NOVARA-T55"
     assert flour["original_text"] == "Farine T65 1 kg"
 
     levain = items["Levain"]
@@ -654,7 +654,7 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
     assert formula["standardized"] is False
     assert formula["basis_g"] is None
     assert [(line["sku"], line["quantity"], line["unit"]) for line in formula["items"]] == [
-        ("FARINHA-T65", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("SAL", "20", "g"), ("LEVAIN", "200", "g"),
+        ("FARINHA-NOVARA-T55", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("SAL-REFINADO", "20", "g"), ("LEVAIN", "200", "g"),
     ]
 
 
@@ -680,9 +680,9 @@ def test_publish_writes_the_sheet_in_the_materials_unit(client, editor, material
     assert response.status_code == 200, response.content
     items = {item.input_sku: (item.quantity, item.unit) for item in Recipe.objects.get(ref="pao-em-gramas").items.all()}
     assert items == {
-        "FARINHA-T55": (Decimal("1"), "kg"),
+        "FARINHA-ANACONDA-PREMIUM": (Decimal("1"), "kg"),
         "AGUA-FILTRADA": (Decimal("0.7"), "L"),
-        "SAL": (Decimal("0.02"), "kg"),
+        "SAL-REFINADO": (Decimal("0.02"), "kg"),
     }
 
 
@@ -701,7 +701,7 @@ def test_publish_refuses_a_mass_line_for_a_liquid_without_declared_density_and_n
     """Leite em grama contra insumo em litro só atravessa com densidade declarada; sem ela, recusa apontando a linha."""
     entry = craftsman.create_entry(ref="pao-de-leite", name="Pão de leite", kind="bread", output_sku="PAO-DE-LEITE")
     formula = flour_formula()
-    formula["items"][1] = {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
+    formula["items"][1] = {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
     craftsman.create_version(entry, formula=formula, yield_quantity="1.6", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-de-leite/versions/1/publish/", {})
@@ -715,7 +715,7 @@ def test_publish_refuses_a_mass_line_for_a_liquid_without_declared_density_and_n
     version = craftsman.update_draft(entry.versions.get(number=1), formula=formula)
     response = _post(client, f"{LIST_URL}pao-de-leite/versions/{version.number}/publish/", {})
     assert response.status_code == 200, response.content
-    milk = Recipe.objects.get(ref="pao-de-leite").items.get(input_sku="LEITE")
+    milk = Recipe.objects.get(ref="pao-de-leite").items.get(input_sku="LEITE-INTEGRAL-A")
     assert (milk.quantity, milk.unit) == (Decimal("0.66"), "L")
 
 
@@ -725,19 +725,19 @@ def test_publish_carries_the_material_profile_into_new_sheet_lines(client, edito
     É a densidade do cadastro que leva o leite pesado em grama até o litro; e é o
     perfil dele que dá ao PDP alérgeno e nutrição de uma receita recém-publicada.
     """
-    materials["LEITE"].metadata = {
+    materials["LEITE-INTEGRAL-A"].metadata = {
         "density_g_per_ml": 1.03, "allergens": ["leite"], "diet": "vegetarian",
         "nutrition": {"energy_kcal": 61}, "supplier_note": "não viaja",
     }
-    materials["LEITE"].save()
+    materials["LEITE-INTEGRAL-A"].save()
     entry = craftsman.create_entry(ref="pao-de-leite-2", name="Pão de leite", kind="bread", output_sku="PAO-DE-LEITE-2")
     formula = flour_formula()
-    formula["items"][1] = {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
+    formula["items"][1] = {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
     craftsman.create_version(entry, formula=formula, yield_quantity="1.6", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-de-leite-2/versions/1/publish/", {})
     assert response.status_code == 200, response.content
-    milk = Recipe.objects.get(ref="pao-de-leite-2").items.get(input_sku="LEITE")
+    milk = Recipe.objects.get(ref="pao-de-leite-2").items.get(input_sku="LEITE-INTEGRAL-A")
     assert (milk.quantity, milk.unit) == (Decimal("0.66"), "L")
     assert milk.meta == {
         "density_g_per_ml": 1.03, "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 61},

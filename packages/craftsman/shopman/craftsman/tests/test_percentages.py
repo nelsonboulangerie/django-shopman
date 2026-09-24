@@ -27,14 +27,14 @@ from shopman.craftsman.exceptions import RecipeBookError
 LEVAIN = {
     "anchor": {"kind": "flour"},
     "items": [
-        {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
+        {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
         {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
     ],
 }
 PASTA = {
     "anchor": {"kind": "flour"},
     "items": [
-        {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
+        {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
         {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 600, "unit": "g"},
     ],
 }
@@ -48,9 +48,9 @@ def tradicao(parts=None, **overrides):
         "basis_g": 1000,
         "standardized": True,
         "items": [
-            {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
+            {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
             {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "g"},
-            {"sku": "SAL", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
+            {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
         "parts": parts or [],
     }
@@ -76,37 +76,37 @@ class TestClassifyIngredient:
             ("Farine T65", "", "flour"),
             ("強力粉", "", "flour"),
             ("ライ麦", "", "flour"),
-            ("", "FARINHA-T55", "flour"),
-            ("", "FARINHA-CENTEIO", "flour"),
-            ("", "FARINHA-INTEGRAL", "flour"),
+            ("", "FARINHA-ANACONDA-PREMIUM", "flour"),
+            ("", "FARINHA-CENTEIO-INTEGRAL-ORGANICA", "flour"),
+            ("", "FARINHA-INTEGRAL-ORGANICA", "flour"),
             ("Fubá", "", "flour"),
             ("Água filtrada", "", "liquid"),
             ("", "AGUA-FILTRADA", "liquid"),
             ("Water", "", "liquid"),
             ("Eau", "", "liquid"),
             ("水", "", "liquid"),
-            ("Leite integral", "LEITE", "liquid"),
+            ("Leite integral", "LEITE-INTEGRAL-A", "liquid"),
             ("牛乳", "", "liquid"),
             ("Creme de leite", "", "dairy"),
             ("Nata", "", "dairy"),
             ("Queijo minas", "", "dairy"),
             ("Fromage", "", "dairy"),
-            ("Sal", "SAL", "salt"),
+            ("Sal", "SAL-REFINADO", "salt"),
             ("Flor de sal", "", "salt"),
             ("塩", "", "salt"),
             ("Salsa", "", "other"),
-            ("Fermento biológico", "FERMENTO-BIOLOGICO", "yeast"),
+            ("Fermento biológico", "FERMENTO-BIOLOGICO-FRESCO", "yeast"),
             ("Levure fraîche", "", "yeast"),
             ("Yeast", "", "yeast"),
             ("イースト", "", "yeast"),
-            ("Manteiga", "MANTEIGA-FRANCESA", "fat"),
+            ("Manteiga", "MANTEIGA-PRESIDENT-SEM-SAL", "fat"),
             ("Beurre", "", "fat"),
-            ("Azeite", "AZEITE", "fat"),
+            ("Azeite", "AZEITE-EXTRAVIRGEM", "fat"),
             ("Óleo", "", "fat"),
             ("バター", "", "fat"),
-            ("Açúcar", "ACUCAR", "sugar"),
+            ("Açúcar", "ACUCAR-CRISTAL", "sugar"),
             ("Mel", "", "sugar"),
-            ("Malte", "MALTE", "sugar"),
+            ("Malte", "MALTE-EXTRATO", "sugar"),
             ("砂糖", "", "sugar"),
             ("Ovos", "OVOS", "egg"),
             ("Œufs", "", "egg"),
@@ -128,8 +128,8 @@ class TestClassifyIngredient:
 
     def test_looks_like_flour_is_the_same_question(self):
         assert looks_like_flour("Farinha T55")
-        assert looks_like_flour("", "FARINHA-CENTEIO")
-        assert not looks_like_flour("Leite integral", "LEITE")
+        assert looks_like_flour("", "FARINHA-CENTEIO-INTEGRAL-ORGANICA")
+        assert not looks_like_flour("Leite integral", "LEITE-INTEGRAL-A")
 
 
 # ── Física do item ───────────────────────────────────────────────────────────
@@ -202,12 +202,12 @@ class TestAnalyze:
         assert pasta.quantity_g == Decimal("960")  # 600 g de farinha + 360 g de água
 
         final_mix = by_sku(analysis.final_mix)
-        assert final_mix["FARINHA-T55"].grams == Decimal("200")  # 1000 − 200 − 600
+        assert final_mix["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("200")  # 1000 − 200 − 600
         assert final_mix["AGUA-FILTRADA"].grams == Decimal("140")  # 700 − 200 − 360
-        assert final_mix["SAL"].grams == Decimal("20")
+        assert final_mix["SAL-REFINADO"].grams == Decimal("20")
 
         bom = {line["sku"]: line for line in analysis.bom}
-        assert bom["FARINHA-T55"]["quantity"] == Decimal("200")
+        assert bom["FARINHA-ANACONDA-PREMIUM"]["quantity"] == Decimal("200")
         assert bom["AGUA-FILTRADA"]["quantity"] == Decimal("140")
         assert bom["LEVAIN"]["quantity"] == Decimal("400")
         assert bom["PASTA-AUTOLIZADA"]["quantity"] == Decimal("960")
@@ -228,10 +228,10 @@ class TestAnalyze:
         assert analysis.old_dough_cap_pct == Decimal("20")
         nominal = by_sku(analysis.final_mix)
         at_cap = by_sku(analysis.final_mix_at_cap)
-        assert nominal["FARINHA-T55"].grams == Decimal("800")
-        assert at_cap["FARINHA-T55"].grams == Decimal("640")
+        assert nominal["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("800")
+        assert at_cap["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("640")
         assert at_cap["AGUA-FILTRADA"].grams == Decimal("400")  # 500 × 0,8
-        assert at_cap["SAL"].grams == Decimal("16")
+        assert at_cap["SAL-REFINADO"].grams == Decimal("16")
 
         old_dough = [line for line in analysis.bom if line["meta"].get("role") == "old_dough"]
         assert len(old_dough) == 1
@@ -245,7 +245,7 @@ class TestAnalyze:
         analysis = analyze(tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]))
         assert [w.code for w in analysis.warnings] == ["PART_WITHOUT_FORMULA"]
         assert analysis.parts[0].has_formula is False
-        assert by_sku(analysis.final_mix)["FARINHA-T55"].grams == Decimal("1000")
+        assert by_sku(analysis.final_mix)["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("1000")
         assert "LEVAIN" not in {line["sku"] for line in analysis.bom}
 
     def test_part_bigger_than_the_base_is_flagged_and_zeroed(self):
@@ -258,8 +258,8 @@ class TestAnalyze:
         )
         codes = [w.code for w in analysis.warnings]
         assert "PART_EXCEEDS_BASE" in codes
-        assert by_sku(analysis.final_mix)["FARINHA-T55"].grams == Decimal("0")
-        assert "FARINHA-T55" not in {line["sku"] for line in analysis.bom}
+        assert by_sku(analysis.final_mix)["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("0")
+        assert "FARINHA-ANACONDA-PREMIUM" not in {line["sku"] for line in analysis.bom}
 
     def test_count_without_grams_per_unit_stays_out_with_a_warning(self):
         formula = tradicao()
@@ -317,7 +317,7 @@ class TestStandardize:
 
         standard = standardize(informed)
         quantities = {item["sku"]: item["quantity"] for item in standard["items"]}
-        assert quantities == {"FARINHA-T55": "1000", "AGUA-FILTRADA": "700", "SAL": "20"}
+        assert quantities == {"FARINHA-ANACONDA-PREMIUM": "1000", "AGUA-FILTRADA": "700", "SAL-REFINADO": "20"}
         assert standard["basis_g"] == "1000"
         assert standard["standardized"] is True
         assert standard["parts"][0]["quantity"] == "400"
@@ -333,7 +333,7 @@ class TestStandardize:
     def test_scale_keeps_percentages_and_drops_the_basis(self):
         scaled = scale(tradicao(), "2.5")
         assert {item["sku"]: item["quantity"] for item in scaled["items"]} == {
-            "FARINHA-T55": "2500", "AGUA-FILTRADA": "1750", "SAL": "50",
+            "FARINHA-ANACONDA-PREMIUM": "2500", "AGUA-FILTRADA": "1750", "SAL-REFINADO": "50",
         }
         assert scaled["standardized"] is False
         assert scaled["basis_g"] is None
@@ -376,9 +376,9 @@ class TestReferences:
         formula = {
             "anchor": {"kind": "flour"},
             "items": [
-                {"sku": "FARINHA-T45", "name": "Farinha T45", "role": "flour", "quantity": 500, "unit": "g"},
+                {"sku": "FARINHA-BAGATELLE-T45", "name": "Farinha T45", "role": "flour", "quantity": 500, "unit": "g"},
                 {"sku": "MANTEIGA", "name": "Manteiga", "role": "fat", "quantity": 250, "unit": "g"},
-                {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 200, "unit": "g"},
+                {"sku": "ACUCAR-CRISTAL", "name": "Açúcar", "role": "sugar", "quantity": 200, "unit": "g"},
                 {"sku": "OVOS", "name": "Ovos", "role": "egg", "quantity": 50, "unit": "g"},
             ],
         }
@@ -429,3 +429,35 @@ class TestValidateFormula:
         formula = tradicao()
         formula["items"][1].update(unit="l", quantity="0.7")
         validate_formula(formula)
+
+
+class TestOQualificadorNaoRoubaOPapel:
+    """"Manteiga sem sal" é gordura, e "chocolate ao leite" é inclusão (não líquido).
+
+    A curadoria dos insumos trocou `MANTEIGA-FR` por `MANTEIGA-PRESIDENT-SEM-SAL`
+    em 24/09/2026, e a manteiga de 16 fichas passou a ser classificada como SAL —
+    porque o classificador lia o último token e não sabia ler negação. O papel
+    alimenta a lente de padaria, então o erro não era cosmético: ele entrava no
+    percentual do padeiro.
+    """
+
+    @pytest.mark.parametrize(
+        "nome,sku,papel",
+        [
+            ("Manteiga President sem sal", "MANTEIGA-PRESIDENT-SEM-SAL", "fat"),
+            ("Manteiga extra sem sal", "MANTEIGA-EXTRA-SEM-SAL", "fat"),
+            ("Beurre sans sel", "", "fat"),
+            ("Unsalted butter", "", "fat"),
+            # A negação não pode engolir o que ela não nega.
+            ("Manteiga President com sal", "MANTEIGA-PRESIDENT-COM-SAL", "fat"),
+            ("Sal refinado", "SAL-REFINADO", "salt"),
+            ("Sal grosso", "SAL-GROSSO", "salt"),
+            # O qualificador que vem depois não rouba o papel do substantivo.
+            ("Gotas de chocolate ao leite", "CHOCOLATE-GOTAS-AOLEITE", "inclusion"),
+            ("Farinha de centeio integral", "FARINHA-CENTEIO-INTEGRAL-ORGANICA", "flour"),
+            # E a palavra curta não casa dentro de outra: `sal` em `salsinha`.
+            ("Salsinha desidratada", "SALSINHA-DESIDRATADA", "other"),
+        ],
+    )
+    def test_o_qualificador_nao_troca_o_papel(self, nome, sku, papel):
+        assert classify_ingredient(nome, sku) == papel

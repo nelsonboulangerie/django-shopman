@@ -26,7 +26,7 @@ DENSIDADE = Decimal("1.03")
 @pytest.fixture
 def leite(db):
     return Material.objects.create(
-        sku="LEITE",
+        sku="LEITE-INTEGRAL-A",
         name="Leite integral",
         unit="l",
         metadata={"density_g_per_ml": 1.03},
@@ -36,18 +36,18 @@ def leite(db):
 @pytest.fixture
 def cenario(leite):
     """Um insumo em litro com saldo, ledger, reserva, alerta, ficha, fornada e custo."""
-    quant = Quant.objects.create(sku="LEITE", _quantity=Decimal("0"))
+    quant = Quant.objects.create(sku="LEITE-INTEGRAL-A", _quantity=Decimal("0"))
     Move.objects.create(quant=quant, delta=Decimal("10.000"), reason="Compra inicial")
     Move.objects.create(quant=quant, delta=Decimal("-2.000"), reason="Consumo da fornada")
 
-    Hold.objects.create(sku="LEITE", quant=quant, quantity=Decimal("2.000"), target_date="2026-09-10")
-    StockAlert.objects.create(sku="LEITE", min_quantity=Decimal("20.000"))
+    Hold.objects.create(sku="LEITE-INTEGRAL-A", quant=quant, quantity=Decimal("2.000"), target_date="2026-09-10")
+    StockAlert.objects.create(sku="LEITE-INTEGRAL-A", min_quantity=Decimal("20.000"))
 
     recipe = Recipe.objects.create(
         ref="brioche", name="Brioche", output_sku="BRIOCHE", batch_size=Decimal("10"),
     )
     item = RecipeItem.objects.create(
-        recipe=recipe, input_sku="LEITE", quantity=Decimal("0.500"), unit="L",
+        recipe=recipe, input_sku="LEITE-INTEGRAL-A", quantity=Decimal("0.500"), unit="L",
     )
 
     aberta = WorkOrder.objects.create(
@@ -56,11 +56,11 @@ def cenario(leite):
         meta={"_recipe_snapshot": {
             "batch_size": "10",
             "version_ref": "",
-            "items": [{"input_sku": "LEITE", "quantity": "0.500", "unit": "L"}],
+            "items": [{"input_sku": "LEITE-INTEGRAL-A", "quantity": "0.500", "unit": "L"}],
         }},
     )
     WorkOrderItem.objects.create(
-        work_order=aberta, kind=WorkOrderItem.Kind.REQUIREMENT, item_ref="LEITE",
+        work_order=aberta, kind=WorkOrderItem.Kind.REQUIREMENT, item_ref="LEITE-INTEGRAL-A",
         quantity=Decimal("0.500"), unit="L", recorded_at="2026-09-03T08:00:00Z",
     )
 
@@ -70,7 +70,7 @@ def cenario(leite):
         meta={"_recipe_snapshot": {
             "batch_size": "10",
             "version_ref": "",
-            "items": [{"input_sku": "LEITE", "quantity": "0.500", "unit": "L"}],
+            "items": [{"input_sku": "LEITE-INTEGRAL-A", "quantity": "0.500", "unit": "L"}],
         }},
     )
     # O status vira 'finished' por update para não passar de novo pelo save().
@@ -91,7 +91,7 @@ def cenario(leite):
 # 1. O cenário completo
 # ────────────────────────────────────────────────────────────────────────
 def test_cada_numero_sai_convertido_e_a_unidade_vira_kg(leite, cenario):
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     leite.refresh_from_db()
     assert leite.unit == "kg"
@@ -106,8 +106,8 @@ def test_cada_numero_sai_convertido_e_a_unidade_vira_kg(leite, cenario):
     # O cache continua sendo Σ(moves.delta): o ledger é que manda.
     assert quant.quantity == sum(deltas, Decimal("0"))
 
-    assert Hold.objects.get(sku="LEITE").quantity == Decimal("2.060")
-    assert StockAlert.objects.get(sku="LEITE").min_quantity == Decimal("20.600")
+    assert Hold.objects.get(sku="LEITE-INTEGRAL-A").quantity == Decimal("2.060")
+    assert StockAlert.objects.get(sku="LEITE-INTEGRAL-A").min_quantity == Decimal("20.600")
 
     item = cenario["item"]
     item.refresh_from_db()
@@ -134,7 +134,7 @@ def test_cada_numero_sai_convertido_e_a_unidade_vira_kg(leite, cenario):
 # 2. Ensaio
 # ────────────────────────────────────────────────────────────────────────
 def test_ensaio_nao_grava_nada(leite, cenario):
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg")
 
     leite.refresh_from_db()
     assert leite.unit == "l"
@@ -151,8 +151,8 @@ def test_ensaio_nao_grava_nada(leite, cenario):
 # 3. Idempotência
 # ────────────────────────────────────────────────────────────────────────
 def test_segunda_passada_nao_move_mais_nada(leite, cenario):
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     cenario["quant"].refresh_from_db()
     assert cenario["quant"].quantity == Decimal("8.240")
@@ -167,15 +167,15 @@ def test_segunda_passada_nao_move_mais_nada(leite, cenario):
 # 4. Sem densidade, recusa — e a transação inteira volta
 # ────────────────────────────────────────────────────────────────────────
 def test_sem_densidade_recusa_nomeando_o_que_cadastrar(db):
-    azeite = Material.objects.create(sku="AZEITE", name="Azeite extra virgem", unit="l")
-    quant = Quant.objects.create(sku="AZEITE", _quantity=Decimal("0"))
+    azeite = Material.objects.create(sku="AZEITE-EXTRAVIRGEM", name="Azeite extra virgem", unit="l")
+    quant = Quant.objects.create(sku="AZEITE-EXTRAVIRGEM", _quantity=Decimal("0"))
     Move.objects.create(quant=quant, delta=Decimal("5.000"), reason="Compra")
 
     with pytest.raises(CommandError) as erro:
-        call_command("convert_material_base_unit", "AZEITE", "--to", "kg", "--apply")
+        call_command("convert_material_base_unit", "AZEITE-EXTRAVIRGEM", "--to", "kg", "--apply")
 
     mensagem = str(erro.value)
-    assert "AZEITE" in mensagem
+    assert "AZEITE-EXTRAVIRGEM" in mensagem
     assert "density_g_per_ml" in mensagem
 
     azeite.refresh_from_db()
@@ -186,10 +186,10 @@ def test_sem_densidade_recusa_nomeando_o_que_cadastrar(db):
 
 def test_recusa_de_um_sku_desfaz_a_conversao_do_outro(leite, cenario):
     """Uma transação só: o insumo bom não fica convertido pela metade."""
-    Material.objects.create(sku="AZEITE", name="Azeite extra virgem", unit="l")
+    Material.objects.create(sku="AZEITE-EXTRAVIRGEM", name="Azeite extra virgem", unit="l")
 
     with pytest.raises(CommandError):
-        call_command("convert_material_base_unit", "LEITE", "AZEITE", "--to", "kg", "--apply")
+        call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "--to", "kg", "--apply")
 
     leite.refresh_from_db()
     assert leite.unit == "l"
@@ -210,7 +210,7 @@ def test_contagem_nao_atravessa(db):
 # 5. História não se reescreve
 # ────────────────────────────────────────────────────────────────────────
 def test_fornada_concluida_mantem_o_snapshot(leite, cenario):
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     concluida = cenario["concluida"]
     concluida.refresh_from_db()
@@ -226,11 +226,11 @@ def test_fornada_concluida_mantem_o_snapshot(leite, cenario):
 def test_item_de_fornada_concluida_nao_e_convertido(leite, cenario):
     velho = WorkOrderItem.objects.create(
         work_order=cenario["concluida"], kind=WorkOrderItem.Kind.CONSUMPTION,
-        item_ref="LEITE", quantity=Decimal("0.500"), unit="L",
+        item_ref="LEITE-INTEGRAL-A", quantity=Decimal("0.500"), unit="L",
         recorded_at="2026-09-01T08:00:00Z",
     )
 
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     velho.refresh_from_db()
     assert velho.quantity == Decimal("0.500")
@@ -244,7 +244,7 @@ def test_o_minimo_declarado_no_compras_acompanha_a_troca(leite, cenario):
     leite.metadata = {**leite.metadata, "purchase": {"min_stock": "20"}}
     leite.save(update_fields=["metadata"])
 
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     leite.refresh_from_db()
     assert leite.metadata["purchase"]["min_stock"] == "20.600"
@@ -254,7 +254,7 @@ def test_o_minimo_declarado_no_compras_acompanha_a_troca(leite, cenario):
 # 6 e 7. A conversão da unidade antiga
 # ────────────────────────────────────────────────────────────────────────
 def test_a_conversao_litro_nasce_com_o_fator_e_o_carimbo(leite, cenario):
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     conversao = MaterialConversion.objects.get(material=leite, label="litros")
     assert conversao.to_base_factor == Decimal("1.030000")
@@ -263,11 +263,11 @@ def test_a_conversao_litro_nasce_com_o_fator_e_o_carimbo(leite, cenario):
 
 
 def test_mesma_dimensao_converte_pela_fisica_e_nao_cria_conversao(db):
-    canela = Material.objects.create(sku="CANELA", name="Canela", unit="g")
-    quant = Quant.objects.create(sku="CANELA", _quantity=Decimal("0"))
+    canela = Material.objects.create(sku="CANELA-PO", name="Canela", unit="g")
+    quant = Quant.objects.create(sku="CANELA-PO", _quantity=Decimal("0"))
     Move.objects.create(quant=quant, delta=Decimal("2500.000"), reason="Compra")
 
-    call_command("convert_material_base_unit", "CANELA", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "CANELA-PO", "--to", "kg", "--apply")
 
     canela.refresh_from_db()
     assert canela.unit == "kg"
@@ -283,7 +283,7 @@ def test_embalagem_ja_cadastrada_e_reescalada(leite, cenario):
         kind=MaterialConversion.Kind.CONVENTIONAL,
     )
 
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     galao = MaterialConversion.objects.get(material=leite, label="Galão")
     assert galao.to_base_factor == Decimal("5.150000")
@@ -300,7 +300,7 @@ def test_custo_de_embalagem_nao_e_redividido(leite, cenario):
         supplier=outro, material=leite, conversion=galao, cost_q=2500,
     )
 
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     custo.refresh_from_db()
     assert custo.cost_q == 2500
@@ -310,7 +310,7 @@ def test_custo_de_embalagem_nao_e_redividido(leite, cenario):
 # 8. A ficha continua válida
 # ────────────────────────────────────────────────────────────────────────
 def test_a_ficha_continua_validando_depois_da_troca(leite, cenario):
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply")
 
     recipe = cenario["recipe"]
     recipe.refresh_from_db()
@@ -328,11 +328,11 @@ def test_no_bridge_converte_sem_deixar_a_conversao_para_tras(leite, cenario):
     para um insumo cuja densidade é 1 a anotação repetiria o mesmo número com um
     ``≈`` na frente, mentindo sobre a precisão.
     """
-    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply", "--no-bridge")
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "kg", "--apply", "--no-bridge")
 
     leite.refresh_from_db()
     assert leite.unit == "kg"
     assert not MaterialConversion.objects.filter(material=leite, label="litros").exists()
     # A conversão do saldo acontece do mesmo jeito: a ponte é só o cadastro da compra.
-    quant = Quant.objects.get(sku="LEITE")
+    quant = Quant.objects.get(sku="LEITE-INTEGRAL-A")
     assert quant.quantity == Decimal("8.240")

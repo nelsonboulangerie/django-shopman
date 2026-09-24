@@ -75,23 +75,86 @@ from django.db import transaction
 #: irmãs juntas; abreviação como ``-FR`` ou ``-DESID`` só o autor do cadastro
 #: decifra.
 RENOMEACOES: tuple[tuple[str, str, str], ...] = (
-    # ── decisão dele, 22/09/2026 ───────────────────────────────────────────
-    # ⚠️ `AGUA-FILTRADA → AGUA` esteve aqui e SAIU: ele voltou atrás em 23/09
-    # ("Agua pode ser AGUA-FILTRADA mesmo ok"). Não é só a linha que sai — com
-    # ela sai a única colisão de coordenada de quant que este comando conhecia,
-    # e por isso o órfão `AGUA` deixou de ter pressa para sumir.
+    # ── 1ª rodada (22/09) ─────────────────────────────────────────────────
     # "a tônica de INSUMO é a Antarctica; a Wewi é revenda e vive no catálogo".
     # Com o fabricante no nome, as duas deixam de se confundir.
     ("TONICA", "TONICA-ANTARCTICA", "dele"),
-    # ── proposta da curadoria, esperando a palavra dele ────────────────────
-    ("BATON-CHOCOLATE", "CHOCOLATE-BATON", "proposta"),
-    ("GOTAS-CHOCOLATE", "CHOCOLATE-GOTAS", "proposta"),
-    ("CENTEIO", "FARINHA-CENTEIO", "proposta"),
-    ("FARINHA-INT", "FARINHA-INTEGRAL", "proposta"),
-    ("FERMENTO-BIO", "FERMENTO-BIOLOGICO", "proposta"),
-    ("FERMENTO-NAT", "FERMENTO-NATURAL", "proposta"),
-    ("MANTEIGA-FR", "MANTEIGA-FRANCESA", "proposta"),
-    ("SALSINHA-DESID", "SALSINHA-DESIDRATADA", "proposta"),
+    # ⚠️ `AGUA-FILTRADA → AGUA` esteve aqui e SAIU: ele voltou atrás em 23/09
+    # ("Agua pode ser AGUA-FILTRADA mesmo ok"). Com a linha saiu a única colisão
+    # de coordenada de quant que este comando conhecia, e por isso o órfão
+    # `AGUA` deixou de ter pressa para sumir.
+    #
+    # ── 2ª rodada (23–24/09) ──────────────────────────────────────────────
+    # Ele reescreveu a aba `Insumos` inteira e depois respondeu 20 perguntas
+    # pelo celular. O par vai do SKU que está no ALPHA direto ao curado: o
+    # banco nunca viu os intermediários da 1ª rodada, que só existiram no seed.
+    ("ACUCAR", "ACUCAR-CRISTAL", "dele"),          # o refinado virou linha própria
+    ("ALECRIM", "ALECRIM-FRESCO", "dele"),
+    ("AZEITE", "AZEITE-EXTRAVIRGEM", "dele"),
+    ("AZEITONA", "AZEITONA-AZAPA", "dele"),
+    ("BAUNILHA", "BAUNILHA-EXTRATO-NATURAL", "dele"),   # é extrato, não fava
+    ("CANELA", "CANELA-PO", "dele"),                     # o pau virou linha própria
+    ("CHOCOLATE-70", "CHOCOLATE-GOTAS-MEIOAMARGO", "dele"),
+    ("BATON-CHOCOLATE", "CHOCOLATE-BATON-MEIOAMARGO", "dele"),
+    # ⚠️ AO LEITE: o rótulo de quem usa esta ficha passa a declarar LEITE, que o
+    # meio amargo não declarava. Ele confirmou em 24/09, ciente disso.
+    ("GOTAS-CHOCOLATE", "CHOCOLATE-GOTAS-AOLEITE", "dele"),
+    ("CREME-DE-LEITE", "NATA-FRESCA", "dele"),
+    ("CENTEIO", "FARINHA-CENTEIO-INTEGRAL-ORGANICA", "dele"),
+    ("FARINHA-INT", "FARINHA-INTEGRAL-ORGANICA", "dele"),
+    ("FARINHA-T45", "FARINHA-BAGATELLE-T45", "dele"),
+    # ⚠️ As duas de baixo TROCAM o nome "T55" entre si, e ele confirmou que é de
+    # propósito: a que está em 6 fichas é a Anaconda Premium (nacional, tipo
+    # T45) e a de 4 é a Novara T55. Quem ler só o nome se perde — quem lê o SKU,
+    # não. Não há colisão: os dois alvos são códigos novos.
+    ("FARINHA-T55", "FARINHA-ANACONDA-PREMIUM", "dele"),
+    ("FARINHA-T65", "FARINHA-NOVARA-T55", "dele"),
+    ("FERMENTO-BIO", "FERMENTO-BIOLOGICO-FRESCO", "dele"),
+    ("FERMENTO-NAT", "LEVAIN-LIQUIDO", "dele"),
+    ("LEITE", "LEITE-INTEGRAL-A", "dele"),               # tipo A, confirmado
+    ("LIMAO", "LIMAO-SICILIANO", "dele"),                # o tahiti virou linha própria
+    ("MACA", "MACA-FUJI", "dele"),
+    ("MALTE", "MALTE-EXTRATO", "dele"),
+    ("MANTEIGA-FR", "MANTEIGA-PRESIDENT-SEM-SAL", "dele"),
+    ("MILHO-VERDE", "MILHO-VERDE-CONSERVA", "dele"),
+    ("QUEIJO-GRUYERE", "QUEIJO-GOUDA", "dele"),          # a ficha real confirma
+    ("SAL", "SAL-REFINADO", "dele"),                     # refinado nas 13 fichas
+    ("SALSINHA-DESID", "SALSINHA-DESIDRATADA", "dele"),
+    ("TOMILHO", "TOMILHO-FRESCO", "dele"),
+    # ⚠️ O CAFÉ não está aqui, e não é esquecimento: `CAFE-GRAO` não vira um
+    # insumo, vira DOIS. Rename não divide insumo — ver `DIVISOES`.
+)
+
+#: Insumo genérico que escondia mais de um, e por isso não cabe em ``RENOMEACOES``.
+#:
+#: ``CAFE-GRAO`` é o caso que abriu o WP inteiro, quando ele disse que os insumos
+#: eram genéricos. Ele era pior do que parecia: não faltava só a torra, faltava
+#: **um café inteiro**. São dois blends, de dois fornecedores — e um deles vem
+#: direto do produtor, sem distribuidor.
+#:
+#: A travessia é rename + criação + reapontamento das fichas que mudam de lado:
+#: quem fica com o SKU herdado leva o ledger e o histórico junto, e é por isso
+#: que o Chocomelo (6 fichas) herda e o Orfeu (1) nasce.
+DIVISOES: tuple[dict, ...] = (
+    {
+        "de": "CAFE-GRAO",
+        "herda": "CAFE-TAMURA-CHOCOMELO",
+        "nasce": {
+            "sku": "CAFE-ORFEU-CLASSICO",
+            "name": "Café Orfeu Clássico em grão",
+            "unit": "kg",
+            "shelf_life_days": 90,
+        },
+        "fichas_que_mudam": ("espresso",),
+        "curadoria": (
+            "dele, 24/09/2026: «Café São 2! Tamura chocomelo e Orfeu Clássico» e «Orfeu para "
+            "espresso, Tamura para os demais». O Orfeu vem DIRETO da Orfeu Cafés Especiais; o "
+            "Chocomelo, da Tamura (é o PRD00015 da nota que o sistema já leu). "
+            "⚠️ «Chocomelo» é palavra dele: o sistema guarda o código do fornecedor, a embalagem "
+            "e a chave de acesso da NF-e, mas NÃO o nome do produto — a grafia não dá para "
+            "conferir por aqui, e a próxima leitura de nota confirma"
+        ),
+    },
 )
 
 #: Insumo que sai do cadastro, com quem decidiu e por quê. Excluir insumo é
@@ -144,7 +207,7 @@ FORA_DA_TABELA: dict[str, str] = {
     # extrato. O cadastro de hoje diz "fava/pasta", que é outra coisa, e ninguém
     # confirmou qual das duas entra. Renomear aqui gravaria no SKU uma resposta
     # que não existe — e o insumo não está em ficha nenhuma, então não há pressa.
-    "BAUNILHA": (
+    "BAUNILHA-EXTRATO-NATURAL": (
         "o nome proposto (BAUNILHA-EXT-NAT) declara que é EXTRATO, e o cadastro diz "
         "«fava/pasta». Qual das duas a casa usa é pergunta dele, na planilha"
     ),
@@ -245,8 +308,9 @@ class Command(BaseCommand):
         exclusoes = {k: v for k, v in EXCLUSOES.items() if not alvo or k == alvo}
         criacoes = [c for c in CRIACOES if not alvo or c["sku"] == alvo]
         reapontamentos = [r for r in REAPONTAMENTOS if not alvo or r[1] == alvo]
+        divisoes = [d for d in DIVISOES if not alvo or d["de"] == alvo]
 
-        if alvo and not (pares or exclusoes or criacoes or reapontamentos):
+        if alvo and not (pares or exclusoes or criacoes or reapontamentos or divisoes):
             motivo = FORA_DA_TABELA.get(alvo)
             raise CommandError(
                 f"'{alvo}' está fora da tabela: {motivo}." if motivo
@@ -264,7 +328,7 @@ class Command(BaseCommand):
         # que já é produto — e aí nada pode ser gravado até alguém corrigi-la.
         # **Impedimento** diz que o MUNDO trava uma linha: o ledger não deixa o
         # órfão sair. Só aquela frente para; o resto segue.
-        recusas = self._recusar(pares, criacoes, reapontamentos, insumos)
+        recusas = self._recusar(pares, criacoes, reapontamentos, divisoes, insumos)
         if recusas:
             self._escrever_recusas(recusas)
             raise CommandError(
@@ -273,6 +337,7 @@ class Command(BaseCommand):
             )
         impedidos = self._impedimentos(pares, exclusoes, insumos, carga_da_exclusao)
 
+        divididos: list[dict] = []
         apagados: list[tuple[str, dict]] = []
         criados: list[str] = []
         feitos: list[tuple[str, str, str, int]] = []
@@ -299,6 +364,10 @@ class Command(BaseCommand):
                     )
                     criados.append(criacao["sku"])
 
+            for divisao in divisoes:
+                if divisao["de"] in insumos:
+                    divididos.append(self._dividir(divisao))
+
             for antigo, novo, quem in pares:
                 if antigo in impedidos:
                     continue
@@ -318,7 +387,7 @@ class Command(BaseCommand):
                 transaction.set_rollback(True)
 
         self._relatorio(
-            feitos, apagados, criados, reapontados, pulados, impedidos,
+            feitos, apagados, criados, reapontados, pulados, impedidos, divididos,
             pares=pares, apply=apply, alvo=alvo,
         )
         if alvo and alvo in impedidos:
@@ -326,7 +395,7 @@ class Command(BaseCommand):
 
     # ---------------------------------------------------------------- recusas
 
-    def _recusar(self, pares, criacoes, reapontamentos, insumos) -> list[str]:
+    def _recusar(self, pares, criacoes, reapontamentos, divisoes, insumos) -> list[str]:
         """O que diz que a TABELA está errada. Lista inteira, não a primeira."""
         from shopman.craftsman.models import Recipe, RecipeItem
         from shopman.offerman.models import Product
@@ -371,6 +440,28 @@ class Command(BaseCommand):
                     f"criar {sku}: já existe um insumo com esse SKU. "
                     "Criar de novo apagaria a curadoria dele."
                 )
+
+        for divisao in divisoes:
+            if divisao["de"] not in insumos:
+                continue
+            for sku in (divisao["herda"], divisao["nasce"]["sku"]):
+                if sku in produtos:
+                    recusas.append(
+                        f"dividir {divisao['de']}: o SKU {sku} já é produto vendável do catálogo."
+                    )
+                if sku in insumos:
+                    recusas.append(
+                        f"dividir {divisao['de']}: o SKU {sku} já é de outro insumo. Uma divisão "
+                        "cria endereços novos — se um deles já existe, a curadoria mudou e a "
+                        "tabela envelheceu."
+                    )
+            for ficha in divisao["fichas_que_mudam"]:
+                if not Recipe.objects.filter(ref=ficha).exists():
+                    recusas.append(
+                        f"dividir {divisao['de']}: a ficha '{ficha}' não existe, e é ela que "
+                        "distingue os dois. Sem ela a divisão não tem como saber o que vai "
+                        "para onde."
+                    )
 
         for ficha, antigo, novo in reapontamentos:
             receita = Recipe.objects.filter(ref=ficha).first()
@@ -495,6 +586,35 @@ class Command(BaseCommand):
         Quant.objects.filter(sku=sku).delete()
         Material.objects.filter(sku=sku).delete()
 
+    def _dividir(self, divisao: dict) -> dict:
+        """Um insumo genérico vira dois, sem que o ledger perca o fio.
+
+        Quem HERDA o SKU antigo leva junto o saldo, os movimentos e as fichas —
+        é um rename comum. Quem NASCE começa do zero, e só as fichas nomeadas
+        mudam de lado. A escolha de quem herda não é estética: herda quem está
+        na maioria das fichas, porque é o caminho com menos linha a reapontar e
+        menos chance de o histórico se descolar do insumo errado.
+        """
+        from shopman.buyman.models import Material
+
+        nasce = divisao["nasce"]
+        Material.objects.create(
+            sku=nasce["sku"],
+            name=nasce["name"],
+            unit=nasce["unit"],
+            shelf_life_days=nasce["shelf_life_days"],
+            metadata={"curadoria": divisao["curadoria"]},
+        )
+        linhas = self._renomear(divisao["de"], divisao["herda"])
+        mudadas = [
+            ficha for ficha in divisao["fichas_que_mudam"]
+            if self._reapontar(ficha, divisao["herda"], nasce["sku"])
+        ]
+        return {
+            "de": divisao["de"], "herda": divisao["herda"], "nasce": nasce["sku"],
+            "linhas": linhas, "fichas": mudadas, "curadoria": divisao["curadoria"],
+        }
+
     def _renomear(self, antigo: str, novo: str) -> int:
         from shopman.refs.bulk import RefBulk
 
@@ -513,7 +633,8 @@ class Command(BaseCommand):
     # ------------------------------------------------------------- relatório
 
     def _relatorio(
-        self, feitos, apagados, criados, reapontados, pulados, impedidos, *, pares, apply, alvo
+        self, feitos, apagados, criados, reapontados, pulados, impedidos, divididos,
+        *, pares, apply, alvo,
     ):
         verbo = "Feito" if apply else "Faria"
         out = self.stdout
@@ -563,6 +684,18 @@ class Command(BaseCommand):
             out.write("  nada a apagar: o órfão já saiu.")
         else:
             out.write("  nenhuma exclusão neste escopo.")
+
+        out.write("\n2b) Insumo genérico que virou DOIS:")
+        if divididos:
+            for d in divididos:
+                out.write(
+                    f"  {d['de']} → {d['herda']} (herda saldo, ledger e fichas, "
+                    f"{d['linhas']} linha(s))"
+                )
+                out.write(f"     + {d['nasce']} nasce, e leva a(s) ficha(s): {', '.join(d['fichas'])}")
+                out.write(f"     {d['curadoria']}")
+        else:
+            out.write("  nenhuma divisão neste escopo.")
 
         out.write("\n3) Insumo que passa a existir:")
         if criados:

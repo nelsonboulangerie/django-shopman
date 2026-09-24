@@ -38,24 +38,24 @@ from shopman.craftsman.models.recipe import _item_mass_in_kg
 # mesmo número.
 DENSIDADES = {
     "AGUA-FILTRADA": Decimal("1.0"),
-    "LEITE": Decimal("1.03"),
-    "AZEITE": Decimal("0.91"),
-    "CREME-DE-LEITE": Decimal("1.01"),
+    "LEITE-INTEGRAL-A": Decimal("1.03"),
+    "AZEITE-EXTRAVIRGEM": Decimal("0.91"),
+    "NATA-FRESCA": Decimal("1.01"),
 }
 
 # A água vem da torneira e não tem fornecedor (`SUPPLIER_BY_MATERIAL`): nunca
 # chega por nota, então não ganha conversão. Fator que ninguém usa é configuração
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
-COMPRADOS_EM_LITRO = ("LEITE", "AZEITE", "CREME-DE-LEITE")
+COMPRADOS_EM_LITRO = ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
 
 # (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 35 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
 #
-# ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE")`,
+# ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE-INTEGRAL-A")`,
 # e ela saiu porque a RECEITA mudou, não porque a conversão foi desfeita: o dono
 # corrigiu que o creme de chocolate é o CREME-BAUNILHA com chocolate derretido,
 # então o leite dele não entra mais direto — entra pela base, onde já está
-# contado em `("creme-baunilha", "LEITE")`. Linha que sai daqui sem essa
+# contado em `("creme-baunilha", "LEITE-INTEGRAL-A")`. Linha que sai daqui sem essa
 # explicação é conversão perdida, e o teste é quem grita.
 #
 # ⚠️ E eram 36 até o fim do mesmo dia. A que saiu depois é
@@ -69,35 +69,35 @@ QUANTIDADES_EM_LITRO = {
     ("massa-yudane", "AGUA-FILTRADA"): Decimal("1.000"),
     ("massa-campagne", "AGUA-FILTRADA"): Decimal("3.500"),
     ("massa-ciabatta", "AGUA-FILTRADA"): Decimal("4.000"),
-    ("massa-ciabatta", "AZEITE"): Decimal("0.250"),
-    ("massa-forma", "LEITE"): Decimal("1.800"),
-    ("massa-croissant", "LEITE"): Decimal("1.200"),
-    ("massa-kuropan", "LEITE"): Decimal("1.800"),
+    ("massa-ciabatta", "AZEITE-EXTRAVIRGEM"): Decimal("0.250"),
+    ("massa-forma", "LEITE-INTEGRAL-A"): Decimal("1.800"),
+    ("massa-croissant", "LEITE-INTEGRAL-A"): Decimal("1.200"),
+    ("massa-kuropan", "LEITE-INTEGRAL-A"): Decimal("1.800"),
     ("massa-folhado", "AGUA-FILTRADA"): Decimal("1.800"),
-    ("creme-baunilha", "LEITE"): Decimal("3.400"),
-    ("massa-butter", "LEITE"): Decimal("1.600"),
+    ("creme-baunilha", "LEITE-INTEGRAL-A"): Decimal("3.400"),
+    ("massa-butter", "LEITE-INTEGRAL-A"): Decimal("1.600"),
     ("massa-pita", "AGUA-FILTRADA"): Decimal("3.000"),
-    ("massa-pita", "AZEITE"): Decimal("0.150"),
-    ("recheio-frango", "AZEITE"): Decimal("0.150"),
-    ("recheio-cebola-bacon-tomilho", "AZEITE"): Decimal("0.150"),
-    ("recheio-cebola-azapas", "AZEITE"): Decimal("0.150"),
-    ("molho-bechamel", "LEITE"): Decimal("2.600"),
-    ("creme-leite-ovos", "CREME-DE-LEITE"): Decimal("0.800"),
-    ("creme-leite-ovos", "LEITE"): Decimal("0.600"),
-    ("vinagrete-frances", "AZEITE"): Decimal("0.700"),
-    ("espresso-macchiato", "LEITE"): Decimal("0.020"),
-    ("cappuccino", "LEITE"): Decimal("0.150"),
-    ("mochaccino", "LEITE"): Decimal("0.150"),
-    ("mocha", "LEITE"): Decimal("0.180"),
-    ("caffe-latte", "LEITE"): Decimal("0.220"),
-    ("chocolate-quente", "LEITE"): Decimal("0.220"),
+    ("massa-pita", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    ("recheio-frango", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    ("recheio-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    ("recheio-cebola-azapas", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    ("molho-bechamel", "LEITE-INTEGRAL-A"): Decimal("2.600"),
+    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.800"),
+    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("0.600"),
+    ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.700"),
+    ("espresso-macchiato", "LEITE-INTEGRAL-A"): Decimal("0.020"),
+    ("cappuccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
+    ("mochaccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
+    ("mocha", "LEITE-INTEGRAL-A"): Decimal("0.180"),
+    ("caffe-latte", "LEITE-INTEGRAL-A"): Decimal("0.220"),
+    ("chocolate-quente", "LEITE-INTEGRAL-A"): Decimal("0.220"),
     ("cha-camille", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-rouge", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-sophie", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-bleu", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-hibisco", "AGUA-FILTRADA"): Decimal("0.300"),
     ("soft-chai-citrico", "AGUA-FILTRADA"): Decimal("0.250"),
-    ("vienna-gelado", "LEITE"): Decimal("0.050"),
+    ("vienna-gelado", "LEITE-INTEGRAL-A"): Decimal("0.050"),
     ("vienna-gelado", "AGUA-FILTRADA"): Decimal("0.200"),
 }
 
@@ -233,6 +233,6 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
 
     # O ganho concreto: a massa do item sai direto do cadastro. Antes, item sem
     # `density_g_per_ml` devolvia `None` e calava o invariante da ficha inteira.
-    leite = RecipeItem.objects.filter(input_sku="LEITE").first()
+    leite = RecipeItem.objects.filter(input_sku="LEITE-INTEGRAL-A").first()
     leite.meta = {}
     assert _item_mass_in_kg(leite) == leite.quantity

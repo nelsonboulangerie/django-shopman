@@ -51,7 +51,7 @@ def position(db):
 @pytest.fixture
 def material(db):
     return Material.objects.create(
-        sku="FARINHA-T65",
+        sku="FARINHA-NOVARA-T55",
         name="Farinha T65",
         unit="kg",
         shelf_life_days=180,
