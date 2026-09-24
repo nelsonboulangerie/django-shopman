@@ -470,7 +470,7 @@ useSeoMeta({
         <UiBreadcrumbs
           :items="[
             { label: 'Início', link: '/' },
-            { label: 'Pedidos', link: '/conta' },
+            { label: 'Pedidos', link: '/conta/pedidos' },
             { label: `Pedido ${orderRef}` }
           ]"
         />
