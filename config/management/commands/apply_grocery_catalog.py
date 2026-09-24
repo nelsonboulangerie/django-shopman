@@ -190,12 +190,10 @@ GROCERY: tuple[GroceryItem, ...] = (
                 "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
                 gtin_source=OWNER_PACKAGE),
     # ── Mirante ──
-    # É de 250 g, não 120 g (dono, lendo a embalagem, 24/09): o "120g" do Yooga
-    # era nome errado. GTIN-12 602883466111 (a embalagem traz 0602883466111),
-    # guardado como os outros Mirante. ⚠️ O preço é o da planilha, que era o do
-    # "120g" — pergunta aberta para o dono.
-    GroceryItem("CHURRASQUINHO-PIMENTA-MIRANTE-250", "Churrasquinho de Pimenta Mirante 250g", 2600,
-                "Mirante", "602883466111", "21039099", "1709200", 250,
+    # 120 g e R$ 26 (dono, 24/09). GTIN-12 602883466111 (a embalagem traz
+    # 0602883466111), guardado como os outros Mirante.
+    GroceryItem("CHURRASQUINHO-PIMENTA-MIRANTE-120", "Churrasquinho de Pimenta Mirante 120g", 2600,
+                "Mirante", "602883466111", "21039099", "1709200", 120,
                 ("churrasquinho", "pimenta", "conserva"), gtin_source=OWNER_PACKAGE),
     # ── Chá Kãnfa em lata ──
     # A lata de Chalosofia (dono, embalagem, 24/09). ⚠️ Na loja da Kãnfa o
@@ -205,6 +203,12 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("CHA-CHALOSOFIA-KANFA-L50", "Chalosofia Kãnfa — Lata 50g", 7300, "Kãnfa",
                 "7898708850477", "09021000", "1709700", 50, ("cha", "chalosofia", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
+    # A lata de Vital Chai (dono confirmou 7898708850743, 24/09 — o mesmo que
+    # a loja da Kãnfa mostra). Peso da planilha (60 g); a loja chama a lata
+    # de "70g", pergunta aberta.
+    GroceryItem("CHA-VITAL-KANFA-L60", "Vital Chai Kãnfa — Lata 60g", 7300, "Kãnfa",
+                "7898708850743", "09021000", "1709700", 60, ("cha", "vital", "chai", "lata", "kanfa"),
+                gtin_source=OWNER_PACKAGE),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
                 "Vito Bauducci", "7890203650002", "02101900", "1707904", 100, ("presunto", "cru", "fatiado")),
@@ -213,9 +217,6 @@ GROCERY: tuple[GroceryItem, ...] = (
 #: Mercearia da planilha que NÃO entra, e por quê. Entra quando o dado faltante
 #: chegar — basta mover a linha para :data:`GROCERY`.
 LEFT_OUT: dict[str, str] = {
-    "CHA-VITAL-KANFA-L60": (
-        "o código lido na lata veio com 11 dígitos (78987088507); é o 7898708850743 da loja da Kãnfa?"
-    ),
     "CHA-INTUICAO-KANFA-F250": "é INSUMO (lata de serviço do chá do bule), não produto de prateleira",
 }
 
@@ -278,8 +279,7 @@ YOOGA_NAMES: dict[str, str] = {
     "Mini Geléia Frutas Vermelhas St.Dalfour 28g": "GELEIA-FRUTASVERM-STDALFOUR-28",
     "Queijo Mini Brie Ile de France 25g": "QUEIJO-BRIE-ILEDEFRANCE-25",
     "Mostarda Àl' Ancienne Maille 210g -": "MOSTARDA-ANCIENNE-MAILLE-210",
-    # O "120g" do Yooga era nome errado: o pote é de 250 g (dono, 24/09).
-    "Churrasquinho de Pimenta Mirante 120g": "CHURRASQUINHO-PIMENTA-MIRANTE-250",
+    "Churrasquinho de Pimenta Mirante 120g": "CHURRASQUINHO-PIMENTA-MIRANTE-120",
     "Mostarda Com Mel Maille 215g": "MOSTARDA-MEL-MAILLE-215",
     "Mostarda Dijon Maille 215g": "MOSTARDA-DIJON-MAILLE-215",
     "Mostarda Maille Dijon Originale 215g": "MOSTARDA-DIJON-MAILLE-215",  # nome do iFood
