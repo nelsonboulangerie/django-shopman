@@ -123,7 +123,7 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
-PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
+PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-", "manteiga-")
 
 # Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo
 # dono em 10/09/2026. Elas tornam as etiquetas testáveis sem fingir validação
@@ -149,6 +149,13 @@ HOUSE_SHEET_SHELF_LIFE_DAYS = {
     # 30 dias congelado; o que conta aqui é o resfriado, depois de descongelar.
     "recheio-frango": 2,
     "creme-chocolate": 5,
+    # 30 dias congelado; 15 resfriado, depois de descongelar.
+    "manteiga-wasabi": 15,
+    "recheio-cebolas-assadas": 15,
+    # 30 dias na ficha; 20 é a «validade loja» que ela mesma escreve ao lado.
+    "molho-caramelo": 20,
+    # «Validade refrigerado: 1 dia — o ideal é fazer e já usar!»
+    "creme-leite-ovos": 1,
 }
 
 
@@ -157,7 +164,7 @@ def _pre_go_live_preparation_shelf_life(recipe_ref: str) -> tuple[str, int] | No
         kind = "mass"
     elif recipe_ref.startswith("creme-"):
         kind = "cream"
-    elif recipe_ref.startswith(("recheio-", "molho-", "salada-", "vinagrete-")):
+    elif recipe_ref.startswith(("recheio-", "molho-", "salada-", "vinagrete-", "manteiga-")):
         kind = "other_filling"
     else:
         return None
@@ -257,6 +264,11 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "creme-leite-ovos":                   6,
     "salada-da-casa":                     5,
     "vinagrete-frances":                  2,
+    # Pré-preparos que chegaram com as fichas reais da casa (24/09/2026). Sem
+    # número do dono: fica UM lote da ficha por dia, e se diz que é isso.
+    "manteiga-wasabi":                    1,
+    "recheio-cebolas-assadas":            1,
+    "molho-caramelo":                     2,
 
     # Peças (saída em unidade): a capacidade fala em peças por dia.
     "baguete":                            75,
@@ -3953,16 +3965,65 @@ class Command(BaseCommand):
                 ],
             },
             {
-                # A base do pain perdu ("Creme de leite e ovos" — dono, 26/08).
+                # A base do pain perdu = o «Creme Pain Perdu» da ficha da casa
+                # (Maysa, 10/10/2022), que rende 0,762 kg; aqui ×2,5. A baunilha
+                # dela são «2 gotas, ok! (não em peso)» — fica fora até ter
+                # peso (pergunta aberta ao dono); custo e rótulo não a sentem.
                 "ref": "creme-leite-ovos",
                 "name": "Creme de Leite e Ovos",
                 "output_sku": "CREME-LEITE-OVOS",
-                "batch_size": Decimal("2"),
+                "batch_size": Decimal("1.9"),
                 "items": [
-                    ("NATA-FRESCA", Decimal("0.808")),
-                    ("LEITE-INTEGRAL-A", Decimal("0.618")),
-                    ("OVOS", Decimal("0.500")),
-                    ("ACUCAR-CRISTAL", Decimal("0.150"))
+                    ("LEITE-INTEGRAL-A", Decimal("1.000")),
+                    ("NATA-FRESCA", Decimal("0.375")),
+                    ("OVOS", Decimal("0.275")),
+                    ("ACUCAR-CRISTAL", Decimal("0.250")),
+                ],
+            },
+            {
+                # «Caramelo Salgado» da ficha da casa, ×2. A flor de sal entra
+                # por cima depois de frio e não tem peso na ficha; a do prato
+                # está na ficha do pain perdu.
+                "ref": "molho-caramelo",
+                "name": "Caramelo Salgado",
+                "output_sku": "MOLHO-CARAMELO",
+                "batch_size": Decimal("2.1"),
+                "items": [
+                    ("ACUCAR-REFINADO", Decimal("1.200")),
+                    ("NATA-FRESCA", Decimal("1.200")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.120")),
+                    ("SAL-REFINADO", Decimal("0.012")),
+                ],
+            },
+            {
+                # «Manteiga de Wassabi» da ficha da casa, ×5: President COM sal
+                # e wasabi em PASTA — o teste com pó, de 30/08/2023, ele
+                # reprovou na própria célula. Planada e cortada em retângulos
+                # de 6 × 2 cm para o Jambon-Beurre.
+                "ref": "manteiga-wasabi",
+                "name": "Manteiga de Wasabi",
+                "output_sku": "MANTEIGA-WASABI",
+                "batch_size": Decimal("1.035"),
+                "items": [
+                    ("MANTEIGA-PRESIDENT-COM-SAL", Decimal("1.000")),
+                    ("WASABI", Decimal("0.035")),
+                ],
+            },
+            {
+                # «Cebolas Assadas» da ficha da casa, ×2: marinadas 4 h e
+                # assadas 12 h de um dia para o outro. Ela usa «o aproveitamento
+                # da roxa + branca para completar» — no estoque, a branca.
+                "ref": "recheio-cebolas-assadas",
+                "name": "Cebolas Assadas",
+                "output_sku": "RECHEIO-CEBOLAS-ASSADAS",
+                "batch_size": Decimal("1.47"),
+                "items": [
+                    ("CEBOLA-BRANCA", Decimal("3.146"), Decimal("0.85")),
+                    ("VINHO-BRANCO-SECO", Decimal("0.410")),
+                    ("ACUCAR-CRISTAL", Decimal("0.040")),
+                    ("SAL-REFINADO", Decimal("0.030")),
+                    ("TOMILHO-FRESCO", Decimal("0.030")),
+                    ("LOURO", Decimal("0.001")),
                 ],
             },
             {
@@ -4314,7 +4375,11 @@ class Command(BaseCommand):
             # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
             # Dão custo, insumo e rótulo; não são fornada. A convenção dos
             # croques é do dono (P7): monsieur vai salada, madame vai ovo,
-            # complet vai salada e ovo.
+            # complet vai salada e ovo. O resto do croque é o da ficha da casa
+            # (Croque / Tartine, Maysa 10/10/2022): pão CAMPAGNE fatiado fino,
+            # bechamel, gouda ralado grosso (95% de aproveitamento), presunto e
+            # parmesão ralado fino. ⚠️ A fatia dela é «1 unidade» sem peso: os
+            # 110 g são os do pão de forma que ela substitui — pergunta aberta.
             #
             # ⚠️ O consumo automático na VENDA destes itens NÃO EXISTE ainda: a
             # ficha nasce pronta para ele, e o insumo entra pela compra e nunca
@@ -4322,6 +4387,9 @@ class Command(BaseCommand):
             # (Este comentário dizia "Fase 2 do Buyman", que é outra coisa — no
             # plano do Buyman, Fase 2 é o Pedido de Compra.)
             {
+                # Ficha da casa: pão, prato, cebolas assadas, requeijão e o
+                # queijo de acabamento — o parmesão «Precioso», da região, no
+                # lugar do terreiro Atalaia da ficha antiga (dono, 24/09).
                 "ref": "queijo-quente",
                 "name": "Queijo-Quente",
                 "output_sku": "QJQT",
@@ -4329,10 +4397,11 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("FORMA", Decimal("0.110")),
-                    ("QUEIJO-PRATO", Decimal("0.040")),
-                    ("REQUEIJAO-CORTE", Decimal("0.030")),
-                    ("QUEIJO-PARMESAO", Decimal("0.015")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.010")),
+                    ("REQUEIJAO-CORTE", Decimal("0.040")),
+                    ("QUEIJO-PRATO", Decimal("0.036")),
+                    ("RECHEIO-CEBOLAS-ASSADAS", Decimal("0.035")),
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.010")),
+                    ("QUEIJO-PARMESAO", Decimal("0.008")),
                 ],
             },
             {
@@ -4342,10 +4411,11 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FORMA", Decimal("0.110")),
-                    ("PRESUNTO-CASA", Decimal("0.040")),
-                    ("QUEIJO-GOUDA", Decimal("0.060")),
-                    ("MOLHO-BECHAMEL", Decimal("0.030")),
+                    ("CPG", Decimal("0.110")),
+                    ("MOLHO-BECHAMEL", Decimal("0.070")),
+                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
+                    ("PRESUNTO-CASA", Decimal("0.050")),
+                    ("QUEIJO-PARMESAO", Decimal("0.002")),
                     ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
                 ],
             },
@@ -4356,10 +4426,11 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FORMA", Decimal("0.110")),
-                    ("PRESUNTO-CASA", Decimal("0.040")),
-                    ("QUEIJO-GOUDA", Decimal("0.060")),
-                    ("MOLHO-BECHAMEL", Decimal("0.030")),
+                    ("CPG", Decimal("0.110")),
+                    ("MOLHO-BECHAMEL", Decimal("0.070")),
+                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
+                    ("PRESUNTO-CASA", Decimal("0.050")),
+                    ("QUEIJO-PARMESAO", Decimal("0.002")),
                     ("OVOS", Decimal("0.050"))
                 ],
             },
@@ -4370,30 +4441,38 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("FORMA", Decimal("0.110")),
-                    ("PRESUNTO-CASA", Decimal("0.040")),
-                    ("QUEIJO-GOUDA", Decimal("0.060")),
-                    ("MOLHO-BECHAMEL", Decimal("0.030")),
+                    ("CPG", Decimal("0.110")),
+                    ("MOLHO-BECHAMEL", Decimal("0.070")),
+                    ("QUEIJO-GOUDA", Decimal("0.050"), Decimal("0.95")),
+                    ("PRESUNTO-CASA", Decimal("0.050")),
+                    ("QUEIJO-PARMESAO", Decimal("0.002")),
                     ("OVOS", Decimal("0.050")),
                     ("SALADA-DA-CASA", Decimal("0.080")),   # já com o vinagrete
                 ],
             },
             {
-                # O presunto aqui é o DA CASA (jambon blanc).
+                # Ficha da casa: UMA Baguete Lanche inteira — massa ciabatta, não
+                # a tradição (dono, 23/09) —, manteiga de wasabi em retângulos,
+                # o presunto DA CASA dobrado e pepino cornichon fatiado.
                 "ref": "jambon-beurre",
                 "name": "Jambon-Beurre",
                 "output_sku": "JB",
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("TRADI", Decimal("0.125")),   # meia baguette
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.020")),
-                    ("PRESUNTO-CASA", Decimal("0.070")),
+                    ("BGL", Decimal("0.230")),     # a baguete lanche assada
+                    ("PRESUNTO-CASA", Decimal("0.085")),
+                    ("MANTEIGA-WASABI", Decimal("0.030")),
+                    ("PEPINO-CORNICHO-CONSERVA", Decimal("0.012")),
                 ],
             },
             {
                 # "1 BN rende, em tese, 8. Nosso pain perdu é pequeno mesmo"
-                # (dono, 26/08): a fatia é 1/8 do Nanterre assado (~26 g).
+                # (dono, 26/08): a fatia é 1/8 do Nanterre assado (~26 g; a ficha
+                # da casa diz 22 g). O resto é a ficha da casa: banhado no creme,
+                # caramelo salgado (a porção dela é 25 g), manteiga para dourar,
+                # chantilly e flor de sal. O açúcar e a canela do rascunho não
+                # estão nela.
                 "ref": "pain-perdu",
                 "name": "Pain Perdu",
                 "output_sku": "PERDU",
@@ -4401,10 +4480,11 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("BRNT", Decimal("0.026")),
-                    ("CREME-LEITE-OVOS", Decimal("0.060")),
-                    ("ACUCAR-CRISTAL", Decimal("0.010")),
-                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("0.010")),
-                    ("CANELA-PO", Decimal("0.001")),
+                    ("CREME-LEITE-OVOS", Decimal("0.065")),
+                    ("MOLHO-CARAMELO", Decimal("0.025")),
+                    ("NATA-FRESCA", Decimal("0.025")),     # chantilly
+                    ("MANTEIGA-EXTRA-SEM-SAL", Decimal("0.010")),
+                    ("FLOR-DE-SAL", Decimal("0.001")),
                 ],
             },
             # ══ Seção 2b — fichas de BEBIDA (is_active=False) ════════════════
@@ -4686,6 +4766,10 @@ class Command(BaseCommand):
             "PIMENTA-PRETA": {"label": "Pimenta-do-reino preta em grão", "allergens": ["pimenta-do-reino"], "diet": "vegan", "nutrition": {"energy_kcal": 251, "carbohydrates_g": 64, "sugars_g": 0.6, "proteins_g": 10, "total_fat_g": 3.3, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 25, "sodium_mg": 20}},
             "TOMATE": {"label": "Tomate", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 18, "carbohydrates_g": 3.9, "sugars_g": 2.6, "proteins_g": 0.9, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.2, "sodium_mg": 5}},
             "COLORAU": {"label": "Colorau", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 351, "carbohydrates_g": 70, "sugars_g": 2, "proteins_g": 8, "total_fat_g": 5, "saturated_fat_g": 1, "trans_fat_g": 0, "fiber_g": 20, "sodium_mg": 30}},
+            "MANTEIGA-PRESIDENT-COM-SAL": {"label": "Manteiga President com sal", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 643}},
+            "WASABI": {"label": "Wasabi em pasta", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 46, "sugars_g": 23, "proteins_g": 2.7, "total_fat_g": 11, "saturated_fat_g": 1.2, "trans_fat_g": 0, "fiber_g": 6, "sodium_mg": 2400}},
+            "PEPINO-CORNICHO-CONSERVA": {"label": "Pepino cornichon em conserva", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 12, "carbohydrates_g": 2.3, "sugars_g": 1.1, "proteins_g": 0.5, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.0, "sodium_mg": 900}},
+            "FLOR-DE-SAL": {"label": "Flor de sal", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 38000}},
         }
 
         # Buyman Material master — os insumos viram Material first-class (sku sem
@@ -4735,6 +4819,9 @@ class Command(BaseCommand):
         SUPPLIER_BY_MATERIAL = {
             "LEITE-INTEGRAL-A": ("deleite", "Leite A integral Deleite", []),
             "MANTEIGA-PRESIDENT-SEM-SAL": ("president", "President", []),
+            "MANTEIGA-PRESIDENT-COM-SAL": ("president", "President", []),
+            # Pasta S&B — o pó foi testado em 30/08/2023 e reprovado por ele.
+            "WASABI": (None, "S&B", []),
             "OVOS": ("jr-ovos", "JR Ovos", []),
             "BACON": ("sao-martinho", "São Martinho", []),
             "SALSICHA-VIENNA": ("strass", "Strass", []),
@@ -4807,6 +4894,8 @@ class Command(BaseCommand):
             "MANTEIGA-EXTRA-SEM-SAL": ("kg", 60), "VINHO-BRANCO-SECO": ("kg", 365),
             "VINAGRE-VINHO-TINTO": ("kg", None), "OLEO-GIRASSOL": ("kg", 365),
             "OLEO-SOJA": ("kg", 365), "PIMENTA-PRETA": ("kg", 365), "COLORAU": ("kg", 365),
+            "MANTEIGA-PRESIDENT-COM-SAL": ("kg", 60), "WASABI": ("kg", 365),
+            "PEPINO-CORNICHO-CONSERVA": ("kg", 365), "FLOR-DE-SAL": ("kg", None),
         }
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
@@ -5743,6 +5832,8 @@ class Command(BaseCommand):
             return ["Pesagem", "Mistura", "Fermentação"]
         if ref.startswith("recheio-"):
             return ["Pesagem", "Cocção", "Resfriamento"]
+        if ref.startswith("manteiga-"):
+            return ["Pesagem", "Mistura", "Resfriamento"]
         return ["Mistura", "Fermentação", "Modelagem", "Forno"]
 
     def _max_started_minutes_for_recipe(self, ref: str) -> int:

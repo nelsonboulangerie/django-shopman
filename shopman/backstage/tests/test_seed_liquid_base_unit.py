@@ -48,7 +48,7 @@ DENSIDADES = {
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
 COMPRADOS_EM_LITRO = ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
 
-# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 31 linhas: toda
+# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 29 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
 #
 # ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE-INTEGRAL-A")`,
@@ -79,8 +79,6 @@ QUANTIDADES_EM_LITRO = {
     ("massa-pita", "AGUA-FILTRADA"): Decimal("3.000"),
     ("massa-pita", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
     ("recheio-cebola-azapas", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
-    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.800"),
-    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("0.600"),
     ("espresso-macchiato", "LEITE-INTEGRAL-A"): Decimal("0.020"),
     ("cappuccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
     ("mochaccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
@@ -101,11 +99,12 @@ QUANTIDADES_EM_LITRO = {
 # os líquidos, e não passaram pela conversão de litro. Estão aqui para que o
 # teste continue gritando quando uma linha de líquido aparece ou some sem aviso.
 #
-# ⚠️ Quatro linhas saíram de `QUANTIDADES_EM_LITRO` em 24/09/2026, e saíram
+# ⚠️ Seis linhas saíram de `QUANTIDADES_EM_LITRO` em 24/09/2026, e saíram
 # porque a RECEITA foi trocada pela real, não porque a conversão foi desfeita
 # (F2 do WP-FICHAS-REAIS-DA-CASA): o bechamel da casa é infusionado e leva nata;
 # o recheio de frango troca o azeite por óleo e ganha o caldo; o de cebola e o
-# vinagrete (que é outra receita) têm a proporção de azeite da ficha dela.
+# vinagrete (que é outra receita) têm a proporção de azeite da ficha dela; e o
+# creme do pain perdu é o «Creme Pain Perdu» dela, com outra proporção.
 NASCIDAS_EM_KG = {
     ("molho-bechamel", "LEITE-INTEGRAL-A"): Decimal("3.000"),
     ("molho-bechamel", "NATA-FRESCA"): Decimal("0.255"),
@@ -113,6 +112,12 @@ NASCIDAS_EM_KG = {
     ("recheio-frango", "AGUA-FILTRADA"): Decimal("1.040"),
     ("recheio-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.300"),
     ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    # Montagens (fatia B): o creme do pain perdu é o da ficha dela, e o
+    # caramelo e o chantilly chegaram com ela.
+    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("1.000"),
+    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.375"),
+    ("molho-caramelo", "NATA-FRESCA"): Decimal("1.200"),
+    ("pain-perdu", "NATA-FRESCA"): Decimal("0.025"),
 }
 
 # O cadastro guarda três casas. Arredondar ali desloca a massa em no máximo meio
