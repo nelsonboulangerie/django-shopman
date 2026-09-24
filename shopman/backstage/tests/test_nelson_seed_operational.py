@@ -475,6 +475,18 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert OperatorAlert.objects.filter(type="payment_after_cancel", severity="critical", acknowledged=False).exists()
     # (alerta stale_new_order + webhook:ifood saíram junto com o edge iFood parado — Entrada vazia)
     assert IdempotencyKey.objects.filter(scope="webhook:efi-pix", status="done").exists()
+    # A cobrança Pix semeada nasce no gateway do adapter em uso, e a Efí com o
+    # ambiente de origem: o estorno do pedido cancelado não pode cair na trava
+    # de ambiente (``payment_reconciliation_failed`` crítico a cada reseed).
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.services.payment import _gateway_for_adapter
+
+    pix_gateway = _gateway_for_adapter(get_adapter("payment", method="pix")) or "mock"
+    pix_intents = PaymentIntent.objects.filter(method=PaymentIntent.Method.PIX)
+    assert set(pix_intents.values_list("gateway", flat=True)) == {pix_gateway}
+    if pix_gateway == "efi":
+        assert not pix_intents.filter(gateway_data__provider_environment__isnull=True).exists()
+    assert not OperatorAlert.objects.filter(type="payment_reconciliation_failed").exists()
 
     low_attention = Customer.objects.get(ref="CLI-001")
     assert low_attention.metadata["seed_persona"] == "low_attention"

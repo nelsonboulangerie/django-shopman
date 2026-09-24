@@ -6732,7 +6732,7 @@ class Command(BaseCommand):
                 pending,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.PENDING,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-pending",
                 expires_at=now + timedelta(minutes=6),
             )
@@ -6763,7 +6763,7 @@ class Command(BaseCommand):
                 expired,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.PENDING,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-expired",
                 expires_at=now - timedelta(minutes=3),
             )
@@ -6795,7 +6795,7 @@ class Command(BaseCommand):
                 late_paid,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.CAPTURED,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-after-cancel",
                 captured_at=now - timedelta(minutes=5),
             )
@@ -6918,6 +6918,27 @@ class Command(BaseCommand):
         )
         return order
 
+    def _pix_gateway(self) -> str:
+        """Gateway do adapter de Pix EM USO — a cobrança semeada nasce como ele a criaria.
+
+        O seed gravava ``efi`` fixo. Num ambiente com o Pix simulado (o alpha),
+        o estorno de um pedido cancelado ia para o caminho da Efí com uma cobrança
+        que nunca existiu lá, a trava de ambiente recusava e o Gestor recebia
+        ``payment_reconciliation_failed`` crítico a cada reseed.
+        """
+        from shopman.shop.adapters import get_adapter
+        from shopman.shop.services.payment import _gateway_for_adapter
+
+        return _gateway_for_adapter(get_adapter("payment", method="pix")) or "mock"
+
+    @staticmethod
+    def _pix_gateway_data(gateway: str) -> dict:
+        """Cobrança Efí carrega o ambiente de origem, como o adapter grava."""
+        if gateway != "efi":
+            return {}
+        sandbox = (getattr(settings, "SHOPMAN_EFI", {}) or {}).get("sandbox", True)
+        return {"provider_environment": "sandbox" if sandbox else "production"}
+
     def _attach_edge_payment_intent(
         self,
         order: Order,
@@ -6936,6 +6957,7 @@ class Command(BaseCommand):
             status=status,
             amount_q=order.total_q,
             gateway=gateway,
+            gateway_data=self._pix_gateway_data(gateway),
             gateway_id=f"{gateway_id}-{order.ref}",
             expires_at=expires_at,
             captured_at=captured_at,
@@ -7217,7 +7239,7 @@ class Command(BaseCommand):
             paid_pix,
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.CAPTURED,
-            gateway="efi",
+            gateway=self._pix_gateway(),
             gateway_id="seed-qa-pix-captured",
             captured_at=paid_pix.created_at + timedelta(minutes=3),
         )
@@ -7263,7 +7285,8 @@ class Command(BaseCommand):
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.REFUNDED,
             amount_q=returned.total_q,
-            gateway="efi",
+            gateway=self._pix_gateway(),
+            gateway_data=self._pix_gateway_data(self._pix_gateway()),
             gateway_id=f"seed-qa-refunded-{returned.ref}",
             captured_at=returned.created_at + timedelta(minutes=5),
         )
@@ -7314,7 +7337,7 @@ class Command(BaseCommand):
             pix_pending,
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.PENDING,
-            gateway="efi",
+            gateway=self._pix_gateway(),
             gateway_id="seed-qa-pix-pending",
             expires_at=timezone.now() + timedelta(minutes=8),
         )
@@ -7844,7 +7867,7 @@ class Command(BaseCommand):
                 continue
 
             method = PaymentIntent.Method.PIX if i % 10 < 7 else PaymentIntent.Method.CARD
-            gateway = "efi" if method == PaymentIntent.Method.PIX else "stripe"
+            gateway = self._pix_gateway() if method == PaymentIntent.Method.PIX else "stripe"
             intent_ref = f"PI-{uuid.uuid4().hex[:12].upper()}"
 
             intent = PaymentIntent(
@@ -7854,6 +7877,7 @@ class Command(BaseCommand):
                 status=PaymentIntent.Status.CAPTURED,
                 amount_q=order.total_q,
                 gateway=gateway,
+                gateway_data=self._pix_gateway_data(gateway),
                 gateway_id=f"gw-{uuid.uuid4().hex[:16]}",
                 captured_at=order.created_at + timedelta(minutes=5),
             )
