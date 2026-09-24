@@ -30,8 +30,8 @@ Design (decisions locked with the owner, 2026-06-28):
   PIS/COFINS CST. **A origem é do produto** (tabela de origem da mercadoria,
   campo ``orig`` do ICMS): nacional é ``0``; o importado que a casa compra de
   um distribuidor no Brasil é ``2`` ("estrangeira, adquirida no mercado
-  interno") — a manteiga Président, os queijos Ile de France, as mostardas
-  Maille e as geleias St. Dalfour. ``resolve_fiscal_item`` merges both into the flat dict the fiscal
+  interno") — os queijos Ile de France, as mostardas Maille e as geleias St.
+  Dalfour (a manteiga Président é fabricada no Brasil: 0). ``resolve_fiscal_item`` merges both into the flat dict the fiscal
   adapter consumes.
 
 PIS/COFINS CST = ``99`` (outras operações) — conforme a parametrização do contador

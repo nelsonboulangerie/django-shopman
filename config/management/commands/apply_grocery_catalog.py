@@ -130,9 +130,9 @@ OWNER_PACKAGE = "embalagem, dono, 24/09"
 
 
 #: Origem 2 — "estrangeira, adquirida no mercado interno": o importado que a
-#: casa compra de distribuidor no Brasil (Président, Ile de France, Maille,
-#: St. Dalfour). Dono, 24/09/2026; a próxima NF-e de compra confere o ``orig``
-#: do fornecedor (conferência fiscal do recebimento).
+#: casa compra de distribuidor no Brasil (Ile de France, Maille, St. Dalfour).
+#: A manteiga Président é FABRICADA NO BRASIL: origem 0 (dono, 24/09/2026). A
+#: próxima NF-e de compra confere o ``orig`` do fornecedor.
 IMPORTED_BOUGHT_HERE = "2"
 
 
@@ -201,7 +201,7 @@ GROCERY: tuple[GroceryItem, ...] = (
                 ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Laticínios ──
     GroceryItem("MANTEIGA-SAL-PRESIDENT-200", "Manteiga Extra com Sal Président 200g", 1500, "Président",
-                "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal"), origin=IMPORTED_BOUGHT_HERE),
+                "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal")),
     GroceryItem("QUEIJO-BRIE-ILEDEFRANCE-25", "Queijo Mini Brie Ile de France 25g", 1000, "Ile de France",
                 "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Mostardas Maille ──

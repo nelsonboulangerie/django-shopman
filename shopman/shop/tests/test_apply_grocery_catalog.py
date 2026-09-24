@@ -522,9 +522,11 @@ def test_os_importados_saem_com_origem_2_e_os_nacionais_sem_origem(catalog):
     apply_grocery(apply=True)
 
     importados = {i.sku for i in GROCERY if i.origin == "2"}
-    assert len(importados) == 13  # + o Camembert, que o seed semeia: 14
-    assert "MANTEIGA-SAL-PRESIDENT-200" in importados
-    assert Product.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200").metadata["fiscal"]["origin"] == "2"
+    assert len(importados) == 12  # + o Camembert, que o seed semeia: 13
+    assert Product.objects.get(sku="GELEIA-FIGO-STDALFOUR-284").metadata["fiscal"]["origin"] == "2"
+    # A Président é fabricada no Brasil (dono, 24/09): origem 0, que não se grava.
+    assert "MANTEIGA-SAL-PRESIDENT-200" not in importados
+    assert "origin" not in Product.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200").metadata["fiscal"]
     assert "origin" not in Product.objects.get(sku="RELISH-PEPINO-DUGA-320").metadata["fiscal"]
 
 
