@@ -2441,24 +2441,24 @@ class Command(BaseCommand):
             #
             # 1. **A folha seca, que se revende** — estes 12, lata e pouch, com
             #    cadastro de compra do mesmo SKU (o Compras recebe a nota por
-            #    ele — ver `apply_product_brands`). NCM 0902.20.00.
+            #    ele — ver `apply_product_brands`). NCM 0902.10.00, o da NF-e
+            #    da Kãnfa.
             # 2. **A bebida preparada na hora**, que usa o blend como INSUMO:
             #    `CHBLU`, `CHCAM`, `CHROU`, `CHSOP`, `SFTCH`, `CHHIB`, `CTFV`,
             #    cada um com ficha apontando para `CHA-BLEU`, `CHA-CHAI`… NCM
             #    2202.99.00, que é bebida pronta.
             #
-            # ⚠️ O perfil `own_production` nos 12 está CERTO, e não é pergunta
-            # para ninguém: o eixo do perfil é **ST × não-ST**, não "quem
-            # fabricou" (ver fiscalman/classification.py — `own_production` é
-            # "fabricação própria **+ revenda comum**"). Chá seco é revenda
-            # comum; ST no segmento de bebida alcança refrigerante, água e
-            # industrializado. Ser comprado pronto é outro eixo: é o cadastro
-            # de compra (`buyman.Material`) do mesmo SKU.
+            # O perfil deles é `resale_common` (revenda sem ST, 102/5102, com o
+            # CEST 17.097.00): quem o grava é o `apply_grocery_catalog`, que o
+            # seed chama logo depois do catálogo — a mesma tabela do banco
+            # vivo. Chá em folhas está fora da ST do PR; o CEST vai no
+            # documento pelo Conv. ICMS 142/2018. Ser comprado pronto é outro
+            # eixo: é o cadastro de compra (`buyman.Material`) do mesmo SKU.
             **dict.fromkeys(
                 ("CHA-INTUICAO-KANFA-P50", "CHA-INTUICAO-KANFA-L70", "CHA-ACONCHEGO-KANFA-P50", "CHA-ACONCHEGO-KANFA-L50",
                  "CHA-NAMASTE-KANFA-P50", "CHA-NAMASTE-KANFA-L70", "CHA-INTIMIDADE-KANFA-P50", "CHA-INTIMIDADE-KANFA-L50",
                  "CHA-VITAL-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-MAMA-KANFA-L70"),
-                "09022000",
+                "09021000",
             ),
         }
 

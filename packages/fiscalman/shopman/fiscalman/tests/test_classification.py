@@ -12,8 +12,18 @@ from shopman.fiscalman.classification import (
 
 
 class TestProfiles:
-    def test_two_named_profiles_exist(self):
-        assert set(FISCAL_PROFILES) == {"own_production", "resale"}
+    def test_three_named_profiles_exist(self):
+        assert set(FISCAL_PROFILES) == {"own_production", "resale_common", "resale"}
+
+    def test_resale_common_is_102_5102_and_carries_cest(self):
+        p = FISCAL_PROFILES["resale_common"]
+        assert (p.csosn, p.cfop_internal, p.cfop_interstate, p.requires_cest, p.carries_cest) == (
+            "102",
+            "5102",
+            "6102",
+            False,
+            True,
+        )
 
     def test_own_production_is_default(self):
         assert DEFAULT_PROFILE_KEY == "own_production"
@@ -60,6 +70,19 @@ class TestValidation:
         c = ProductFiscalClassification(profile="own_production", ncm="19059010", cest="0300700")
         assert not c.is_valid
         assert any("CEST não se aplica" in e for e in c.errors())
+
+    def test_resale_common_accepts_cest_and_does_not_require_it(self):
+        assert ProductFiscalClassification(profile="resale_common", ncm="04069020", cest="1702400").is_valid
+        assert ProductFiscalClassification(profile="resale_common", ncm="21039099").is_valid
+
+    def test_resale_common_rejects_malformed_cest(self):
+        c = ProductFiscalClassification(profile="resale_common", ncm="04069020", cest="17.024.00")
+        assert "CEST deve ter 7 dígitos." in c.errors()
+
+    def test_resale_common_puts_cest_in_the_item(self):
+        c = ProductFiscalClassification(profile="resale_common", ncm="04069020", cest="1702400")
+        item = resolve_fiscal_item(c)
+        assert (item["cfop"], item["icms_situacao_tributaria"], item["cest"]) == ("5102", "102", "1702400")
 
     def test_unknown_profile(self):
         assert ProductFiscalClassification(profile="bogus", ncm="19059010").errors() == [

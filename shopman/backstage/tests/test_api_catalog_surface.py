@@ -899,7 +899,7 @@ def test_product_detail_get_shape(client, operator, catalog):
     assert product["base_price_q"] == 4500
     assert product["primary_collection"] == "doces"
     assert set(product["fiscal"]) == {"profile", "ncm", "cest", "unit"}
-    assert {p["key"] for p in product["fiscal_profiles"]} == {"own_production", "resale"}
+    assert {p["key"] for p in product["fiscal_profiles"]} == {"own_production", "resale_common", "resale"}
 
 
 def test_product_detail_get_unknown_sku(client, operator, catalog):
@@ -1112,6 +1112,17 @@ def test_product_detail_patch_fiscal_requires_cest_on_resale(client, operator, c
     client.force_login(operator)
     resp = _patch(client, "PAO", {"fiscal": {"profile": "resale", "ncm": "19059090"}})
     assert resp.status_code == 400
+
+
+def test_product_detail_patch_fiscal_resale_common_keeps_the_cest(client, operator, catalog):
+    """Revenda sem ST leva o CEST (Conv. ICMS 142/2018), com os códigos de 102/5102."""
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {
+        "fiscal": {"profile": "resale_common", "ncm": "04069020", "cest": "1702400"},
+    })
+    assert resp.status_code == 200
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["fiscal"]["cest"] == "1702400"
 
 
 def test_product_detail_patches_the_declared_ready_time(client, operator, catalog):

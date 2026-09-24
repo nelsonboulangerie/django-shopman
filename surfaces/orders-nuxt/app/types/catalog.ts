@@ -133,6 +133,8 @@ export interface FiscalProfileChoice {
   key: string;
   name: string;
   requires_cest: boolean;
+  /** O perfil leva CEST no documento (revenda com ou sem ST). */
+  carries_cest: boolean;
 }
 
 // Detalhe de UM produto — tudo que o painel de produto edita
