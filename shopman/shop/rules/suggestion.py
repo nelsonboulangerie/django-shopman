@@ -128,11 +128,24 @@ DEFAULT_COMPLEMENT_PARAMS = {
          "suggest": {"attr": "sabor", "value": "doce"}, "weight": 3},
         {"when": [{"attr": "natureza", "value": "comida"}, {"attr": "natureza", "value": "bebida"}],
          "suggest": {"attr": "sabor", "value": "doce"}, "weight": 1},
-        # Doce + bebida: o café da manhã está completo; o convite é o pão para
-        # levar, e fraco (default de 23/09, pergunta aberta ao dono). Com
-        # salgado também na mesa, ela está completa e o motor se cala.
-        # `tag: pao` porque "neutro" também é o brioche de chocolate, que a
-        # coleção (macios) não distingue do pão de forma.
+        # Doce + bebida, sem salgado (dono, 24/09): 1º um SALGADO — é o que
+        # completa a mesa; o LEVE (temperatura ambiente: croissant de presunto
+        # e queijo, folhado de frango) ganha do prato quente. Com bebida
+        # gelada, o salgado ganha mais (gelada ↔ salgado vale nos dois
+        # sentidos). 2º, com peso menor, o pão para levar. Com salgado também
+        # na mesa, ela está completa e o motor se cala.
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "natureza", "value": "bebida"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": {"attr": "sabor", "value": "salgado"}, "weight": 3},
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "natureza", "value": "bebida"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": [{"attr": "sabor", "value": "salgado"},
+                     {"attr": "temperatura", "value": "ambiente"}], "weight": 1},
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "temperatura", "value": "gelado"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": {"attr": "sabor", "value": "salgado"}, "weight": 2},
+        # `tag: pao` porque "neutro" também é brioche recheado, que a coleção
+        # (macios) não distingue do pão de forma.
         {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "natureza", "value": "bebida"}],
          "when_absent": [{"attr": "sabor", "value": "salgado"}],
          "suggest": [{"attr": "sabor", "value": "neutro"}, {"tag": "pao"}], "weight": 1},

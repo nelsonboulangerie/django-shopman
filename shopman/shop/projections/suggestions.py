@@ -505,33 +505,49 @@ def _same_role_as_cart(
 
     - **uma coleção em comum** — a categoria que o Offerman já guarda, primária
       ou secundária (o Pain au Chocolat é Folhados e Doces). Salgado com
-      salgado, folhado com folhado, doce com doce;
+      salgado, folhado com folhado, doce com doce. **Salvo** quando os dois têm
+      valor conhecido e DIFERENTE num dos ``distinct_from_cart``: Folhados
+      agrupa pela massa, não pela função (dono, 02/09), e o croissant de
+      presunto e queijo não substitui o pain au chocolat — completa a mesa;
     - **mesmos valores em todos os ``distinct_from_cart``** da regra (default
       ``natureza`` + ``sabor``): pão rústico e pão macio moram em coleções
       diferentes e são o mesmo papel na mesa.
 
-    ⚠️ Dado que falta nunca exclui: só compara atributos quando os dois lados
-    têm todos preenchidos. Atributo em branco é ausência de dado, não igualdade.
+    ⚠️ Dado que falta nunca exclui por atributo, nem liberta da coleção: só
+    compara atributos quando os dois lados têm o valor. Atributo em branco é
+    ausência de dado, não igualdade nem diferença.
     """
     if not (candidate_skus and cart_skus):
         return set()
 
     collections = _collections(candidate_skus | cart_skus)
-    cart_collections: set[str] = set()
-    for cart_sku in cart_skus:
-        cart_collections |= collections.get(cart_sku, set())
+
+    def value(ref, sku):
+        v = (values.get(ref) or {}).get(sku)
+        if v is None or v == []:
+            return None
+        return tuple(sorted(map(str, v))) if isinstance(v, list) else str(v)
 
     def signature(sku):
-        sig = tuple((values.get(ref) or {}).get(sku) for ref in distinct_refs)
-        if not sig or any(v is None or v == [] for v in sig):
-            return None
-        return tuple(tuple(sorted(map(str, v))) if isinstance(v, list) else str(v) for v in sig)
+        sig = tuple(value(ref, sku) for ref in distinct_refs)
+        return None if not sig or None in sig else sig
+
+    def known_different(a, b):
+        return any(
+            value(ref, a) is not None and value(ref, b) is not None
+            and value(ref, a) != value(ref, b)
+            for ref in distinct_refs
+        )
 
     cart_signatures = {sig for sig in map(signature, cart_skus) if sig is not None}
 
     out: set[str] = set()
     for sku in candidate_skus:
-        if collections.get(sku, set()) & cart_collections:
+        mine = collections.get(sku, set())
+        if any(
+            mine & collections.get(cart_sku, set()) and not known_different(sku, cart_sku)
+            for cart_sku in cart_skus
+        ):
             out.add(sku)
             continue
         sig = signature(sku)
