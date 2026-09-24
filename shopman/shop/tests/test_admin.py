@@ -548,6 +548,8 @@ class TestShopAdminPurchaseDefaults:
         assert b'name="defaults_purchase_min_lead_time_days"' in resp.content
         assert b'name="defaults_purchase_lead_time_history_days"' in resp.content
         assert b'name="defaults_purchase_lead_time_max_days"' in resp.content
+        assert b'name="defaults_purchase_resale_markup_pct"' in resp.content
+        assert b'name="defaults_purchase_resale_markup_by_collection"' in resp.content
 
     def test_initial_reflects_existing_purchase_block(self, shop):
         from shopman.shop.admin.shop import ShopForm
@@ -584,7 +586,42 @@ class TestShopAdminPurchaseDefaults:
             "min_lead_time_days": 2,
             "lead_time_history_days": 90,
             "lead_time_max_days": 30,
+            # Markup da revenda mora no mesmo bloco; em branco = padrão (50%).
+            "resale_markup_pct": 50,
+            "resale_markup_by_collection": {},
         }
+
+    def test_form_saves_resale_markup_by_category(self, shop):
+        from shopman.offerman.models import Collection
+
+        from shopman.shop.admin.shop import ShopForm
+
+        Collection.objects.create(ref="mercearia", name="Mercearia")
+        Collection.objects.create(ref="frios", name="Frios")
+        data = _shop_form_data(shop)
+        data["defaults_purchase_resale_markup_pct"] = "60"
+        data["defaults_purchase_resale_markup_by_collection"] = "mercearia: 70; frios: 100"
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["purchase"]["resale_markup_pct"] == 60
+        assert saved.defaults["purchase"]["resale_markup_by_collection"] == {"mercearia": 70, "frios": 100}
+        again = ShopForm(instance=saved)
+        assert again.fields["defaults_purchase_resale_markup_by_collection"].initial == "frios: 100; mercearia: 70"
+
+    def test_resale_markup_with_unknown_category_or_bad_value_is_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_purchase_resale_markup_by_collection"] = "nao-existe: 50; mercearia sessenta"
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        errors = " ".join(form.errors["defaults_purchase_resale_markup_by_collection"])
+        assert "mercearia sessenta" in errors
+        assert "nao-existe" in errors
 
     def test_lead_time_ceiling_below_floor_rejected(self, shop):
         from shopman.shop.admin.shop import ShopForm

@@ -26,6 +26,7 @@ import {
   isApproximateCost,
   purchaseUnitLabel,
   resaleCopy,
+  resaleSuggestionView,
   skuRoleBadges,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
@@ -194,6 +195,7 @@ async function onResaleToggle(event: Event) {
   if (!material) return;
   if (input.checked) {
     saleOpen.value = true;
+    salePriceInput.value = resaleSuggestionView(material.saleSuggestion, material.unit)?.input ?? "";
     return;
   }
   if (saleOpen.value && !material.roles?.sellable) {
@@ -1379,9 +1381,10 @@ onBeforeUnmount(stopInvoiceScanner);
                   <span class="block text-xs font-medium text-muted-foreground">{{ resaleCopy(selectedMaterial.unit, salePriceInput).priceLabel }}</span>
                   <input v-model="salePriceInput" inputmode="decimal" required placeholder="0,00" class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums" />
                 </label>
-                <p v-if="selectedMaterial.preferredBaseCostQ" class="text-xs text-muted-foreground">
-                  Custo de compra: {{ formatMoney(selectedMaterial.preferredBaseCostQ) }} / {{ selectedMaterial.unit }}
+                <p v-if="resaleSuggestionView(selectedMaterial.saleSuggestion, selectedMaterial.unit)" class="text-xs text-muted-foreground">
+                  Sugerido: {{ resaleSuggestionView(selectedMaterial.saleSuggestion, selectedMaterial.unit)?.basis }}
                 </p>
+                <p v-else class="text-xs text-muted-foreground">Sem custo de compra registrado: informe o preço.</p>
                 <p class="text-xs text-muted-foreground">{{ resaleCopy(selectedMaterial.unit, salePriceInput).reach }}</p>
                 <button
                   type="submit"

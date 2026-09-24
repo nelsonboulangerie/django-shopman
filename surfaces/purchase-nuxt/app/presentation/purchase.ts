@@ -1,4 +1,5 @@
 import type {
+  SaleSuggestion,
   SkuRoles,
   CountItem,
   CountRow,
@@ -984,5 +985,20 @@ export function resaleCopy(unit: string, priceInput: string) {
     priceLabel: byWeight ? "Preço por kg (R$)" : `Preço de venda (R$ por ${unit})`,
     reach: byWeight ? "Vendido só no balcão, por peso." : "Entra no PDV. Na loja online, só com foto.",
     ready: parseMoneyInput(priceInput) > 0,
+  };
+}
+
+/**
+ * A sugestão de preço da revenda, pronta para o campo e para a explicação ao lado.
+ *
+ * `input` é o texto que o campo recebe ("42,00"), editável; `basis` diz de onde
+ * o número saiu, para ninguém confirmar um preço sem saber por quê.
+ */
+export function resaleSuggestionView(suggestion: SaleSuggestion | null | undefined, unit: string) {
+  if (!suggestion || suggestion.priceQ <= 0) return null;
+  const category = suggestion.markupCategory ? `categoria ${suggestion.markupCategory}` : "padrão da loja";
+  return {
+    input: (suggestion.priceQ / 100).toFixed(2).replace(".", ","),
+    basis: `custo ${formatMoney(suggestion.costQ)}/${unit} · markup ${suggestion.markupPct}% (${category})`,
   };
 }
