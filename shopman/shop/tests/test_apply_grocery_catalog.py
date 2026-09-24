@@ -14,7 +14,7 @@ from django.core.management import call_command
 from shopman.buyman.models import Material
 from shopman.fiscalman.classification import from_metadata, resolve_fiscal_item
 from shopman.offerman import get_social_attributes
-from shopman.offerman.contrib.social.schema import _gtin_is_valid
+from shopman.offerman.contrib.social.schema import gtin_is_valid
 from shopman.offerman.models import Collection, Listing, ListingItem, Product
 
 from config.management.commands import apply_grocery_catalog as command
@@ -48,7 +48,7 @@ def test_a_tabela_so_tem_item_vendavel_sem_mentir():
     assert not set(skus) & set(LEFT_OUT)
     for item in GROCERY:
         assert item.price_q > 0, item.sku
-        assert _gtin_is_valid(item.gtin), item.sku
+        assert gtin_is_valid(item.gtin), item.sku
         # Perfil de revenda comum: NCM de 8 dígitos e SEM CEST gravado.
         metadata = {"fiscal": {"profile": "own_production", "ncm": item.ncm, "unit": "UN"}}
         assert not from_metadata(metadata).errors(), item.sku

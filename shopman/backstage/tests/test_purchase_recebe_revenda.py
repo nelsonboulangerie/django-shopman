@@ -225,3 +225,35 @@ def test_a_migracao_leva_a_marca_antiga_para_o_cadastro_de_compra(db):
         "GF284": {"materialSku": geleia.sku, "conversionLabel": ""},
         "FAR": {"materialSku": "FARINHA", "conversionLabel": "saco 25 kg"},
     }
+
+
+def test_a_nfe_vira_a_primeira_fonte_da_sugestao_de_catalogo(cenario, operador):
+    """GTIN, NCM, CEST e unidade da nota vão para o RASCUNHO — nunca para o produto."""
+    fornecedor, cha = cenario
+
+    purchase_service.confirm_receipt(
+        _payload(
+            fornecedor,
+            linha=_linha_do_cha(
+                invoiceEan="7898708850309",
+                invoicePackageEan="17898708850306",
+                invoiceNcm="21012010",
+                invoiceCest="1709900",
+                invoiceUnit="UN",
+            ),
+        ),
+        user=operador,
+    )
+
+    cha.refresh_from_db()
+    campos = cha.metadata["enrichment"]["fields"]
+    assert campos["gtin"]["value"] == "7898708850309"
+    assert campos["gtin"]["source"] == "nfe"
+    assert campos["gtin"]["source_ref"] == CHAVE
+    assert "17898708850306" in campos["gtin"]["detail"]
+    assert campos["ncm"]["value"] == "21012010"
+    assert campos["cest"]["value"] == "1709900"
+    assert campos["fiscal_unit"]["value"] == "UN"
+    # nada disso entrou no produto
+    assert "gtin" not in cha.metadata["social"]
+    assert "fiscal" not in cha.metadata

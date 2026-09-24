@@ -99,3 +99,11 @@ class BackstageConfig(AppConfig):
         from shopman.backstage.backup_resources import register_backstage_resources
 
         register_backstage_resources()
+
+        # A revisão campo a campo da sugestão do GTIN entra por cima do Admin de
+        # Produto que o Core registrou. Precisa ser aqui, no ready() do último
+        # app: as abas fiscal e social também são compostas em ready(), e o
+        # autodiscover do admin roda antes de todos eles.
+        from shopman.backstage.admin.product_enrichment import install_enrichment_review
+
+        install_enrichment_review()

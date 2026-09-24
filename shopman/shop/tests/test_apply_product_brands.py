@@ -12,7 +12,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from shopman.offerman import get_social_attributes
-from shopman.offerman.contrib.social.schema import _gtin_is_valid
+from shopman.offerman.contrib.social.schema import gtin_is_valid
 from shopman.offerman.models import Product
 
 from config.management.commands.apply_product_brands import HOUSE_SKUS, RESALE, apply_brands
@@ -87,7 +87,7 @@ def test_revenda_nunca_leva_a_marca_da_loja():
 def test_todo_gtin_da_tabela_passa_no_digito_verificador():
     for sku, fields in RESALE.items():
         if fields.get("gtin"):
-            assert _gtin_is_valid(fields["gtin"]), sku
+            assert gtin_is_valid(fields["gtin"]), sku
 
 
 def test_a_tabela_so_nomeia_skus_que_o_seed_cria(monkeypatch):

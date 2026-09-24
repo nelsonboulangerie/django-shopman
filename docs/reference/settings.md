@@ -280,6 +280,8 @@ Settings flat no `settings.py` do Django (sem dict wrapper).
 | `SHOPMAN_ACCOUNTING_BACKEND` | str | *(sem default)* | Backend de contabilidade. Se ausente, handler de accounting não é registrado |
 | `SHOPMAN_NOTIFICATIONS` | str | `"console"` | Backend padrão de notificações |
 | `SHOPMAN_CONSENT_IP_RETENTION_DAYS` | int | `90` | Prazo do IP bruto nas provas de consentimento (R11). Aceita 1–90 dias; acima de 90 vira 90, abaixo de 1 vira 1. Quem aplica é o `purge_consent_ip --apply`, manual: nada roda sozinho. Finalidade, texto, hashes, estado e instante da prova ficam |
+| `SHOPMAN_COSMOS_TOKEN` | env str | `""` | Token da API **Cosmos (Bluesoft)** para a sugestão de catálogo por GTIN (`shop.services.product_enrichment`, `manage.py fetch_product_enrichment`): nome, marca, NCM, CEST, peso e foto de referência. **Vazio = Cosmos inerte**: a sugestão segue com a NF-e de compra e o Open Food Facts, e o rascunho registra que a Cosmos "ficou de fora (sem SHOPMAN_COSMOS_TOKEN)" — a ausência sai com o escopo colado. Plano Basic grátis: 25 consultas/dia (o comando já limita a 25). É segredo: vai no ambiente, nunca no repositório |
+| `SHOPMAN_ENRICHMENT_ALLOW_IN_DEBUG` | env bool | `false` | Opt-in para a sugestão por GTIN consultar Cosmos/Open Food Facts em `DEBUG` (dev não gasta a cota sem pedir). Fora de `DEBUG` não tem efeito |
 
 Para staging/homologação de POS, `make smoke-gateways-sandbox` exige Focus NFe
 em homologação, Efí sandbox e Stripe test. Configurações live/producao nesses

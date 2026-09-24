@@ -2,8 +2,21 @@
 
 **Estado:** planejado, não iniciado
 **Pedido por:** Pablo, 05/09/2026 — *"faça o mesmo para insumos/compráveis"*
-**Depende de:** o enriquecimento de produto de revenda (PR do `product_enrichment`),
+**Depende de:** o enriquecimento de produto de revenda (`product_enrichment`),
 que já resolve a metade de venda e estabelece o desenho a copiar.
+
+> **24/09/2026 — a metade de revenda mudou de forma, e este WP herda a forma
+> nova.** O rascunho agora é **por campo** (`fields[campo] = {value, source,
+> fetched_at}`), o aceite é **campo a campo** (diálogo "Revisar sugestão do
+> GTIN" na ficha do produto, `backstage/admin/product_enrichment.py`), valor
+> preenchido à mão só é trocado com "substituir" explícito, alérgeno vazio na
+> fonte é "não curado", foto de terceiro fica como `reference_photo` com
+> licença e nunca vira foto da vitrine, e a **NF-e de compra é a primeira
+> fonte** (GTIN da unidade com dígito verificador, NCM, CEST, unidade),
+> gravada no rascunho ao receber mercadoria de revenda. Schema em
+> `docs/reference/data-schemas.md` (`Product.metadata['enrichment']`).
+> Para o insumo, a NF-e já lê o que precisa; falta só decidir o item 1 abaixo
+> — o recebimento de insumo NÃO grava sugestão enquanto isso não se decide.
 
 ---
 
@@ -46,9 +59,10 @@ produtos**: acertar a farinha acerta o rótulo de dez pães de uma vez.
 2. **Reuso do serviço.** `shop/services/product_enrichment.py` já isola
    `build_suggestion(gtin)` do que é Product. Extrair a parte de busca para
    servir os dois lados, sem duplicar o mapeamento OFF→casa nem as travas.
-3. **Aceite.** Ação no Admin do material, espelhando
-   `accept_enrichment` — com `permissions=` (a armadilha documentada: ação em
-   lote sem isso roda para quem só tem `view`).
+3. **Aceite.** Diálogo de detalhe no Admin do material, espelhando
+   "Revisar sugestão do GTIN" do produto (campo a campo, "substituir"
+   explícito) — com `permissions=` (a armadilha documentada: ação sem isso
+   roda para quem só tem `view`).
 4. **Propagação.** Aceitar alérgeno no insumo deve **reabrir a derivação** dos
    produtos que o usam. O sinal já existe (`Recipe` `post_save` chama a
    agregação); falta disparar a partir do material.
@@ -57,12 +71,30 @@ produtos**: acertar a farinha acerta o rótulo de dez pães de uma vez.
    declaram* e *quais receitas estão a um insumo de derivar*. Dívida que não
    tem número cresce calada — foi o que este WP descobriu ao ser escrito.
 
+## Próximo passo anotado (não implementado)
+
+- **Consulta SEFAZ `ccgConsGTIN` (Cadastro Centralizado de GTIN).** É a fonte
+  oficial que devolve, para um GTIN, a descrição, o NCM e o CEST que o
+  **dono da marca** cadastrou na GS1 — mais autoridade que Cosmos e OFF para
+  o eixo fiscal. Exige certificado A1 do destinatário (o mesmo da
+  Distribuição DF-e do Compras) e é serviço SOAP da SVRS. Pedido do dono em
+  24/09/2026: **não implementar agora** e **não abrir seam novo** para ela.
+  Quando vier, entra como mais uma `source` no mesmo rascunho por campo
+  (`product_enrichment`), entre a NF-e e a Cosmos na ordem de autoridade —
+  sem adapter/Protocol enquanto houver uma implementação só (ADR-001).
+- **Ausência também é resposta com escopo.** O que nenhuma fonte conhece sai
+  como "Nenhuma das fontes consultadas tem este GTIN; só a embalagem
+  confirma", com quem foi perguntado e quem ficou de fora. Vale para o insumo
+  do mesmo jeito.
+
 ## Fora de escopo
 
 - **GTIN múltiplo por item.** Decidido em 05/09: sabor é produto próprio, e se o
   código bipado não bater o operador busca de outro jeito. Não é bloqueante.
-- **Foto na vitrine vinda do OFF.** Licença CC-BY-SA exige atribuição; a foto do
-  cliente continua sendo a da casa.
+- **Foto na vitrine vinda do OFF ou da Cosmos.** A do OFF é CC BY-SA (exige
+  atribuição); a da Cosmos não declara licença de uso. As duas ficam como foto
+  de referência no rascunho, com licença e atribuição; a foto do cliente
+  continua sendo a da casa.
 - **GS1.** Serve para **emitir** código próprio, não para consultar o de
   terceiro. Adesão de R$ 683 + anuidade por faixa de faturamento, e a Nelson
   revende marca alheia — resolve um problema que a casa não tem.
