@@ -304,7 +304,9 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # Float, o Purin, o Tea Jelly, o Pain Grillé, a Tábua, o Combo Petit
     # Déjeuner e a geleia mini ("era ideia, não virou produto"). Etiqueta de
     # SKU que não existe não conta nada — é linha morta, não curadoria perdida.
-    assert ProductConsumptionTag.objects.count() == 155  # ver a conta acima
+    # ⚠️ E 155 → 148 em 24/09/2026: saíram os sete placeholders da despensa
+    # (MT, QP, CX, BK, GR, LN, THL), todos etiquetados `leva`.
+    assert ProductConsumptionTag.objects.count() == 148  # ver a conta acima
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -342,7 +344,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 155
+    assert ProductConsumptionTag.objects.count() == 148
     assert SeatingSpot.objects.count() == 17
 
 

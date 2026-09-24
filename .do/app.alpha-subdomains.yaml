@@ -663,7 +663,8 @@ envs:
   type: GENERAL
 
 # ── Fiscal: NF-e de entrada (Compras) ─────────────────────────────────
-# ⚠️ O certificado e-CNPJ A1 vence em 10/09/2026.
+# O certificado e-CNPJ A1 foi RENOVADO (o anterior vencia em 10/09/2026); a
+# validade nova está no próprio certificado.
 - key: PURCHASE_NFE_ENVIRONMENT
   scope: RUN_TIME
   value: 'producao'

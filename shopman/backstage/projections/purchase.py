@@ -139,6 +139,8 @@ class ReceiptLineProjection:
     materialSku: str
     suggestedMaterialSku: str
     suggestionScore: int
+    #: De onde veio a sugestão: ``gtin`` (código de barras) ou ``name``.
+    suggestionSource: str
     conversionId: str | None
     requiresConversion: bool
     conversionSuggestion: ReceiptConversionSuggestionProjection | None
@@ -522,6 +524,7 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         materialSku=str(line.get("materialSku") or line.get("material_sku") or ""),
         suggestedMaterialSku=str(line.get("suggestedMaterialSku") or line.get("suggested_material_sku") or ""),
         suggestionScore=int(_decimal(line.get("suggestionScore", line.get("suggestion_score", 0)) or 0)),
+        suggestionSource=str(line.get("suggestionSource") or ""),
         conversionId=(
             str(line.get("conversionId") or line.get("conversion_id"))
             if line.get("conversionId") or line.get("conversion_id")
