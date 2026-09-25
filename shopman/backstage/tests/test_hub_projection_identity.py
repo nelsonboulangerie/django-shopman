@@ -93,3 +93,52 @@ def test_the_launcher_has_one_name_on_both_sides() -> None:
     name = _identity()["hub"]["label"]
     assert SERVICE_LABELS["hub"] == name
     assert PushSurface.HUB.label == name
+
+
+# Onde a porta pede outra coisa que o tile — só com motivo escrito. O tile do
+# Marketing também aceita `shop.manage_campaigns` na janela de migração do app
+# (`permissions.can_manage_campaigns`); a porta pede só `shop.view_marketing`.
+TILE_WIDER_THAN_DOOR = {"marketing": "janela de migração de shop.manage_campaigns (can_manage_campaigns)"}
+
+
+def _door_permission(app: str) -> str:
+    """A permissão que o app pede na porta (`const OPERATOR_PERM = "..."` na casca)."""
+    import re
+
+    found = {
+        match
+        for path in (SURFACES_DIR / f"{app}-nuxt" / "app").rglob("*.vue")
+        for match in re.findall(r'const OPERATOR_PERM = "([a-z_]+\.[a-z_]+)"', path.read_text(encoding="utf-8"))
+    }
+    assert len(found) == 1, f"{app}: esperava uma permissão de porta, achei {sorted(found)}"
+    return found.pop()
+
+
+class _UserWith:
+    """Usuário de mentira: tem exatamente as permissões dadas (ou todas, menos uma)."""
+
+    is_superuser = False
+    is_staff = True
+
+    def __init__(self, *, only: str | None = None, all_but: str | None = None):
+        self.only, self.all_but = only, all_but
+
+    def has_perm(self, perm: str) -> bool:
+        return perm == self.only if self.only is not None else perm != self.all_but
+
+
+@pytest.mark.parametrize(("tile_ref", "app"), sorted(TILE_TO_APP.items()))
+def test_the_tile_asks_what_the_app_door_asks(tile_ref: str, app: str) -> None:
+    """Quem recebe a permissão da porta vê o tile; quem não a tem, não vê.
+
+    Nos dois sentidos o defeito já existiu: o padeiro com `operate_production` via a
+    grade VAZIA enquanto o app abria, e quem tinha outra permissão via o tile e
+    levava 403 ao clicar. App novo (`make new-surface`) nasce com os dois no mesmo
+    predicado; este teste impede que eles se separem depois.
+    """
+    spec = next(spec for spec in _REGISTRY if spec.ref == tile_ref)
+    door = _door_permission(app)
+    assert spec.can_access(_UserWith(only=door)), f"{tile_ref}: quem tem {door} abre o app e não vê o tile"
+    if app in TILE_WIDER_THAN_DOOR:
+        return
+    assert not spec.can_access(_UserWith(all_but=door)), f"{tile_ref}: o tile aparece para quem a porta de {app} recusa"

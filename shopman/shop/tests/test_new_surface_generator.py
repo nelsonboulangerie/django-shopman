@@ -41,6 +41,8 @@ FILES = (
     ".do/app.alpha-subdomains.yaml",
     "config/settings.py",
     "shopman/backstage/projections/hub.py",
+    "shopman/backstage/permissions.py",
+    "shopman/backstage/models/closing.py",
     "surfaces/operator-kit/app-identity.json",
     "tools/pwa-gate/check.mjs",
     "CLAUDE.md",
@@ -104,12 +106,39 @@ def test_the_lock_is_the_mold_lock_so_versions_start_aligned(repo: Path):
     assert lock == mold
 
 
-def test_the_tile_is_fail_closed_until_someone_wires_the_permission(repo: Path):
-    generator.create(repo, **ARGS)
+def test_the_tile_asks_the_same_permission_as_the_app_door(repo: Path):
+    """O tile e a porta perguntam `backstage.view_loyalty`; conceder é gesto de Admin, não código."""
+    touched = generator.create(repo, **ARGS)
+    assert touched.declared_permission is True
+    closing = (repo / "shopman/backstage/models/closing.py").read_text()
+    assert '("view_loyalty", "Pode usar a Fidelidade no app dedicado"),' in closing
+    permissions = (repo / "shopman/backstage/permissions.py").read_text()
+    assert "def can_view_loyalty(user) -> bool:" in permissions
+    assert 'return is_superuser(user) or user.has_perm("backstage.view_loyalty")' in permissions
     hub = (repo / "shopman/backstage/projections/hub.py").read_text()
-    assert (
-        '_AppSpec("loyalty", "Fidelidade", "Fidelidade da operação", "heart-handshake", "launch", is_superuser)' in hub
-    )
+    assert '"heart-handshake", "launch", can_view_loyalty),' in hub
+    assert "    can_view_bi,\n    can_view_loyalty,\n    is_superuser,\n)" in hub
+
+
+def test_the_predicate_import_stays_sorted(repo: Path):
+    """`can_audit_x` entra no meio da lista, não antes de `is_superuser` (isort reprovaria)."""
+    generator.create(repo, **{**ARGS, "perm": "backstage.audit_loyalty"})
+    hub = (repo / "shopman/backstage/projections/hub.py").read_text()
+    block = hub.split("from shopman.backstage.permissions import (\n", 1)[1].split(")", 1)[0]
+    names = [line.strip().rstrip(",") for line in block.splitlines()]
+    assert "can_audit_loyalty" in names
+    assert names == sorted(names)
+
+
+def test_an_existing_permission_reuses_its_predicate_and_declares_nothing(repo: Path):
+    closing = (repo / "shopman/backstage/models/closing.py").read_text()
+    permissions = (repo / "shopman/backstage/permissions.py").read_text()
+    touched = generator.create(repo, **{**ARGS, "perm": "backstage.view_bi"})
+    assert touched.declared_permission is False
+    assert (repo / "shopman/backstage/models/closing.py").read_text() == closing
+    assert (repo / "shopman/backstage/permissions.py").read_text() == permissions
+    assert '"launch", can_view_bi),' in (repo / "shopman/backstage/projections/hub.py").read_text()
+    assert guard.run(repo) == []
 
 
 def test_dry_run_touches_nothing(repo: Path):
@@ -127,6 +156,7 @@ def test_dry_run_touches_nothing(repo: Path):
         ({"subdomain": "pdv"}, "já usado"),
         ({"group": "operator-everything"}, "use um de"),
         ({"perm": "view_loyalty"}, "<app_label>.<codename>"),
+        ({"perm": "loyalty.view_card"}, "só declara"),
         ({"color": "verde"}, "#RRGGBB"),
         ({"symbol": "heart"}, "lucide:<nome>"),
     ],

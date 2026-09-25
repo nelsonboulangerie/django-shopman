@@ -27,9 +27,12 @@ superfície já nascer inteira, e termina rodando a própria trava.
 
 - **O subdomínio** é argumento obrigatório: hostname é DNS e é do dono. O
   gerador escreve no spec o que foi pedido; o registro de DNS continua manual.
-- **A permissão.** O app nasce trancado na permissão pedida em `perm=`, que
-  precisa existir no Django, e o tile do Shopman Apps nasce visível só para
-  superusuário (falha fechada) até alguém trocar pelo predicado certo.
+- **Quem recebe a permissão.** O gerador declara a permissão pedida em `perm=`
+  (quando ela ainda não existe), cria o predicado `can_<codename>` em
+  `shopman/backstage/permissions.py` e liga NELE tanto a porta do app quanto o
+  tile do Shopman Apps: os dois perguntam a mesma coisa. Enquanto ninguém a
+  concede, só o superusuário entra (todo predicado da casa é
+  `is_superuser or has_perm`). Conceder é gesto de Admin: a permissão no grupo.
 - **A copy.** O rótulo vem do argumento; descrição e convite de instalação saem
   num formato neutro, e o vocabulário fechado (`docs/reference/suite-vocabulary.md`)
   é quem decide a versão final.
@@ -73,6 +76,7 @@ class Repo:
         self.root = root
         self.dry_run = dry_run
         self.touched: list[str] = []
+        self.declared_permission = False
 
     def read(self, rel: str) -> str:
         return (self.root / rel).read_text(encoding="utf-8")
@@ -445,8 +449,9 @@ def register_everywhere(repo: Repo, s: dict, sibling: dict, domain_by_spec: dict
         hub,
         '    _AppSpec("loja",',
         f'    _AppSpec("{s["hub_tile"]}", "{s["label"]}", "{identity["description"].rstrip(".")}", '
-        f'"{identity["fallbackIcon"]}", "launch", is_superuser),\n    _AppSpec("loja",',
+        f'"{identity["fallbackIcon"]}", "launch", {s["predicate"]}),\n    _AppSpec("loja",',
     )
+    add_permission_import(repo, hub, s["predicate"])
 
     table = json.loads(repo.read("surfaces/operator-kit/app-identity.json"))
     table["apps"][app_id] = identity
@@ -497,6 +502,50 @@ def register_in_spec(repo: Repo, spec: str, s: dict, sibling: dict, domain: str)
     block = env_block.group(0).replace(sibling["base_url_env"], s["base_url_env"]).replace(sibling_host, host)
     source = source[: env_block.end()] + block + source[env_block.end() :]
     repo.write(spec, source)
+
+
+PERMISSIONS = "shopman/backstage/permissions.py"
+PERMISSION_MODEL = "shopman/backstage/models/closing.py"
+
+
+def existing_predicate(repo: Repo, perm: str) -> str | None:
+    """O predicado que já pergunta EXATAMENTE `perm` (`is_superuser or has_perm(perm)`)."""
+    pattern = rf'^def (can_\w+)\(user\) -> bool:\n(?:    """.*?"""\n)?    return is_superuser\(user\) or user\.has_perm\("{re.escape(perm)}"\)\n'
+    match = re.search(pattern, repo.read(PERMISSIONS), re.M | re.S)
+    return match.group(1) if match else None
+
+
+def wire_permission(repo: Repo, perm: str, label: str, article: str) -> tuple[str, bool]:
+    """Declara a permissão e o predicado quando faltam. Devolve (predicado, declarou_permissão)."""
+    predicate = existing_predicate(repo, perm)
+    if predicate:
+        return predicate, False
+    app_label, codename = perm.split(".", 1)
+    if app_label != "backstage":
+        raise SurfaceError(
+            f"perm={perm!r}: nenhum predicado pergunta essa permissão, e o gerador só declara "
+            "permissão nova em `backstage.` — use uma existente ou `backstage.<codename>`"
+        )
+    predicate = f"can_{codename}"
+    if re.search(rf"^def {predicate}\(", repo.read(PERMISSIONS), re.M):
+        raise SurfaceError(f"{PERMISSIONS}: {predicate} já existe e pergunta outra coisa")
+
+    declared = f'("{codename}",' in repo.read(PERMISSION_MODEL)
+    if not declared:
+        repo.insert_after_last(
+            PERMISSION_MODEL,
+            r'^\s+\("[a-z_]+", "',
+            f'            ("{codename}", "Pode usar {article} {label} no app dedicado"),',
+            within=(r"^\s+permissions = \[", r"^\s+\]"),
+        )
+    repo.replace_once(
+        PERMISSIONS,
+        "def can_view_operator_alerts(user) -> bool:",
+        f'def {predicate}(user) -> bool:\n    """Gate do app {label}: a porta do app e o tile do Shopman Apps."""\n'
+        f'    return is_superuser(user) or user.has_perm("{perm}")\n\n\n'
+        "def can_view_operator_alerts(user) -> bool:",
+    )
+    return predicate, not declared
 
 
 def spec_domain(repo: Repo, spec: str) -> str:
@@ -571,11 +620,48 @@ def create(
     repo = Repo(root, dry_run=dry_run)
     domains = {spec: spec_domain(repo, spec) for spec in (".do/app.subdomains.yaml", ".do/app.alpha-subdomains.yaml")}
 
+    predicate, repo.declared_permission = wire_permission(repo, perm, label, article)
     surfaces[name] = entry
     repo.write("surfaces/registry.json", dump_json(registry))
     write_app(repo, name, port, label, perm, article, color)
-    register_everywhere(repo, dict(entry, id=name, label=label), sibling, domains, identity)
+    register_everywhere(repo, dict(entry, id=name, label=label, predicate=predicate), sibling, domains, identity)
     return repo
+
+
+def add_permission_import(repo: Repo, rel: str, predicate: str) -> None:
+    """Acrescenta o predicado ao `from shopman.backstage.permissions import (...)`, em ordem (isort)."""
+    source = repo.read(rel)
+    match = re.search(r"^from shopman\.backstage\.permissions import \(\n(.*?)^\)\n", source, re.M | re.S)
+    if not match:
+        raise SurfaceError(f"{rel}: não achei o import de shopman.backstage.permissions")
+    names = {line.strip().rstrip(",") for line in match.group(1).splitlines() if line.strip()}
+    if predicate in names:
+        return
+    body = "".join(f"    {name},\n" for name in sorted(names | {predicate}))
+    block = f"from shopman.backstage.permissions import (\n{body})\n"
+    repo.write(rel, source[: match.start()] + block + source[match.end() :])
+
+
+def make_migration(root: Path, name: str) -> bool:
+    """A permissão nova em `Meta.permissions` é uma migração do backstage."""
+    result = subprocess.run(
+        [sys.executable, "manage.py", "makemigrations", "backstage", "--name", f"{name}_permission"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        tail = (result.stderr.strip().splitlines() or ["?"])[-1]
+        print(
+            f"✗ makemigrations falhou ({tail}). Rode no checkout com .env:\n"
+            f"    python manage.py makemigrations backstage --name {name}_permission",
+            file=sys.stderr,
+        )
+        return False
+    print(result.stdout.strip())
+    for path in re.findall(r"(shopman/backstage/migrations/\S+\.py)", result.stdout):
+        subprocess.run([sys.executable, "-m", "ruff", "format", "-q", path], cwd=root, check=False)
+    return True
 
 
 def generate_icons(root: Path, name: str) -> bool:
@@ -637,6 +723,8 @@ def main(argv: list[str] | None = None) -> int:
     import check_surface_registry
 
     errors = check_surface_registry.run(root)
+    if repo.declared_permission and not make_migration(root, args.name):
+        errors.append("makemigrations backstage falhou: a permissão está no Meta, sem migração")
     for error in errors:
         print(f"✗ {error}", file=sys.stderr)
     icons = generate_icons(root, args.name)
@@ -646,8 +734,8 @@ def main(argv: list[str] | None = None) -> int:
 Próximos passos (fora do alcance do gerador):
   1. {"ícones PWA gerados" if icons else f"ícones PWA: cd {d} && npm run pwa:assets (precisa do npm ci no operator-kit)"}
   2. cd {d} && npm ci && npm run typecheck && npm test && npm run lint
-  3. a permissão {args.perm} tem de existir no Django; troque o `is_superuser` do tile em
-     shopman/backstage/projections/hub.py pelo predicado dela
+  3. conceder {args.perm} ao grupo que vai usar o app (Admin → Grupos). Até lá, só o
+     superusuário vê o tile e abre o app — os dois perguntam a mesma permissão
   4. a API do app no backstage (shopman/backstage/api/) e a primeira tela de verdade
   5. o registro de DNS de {args.subdomain}. é do dono — o spec já roteia o host
 """
