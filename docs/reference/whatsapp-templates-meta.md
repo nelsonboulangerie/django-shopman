@@ -136,12 +136,19 @@ Eles não gravam nada em lugar nenhum.
 | Variável | Sample |
 |---|---|
 | Nome do cliente | `Ana` |
-| Ref do pedido | `NB-260902-A17` |
+| Pedido, no corpo (final do ref) | `A17` |
+| Ref do pedido, no botão | `NB-260902-A17` |
 | Total | `R$ 38,00` |
 
 > ⚠️ A ref **não** é `NB-1042`. O formato real é `{PREFIXO}-{AAMMDD}-{L##}`
 > (`orderman/ids.py::generate_order_ref`), com o prefixo `NB` vindo de `order_ref_prefix`
 > na config do canal. Sample com formato irreal atrapalha a revisão do botão.
+>
+> ⚠️ **No CORPO o pedido é chamado só pelo final** ("seu pedido A17"), decisão do dono de
+> 25/09/2026: é o que o balcão fala e o que o card mostra em destaque, e é único no dia
+> entre todos os canais (`generate_order_ref` sorteia de novo quando o final já foi dado).
+> A variável do corpo liga ao campo `order_ref_short`; a do **botão** continua em
+> `order_ref`, porque a URL precisa do ref completo.
 
 ---
 
@@ -190,12 +197,12 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_recebido` — evento `order_received`
 - Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Estamos conferindo a disponibilidade e avisamos em seguida.`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_confirmado` — evento `order_accepted`
 - Corpo: `Seu pedido {{1}} está confirmado. Total: {{2}}. Já vamos preparar.`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`) · `{{2}}`=`R$ 38,00` (`total`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido`
 
 > ⚠️ **Sem cumprimento e sem agradecimento, e os dois são decisão do dono.** O
@@ -206,12 +213,12 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Olá, {{1}}! Não conseguimos confirmar o seu pedido {{2}} desta vez. Nada foi cobrado. Se quiser entender o motivo, é só falar com a gente por aqui.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Ver pedido`
 
 ### `pedido_em_preparo` — evento `order_preparing`
 - Corpo: `Estamos preparando o seu pedido {{1}}. Avisamos assim que estiver pronto.`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 > ⚠️ **O `{eta_note}` não viaja neste template**, e é o mesmo motivo do `produto_chegou`:
@@ -226,17 +233,17 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_pronto_retirada` — evento `order_ready_pickup`
 - Corpo: `Seu pedido {{1}} está pronto e esperando por você no balcão. 🥐`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Endereço e detalhes`
 
 ### `pedido_pronto_entrega` — evento `order_ready_delivery`
 - Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair. 📦`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
 - Corpo: `Seu pedido {{1}} saiu para entrega.`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 > ✅ **Destravado em 25/09/2026 por decisão do dono:** sem cumprimento, como os outros
@@ -253,7 +260,7 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_entregue` — evento `order_delivered`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `nota_fiscal_disponivel` — evento `fiscal_note_ready` (NOVO, 25/09/2026 — ainda não submetido)
 A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): sem papel e sem pedir
@@ -271,30 +278,30 @@ com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_fl
 > leva o link; quando o status sai por flow, o código não conta com ele e manda este
 > avulso. Nenhum template novo além deste.
 - Corpo: `A nota fiscal do seu pedido {{1}} está disponível. Toque no botão abaixo para abrir.`
-- Vars: `{{1}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`A17` (`order_ref_short`); o botão leva `order_ref` (`NB-260902-A17`)
 - Botão URL: `Ver nota fiscal` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (a página do
   pedido mostra a nota com o link da DANFE e a chave de acesso). O prefixo fixo é o NOSSO, não
   o do provedor fiscal: trocar de provedor não custa reaprovação.
 
 ### `pedido_cancelado` — evento `order_cancelled`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado. Se tiver qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pedido_agendado_lembrete` — evento `preorder_reminder`
 - Corpo: `Olá, {{1}}! Lembrando que o seu pedido {{2}} está agendado para amanhã. Já estamos preparando tudo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Pagar pedido`
 
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
 - Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para garantir o pedido, é só pagar pelo botão abaixo até {{4}}. Depois disso a reserva é liberada. Qualquer coisa, é só responder esta mensagem.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
 - Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
-- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
+- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref_short`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
 
 > ⚠️ É `customer_name` (`Ana`), **não** `customer_name_greeting`. As duas chaves existem no
 > contexto e as duas viram campo personalizado, mas `customer_name_greeting` já vem com a
@@ -306,32 +313,32 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 
 ### `pagamento_confirmado` — evento `payment_confirmed`
 - Corpo: `Olá, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Avisamos a cada passo daqui em diante.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pagamento_lembrete` — evento `payment_reminder`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} ainda aguarda o pagamento via PIX. Toque abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Concluir pagamento`
 
 ### `pagamento_expirado` — evento `payment_expired`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado porque o pagamento via PIX não foi confirmado a tempo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pagamento_falhou` — evento `payment_failed`
 - Corpo: `Olá, {{1}}! Não conseguimos preparar o pagamento do seu pedido {{2}}. Abra o pedido pelo botão abaixo para tentar de novo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Abrir pedido`
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
 - Corpo: `Olá, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} pelo botão abaixo para garantir o seu.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Confirmar pedido`
 
 > ⚠️ Não ligar `waitlist.enabled` antes do #392 estar no ar — ver a política de fila.
 
 ### `fila_vaga_liberada` — evento `waitlist_released`
 - Corpo: `Olá, {{1}}! O prazo de confirmação do pedido {{2}} passou e liberamos a sua vaga. Nada foi cobrado, e é só entrar na fila da próxima fornada.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Ver pedido`
 
 ### `produto_chegou` — evento `stock_arrived`
@@ -475,7 +482,8 @@ nome**, senão a variável sai em branco e nada falha.
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
 | Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
-| Ref do pedido | `order_ref` | todos os de pedido **e todo botão de URL** |
+| Pedido, no corpo | `order_ref_short` | todos os de pedido (o final do ref: `A17`) |
+| Ref do pedido | `order_ref` | **todo botão de URL** — nunca no corpo |
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
@@ -497,7 +505,7 @@ Número recusa a gravação, e a recusa só aparece no log.
 guarda o que sobrou do envio ANTERIOR àquele assinante em vez de limpar. Na prática só
 morde onde o dado é opcional: `customer_name` (o checkout da loja o exige, mas pedido
 anotado no PDV e ingestão do iFood não) e `payment_deadline`. Onde o dado é obrigatório
-(`order_ref`, `total`) não há caso.
+(`order_ref`, `order_ref_short`, `total`) não há caso.
 
 ### Critério de aceite
 

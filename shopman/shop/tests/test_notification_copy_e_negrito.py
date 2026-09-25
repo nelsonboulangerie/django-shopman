@@ -37,9 +37,9 @@ class TestNegritoNaoVazaParaOSms:
         from shopman.shop.adapters.notification_manychat import MESSAGE_TEMPLATES
 
         corpo = render_message(
-            "order_accepted", {"order_ref": "NB-1", "customer_name": "Joyce"}, MESSAGE_TEMPLATES
+            "order_accepted", {"order_ref": "NB-260925-A47", "customer_name": "Joyce"}, MESSAGE_TEMPLATES
         )
-        assert "NB-1" in corpo
+        assert "A47" in corpo and "NB-260925" not in corpo
 
 
 class TestAvisoNaoPrometeOQueATelaNaoCumpre:

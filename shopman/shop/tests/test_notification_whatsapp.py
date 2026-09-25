@@ -76,11 +76,11 @@ def test_send_falls_back_to_text_when_event_not_mapped():
         return _ok_response()
 
     with mock.patch.object(wa, "urlopen", fake_urlopen):
-        ok = wa.send("5543999990000", "order_ready_pickup", {"order_ref": "ORD-9"})
+        ok = wa.send("5543999990000", "order_ready_pickup", {"order_ref": "ORD-260925-B09"})
 
     assert ok is True
     assert captured["body"]["type"] == "text"
-    assert "ORD-9" in captured["body"]["text"]["body"]
+    assert "pedido B09 " in captured["body"]["text"]["body"]
 
 
 @override_settings(SHOPMAN_WHATSAPP=dict(_CFG, PHONE_NUMBER_ID="", ACCESS_TOKEN=""))

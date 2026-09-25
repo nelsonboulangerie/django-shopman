@@ -32,7 +32,8 @@ ORDER_REF = RefType(
     unique_scope="all",
     normalizer="upper_strip",
     # Sufixo curto e memorável: 1 letra + 2 dígitos (ex.: WEB-260630-A17). Fácil de
-    # visualizar, memorizar e falar. Sequencial por (canal, dia) → collision-free.
+    # visualizar, memorizar e falar. ALEATÓRIO, não sequencial (não revela volume):
+    # quem garante que o final não se repete no dia, entre canais, é o `generate_order_ref`.
     validator=r"^[A-Z0-9][A-Z0-9_-]{1,63}-\d{6}-[A-Z]\d{2}$",
     generator="alpha_digit",
     generator_format="{channel_ref}-{date:%y%m%d}-{code}",

@@ -22,22 +22,22 @@ logger = logging.getLogger(__name__)
 
 SUBJECT_TEMPLATES: dict[str, str] = {
     "operator_critical": "Alerta crítico operacional — {alert_type}",
-    "order_received": "Recebemos seu pedido {order_ref}",
-    "order_accepted": "Pedido {order_ref} confirmado",
-    "order_preparing": "Pedido {order_ref} em preparo",
-    "order_ready_pickup": "Pedido {order_ref} pronto para retirada",
-    "order_ready_delivery": "Pedido {order_ref} pronto — aguardando entregador",
-    "order_dispatched": "Pedido {order_ref} saiu para entrega",
-    "order_delivered": "Pedido {order_ref} entregue",
-    "fiscal_note_ready": "Nota fiscal do pedido {order_ref}",
-    "order_cancelled": "Pedido {order_ref} cancelado",
-    "order_rejected": "Pedido {order_ref} não confirmado",
-    "payment_confirmed": "Pagamento do pedido {order_ref} recebido",
-    "payment_requested": "Pedido {order_ref}: pagamento liberado",
-    "payment_link_sent": "Pedido {order_ref}: link de pagamento",
-    "payment_expired": "Pedido {order_ref}: reserva liberada",
-    "payment_failed": "Falha ao preparar pagamento do pedido {order_ref}",
-    "preorder_reminder": "Lembrete: pedido {order_ref} agendado para amanhã",
+    "order_received": "Recebemos seu pedido {order_ref_short}",
+    "order_accepted": "Pedido {order_ref_short} confirmado",
+    "order_preparing": "Pedido {order_ref_short} em preparo",
+    "order_ready_pickup": "Pedido {order_ref_short} pronto para retirada",
+    "order_ready_delivery": "Pedido {order_ref_short} pronto — aguardando entregador",
+    "order_dispatched": "Pedido {order_ref_short} saiu para entrega",
+    "order_delivered": "Pedido {order_ref_short} entregue",
+    "fiscal_note_ready": "Nota fiscal do pedido {order_ref_short}",
+    "order_cancelled": "Pedido {order_ref_short} cancelado",
+    "order_rejected": "Pedido {order_ref_short} não confirmado",
+    "payment_confirmed": "Pagamento do pedido {order_ref_short} recebido",
+    "payment_requested": "Pedido {order_ref_short}: pagamento liberado",
+    "payment_link_sent": "Pedido {order_ref_short}: link de pagamento",
+    "payment_expired": "Pedido {order_ref_short}: reserva liberada",
+    "payment_failed": "Falha ao preparar pagamento do pedido {order_ref_short}",
+    "preorder_reminder": "Lembrete: pedido {order_ref_short} agendado para amanhã",
     "stock_alert": "Alerta de estoque: {product_label}",
     "stock_arrived": "Boa notícia: {product_name} chegou",
     "production_ready": "Saiu do forno agora: {product_name}",
@@ -50,78 +50,78 @@ BODY_TEMPLATES: dict[str, str] = {
     "operator_critical": "O alerta {alert_type} exige atenção no Gestor. Referência: {order_ref}. Confira os alertas operacionais antes de repetir a operação.",
     "order_received": (
         "Olá{customer_name_greeting}!\n\n"
-        "Recebemos seu pedido {order_ref}.\n"
+        "Recebemos seu pedido {order_ref_short}.\n"
         "Estamos conferindo a disponibilidade e avisamos em seguida.\n"
         "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_accepted": (
-        "Seu pedido {order_ref} está confirmado. Total: {total}.\n"
+        "Seu pedido {order_ref_short} está confirmado. Total: {total}.\n"
         "Já vamos preparar.\n"
         "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_preparing": (
-        "Estamos preparando seu pedido {order_ref}.{eta_note}\n"
+        "Estamos preparando seu pedido {order_ref_short}.{eta_note}\n"
         "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_ready_pickup": (
-        "Seu pedido {order_ref} está pronto e esperando por você no balcão. \U0001f950\n"
+        "Seu pedido {order_ref_short} está pronto e esperando por você no balcão. \U0001f950\n"
         "Endereço e detalhes: {tracking_url}{fiscal_note_suffix}\n"
     ),
     "order_ready_delivery": (
-        "Seu pedido {order_ref} está pronto e aguardando o entregador.\n"
+        "Seu pedido {order_ref_short} está pronto e aguardando o entregador.\n"
         "Avisamos assim que sair. \U0001f4e6\n"
         "Acompanhe por aqui: {tracking_url}{fiscal_note_suffix}\n"
     ),
     "order_dispatched": (
-        "Seu pedido {order_ref} saiu para entrega."
+        "Seu pedido {order_ref_short} saiu para entrega."
         "{courier_tracking_suffix}\n"
         "Quando receber, é só confirmar por aqui: {tracking_url}{fiscal_note_suffix}\n"
     ),
     "order_delivered": (
         "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} foi entregue.{fiscal_note_suffix}\n\nObrigado pela preferência!\n"
+        "Seu pedido {order_ref_short} foi entregue.{fiscal_note_suffix}\n\nObrigado pela preferência!\n"
     ),
     "fiscal_note_ready": (
-        "A nota fiscal do pedido {order_ref} está pronta: {danfe_url}{fiscal_test_note}\n"
+        "A nota fiscal do pedido {order_ref_short} está pronta: {danfe_url}{fiscal_test_note}\n"
     ),
     "order_cancelled": (
         "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} foi cancelado.{reason_note}\n\n"
+        "Seu pedido {order_ref_short} foi cancelado.{reason_note}\n\n"
         "Veja os detalhes do pedido por aqui: {tracking_url}\n"
     ),
     "order_rejected": (
         "Olá{customer_name_greeting}!\n\n"
-        "Não conseguimos confirmar o pedido {order_ref}.{reason_note}\n\n"
+        "Não conseguimos confirmar o pedido {order_ref_short}.{reason_note}\n\n"
         "Veja os detalhes do pedido por aqui: {tracking_url}\n"
     ),
     "payment_confirmed": (
         "Olá{customer_name_greeting}!\n\n"
-        "O pagamento do pedido {order_ref} foi recebido.\n\n"
+        "O pagamento do pedido {order_ref_short} foi recebido.\n\n"
         "Avisamos a cada passo. Acompanhe por aqui: {tracking_url}\n\n"
         "Obrigado!\n"
     ),
     "payment_requested": (
         "Olá{customer_name_greeting}!\n\n"
-        "Conferimos a disponibilidade do pedido {order_ref}.\n\n"
+        "Conferimos a disponibilidade do pedido {order_ref_short}.\n\n"
         "Agora falta o pagamento. Acesse: {payment_url}\n\n"
         "{pix_suffix}\n"
     ),
     "payment_link_sent": (
         "Olá{customer_name_greeting}!\n\n"
-        "Anotamos seu pedido {order_ref}. Total: {total}.\n\n"
+        "Anotamos seu pedido {order_ref_short}. Total: {total}.\n\n"
         "Para confirmar, conclua o pagamento por aqui:\n"
         "{checkout_url}{payment_deadline_note}\n\n"
         "Qualquer dúvida, é só responder este e-mail.\n"
     ),
     "payment_expired": (
         "Olá{customer_name_greeting}!\n\n"
-        "Não recebemos o pagamento do pedido {order_ref} dentro do prazo, "
+        "Não recebemos o pagamento do pedido {order_ref_short} dentro do prazo, "
         "então liberamos a reserva.\n\n"
         "Se ainda quiser, é só falar com a gente que refazemos o pedido.\n"
     ),
     "payment_failed": (
         "Olá{customer_name_greeting}!\n\n"
-        "Não conseguimos preparar o pagamento do pedido {order_ref}.\n\n"
+        "Não conseguimos preparar o pagamento do pedido {order_ref_short}.\n\n"
         "Acesse {payment_url} para tentar novamente.\n"
     ),
     "stock_alert": (
@@ -130,7 +130,7 @@ BODY_TEMPLATES: dict[str, str] = {
         "Mínimo configurado: {min_quantity}\n\nProvidencie reposição.\n"
     ),
     "preorder_reminder": (
-        "Lembrete: seu pedido {order_ref} está agendado para amanhã.\n"
+        "Lembrete: seu pedido {order_ref_short} está agendado para amanhã.\n"
         "Já estamos preparando tudo!"
     ),
     "stock_arrived": (

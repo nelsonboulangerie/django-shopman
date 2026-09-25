@@ -18,45 +18,45 @@ logger = logging.getLogger(__name__)
 
 MESSAGE_TEMPLATES: dict[str, str] = {
     "order_received": (
-        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref}."
+        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref_short}."
         "\nEstamos conferindo a disponibilidade e avisamos em seguida."
         "\nAcompanhe por aqui: {tracking_url}"
     ),
     "order_accepted": (
-        "Seu pedido {order_ref} está confirmado. Total: {total}."
+        "Seu pedido {order_ref_short} está confirmado. Total: {total}."
         "\nJá vamos preparar.{tracking_suffix}"
     ),
     "order_preparing": (
-        "Estamos preparando seu pedido {order_ref}.{eta_note}{tracking_suffix}"
+        "Estamos preparando seu pedido {order_ref_short}.{eta_note}{tracking_suffix}"
     ),
     "order_ready_pickup": (
-        "Seu pedido {order_ref} está pronto e esperando por você no balcão."
+        "Seu pedido {order_ref_short} está pronto e esperando por você no balcão."
         " \U0001f950{tracking_suffix}{fiscal_note_suffix}"
     ),
     "order_ready_delivery": (
-        "Seu pedido {order_ref} está pronto e aguardando o entregador."
+        "Seu pedido {order_ref_short} está pronto e aguardando o entregador."
         "\nAvisamos assim que sair. \U0001f4e6{tracking_suffix}{fiscal_note_suffix}"
     ),
     "order_dispatched": (
-        "Seu pedido {order_ref} saiu para entrega."
+        "Seu pedido {order_ref_short} saiu para entrega."
         "{courier_tracking_suffix}"
         "\nQuando receber, é só confirmar por aqui: {tracking_url}{fiscal_note_suffix}"
     ),
     "order_delivered": (
-        "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{fiscal_note_suffix}{reorder_suffix}"
+        "Pedido {order_ref_short} entregue. Obrigado pela preferência! \u2b50{fiscal_note_suffix}{reorder_suffix}"
     ),
     # A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): o link
     # da DANFE, sem pedir e-mail. O ManyChat não manda arquivo no WhatsApp, então
     # vai o link. Fora da janela de 24h só sai com template aprovado (flow).
     "fiscal_note_ready": (
-        "A nota fiscal do pedido {order_ref} está pronta: {danfe_url}{fiscal_test_note}"
+        "A nota fiscal do pedido {order_ref_short} está pronta: {danfe_url}{fiscal_test_note}"
     ),
     "order_cancelled": (
-        "Seu pedido {order_ref} foi cancelado.{reason_note}"
+        "Seu pedido {order_ref_short} foi cancelado.{reason_note}"
         "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     "order_rejected": (
-        "Não conseguimos confirmar o pedido {order_ref}.{reason_note}"
+        "Não conseguimos confirmar o pedido {order_ref_short}.{reason_note}"
         "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
@@ -70,45 +70,45 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     ),
     "waitlist_available": (
         "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "
-        "Confirme o pedido {order_ref} para garantir o seu: {tracking_url}"
+        "Confirme o pedido {order_ref_short} para garantir o seu: {tracking_url}"
     ),
     "waitlist_released": (
-        "O prazo de confirmação do pedido {order_ref} passou e liberamos a sua vaga. "
+        "O prazo de confirmação do pedido {order_ref_short} passou e liberamos a sua vaga. "
         "Nada foi cobrado, e é só entrar na fila da próxima fornada. {tracking_url}"
     ),
     # Pagar não é o mesmo que ser aceito: enquanto o pedido está `new`, a tela diz
     # "estamos conferindo a disponibilidade". Prometer preparo aqui era prometer o
     # que a tela não cumpre.
     "payment_confirmed": (
-        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido."
+        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref_short} recebido."
         "\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"
     ),
     "payment_requested": (
-        "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
+        "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref_short}. "
         "Agora falta o pagamento. Acesse: {payment_url}{pix_suffix}"
     ),
     # Pedido remoto anotado no PDV: a venda já fechou, falta o cliente pagar pelo
     # link. "Anotamos", não "conferimos a disponibilidade" — o pão já está separado.
     "payment_link_sent": (
-        "Olá{customer_name_greeting}! Anotamos seu pedido {order_ref} — total {total}."
+        "Olá{customer_name_greeting}! Anotamos seu pedido {order_ref_short} — total {total}."
         "\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}"
         "\nQualquer coisa, é só responder esta mensagem. \U0001f956"
     ),
     "payment_reminder": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} aguarda"
+        "Olá{customer_name_greeting}! Seu pedido {order_ref_short} aguarda"
         " pagamento PIX. Use o código: {copy_paste}"
     ),
     "payment_expired": (
-        "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido {order_ref}"
+        "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido {order_ref_short}"
         " dentro do prazo, então liberamos a reserva."
         "\nSe ainda quiser, é só falar com a gente que refazemos o pedido. \U0001f956"
     ),
     "payment_failed": (
-        "Não conseguimos preparar o pagamento do pedido {order_ref}. "
+        "Não conseguimos preparar o pagamento do pedido {order_ref_short}. "
         "Abra o link do pedido para tentar novamente: {payment_url}"
     ),
     "preorder_reminder": (
-        "Lembrete: seu pedido {order_ref} está agendado para amanhã. "
+        "Lembrete: seu pedido {order_ref_short} está agendado para amanhã. "
         "Já estamos preparando tudo!"
     ),
     # Chegada de estoque (AVAILABILITY-PLAN §8.3 + "Me avise"): os pedaços

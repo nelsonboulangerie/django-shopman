@@ -79,7 +79,7 @@ def _order(*, phone: str | None = "+5543999990001", email: str | None = None, ex
     if expires_at:
         payment["expires_at"] = expires_at
     order = MagicMock()
-    order.ref = "PDV-1"
+    order.ref = "PDV-260925-A47"
     order.total_q = 3800
     order.status = "accepted"
     order.channel_ref = "pdv"
@@ -160,17 +160,17 @@ class TestDeriveContextPrazo:
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_build_context_exporta_checkout_url_distinto_do_payment_url():
-    context = _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
+    context = _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     assert context["checkout_url"] == CHECKOUT_URL
-    assert context["payment_url"] == "https://loja.test/pedido/PDV-1", "o acompanhamento segue sendo outro link"
+    assert context["payment_url"] == "https://loja.test/pedido/PDV-260925-A47", "o acompanhamento segue sendo outro link"
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_build_context_sem_pagamento_exporta_checkout_url_vazio():
     order = _order()
     order.data.pop("payment")
-    context = _build_context(order, {"order_ref": "PDV-1"}, "order_accepted")
+    context = _build_context(order, {"order_ref": "PDV-260925-A47"}, "order_accepted")
     assert context["checkout_url"] == ""
 
 
@@ -195,11 +195,11 @@ class TestRenderDosTresCanais:
     @pytest.fixture
     def with_deadline(self):
         expires_at = (timezone.now() + timedelta(hours=3)).isoformat()
-        return _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-1"}, "payment_link_sent")
+        return _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     @pytest.fixture
     def without_deadline(self):
-        return _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
+        return _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     def test_com_prazo_todo_canal_diz_ate_quando_e_a_consequencia(self, with_deadline):
         """A encomenda remota só é liberada contra o pagamento: o cliente lê até
@@ -241,7 +241,7 @@ class TestRenderDosTresCanais:
 
         sms = notification_sms._build_message("payment_link_sent", without_deadline)
         assert "*" not in sms
-        assert "PDV-1" in sms and CHECKOUT_URL in sms
+        assert "pedido A47 " in sms and CHECKOUT_URL in sms
 
 
 def _renders_expired(context: dict) -> dict[str, str]:
@@ -263,12 +263,12 @@ class TestPrazoVencidoEmTodoCanal:
 
     @pytest.fixture
     def expired(self):
-        return _build_context(_order(), {"order_ref": "PDV-1"}, "payment_expired")
+        return _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_expired")
 
     def test_todo_canal_diz_que_a_reserva_foi_liberada(self, expired):
         for channel, text in _renders_expired(expired).items():
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
-            assert "PDV-1" in text, f"{channel}: {text!r}"
+            assert "A47" in text and "PDV-260925" not in text, f"{channel}: {text!r}"
             assert "expirou" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
             assert "cancelado" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
             if channel.endswith("subject"):
@@ -516,13 +516,14 @@ def _fields(calls) -> dict[str, str]:
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
     expires_at = (timezone.now() + timedelta(hours=3)).isoformat()
-    context = _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-1"}, "payment_link_sent")
+    context = _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     assert notification_manychat.send("+5543999990001", "payment_link_sent", context) is True
 
     fields = _fields(manychat_calls)
     assert MANYCHAT_FIELDS <= set(fields), MANYCHAT_FIELDS - set(fields)
-    assert fields["order_ref"] == "PDV-1"
+    assert fields["order_ref"] == "PDV-260925-A47"
+    assert fields["order_ref_short"] == "A47"
     assert fields["customer_name_greeting"] == ", Joyce"
     assert fields["total"] == "R$ 38,00"
     assert fields["checkout_url"] == CHECKOUT_URL
@@ -534,7 +535,7 @@ def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_sem_prazo_o_campo_nao_e_gravado(manychat_calls):
     """Campo vazio não sobrescreve: o template do painel decide o que mostrar sem prazo."""
-    context = _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
+    context = _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     notification_manychat.send("+5543999990001", "payment_link_sent", context)
 
