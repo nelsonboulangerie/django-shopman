@@ -195,7 +195,7 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
-- Corpo: `Seu pedido {{1}} saiu para entrega e chega logo.`
+- Corpo: `Seu pedido {{1}} saiu para entrega.`
 - Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
 - Botão URL: `Acompanhar pedido`
 

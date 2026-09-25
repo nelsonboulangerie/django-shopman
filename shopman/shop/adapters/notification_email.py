@@ -72,7 +72,7 @@ BODY_TEMPLATES: dict[str, str] = {
         "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_dispatched": (
-        "Seu pedido {order_ref} saiu para entrega e chega logo."
+        "Seu pedido {order_ref} saiu para entrega."
         "{courier_tracking_suffix}\n"
         "Quando receber, é só confirmar por aqui: {tracking_url}\n"
     ),

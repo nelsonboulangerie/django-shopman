@@ -115,7 +115,7 @@ def test_saida_para_entrega_nao_cumprimenta_e_bate_com_o_seed():
         notification_email.BODY_TEMPLATES["order_dispatched"],
         notification_manychat.MESSAGE_TEMPLATES["order_dispatched"],
     ):
-        assert fallback.startswith("Seu pedido {order_ref} saiu para entrega e chega logo.")
+        assert fallback.startswith("Seu pedido {order_ref} saiu para entrega.")
 
 
 @pytest.mark.django_db

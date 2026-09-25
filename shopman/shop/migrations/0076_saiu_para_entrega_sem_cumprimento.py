@@ -10,7 +10,7 @@ from django.db import migrations
 
 EVENT = "order_dispatched"
 OLD_BODY = "Olá{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!{courier_tracking_suffix}\n\nQuando receber, é só confirmar por aqui: {tracking_url}"
-NEW_BODY = "Seu pedido *{order_ref}* saiu para entrega e chega logo.{courier_tracking_suffix}\nQuando receber, é só confirmar por aqui: {tracking_url}"
+NEW_BODY = "Seu pedido *{order_ref}* saiu para entrega.{courier_tracking_suffix}\nQuando receber, é só confirmar por aqui: {tracking_url}"
 
 
 def forwards(apps, schema_editor):
