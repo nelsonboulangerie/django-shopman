@@ -304,6 +304,18 @@ useHead({
             <p v-if="longDescription" class="mt-2 shop-muted">{{ longDescription }}</p>
             <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
 
+            <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
+                 constantes da ficha. Não vai para o selo do card do cardápio: lá
+                 o slot é de exceção ("Últimas unidades", "Lista de espera"), e um
+                 selo permanente em ~1 de cada 4 produtos ensinaria o cliente a
+                 parar de ler justamente o aviso que o faz agir. -->
+            <div v-if="product.is_made_to_order && product.made_to_order_label" class="mt-3" data-pdp-made-to-order>
+              <UiBadge variant="outline">
+                <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
+                {{ product.made_to_order_label }}
+              </UiBadge>
+            </div>
+
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <!-- O risco mudo não dizia que o desconto já está no valor grande. -->

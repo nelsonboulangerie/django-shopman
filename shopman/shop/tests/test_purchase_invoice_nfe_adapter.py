@@ -33,6 +33,8 @@ def _nfe_xml(
     tax_ean: str | None = None,
     cest: str | None = None,
     rastro: str = "",
+    icms: str = "",
+    ncm: str = "11010010",
 ) -> str:
     """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
 
@@ -72,13 +74,13 @@ def _nfe_xml(
           <cProd>{product_code}</cProd>
           <cEAN>{ean}</cEAN>
           <xProd>{product_name}</xProd>
-          <NCM>11010010</NCM>{f"<CEST>{cest}</CEST>" if cest else ""}
+          <NCM>{ncm}</NCM>{f"<CEST>{cest}</CEST>" if cest else ""}
           <CFOP>5102</CFOP>
           <uCom>{unit}</uCom>
           <qCom>{quantity}</qCom>
           <vUnCom>{unit_value}</vUnCom>{tax_block}
           <vProd>{total}</vProd>{rastro}
-        </prod>
+        </prod>{f"<imposto><ICMS>{icms}</ICMS></imposto>" if icms else ""}
       </det>
       <total>
         <ICMSTot>
@@ -171,6 +173,10 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "invoicePackageEan": "",
             "invoiceNcm": "11010010",
             "invoiceCest": "",
+            "invoiceIcmsCst": "",
+            "invoiceIcmsCsosn": "",
+            "invoiceStValueQ": 0,
+            "fiscalDivergences": [],
             "checked": False,
         }
     ]
@@ -785,3 +791,68 @@ def test_cest_e_ncm_da_nota_chegam_a_linha(supplier):
     line = draft["lines"][0]
     assert line["invoiceNcm"] == "11010010"
     assert line["invoiceCest"] == "1704600"
+
+
+# ── O grupo ICMS do item e a conferência do cadastro fiscal ──────────────
+
+
+@pytest.mark.django_db
+def test_grupo_icms_do_simples_com_st_retida_chega_a_linha(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            icms="<ICMSSN500><orig>0</orig><CSOSN>500</CSOSN><vBCSTRet>100.00</vBCSTRet>"
+            "<vICMSSTRet>12.34</vICMSSTRet></ICMSSN500>"
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert (line["invoiceIcmsCst"], line["invoiceIcmsCsosn"], line["invoiceStValueQ"]) == ("", "500", 1234)
+
+
+@pytest.mark.django_db
+def test_grupo_icms_do_regime_normal_com_st_cobrada(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(icms="<ICMS10><orig>0</orig><CST>10</CST><vICMSST>7.50</vICMSST></ICMS10>"),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert (line["invoiceIcmsCst"], line["invoiceIcmsCsosn"], line["invoiceStValueQ"]) == ("10", "", 750)
+
+
+@pytest.mark.django_db
+def test_nota_sem_grupo_icms_deixa_os_campos_vazios(supplier):
+    line = parse_nfe_xml_to_purchase_draft(_nfe_xml(), access_key=VALID_ACCESS_KEY)["lines"][0]
+    assert (line["invoiceIcmsCst"], line["invoiceIcmsCsosn"], line["invoiceStValueQ"]) == ("", "", 0)
+    assert line["fiscalDivergences"] == []
+
+
+@pytest.mark.django_db
+def test_linha_de_revenda_traz_a_divergencia_com_o_cadastro_fiscal(supplier, material):
+    from shopman.fiscalman.classification import FISCAL_PROFILES
+    from shopman.offerman.models import Product
+
+    sem_st = next(k for k, p in FISCAL_PROFILES.items() if p.csosn != "500")
+    Product.objects.create(
+        sku=material.sku,
+        name=material.name,
+        unit="kg",
+        base_price_q=1000,
+        metadata={"fiscal": {"profile": sem_st, "ncm": "11010010", "unit": "KG"}},
+    )
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(ncm="11022000", icms="<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>"),
+        access_key=VALID_ACCESS_KEY,
+    )
+    [divergence] = draft["lines"][0]["fiscalDivergences"]
+    assert divergence["sku"] == material.sku
+    assert (divergence["field"], divergence["catalogValue"], divergence["invoiceValue"]) == (
+        "ncm",
+        "11010010",
+        "11022000",
+    )
+
+
+@pytest.mark.django_db
+def test_insumo_sem_produto_de_venda_nao_tem_o_que_conferir(supplier, material):
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(ncm="11022000"), access_key=VALID_ACCESS_KEY)
+    assert draft["lines"][0]["fiscalDivergences"] == []

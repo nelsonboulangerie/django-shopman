@@ -12,7 +12,7 @@ import re
 import unicodedata
 import zlib
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -107,6 +107,14 @@ class NFeItem:
     #: o da caixa. ``ean`` fica com o da unidade (ver :func:`_unit_gtin`).
     package_ean: str = ""
     cest: str = ""
+    #: O grupo ICMS do item (``imposto/ICMS/ICMSxx``): o CST de quem está no
+    #: regime normal, ou o CSOSN de quem está no Simples — um dos dois. E o
+    #: valor de ST em centavos (``vICMSST`` cobrado agora, ou ``vICMSSTRet``
+    #: retido antes). É o que diz se o item chegou com substituição tributária
+    #: (ver ``shop/services/invoice_fiscal_check.py``).
+    icms_cst: str = ""
+    icms_csosn: str = ""
+    st_value_q: int = 0
 
 
 @dataclass(frozen=True)
@@ -334,8 +342,43 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "invoicePackageEan": item.package_ean,
         "invoiceNcm": item.ncm,
         "invoiceCest": item.cest,
+        "invoiceIcmsCst": item.icms_cst,
+        "invoiceIcmsCsosn": item.icms_csosn,
+        "invoiceStValueQ": item.st_value_q,
+        # A nota confere o cadastro fiscal do produto que a linha abastece
+        # (resolvido ou sugerido — cada divergência leva o SKU, e a tela só a
+        # mostra enquanto a linha aponta para ele). Aviso, nunca correção.
+        "fiscalDivergences": _fiscal_divergences(
+            item, sku=material.sku if material else (suggestion[0].sku if suggestion else "")
+        ),
         "checked": False,
     }
+
+
+def _fiscal_divergences(item: NFeItem, *, sku: str) -> list[dict[str, str]]:
+    """O que a nota diz de NCM/CEST/ST contra o cadastro fiscal do produto vendável.
+
+    Só o produto de VENDA tem cadastro fiscal: insumo que não se revende não
+    tem o que conferir e devolve lista vazia.
+    """
+    if not sku:
+        return []
+    from shopman.shop.services.invoice_fiscal_check import check_invoice_fiscal
+
+    product = apps.get_model("offerman", "Product").objects.filter(sku=sku).only("metadata").first()
+    if product is None:
+        return []
+    return [
+        {"sku": sku, **divergence.as_dict()}
+        for divergence in check_invoice_fiscal(
+            metadata=product.metadata,
+            ncm=item.ncm,
+            cest=item.cest,
+            icms_cst=item.icms_cst,
+            icms_csosn=item.icms_csosn,
+            st_value_q=item.st_value_q,
+        )
+    ]
 
 
 def _line_quantity(item: NFeItem, *, material: Any | None, conversion: Any | None) -> Decimal:
@@ -576,6 +619,8 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
         tax_unit=tax_unit,
     )
 
+    icms_cst, icms_csosn, st_value_q = _icms_of_item(det)
+
     return NFeItem(
         number=str(det.attrib.get("nItem") or index),
         product_code=_text(prod, "cProd"),
@@ -594,7 +639,30 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
         cfop=_text(prod, "CFOP"),
         expiry_date=expiry,
         lot=lot,
+        icms_cst=icms_cst,
+        icms_csosn=icms_csosn,
+        st_value_q=st_value_q,
     )
+
+
+def _icms_of_item(det: ET.Element) -> tuple[str, str, int]:
+    """CST (ou CSOSN) e valor de ST do grupo ICMS do item, em centavos.
+
+    O grupo vem com o nome da situação (``ICMS60``, ``ICMSSN500``, ``ICMSST``…)
+    e há um só por item. ``CST``/``CSOSN``/``vICMSST``/``vICMSSTRet`` são nomes
+    do leiaute da SEFAZ e param aqui: para dentro viram ``icms_cst``,
+    ``icms_csosn`` e ``st_value_q``. ``vBCSTRet`` é BASE, não imposto — não
+    entra no valor.
+    """
+    icms = _find_child(_find_child(det, "imposto"), "ICMS")
+    group = next(iter(icms), None) if icms is not None else None
+    if group is None:
+        return "", "", 0
+    cst = _digits(_text(group, "CST"))
+    csosn = _digits(_text(group, "CSOSN"))
+    st_value = max(_decimal(_text(group, "vICMSST")), _decimal(_text(group, "vICMSSTRet")))
+    st_value_q = int((st_value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if st_value > 0 else 0
+    return cst, csosn, st_value_q
 
 
 def _unit_gtin(*, commercial: str, taxable: str, unit: str, tax_unit: str) -> tuple[str, str]:

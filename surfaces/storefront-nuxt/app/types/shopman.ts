@@ -151,6 +151,12 @@ export interface ProductDetailProjection {
   components: ComponentProjection[]
   unit_weight_label: string | null
   approx_dimensions_label: string | null
+  // Preparado na hora: promessa DECLARADA da casa
+  // (`Product.metadata.made_to_order`), não dedução de availability_policy.
+  // Mora no bloco de atributos da ficha — e NÃO no selo do card do cardápio,
+  // que é slot de exceção ("Últimas unidades", "Lista de espera", "Pausado").
+  is_made_to_order: boolean
+  made_to_order_label: string
   allergen: ProductAllergenProjection | null
   conservation: ProductConservationProjection | null
   ingredients_text: string | null
@@ -826,6 +832,13 @@ export interface CheckoutProjection {
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+  // NOTA DA ENTREGA: a entrega deste canal vai com NFC-e, e a nota de entrega
+  // não sai sem CPF/CNPJ (o servidor pergunta ao mesmo resolver da emissão).
+  // `saved_tax_id` pré-preenche; `offer_save_tax_id` libera a PERGUNTA de
+  // guardar (o cadastro ainda não tem documento). Opcionais: servidor antigo.
+  delivery_requires_tax_id?: boolean
+  saved_tax_id?: string
+  offer_save_tax_id?: boolean
 }
 
 export interface StripeTestCard {

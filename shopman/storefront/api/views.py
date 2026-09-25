@@ -307,6 +307,23 @@ class CheckoutView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        # CPF/CNPJ da nota da entrega: validado AQUI, no campo, antes de qualquer
+        # outra coisa do pedido. Se ele é exigido é pergunta da trava do commit
+        # (a mesma regra da emissão); se veio, tem de estar certo.
+        fiscal_tax_id = ""
+        if fulfillment_type == "delivery":
+            from shopman.utils.documents import is_valid_tax_id
+
+            from shopman.shop.services import delivery_fiscal_identity
+
+            fiscal_tax_id = "".join(ch for ch in validated_data.get("fiscal_tax_id", "") if ch.isdigit())
+            if fiscal_tax_id and not is_valid_tax_id(fiscal_tax_id):
+                message = delivery_fiscal_identity.TAX_ID_INVALID_MESSAGE
+                return Response(
+                    {"detail": message, "field": "fiscal_tax_id", "errors": {"fiscal_tax_id": message}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         if fulfillment_type == "delivery" and saved_address_id:
             saved_payload, saved_error = _saved_address_payload(request, saved_address_id)
             if saved_error:
@@ -406,6 +423,9 @@ class CheckoutView(APIView):
             checkout_data["delivery_date"] = delivery_date
         if delivery_time_slot:
             checkout_data["delivery_time_slot"] = delivery_time_slot
+        # Sempre gravada: uma tentativa anterior de entrega com CPF não pode
+        # deixar o documento na sessão de um pedido que virou retirada.
+        checkout_data["fiscal"] = {"tax_id": fiscal_tax_id} if fiscal_tax_id else {}
         if payment_method in {"pix", "card"}:
             checkout_data["payment"] = {"method": payment_method}
         elif payment_method == "cash":
@@ -458,8 +478,9 @@ class CheckoutView(APIView):
                 if loyalty_balance_q > 0:
                     checkout_data["loyalty"] = {"redeem_points_q": loyalty_balance_q}
             except Exception:
-                logger.debug("views.post degraded; using fallback", exc_info=True)
-                pass
+                # O cliente pediu para usar os pontos: seguir sem eles é
+                # degradação que alguém precisa ver, não um detalhe de debug.
+                logger.warning("storefront.checkout loyalty_balance failed; checkout without redemption", exc_info=True)
 
         # Passou por todas as validações: agora sim a tentativa CONTA.
         if self._rate_limited(request, increment=True):
@@ -494,6 +515,9 @@ class CheckoutView(APIView):
                     status=order_error.http_status,
                 )
             raise
+
+        if fiscal_tax_id and validated_data.get("save_fiscal_tax_id"):
+            _save_fiscal_tax_id(request, fiscal_tax_id, order_ref=result.order_ref)
 
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
@@ -543,6 +567,30 @@ class CheckoutView(APIView):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(CHECKOUT_RATE_LIMIT_RETRY_SECONDS)},
         )
+
+
+def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
+    """Guarda o CPF da nota no cadastro porque a pessoa respondeu que sim.
+
+    Nunca derruba o pedido já confirmado: a nota sai com o CPF informado de
+    qualquer jeito, e o que falha aqui é só a conveniência da próxima vez.
+    Sessão que só conhece o número (link de campanha) não grava identidade
+    fiscal: a tela nem oferece.
+    """
+    from django.db import transaction
+
+    from shopman.shop.services import delivery_fiscal_identity
+
+    customer = getattr(request, "customer", None)
+    if customer is None or knows_only_the_number(request):
+        return
+    try:
+        with transaction.atomic():
+            outcome = delivery_fiscal_identity.save_tax_id_to_customer(customer.uuid, tax_id)
+    except Exception:
+        logger.warning("storefront.checkout save_fiscal_tax_id failed order=%s", order_ref, exc_info=True)
+        return
+    logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=%s", order_ref, outcome)
 
 
 def _closed_shop_hint() -> dict:

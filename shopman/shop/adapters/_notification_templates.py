@@ -125,6 +125,7 @@ def derive_context(context: dict | None) -> dict:
     # que não passa por lá e deixaria o rótulo cru na mensagem.
     ctx.setdefault("courier_tracking_suffix", "")
     ctx.setdefault("pix_suffix", "")
+    ctx.setdefault("eta_note", "")
     ctx.setdefault("management_url", "")
     ctx.setdefault("management_note", "")
     reason = ctx.get("reason")

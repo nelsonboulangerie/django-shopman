@@ -57,7 +57,7 @@ import {
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { isValidTaxId } from "~/presentation/taxId";
+import { deliveryTaxIdMissing, isValidTaxId } from "~/presentation/taxId";
 import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
@@ -309,7 +309,9 @@ const reviewWarnings = computed(() => {
       // sem caminho e — porque a review só é refeita quando o CARRINHO muda —
       // podendo ficar defasado ao lado de um cabeçalho já com o nome do cliente.
       // Dois avisos para uma pendência é o que faz o operador parar de ler os dois.
-      && w.code !== "customer_required_for_scheduled",
+      && w.code !== "customer_required_for_scheduled"
+      // Endereço incompleto para a nota: quem fala é o bloqueio do Validar.
+      && w.code !== "delivery_address_incomplete",
   );
   return fromServer;
 });
@@ -848,6 +850,38 @@ const ctaBlock = computed<{
       message: "O horário combinado não cabe mais.",
       hint: scheduleConflictReason.value,
       action: { label: "Escolher horário", run: () => { scheduleSheetOpen.value = true; } },
+    };
+  }
+  // ENTREGA COM NOTA sem o documento: a gêmea de `delivery_tax_id_required` do
+  // fechamento. A SEFAZ recusa a nota de entrega sem CPF/CNPJ, e a recusa
+  // chegava com o entregador na rua; agora o Validar trava aqui, com o toque
+  // que abre o campo.
+  if (deliveryTaxIdMissing({
+    fulfillmentType: props.fulfillmentType,
+    required: props.review?.delivery_tax_id_required,
+    wantsCpfOnInvoice: props.wantsCpfOnInvoice,
+    invoiceTaxId: props.invoiceTaxId,
+  })) {
+    return {
+      message: "Entrega com nota fiscal: falta o CPF ou CNPJ do cliente.",
+      hint: "A SEFAZ exige o documento na nota da entrega. Sem ele, a entrega não fecha; a retirada continua.",
+      action: {
+        label: "Preencher CPF na nota",
+        run: () => {
+          if (!props.wantsCpfOnInvoice) emit("update:wantsCpfOnInvoice", true);
+          focusByAriaLabel("CPF que sai na nota");
+        },
+      },
+    };
+  }
+  // Endereço sem as partes que a nota exige (rua, número, bairro, cidade,
+  // estado, CEP): a review diz o que falta; aqui ela trava, como o fechamento.
+  const addressGap = props.review?.warnings?.find((w) => w.code === "delivery_address_incomplete");
+  if (props.fulfillmentType === "delivery" && addressGap) {
+    return {
+      message: addressGap.message,
+      hint: "A nota fiscal da entrega sai com o endereço completo.",
+      action: { label: "Completar endereço", run: () => { fulfillmentSheetOpen.value = true; } },
     };
   }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable

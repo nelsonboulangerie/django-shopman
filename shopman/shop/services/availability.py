@@ -228,8 +228,18 @@ def decide(
     *,
     channel_ref: str | None = None,
     target_date: date | None = None,
+    as_component: bool = False,
 ) -> dict:
-    """Return a canonical promise decision for one SKU in context."""
+    """Return a canonical promise decision for one SKU in context.
+
+    ``as_component``: o SKU está sendo conferido como COMPONENTE de um kit. O
+    portão da listagem é do que se vende — o kit, que já passou por ele —, não
+    do que vai dentro: a caixa física da caixa presente não é vendável avulsa
+    (não tem listagem) e mesmo assim é estoque limitado que restringe o kit.
+    Só a AUSÊNCIA na listagem é perdoada: componente listado e pausado no
+    canal recusa como antes, e estoque, pausa global e política de
+    disponibilidade continuam valendo.
+    """
     qty_d = Decimal(str(qty))
     if target_date is None:
         # A decisão sem data explícita segue a mesma escolha da reserva: usa a
@@ -266,6 +276,8 @@ def decide(
         }
 
     listing_item = _sku_in_channel_listing(sku, channel_ref)
+    if listing_item is False and as_component:
+        listing_item = True  # componente não precisa estar listado; pausado no canal, sim, recusa
     if listing_item is False:
         return {
             "approved": False,
@@ -353,6 +365,7 @@ def check(
     *,
     channel_ref: str | None = None,
     target_date: date | None = None,
+    as_component: bool = False,
 ) -> dict:
     """
     Read-only availability check for a single SKU/qty in a channel scope.
@@ -389,6 +402,7 @@ def check(
         qty,
         channel_ref=channel_ref,
         target_date=target_date,
+        as_component=as_component,
     )
     return {
         "ok": decision["approved"],
@@ -443,7 +457,7 @@ def _check_bundle(
         comp_sku = comp["sku"]
         comp_qty = Decimal(str(comp["qty"]))
 
-        result = check(comp_sku, comp_qty, channel_ref=channel_ref, target_date=target_date)
+        result = check(comp_sku, comp_qty, channel_ref=channel_ref, target_date=target_date, as_component=True)
 
         if not result["ok"]:
             return {

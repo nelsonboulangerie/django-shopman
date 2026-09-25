@@ -383,7 +383,8 @@ def test_caixa_presente_e_produto_da_casa_so_no_pdv(catalog):
     for box in GIFT_BOXES:
         caixa = Product.objects.get(sku=box.sku)
         assert (caixa.name, caixa.base_price_q) == (box.name, box.price_q)
-        assert caixa.is_sellable and not caixa.is_published
+        # Kit sem composição: cadastrado e listado no PDV, fora da venda.
+        assert not caixa.is_sellable and not caixa.is_published
         assert "purchase" not in caixa.metadata
         assert get_social_attributes(caixa).gtin == ""
         assert _refs(box.sku) == {"pdv"}
@@ -598,3 +599,113 @@ def test_a_manteiga_abre_na_unidade_do_insumo_que_ela_vira():
         assert opening.opened_unit == "g", opening.sku
         weight = next(i.weight_g for i in GROCERY if i.sku == opening.sku)
         assert Decimal(opening.quantity) == Decimal(weight), opening.sku
+
+
+# ── Caixa presente é kit: sem composição, fora da venda ───────────────────
+
+
+def test_caixa_presente_sem_composicao_e_kit_fora_da_venda(catalog):
+    report = apply_grocery(apply=True)
+
+    for box in GIFT_BOXES:
+        caixa = Product.objects.get(sku=box.sku)
+        assert caixa.metadata["kit"] is True
+        assert not caixa.is_sellable
+        assert not ListingItem.objects.filter(product=caixa, is_sellable=True).exists()
+        # Só a caixa física na composição; o resto não se inventa.
+        assert [pc.component.sku for pc in caixa.components.all()] == [box.packaging_sku]
+        assert (box.sku, "caixa presente sem composição: fora da venda até o dono definir") in (
+            report["kits_without_components"]
+        )
+
+
+def test_caixa_presente_que_estava_a_venda_sai_e_o_relatorio_diz(catalog):
+    apply_grocery(apply=True)
+    box = GIFT_BOXES[0]
+    Product.objects.filter(sku=box.sku).update(is_sellable=True)
+    ListingItem.objects.filter(product__sku=box.sku).update(is_sellable=True)
+
+    report = apply_grocery(apply=True)
+
+    assert not Product.objects.get(sku=box.sku).is_sellable
+    assert not ListingItem.objects.filter(product__sku=box.sku, is_sellable=True).exists()
+    assert (box.sku, ["venda: desligada até ter composição"]) in report["updated"]
+
+
+def test_caixa_presente_com_composicao_nao_e_desligada(catalog):
+    from shopman.offerman.models import ProductComponent
+
+    apply_grocery(apply=True)
+    box = GIFT_BOXES[0]
+    caixa = Product.objects.get(sku=box.sku)
+    ProductComponent.objects.create(parent=caixa, component=Product.objects.get(sku=DIJON), qty=1)
+    Product.objects.filter(sku=box.sku).update(is_sellable=True)
+
+    report = apply_grocery(apply=True)
+
+    assert Product.objects.get(sku=box.sku).is_sellable
+    assert box.sku not in {sku for sku, _ in report["kits_without_components"]}
+
+
+def test_o_relatorio_do_comando_lista_a_caixa_sem_composicao(catalog):
+    out = StringIO()
+    call_command("apply_grocery_catalog", stdout=out)
+
+    assert "caixa presente sem composição: fora da venda até o dono definir" in out.getvalue()
+
+
+def test_a_caixa_fisica_e_componente_de_estoque_do_kit_sem_venda_avulsa(catalog):
+    from config.management.commands.apply_grocery_catalog import PACKAGING_NCM_FOLDING_CARTON
+
+    apply_grocery(apply=True)
+
+    for box in GIFT_BOXES:
+        packaging = Product.objects.get(sku=box.packaging_sku)
+        assert packaging.name == f"{box.name} (embalagem)"
+        assert packaging.metadata["kit_packaging"] is True
+        assert packaging.metadata["fiscal"] == {"profile": "standard", "ncm": PACKAGING_NCM_FOLDING_CARTON, "unit": "UN"}
+        # Sem listagem: não se vende avulsa. Ligada: é a chave que o Stockman lê.
+        assert packaging.is_sellable and not packaging.is_published
+        assert not ListingItem.objects.filter(product=packaging).exists()
+        assert packaging.base_price_q == 0
+        assert get_social_attributes(packaging).gtin == ""
+        # Estoque limitado: comprada no Compras, só vende o que tem.
+        assert packaging.availability_policy == "stock_only"
+        assert Material.objects.get(sku=box.packaging_sku).unit == packaging.unit
+        resolved = resolve_fiscal_item(from_metadata(packaging.metadata))
+        assert (resolved["cfop"], resolved["icms_situacao_tributaria"]) == ("5102", "102")
+
+
+def test_o_ncm_da_caixa_e_configuravel_por_kit(catalog, monkeypatch):
+    from config.management.commands.apply_grocery_catalog import PACKAGING_NCM_WICKER
+
+    box = replace(GIFT_BOXES[0], packaging_ncm=PACKAGING_NCM_WICKER)
+    monkeypatch.setattr(command, "GIFT_BOXES", (box, *GIFT_BOXES[1:]))
+
+    apply_grocery(apply=True)
+
+    assert Product.objects.get(sku=box.packaging_sku).metadata["fiscal"]["ncm"] == "46021900"
+
+
+def test_a_caixa_nasce_rastreada_com_saldo_zero_na_vitrine(catalog):
+    """Sem saldo nenhum o Stockman a trataria como não rastreada (sempre
+    disponível) e "sem caixa" não valeria. Zero é a verdade até a 1ª nota."""
+    from shopman.stockman.models import Position, Quant
+
+    Position.objects.create(ref="vitrine", name="Vitrine", kind="physical", is_saleable=True)
+
+    report = apply_grocery(apply=True)
+
+    box = GIFT_BOXES[0]
+    (quant,) = Quant.objects.filter(sku=box.packaging_sku)
+    assert (quant.position.ref, quant.quantity) == ("vitrine", 0)
+    assert any("rastreado (saldo 0" in line for sku, lines in report["updated"] if sku == box.sku for line in lines)
+    assert apply_grocery(apply=True)["updated"] == []  # idempotente
+
+
+def test_sem_posicao_de_venda_a_caixa_espera_o_seed(catalog):
+    from shopman.stockman.models import Quant
+
+    apply_grocery(apply=True)
+
+    assert not Quant.objects.filter(sku=GIFT_BOXES[0].packaging_sku).exists()

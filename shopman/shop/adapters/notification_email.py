@@ -26,12 +26,12 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "order_accepted": "Pedido {order_ref} confirmado",
     "order_preparing": "Pedido {order_ref} em preparo",
     "order_ready_pickup": "Pedido {order_ref} pronto para retirada",
-    "order_ready_delivery": "Pedido {order_ref} pronto para envio",
+    "order_ready_delivery": "Pedido {order_ref} pronto — aguardando entregador",
     "order_dispatched": "Pedido {order_ref} saiu para entrega",
     "order_delivered": "Pedido {order_ref} entregue",
     "order_cancelled": "Pedido {order_ref} cancelado",
     "order_rejected": "Pedido {order_ref} não confirmado",
-    "payment_confirmed": "Pagamento do pedido {order_ref} confirmado",
+    "payment_confirmed": "Pagamento do pedido {order_ref} recebido",
     "payment_requested": "Pedido {order_ref}: pagamento liberado",
     "payment_link_sent": "Pedido {order_ref}: link de pagamento",
     "payment_expired": "Pedido {order_ref}: reserva liberada",
@@ -49,28 +49,27 @@ BODY_TEMPLATES: dict[str, str] = {
     "operator_critical": "O alerta {alert_type} exige atenção no Gestor. Referência: {order_ref}. Confira os alertas operacionais antes de repetir a operação.",
     "order_received": (
         "Olá{customer_name_greeting}!\n\n"
-        "Recebemos seu pedido {order_ref}.\n\n"
-        "O estabelecimento vai conferir a disponibilidade e avisaremos a próxima etapa.\n"
+        "Recebemos seu pedido {order_ref}.\n"
+        "Estamos conferindo a disponibilidade e avisamos em seguida.\n"
+        "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_accepted": (
-        "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} foi confirmado.\n\n"
-        "Total: {total}\n\nObrigado pela preferência!\n"
+        "Seu pedido {order_ref} está confirmado. Total: {total}.\n"
+        "Já vamos preparar.\n"
+        "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_preparing": (
-        "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} está em preparo.\n\n"
-        "Avisaremos quando estiver pronto!\n"
+        "Estamos preparando seu pedido {order_ref}.{eta_note}\n"
+        "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_ready_pickup": (
-        "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} está pronto para retirada.\n\n"
-        "Venha buscar. Obrigado!\n"
+        "Seu pedido {order_ref} está pronto e esperando por você no balcão. \U0001f950\n"
+        "Endereço e detalhes: {tracking_url}\n"
     ),
     "order_ready_delivery": (
-        "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} está pronto e será enviado em breve.\n\n"
-        "Obrigado!\n"
+        "Seu pedido {order_ref} está pronto e aguardando o entregador.\n"
+        "Avisamos assim que sair. \U0001f4e6\n"
+        "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_dispatched": (
         "Olá{customer_name_greeting}!\n\n"
@@ -89,12 +88,12 @@ BODY_TEMPLATES: dict[str, str] = {
     ),
     "order_rejected": (
         "Olá{customer_name_greeting}!\n\n"
-        "O estabelecimento não conseguiu confirmar o pedido {order_ref}.{reason_note}\n\n"
+        "Não conseguimos confirmar o pedido {order_ref}.{reason_note}\n\n"
         "Veja os detalhes do pedido por aqui: {tracking_url}\n"
     ),
     "payment_confirmed": (
         "Olá{customer_name_greeting}!\n\n"
-        "O pagamento do pedido {order_ref} foi confirmado.\n\n"
+        "O pagamento do pedido {order_ref} foi recebido.\n\n"
         "Avisamos a cada passo. Acompanhe por aqui: {tracking_url}\n\n"
         "Obrigado!\n"
     ),

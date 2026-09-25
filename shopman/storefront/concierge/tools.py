@@ -779,8 +779,14 @@ def set_fulfillment(
     delivery_date: str = "",
     slot_ref: str = "",
     address: str = "",
+    tax_id: str = "",
 ) -> dict:
-    """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site."""
+    """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
+
+    Na entrega, ``tax_id`` é o CPF/CNPJ PEDIDO para a nota (``fiscal.tax_id``):
+    a nota da entrega a domicílio não sai sem ele, e a porta do pedido recusa
+    (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
+    """
     from shopman.shop.services import cart as cart_service
     from shopman.storefront.intents.checkout import _validate_preorder
     from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
@@ -818,6 +824,9 @@ def set_fulfillment(
     slot_ref = str(slot_ref or "").strip()
 
     if fulfillment_type == "pickup":
+        # Retirada não leva o CPF da entrega: a nota do balcão só sai com CPF
+        # quando a pessoa pede, e aqui ninguém pediu para a retirada.
+        values["fiscal"] = {}
         if slot_ref:
             skus = [str(item.get("sku")) for item in (session.items or [])]
             now_time = timezone.localtime().time().replace(second=0, microsecond=0)
@@ -828,6 +837,16 @@ def set_fulfillment(
                 values["delivery_time_slot"] = slot_ref
         values["delivery_address"] = ""
     else:
+        tax_digits = "".join(ch for ch in str(tax_id or "") if ch.isdigit())
+        if tax_digits:
+            from shopman.utils.documents import is_valid_tax_id
+
+            from shopman.shop.services.delivery_fiscal_identity import TAX_ID_INVALID_MESSAGE
+
+            if is_valid_tax_id(tax_digits):
+                values["fiscal"] = {"tax_id": tax_digits}
+            else:
+                errors["fiscal_tax_id"] = TAX_ID_INVALID_MESSAGE
         address = " ".join(str(address or "").split()).strip()
         if not address:
             errors["delivery_address"] = "Preciso do endereço completo, com número."
@@ -930,6 +949,8 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
             missing.append("delivery_address")
         if data.get("delivery_zone_error"):
             missing.append("delivery_out_of_zone")
+    if fulfillment_type == "delivery":
+        missing.extend(_delivery_fiscal_missing(ctx, session))
     if not ctx.conversation.phone:
         missing.append("customer_phone")
     if data.get("delivery_date"):
@@ -977,6 +998,27 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         ctx.conversation.save(update_fields=["quote", "updated_at"])
         result["quote_token"] = token
     return result
+
+
+def _delivery_fiscal_missing(ctx: ToolContext, session) -> list[str]:
+    """O que falta para a nota da entrega sair — a régua da porta do pedido.
+
+    ``fiscal_tax_id``: pedir o CPF ou CNPJ e gravar com set_fulfillment.
+    ``delivery_address_details``: o endereço dito na conversa não tem rua,
+    número, bairro, cidade, estado e CEP separados, que a nota exige; o caminho
+    é o site (onde o endereço é escolhido no mapa) ou a retirada.
+    """
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    order = identity.order_view(
+        data=session.data or {}, channel_ref=ctx.channel_ref, total_q=_lines_total_q(session),
+    )
+    missing: list[str] = []
+    for gap in identity.delivery_fiscal_gaps(order):
+        code = "fiscal_tax_id" if gap.field == identity.TAX_ID_FIELD else "delivery_address_details"
+        if code not in missing:
+            missing.append(code)
+    return missing
 
 
 def _assert_authority(ctx: ToolContext, *, for_mutation=True):
@@ -1099,6 +1141,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     data = {key: value for key, value in (session.data or {}).items() if key in {
         "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
         "delivery_time_slot", "saved_address_id", "order_notes", "is_gift", "recipient", "gift_message", "gift_hide_values",
+        "fiscal",
     }}
     data.update(customer={k: v for k, v in {"name": current.customer_name, "phone": current.phone, "ref": current.customer_ref}.items() if v}, payment={"method": payment_method})
     if notes:
@@ -1153,6 +1196,16 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         recovered = remote_mutations.lookup_local_mutation(scope=scope, key=quote_token, fingerprint=fingerprint)
         if recovered and recovered.response_body.get("order_ref"):
             return _placed_result(ctx, recovered.response_body["order_ref"], payment_method, replayed=True)
+        from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
+
+        if getattr(exc, "code", "") in REFUSAL_CODES:
+            # A nota da entrega não sai sem CPF e endereço completo. O modelo
+            # precisa saber O QUE pedir, não que "não deu".
+            return _error(
+                exc.code,
+                f"{exc.message} Peça o CPF ou CNPJ ao cliente e grave com set_fulfillment (tax_id); "
+                "se o endereço estiver incompleto, ofereça o site (send_web_link) ou a retirada.",
+            )
         if getattr(exc, "code", "") == "total_changed":
             return _error("revision_conflict", "O total mudou. Confira a diferença antes de confirmar.", facts=getattr(exc, "context", {}))
         return _error("checkout_unavailable", "Não consegui concluir a confirmação. Consulte o resultado usando esta mesma confirmação.")
@@ -1550,7 +1603,7 @@ def render_result(name: str, result: dict) -> str:
             if result.get("ready"):
                 rows.append("Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘confirmo’ para registrar.")
             else:
-                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "cart": "conferir a sacola"}
+                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "informar o CPF ou CNPJ para a nota fiscal da entrega (sem ele, só a retirada)", "delivery_address_details": "completar o endereço pelo site, com rua, número, bairro e CEP (ou escolher a retirada)", "cart": "conferir a sacola"}
                 rows.append("Ainda falta: " + ", ".join(labels.get(field, "conferir a disponibilidade da sacola") for field in result.get("missing", [])))
         return "\n".join(rows)
     if name == "place_order":
@@ -1661,7 +1714,8 @@ TOOL_SPECS: list[dict] = [
         "description": (
             "Grava retirada (pickup) ou entrega (delivery), a data (AAAA-MM-DD, \"\" = hoje), o "
             "horário (slot_ref de list_fulfillment_slots, \"\" se ainda não escolhido) e, na entrega, o "
-            "endereço completo com número. Valida como o site e devolve a taxa de entrega."
+            "endereço completo com número e o CPF ou CNPJ para a nota fiscal. Valida como o site e "
+            "devolve a taxa de entrega."
         ),
         "input_schema": _schema(
             {
@@ -1669,6 +1723,7 @@ TOOL_SPECS: list[dict] = [
                 "delivery_date": {"type": "string", "description": "AAAA-MM-DD ou \"\"."},
                 "slot_ref": {"type": "string", "description": "Ref do horário, ou \"\"."},
                 "address": {"type": "string", "description": "Endereço completo (entrega), ou \"\"."},
+                "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (obrigatório para entregar), ou \"\"."},
             },
             ["fulfillment_type"],
         ),

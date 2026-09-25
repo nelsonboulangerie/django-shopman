@@ -395,6 +395,46 @@ class TestAllergenAndConservation:
         assert proj.allergen is not None
         assert proj.allergen.serves == "2 a 4 pessoas"
 
+    def test_the_made_to_order_promise_reaches_the_product_page(self, listing, product):
+        """O selo vive na FICHA, que é onde se decide — e onde os atributos
+        constantes já moram (alérgenos, restrições, peso, medidas).
+
+        Ele não foi para o selo do card do cardápio de propósito: lá o slot é de
+        exceção ("Últimas unidades", "Lista de espera", "Pausado"), e a regra
+        está escrita em `menu.ts` — *"Badge só quando informa: disponível é o
+        estado default e não ganha selo."* Esta frase é constante e vale para ~1
+        em cada 4 produtos da casa.
+        """
+        product.metadata = {"made_to_order": True}
+        product.save()
+        _publish_on_listing(listing, product)
+
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+
+        assert proj is not None
+        assert proj.is_made_to_order is True
+        assert proj.made_to_order_label == "Preparado na hora"
+
+    def test_a_product_the_house_did_not_declare_carries_no_promise(self, listing, product):
+        """A contraprova, e ela é o ponto inteiro do desenho.
+
+        O selo já foi deduzido de ``availability_policy == "demand_ok"``, que é
+        conferência de ESTOQUE. Um pão marcado assim por razão de saldo ganhava
+        uma promessa que ninguém tinha feito. Quem declara é a casa, e só ela.
+        """
+        from shopman.offerman.models import AvailabilityPolicy
+
+        product.availability_policy = AvailabilityPolicy.DEMAND_OK
+        product.metadata = {}
+        product.save()
+        _publish_on_listing(listing, product)
+
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+
+        assert proj is not None
+        assert proj.is_made_to_order is False
+        assert proj.made_to_order_label == ""
+
     def test_allergen_is_none_when_metadata_empty(self, listing, product):
         _publish_on_listing(listing, product)
         proj = build_product_detail(sku=product.sku, channel_ref="web")

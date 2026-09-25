@@ -57,7 +57,7 @@ EVENT_LABELS: dict[str, str | None] = {
     # mandou o pedido. A linha do tempo é a loja narrando a jornada do cliente.
     "created": "Pedido recebido",
     "status_changed": None,
-    "payment.captured": "Pagamento confirmado",
+    "payment.captured": "Pagamento recebido",
     "payment.refunded": "Pagamento estornado",
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
@@ -90,7 +90,7 @@ STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
 # Semantic payment status descriptor → customer-facing label.
 PAYMENT_STATUS_LABELS: dict[str, str] = {
     "payment_expired": "Pagamento expirado",
-    "payment_confirmed": "Pagamento confirmado",
+    "payment_confirmed": "Pagamento recebido",
     "card_authorized": "Pagamento autorizado",
     "payment_pending": "Aguardando pagamento",
 }
@@ -896,7 +896,7 @@ def _promise_copy(
 
     if state == "store_checking":
         # Pago e conferindo é UM momento, não dois recados. O aviso separado
-        # "Pagamento confirmado." empilhava uma terceira linha dizendo o que a
+        # "Pagamento recebido." empilhava uma terceira linha dizendo o que a
         # frase já podia dizer — e o histórico registra o passo de qualquer jeito.
         # Chaves literais: o scanner do usage_map lê a chamada, não a variável.
         title = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
@@ -910,7 +910,7 @@ def _promise_copy(
         if payment_confirmed:
             return title, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
-                "Pagamento confirmado. Estamos conferindo a disponibilidade.",
+                "Pagamento recebido. Estamos conferindo a disponibilidade.",
             )
         return title, copy.message(
             "TRACKING_PROMISE_AVAILABILITY_MESSAGE",
@@ -946,7 +946,7 @@ def _promise_copy(
     if state == "payment_confirmed":
         if _is_fulfillment_wait(data):
             message = _waitlist_message(data, copy=copy, wait_display=wait_display)
-            return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento confirmado"), message
+            return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
         message = (
             copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW",
                          "Estamos conferindo a disponibilidade.")
@@ -954,7 +954,7 @@ def _promise_copy(
             else copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED",
                               "Pedido aceito. Acompanhe o andamento por aqui.")
         )
-        return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento confirmado"), message
+        return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
 
     if state == "preparing":
         eta_display = _eta_display(data.eta_at)
@@ -1143,21 +1143,21 @@ def _paid_fulfillment_wait_message(
         if wait_display:
             return copy.message(
                 "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID",
-                "Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+                "Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
             ).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
-            "Pagamento confirmado. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+            "Pagamento recebido. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
         )
 
     if wait_display:
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID",
-            "Pagamento confirmado. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+            "Pagamento recebido. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
         ).replace("{when}", wait_display)
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE",
-        "Pagamento confirmado. Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+        "Pagamento recebido. Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
     )
 
 

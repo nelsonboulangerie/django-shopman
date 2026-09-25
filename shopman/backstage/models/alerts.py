@@ -261,6 +261,12 @@ class OperatorAlert(models.Model):
         ("ifood_store_closed_while_open", "iFood fechado com a loja aberta"),
         ("ifood_store_open_while_closed", "iFood aberto com a loja fechada"),
         ("ifood_store_sync_failed", "Pausa ou horário não gravado no iFood"),
+        # A NF-e de compra discorda do cadastro fiscal do produto que ela
+        # abastece: NCM, CEST, ou ST na nota × perfil sem ST (e o inverso). O
+        # recebimento nunca corrige o cadastro sozinho — fornecedor também erra
+        # NCM —, então a divergência precisa chegar a alguém (decisão do dono,
+        # 24/09/2026: "pendências que sobrarem confirmamos nas próximas NFs").
+        ("purchase_invoice_fiscal_divergence", "Compras: NF-e diverge do cadastro fiscal"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),

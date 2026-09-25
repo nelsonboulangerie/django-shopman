@@ -293,7 +293,7 @@ def test_storefront_operational_copy_guardrails_cover_payment_prep_and_fulfillme
         "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
         "Finalize no ambiente seguro para seguir com o pedido aceito.",
         "Finalize no ambiente seguro para garantir sua encomenda para {when}.",
-        "Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+        "Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
         "Pague ao receber",
         "Acompanhe o status do pedido em tempo real.",
         "Assim que a confirmação chegar, atualizamos esta tela.",

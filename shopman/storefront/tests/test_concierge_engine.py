@@ -655,6 +655,44 @@ def test_set_fulfillment_delivery_stores_the_located_address(ctx, monkeypatch):
     assert session.data["delivery_address_structured"]["latitude"] == -23.31
 
 
+def _delivery_note_expected(monkeypatch, settings):
+    from unittest.mock import Mock
+
+    from shopman.shop.services import fiscal
+
+    monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda: Mock())
+    settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = (
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment"
+    )
+    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode", lambda address: (-23.31, -51.16))
+
+
+def test_review_order_asks_for_the_tax_id_when_the_delivery_has_a_note(ctx, monkeypatch, settings):
+    """Entrega com nota: a revisão diz ao modelo o que PEDIR, antes de qualquer token."""
+    _delivery_note_expected(monkeypatch, settings)
+    tools.set_item(ctx, SKU, 1)
+    assert tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro")["ok"]
+    review = tools.review_order(ctx, "pix")
+    assert "fiscal_tax_id" in review["missing"]
+    assert "quote_token" not in review
+    assert "CPF ou CNPJ" in tools.render_result("review_order", review)
+
+
+def test_set_fulfillment_records_the_tax_id_and_refuses_a_wrong_one(ctx, monkeypatch, settings):
+    _delivery_note_expected(monkeypatch, settings)
+    tools.set_item(ctx, SKU, 1)
+    wrong = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro", "11111111111")
+    assert wrong["ok"] is False and "fiscal_tax_id" in wrong["errors"]
+    ok = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro", "529.982.247-25")
+    assert ok["ok"], ok
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert session.data["fiscal"] == {"tax_id": "52998224725"}
+    review = tools.review_order(ctx, "pix")
+    # O CPF chegou; o endereço dito na conversa não tem as partes que a nota exige.
+    assert "fiscal_tax_id" not in review["missing"]
+    assert "delivery_address_details" in review["missing"]
+
+
 def test_order_status_reads_the_customer_orders_through_the_projection(ctx, django_capture_on_commit_callbacks):
     review = _pickup_ready(ctx)
     _accept_review(ctx, review)
