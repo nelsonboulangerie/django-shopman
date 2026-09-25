@@ -159,13 +159,19 @@ o sintoma é um botão que abre `/pedido/A17` e não encontra o pedido.
 >
 > O que a voz nova fez, e que muda o jeito de montar o template:
 >
-> - **O cumprimento saiu de cinco deles** — todos menos o `pedido_recebido`, que é a
->   primeira mensagem do pedido e continua se apresentando. Onde saiu, o corpo **não usa
->   `customer_name`** e a numeração andou: `{{1}}` passa a ser a **ref**. Conferir variável
->   por variável, porque ligar `{{1}}` ao nome num corpo que começa com "Seu pedido "
->   produz "Seu pedido Ana".
-> - **"Obrigado pela preferência" é exclusivo do `pedido_entregue`.** Saiu do
->   `pedido_confirmado` e não volta em nenhum outro.
+> - **O cumprimento saiu de quatro deles** — `pedido_em_preparo`,
+>   `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega`. Onde saiu, o
+>   corpo **não usa `customer_name`** e a numeração andou: `{{1}}` passa a ser o **código
+>   curto**. Conferir variável por variável, porque ligar `{{1}}` ao nome num corpo que
+>   começa com "Seu pedido " produz "Seu pedido Ana".
+> - **Dois mantiveram o cumprimento**, e por motivos diferentes: o `pedido_recebido` é a
+>   primeira mensagem do pedido e continua se apresentando; o `pedido_confirmado` é a
+>   **exceção de 25/09**, em que o dono preferiu o cumprimento e o agradecimento de volta
+>   ao ver o texto pronto (ver a entrada dele).
+> - **O agradecimento vive em dois lugares, e só nesses dois:** "Obrigado pela preferência"
+>   no `pedido_entregue` e "Obrigado por nos prestigiar" no `pedido_confirmado`. Em 24/09
+>   ele era exclusivo do entregue; a exceção de 25/09 devolveu um ao confirmado. Não volta
+>   em nenhum outro.
 > - **`order_rejected` já nasceu certo** neste doc ("Não conseguimos confirmar"): a PR só
 >   trocou o "O estabelecimento não conseguiu" que vivia no `seed`. Nada a fazer aqui.
 > - **`payment_confirmed` mudou só o ASSUNTO**, que é coisa de e-mail. O corpo do
@@ -182,15 +188,23 @@ o sintoma é um botão que abre `/pedido/A17` e não encontra o pedido.
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_confirmado` — evento `order_accepted`
-- Corpo: `Seu pedido {{1}} está confirmado. Total: {{2}}. Já vamos preparar.`
-- Vars: `{{1}}`=`A17` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
+- Corpo: `Oi, {{1}}! Confirmamos o seu pedido {{2}}. O total é {{3}}. Obrigado por nos prestigiar.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido`
 
-> ⚠️ **Sem cumprimento e sem agradecimento, e os dois são decisão do dono.** O
-> cumprimento saiu (o aviso não precisa se apresentar a cada passo) e o "Obrigado pela
-> preferência" ficou **só** no `pedido_entregue`. Consequência para quem monta o template:
-> este corpo **não usa `customer_name`**, e a numeração andou — `{{1}}` aqui é a **ref**,
-> não o nome.
+> ✅ **Este é a EXCEÇÃO do pacote de voz, por decisão do dono em 25/09/2026.** Em 24/09 ele
+> tinha tirado o cumprimento e o agradecimento daqui; ao ver o texto pronto, preferiu os
+> dois de volta **nesta mensagem**. Vale **só** para a confirmação: os outros quatro
+> (`pedido_recebido` já tinha cumprimento; `pedido_em_preparo`, `pedido_pronto_retirada`,
+> `pedido_pronto_entrega` e `pedido_saiu_entrega`) seguem sem.
+>
+> Ele escolheu aplicar em **todos os canais**, não só no WhatsApp — então o `seed`, os
+> fallbacks e uma migração de dados nova recebem a mesma redação, em PR da sessão da voz.
+> A alternativa era o mesmo evento falar diferente por canal, que é o que o pacote de voz
+> veio justamente acabar.
+>
+> ⚠️ Aqui o cumprimento voltou, então este corpo **usa `customer_name`** e tem **três**
+> variáveis — ao contrário dos outros quatro. `{{1}}` é o nome, `{{2}}` é o código curto.
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Olá, {{1}}! Não conseguimos confirmar o seu pedido {{2}} desta vez. Nada foi cobrado. Se quiser entender o motivo, é só falar com a gente por aqui.`
@@ -443,7 +457,7 @@ nome**, senão a variável sai em branco e nada falha.
 
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
-| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
+| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24/09 tirou o cumprimento desses quatro) |
 | Código do pedido (curto) | `order_ref_short` | o **corpo** de todos os de pedido |
 | Ref do pedido (inteira) | `order_ref` | **todo botão de URL**, e o corpo do `pedido_compra` |
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
