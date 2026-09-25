@@ -213,6 +213,17 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
 
+### `nota_fiscal_disponivel` — evento `fiscal_note_ready` (NOVO, 25/09/2026 — ainda não submetido)
+A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): sem papel e sem pedir
+e-mail. A API do ManyChat não manda arquivo no WhatsApp, então vai o link. Dentro da janela
+de 24h o código já manda o texto livre com o link da DANFE (`danfe_url`); fora dela só sai
+com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_flow_ns`.
+- Corpo: `A nota fiscal do seu pedido {{1}} está disponível. Toque no botão abaixo para abrir.`
+- Vars: `{{1}}`=`NB-260902-A17`
+- Botão URL: `Ver nota fiscal` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (a página do
+  pedido mostra a nota com o link da DANFE e a chave de acesso). O prefixo fixo é o NOSSO, não
+  o do provedor fiscal: trocar de provedor não custa reaprovação.
+
 ### `pedido_cancelado` — evento `order_cancelled`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado. Se tiver qualquer dúvida, estamos à disposição.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
@@ -366,6 +377,7 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 | `order_dispatched` | `pedido_saiu_entrega` | Utility |
 | `order_delivered` | `pedido_entregue` | Utility |
 | `order_cancelled` | `pedido_cancelado` | Utility |
+| `fiscal_note_ready` | `nota_fiscal_disponivel` | Utility |
 | `preorder_reminder` | `pedido_agendado_lembrete` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |

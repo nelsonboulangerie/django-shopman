@@ -239,7 +239,11 @@ def test_unknown_or_inactive_connection_is_404(settings, intake):
         (event(subscriber_id=True), "subscriber_id"),
         (event(text=[]), "text"),
         (event(event_id=[]), "event_id"),
-        (event(message_type="location"), "message_type"),
+        (event(message_type="sticker"), "message_type"),
+        (event(message_type="location"), "latitude"),
+        (event(message_type="location", latitude="-23.3", longitude="abc"), "longitude"),
+        (event(message_type="location", latitude=-123.0, longitude=-51.1), "latitude"),
+        (event(message_type="location", latitude=True, longitude=-51.1), "latitude"),
     ],
 )
 def test_invalid_payload_never_reaches_service(url, intake, body, field):
@@ -247,6 +251,24 @@ def test_invalid_payload_never_reaches_service(url, intake, body, field):
     assert response.status_code == 400
     assert response.json().get("field", "") == field
     assert intake == []
+
+
+def test_location_pin_arrives_as_marked_text_with_coordinates_in_the_envelope(url, intake):
+    """O pin do WhatsApp: a coordenada é dado do envelope; o texto do disparo não vale."""
+    from shopman.storefront.concierge.contracts import LOCATION_TEXT
+
+    response = post(url, event(message_type="location", text="{{last_text_input}}", latitude="-23,3045", longitude=-51.1696))
+    assert response.status_code == 200
+    [normalized] = intake
+    assert normalized.text == LOCATION_TEXT
+    assert normalized.location == {"latitude": -23.3045, "longitude": -51.1696}
+    envelope = normalized.as_envelope()
+    assert envelope["message_type"] == "location"
+    assert envelope["location"] == {"latitude": -23.3045, "longitude": -51.1696}
+
+    other = post(url, event(message_type="location", latitude=-23.31, longitude=-51.1696))
+    assert other.status_code == 200
+    assert intake[1].payload_hash != normalized.payload_hash
 
 
 def test_content_type_size_depth_and_rate_limits(url, intake, monkeypatch):

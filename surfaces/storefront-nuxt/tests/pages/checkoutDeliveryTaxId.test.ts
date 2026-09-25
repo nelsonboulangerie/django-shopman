@@ -2,14 +2,15 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 
 import CheckoutPage from '~/pages/finalizar.vue'
-import { TAX_ID_INVALID_MESSAGE, TAX_ID_WHY } from '~/presentation/taxId'
+import { PICKUP_TAX_ID_WHY, TAX_ID_INVALID_MESSAGE, TAX_ID_WHY } from '~/presentation/taxId'
 import type { CheckoutProjection } from '~/types/shopman'
 
-// NOTA DA ENTREGA (decisões do dono, 24 e 25/09/2026): toda entrega pede o
+// CPF/CNPJ NA NOTA (decisões do dono, 24 e 25/09/2026): toda entrega pede o
 // CPF/CNPJ no MESMO passo do endereço, com o porquê numa linha. Sem CPF, a
-// entrega não fecha e a retirada fica a um toque. Na próxima entrega o
-// documento já vem no campo, sem pergunta de "guardar", e nunca vai para o
-// rascunho do aparelho.
+// entrega não fecha e a retirada fica a um toque; na retirada o documento é o
+// "CPF na nota?" do balcão, opcional. Na próxima vez o documento já vem no
+// campo, e nunca vai para o rascunho do aparelho. Guardar no cadastro é
+// PERGUNTA, desmarcada, só quando o cadastro ainda não tem documento.
 
 const DRAFT_KEY = 'shopman-checkout-draft'
 
@@ -52,6 +53,7 @@ function projection (overrides: Partial<CheckoutProjection> = {}): CheckoutProje
     closed_weekdays: [],
     prefill_tax_id: '',
     prefill_tax_id_source: '',
+    offer_save_tax_id: false,
     ...overrides
   } as unknown as CheckoutProjection
 }
@@ -111,7 +113,7 @@ describe('checkout: a entrega com nota pede o CPF no passo do endereço', () => 
     page.unmount()
   })
 
-  it('pré-preenche com o CPF da última entrega, sem perguntar se guarda', async () => {
+  it('pré-preenche com o CPF da última entrega; sem a oferta do servidor, não pergunta', async () => {
     const page = await abrirCheckout(projection({ prefill_tax_id: '52998224725', prefill_tax_id_source: 'last_delivery' }))
     expect(page.find<HTMLInputElement>('#checkout-tax-id').element.value).toBe('529.982.247-25')
     const block = page.find('[data-checkout-tax-id]')
@@ -144,6 +146,58 @@ describe('checkout: a entrega com nota pede o CPF no passo do endereço', () => 
     const saved = JSON.parse(store.get(DRAFT_KEY) || '{}')
     expect(saved.state?.fiscal_tax_id || '').toBe('')
     expect(JSON.stringify(saved)).not.toContain('52998224725')
+    page.unmount()
+  })
+
+  it('cadastro sem documento: pergunta se guarda, desmarcada, só com um documento certo', async () => {
+    const page = await abrirCheckout(projection({ offer_save_tax_id: true }))
+    expect(page.find('[data-checkout-save-tax-id]').exists()).toBe(false)
+    await page.find('#checkout-tax-id').setValue('52998224700')
+    expect(page.find('[data-checkout-save-tax-id]').exists()).toBe(false)
+    await page.find('#checkout-tax-id').setValue('52998224725')
+    const pergunta = page.find('[data-checkout-save-tax-id]')
+    expect(pergunta.text()).toContain('Guardar no seu cadastro?')
+    expect(pergunta.find('[role="switch"]').attributes('aria-checked')).toBe('false')
+    page.unmount()
+  })
+
+  it('documento diferente do cadastro vale só para esta nota, sem oferta de troca', async () => {
+    const page = await abrirCheckout(projection({ prefill_tax_id: '52998224725', prefill_tax_id_source: 'document' }))
+    await page.find('#checkout-tax-id').setValue('11144477735')
+    expect(page.find('[data-checkout-tax-id-prefill]').text()).toBe('Vale só para esta nota. O documento do seu cadastro continua o mesmo.')
+    expect(page.find('[data-checkout-save-tax-id]').exists()).toBe(false)
+    page.unmount()
+  })
+})
+
+describe('checkout: na retirada, CPF na nota é o do balcão, opcional', () => {
+  beforeEach(() => {
+    store.set(DRAFT_KEY, JSON.stringify({
+      version: 2,
+      context: 'ctx-entrega',
+      attemptKey: null,
+      state: { fulfillment_type: 'pickup' },
+      activeStep: 'payment',
+      savedAt: Date.now()
+    }))
+  })
+
+  it('vem desligado, e ligar abre o campo já com o documento conhecido', async () => {
+    const page = await abrirCheckout(projection({ prefill_tax_id: '52998224725', prefill_tax_id_source: 'document' }))
+    const card = page.find('[data-checkout-pickup-tax-id]')
+    expect(card.text()).toContain('CPF ou CNPJ na nota?')
+    expect(card.text()).toContain(PICKUP_TAX_ID_WHY)
+    expect(page.find('#checkout-pickup-tax-id').exists()).toBe(false)
+    await page.find('#checkout-pickup-tax-id-toggle').trigger('click')
+    const input = page.find<HTMLInputElement>('#checkout-pickup-tax-id')
+    expect(input.element.value).toBe('529.982.247-25')
+    expect(page.find('[data-checkout-tax-id-prefill]').text()).toContain('Do seu cadastro')
+    page.unmount()
+  })
+
+  it('não mostra o campo da entrega', async () => {
+    const page = await abrirCheckout(projection())
+    expect(page.find('[data-checkout-tax-id]').exists()).toBe(false)
     page.unmount()
   })
 })

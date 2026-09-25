@@ -816,6 +816,16 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # preparo — no despacho o `_eta_at` é a hora de CHEGADA, e a frase é outra.
     context["eta_note"] = _eta_note(order)
 
+    # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
+    # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
+    # carrega ``?t=``), e sai vazio enquanto não há nota.
+    order_data = order.data or {}
+    context["danfe_url"] = str(order_data.get("nfce_danfe_url") or order_data.get("nfce_qrcode_url") or "")
+    focus_environment = str((getattr(settings, "SHOPMAN_FOCUS_NFE", {}) or {}).get("environment", "homologacao"))
+    context["fiscal_test_note"] = (
+        "" if "prod" in focus_environment.lower() else "\n(Nota de teste, sem valor fiscal.)"
+    )
+
     return context
 
 

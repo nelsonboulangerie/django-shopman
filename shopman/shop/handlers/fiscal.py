@@ -24,6 +24,9 @@ from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 
 logger = logging.getLogger(__name__)
 
+#: O aviso ao cliente da loja online de que a NFC-e dele está autorizada.
+FISCAL_NOTE_READY_TEMPLATE = "fiscal_note_ready"
+
 # Códigos que retry pode curar: transporte fora do ar, 5xx, rate limit e
 # "processando_autorizacao" (async da SEFAZ). Qualquer 4xx/payload é terminal.
 _TRANSIENT_PREFIXES = ("focus_nfe_http_5",)
@@ -345,6 +348,35 @@ class NFCeEmitHandler:
             fiscal.cancel(order)
             return
         self._send_receipt_email(order)
+        self._notify_online_customer(order)
+
+    @staticmethod
+    def _notify_online_customer(order) -> None:
+        """Pedido da loja online: a nota vai ao cliente pelo aviso de pedido.
+
+        Decisão do dono (25/09/2026): a loja online não imprime nem pede e-mail;
+        a nota chega DIGITAL — na página do pedido e numa mensagem com o link da
+        DANFE, pela cadeia de avisos do pedido (WhatsApp primeiro). Só o canal da
+        loja: o balcão entrega a nota no papel ou no e-mail que o operador
+        anotou, e o marketplace não é contato nosso. A mensagem é a da nota
+        AUTORIZADA, e não um pedaço do aviso de despacho: na entrega a nota nasce
+        no despacho, depois de o aviso já ter saído.
+
+        Best-effort, como o e-mail: a nota já existe, e o aviso não pode derrubar
+        a directive de emissão. ``notification.send`` é deduplicado por pedido e
+        evento, então o retry da directive não repete a mensagem.
+        """
+        from django.conf import settings
+
+        storefront_channel = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+        if (order.channel_ref or "") != storefront_channel:
+            return
+        try:
+            from shopman.shop.services import notification
+
+            notification.send(order, FISCAL_NOTE_READY_TEMPLATE)
+        except Exception:
+            logger.warning("fiscal.notify: aviso da nota não agendado order=%s", order.ref, exc_info=True)
 
     def _send_receipt_email(self, order) -> None:
         """Nota autorizada + cliente pediu e-mail → o Focus envia (DANFE + XML).

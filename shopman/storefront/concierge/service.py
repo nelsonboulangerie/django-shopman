@@ -153,6 +153,12 @@ class IntakeResult:
     reason: str  # queued | observed | duplicate | handoff | disabled | not_allowed | empty
 
 
+#: Entradas que o turno conversa. A localização entra como texto marcado
+#: (``contracts.LOCATION_TEXT``) e a coordenada fica no envelope, para a
+#: ferramenta de entrega (``tools._shared_location``).
+CONVERSATIONAL_MESSAGE_TYPES = frozenset({"text", "location"})
+
+
 def _external_id(external_id: str) -> str:
     # O digest cabe no índice, sem truncar a identidade do fornecedor.
     # O envelope conserva o valor integral para auditoria e conflito.
@@ -907,7 +913,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
             )
         assert_turn_authority(conversation, for_mutation=False)
         if all(
-            (message.envelope or {}).get("message_type", "text") != "text"
+            (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
             for message in inbound
         ):
             outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"))

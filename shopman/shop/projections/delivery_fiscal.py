@@ -1,12 +1,13 @@
-"""O CPF/CNPJ que já vem preenchido na nota da próxima entrega.
+"""O CPF/CNPJ que já vem preenchido na nota do próximo pedido.
 
 A regra de exigência mora em ``shop/services/delivery_fiscal_identity`` (a mesma
 da trava do commit e da emissão). Aqui fica só o lado de LEITURA que a tela
 consome: que documento a casa já conhece para pré-preencher o campo.
 
-Decisão do dono (25/09/2026): entrega pede CPF sempre, então perguntar "guardar
-para as próximas entregas?" era ruído. Na próxima entrega o CPF vem preenchido
-e vale (editável), sem pergunta e sem gravar nada. A ordem da procura:
+Decisões do dono (25/09/2026): na próxima vez o CPF vem preenchido e vale
+(editável) — na entrega, e na retirada quando a pessoa pede CPF na nota. Ler não
+grava nada; gravar no cadastro é outra coisa, só com o "sim" da pessoa
+(``shop/services/customer_tax_id``). A ordem da procura:
 
 1. ``customer.document`` — o documento do cadastro, quando existe;
 2. senão, o ``fiscal.tax_id`` do último pedido de ENTREGA do mesmo cliente.

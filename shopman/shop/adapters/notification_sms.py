@@ -36,6 +36,7 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "order_ready_delivery": "Pedido {order_ref} pronto! Sera enviado em breve.",
     "order_dispatched": "Pedido {order_ref} saiu para entrega! Quando receber, confirme aqui: {tracking_url}",
     "order_delivered": "Pedido {order_ref} entregue. Obrigado!",
+    "fiscal_note_ready": "Nota fiscal do pedido {order_ref}: {danfe_url}{fiscal_test_note}",
     "order_cancelled": "Pedido {order_ref} cancelado.{reason_note}\nVeja os detalhes: {tracking_url}",
     "order_rejected": "Pedido {order_ref} nao foi confirmado pelo estabelecimento.{reason_note}\nVeja os detalhes: {tracking_url}",
     "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Avisamos a cada passo: {tracking_url}",

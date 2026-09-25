@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 import secrets
 from collections import Counter
@@ -23,6 +24,7 @@ from django.conf import settings
 from django.utils.module_loading import import_string
 
 from .contracts import (
+    LOCATION_TEXT,
     ChannelCapabilities,
     ConversationAdapter,
     HandoffOutcome,
@@ -358,8 +360,15 @@ class ManyChatWhatsAppAdapter:
             raise IngressRejected(400, "invalid_event_id", "Identidade de evento inválida", field="event_id")
 
         message_type = data.get("message_type", "text")
-        if message_type not in ("text", "audio", "image", "video", "file"):
+        if message_type not in ("text", "audio", "image", "video", "file", "location"):
             raise IngressRejected(400, "invalid_message_type", "Tipo de mensagem inválido", field="message_type")
+        location = None
+        if message_type == "location":
+            # O pin do WhatsApp: a coordenada vale como dado, nunca como texto.
+            # O texto do disparo é descartado (o flow pode mandar a última
+            # entrada de TEXTO, que não é esta mensagem).
+            location = self._location(data)
+            text = LOCATION_TEXT
         correlation_ref = data.get("correlation_ref", "")
         if not isinstance(correlation_ref, str) or len(correlation_ref) > 256:
             raise IngressRejected(400, "invalid_metadata", "Metadado inválido", field="correlation_ref")
@@ -391,6 +400,8 @@ class ManyChatWhatsAppAdapter:
             "message_type": str(message_type),
             "text": text,
         }
+        if location:
+            semantic_payload["location"] = location
         return InboundEvent(
             scope=scope,
             text=text,
@@ -410,7 +421,25 @@ class ManyChatWhatsAppAdapter:
                 ).encode()
             ).hexdigest(),
             window_evidence=evidence,
+            location=location,
         )
+
+    @staticmethod
+    def _location(data: Mapping[str, Any]) -> dict[str, float]:
+        """``latitude``/``longitude`` do pin, em número ou texto numérico."""
+        coords: dict[str, float] = {}
+        for name, bound in (("latitude", 90.0), ("longitude", 180.0)):
+            raw = data.get(name)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                raise IngressRejected(400, "invalid_location", "Localização inválida", field=name)
+            try:
+                value = float(str(raw).strip().replace(",", "."))
+            except ValueError as exc:
+                raise IngressRejected(400, "invalid_location", "Localização inválida", field=name) from exc
+            if not math.isfinite(value) or abs(value) > bound:
+                raise IngressRejected(400, "invalid_location", "Localização inválida", field=name)
+            coords[name] = value
+        return coords
 
     def window_evidence(self, envelope: Mapping[str, Any], now: datetime) -> WindowEvidence | None:
         config = self._window_config()

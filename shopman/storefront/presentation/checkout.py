@@ -23,6 +23,7 @@ from shopman.shop.projections import checkout as checkout_projection
 from shopman.shop.projections import customer_context
 from shopman.shop.projections.channel_policy import ChannelPolicyResolution, resolve_channel_policy
 from shopman.shop.projections.copy import build_copy
+from shopman.shop.projections.delivery_fiscal import FROM_DOCUMENT
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import (
     Action,
@@ -152,13 +153,17 @@ class CheckoutProjection:
     # partir desta tupla, chave `live` não deixa os números nem no HTML.
     stripe_test_cards: tuple[StripeTestCardProjection, ...] = ()
 
-    # NOTA DA ENTREGA. Toda entrega pede o CPF/CNPJ na tela (decisão do dono,
-    # 25/09/2026). ``prefill_tax_id``: o documento que já vem no campo — o do
-    # cadastro ou, sem ele, o da última entrega da pessoa (vazio em sessão que
-    # só conhece o número). ``prefill_tax_id_source``: de onde veio
-    # (``document`` | ``last_delivery``), para a tela dizer isso ao lado.
+    # CPF/CNPJ NA NOTA. Toda entrega pede o documento; na retirada é o "CPF na
+    # nota?" do balcão, opcional (decisões do dono, 24 e 25/09/2026).
+    # ``prefill_tax_id``: o documento que já vem no campo — o do cadastro ou,
+    # sem ele, o da última entrega da pessoa (vazio em sessão que só conhece o
+    # número). ``prefill_tax_id_source``: de onde veio (``document`` |
+    # ``last_delivery``), para a tela dizer isso ao lado. ``offer_save_tax_id``:
+    # a pessoa é conhecida e o cadastro dela ainda NÃO tem documento, então a
+    # tela pode PERGUNTAR "guardar no seu cadastro?" (desmarcada).
     prefill_tax_id: str = ""
     prefill_tax_id_source: str = ""
+    offer_save_tax_id: bool = False
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -218,10 +223,8 @@ def build_checkout(
 
     is_authenticated = customer_info is not None
     requires_authentication = _requires_authentication(channel_ref)
-    prefill = _delivery_tax_id_prefill(
-        customer_info=customer_info,
-        reduced=knows_only_the_number(request) if customer_info else True,
-    )
+    reduced_identity = knows_only_the_number(request) if customer_info else True
+    prefill = _delivery_tax_id_prefill(customer_info=customer_info, reduced=reduced_identity)
 
     return CheckoutProjection(
         copy=_checkout_copy(),
@@ -262,6 +265,7 @@ def build_checkout(
         default_ddd=get_default_ddd(),
         prefill_tax_id=prefill.tax_id,
         prefill_tax_id_source=prefill.source,
+        offer_save_tax_id=not reduced_identity and prefill.source != FROM_DOCUMENT,
     )
 
 

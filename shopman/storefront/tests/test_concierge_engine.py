@@ -635,24 +635,61 @@ def test_set_fulfillment_validates_the_slot_like_the_site(ctx):
     assert open_slots["ok"] and open_slots["pickup_slots"]
 
 
+def _geocoded(**parts):
+    """O resultado do Google para um endereço: as partes que ele separou + a coordenada."""
+    from shopman.shop.services.geocoding import ReverseGeocodeResult
+
+    values = {
+        "formatted_address": "", "route": "", "street_number": "", "neighborhood": "", "city": "",
+        "state": "", "state_code": "", "postal_code": "", "country": "Brasil", "country_code": "BR",
+        "latitude": -23.31, "longitude": -51.16, "place_id": "",
+    }
+    values.update(parts)
+    return ReverseGeocodeResult(**values)
+
+
+FULL_TEXT = {
+    "route": "Rua das Flores", "street_number": "10", "neighborhood": "Centro", "city": "Londrina",
+    "state": "Paraná", "state_code": "PR", "postal_code": "86010-000",
+}
+
+
+def _geocode_text(monkeypatch, **parts):
+    monkeypatch.setattr(
+        "shopman.shop.services.geocoding.forward_geocode_structured",
+        lambda address: _geocoded(**parts) if parts else None,
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.geocoding.forward_geocode", lambda address: (-23.31, -51.16) if parts else None
+    )
+
+
 def test_set_fulfillment_refuses_delivery_without_coordinates(ctx, monkeypatch):
-    """Sem coordenada não há taxa honesta: falha fechado, aponta retirada ou o site."""
+    """Sem coordenada não há taxa honesta: falha fechado e pede o que resolve (nunca o site)."""
     tools.set_item(ctx, SKU, 1)
-    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode", lambda address: None)
+    _geocode_text(monkeypatch)
     refused = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10")
     assert refused["ok"] is False and refused["error"] == "address_not_located"
+    assert "localização" in refused["message"] and "send_web_link" not in refused["message"]
     assert tools.view_cart(ctx)["fulfillment"]["type"] == ""
 
 
 def test_set_fulfillment_delivery_stores_the_located_address(ctx, monkeypatch):
     tools.set_item(ctx, SKU, 1)
-    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode", lambda address: (-23.31, -51.16))
+    _geocode_text(monkeypatch, **FULL_TEXT)
     result = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro")
     assert result["ok"], result
     assert result["fulfillment"]["type"] == "delivery"
-    assert result["fulfillment"]["address"] == "Rua das Flores, 10, Centro"
+    assert result["fulfillment"]["address"] == "Rua das Flores, 10 - Centro, Londrina - PR, CEP 86010-000"
     session = Session.objects.get(session_key=ctx.conversation.session_key)
-    assert session.data["delivery_address_structured"]["latitude"] == -23.31
+    structured = session.data["delivery_address_structured"]
+    assert structured["latitude"] == -23.31
+    assert (structured["route"], structured["street_number"], structured["postal_code"]) == (
+        "Rua das Flores", "10", "86010-000",
+    )
+    # Tudo o que a nota pede está aí; falta só perguntar o complemento.
+    assert result["address_missing"] == []
+    assert "complemento" in tools.render_result("set_fulfillment", result)
 
 
 def _delivery_note_expected(monkeypatch, settings):
@@ -664,7 +701,7 @@ def _delivery_note_expected(monkeypatch, settings):
     settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = (
         "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment"
     )
-    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode", lambda address: (-23.31, -51.16))
+    _geocode_text(monkeypatch, route="Rua das Flores", street_number="10", neighborhood="Centro")
 
 
 def test_review_order_asks_for_the_tax_id_when_the_delivery_has_a_note(ctx, monkeypatch, settings):
@@ -691,6 +728,297 @@ def test_set_fulfillment_records_the_tax_id_and_refuses_a_wrong_one(ctx, monkeyp
     # O CPF chegou; o endereço dito na conversa não tem as partes que a nota exige.
     assert "fiscal_tax_id" not in review["missing"]
     assert "delivery_address_details" in review["missing"]
+    rendered = tools.render_result("review_order", review)
+    assert "a cidade, o estado e o CEP" in rendered and "site" not in rendered
+
+
+# ── Endereço completo na conversa (decisão do dono, 25/09/2026) ─────────
+
+
+def _share_location(ctx, latitude=-23.3045, longitude=-51.1696):
+    """O cliente manda o pin: a entrada chega pelo transporte com a coordenada no envelope."""
+    from dataclasses import replace
+
+    from shopman.storefront.concierge.contracts import LOCATION_TEXT
+
+    event_id = f"pin-{ConversationMessage.objects.count()}"
+    event = replace(
+        _event(text=LOCATION_TEXT, event_id=event_id, message_type="location"),
+        location={"latitude": latitude, "longitude": longitude},
+    )
+    message = ConversationMessage.objects.create(
+        conversation=ctx.conversation,
+        binding=_binding(ctx.conversation),
+        role=ConversationMessage.Role.USER,
+        kind=ConversationMessage.Kind.INBOUND,
+        text=LOCATION_TEXT,
+        content=[{"type": "text", "text": LOCATION_TEXT}],
+        external_id=service._external_id(event_id),
+        envelope={**event.as_envelope(), "input_assurance": "provider_event"},
+    )
+    # O turno que lê o pin é o que o reivindicou: a ferramenta enxerga até ele.
+    _reclaim(ctx)
+    return message
+
+
+def _reverse(monkeypatch, **parts):
+    calls = []
+
+    def reverse(lat, lng):
+        calls.append((lat, lng))
+        return _geocoded(latitude=lat + 0.0001, longitude=lng, **parts)
+
+    monkeypatch.setattr("shopman.shop.services.geocoding.reverse_geocode", reverse)
+    return calls
+
+
+PIN_PARTS = {
+    "route": "Avenida Higienópolis", "street_number": "1100", "neighborhood": "Centro", "city": "Londrina",
+    "state": "Paraná", "state_code": "PR", "postal_code": "86020-080",
+}
+
+
+def test_pin_with_complete_reverse_asks_the_number_and_keeps_the_pin(ctx, monkeypatch, settings):
+    """O reverso dá rua, bairro, cidade, UF e CEP; o NÚMERO dele é chute do Google e não entra."""
+    _delivery_note_expected(monkeypatch, settings)
+    calls = _reverse(monkeypatch, **PIN_PARTS)
+    tools.set_item(ctx, SKU, 1)
+    _share_location(ctx)
+    result = tools.set_fulfillment(
+        ctx, "delivery", _tomorrow(), "", "", "529.982.247-25", use_shared_location=True,
+    )
+    assert result["ok"], result
+    assert calls == [(-23.3045, -51.1696)]
+    structured = Session.objects.get(session_key=ctx.conversation.session_key).data["delivery_address_structured"]
+    assert "street_number" not in structured
+    assert (structured["latitude"], structured["longitude"]) == (-23.3045, -51.1696)
+    assert structured["coordinates_source"] == "pin"
+    assert result["address_missing"] == ["o número (ou S/N)"]
+    rendered = tools.render_result("set_fulfillment", result)
+    assert "Pela sua localização: Avenida Higienópolis - Centro, Londrina - PR, CEP 86020-080." in rendered
+    assert "me diga o número (ou S/N)" in rendered
+    review = tools.review_order(ctx, "pix")
+    assert "delivery_address_details" in review["missing"] and "quote_token" not in review
+
+    # A resposta seguinte traz só as partes novas; o pin continua sendo o endereço.
+    numbered = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "", "", street_number="1100")
+    assert numbered["ok"] and numbered["address_missing"] == []
+    assert "complemento" in numbered["address_question"]
+    done = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "", "", complement="apto 12")
+    assert done["ok"] and done["address_question"] == ""
+    structured = Session.objects.get(session_key=ctx.conversation.session_key).data["delivery_address_structured"]
+    assert structured["formatted_address"] == (
+        "Avenida Higienópolis, 1100 - apto 12 - Centro, Londrina - PR, CEP 86020-080"
+    )
+    assert (structured["latitude"], structured["longitude"]) == (-23.3045, -51.1696)
+    assert len(calls) == 1
+
+
+def test_pin_without_reverse_still_locates_and_asks_every_part(ctx, monkeypatch):
+    from shopman.shop.services.geocoding import GeocodingError
+
+    def down(lat, lng):
+        raise GeocodingError("quota")
+
+    monkeypatch.setattr("shopman.shop.services.geocoding.reverse_geocode", down)
+    tools.set_item(ctx, SKU, 1)
+    _share_location(ctx)
+    result = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "", "", use_shared_location=True)
+    assert result["ok"], result
+    assert "a rua" in result["address_question"] and "o CEP" in result["address_question"]
+
+
+def test_use_shared_location_without_a_pin_asks_for_it(ctx):
+    tools.set_item(ctx, SKU, 1)
+    refused = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "", "", use_shared_location=True)
+    assert refused["ok"] is False and refused["error"] == "no_shared_location"
+    assert "Localização" in tools.render_result("set_fulfillment", refused)
+
+
+def test_incomplete_text_asks_what_is_missing_and_the_answers_complete_it(ctx, monkeypatch):
+    """Texto sem número e sem CEP: pergunta os dois; as respostas entram por cima."""
+    _geocode_text(monkeypatch, route="Rua das Flores", neighborhood="Centro", city="Londrina", state_code="PR")
+    tools.set_item(ctx, SKU, 1)
+    first = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "rua das flores centro")
+    assert first["ok"], first
+    assert first["address_missing"] == ["o número (ou S/N)", "o CEP"]
+    assert "Para a entrega, me diga o número (ou S/N) e o CEP." in tools.render_result("set_fulfillment", first)
+    assert "delivery_address_details" in tools.review_order(ctx, "pix")["missing"]
+
+    answered = tools.set_fulfillment(
+        ctx, "delivery", _tomorrow(), "", "", "",
+        street_number="s/n", postal_code="86010000", complement="sem complemento",
+    )
+    assert answered["ok"] and answered["address_question"] == ""
+    structured = Session.objects.get(session_key=ctx.conversation.session_key).data["delivery_address_structured"]
+    assert (structured["street_number"], structured["postal_code"], structured["complement"]) == (
+        "S/N", "86010-000", "",
+    )
+    assert tools.review_order(ctx, "pix")["ready"]
+
+
+def test_complete_address_passes_the_delivery_door_of_1118(
+    ctx, monkeypatch, settings, django_capture_on_commit_callbacks,
+):
+    """Endereço fechado na conversa + CPF: a mesma régua da porta (commit) deixa passar."""
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    _delivery_note_expected(monkeypatch, settings)
+    _reverse(monkeypatch, **PIN_PARTS)
+    tools.set_item(ctx, SKU, 1)
+    _share_location(ctx)
+    assert tools.set_fulfillment(
+        ctx, "delivery", _tomorrow(), "", "", "529.982.247-25", use_shared_location=True,
+    )["ok"]
+    assert tools.set_fulfillment(
+        ctx, "delivery", _tomorrow(), "", "", "", street_number="1100", complement="sem complemento",
+    )["ok"]
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert identity.recipient_gaps(tax_id="52998224725", address=session.data["delivery_address_structured"]) == []
+    review = tools.review_order(ctx, "pix")
+    assert review["ready"], review
+    _accept_review(ctx, review)
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = tools.place_order(ctx, review["quote_token"], "pix", "")
+    assert placed["ok"], placed
+    order = Order.objects.get(ref=placed["order_ref"])
+    assert order.data["delivery_address_structured"]["street_number"] == "1100"
+    assert order.data["delivery_address"] == "Avenida Higienópolis, 1100 - Centro, Londrina - PR, CEP 86020-080"
+
+
+# ── Endereço do cadastro oferecido antes de perguntar (decisão do dono, 25/09/2026) ──
+
+
+def _saved_address(customer, **overrides):
+    from shopman.guestman.models import CustomerAddress
+
+    values = {
+        "label": "home", "route": "Rua Pará", "street_number": "120", "neighborhood": "Centro",
+        "city": "Londrina", "state": "Paraná", "state_code": "PR", "postal_code": "86010-100",
+        "formatted_address": "Rua Pará, 120 - Centro, Londrina - PR, 86010-100",
+        "latitude": Decimal("-23.3101"), "longitude": Decimal("-51.1622"), "is_default": True,
+    }
+    values.update(overrides)
+    return CustomerAddress.objects.create(customer=customer, **values)
+
+
+def test_delivery_offers_the_saved_address_before_asking_anything(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)  # nenhuma geocodificação: o cadastro já tem a coordenada
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    offer = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert offer["ok"] and offer["code"] == "saved_address_offer"
+    assert tools.render_result("set_fulfillment", offer) == (
+        "Entregamos no endereço do seu cadastro, Rua Pará, 120 - Centro?"
+    )
+    # A oferta não grava nada: a resposta do cliente decide.
+    assert tools.view_cart(ctx)["fulfillment"]["type"] == ""
+
+
+def test_accepted_saved_address_passes_the_delivery_door(
+    ctx, customer, monkeypatch, settings, django_capture_on_commit_callbacks,
+):
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    _delivery_note_expected(monkeypatch, settings)
+    _geocode_text(monkeypatch)
+    saved = _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    assert tools.set_fulfillment(ctx, "delivery", _tomorrow())["code"] == "saved_address_offer"
+    accepted = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "", "529.982.247-25", use_saved_address=True)
+    assert accepted["ok"], accepted
+    assert accepted["address_missing"] == [] and accepted["address_question"] == ""
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    structured = session.data["delivery_address_structured"]
+    assert (structured["latitude"], structured["longitude"]) == (-23.3101, -51.1622)
+    assert structured["coordinates_source"] == "saved"
+    assert session.data["saved_address_id"] == saved.pk
+    assert identity.recipient_gaps(tax_id="52998224725", address=structured) == []
+    review = tools.review_order(ctx, "pix")
+    assert review["ready"], review
+    _accept_review(ctx, review)
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = tools.place_order(ctx, review["quote_token"], "pix", "")
+    assert placed["ok"], placed
+    order = Order.objects.get(ref=placed["order_ref"])
+    assert order.data["delivery_address"] == saved.formatted_address
+    # Usou o cadastrado: nenhum endereço duplicado nasce no cadastro.
+    assert customer.addresses.count() == 1
+
+
+def test_saved_address_without_postal_code_is_asked_by_the_same_rule(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)
+    _saved_address(customer, postal_code="")
+    tools.set_item(ctx, SKU, 1)
+    accepted = tools.set_fulfillment(ctx, "delivery", _tomorrow(), use_saved_address=True)
+    assert accepted["ok"] and accepted["address_missing"] == ["o CEP"]
+    assert "Para a entrega, me diga o CEP." in tools.render_result("set_fulfillment", accepted)
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert "delivery_address_details" in tools.review_order(ctx, "pix")["missing"]
+    completed = tools.set_fulfillment(ctx, "delivery", _tomorrow(), postal_code="86010100")
+    assert completed["ok"] and completed["address_missing"] == []
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    # Completado na conversa, o pedido leva o endereço novo (o checkout o cadastra).
+    assert session.data.get("saved_address_id") is None
+    assert session.data["delivery_address_structured"]["postal_code"] == "86010-100"
+
+
+def test_refused_saved_address_falls_back_to_pin_or_text(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch, route="Rua das Flores", neighborhood="Centro", city="Londrina", state_code="PR")
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    assert tools.set_fulfillment(ctx, "delivery", _tomorrow())["code"] == "saved_address_offer"
+    # "Não, é em outro lugar": o texto segue o fluxo da conversa e pergunta o que falta.
+    other = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "rua das flores centro")
+    assert other["ok"], other
+    assert "Para a entrega, me diga o número (ou S/N) e o CEP." in tools.render_result("set_fulfillment", other)
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert session.data["delivery_address_structured"]["route"] == "Rua das Flores"
+    assert session.data.get("saved_address_id") is None
+
+
+def test_without_saved_address_the_conversation_asks_for_pin_or_text(ctx):
+    tools.set_item(ctx, SKU, 1)
+    asked = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert asked["ok"] is False and "delivery_address" in asked["errors"]
+    assert "localização pelo WhatsApp" in tools.render_result("set_fulfillment", asked)
+    refused = tools.set_fulfillment(ctx, "delivery", _tomorrow(), use_saved_address=True)
+    assert refused["ok"] is False and refused["error"] == "no_saved_address"
+
+
+def test_two_saved_addresses_offer_the_default_and_let_the_customer_pick(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)
+    _saved_address(customer, label="work", route="Avenida Paraná", street_number="500", is_default=False,
+                   formatted_address="Avenida Paraná, 500 - Centro, Londrina - PR")
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    offer = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert offer["saved_address_labels"] == ["Casa", "Trabalho"]
+    assert tools.render_result("set_fulfillment", offer) == (
+        "Entregamos no endereço do seu cadastro, Rua Pará, 120 - Centro? "
+        "Se preferir outro endereço cadastrado, é só dizer qual."
+    )
+    listed = tools.set_fulfillment(ctx, "delivery", _tomorrow(), list_saved_addresses=True)
+    assert tools.render_result("set_fulfillment", listed) == (
+        "Seus endereços cadastrados: Casa: Rua Pará, 120 - Centro; Trabalho: Avenida Paraná, 500 - Centro. "
+        "Em qual entregamos?"
+    )
+    picked = tools.set_fulfillment(ctx, "delivery", _tomorrow(), saved_address_label="trabalho")
+    assert picked["ok"], picked
+    assert picked["fulfillment"]["address"].startswith("Avenida Paraná, 500 - Centro")
+
+
+def test_saved_addresses_of_another_customer_never_show_up(ctx, monkeypatch):
+    from shopman.guestman.models import Customer
+    from shopman.guestman.services import customer as customer_service
+
+    stranger = customer_service.create(
+        ref=Customer.generate_ref(), first_name="Bia", phone="+5543999990000", source_system="test",
+    )
+    _saved_address(stranger)
+    tools.set_item(ctx, SKU, 1)
+    asked = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert asked["ok"] is False and "Rua Pará" not in tools.render_result("set_fulfillment", asked)
 
 
 def test_order_status_reads_the_customer_orders_through_the_projection(ctx, django_capture_on_commit_callbacks):
@@ -1387,6 +1715,34 @@ def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, ou
     from shopman.backstage.models import OperatorAlert
 
     assert OperatorAlert.objects.filter(type="concierge_unavailable").count() == 1
+
+
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+def test_run_turn_takes_the_location_pin_as_a_conversation_turn(ctx, outbox, monkeypatch):
+    """O pin não é "mídia não suportada": o turno roda e a entrega pergunta só o número."""
+    from dataclasses import replace
+
+    from shopman.storefront.concierge.contracts import LOCATION_TEXT
+
+    _reverse(monkeypatch, **PIN_PARTS)
+    tools.set_item(ctx, SKU, 1)
+    conversation = ctx.conversation
+    event = replace(
+        _event(text=LOCATION_TEXT, event_id="pin-1", subject=_binding(conversation).subject, message_type="location"),
+        location={"latitude": -23.3045, "longitude": -51.1696},
+    )
+    assert service.receive_inbound(event).queued
+    client = ScriptedClient(
+        _response(
+            _tool("set_fulfillment", {"fulfillment_type": "delivery", "delivery_date": _tomorrow(), "use_shared_location": True}),
+            stop_reason="tool_use",
+        ),
+        _response(_text("ok"), stop_reason="end_turn"),
+    )
+    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=client)
+    assert result.fallback == "", result
+    assert any("Pela sua localização: Avenida Higienópolis" in text for text in outbox.sent), outbox.sent
+    assert any("me diga o número (ou S/N)" in text for text in outbox.sent)
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
