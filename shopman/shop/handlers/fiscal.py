@@ -2,6 +2,8 @@
 Fiscal handlers — emissão e cancelamento de NFC-e.
 
 Tratamento de erro de produção:
+- Rejeição da SEFAZ por GTIN → reemite na hora com "SEM GTIN", marca o
+  produto e alerta (``_reemit_without_rejected_gtin``): o GTIN nunca trava a venda.
 - Falha de transporte/5xx/processando → ``DirectiveTransientError`` (retry com
   backoff); rejeição/payload/4xx → ``DirectiveTerminalError`` (visível na fila).
 - Retry NUNCA re-POSTa cego: consulta ``query_status`` primeiro. Um timeout
@@ -12,6 +14,7 @@ Tratamento de erro de produção:
 from __future__ import annotations
 
 import logging
+import re
 
 from shopman.fiscalman.contracts import FiscalBackend, FiscalDocumentResult
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
@@ -31,11 +34,43 @@ _TRANSIENT_CODES = {
     "focus_nfe_processing",
 }
 _REFERENCE_CONFLICT_CODES = {"focus_nfe_http_422"}
+# A SEFAZ recusou o GTIN e a nota foi reemitida "SEM GTIN" (rótulo em
+# ``backstage.models.alerts.OperatorAlert.TYPE_CHOICES``).
+GTIN_REJECTED_ALERT_TYPE = "fiscal_gtin_rejected"
 
 
 def _is_transient(error_code: str | None) -> bool:
     code = str(error_code or "")
     return code in _TRANSIENT_CODES or code.startswith(_TRANSIENT_PREFIXES)
+
+
+# A SEFAZ aponta o item pelo número dele na nota: "[nItem:3]" / "[nItem: 3]".
+_ITEM_NUMBER = re.compile(r"nItem\s*:\s*(\d+)", re.IGNORECASE)
+
+
+def _is_delivery_fee_line(item: dict) -> bool:
+    """A taxa de entrega não é item da nota (vira frete) e não conta no nItem.
+
+    Mesma regra do adapter (``fiscal_focusnfe._is_delivery_fee_item``), que
+    numera só a mercadoria. Se as duas divergirem, o item apontado não leva
+    GTIN e a reemissão cai no caminho seguro: tira o GTIN de todos.
+    """
+    meta = item.get("meta") or {}
+    return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
+
+
+def _items_with_rejected_gtin(items: list[dict], sefaz_message: str) -> list[dict]:
+    """Itens cujo GTIN sai da nota: o apontado pela SEFAZ, ou todos que o levam."""
+    with_gtin = [item for item in items if str(item.get("gtin") or "").strip()]
+    match = _ITEM_NUMBER.search(sefaz_message)
+    if match:
+        merchandise = [item for item in items if not _is_delivery_fee_line(item)]
+        number = int(match.group(1))
+        if 1 <= number <= len(merchandise):
+            pointed = merchandise[number - 1]
+            if str(pointed.get("gtin") or "").strip():
+                return [pointed]
+    return with_gtin
 
 
 class NFCeEmitHandler:
@@ -129,13 +164,8 @@ class NFCeEmitHandler:
             if self._adopt_existing(order, order_ref):
                 return
 
-        result = self.backend.emit(
-            reference=order_ref, items=payload["items"],
-            customer=payload.get("customer"), payment=payload["payment"],
-            additional_info=payload.get("additional_info"),
-            delivery=payload.get("delivery"),
-            intermediary=payload.get("intermediary"),
-        )
+        result = self._emit(order_ref, payload)
+        result = self._reemit_without_rejected_gtin(message, order_ref, payload, result)
 
         if result.success:
             self._record(order, result)
@@ -164,6 +194,99 @@ class NFCeEmitHandler:
                 context={"order_ref": order_ref, "error_code": result.error_code},
             )
         raise DirectiveTerminalError(f"NFC-e emission failed: {result.error_message}")
+
+    def _emit(self, order_ref: str, payload: dict) -> FiscalDocumentResult:
+        return self.backend.emit(
+            reference=order_ref, items=payload["items"],
+            customer=payload.get("customer"), payment=payload["payment"],
+            additional_info=payload.get("additional_info"),
+            delivery=payload.get("delivery"),
+            intermediary=payload.get("intermediary"),
+        )
+
+    def _reemit_without_rejected_gtin(
+        self, message: Directive, order_ref: str, payload: dict, result: FiscalDocumentResult,
+    ) -> FiscalDocumentResult:
+        """SEFAZ recusou o GTIN → a mesma nota sai de novo com "SEM GTIN".
+
+        Decisão do dono (24/09/2026): o GTIN nunca trava a venda. Para cada
+        rejeição de GTIN (``services.fiscal.SEFAZ_GTIN_REJECTION_CODES``):
+
+        1. o item culpado sai "SEM GTIN" — o apontado por ``[nItem:N]`` na
+           mensagem da SEFAZ; sem apontamento (ou apontando item que não levava
+           GTIN), TODOS os itens que levavam GTIN;
+        2. o produto ganha ``metadata['gtin_nf_rejected']`` — dali em diante
+           ``_trusted_gtin`` o manda "SEM GTIN" em toda nota, até alguém
+           conferir a embalagem e limpar a marca;
+        3. o payload da directive é regravado, para que um retry transiente
+           depois daqui também saia "SEM GTIN";
+        4. a nota é reenviada com a MESMA referência: nota rejeitada não fica
+           na SEFAZ, e a Focus aceita o reenvio da ref em ``erro_autorizacao``
+           (só recusa ref já autorizada — ``already_processed``).
+
+        Repete enquanto a SEFAZ acusar outro item (ela aponta um por vez);
+        termina porque cada volta tira ao menos um GTIN. Rejeição que não é de
+        GTIN, ou GTIN que já não está na nota (889, por exemplo), volta ao
+        caminho de sempre. Ao fim, um alerta diz qual produto e qual código.
+        """
+        from shopman.shop.services import fiscal as fiscal_service
+
+        stripped: list[dict] = []
+        while not result.success:
+            code = fiscal_service.sefaz_gtin_rejection_code(result.error_code)
+            if not code:
+                break
+            items = payload.get("items") or []
+            targets = _items_with_rejected_gtin(items, result.error_message or "")
+            if not targets:
+                break
+            for item in targets:
+                sku = str(item.get("sku") or "")
+                gtin = str(item.get("gtin") or "")
+                item["gtin"] = ""
+                fiscal_service.mark_gtin_rejected(
+                    sku, gtin=gtin, code=code, reason=result.error_message or "", order_ref=order_ref,
+                )
+                stripped.append({
+                    "sku": sku, "name": str(item.get("name") or sku), "gtin": gtin,
+                    "code": code, "reason": result.error_message or "",
+                })
+            Directive.objects.filter(pk=message.pk).update(payload=payload)
+            message.payload = payload
+            logger.warning(
+                "fiscal.emit: GTIN recusado pela SEFAZ (%s), reenviando SEM GTIN order=%s skus=%s",
+                code, order_ref, [item.get("sku") for item in targets],
+            )
+            result = self._emit(order_ref, payload)
+
+        if stripped:
+            self._alert_gtin_rejected(order_ref, stripped, result)
+        return result
+
+    @staticmethod
+    def _alert_gtin_rejected(order_ref: str, stripped: list[dict], result: FiscalDocumentResult) -> None:
+        from shopman.shop.services.observability import create_operator_alert
+
+        products = "; ".join(
+            f"{row['name']} (SKU {row['sku']}, GTIN {row['gtin']}): rejeição {row['code']}"
+            for row in stripped
+        )
+        outcome = (
+            "A nota foi reemitida SEM GTIN e autorizada."
+            if result.success
+            else "A nota foi reenviada SEM GTIN e ainda não foi autorizada — veja a fila fiscal."
+        )
+        create_operator_alert(
+            type=GTIN_REJECTED_ALERT_TYPE,
+            severity="warning",
+            message=(
+                f"A SEFAZ recusou o GTIN na NFC-e do pedido {order_ref}: {products}. {outcome} "
+                "Esses produtos saem SEM GTIN nas próximas notas até alguém conferir o código "
+                "na embalagem e limpar a marca gtin_nf_rejected do produto."
+            ),
+            order_ref=order_ref,
+            dedupe_key=f"{GTIN_REJECTED_ALERT_TYPE}:{order_ref}",
+        )
 
     def _adopt_existing(self, order, order_ref: str) -> bool:
         """Consulta o Focus pelo ref; se autorizada, adota a nota existente."""

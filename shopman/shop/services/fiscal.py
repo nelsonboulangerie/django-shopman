@@ -1037,11 +1037,18 @@ def _trusted_gtin(metadata: dict) -> str:
       embalagem"`` é palpite de fontes públicas — fica fora da nota até alguém
       ler o código na embalagem.
 
+    - produto SEM a marca ``metadata['gtin_nf_rejected']``: a SEFAZ já
+      recusou o GTIN dele numa nota (``mark_gtin_rejected``). Daí em diante o
+      produto sai ``"SEM GTIN"`` até alguém conferir a embalagem e limpar a
+      marca — a venda nunca espera pelo GTIN.
+
     Produto da casa não tem GTIN. Nos casos sem GTIN confiável o adapter
     escreve o literal ``"SEM GTIN"``, que é o que o leiaute 4.0 exige.
     """
     from shopman.offerman import get_social_attributes, gtin_is_valid
 
+    if metadata.get(GTIN_NF_REJECTED_KEY):
+        return ""
     gtin = get_social_attributes(metadata).gtin.strip()
     if not gtin or not gtin_is_valid(gtin):
         return ""
@@ -1049,6 +1056,87 @@ def _trusted_gtin(metadata: dict) -> str:
     if source.startswith("web"):
         return ""
     return gtin
+
+
+# Rejeições da SEFAZ que dizem "o GTIN deste item está errado" e que a nota
+# CURA saindo com "SEM GTIN" nas duas tags (cEAN e cEANTrib). Textos do Manual
+# de Orientação do Contribuinte e da NT 2021.003 (Cadastro Centralizado de GTIN,
+# CCG), conferidos em 24/09/2026 em:
+#   - https://focusnfe.com.br/blog/nota-tecnica-2021-003/ (NT 2021.003: 883,
+#     888, 890, 891, 892, 894, 897)
+#   - https://cstat.vinco.com.br/help/cstat-800-899 (tabela cStat 882–896)
+#   - https://oobj.com.br/bc/rejeicao-611-como-resolver/ (611)
+#   - https://oobj.com.br/bc/rejeicao-882-como-resolver/ (882)
+#   - https://ajuda.omie.com.br/pt-BR/articles/6173400 (889)
+#
+#   611 GTIN (cEAN) inválido — dígito verificador GS1
+#   612 GTIN da unidade tributável (cEANTrib) inválido
+#   882 GTIN (cEAN) com prefixo inválido
+#   884 GTIN da unidade tributável (cEANTrib) com prefixo inválido
+#   885 GTIN informado, mas não informado o GTIN da unidade tributável
+#   886 GTIN da unidade tributável informado, mas não informado o GTIN
+#   887 GTIN-14 de agrupamento no cEANTrib / item de serviço com GTIN (o texto
+#       varia entre as fontes; nos dois casos a cura é "SEM GTIN")
+#   890 GTIN inexistente no Cadastro Centralizado de GTIN (CCG)
+#   891 GTIN incompatível com a NCM
+#   892 GTIN incompatível com o CEST
+#   893 GTIN da unidade tributável diverge do GTIN de nível inferior no CCG
+#   894 GTIN da unidade tributável inexistente no CCG
+#   895 GTIN da unidade tributável incompatível com a NCM
+#   896 GTIN da unidade tributável incompatível com o CEST
+#   897 Item de serviço com GTIN diferente de "SEM GTIN"
+#
+# FORA de propósito, porque "SEM GTIN" não cura (ou é a própria causa):
+#   883 GTIN (cEAN) sem informação · 888 cEANTrib sem informação — tag vazia;
+#       o adapter nunca manda vazio (``fiscal_focusnfe.NO_GTIN``).
+#   889 Obrigatória a informação do GTIN para o produto — a SEFAZ QUER o GTIN;
+#       reenviar "SEM GTIN" repetiria a rejeição. Segue terminal, para gente.
+SEFAZ_GTIN_REJECTION_CODES = frozenset({
+    "611", "612", "882", "884", "885", "886", "887",
+    "890", "891", "892", "893", "894", "895", "896", "897",
+})
+# Prefixo do ``error_code`` que o adapter devolve para rejeição da SEFAZ
+# (``fiscal_focusnfe._document_result``: ``sefaz_<cStat>``).
+SEFAZ_REJECTION_PREFIX = "sefaz_"
+GTIN_NF_REJECTED_KEY = "gtin_nf_rejected"
+
+
+def sefaz_gtin_rejection_code(error_code: str | None) -> str:
+    """cStat da rejeição quando ela é de GTIN curável com "SEM GTIN"; senão ``""``."""
+    code = str(error_code or "")
+    if not code.startswith(SEFAZ_REJECTION_PREFIX):
+        return ""
+    cstat = code[len(SEFAZ_REJECTION_PREFIX):]
+    return cstat if cstat in SEFAZ_GTIN_REJECTION_CODES else ""
+
+
+def mark_gtin_rejected(sku: str, *, gtin: str, code: str, reason: str, order_ref: str) -> bool:
+    """Grava ``metadata['gtin_nf_rejected']`` no produto; ``True`` quando gravou.
+
+    Relê a linha sob lock: ``Product.metadata`` tem muitos donos (fiscal,
+    social, enriquecimento) e gravar o dicionário lido antes seria
+    last-write-wins sobre eles. A marca só sai à mão, depois de alguém conferir
+    o código na embalagem — é o que devolve o GTIN à nota.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from shopman.offerman.models import Product
+
+    with transaction.atomic():
+        product = Product.objects.select_for_update().filter(sku=sku).first()
+        if product is None:
+            return False
+        metadata = dict(product.metadata or {})
+        metadata[GTIN_NF_REJECTED_KEY] = {
+            "at": timezone.now().isoformat(),
+            "code": code,
+            "reason": str(reason or "")[:500],
+            "gtin": gtin,
+            "order_ref": order_ref,
+        }
+        product.metadata = metadata
+        product.save(update_fields=["metadata", "updated_at"])
+    return True
 
 
 def _products_by_sku(skus: list[str]) -> dict[str, object]:
