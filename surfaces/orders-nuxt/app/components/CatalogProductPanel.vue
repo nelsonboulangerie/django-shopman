@@ -433,7 +433,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
       <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
         <p>Seu rascunho foi preservado. Confira os campos que mudaram desde sua leitura:</p>
         <ul><li v-for="field in conflict.conflicting_fields" :key="field">
-          {{ conflictLabels[field] || "Campo editado" }} — atual: {{ currentValue(field) }}
+          {{ conflictLabels[field] || "Campo editado" }}. Valor atual: {{ currentValue(field) }}
           <span v-if="sourceChange(field)" class="block text-xs">{{ sourceChange(field) }}</span>
         </li></ul>
         <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', true)">Manter meu rascunho</button>
@@ -790,7 +790,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           <!-- Fiscal (NFC-e) -->
           <div v-show="tab === 'fiscal'" class="space-y-4">
             <p class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil — aqui
+              Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil; aqui fica
               só o que muda de produto para produto.
             </p>
 

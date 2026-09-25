@@ -204,10 +204,10 @@ async function requeueFiscal(sale: RecentSale) {
       apiPath(`/api/v1/backstage/orders/${encodeURIComponent(sale.order_ref)}/requeue-fiscal/`),
       { method: "POST", credentials: "include" },
     );
-    toast.success(`Emissão de ${sale.order_ref} reenfileirada.`);
+    toast.success(`NFC-e de ${sale.order_ref} enviada de novo. A lista mostra quando ela for autorizada.`);
     await load();
   } catch (error) {
-    toast.error(`${messageOf(error)} A emissão não foi reenfileirada. Atualize a lista e confira a situação da nota antes de repetir.`);
+    toast.error(`${messageOf(error)} A NFC-e não foi enviada de novo. Atualize a lista e confira a nota antes de repetir.`);
   } finally {
     busyRef.value = "";
   }
@@ -241,7 +241,7 @@ async function submitEmitFiscal(aprovacao: Record<string, string>) {
     );
     emitDialogOpen.value = false;
     emitTargetRef.value = "";
-    toast.success(response?.detail || `NFC-e de ${orderRef} na fila.`);
+    toast.success(response?.detail || `NFC-e de ${orderRef} em emissão.`);
     await load();
   } catch (error) {
     const failure = httpError(error);
@@ -437,11 +437,10 @@ function fiscalChipClass(status: string): string {
                 @click="requeueFiscal(sale)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-3.5" />
-                <!-- Sem reticências: o toque reenfileira na hora, não abre nada.
-                     A emissão FOI tentada e falhou (`can_requeue_fiscal` é
-                     `fiscal_status == "failed"`), então "de novo" é verdade — e o
-                     objeto vai no rótulo porque ao lado há outras três ações. -->
-                Tentar a emissão de novo
+                <!-- Sem reticências: o toque reenvia na hora, não abre nada. É o
+                     MESMO nome do gesto no Gestor de pedidos (`requeue-fiscal`):
+                     um gesto, um nome, em toda superfície de operador. -->
+                Reprocessar NFC-e
               </UiButton>
               <!-- Emissão avulsa: a regra da casa não emitiu. Botão NEUTRO — não
                    há nada errado com a venda; o gerente é pedido no toque. -->

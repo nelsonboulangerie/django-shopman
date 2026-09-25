@@ -192,7 +192,7 @@ useHead({ title: "Canais" });
               <Icon v-if="!c.exists" name="lucide:triangle-alert" class="size-3" />
               {{ c.name }}
             </span>
-            <span v-if="!sc.collections.length" class="text-xs text-muted-foreground/70">Nenhuma coleção — nada a exibir.</span>
+            <span v-if="!sc.collections.length" class="text-xs text-muted-foreground/70">Nenhuma coleção: não há nada a exibir.</span>
           </div>
 
           <ChannelHealthChecklist :health="healthOf(sc.ref)" @choose-collections="openEdit(sc)" />

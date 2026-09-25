@@ -59,7 +59,7 @@ describe("PosRecentSales — o chip fiscal segue `fiscal_state` quando existe", 
       sale({ order_ref: "D", fiscal_state: "failed" }),
       sale({ order_ref: "E", fiscal_state: "not_expected" }),
     ]);
-    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e na fila", "NFC-e aguarda o pagamento", "NFC-e falhou", "Emissão não estabelecida"]);
+    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e em emissão", "NFC-e sai quando o pagamento confirmar", "NFC-e não autorizada", "Emissão não estabelecida"]);
     w.unmount();
   });
 
@@ -105,7 +105,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
     // Nada sai antes da assinatura.
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("emit-fiscal"))).toBe(false);
 
-    fetchMock.mockResolvedValueOnce({ ok: true, detail: "NFC-e de PDV-042 na fila. A nota sai com a data e a hora de agora." });
+    fetchMock.mockResolvedValueOnce({ ok: true, detail: "NFC-e de PDV-042 em emissão. A nota sai com a data e a hora de agora." });
     auth.vm.$emit("authorize", "pablo", "4321");
     await vi.waitFor(() => expect(auth.props("open")).toBe(false));
 

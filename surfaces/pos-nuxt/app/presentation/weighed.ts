@@ -118,7 +118,7 @@ export function weighedPreview(input: {
       labelQ,
       gapQ,
       gapNote: gapQ > 0
-        ? `A etiqueta diz ${formatBRL(labelQ)}; pelo preço do quilo cadastrado, ${kgDisplay(weightG)} valem ${formatBRL(totalQ)}. Cobramos ${formatBRL(totalQ)} — confira o preço do quilo na balança.`
+        ? `A etiqueta diz ${formatBRL(labelQ)}; pelo preço do quilo cadastrado, ${kgDisplay(weightG)} valem ${formatBRL(totalQ)}. Cobramos ${formatBRL(totalQ)}. Confira o preço do quilo na balança.`
         : "",
     };
   }

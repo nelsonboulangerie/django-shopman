@@ -26,11 +26,11 @@ describe("receiptRequestNote", () => {
 
   it("papel e e-mail pedem a nota quando a regra do servidor confirma", () => {
     expect(receiptRequestNote({ print: true, email: false, emits: true }))
-      .toBe("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
+      .toBe("Pedir papel já pede a nota: ela imprime sozinha assim que for autorizada.");
     expect(receiptRequestNote({ print: false, email: true, emits: true }))
-      .toBe("Pedir por e-mail já pede a nota — o e-mail sai assim que autorizar.");
+      .toBe("Pedir por e-mail já pede a nota: o e-mail sai assim que ela for autorizada.");
     expect(receiptRequestNote({ print: true, email: true, emits: true }))
-      .toBe("Papel e e-mail já pedem a nota — imprime sozinha e o e-mail sai assim que autorizar.");
+      .toBe("Papel e e-mail já pedem a nota: ela imprime sozinha, e o e-mail sai assim que ela for autorizada.");
   });
 
   it("sem a palavra do servidor, diz quando a nota sai em vez de prometer", () => {

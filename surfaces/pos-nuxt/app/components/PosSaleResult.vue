@@ -200,7 +200,7 @@ function onNewSale() {
         {{ result.payment?.amountDisplay }} em
         {{ result.payment?.method === 'pix' ? 'Pix' : result.payment?.method === 'link' ? 'link de pagamento' : 'cartão' }}
         segue <strong class="text-foreground">em aberto</strong>. Receba de outra forma e acerte o
-        pedido no gestor — não trate esta venda como paga.
+        pedido no gestor. Não trate esta venda como paga.
       </p>
     </div>
 

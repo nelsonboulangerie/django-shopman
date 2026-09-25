@@ -2759,7 +2759,7 @@ class POSEmitFiscalView(APIView):
         return Response({
             "ok": True,
             "order_ref": order.ref,
-            "detail": f"NFC-e de {order.ref} na fila. A nota sai com a data e a hora de agora.",
+            "detail": f"NFC-e de {order.ref} em emissão. A nota sai com a data e a hora de agora.",
         })
 
 

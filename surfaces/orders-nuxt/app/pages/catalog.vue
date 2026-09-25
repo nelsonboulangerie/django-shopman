@@ -474,7 +474,7 @@ useHead({ title: "Catálogo" });
           @pointerdown="collPointerDown(c.ref, $event)"
           @keydown="collKeyDown(c.ref, $event)"
           aria-keyshortcuts="ArrowUp ArrowDown"
-          :title="`${c.name} — reordenar com as setas para cima ou para baixo`"
+          :title="`${c.name}. Para reordenar, use as setas para cima ou para baixo.`"
         >
           <template v-if="c.is_smart" #icon>
             <Icon name="lucide:sparkles" class="size-3.5 opacity-70" title="Coleção por regra" />
@@ -545,7 +545,7 @@ useHead({ title: "Catálogo" });
       </div>
     </div>
 
-    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais — role horizontalmente para ver os canais" tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
+    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
       <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
            do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
            tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
@@ -580,7 +580,7 @@ useHead({ title: "Catálogo" });
               <!-- Canal ou feed desligado não chega aqui: sai das colunas e só a aba
                    Canais o mostra, para religar. -->
               <div class="flex flex-col gap-0.5">
-                <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
+                <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name}: feed (só exibe, não vende)`">
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
                   <span class="truncate text-xs">{{ s.short_name }}</span>
                   <a
@@ -671,7 +671,7 @@ useHead({ title: "Catálogo" });
                         type="button"
                         class="min-h-control min-w-control inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
                         :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
-                        :title="`Erro de sync em ${rowSyncErrors(row)} plataforma(s) — reenviar tudo`"
+                        :title="`Erro de sincronização em ${rowSyncErrors(row)} plataforma(s). Toque para reenviar tudo.`"
                         @click.stop="resyncRow(row)"
                       >
                         <Icon name="lucide:triangle-alert" class="size-3" /> {{ rowSyncErrors(row) }}
@@ -773,8 +773,8 @@ useHead({ title: "Catálogo" });
                   :tone="rowStatuses[row.sku]?.off ? 'muted' : 'success'"
                   :model-value="cell.is_sellable"
                   :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
-                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Ativar neste ${surfaceWord(cell)}`"
-                  :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — ativar neste ${surfaceWord(cell)}`"
+                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Ativar neste ${surfaceWord(cell)}`"
+                  :title="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Pausado. Toque para ativar neste ${surfaceWord(cell)}.`"
                   @update:model-value="toggleCell(row, cell)"
                 />
 
@@ -794,7 +794,7 @@ useHead({ title: "Catálogo" });
                       class="flex min-h-control min-w-control items-center justify-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
                       :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                       :title="priceTitle(row, cell)"
-                      :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display} — editar`"
+                      :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
                       @click="startEdit(row, cell)"
                     >
                       <span v-if="cellPrice(row, cell).differs" class="flex items-center gap-0.5">
@@ -841,8 +841,8 @@ useHead({ title: "Catálogo" });
                     class="grid size-control shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
                     :class="cellSync(cell).toneClass"
                     :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !row.resync_action?.enabled"
-                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''} — reenviar agora`"
-                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)} — reenviar agora`"
+                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
+                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
                     @click="resyncCell(row, cell)"
                   >{{ cellSync(cell).dot }}</button>
                   <span
@@ -930,7 +930,7 @@ useHead({ title: "Catálogo" });
             </div>
             <p class="mt-1.5 text-xs leading-tight text-muted-foreground">
               {{ priceOp === "set" ? "Define o preço de todos os selecionados." : priceOp === "pct" ? "Aumenta (+) ou reduz (−) por porcentagem." : "Soma (+) ou subtrai (−) do preço atual." }}
-              Permanente — para promo, use as regras.
+              A mudança é permanente. Para promoção, use as regras.
             </p>
             <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
               <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>

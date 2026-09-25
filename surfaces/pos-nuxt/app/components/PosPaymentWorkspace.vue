@@ -410,12 +410,12 @@ const invoiceTaxIdMasked = computed(() => {
 // é conferir documento — quem confere é o dígito verificador.
 const taxIdEcho = computed<{ ok: boolean; text: string }>(() => {
   const digits = props.invoiceTaxId.replace(/\D/g, "");
-  if (!digits) return { ok: false, text: "Digite o documento — sem ele a nota sai sem CPF." };
+  if (!digits) return { ok: false, text: "Digite o documento. Sem ele, a nota sai sem CPF." };
   if (digits.length !== 11 && digits.length !== 14) {
-    return { ok: false, text: "Documento incompleto — a nota sai sem CPF." };
+    return { ok: false, text: "Documento incompleto: a nota sai sem CPF." };
   }
   if (!isValidTaxId(digits)) {
-    return { ok: false, text: "Documento inválido — confira com o cliente." };
+    return { ok: false, text: "Documento inválido. Confira com o cliente." };
   }
   if (digits.length === 11) {
     return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
@@ -907,7 +907,7 @@ const ctaBlock = computed<{
   if (hasLinkTender.value && !props.customerPhone.trim() && !props.customerEmail.trim()) {
     return {
       message: "O link precisa de um contato.",
-      hint: "Telefone ou e-mail — é por onde ele vai.",
+      hint: "Telefone ou e-mail: é por onde o link chega ao cliente.",
       action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
     };
   }
@@ -1020,7 +1020,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       tone: "warn",
       icon: "lucide:triangle-alert",
       message: `A cozinha preparou ${kitchenSurplus.value} ${kitchenSurplus.value === 1 ? "item" : "itens"} a mais do que esta conta cobra.`,
-      hint: "Cancele o envio da linha, ou avise o preparo — a diferença sai sem pagamento.",
+      hint: "Cancele o envio da linha ou avise o preparo. Se nada mudar, a diferença sai sem pagamento.",
     });
   }
   if (props.items.length && kitchenNote.value) {
@@ -2096,7 +2096,7 @@ defineExpose({
       <UiDialogHeader>
         <UiDialogTitle>Dividir conta</UiDialogTitle>
         <UiDialogDescription>
-          Em quantas pessoas — digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
+          Em quantas pessoas? Digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
         </UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">
@@ -2136,7 +2136,7 @@ defineExpose({
             <OperatorKbd aria-hidden="true">1</OperatorKbd>
           </UiButton>
           <p v-if="splitInProgress" class="text-center text-xs text-muted-foreground">
-            As partes já lançadas continuam na conta — remova cada linha de pagamento se quiser recomeçar.
+            As partes já lançadas continuam na conta. Para recomeçar, remova cada linha de pagamento.
           </p>
         </template>
       </UiDialogFooter>

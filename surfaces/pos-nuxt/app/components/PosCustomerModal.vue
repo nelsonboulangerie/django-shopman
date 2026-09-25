@@ -418,7 +418,7 @@ const newCustomerNote = computed(() => {
       <UiDialogHeader>
         <UiDialogTitle ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
         <UiDialogDescription v-if="!isReceiptDecision">
-          Busque por nome, telefone, CPF ou e-mail — selecione um cadastro ou crie um novo.
+          Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.
         </UiDialogDescription>
       </UiDialogHeader>
 

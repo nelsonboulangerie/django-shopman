@@ -54,7 +54,7 @@ async function copyLink() {
   if (!props.proof.checkoutUrl) return;
   try {
     await navigator.clipboard.writeText(props.proof.checkoutUrl);
-    toast.success("Link copiado — mande para o cliente");
+    toast.success("Link copiado. Mande para o cliente.");
   } catch {
     toast.error("Não foi possível copiar. Selecione e copie manualmente.");
   }

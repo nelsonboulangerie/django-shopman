@@ -205,12 +205,12 @@ describe("PosSaleResult — a DANFE obedece ao estado da nota", () => {
     expect(wrapper.text()).toContain("Ver a nota");
   });
 
-  it("queued: botão desabilitado 'NFC-e na fila…', sem 'Ver a nota'", async () => {
+  it("queued: botão desabilitado 'NFC-e em emissão…', sem 'Ver a nota'", async () => {
     const wrapper = await mountSuspended(PosSaleResult, {
       props: props({ result: result({ fiscalExpected: true, fiscalState: "queued" }), danfeScreenUrl: "http://api.test/fiscal/danfe/PDV-042/" }),
     });
     const button = danfeButton(wrapper);
-    expect(button.text()).toContain("NFC-e na fila…");
+    expect(button.text()).toContain("NFC-e em emissão…");
     expect(button.attributes("disabled")).toBeDefined();
     expect(wrapper.text()).not.toContain("Ver a nota");
     // e a promoção (o 409 virou 200) troca o botão sem remontar
@@ -234,7 +234,7 @@ describe("PosSaleResult — a DANFE obedece ao estado da nota", () => {
     expect(danfeButton(wrapper).exists()).toBe(false);
     const alert = wrapper.find("[data-fiscal-failed]");
     expect(alert.attributes("role")).toBe("alert");
-    expect(alert.text()).toContain("NFC-e falhou — veja Últimas vendas");
+    expect(alert.text()).toContain("NFC-e não autorizada. Em Últimas vendas, toque em Reprocessar NFC-e.");
   });
 
   it("not_expected: nada sobre a DANFE, mesmo com URL da nota", async () => {

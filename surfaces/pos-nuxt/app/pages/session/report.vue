@@ -75,7 +75,7 @@ async function goToCashSession() {
           <h2 class="text-base font-semibold">Relatório é de quem audita</h2>
         </div>
         <p class="text-sm text-muted-foreground">
-          Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita — quem vê a
+          Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a
           apuração é a gestão.
         </p>
         <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
