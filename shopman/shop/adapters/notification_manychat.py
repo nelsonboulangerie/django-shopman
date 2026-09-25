@@ -38,8 +38,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "\nAvisamos assim que sair. \U0001f4e6{tracking_suffix}"
     ),
     "order_dispatched": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
-        " entrega! \U0001f697{courier_tracking_suffix}"
+        "Seu pedido {order_ref} saiu para entrega e chega logo."
+        "{courier_tracking_suffix}"
         "\nQuando receber, é só confirmar por aqui: {tracking_url}"
     ),
     "order_delivered": (

@@ -23,6 +23,7 @@ from django.apps import apps
 from django.conf import settings
 from django.utils import timezone
 
+from shopman.shop.adapters import notification_email, notification_manychat
 from shopman.shop.services.notification import _eta_note
 
 MIGRATION = import_module("shopman.shop.migrations.0075_voz_dos_avisos_do_pedido")
@@ -37,9 +38,7 @@ def _order(status: str):
 
 def test_eta_note_usa_a_hora_da_tela():
     eta = timezone.make_aware(datetime(2026, 9, 24, 18, 20))
-    with patch(
-        "shopman.shop.projections.order_tracking._eta_at", return_value=eta.isoformat()
-    ) as tela:
+    with patch("shopman.shop.projections.order_tracking._eta_at", return_value=eta.isoformat()) as tela:
         note = _eta_note(_order("preparing"))
 
     tela.assert_called_once()
@@ -103,3 +102,36 @@ def test_migracao_troca_so_o_texto_antigo_do_seed():
     MIGRATION.backwards(apps, None)
     tpl.refresh_from_db()
     assert (tpl.subject, tpl.body) == (old_subject, old_body)
+
+
+DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
+
+
+def test_saida_para_entrega_nao_cumprimenta_e_bate_com_o_seed():
+    body = _seeded_templates()["order_dispatched"]["body"]
+    assert body == DISPATCHED.NEW_BODY
+    assert "customer_name_greeting" not in body
+    for fallback in (
+        notification_email.BODY_TEMPLATES["order_dispatched"],
+        notification_manychat.MESSAGE_TEMPLATES["order_dispatched"],
+    ):
+        assert fallback.startswith("Seu pedido {order_ref} saiu para entrega e chega logo.")
+
+
+@pytest.mark.django_db
+def test_migracao_da_saida_troca_so_o_texto_antigo_do_seed():
+    from shopman.shop.models import NotificationTemplate
+
+    tpl = NotificationTemplate.objects.create(
+        event="order_dispatched", subject="Pedido {order_ref} saiu para entrega", body=DISPATCHED.OLD_BODY
+    )
+    DISPATCHED.forwards(apps, None)
+    tpl.refresh_from_db()
+    assert tpl.body == DISPATCHED.NEW_BODY
+
+    tpl.body = "Texto que o lojista escreveu."
+    tpl.save(update_fields=["body"])
+    DISPATCHED.backwards(apps, None)
+    DISPATCHED.forwards(apps, None)
+    tpl.refresh_from_db()
+    assert tpl.body == "Texto que o lojista escreveu."

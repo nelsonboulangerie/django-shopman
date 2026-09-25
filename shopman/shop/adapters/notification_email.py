@@ -72,9 +72,8 @@ BODY_TEMPLATES: dict[str, str] = {
         "Acompanhe por aqui: {tracking_url}\n"
     ),
     "order_dispatched": (
-        "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} saiu para entrega."
-        "{courier_tracking_suffix}\n\n"
+        "Seu pedido {order_ref} saiu para entrega e chega logo."
+        "{courier_tracking_suffix}\n"
         "Quando receber, é só confirmar por aqui: {tracking_url}\n"
     ),
     "order_delivered": (
