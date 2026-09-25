@@ -22,3 +22,14 @@ from django.dispatch import Signal
 #: Argumentos: ``customer_ref``, ``phone`` (o original, já apagado do Customer)
 #: e ``pseudonym`` (o handle estável que substituiu o telefone nos pedidos).
 customer_anonymized = Signal()
+
+
+#: A NFC-e de um pedido vivo acabou de ser AUTORIZADA e gravada em
+#: ``order.data`` (``handlers/fiscal.NFCeEmitHandler._after_authorized``).
+#:
+#: Existe porque a DANFE da entrega sai pela impressora do despacho, e quem sabe
+#: imprimir é o ``backstage`` (``services/order_danfe.py``), que o shop não pode
+#: importar. Pedido desfeito não anuncia: a nota dele vai para o cancelamento.
+#:
+#: Argumento: ``order``.
+nfce_authorized = Signal()

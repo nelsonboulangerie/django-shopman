@@ -413,7 +413,8 @@ export interface OrderCardProjection {
   test_order_notice: string;
   danfe_printable: boolean;
   danfe_printed: boolean;
-  danfe_auto_print: boolean;
+  danfe_state: string;
+  danfe_problem: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */

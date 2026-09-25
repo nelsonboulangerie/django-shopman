@@ -105,6 +105,8 @@ _PRODUCTION_CONTEXT_PATHS = {
 _ORDER_CONTEXT_PATHS = {
     "order_production_quality_risk": "/",
     "customer_cancellation_requested": "/",
+    # O card do pedido, filtrado no quadro: é lá que está "Imprimir DANFE".
+    "danfe_print_failed": "/",
 }
 
 

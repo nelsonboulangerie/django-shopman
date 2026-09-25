@@ -204,7 +204,15 @@ class OperatorPrintJobMixin:
     required_production_capability = "can_print_prep"
 
     def job(self, request, ref):
-        job = PrintJob.objects.select_related("target_terminal").filter(ref=ref).first()
+        # Só etiquetas: a DANFE da entrega também é PrintJob, mas é papel do
+        # Gestor de pedidos (services/order_danfe.py), e reimprimi-la por aqui
+        # passaria o documento dela pelo compositor de etiqueta.
+        job = (
+            PrintJob.objects.select_related("target_terminal")
+            .filter(ref=ref)
+            .exclude(kind=PrintJob.Kind.ORDER_DANFE)
+            .first()
+        )
         if job is None:
             raise PrintJobAPIError(print_jobs.PrintJobError("Impressão não encontrada.", code="job_not_found", status_code=404))
         access = getattr(request, "production_access", None)

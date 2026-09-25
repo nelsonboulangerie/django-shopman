@@ -2429,17 +2429,19 @@ class OrderTicketEscposView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="DANFE NFC-e bytes (ESC/POS, base64) for the Gestor station agent",
+        summary="Print the delivery DANFE on the dispatch printer (relay), or return bytes for the station agent",
         responses={200: OpenApiResponse(description="DANFE payload.")},
     ),
 )
 class OrderDanfeEscposView(APIView):
-    """A DANFE que vai na sacola do pedido de entrega, pedida pelo Gestor.
+    """O botão "Imprimir DANFE" do card do Gestor.
 
-    Mesmo compositor e mesmo carimbo do balcão (``POSDanfeEscposView``); muda a
-    permissão (quem cuida da fila) e a pergunta ``auto``: a impressão que
-    ninguém pediu só sai uma vez, e só enquanto a sacola ainda está na casa —
-    ver ``services/order_danfe.py``. POST porque grava o carimbo.
+    A DANFE vai pela impressora do despacho, pelo relay do servidor, e não pela
+    tela que está aberta (``services/order_danfe.print_on_demand``). Só quando a
+    loja não tem impressora de despacho a resposta volta com os bytes, para a
+    página relaiar ao agente local desta estação (``local_agent: true`` diz que
+    ela tem um). A automática não passa por aqui: quem a dispara é o servidor,
+    quando a nota autoriza ou o pedido sai. POST porque grava o carimbo.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -2448,21 +2450,25 @@ class OrderDanfeEscposView(APIView):
     def post(self, request, ref: str):
         import base64
 
+        from shopman.backstage import station_trust
         from shopman.backstage.services import order_danfe
 
-        auto = request.data.get("auto") is True
         try:
-            printed = order_danfe.claim_print(ref, auto=auto)
+            printed = order_danfe.print_on_demand(
+                ref,
+                actor=request.user,
+                station_ref=station_trust.station_ref(request) or "",
+                local_agent=request.data.get("local_agent") is True,
+            )
         except order_danfe.DanfeRefused as refused:
             return Response({"detail": refused.message, "code": refused.code}, status=refused.status)
-        return Response(
-            {
-                "ok": True,
-                "payload_b64": base64.b64encode(printed.payload).decode("ascii"),
-                "title": f"danfe:{ref}",
-                "reprint": printed.reprint,
-            }
-        )
+        body = {"ok": True, "via": printed.via, "reprint": printed.reprint}
+        if printed.via == "relay":
+            body["target_label"] = printed.target_label
+        else:
+            body["payload_b64"] = base64.b64encode(printed.payload).decode("ascii")
+            body["title"] = f"danfe:{ref}"
+        return Response(body)
 
 
 @extend_schema_view(

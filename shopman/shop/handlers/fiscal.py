@@ -348,6 +348,11 @@ class NFCeEmitHandler:
             fiscal.cancel(order)
             return
         self._send_receipt_email(order)
+        # A DANFE da entrega sai pela impressora do despacho, e quem sabe
+        # imprimir é o backstage: o shop só anuncia.
+        from shopman.shop.signals import nfce_authorized
+
+        nfce_authorized.send(sender=type(self), order=order)
         self._notify_online_customer(order)
 
     @staticmethod
