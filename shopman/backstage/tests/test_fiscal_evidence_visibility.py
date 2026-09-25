@@ -96,4 +96,4 @@ def test_not_requested_stays_not_requested(_backend_present, settings):
     order = Order.objects.create(ref="LAB-FISCAL-NOT", status="accepted", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
 
-    assert order_queue._fiscal_status(order)[:3] == ("not_requested", "Sem NFC-e neste pedido", "not_expected")
+    assert order_queue._fiscal_status(order)[:3] == ("not_requested", "Emissão não estabelecida", "not_expected")
