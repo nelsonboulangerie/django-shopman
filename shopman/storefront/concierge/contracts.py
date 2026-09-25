@@ -99,6 +99,11 @@ class WindowEvidence:
             return None
 
 
+#: O texto da entrada que é só uma localização: o modelo lê a conversa como
+#: texto, e a coordenada fica no envelope, onde só o servidor a lê.
+LOCATION_TEXT = "[localização enviada pelo WhatsApp]"
+
+
 @dataclass(frozen=True)
 class InboundEvent:
     """Evento autenticado e normalizado; o payload não escolhe seu escopo."""
@@ -116,6 +121,8 @@ class InboundEvent:
     authentication_assurance: str = ""
     payload_hash: str = ""
     window_evidence: WindowEvidence | None = None
+    #: ``{"latitude", "longitude"}`` quando a entrada é uma localização (pin).
+    location: Mapping[str, float] | None = None
 
     def as_envelope(self) -> dict[str, Any]:
         envelope: dict[str, Any] = {
@@ -138,6 +145,8 @@ class InboundEvent:
         }
         if self.window_evidence:
             envelope["window_evidence"] = self.window_evidence.as_dict()
+        if self.location:
+            envelope["location"] = dict(self.location)
         return envelope
 
 
