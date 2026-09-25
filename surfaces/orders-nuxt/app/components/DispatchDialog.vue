@@ -121,7 +121,7 @@ const code = (ref_: string) => splitRef(ref_).code;
       </div>
 
       <UiDialogFooter>
-        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="emit('close')">Cancelar</button>
+        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="emit('close')">Voltar</button>
         <button
           v-if="primaryLabel"
           type="button"

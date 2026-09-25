@@ -380,5 +380,11 @@ function buttonClass(priority: string): string {
         {{ aff.label }}
       </button>
     </div>
+    <!-- Por que o botão está travado, à vista: antes só no tooltip, que o
+         tablet não tem. A frase inteira, e não o rótulo curto, que dizia
+         "Encomenda do dia…" e deixava o operador completar o sentido. -->
+    <p v-if="!negotiationOnly && card.advance_block_reason" class="text-xs text-muted-foreground" data-advance-block>
+      {{ card.advance_block_reason }}
+    </p>
   </article>
 </template>

@@ -701,7 +701,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     if courier_block:
         from shopman.shop.services.courier import dispatch_revision
 
-        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Solicitar entregador",
+        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
             enabled=authorized and courier_block["can_dispatch"],
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
                 "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
@@ -729,7 +729,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         from shopman.shop.services import notification as notification_svc
 
         refusal = notification_svc.payment_link_resend_refusal(order)
-        extra_actions.append(Action(ref="resend-payment-link", kind="mutation", label="Reenviar link", enabled=authorized and refusal is None,
+        extra_actions.append(Action(ref="resend-payment-link", kind="mutation", label="Reenviar link de pagamento", enabled=authorized and refusal is None,
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else refusal.message if refusal else ""),
             method="POST", idempotency="required",
             payload_schema={"base_revision": notification_svc.payment_link_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
@@ -802,7 +802,7 @@ COURIER_STATUS_LABELS = {
     "F": "Entregue",
     "N": "Não atendida",
     "C": "Corrida cancelada",
-    "U": "Agrupada",
+    "U": "Junto com outra corrida",
 }
 
 
@@ -1846,12 +1846,22 @@ def _cash_settlement_actions(order, user, context):
         reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
     is_pickup = not _is_delivery(order)
     return (Action(ref="settle-delivery-cash", kind="mutation", label=(
-        "Registrar pagamento na retirada" if is_pickup else "Registrar pagamento da entrega"
+        "Receber na retirada" if is_pickup else "Acertar entrega"
     ),
         enabled=authorized and not reason, reason=reason, method="POST", idempotency="required",
         payload_schema={"base_revision": operator_orders.cash_settlement_revision(order, shift),
             "expected_actor_id": getattr(user, "pk", None), "cash_shift_id": shift.pk if shift else None},
-        confirmation={"required": True, "description": f"Recebimento no caixa {shift.terminal.label}, turno {shift.pk}." if shift else reason}),)
+        confirmation={"required": True, "description": _settlement_description(shift) if shift else reason}),)
+
+
+def _settlement_description(shift) -> str:
+    """Onde o dinheiro entra, como o operador reconhece: o caixa e quando abriu.
+
+    Antes dizia "turno 42", o número interno do turno, que ninguém no balcão vê.
+    """
+    opened = timezone.localtime(shift.opened_at)
+    terminal = shift.terminal.label or shift.terminal.ref
+    return f"O dinheiro entra no caixa {terminal}, no turno aberto às {opened:%H:%M}."
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:

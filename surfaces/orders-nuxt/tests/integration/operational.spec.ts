@@ -674,7 +674,7 @@ test("queue rejection protects its reason on close and reload", async ({ page })
   await reason.fill("Recusa ainda em avaliação");
   let confirmations = 0;
   page.once("dialog", async prompt => { confirmations++; expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
-  await page.getByRole("dialog").getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Voltar", exact: true }).click();
   expect(confirmations).toBe(1);
   await expect(reason).toHaveValue("Recusa ainda em avaliação");
   const reload = page.waitForEvent("dialog");
