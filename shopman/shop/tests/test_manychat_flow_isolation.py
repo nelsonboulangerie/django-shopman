@@ -258,6 +258,8 @@ def test_every_marketing_event_writes_its_whole_declared_set_and_nothing_else(
     assert "undeclared_secret" not in fields
     assert all(value == "" for name, value in fields.items() if name not in {
         "product_name", "product_label", "customer_name_greeting",
+        # Derivada para todo envio e nunca vazia: é a frase do template aprovado.
+        "availability_note",
     })
 
 

@@ -297,7 +297,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
                 # quantidade fica vazia de propósito — apressar quem já está garantido
                 # seria urgência fabricada, e o cliente percebe.
                 "available_qty": "",
-                "reserve_note": " Sua reserva esta garantida.",
+                "reserve_note": " Sua reserva está garantida.",
                 "deadline_note": _deadline_note(deadline_at),
                 "cta": "Finalize seu pedido:",
                 "action_url": _cart_url(),

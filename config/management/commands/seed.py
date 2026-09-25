@@ -115,6 +115,7 @@ from shopman.shop.models import (
     RuleConfig,
     Shop,
 )
+from shopman.shop.notification_copy import CUSTOMER_COPY
 from shopman.shop.rules.suggestion import (
     DEFAULT_COMPLEMENT_PARAMS,
     DEFAULT_SUBSTITUTE_PARAMS,
@@ -838,6 +839,30 @@ def _ensure_seed_active_production_supply() -> int:
             metadata.update({"seed": "nelson", "seed_contract": contract})
             Quant.objects.filter(pk=quant.pk).update(metadata=metadata)
     return repaired
+
+
+NOTIFICATION_TEMPLATES = {
+    # Avisos ao cliente: fonte única em `shopman/shop/notification_copy.py`
+    # (revisão do dono, 25/09/2026). Aqui ficam campanha, fornecedor e operador.
+    **CUSTOMER_COPY,
+    # Campanha de marketing. A linha existe no seed porque é AQUI que o
+    # operador cola o `ns` do flow aprovado — o check W010 manda configurar, e
+    # mandar configurar numa linha que não existe é mandar para o vazio.
+    "announcement_published": {"subject": "Novidade na padaria", "body": "{body}\n\n{cta} {action_url}"},
+    # Pedido de compra ao fornecedor (WhatsApp/SMS/e-mail via
+    # `purchase._supplier_dispatch_route`). Único evento de audiência
+    # FORNECEDOR, e o único do mapa de templates da Meta que não tinha
+    # linha aqui: `event` é readonly no Admin, então sem esta linha o
+    # template aprovado não teria onde gravar o `whatsapp_flow_ns` —
+    # sobrava o `MANYCHAT_FLOW_MAP` do settings, que custa deploy.
+    "purchase_request": {"subject": "Pedido de compra {purchase_ref}", "body": "Olá, {supplier_greeting}! Aqui é da {shop_name}. Precisamos repor {material_name}: {purchase_qty_display}. Pode confirmar disponibilidade, prazo e valor final? (pedido {purchase_ref})"},
+    # Produção → operador (notification.send de sistema, WP-PE2).
+    # Opt-in via Shop.defaults["production"]["notifications"].
+    "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},
+    "production_low_yield": {"subject": "Yield baixo na produção {work_order_ref}", "body": "A produção *{work_order_ref}* ({output_sku}) fechou com yield de {yield_percent}%.\n\nVale conferir a perda no relatório de produção."},
+    "production_forgotten": {"subject": "Produção {work_order_ref} não foi iniciada", "body": "A produção *{work_order_ref}* ({output_sku}) planejada para {target_date} nunca foi iniciada.\n\nConclua, reagende ou estorne no planejamento."},
+    "production_stock_short": {"subject": "Produção {work_order_ref} sem insumos", "body": "A produção *{work_order_ref}* ({output_sku}) falhou por estoque insuficiente.\n\nDetalhe: {error}"},
+}
 
 
 class Command(BaseCommand):
@@ -8418,69 +8443,8 @@ class Command(BaseCommand):
 
         from shopman.shop.models import NotificationTemplate
 
-        FALLBACK_TEMPLATES = {
-            # Campanha de marketing. A linha existe no seed porque é AQUI que o
-            # operador cola o `ns` do flow aprovado — o check W010 manda configurar, e
-            # mandar configurar numa linha que não existe é mandar para o vazio.
-            "announcement_published": {"subject": "Novidade na padaria", "body": "{body}\n\n{cta} {action_url}"},
-            # Alertas por SKU. Sem linha aqui, o adapter caía no texto genérico e o
-            # operador não tinha onde mapear o flow — logo o alerta nunca alcançava quem
-            # está fora da janela de 24h, que é justamente o caso de "me avise".
-            "stock_arrived": {"subject": "{product_name} disponível", "body": "Olá{customer_name_greeting}! O {product_name} que você pediu para acompanhar está disponível: {action_url}{management_note}"},
-            "production_ready": {"subject": "{product_name} saiu do forno", "body": "Olá{customer_name_greeting}! O {product_name} acabou de sair do forno: {action_url}{management_note}"},
-            "order_received": {"subject": "Pedido {order_ref_short} recebido", "body": "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref_short}*.\nEstamos conferindo a disponibilidade e avisamos em seguida.\nAcompanhe por aqui: {tracking_url}"},
-            "order_received_outside_hours": {"subject": "Pedido {order_ref_short} recebido", "body": "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref_short}* fora do nosso horário de atendimento. Vamos processar assim que abrirmos. Total: *{total}*."},
-            "order_accepted": {"subject": "Pedido {order_ref_short} confirmado", "body": "Seu pedido *{order_ref_short}* está confirmado. Total: *{total}*.\nJá vamos preparar.\nAcompanhe por aqui: {tracking_url}"},
-            "order_preparing": {"subject": "Pedido {order_ref_short} em preparo", "body": "Estamos preparando seu pedido *{order_ref_short}*.{eta_note}\nAcompanhe por aqui: {tracking_url}"},
-            "order_ready_pickup": {"subject": "Pedido {order_ref_short} pronto para retirada", "body": "Seu pedido *{order_ref_short}* está pronto e esperando por você no balcão. \U0001f950\nEndereço e detalhes: {tracking_url}"},
-            "order_ready_delivery": {"subject": "Pedido {order_ref_short} pronto — aguardando entregador", "body": "Seu pedido *{order_ref_short}* está pronto e aguardando o entregador.\nAvisamos assim que sair. \U0001f4e6\nAcompanhe por aqui: {tracking_url}"},
-            "order_dispatched": {"subject": "Pedido {order_ref_short} saiu para entrega", "body": "Seu pedido *{order_ref_short}* saiu para entrega.{courier_tracking_suffix}\nQuando receber, é só confirmar por aqui: {tracking_url}"},
-            "order_delivered": {"subject": "Pedido {order_ref_short} entregue", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref_short}* foi entregue.\n\nEsperamos que tenha gostado! Obrigado pela preferência."},
-            "order_cancelled": {"subject": "Pedido {order_ref_short} cancelado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref_short}* foi cancelado.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
-            "order_rejected": {"subject": "Pedido {order_ref_short} não confirmado", "body": "Olá{customer_name_greeting}! Não conseguimos confirmar o pedido *{order_ref_short}*.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
-            "payment_requested": {"subject": "Pedido {order_ref_short}: pagamento disponível", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref_short}* está disponível.\n\nPara continuar, pague dentro do prazo: {payment_url}{pix_suffix}"},
-            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref_short} recebido", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref_short}* foi recebido.\n\nValor: *{total}*\n\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"},
-            # Pedido remoto anotado no PDV: a venda fechou e o cliente paga pelo link.
-            # Evento próprio, não o `payment_requested` — a copy é outra ("anotamos",
-            # não "conferimos a disponibilidade") e o dedupe por (pedido, template)
-            # colidiria com o aviso da loja online. `{payment_deadline_note}` some
-            # sozinho quando não há prazo gravado.
-            "payment_link_sent": {"subject": "Pedido {order_ref_short}: link de pagamento", "body": "Olá{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* — total *{total}*.\n\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}\n\nQualquer coisa, é só responder esta mensagem. 🥖"},
-            # Prazo vencido sem pagamento (Pix da loja ou link do balcão): a casa
-            # LIBEROU a reserva — é o que acontece e é o que o cliente entende.
-            # "Expirou / cancelado automaticamente" era vocabulário de sistema.
-            "payment_expired": {"subject": "Pedido {order_ref_short}: reserva liberada", "body": "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido *{order_ref_short}* dentro do prazo, então liberamos a reserva. Se ainda quiser, é só falar com a gente que refazemos o pedido. 🥖"},
-            "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref_short}", "body": "Olá{customer_name_greeting}! Não conseguimos preparar o pagamento do pedido *{order_ref_short}*.\n\nAcesse {payment_url} para tentar novamente."},
-            "payment_refunded": {"subject": "Reembolso do pedido {order_ref_short} processado", "body": "Olá{customer_name_greeting}! O reembolso do pedido *{order_ref_short}* foi processado.\n\nValor: *{total}*"},
-            "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref_short}*.\n\nSeu saldo fica aqui: {account_url}"},
-            # Quatro eventos que viviam só no fallback do código: sem linha aqui, o
-            # lojista não os enxerga no Admin, não reescreve o texto e não tem onde
-            # colar o flow do ManyChat. Mesmo motivo pelo qual announcement_published
-            # e stock_arrived já estavam na lista.
-            # A mensagem de ENTRADA na loja. Morava dentro do ManyChat e por isso
-            # não tinha log, teste nem quem revisasse; agora é copy da casa.
-            "access_link": {"subject": "Seu acesso à loja", "body": "Olá{customer_name_greeting}! Aqui está seu acesso à loja:\n{access_url}{cart_note}\n\nO link é só seu e vale por poucos minutos."},
-            "waitlist_available": {"subject": "Sua fornada saiu — confirme o pedido {order_ref_short}", "body": "Olá{customer_name_greeting}! Sua fornada saiu 🥐\n\nConfirme o pedido *{order_ref_short}* para garantir o seu: {tracking_url}"},
-            "waitlist_released": {"subject": "Pedido {order_ref_short}: a vaga passou a vez", "body": "Olá{customer_name_greeting}! O prazo de confirmação do pedido *{order_ref_short}* passou e liberamos a sua vaga.\n\nNada foi cobrado, e é só entrar na fila da próxima fornada: {tracking_url}"},
-            "preorder_reminder": {"subject": "Lembrete: pedido {order_ref_short} agendado para amanhã", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref_short}* está agendado para amanhã. Já estamos preparando tudo!\n\nAcompanhe por aqui: {tracking_url}"},
-            "payment_reminder": {"subject": "Pedido {order_ref_short} aguarda pagamento", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref_short}* aguarda o pagamento.\n\nConclua por aqui: {payment_url}{pix_suffix}"},
-            # Pedido de compra ao fornecedor (WhatsApp/SMS/e-mail via
-            # `purchase._supplier_dispatch_route`). Único evento de audiência
-            # FORNECEDOR, e o único do mapa de templates da Meta que não tinha
-            # linha aqui: `event` é readonly no Admin, então sem esta linha o
-            # template aprovado não teria onde gravar o `whatsapp_flow_ns` —
-            # sobrava o `MANYCHAT_FLOW_MAP` do settings, que custa deploy.
-            "purchase_request": {"subject": "Pedido de compra {purchase_ref}", "body": "Olá, {supplier_greeting}! Aqui é da {shop_name}. Precisamos repor {material_name}: {purchase_qty_display}. Pode confirmar disponibilidade, prazo e valor final? (pedido {purchase_ref})"},
-            # Produção → operador (notification.send de sistema, WP-PE2).
-            # Opt-in via Shop.defaults["production"]["notifications"].
-            "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},
-            "production_low_yield": {"subject": "Yield baixo na produção {work_order_ref}", "body": "A produção *{work_order_ref}* ({output_sku}) fechou com yield de {yield_percent}%.\n\nVale conferir a perda no relatório de produção."},
-            "production_forgotten": {"subject": "Produção {work_order_ref} não foi iniciada", "body": "A produção *{work_order_ref}* ({output_sku}) planejada para {target_date} nunca foi iniciada.\n\nConclua, reagende ou estorne no planejamento."},
-            "production_stock_short": {"subject": "Produção {work_order_ref} sem insumos", "body": "A produção *{work_order_ref}* ({output_sku}) falhou por estoque insuficiente.\n\nDetalhe: {error}"},
-        }
-
         count = 0
-        for event, tpl in FALLBACK_TEMPLATES.items():
+        for event, tpl in NOTIFICATION_TEMPLATES.items():
             _, created = NotificationTemplate.objects.update_or_create(
                 event=event,
                 defaults={
@@ -8492,7 +8456,7 @@ class Command(BaseCommand):
             if created:
                 count += 1
 
-        self.stdout.write(f"  ✅ {len(FALLBACK_TEMPLATES)} templates de notificação ({count} novos)")
+        self.stdout.write(f"  ✅ {len(NOTIFICATION_TEMPLATES)} templates de notificação ({count} novos)")
 
     def _seed_rule_configs(self):
         self.stdout.write("  ⚙️  Rule configs...")

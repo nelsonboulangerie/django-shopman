@@ -61,7 +61,7 @@ def test_send_posts_to_comtele_and_trusts_haserror_flag():
     assert captured["headers"]["X-api-key"] == "key-1"
     assert captured["payload"]["route"] == "17"
     assert captured["payload"]["receivers"] == ["5543999990001"]
-    assert "Pedido A47 " in captured["payload"]["message"]
+    assert "pedido A47 " in captured["payload"]["message"]
 
 
 @override_settings(SHOPMAN_SMS=COMTELE_SETTINGS)

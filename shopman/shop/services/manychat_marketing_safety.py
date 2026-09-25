@@ -83,6 +83,7 @@ MARKETING_FLOW_EVENTS = frozenset({
 #: ``product_label`` são derivadas por ``derive_context`` para todo envio.
 _ALERT_FLOW_FIELDS = (
     "action_url",
+    "availability_note",
     "availability_phrase",
     "available_qty",
     "cta",

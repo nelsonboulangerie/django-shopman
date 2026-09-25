@@ -1156,8 +1156,8 @@ class TestNotificationSendHandler:
 
         assert ctx["items"] == []
 
-    def test_build_context_reason_note_is_a_self_suppressing_line(self):
-        """`reason_note` renders a Motivo line only when a reason is present."""
+    def test_build_context_status_note_names_the_reason_or_points_to_the_order(self):
+        """`status_note` nunca fica vazia: o motivo, ou a frase-padrão (vai no template da Meta)."""
         from shopman.shop.services.notification import _build_context
 
         order = _make_order(snapshot={}, data={})
@@ -1165,10 +1165,10 @@ class TestNotificationSendHandler:
         with_reason = _build_context(
             order, {"order_ref": "ORD-001", "reason": "Item indisponível"}, "order_cancelled"
         )
-        assert with_reason["reason_note"] == "\n\nMotivo: Item indisponível"
+        assert with_reason["status_note"] == "Motivo: Item indisponível."
 
         without_reason = _build_context(order, {"order_ref": "ORD-001"}, "order_cancelled")
-        assert without_reason["reason_note"] == ""
+        assert without_reason["status_note"] == "Os detalhes estão no pedido."
 
     @pytest.mark.django_db
     def test_stock_alert_context_resolves_name_without_hiding_sku(self):

@@ -691,10 +691,6 @@ def _build_context(order, payload: dict, template: str) -> dict:
         "total_q": order.total_q,
         "items": order.snapshot.get("items", []),
         "reason": reason,
-        # Pre-formatted, self-suppressing reason line — templates embed `{reason_note}`
-        # and it disappears cleanly when no customer-facing reason is present (same
-        # pattern as `pix_suffix`). Avoids "Motivo: None"/dangling labels in flat copy.
-        "reason_note": f"\n\nMotivo: {reason}" if reason else "",
         "fulfillment_type": fulfillment_type,
         "outside_business_hours": bool(order.data.get("outside_business_hours", False)),
     }
@@ -798,6 +794,9 @@ def _build_context(order, payload: dict, template: str) -> dict:
     context["reorder_url_public"] = storefront_links.storefront_url(
         storefront_links.path_order_history()
     )
+    # Mesmo critério do `tracking_url`: sem magic link, o link comum (o aviso de
+    # prazo vencido manda "pedir de novo" por ele).
+    context["reorder_url"] = context.get("reorder_url") or context["reorder_url_public"]
 
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.
     # Sufixo auto-suprimível (padrão pix_suffix) — some limpo em pedidos sem
@@ -811,11 +810,11 @@ def _build_context(order, payload: dict, template: str) -> dict:
         f"\nAcompanhe o entregador: {courier_tracking}" if courier_tracking else ""
     )
 
-    # Hora prevista do preparo, sufixo auto-suprimível (padrão `reason_note`). A âncora
-    # é o MESMO `_eta_at` que a tela de acompanhamento mostra: aviso e tela dizendo
-    # horas diferentes para o mesmo pedido é pior que não dizer hora nenhuma. Só no
-    # preparo — no despacho o `_eta_at` é a hora de CHEGADA, e a frase é outra.
-    context["eta_note"] = _eta_note(order)
+    # A informação do pedido que muda de um para outro (hora prevista, motivo), numa
+    # frase que NUNCA fica vazia: sem o dado, entra a frase-padrão. É o que a deixa
+    # caber no template aprovado do WhatsApp, que não aceita variável vazia
+    # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
+    context["status_note"] = _status_note(order, template, reason)
 
     # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
     # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
@@ -1006,7 +1005,29 @@ def _last_carrier_still_ahead(order) -> bool:
     return str(order.status) in _LAST_CARRIER_AHEAD[fulfillment_type]
 
 
-def _eta_note(order) -> str:
+def _status_note(order, template: str, reason) -> str:
+    """A frase do pedido em ``{status_note}``, com a frase-padrão quando falta o dado.
+
+    Preparo: a hora prevista, SEM ponto final (o ponto é do texto: o template da
+    Meta não pode terminar em variável). Cancelado e não confirmado: o motivo.
+    """
+    template = _canonical_template(template)
+    if template == "order_preparing":
+        clock = _eta_clock(order)
+        if clock:
+            return f"Previsto para ficar pronto às {clock}. Mas avisamos assim que estiver"
+        return "Avisamos assim que estiver pronto"
+    if template in {"order_cancelled", "order_rejected"}:
+        return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
+    return ""
+
+
+def _eta_clock(order) -> str:
+    """A hora prevista do preparo ("18h20"), do MESMO ``_eta_at`` que a tela mostra.
+
+    Aviso e tela dizendo horas diferentes para o mesmo pedido é pior que não dizer
+    hora nenhuma. Só no preparo: no despacho o ``_eta_at`` é a hora de CHEGADA.
+    """
     if order.status != "preparing":
         return ""
     from shopman.shop.projections.order_tracking import _eta_at
@@ -1016,8 +1037,7 @@ def _eta_note(order) -> str:
     if eta is None:
         return ""
     local = timezone.localtime(eta)
-    clock = f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
-    return f"\nDeve ficar pronto às {clock}."
+    return f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
 
 
 def _qualify_template(template: str, context: dict) -> str:
