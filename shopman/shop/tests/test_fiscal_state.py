@@ -195,7 +195,7 @@ def test_despacho_com_a_nota_na_fila_cria_UM_alerta_por_pedido():
 
     alerts = list(_handoff_alerts(order.ref))
     assert len(alerts) == 1
-    assert "FS-HANDOFF saiu sem NFC-e autorizada" in alerts[0].message
+    assert "FS-HANDOFF foi despachado sem NFC-e autorizada" in alerts[0].message
     assert "despachado" in alerts[0].message
     assert warning.call_count == 2
     assert warning.call_args_list[0].args[0].startswith("fiscal.handoff_without_nfce")
@@ -210,7 +210,7 @@ def test_emissao_morta_tambem_grita_na_conclusao():
 
     alert = _handoff_alerts(order.ref).get()
     assert "concluído" in alert.message
-    assert "falha de emissão" in alert.message
+    assert "A emissão falhou" in alert.message
 
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)

@@ -322,7 +322,7 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(ok).toBe(false);
     const message = board.actionError("WEB-5");
     expect(message).toContain("Pedido não está mais aguardando confirmação");
-    expect(message).toContain("confirmado automaticamente");
+    expect(message).toContain("Atualizamos o quadro: confira o pedido antes de tentar de novo.");
     expect(env.sonner.error).toHaveBeenCalledWith(message);
     expect(env.refresh).toHaveBeenCalledTimes(1);
   });

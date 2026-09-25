@@ -211,10 +211,15 @@ class NotificationSendHandler:
                 "notification_failed",
                 "error",
                 (
-                    (f"Aceite da notificação '{template}' não confirmado; confira o envio antes de reenviar. "
-                     if unknown else f"Notificação '{template}' falhou após 5 tentativas ")
-                    +
-                    f"para pedido {order_ref}. Último erro: {last_error or 'desconhecido'}"
+                    # O ``'{template}'`` entre aspas é o marcador do dedupe logo acima.
+                    (
+                        f"Não dá para saber se o aviso '{template}' chegou ao cliente do pedido {order_ref}. "
+                        "Confira com o cliente pelo WhatsApp do pedido antes de mandar de novo."
+                        if unknown
+                        else f"O aviso '{template}' não chegou ao cliente do pedido {order_ref} depois de "
+                        "5 tentativas. Se for importante, fale com o cliente pelo WhatsApp do pedido."
+                    )
+                    + f" Último erro: {last_error or 'desconhecido'}"
                 ),
                 order_ref=order_ref or "",
             )

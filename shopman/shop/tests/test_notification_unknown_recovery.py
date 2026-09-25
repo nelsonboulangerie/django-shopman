@@ -62,7 +62,7 @@ def test_crash_after_remote_acceptance_fences_worker_replay(context, monkeypatch
     from shopman.backstage.models import OperatorAlert
     alerts = OperatorAlert.objects.filter(type="notification_failed", order_ref=context.ref)
     assert alerts.count() == 1
-    assert "não confirmado" in alerts.get().message
+    assert "Não dá para saber se o aviso" in alerts.get().message
     assert "5 tentativas" not in alerts.get().message
 
 

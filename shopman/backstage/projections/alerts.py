@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote, urlencode
@@ -46,7 +47,19 @@ class OperatorAlertsProjection:
     contract_version: int = 1
 
 
-def build_operator_alerts_projection(*, alerts, counts) -> OperatorAlertsProjection:
+#: O marcador técnico de dedupe que ``create_operator_alert`` pendura no fim da
+#: mensagem quando a chave não aparece no texto. Ele continua no banco (o
+#: dedupe e ``fiscal.emit_failed_alert_open`` procuram por ele), mas não é
+#: frase para o operador.
+_DEDUPE_SUFFIX = re.compile(r"\s*\n\s*\nDedupe: [^\n]*\s*$")
+
+
+def readable_message(message: str) -> str:
+    """A mensagem como o operador lê: sem o marcador técnico de dedupe."""
+    return _DEDUPE_SUFFIX.sub("", str(message or "")).strip()
+
+
+def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> OperatorAlertsProjection:
     alert_rows = tuple(alerts)
     production_refs = {alert.order_ref for alert in alert_rows if alert.order_ref and alert.audience == "production"}
     target_dates: dict[str, str] = {}
@@ -69,12 +82,13 @@ def build_operator_alerts_projection(*, alerts, counts) -> OperatorAlertsProject
             severity=alert.severity,
             severity_label=alert.get_severity_display(),
             audience=alert.audience,
-            message=alert.message,
+            message=readable_message(alert.message),
             order_ref=alert.order_ref,
             created_at_display=timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
             actions=_alert_actions(
                 alert,
                 target_date=target_dates.get(alert.order_ref, ""),
+                surface=surface,
             ),
         )
         for alert in alert_rows
@@ -109,12 +123,26 @@ _ORDER_CONTEXT_PATHS = {
     "danfe_print_failed": "/",
 }
 
+#: O rótulo do botão, no Gestor de pedidos: diz aonde leva, não "resolver".
+_ORDERS_SURFACE_LABELS = {
+    "danfe_print_failed": "Imprimir a DANFE no card",
+    "order_production_quality_risk": "Abrir o pedido no quadro",
+}
 
-def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionProjection, ...]:
+
+def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[ProductionActionProjection, ...]:
     actions = []
     path = _PRODUCTION_CONTEXT_PATHS.get(alert.type) or _ORDER_CONTEXT_PATHS.get(alert.type)
+    label = "Resolver no contexto"
+    exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
+    if surface == "orders" and alert.order_ref and alert.type not in _PRODUCTION_CONTEXT_PATHS:
+        # No Gestor de pedidos, todo alerta de pedido leva ao pedido: é lá que
+        # estão o contato do cliente, a nota, a corrida e o cancelamento.
+        label = _ORDERS_SURFACE_LABELS.get(alert.type, "Abrir o pedido")
+        if path is None:
+            path = "/"
+            exact_order_path = True
     if path is not None:
-        exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
         if exact_order_path:
             path = f"/{quote(alert.order_ref, safe='')}"
         query_params = {}
@@ -128,7 +156,7 @@ def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionPro
             ProductionActionProjection(
                 ref=f"open-context:{alert.pk}",
                 kind="open_alert_context",
-                label="Resolver no contexto",
+                label=label,
                 priority=10,
                 enabled=True,
                 reason="",

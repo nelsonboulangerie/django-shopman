@@ -722,7 +722,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
-        extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar fiscal", enabled=authorized,
+        extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar NFC-e", enabled=authorized,
             reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.", method="POST", idempotency="required",
             payload_schema={"base_revision": fiscal_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     if method == "link":
@@ -1813,7 +1813,7 @@ def _payment_method_label(method: str, payment_data: dict, *, labels: dict | Non
         )
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
-            return f"{label} — pagamento confirmado"
+            return f"{label} · pagamento confirmado"
         handoff = "retirada" if order is not None and not _is_delivery(order) else "entrega"
         return f"{label} na {handoff}"
     return label
@@ -1933,14 +1933,14 @@ def _format_time_of_day(dt) -> str:
 #: A copy segue o PONTO em que a nota nasce, não o status do pedido: pix/link
 #: emitem na captura (``lifecycle._on_paid``), e "Fiscal na conclusão" mentia
 #: para eles. ``fiscal_status`` mantém as chaves que a tela do Gestor já lê
-#: (``failed`` liga o "Reprocessar fiscal"); ``fiscal_state`` é o vocabulário
+#: (``failed`` liga o "Reprocessar NFC-e"); ``fiscal_state`` é o vocabulário
 #: canônico, o mesmo do PDV.
 _FISCAL_PILL = {
     "authorized": ("authorized", "NFC-e autorizada"),
-    "failed": ("failed", "NFC-e falhou"),
-    "queued": ("pending", "NFC-e na fila"),
+    "failed": ("failed", "NFC-e não autorizada"),
+    "queued": ("pending", "NFC-e em emissão"),
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
-    "not_expected": ("not_requested", "Emissão não estabelecida"),
+    "not_expected": ("not_requested", "Sem NFC-e neste pedido"),
 }
 
 

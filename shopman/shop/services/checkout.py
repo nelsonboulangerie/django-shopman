@@ -504,7 +504,11 @@ def _apply_post_commit_side_effects(data: dict, channel_ref: str, *, order_ref: 
         except Exception:
             pending.append(effect)
             logger.warning("checkout.convenience_pending effect=%s", effect, exc_info=True)
-            create_operator_alert(type="checkout_convenience_pending", severity="warning", message="Pedido confirmado; recuperação das escolhas salvas pendente.", order_ref=order_ref, dedupe_key=key)
+            create_operator_alert(type="checkout_convenience_pending", severity="warning", message=(
+                    f"O pedido {order_ref} entrou, mas o cadastro do cliente (vínculo, endereço ou "
+                    "preferências que ele pediu para guardar) ainda não foi atualizado. O pedido segue "
+                    "normal."
+                ), order_ref=order_ref, dedupe_key=key)
     return pending
 
 
