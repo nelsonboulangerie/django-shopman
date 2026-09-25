@@ -1,8 +1,23 @@
-# WhatsApp — Pacote de templates Meta (pronto para submissão)
+# WhatsApp — Pacote de templates Meta
+
+> ## ⛔ SUBMISSÃO PAUSADA em 25/09/2026 — não submeta nada a partir deste doc
+>
+> Decisão do dono: **todas as frases vão ser revistas de uma vez** antes de qualquer
+> submissão. A revisão é da sessão da voz das notificações, e depois dela o texto desce em
+> cascata — `seed`, migração de dados e este doc. **Só então os templates vão à Meta.**
+>
+> Por que a pausa existe, e por que ela é barata: a redação do ciclo do pedido mudou **duas
+> vezes em 24 horas** (o pacote de voz de 24/09 e a exceção da confirmação em 25/09). Um
+> template aprovado com o texto errado **não se edita** — reaprova, e a fila da Meta leva
+> 24-48h por rodada. Esperar a revisão custa horas; submeter no meio dela custa dias, vezes
+> o número de templates.
+>
+> Quando a revisão fechar, remova este bloco junto com a cascata.
 
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
-> Pesquisa de regras: Meta + BSPs, jun/2026. Medição contra o código: 02/09/2026.
+> Pesquisa de regras: Meta + BSPs, jun/2026. Medição contra o código: 02/09/2026;
+> voz e domínio remedidos em 25/09/2026.
 
 **Submissão é pelo ManyChat.** O número da padaria é controlado por ele e continua sendo.
 Meta Cloud API direta, WhatsApp Flows e segundo número estão **descartados**: a burocracia
@@ -90,6 +105,31 @@ Eles não gravam nada em lugar nenhum.
 6. **Corpo majoritariamente literal.** Template que é quase só variável reprova: a Meta precisa
    ver o que a mensagem diz. Vale para o `anuncio_novidade`, o mais arriscado do pacote.
 7. Sem pedir dado sensível no corpo (cartão, CPF) — reprovação automática.
+8. **Um corpo por evento, sem variantes.** `NotificationTemplate.event` é `unique=True` e o
+   adapter busca um flow por evento (`_load_db_flow_ns`). Não existe "a versão com nome e a
+   versão sem" da mesma mensagem: a frase escolhida tem de funcionar em **todos** os casos
+   daquele evento.
+9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
+   que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
+   `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
+   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`. Eles continuam saindo inteiros
+   por SMS e e-mail, que interpolam na hora. No template, ou a informação é fixa no texto,
+   ou fica de fora.
+
+> ### 📝 Para quem for reescrever as frases
+>
+> As sete primeiras regras são sobre o formato que a Meta exige. As duas últimas são as que
+> pegam quem escreve copy boa e descobre tarde que ela não vira template — vale lê-las
+> **antes** de redigir, não depois.
+>
+> Duas armadilhas a mais, que não são regra da Meta e sim do nosso caminho:
+>
+> - **Variável que pode chegar vazia quebra a frase em volta.** `customer_name` é o caso
+>   vivo: o checkout da loja o exige, mas pedido anotado no PDV e ingestão do iFood não. Uma
+>   frase com vírgula fixa (`Oi, {{1}}!`) não tem como se recompor sem o nome. Ou o dado é
+>   garantido, ou a frase se vira sem ele.
+> - **Link não vira texto, vira botão** (regra 5), e o botão tem numeração própria. Uma frase
+>   que termina com "acesse o link abaixo" está pedindo um botão, não uma variável.
 
 ### Sample values do pacote
 
