@@ -119,15 +119,49 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 Onde há botão, ele é sempre `https://www.nelsonboulangerie.com.br/pedido/{{1}}`,
 com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
+> ### ⛔ Os corpos daqui seguem a VOZ APROVADA de 24/09/2026
+>
+> O dono aprovou em bloco um padrão de voz e cinco textos do ciclo do pedido (Mesa de
+> pendências, item 11), que entraram pela PR #1122 — `seed.py` + a migração de dados
+> `shop.0075_voz_dos_avisos_do_pedido`. **Sete eventos** mudaram de texto ali, e **cinco
+> deles têm template Meta**: `pedido_recebido`, `pedido_confirmado`, `pedido_em_preparo`,
+> `pedido_pronto_retirada` e `pedido_pronto_entrega`. Os corpos abaixo já são os novos.
+>
+> O que a voz nova fez, e que muda o jeito de montar o template:
+>
+> - **O cumprimento saiu de quatro deles.** Onde saiu, o corpo **não usa `customer_name`** e
+>   a numeração andou: `{{1}}` passa a ser a **ref**. Conferir variável por variável, porque
+>   ligar `{{1}}` ao nome num corpo que começa com "Seu pedido " produz "Seu pedido Ana".
+> - **"Obrigado pela preferência" é exclusivo do `pedido_entregue`.** Saiu do
+>   `pedido_confirmado` e não volta em nenhum outro.
+> - **`order_rejected` já nasceu certo** neste doc ("Não conseguimos confirmar"): a PR só
+>   trocou o "O estabelecimento não conseguiu" que vivia no `seed`. Nada a fazer aqui.
+> - **`payment_confirmed` mudou só o ASSUNTO**, que é coisa de e-mail. O corpo do
+>   `pagamento_confirmado` fica como está.
+>
+> ⚠️ Os outros dois eventos do pacote de voz (`order_dispatched` e o assunto do
+> `payment_confirmed`) estão tratados nas suas próprias entradas abaixo.
+>
+> ⚠️ **No WhatsApp o texto do Admin não alcança o cliente** — quem fala é o template
+> aprovado na Meta. SMS e e-mail ganham a voz nova no deploy da #1122; o WhatsApp só ganha
+> quando **estes** templates forem aprovados. É por isso que submeter na voz velha custa
+> um ciclo de reaprovação, não uma edição.
+
 ### `pedido_recebido` — evento `order_received`
-- Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Vamos conferir a disponibilidade e avisamos a próxima etapa por aqui.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Estamos conferindo a disponibilidade e avisamos em seguida.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`NB-260902-A17` (`order_ref`)
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_confirmado` — evento `order_accepted`
-- Corpo: `Olá, {{1}}! Confirmamos o seu pedido {{2}}. O total é {{3}}. Obrigado por comprar conosco.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17` · `{{3}}`=`R$ 38,00`
+- Corpo: `Seu pedido {{1}} está confirmado. Total: {{2}}. Já vamos preparar.`
+- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido`
+
+> ⚠️ **Sem cumprimento e sem agradecimento, e os dois são decisão do dono.** O
+> cumprimento saiu (o aviso não precisa se apresentar a cada passo) e o "Obrigado pela
+> preferência" ficou **só** no `pedido_entregue`. Consequência para quem monta o template:
+> este corpo **não usa `customer_name`**, e a numeração andou — `{{1}}` aqui é a **ref**,
+> não o nome.
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Olá, {{1}}! Não conseguimos confirmar o seu pedido {{2}} desta vez. Nada foi cobrado. Se quiser entender o motivo, é só falar com a gente por aqui.`
@@ -135,20 +169,44 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 - Botão URL: `Ver pedido`
 
 ### `pedido_em_preparo` — evento `order_preparing`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} já está em preparo. Avisaremos assim que estiver pronto.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Estamos preparando o seu pedido {{1}}. Avisamos assim que estiver pronto.`
+- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Botão URL: `Acompanhar pedido`
+
+> ⚠️ **O `{eta_note}` não viaja neste template**, e é o mesmo motivo do `produto_chegou`:
+> ele é sufixo **auto-suprimível** (`"\nDeve ficar pronto às 18h20."`, de
+> `services/notification._eta_note`) e a Meta não aceita variável vazia. Um corpo aprovado
+> com a hora dentro fica quebrado em todo pedido sem ETA calculável. A hora continua
+> saindo inteira por SMS e e-mail, que interpolam na hora.
+>
+> O fecho "Avisamos assim que estiver pronto." não é invenção: é a mesma construção que a
+> voz aprovada usa no `pedido_pronto_entrega` ("Avisamos assim que sair."). Sem ele o corpo
+> terminaria logo depois da variável — quase-só-variável reprova (regra de ouro 6).
 
 ### `pedido_pronto_retirada` — evento `order_ready_pickup`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} está pronto para retirada. Estamos te esperando.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Seu pedido {{1}} está pronto e esperando por você no balcão. 🥐`
+- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Botão URL: `Endereço e detalhes`
 
 ### `pedido_pronto_entrega` — evento `order_ready_delivery`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} está pronto e sairá para entrega em breve.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair. 📦`
+- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} saiu para entrega e chega logo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`NB-260902-A17` (`order_ref`)
+
+> ⛔ **SUBMETER ESTE POR ÚLTIMO — o texto dele não está decidido.** É o único evento do
+> ciclo que o pacote de voz de 24/09 **não** cobriu: o `order_dispatched` segue abrindo com
+> "Olá{customer_name_greeting}!" no `seed` e nos fallbacks, contra a regra que tirou o
+> cumprimento dos outros quatro. A própria PR #1122 registra isso como fora de escopo, sem
+> decisão.
+>
+> Submetê-lo agora é apostar em qual das duas versões vence, e a aposta errada custa um
+> ciclo de reaprovação. O corpo acima é o antigo, mantido de propósito: se a regra valer
+> aqui também, ele vira `Seu pedido {{1}} saiu para entrega e chega logo.` — com a
+> numeração andando, como nos outros. Alinhar com o dono antes.
 
 ### `pedido_entregue` — evento `order_delivered`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
@@ -351,7 +409,7 @@ nome**, senão a variável sai em branco e nada falha.
 
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
-| Nome do cliente | `customer_name` | todos os de cliente |
+| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada` e `pedido_pronto_entrega` (a voz de 24/09 tirou o cumprimento desses quatro) |
 | Ref do pedido | `order_ref` | todos os de pedido **e todo botão de URL** |
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
