@@ -30,6 +30,8 @@ export interface POSProductProjection {
   gtin?: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
+  /** Motivo do bloqueio quando não é o genérico "Esgotado" (ex.: "Sem caixa"). */
+  sold_out_reason?: string;
   /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
    *  da etiqueta (ou o peso) em vez de somar uma unidade. */
   sold_by_weight?: boolean;

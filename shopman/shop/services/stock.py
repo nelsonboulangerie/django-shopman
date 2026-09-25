@@ -643,9 +643,7 @@ def _expand_if_bundle(sku: str, qty: Decimal) -> list[dict]:
     """Expand bundle into components. Returns single-item list if not a bundle."""
     try:
         catalog = get_adapter("catalog")
-        # Kit só com a embalagem (que o adapter tira da expansão) segura o
-        # próprio SKU, como antes de ter composição.
-        return catalog.expand_bundle(sku, qty) or [{"sku": sku, "qty": qty}]
+        return catalog.expand_bundle(sku, qty)
     except Exception as exc:
         if getattr(exc, "code", "") == "NOT_A_BUNDLE":
             return [{"sku": sku, "qty": qty}]

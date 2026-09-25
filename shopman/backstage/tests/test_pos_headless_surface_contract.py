@@ -172,6 +172,37 @@ class POSHeadlessSurfaceContractTests(TestCase):
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
 
+    def test_kit_without_its_box_is_inert_with_the_reason(self) -> None:
+        """Caixa presente sem a caixa física em estoque: tile inerte, "Sem caixa".
+
+        A caixa é estoque limitado e restringe a venda do kit (dono, 24/09). O
+        operador precisa saber O QUE falta — "Esgotado" o mandaria procurar pão.
+        """
+        from shopman.offerman.models import ProductComponent
+        from shopman.stockman import stock
+        from shopman.stockman.models import Position, Quant
+
+        kit = Product.objects.create(sku="KIT-HEADLESS", name="Caixa Presente", base_price_q=6000, is_sellable=True)
+        box = Product.objects.create(
+            sku="KIT-HEADLESS-EMB", name="Caixa Presente (embalagem)", base_price_q=0, is_sellable=True,
+            metadata={"kit_packaging": True},
+        )
+        ProductComponent.objects.create(parent=kit, component=box, qty=1)
+        ListingItem.objects.create(
+            listing=Listing.objects.get(ref="pdv"), product=kit, price_q=6000, is_published=True, is_sellable=True,
+        )
+        vitrine = Position.objects.create(ref="vitrine", name="Vitrine", is_saleable=True)
+        Quant.objects.create(sku="KIT-HEADLESS-EMB", position=vitrine)
+
+        products = {p["sku"]: p for p in self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"]}
+        self.assertTrue(products["KIT-HEADLESS"]["sold_out"])
+        self.assertEqual(products["KIT-HEADLESS"]["sold_out_reason"], "Sem caixa")
+        self.assertEqual(products["POS-HEADLESS-ITEM"]["sold_out_reason"], "")
+
+        stock.receive(quantity=3, sku="KIT-HEADLESS-EMB", position=vitrine, reason="teste")
+        products = {p["sku"]: p for p in self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"]}
+        self.assertFalse(products["KIT-HEADLESS"]["sold_out"])
+
     def test_products_expose_the_package_barcode_for_the_counter_scanner(self) -> None:
         """O leitor do balcão DIGITA o código no campo de busca do PDV.
 

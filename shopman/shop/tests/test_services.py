@@ -2268,7 +2268,7 @@ class TestAvailabilityBundles:
         # FARINHA has 50 units → 50/2=25 bundles
         # MANTEIGA has 200 units → 200/1=200 bundles
         # min = 25
-        def fake_check(sku, qty, *, channel_ref=None, target_date=None):
+        def fake_check(sku, qty, *, channel_ref=None, target_date=None, as_component=False):
             if sku == "FARINHA-001":
                 return {**self._make_check_result(available_qty=Decimal("50")), "is_bundle": False, "failed_sku": None}
             return {**self._make_check_result(available_qty=Decimal("200")), "is_bundle": False, "failed_sku": None}
@@ -2291,7 +2291,7 @@ class TestAvailabilityBundles:
             {"sku": "MANTEIGA-001", "qty": Decimal("1")},
         ]
 
-        def fake_check(sku, qty, *, channel_ref=None, target_date=None):
+        def fake_check(sku, qty, *, channel_ref=None, target_date=None, as_component=False):
             if sku == "FARINHA-001":
                 return {
                     "ok": False, "available_qty": Decimal("0"),
@@ -2314,27 +2314,31 @@ class TestAvailabilityBundles:
         assert result["failed_sku"] == "FARINHA-001"
         assert result["error_code"] == "insufficient_stock"
 
-    def test_bundle_component_not_in_listing(self):
-        """Bundle with 1 component not in listing → ok=False, error_code=not_in_listing."""
+    def test_bundle_components_are_checked_as_components(self):
+        """Componente é conferido com ``as_component=True``: fora da listagem
+        não recusa o kit (a caixa física da caixa presente não é vendável
+        avulsa e mesmo assim compõe o kit). Estoque e pausa continuam valendo."""
         from shopman.shop.services import availability
 
-        bundle_qty = Decimal("1")
-        components = [{"sku": "COMP-A", "qty": Decimal("1")}]
+        calls = []
 
-        def fake_check(sku, qty, *, channel_ref=None, target_date=None):
+        def fake_check(sku, qty, *, channel_ref=None, target_date=None, as_component=False):
+            calls.append(as_component)
             return {
-                "ok": False, "available_qty": Decimal("0"),
+                "ok": True, "available_qty": Decimal("5"),
                 "is_paused": False, "is_planned": False,
-                "breakdown": {}, "error_code": "not_in_listing",
+                "breakdown": {}, "error_code": None,
                 "is_bundle": False, "failed_sku": None,
             }
 
         with patch("shopman.shop.services.availability.check", side_effect=fake_check):
-            result = availability._check_bundle("BUNDLE-001", bundle_qty, components, channel_ref="ifood", target_date=None)
+            result = availability._check_bundle(
+                "BUNDLE-001", Decimal("1"), [{"sku": "COMP-A", "qty": Decimal("1")}],
+                channel_ref="ifood", target_date=None,
+            )
 
-        assert result["ok"] is False
-        assert result["error_code"] == "not_in_listing"
-        assert result["failed_sku"] == "COMP-A"
+        assert result["ok"] is True
+        assert calls == [True]
 
     def test_bundle_component_paused(self):
         """Bundle with 1 component paused → ok=False, error_code=paused."""
@@ -2343,7 +2347,7 @@ class TestAvailabilityBundles:
         bundle_qty = Decimal("1")
         components = [{"sku": "COMP-A", "qty": Decimal("1")}]
 
-        def fake_check(sku, qty, *, channel_ref=None, target_date=None):
+        def fake_check(sku, qty, *, channel_ref=None, target_date=None, as_component=False):
             return {
                 "ok": False, "available_qty": Decimal("0"),
                 "is_paused": True, "is_planned": False,

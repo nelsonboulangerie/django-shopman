@@ -70,6 +70,10 @@ class POSProductProjection:
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
     # da grade faria o operador procurar um botão que "sumiu".
     sold_out: bool = False
+    # Por que o tile está inerte, quando o motivo não é o genérico "Esgotado":
+    # "Sem caixa" = caixa presente cuja caixa física (componente de estoque
+    # limitado, ``metadata['kit_packaging']``) acabou. Vazio = "Esgotado".
+    sold_out_reason: str = ""
     # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
     # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
     # uma unidade. Ver ``shop/services/weighed_sale.py``.
@@ -1002,9 +1006,15 @@ def _load_products() -> list[POSProductProjection]:
             .order_by("name")
         ]
 
-    sold_out = _sold_out_skus([p.sku for p, _ in entries])
+    skus = [p.sku for p, _ in entries]
+    sold_out = _sold_out_skus(skus)
+    without_box = _kits_without_box(skus)
     return [
-        _product_projection(p, price_q, sold_out=p.sku in sold_out)
+        _product_projection(
+            p, price_q,
+            sold_out=p.sku in sold_out or p.sku in without_box,
+            sold_out_reason="Sem caixa" if p.sku in without_box else "",
+        )
         for p, price_q in entries
     ]
 
@@ -2117,7 +2127,9 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
     )
 
 
-def _product_projection(product: Product, price_q: int, *, sold_out: bool = False) -> POSProductProjection:
+def _product_projection(
+    product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
+) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
         ci = (
@@ -2148,6 +2160,7 @@ def _product_projection(product: Product, price_q: int, *, sold_out: bool = Fals
         image_url=product.image_url or "",
         gtin=_product_gtin(product),
         sold_out=sold_out,
+        sold_out_reason=sold_out_reason,
         sold_by_weight=sold_by_weight,
     )
 
@@ -2156,6 +2169,41 @@ def _product_gtin(product: Product) -> str:
     metadata = product.metadata if isinstance(product.metadata, dict) else {}
     social = metadata.get("social")
     return str(social.get("gtin") or "") if isinstance(social, dict) else ""
+
+
+def _kits_without_box(skus: list[str]) -> set[str]:
+    """Caixas presente da grade cuja caixa física acabou (dono, 24/09).
+
+    A caixa (componente com ``metadata['kit_packaging']``) é estoque limitado e
+    restringe a venda do kit. Sem ela, o tile fica inerte com "Sem caixa" — o
+    operador sabe o que falta, e não procura pão que está na vitrine. Só a
+    caixa RASTREADA conta (com saldo, mesmo zero); a mesma leitura em lote do
+    selo de esgotado. Silencioso quando o stockman não responde.
+    """
+    if not skus:
+        return set()
+    try:
+        from shopman.offerman.models import ProductComponent
+
+        from shopman.shop.projections.catalog_context import availability_for_skus
+
+        boxes = [
+            (pc.parent.sku, pc.component.sku, pc.qty)
+            for pc in ProductComponent.objects.filter(parent__sku__in=skus).select_related("parent", "component")
+            if isinstance(pc.component.metadata, dict) and pc.component.metadata.get("kit_packaging") is True
+        ]
+        if not boxes:
+            return set()
+        avail = availability_for_skus(sorted({box for _, box, _ in boxes}), channel_ref=POS_CHANNEL_REF)
+        without: set[str] = set()
+        for kit_sku, box_sku, qty in boxes:
+            raw = avail.get(box_sku)
+            if raw and raw.get("is_tracked") and (raw.get("total_promisable") or 0) < qty:
+                without.add(kit_sku)
+        return without
+    except Exception:
+        logger.exception("pos_kit_box_lookup_failed")
+        return set()
 
 
 def _sold_out_skus(skus: list[str]) -> set[str]:

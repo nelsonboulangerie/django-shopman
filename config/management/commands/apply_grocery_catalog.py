@@ -75,8 +75,11 @@ próprio (montagem, embalagem especial), maior que a soma dos itens avulsos:
 os itens saem pelo preço avulso e o ágio sai na linha da **embalagem** — a
 caixa física, componente declarado do kit que este comando cria
 (``<SKU>-EMB``, "Caixa Presente <nome> (embalagem)", ``metadata['kit_packaging']``,
-NCM de papelão/cartão configurável por caixa, perfil sem ST, sem GTIN, não
-vendável avulsa, sem estoque obrigatório). Kit sem mercadoria na composição
+NCM de papelão/cartão configurável por caixa, perfil sem ST, sem GTIN, sem
+listagem — não se vende avulsa). A caixa física é **item de estoque limitado**
+(dono, 24/09): cadastro de compra do mesmo SKU, saldo em unidades, e restringe
+a venda do kit como qualquer componente — sem caixa, kit indisponível (ver
+``_ensure_packaging``). Kit sem mercadoria na composição
 (só a caixa) não tem o que pôr na nota, então fica ``is_sellable=False`` — no
 produto e na listagem — até o dono definir o que vai dentro. Ligar a venda
 depois de cadastrar a composição é passo do gestor: o comando não religa. Os placeholders que
@@ -755,51 +758,77 @@ def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
 
 
 def _ensure_packaging(box: GiftBox, kit, report: dict) -> None:
-    """A caixa física do kit: produto da casa, componente declarado, fora da venda.
+    """A caixa física do kit: componente declarado, item de ESTOQUE, sem venda avulsa.
 
-    Recebe na NFC-e o ágio do kit (preço do kit − soma avulsa dos itens). Não
-    tem preço próprio (o valor dela é a diferença), não se vende avulsa, não
-    entra em listagem e não tem estoque obrigatório (``demand_ok``; o adapter
-    de catálogo a tira da expansão de disponibilidade e de reserva). NCM de
-    embalagem por material, perfil ``standard`` (sem ST: a embalagem é da
-    casa), sem GTIN.
+    - **Nota**: recebe o ágio do kit (preço do kit − soma avulsa dos itens);
+      NCM de embalagem por material, perfil ``standard`` (sem ST: a embalagem
+      é da casa), sem GTIN. Sem preço próprio: o valor dela é a diferença.
+    - **Estoque limitado** (dono, 24/09: "a caixa é, em si, um item de estoque
+      limitado, e pode restringir sim a venda do kit"): cadastro de compra do
+      mesmo SKU (entra pelo Compras, como embalagem), unidade, política
+      ``stock_only``. Entra na disponibilidade do kit como qualquer componente
+      (kit disponível = mínimo dos componentes) e na reserva/baixa da venda.
+      Sem caixa, o kit fica indisponível.
+    - **Rastreada desde o primeiro dia**: o Stockman trata SKU sem nenhum saldo
+      como "não rastreado" (sempre disponível). Por isso a caixa nasce com um
+      saldo ZERO na posição de venda (``vitrine``) — é a verdade até a primeira
+      nota ou contagem, e é o que faz "sem caixa" valer. Banco sem posição
+      ainda (o seed, que chama isto antes de criar as posições) ganha o
+      estoque inicial no próprio seed.
+    - **Não vendável avulsa**: sem listagem em canal nenhum. ``is_sellable``
+      fica ligado porque é a chave comercial que o Stockman lê — desligada, a
+      caixa contaria como pausada e derrubaria todo kit que a usa.
     """
     from shopman.offerman.models import AvailabilityPolicy, Product, ProductComponent
 
+    lines: list[str] = []
     wanted_fiscal = {"profile": "standard", "ncm": box.packaging_ncm, "unit": "UN"}
     packaging = Product.objects.filter(sku=box.packaging_sku).first()
     if packaging is None:
         packaging = Product.objects.create(
             sku=box.packaging_sku, name=box.packaging_name, base_price_q=0, unit="un",
-            is_published=False, is_sellable=False,
-            availability_policy=AvailabilityPolicy.DEMAND_OK,
+            is_published=False, is_sellable=True,
+            availability_policy=AvailabilityPolicy.STOCK_ONLY,
             metadata={"kit_packaging": True, "fiscal": wanted_fiscal},
         )
+        lines.append(f"embalagem: {packaging.sku} (NCM {box.packaging_ncm}, estoque)")
     else:
-        metadata = _metadata(packaging)
-        have_ncm = (metadata.get("fiscal") or {}).get("ncm")
-        if have_ncm and have_ncm != box.packaging_ncm:
+        have_ncm = (_metadata(packaging).get("fiscal") or {}).get("ncm")
+        if have_ncm != box.packaging_ncm:
             report["conflicts"].append((packaging.sku, "ncm", have_ncm, box.packaging_ncm))
-        changed = False
-        if metadata.get("kit_packaging") is not True:
-            metadata["kit_packaging"] = True
-            changed = True
-        if not have_ncm:
-            metadata["fiscal"] = wanted_fiscal
-            changed = True
-        if changed:
-            packaging.metadata = metadata
-            packaging.save(update_fields=["metadata"])
-        if packaging.is_sellable:
-            packaging.is_sellable = False
-            packaging.save(update_fields=["is_sellable"])
+    _material, purchasable = ensure_purchase_record(packaging)
+    if purchasable:
+        lines.append(f"compra: cadastro de compra de {packaging.sku}")
+    if _ensure_tracked(packaging.sku):
+        lines.append(f"estoque: {packaging.sku} rastreado (saldo 0 até a primeira nota ou contagem)")
     _link, created = ProductComponent.objects.get_or_create(
         parent=kit, component=packaging, defaults={"qty": 1}
     )
     if created:
-        report["updated"].append(
-            (box.sku, [f"composição: + {packaging.sku} (embalagem, NCM {packaging.metadata['fiscal']['ncm']})"])
-        )
+        lines.append(f"composição: + {packaging.sku}")
+    if lines:
+        report["updated"].append((box.sku, lines))
+
+
+def _ensure_tracked(sku: str) -> bool:
+    """Saldo zero na posição de venda para o SKU que ainda não tem saldo nenhum.
+
+    ``Quant`` sem movimento é coerente com o invariante do Stockman
+    (``_quantity == Σ moves == 0``) e é o que tira o SKU de "não rastreado".
+    Devolve se criou. Sem posição de venda no banco, não cria.
+    """
+    from shopman.stockman.models import Position, Quant
+
+    if Quant.objects.filter(sku=sku).exists():
+        return False
+    position = (
+        Position.objects.filter(ref="vitrine").first()
+        or Position.objects.filter(is_saleable=True, kind="physical").order_by("ref").first()
+    )
+    if position is None:
+        return False
+    Quant.objects.get_or_create(sku=sku, position=position, target_date=None, batch="")
+    return True
 
 
 def _apply_placeholder(real: RealPlaceholder, report: dict) -> None:

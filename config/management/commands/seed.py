@@ -939,6 +939,7 @@ class Command(BaseCommand):
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
+        self._seed_gift_box_packaging_stock(positions)
         self._seed_recipes()
         self._assert_catalog_remote_purchase_data()
         customers = self._seed_customers()
@@ -3281,6 +3282,23 @@ class Command(BaseCommand):
 
         self.stdout.write("  ✅ 7 posicoes")
         return positions
+
+    def _seed_gift_box_packaging_stock(self, positions):
+        """A caixa física das caixas presente é estoque limitado (dono, 24/09).
+
+        O ``apply_grocery`` cria a embalagem (``<SKU>-EMB``) antes de existir
+        posição; aqui ela ganha um estoque inicial de demonstração na vitrine.
+        No alpha o saldo é zero até a primeira nota ou contagem — é real.
+        """
+        from config.management.commands.apply_grocery_catalog import GIFT_BOXES
+
+        for box in GIFT_BOXES:
+            stock.receive(
+                quantity=Decimal("10"),
+                sku=box.packaging_sku,
+                position=positions["vitrine"],
+                reason=f"Estoque inicial seed Nelson: {box.packaging_sku}",
+            )
 
     def _seed_stock(self, products, positions):
         self.stdout.write("  📊 Estoque inicial...")

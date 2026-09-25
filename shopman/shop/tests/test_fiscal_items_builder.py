@@ -357,7 +357,7 @@ def gift_box_with_packaging(gift_box):
     from shopman.offerman.models import ProductComponent
 
     packaging = Product.objects.create(
-        sku="CAIXA-KIT-EMB", name="Caixa Presente (embalagem)", base_price_q=0, is_sellable=False,
+        sku="CAIXA-KIT-EMB", name="Caixa Presente (embalagem)", base_price_q=0,
         metadata={"kit_packaging": True, "fiscal": {"profile": "standard", "ncm": "48192000"}},
     )
     ProductComponent.objects.create(parent=gift_box, component=packaging, qty=1)
@@ -439,9 +439,3 @@ def test_kit_com_agio_passa_pelo_adapter_focus_e_a_nota_fecha(gift_box_with_pack
     assert mapped[-1]["codigo_barras_comercial"] == "SEM GTIN"
     assert [m["valor_unitario_comercial"] for m in mapped] == ["20.00", "30.00", "10.00"]
     assert sum(int(round(float(m["valor_bruto"]) * 100)) for m in mapped) == 6000
-
-
-def test_a_embalagem_nao_entra_na_expansao_de_disponibilidade_e_reserva(gift_box_with_packaging):
-    from shopman.shop.adapters.catalog import expand_bundle
-
-    assert [c["sku"] for c in expand_bundle("CAIXA-KIT", 1)] == ["PAO-KIT", "MOSTARDA-KIT"]

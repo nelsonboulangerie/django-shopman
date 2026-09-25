@@ -21,24 +21,10 @@ def get_price(sku: str, qty: int = 1, channel: str | None = None) -> int:
 
 
 def expand_bundle(sku: str, qty) -> list[dict]:
-    """Expande bundle em componentes. Retorna [{"sku": str, "qty": Decimal}].
-
-    A embalagem do kit (``metadata['kit_packaging']``, a caixa física da caixa
-    presente) fica de fora: ela existe para a NFC-e (recebe o ágio do kit) e
-    não é vendável avulsa nem tem estoque obrigatório. Deixá-la aqui faria a
-    disponibilidade recusar o kit pela listagem dela e a reserva tentar
-    segurar estoque que ninguém conta.
-    """
-    from shopman.offerman.models import Product
+    """Expande bundle em componentes. Retorna [{"sku": str, "qty": Decimal}]."""
     from shopman.offerman.service import CatalogService
 
-    components = CatalogService.expand(sku, qty)
-    packaging = set(
-        Product.objects.filter(
-            sku__in=[c["sku"] for c in components], metadata__kit_packaging=True
-        ).values_list("sku", flat=True)
-    )
-    return [c for c in components if c["sku"] not in packaging]
+    return CatalogService.expand(sku, qty)
 
 
 def get_product_base_price(sku: str) -> int:

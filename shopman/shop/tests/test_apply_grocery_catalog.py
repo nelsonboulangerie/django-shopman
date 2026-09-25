@@ -654,7 +654,7 @@ def test_o_relatorio_do_comando_lista_a_caixa_sem_composicao(catalog):
     assert "caixa presente sem composição: fora da venda até o dono definir" in out.getvalue()
 
 
-def test_a_caixa_fisica_e_componente_declarado_do_kit_fora_da_venda(catalog):
+def test_a_caixa_fisica_e_componente_de_estoque_do_kit_sem_venda_avulsa(catalog):
     from config.management.commands.apply_grocery_catalog import PACKAGING_NCM_FOLDING_CARTON
 
     apply_grocery(apply=True)
@@ -664,11 +664,14 @@ def test_a_caixa_fisica_e_componente_declarado_do_kit_fora_da_venda(catalog):
         assert packaging.name == f"{box.name} (embalagem)"
         assert packaging.metadata["kit_packaging"] is True
         assert packaging.metadata["fiscal"] == {"profile": "standard", "ncm": PACKAGING_NCM_FOLDING_CARTON, "unit": "UN"}
-        assert not packaging.is_sellable and not packaging.is_published
-        assert packaging.base_price_q == 0
+        # Sem listagem: não se vende avulsa. Ligada: é a chave que o Stockman lê.
+        assert packaging.is_sellable and not packaging.is_published
         assert not ListingItem.objects.filter(product=packaging).exists()
+        assert packaging.base_price_q == 0
         assert get_social_attributes(packaging).gtin == ""
-        assert packaging.availability_policy == "demand_ok"
+        # Estoque limitado: comprada no Compras, só vende o que tem.
+        assert packaging.availability_policy == "stock_only"
+        assert Material.objects.get(sku=box.packaging_sku).unit == packaging.unit
         resolved = resolve_fiscal_item(from_metadata(packaging.metadata))
         assert (resolved["cfop"], resolved["icms_situacao_tributaria"]) == ("5102", "102")
 
@@ -682,3 +685,27 @@ def test_o_ncm_da_caixa_e_configuravel_por_kit(catalog, monkeypatch):
     apply_grocery(apply=True)
 
     assert Product.objects.get(sku=box.packaging_sku).metadata["fiscal"]["ncm"] == "46021900"
+
+
+def test_a_caixa_nasce_rastreada_com_saldo_zero_na_vitrine(catalog):
+    """Sem saldo nenhum o Stockman a trataria como não rastreada (sempre
+    disponível) e "sem caixa" não valeria. Zero é a verdade até a 1ª nota."""
+    from shopman.stockman.models import Position, Quant
+
+    Position.objects.create(ref="vitrine", name="Vitrine", kind="physical", is_saleable=True)
+
+    report = apply_grocery(apply=True)
+
+    box = GIFT_BOXES[0]
+    (quant,) = Quant.objects.filter(sku=box.packaging_sku)
+    assert (quant.position.ref, quant.quantity) == ("vitrine", 0)
+    assert any("rastreado (saldo 0" in line for sku, lines in report["updated"] if sku == box.sku for line in lines)
+    assert apply_grocery(apply=True)["updated"] == []  # idempotente
+
+
+def test_sem_posicao_de_venda_a_caixa_espera_o_seed(catalog):
+    from shopman.stockman.models import Quant
+
+    apply_grocery(apply=True)
+
+    assert not Quant.objects.filter(sku=GIFT_BOXES[0].packaging_sku).exists()
