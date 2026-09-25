@@ -6,7 +6,7 @@
 // passou de um cadastro para o outro, e quanto tempo ainda resta.
 import type { MergeAuditRowProjection } from "~/generated/ordersContract";
 
-useHead({ title: "Unificações · Clientes" });
+useHead({ title: "Unificações de clientes" });
 
 const { merges, pending, error, refresh, readMetadata, undo, busyId, message } = useCustomerMerges();
 const confirming = ref<MergeAuditRowProjection | null>(null);
