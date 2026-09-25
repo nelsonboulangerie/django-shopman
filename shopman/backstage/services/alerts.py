@@ -44,14 +44,14 @@ def visible_alert_audiences(user) -> frozenset[str]:
 #: no quadro, e continuam no Admin e no e-mail crítico, onde alguém age.
 ALERT_SCOPES = frozenset({"orders"})
 
-#: Presos a um pedido, mas sem gesto nem decisão no quadro: quem resolve é o
-#: cadastro fiscal (intermediador), o Catálogo (GTIN) ou ninguém (o cadastro do
-#: cliente que não atualizou; o pedido segue). Ficam no Admin e, os críticos, no
-#: e-mail. No sino do Gestor só ensinavam a ignorar o sino.
+#: Presos a um pedido, mas sem gesto nem decisão no Gestor: quem resolve é o
+#: cadastro fiscal (intermediador) ou ninguém (o cadastro do cliente que não
+#: atualizou; o pedido segue). Ficam no Admin e, os críticos, no e-mail. No sino
+#: do Gestor só ensinavam a ignorar o sino. O GTIN recusado voltou: o gesto dele
+#: mora no Catálogo, que é deste mesmo app, e o alerta leva direto ao produto.
 ORDERS_SCOPE_EXCLUDED = frozenset({
     "fiscal_intermediary_not_declared",
     "fiscal_intermediary_base_unknown",
-    "fiscal_gtin_rejected",
     "checkout_convenience_pending",
 })
 
@@ -330,6 +330,42 @@ def resolve_alerts_matching(
         rows = list(
             OperatorAlert.objects.select_for_update()
             .filter(type=type, resolved_at__isnull=True, message__contains=marker)
+            .order_by("pk")
+        )
+        resolved_at = timezone.now()
+        for alert in rows:
+            alert.acknowledged = True
+            alert.resolved_at = resolved_at
+            alert.resolved_by = resolved_actor
+            alert.rev += 1
+            alert.save(update_fields=["acknowledged", "resolved_at", "resolved_by", "rev"])
+        return len(rows)
+
+
+def resolve_alerts_ending_with(
+    type: str,
+    *,
+    suffix: str,
+    actor: str,
+) -> int:
+    """Resolve causas cujo marcador TERMINA em ``suffix`` (fim exato da mensagem).
+
+    Para a causa que é um cadastro, não um pedido: o GTIN recusado de um
+    produto termina em ``:sku=<SKU>``. ``contains`` confundiria ``AGUA`` com
+    ``AGUA-500``; o fim da mensagem não confunde. Mesmo lock e mesma trilha.
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    resolved_actor = str(actor or "").strip()[:100]
+    marker = str(suffix or "").strip()
+    if not resolved_actor:
+        raise AlertError("Identidade da resolução do alerta é obrigatória.")
+    if not marker:
+        raise AlertError("Marcador da causa é obrigatório para resolver alertas.")
+    with transaction.atomic():
+        rows = list(
+            OperatorAlert.objects.select_for_update()
+            .filter(type=type, resolved_at__isnull=True, message__endswith=marker)
             .order_by("pk")
         )
         resolved_at = timezone.now()

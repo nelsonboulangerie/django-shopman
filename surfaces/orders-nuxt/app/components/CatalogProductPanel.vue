@@ -365,6 +365,25 @@ function onSave() {
   emit("save", buildPatch());
 }
 
+// GTIN recusado pela SEFAZ. A nota já saiu de novo sem GTIN; o que falta é
+// alguém com a embalagem na mão. Código diferente: corrige o campo e salva.
+// Mesmo código, ou produto sem código de barras: "Manter sem GTIN na nota",
+// que salva junto o que mais estiver no rascunho.
+const gtinRejected = computed(() => props.detail?.gtin_rejected ?? null);
+const gtinRejectedWhen = computed(() => {
+  const at = new Date(gtinRejected.value?.at ?? "");
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+});
+const gtinStillRejected = computed(() =>
+  !!gtinRejected.value && draft.social.gtin.trim() === gtinRejected.value.gtin);
+const canKeepWithoutGtin = computed(() =>
+  !!gtinRejected.value && !gtinRejected.value.confirmed && gtinStillRejected.value
+  && !props.busy && !props.loading && !props.conflict && !formInvalid.value);
+function keepWithoutGtin() {
+  if (!canKeepWithoutGtin.value) return;
+  emit("save", { ...buildPatch(), gtin_rejected: { confirmed: true } });
+}
+
 const discardRequested = ref(false);
 function requestClose(open: boolean) {
   if (!open && props.busy) return;
@@ -738,6 +757,45 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                   <option v-for="c in CONDITIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
                 </UiNativeSelect>
               </label>
+            </div>
+
+            <div
+              v-if="gtinRejected"
+              class="space-y-2 rounded-lg border px-3 py-2 text-sm"
+              :class="gtinRejected.confirmed ? 'border-border bg-muted/40' : 'border-amber-500/40 bg-amber-500/10'"
+              data-gtin-rejected
+            >
+              <template v-if="gtinRejected.confirmed">
+                <p data-gtin-rejected-confirmed>
+                  Sai sem GTIN na NFC-e. A SEFAZ recusou o código {{ gtinRejected.gtin }}, e {{ gtinRejected.confirmed_by || "o gestor" }} conferiu a embalagem.
+                  Para voltar a mandar o GTIN, corrija o campo e salve.
+                </p>
+              </template>
+              <template v-else>
+                <p class="font-medium">
+                  A SEFAZ recusou o GTIN {{ gtinRejected.gtin }} na NFC-e do pedido {{ gtinRejected.order_ref }}<template v-if="gtinRejectedWhen">, em {{ gtinRejectedWhen }}</template>.
+                </p>
+                <p class="text-muted-foreground">
+                  A nota saiu de novo sem GTIN, e o produto segue saindo assim até alguém conferir. Compare com o código da embalagem:
+                  se for outro, corrija o campo e salve; se for o mesmo, ou se o produto não tiver código de barras, toque em Manter sem GTIN na nota.
+                </p>
+                <p v-if="gtinRejected.reason" class="text-xs text-muted-foreground" data-gtin-rejected-reason>
+                  Motivo da SEFAZ (rejeição {{ gtinRejected.code }}): {{ gtinRejected.reason }}
+                </p>
+                <p v-if="!gtinStillRejected" class="text-xs" data-gtin-rejected-corrected>
+                  Ao salvar, o código novo volta a ir na nota.
+                </p>
+                <button
+                  v-else
+                  type="button"
+                  class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-50"
+                  :disabled="!canKeepWithoutGtin"
+                  data-gtin-keep-without
+                  @click="keepWithoutGtin"
+                >
+                  Manter sem GTIN na nota
+                </button>
+              </template>
             </div>
 
             <label class="block">

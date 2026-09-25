@@ -3,7 +3,8 @@
 Decisão do dono (24/09/2026): o GTIN nunca pode travar a venda. Rejeição de
 GTIN (``services.fiscal.SEFAZ_GTIN_REJECTION_CODES``) → reemite a mesma nota
 com "SEM GTIN" no item culpado, marca o produto (``gtin_nf_rejected``) e alerta
-o operador; dali em diante o produto sai "SEM GTIN" até alguém limpar a marca.
+o operador; dali em diante o produto sai "SEM GTIN" até alguém conferir o GTIN
+no Catálogo (``backstage/tests/test_gtin_recusado_no_catalogo.py``).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from shopman.orderman.models import Directive, Order
 
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.adapters.fiscal_focusnfe import _document_result
-from shopman.shop.handlers.fiscal import GTIN_REJECTED_ALERT_TYPE, NFCeEmitHandler
+from shopman.shop.handlers.fiscal import NFCeEmitHandler
 from shopman.shop.models import Channel
 from shopman.shop.services import fiscal as fiscal_service
 
@@ -92,7 +93,7 @@ def _items():
 
 
 def _alerts(order):
-    return OperatorAlert.objects.filter(type=GTIN_REJECTED_ALERT_TYPE, order_ref=order.ref)
+    return OperatorAlert.objects.filter(type=fiscal_service.GTIN_REJECTED_ALERT_TYPE, order_ref=order.ref)
 
 
 def test_focus_rejection_carries_the_sefaz_code():
@@ -137,6 +138,10 @@ def test_rejection_890_pointing_one_item_reemits_that_item_without_gtin(order):
     alert = _alerts(order).get()
     assert "AGUA-500" in alert.message and "890" in alert.message
     assert "GELEIA-DALFOUR" not in alert.message
+    assert "A nota saiu de novo sem GTIN e foi autorizada." in alert.message
+    assert "Catálogo" in alert.message and "gtin_nf_rejected" not in alert.message
+    assert "—" not in alert.message
+    assert fiscal_service.gtin_rejected_alert_sku(alert.message) == "AGUA-500"
 
 
 def test_rejection_611_without_item_number_strips_every_gtin(order):
@@ -149,7 +154,10 @@ def test_rejection_611_without_item_number_strips_every_gtin(order):
         assert Product.objects.get(sku=sku).metadata["gtin_nf_rejected"]["code"] == "611"
     order.refresh_from_db()
     assert order.data["nfce_access_key"] == AUTHORIZED.access_key
-    assert _alerts(order).count() == 1
+    # Um alerta por produto: cada um tem o seu gesto no Catálogo e fecha sozinho.
+    assert sorted(fiscal_service.gtin_rejected_alert_sku(a.message) for a in _alerts(order)) == [
+        "AGUA-500", "GELEIA-DALFOUR",
+    ]
 
 
 def test_sefaz_pointing_items_one_at_a_time_reemits_until_authorized(order):
@@ -165,8 +173,9 @@ def test_sefaz_pointing_items_one_at_a_time_reemits_until_authorized(order):
     assert [item["gtin"] for item in backend.sent_items[2]] == ["", ""]
     assert Product.objects.get(sku="GELEIA-DALFOUR").metadata["gtin_nf_rejected"]["code"] == "890"
     assert Product.objects.get(sku="AGUA-500").metadata["gtin_nf_rejected"]["code"] == "891"
-    alert = _alerts(order).get()
-    assert "GELEIA-DALFOUR" in alert.message and "AGUA-500" in alert.message
+    assert sorted(fiscal_service.gtin_rejected_alert_sku(a.message) for a in _alerts(order)) == [
+        "AGUA-500", "GELEIA-DALFOUR",
+    ]
 
 
 def test_item_number_skips_the_delivery_fee_line(order):

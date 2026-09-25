@@ -112,3 +112,40 @@ it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
   expect(w.findAll("button").find(button => button.text() === "Salvar")!.attributes("disabled")).toBeDefined();
   expect(w.emitted("save")).toBeUndefined();
 });
+
+describe("GTIN recusado pela SEFAZ", () => {
+  const recusa = {
+    gtin: "7896064200011", code: "890", reason: "Rejeicao: GTIN inexistente no CCG", at: "2026-09-24T10:00:00-03:00",
+    order_ref: "WEB-7", confirmed: false, confirmed_by: "", confirmed_at: "",
+  };
+  const recusado = { ...detail, social: { ...detail.social, gtin: recusa.gtin }, gtin_rejected: recusa } as ProductDetailProjection;
+
+  it("diz o que houve e o que fazer, e Manter sem GTIN na nota salva num toque", async () => {
+    const w = panel();
+    await w.setProps({ detail: recusado });
+    const bloco = w.find("[data-gtin-rejected]");
+    expect(bloco.text()).toContain("A SEFAZ recusou o GTIN 7896064200011 na NFC-e do pedido WEB-7");
+    expect(bloco.text()).toContain("Compare com o código da embalagem");
+    expect(bloco.text()).not.toContain("gtin_nf_rejected");
+    expect(bloco.text()).not.toContain("—");
+    await w.find("[data-gtin-keep-without]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ gtin_rejected: { confirmed: true } }]]);
+  });
+
+  it("com o código corrigido, o botão sai e o Salvar leva o GTIN novo", async () => {
+    const w = panel();
+    await w.setProps({ detail: recusado });
+    await w.find('input[placeholder="8, 12, 13 ou 14 dígitos"]').setValue("3088542500285");
+    expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
+    expect(w.find("[data-gtin-rejected-corrected]").text()).toContain("o código novo volta a ir na nota");
+    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    expect(w.emitted("save")).toEqual([[{ social: { gtin: "3088542500285" } }]]);
+  });
+
+  it("depois de conferido, só registra quem conferiu e como voltar atrás", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...recusado, gtin_rejected: { ...recusa, confirmed: true, confirmed_by: "maria" } } });
+    expect(w.find("[data-gtin-rejected-confirmed]").text()).toContain("maria conferiu a embalagem");
+    expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
+  });
+});
