@@ -1235,9 +1235,13 @@ def _waiting_for_the_batch(order: Order, *, state: str | None = None) -> bool:
     ainda não foi assado. Degrada para False — pergunta que falha não pode
     travar o board.
     """
-    from shopman.shop.services import waitlist
+    try:
+        from shopman.shop.services import waitlist
 
-    return waitlist.is_in_fermata(order, state=state)
+        return (waitlist.state_for(order) if state is None else state) == waitlist.FERMATA
+    except Exception:
+        logger.debug("operator_orders._waiting_for_the_batch degraded ref=%s", order.ref, exc_info=True)
+        return False
 
 
 def _preorder_not_due(order: Order) -> bool:
