@@ -21,7 +21,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
-from shopman.shop.services import operator_orders
+from shopman.shop.services import operator_orders, order_composition
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
@@ -728,7 +728,9 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         or ""
     )
     is_delivery = get_fulfillment_type(order) == "delivery"
-    items = tuple(order.items.all())
+    # Pedido + ajustes: a conferência da expedição é sobre a sacola que sai
+    # hoje, não sobre a lista com que o pedido nasceu.
+    items = tuple(order_composition.effective_items(order))
     units_count = sum((Decimal(str(item.qty)) for item in items), Decimal("0"))
     # Itens para conferência na expedição (despacho/entrega): qty × nome, sem check/SLA.
     item_projections = tuple(
@@ -768,7 +770,7 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         is_delivery=is_delivery,
         units_count=_qty(units_count),
         line_count=len(items),
-        total_display=_money(order.total_q),
+        total_display=_money(order_composition.effective_total_q(order)),
         items=item_projections,
         is_scheduled=is_scheduled,
         advance_block_label=block_label,

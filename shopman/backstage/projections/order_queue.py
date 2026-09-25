@@ -33,7 +33,7 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
-from shopman.shop.services import operator_orders
+from shopman.shop.services import operator_orders, order_composition
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
 
@@ -636,7 +636,12 @@ def _approver_options(user) -> tuple[dict[str, str], ...]:
 
 
 def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
-    """Build the expanded detail projection for a single order."""
+    """Build the expanded detail projection for a single order.
+
+    Pedido + ajustes: o detalhe mostra o pedido que VALE agora. Um pedido que o
+    cliente alterou no iFood depois de confirmado tem itens e total novos, e o
+    operador não pode conferir a sacola por uma lista velha.
+    """
     items = tuple(
         OrderItemProjection(
             sku=it.sku,
@@ -645,7 +650,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
             unit_price_display=_money(it.unit_price_q),
             total_display=_money(it.line_total_q),
         )
-        for it in order.items.all()
+        for it in order_composition.effective_items(order)
     )
 
     timeline = _build_timeline(order)
@@ -731,7 +736,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
         delivery_instructions=delivery_instructions,
-        total_display=_money(order.total_q),
+        total_display=_money(order_composition.effective_total_q(order)),
         items=items,
         timeline=timeline,
         kitchen_note=order.data.get("kitchen_note", ""),
@@ -1129,11 +1134,19 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     ]
 
     # The queue only reads quantity/name/SKU; no full item models or metadata needed.
+    # Pedido + ajustes: o pedido alterado tem a lista dele lida do ajuste, não
+    # das linhas — somar as duas no card faria o resumo mentir sobre a sacola.
+    adjusted = order_composition.adjusted_order_ids([order.pk for order in all_orders])
     items_by_order = defaultdict(list)
-    for item in OrderItem.objects.filter(order_id__in=[order.pk for order in all_orders]).values_list("order_id", "qty", "name", "sku", named=True):
+    plain = [order.pk for order in all_orders if order.pk not in adjusted]
+    for item in OrderItem.objects.filter(order_id__in=plain).values_list("order_id", "qty", "name", "sku", named=True):
         items_by_order[item.order_id].append(item)
     for order in all_orders:
-        order._queue_items = items_by_order[order.pk]
+        order._queue_items = (
+            order_composition.effective_items(order)
+            if order.pk in adjusted
+            else items_by_order[order.pk]
+        )
 
     from shopman.shop.services import waitlist
 
@@ -1355,14 +1368,16 @@ def _build_card(
     timer_class = _timer_class(order.status, elapsed)
 
     queue_items = getattr(order, "_queue_items", None)
-    items_qs = queue_items[:4] if queue_items is not None else list(order.items.all()[:4])
+    if queue_items is None:
+        queue_items = order_composition.effective_items(order)
+    items_qs = queue_items[:4]
     items_summary = ", ".join(
         f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in items_qs[:3]
     )
     if len(items_qs) > 3:
         items_summary += "..."
 
-    items_count = len(queue_items) if queue_items is not None else order.items.count()
+    items_count = len(queue_items)
 
     is_delivery = _is_delivery(order)
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
@@ -1422,7 +1437,7 @@ def _build_card(
         timer_class=timer_class,
         items_summary=items_summary,
         items_count=items_count,
-        total_display=_money(order.total_q),
+        total_display=_money(order_composition.effective_total_q(order)),
         fulfillment_icon=fulfillment_icon,
         fulfillment_label=fulfillment_label,
         fulfillment_type="delivery" if is_delivery else "pickup",

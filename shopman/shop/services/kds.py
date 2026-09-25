@@ -379,9 +379,16 @@ def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
 
 
 def _order_to_lines(order) -> list[dict]:
-    """Normalize an Order's items to source-agnostic fire lines."""
+    """Normalize an Order's items to source-agnostic fire lines.
+
+    Pedido + ajustes: quando o cliente alterou o pedido depois de ele existir
+    (``ORDER_PATCHED`` do iFood), a cozinha tem de ver a lista que vale AGORA —
+    e ela vem da leitura composta, nunca das linhas originais.
+    """
+    from shopman.shop.services import order_composition
+
     lines = []
-    for item in order.items.all():
+    for item in order_composition.effective_items(order):
         meta = item.meta or {}
         lines.append({
             "line_id": item.line_id,
@@ -392,6 +399,16 @@ def _order_to_lines(order) -> list[dict]:
             "meta": meta,
         })
     return lines
+
+
+def order_lines(order) -> list[dict]:
+    """As linhas de cozinha do pedido como ele está AGORA (leitura composta).
+
+    Existe para quem precisa fotografar as linhas ANTES de gravar um ajuste,
+    para depois comparar — ``reconcile_to_lines`` só sabe o que mudou porque
+    alguém guardou o antes.
+    """
+    return _order_to_lines(order)
 
 
 def _match_instances(
@@ -505,6 +522,62 @@ def cancel_tickets(order) -> int:
     if count:
         logger.info("kds.cancel_tickets: cancelled %d tickets for order=%s", count, order.ref)
     return count
+
+
+def reconcile_to_lines(order, *, previous_lines: list[dict]) -> dict:
+    """A cozinha passa a ver o pedido que o cliente alterou.
+
+    Chamada depois de o ajuste já estar gravado (``order.data["adjustment"]``),
+    então ``_order_to_lines(order)`` já devolve a lista nova. O trabalho aqui é
+    só a DIFERENÇA contra o que já foi disparado:
+
+    - linha que saiu, ou cuja quantidade mudou, é **desfirada**
+      (``unfire_session_lines``). Isso não apaga o fato: o adapter recorta a
+      linha do ticket vivo e cria um ticket ``cancelled`` só com ela, que é o
+      comprovante que o board mostra e que alguém precisa dar "Ciente". A
+      cozinha não descobre por adivinhação que parou de fazer alguma coisa.
+    - a lista nova é **firada** em seguida. ``fire_lines`` é idempotente por
+      ``line_id``, então o que não mudou não vira ticket de novo, e a linha
+      recém-desfirada volta com a quantidade certa (reimpressão = desfirar +
+      firar, que é o contrato do adapter).
+
+    Pedido sem ticket nenhum não entra aqui: o ``dispatch`` que vier depois já
+    lê a lista composta. Devolve ``{unfired, refired}``.
+    """
+    from shopman.shop.adapters import kds as kds_adapter
+
+    if is_test_order(order):
+        logger.info("kds.reconcile_to_lines: pedido de teste order=%s — cozinha intocada", order.ref)
+        return {"unfired": 0, "refired": 0, "skipped": "test_order"}
+
+    fired = kds_adapter.fired_line_ids_for_session(order.session_key)
+    if not fired:
+        return {"unfired": 0, "refired": 0}
+
+    lines = _order_to_lines(order)
+    current_by_id = {line["line_id"]: line for line in lines}
+    stale = [
+        line["line_id"]
+        for line in previous_lines
+        if line["line_id"] in fired
+        and (
+            line["line_id"] not in current_by_id
+            or str(current_by_id[line["line_id"]]["qty"]) != str(line["qty"])
+        )
+    ]
+    if stale:
+        kds_adapter.unfire_session_lines(order.session_key, stale)
+
+    tickets = fire_lines(
+        session_key=order.session_key,
+        lines=lines,
+        prep_only=_customer_holds_the_goods(order),
+    )
+    logger.info(
+        "kds.reconcile_to_lines: order=%s %d linha(s) desfirada(s), %d ticket(s) novo(s)",
+        order.ref, len(stale), len(tickets),
+    )
+    return {"unfired": len(stale), "refired": len(tickets)}
 
 
 def cancel_tickets_for_session(session_key: str) -> int:

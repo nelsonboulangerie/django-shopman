@@ -105,7 +105,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             f"Canal iFood '{channel_ref}' não encontrado. Rode o seed ou crie o canal no admin.",
         ) from e
 
-    items = _normalize_items(payload["items"])
+    items = normalize_items(payload["items"])
     items_subtotal_q = sum(int(item["line_total_q"]) for item in items)
     # Marketplace orders are pre-priced by iFood: the authoritative total is the
     # grand total (orderAmount = subtotal + delivery fee + service fees − benefits).
@@ -403,8 +403,14 @@ def _validate_payload(payload: dict) -> None:
         raise IFoodIngestError("missing_items", "items (lista não vazia) é obrigatório")
 
 
-def _normalize_items(raw_items: list[dict]) -> list[dict]:
-    """Ensure every item has line_id / line_total_q computed."""
+def normalize_items(raw_items: list[dict]) -> list[dict]:
+    """Ensure every item has line_id / line_total_q computed.
+
+    Público porque a reconciliação de um pedido ALTERADO
+    (``ifood_events._process_patch``) relê o pedido inteiro e precisa da mesma
+    normalização que a ingestão usou — duas normalizações do mesmo payload
+    seriam duas verdades sobre o mesmo pedido.
+    """
     normalized: list[dict] = []
     for idx, raw in enumerate(raw_items, start=1):
         if not raw.get("sku"):
@@ -432,4 +438,4 @@ def _fulfillment_type(payload: dict) -> str:
     return "delivery" if kind == "DELIVERY" else "pickup"
 
 
-__all__ = ["ingest", "IFoodIngestError", "IFOOD_CHANNEL_REF"]
+__all__ = ["ingest", "normalize_items", "IFoodIngestError", "IFOOD_CHANNEL_REF"]

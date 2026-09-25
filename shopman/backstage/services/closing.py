@@ -362,11 +362,16 @@ def _reconciliation_errors(*, closing_date: date, items: list[dict]) -> list[dic
         .exclude(status__in=["cancelled", "returned"])
         .prefetch_related("items")
     )
+    # Pedido + ajustes: o que a casa VENDEU no dia é o pedido que vale, não o
+    # que nasceu. Um pedido que o cliente alterou no iFood contaria a mais (ou a
+    # menos) no confronto com o que havia para vender.
+    from shopman.shop.services import order_composition
+
     for order in orders:
         commitment = get_commitment_date(order) or timezone.localtime(order.created_at).date()
         if commitment != closing_date:
             continue
-        for item in order.items.all():
+        for item in order_composition.effective_items(order):
             sold_by_sku[item.sku] = sold_by_sku.get(item.sku, 0) + int(item.qty)
 
     errors: list[dict] = []

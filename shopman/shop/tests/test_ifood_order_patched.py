@@ -15,10 +15,18 @@ em https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/events):
     ``items`` (SÓ os afetados), ``oldTotal`` e ``newTotal`` — é DELTA, nunca o
     estado final do pedido.
 
-Esta é a Etapa 1: parar de mentir. O evento passa a ser gravado no pedido e a
-gritar com o operador; a reconciliação automática é a Etapa 2 e depende de uma
-decisão de desenho (``Order.total_q`` e ``Order.snapshot`` são ``SEALED_FIELDS``
-do Core — reescrever o pedido no lugar levanta ``ImmutabilityError``).
+Este arquivo cobre o que a Etapa 1 (#897) trouxe e o que **continua valendo
+depois da Etapa 2**: o registro do fato e o aviso ao operador quando a loja NÃO
+pode acompanhar a alteração. A reconciliação em si — releitura do pedido, ajuste
+em ``order.data`` e a leitura composta que cozinha, Gestor, vias, fechamento,
+nota e B.I. usam — está em ``test_ifood_order_patched_reconciliation.py``.
+
+Para isolar esta metade, ``_process`` faz a **releitura do pedido falhar de
+propósito**. É o ramo ``blocked:fetch_failed``: sem o estado final vindo do
+iFood não há o que reconciliar, e a resposta certa volta a ser exatamente a da
+Etapa 1 — gravar, avisar alto e parar. Sem esse recorte estes testes passariam
+por acidente (num ambiente de teste sem credencial o ``GET`` falha sozinho), e
+teste que passa por acidente não prova nada.
 """
 
 from unittest.mock import patch
@@ -27,7 +35,7 @@ import pytest
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import OperatorAlert
-from shopman.shop.services import ifood_events
+from shopman.shop.services import ifood_events, ifood_orders
 
 
 def _patch_event(*, change_type="DELETE_ITEMS", items=None, old_total=25.5, new_total=20.5,
@@ -56,7 +64,13 @@ def _order(**kwargs):
 
 
 def _process(events):
-    with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
+    """Roda o lote com a releitura do pedido FALHANDO (ver o docstring do módulo)."""
+    with (
+        patch.object(ifood_events, "acknowledge", return_value=True) as ack,
+        patch.object(
+            ifood_orders, "fetch_order", side_effect=ifood_orders.IFoodOrderFetchError("403")
+        ),
+    ):
         summary = ifood_events.process_events(events)
     return summary, ack
 
@@ -92,18 +106,22 @@ def test_the_change_is_recorded_with_the_facts_the_operator_needs():
     assert record["new_total_q"] == 2050
     assert record["local_total_q"] == 2550
     assert record["order_status"] == "preparing"
-    # A chave que impede a Etapa 1 de se passar pela Etapa 2.
+    # A chave que impede um registro sem reconciliação de se passar por uma.
     assert record["reconciled"] is False
 
 
 @pytest.mark.django_db
-def test_the_local_order_is_not_silently_rewritten():
-    """Etapa 1 não reconcilia — e não pode FINGIR que reconciliou."""
+def test_a_change_that_could_not_be_applied_never_pretends_it_was():
+    """Sem reconciliar, o pedido local segue o original — e o registro admite isso."""
     order = _order()
     _process([_patch_event(new_total=20.5)])
 
     order.refresh_from_db()
     assert order.total_q == 2550  # o total local segue o original, explicitamente
+    record = order.data["ifood"]["patches"][0]
+    assert record["reconciled"] is False
+    assert record["reconciliation"] == "blocked:fetch_failed"
+    assert "adjustment" not in order.data
 
 
 @pytest.mark.django_db
