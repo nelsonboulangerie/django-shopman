@@ -5155,12 +5155,16 @@ class Command(BaseCommand):
         # prateleira para insumo ainda sem ficha). O refresh_seed_dates repõe
         # ao MESMO alvo num banco envelhecido — fonte única.
         # kind default (ADJUST = saldo de abertura), igual ao estoque de produto.
+        # Onde o Compras receberia: revenda na loja (conta para a venda),
+        # insumo no depósito (``shop/services/receiving_position.py``).
+        from shopman.shop.services.receiving_position import receiving_position
+
         abertura = material_opening_targets()
         for sku, quantidade in abertura.items():
             stock.receive(
                 quantity=quantidade,
                 sku=sku,
-                position=deposito,
+                position=receiving_position(sku),
                 reason="Saldo de abertura de insumo (seed)",
             )
         maiores = ", ".join(

@@ -550,6 +550,8 @@ class TestShopAdminPurchaseDefaults:
         assert b'name="defaults_purchase_lead_time_max_days"' in resp.content
         assert b'name="defaults_purchase_resale_markup_pct"' in resp.content
         assert b'name="defaults_purchase_resale_markup_by_collection"' in resp.content
+        assert b'name="defaults_purchase_receive_position_resale"' in resp.content
+        assert b'name="defaults_purchase_receive_position_material"' in resp.content
 
     def test_initial_reflects_existing_purchase_block(self, shop):
         from shopman.shop.admin.shop import ShopForm
@@ -610,6 +612,27 @@ class TestShopAdminPurchaseDefaults:
         assert saved.defaults["purchase"]["resale_markup_by_collection"] == {"mercearia": 70, "frios": 100}
         again = ShopForm(instance=saved)
         assert again.fields["defaults_purchase_resale_markup_by_collection"].initial == "frios: 100; mercearia: 70"
+
+    def test_form_saves_receive_positions_by_role(self, shop):
+        from shopman.stockman.models import Position, PositionKind
+
+        from shopman.shop.admin.shop import ShopForm
+
+        Position.objects.create(ref="prateleira", name="Prateleira", kind=PositionKind.PHYSICAL, is_saleable=True)
+        Position.objects.create(ref="deposito", name="Depósito", kind=PositionKind.PHYSICAL, is_saleable=False)
+        data = _shop_form_data(shop)
+        data["defaults_purchase_receive_position_resale"] = "prateleira"
+        data["defaults_purchase_receive_position_material"] = ""
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["purchase"]["receive_position_resale"] == "prateleira"
+        assert "receive_position_material" not in saved.defaults["purchase"]
+        # O insumo só oferece posição que não vende.
+        choices = dict(ShopForm(instance=saved).fields["defaults_purchase_receive_position_material"].choices)
+        assert "deposito" in choices and "prateleira" not in choices
 
     def test_resale_markup_with_unknown_category_or_bad_value_is_refused(self, shop):
         from shopman.shop.admin.shop import ShopForm
