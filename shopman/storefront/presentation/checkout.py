@@ -575,7 +575,9 @@ def _shop_config() -> tuple[int, list, str]:
                 shop.whatsapp_url,
             )
     except Exception:
-        logger.debug("checkout_projection_shop_config_failed", exc_info=True)
+        # Sem a config da loja, o calendário cai no padrão e ignora os dias
+        # fechados: degradação que alguém precisa ver.
+        logger.warning("checkout_projection_shop_config_failed", exc_info=True)
     return 30, [], ""
 
 

@@ -478,8 +478,9 @@ class CheckoutView(APIView):
                 if loyalty_balance_q > 0:
                     checkout_data["loyalty"] = {"redeem_points_q": loyalty_balance_q}
             except Exception:
-                logger.debug("views.post degraded; using fallback", exc_info=True)
-                pass
+                # O cliente pediu para usar os pontos: seguir sem eles é
+                # degradação que alguém precisa ver, não um detalhe de debug.
+                logger.warning("storefront.checkout loyalty_balance failed; checkout without redemption", exc_info=True)
 
         # Passou por todas as validações: agora sim a tentativa CONTA.
         if self._rate_limited(request, increment=True):
