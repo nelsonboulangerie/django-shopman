@@ -195,7 +195,7 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
-- Corpo: `Seu pedido {{1}} saiu para entrega e chega logo.`
+- Corpo: `Seu pedido {{1}} saiu para entrega.`
 - Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
 - Botão URL: `Acompanhar pedido`
 
@@ -206,8 +206,10 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 > porque escolher entre as duas versões custaria um ciclo de reaprovação, não uma edição.
 >
 > Como nos outros quatro, o corpo **não usa `customer_name`** e a numeração andou: `{{1}}`
-> é a **ref**. O `seed` e a migração de dados vão receber o mesmo texto em PR própria, para
-> o aviso e o template aprovado dizerem a mesma coisa.
+> é a **ref**. O `seed`, os fallbacks e a migração de dados
+> `shop.0076_saiu_para_entrega_sem_cumprimento` dizem o mesmo texto. O
+> `{courier_tracking_suffix}` (rastreio do entregador) é auto-suprimível e não viaja no
+> template, pelo mesmo motivo do `{eta_note}`.
 
 ### `pedido_entregue` — evento `order_delivered`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
