@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { POSProductProjection } from "~/types/pos";
 import { productFallbackIcon, productFallbackStyle } from "~/presentation/catalog";
-import { productBlockedLabel, productSupplyLabel } from "~/presentation/weighed";
+import { productBlockedLabel } from "~/presentation/weighed";
 
 const props = defineProps<{
   product: POSProductProjection;
@@ -16,8 +16,6 @@ defineEmits<{
 // Inerte com selo: esgotado, ou sem preço no catálogo (nenhum canal vende preço zero).
 const blockedLabel = computed(() => productBlockedLabel(props.product) || (props.disabled ? "Esgotado" : ""));
 const inert = computed(() => Boolean(blockedLabel.value));
-// Fornada NÃO entra no `inert`: é venda legítima, só que com espera combinada.
-const supplyLabel = computed(() => (inert.value ? "" : productSupplyLabel(props.product)));
 
 const hasImage = computed(() => Boolean(props.product.image_url?.trim()));
 
@@ -73,17 +71,6 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
         class="absolute inset-x-0 bottom-0 bg-foreground/70 py-0.5 text-center text-xs font-semibold uppercase tracking-wide text-background"
       >
         Esgotado
-      </span>
-      <!-- Fornada planejada: o pão está no FORNO, não na gôndola. Mesma faixa
-           do esgotado para ser lida no mesmo lugar, mas em cinza neutro e com
-           ícone — âmbar aqui leria como problema, e fornada saindo é o
-           funcionamento normal da casa, não uma exceção. -->
-      <span
-        v-else-if="supplyLabel"
-        class="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-muted/90 py-0.5 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-      >
-        <Icon name="lucide:croissant" class="size-3 shrink-0" />
-        {{ supplyLabel }}
       </span>
     </div>
 

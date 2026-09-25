@@ -33,7 +33,7 @@ def _counter_order(**data) -> _FakeOrder:
         "payment": {"method": "cash"},
     }
     base.update(data)
-    return _FakeOrder(ref="PDV-TESTE-1", data=base, snapshot={})
+    return _FakeOrder(ref="PDV-TESTE-1", channel_ref="pdv", data=base, snapshot={})
 
 
 class TestCustomerHoldsTheGoods:
@@ -114,7 +114,7 @@ class TestTheWarningSaysWhichProblemItIs:
 
         assert "pausado" in _availability_shortfall({"is_paused": True})
         assert "fora do cardápio" in _availability_shortfall({"reason_code": "not_in_listing"})
-        assert "fornada" in _availability_shortfall({"is_planned": True})
+        assert "lote planejado" in _availability_shortfall({"is_planned": True})
         assert "em estoque" in _availability_shortfall({"available_qty": 2})
 
     def test_half_a_kilo_is_not_reported_as_zero(self):

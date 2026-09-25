@@ -30,10 +30,6 @@ export interface POSProductProjection {
   gtin?: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
-  /** Só existe como FORNADA PLANEJADA de hoje — está no forno, não na gôndola.
-   *  Vender é legítimo; o tile continua ativo e ganha selo, porque quem combina
-   *  a espera com o cliente é o operador. Excludente com `sold_out`. */
-  planned_only?: boolean;
   /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
    *  da etiqueta (ou o peso) em vez de somar uma unidade. */
   sold_by_weight?: boolean;

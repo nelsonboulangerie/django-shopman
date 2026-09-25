@@ -902,9 +902,9 @@ def _payload_commitment_date(payload: dict):
     if raw:
         try:
             return _date.fromisoformat(raw)
-        except ValueError:
-            pass
-    return timezone.localdate()
+        except ValueError:  # silêncio-deliberado: data ilegível é recusada com
+            pass            # motivo por `_validate_schedule`; aqui só decide para
+    return timezone.localdate()  # QUE DIA perguntar o estoque, e hoje é o certo.
 
 
 def _qty_display(value) -> str:
@@ -939,9 +939,11 @@ def _availability_shortfall(decision: dict) -> str:
     if decision.get("reason_code") == "not_in_listing":
         return "fora do cardápio do balcão. A venda vale; confira o cadastro."
     if decision.get("is_planned"):
-        # Não é falta: é pão que ainda está no forno. Quem lê isto precisa
-        # combinar a espera com o cliente, não caçar unidade na prateleira.
-        return "só na fornada planejada — ainda não está na gôndola."
+        # Não é falta: o que cobre a data é produção ainda por fazer. Quem lê
+        # isto precisa combinar a espera com o cliente, não caçar unidade na
+        # prateleira. (Na tela de operador o objeto chama-se LOTE — decisão do
+        # dono, 22/09/2026 —, e "fornada" ficou só para a loja.)
+        return "ainda não está pronto: sai do lote planejado para a data."
     available = decision.get("available_qty") or 0
     return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 
