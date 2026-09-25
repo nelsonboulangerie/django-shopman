@@ -1950,7 +1950,9 @@ _FISCAL_PILL = {
     "failed": ("failed", "NFC-e não autorizada"),
     "queued": ("pending", "NFC-e em emissão"),
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
-    "not_expected": ("not_requested", "Sem NFC-e neste pedido"),
+    # Escolha do Pablo, a mesma do PDV (`pos-nuxt/app/presentation/saleResult.ts`):
+    # diz o fato sem alarme; não trocar num lado só.
+    "not_expected": ("not_requested", "Emissão não estabelecida"),
 }
 
 
