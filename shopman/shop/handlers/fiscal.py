@@ -475,7 +475,14 @@ class NFCeEmitHandler:
             # art. 35). O adapter já lia ``data_autorizacao`` da Focus e o
             # contrato já carregava o campo; o que faltava era gravá-lo, e sem
             # ele ninguém consegue dizer se ainda dá tempo de cancelar.
-            data["nfce_authorized_at"] = result.authorization_date or ""
+            #
+            # Só TEXTO entra: o destino é um JSONField, e o contrato tipa o
+            # campo como ``str | None``. Backend que devolva outra coisa grava
+            # vazio — e vazio tem caminho próprio ("não deu para medir o
+            # prazo"), em vez de explodir na serialização e derrubar a
+            # gravação da chave de acesso junto.
+            authorized_at = result.authorization_date
+            data["nfce_authorized_at"] = authorized_at if isinstance(authorized_at, str) else ""
             data["nfce_number"] = result.document_number
             data["nfce_series"] = result.document_series
             data["nfce_protocol"] = result.protocol_number
