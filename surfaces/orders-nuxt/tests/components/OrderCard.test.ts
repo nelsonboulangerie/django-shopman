@@ -265,3 +265,35 @@ describe("OrderCard — maquininha na rua", () => {
     expect(mountCard({ card: card() }).find("[data-equipment-label]").exists()).toBe(false);
   });
 });
+
+describe("OrderCard — a DANFE da sacola", () => {
+  it("sem nota autorizada (ou no iFood), nenhuma linha", () => {
+    expect(mountCard({ card: card() }).find("[data-danfe]").exists()).toBe(false);
+  });
+  it("na fila da impressora: diz que está saindo e o botão espera", () => {
+    const w = mountCard({ card: card({ status: "dispatched", danfe_printable: true, danfe_state: "sending" }) });
+    expect(w.get("[data-danfe-status]").text()).toBe("DANFE saindo na impressora");
+    expect(w.get("[data-danfe-print]").attributes("disabled")).toBeDefined();
+  });
+  it("não saiu: diz por quê e deixa imprimir", async () => {
+    const w = mountCard({
+      card: card({
+        status: "dispatched",
+        danfe_printable: true,
+        danfe_state: "not_printed",
+        danfe_problem: "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
+      }),
+    });
+    expect(w.get("[data-danfe-status]").text()).toBe("DANFE não impressa");
+    expect(w.get("[data-danfe-problem]").text()).toContain("não buscou a DANFE");
+    expect(w.get("[data-danfe]").attributes("data-danfe-attention")).toBeDefined();
+    await w.get("[data-danfe-print]").trigger("click");
+    expect(w.emitted("print-danfe")).toHaveLength(1);
+  });
+  it("já impressa: o gesto é reimprimir, e fica travado enquanto imprime", () => {
+    const w = mountCard({ card: card({ danfe_printable: true, danfe_printed: true, danfe_state: "printed" }), danfePrinting: true });
+    expect(w.get("[data-danfe-status]").text()).toBe("DANFE impressa");
+    expect(w.get("[data-danfe-print]").attributes("disabled")).toBeDefined();
+    expect(w.get("[data-danfe-print]").text()).toBe("Imprimindo…");
+  });
+});

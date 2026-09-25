@@ -345,6 +345,37 @@ class NFCeEmitHandler:
             fiscal.cancel(order)
             return
         self._send_receipt_email(order)
+        # A DANFE da entrega sai pela impressora do despacho, e quem sabe
+        # imprimir é o backstage: o shop só anuncia.
+        from shopman.shop.signals import nfce_authorized
+
+        nfce_authorized.send(sender=type(self), order=order)
+        self._notify_online_customer(order)
+
+    @staticmethod
+    def _notify_online_customer(order) -> None:
+        """Pedido da loja online: a nota vai ao cliente, e numa mensagem só.
+
+        Decisões do dono (25/09/2026): a loja online não imprime nem pede e-mail;
+        a nota chega DIGITAL — na página do pedido e com o link da DANFE pela
+        cadeia de avisos do pedido (WhatsApp primeiro). E menos mensagens: o link
+        vai DENTRO da mensagem de status que ainda vai sair (pronto, saiu,
+        entregue); o aviso avulso ``fiscal_note_ready`` só sai quando a nota
+        autoriza depois da última delas. Quem decide é
+        ``notification.send_fiscal_note_unless_carried`` (só o canal da loja: o
+        balcão entrega a nota no papel ou no e-mail que o operador anotou, e o
+        marketplace não é contato nosso).
+
+        Best-effort, como o e-mail: a nota já existe, e o aviso não pode derrubar
+        a directive de emissão. A menção é reservada no pedido, então o retry da
+        directive não repete a mensagem.
+        """
+        try:
+            from shopman.shop.services import notification
+
+            notification.send_fiscal_note_unless_carried(order)
+        except Exception:
+            logger.warning("fiscal.notify: aviso da nota não agendado order=%s", order.ref, exc_info=True)
 
     def _send_receipt_email(self, order) -> None:
         """Nota autorizada + cliente pediu e-mail → o Focus envia (DANFE + XML).
@@ -457,6 +488,12 @@ class NFCeEmitHandler:
 
         # O objeto do chamador segue em uso (guarda de idempotência, logs).
         order.data = data
+
+        # A nota nasce no despacho da entrega e a DANFE vai na sacola: o
+        # Gestor precisa saber AGORA, não no próximo poll.
+        from shopman.shop.handlers._sse_emitters import emit_fiscal_update
+
+        emit_fiscal_update(locked)
 
 
 class NFCeCancelHandler:

@@ -136,6 +136,24 @@ class TrackingCancellationRequestData:
 
 
 @dataclass(frozen=True)
+class TrackingFiscalNoteData:
+    """A NFC-e AUTORIZADA do pedido, do jeito que o cliente pode abrir.
+
+    Só existe com ``nfce_access_key`` (é fato, não regra). ``url``: o DANFE que
+    o provedor hospeda (``nfce_danfe_url``) ou, sem ele, a consulta da SEFAZ do
+    QR (``nfce_qrcode_url``). ``is_test``: emitida em homologação, sem valor
+    fiscal — a tela diz isso, como o papel diz. ``cancelled``: a nota foi
+    cancelada; a tela não oferece o link de uma nota que não vale mais.
+    """
+
+    access_key: str
+    number: str
+    url: str
+    is_test: bool
+    cancelled: bool
+
+
+@dataclass(frozen=True)
 class TrackingPromiseData:
     """The active operational promise as data.
 
@@ -247,6 +265,9 @@ class TrackingData:
     # O rótulo humano do slot ("A partir das 9h" / "14:00 às 14:30"), resolvido
     # AQUI, no lado de leitura: a presentation não importa shop.services.
     commitment_slot_label: str | None = None
+    # A nota fiscal chega ao cliente pela página do pedido (decisão do dono,
+    # 25/09/2026): a loja online não imprime nem pede e-mail.
+    fiscal_note: TrackingFiscalNoteData | None = None
 
 
 @dataclass(frozen=True)
@@ -392,10 +413,28 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         shop_name=shop_name,
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
+        fiscal_note=_fiscal_note(order_data),
         **_waitlist_info(
             order,
             payment_unsettled=payment_pending or payment_status_key == "card_authorized",
         ),
+    )
+
+
+def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
+    """A NFC-e do pedido para o cliente abrir, ou ``None`` enquanto não há nota."""
+    access_key = "".join(ch for ch in str(order_data.get("nfce_access_key") or "") if ch.isdigit())
+    if not access_key:
+        return None
+    from django.conf import settings
+
+    environment = str((getattr(settings, "SHOPMAN_FOCUS_NFE", {}) or {}).get("environment", "homologacao")).lower()
+    return TrackingFiscalNoteData(
+        access_key=access_key,
+        number=str(order_data.get("nfce_number") or ""),
+        url=str(order_data.get("nfce_danfe_url") or order_data.get("nfce_qrcode_url") or ""),
+        is_test="prod" not in environment,
+        cancelled=bool(order_data.get("nfce_cancelled")),
     )
 
 
@@ -1758,6 +1797,7 @@ def _is_payment_timeout_cancelled(order) -> bool:
 
 __all__ = [
     "TrackingData",
+    "TrackingFiscalNoteData",
     "TrackingFulfillmentData",
     "TrackingItemData",
     "TrackingPickupData",

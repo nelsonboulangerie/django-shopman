@@ -914,7 +914,9 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += _centered("Documento Auxiliar da Nota Fiscal")
     out += _centered("de Consumidor Eletronica")
     if reprint:
-        out += _centered("*** 2a VIA ***")
+        # "REIMPRESSÃO", não "2a VIA": decisão do dono — "via" nomeia a
+        # audiência de um papel (order_documents.py), e a DANFE é uma só.
+        out += _centered("*** REIMPRESSÃO ***")
     if doc.is_homolog:
         # Exigência da SEFAZ em homologação: o papel diz que não vale.
         out += _rule()

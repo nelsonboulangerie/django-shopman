@@ -411,6 +411,10 @@ export interface OrderCardProjection {
   ifood_negotiations: IFoodNegotiationProjection[];
   test_order_label: string;
   test_order_notice: string;
+  danfe_printable: boolean;
+  danfe_printed: boolean;
+  danfe_state: string;
+  danfe_problem: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */

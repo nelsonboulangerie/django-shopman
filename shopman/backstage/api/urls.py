@@ -118,6 +118,7 @@ from .operations import (
     OrderCourierCancelView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
+    OrderDanfeEscposView,
     OrderDetailView,
     OrderEquipmentBackView,
     OrderIFoodEvidenceView,
@@ -518,6 +519,11 @@ urlpatterns = [
         "orders/<str:ref>/ticket-escpos/",
         OrderTicketEscposView.as_view(),
         name="api-backstage-order-ticket-escpos",
+    ),
+    path(
+        "orders/<str:ref>/danfe-escpos/",
+        OrderDanfeEscposView.as_view(),
+        name="api-backstage-order-danfe-escpos",
     ),
     path(
         "orders/<str:ref>/courier-ticket-escpos/",

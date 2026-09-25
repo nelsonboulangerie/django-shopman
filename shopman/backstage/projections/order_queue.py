@@ -28,6 +28,7 @@ from shopman.backstage.presentation.status import (
 )
 from shopman.backstage.projections import ifood as ifood_projection
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
+from shopman.backstage.services import order_danfe
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -302,6 +303,17 @@ class OrderCardProjection:
     # frase inteira. Vazios no pedido de verdade.
     test_order_label: str = ""
     test_order_notice: str = ""
+    # A DANFE da NFC-e (services/order_danfe.py). ``danfe_printable``: a nota
+    # está autorizada e o Gestor pode imprimi-la (o iFood fica de fora).
+    # ``danfe_printed``: já saiu uma vez, e a próxima é REIMPRESSÃO.
+    # ``danfe_state``: ``printed`` · ``sending`` (na fila da impressora do
+    # despacho) · ``not_printed`` · ``on_dispatch`` (entrega ainda na casa: sai
+    # sozinha na saída) · ``available`` (retirada: à mão, se o cliente pedir).
+    # ``danfe_problem``: por que não saiu e o que fazer, só em ``not_printed``.
+    danfe_printable: bool = False
+    danfe_printed: bool = False
+    danfe_state: str = ""
+    danfe_problem: str = ""
 
 
 @dataclass(frozen=True)
@@ -1152,6 +1164,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     waitlist_states = waitlist.states_for(all_orders)
     payment_reads = payment_svc.read_payments_for(all_orders)
+    # A última tentativa de DANFE de cada pedido e o destino: uma leitura só.
+    danfe_reads = order_danfe.read_for(all_orders)
     from shopman.backstage.models import DeliveryDevice
     from shopman.backstage.services.delivery_devices import PREFIX
 
@@ -1178,12 +1192,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1191,16 +1205,16 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1218,7 +1232,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
-            _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user)
+            _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
             for o in all_orders if o.channel_ref == "ifood" and ((o.data or {}).get("ifood") or {}).get("handshake_pending")
         ),
         intake=intake,
@@ -1361,6 +1375,7 @@ def _build_card(
     status_labels=None,
     method_labels=None,
     fiscal_states=None,
+    danfe_reads=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1411,6 +1426,7 @@ def _build_card(
     is_preorder = commitment is not None and commitment > timezone.localdate()
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
+    danfe = order_danfe.card_state(order, reads=danfe_reads, now=now)
 
     actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
     # Reuse only this read's canonical action revisions; commands still recompute under lock.
@@ -1487,6 +1503,10 @@ def _build_card(
         waitlist_state=waitlist_state,
         waitlist_deadline_iso=waitlist_deadline_iso,
         waitlist_label=waitlist_label,
+        danfe_printable=danfe.printable,
+        danfe_printed=danfe.printed,
+        danfe_state=danfe.state,
+        danfe_problem=danfe.problem,
     )
 
 

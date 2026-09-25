@@ -4,9 +4,10 @@ Decisão do dono (24/09/2026): pedir o CPF na ENTRADA do pedido; sem CPF, a
 entrega não fica disponível e a retirada continua. A trava é do commit
 (``DeliveryFiscalIdentityRule``); a loja manda o dado e lê a recusa no campo.
 
-Decisão do dono (25/09/2026): sem pergunta de "guardar". Na próxima entrega o
-campo vem com o documento do cadastro ou, sem ele, com o da última entrega — e
-o cadastro nunca é escrito pelo checkout.
+Decisão do dono (25/09/2026): na próxima entrega o campo vem com o documento
+do cadastro ou, sem ele, com o da última entrega. O cadastro só é escrito
+quando a pessoa responde "sim" a "guardar no seu cadastro?" — a matriz inteira
+está em ``test_checkout_cpf_na_nota.py``.
 """
 
 from __future__ import annotations
@@ -110,7 +111,7 @@ def test_projecao_pre_preenche_com_o_cpf_da_ultima_entrega_sem_gravar_no_cadastr
     assert checkout["prefill_tax_id"] == ""
     assert checkout["prefill_tax_id_source"] == ""
     assert "delivery_requires_tax_id" not in checkout
-    assert "offer_save_tax_id" not in checkout
+    assert checkout["offer_save_tax_id"] is True  # a pergunta existe; sem o sim, nada grava
 
     resp = _post(client, fiscal_tax_id=CPF)
     assert resp.status_code == 201, resp.content

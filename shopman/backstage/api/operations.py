@@ -1659,7 +1659,25 @@ class OrderQueueView(OperationalObservationMixin, APIView):
 
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
-        return Response(read_data(queue=projection_data(queue)))
+        return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
+
+
+def _station_device_agent(request) -> dict:
+    """A impressora DESTA estação, para o Gestor mandar a DANFE da sacola.
+
+    O mesmo bloco que o PDV recebe (``DeviceAgentConfig.surface_payload``):
+    quem alcança a loopback do balcão é a página. Sem estação confiável, ou
+    estação sem agente, a resposta diz que não imprime — e o card oferece o
+    botão assim mesmo, para o operador saber que a DANFE existe.
+    """
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage import station_trust
+    from shopman.backstage.services.pos_hardware import DeviceAgentConfig
+
+    station_ref = station_trust.station_ref(request)
+    terminal = Terminal.objects.filter(ref=station_ref, is_active=True).first() if station_ref else None
+    return DeviceAgentConfig.from_terminal(terminal).surface_payload()
 
 
 # ── Order action endpoints ────────────────────────────────────────────
@@ -2406,6 +2424,51 @@ class OrderTicketEscposView(APIView):
                 "reprint": reprint,
             }
         )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Print the delivery DANFE on the dispatch printer (relay), or return bytes for the station agent",
+        responses={200: OpenApiResponse(description="DANFE payload.")},
+    ),
+)
+class OrderDanfeEscposView(APIView):
+    """O botão "Imprimir DANFE" do card do Gestor.
+
+    A DANFE vai pela impressora do despacho, pelo relay do servidor, e não pela
+    tela que está aberta (``services/order_danfe.print_on_demand``). Só quando a
+    loja não tem impressora de despacho a resposta volta com os bytes, para a
+    página relaiar ao agente local desta estação (``local_agent: true`` diz que
+    ela tem um). A automática não passa por aqui: quem a dispara é o servidor,
+    quando a nota autoriza ou o pedido sai. POST porque grava o carimbo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        import base64
+
+        from shopman.backstage import station_trust
+        from shopman.backstage.services import order_danfe
+
+        try:
+            printed = order_danfe.print_on_demand(
+                ref,
+                actor=request.user,
+                station_ref=station_trust.station_ref(request) or "",
+                local_agent=request.data.get("local_agent") is True,
+            )
+        except order_danfe.DanfeRefused as refused:
+            return Response({"detail": refused.message, "code": refused.code}, status=refused.status)
+        body = {"ok": True, "via": printed.via, "reprint": printed.reprint}
+        if printed.via == "relay":
+            body["target_label"] = printed.target_label
+        else:
+            body["payload_b64"] = base64.b64encode(printed.payload).decode("ascii")
+            body["title"] = f"danfe:{ref}"
+        return Response(body)
 
 
 @extend_schema_view(

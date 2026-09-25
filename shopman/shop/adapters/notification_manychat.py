@@ -31,19 +31,25 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     ),
     "order_ready_pickup": (
         "Seu pedido {order_ref} está pronto e esperando por você no balcão."
-        " \U0001f950{tracking_suffix}"
+        " \U0001f950{tracking_suffix}{fiscal_note_suffix}"
     ),
     "order_ready_delivery": (
         "Seu pedido {order_ref} está pronto e aguardando o entregador."
-        "\nAvisamos assim que sair. \U0001f4e6{tracking_suffix}"
+        "\nAvisamos assim que sair. \U0001f4e6{tracking_suffix}{fiscal_note_suffix}"
     ),
     "order_dispatched": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
-        " entrega! \U0001f697{courier_tracking_suffix}"
-        "\nQuando receber, é só confirmar por aqui: {tracking_url}"
+        "Seu pedido {order_ref} saiu para entrega."
+        "{courier_tracking_suffix}"
+        "\nQuando receber, é só confirmar por aqui: {tracking_url}{fiscal_note_suffix}"
     ),
     "order_delivered": (
-        "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
+        "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{fiscal_note_suffix}{reorder_suffix}"
+    ),
+    # A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): o link
+    # da DANFE, sem pedir e-mail. O ManyChat não manda arquivo no WhatsApp, então
+    # vai o link. Fora da janela de 24h só sai com template aprovado (flow).
+    "fiscal_note_ready": (
+        "A nota fiscal do pedido {order_ref} está pronta: {danfe_url}{fiscal_test_note}"
     ),
     "order_cancelled": (
         "Seu pedido {order_ref} foi cancelado.{reason_note}"
@@ -222,6 +228,16 @@ def _load_db_flow_ns(event: str) -> str | None:
         logger.warning("manychat template flow lookup failed")
 
     return None
+
+
+def sends_as_flow(template: str) -> bool:
+    """Este evento sai por FLOW (template aprovado), e não por texto livre?
+
+    O texto do flow mora no ManyChat e é fixo: nada que o código acrescente ao
+    corpo (o link da nota, por exemplo) chega ao cliente por ele. Quem quer
+    pegar carona numa mensagem pergunta isto antes. Mesma ordem do ``send``.
+    """
+    return bool(_load_db_flow_ns(template) or _get_config().get("flow_map", {}).get(template))
 
 
 def send(recipient: str, template: str, context: dict | None = None, **config) -> bool | dict:

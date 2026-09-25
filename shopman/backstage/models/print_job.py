@@ -20,6 +20,11 @@ class PrintJob(models.Model):
     class Kind(models.TextChoices):
         PRODUCTION_WEIGHING = "production_weighing", "Pesagem cega"
         PRODUCTION_PREPARATION = "production_preparation", "Etiqueta de preparo"
+        # A DANFE da NFC-e que vai na sacola da entrega (services/order_danfe.py).
+        # Sai pelo relay para a impressora do despacho, e não pela tela que está
+        # aberta: um Gestor num tablet sem impressora não pode deixar a sacola
+        # sair sem o papel.
+        ORDER_DANFE = "order_danfe", "DANFE da entrega"
 
     class Status(models.TextChoices):
         PREPARED = "prepared", "Preparada no navegador"
@@ -64,6 +69,10 @@ class PrintJob(models.Model):
     )
     requested_by_ref = models.CharField("identificação do solicitante", max_length=150)
     requested_station_ref = models.CharField("estação solicitante", max_length=80, blank=True, default="")
+    # O pedido dono do papel, quando o papel é de um pedido (a DANFE da
+    # entrega). Vazio nas etiquetas de produção. É por aqui que o card do
+    # Gestor acha a última tentativa de impressão sem abrir o documento.
+    order_ref = models.CharField("pedido", max_length=64, blank=True, default="", db_index=True)
     source_revision = models.CharField("revisão de origem", max_length=256)
     document = models.JSONField("documento congelado")
     document_sha256 = models.CharField("hash do documento", max_length=64)

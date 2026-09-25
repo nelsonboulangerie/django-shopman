@@ -836,6 +836,9 @@ useSeoMeta({
               </UiTabs>
             </UiCardContent>
           </UiCard>
+
+          <!-- A nota fiscal chega digital: aqui, quando autorizada. -->
+          <OrderFiscalNote v-if="tracking.fiscal_note" :note="tracking.fiscal_note" />
         </template>
       </section>
 

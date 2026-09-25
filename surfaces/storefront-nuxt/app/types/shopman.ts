@@ -837,6 +837,9 @@ export interface CheckoutProjection {
   // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
   prefill_tax_id?: string
   prefill_tax_id_source?: '' | 'document' | 'last_delivery'
+  // A pessoa é conhecida e o cadastro dela ainda não tem documento: a tela pode
+  // PERGUNTAR "guardar no seu cadastro?" (desmarcada).
+  offer_save_tax_id?: boolean
 }
 
 export interface StripeTestCard {
@@ -987,6 +990,18 @@ export interface TrackingCopyProjection {
   waitlist_released_message: string
 }
 
+export interface FiscalNote {
+  title: string
+  number_display: string
+  // A chave de acesso em grupos de 4, como no papel.
+  access_key_display: string
+  // Vazio quando a nota foi cancelada.
+  url: string
+  link_label: string
+  // "Nota de teste, sem valor fiscal." / "Esta nota foi cancelada…" / vazio.
+  note: string
+}
+
 export interface TrackingResponse {
   convenience_pending?: string[]
   ref: string
@@ -1033,6 +1048,9 @@ export interface TrackingResponse {
     title: string
     message: string
   } | null
+  // A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
+  // pede e-mail). Ausente/`null` enquanto não há nota.
+  fiscal_note?: FiscalNote | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string
