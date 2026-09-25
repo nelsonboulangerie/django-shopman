@@ -301,11 +301,17 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`R$ 38,00` (`total`) · `{{4}}`=`hoje às 18h` (`payment_deadline`)
 - Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (`checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
 
-> ⚠️ **`{{4}}` pressupõe prazo, e este é o único template que depende de um dado que pode
-> faltar.** A Meta não aceita variável vazia. Todo link nasce com `expires_at`
-> (`min(agora + janela do canal, corte do atendimento)`, ver `docs/guides/payments.md`), e o
-> único caso sem prazo é um adapter que falhou ao gravá-lo. A sessão da voz ficou de
-> confirmar no código que **todo** link de pagamento grava o prazo antes de isto ir ao ar.
+> ✅ **`{{4}}` nunca chega vazio — medido em 25/09/2026, não suposto.** Era a única
+> dependência de dado opcional do pacote, e o caminho foi percorrido inteiro: o
+> `payment_link_sent` só sai de `pos._send_payment_link`, depois do `initiate` e com a
+> `checkout_url` já gravada; para `method == "link"` os dois adapters que emitem link
+> (`payment_stripe` e `payment_mock` — a Efí só faz Pix) calculam
+> `_payment_link.link_expires_at(...)`, que **sempre** devolve um instante
+> (`max(agora + TTL_MIN, min(janela, corte))`, nunca `None`); o `services/payment.initiate`
+> copia `intent.expires_at` para `order.data["payment"]["expires_at"]`, que é de onde o
+> `payment_deadline` é lido; e a janela do canal (`link_timeout_minutes`) é validada `> 0`
+> no `ChannelConfig`. O único jeito de faltar seria um terceiro adapter de link que não
+> usasse `link_expires_at`, e não existe nenhum.
 
 ### `pagamento_confirmado` — evento `payment_confirmed`
 - Corpo: `Obrigada, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Vamos atualizando você por aqui.`
