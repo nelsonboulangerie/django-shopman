@@ -403,6 +403,29 @@ def states_for(orders) -> dict[str, str]:
     return {order.ref: state_for(order, holds=grouped[f"order:{order.ref}"], quant_available=available) for order in orders}
 
 
+def is_in_fermata(order, *, state: str | None = None) -> bool:
+    """O pedido está esperando o lote SAIR? — a pergunta, num lugar só.
+
+    Três caminhos decidem coisas diferentes com esta mesma resposta: o gestor
+    barra o "Iniciar preparo" (``AdvanceBlock.WAITLIST_FERMATA``), o balcão
+    deixa de fechar a venda como entrega consumada
+    (``customer_holds_the_goods``) e a baixa de estoque espera
+    (``_stock_fulfill_allowed``). Enquanto cada um perguntava por conta
+    própria, uma regra nova entrava num e faltava nos outros.
+
+    ``state`` evita a requery quando quem chama já computou o estado em lote
+    (o board faz isso para a fila inteira).
+
+    Degrada para ``False`` de propósito: fila é o caminho excepcional, e um
+    stockman mudo não pode congelar a venda de balcão.
+    """
+    try:
+        return (state_for(order) if state is None else state) == FERMATA
+    except Exception:
+        logger.debug("waitlist.is_in_fermata degraded ref=%s", getattr(order, "ref", "?"), exc_info=True)
+        return False
+
+
 def planned_batch_date(order) -> date | None:
     """A fornada que este pedido espera, lida do hold.
 

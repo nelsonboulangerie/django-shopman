@@ -70,6 +70,15 @@ class POSProductProjection:
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
     # da grade faria o operador procurar um botão que "sumiu".
     sold_out: bool = False
+    # Só existe como FORNADA PLANEJADA de hoje: o pão está no forno, não na
+    # gôndola. Vender é legítimo (a casa vende a fornada que vai sair), mas é
+    # uma venda com espera — e o operador precisa saber disso ANTES de lançar,
+    # porque é ele quem diz ao cliente "sai às 15h". ``sold_out`` e
+    # ``planned_only`` são excludentes: quem não tem nada está esgotado, quem
+    # só tem plano é planejado, e quem tem pão na prateleira não é nenhum dos
+    # dois. O selo é NEUTRO de propósito — âmbar aqui leria como problema, e
+    # fornada saindo não é problema, é o funcionamento normal da casa.
+    planned_only: bool = False
     # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
     # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
     # uma unidade. Ver ``shop/services/weighed_sale.py``.
@@ -1002,9 +1011,9 @@ def _load_products() -> list[POSProductProjection]:
             .order_by("name")
         ]
 
-    sold_out = _sold_out_skus([p.sku for p, _ in entries])
+    supply = _supply_by_sku([p.sku for p, _ in entries])
     return [
-        _product_projection(p, price_q, sold_out=p.sku in sold_out)
+        _product_projection(p, price_q, supply=supply.get(p.sku, "ready"))
         for p, price_q in entries
     ]
 
@@ -2117,7 +2126,7 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
     )
 
 
-def _product_projection(product: Product, price_q: int, *, sold_out: bool = False) -> POSProductProjection:
+def _product_projection(product: Product, price_q: int, *, supply: str = "ready") -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
         ci = (
@@ -2147,7 +2156,8 @@ def _product_projection(product: Product, price_q: int, *, sold_out: bool = Fals
         collection_icon=str(meta.get("icon") or ""),
         image_url=product.image_url or "",
         gtin=_product_gtin(product),
-        sold_out=sold_out,
+        sold_out=supply == "sold_out",
+        planned_only=supply == "planned",
         sold_by_weight=sold_by_weight,
     )
 
@@ -2158,14 +2168,23 @@ def _product_gtin(product: Product) -> str:
     return str(social.get("gtin") or "") if isinstance(social, dict) else ""
 
 
-def _sold_out_skus(skus: list[str]) -> set[str]:
-    """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
-    storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
-    query para a grade inteira. Silencioso quando o stockman não responde: a
-    grade do balcão nunca quebra por causa de um selo.
+def _supply_by_sku(skus: list[str]) -> dict[str, str]:
+    """De ONDE vem cada SKU agora: ``"ready"`` (gôndola), ``"planned"`` (só a
+    fornada de hoje) ou ``"sold_out"`` (nada).
+
+    Mesma leitura em lote que o storefront usa
+    (``catalog_context.availability_for_skus`` → stockman), uma query para a
+    grade inteira. Silencioso quando o stockman não responde: a grade do balcão
+    nunca quebra por causa de um selo.
+
+    O PDV lia isto como UM BIT e jogava fora a distinção que o
+    ``basic_availability`` já fazia: ``planned_ok`` **não** é ``unavailable``,
+    então o pão que só existe como fornada nunca marcava esgotado e o tile
+    ficava idêntico ao pão pronto. O operador vendia a fornada sem saber que
+    estava vendendo espera — e quem descobria era o cliente, na fila.
     """
     if not skus:
-        return set()
+        return {}
     try:
         from decimal import Decimal
 
@@ -2175,22 +2194,25 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
         )
 
         avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF)
-        sold_out: set[str] = set()
+        supply: dict[str, str] = {}
         for sku in skus:
             raw = avail_map.get(sku)
-            # SKU sem rastreio de estoque não é esgotado: o zero dele é ausência
-            # de dado, não vitrine vazia — o selo só afirma o que o stockman mede.
+            # SKU sem rastreio de estoque não é esgotado nem planejado: o zero
+            # dele é ausência de dado, não vitrine vazia — o selo só afirma o
+            # que o stockman mede.
             if not raw or not raw.get("is_tracked"):
                 continue
             resolved = basic_availability(
                 raw, is_sellable=True, low_stock_threshold=Decimal("0"),
             )
             if resolved.status == "unavailable":
-                sold_out.add(sku)
-        return sold_out
+                supply[sku] = "sold_out"
+            elif resolved.status == "planned_ok":
+                supply[sku] = "planned"
+        return supply
     except Exception:
-        logger.exception("pos_sold_out_lookup_failed")
-        return set()
+        logger.exception("pos_supply_lookup_failed")
+        return {}
 
 
 def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:

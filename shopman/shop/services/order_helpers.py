@@ -282,7 +282,20 @@ def customer_holds_the_goods(order) -> bool:
         if not payment_is_captured(order):
             return False
     commitment = get_commitment_date(order)
-    return not (commitment and commitment > timezone.localdate())
+    if commitment and commitment > timezone.localdate():
+        return False
+    # O pão que ainda está no FORNO não está na mão de ninguém. Sem este corte
+    # a venda de balcão de um item que só existe como fornada planejada fechava
+    # ``COMPLETED`` no ato (``system:counter_handoff``) e mandava baixar
+    # estoque de um lote que não saiu — o `fulfill_hold` falhava e o operador
+    # recebia um alerta CRÍTICO de "estoque acima do físico" pela venda mais
+    # normal da padaria. Pior que o alerta: o pedido nascia e morria no mesmo
+    # instante, então ninguém no gestor sabia que havia um cliente esperando
+    # uma fornada. Com o corte ele fica em fermata e o board já diz
+    # "Esperando o lote…".
+    from shopman.shop.services import waitlist
+
+    return not waitlist.is_in_fermata(order)
 
 
 def merge_order_data(order, values: dict, *, block: str | None = None, remove: tuple[str, ...] = ()) -> None:

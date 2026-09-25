@@ -172,6 +172,55 @@ class POSHeadlessSurfaceContractTests(TestCase):
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
 
+    def test_products_tell_the_shelf_apart_from_the_oven(self) -> None:
+        """Gôndola, forno e nada são TRÊS estados — o PDV lia um bit só.
+
+        ``basic_availability`` já distinguia ``planned_ok`` de ``unavailable``,
+        e o PDV descartava a diferença: o pão que só existe como fornada de
+        hoje não marcava esgotado (certo — vender é legítimo) e por isso ficava
+        idêntico ao pão pronto na prateleira (errado — é venda com espera, e
+        quem combina a espera é o operador).
+        """
+        from decimal import Decimal
+
+        from django.utils import timezone
+        from shopman.stockman.models import Position, Quant
+
+        vitrine = Position.objects.create(ref="vitrine", name="Vitrine", is_saleable=True)
+
+        # Só a fornada de hoje: não é esgotado, mas não está na gôndola.
+        Quant.objects.create(
+            sku="POS-HEADLESS-ITEM",
+            position=vitrine,
+            target_date=timezone.localdate(),
+            _quantity=Decimal("6"),
+        )
+        product = self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"][0]
+        self.assertFalse(product["sold_out"])
+        self.assertTrue(product["planned_only"])
+
+        # Pão na prateleira: nenhum dos dois selos.
+        Quant.objects.create(
+            sku="POS-HEADLESS-ITEM",
+            position=vitrine,
+            _quantity=Decimal("4"),
+        )
+        product = self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"][0]
+        self.assertFalse(product["sold_out"])
+        self.assertFalse(product["planned_only"])
+
+    def test_sold_out_and_planned_only_never_light_together(self) -> None:
+        """Esgotado e fornada são excludentes — dois selos na mesma cara é
+        tela dizendo duas coisas, e o operador acredita na pior."""
+        from shopman.stockman.models import Position, Quant
+
+        vitrine = Position.objects.create(ref="vitrine", name="Vitrine", is_saleable=True)
+        Quant.objects.create(sku="POS-HEADLESS-ITEM", position=vitrine)
+
+        product = self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"][0]
+        self.assertTrue(product["sold_out"])
+        self.assertFalse(product["planned_only"])
+
     def test_products_expose_the_package_barcode_for_the_counter_scanner(self) -> None:
         """O leitor do balcão DIGITA o código no campo de busca do PDV.
 

@@ -1255,6 +1255,14 @@ export function usePosSale(deps: PosSaleDeps) {
     // Sem preço no catálogo não entra no pedido — nenhum canal vende preço zero.
     // O tile já vem inerte; isto cobre o leitor e o "repetir pedido".
     if (productBlockedLabel({ price_q: product.price_q, sold_out: false })) return;
+    // Fornada planejada: o pão está no FORNO. A venda segue (a casa vende a
+    // fornada que vai sair), mas o operador tem que saber NA HORA de lançar —
+    // é ele quem combina a espera com o cliente que está na frente dele. No
+    // tile o selo se lê de relance; pelo leitor de código e pelo "repetir
+    // pedido" não há tile nenhum, e sem isto a linha entrava calada.
+    if (product.planned_only) {
+      toast.info(`${product.name}: sai da próxima fornada — ainda não está na gôndola.`);
+    }
     if (product.sold_by_weight && !weighed) {
       if (orderSetupPending.value) return;
       weighedPrompt.value = product;

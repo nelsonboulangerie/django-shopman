@@ -182,8 +182,11 @@ class ChannelConfig:
         low_stock_threshold: int = 5  # acima de 0 e <= este valor → "Últimas unidades" no cardápio
         preorder: bool = True  # canal aceita encomenda p/ data futura sem plano
         # (commit registra DEMANDA — hold quant=None — em vez de recusar; a
-        # janela continua sendo orders.max_preorder_days no checkout). PDV e
-        # marketplaces devem declarar False no Channel.config.
+        # janela continua sendo orders.max_preorder_days no checkout).
+        # ⚠️ O PDV fica no default True, e isso é deliberado: encomenda de
+        # padaria NASCE no balcão ("me separa seis pães para sábado"), e o
+        # funil existe (sales_mode="order", com cliente e data obrigatórios).
+        # Marketplace é que declara False — lá a data quem manda é o parceiro.
         allow_untracked: bool = True
         # SKU fora do CATÁLOGO pode entrar em pedido sem reserva (seam de
         # integração/smoke)? Canais de CLIENTE devem declarar False — typo de

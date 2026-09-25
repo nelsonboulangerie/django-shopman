@@ -5995,10 +5995,15 @@ class Command(BaseCommand):
             # para hoje ou para amanhã, e a encomenda remota só é liberada
             # contra o pagamento.
             "payment": {"method": "cash", "timing": "external", "link_timeout_minutes": 120},
-            # No balcão o item já saiu fisicamente da vitrine: a venda NUNCA é
-            # auto-rejeitada por estoque (o kernel reserva o que der, best-effort,
-            # e o estoque reconcilia). A review avisa; não bloqueia. Mesma semântica
-            # do marketplace (check_on_commit=False).
+            # A venda de balcão NUNCA é auto-rejeitada por estoque (o kernel
+            # reserva o que der, best-effort, e o estoque reconcilia). A review
+            # avisa; não bloqueia. Mesma semântica do marketplace
+            # (check_on_commit=False).
+            # ⚠️ Isto NÃO quer dizer que o item já saiu da vitrine. Vale para a
+            # gôndola; não vale para a fornada que ainda está no forno nem para
+            # a encomenda. Quem separa os três é a disponibilidade
+            # (`planned_only` na grade) e, no pedido, a fermata — que impede o
+            # balcão de fechar como entrega consumada o pão que não existe.
             # allow_untracked=False: canal de CLIENTE — typo de SKU não pode
             # virar pedido sem reserva (SKU fora do catálogo é recusado/alertado).
             # sells_nonconforming=True: no balcão o lote com desconto de

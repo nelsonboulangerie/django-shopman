@@ -146,6 +146,18 @@ export function isWeighedLine(item: Pick<POSCartItem, "weighed">): boolean {
 
 /** Produto que não pode entrar no pedido: sem preço no catálogo (nenhum canal
  *  vende preço zero) ou esgotado. "" quando vende. */
+/** De onde vem este pão agora — "" quando está na gôndola (o caso comum).
+ *
+ *  Separado de `productBlockedLabel` de propósito: aquele diz o que IMPEDE a
+ *  venda, este diz o que ela IMPLICA. Fornada planejada não bloqueia nada — a
+ *  casa vende a fornada que vai sair —, mas muda a conversa no balcão, porque
+ *  o operador precisa dizer "sai da próxima fornada" antes de o cliente
+ *  esperar por um pão que ele acha que já existe. */
+export function productSupplyLabel(product: Pick<POSProductProjection, "sold_out" | "planned_only">): string {
+  if (product.sold_out) return "";
+  return product.planned_only ? "Fornada" : "";
+}
+
 export function productBlockedLabel(product: Pick<POSProductProjection, "price_q" | "sold_out">): string {
   if (!(product.price_q > 0)) return "Sem preço";
   if (product.sold_out) return "Esgotado";
