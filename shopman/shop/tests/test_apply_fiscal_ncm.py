@@ -248,3 +248,47 @@ def test_ncm_corrigido_da_revenda_e_da_despensa_mantem_o_cest():
     assert (queijo["ncm"], queijo["cest"]) == ("04069030", "1702400")
     pasta = Product.objects.get(sku="TPND").metadata["fiscal"]
     assert (pasta["ncm"], pasta["cest"]) == ("20057000", "1709200")
+
+
+
+# ── Sanduíches, salsicha e a ficha do croque ───────────────────────────────
+
+
+def test_sanduiche_com_embutido_predominante_vai_ao_capitulo_16_e_o_cest_acompanha():
+    for sku in ("HOD", "JB"):
+        produto = _product(sku, "19059090")
+        produto.metadata = {"fiscal": {**produto.metadata["fiscal"], "cest": "1706200"}}
+        produto.save()
+    _product("CQCOM", "19059090")
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    hot_dog = Product.objects.get(sku="HOD").metadata["fiscal"]
+    assert (hot_dog["ncm"], hot_dog["cest"]) == ("16010000", "1707600")
+    jambon = Product.objects.get(sku="JB").metadata["fiscal"]
+    assert (jambon["ncm"], jambon["cest"]) == ("16024100", "1707904")
+    assert _ncm("CQCOM") == "19059090"
+
+
+def test_a_salsicha_comprada_guarda_o_ncm_da_nota_do_fornecedor():
+    from shopman.buyman.models import Material
+
+    Material.objects.create(sku="SALSICHA-VIENNA", name="Salsicha vienna artesanal", unit="g")
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    assert Material.objects.get(sku="SALSICHA-VIENNA").metadata["ncm"] == "16024100"
+
+
+def test_a_ficha_do_croque_carrega_o_limite_de_20_por_cento_de_presunto():
+    from shopman.craftsman.models import Recipe
+
+    from config.management.commands.apply_fiscal_ncm import CROQUE_FISCAL_NOTE
+
+    _product("CQCOM", "19059090")
+    Recipe.objects.create(ref="croque-complet", name="Croque Complet", output_sku="CQCOM", batch_size=1)
+
+    call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
+
+    assert Recipe.objects.get(ref="croque-complet").meta["fiscal_note"] == CROQUE_FISCAL_NOTE
+    assert "20%" in CROQUE_FISCAL_NOTE

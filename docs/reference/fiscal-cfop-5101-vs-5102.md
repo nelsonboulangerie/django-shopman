@@ -30,6 +30,17 @@ O perfil `standard` (sem ST) cobre **fabricação própria + revenda comum** de
 propósito (pães, salgados, doces, bebidas preparadas, mercearia fora da ST). Um CFOP único para os dois
 é exatamente a simplificação que a decisão adota.
 
+## Revisitado em 24/09/2026 — e mantido
+
+Na auditoria fiscal do alpha surgiu de novo a leitura de que o pão feito aqui
+seria "venda de produção do estabelecimento" (**5101**) — e o 5101 está, sim, na
+lista de CFOPs aceitos na NFC-e. Chegou a haver um PR (#1108, fechado sem
+entrar) separando produção própria (5101) de revenda (5102). **Ficou o 5102**:
+é a parametrização **formal** do contador (doc "PROCEDIMENTO E
+PARAMETRIZAÇÃO", SEFA-PR, aplicado em 29/06), e sob Simples Nacional o CFOP não
+muda o imposto. Mudar para 5101 só com o contador — e aí é um valor no perfil
+`standard`, o default do deployment e esta página.
+
 ## Referência da tabela CFOP
 
 | CFOP | Descrição |
