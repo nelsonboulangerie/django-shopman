@@ -771,7 +771,8 @@ def _ensure_packaging(box: GiftBox, kit, report: dict) -> None:
       Sem caixa, o kit fica indisponível.
     - **Rastreada desde o primeiro dia**: o Stockman trata SKU sem nenhum saldo
       como "não rastreado" (sempre disponível). Por isso a caixa nasce com um
-      saldo ZERO na posição de venda (``vitrine``) — é a verdade até a primeira
+      saldo ZERO na posição de venda (a de recebimento da revenda,
+      ``receiving_position``; no Nelson, ``vitrine``) — é a verdade até a primeira
       nota ou contagem, e é o que faz "sem caixa" valer. Banco sem posição
       ainda (o seed, que chama isto antes de criar as posições) ganha o
       estoque inicial no próprio seed.
@@ -817,15 +818,15 @@ def _ensure_tracked(sku: str) -> bool:
     (``_quantity == Σ moves == 0``) e é o que tira o SKU de "não rastreado".
     Devolve se criou. Sem posição de venda no banco, não cria.
     """
-    from shopman.stockman.models import Position, Quant
+    from shopman.stockman.models import Quant
+
+    from shopman.shop.services.receiving_position import RESALE, position_for_role
 
     if Quant.objects.filter(sku=sku).exists():
         return False
-    position = (
-        Position.objects.filter(ref="vitrine").first()
-        or Position.objects.filter(is_saleable=True, kind="physical").order_by("ref").first()
-    )
-    if position is None:
+    # A mesma régua do recebimento do Compras: revenda entra onde se vende.
+    position = position_for_role(RESALE)
+    if position is None or not position.is_saleable:
         return False
     Quant.objects.get_or_create(sku=sku, position=position, target_date=None, batch="")
     return True
