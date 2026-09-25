@@ -187,7 +187,7 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
     {
       key: "intake",
       title: "Entrada",
-      subtitle: "Novos — aceitar ou recusar",
+      subtitle: "Novos: aceitar ou recusar",
       icon: "lucide:inbox",
       cards: queue.intake,
       count: queue.intake.length,

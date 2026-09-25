@@ -3,7 +3,7 @@
 // functional (severity); the bell itself is neutral chrome. Lives in the board header.
 import type { AlertProjection } from "~/types/orders";
 
-const { alerts, activeCount, criticalCount, ack } = useAlerts();
+const { alerts, activeCount, criticalCount, ack, ackAction } = useAlerts();
 const open = ref(false);
 
 function contextAction(alert: AlertProjection) {
@@ -53,14 +53,20 @@ function sevChip(sev: AlertProjection["severity"]): string {
           <p class="text-sm">Nenhum alerta agora.</p>
         </div>
         <ul v-else class="flex flex-col gap-1.5">
-          <li v-for="a in alerts" :key="a.pk" class="flex items-start gap-2 rounded-md border p-2.5" :class="sevChip(a.severity)">
+          <li
+            v-for="a in alerts"
+            :key="a.pk"
+            class="flex items-start gap-2 rounded-md border p-2.5"
+            :class="[sevChip(a.severity), ackAction(a) ? '' : 'opacity-70']"
+            :data-alert-seen="ackAction(a) ? undefined : ''"
+          >
             <div class="min-w-0 flex-1">
               <p class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
                 {{ a.severity_label }} · {{ a.type_label }}
               </p>
-              <p class="mt-0.5 break-words text-sm text-foreground">{{ a.message }}</p>
+              <p class="mt-0.5 whitespace-pre-line break-words text-sm text-foreground">{{ a.message }}</p>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                {{ a.created_at_display }}<template v-if="a.order_ref"> · {{ a.order_ref }}</template>
+                {{ a.created_at_display }}<template v-if="a.order_ref"> · pedido {{ a.order_ref }}</template><template v-if="!ackAction(a)"> · visto</template>
               </p>
               <NuxtLink
                 v-if="contextAction(a)"
@@ -72,13 +78,15 @@ function sevChip(sev: AlertProjection["severity"]): string {
               </NuxtLink>
             </div>
             <button
+              v-if="ackAction(a)"
               type="button"
-              class="grid size-7 shrink-0 place-items-center rounded border bg-background text-muted-foreground transition hover:text-foreground"
-              aria-label="Reconhecer alerta"
-              title="Reconhecer"
-              @click="ack(a.pk)"
+              class="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-md border bg-background px-2 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+              aria-label="Marcar como visto"
+              title="Marca que você leu. O alerta sai quando o problema for resolvido."
+              data-alert-ack
+              @click="ack(a)"
             >
-              <Icon name="lucide:check" class="size-3.5" />
+              <Icon name="lucide:check" class="size-3.5" /> Visto
             </button>
           </li>
         </ul>

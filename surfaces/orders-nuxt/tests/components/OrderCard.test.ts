@@ -297,3 +297,15 @@ describe("OrderCard — a DANFE da sacola", () => {
     expect(w.get("[data-danfe-print]").text()).toBe("Imprimindo…");
   });
 });
+
+describe("OrderCard: a NFC-e que não autorizou", () => {
+  it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", () => {
+    const w = mountCard({ card: card({ fiscal_status: "failed", fiscal_status_label: "NFC-e não autorizada" }) });
+    const link = w.get("[data-fiscal-failed]");
+    expect(link.text()).toContain("NFC-e não autorizada");
+    expect(link.text()).toContain("reprocessar");
+  });
+  it("nota em dia não ocupa o card", () => {
+    expect(mountCard({ card: card({ fiscal_status: "authorized" }) }).find("[data-fiscal-failed]").exists()).toBe(false);
+  });
+});

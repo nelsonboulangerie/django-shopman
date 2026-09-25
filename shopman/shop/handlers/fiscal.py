@@ -89,7 +89,11 @@ class NFCeEmitHandler:
             return
         create_operator_alert(
             type="fiscal_emit_failed", severity="critical", order_ref=order_ref,
-            message=f"NFC-e do pedido {order_ref} sem emissão confirmada após {message.attempts} tentativa(s). Confira a fila fiscal e consulte a referência antes de reenviar.",
+            message=(
+                f"A NFC-e do pedido {order_ref} não foi autorizada depois de {message.attempts} "
+                "tentativa(s). Abra o pedido e toque em Reprocessar NFC-e; se falhar de novo, "
+                "chame o contador."
+            ),
             dedupe_key=f"fiscal_emit_failed:{order_ref}",
         )
 
@@ -539,9 +543,9 @@ class NFCeCancelHandler:
             type="fiscal_cancel_failed",
             severity="critical",
             message=(
-                f"Cancelamento da NFC-e do pedido {order.ref} FALHOU "
-                f"({result.error_message}). A nota continua válida na SEFAZ — "
-                "resolver com o contador (cancelamento fora da janela exige outro instrumento)."
+                f"O cancelamento da NFC-e do pedido {order.ref} falhou "
+                f"({result.error_message}). A nota continua valendo na SEFAZ. "
+                "Leve o caso ao contador: fora do prazo, o cancelamento é feito por outro documento."
             ),
             order_ref=order.ref,
             dedupe_key=f"fiscal_cancel_failed:{order.ref}",

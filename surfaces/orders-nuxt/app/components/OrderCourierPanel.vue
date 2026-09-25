@@ -130,7 +130,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         @click="emit('dispatch')"
       >
         <Icon name="lucide:send" class="size-4" />
-        {{ hasRide || courier.attempts_count > 0 ? "Re-despachar" : "Chamar entregador" }}
+        {{ hasRide || courier.attempts_count > 0 ? "Chamar outro entregador" : "Chamar entregador" }}
       </button>
       <button
         v-if="courier.can_quote"

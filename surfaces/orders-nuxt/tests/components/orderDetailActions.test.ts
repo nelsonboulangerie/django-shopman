@@ -560,7 +560,7 @@ it("fechar e reabrir o acerto conserva valor e pede revisar a custódia que mudo
 
 
 it.each([
-  ["requeue-fiscal", "Reprocessar fiscal", { fiscal_status: "failed" }, requeueFiscal],
+  ["requeue-fiscal", "Reprocessar NFC-e", { fiscal_status: "failed" }, requeueFiscal],
   ["equipment-back", "Maquininha voltou", { equipment_back_pending: true }, equipmentBack],
 ] as const)("respects disabled projected recovery %s without a request", async (refName, label, fields, execute) => {
   execute.mockClear();

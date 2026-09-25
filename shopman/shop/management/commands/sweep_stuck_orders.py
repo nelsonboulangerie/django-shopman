@@ -169,15 +169,13 @@ class Command(BaseCommand):
             return False
 
     def _alert(self, order, phase: str) -> None:
+        from shopman.shop.lifecycle import phase_stuck_message
         from shopman.shop.services.observability import create_operator_alert
 
         create_operator_alert(
             type="lifecycle_phase_stuck",
             severity="critical",
-            message=(
-                f"Pedido {order.ref} ficou com a fase {phase} incompleta e o "
-                "re-dispatch automático falhou — conferir e destravar manualmente."
-            ),
+            message=phase_stuck_message(order.ref, phase),
             order_ref=order.ref,
             dedupe_key=f"lifecycle_phase_stuck:{order.ref}:{phase}",
         )

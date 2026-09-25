@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 
+from shopman.utils.monetary import format_money
+
 from shopman.shop import directives, fiscal_intermediary
 from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
@@ -535,11 +537,11 @@ def _alert_payment_mismatch(order, payment: dict) -> None:
         type="fiscal_payment_mismatch",
         severity="critical",
         message=(
-            f"NFC-e do pedido {order.ref} NÃO foi emitida: o pagamento gravado "
-            f"(R$ {declared_q / 100:.2f}) está abaixo do valor que a nota deve "
-            f"declarar (R$ {base_q / 100:.2f}). Emitir assim colocaria no "
-            "documento um desconto que não houve. Acerte o pagamento do pedido e "
-            "emita de novo."
+            f"A NFC-e do pedido {order.ref} não foi emitida: o pagamento registrado "
+            f"(R$ {format_money(declared_q)}) está abaixo do valor que a nota deve "
+            f"declarar (R$ {format_money(base_q)}). Emitir assim colocaria na "
+            "nota um desconto que não houve. Registre o pagamento que falta no pedido "
+            "e toque em Reprocessar NFC-e."
         ),
         order_ref=order.ref,
         dedupe_key=f"fiscal_payment_mismatch:{order.ref}",
@@ -812,9 +814,12 @@ def alert_handoff_without_nfce(order, *, target_status: str) -> None:
         type=HANDOFF_WITHOUT_NFCE_ALERT_TYPE,
         severity="warning",
         message=(
-            f"Pedido {order.ref} saiu sem NFC-e autorizada: {verbo} com a nota "
-            + ("na fila." if state == FISCAL_STATE_QUEUED else "com falha de emissão.")
-            + " Confira a fila fiscal."
+            f"O pedido {order.ref} foi {verbo} sem NFC-e autorizada. "
+            + (
+                "A nota ainda está sendo emitida; este aviso fecha sozinho quando ela autorizar."
+                if state == FISCAL_STATE_QUEUED
+                else "A emissão falhou: abra o pedido e toque em Reprocessar NFC-e."
+            )
         ),
         order_ref=order.ref,
         dedupe_key=f"{HANDOFF_WITHOUT_NFCE_ALERT_TYPE}:{order.ref}",
