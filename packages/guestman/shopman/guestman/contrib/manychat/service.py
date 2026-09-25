@@ -29,6 +29,37 @@ ERASED_SUBSCRIBER = (
 )
 
 
+# Campos de identidade que o ManyChat manda ora como texto, ora como NÚMERO. O
+# `getInfo` devolve `ig_id` numérico, e um `{{Subscriber ID}}` sem aspas no corpo do
+# External Request chega como int. Tudo aqui dentro trata identificador como texto
+# (`.strip()`, `.encode()`, `.lower()`), então a conversão acontece na porta: em
+# 25/09/2026 um `ig_id` numérico derrubou o "Entrar pelo WhatsApp" de um cliente novo
+# com `'int' object has no attribute 'strip'`, e o link nunca saiu.
+_TEXT_FIELDS = (
+    "id",
+    "whatsapp_id",
+    "whatsapp_phone",
+    "phone",
+    "email",
+    "first_name",
+    "last_name",
+    "ig_id",
+    "ig_username",
+    "fb_id",
+    "tg_id",
+)
+
+
+def _as_text_fields(subscriber_data: dict) -> dict:
+    """Cópia do payload com os identificadores numéricos convertidos em texto."""
+    data = dict(subscriber_data)
+    for key in _TEXT_FIELDS:
+        value = data.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            data[key] = str(int(value)) if float(value).is_integer() else str(value)
+    return data
+
+
 class ManychatService:
     """
     Service for Manychat integration.
@@ -63,6 +94,7 @@ class ManychatService:
         """
         if not isinstance(subscriber_data, dict):
             raise ValueError("Subscriber data must be an object")
+        subscriber_data = _as_text_fields(subscriber_data)
         manychat_id = subscriber_data.get("id")
         if not manychat_id:
             raise ValueError("Subscriber data must contain 'id' field")
@@ -176,6 +208,7 @@ class ManychatService:
         source_system: str = "manychat",
     ) -> Customer:
         """Bind trusted ManyChat/access-link identity data to a known customer."""
+        subscriber_data = _as_text_fields(subscriber_data or {})
         with transaction.atomic():
             customer = cls._lock_active_customer(customer.pk)
             cls._add_manychat_identifiers(customer, subscriber_data, source_system)
