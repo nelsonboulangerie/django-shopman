@@ -166,22 +166,36 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
-  it("usa o produto da ocorrência na revisão, sem voltar para a amostra", async () => {
+  it("na revisão lê o anúncio gravado: sem produto de exemplo, sem link inventado", async () => {
+    // Medido em 25/09/2026 (anúncio 31): a revisão mandava `sku` vazio, o servidor
+    // escolhia um produto de exemplo e a prévia mostrava um link que o post não teria.
     const fetch = vi.fn().mockResolvedValue({
-      ...batch({ instagram: "Madeleine saiu do forno" }),
-      sku: "MD",
+      ...batch({ google_business: "Ensaio do Google" }),
+      sku: "",
       sample: false,
-      product_name: "Madeleine",
+      product_name: "",
+      facts: null,
     });
     vi.stubGlobal("$fetch", fetch);
-    const wrapper = mountPreview({ sku: "MD" });
+    const wrapper = mountPreview({
+      announcementId: 31,
+      body: "Ensaio do Google",
+      hashtags: ["padaria"],
+      platforms: ["google_business"],
+      platformLabels: { google_business: "Google" },
+    });
 
     await vi.advanceTimersByTimeAsync(400);
     await flushPromises();
 
-    expect(fetch.mock.calls[0]![1].body.sku).toBe("MD");
+    expect(fetch.mock.calls[0]![1].body).toEqual({
+      announcement: 31,
+      body: "Ensaio do Google",
+      hashtags: ["padaria"],
+      platforms: ["google_business"],
+    });
     expect(wrapper.text()).not.toContain("Exemplo com");
-    expect(wrapper.text()).toContain("Madeleine saiu do forno");
+    expect(wrapper.text()).toContain("Ensaio do Google");
     wrapper.unmount();
   });
 

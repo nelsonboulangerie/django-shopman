@@ -8,8 +8,14 @@ import {
 
 const props = defineProps<{
   body: string;
-  /** SKU da ocorrência real. Vazio usa somente a amostra do formulário. */
-  sku?: string;
+  /** Revisão de anúncio que JÁ existe: a prévia sai do conteúdo gravado dele (+ as
+   *  edições), como a aprovação monta — nunca de um produto de exemplo. Ausente = o
+   *  formulário de campanha/modelo, onde o exemplo explica o modelo. */
+  announcementId?: number;
+  /** Hashtags editadas na revisão (só com `announcementId`). */
+  hashtags?: string[];
+  /** Tipo e botão do post do Google escolhidos na revisão (só com `announcementId`). */
+  googleBusiness?: Record<string, string>;
   platforms: string[];
   platformContent?: Record<string, Record<string, unknown>>;
   promotionRef?: string;
@@ -48,6 +54,7 @@ type PreviewBatch = {
   product_name: string;
   fields: Record<string, string>;
   ai_writes: boolean;
+  /** `null` na revisão de anúncio sem fatos gravados (nenhuma variável de catálogo). */
   facts: {
     schema_version: number;
     as_of: string;
@@ -62,7 +69,7 @@ type PreviewBatch = {
     availability: Record<string, Scalar>;
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
-  };
+  } | null;
   previews: Record<
     string,
     {
@@ -94,7 +101,9 @@ let epoch = 0;
 watch(
   () => [
     props.body,
-    props.sku || "",
+    props.announcementId ?? "",
+    (props.hashtags || []).join("\u001f"),
+    JSON.stringify(props.googleBusiness || {}),
     props.promotionRef || "",
     props.useAi ? "1" : "0",
     props.platforms.join("\u001f"),
@@ -151,14 +160,23 @@ async function load(requestEpoch: number) {
       {
         method: "POST",
         signal: requestController.signal,
-        body: {
-          body: props.body,
-          sku: props.sku || "",
-          platforms: normalizedPlatforms(),
-          platform_content: props.platformContent || {},
-          promotion_ref: props.promotionRef || "",
-          use_ai: props.useAi,
-        },
+        body: props.announcementId
+          ? {
+              announcement: props.announcementId,
+              body: props.body,
+              hashtags: props.hashtags || [],
+              platforms: normalizedPlatforms(),
+              ...(props.googleBusiness
+                ? { google_business: props.googleBusiness }
+                : {}),
+            }
+          : {
+              body: props.body,
+              platforms: normalizedPlatforms(),
+              platform_content: props.platformContent || {},
+              promotion_ref: props.promotionRef || "",
+              use_ai: props.useAi,
+            },
       },
     );
     if (requestEpoch !== epoch) return;
@@ -245,12 +263,12 @@ const emptyFields = computed(() =>
   Object.entries(preview.value?.fields || {})
     .filter(
       ([key, value]) =>
-        preview.value?.facts.referenced_variables.includes(key) && !value,
+        preview.value?.facts?.referenced_variables.includes(key) && !value,
     )
     .map(([key]) => key),
 );
 const factTime = computed(() => {
-  const raw = preview.value?.facts.as_of;
+  const raw = preview.value?.facts?.as_of;
   if (!raw) return "";
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -597,7 +615,7 @@ const simulatedScenes = computed(() =>
         <div v-if="factTime" class="flex gap-1">
           <dt>Dados conferidos às:</dt>
           <dd
-            :title="`Dados de ${preview.facts.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
+            :title="`Dados de ${preview.facts?.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
           >
             {{ factTime }}
           </dd>

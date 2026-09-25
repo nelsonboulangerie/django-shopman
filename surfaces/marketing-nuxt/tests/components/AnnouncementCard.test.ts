@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import AnnouncementCard from "~/components/AnnouncementCard.vue";
+import AnnouncementPreview from "~/components/AnnouncementPreview.vue";
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import GoogleBusinessPostOptions from "~/components/GoogleBusinessPostOptions.vue";
 import type { Announcement } from "~/types/campaign";
@@ -249,6 +250,41 @@ describe("AnnouncementCard", () => {
     expect(edits.hashtags).toEqual(["paes", "fornada"]);
     expect(edits.platforms).toEqual(["instagram"]);
     expect(wrapper.emitted("approve")![0]![2]).toBe("now");
+  });
+
+  it("a prévia da revisão pede o anúncio gravado com as mesmas edições da aprovação", async () => {
+    // Sem `announcement`, o servidor caía na prévia do formulário e inventava um produto
+    // de exemplo (com link) para um anúncio que não tinha produto — medido em 25/09/2026.
+    const fetch = vi.fn().mockReturnValue(new Promise(() => {}));
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mount(AnnouncementCard, {
+      props: {
+        announcement: makeAnnouncement({ sku: "" }),
+        platformOptions: PLATFORMS,
+        draftOwner: "",
+        shopTimezone: "America/Sao_Paulo",
+        aiAssistAvailable: false,
+        quietHoursSuspendedForLocalSimulation: false,
+      },
+      global: {
+        components: { AnnouncementPreview, DraftRecoveryNotice },
+        stubs: { AnnouncementSimulatedPreview: true, Icon: true, NuxtLink: true },
+      },
+    });
+    await wrapper.find("textarea").setValue("Texto revisado");
+    await wrapper.find("input[type=text]").setValue("#paes #fornada");
+    await vi.advanceTimersByTimeAsync(400);
+
+    const previews = fetch.mock.calls.filter(
+      ([url]) => url === "/api/v1/backstage/marketing/preview/",
+    );
+    expect(previews.at(-1)![1].body).toEqual({
+      announcement: 7,
+      body: "Texto revisado",
+      hashtags: ["paes", "fornada"],
+      platforms: ["instagram"],
+    });
+    wrapper.unmount();
   });
 
   it("refuses to publish an empty announcement", async () => {

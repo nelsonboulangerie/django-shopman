@@ -254,6 +254,38 @@ def prepare_platform_content(
     return variants
 
 
+#: O que a revisão escolhe no post. Título e período da oferta ficam de fora: vêm da
+#: promoção da campanha, selados por ``prepare_platform_content``.
+REVIEW_OPTION_KEYS = frozenset({
+    "publication_format",
+    "call_to_action",
+    "event_title",
+    "event_start",
+    "event_end",
+    "offer_terms",
+})
+
+
+def with_review_options(
+    platform_content: Mapping[str, Any], options: Mapping[str, str]
+) -> dict[str, Any]:
+    """A escolha da revisão substitui as opções do modelo; campo vazio sai.
+
+    Um caminho só para a prévia da revisão e para a aprovação: a prévia não pode
+    montar o post de um jeito e a aprovação de outro.
+    """
+
+    merged = dict(platform_content)
+    variant = {
+        key: value
+        for key, value in dict(merged.get(PLATFORM) or {}).items()
+        if key not in REVIEW_OPTION_KEYS
+    }
+    variant.update({key: value for key, value in options.items() if value})
+    merged[PLATFORM] = variant
+    return merged
+
+
 def request_payload(artifact) -> dict[str, Any]:
     """O corpo do ``localPosts.create`` — só a partir do artefato aprovado."""
 

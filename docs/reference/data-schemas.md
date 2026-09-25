@@ -2062,7 +2062,8 @@ Sem cupom: promoção com cupom não pode ser anunciada pelo Marketing
 (`marketing_promotion_requires_coupon`), então `couponCode` nunca sai. O link de
 resgate da oferta (`redeemOnlineUrl`) é o `link` do conteúdo, que precisa ser a página
 `/oferta/<ref>`. A revisão envia as chaves que escreve em `google_business` no corpo da
-aprovação (`_GOOGLE_BUSINESS_EDIT_KEYS` em `backstage/api/marketing.py`).
+aprovação (`REVIEW_OPTION_KEYS` em `marketing_google_post.py`), e a prévia da revisão
+monta o post pelo mesmo `with_review_options`.
 
 ---
 
