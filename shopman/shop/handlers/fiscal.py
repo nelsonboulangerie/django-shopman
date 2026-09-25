@@ -34,9 +34,6 @@ _TRANSIENT_CODES = {
     "focus_nfe_processing",
 }
 _REFERENCE_CONFLICT_CODES = {"focus_nfe_http_422"}
-# A SEFAZ recusou o GTIN e a nota foi reemitida "SEM GTIN" (rótulo em
-# ``backstage.models.alerts.OperatorAlert.TYPE_CHOICES``).
-GTIN_REJECTED_ALERT_TYPE = "fiscal_gtin_rejected"
 
 
 def _is_transient(error_code: str | None) -> bool:
@@ -269,28 +266,38 @@ class NFCeEmitHandler:
 
     @staticmethod
     def _alert_gtin_rejected(order_ref: str, stripped: list[dict], result: FiscalDocumentResult) -> None:
+        """Um alerta por produto: cada um tem o seu gesto no Catálogo e fecha sozinho.
+
+        O alerta leva ao produto ("Conferir o GTIN no Catálogo"), onde o gestor
+        corrige o código lido na embalagem ou confirma que ele sai sem GTIN
+        (``backstage.services.catalog._settle_rejected_gtin``).
+        """
+        from shopman.shop.services import fiscal as fiscal_service
         from shopman.shop.services.observability import create_operator_alert
 
-        products = "; ".join(
-            f"{row['name']} (SKU {row['sku']}, GTIN {row['gtin']}): rejeição {row['code']}"
-            for row in stripped
-        )
         outcome = (
-            "A nota foi reemitida SEM GTIN e autorizada."
+            "A nota saiu de novo sem GTIN e foi autorizada."
             if result.success
-            else "A nota foi reenviada SEM GTIN e ainda não foi autorizada — veja a fila fiscal."
+            else "A nota foi enviada de novo sem GTIN e ainda não foi autorizada: "
+            "abra o pedido e toque em Reprocessar NFC-e."
         )
-        create_operator_alert(
-            type=GTIN_REJECTED_ALERT_TYPE,
-            severity="warning",
-            message=(
-                f"A SEFAZ recusou o GTIN na NFC-e do pedido {order_ref}: {products}. {outcome} "
-                "Esses produtos saem SEM GTIN nas próximas notas até alguém conferir o código "
-                "na embalagem e limpar a marca gtin_nf_rejected do produto."
-            ),
-            order_ref=order_ref,
-            dedupe_key=f"{GTIN_REJECTED_ALERT_TYPE}:{order_ref}",
-        )
+        seen: set[str] = set()
+        for row in stripped:
+            if row["sku"] in seen:
+                continue
+            seen.add(row["sku"])
+            create_operator_alert(
+                type="fiscal_gtin_rejected",  # == fiscal_service.GTIN_REJECTED_ALERT_TYPE (literal para a varredura de tipos)
+                severity="warning",
+                message=(
+                    f"A SEFAZ recusou o GTIN {row['gtin']} de {row['name']} (SKU {row['sku']}) "
+                    f"na NFC-e do pedido {order_ref} (rejeição {row['code']}). {outcome} "
+                    "Até alguém conferir, esse produto sai sem GTIN nas notas e a venda segue. "
+                    "Abra o produto no Catálogo e compare com o código da embalagem."
+                ),
+                order_ref=order_ref,
+                dedupe_key=fiscal_service.gtin_rejected_alert_dedupe_key(order_ref, row["sku"]),
+            )
 
     def _adopt_existing(self, order, order_ref: str) -> bool:
         """Consulta o Focus pelo ref; se autorizada, adota a nota existente."""

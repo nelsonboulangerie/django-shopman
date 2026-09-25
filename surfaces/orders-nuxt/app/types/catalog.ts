@@ -184,9 +184,28 @@ export interface ProductDetailProjection {
   readonly fiscal_origins?: FiscalOriginChoice[];
   /** Avisos do servidor (não bloqueiam): CEST incompatível com o NCM. */
   readonly fiscal_warnings?: string[];
+  /** A SEFAZ recusou o GTIN numa NFC-e; `null` quando não. */
+  readonly gtin_rejected?: GtinRejected | null;
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
+}
+
+/**
+ * GTIN recusado pela SEFAZ (`Product.metadata.gtin_nf_rejected`). A nota já saiu
+ * de novo sem GTIN; o produto segue saindo sem ele até alguém conferir a
+ * embalagem: corrigir `social.gtin` apaga a marca, e `confirmed` registra que
+ * ele fica sem GTIN na nota.
+ */
+export interface GtinRejected {
+  readonly gtin: string;
+  readonly code: string;
+  readonly reason: string;
+  readonly at: string;
+  readonly order_ref: string;
+  readonly confirmed: boolean;
+  readonly confirmed_by: string;
+  readonly confirmed_at: string;
 }
 
 /** Comprável · Vendável · Produzido · Usado em receita — derivados no servidor. */
@@ -212,11 +231,13 @@ export type ProductDetailPatch = Partial<
     | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
+    | "gtin_rejected"
     | "social"
     | "fiscal"
     | "nutrition_facts"
   >
 > & {
+  gtin_rejected?: { confirmed: true };
   social?: Partial<Omit<ProductSocial, "has_data">>;
   fiscal?: Partial<ProductFiscal>;
   nutrition_facts?: Partial<NutritionFacts>;

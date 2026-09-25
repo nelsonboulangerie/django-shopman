@@ -890,6 +890,8 @@ def test_product_detail_get_shape(client, operator, catalog):
         "allergens", "dietary_info", "serves", "approx_dimensions",
         "allows_next_day_sale", "made_to_order", "ready_from",
         "nutrition_facts", "social", "fiscal",
+        # somente-leitura, menos `confirmed`: o GTIN que a SEFAZ recusou (None sem recusa)
+        "gtin_rejected",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
         "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources",
         # somente-leitura: selos do SKU (Comprável · Vendável · Produzido · Usado em receita)
