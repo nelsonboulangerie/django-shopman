@@ -220,6 +220,16 @@ A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): sem papel e 
 e-mail. A API do ManyChat não manda arquivo no WhatsApp, então vai o link. Dentro da janela
 de 24h o código já manda o texto livre com o link da DANFE (`danfe_url`); fora dela só sai
 com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_flow_ns`.
+
+> **É a REDE, não o caminho normal** (decisão do dono, 25/09/2026: menos mensagens). O link
+> da nota vai DENTRO da mensagem de status que sai quando a nota já existe ("saiu para
+> entrega", "entregue", "pronto"), como uma linha a mais no fim do texto livre
+> (`Nota fiscal do pedido: <link>`). Este aviso avulso só sai quando a nota autoriza DEPOIS
+> da última mensagem que a levaria — na retirada é o caso de sempre, porque a nota nasce
+> na conclusão. Os templates aprovados de status (`pedido_pronto_retirada`,
+> `pedido_saiu_entrega`, `pedido_entregue`) **não mudam**: o texto de um flow é fixo e não
+> leva o link; quando o status sai por flow, o código não conta com ele e manda este
+> avulso. Nenhum template novo além deste.
 - Corpo: `A nota fiscal do seu pedido {{1}} está disponível. Toque no botão abaixo para abrir.`
 - Vars: `{{1}}`=`NB-260902-A17`
 - Botão URL: `Ver nota fiscal` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (a página do

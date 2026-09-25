@@ -854,9 +854,6 @@ export interface CheckoutResponse {
 
 export interface CheckoutMutationResponse {
   convenience_pending?: string[]
-  // Só presente quando a pessoa pediu para guardar o CPF: `false` = vale só
-  // para esta nota (o motivo nunca vem: documento de outra conta não se revela).
-  tax_id_saved?: boolean
   order_ref: string
   status: string
   next_url?: string

@@ -9,9 +9,11 @@ como PERGUNTA, com a matriz do PDV adaptada ao autoatendimento:
   intacto (CPF não muda na vida de ninguém; um CPF diferente é quase sempre a
   nota de outra pessoa, e trocar identidade fiscal é gesto com atrito, do PDV);
 - documento que já é de OUTRA conta → vale para a nota e nunca entra no
-  cadastro. Quem chama NÃO pode dizer à pessoa que o documento é de outra conta
-  (a loja nunca revela isso — PR #553): a resposta para ela é a mesma de
-  qualquer outro "não gravou".
+  cadastro como identidade. Quem chama NÃO pode dizer à pessoa que o documento
+  é de outra conta (a loja nunca revela isso — PR #553), nem agora nem na
+  próxima visita: ele fica guardado como PREFERÊNCIA DA NOTA desta pessoa
+  (``Customer.metadata.note_tax_id``), e o próximo checkout o traz preenchido
+  e sem a pergunta de guardar, exatamente como se tivesse entrado no cadastro.
 
 Em nenhum caso a nota do pedido muda: ``fiscal.tax_id`` sai com o documento
 informado. Aqui só se decide o cadastro.
@@ -24,6 +26,11 @@ ALREADY_SAVED = "already_saved"
 KEPT_EXISTING = "kept_existing"
 OWNED_BY_OTHER = "owned_by_other"
 NOT_SAVED = "not_saved"
+
+#: Chave em ``Customer.metadata``: o documento que a pessoa pediu para guardar e
+#: que é de outro cadastro. Não é identidade (``customer.document`` segue vazio);
+#: só pré-preenche a nota dela. Ver docs/reference/data-schemas.md.
+NOTE_TAX_ID_KEY = "note_tax_id"
 
 
 def _digits(value) -> str:
@@ -55,6 +62,11 @@ def save_to_customer(customer_uuid, tax_id) -> str:
         if current:
             return KEPT_EXISTING
         if Customer.objects.filter(document=digits).exclude(pk=customer.pk).exists():
+            metadata = dict(customer.metadata or {})
+            if metadata.get(NOTE_TAX_ID_KEY) != digits:
+                metadata[NOTE_TAX_ID_KEY] = digits
+                customer.metadata = metadata
+                customer.save(update_fields=["metadata", "updated_at"])
             return OWNED_BY_OTHER
         customer_service.update(customer.ref, document=digits)
     return SAVED

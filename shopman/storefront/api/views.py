@@ -515,9 +515,12 @@ class CheckoutView(APIView):
                 )
             raise
 
-        tax_id_saved = None
+        # "Guardar no seu cadastro?": o desfecho NÃO volta na resposta. Dizer
+        # "não entrou" a quem pediu deixaria inferir que o documento é de outra
+        # conta (a loja nunca revela isso, PR #553); a resposta é a mesma, byte
+        # a byte, tenha gravado ou não. O porquê fica no log do servidor.
         if fiscal_tax_id and validated_data.get("save_fiscal_tax_id"):
-            tax_id_saved = _save_fiscal_tax_id(request, fiscal_tax_id, order_ref=result.order_ref)
+            _save_fiscal_tax_id(request, fiscal_tax_id, order_ref=result.order_ref)
 
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
@@ -533,15 +536,14 @@ class CheckoutView(APIView):
         # Resultado observado no staging: pedido criado e cliente na tela de 404.
         next_url = f"/pedido/{result.order_ref}"
 
-        body = {
-            "order_ref": result.order_ref,
-            "status": result.status,
-            "next_url": next_url,
-            "convenience_pending": list(result.convenience_pending),
-        }
-        if tax_id_saved is not None:
-            body["tax_id_saved"] = tax_id_saved
-        data = CheckoutResponseSerializer(body).data
+        data = CheckoutResponseSerializer(
+            {
+                "order_ref": result.order_ref,
+                "status": result.status,
+                "next_url": next_url,
+                "convenience_pending": list(result.convenience_pending),
+            }
+        ).data
         return Response(data, status=status.HTTP_201_CREATED)
 
     @staticmethod
@@ -570,29 +572,41 @@ class CheckoutView(APIView):
         )
 
 
-def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> bool:
+def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
     """Guarda o CPF da nota no cadastro porque a pessoa respondeu que sim.
 
-    Devolve se o documento ESTÁ no cadastro depois disto. O porquê de um
-    ``False`` fica no log: documento de outra conta não se revela na loja (PR
-    #553), então a tela diz a mesma coisa em todos os casos ("vale para esta
-    nota, não entrou no cadastro"). Nunca derruba o pedido já confirmado: a nota
-    sai com o CPF informado de qualquer jeito. Sessão que só conhece o número
-    (link de campanha) não grava identidade fiscal: a tela nem oferece.
+    Não devolve nada, de propósito: quem chama não tem o que dizer ao cliente.
+    O desfecho fica SÓ no servidor, e sem dado pessoal na linha (ref do pedido e
+    desfecho; nunca o documento nem a outra conta). Documento de outra conta
+    não se revela na loja (PR #553): ``customer_tax_id.save_to_customer`` o
+    guarda como preferência da nota, sem tocar a identidade, para que a próxima
+    visita também não denuncie a diferença. Nunca derruba o pedido já
+    confirmado: a nota sai com o CPF informado de qualquer jeito. Sessão que só
+    conhece o número (link de campanha) não grava identidade fiscal: a tela nem
+    oferece.
     """
     from shopman.shop.services import customer_tax_id
 
     customer = getattr(request, "customer", None)
     if customer is None or knows_only_the_number(request):
         logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=no_identified_customer", order_ref)
-        return False
+        return
     try:
         outcome = customer_tax_id.save_to_customer(customer.uuid, tax_id)
     except Exception:
         logger.warning("storefront.checkout save_fiscal_tax_id failed order=%s", order_ref, exc_info=True)
-        return False
+        return
+    if outcome == customer_tax_id.OWNED_BY_OTHER:
+        # Sinal operacional: alguém pediu para guardar um documento que já é de
+        # outro cadastro (nota do cônjuge, da empresa, ou cadastro duplicado).
+        logger.warning(
+            "storefront.checkout save_fiscal_tax_id order=%s outcome=%s: documento de outro cadastro, "
+            "guardado só como preferência da nota",
+            order_ref,
+            outcome,
+        )
+        return
     logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=%s", order_ref, outcome)
-    return customer_tax_id.is_in_profile(outcome)
 
 
 def _closed_shop_hint() -> dict:

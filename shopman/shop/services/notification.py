@@ -467,6 +467,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     context = _build_context(order, payload, template)
     template = _qualify_template(template, context)
     context["template"] = template
+    context.update(_fiscal_note_carriage(order, template, backend_chain, context))
 
     last_error: str | None = None
     any_attempted = False
@@ -827,6 +828,182 @@ def _build_context(order, payload: dict, template: str) -> dict:
     )
 
     return context
+
+
+# ── A nota fiscal na mensagem do pedido ──────────────────────────────────
+#
+# Decisão do dono (25/09/2026): menos mensagens. O link da NFC-e da loja online
+# vai DENTRO de uma mensagem que o cliente já recebe, quando a nota já existe no
+# momento de montá-la; o aviso avulso ``fiscal_note_ready`` é só a rede, para a
+# nota que autoriza DEPOIS da última mensagem que a levaria. Uma nota, no máximo
+# uma menção por pedido.
+#
+# Onde a nota nasce (``lifecycle``) decide qual caminho é o normal:
+# - retirada: na conclusão, depois do "pronto para retirada" → o avulso;
+# - entrega que cobra na porta: no despacho → normalmente vai no "entregue"
+#   (ou no "saiu para entrega", se a nota ganhar a corrida);
+# - entrega paga antes: na conclusão, logo depois do "entregue" → vai nele se a
+#   nota autorizar antes de a mensagem sair, senão o avulso.
+#
+# As duas pontas (montar a mensagem de status, autorizar a nota) decidem sob o
+# lock da linha do pedido, então a corrida entre elas não produz nem duas
+# menções nem nenhuma.
+
+FISCAL_NOTE_TEMPLATE = "fiscal_note_ready"
+
+#: Mensagens de status (nome já qualificado) que podem levar o link da nota.
+FISCAL_NOTE_CARRIERS = frozenset(
+    {"order_ready_pickup", "order_ready_delivery", "order_dispatched", "order_delivered"}
+)
+
+#: A ÚLTIMA mensagem do pedido que levaria a nota, por forma de receber:
+#: ``(nome qualificado, nome do envio)``. O envio é o que ``send`` deduplica.
+_LAST_CARRIER = {
+    "pickup": ("order_ready_pickup", "order_ready"),
+    "delivery": ("order_delivered", "order_delivered"),
+}
+
+#: Status em que a última mensagem que levaria a nota ainda VAI sair.
+_LAST_CARRIER_AHEAD = {
+    "pickup": frozenset({"new", "accepted", "preparing"}),
+    "delivery": frozenset({"new", "accepted", "preparing", "ready", "dispatched"}),
+}
+
+#: Chave em ``Order.data``. Ver docs/reference/data-schemas.md.
+FISCAL_NOTE_MESSAGE_KEY = "fiscal_note_message"
+
+
+def _is_storefront_order(order) -> bool:
+    storefront_channel = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    return (order.channel_ref or "") == storefront_channel
+
+
+def _fiscal_note_url(order_data: dict) -> str:
+    """O link da nota autorizada e viva, ou ``""``."""
+    if not order_data.get("nfce_access_key") or order_data.get("nfce_cancelled"):
+        return ""
+    return str(order_data.get("nfce_danfe_url") or order_data.get("nfce_qrcode_url") or "")
+
+
+def _last_carrier(order_data: dict) -> tuple[str, str]:
+    fulfillment_type = "delivery" if order_data.get("fulfillment_type") == "delivery" else "pickup"
+    return _LAST_CARRIER[fulfillment_type]
+
+
+def _write_fiscal_note_state(locked, state: dict) -> None:
+    data = dict(locked.data or {})
+    data[FISCAL_NOTE_MESSAGE_KEY] = state
+    locked.data = data
+    locked.save(update_fields=["data", "updated_at"])
+
+
+def _fiscal_note_carriage(order, template: str, backend_chain: list[str], context: dict) -> dict:
+    """O link da nota nesta mensagem de status, se ela for quem o leva.
+
+    Devolve ``fiscal_note_url``/``fiscal_note_suffix`` (vazios quando não leva).
+    Sob lock do pedido: reserva a menção (``sent_in``) quando leva, ou registra
+    que a ÚLTIMA mensagem saiu sem nota (``last_sent_without``), que é o que
+    libera o aviso avulso quando a nota autorizar depois. O retry da mesma
+    mensagem leva o link de novo (a reserva é dela).
+    """
+    empty = {"fiscal_note_url": "", "fiscal_note_suffix": ""}
+    if template not in FISCAL_NOTE_CARRIERS or not _is_storefront_order(order):
+        return empty
+    from shopman.orderman.models import Order
+
+    # O texto de um flow aprovado é fixo no ManyChat: o link não chegaria.
+    from shopman.shop.adapters import notification_manychat
+
+    can_carry = not ("manychat" in backend_chain and notification_manychat.sends_as_flow(template))
+    send_fallback = False
+    with transaction.atomic():
+        # Pelo ref (único): pedido que não está no banco não tem nota a levar.
+        locked = Order.objects.select_for_update().filter(ref=order.ref).first()
+        if locked is None:
+            return empty
+        data = locked.data or {}
+        state = dict(data.get(FISCAL_NOTE_MESSAGE_KEY) or {})
+        url = _fiscal_note_url(data)
+        sent_in = state.get("sent_in")
+        if sent_in:
+            carried = url if sent_in == template else ""
+        elif url and can_carry:
+            state["sent_in"] = template
+            _write_fiscal_note_state(locked, state)
+            carried = url
+        else:
+            carried = ""
+            if template == _last_carrier(data)[0] and state.get("last_sent_without") != template:
+                state["last_sent_without"] = template
+                if url:
+                    # A nota já existe, mas esta mensagem não pode levá-la (flow):
+                    # ela é a última, então o avulso sai agora.
+                    state["sent_in"] = FISCAL_NOTE_TEMPLATE
+                    send_fallback = True
+                _write_fiscal_note_state(locked, state)
+        if send_fallback:
+            send(locked, FISCAL_NOTE_TEMPLATE)
+    order.data = {**(order.data or {}), FISCAL_NOTE_MESSAGE_KEY: state}
+    if not carried:
+        return empty
+    return {
+        "fiscal_note_url": carried,
+        "fiscal_note_suffix": f"\n\nNota fiscal do pedido: {carried}{context.get('fiscal_test_note', '')}",
+    }
+
+
+def send_fiscal_note_unless_carried(order) -> bool:
+    """NFC-e da loja online autorizada: o aviso avulso, só se nenhuma mensagem a levar.
+
+    Chamado por ``handlers/fiscal.NFCeEmitHandler`` depois de gravar a nota.
+    Agenda ``fiscal_note_ready`` só quando a última mensagem do pedido que a
+    levaria já saiu sem ela, ou nunca vai sair (o pedido já passou do ponto
+    dela sem mensagem nenhuma). Se ela ainda vai sair, a nota vai nela.
+    Devolve se agendou. Idempotente: a menção reservada não se repete.
+    """
+    if not _is_storefront_order(order):
+        return False
+    from shopman.orderman.models import Order
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().filter(ref=order.ref).first()
+        if locked is None:
+            return False
+        data = locked.data or {}
+        state = dict(data.get(FISCAL_NOTE_MESSAGE_KEY) or {})
+        if state.get("sent_in") or not _fiscal_note_url(data):
+            return False
+        if not state.get("last_sent_without") and _last_carrier_still_ahead(locked):
+            logger.info(
+                "notification.fiscal_note: a nota vai na próxima mensagem do pedido order=%s", locked.ref
+            )
+            return False
+        state["sent_in"] = FISCAL_NOTE_TEMPLATE
+        _write_fiscal_note_state(locked, state)
+        send(locked, FISCAL_NOTE_TEMPLATE)
+    order.data = {**(order.data or {}), FISCAL_NOTE_MESSAGE_KEY: state}
+    return True
+
+
+def _last_carrier_still_ahead(order) -> bool:
+    """A última mensagem que levaria a nota ainda vai ser montada?
+
+    Na fila (ou rodando sem ter chegado ao lock): sim. Já montada, ela teria
+    gravado ``last_sent_without``. Sem Directive nenhuma, depende do status: o
+    pedido ainda não chegou ao ponto dela.
+    """
+    data = order.data or {}
+    _, send_template = _last_carrier(data)
+    status = (
+        Directive.objects.filter(topic=TOPIC, dedupe_key=_dedupe_key(order, send_template))
+        .order_by("-pk")
+        .values_list("status", flat=True)
+        .first()
+    )
+    if status is not None:
+        return status in ("queued", "running")
+    fulfillment_type = "delivery" if data.get("fulfillment_type") == "delivery" else "pickup"
+    return str(order.status) in _LAST_CARRIER_AHEAD[fulfillment_type]
 
 
 def _eta_note(order) -> str:
