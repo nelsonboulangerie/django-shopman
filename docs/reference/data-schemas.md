@@ -201,6 +201,7 @@ for key in (
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
 | `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
+| `nfce_authorized_at` | `string` | NFCeEmitHandler (`_record`, de `data_autorizacao` da Focus) | `services.fiscal.cancellation_path` | ISO datetime da **Autorização de Uso** na SEFAZ — não da emissão nem da gravação. É o instante de onde conta o prazo de cancelamento (RICMS/PR, Anexo III, Subanexo I, art. 35: 30 minutos). Vazio quando a Focus não devolveu a data: aí o prazo **não é chutado**, o operador é avisado de que não deu para medir |
 | `nfce_number` | `int` | NFCeEmitHandler | — | Número do documento |
 | `nfce_danfe_url` | `string` | NFCeEmitHandler | — | URL do DANFE PDF |
 | `nfce_qrcode_url` | `string` | NFCeEmitHandler | — | URL do QR code |

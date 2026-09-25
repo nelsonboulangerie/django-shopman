@@ -49,6 +49,7 @@ import threading
 
 from django.conf import settings
 
+from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
 
 logger = logging.getLogger(__name__)
@@ -375,7 +376,11 @@ def _brl(value_q: int | None) -> str:
 #: volta inventaria pão que não está na prateleira. O AJUSTE continua valendo —
 #: o Gestor, as vias e o B.I. passam a mostrar o que a plataforma vai pagar —,
 #: mas o físico não se desfaz por evento.
-_GOODS_STILL_IN_THE_HOUSE = frozenset({"new", "accepted", "preparing", "ready"})
+#:
+#: O conjunto mora em ``services.fiscal`` porque a mesma saída da mercadoria é a
+#: segunda condição do art. 35 do RICMS/PR para cancelar a NFC-e. Um fato
+#: físico, dois leitores — não dois conjuntos que um dia divergem.
+_GOODS_STILL_IN_THE_HOUSE = fiscal_service.GOODS_NOT_DISPATCHED
 
 
 def _patch_block_reason(order, *, fiscal_authorized: bool) -> str:
@@ -617,12 +622,54 @@ def _apply_patch(order, payload: dict, event_id: str) -> dict:
     return outcome
 
 
-_BLOCK_EXPLANATION = {
-    "fiscal_authorized": (
+def _fiscal_authorized_explanation(order) -> str:
+    """Qual dos dois caminhos vale para a nota já autorizada deste pedido.
+
+    Até aqui esta frase dizia "fale com o contador", que é verdade e não ajuda:
+    o operador do iFood tem minutos, não um telefonema. Os dois caminhos são de
+    lei, e qual deles vale é uma conta de relógio que o sistema sabe fazer.
+
+    ⚠️ Nenhum dos dois é executado sozinho. Cancelar e reemitir mexe em
+    documento fiscal autorizado, e quem decide é gente — o que muda é que agora
+    ela decide sabendo se ainda dá tempo.
+    """
+    decision = fiscal_service.cancellation_path(order)
+    minutos = fiscal_service.cancellation_window_minutes()
+    abertura = (
         "A NFC-e deste pedido já foi autorizada, então a loja NÃO acompanhou a alteração: "
-        "corrigir a nota é decisão fiscal (devolução ou cancelamento) e o sistema não faz isso "
-        "sozinho — fale com o contador."
-    ),
+        "corrigir a nota é decisão fiscal e o sistema não faz isso sozinho. "
+    )
+    if decision["path"] == fiscal_service.CANCEL_AND_REISSUE:
+        # Arredonda, não trunca: cinco minutos depois da autorização restam
+        # 24,99, e dizer "24" faz o operador achar que perdeu um minuto.
+        restam = max(1, round(decision["minutes_left"]))
+        sobra = "resta cerca de 1 minuto" if restam == 1 else f"restam cerca de {restam} minutos"
+        return abertura + (
+            f"AINDA DÁ TEMPO DE CANCELAR: o prazo é de {minutos} minutos depois da autorização "
+            f"e {sobra}. Cancele a nota e emita de novo com os itens corretos."
+        )
+    if decision["path"] == fiscal_service.RETURN_NOTE:
+        # Cancelar exige as DUAS condições do art. 35 — dentro do prazo e sem
+        # saída da mercadoria. Dizer "o prazo passou" para um pedido que saiu
+        # com a nota recém-autorizada mandaria o operador conferir o relógio
+        # errado.
+        porta = (
+            "A MERCADORIA JÁ SAIU, e nota de venda entregue não se cancela"
+            if decision["reason"] == "goods_dispatched"
+            else f"O PRAZO DE CANCELAMENTO JÁ PASSOU (são {minutos} minutos depois da autorização)"
+        )
+        return abertura + (
+            f"{porta}. O caminho agora é nota de DEVOLUÇÃO/estorno, ainda dentro deste "
+            "mês — fale com o contador."
+        )
+    return abertura + (
+        "Não foi possível saber a que horas esta nota foi autorizada, então o prazo de "
+        f"cancelamento ({minutos} minutos) não pôde ser medido. Confira a hora da autorização "
+        "na nota: dentro do prazo, cancele e reemita; fora dele, é nota de devolução/estorno."
+    )
+
+
+_BLOCK_EXPLANATION = {
     "terminal": (
         "O pedido já está encerrado nesta loja, então a alteração NÃO foi aplicada: "
         "confira no portal do iFood o que ficou diferente."
@@ -674,7 +721,10 @@ def _alert_patched(order, record: dict, outcome: dict | None, *, fiscal_authoriz
             f"O cliente alterou o pedido {order.ref} no iFood depois de confirmado: {description}. "
             f"O total no iFood foi de {_brl(record['old_total_q'])} para {_brl(record['new_total_q'])}; "
             f"o pedido nesta loja continua em {_brl(record['local_total_q'])} e com os itens originais. "
-            + _BLOCK_EXPLANATION.get(block, "Confira o pedido no portal do iFood antes de continuar.")
+            + (
+                _fiscal_authorized_explanation(order) if block == "fiscal_authorized"
+                else _BLOCK_EXPLANATION.get(block, "Confira o pedido no portal do iFood antes de continuar.")
+            )
         )
         create_operator_alert(
             type="ifood_order_patched",

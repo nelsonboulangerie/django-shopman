@@ -24,7 +24,7 @@ from django.test import override_settings
 from shopman.orderman.models import Order, OrderItem
 
 from shopman.shop import fiscal_intermediary
-from shopman.shop.models import Channel
+from shopman.shop.models import Channel, Shop
 from shopman.shop.services import fiscal, ifood_ingest, ifood_orders
 
 pytestmark = pytest.mark.django_db
@@ -56,18 +56,41 @@ def _focus_settings():
     }
 
 
+def cupom(sponsor, value_q, *, target="CART", sem_patrocinio=False):
+    """Um ``benefits[]`` como o iFood manda: valor, alvo e quem pagou.
+
+    ``sponsor`` é a palavra da tabela "Sponsorship" deles (``MERCHANT``,
+    ``IFOOD``, ``EXTERNAL``, ``CHAIN``); ``sem_patrocinio`` monta o cupom
+    **sem** ``sponsorshipValues``, que é o caso em que não dá para saber de
+    quem saiu o dinheiro.
+    """
+    benefit = {"value": value_q / 100, "target": target}
+    if not sem_patrocinio:
+        benefit["sponsorshipValues"] = [
+            {"name": sponsor, "value": value_q / 100, "description": f"Incentivo {sponsor}"},
+        ]
+    return benefit
+
+
 def ingest_ifood(*, delivered_by="IFOOD", order_type="DELIVERY", subtotal=3000,
-                 delivery_fee=799, additional_fees=150, benefits=0, sem_documento=False):
+                 delivery_fee=799, additional_fees=150, benefits=(), sem_documento=False,
+                 suffix=""):
     """Pedido iFood real: um item de R$ 30,00 mais o que a plataforma cobrou.
 
     ``sem_documento`` é o caso COMUM na vida real, não a exceção: o iFood só
     repassa ``customer.documentNumber`` quando o cliente pede a nota.
+
+    ``benefits`` é a lista de cupons (use :func:`cupom`), como o iFood manda:
+    o total deles vira ``total.benefits`` e a lista vira ``benefits[]``, que é
+    onde mora o patrocinador.
     """
     Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood"})
-    order_amount = subtotal + delivery_fee + additional_fees - benefits
+    benefits = list(benefits)
+    benefits_q = sum(int(round(b["value"] * 100)) for b in benefits)
+    order_amount = subtotal + delivery_fee + additional_fees - benefits_q
     documento = {} if sem_documento else {"documentNumber": "52998224725", "documentType": "CPF"}
     payload = ifood_orders.map_order({
-        "id": f"ifood-{delivered_by}-{order_type}-{additional_fees}-{int(sem_documento)}",
+        "id": f"ifood-{delivered_by}-{order_type}-{additional_fees}-{int(sem_documento)}{suffix}",
         "orderType": order_type,
         "merchant": {"id": "merchant"},
         "customer": {"name": "Cliente iFood", **documento},
@@ -81,9 +104,10 @@ def ingest_ifood(*, delivered_by="IFOOD", order_type="DELIVERY", subtotal=3000,
         },
         "items": [{"id": "item-1", "externalCode": "PAO-001", "name": "Pão",
                    "quantity": 1, "unitPrice": subtotal / 100, "totalPrice": subtotal / 100}],
+        "benefits": benefits,
         "total": {
             "subTotal": subtotal / 100, "deliveryFee": delivery_fee / 100,
-            "additionalFees": additional_fees / 100, "benefits": benefits / 100,
+            "additionalFees": additional_fees / 100, "benefits": benefits_q / 100,
             "orderAmount": order_amount / 100,
         },
     })
@@ -189,6 +213,183 @@ def test_an_ifood_order_without_the_financial_breakdown_is_left_alone_AND_stays_
     assert fiscal.note_base_q(order) == order.total_q == 1000
 
 
+# ── 1a. O cupom cai de um lado ou do outro, conforme quem o patrocinou ────
+#
+# Decisão do dono: cupom da LOJA é desconto e derruba a base; cupom do iFood
+# compõe a base, porque a plataforma repassa aquele valor e a loja recebe
+# cheio. Quem define as palavras é a tabela "Sponsorship" do portal do iFood,
+# que para cada patrocinador prescreve "trate como desconto" (só MERCHANT) ou
+# "trate como pagamento" (IFOOD, EXTERNAL, CHAIN).
+#
+# Metade desta seção é o lado que NÃO muda: cupom da loja continua reduzindo a
+# base exatamente como antes.
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_coupon_the_house_paid_for_is_a_discount_and_lowers_the_base():
+    order = ingest_ifood(delivered_by="IFOOD", subtotal=3000, delivery_fee=799,
+                         additional_fees=150, benefits=[cupom("MERCHANT", 500)])
+
+    # O cliente pagou 34,49 ao iFood; a loja abriu mão de 5,00 do próprio bolso.
+    assert order.total_q == 3449
+    assert fiscal_intermediary.seller_amounts(order) == {"base_q": 2500, "freight_q": 0}
+    assert fiscal_intermediary.unattributable_benefits(order) == ""
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_coupon_the_platform_paid_for_composes_the_base_instead_of_lowering_it():
+    """O iFood repassa o valor: a loja recebe cheio, e a nota declara cheio."""
+    order = ingest_ifood(delivered_by="IFOOD", subtotal=3000, delivery_fee=799,
+                         additional_fees=150, benefits=[cupom("IFOOD", 500)])
+
+    # Mesmo total de pedido do teste anterior, base DIFERENTE — é exatamente
+    # esta diferença que o patrocinador decide.
+    assert order.total_q == 3449
+    assert fiscal_intermediary.seller_amounts(order) == {"base_q": 3000, "freight_q": 0}
+    assert fiscal_intermediary.unattributable_benefits(order) == ""
+
+
+@pytest.mark.parametrize("sponsor", ["EXTERNAL", "CHAIN"])
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_the_other_two_sponsors_the_ifood_documents_are_repasse_too(sponsor):
+    """``EXTERNAL`` (parceiro) e ``CHAIN`` (rede) também são "trate como pagamento"."""
+    order = ingest_ifood(benefits=[cupom(sponsor, 500)], suffix=sponsor)
+
+    assert fiscal_intermediary.seller_amounts(order)["base_q"] == 3000
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_coupon_split_between_the_house_and_the_platform_splits_the_base_too():
+    """``sponsorshipValues`` é LISTA: a divisão é por parcela, não pelo cupom."""
+    order = ingest_ifood(benefits=[{
+        "value": 5.00, "target": "CART",
+        "sponsorshipValues": [
+            {"name": "MERCHANT", "value": 2.00, "description": "Incentivo da Loja"},
+            {"name": "IFOOD", "value": 3.00, "description": "Incentivo do iFood"},
+        ],
+    }])
+
+    # Só os 2,00 da loja saem da base; os 3,00 do iFood são repasse.
+    assert fiscal_intermediary.seller_amounts(order)["base_q"] == 2800
+    assert fiscal_intermediary.house_discounts(order) == {
+        "goods_q": 200, "freight_q": 0, "unreadable": "",
+    }
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_delivery_coupon_only_lands_where_the_freight_actually_is():
+    """Cupom de frete não abate de uma base que não tem frete dentro.
+
+    A loja patrocinou o frete grátis, mas quem entregou foi o iFood: o frete
+    nem está na base, e descontar dele tiraria duas vezes.
+    """
+    ifood_entregou = ingest_ifood(
+        delivered_by="IFOOD", subtotal=3000, delivery_fee=800, additional_fees=150,
+        benefits=[cupom("MERCHANT", 800, target="DELIVERY_FEE")],
+    )
+    casa_entregou = ingest_ifood(
+        delivered_by="MERCHANT", subtotal=3000, delivery_fee=800, additional_fees=150,
+        benefits=[cupom("MERCHANT", 800, target="DELIVERY_FEE")],
+    )
+
+    # Entrega da plataforma: a mercadoria segue cheia, o frete não entra.
+    assert fiscal_intermediary.seller_amounts(ifood_entregou) == {"base_q": 3000, "freight_q": 0}
+    # Entrega da casa: o frete entra na nota (8,00) e o cupom da loja o zera.
+    assert fiscal_intermediary.seller_amounts(casa_entregou) == {"base_q": 3000, "freight_q": 800}
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_delivery_coupon_the_platform_paid_keeps_the_freight_the_house_earned():
+    """Frete grátis bancado pelo iFood, entrega da casa: a casa recebe o frete."""
+    order = ingest_ifood(delivered_by="MERCHANT", subtotal=3000, delivery_fee=800,
+                         additional_fees=150,
+                         benefits=[cupom("IFOOD", 800, target="DELIVERY_FEE")])
+
+    assert fiscal_intermediary.seller_amounts(order) == {"base_q": 3800, "freight_q": 800}
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_coupon_with_no_sponsor_at_all_declares_MORE_and_screams():
+    """Não saber quem pagou não vira desconto — vira nota cheia e alerta crítico.
+
+    Desconto que não houve é subdeclaração, que é infração. Declarar a mais é
+    caro e não é crime. O erro escolhe esse lado, e não escolhe calado.
+    """
+    order = ingest_ifood(benefits=[cupom("MERCHANT", 500, sem_patrocinio=True)])
+
+    assert fiscal_intermediary.seller_amounts(order)["base_q"] == 3000
+    assert "sem patrocinador declarado" in fiscal_intermediary.unattributable_benefits(order)
+
+    with patch("shopman.shop.services.observability.create_operator_alert") as alert:
+        fiscal.build_emission_payload(order)
+
+    tipos = [call.kwargs["type"] for call in alert.call_args_list]
+    assert "fiscal_intermediary_benefit_unattributed" in tipos
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_an_unknown_sponsor_name_is_not_quietly_read_as_one_of_the_four():
+    """Palavra nova do iFood não pode cair no balde errado em silêncio."""
+    order = ingest_ifood(benefits=[cupom("FRANCHISE", 500)])
+
+    assert fiscal_intermediary.seller_amounts(order)["base_q"] == 3000
+    assert "patrocinador desconhecido (FRANCHISE)" in (
+        fiscal_intermediary.unattributable_benefits(order)
+    )
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_an_unknown_coupon_target_is_not_guessed_between_goods_and_freight():
+    """Alvo novo: os dois destinos caem em lugares diferentes da nota."""
+    order = ingest_ifood(benefits=[cupom("MERCHANT", 500, target="TIP")])
+
+    assert fiscal_intermediary.seller_amounts(order)["base_q"] == 3000
+    assert "alvo de cupom desconhecido (TIP)" in (
+        fiscal_intermediary.unattributable_benefits(order)
+    )
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_a_coupon_total_that_does_not_close_with_the_detail_screams():
+    """``total.benefits`` de 5,00 com 2,00 detalhados: falta cupom, e isso se diz."""
+    Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood"})
+    payload = ifood_orders.map_order({
+        "id": "ifood-cupom-que-nao-fecha",
+        "orderType": "TAKEOUT", "merchant": {"id": "merchant"},
+        "customer": {"name": "Cliente iFood"},
+        "items": [{"id": "i1", "externalCode": "PAO-001", "name": "Pão",
+                   "quantity": 1, "unitPrice": 30.0, "totalPrice": 30.0}],
+        "benefits": [cupom("MERCHANT", 200)],
+        "total": {"subTotal": 30.0, "deliveryFee": 0.0, "additionalFees": 0.0,
+                  "benefits": 5.00, "orderAmount": 25.00},
+    })
+    with patch.object(ifood_ingest.order_changed, "send"):
+        order = ifood_ingest.ingest(payload)
+
+    assert "não fecha com o cupom do total" in (
+        fiscal_intermediary.unattributable_benefits(order)
+    )
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_an_order_with_no_coupon_at_all_says_nothing():
+    """O silêncio do caso comum: sem cupom não há atribuição a fazer."""
+    order = ingest_ifood(benefits=[])
+
+    assert fiscal_intermediary.house_discounts(order) == {
+        "goods_q": 0, "freight_q": 0, "unreadable": "",
+    }
+    assert fiscal_intermediary.unattributable_benefits(order) == ""
+
+
+def test_a_counter_order_with_no_ifood_data_never_enters_the_coupon_split():
+    """O controle: o pedido do canal próprio não tem cupom de plataforma."""
+    order = counter_order()
+
+    assert fiscal_intermediary.unattributable_benefits(order) == ""
+    assert fiscal_intermediary.seller_amounts(order) is None
+
+
 # ── 1b. As duas omissões da mesma família falham do MESMO jeito ───────────
 #
 # Correção de desenho apontada em revisão: faltar a CONFIGURAÇÃO do grupo
@@ -249,7 +450,90 @@ def test_the_readable_channel_and_the_direct_sale_never_raise_the_base_alarm():
 def test_house_delivered_asks_the_generic_question_the_platform_answers_in_its_own_word():
     assert fiscal_intermediary.house_delivered(ingest_ifood(delivered_by="MERCHANT")) is True
     assert fiscal_intermediary.house_delivered(ingest_ifood(delivered_by="IFOOD")) is False
-    assert fiscal_intermediary.house_delivered(counter_order()) is False
+    # Venda direta é SEMPRE transporte da casa: não há plataforma para entregar.
+    # Antes isto devolvia False, porque a função lia a chave do iFood num pedido
+    # que não tem chave do iFood — ausência lida como negativa. Não incomodava
+    # enquanto o único leitor era a base (que já filtra por venda intermediada);
+    # passou a incomodar quando o grupo do transportador virou leitor, porque aí
+    # a resposta errada tiraria a padaria de transportadora da entrega DELA.
+    assert fiscal_intermediary.house_delivered(counter_order()) is True
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
+def test_a_delivery_by_the_platform_does_not_name_the_bakery_as_the_carrier():
+    """Quem entregou foi o iFood: a padaria não se declara transportadora.
+
+    ``modFrete=2`` ("Contratação do Frete por conta de Terceiros"), porque o
+    transporte HOUVE — ``9`` diria que não houve — e quem o contratou não foi
+    nem o remetente nem o destinatário. O subgrupo X03 ``transporta`` fica
+    fora: nomear a padaria ali declararia um transporte que ela não prestou.
+    """
+    order = ingest_ifood(delivered_by="IFOOD", subtotal=3000, delivery_fee=800,
+                         additional_fees=150)
+    _result, sent = _emit_captured(_classify(fiscal.build_emission_payload(order)))
+
+    assert sent["presenca_comprador"] == "4"
+    assert sent["modalidade_frete"] == "2"
+    assert "cnpj_transportador" not in sent
+    assert "nome_transportador" not in sent
+    # O terceiro que transportou tem nome e CNPJ, e sai na MESMA nota — no
+    # grupo do intermediador, que é onde ele cabe.
+    assert sent["cnpj_intermediario"] == IFOOD_CNPJ
+    # A taxa do iFood segue fora da nota: quem a recebeu não foi a casa.
+    assert "valor_frete" not in sent or sent["valor_frete"] == "0.00"
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
+def test_a_delivery_by_the_house_still_declares_the_bakery_as_the_carrier():
+    """O outro lado: entrega da casa não muda em nada.
+
+    ``modFrete=3`` ("Transporte Próprio por conta do Remetente") e o
+    transportador é o emitente — que é o que a regra X04-30 espera de um
+    ``modFrete=3`` (CNPJ do transportador igual ao do remetente).
+    """
+    Shop.objects.create(name="Nelson Boulangerie")
+    order = ingest_ifood(delivered_by="MERCHANT", subtotal=3000, delivery_fee=800,
+                         additional_fees=150)
+    _result, sent = _emit_captured(_classify(fiscal.build_emission_payload(order)))
+
+    assert sent["modalidade_frete"] == "3"
+    assert sent["cnpj_transportador"]
+    assert sent["nome_transportador"] == "Nelson Boulangerie"
+    assert sent["valor_frete"] == "8.00"
+
+
+@override_settings(SHOPMAN_FOCUS_NFE=_focus_settings())
+def test_a_counter_delivery_keeps_the_bakery_as_the_carrier():
+    """O controle: a entrega do canal PRÓPRIO nunca passou por plataforma nenhuma.
+
+    Sem ``by_house`` no ``delivery``, o adapter assume a casa — entrega própria
+    é a regra, e é o comportamento que já existia.
+    """
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    Shop.objects.create(name="Nelson Boulangerie")
+    captured = {}
+
+    def fake_request(method, path, payload_, config):
+        captured.update(payload=payload_)
+        return {"status": "autorizado", "chave_nfe": "K" * 44}
+
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request", side_effect=fake_request):
+        result = FocusNFeBackend().emit(
+            reference="ORD-PDV-DELIVERY-1",
+            items=[{"sku": "PAO-001", "name": "Pão", "qty": "1", "unit": "un",
+                    "unit_price_q": 3000, "total_q": 3000, "fiscal": FISCAL_OWN_PRODUCTION}],
+            customer={"tax_id": "52998224725", "name": "Cliente"},
+            payment={"method": "cash", "amount_q": 3000},
+            delivery={"address": {
+                "route": "Rua X", "street_number": "123", "neighborhood": "Centro",
+                "city": "Londrina", "state_code": "PR", "postal_code": "86010000",
+            }},
+        )
+
+    assert result.success is True
+    assert captured["payload"]["modalidade_frete"] == "3"
+    assert captured["payload"]["nome_transportador"] == "Nelson Boulangerie"
 
 
 def test_the_seam_for_a_second_marketplace_is_named_in_one_place():
@@ -394,7 +678,12 @@ def test_half_an_intermediary_group_is_refused_before_the_http_call():
 
 @override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES_SEM_ID)
 def test_an_intermediated_sale_without_the_group_screams_instead_of_emitting_in_silence():
-    """Nota válida e fora do Ajuste SINIEF 22/20 é o pior defeito: nada reclama."""
+    """Nota válida e fora do Ajuste SINIEF 22/20 é o pior defeito: nada reclama.
+
+    Sem env var E sem loja cadastrada não sobra de onde tirar o identificador —
+    o grupo não sai, e a ausência grita. É o único caminho que continua levando
+    ao silêncio recusado.
+    """
     order = ingest_ifood()
 
     with patch("shopman.shop.services.observability.create_operator_alert") as alert:
@@ -404,6 +693,47 @@ def test_an_intermediated_sale_without_the_group_screams_instead_of_emitting_in_
     alert.assert_called_once()
     assert alert.call_args.kwargs["type"] == "fiscal_intermediary_not_declared"
     assert "idCadIntTran" in alert.call_args.kwargs["message"]
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES_SEM_ID)
+def test_the_store_name_fills_the_idCadIntTran_when_the_deployment_did_not():
+    """O identificador do YB03 é o NOME DA LOJA, e ele já está no sistema.
+
+    A NT 2020.006 define o campo como "nome do usuário ou identificação do
+    perfil do vendedor no site do intermediador", de 2 a 60 caracteres, e a
+    SEFAZ não valida o conteúdo. O nome fantasia da loja é exatamente isso, é o
+    mesmo com que ela aparece no iFood, e cada deployment já tem o seu — ou
+    seja, o valor certo chega sem ninguém precisar lembrar.
+    """
+    Shop.objects.create(name="Nelson Boulangerie")
+    order = ingest_ifood()
+
+    with patch("shopman.shop.services.observability.create_operator_alert") as alert:
+        payload = fiscal.build_emission_payload(order)
+
+    assert payload["intermediary"] == {
+        "cnpj": IFOOD_CNPJ, "id_cad_int_tran": "Nelson Boulangerie",
+    }
+    assert fiscal_intermediary.missing_configuration(order) == ""
+    alert.assert_not_called()
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES)
+def test_the_deployment_env_var_still_wins_over_the_store_name():
+    """A loja cujo perfil na plataforma tem outro nome continua podendo fixá-lo."""
+    Shop.objects.create(name="Nelson Boulangerie")
+    order = ingest_ifood()
+
+    assert fiscal_intermediary.intermediary_for(order)["id_cad_int_tran"] == "MERCHANT-42"
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES_SEM_ID)
+def test_a_store_name_longer_than_the_field_is_cut_at_sixty_characters():
+    """String[2-60] no YB03: nome maior é cortado, não recusado."""
+    Shop.objects.create(name="B" * 80)
+    order = ingest_ifood()
+
+    assert fiscal_intermediary.intermediary_for(order)["id_cad_int_tran"] == "B" * 60
 
 
 # ── 3b. O indPres da NFC-e, travado por tipo de operação ──────────────────
@@ -629,7 +959,8 @@ def test_an_ifood_delivery_by_the_house_without_a_tax_id_carries_the_fee_as_othe
 def test_other_expenses_and_a_discount_close_to_the_cent():
     """Com cupom (benefits), taxa ímpar e receita do iFood, tudo fecha no centavo."""
     order = ingest_ifood(delivered_by="MERCHANT", subtotal=3000, delivery_fee=701,
-                         additional_fees=99, benefits=500, sem_documento=True)
+                         additional_fees=99, benefits=[cupom("MERCHANT", 500)],
+                         sem_documento=True)
     emission = _classify(fiscal.build_emission_payload(order))
 
     result, sent = _emit_captured(emission)

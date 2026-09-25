@@ -29,9 +29,11 @@ por acidente (num ambiente de teste sem credencial o ``GET`` falha sozinho), e
 teste que passa por acidente não prova nada.
 """
 
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import OperatorAlert
@@ -269,10 +271,16 @@ def test_a_patch_is_recorded_whatever_the_order_already_lived(status):
 
 @pytest.mark.django_db
 def test_an_authorized_nfce_turns_the_warning_into_a_fiscal_one():
-    """Nota autorizada: alterar vira assunto fiscal, e o sistema NÃO resolve."""
+    """Nota autorizada e mercadoria já entregue: o caminho é devolução, não cancelamento.
+
+    ``completed`` é saída da mercadoria, e o art. 35 do Subanexo I do Anexo III
+    do RICMS/PR exige as DUAS condições — dentro de 30 minutos **e** sem saída.
+    Mesmo com a nota recém-autorizada, cancelar aqui já não é caminho.
+    """
     order = _order(status="completed", data={
         "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"},
         "nfce_access_key": "3526...chave",
+        "nfce_authorized_at": timezone.now().isoformat(),
     })
     _process([_patch_event()])
 
@@ -280,7 +288,66 @@ def test_an_authorized_nfce_turns_the_warning_into_a_fiscal_one():
     assert order.data["ifood"]["patches"][0]["fiscal_authorized"] is True
     message = OperatorAlert.objects.get(type="ifood_order_patched").message
     assert "NFC-e" in message
-    assert "contador" in message
+    # A porta que fechou é a SAÍDA, não o relógio: a nota tem segundos de vida.
+    assert "A MERCADORIA JÁ SAIU" in message
+    assert "PRAZO DE CANCELAMENTO JÁ PASSOU" not in message
+    assert "DEVOLUÇÃO" in message
+
+
+@pytest.mark.django_db
+def test_an_authorized_nfce_inside_the_window_says_there_is_still_time_to_cancel():
+    """Dentro dos 30 minutos e com a mercadoria na casa: cancelar e reemitir.
+
+    O operador do iFood tem minutos, não um telefonema: a frase precisa dizer
+    QUAL dos dois caminhos vale, não que existem dois.
+    """
+    _order(status="preparing", data={
+        "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"},
+        "nfce_access_key": "3526...chave",
+        "nfce_authorized_at": (timezone.now() - timedelta(minutes=5)).isoformat(),
+    })
+    _process([_patch_event()])
+
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "AINDA DÁ TEMPO DE CANCELAR" in message
+    # 30 − 5 = 25 minutos de sobra, arredondados para baixo.
+    assert "restam cerca de 25" in message
+    assert "devolução" not in message
+
+
+@pytest.mark.django_db
+def test_an_authorized_nfce_past_the_window_sends_the_operator_to_the_return_note():
+    """Passados os 30 minutos, o PR não tem cancelamento extemporâneo: é estorno."""
+    _order(status="preparing", data={
+        "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"},
+        "nfce_access_key": "3526...chave",
+        "nfce_authorized_at": (timezone.now() - timedelta(minutes=31)).isoformat(),
+    })
+    _process([_patch_event()])
+
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "PRAZO DE CANCELAMENTO JÁ PASSOU" in message
+    assert "DEVOLUÇÃO" in message
+    assert "AINDA DÁ TEMPO" not in message
+
+
+@pytest.mark.django_db
+def test_an_authorized_nfce_without_an_authorization_time_refuses_to_guess():
+    """Sem a hora da autorização o prazo não se mede — e não se chuta.
+
+    Errar para o lado do "provavelmente dá tempo" é mandar cancelar fora do
+    prazo, levar a recusa do autorizador e ficar sem documento nenhum.
+    """
+    _order(status="preparing", data={
+        "fulfillment_type": "delivery", "ifood": {"delivered_by": "MERCHANT"},
+        "nfce_access_key": "3526...chave",
+    })
+    _process([_patch_event()])
+
+    message = OperatorAlert.objects.get(type="ifood_order_patched").message
+    assert "não pôde ser medido" in message
+    assert "AINDA DÁ TEMPO" not in message
+    assert "JÁ PASSOU" not in message
 
 
 @pytest.mark.django_db

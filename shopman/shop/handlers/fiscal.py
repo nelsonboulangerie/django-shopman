@@ -439,6 +439,12 @@ class NFCeEmitHandler:
             locked = Order.objects.select_for_update().get(pk=order.pk)
             data = dict(locked.data or {})
             data["nfce_access_key"] = result.access_key
+            # O relógio do cancelamento conta da AUTORIZAÇÃO DE USO, não da
+            # emissão nem do salvamento aqui (RICMS/PR, Anexo III, Subanexo I,
+            # art. 35). O adapter já lia ``data_autorizacao`` da Focus e o
+            # contrato já carregava o campo; o que faltava era gravá-lo, e sem
+            # ele ninguém consegue dizer se ainda dá tempo de cancelar.
+            data["nfce_authorized_at"] = result.authorization_date or ""
             data["nfce_number"] = result.document_number
             data["nfce_series"] = result.document_series
             data["nfce_protocol"] = result.protocol_number

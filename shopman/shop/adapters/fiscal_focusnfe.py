@@ -317,10 +317,11 @@ def _build_nfce_payload(
         "formas_pagamento": _payment_forms(payment),
     }
     if home_delivery is not None:
-        # Entrega a domicílio: indPres=4, frete no item (I15) e no total (W08),
-        # modFrete próprio (3) e transportador = o emitente.
+        # Entrega a domicílio: indPres=4, frete no item (I15) e no total (W08).
+        # A modalidade do frete (X02) diz QUEM transportou, e são dois casos —
+        # ver _delivery_freight_mode.
         payload["presenca_comprador"] = "4"
-        payload["modalidade_frete"] = str(config.get("modalidade_frete_delivery") or "3")
+        payload["modalidade_frete"] = _delivery_freight_mode(config, delivery)
         payload["valor_frete"] = _money_q(freight_q)
         _apportion_over_items(mapped_items, freight_q, field="valor_frete")
         payload.update(home_delivery)
@@ -448,6 +449,63 @@ def _intermediary_fields(intermediary: dict) -> dict:
     }
 
 
+def _house_transported(delivery: dict) -> bool:
+    """Quem levou a mercadoria foi a CASA?
+
+    A resposta é do PEDIDO, não do adapter: quem a monta é
+    ``fiscal_intermediary.house_delivered``, e ela chega aqui dentro do próprio
+    ``delivery``. O default é a casa porque entrega própria é a regra — no canal
+    da loja não existe plataforma para entregar.
+    """
+    return bool(delivery.get("by_house", True)) if isinstance(delivery, dict) else True
+
+
+def _delivery_freight_mode(config: dict, delivery: dict) -> str:
+    """A modalidade do frete (X02) da nota de entrega a domicílio.
+
+    Tabela do MOC 7.00, Anexo I, item 357, criada pela NT 2016.002::
+
+        0 = Contratação do Frete por conta do Remetente (CIF)
+        1 = Contratação do Frete por conta do Destinatário (FOB)
+        2 = Contratação do Frete por conta de Terceiros
+        3 = Transporte Próprio por conta do Remetente
+        4 = Transporte Próprio por conta do Destinatário
+        9 = Sem Ocorrência de Transporte
+
+    **Entrega da casa: 3.** O emitente transporta com meios dele. É o que a
+    regra X04-30 espera (com ``modFrete=3``, o CNPJ do transportador tem de ser
+    igual ao do remetente) e continua sendo o caso do canal próprio.
+
+    **Entrega da plataforma: 2.** Descarta-se um a um pelo texto literal: não é
+    ``3`` nem ``4``, porque "transporte PRÓPRIO" é transportar com meios seus e
+    o entregador do iFood não é nem a padaria nem o cliente; não é ``0`` nem
+    ``1``, porque quem contratou o frete não foi o remetente nem o destinatário.
+    Sobra ``2``, que é exatamente "por conta de Terceiros", e o terceiro tem
+    nome, CNPJ e sai declarado no grupo do intermediador da MESMA nota.
+
+    ⚠️ **``2`` × ``9`` é o único ponto que a norma não decide**, e a escolha
+    aqui é argumentada, não sorteada. Varredura do MOC 7.00, das NTs vigentes e
+    do manual de NFC-e da SEFAZ-RJ (edição de 16/07/2026): nenhuma fonte oficial
+    — nacional ou estadual — diz qual dos dois usar quando quem entrega é
+    marketplace. O que decide é a coerência interna do documento: esta nota já
+    afirma ``indPres=4``, entrega a domicílio, com o endereço do destinatário
+    dentro dela. Dizer ``9``, "Sem Ocorrência de Transporte", seria a mesma nota
+    negando o que ela própria declara duas linhas acima. A X02-10 (rejeição
+    753) confirma a direção: ``modFrete<>9`` só é aceito **com** ``indPres=4``,
+    ou seja, a norma espera modalidade real justamente na entrega a domicílio.
+
+    O contra-argumento honesto, para quem reabrir isto: nesta nota ``vFrete`` é
+    zero (a taxa é receita do iFood e nem entra), e ``2`` declara frete
+    contratado sem valor de frete. Não há regra exigindo ``vFrete>0`` com
+    ``modFrete<>9`` — e zero é o número certo, porque o frete não é dinheiro da
+    casa. Se o contador preferir ``9``, é uma env var
+    (``FOCUS_NFE_NFCE_MODALIDADE_FRETE_TERCEIRO``), não um deploy de código.
+    """
+    if _house_transported(delivery):
+        return str(config.get("modalidade_frete_delivery") or "3")
+    return str(config.get("modalidade_frete_third_party") or "2")
+
+
 def _home_delivery_fields(config: dict, customer: dict, delivery: dict) -> dict:
     """Exige identificação e endereço reais para entrega a domicílio.
 
@@ -478,11 +536,23 @@ def _home_delivery_fields(config: dict, customer: dict, delivery: dict) -> dict:
         "municipio_destinatario": city[:60],
         "uf_destinatario": state[:2].upper(),
         "cep_destinatario": cep,
-        # Entrega própria: o transportador é o próprio emitente (rejeição 786
-        # exige o grupo transporta em entrega a domicílio).
-        "cnpj_transportador": _focus_cnpj_emitente(config),
-        "nome_transportador": (_shop_name() or "Emitente")[:60],
     }
+    if _house_transported(delivery):
+        # A casa transportou: ela É a transportadora, e se declara como tal.
+        fields["cnpj_transportador"] = _focus_cnpj_emitente(config)
+        fields["nome_transportador"] = (_shop_name() or "Emitente")[:60]
+    # Quem entregou foi a plataforma: o grupo X sai com a modalidade certa
+    # (modFrete=2, "por conta de Terceiros" — ver _delivery_freight_mode) e
+    # SEM o subgrupo X03 ``transporta``, porque nomear a padaria ali seria
+    # declarar um transporte que ela não prestou.
+    #
+    # Omitir X03 é válido: no XSD v4.00 ``transporta`` é ``minOccurs="0"`` e
+    # todos os campos internos também. A regra que o exigia na NFC-e de entrega
+    # a domicílio — X03-20, rejeição 786 — foi DESABILITADA pela NT 2023.004,
+    # seção 2.3.2, em produção desde 01/07/2024, e nenhuma NT posterior a
+    # reativou (a NT 2026.002 reescreve meio grupo X e não a menciona). A
+    # rejeição 845, que proíbe ``transporta`` junto de ``modFrete=9``, é do
+    # modelo 55 e não alcança a NFC-e.
     return fields
 
 

@@ -23,10 +23,12 @@ Este arquivo prova as três coisas que a decisão exige:
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order
 from shopman.stockman import HoldStatus, PositionKind
@@ -445,11 +447,20 @@ def test_a_test_order_touches_nothing():
     assert not OperatorAlert.objects.filter(type="ifood_order_patched").exists()
 
 
-def test_an_authorized_nfce_still_stops_and_calls_the_accountant():
-    """A pergunta fiscal está com o contador. A Etapa 1 segue sendo a resposta."""
+def test_an_authorized_nfce_still_stops_and_names_the_fiscal_path():
+    """A nota já saiu: o pedido NÃO é reconciliado, e o aviso diz o que fazer.
+
+    Reconciliar aqui faria pedido e nota divergirem em silêncio — isso não
+    mudou. O que mudou é o fim da frase: era "fale com o contador", agora é
+    qual dos dois caminhos de lei vale, medido pelo relógio do art. 35.
+    """
     _world()
     order = _ingest()
-    order.data = {**order.data, "nfce_access_key": "3526...chave"}
+    order.data = {
+        **order.data,
+        "nfce_access_key": "3526...chave",
+        "nfce_authorized_at": (timezone.now() - timedelta(minutes=2)).isoformat(),
+    }
     order.save(update_fields=["data", "updated_at"])
 
     _summary, _ack, fetch = _process(_patch_event(), final_items=[_line(PAO, "Pão francês", 9)])
@@ -460,7 +471,7 @@ def test_an_authorized_nfce_still_stops_and_calls_the_accountant():
     assert order.data["ifood"]["patches"][0]["reconciliation"] == "blocked:fiscal_authorized"
     alert = OperatorAlert.objects.get(type="ifood_order_patched")
     assert alert.severity == "error"
-    assert "contador" in alert.message
+    assert "AINDA DÁ TEMPO DE CANCELAR" in alert.message
 
 
 @pytest.mark.parametrize("status", ["cancelled", "completed"])
