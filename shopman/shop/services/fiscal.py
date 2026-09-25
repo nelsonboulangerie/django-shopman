@@ -13,7 +13,6 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-
 from shopman.utils.monetary import format_money
 
 from shopman.shop import directives, fiscal_intermediary
