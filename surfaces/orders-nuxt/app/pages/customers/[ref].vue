@@ -11,7 +11,7 @@ const router = useRouter();
 const customerRef = computed(() => String(route.params.ref || ""));
 const { customer, pending, error, refresh, readMetadata } = useCustomerDetail(customerRef);
 
-useHead({ title: computed(() => (customer.value ? `${customer.value.name} · Clientes` : "Clientes · Gestor")) });
+useHead({ title: computed(() => customer.value?.name || "Cliente") });
 
 const mergeOpen = ref(false);
 const mergeWith = ref<CustomerCandidateProjection | null>(null);
@@ -127,7 +127,7 @@ const notFound = computed(() => httpError(error.value).status === 404);
         <!-- Quem pode ser a mesma pessoa -->
         <article v-if="customer.candidates.length" class="rounded-lg border border-amber-300 bg-card p-4 lg:col-span-2 dark:border-amber-500/40" data-customer-candidates>
           <h2 class="text-sm font-semibold">Pode ser a mesma pessoa</h2>
-          <p class="text-xs text-muted-foreground">Confira antes de unificar: a tela sugere pelo motivo ao lado, quem decide é você.</p>
+          <p class="text-xs text-muted-foreground">Sugestão da tela, com o motivo em cada linha. Confira antes de unificar.</p>
           <ul class="mt-2 divide-y">
             <li v-for="candidate in customer.candidates" :key="candidate.ref" class="flex flex-wrap items-center justify-between gap-3 py-2">
               <div class="min-w-0 text-sm">

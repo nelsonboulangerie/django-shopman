@@ -7,7 +7,7 @@
 // busca, então voltar da ficha devolve a mesma lista.
 import { listQueryFromRoute, routeQueryFromList, type CustomerFilter } from "~/presentation/customers";
 
-useHead({ title: "Clientes · Gestor" });
+useHead({ title: "Clientes" });
 
 const route = useRoute();
 const router = useRouter();
