@@ -13,13 +13,14 @@
 
 ## 2. Perfis fiscais (o perfil responde só: tem ST ou não)
 
-Os parâmetros que dependem da operação vivem em 2 perfis nomeados (`shopman/fiscalman/classification.py`);
+Os parâmetros que dependem da operação vivem em 3 perfis nomeados (`shopman/fiscalman/classification.py`);
 por produto guarda-se `profile` + `ncm` + `cest` + `unit` (em `Product.metadata["fiscal"]`).
 
 | Perfil | Aplica a | CSOSN | CFOP interno | CFOP interest. | Origem | PIS CST | COFINS CST |
 |---|---|---|---|---|---|---|---|
-| `standard` (sem ST) | o que a casa faz (pães, salgados, doces, bebidas preparadas, caixas presente) e a revenda fora da ST do PR (queijo, manteiga, azeite, geleia, picles, presunto cru, chá em folhas) | **102** | **5102** | 6102 | 0 | **99** | **99** |
-| `tax_substitution` (com ST) | revenda sujeita a ST no PR: refrigerantes, água, mostarda preparada, cremes de queijo (requeijão e similares) | **500** | **5405** | 6405 | 0 | **99** | **99** |
+| `own_production` | o que a casa produz: pães, salgados, doces, bebidas preparadas, sanduíches, caixas presente | **102** | **5101** | 6101 | 0 | **99** | **99** |
+| `resale` (sem ST) | revenda fora da ST do PR: queijo, manteiga, azeite, geleia, picles, presunto cru, chá em folhas | **102** | **5102** | 6102 | 0 | **99** | **99** |
+| `resale_tax_substitution` (com ST) | revenda sujeita a ST no PR: refrigerantes, água, mostarda preparada, cremes de queijo (requeijão e similares) | **500** | **5405** | 6405 | 0 | **99** | **99** |
 
 **O CEST é atributo do produto, não do perfil** (decisão do dono, 24/09/2026). Ele identifica a
 mercadoria no catálogo de segmentos do Conv. ICMS 142/2018 e não define tributação — quem define é
@@ -48,7 +49,7 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 - **Produção própria:** 1905.90.90 → 17.062.00 (pães, folhados, doces — a casa já usava),
   1905.90.10 → 17.060.00 só para o pão de forma de verdade (Shokupan), 2005.99.00 → 17.092.00.
   O 1905.90.20 não serve a nenhum item (é biscoito "cream cracker"/"água e sal", 17.056.00).
-- **Bebida industrializada de revenda com ST** (água mineral, refrigerante): `tax_substitution`
+- **Bebida industrializada de revenda com ST** (água mineral, refrigerante): `resale_tax_substitution`
   com o CEST do Anexo III — água em embalagem plástica até 500 ml 03.005.00 (vidro: 03.001.00). Bebida
   preparada no balcão (2202.99.00) segue sem CEST: o Anexo descreve o industrializado pronto para
   beber, e não é isso que a casa vende. Tabela em `apply_fiscal_ncm.HOUSE_CEST_BY_NCM`.
@@ -63,7 +64,7 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 > cadastro e avisa) **ou com o contador**. Tabelas vivas: `config/management/commands/apply_fiscal_ncm.py`
 > (produção própria, bebidas preparadas, correções) e `apply_grocery_catalog.py` (revenda).
 
-### O que a casa faz — perfil `standard` (102/5102), origem 0
+### O que a casa faz — perfil `own_production` (102/5101), origem 0
 
 | Grupo | NCM | CEST | Itens |
 |---|---|---|---|
@@ -78,19 +79,19 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 
 | Item | NCM | CEST | Perfil | Origem |
 |---|---|---|---|---|
-| Água Mineral Prata 310ml, sem gás e com gás (2 SKUs) | `2201.10.00` | 03.005.00 | `tax_substitution` (500/5405) | 0 |
-| Mostardas Maille (Dijon, Mel, à l'Ancienne) | `2103.30.21` | 17.038.00 | `tax_substitution` | 2 |
-| Cremes de queijo Pomerode (Gorgonzola, Parmesão, Brie) | `0406.30.00` | 17.023.00 | `tax_substitution` | 0 |
-| Queijos: Camembert, Mini Brie Ile de France | `0406.90.30` | 17.024.00 | `standard` | 2 |
-| Queijo Vale do Testo Pomerode (a quilo) | `0406.90.20` | 17.024.00 | `standard` | 0 |
-| Manteiga Président | `0405.10.00` | 17.025.00 | `standard` | 2 |
-| Geleias St. Dalfour (6 × 284 g, 2 × 28 g) | `2007.99.10` / `2007.91.00` (cítricos) | 17.094.00 | `standard` | 2 |
-| Azeites Mirante | `1509.20.00` ⚠️ | 17.067.00 | `standard` | 0 |
-| Relish Duga | `2001.90.00` | 17.090.00 | `standard` | 0 |
-| Berinjela Duga | `2005.99.00` ⚠️ | 17.092.00 | `standard` | 0 |
-| Churrasquinho de Pimenta Mirante | `2103.90.99` ⚠️ | — | `standard` | 0 |
-| Presunto cru Vito Bauducci | `0210.19.00` | 17.087.01 | `standard` | 0 |
-| Chás Kãnfa (latas e pouches) | `0902.10.00` ⚠️ | 17.097.00 | `standard` | 0 |
+| Água Mineral Prata 310ml, sem gás e com gás (2 SKUs) | `2201.10.00` | 03.005.00 | `resale_tax_substitution` (500/5405) | 0 |
+| Mostardas Maille (Dijon, Mel, à l'Ancienne) | `2103.30.21` | 17.038.00 | `resale_tax_substitution` | 2 |
+| Cremes de queijo Pomerode (Gorgonzola, Parmesão, Brie) | `0406.30.00` | 17.023.00 | `resale_tax_substitution` | 0 |
+| Queijos: Camembert, Mini Brie Ile de France | `0406.90.30` | 17.024.00 | `resale` | 2 |
+| Queijo Vale do Testo Pomerode (a quilo) | `0406.90.20` | 17.024.00 | `resale` | 0 |
+| Manteiga Président | `0405.10.00` | 17.025.00 | `resale` | 2 |
+| Geleias St. Dalfour (6 × 284 g, 2 × 28 g) | `2007.99.10` / `2007.91.00` (cítricos) | 17.094.00 | `resale` | 2 |
+| Azeites Mirante | `1509.20.00` ⚠️ | 17.067.00 | `resale` | 0 |
+| Relish Duga | `2001.90.00` | 17.090.00 | `resale` | 0 |
+| Berinjela Duga | `2005.99.00` ⚠️ | 17.092.00 | `resale` | 0 |
+| Churrasquinho de Pimenta Mirante | `2103.90.99` ⚠️ | — | `resale` | 0 |
+| Presunto cru Vito Bauducci | `0210.19.00` | 17.087.01 | `resale` | 0 |
+| Chás Kãnfa (latas e pouches) | `0902.10.00` ⚠️ | 17.097.00 | `resale` | 0 |
 
 ### ⚠️ Confirmar na próxima NF-e / com o contador
 

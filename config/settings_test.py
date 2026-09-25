@@ -243,7 +243,7 @@ SHOPMAN_FOCUS_NFE.update(  # noqa: F405
     presenca_comprador_nfce="1",
     modalidade_frete_nfce="9",
     natureza_operacao="VENDA AO CONSUMIDOR",
-    default_cfop_nfce="5102",
+    default_cfop_nfce="5101",
     timeout=30,
     base_url="",
 )

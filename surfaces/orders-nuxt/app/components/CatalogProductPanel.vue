@@ -159,7 +159,7 @@ const draft = reactive({
     hashtagsText: "",
     social_caption: "",
   },
-  fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN", origin: "0" },
+  fiscal: { profile: "own_production", ncm: "", cest: "", unit: "UN", origin: "0" },
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
@@ -209,7 +209,7 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.social.social_caption = s?.social_caption ?? "";
 
   const f = detail?.fiscal;
-  draft.fiscal.profile = f?.profile || "standard";
+  draft.fiscal.profile = f?.profile || "own_production";
   draft.fiscal.ncm = f?.ncm ?? "";
   draft.fiscal.cest = f?.cest ?? "";
   draft.fiscal.unit = f?.unit || "UN";

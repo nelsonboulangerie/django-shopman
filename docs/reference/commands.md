@@ -162,7 +162,7 @@ python manage.py apply_grocery_catalog --apply    # grava
 ```
 
 Cada item nasce vendável e despublicado (ficha da embalagem por preencher),
-perfil fiscal por item (`standard` 102/5102 ou `tax_substitution` 500/5405) com
+perfil fiscal por item (`resale` 102/5102 ou `resale_tax_substitution` 500/5405) com
 o CEST do Anexo do Conv. ICMS 142/2018, marca e GTIN em `metadata.social`,
 o cadastro de compra do mesmo SKU (`buyman.Material`) e coleção `mercearia`. **Listagem: PDV
 sempre; loja online, WhatsApp e iFood só com foto** — sem foto, o item sai do

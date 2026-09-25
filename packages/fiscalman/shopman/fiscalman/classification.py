@@ -10,14 +10,19 @@ Design (decisions locked with the owner, 2026-06-28):
 
 - Regime: **Simples Nacional**. Document: **NFC-e (model 65)** intrastate; NF-e
   (model 55) interstate is future scope.
-- Two named profiles instead of copying CFOP/CSOSN into every product. The
-  profile answers ONE question — **tributação: ST ou não** (parametrização do
-  contador, SEFA-PR):
-    * ``standard`` — sem ST: o que a casa faz e a revenda fora do Anexo IX do
-      RICMS/PR (pães, doces, bebidas preparadas, queijo, manteiga, azeite,
-      geleia, chá em folhas). CSOSN 102, **CFOP 5102/6102**.
-    * ``tax_substitution`` — com ST (refrigerante, água, mostarda preparada,
-      requeijão e similares). CSOSN 500, CFOP 5405/6405, e o CEST é obrigatório.
+- Three named profiles instead of copying CFOP/CSOSN into every product. The
+  profile is the **tributação da operação** — CSOSN + CFOP — and the CFOP tells
+  who made what is sold:
+    * ``own_production`` — o que a casa produz (pães, doces, salgados, bebidas
+      preparadas, sanduíches, caixas presente). CSOSN 102, **CFOP 5101/6101**,
+      "venda de produção do estabelecimento".
+    * ``resale`` — revenda sem ST (mercearia fora do Anexo IX do RICMS/PR:
+      queijo, manteiga, azeite, geleia, picles, chá em folhas). CSOSN 102,
+      **CFOP 5102/6102**.
+    * ``resale_tax_substitution`` — revenda com ST (água, refrigerante,
+      mostarda preparada, requeijão e similares). CSOSN 500, CFOP 5405/6405, e o
+      CEST é obrigatório.
+  Os três CFOPs estão na lista dos aceitos na NFC-e (rejeição 725 fora dela).
 - **O CEST é atributo do produto, não do perfil.** Ele identifica a mercadoria
   no catálogo de segmentos do Conv. ICMS 142/2018 — não define tributação — e
   a lei manda informá-lo sempre que o item estiver listado, "ainda que a
@@ -72,14 +77,11 @@ class FiscalProfile:
     intrastate and interstate — and the emission layer picks one by the buyer's
     UF (see ``resolve_fiscal_item``).
 
-    **CFOP da fabricação própria = 5102 (interno) / 6102 (interestadual).**
-    Decisão do dono em 2026-08-19. Razão: a Nelson fabrica o que vende mas NÃO é
-    registrada como indústria — 5101 é venda de produção do estabelecimento
-    industrial —, e sob Simples Nacional (CRT-01) o CFOP não altera o imposto,
-    recolhido no DAS. É também o que a parametrização do contador registra
-    ("alimentação em geral, salgados, doces" = comercialização).
-    Referências: ``docs/reference/fiscal-cfop-5101-vs-5102.md`` (decisão) e
-    ``docs/reference/fiscal-parametrizacao-nfce.md`` §2 (parametrização).
+    **CFOP da produção própria = 5101 (interno) / 6101 (interestadual)**
+    (24/09/2026, revendo a decisão de 19/08 que usava 5102): "venda de produção
+    do estabelecimento" descreve o pão que a casa faz; 5102 é mercadoria de
+    terceiros. Sob Simples Nacional (CRT-01) o CFOP não altera o imposto,
+    recolhido no DAS. Ver ``docs/reference/fiscal-cfop-5101-vs-5102.md``.
     """
 
     key: str
@@ -92,25 +94,35 @@ class FiscalProfile:
     requires_cest: bool = False
 
 
-STANDARD = FiscalProfile(
-    key="standard",
-    name="Sem substituição tributária",
+OWN_PRODUCTION = FiscalProfile(
+    key="own_production",
+    name="Produção própria",
+    csosn="102",
+    cfop_internal="5101",
+    cfop_interstate="6101",
+)
+
+RESALE = FiscalProfile(
+    key="resale",
+    name="Revenda",
     csosn="102",
     cfop_internal="5102",
     cfop_interstate="6102",
 )
 
-TAX_SUBSTITUTION = FiscalProfile(
-    key="tax_substitution",
-    name="Com substituição tributária (ST)",
+RESALE_TAX_SUBSTITUTION = FiscalProfile(
+    key="resale_tax_substitution",
+    name="Revenda com substituição tributária (ST)",
     csosn="500",
     cfop_internal="5405",
     cfop_interstate="6405",
     requires_cest=True,
 )
 
-FISCAL_PROFILES: dict[str, FiscalProfile] = {p.key: p for p in (STANDARD, TAX_SUBSTITUTION)}
-DEFAULT_PROFILE_KEY = STANDARD.key
+FISCAL_PROFILES: dict[str, FiscalProfile] = {
+    p.key: p for p in (OWN_PRODUCTION, RESALE, RESALE_TAX_SUBSTITUTION)
+}
+DEFAULT_PROFILE_KEY = OWN_PRODUCTION.key
 
 
 @dataclass(frozen=True)

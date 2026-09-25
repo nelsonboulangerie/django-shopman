@@ -35,7 +35,8 @@ class FiscalProductAdminForm(ProductAdminForm):
         widget=UnfoldAdminSelectWidget,
         choices=[(key, profile.name) for key, profile in FISCAL_PROFILES.items()],
         help_text=(
-            "Define a tributação: sem substituição tributária (5102/102) ou com ST (5405/500)."
+            "Define a tributação: produção própria (5101/102), revenda (5102/102) "
+            "ou revenda com ST (5405/500)."
         ),
     )
     fiscal_ncm = forms.CharField(

@@ -1687,13 +1687,13 @@ class TestFiscalService:
 
         Product.objects.create(
             sku="PAO-FISCAL", name="Pão", base_price_q=500,
-            metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
+            metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
         )
         order = _make_order(items_list=[_make_item(sku="PAO-FISCAL")])
 
         fiscal = _build_fiscal_items(order)[0]["fiscal"]
         assert fiscal["ncm"] == "19059010"
-        assert fiscal["cfop"] == "5102"  # não-ST intraestadual (parametrização do contador)
+        assert fiscal["cfop"] == "5101"  # produção própria, intraestadual
         assert fiscal["icms_situacao_tributaria"] == "102"
 
     @pytest.mark.django_db
@@ -1705,7 +1705,7 @@ class TestFiscalService:
 
         Product.objects.create(
             sku="PAO-OV", name="Pão", base_price_q=500,
-            metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
+            metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
         )
         order = _make_order(
             items_list=[_make_item(sku="PAO-OV", meta={"fiscal": {"ncm": "99999999"}})]
@@ -1713,7 +1713,7 @@ class TestFiscalService:
 
         fiscal = _build_fiscal_items(order)[0]["fiscal"]
         assert fiscal["ncm"] == "99999999"  # override wins
-        assert fiscal["cfop"] == "5102"     # profile-resolved codes still present
+        assert fiscal["cfop"] == "5101"     # profile-resolved codes still present
 
     @pytest.mark.django_db
     @patch("shopman.shop.services.fiscal.fiscal_pool")

@@ -53,7 +53,7 @@ def order_with_item(db):
     Product.objects.create(
         sku="PAO-1",
         name="Pão",
-        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
+        metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
     )
     order = Order.objects.create(
         ref="ORD-FISCAL-BUILD-1", channel_ref="pdv", status=Order.Status.COMPLETED, total_q=1000
@@ -82,7 +82,7 @@ def test_readable_catalog_queues_items_with_their_fiscal_codes(order_with_item):
     directive = Directive.objects.get(topic="fiscal.emit_nfce")
     item = directive.payload["items"][0]
     assert item["fiscal"]["ncm"] == "19059010"
-    assert item["fiscal"]["cfop"] == "5102"
+    assert item["fiscal"]["cfop"] == "5101"
 
 
 @EMIT_ALWAYS
@@ -172,7 +172,7 @@ VALID_GTIN = "3006670000187"
 )
 def test_fiscal_item_carries_only_a_trusted_gtin(order_with_item, extra, expected):
     Product.objects.filter(sku="PAO-1").update(
-        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}, **extra}
+        metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}, **extra}
     )
 
     items = fiscal_service._build_fiscal_items(order_with_item)
@@ -195,7 +195,7 @@ def test_nfce_item_barcode_fields_follow_the_trust_rule(order_with_item, extra, 
     from shopman.shop.adapters.fiscal_focusnfe import _map_item
 
     Product.objects.filter(sku="PAO-1").update(
-        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}, **extra}
+        metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}, **extra}
     )
 
     item = fiscal_service._build_fiscal_items(order_with_item)[0]

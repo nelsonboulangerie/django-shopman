@@ -2463,7 +2463,7 @@ class Command(BaseCommand):
             #    cada um com ficha apontando para `CHA-BLEU`, `CHA-CHAI`… NCM
             #    2202.99.00, que é bebida pronta.
             #
-            # O perfil deles é `standard` (sem ST, 102/5102) com o CEST
+            # O perfil deles é `resale` (revenda sem ST, 102/5102) com o CEST
             # 17.097.00: quem o grava é o `apply_grocery_catalog`, que o
             # seed chama logo depois do catálogo — a mesma tabela do banco
             # vivo. Chá em folhas está fora da ST do PR; o CEST vai no
@@ -2482,7 +2482,7 @@ class Command(BaseCommand):
             # O CEST da casa sai do NCM (a mesma tabela do `apply_fiscal_ncm`);
             # a revenda ganha o dela no `apply_grocery_catalog`.
             cest = house_cest_for(ncm)
-            return {"profile": "standard", "ncm": ncm, "unit": "UN", **({"cest": cest} if cest else {})}
+            return {"profile": "own_production", "ncm": ncm, "unit": "UN", **({"cest": cest} if cest else {})}
 
         # ⚠️ Voltaram do Yooga com código e preço reais, mas SEM ficha: alergênicos,
         # informação nutricional, dieta, porção e ingredientes são dado da casa —

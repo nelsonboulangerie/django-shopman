@@ -28,17 +28,17 @@ def test_fiscal_fieldset_present():
 def test_form_initial_reads_metadata():
     product = Product.objects.create(
         sku="PAO-BRIDGE", name="Pão", base_price_q=500,
-        metadata={"fiscal": {"profile": "standard", "ncm": "19059010"}},
+        metadata={"fiscal": {"profile": "own_production", "ncm": "19059010"}},
     )
     form = FiscalProductAdminForm(instance=product)
-    assert form.fields["fiscal_profile"].initial == "standard"
+    assert form.fields["fiscal_profile"].initial == "own_production"
     assert form.fields["fiscal_ncm"].initial == "19059010"
     assert form.fields["fiscal_cest"].initial == ""
 
 
 def test_form_accepts_cest_without_st():
     """O CEST identifica a mercadoria em qualquer perfil (Conv. ICMS 142/2018)."""
-    cleaned = {"fiscal_profile": "standard", "fiscal_ncm": "19059090", "fiscal_cest": "1706200"}
+    cleaned = {"fiscal_profile": "own_production", "fiscal_ncm": "19059090", "fiscal_cest": "1706200"}
     assert _classification_errors(cleaned) == []
 
 
@@ -53,7 +53,7 @@ def _classification_errors(cleaned):
 
 
 def test_every_cfop_voice_says_the_same_thing():
-    """CFOP da fabricação própria = 5102, decisão do dono em 2026-08-19.
+    """CFOP da produção própria = 5101 (revisto em 2026-09-24; era 5102).
 
     O código já respondeu essa pergunta de três jeitos ao mesmo tempo: o
     dataclass emitia 5102, o help_text ensinava "5101/102" ao operador e o
@@ -64,17 +64,16 @@ def test_every_cfop_voice_says_the_same_thing():
     docs/reference/fiscal-cfop-5101-vs-5102.md.
     """
     from django.conf import settings
-    from shopman.fiscalman.classification import STANDARD
+    from shopman.fiscalman.classification import OWN_PRODUCTION
 
-    decided_internal, decided_interstate = "5102", "6102"
+    decided_internal, decided_interstate = "5101", "6101"
 
-    assert (STANDARD.cfop_internal, STANDARD.cfop_interstate) == (
+    assert (OWN_PRODUCTION.cfop_internal, OWN_PRODUCTION.cfop_interstate) == (
         decided_internal,
         decided_interstate,
     )
 
     help_text = str(FiscalProductAdminForm.base_fields["fiscal_profile"].help_text)
-    assert decided_internal in help_text
-    assert "5101" not in help_text
+    assert f"produção própria ({decided_internal}" in help_text
 
     assert settings.SHOPMAN_FOCUS_NFE["default_cfop_nfce"] == decided_internal

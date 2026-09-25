@@ -61,14 +61,14 @@ def test_a_tabela_so_tem_item_vendavel_sem_mentir():
             assert gtin_is_valid(item.gtin), item.sku
         # Revenda: sem ST (102/5102) ou na ST do PR (500/5405), sempre com o CEST
         # do Anexo XVII quando o NCM tem um.
-        assert item.profile in {"standard", "tax_substitution"}, item.sku
+        assert item.profile in {"resale", "resale_tax_substitution"}, item.sku
         fiscal = {"profile": item.profile, "ncm": item.ncm, "unit": item.unit.upper()}
         if item.cest:
             fiscal["cest"] = item.cest
         classification = from_metadata({"fiscal": fiscal})
         assert not classification.errors(), item.sku
         resolved = resolve_fiscal_item(classification)
-        expected = ("5405", "500") if item.profile == "tax_substitution" else ("5102", "102")
+        expected = ("5405", "500") if item.profile == "resale_tax_substitution" else ("5102", "102")
         assert (resolved["cfop"], resolved["icms_situacao_tributaria"]) == expected, item.sku
         assert resolved.get("cest", "") == item.cest, item.sku
 
@@ -120,7 +120,7 @@ def test_cria_a_revenda_so_no_pdv(catalog):
     # Mostarda preparada está na ST do PR (17.038.00): revenda com ST.
     # Importada, comprada de distribuidor no Brasil: origem 2.
     assert dijon.metadata["fiscal"] == {
-        "profile": "tax_substitution", "ncm": "21033021", "unit": "UN", "cest": "1703800", "origin": "2",
+        "profile": "resale_tax_substitution", "ncm": "21033021", "unit": "UN", "cest": "1703800", "origin": "2",
     }
     assert "purchase" not in dijon.metadata
     # Comprável: o cadastro de compra do MESMO SKU, na mesma unidade.
@@ -326,7 +326,7 @@ def test_o_custo_do_fornecedor_fica_no_cadastro_de_compra_com_a_origem(catalog):
 def test_latas_kanfa_com_o_peso_confirmado(catalog):
     for sku in ("CHA-NAMASTE-KANFA-L70", "CHA-ACONCHEGO-KANFA-L50"):
         Product.objects.create(sku=sku, name=sku, unit="un", base_price_q=7300, unit_weight_g=60,
-                               metadata={"fiscal": {"profile": "standard", "ncm": "09022000", "unit": "UN"}})
+                               metadata={"fiscal": {"profile": "resale", "ncm": "09022000", "unit": "UN"}})
 
     apply_grocery(apply=True)
 
@@ -443,16 +443,16 @@ def test_mercearia_no_perfil_antigo_e_reclassificada(catalog):
     """Quem está sem CEST no perfil sem ST (a Mercearia de antes) ganha o da tabela."""
     queijo = Product.objects.create(
         sku="QUEIJO-BRIE-ILEDEFRANCE-25", name="Queijo Mini Brie Ile de France 25g", unit="un",
-        base_price_q=1000, metadata={"fiscal": {"profile": "standard", "ncm": "04069030", "unit": "UN"}},
+        base_price_q=1000, metadata={"fiscal": {"profile": "resale", "ncm": "04069030", "unit": "UN"}},
     )
 
     report = apply_grocery(apply=True)
 
     queijo.refresh_from_db()
     assert queijo.metadata["fiscal"] == {
-        "profile": "standard", "ncm": "04069030", "unit": "UN", "cest": "1702400", "origin": "2",
+        "profile": "resale", "ncm": "04069030", "unit": "UN", "cest": "1702400", "origin": "2",
     }
-    assert any(sku == queijo.sku and any("fiscal: perfil standard" in line for line in lines)
+    assert any(sku == queijo.sku and any("fiscal: perfil resale" in line for line in lines)
                for sku, lines in report["updated"])
 
 
@@ -460,26 +460,26 @@ def test_classificacao_curada_fica_e_sai_como_divergencia(catalog):
     Product.objects.create(
         sku="MANTEIGA-SAL-PRESIDENT-200", name="Manteiga Extra com Sal Président 200g", unit="un",
         base_price_q=1500,
-        metadata={"fiscal": {"profile": "tax_substitution", "ncm": "04051000", "unit": "UN", "cest": "1702500"}},
+        metadata={"fiscal": {"profile": "resale_tax_substitution", "ncm": "04051000", "unit": "UN", "cest": "1702500"}},
     )
 
     report = apply_grocery(apply=True)
 
     manteiga = Product.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200")
-    assert manteiga.metadata["fiscal"]["profile"] == "tax_substitution"
-    assert ("MANTEIGA-SAL-PRESIDENT-200", "profile", "tax_substitution", "standard") in report["conflicts"]
+    assert manteiga.metadata["fiscal"]["profile"] == "resale_tax_substitution"
+    assert ("MANTEIGA-SAL-PRESIDENT-200", "profile", "resale_tax_substitution", "resale") in report["conflicts"]
 
 
 def test_chas_kanfa_do_seed_ganham_ncm_da_nota_e_cest(catalog):
     cha = Product.objects.create(
         sku="CHA-MAMA-KANFA-P50", name="Mama Chai Kãnfa — Pouch 50g", unit="un", base_price_q=6000,
-        metadata={"fiscal": {"profile": "standard", "ncm": "09022000", "unit": "UN"}},
+        metadata={"fiscal": {"profile": "resale", "ncm": "09022000", "unit": "UN"}},
     )
 
     apply_grocery(apply=True)
 
     cha.refresh_from_db()
-    assert cha.metadata["fiscal"] == {"profile": "standard", "ncm": "09021000", "unit": "UN", "cest": "1709700"}
+    assert cha.metadata["fiscal"] == {"profile": "resale", "ncm": "09021000", "unit": "UN", "cest": "1709700"}
 
 
 def test_cada_perfil_fiscal_tem_nota_com_fonte():
@@ -501,20 +501,20 @@ def test_caixa_presente_nasce_com_o_cest_dos_paes(catalog):
     apply_grocery(apply=True)
 
     assert Product.objects.get(sku="DIJON").metadata["fiscal"] == {
-        "profile": "standard", "ncm": "19059090", "unit": "UN", "cest": "1706200",
+        "profile": "own_production", "ncm": "19059090", "unit": "UN", "cest": "1706200",
     }
 
 
 def test_agua_mineral_de_revenda_tem_st_e_o_cest_do_anexo_iii(catalog):
     Product.objects.create(
         sku="AGUA-MINERAL-PRATA-310", name="Água", unit="un", base_price_q=600,
-        metadata={"fiscal": {"profile": "standard", "ncm": "22011000", "unit": "UN"}},
+        metadata={"fiscal": {"profile": "resale", "ncm": "22011000", "unit": "UN"}},
     )
 
     apply_grocery(apply=True)
 
     fiscal = Product.objects.get(sku="AGUA-MINERAL-PRATA-310").metadata["fiscal"]
-    assert fiscal == {"profile": "tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500"}
+    assert fiscal == {"profile": "resale_tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500"}
     assert resolve_fiscal_item(from_metadata({"fiscal": fiscal}))["cfop"] == "5405"
 
 
@@ -533,7 +533,7 @@ def test_os_importados_saem_com_origem_2_e_os_nacionais_sem_origem(catalog):
 def test_origem_ausente_e_preenchida_sem_mexer_no_resto(catalog):
     Product.objects.create(
         sku="QUEIJO-CAMEMBERT-ILEDEFRANCE-125", name="Camembert", unit="un", base_price_q=4000,
-        metadata={"fiscal": {"profile": "standard", "ncm": "04069020", "unit": "UN", "cest": "1702400"}},
+        metadata={"fiscal": {"profile": "resale", "ncm": "04069020", "unit": "UN", "cest": "1702400"}},
     )
 
     report = apply_grocery(apply=True)
@@ -554,7 +554,7 @@ def test_agua_com_gas_e_sku_proprio_com_st_na_colecao_de_bebidas(catalog):
     assert (com_gas.name, com_gas.base_price_q) == ("Água Mineral com Gás Prata 310ml", 700)
     assert get_social_attributes(com_gas).gtin == "7897123884043"
     assert com_gas.metadata["fiscal"] == {
-        "profile": "tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500",
+        "profile": "resale_tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500",
     }
     assert com_gas.collection_items.get().collection.ref == "bebidas-geladas"
 
@@ -564,7 +564,7 @@ def test_a_agua_de_antes_vira_a_sem_gas_e_a_venda_com_gas_muda_de_sku(catalog):
 
     agua = Product.objects.create(
         sku="AGUA-MINERAL-PRATA-310", name="Água", unit="un", base_price_q=600, unit_weight_g=500,
-        metadata={"fiscal": {"profile": "standard", "ncm": "22011000", "unit": "UN"}},
+        metadata={"fiscal": {"profile": "resale", "ncm": "22011000", "unit": "UN"}},
     )
     sem = ProductAlias.objects.create(
         source="yooga", external_name="Água Mineral Prata 310ml", status="confirmed", product=agua,

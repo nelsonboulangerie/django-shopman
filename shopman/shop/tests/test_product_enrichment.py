@@ -219,7 +219,7 @@ def geleia(db):
         name="Geleia de framboesa",
         base_price_q=3900,
         image_url="",
-        metadata={"fiscal": {"profile": "tax_substitution", "ncm": "", "unit": "UN"}},
+        metadata={"fiscal": {"profile": "resale_tax_substitution", "ncm": "", "unit": "UN"}},
     )
 
 
@@ -298,7 +298,7 @@ def test_aceitar_nunca_promove_foto_para_a_vitrine(geleia, gestor, monkeypatch):
 def test_cest_da_nota_entra_em_qualquer_perfil(geleia, gestor):
     """O CEST identifica a mercadoria; sem ST ele também vai (Conv. ICMS 142/2018)."""
     geleia.metadata = pe.merge_into_metadata(
-        {**geleia.metadata, "fiscal": {"profile": "standard", "ncm": "20079990"}},
+        {**geleia.metadata, "fiscal": {"profile": "resale", "ncm": "20079990"}},
         pe.suggestion_from_invoice(cest="1709400"),
     )
     geleia.save()
@@ -308,7 +308,7 @@ def test_cest_da_nota_entra_em_qualquer_perfil(geleia, gestor):
     geleia.refresh_from_db()
     assert "cest" not in result.refused
     assert geleia.metadata["fiscal"]["cest"] == "1709400"
-    assert geleia.metadata["fiscal"]["profile"] == "standard"
+    assert geleia.metadata["fiscal"]["profile"] == "resale"
 
 
 def test_gtin_da_nota_entra_no_cadastro_social(geleia, gestor):

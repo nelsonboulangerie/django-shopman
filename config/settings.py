@@ -1732,10 +1732,10 @@ SHOPMAN_FOCUS_NFE = {
     "presenca_comprador_nfce": os.environ.get("FOCUS_NFE_NFCE_PRESENCA_COMPRADOR", "1"),
     "modalidade_frete_nfce": os.environ.get("FOCUS_NFE_NFCE_MODALIDADE_FRETE", "9"),
     "natureza_operacao": os.environ.get("FOCUS_NFE_NATUREZA_OPERACAO", "VENDA AO CONSUMIDOR"),
-    # CFOP de fabricação própria decidido pelo dono em 2026-08-19 (5102, não 5101:
-    # a Nelson não é registrada como indústria). Mesmo valor do perfil `standard`
-    # em shopman.fiscalman.classification — docs/reference/fiscal-cfop-5101-vs-5102.md.
-    "default_cfop_nfce": os.environ.get("FOCUS_NFE_NFCE_DEFAULT_CFOP", "5102"),
+    # CFOP da produção própria (5101, revisto em 24/09/2026). Mesmo valor do perfil
+    # `own_production` em shopman.fiscalman.classification —
+    # docs/reference/fiscal-cfop-5101-vs-5102.md.
+    "default_cfop_nfce": os.environ.get("FOCUS_NFE_NFCE_DEFAULT_CFOP", "5101"),
     "timeout": int(os.environ.get("FOCUS_NFE_TIMEOUT", "30")),
     "base_url": os.environ.get("FOCUS_NFE_BASE_URL", ""),
 }

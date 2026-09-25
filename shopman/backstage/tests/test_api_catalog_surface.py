@@ -900,7 +900,7 @@ def test_product_detail_get_shape(client, operator, catalog):
     assert product["primary_collection"] == "doces"
     assert set(product["fiscal"]) == {"profile", "ncm", "cest", "unit", "origin"}
     assert {o["key"] for o in product["fiscal_origins"]} == {str(n) for n in range(9)}
-    assert {p["key"] for p in product["fiscal_profiles"]} == {"standard", "tax_substitution"}
+    assert {p["key"] for p in product["fiscal_profiles"]} == {"own_production", "resale", "resale_tax_substitution"}
 
 
 def test_product_detail_get_unknown_sku(client, operator, catalog):
@@ -1087,7 +1087,7 @@ def test_product_detail_patch_social_rejects_bad_gtin(client, operator, catalog)
 
 def test_product_detail_patch_fiscal(client, operator, catalog):
     client.force_login(operator)
-    resp = _patch(client, "PAO", {"fiscal": {"profile": "standard", "ncm": "19059090"}})
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "own_production", "ncm": "19059090"}})
     assert resp.status_code == 200
     assert resp.json()["product"]["fiscal"]["ncm"] == "19059090"
 
@@ -1103,14 +1103,14 @@ def test_product_detail_patch_fiscal_rejects_short_ncm(client, operator, catalog
 def test_product_detail_patch_fiscal_rejects_malformed_cest(client, operator, catalog):
     client.force_login(operator)
     resp = _patch(client, "PAO", {
-        "fiscal": {"profile": "standard", "ncm": "19059090", "cest": "17.062"},
+        "fiscal": {"profile": "own_production", "ncm": "19059090", "cest": "17.062"},
     })
     assert resp.status_code == 400
 
 
-def test_product_detail_patch_fiscal_requires_cest_with_tax_substitution(client, operator, catalog):
+def test_product_detail_patch_fiscal_requires_cest_with_st(client, operator, catalog):
     client.force_login(operator)
-    resp = _patch(client, "PAO", {"fiscal": {"profile": "tax_substitution", "ncm": "19059090"}})
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "resale_tax_substitution", "ncm": "19059090"}})
     assert resp.status_code == 400
 
 
@@ -1118,7 +1118,7 @@ def test_product_detail_patch_fiscal_keeps_the_cest_without_st(client, operator,
     """O CEST é atributo do produto: sem ST ele também vai (Conv. ICMS 142/2018)."""
     client.force_login(operator)
     resp = _patch(client, "PAO", {
-        "fiscal": {"profile": "standard", "ncm": "04069020", "cest": "1702400"},
+        "fiscal": {"profile": "own_production", "ncm": "04069020", "cest": "1702400"},
     })
     assert resp.status_code == 200
     catalog["pao"].refresh_from_db()
@@ -1130,7 +1130,7 @@ def test_product_detail_patch_fiscal_keeps_the_cest_without_st(client, operator,
 def test_product_detail_patch_fiscal_origin(client, operator, catalog):
     """A origem é do produto: importado comprado no Brasil sai com 2."""
     client.force_login(operator)
-    resp = _patch(client, "PAO", {"fiscal": {"profile": "standard", "ncm": "04051000", "origin": "2"}})
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "own_production", "ncm": "04051000", "origin": "2"}})
     assert resp.status_code == 200
     assert resp.json()["product"]["fiscal"]["origin"] == "2"
     catalog["pao"].refresh_from_db()
@@ -1142,7 +1142,7 @@ def test_product_detail_warns_when_cest_does_not_match_the_ncm(client, operator,
     """CEST incompatível com o NCM é aviso, não bloqueio: salva e avisa."""
     client.force_login(operator)
     resp = _patch(client, "PAO", {
-        "fiscal": {"profile": "standard", "ncm": "21039099", "cest": "1709200"},
+        "fiscal": {"profile": "own_production", "ncm": "21039099", "cest": "1709200"},
     })
     assert resp.status_code == 200
     assert any("2005" in w for w in resp.json()["product"]["fiscal_warnings"])

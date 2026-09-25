@@ -54,11 +54,11 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for sku in ("TRADI", "SP", "MDLN"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
-        assert fiscal["profile"] == "standard"
+        assert fiscal["profile"] == "own_production"
         assert fiscal["ncm"]
         # CFOP/CSOSN são resolvidos do perfil fiscal na emissão (NFC-e intraestadual).
         resolved = resolve_fiscal_item(from_metadata(metadata))
-        assert resolved["cfop"] == "5102"
+        assert resolved["cfop"] == "5101"
         assert resolved["icms_situacao_tributaria"] == "102"
     # A Mercearia real nasce no seed pela mesma tabela do `apply_grocery_catalog`:
     # vendável no PDV, fora de todo canal remoto (sem foto), com cadastro de compra do mesmo SKU.

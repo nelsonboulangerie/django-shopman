@@ -19,7 +19,7 @@ pytestmark = pytest.mark.django_db
 
 
 def _product(sku: str, ncm: str = "") -> Product:
-    fiscal = {"profile": "standard", "unit": "UN"}
+    fiscal = {"profile": "own_production", "unit": "UN"}
     if ncm:
         fiscal["ncm"] = ncm
     return Product.objects.create(
@@ -78,7 +78,7 @@ def test_preserva_o_resto_do_fiscal():
     call_command("apply_fiscal_ncm", "--apply", stdout=StringIO())
 
     fiscal = Product.objects.get(sku="SP").metadata["fiscal"]
-    assert fiscal == {"profile": "standard", "unit": "UN", "ncm": "22029900"}
+    assert fiscal == {"profile": "own_production", "unit": "UN", "ncm": "22029900"}
 
 
 def test_o_aviso_do_engarrafamento_sai_toda_vez():
@@ -163,7 +163,7 @@ def test_o_cest_da_casa_sai_do_ncm():
 
     cests = {sku: Product.objects.get(sku=sku).metadata["fiscal"].get("cest") for sku in ("CRO", "FORMA", "RTAT")}
     assert cests == {"CRO": "1706200", "FORMA": "1706000", "RTAT": "1709200"}
-    assert Product.objects.get(sku="CRO").metadata["fiscal"]["profile"] == "standard"
+    assert Product.objects.get(sku="CRO").metadata["fiscal"]["profile"] == "own_production"
 
 
 def test_cest_ja_escrito_fica():

@@ -85,7 +85,7 @@ vende:
 **Mas o CEST identifica a mercadoria listada no Anexo**, e os do 2202.99.00
 descrevem o industrializado pronto para beber que circula na cadeia — a
 garrafa, a lata. O que a casa prepara no balcão não é esse produto (perfil
-`standard`, CFOP 5102 / CSOSN 102, sem ST), então não há CEST a informar.
+`own_production`, CFOP 5101 / CSOSN 102, sem ST), então não há CEST a informar.
 (Revisto em 24/09/2026: o CEST não declara ST — quem declara é o perfil —, mas
 a conclusão fica, porque a mercadoria não é a do Anexo.)
 
@@ -143,8 +143,9 @@ fora.
 
   ⚠️ **E não há pergunta de perfil aqui — eu cheguei a levantar uma, e estava
   errado.** O eixo do `FiscalProfile` é **ST × não-ST**, não "quem fabricou":
-  o perfil sem ST (hoje `standard`) é *"fabricação própria **+ revenda
-  comum**"*, e é a parametrização que o contador já fez (SEFA-PR). Chá seco é
+  o eixo do perfil fiscal era, na época, ST × não-ST (*"fabricação própria
+  **+ revenda comum**"*; desde 24/09 são três: produção própria 5101, revenda
+  5102, revenda com ST 5405), e é a parametrização que o contador já fez (SEFA-PR). Chá seco é
   revenda comum; a ST no segmento de bebida alcança refrigerante, água e
   industrializado. Ser comprado pronto é outro eixo — é o cadastro de compra
   (`buyman.Material`) do mesmo SKU, que deixa o Compras receber a nota.

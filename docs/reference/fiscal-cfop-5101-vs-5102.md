@@ -1,42 +1,32 @@
-# CFOP 5101 × 5102 — decisão registrada: **5102**
+# CFOP 5101 × 5102 — produção própria sai com **5101**
 
-> **Decisão do dono, 2026-08-19.** Fabricação própria emite **CFOP 5102**
-> (interno) / **6102** (interestadual). Este documento era a pauta da pergunta;
-> virou o registro da resposta, para que a próxima leitura encontre a razão junto
-> do valor.
+> **24/09/2026 — revisto.** A decisão de 19/08 (produção própria em 5102, "a
+> Nelson não é registrada como indústria") foi revista na auditoria fiscal do
+> alpha, com o dono mandando decidir por bom senso: o CFOP é tributação da
+> operação e diz quem produziu o que se vende. **Produção própria → 5101**
+> ("venda de produção do estabelecimento"); **revenda sem ST → 5102**; **revenda
+> com ST → 5405**. Três perfis em `shopman/fiscalman/classification.py`
+> (`own_production`, `resale`, `resale_tax_substitution`).
 >
-> Complementa [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md) §2
-> (tabela dos perfis) e §6 (pendências com o contador).
-
-## A decisão
-
-Para a venda de fabricação própria da padaria (pães, salgados, doces), a NFC-e
-sai com **CFOP 5102** — venda de mercadoria adquirida ou recebida de terceiros —
-e não 5101.
-
-**Razão:**
-
-1. **A Nelson fabrica o que vende, mas não é registrada como indústria.** O 5101
-   é venda de produção do *estabelecimento industrial*; a condição é cadastral,
-   não descritiva do processo de produção.
-2. **Sob Simples Nacional (CRT-01) o CFOP não altera o imposto**, recolhido no
-   DAS. O que o CFOP afeta é a escrituração e a coerência com o cadastro da
-   atividade — e a coerência aponta para 5102.
-3. É o que a [parametrização do contador](fiscal-parametrizacao-nfce.md) §2 já
-   registrava: *"O contador classifica 'alimentação em geral, salgados, doces'
-   como comercialização (5102/102), não produção própria (5101)."*
-
-O perfil `standard` (sem ST) cobre **fabricação própria + revenda comum** de
-propósito (pães, salgados, doces, bebidas preparadas, mercearia fora da ST). Um CFOP único para os dois
-é exatamente a simplificação que a decisão adota.
+> Sob Simples Nacional (CRT-01) o CFOP não altera o imposto, recolhido no DAS.
+> O 5101 está na lista de CFOPs aceitos na NFC-e (5101, 5102, 5103, 5104, 5115,
+> 5405, 5656, 5667, 5933 — fora dela, rejeição 725):
+> [TecnoSpeed](https://atendimento.tecnospeed.com.br/hc/pt-br/articles/360008266354-Rejei%C3%A7%C3%A3o-725-NFC-e-com-CFOP-inv%C3%A1lido),
+> [Webmania](https://ajuda.webmaniabr.com/hc/pt-br/articles/4403755367437-Rejei%C3%A7%C3%A3o-725-NFC-e-com-CFOP-inv%C3%A1lido).
+>
+> ⚠️ A parametrização antiga do contador registrava "alimentação em geral,
+> salgados, doces" como comercialização (5102/102). Se ele mantiver essa
+> posição, a volta é um valor em `OWN_PRODUCTION` + o default do deployment +
+> esta página (o teste `test_every_cfop_voice_says_the_same_thing` aponta as
+> três vozes).
 
 ## Referência da tabela CFOP
 
 | CFOP | Descrição |
 |------|-----------|
-| 5101 | Venda de produção do **estabelecimento** (o vendedor industrializou) |
-| **5102** | Venda de mercadoria **adquirida ou recebida de terceiros** — **o nosso** |
-| 5405 | Venda de mercadoria adquirida de terceiros, **sujeita a ST**, na condição de contribuinte substituído (perfil `tax_substitution`) |
+| **5101** | Venda de produção do **estabelecimento** — o que a casa produz (`own_production`) |
+| **5102** | Venda de mercadoria **adquirida ou recebida de terceiros** — revenda sem ST (`resale`) |
+| 5405 | Venda de mercadoria adquirida de terceiros, **sujeita a ST**, na condição de contribuinte substituído (perfil `resale_tax_substitution`) |
 
 Interestadual é a mesma família com prefixo 6 (6101/**6102**/6405).
 
@@ -64,7 +54,7 @@ para o sistema emitir.
 
 **Se o contador discordar** (ou seja, se ele apontar que a Nelson deve emitir
 5101), o conserto é pequeno e está inteiro na tabela acima: trocar o valor no
-perfil `standard` (`cfop_internal`/`cfop_interstate`), no `help_text` do
+perfil `own_production` (`cfop_internal`/`cfop_interstate`), no `help_text` do
 Admin e no default do deployment, atualizar esta seção com a nova razão e a data,
 e ajustar a linha da tabela de perfis em
 [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md) §2. Nenhuma migração,
