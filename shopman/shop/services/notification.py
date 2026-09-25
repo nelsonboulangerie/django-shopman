@@ -810,7 +810,27 @@ def _build_context(order, payload: dict, template: str) -> dict:
         f"\nAcompanhe o entregador: {courier_tracking}" if courier_tracking else ""
     )
 
+    # Hora prevista do preparo, sufixo auto-suprimível (padrão `reason_note`). A âncora
+    # é o MESMO `_eta_at` que a tela de acompanhamento mostra: aviso e tela dizendo
+    # horas diferentes para o mesmo pedido é pior que não dizer hora nenhuma. Só no
+    # preparo — no despacho o `_eta_at` é a hora de CHEGADA, e a frase é outra.
+    context["eta_note"] = _eta_note(order)
+
     return context
+
+
+def _eta_note(order) -> str:
+    if order.status != "preparing":
+        return ""
+    from shopman.shop.projections.order_tracking import _eta_at
+
+    eta_iso = _eta_at(order)
+    eta = parse_datetime(eta_iso) if eta_iso else None
+    if eta is None:
+        return ""
+    local = timezone.localtime(eta)
+    clock = f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
+    return f"\nDeve ficar pronto às {clock}."
 
 
 def _qualify_template(template: str, context: dict) -> str:

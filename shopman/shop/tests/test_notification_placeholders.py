@@ -36,8 +36,9 @@ COMTELE_SETTINGS = {"api_key": "key-1", "route": "17", "timeout": 5}
 
 #: O corpo semeado de `order_received` — o texto que a Joyce recebeu.
 SEEDED_ORDER_RECEIVED = (
-    "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. "
-    "O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"
+    "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}*.\n"
+    "Estamos conferindo a disponibilidade e avisamos em seguida.\n"
+    "Acompanhe por aqui: {tracking_url}"
 )
 
 _PLACEHOLDER = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
