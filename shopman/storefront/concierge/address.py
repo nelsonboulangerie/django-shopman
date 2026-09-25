@@ -3,8 +3,11 @@
 Decisão do dono (25/09/2026): a entrega pelo WhatsApp não manda o cliente
 para o site completar o endereço. A nota da entrega a domicílio exige rua,
 número, bairro, cidade, UF e CEP separados (``delivery_fiscal_identity``, a
-régua do #1118), e o concierge chega lá por três portas:
+régua do #1118), e o concierge chega lá por quatro portas:
 
+- **o cadastro** (``guestman.CustomerAddress`` do próprio cliente): oferecido
+  antes de qualquer pergunta, o padrão primeiro; aceito, entra estruturado e
+  com a coordenada que já tem;
 - **a localização** (pin do WhatsApp): a geocodificação reversa do servidor
   (``geocoding.reverse_geocode``, o mesmo serviço do botão "usar minha
   localização" da loja) devolve rua, bairro, cidade, UF e CEP. O NÚMERO que
@@ -45,7 +48,7 @@ _LOCATING_KEYS = ("route", "street_number", "neighborhood", "postal_code", "city
 _STRUCTURED_KEYS = (
     "route", "street_number", "complement", "neighborhood", "city", "state_code",
     "postal_code", "place_id", "formatted_address", "latitude", "longitude",
-    "is_verified", "coordinates_source",
+    "is_verified", "coordinates_source", "delivery_instructions",
 )
 
 #: "Não tem complemento", dito de algumas formas. Vira ``complement == ""``
@@ -226,3 +229,92 @@ def question(structured: dict, *, from_pin: bool) -> str:
     if "complement" not in structured:
         return f"{prefix}Tem complemento (apartamento, bloco, fundos)? Se não tiver, é só dizer \"sem complemento\"."
     return ""
+
+
+# ── O endereço que o cliente já cadastrou ─────────────────────────────
+#
+# Decisão do dono (25/09/2026): quem escolhe entrega e já tem endereço
+# cadastrado ouve primeiro esse endereço, antes de qualquer pergunta. Só o
+# cadastro do PRÓPRIO cliente da conversa (``customer_ref``, que só existe com
+# identidade verificada) é lido; nenhum outro endereço sai daqui.
+
+SAVED = "saved"
+
+#: O que o modelo pode passar para dizer "o padrão".
+_DEFAULT_WORDS = frozenset({"", "padrao", "o padrao", "principal", "default", "cadastrado", "o cadastrado"})
+
+
+def saved_addresses(customer_ref: str) -> list:
+    """Os endereços cadastrados do cliente: o padrão primeiro, depois o mais recente."""
+    if not customer_ref:
+        return []
+    from shopman.guestman.services import address as address_service
+
+    found = [saved for saved in address_service.addresses(customer_ref) if short_line(saved)]
+    return sorted(found, key=lambda saved: (not saved.is_default, -saved.updated_at.timestamp(), saved.pk))
+
+
+def short_line(saved) -> str:
+    """"Rua X, 120 - Centro": o que o cliente reconhece de relance."""
+    street = ", ".join(p for p in (_clean(saved.route), _clean(saved.street_number)) if p)
+    if not street:
+        return _clean(saved.formatted_address)
+    return " - ".join(p for p in (street, _clean(saved.neighborhood)) if p)
+
+
+def pick_saved(saved_list: list, label: str):
+    """O endereço cadastrado escolhido: o padrão, ou o do rótulo dito pelo cliente."""
+    wanted = _fold(label)
+    if wanted in _DEFAULT_WORDS:
+        return saved_list[0] if saved_list else None
+    for saved in saved_list:
+        if _fold(saved.display_label) == wanted:
+            return saved
+    matches = [saved for saved in saved_list if wanted in _fold(short_line(saved))]
+    return matches[0] if len(matches) == 1 else None
+
+
+def from_saved(saved) -> dict:
+    """O endereço estruturado da entrega a partir do cadastro.
+
+    Complemento vazio no cadastro é resposta (não tem), não pergunta pendente.
+    Sem coordenada no cadastro, a coordenada da taxa sai do texto; sem
+    nenhuma, levanta ``AddressNotLocated``.
+    """
+    structured = {
+        "route": _clean(saved.route), "street_number": _clean(saved.street_number),
+        "neighborhood": _clean(saved.neighborhood), "city": _clean(saved.city),
+        "state_code": _clean(saved.state_code).upper(), "postal_code": _postal_code(saved.postal_code),
+        "place_id": _clean(saved.place_id), "delivery_instructions": _clean(saved.delivery_instructions),
+    }
+    structured = {key: value for key, value in structured.items() if value}
+    structured["complement"] = _clean(saved.complement)
+    if saved.latitude is not None and saved.longitude is not None:
+        structured.update(latitude=float(saved.latitude), longitude=float(saved.longitude))
+    else:
+        from shopman.shop.services.geocoding import forward_geocode
+
+        coords = forward_geocode(formatted({**structured, "complement": ""}) or _clean(saved.formatted_address))
+        if not coords:
+            raise AddressNotLocated(short_line(saved))
+        structured["latitude"], structured["longitude"] = coords
+    structured["coordinates_source"] = SAVED
+    # O texto do cadastro, como o checkout do site: é por ele que o pedido
+    # reconhece o endereço já cadastrado (e não cria uma cópia).
+    structured["formatted_address"] = _clean(saved.formatted_address) or formatted(structured)
+    structured["is_verified"] = bool(saved.is_verified)
+    return structured
+
+
+def saved_offer(saved_list: list) -> str:
+    """A oferta do endereço cadastrado, antes de pedir qualquer coisa."""
+    text = f"Entregamos no endereço do seu cadastro, {short_line(saved_list[0])}?"
+    if len(saved_list) > 1:
+        text += " Se preferir outro endereço cadastrado, é só dizer qual."
+    return text
+
+
+def saved_listing(saved_list: list) -> str:
+    """Os endereços do cliente pelo rótulo, quando ele pede para escolher."""
+    rows = "; ".join(f"{saved.display_label}: {short_line(saved)}" for saved in saved_list)
+    return f"Seus endereços cadastrados: {rows}. Em qual entregamos?"
