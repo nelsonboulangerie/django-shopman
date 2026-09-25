@@ -53,7 +53,7 @@ def test_send_posts_to_comtele_and_trusts_haserror_flag():
         ok = notification_sms.send(
             "+55 (43) 99999-0001",
             "order_accepted",
-            {"order_ref": "ORD-1", "total": "R$ 56,00"},
+            {"order_ref": "ORD-260925-A47", "total": "R$ 56,00"},
         )
 
     assert ok is True
@@ -61,7 +61,7 @@ def test_send_posts_to_comtele_and_trusts_haserror_flag():
     assert captured["headers"]["X-api-key"] == "key-1"
     assert captured["payload"]["route"] == "17"
     assert captured["payload"]["receivers"] == ["5543999990001"]
-    assert "ORD-1" in captured["payload"]["message"]
+    assert "Pedido A47 " in captured["payload"]["message"]
 
 
 @override_settings(SHOPMAN_SMS=COMTELE_SETTINGS)

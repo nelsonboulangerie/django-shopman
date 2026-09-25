@@ -27,6 +27,7 @@ from shopman.shop.adapters import notification_email, notification_manychat
 from shopman.shop.services.notification import _eta_note
 
 MIGRATION = import_module("shopman.shop.migrations.0075_voz_dos_avisos_do_pedido")
+DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
 
 
 def _order(status: str):
@@ -73,11 +74,26 @@ def _seeded_templates() -> dict:
     raise AssertionError("FALLBACK_TEMPLATES sumiu do seed")
 
 
+SHORT_REF = import_module("shopman.shop.migrations.0077_mensagem_chama_pedido_pelo_final")
+
+
+def _through_later_migrations(event: str, subject: str, body: str) -> tuple[str, str]:
+    """O texto que uma migração deixou, depois das migrações de texto seguintes."""
+    if event == "order_dispatched" and body == DISPATCHED.OLD_BODY:
+        body = DISPATCHED.NEW_BODY
+    for row_event, old_subject, new_subject, old_body, new_body in SHORT_REF.TEXTS:
+        if row_event == event:
+            subject = new_subject if subject == old_subject else subject
+            body = new_body if body == old_body else body
+    return subject, body
+
+
 def test_migracao_chega_ao_mesmo_texto_do_seed():
     seeded = _seeded_templates()
     for event, _old_subject, new_subject, _old_body, new_body in MIGRATION.TEXTS:
-        assert seeded[event]["subject"] == new_subject, event
-        assert seeded[event]["body"] == new_body, event
+        subject, body = _through_later_migrations(event, new_subject, new_body)
+        assert seeded[event]["subject"] == subject, event
+        assert seeded[event]["body"] == body, event
 
 
 @pytest.mark.django_db
@@ -104,18 +120,17 @@ def test_migracao_troca_so_o_texto_antigo_do_seed():
     assert (tpl.subject, tpl.body) == (old_subject, old_body)
 
 
-DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
-
-
 def test_saida_para_entrega_nao_cumprimenta_e_bate_com_o_seed():
-    body = _seeded_templates()["order_dispatched"]["body"]
-    assert body == DISPATCHED.NEW_BODY
-    assert "customer_name_greeting" not in body
+    seeded = _seeded_templates()["order_dispatched"]
+    assert (seeded["subject"], seeded["body"]) == _through_later_migrations(
+        "order_dispatched", seeded["subject"], DISPATCHED.NEW_BODY
+    )
+    assert "customer_name_greeting" not in seeded["body"]
     for fallback in (
         notification_email.BODY_TEMPLATES["order_dispatched"],
         notification_manychat.MESSAGE_TEMPLATES["order_dispatched"],
     ):
-        assert fallback.startswith("Seu pedido {order_ref} saiu para entrega.")
+        assert fallback.startswith("Seu pedido {order_ref_short} saiu para entrega.")
 
 
 @pytest.mark.django_db
@@ -135,3 +150,35 @@ def test_migracao_da_saida_troca_so_o_texto_antigo_do_seed():
     DISPATCHED.forwards(apps, None)
     tpl.refresh_from_db()
     assert tpl.body == "Texto que o lojista escreveu."
+
+
+# ── O pedido é chamado pelo final do ref (decisão do dono, 25/09/2026) ─────────
+
+
+def test_contexto_traz_o_final_do_ref_e_mantem_o_ref_completo():
+    from shopman.shop.adapters._notification_templates import derive_context
+
+    ctx = derive_context({"order_ref": "NB-260925-A47"})
+    assert ctx["order_ref_short"] == "A47"
+    assert ctx["order_ref"] == "NB-260925-A47"
+    assert derive_context({})["order_ref_short"] == ""
+
+
+def test_migracao_do_final_bate_com_o_seed():
+    seeded = _seeded_templates()
+    for event, _old_subject, new_subject, _old_body, new_body in SHORT_REF.TEXTS:
+        assert (seeded[event]["subject"], seeded[event]["body"]) == (new_subject, new_body), event
+
+
+def test_nenhuma_mensagem_ao_cliente_diz_o_ref_completo():
+    """No texto, o pedido é o final; o ref completo só vive no link."""
+    from shopman.shop.adapters import notification_sms
+
+    textos = {f"seed:{k}": v["subject"] + v["body"] for k, v in _seeded_templates().items()}
+    textos |= {f"email:{k}": v for k, v in notification_email.SUBJECT_TEMPLATES.items()}
+    textos |= {f"email:{k}": v for k, v in notification_email.BODY_TEMPLATES.items()}
+    textos |= {f"manychat:{k}": v for k, v in notification_manychat.MESSAGE_TEMPLATES.items()}
+    textos |= {f"sms:{k}": v for k, v in notification_sms.MESSAGE_TEMPLATES.items()}
+    # O alerta crítico vai ao OPERADOR, que busca pelo ref completo.
+    culpados = [k for k, v in textos.items() if "{order_ref}" in v and not k.endswith(":operator_critical")]
+    assert culpados == []

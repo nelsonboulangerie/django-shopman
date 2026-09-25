@@ -272,6 +272,13 @@ describe("matchesQuery", () => {
     expect(matchesQuery(c, "café")).toBe(true);
     expect(matchesQuery(c, "pizza")).toBe(false);
   });
+
+  it("finds the order by its final alone — the name the customer's message uses", () => {
+    const c = card({ ref: "NB-260925-A47" });
+    expect(matchesQuery(c, "A47")).toBe(true);
+    expect(matchesQuery(c, "a47")).toBe(true);
+    expect(matchesQuery(c, "B12")).toBe(false);
+  });
 });
 
 describe("channelLabel", () => {

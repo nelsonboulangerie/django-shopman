@@ -583,7 +583,13 @@ def machine_phrase(label: str) -> str:
 
 
 def short_ref(ref: str) -> str:
-    """O número que o card mostra em destaque (o que vem depois do último hífen)."""
+    """O final do ref, que é o nome do pedido no dia (``NB-260925-A47`` → ``A47``).
+
+    É o que o card mostra em destaque, o que o balcão fala e o que a mensagem ao
+    cliente usa: uma régua só, para operador e cliente verem o mesmo código. É único
+    no dia entre os canais (``orderman.ids.generate_order_ref``). O ref completo
+    continua sendo o identificador (link, impresso).
+    """
     return str(ref).rsplit("-", 1)[-1]
 
 

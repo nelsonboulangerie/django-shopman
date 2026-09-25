@@ -1533,7 +1533,7 @@ def _equipment_fields(order: Order, *, channel_config=None) -> dict:
         options += tuple(EquipmentOptionProjection(
             ref=PREFIX + str(device.ref), label=device.label,
             enabled=device.active and device.current_order_id is None,
-            reason=(f"Na rua com o pedido {_short_ref(device.current_order.ref)}" if device.current_order_id else "Inativa" if not device.active else ""),
+            reason=(f"Na rua com o pedido {operator_orders.short_ref(device.current_order.ref)}" if device.current_order_id else "Inativa" if not device.active else ""),
             order_ref=device.current_order.ref if device.current_order_id else "",
         ) for device in devices if device.active or device.current_order_id)
     custody = operator_orders.equipment_custody(order)
@@ -1554,7 +1554,6 @@ def _equipment_fields(order: Order, *, channel_config=None) -> dict:
 
 
 machine_phrase = operator_orders.machine_phrase
-_short_ref = operator_orders.short_ref
 
 
 def _trip_fields(order: Order) -> dict:
@@ -1569,7 +1568,7 @@ def _trip_fields(order: Order) -> dict:
         lines.append(phrase[0].upper() + phrase[1:])
     if back.cash_q:
         many = len(back.orders) > 1
-        parts = [f"{_money(q)} do pedido{' ' + _short_ref(ref) if many else ''}" for ref, q in back.cash_parts]
+        parts = [f"{_money(q)} do pedido{' ' + operator_orders.short_ref(ref) if many else ''}" for ref, q in back.cash_parts]
         if back.change_q:
             parts.append(f"{_money(back.change_q)} de troco")
         if len(parts) > 1:

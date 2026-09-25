@@ -69,6 +69,14 @@ def derive_context(context: dict | None) -> dict:
     """
     ctx = dict(context or {})
 
+    # O nome do pedido NA MENSAGEM é o final do ref ("A47"): é o que o balcão fala e o
+    # que o card mostra em destaque, e é único no dia entre os canais
+    # (`orderman.ids.generate_order_ref`). O ref completo segue no link.
+    order_ref = str(ctx.get("order_ref") or "").strip()
+    from shopman.shop.services.operator_orders import short_ref
+
+    ctx["order_ref_short"] = short_ref(order_ref) if order_ref else ""
+
     name = str(ctx.get("customer_name") or "").strip()
     ctx["customer_name_greeting"] = f", {name}" if name else ""
 

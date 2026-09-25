@@ -94,3 +94,40 @@ def test_house_channels_keep_the_random_suffix_untouched():
     for channel in ("pdv", "web", "delivery"):
         ref = generate_order_ref(channel_ref=channel, business_date=date(2026, 9, 19))
         assert re.fullmatch(rf"{channel.upper()}-260919-[A-Z]\d{{2}}", ref)
+
+
+# ── O final é o nome do pedido no dia ─────────────────────────────────────────
+# A mensagem ao cliente e o balcão chamam o pedido só pelo final ("A47"). Então o
+# final não pode se repetir no mesmo dia, nem entre canais.
+
+
+def test_final_already_taken_by_another_channel_is_drawn_again(monkeypatch):
+    from shopman.orderman.models import Order
+
+    Order.objects.create(ref="POS-260504-A17", channel_ref="POS", session_key="k1", total_q=0)
+
+    seq = iter(["WEB-260504-A17", "WEB-260504-B22"])  # 1º repete o final do PDV
+    monkeypatch.setattr("shopman.orderman.ids._order_ref_candidate", lambda ch, day: next(seq))
+
+    assert generate_order_ref(channel_ref="web", business_date=date(2026, 5, 4)) == "WEB-260504-B22"
+
+
+def test_same_final_on_another_day_is_free(monkeypatch):
+    from shopman.orderman.models import Order
+
+    Order.objects.create(ref="POS-260503-A17", channel_ref="POS", session_key="k1", total_q=0)
+    monkeypatch.setattr("shopman.orderman.ids._order_ref_candidate", lambda ch, day: "WEB-260504-A17")
+
+    assert generate_order_ref(channel_ref="web", business_date=date(2026, 5, 4)) == "WEB-260504-A17"
+
+
+def test_preferred_suffix_ignores_house_finals():
+    """O número do iFood (dígitos) não colide com letra+2 dígitos da casa."""
+    from shopman.orderman.models import Order
+
+    Order.objects.create(ref="WEB-260919-A17", channel_ref="web", status=Order.Status.NEW)
+
+    assert generate_order_ref(channel_ref="ifood", business_date=date(2026, 9, 19), preferred_suffix="4994") == (
+        "IFOOD-260919-4994"
+    )
+

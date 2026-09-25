@@ -30,7 +30,7 @@
                 Olá{{ customer_name_greeting }}!
               </p>
               <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
-                Seu pedido <strong>{{ order_ref }}</strong> foi entregue.
+                Seu pedido <strong>{{ order_ref_short }}</strong> foi entregue.
                 {% if total %} Total: <strong>{{ total }}</strong>.{% endif %}
               </p>
               {% if fiscal_note_url %}
