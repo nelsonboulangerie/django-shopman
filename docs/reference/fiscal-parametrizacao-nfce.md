@@ -108,6 +108,15 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 - **Caixas presente:** são KIT — cada componente sai na nota com a própria tributação (PR do kit).
 - **Azeite:** 1509.20 (extravirgem) × 1509.90 (outros) — a nota do fornecedor decide.
 - **Água Prata:** 03.005.00 é embalagem plástica até 500 ml; se a garrafa for de vidro, 03.001.00.
+- **GTIN estrangeiro em homologação:** na NFC-e de teste 710 (24/09, homologação, autorizada) o
+  sistema ENVIOU o GTIN da geleia St. Dalfour (084380959042) e da Mostarda Maille (3036810201280),
+  mas o XML autorizado saiu com "SEM GTIN" nos dois — a troca foi feita pela Focus/SEFAZ de
+  homologação (provável: GTIN de prefixo estrangeiro fora do Cadastro Centralizado). O da Água Prata
+  (789…) passou. Em produção, se a SEFAZ rejeitar por GTIN, a nota é reemitida com "SEM GTIN" e o
+  produto marcado (`gtin_nf_rejected`, #1101) — a venda nunca trava por GTIN.
+- **Teste do caminho com e sem ST (NFC-e 710, homologação, cStat 100):** pão 5102/102 CEST 17.062.00;
+  Água 5405/500 CEST 03.005.00; geleia 5102/102 CEST 17.094.00 origem 2; Maille 5405/500 CEST
+  17.038.00 origem 2.
 
 ## 4. Setup de conta / SEFAZ (obrigatório p/ go-live — **não é código nosso**)
 
