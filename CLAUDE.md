@@ -213,7 +213,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
-surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
+surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
 ├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
@@ -221,13 +221,15 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as super
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
 ├── production-nuxt/   produção/fornadas (kiosk Solari, :3005)              → api./backstage
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
-├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento     → api./backstage
+├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
 └── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
                        retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
                        BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
                        tw-helper/translucent, harness de teste (tests/support/composableEnv).
                        Storefront fica de fora (superfície de cliente, branded, harness próprio).
+└── operator-router/   roteador por Host dos grupos de operador (ADR-030, zero dependências):
+                       `groups.json` diz qual app mora em `operator-floor`/`operator-office`.
     Cada app: BFF Nitro (proxy da layer; storefront mantém o próprio djangoProxy.ts, CSRF),
     composables + presentation/ pura (vitest).
 
@@ -351,10 +353,16 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   `@nuxt/test-utils` tinha faixa idêntica nos dez apps e três versões travadas diferentes.
   A referência é a versão **mais alta** presente, nunca a mais comum: por maioria o guard
   mandaria rebaixar `@nuxt/eslint` e `@nuxt/icon` — alinhados e velhos, o oposto do que foi
-  decidido. ⚠️ Superfície nova entra em TRÊS lugares: `.github/dependabot.yml` (cadência),
-  `surfaces-gate.yml` (teste) e `SURFACES` no Makefile. Faltar no primeiro não acusa nada e
-  envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente desde que nasceu e
-  atrasado em 16 pacotes de uma vez. Exceção existe, mas é **declarada com motivo** no
+  decidido. ⚠️ Superfície nova entra PRIMEIRO em `surfaces/registry.json` (id, diretório,
+  tipo, porta, grupo, subdomínio, env da URL, tile do Shopman Apps) e depois em cada lugar
+  que enumera superfícies — medidos em 24/09/2026: `.github/dependabot.yml` (cadência),
+  `surfaces-gate.yml` (teste e PWA), `SURFACES` no Makefile, `operator-router/groups.json`,
+  `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`, env da
+  URL), `operator-kit/app-identity.json`, as portas de dev no `CSRF_TRUSTED_ORIGINS`, os
+  defaults de dev do `projections/hub.py` e `SHOPMAN_SURFACE_URLS`. Faltar em um não acusa
+  nada e envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente do
+  Dependabot desde que nasceu e atrasado em 16 pacotes de uma vez; e com o Marketing e o
+  B.I., fora das origens de dev do CSRF até 24/09. Exceção existe, mas é **declarada com motivo** no
   `EXCEPTIONS` do guard (hoje uma: o pino exato do `operator-kit`), e nunca autoriza ficar
   para trás.
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:

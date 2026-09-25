@@ -223,8 +223,10 @@ if DEBUG:
         "https://*.ngrok.io",
         "https://*.ngrok.app",
         "https://*.trycloudflare.com",
-        # Nuxt dev surfaces (contíguo): storefront :3000 · central :3001 · pos :3002
-        # · kds :3003 · gestor :3004 · Produção :3005 · Compras :3008.
+        # Portas de dev das superfícies Nuxt — a MESMA lista de `dev_port` em
+        # surfaces/registry.json (a trava de registro confere): loja :3000 ·
+        # Shopman Apps :3001 · PDV :3002 · Cozinha :3003 · Gestor :3004 ·
+        # Produção :3005 · Marketing :3006 · B.I. :3007 · Compras :3008.
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:3001",
@@ -237,6 +239,10 @@ if DEBUG:
         "http://127.0.0.1:3004",
         "http://localhost:3005",
         "http://127.0.0.1:3005",
+        "http://localhost:3006",
+        "http://127.0.0.1:3006",
+        "http://localhost:3007",
+        "http://127.0.0.1:3007",
         "http://localhost:3008",
         "http://127.0.0.1:3008",
     ]
