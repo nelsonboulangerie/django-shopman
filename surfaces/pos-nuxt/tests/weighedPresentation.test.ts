@@ -121,6 +121,7 @@ describe("preço zero não vende", () => {
   it("o tile sem preço fica inerte com o motivo", () => {
     expect(productBlockedLabel({ price_q: 0, sold_out: false })).toBe("Sem preço");
     expect(productBlockedLabel({ price_q: 1200, sold_out: true })).toBe("Esgotado");
+    expect(productBlockedLabel({ price_q: 6000, sold_out: true, sold_out_reason: "Sem caixa" })).toBe("Sem caixa");
     expect(productBlockedLabel({ price_q: 1200, sold_out: false })).toBe("");
   });
 });

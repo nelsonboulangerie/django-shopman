@@ -825,38 +825,193 @@ def _build_fiscal_items(order) -> list[dict]:
     (``Product.metadata['fiscal']`` → profile + NCM/CEST → CFOP/CSOSN/origem/
     PIS/COFINS). NFC-e is intrastate, so ``interstate=False``. A per-line
     override in ``item.meta['fiscal']`` still wins (rare).
+
+    **Kit sai aberto na nota** (decisão do dono, 24/09/2026). Linha cujo produto
+    tem componentes (``offerman.ProductComponent``) vira uma linha fiscal POR
+    COMPONENTE, cada uma com a tributação do próprio componente (NCM, CEST,
+    perfil, origem, GTIN): a caixa presente com pão, geleia e vinho não pode sair
+    com o NCM de pão para o vinho. O rateio do preço está em
+    :func:`_kit_lines`. Os pacotes de N unidades do mesmo pão (``BRBB2`` =
+    2 × ``BRBB``) seguem a mesma regra, de propósito: sai "2 × Brioche Burger
+    Bun" pelo preço do pacote, com o fiscal do pão — é o mesmo pão, e a nota
+    diz o que foi entregue. Caixa presente com preço próprio: os itens saem
+    pelo preço avulso e o ágio sai na linha da embalagem (ver
+    :func:`_kit_lines`). Kit sem mercadoria (só a caixa, ou nada) não chega
+    aqui vendido: fica ``is_sellable=False`` (``apply_grocery_catalog``).
     """
-    from shopman.fiscalman.classification import from_metadata, resolve_fiscal_item
+    order_items = list(order.items.all())
+    skus = [item.sku for item in order_items]
+    products_by_sku = _products_by_sku(skus)
+    components_by_sku = _kit_components_by_sku(skus)
 
     items = []
-    products_by_sku = _products_by_sku([item.sku for item in order.items.all()])
-    for item in order.items.all():
-        product = products_by_sku.get(item.sku)
-        metadata = dict(getattr(product, "metadata", None) or {})
-        fiscal = resolve_fiscal_item(from_metadata(metadata))
+    for item in order_items:
         override = (item.meta or {}).get("fiscal")
-        if override:
-            fiscal = {**fiscal, **dict(override)}
-        # Vendido por peso, a quantidade da linha É quilo (0,312) e o valor
-        # unitário é o preço do quilo: a unidade comercial não pode ser a "UN"
-        # que a classificação fiscal traz por padrão — a nota diria 0,312
-        # unidade. Não é segunda opinião fiscal: é a unidade da quantidade.
-        from shopman.shop.services.weighed_sale import is_sold_by_weight
-
-        if is_sold_by_weight(getattr(product, "unit", "")):
-            fiscal = {**fiscal, "unit": "KG", "unidade_comercial": "KG"}
-        items.append({
-            "sku": item.sku,
-            "name": item.name,
-            "qty": str(item.qty.normalize()) if hasattr(item.qty, "normalize") else float(item.qty),
-            "unit": getattr(product, "unit", "") or fiscal.get("unit") or "UN",
-            "unit_price_q": item.unit_price_q,
-            "total_q": item.line_total_q,
-            "meta": dict(item.meta or {}),
-            "fiscal": fiscal,
-            "gtin": _trusted_gtin(metadata),
-        })
+        components = components_by_sku.get(item.sku)
+        if components:
+            items.extend(_kit_lines(item, components, override))
+            continue
+        items.append(_fiscal_line(
+            products_by_sku.get(item.sku),
+            sku=item.sku,
+            name=item.name,
+            qty=item.qty,
+            unit_price_q=item.unit_price_q,
+            total_q=item.line_total_q,
+            meta=dict(item.meta or {}),
+            override=override,
+        ))
     return items
+
+
+def _fiscal_line(product, *, sku, name, qty, unit_price_q, total_q, meta, override) -> dict:
+    """Uma linha do payload fiscal, com a tributação resolvida do ``product``."""
+    from shopman.fiscalman.classification import from_metadata, resolve_fiscal_item
+
+    from shopman.shop.services.weighed_sale import is_sold_by_weight
+
+    metadata = dict(getattr(product, "metadata", None) or {})
+    fiscal = resolve_fiscal_item(from_metadata(metadata))
+    if override:
+        fiscal = {**fiscal, **dict(override)}
+    # Vendido por peso, a quantidade da linha É quilo (0,312) e o valor
+    # unitário é o preço do quilo: a unidade comercial não pode ser a "UN"
+    # que a classificação fiscal traz por padrão — a nota diria 0,312
+    # unidade. Não é segunda opinião fiscal: é a unidade da quantidade.
+    if is_sold_by_weight(getattr(product, "unit", "")):
+        fiscal = {**fiscal, "unit": "KG", "unidade_comercial": "KG"}
+    return {
+        "sku": sku,
+        "name": name,
+        "qty": str(qty.normalize()) if hasattr(qty, "normalize") else float(qty),
+        "unit": getattr(product, "unit", "") or fiscal.get("unit") or "UN",
+        "unit_price_q": unit_price_q,
+        "total_q": total_q,
+        "meta": meta,
+        "fiscal": fiscal,
+        "gtin": _trusted_gtin(metadata),
+    }
+
+
+def _kit_lines(item, components: list, override) -> list[dict]:
+    """Abre a linha do kit em uma linha fiscal por componente.
+
+    **Quantidade**: ``qty da linha × qty do componente`` (2 caixas com 3 pães
+    = 6 pães).
+
+    **Valor — primeiro o preço cheio do kit** (``meta['_list_q']``, o preço de
+    lista carimbado antes de qualquer desconto; sem ele, ``unit_price_q``) ×
+    qty da linha, repartido assim:
+
+    - **Kit com ágio** (preço do kit > soma dos componentes avulsos, e o kit
+      declara a embalagem — componente com ``metadata['kit_packaging']``):
+      cada componente sai pelo **preço avulso** (``base_price_q × qty``) e a
+      **diferença** sai na linha da embalagem (a caixa física entregue ao
+      cliente, NCM de embalagem, perfil sem ST, sem GTIN). O serviço de
+      montagem vai embutido no valor da mercadoria: no Simples a caixa
+      presente é VENDA DE MERCADORIA, e NFC-e não tem ISS — não existe linha
+      de serviço a separar.
+    - **Kit com desconto** (soma avulsa ≥ preço do kit), ou kit sem embalagem
+      declarada: **sem linha de embalagem**. O preço do kit é rateado entre os
+      componentes proporcional ao preço avulso (todos zerados → rateio igual).
+      A embalagem não entra com valor simbólico: ela simplesmente não aparece.
+
+    **Depois o desconto da venda** (o que o ``line_total_q`` cobrado ficou
+    abaixo do preço cheio): aplicado ao total do kit e rateado entre TODAS as
+    linhas acima, embalagem inclusa, proporcional ao valor de cada uma. Na
+    prática as duas etapas são um rateio só do ``line_total_q`` pelos pesos
+    acima — sem desconto, cada linha recebe exatamente o seu peso.
+
+    Cada fatia é arredondada para baixo e o resto de centavos vai na ÚLTIMA
+    linha: a soma fecha o total cobrado da linha original centavo a centavo,
+    que é o que a SEFAZ confere contra o pagamento. O desconto do PEDIDO o
+    adapter rateia depois, sobre estas linhas, como sobre qualquer outra.
+
+    **Valor unitário**: ``total ÷ qty`` arredondado; quando não fecha, o
+    adapter deriva ``vUnCom`` de ``vProd/qCom`` (até 10 casas).
+    **Fiscal**: do produto componente. Um ``meta['fiscal']`` na linha do kit
+    (override manual, raro) vale para todas as linhas abertas.
+    ``meta['kit']`` guarda de qual linha a linha veio (``sku``, ``name``,
+    ``qty``), para quem reconciliar a nota com o pedido.
+    """
+    from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+
+    line_qty = Decimal(str(item.qty))
+    charged_q = int(item.line_total_q)
+    list_unit_q = (item.meta or {}).get("_list_q")
+    if list_unit_q is None:
+        list_unit_q = item.unit_price_q
+    full_q = int((Decimal(int(list_unit_q or 0)) * line_qty).to_integral_value(rounding=ROUND_HALF_UP))
+
+    packaging = [pc for pc in components if _is_kit_packaging(pc.component)]
+    goods = [pc for pc in components if not _is_kit_packaging(pc.component)]
+    goods_weights = [
+        Decimal(int(pc.component.base_price_q or 0)) * Decimal(str(pc.qty)) * line_qty for pc in goods
+    ]
+    goods_sum = sum(goods_weights, Decimal(0))
+
+    if packaging and Decimal(full_q) > goods_sum:
+        # Ágio: avulsos pelo preço de lista, a diferença na caixa.
+        lines_to_emit = [*goods, packaging[0]]
+        weights = [*goods_weights, Decimal(full_q) - goods_sum]
+    else:
+        # Desconto (ou kit sem embalagem declarada): sem linha de caixa.
+        lines_to_emit = goods or components  # kit só com a caixa: ela leva tudo
+        weights = goods_weights if goods else [Decimal(0)] * len(components)
+        if sum(weights, Decimal(0)) <= 0:
+            weights = [Decimal(1)] * len(lines_to_emit)
+    weight_sum = sum(weights, Decimal(0))
+
+    lines = []
+    allocated = 0
+    kit_meta = {"sku": item.sku, "name": item.name, "qty": str(line_qty.normalize())}
+    for idx, (pc, weight) in enumerate(zip(lines_to_emit, weights, strict=True)):
+        if idx == len(lines_to_emit) - 1:
+            share_q = charged_q - allocated
+        else:
+            share_q = int((Decimal(charged_q) * weight / weight_sum).to_integral_value(rounding=ROUND_DOWN))
+        allocated += share_q
+        qty = line_qty * Decimal(str(pc.qty))
+        unit_price_q = int((Decimal(share_q) / qty).to_integral_value(rounding=ROUND_HALF_UP)) if qty else 0
+        lines.append(_fiscal_line(
+            pc.component,
+            sku=pc.component.sku,
+            name=pc.component.name,
+            qty=qty,
+            unit_price_q=unit_price_q,
+            total_q=share_q,
+            meta={"kit": kit_meta},
+            override=override,
+        ))
+    return lines
+
+
+def _is_kit_packaging(product) -> bool:
+    """A caixa física do kit (``metadata['kit_packaging']``): recebe o ágio."""
+    metadata = getattr(product, "metadata", None)
+    return isinstance(metadata, dict) and metadata.get("kit_packaging") is True
+
+
+def _kit_components_by_sku(skus: list[str]) -> dict[str, list]:
+    """Componentes (``ProductComponent``) por SKU do kit, em ordem estável.
+
+    A ordem decide quem recebe o resto de centavos do rateio (a última linha),
+    então é a de cadastro (``pk``), nunca a do banco. Falha de leitura SOBE,
+    pelo mesmo motivo de :func:`_products_by_sku`.
+    """
+    if not skus:
+        return {}
+    from shopman.offerman.models import ProductComponent
+
+    by_sku: dict[str, list] = {}
+    rows = (
+        ProductComponent.objects.filter(parent__sku__in=set(skus))
+        .select_related("parent", "component")
+        .order_by("parent_id", "pk")
+    )
+    for pc in rows:
+        by_sku.setdefault(pc.parent.sku, []).append(pc)
+    return by_sku
 
 
 def _trusted_gtin(metadata: dict) -> str:

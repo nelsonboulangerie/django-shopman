@@ -68,7 +68,21 @@ fontes ou mais concordando) e não da NF-e nem da embalagem, o produto guarda
 ``metadata['gtin_source'] = "web, a confirmar na embalagem"``.
 
 **Caixas presente** (:data:`GIFT_BOXES`): produto da casa, SKU da casa, sem
-GTIN nem marca de revenda; entram no lugar da ``LN``. Os placeholders que
+GTIN nem marca de revenda; entram no lugar da ``LN``. Caixa presente é **kit**
+(``metadata['kit'] = True``, decisão do dono em 24/09): na NFC-e cada
+componente sai como item próprio, com a tributação dele. A caixa tem preço
+próprio (montagem, embalagem especial), maior que a soma dos itens avulsos:
+os itens saem pelo preço avulso e o ágio sai na linha da **embalagem** — a
+caixa física, componente declarado do kit que este comando cria
+(``<SKU>-EMB``, "Caixa Presente <nome> (embalagem)", ``metadata['kit_packaging']``,
+NCM de papelão/cartão configurável por caixa, perfil sem ST, sem GTIN, sem
+listagem — não se vende avulsa). A caixa física é **item de estoque limitado**
+(dono, 24/09): cadastro de compra do mesmo SKU, saldo em unidades, e restringe
+a venda do kit como qualquer componente — sem caixa, kit indisponível (ver
+``_ensure_packaging``). Kit sem mercadoria na composição
+(só a caixa) não tem o que pôr na nota, então fica ``is_sellable=False`` — no
+produto e na listagem — até o dono definir o que vai dentro. Ligar a venda
+depois de cadastrar a composição é passo do gestor: o comando não religa. Os placeholders que
 saíram (MT, QP, CX, BK, GR, LN, THL) saem pelo ``apply_catalog_decisions``.
 
 **Placeholders da despensa que viram produto real** (:data:`REAL_PLACEHOLDERS`):
@@ -408,19 +422,42 @@ class RealPlaceholder:
     weight_g: int
 
 
+#: NCM da caixa física, por material (TIPI): 4819.20.00 = caixas e
+#: cartonagens dobráveis de papel ou cartão NÃO ondulado (o padrão); 4819.10.00
+#: = caixas de papel ou cartão ondulado; 4602.19.00 = cesta de vime (obras de
+#: cestaria de outras matérias vegetais).
+PACKAGING_NCM_FOLDING_CARTON = "48192000"
+PACKAGING_NCM_CORRUGATED = "48191000"
+PACKAGING_NCM_WICKER = "46021900"
+
+
 @dataclass(frozen=True)
 class GiftBox:
-    """Caixa presente montada na casa: SKU da casa, sem GTIN, marca da loja."""
+    """Caixa presente montada na casa: SKU da casa, sem GTIN, marca da loja.
+
+    ``packaging_ncm`` é o NCM da caixa física (a embalagem que o cliente leva),
+    configurável por kit conforme o material.
+    """
 
     sku: str
     name: str
     price_q: int
     ncm: str
+    packaging_ncm: str = PACKAGING_NCM_FOLDING_CARTON
+
+    @property
+    def packaging_sku(self) -> str:
+        return f"{self.sku}-EMB"
+
+    @property
+    def packaging_name(self) -> str:
+        return f"{self.name} (embalagem)"
 
 
 #: As quatro caixas presente (planilha consolidada; entram no lugar do `LN`,
-#: decisão do dono em 24/09). Composição ainda indefinida: vendável no PDV,
-#: sem ficha, despublicada na loja. A marca da casa vem do
+#: decisão do dono em 24/09). São kits, e a composição ainda é indefinida:
+#: cadastradas, listadas no PDV e FORA da venda até o dono definir o que vai
+#: dentro (ver ``_apply_gift_box``); despublicadas na loja. A marca da casa vem do
 #: `apply_product_brands`.
 GIFT_BOXES: tuple[GiftBox, ...] = (
     GiftBox("DIJON", "Caixa Presente Dijon", 27000, "19059090"),
@@ -669,20 +706,130 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
 
 
 def _apply_gift_box(box: GiftBox, collection, report: dict) -> None:
-    """Caixa presente: produto da casa. Sem GTIN, sem marca de revenda."""
+    """Caixa presente: produto da casa, e kit. Sem GTIN, sem marca de revenda.
+
+    A caixa física entra na composição como embalagem (:func:`_ensure_packaging`).
+    Kit sem MERCADORIA na composição não vende: a NFC-e abre o kit em um item
+    por componente (``shop/services/fiscal._kit_lines``), e sem os itens a nota
+    sairia só com a caixa. O resto da composição não se inventa — quem define é
+    o dono.
+    """
+    from shopman.offerman.models import ListingItem
+
     product = _get_or_build(box.sku, box.name, box.price_q, unit="un", weight_g=None, ncm=box.ncm,
                             report=report)
-    if product.pk is None:
+    is_new = product.pk is None
+    lines: list[str] = []
+    if is_new:
         from config.management.commands.apply_fiscal_ncm import house_cest_for
 
         cest = house_cest_for(box.ncm)
         if cest:
             product.metadata["fiscal"]["cest"] = cest
+    metadata = _metadata(product)
+    if metadata.get("kit") is not True:
+        metadata["kit"] = True
+        product.metadata = metadata
+        lines.append("kit: marcado")
+    has_goods = not is_new and any(
+        not (pc.component.metadata or {}).get("kit_packaging")
+        for pc in product.components.select_related("component")
+    )
+    if not has_goods and product.is_sellable:
+        product.is_sellable = False
+        if not is_new:
+            lines.append("venda: desligada até ter composição")
+    if is_new:
         product.save()
         report["created"].append(box)
+    elif lines:
+        product.save()
+        report["updated"].append((box.sku, lines))
+    _ensure_packaging(box, product, report)
     product.keywords.add(COLLECTION_REF, "presente", "caixa")
     _ensure_collection(product, collection)
     _sync_listings(product, product.base_price_q, report)
+    if not product.is_sellable:
+        ListingItem.objects.filter(product=product, is_sellable=True).update(is_sellable=False)
+    if not has_goods:
+        report["kits_without_components"].append(
+            (box.sku, "caixa presente sem composição: fora da venda até o dono definir")
+        )
+
+
+def _ensure_packaging(box: GiftBox, kit, report: dict) -> None:
+    """A caixa física do kit: componente declarado, item de ESTOQUE, sem venda avulsa.
+
+    - **Nota**: recebe o ágio do kit (preço do kit − soma avulsa dos itens);
+      NCM de embalagem por material, perfil ``standard`` (sem ST: a embalagem
+      é da casa), sem GTIN. Sem preço próprio: o valor dela é a diferença.
+    - **Estoque limitado** (dono, 24/09: "a caixa é, em si, um item de estoque
+      limitado, e pode restringir sim a venda do kit"): cadastro de compra do
+      mesmo SKU (entra pelo Compras, como embalagem), unidade, política
+      ``stock_only``. Entra na disponibilidade do kit como qualquer componente
+      (kit disponível = mínimo dos componentes) e na reserva/baixa da venda.
+      Sem caixa, o kit fica indisponível.
+    - **Rastreada desde o primeiro dia**: o Stockman trata SKU sem nenhum saldo
+      como "não rastreado" (sempre disponível). Por isso a caixa nasce com um
+      saldo ZERO na posição de venda (a de recebimento da revenda,
+      ``receiving_position``; no Nelson, ``vitrine``) — é a verdade até a primeira
+      nota ou contagem, e é o que faz "sem caixa" valer. Banco sem posição
+      ainda (o seed, que chama isto antes de criar as posições) ganha o
+      estoque inicial no próprio seed.
+    - **Não vendável avulsa**: sem listagem em canal nenhum. ``is_sellable``
+      fica ligado porque é a chave comercial que o Stockman lê — desligada, a
+      caixa contaria como pausada e derrubaria todo kit que a usa.
+    """
+    from shopman.offerman.models import AvailabilityPolicy, Product, ProductComponent
+
+    lines: list[str] = []
+    wanted_fiscal = {"profile": "standard", "ncm": box.packaging_ncm, "unit": "UN"}
+    packaging = Product.objects.filter(sku=box.packaging_sku).first()
+    if packaging is None:
+        packaging = Product.objects.create(
+            sku=box.packaging_sku, name=box.packaging_name, base_price_q=0, unit="un",
+            is_published=False, is_sellable=True,
+            availability_policy=AvailabilityPolicy.STOCK_ONLY,
+            metadata={"kit_packaging": True, "fiscal": wanted_fiscal},
+        )
+        lines.append(f"embalagem: {packaging.sku} (NCM {box.packaging_ncm}, estoque)")
+    else:
+        have_ncm = (_metadata(packaging).get("fiscal") or {}).get("ncm")
+        if have_ncm != box.packaging_ncm:
+            report["conflicts"].append((packaging.sku, "ncm", have_ncm, box.packaging_ncm))
+    _material, purchasable = ensure_purchase_record(packaging)
+    if purchasable:
+        lines.append(f"compra: cadastro de compra de {packaging.sku}")
+    if _ensure_tracked(packaging.sku):
+        lines.append(f"estoque: {packaging.sku} rastreado (saldo 0 até a primeira nota ou contagem)")
+    _link, created = ProductComponent.objects.get_or_create(
+        parent=kit, component=packaging, defaults={"qty": 1}
+    )
+    if created:
+        lines.append(f"composição: + {packaging.sku}")
+    if lines:
+        report["updated"].append((box.sku, lines))
+
+
+def _ensure_tracked(sku: str) -> bool:
+    """Saldo zero na posição de venda para o SKU que ainda não tem saldo nenhum.
+
+    ``Quant`` sem movimento é coerente com o invariante do Stockman
+    (``_quantity == Σ moves == 0``) e é o que tira o SKU de "não rastreado".
+    Devolve se criou. Sem posição de venda no banco, não cria.
+    """
+    from shopman.stockman.models import Quant
+
+    from shopman.shop.services.receiving_position import RESALE, position_for_role
+
+    if Quant.objects.filter(sku=sku).exists():
+        return False
+    # A mesma régua do recebimento do Compras: revenda entra onde se vende.
+    position = position_for_role(RESALE)
+    if position is None or not position.is_saleable:
+        return False
+    Quant.objects.get_or_create(sku=sku, position=position, target_date=None, batch="")
+    return True
 
 
 def _apply_placeholder(real: RealPlaceholder, report: dict) -> None:
@@ -870,13 +1017,15 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
     ``listed``/``unlisted`` [(sku, listagem)], ``conflicts`` [(sku, campo, atual,
     tabela)], ``refused`` [(sku, motivo)], ``no_price`` [(sku, motivo)],
     ``aliases`` [(nome no Yooga, antes, depois)],
-    ``missing`` [sku], ``left_out`` [(sku, motivo)].
+    ``missing`` [sku], ``left_out`` [(sku, motivo)],
+    ``kits_without_components`` [(sku, motivo)].
     """
     from shopman.offerman.models import Collection
 
     report: dict[str, list] = {
         "created": [], "updated": [], "listed": [], "unlisted": [], "conflicts": [],
         "refused": [], "no_price": [], "aliases": [], "missing": [],
+        "kits_without_components": [],
         "left_out": sorted(LEFT_OUT.items()),
     }
     refs = {COLLECTION_REF, *(item.collection for item in GROCERY)}
@@ -940,6 +1089,8 @@ class Command(BaseCommand):
         for sku, field, have, want in report["conflicts"]:
             out.write(self.style.WARNING(f"  {sku:38s} {field} já é {have!r} (a tabela diz {want!r}) — mantido"))
         for sku, reason in report["no_price"]:
+            out.write(self.style.WARNING(f"  {sku:38s} {reason}"))
+        for sku, reason in report["kits_without_components"]:
             out.write(self.style.WARNING(f"  {sku:38s} {reason}"))
         for sku, reason in report["refused"]:
             out.write(self.style.ERROR(f"  {sku:38s} recusado: {reason}"))

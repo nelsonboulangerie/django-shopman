@@ -146,9 +146,11 @@ export function isWeighedLine(item: Pick<POSCartItem, "weighed">): boolean {
 
 /** Produto que não pode entrar no pedido: sem preço no catálogo (nenhum canal
  *  vende preço zero) ou esgotado. "" quando vende. */
-export function productBlockedLabel(product: Pick<POSProductProjection, "price_q" | "sold_out">): string {
+export function productBlockedLabel(
+  product: Pick<POSProductProjection, "price_q" | "sold_out" | "sold_out_reason">,
+): string {
   if (!(product.price_q > 0)) return "Sem preço";
-  if (product.sold_out) return "Esgotado";
+  if (product.sold_out) return product.sold_out_reason || "Esgotado";
   return "";
 }
 

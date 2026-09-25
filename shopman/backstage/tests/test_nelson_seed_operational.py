@@ -163,8 +163,9 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA) + 4
     # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
     # Os insumos (sem cadastro de venda) seguem 75; a revenda soma o cadastro de
-    # compra do mesmo SKU — um por item de `RESALE` e da Mercearia.
-    from config.management.commands.apply_grocery_catalog import GROCERY, OPENINGS
+    # compra do mesmo SKU — um por item de `RESALE` e da Mercearia, e um por
+    # caixa física das caixas presente (a embalagem entra pelo Compras).
+    from config.management.commands.apply_grocery_catalog import GIFT_BOXES, GROCERY, OPENINGS
     from config.management.commands.apply_product_brands import RESALE
 
     vendaveis = set(Product.objects.values_list("sku", flat=True))
@@ -176,7 +177,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert tablete.metadata["opens_into"]["sku"] == opening.opened_sku
         assert RecipeItem.objects.filter(input_sku=opening.opened_sku, recipe__is_active=True).exists()
     assert set(Material.objects.filter(sku__in=vendaveis).values_list("sku", flat=True)) == (
-        set(RESALE) | {item.sku for item in GROCERY}
+        set(RESALE) | {item.sku for item in GROCERY} | {box.packaging_sku for box in GIFT_BOXES}
     )
     # A divisão do café não é cosmética: são dois fornecedores, e um deles vem
     # direto do produtor. Quem usa cada um vem da ficha, não do nome.
