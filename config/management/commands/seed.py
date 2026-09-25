@@ -71,7 +71,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
-from config.management.commands.apply_fiscal_ncm import house_cest_for
+from config.management.commands.apply_fiscal_ncm import CROQUE_FISCAL_NOTE, house_cest_for
 from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
 from config.management.commands.apply_search_presence import (
@@ -2414,6 +2414,12 @@ class Command(BaseCommand):
             "default": "19059090",
             # Só o pão de forma de verdade fica em 1905.90.10.
             "FORMA": "19059010",
+            # Sanduíche com embutido predominante é Cap. 16 (ver
+            # `apply_fiscal_ncm.NCM_CORRECTIONS`); croques, queijo-quente e
+            # pain perdu seguem 1905.90.90.
+            "HOD": "16010000",
+            "HODP": "16010000",
+            "JB": "16024100",
             # ── Bebidas PREPARADAS na loja (revisão de 23/09/2026) ───────────
             # O capítulo 22 é o das bebidas PRONTAS; o 21.01 e o 21.06 são das
             # preparações que servem para FAZER bebida (pó solúvel, extrato,
@@ -4793,6 +4799,9 @@ class Command(BaseCommand):
             "MANTEIGA-PRESIDENT-COM-SAL": ("g", 60), "WASABI": ("g", 365),
             "PEPINO-CORNICHO-CONSERVA": ("g", 365), "FLOR-DE-SAL": ("g", None),
         }
+        from config.management.commands.apply_fiscal_ncm import MATERIAL_NCM
+
+        material_ncm = {sku: ncm for sku, ncm, _source in MATERIAL_NCM}
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
             metadata = {k: v for k, v in profile.items() if k != "label"}
@@ -4806,6 +4815,8 @@ class Command(BaseCommand):
                     metadata["alt_suppliers"] = alternativos
             elif sku == "PRESUNTO-CASA":
                 metadata["supplier_note"] = "produção própria (jambon blanc da casa)"
+            if sku in material_ncm:
+                metadata["ncm"] = material_ncm[sku]
             Material.objects.update_or_create(
                 sku=sku,
                 defaults={
@@ -5012,6 +5023,11 @@ class Command(BaseCommand):
                         # invariante de massa da ficha (`Recipe.clean`) e impede
                         # que uma massa volte a render mais do que pesa.
                         **({"output_unit": "g"} if _is_preparation(rd["ref"]) else {}),
+                        # O croque sai na nota como produto de padaria (1905.90.90)
+                        # enquanto o presunto não passar de 20% do peso do
+                        # sanduíche: acima disso a Nota 2 do Cap. 16 o leva para
+                        # 1602 (auditoria fiscal de 24/09).
+                        **({"fiscal_note": CROQUE_FISCAL_NOTE} if rd["ref"].startswith("croque-") else {}),
                     },
                 },
             )

@@ -98,9 +98,9 @@ def test_a_manteiga_president_abre_em_insumo_pesado_e_quem_declarou_manda(catalo
     tablete = Material.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200")
     # Abre no insumo que as fichas já usam: nenhuma ficha precisa mudar.
     assert tablete.metadata["opens_into"] == {
-        "sku": "MANTEIGA-PRESIDENT-COM-SAL", "quantity": "0.200", "shelf_life_days": 30,
+        "sku": "MANTEIGA-PRESIDENT-COM-SAL", "quantity": "200", "shelf_life_days": 30,
     }
-    assert Material.objects.get(sku="MANTEIGA-PRESIDENT-COM-SAL").unit == "kg"
+    assert Material.objects.get(sku="MANTEIGA-PRESIDENT-COM-SAL").unit == "g"
 
     # O que o operador mudar no Compras não é desfeito por rodar de novo.
     tablete.metadata = {**tablete.metadata, "opens_into": {"sku": "OUTRO", "quantity": "0.2"}}
@@ -588,3 +588,13 @@ def test_os_gtins_da_agua_fecham_o_digito():
 
     assert gtin_is_valid(RESALE["AGUA-MINERAL-PRATA-310"]["gtin"])
     assert gtin_is_valid(next(i for i in GROCERY if i.sku == "AGUA-GAS-PRATA-310").gtin)
+
+
+def test_a_manteiga_abre_na_unidade_do_insumo_que_ela_vira():
+    """O tablete de 200 g abre em 200 g — a base dos insumos é a grama."""
+    from decimal import Decimal
+
+    for opening in command.OPENINGS:
+        assert opening.opened_unit == "g", opening.sku
+        weight = next(i.weight_g for i in GROCERY if i.sku == opening.sku)
+        assert Decimal(opening.quantity) == Decimal(weight), opening.sku
