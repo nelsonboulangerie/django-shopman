@@ -213,7 +213,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
         "body": "Saiu do forno",
         "variables": {
             "product_name": "Baguete", "product_sku": "BAGUETE", "available_qty": "12",
-            "availability_phrase": "Neste momento ainda temos 12 unidades.",
+            "availability_phrase": "No momento temos 12 un. disponíveis.",
             "product_image_url": "https://cdn.example/baguete.jpg",
         },
     }
@@ -227,7 +227,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
     assert SHARED_FIELDS <= set(seen[0]), SHARED_FIELDS - set(seen[0])
     assert seen[0]["customer_name"] == "Pablo"
     assert seen[0]["available_qty"] == "12"
-    assert seen[0]["availability_phrase"] == "Neste momento ainda temos 12 unidades."
+    assert seen[0]["availability_phrase"] == "No momento temos 12 un. disponíveis."
 
 
 def test_the_photo_url_must_be_absolute(db, settings):

@@ -6,17 +6,12 @@ from decimal import Decimal, InvalidOperation
 
 
 def availability_phrase(available_qty) -> str:
-    """Human-ready availability line for approved WhatsApp templates."""
-    qty = _positive_decimal(available_qty)
-    if qty is None:
-        return "Já está disponível para pedido."
+    """A frase pronta de disponibilidade, COM ponto final (campanhas, marketing).
 
-    if qty == qty.to_integral_value():
-        text = str(int(qty))
-    else:
-        text = format(qty.normalize(), "f").replace(".", ",")
-    unit = "unidade" if qty == Decimal("1") else "unidades"
-    return f"Neste momento ainda temos {text} {unit}."
+    É a ``availability_note`` fechada: o texto da quantidade existe uma vez só, na
+    redação do dono (25/09/2026). A nota sem ponto é a do template que fecha a frase.
+    """
+    return f"{availability_note(available_qty)}."
 
 
 def availability_note(available_qty) -> str:
