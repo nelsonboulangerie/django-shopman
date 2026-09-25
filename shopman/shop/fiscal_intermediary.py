@@ -186,6 +186,39 @@ def unreadable_breakdown(order) -> str:
     )
 
 
+def issues_as_presential(order, *, requested_tax_id: str) -> bool:
+    """Esta entrega intermediada sai como NFC-e PRESENCIAL, sem destinatário?
+
+    Decisão do dono (24/09/2026), praxe do mercado (ERPs de restaurante fazem
+    assim); a confirmação do contador fica registrada como pendência dele.
+
+    A nota de entrega a domicílio (``indPres=4``) exige destinatário
+    identificado (E01-20 → 787), endereço (E05-20 → 788) e transportador
+    (X03-20 → 786). O marketplace só repassa o documento quando o cliente pede
+    a nota — o caso comum é chegar sem CPF, e o cliente já foi embora com o
+    pedido fechado no app de outro. Nesse caso a venda é declarada como
+    **presencial** (``indPres=1``), consumidor não identificado, sem endereço,
+    sem frete e sem transportador. A taxa de entrega que foi da casa não some
+    da nota: vira **outras despesas** (``vOutro``), para o total bater com o que
+    o cliente pagou à casa.
+
+    **Só vale para canal intermediado.** Nos canais próprios (loja, PDV,
+    WhatsApp) o dono decidiu o contrário: o CPF é exigido na ENTRADA do pedido
+    de entrega, e entrega sem ele continua recusada e gritando. Com documento,
+    a venda intermediada segue a nota de entrega completa.
+
+    ``requested_tax_id`` é o documento PEDIDO para esta nota (``fiscal.tax_id``),
+    nunca o do cadastro. Documento informado e inválido **não** entra aqui: é
+    pedido de nota com dado errado, e a recusa ruidosa do adapter continua
+    sendo a resposta certa.
+    """
+    if not is_intermediated(order):
+        return False
+    if (order.data or {}).get("fulfillment_type") != "delivery":
+        return False
+    return not _digits(requested_tax_id)
+
+
 def seller_amounts(order) -> dict | None:
     """A base da nota desta venda intermediada: ``{"base_q", "freight_q"}``.
 
@@ -236,6 +269,7 @@ __all__ = [
     "house_delivered",
     "intermediary_for",
     "is_intermediated",
+    "issues_as_presential",
     "missing_configuration",
     "seller_amounts",
     "unreadable_breakdown",

@@ -235,8 +235,14 @@ def build_emission_payload(order) -> dict:
     if _payment_below_total(payment, order):
         raise ValueError("Pagamento fiscal abaixo da base da nota. Corrija antes de reprocessar.")
     payment = _payment_net_of_change(payment, note_base_q(order))
+    customer = _fiscal_customer(data)
+    # Entrega intermediada sem documento sai presencial, sem destinatário nem
+    # frete — ver fiscal_intermediary.issues_as_presential. Canal próprio nunca.
+    presential = fiscal_intermediary.issues_as_presential(
+        order, requested_tax_id=customer.get("tax_id") or "",
+    )
     delivery = None
-    if data.get("fulfillment_type") == "delivery":
+    if data.get("fulfillment_type") == "delivery" and not presential:
         delivery = {"address": dict(data.get("delivery_address_structured") or {})}
     payload = {"order_ref": order.ref}
     if order.channel_ref:
@@ -244,8 +250,8 @@ def build_emission_payload(order) -> dict:
     items = _build_fiscal_items(order)
     amounts = fiscal_intermediary.seller_amounts(order)
     if amounts is not None and amounts["freight_q"] > 0:
-        items.append(_intermediary_freight_item(amounts["freight_q"]))
-    payload.update(items=items, payment=payment, customer=_fiscal_customer(data), delivery=delivery)
+        items.append(_intermediary_freight_item(amounts["freight_q"], as_other_expense=presential))
+    payload.update(items=items, payment=payment, customer=customer, delivery=delivery)
     intermediary = fiscal_intermediary.intermediary_for(order)
     if intermediary is not None:
         payload["intermediary"] = intermediary
@@ -277,7 +283,7 @@ def _fiscal_payment(order, data: dict) -> dict:
     return payment
 
 
-def _intermediary_freight_item(freight_q: int) -> dict:
+def _intermediary_freight_item(freight_q: int, *, as_other_expense: bool = False) -> dict:
     """A taxa de entrega que É DA CASA vira a linha de frete da nota.
 
     Pedido de marketplace não tem a linha ``__DELIVERY_FEE__`` que o carrinho
@@ -285,7 +291,23 @@ def _intermediary_freight_item(freight_q: int) -> dict:
     como item. O adapter fiscal separa frete de mercadoria por esta marca e
     nunca mapeia a linha como produto — por isso ela não precisa (nem deve ter)
     classificação fiscal.
+
+    ``as_other_expense``: a nota sai presencial, sem frete
+    (``fiscal_intermediary.issues_as_presential``), e a mesma taxa entra como
+    **outras despesas** (``vOutro``). A linha ganha outra marca, e o adapter a
+    declara em ``valor_outras_despesas``, nunca como frete nem como mercadoria.
     """
+    if as_other_expense:
+        return {
+            "sku": "__OTHER_EXPENSE__",
+            "name": "Taxa de entrega",
+            "qty": "1",
+            "unit": "UN",
+            "unit_price_q": int(freight_q),
+            "total_q": int(freight_q),
+            "meta": {"type": "other_expense"},
+            "fiscal": {},
+        }
     return {
         "sku": "__DELIVERY_FEE__",
         "name": "Taxa de entrega",

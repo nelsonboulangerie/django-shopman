@@ -278,20 +278,28 @@ def _build_nfce_payload(
     # Dados fiscais incompletos recusam a emissão antes do HTTP, sem reclassificar
     # a operação nem reduzir o valor declarado para contornar validações.
     fee_items = [item for item in items if _is_delivery_fee_item(item)]
-    merchandise = [item for item in items if not _is_delivery_fee_item(item)]
+    expense_items = [item for item in items if _is_other_expense_item(item)]
+    merchandise = [
+        item for item in items if not _is_delivery_fee_item(item) and not _is_other_expense_item(item)
+    ]
     freight_q = sum(int(item.get("total_q") or 0) for item in fee_items)
+    other_q = sum(int(item.get("total_q") or 0) for item in expense_items)
 
     if not merchandise:
         raise FocusNFePayloadError("NFC-e exige ao menos um item.")
 
     if freight_q and delivery is None:
         raise FocusNFePayloadError("Pedido com taxa de entrega sem indicação de entrega a domicílio.")
+    if other_q and delivery is not None:
+        # Outras despesas é a taxa da nota PRESENCIAL; na nota de entrega a
+        # mesma taxa é frete. As duas juntas contariam o dinheiro duas vezes.
+        raise FocusNFePayloadError("Taxa de entrega como outras despesas numa nota de entrega a domicílio.")
     home_delivery = _home_delivery_fields(config, customer, delivery) if delivery is not None else None
 
     mapped_items = [_map_item(idx, item, config) for idx, item in enumerate(merchandise, start=1)]
     product_total_q = _sum_focus_money_q(mapped_items, "valor_bruto")
     payment_total_q = _payment_total_q(payment)
-    note_total_q = payment_total_q or (product_total_q + freight_q)
+    note_total_q = payment_total_q or (product_total_q + freight_q + other_q)
 
     payload = {
         "cnpj_emitente": _focus_cnpj_emitente(config),
@@ -317,10 +325,19 @@ def _build_nfce_payload(
         _apportion_over_items(mapped_items, freight_q, field="valor_frete")
         payload.update(home_delivery)
 
+    if other_q:
+        # vOutro no total (W15) e rateado por item (I17a): a regra W15-10
+        # confere o total contra o somatório dos itens, como o vDesc. Nome do
+        # campo conferido na referência canônica da Focus
+        # (campos.focusnfe.com.br, NotaFiscalXML e ItemNotaFiscalXML):
+        # ``valor_outras_despesas`` nos dois níveis.
+        payload["valor_outras_despesas"] = _money_q(other_q)
+        _apportion_over_items(mapped_items, other_q, field="valor_outras_despesas")
+
     # SEFAZ valida vDesc do TOTAL contra o somatório dos itens (confirmado em
     # homologação): o desconto é rateado por item, proporcional ao valor
     # bruto, com o resíduo do arredondamento no último item.
-    discount_q = product_total_q + freight_q - note_total_q
+    discount_q = product_total_q + freight_q + other_q - note_total_q
     if discount_q > 0:
         payload["valor_desconto"] = _money_q(discount_q)
         _apportion_over_items(mapped_items, discount_q, field="valor_desconto")
@@ -509,6 +526,16 @@ def _money_to_q(value) -> int:
 def _is_delivery_fee_item(item: dict) -> bool:
     meta = item.get("meta") or {}
     return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
+
+
+def _is_other_expense_item(item: dict) -> bool:
+    """Linha que a nota declara em outras despesas (``vOutro``), não como produto.
+
+    Hoje nasce só em ``services.fiscal._intermediary_freight_item``: a taxa de
+    entrega da casa numa venda intermediada emitida como presencial.
+    """
+    meta = item.get("meta") or {}
+    return item.get("sku") == "__OTHER_EXPENSE__" or meta.get("type") == "other_expense"
 
 
 # Campos tributários que o adapter NÃO adivinha. Cada um chega resolvido pelo

@@ -733,6 +733,18 @@ Cada linha de `items` leva `gtin` (`str`): o GTIN confiável do produto
 inclusive frete zero; `null` indica retirada. Dado insuficiente impede emitir,
 sem substituir por operação presencial ou retirar o frete dos valores.
 
+⚠️ **Uma exceção, só para canal intermediado** (decisão do dono, 24/09/2026,
+praxe do mercado; confirmação do contador pendente): entrega de canal
+declarado em `SHOPMAN_FISCAL_INTERMEDIARIES` **sem** `fiscal.tax_id` sai com
+`delivery=null` — NFC-e presencial (`indPres=1`), consumidor não identificado,
+sem endereço, `modalidade_frete=9`, sem transportador
+(`fiscal_intermediary.issues_as_presential`). Se a entrega foi da casa, a taxa
+vai como linha `sku="__OTHER_EXPENSE__"` (`meta.type="other_expense"`) e o
+adapter a declara em `valor_outras_despesas` (vOutro, W15/I17a), para o total
+bater com o pagamento; se foi a plataforma, a taxa fica fora. Documento
+informado e inválido não entra na exceção (recusa ruidosa). Canal próprio
+nunca: lá o CPF é exigido na entrada do pedido de entrega.
+
 ⚠️ **Fonte da verdade das regras de NFC-e: NT + XSD, nunca o MOC 7.00 em PDF.**
 O PDF que o CONFAZ publica (Anexo I, nov/2020) é o último MOC consolidado e
 está defasado em pelo menos três pontos que tocam este payload: traz a B25b-20
