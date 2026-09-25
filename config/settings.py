@@ -1758,7 +1758,20 @@ SHOPMAN_FOCUS_NFE = {
     "completa_nfce": os.environ.get("FOCUS_NFE_NFCE_COMPLETA", "1"),
     "local_destino_nfce": os.environ.get("FOCUS_NFE_NFCE_LOCAL_DESTINO", "1"),
     "presenca_comprador_nfce": os.environ.get("FOCUS_NFE_NFCE_PRESENCA_COMPRADOR", "1"),
+    # Modalidade do frete (X02) — tabela do MOC 7.00, Anexo I, item 357, criada
+    # pela NT 2016.002: 0=CIF remetente, 1=FOB destinatário, 2=por conta de
+    # Terceiros, 3=Transporte Próprio do remetente, 4=Transporte Próprio do
+    # destinatário, 9=Sem Ocorrência de Transporte.
+    #
+    # Três casos, três valores — ver `_delivery_freight_mode` no adapter:
+    # venda sem entrega = 9; entrega da CASA = 3 (transporte próprio);
+    # entrega de PLATAFORMA = 2 (o iFood contratou e bancou o frete; 9 seria
+    # afirmar que transporte não houve, e houve).
     "modalidade_frete_nfce": os.environ.get("FOCUS_NFE_NFCE_MODALIDADE_FRETE", "9"),
+    "modalidade_frete_delivery": os.environ.get("FOCUS_NFE_NFCE_MODALIDADE_FRETE_ENTREGA", "3"),
+    "modalidade_frete_third_party": os.environ.get(
+        "FOCUS_NFE_NFCE_MODALIDADE_FRETE_TERCEIRO", "2"
+    ),
     "natureza_operacao": os.environ.get("FOCUS_NFE_NATUREZA_OPERACAO", "VENDA AO CONSUMIDOR"),
     # CFOP de fabricação própria decidido pelo dono em 2026-08-19 (5102, não 5101:
     # a Nelson não é registrada como indústria). Mesmo valor do perfil `standard`
@@ -1767,6 +1780,36 @@ SHOPMAN_FOCUS_NFE = {
     "timeout": int(os.environ.get("FOCUS_NFE_TIMEOUT", "30")),
     "base_url": os.environ.get("FOCUS_NFE_BASE_URL", ""),
 }
+#: Em quantos MINUTOS após a Autorização de Uso uma NFC-e ainda pode ser
+#: cancelada. É prazo de lei, não preferência da loja — por isso mora aqui, no
+#: deployment (que sabe em que UF está), e não em ``Shop.defaults``.
+#:
+#: **30 minutos no Paraná.** RICMS/PR (Decreto 7.871/2017), Anexo III, Subanexo
+#: I, art. 35, na redação do Decreto 10.858/2018 (alteração 194ª, efeitos desde
+#: 1º.10.2018): "O emitente poderá solicitar o cancelamento da NFC-e, desde que
+#: não tenha havido a saída da mercadoria, em prazo não superior a 30 (trinta)
+#: minutos, contado do momento em que foi concedida a Autorização de Uso da
+#: NFC-e". O nacional é o Ajuste SINIEF 19/16, cláusula décima quinta, na
+#: redação do Ajuste SINIEF 7/18, que fixa os 30 minutos como TETO que cada UF
+#: pode reduzir — o PR não reduziu.
+#:
+#: ⚠️ São DUAS condições cumulativas, e esta constante é só a primeira: a outra
+#: é "não ter havido a saída da mercadoria". Ver
+#: ``shopman.shop.services.fiscal.GOODS_NOT_DISPATCHED``.
+#:
+#: ⚠️ As 24 horas que circulam por aí são a redação ORIGINAL do art. 35, morta
+#: em 30.9.2018 — e as 168 horas são NF-e modelo 55 (Subanexo I, art. 11), mais
+#: a hipótese de contingência do art. 35-A. Nenhuma das duas vale para a NFC-e
+#: desta casa. **Não existe cancelamento extemporâneo de NFC-e no PR**: fora do
+#: prazo o caminho é documento fiscal de estorno (RICMS/2017, art. 298, VII),
+#: limpo dentro do mesmo período de apuração e, depois dele, com os acréscimos
+#: legais do § 2º do mesmo artigo.
+#:
+#: Só mexa daqui se a loja mudar de UF, e com a norma da UF nova na mão.
+SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES = int(
+    os.environ.get("NFCE_CANCELLATION_WINDOW_MINUTES", "30")
+)
+
 SHOPMAN_PURCHASE_INVOICE_READER = os.environ.get("SHOPMAN_PURCHASE_INVOICE_READER", "").strip()
 SHOPMAN_PURCHASE_NFE = {
     "environment": os.environ.get("PURCHASE_NFE_ENVIRONMENT", SHOPMAN_FOCUS_NFE["environment"]).strip().lower()

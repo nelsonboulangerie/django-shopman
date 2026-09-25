@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import timedelta
 
+from django.conf import settings
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from shopman.utils.monetary import format_money
 
 from shopman.shop import directives, fiscal_intermediary
@@ -140,6 +144,99 @@ def late_emission_rule_text(days: int) -> str:
     return f"Só dá para emitir nota de venda de até {days} dia{'s' if days > 1 else ''} atrás."
 
 
+#: Enquanto o pedido está num destes, a mercadoria ainda está NA CASA.
+#:
+#: É a segunda condição do art. 35 do Subanexo I do Anexo III do RICMS/PR —
+#: cancelar exige "que não tenha havido a saída da mercadoria" — e é também a
+#: pergunta que o estoque faz antes de creditar de volta (se o pão saiu com o
+#: entregador, devolvê-lo ao saldo inventaria o que não está na prateleira).
+#: Duas perguntas diferentes sobre o MESMO fato físico, por isso um conjunto só.
+GOODS_NOT_DISPATCHED = frozenset({"new", "accepted", "preparing", "ready"})
+
+#: O que dá para fazer com uma NFC-e autorizada que precisa ser desfeita.
+CANCEL_AND_REISSUE = "cancel_and_reissue"
+RETURN_NOTE = "return_note"
+CANCELLATION_PATH_UNKNOWN = "unknown"
+
+
+def cancellation_window_minutes() -> int:
+    """Quantos minutos após a Autorização de Uso a NFC-e ainda pode ser cancelada.
+
+    O número e a norma que o sustenta moram em
+    ``settings.SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES`` — é lei da UF, não
+    regra desta lógica. Valor ilegível cai em zero, que é o lado seguro: manda
+    para o estorno, que sempre vale, em vez de mandar cancelar uma nota fora do
+    prazo (e receber a recusa do autorizador com a mercadoria já na rua).
+    """
+    try:
+        return max(0, int(getattr(settings, "SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES", 30)))
+    except (TypeError, ValueError):
+        logger.warning("fiscal.cancellation_window_minutes: valor ilegível em settings; usando 0")
+        return 0
+
+
+def nfce_authorized_at(order):
+    """Quando a Autorização de Uso saiu, ou ``None`` se a nota não disse.
+
+    É o instante que o art. 35 manda contar, e vem da SEFAZ (``data_autorizacao``
+    da Focus) — não do nosso relógio, nem da hora em que gravamos.
+    """
+    raw = (order.data or {}).get("nfce_authorized_at")
+    if not raw:
+        return None
+    parsed = parse_datetime(str(raw))
+    if parsed is None:
+        logger.warning("fiscal.nfce_authorized_at: data ilegível %r em %s", raw, order.ref)
+        return None
+    return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+
+
+def cancellation_path(order) -> dict:
+    """Como desfazer a NFC-e já autorizada deste pedido.
+
+    ``{"path", "deadline", "minutes_left", "reason"}``. São dois caminhos de
+    verdade, e a diferença entre eles é prazo, não preferência:
+
+    - :data:`CANCEL_AND_REISSUE` — dentro da janela do art. 35 **e** com a
+      mercadoria ainda na casa. Cancela e emite de novo.
+    - :data:`RETURN_NOTE` — fora da janela, ou mercadoria já despachada. No
+      Paraná **não existe cancelamento extemporâneo**: o caminho é documento
+      fiscal de estorno (RICMS/2017, art. 298, VII), limpo dentro do mesmo
+      período de apuração e, depois dele, com os acréscimos legais do § 2º.
+    - :data:`CANCELLATION_PATH_UNKNOWN` — a nota não trouxe a hora da
+      autorização, então o prazo não pode ser medido. Não vira "provavelmente
+      dá tempo": vira pergunta explícita, porque errar para o lado do
+      cancelamento é tentar cancelar fora do prazo e ficar sem documento nenhum.
+
+    ``reason`` diz QUAL das duas condições fechou a porta — ``window_closed``
+    ou ``goods_dispatched``. Não é detalhe: o aviso que diz "o prazo passou"
+    para um pedido já entregue, com a nota de dois minutos atrás, está mentindo
+    — e manda o operador procurar o erro no relógio.
+    """
+    window = cancellation_window_minutes()
+    authorized_at = nfce_authorized_at(order)
+    if authorized_at is None:
+        return {
+            "path": CANCELLATION_PATH_UNKNOWN, "deadline": None,
+            "minutes_left": None, "reason": "",
+        }
+
+    deadline = authorized_at + timedelta(minutes=window)
+    minutes_left = (deadline - timezone.now()).total_seconds() / 60
+    dispatched = str(getattr(order, "status", "")) not in GOODS_NOT_DISPATCHED
+    if minutes_left <= 0 or dispatched:
+        return {
+            "path": RETURN_NOTE, "deadline": deadline, "minutes_left": minutes_left,
+            # Quando as duas fecharam, a saída da mercadoria é a que se diz: é a
+            # irreversível, e é a que o operador consegue conferir com os olhos.
+            "reason": "goods_dispatched" if dispatched else "window_closed",
+        }
+    return {
+        "path": CANCEL_AND_REISSUE, "deadline": deadline,
+        "minutes_left": minutes_left, "reason": "",
+    }
+
+
 def issue_override(order) -> dict:
     """A autorização gravada da emissão avulsa, ou ``{}``."""
     value = ((order.data or {}).get("fiscal") or {}).get(ISSUE_OVERRIDE_KEY)
@@ -247,7 +344,12 @@ def build_emission_payload(order) -> dict:
     )
     delivery = None
     if data.get("fulfillment_type") == "delivery" and not presential:
-        delivery = {"address": dict(data.get("delivery_address_structured") or {})}
+        delivery = {
+            "address": dict(data.get("delivery_address_structured") or {}),
+            # Quem transportou decide a modalidade do frete (X02) e se a padaria
+            # se declara transportadora. Venda direta é sempre da casa.
+            "by_house": fiscal_intermediary.house_delivered(order),
+        }
     payload = {"order_ref": order.ref}
     if order.channel_ref:
         payload["channel_ref"] = order.channel_ref
@@ -262,6 +364,7 @@ def build_emission_payload(order) -> dict:
     else:
         _alert_intermediary_not_declared(order)
     _alert_intermediary_base_unknown(order)
+    _alert_intermediary_benefit_unattributed(order)
     return payload
 
 
@@ -522,6 +625,40 @@ def _alert_intermediary_base_unknown(order) -> None:
         ),
         order_ref=order.ref,
         dedupe_key=f"fiscal_intermediary_base_unknown:{order.ref}",
+    )
+
+
+def _alert_intermediary_benefit_unattributed(order) -> None:
+    """Cupom de venda intermediada sem patrocinador legível: grite.
+
+    Terceiro irmão de :func:`_alert_intermediary_not_declared` e
+    :func:`_alert_intermediary_base_unknown`. Cupom patrocinado pela LOJA é
+    desconto e derruba a base; cupom patrocinado pelo iFood, por parceiro
+    externo ou pela rede é repasse e COMPÕE a base. Sem saber qual é, a conta
+    escolhe o lado que declara a mais — nunca a menos —, e essa escolha não
+    pode ficar só no código.
+    """
+    missing = fiscal_intermediary.unattributable_benefits(order)
+    if not missing:
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    logger.error(
+        "fiscal.intermediary_benefit_unattributed order=%s channel=%s motivo=%s",
+        order.ref, order.channel_ref, missing,
+    )
+    create_operator_alert(
+        type="fiscal_intermediary_benefit_unattributed",
+        severity="critical",
+        message=(
+            f"A NFC-e do pedido {order.ref} vai declarar o cupom como repasse da "
+            f"plataforma (base cheia), porque não deu para saber quem o patrocinou: "
+            f"{missing}. Se o cupom era da loja, a nota está declarando a MAIS — "
+            "confira no portal do iFood antes de fechar o mês."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"fiscal_intermediary_benefit_unattributed:{order.ref}",
     )
 
 

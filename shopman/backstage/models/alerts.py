@@ -151,6 +151,11 @@ class OperatorAlert(models.Model):
         # então a nota sai pelo total CHEIO — com a receita da plataforma
         # dentro da base tributável.
         ("fiscal_intermediary_base_unknown", "NFC-e de marketplace com base não corrigida"),
+        # Terceiro da mesma família: o cupom existe, mas não dá para saber quem
+        # o patrocinou. Cupom da LOJA é desconto e derruba a base; cupom da
+        # plataforma é repasse e COMPÕE a base. Sem saber, a nota sai pela base
+        # cheia — declara a mais, nunca a menos — e alguém precisa conferir.
+        ("fiscal_intermediary_benefit_unattributed", "NFC-e de marketplace com cupom sem patrocinador"),
         # A mercadoria SAIU (despacho ou conclusão) com a nota ainda na fila ou
         # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
         # barrar é do dono.

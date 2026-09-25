@@ -81,6 +81,48 @@ def test_a_backend_written_strictly_to_the_contract_survives_the_handler(emit_di
     assert backend.received["delivery"] == {"address": {"route": "Rua X"}}
 
 
+def test_the_authorization_date_is_persisted_as_the_clock_of_the_cancellation_window(
+    emit_directive,
+):
+    """A hora da Autorização de Uso é gravada: é dela que conta o art. 35."""
+    backend = ContractOnlyBackend()
+    backend.emit = lambda **kwargs: FiscalDocumentResult(  # type: ignore[method-assign]
+        success=True, access_key="4125" + "0" * 40, status="authorized",
+        authorization_date="2026-09-25T10:15:00-03:00",
+    )
+
+    NFCeEmitHandler(backend).handle(message=emit_directive, ctx={})
+
+    order = Order.objects.get(ref=emit_directive.payload["order_ref"])
+    assert order.data["nfce_authorized_at"] == "2026-09-25T10:15:00-03:00"
+
+
+def test_an_authorization_date_that_is_not_text_is_stored_empty_instead_of_exploding(
+    emit_directive,
+):
+    """O destino é um JSONField, e o contrato tipa o campo como ``str | None``.
+
+    Um backend que devolva outra coisa (um ``Mock`` num teste, um objeto de
+    data num backend futuro) fazia a gravação inteira estourar em
+    ``Object of type X is not JSON serializable`` — e junto com ela ia a chave
+    de acesso, que é o registro que NÃO pode se perder: sem ele a nota fica
+    autorizada na SEFAZ sem rastro local. Vazio tem caminho próprio ("não deu
+    para medir o prazo"); exceção na serialização não tem.
+    """
+    backend = ContractOnlyBackend()
+    backend.emit = lambda **kwargs: FiscalDocumentResult(  # type: ignore[method-assign]
+        success=True, access_key="4125" + "0" * 40, status="authorized",
+        authorization_date=object(),  # type: ignore[arg-type]
+    )
+
+    NFCeEmitHandler(backend).handle(message=emit_directive, ctx={})
+
+    order = Order.objects.get(ref=emit_directive.payload["order_ref"])
+    assert order.data["nfce_authorized_at"] == ""
+    # O que importa preservar sobreviveu.
+    assert order.data["nfce_access_key"] == "4125" + "0" * 40
+
+
 def test_the_reference_adapter_accepts_every_keyword_the_contract_declares():
     adapter = set(inspect.signature(FocusNFeBackend.emit).parameters)
     missing = _contract_params() - adapter
