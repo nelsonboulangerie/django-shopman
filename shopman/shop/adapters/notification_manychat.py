@@ -18,24 +18,24 @@ logger = logging.getLogger(__name__)
 
 MESSAGE_TEMPLATES: dict[str, str] = {
     "order_received": (
-        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref}. "
-        "O estabelecimento vai conferir a disponibilidade. Acompanhe: {tracking_url}"
+        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref}."
+        "\nEstamos conferindo a disponibilidade e avisamos em seguida."
+        "\nAcompanhe por aqui: {tracking_url}"
     ),
     "order_accepted": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} foi confirmado."
-        " Total: {total}. Obrigado pela preferência! \U0001f950{tracking_suffix}"
+        "Seu pedido {order_ref} está confirmado. Total: {total}."
+        "\nJá vamos preparar.{tracking_suffix}"
     ),
     "order_preparing": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} está em preparo."
-        "{tracking_suffix}"
+        "Estamos preparando seu pedido {order_ref}.{eta_note}{tracking_suffix}"
     ),
     "order_ready_pickup": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} está pronto"
-        " para retirada! \U0001f389\n\nVenha buscar. Obrigado!{tracking_suffix}"
+        "Seu pedido {order_ref} está pronto e esperando por você no balcão."
+        " \U0001f950{tracking_suffix}"
     ),
     "order_ready_delivery": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} está pronto"
-        " e será enviado em breve! \U0001f4e6{tracking_suffix}"
+        "Seu pedido {order_ref} está pronto e aguardando o entregador."
+        "\nAvisamos assim que sair. \U0001f4e6{tracking_suffix}"
     ),
     "order_dispatched": (
         "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
@@ -50,7 +50,7 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     "order_rejected": (
-        "Seu pedido {order_ref} não pôde ser confirmado pelo estabelecimento.{reason_note}"
+        "Não conseguimos confirmar o pedido {order_ref}.{reason_note}"
         "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila

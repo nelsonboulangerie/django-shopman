@@ -563,7 +563,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
     },
     "TRACKING_PROMISE_PAYMENT_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento confirmado")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento recebido")},
     },
     "TRACKING_PROMISE_READY_PICKUP_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pronto para retirada")},
@@ -575,7 +575,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebido")},
     },
     "TRACKING_STEP_AVAILABILITY_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Aceito")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Confirmado")},
     },
     "TRACKING_STEP_PAYMENT_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pago")},
@@ -785,9 +785,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Atualizar")},
     },
     # Pago e conferindo é UM momento: a frase absorve o fato do pagamento em vez
-    # de empilhar um "Pagamento confirmado." solto (o histórico já registra o passo).
+    # de empilhar um "Pagamento recebido." solto (o histórico já registra o passo).
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento confirmado. Estamos conferindo a disponibilidade.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos conferindo a disponibilidade.")},
     },
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},
@@ -818,7 +818,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
-                    "Pagamento confirmado. Sua reserva está na fila de espera da fornada "
+                    "Pagamento recebido. Sua reserva está na fila de espera da fornada "
                     "prevista para {when}. Avisamos quando sair."
                 ),
             ),
@@ -828,7 +828,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
-                    "Pagamento confirmado. Sua reserva está na fila de espera. "
+                    "Pagamento recebido. Sua reserva está na fila de espera. "
                     "Avisamos quando estiver pronto."
                 ),
             ),
@@ -851,14 +851,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+                message="Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
             ),
         },
     },
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento confirmado. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+                message="Pagamento recebido. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
             ),
         },
     },

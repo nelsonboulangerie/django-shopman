@@ -65,6 +65,9 @@ def status_tone(status: str | None) -> str:
 # em `new` (nenhuma regra de pagamento o mapeia) e a lista "Meus pedidos".
 _CUSTOMER_STATUS_COPY: dict[str, tuple[str, str]] = {
     "new": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
+    # O operador ACEITA; o cliente lê que o pedido está CONFIRMADO — a mesma
+    # palavra do aviso `order_accepted` e do marco da linha do tempo (mesma chave).
+    "accepted": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Confirmado"),
 }
 
 
