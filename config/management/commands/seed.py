@@ -60,7 +60,6 @@ from shopman.orderman.models import (
     Directive,
     Fulfillment,
     FulfillmentItem,
-    IdempotencyKey,
     Order,
     OrderEvent,
     OrderItem,
@@ -6852,88 +6851,11 @@ class Command(BaseCommand):
             )
             created += 1
 
-        late_paid = self._create_edge_order(
-            seed_key="security:payment-after-cancel",
-            channel_ref=web.ref,
-            status=Order.Status.CANCELLED,
-            product=product,
-            qty=Decimal("3"),
-            customer=low_attention,
-            created_at=now - timedelta(minutes=26),
-            data={
-                "customer": {"name": getattr(low_attention, "name", "Cliente distraído")},
-                "payment": {
-                    "method": "pix",
-                    "amount_q": product.base_price_q * 3,
-                    "expires_at": (now - timedelta(minutes=10)).replace(microsecond=0).isoformat(),
-                },
-                "fulfillment_type": "pickup",
-                "cancellation_reason": "customer_requested",
-                "edge_case": "late_payment_after_cancel",
-                "availability_decision": {"approved": True, "source": "seed:edge", "decisions": []},
-            },
-        )
-        if late_paid:
-            self._attach_edge_payment_intent(
-                late_paid,
-                method=PaymentIntent.Method.PIX,
-                status=PaymentIntent.Status.CAPTURED,
-                gateway=self._pix_gateway(),
-                gateway_id="seed-edge-pix-after-cancel",
-                captured_at=now - timedelta(minutes=5),
-            )
-            OperatorAlert.objects.get_or_create(
-                type="payment_after_cancel",
-                order_ref=late_paid.ref,
-                defaults={
-                    "severity": "critical",
-                    "message": (
-                        f"Pagamento capturado depois do cancelamento do pedido {late_paid.ref}. "
-                        "Validar reembolso e comunicação com o cliente."
-                    ),
-                },
-            )
-            self._mark_edge_webhook_replay(
-                scope="webhook:efi-pix",
-                source="e2e",
-                source_id="seed-edge-e2e-after-cancel",
-                response_body={
-                    "status": "processed",
-                    "txid": f"seed-edge-pix-after-cancel-{late_paid.ref}",
-                    "e2e_id": "seed-edge-e2e-after-cancel",
-                },
-                now=now,
-            )
-            created += 1
-
         # Cenário "iFood parado" (pedido NEW há 46min + alerta stale) foi omitido de
         # propósito: a coluna Entrada nasce 100% vazia para testar a chegada de pedidos
         # novos ao vivo. O comportamento do alerta stale_new_order segue coberto em testes.
 
         self.stdout.write(f"  ✅ {created} cenários determinísticos de borda")
-
-    def _mark_edge_webhook_replay(
-        self,
-        *,
-        scope: str,
-        source: str,
-        source_id: str,
-        response_body: dict,
-        now,
-    ) -> None:
-        from shopman.shop.services.webhook_idempotency import stable_webhook_key
-
-        key = f"{source}:{stable_webhook_key(source_id)}"
-        IdempotencyKey.objects.update_or_create(
-            scope=scope,
-            key=key,
-            defaults={
-                "status": "done",
-                "response_code": 200,
-                "response_body": response_body,
-                "expires_at": now + timedelta(days=30),
-            },
-        )
 
     def _create_edge_order(
         self,
