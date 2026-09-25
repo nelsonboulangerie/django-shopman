@@ -296,14 +296,23 @@ def _webhook_errors(url, caplog):
     """Posta uma mensagem e devolve os ERROR do logger do webhook (``shopman`` não propaga)."""
     webhook_logger = logging.getLogger(webhook.__name__)
     webhook_logger.addHandler(caplog.handler)
-    previous = webhook_logger.level
+    previous = (webhook_logger.level, webhook_logger.propagate)
     webhook_logger.setLevel(logging.DEBUG)
+    # Captura única: com propagação ligada (varia por ambiente; na CI está), o
+    # handler-raiz do caplog pegaria o MESMO record de novo.
+    webhook_logger.propagate = False
     try:
         response = post(url, event())
     finally:
         webhook_logger.removeHandler(caplog.handler)
-        webhook_logger.setLevel(previous)
-    errors = [r for r in caplog.records if r.name == webhook.__name__ and r.levelno >= logging.ERROR]
+        webhook_logger.setLevel(previous[0])
+        webhook_logger.propagate = previous[1]
+    # Mensagens distintas: a asserção não depende de quantas vezes um mesmo
+    # record foi capturado.
+    errors = sorted({
+        r.getMessage() for r in caplog.records
+        if r.name == webhook.__name__ and r.levelno >= logging.ERROR
+    })
     return response, errors
 
 
@@ -335,7 +344,7 @@ def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, o
     response, errors = _webhook_errors(url, caplog)
     assert response.json() == {"status": "disabled", "reason": reason}
     assert len(errors) == 1
-    assert reason in errors[0].getMessage()
+    assert reason in errors[0]
 
 
 def test_no_network_lookup_in_ack(url, intake, monkeypatch):
