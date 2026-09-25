@@ -80,7 +80,7 @@ def test_send_falls_back_to_text_when_event_not_mapped():
 
     assert ok is True
     assert captured["body"]["type"] == "text"
-    assert "pedido B09 " in captured["body"]["text"]["body"]
+    assert "pedido *B09* " in captured["body"]["text"]["body"]
 
 
 @override_settings(SHOPMAN_WHATSAPP=dict(_CFG, PHONE_NUMBER_ID="", ACCESS_TOKEN=""))

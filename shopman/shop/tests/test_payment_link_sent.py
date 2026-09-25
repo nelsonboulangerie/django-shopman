@@ -36,6 +36,7 @@ from django.utils import timezone
 from shopman.cashman import services as cash
 from shopman.orderman.models import Directive, Order
 
+from config.management.commands.seed import NOTIFICATION_TEMPLATES
 from shopman.shop.adapters import notification_email, notification_manychat, notification_sms
 from shopman.shop.adapters._notification_templates import derive_context, render_message, render_template
 from shopman.shop.config import ChannelConfig
@@ -128,7 +129,7 @@ class TestDeriveContextPrazo:
 
         assert ctx["payment_deadline"], "o prazo cru é o campo personalizado do ManyChat"
         assert ctx["payment_deadline_note"] == (
-            f"\nPara garantir o pedido, é só pagar até {ctx['payment_deadline']}. Depois disso a reserva é liberada."
+            f"\nAté {ctx['payment_deadline']}. Depois disso liberamos a reserva."
         )
 
     def test_sem_prazo_as_duas_chaves_sao_vazias(self):
@@ -186,7 +187,7 @@ def _renders(context: dict) -> dict[str, str]:
         "sms": notification_sms._build_message("payment_link_sent", ctx),
         "email.body": render_message("payment_link_sent", ctx, notification_email.BODY_TEMPLATES),
         "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["payment_link_sent"], ctx),
-        "seed": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_link_sent"]["body"], ctx),
+        "seed": render_template(NOTIFICATION_TEMPLATES["payment_link_sent"]["body"], ctx),
     }
 
 
@@ -207,16 +208,16 @@ class TestRenderDosTresCanais:
         for channel, text in _renders(with_deadline).items():
             if channel == "email.subject":
                 continue
-            assert "é só pagar até " in text, f"{channel}: {text!r}"
-            assert "a reserva é liberada" in text, f"{channel}: {text!r}"
-            assert "pagar até ." not in text, f"{channel}: {text!r}"
+            assert "Até " in text, f"{channel}: {text!r}"
+            assert "liberamos a reserva" in text, f"{channel}: {text!r}"
+            assert "Até ." not in text, f"{channel}: {text!r}"
             assert CHECKOUT_URL in text, f"{channel}: {text!r}"
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
 
     def test_sem_prazo_nenhum_canal_deixa_rotulo_pendurado(self, without_deadline):
-        """"é só pagar até ." é proibido — a frase inteira some."""
+        """"Até ." é proibido — a frase inteira some."""
         for channel, text in _renders(without_deadline).items():
-            assert "pagar até" not in text, f"{channel}: {text!r}"
+            assert "Até" not in text, f"{channel}: {text!r}"
             assert "reserva" not in text, f"{channel}: {text!r}"
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
             if channel != "email.subject":
@@ -236,7 +237,7 @@ class TestRenderDosTresCanais:
     def test_o_sms_nao_leva_o_negrito_do_template_do_admin(self, without_deadline):
         from shopman.shop.models import NotificationTemplate
 
-        seeded = _seed_assignment("FALLBACK_TEMPLATES")["payment_link_sent"]
+        seeded = NOTIFICATION_TEMPLATES["payment_link_sent"]
         NotificationTemplate.objects.create(event="payment_link_sent", is_active=True, **seeded)
 
         sms = notification_sms._build_message("payment_link_sent", without_deadline)
@@ -251,8 +252,8 @@ def _renders_expired(context: dict) -> dict[str, str]:
         "sms": notification_sms._build_message("payment_expired", ctx),
         "email.body": render_message("payment_expired", ctx, notification_email.BODY_TEMPLATES),
         "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["payment_expired"], ctx),
-        "seed": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_expired"]["body"], ctx),
-        "seed.subject": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_expired"]["subject"], ctx),
+        "seed": render_template(NOTIFICATION_TEMPLATES["payment_expired"]["body"], ctx),
+        "seed.subject": render_template(NOTIFICATION_TEMPLATES["payment_expired"]["subject"], ctx),
     }
 
 
@@ -275,17 +276,16 @@ class TestPrazoVencidoEmTodoCanal:
                 assert "reserva liberada" in text, f"{channel}: {text!r}"
             else:
                 assert "liberamos a reserva" in text, f"{channel}: {text!r}"
-                assert "refazemos o pedido" in text, f"{channel}: {text!r}"
+                assert "Nada foi cobrado" in text, f"{channel}: {text!r}"
 
-    def test_o_sms_e_uma_linha_sem_acento(self, expired):
+    def test_o_sms_e_sem_acento(self, expired):
         sms = _renders_expired(expired)["sms"]
-        assert "\n" not in sms
         assert sms.isascii(), sms
 
 
 class TestSeedDoTemplate:
     def test_o_evento_tem_linha_no_seed(self):
-        templates = _seed_assignment("FALLBACK_TEMPLATES")
+        templates = NOTIFICATION_TEMPLATES
         assert "payment_link_sent" in templates, "sem linha, o lojista não edita nem cola o flow do ManyChat"
         body = templates["payment_link_sent"]["body"]
         assert "{checkout_url}" in body, "o aviso manda para a COBRANÇA, não para o acompanhamento"

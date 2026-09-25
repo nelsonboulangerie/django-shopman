@@ -27,11 +27,7 @@
           <tr>
             <td style="padding:28px 32px;">
               <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
-                Olá{{ customer_name_greeting }}!
-              </p>
-              <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
                 Seu pedido <strong>{{ order_ref_short }}</strong> foi entregue.
-                {% if total %} Total: <strong>{{ total }}</strong>.{% endif %}
               </p>
               {% if fiscal_note_url %}
               <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
@@ -39,7 +35,7 @@
               </p>
               {% endif %}
               <p style="margin:0 0 24px;font-size:15px;color:#3d2b1f;line-height:1.6;">
-                Bom apetite. Até a próxima. 🍞
+                Esperamos que tenha gostado{{ customer_name_greeting }}! Obrigada por nos prestigiar! 💛✨
               </p>
               {% if reorder_url %}
               <p style="margin:0;text-align:center;">

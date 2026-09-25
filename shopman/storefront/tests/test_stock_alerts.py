@@ -367,7 +367,7 @@ def test_notify_context_includes_truthful_availability_phrase():
     assert nf.call_args.kwargs["event"] == "production_ready"
     context = nf.call_args.kwargs["context"]
     assert context["available_qty"] == "12"
-    assert context["availability_phrase"] == "Neste momento ainda temos 12 unidades."
+    assert context["availability_phrase"] == "No momento temos 12 un. disponíveis."
     assert urlsplit(context["management_url"]).path == "/gerenciar-aviso"
     assert urlsplit(context["management_url"]).fragment
     assert context["management_url"] in context["management_note"]
@@ -391,7 +391,7 @@ def test_notify_context_uses_neutral_phrase_when_quantity_is_unknown():
 def test_availability_phrase_uses_singular_for_one_unit():
     from shopman.shop.services.availability_copy import availability_phrase
 
-    assert availability_phrase(1) == "Neste momento ainda temos 1 unidade."
+    assert availability_phrase(1) == "No momento temos 1 un. disponível."
 
 
 def test_notify_skips_when_still_unavailable():

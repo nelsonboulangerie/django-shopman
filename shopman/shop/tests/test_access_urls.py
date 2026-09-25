@@ -192,9 +192,9 @@ class TestNotificationContextEnrichment:
 
         ctx = _build_context(order, {"order_ref": "ORD-002"}, "order_accepted")
         assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-002"
-        # Não há link comum de "pedir de novo" (o histórico exige login); o template
-        # consome isso pelo `{reorder_suffix}`, que se auto-suprime.
-        assert "reorder_url" not in ctx
+        # Sem magic link, "pedir de novo" cai no link comum do histórico (a loja pede
+        # o telefone e volta para lá), como o acompanhamento.
+        assert ctx["reorder_url"] == ctx["reorder_url_public"]
 
     def test_tracking_url_falls_back_when_customer_data_missing(self, settings):
         settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.test"
@@ -225,27 +225,11 @@ class TestManychatMessageSuffixes:
         with patch("shopman.shop.adapters._notification_templates.db_template", return_value=(None, None)):
             return _build_message(template, ctx)
 
-    def test_tracking_suffix_appended_when_url_present(self):
+    def test_tracking_url_goes_in_the_message(self):
         msg = self._build("order_accepted", tracking_url="https://shop.test/a?t=abc")
-        assert "Acompanhe:" in msg
-        assert "/a?t=abc" in msg
-
-    def test_tracking_suffix_absent_when_url_missing(self):
-        msg = self._build("order_accepted")
-        assert "Acompanhe:" not in msg
-        assert "{tracking_suffix}" not in msg
-
-    def test_reorder_suffix_appended_when_url_present(self):
-        msg = self._build("order_delivered", reorder_url="https://shop.test/a?t=xyz")
-        assert "Peca de novo:" in msg
-        assert "/a?t=xyz" in msg
-
-    def test_reorder_suffix_absent_when_url_missing(self):
-        msg = self._build("order_delivered")
-        assert "Peca de novo:" not in msg
-        assert "{reorder_suffix}" not in msg
+        assert "Acompanhe por aqui: https://shop.test/a?t=abc" in msg
 
     def test_tracking_url_none_renders_cleanly(self):
         msg = self._build("order_accepted", tracking_url=None)
         assert "None" not in msg
-        assert "{tracking_suffix}" not in msg
+        assert "{tracking_url}" not in msg

@@ -14,116 +14,11 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+from shopman.shop import notification_copy
+
 logger = logging.getLogger(__name__)
 
 MESSAGE_TEMPLATES: dict[str, str] = {
-    "order_received": (
-        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref_short}."
-        "\nEstamos conferindo a disponibilidade e avisamos em seguida."
-        "\nAcompanhe por aqui: {tracking_url}"
-    ),
-    "order_accepted": (
-        "Seu pedido {order_ref_short} está confirmado. Total: {total}."
-        "\nJá vamos preparar.{tracking_suffix}"
-    ),
-    "order_preparing": (
-        "Estamos preparando seu pedido {order_ref_short}.{eta_note}{tracking_suffix}"
-    ),
-    "order_ready_pickup": (
-        "Seu pedido {order_ref_short} está pronto e esperando por você no balcão."
-        " \U0001f950{tracking_suffix}{fiscal_note_suffix}"
-    ),
-    "order_ready_delivery": (
-        "Seu pedido {order_ref_short} está pronto e aguardando o entregador."
-        "\nAvisamos assim que sair. \U0001f4e6{tracking_suffix}{fiscal_note_suffix}"
-    ),
-    "order_dispatched": (
-        "Seu pedido {order_ref_short} saiu para entrega."
-        "{courier_tracking_suffix}"
-        "\nQuando receber, é só confirmar por aqui: {tracking_url}{fiscal_note_suffix}"
-    ),
-    "order_delivered": (
-        "Pedido {order_ref_short} entregue. Obrigado pela preferência! \u2b50{fiscal_note_suffix}{reorder_suffix}"
-    ),
-    # A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): o link
-    # da DANFE, sem pedir e-mail. O ManyChat não manda arquivo no WhatsApp, então
-    # vai o link. Fora da janela de 24h só sai com template aprovado (flow).
-    "fiscal_note_ready": (
-        "A nota fiscal do pedido {order_ref_short} está pronta: {danfe_url}{fiscal_test_note}"
-    ),
-    "order_cancelled": (
-        "Seu pedido {order_ref_short} foi cancelado.{reason_note}"
-        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
-    ),
-    "order_rejected": (
-        "Não conseguimos confirmar o pedido {order_ref_short}.{reason_note}"
-        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
-    ),
-    # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
-    # funcionar. Sem prazo dito, a vaga fica presa a quem não respondeu.
-    # Entrada na loja pelo WhatsApp: a pessoa mandou a palavra e recebe o acesso.
-    # Uso único e vida curta — dizer isso evita o link guardado que não abre depois.
-    "access_link": (
-        "Oi{customer_name_greeting}! Aqui está seu link para entrar na loja:"
-        "\n{access_url}"
-        "\n{cart_note}O link vale por 5 min."
-    ),
-    "waitlist_available": (
-        "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "
-        "Confirme o pedido {order_ref_short} para garantir o seu: {tracking_url}"
-    ),
-    "waitlist_released": (
-        "O prazo de confirmação do pedido {order_ref_short} passou e liberamos a sua vaga. "
-        "Nada foi cobrado, e é só entrar na fila da próxima fornada. {tracking_url}"
-    ),
-    # Pagar não é o mesmo que ser aceito: enquanto o pedido está `new`, a tela diz
-    # "estamos conferindo a disponibilidade". Prometer preparo aqui era prometer o
-    # que a tela não cumpre.
-    "payment_confirmed": (
-        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref_short} recebido."
-        "\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"
-    ),
-    "payment_requested": (
-        "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref_short}. "
-        "Agora falta o pagamento. Acesse: {payment_url}{pix_suffix}"
-    ),
-    # Pedido remoto anotado no PDV: a venda já fechou, falta o cliente pagar pelo
-    # link. "Anotamos", não "conferimos a disponibilidade" — o pão já está separado.
-    "payment_link_sent": (
-        "Olá{customer_name_greeting}! Anotamos seu pedido {order_ref_short} — total {total}."
-        "\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}"
-        "\nQualquer coisa, é só responder esta mensagem. \U0001f956"
-    ),
-    "payment_reminder": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref_short} aguarda"
-        " pagamento PIX. Use o código: {copy_paste}"
-    ),
-    "payment_expired": (
-        "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido {order_ref_short}"
-        " dentro do prazo, então liberamos a reserva."
-        "\nSe ainda quiser, é só falar com a gente que refazemos o pedido. \U0001f956"
-    ),
-    "payment_failed": (
-        "Não conseguimos preparar o pagamento do pedido {order_ref_short}. "
-        "Abra o link do pedido para tentar novamente: {payment_url}"
-    ),
-    "preorder_reminder": (
-        "Lembrete: seu pedido {order_ref_short} está agendado para amanhã. "
-        "Já estamos preparando tudo!"
-    ),
-    # Chegada de estoque (AVAILABILITY-PLAN §8.3 + "Me avise"): os pedaços
-    # reserve_note/deadline_note/cta/action_url vem prontos do emissor —
-    # reserva de sacola materializada traz prazo + link do carrinho; o
-    # "Me avise" (sem reserva) traz o link do produto.
-    "stock_arrived": (
-        "Boa notícia! {product_name} chegou.{reserve_note}{deadline_note} "
-        "{cta} {action_url}{management_note}"
-    ),
-    # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):
-    # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
-    "production_ready": (
-        "Saiu do forno agora: {product_name}! {cta} {action_url}{management_note}"
-    ),
     "purchase_request": (
         "Olá, {supplier_greeting}! Aqui é da {shop_name}. "
         "Precisamos repor {material_name}: {purchase_qty_display}. "
@@ -137,6 +32,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # Campanha: o corpo ja vem pronto do AnnouncementTemplate (com as variaveis
     # resolvidas), entao o template daqui e so o envelope.
     "announcement_published": "{body}\n\n{cta} {action_url}",
+    # Avisos ao cliente: fonte única em `shopman/shop/notification_copy.py`.
+    **{event: copy["body"] for event, copy in notification_copy.CUSTOMER_COPY.items()},
 }
 
 
@@ -207,7 +104,7 @@ def _build_message(template: str, context: dict) -> str:
     2. MESSAGE_TEMPLATES hardcoded fallback
     3. Generic fallback with order_ref
 
-    As chaves auxiliares (``customer_name_greeting``, ``tracking_suffix``, …) são
+    As chaves auxiliares (``customer_name_greeting``, ``order_ref_short``, …) são
     derivadas por ``_notification_templates.derive_context``, dentro do
     ``render_message`` — ponto único para WhatsApp, SMS e e-mail.
     """
@@ -238,6 +135,16 @@ def sends_as_flow(template: str) -> bool:
     pegar carona numa mensagem pergunta isto antes. Mesma ordem do ``send``.
     """
     return bool(_load_db_flow_ns(template) or _get_config().get("flow_map", {}).get(template))
+
+
+def _flow_lacks_name(template: str, ctx: dict) -> bool:
+    """Aviso de pedido cujo template cumprimenta pelo nome, sem nome no despacho."""
+    copy = notification_copy.CUSTOMER_COPY.get(template)
+    if copy is None or "{order_ref_short}" not in copy["body"]:
+        return False
+    if "{customer_name_greeting}" not in copy["body"]:
+        return False
+    return not str(ctx.get("customer_name") or "").strip()
 
 
 def send(recipient: str, template: str, context: dict | None = None, **config) -> bool | dict:
@@ -294,6 +201,13 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     # Flow configurado no Admin (NotificationTemplate.whatsapp_flow_ns) tem precedência;
     # cai no settings flow_map como fallback de bootstrap.
     flow_ns = _load_db_flow_ns(template) or mc_config.get("flow_map", {}).get(template)
+
+    if flow_ns and _flow_lacks_name(template, ctx):
+        # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
+        # do ManyChat, sem valor novo, guardaria o nome de um envio anterior. Pedido
+        # sem nome (raro: o checkout exige) passa a vez para o SMS/e-mail da cadeia.
+        logger.info("manychat.flow_sem_nome template=%s", template)
+        return False
 
     if flow_ns:
         # ⚠️ UMA mensagem com flow por assinante por vez. Os campos personalizados são

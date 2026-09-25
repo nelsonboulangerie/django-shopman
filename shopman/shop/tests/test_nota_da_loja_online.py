@@ -130,7 +130,7 @@ def test_aviso_leva_o_link_da_danfe(settings):
     message = notification_manychat._build_message("fiscal_note_ready", ctx)
     assert message == (
         # A mensagem chama o pedido pelo final do ref; o link é que leva o ref inteiro.
-        f"A nota fiscal do pedido {short_ref(order.ref)} está pronta: "
+        f"A nota fiscal do pedido *{short_ref(order.ref)}* está disponível: "
         "https://api.focusnfe.com.br/notas_fiscais_consumidor/NFe1.html"
     )
 

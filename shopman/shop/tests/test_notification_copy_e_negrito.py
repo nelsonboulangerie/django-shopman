@@ -8,9 +8,6 @@
 
 from __future__ import annotations
 
-import ast
-import pathlib
-
 import pytest
 
 from shopman.shop.adapters.notification_sms import _strip_markdown_bold
@@ -69,18 +66,10 @@ class TestAvisoNaoPrometeOQueATelaNaoCumpre:
 
 
 def _seed_templates() -> dict:
-    """Lê os NotificationTemplate do seed por AST — sem importar Django."""
-    fonte = pathlib.Path(__file__).resolve().parents[3] / "config/management/commands/seed.py"
-    arvore = ast.parse(fonte.read_text(encoding="utf-8"))
-    for node in ast.walk(arvore):
-        if isinstance(node, ast.Dict) and node.keys:
-            try:
-                chaves = [k.value for k in node.keys if isinstance(k, ast.Constant)]
-            except Exception:
-                continue
-            if "order_received" in chaves and "order_accepted" in chaves:
-                return dict(zip(chaves, [ast.literal_eval(v) for v in node.values], strict=False))
-    raise AssertionError("dicionário de NotificationTemplate não encontrado no seed")
+    """Os NotificationTemplate que o seed grava."""
+    from config.management.commands.seed import NOTIFICATION_TEMPLATES
+
+    return NOTIFICATION_TEMPLATES
 
 
 class TestOsQuatroEventosViramEditaveisNoAdmin:

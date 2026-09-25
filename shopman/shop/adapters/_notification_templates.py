@@ -6,7 +6,7 @@ ManyChat, SMS, e-mail) leem o mesmo template. Placeholder ausente vai literal
 cliente sem aviso.
 
 ⚠️ E é exatamente por isso que as chaves AUXILIARES (``customer_name_greeting``,
-``tracking_suffix``, ``reorder_suffix``) moram aqui, em ``derive_context``, e não
+``order_ref_short``, ``payment_deadline_note``) moram aqui, em ``derive_context``, e não
 dentro de um canal. Elas eram derivadas só no adapter do ManyChat; SMS e e-mail
 liam o MESMO template do Admin e mandavam ``{customer_name_greeting}`` cru para o
 cliente. A política de não quebrar o envio transforma chave faltante em texto
@@ -80,11 +80,10 @@ def derive_context(context: dict | None) -> dict:
     name = str(ctx.get("customer_name") or "").strip()
     ctx["customer_name_greeting"] = f", {name}" if name else ""
 
-    tracking_url = str(ctx.get("tracking_url") or "").strip()
-    ctx["tracking_suffix"] = f"\nAcompanhe: {tracking_url}" if tracking_url else ""
-
-    reorder_url = str(ctx.get("reorder_url") or "").strip()
-    ctx["reorder_suffix"] = f"\nPeca de novo: {reorder_url}" if reorder_url else ""
+    # Link ausente sai vazio, nunca como "None" no texto do cliente.
+    for link in ("tracking_url", "payment_url", "reorder_url"):
+        if link in ctx and ctx[link] is None:
+            ctx[link] = ""
 
     # Compras: do outro lado do pedido tem uma pessoa, e ela tem nome. Quando
     # ninguém foi cadastrado, cumprimenta-se a casa pelo nome fantasia — nunca
@@ -123,7 +122,7 @@ def derive_context(context: dict | None) -> dict:
         ctx["payment_deadline"] = _payment_deadline(ctx.get("payment"))
     deadline = ctx["payment_deadline"]
     ctx["payment_deadline_note"] = (
-        f"\nPara garantir o pedido, é só pagar até {deadline}. Depois disso a reserva é liberada."
+        f"\nAté {deadline}. Depois disso liberamos a reserva."
         if deadline
         else ""
     )
@@ -133,15 +132,17 @@ def derive_context(context: dict | None) -> dict:
     # que não passa por lá e deixaria o rótulo cru na mensagem.
     ctx.setdefault("courier_tracking_suffix", "")
     ctx.setdefault("pix_suffix", "")
-    ctx.setdefault("eta_note", "")
+    ctx.setdefault("status_note", "")
+    if "availability_note" not in ctx:
+        from shopman.shop.services.availability_copy import availability_note
+
+        ctx["availability_note"] = availability_note(ctx.get("available_qty"))
     ctx.setdefault("management_url", "")
     ctx.setdefault("management_note", "")
     # O link da nota fiscal que ESTA mensagem de status leva (loja online;
     # `services/notification._fiscal_note_carriage`). Vazio em todas as outras.
     ctx.setdefault("fiscal_note_url", "")
     ctx.setdefault("fiscal_note_suffix", "")
-    reason = ctx.get("reason")
-    ctx.setdefault("reason_note", f"\n\nMotivo: {reason}" if reason else "")
 
     return ctx
 

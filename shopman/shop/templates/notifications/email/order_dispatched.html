@@ -28,6 +28,7 @@
             <td style="padding:28px 32px;">
               <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
                 Seu pedido <strong>{{ order_ref_short }}</strong> saiu para entrega.
+                Quando receber, é só confirmar.
               </p>
               {% if fiscal_note_url %}
               <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
@@ -38,13 +39,10 @@
               <p style="margin:24px 0;text-align:center;">
                 <a href="{{ tracking_url }}"
                    style="display:inline-block;background:#7c5c3a;color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:13px 28px;border-radius:8px;">
-                  Acompanhar entrega
+                  Confirmar recebimento
                 </a>
               </p>
               {% endif %}
-              <p style="margin:0;font-size:14px;color:#6b5b4f;line-height:1.6;">
-                Fique de olho — avisamos assim que chegar.
-              </p>
             </td>
           </tr>
 
