@@ -2711,3 +2711,210 @@ class TestAudienceCount:
         )
         assert response.status_code == 200
         assert response.json()["total"] == 0
+
+
+# ── Post do Google Meu Negócio ──────────────────────────────────────
+
+
+def _approve_google(client, announcement, *, key, **edits):
+    return _confirmed_post(
+        client,
+        f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+        {
+            "base_version": announcement.version,
+            "publish_mode": "now",
+            "platforms": ["google_business"],
+            **edits,
+        },
+        key=key,
+    )
+
+
+def _sealed_google(announcement) -> dict:
+    artifact = MarketingContentArtifact.objects.get(announcement=announcement)
+    return artifact.payload["resolved_artifacts"]["google_business"]["provider_fields"]
+
+
+class TestGoogleBusinessPost:
+    """O post do Google escolhido na revisão chega selado, e as travas voltam no campo.
+
+    O card manda ``google_business`` (tipo e botão) junto da aprovação — um request só,
+    como o resto das edições. A prévia confere as mesmas travas antes.
+    """
+
+    def test_review_button_choice_is_sealed(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-button-call-0001",
+            google_business={"publication_format": "standard", "call_to_action": "call"},
+        )
+
+        assert response.status_code == 200, response.content
+        assert _sealed_google(announcement) == {
+            "call_to_action": "call",
+            "publication_format": "standard",
+        }
+
+    def test_approval_without_choice_seals_no_button(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(client, announcement, key="gbp-no-button-0001")
+
+        assert response.status_code == 200, response.content
+        assert _sealed_google(announcement) == {"publication_format": "standard"}
+
+    def test_event_from_the_review_is_sealed(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-event-review-0001",
+            google_business={
+                "publication_format": "event",
+                "call_to_action": "learn_more",
+                "event_title": "Semana do Pão",
+                "event_start": "2099-10-05T08:00",
+                "event_end": "2099-10-11T19:00",
+            },
+        )
+
+        assert response.status_code == 200, response.content
+        sealed = _sealed_google(announcement)
+        assert sealed["publication_format"] == "event"
+        assert sealed["event_title"] == "Semana do Pão"
+        assert sealed["call_to_action"] == "learn_more"
+
+    def test_link_button_without_link_comes_back_on_the_field(self, client, gestor, rule, template):
+        announcement = _post(
+            rule,
+            template,
+            platforms=["google_business"],
+            content={"body": "Um lugar onde o tempo é bem-vindo", "hashtags": [], "link": "", "image_url": ""},
+        )
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-link-button-0001",
+            google_business={"publication_format": "standard", "call_to_action": "learn_more"},
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "google_call_to_action_link_required"
+        assert "platform_content.google_business.call_to_action" in body["field_errors"]
+        assert MarketingContentArtifact.objects.count() == 0
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+
+    def test_phone_in_text_is_refused_before_approval(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-phone-in-text-0001",
+            body="Encomende pelo (43) 3322-1100",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_summary_has_phone"
+        assert "content.body" in response.json()["field_errors"]
+
+    def test_offer_without_campaign_promotion_is_refused(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-offer-no-promo-0001",
+            google_business={"publication_format": "offer"},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_offer_promotion_required"
+
+    def test_review_cannot_write_the_sealed_offer_fields(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-offer-title-0001",
+            google_business={"publication_format": "offer", "offer_title": "Inventada"},
+        )
+
+        assert response.status_code == 422
+        assert "google_business.offer_title" in response.json()["field_errors"]
+
+    def test_preview_shows_the_google_refusal_before_approving(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "body": "Ligue 43 99988-7766",
+                "platforms": ["google_business"],
+                "platform_content": {
+                    "google_business": {"publication_format": "standard", "call_to_action": "call"}
+                },
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_summary_has_phone"
+
+    def test_review_preview_shows_the_button_chosen_in_the_card(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Croissant saiu do forno",
+                "platforms": ["google_business"],
+                "google_business": {
+                    "publication_format": "standard",
+                    "call_to_action": "call",
+                },
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        fields = response.json()["previews"]["google_business"]["artifact"]["provider_fields"]
+        assert fields == {"call_to_action": "call", "publication_format": "standard"}
+
+    def test_review_preview_refuses_what_the_approval_would_refuse(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Encomendas: (43) 3322-1100",
+                "platforms": ["google_business"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_summary_has_phone"

@@ -191,6 +191,25 @@ def approve_command(
         approved_content = dict(safe_content)
         if facts is not None:
             approved_content["facts"] = facts.as_payload()
+        sealed_platform_content = safe_platform_content
+        if "google_business" in safe_platforms:
+            from shopman.shop.services import marketing_google_post
+
+            try:
+                sealed_platform_content = marketing_google_post.prepare_platform_content(
+                    safe_platform_content,
+                    facts=facts.as_payload() if facts is not None else None,
+                    image_url=str(approved_content.get("image_url") or ""),
+                    timezone_name=marketing_time.configured_timezone_name(),
+                    now=now,
+                )
+            except MarketingContractError as exc:
+                raise RejectCommand(
+                    code=exc.code,
+                    detail=exc.detail,
+                    outcome={"retryable": exc.retryable},
+                    field_errors=exc.field_errors,
+                ) from exc
         ai_trace = None
         if ai_suggestion_ref:
             from shopman.shop.services import marketing_ai
@@ -275,7 +294,7 @@ def approve_command(
         resolved_artifacts = marketing_artifacts.resolve_all_dispatch_artifacts(
             platforms=safe_platforms,
             content=approved_content,
-            platform_content=safe_platform_content,
+            platform_content=sealed_platform_content,
             content_version=announcement.version + 1,
             facts_as_of=facts.as_of.isoformat() if facts is not None else "",
             facts_hash=facts.source_hash if facts is not None else "",
@@ -286,7 +305,7 @@ def approve_command(
         artifact_payload = {
             "content": approved_content,
             "content_version": approved_version,
-            "platform_content": safe_platform_content,
+            "platform_content": sealed_platform_content,
             "platforms": safe_platforms,
             "resolved_artifacts": marketing_artifacts.resolved_payloads(resolved_artifacts),
             "schema_version": marketing_artifacts.SCHEMA_VERSION,
@@ -404,7 +423,7 @@ def approve_command(
             )
 
         announcement.content = approved_content
-        announcement.platform_content = safe_platform_content
+        announcement.platform_content = sealed_platform_content
         announcement.platforms = safe_platforms
         announcement.audience = resolution.summary()
         announcement.approved_by_id = receipt.actor_id

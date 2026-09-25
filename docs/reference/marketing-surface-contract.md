@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-17
+- **Última verificação:** 2026-09-25
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -21,7 +21,7 @@ e sem navegação por membro, contato, outbox, destino ou tentativa.
 |---|---|---:|---|
 | Instagram | Story público por padrão; Feed só por escolha explícita | 1 por anúncio | mensagem direta ou fallback de Story para Feed |
 | Facebook | postagem pública na página | 1 por anúncio | mensagem por pessoa |
-| Google Meu Negócio | atualização pública padrão do estabelecimento | 1 por anúncio | mensagem por pessoa |
+| Google Meu Negócio | post público no perfil: Atualização, Evento ou Oferta | 1 por anúncio | mensagem por pessoa |
 | WhatsApp | mensagem direta | até 1 por pessoa elegível | postagem pública |
 
 Mensagem direta no Instagram está fora do contrato. Se for aprovada no futuro, exige
@@ -57,9 +57,43 @@ mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automati
 campanha/modelo: ainda não existe anúncio, e um produto real da loja serve de exemplo
 (`sample: true`, "Exemplo com: …"). Com `announcement: <id>` (tela de revisão), a prévia
 sai do conteúdo GRAVADO do anúncio mais as edições do card (`body`, `hashtags`,
-`platforms`), montada como a aprovação monta — nunca com produto de exemplo. Se o
+`platforms`, `google_business`), montada como a aprovação monta — nunca com produto de exemplo. Se o
 anúncio não tem link, a prévia não mostra link, porque o post não terá
 (`campaign.preview_announcement`).
+
+### Post do Google Meu Negócio
+
+Três formatos (`publication_format`): `standard` (Atualização), `event` (Evento: título,
+início e fim em hora local da loja) e `offer` (Oferta). `ALERT` fica de fora. O botão é
+escolha explícita (`call_to_action`), no modelo e na revisão do anúncio, com o rótulo que o
+Google mostra em pt-BR: **Nenhum** (padrão), Ligar agora (`call`, sem URL: usa o telefone
+do perfil), Saiba mais (`learn_more`), Pedir on-line (`order`), Comprar (`shop`), Reservar
+(`book`), Inscrever-se (`sign_up`). **Link nunca vira botão sozinho**; sem botão, o link não
+aparece no post. Pedir on-line e Comprar só levam a `/produto/` ou `/oferta/`. "Como chegar"
+não existe na API. A Oferta não tem botão escolhível (o Google mostra "Ver oferta") e nasce
+da `Promotion` da campanha: título e validade são selados pelo servidor a partir dos fatos,
+o link de resgate é a página da oferta e o operador só escreve as condições. Chaves e donos
+em [data-schemas.md](data-schemas.md#google_business--post-do-google-meu-negócio).
+
+Travas na prévia e na aprovação, com a mensagem no campo (`field_errors`), a partir dos
+limites da documentação oficial do Google conferidos em 2026-09-25: texto + hashtags até
+1.500 caracteres (`google_summary_too_long`), sem telefone no texto
+(`google_summary_has_phone` — o Google remove post com contato que não consegue
+verificar; o botão "Ligar agora" é o caminho), foto JPEG ou PNG, de 10 KB a 5 MB e com ao
+menos 250 × 250 px (`google_media_*`). Formato, peso e dimensão da foto são lidos do
+arquivo (`marketing_media_probe`): `GET` com `Range` de 256 KB, só em host da lista de
+mídia, sem seguir redirecionamento, com cache de 10 min por URL — é a única leitura de
+mídia que o servidor faz. A prévia mostra a foto no recorte do cartão e desaconselha
+texto dentro da imagem (o Google corta as laterais conforme a tela). As mesmas travas
+puras voltam no adapter antes da rede.
+
+Depois do aceite, a passada de entrega (`process_marketing_delivery --with-reconciliation`,
+no `maintenance-worker`) consulta `localPosts.get` dos posts do Google aceitos nas últimas
+48 h: `LIVE`/`RECURRING`/`SCHEDULED` → `confirmed`, `REJECTED` → `failed_final`
+(`google_post_rejected`), `PROCESSING` fica `accepted` para o ciclo seguinte (a foto
+aparece ~1–2 min depois do texto). A consulta só lê. Apagar um post é outra ação
+pública: não existe no cockpit, e quando existir será comando explícito, com
+confirmação, nunca automático.
 
 ## Rotas Nuxt
 
@@ -214,6 +248,7 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY` e versão | Segurança | vazio bloqueia materialização segura | rotação versionada |
 | `SHOPMAN_MARKETING_TEST_TARGETS_JSON` | Platform Owner | `{}`; nenhum alvo de teste | remover alvo ao fim do teste |
 | `SHOPMAN_MARKETING_MEDIA_HOSTS` | Segurança/Marca | vazio; mídia externa bloqueada | revisão por host |
+| `SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED` | Platform Owner | `true`; a foto do Google é lida antes de aprovar. `false` só onde não há rede (testes, simulador) | — |
 | `SHOPMAN_MARKETING_AI_ASSIST_V2` | Produto | `false`; assistência invisível | MKT-054 |
 | `SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED` | Jurídico/Segurança | `false`; chave não basta | por política do fornecedor |
 

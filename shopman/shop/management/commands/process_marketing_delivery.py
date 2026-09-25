@@ -246,8 +246,21 @@ class Command(BaseCommand):
                     "deferred" if execution.deferred else execution.target.state
                 ] += 1
 
+        confirmation_outcomes: Counter[str] = Counter()
+        if with_reconciliation:
+            from shopman.shop.services.marketing_publication_confirmation import (
+                confirm_accepted_publications,
+            )
+
+            confirmation_outcomes = confirm_accepted_publications(
+                providers=providers,
+                now=clock,
+                limit=limit,
+            )
+
         active = bool(
             outbox_activity
+            or confirmation_outcomes
             or stale_calling
             or claims.examined
             or outcomes
@@ -262,6 +275,10 @@ class Command(BaseCommand):
                 f"{name}={count}"
                 for name, count in sorted(reconciliation_outcomes.items())
             ) or "none"
+            confirmation_text = ",".join(
+                f"{name}={count}"
+                for name, count in sorted(confirmation_outcomes.items())
+            ) or "none"
             self.stdout.write(
                 "Marketing delivery: "
                 f"outbox_activity={outbox_activity} examined={claims.examined} "
@@ -269,6 +286,7 @@ class Command(BaseCommand):
                 f"deferred={claims.deferred} stale_calling={stale_calling} "
                 f"outcomes={outcome_text} "
                 f"reconciliations_claimed={reconciliation_claimed} "
-                f"reconciliations={reconciliation_text}."
+                f"reconciliations={reconciliation_text} "
+                f"publication_checks={confirmation_text}."
             )
         return active

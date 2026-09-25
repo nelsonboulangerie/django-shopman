@@ -168,6 +168,9 @@ def resolve_dispatch_artifact(
     _validate_publication_contract(
         platform=normalized_platform,
         provider_fields=dict(provider_fields),
+        body=body,
+        hashtags=hashtags,
+        link=link,
         image_url=image_url,
     )
     delivery_kind, delivery_format = marketing_capabilities.resolve_identity(
@@ -606,6 +609,9 @@ def _validate_publication_contract(
     *,
     platform: str,
     provider_fields: Mapping[str, Any],
+    body: str,
+    hashtags: tuple[str, ...],
+    link: str,
     image_url: str,
 ) -> None:
     """Validate explicit formats while keeping old sealed artifacts readable."""
@@ -625,6 +631,16 @@ def _validate_publication_contract(
             code="publication_format_invalid",
             detail="O formato de publicação não é aceito por esta plataforma.",
             field_errors={field: ("Escolha um formato disponível.",)},
+        )
+    if platform == "google_business":
+        from shopman.shop.services import marketing_google_post
+
+        marketing_google_post.validate_artifact(
+            provider_fields=provider_fields,
+            body=body,
+            hashtags=hashtags,
+            link=link,
+            image_url=image_url,
         )
     if platform == "instagram" and not image_url:
         raise MarketingContractError(

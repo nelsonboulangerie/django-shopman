@@ -1097,6 +1097,16 @@ def preview_platforms(
         platforms=normalized_platforms,
         platform_content=rendered_variants,
     )
+    if "google_business" in normalized_platforms:
+        from shopman.shop.services import marketing_google_post, marketing_time
+
+        rendered_variants = marketing_google_post.prepare_platform_content(
+            rendered_variants,
+            facts=facts.as_payload(),
+            image_url=variables["product_image_url"],
+            timezone_name=marketing_time.configured_timezone_name(),
+            now=timezone.now(),
+        )
     flow_binding = (
         verified_whatsapp_flow_binding()
         if "whatsapp" in normalized_platforms
@@ -1161,6 +1171,7 @@ def preview_announcement(
     platforms,
     body: str | None = None,
     hashtags: list[str] | None = None,
+    google_business: dict[str, str] | None = None,
 ) -> dict:
     """Prévia da REVISÃO: o conteúdo gravado do anúncio, montado como a aprovação monta.
 
@@ -1195,12 +1206,30 @@ def preview_announcement(
         content["body"] = body
     if hashtags is not None:
         content["hashtags"] = list(hashtags)
+    stored_platform_content = dict(announcement.platform_content or {})
+    if google_business is not None:
+        from shopman.shop.services.marketing_google_post import with_review_options
+
+        stored_platform_content = with_review_options(
+            stored_platform_content, google_business
+        )
     platform_content = normalize_platform_content(
         platforms=normalized_platforms,
-        platform_content=dict(announcement.platform_content or {}),
+        platform_content=stored_platform_content,
     )
     raw_facts = content.get("facts")
     facts = marketing_facts.from_payload(raw_facts) if raw_facts is not None else None
+    if "google_business" in normalized_platforms:
+        from shopman.shop.services import marketing_google_post, marketing_time
+
+        # As mesmas travas e o mesmo selo da oferta que a aprovação aplica.
+        platform_content = marketing_google_post.prepare_platform_content(
+            platform_content,
+            facts=facts.as_payload() if facts is not None else None,
+            image_url=str(content.get("image_url") or ""),
+            timezone_name=marketing_time.configured_timezone_name(),
+            now=timezone.now(),
+        )
     flow_binding = (
         verified_whatsapp_flow_binding()
         if "whatsapp" in normalized_platforms

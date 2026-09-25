@@ -227,6 +227,7 @@ def all_formats_announcement() -> dict:
         },
         "google_business": {
             "publication_format": "standard",
+            "call_to_action": "call",
             "image_url": VISUAL_WIDE_IMAGE,
         },
         "whatsapp": {"image_url": VISUAL_SQUARE_IMAGE},
@@ -818,6 +819,27 @@ class Handler(BaseHTTPRequestHandler):
             platform_content = body.get("platform_content", {})
             if not isinstance(platform_content, dict):
                 platform_content = {}
+            # Prévia da REVISÃO (#1157): o servidor lê o anúncio gravado e aplica as
+            # edições do card; o corpo não carrega mais `platform_content`.
+            if body.get("announcement"):
+                stored = (
+                    all_formats_announcement()
+                    if scenario == "board-all-formats"
+                    else legacy_announcement(int(body["announcement"]))
+                )
+                platform_content = {
+                    key: dict(value) for key, value in stored["platform_content"].items()
+                }
+                google = body.get("google_business")
+                if isinstance(google, dict):
+                    platform_content["google_business"] = {
+                        **{
+                            key: value
+                            for key, value in platform_content.get("google_business", {}).items()
+                            if key == "image_url"
+                        },
+                        **{key: value for key, value in google.items() if value},
+                    }
             previews = {}
             for platform in platforms:
                 rendered = source_body.replace("{{ product_name }}", "Pão artesanal")
@@ -840,11 +862,11 @@ class Handler(BaseHTTPRequestHandler):
                                 else ""
                             )
                         ),
-                        "provider_fields": (
-                            {"publication_format": publication_format}
-                            if publication_format
-                            else {}
-                        ),
+                        "provider_fields": {
+                            key: value
+                            for key, value in variant.items()
+                            if key != "image_url"
+                        },
                         "content_version": 1,
                         "facts_as_of": FIXED_NOW,
                         "facts_hash": "facts-visual-mkt046",

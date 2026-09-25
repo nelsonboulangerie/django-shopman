@@ -1943,6 +1943,13 @@ SHOPMAN_MARKETING_MEDIA_HOSTS = tuple(
     if host.strip()
 )
 
+# A prévia e a aprovação do Google leem o começo da foto (formato, peso, dimensão)
+# num host da lista acima, sem seguir redirecionamento. Desligada só onde não há rede
+# (testes e simulador); aí vale apenas a conferência pela URL.
+SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED", True
+)
+
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
 DOORMAN["ACCESS_LINK_ENTRY_URL"] = SHOPMAN_STOREFRONT_BASE_URL

@@ -95,8 +95,26 @@ _DESTINATIONS = (
         formats=(
             MarketingFormatCapability(
                 ref="standard",
-                label="Atualização padrão",
-                provider_fields=_PUBLICATION_FIELD,
+                label="Atualização",
+                provider_fields=_PUBLICATION_FIELD | {"call_to_action"},
+                required_provider_fields=_PUBLICATION_FIELD,
+            ),
+            MarketingFormatCapability(
+                ref="event",
+                label="Evento",
+                provider_fields=_PUBLICATION_FIELD
+                | {"call_to_action", "event_title", "event_start", "event_end"},
+                required_provider_fields=_PUBLICATION_FIELD
+                | {"event_title", "event_start", "event_end"},
+            ),
+            # Título e período da oferta são selados da ``Promotion`` da campanha
+            # (``marketing_google_post.prepare_platform_content``); o operador só
+            # escreve os termos. Sem botão próprio: o Google mostra "Ver oferta".
+            MarketingFormatCapability(
+                ref="offer",
+                label="Oferta",
+                provider_fields=_PUBLICATION_FIELD
+                | {"offer_title", "offer_start", "offer_end", "offer_terms"},
                 required_provider_fields=_PUBLICATION_FIELD,
             ),
         ),

@@ -14,6 +14,7 @@
     "link": "https://shop.example/produto/croissant",
     "platform": "google_business",
     "provider_fields": {
+      "call_to_action": "call",
       "publication_format": "standard"
     }
   },
