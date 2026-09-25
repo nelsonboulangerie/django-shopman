@@ -304,6 +304,7 @@ const BLOCKER_FIELD: Record<ReceiptWarning["key"], ReceiptFieldAnchor | null> = 
   "invalid-qty": "qty",
   "missing-expiry": "expiry",
   "diverging-conversion": null,
+  "fiscal-divergence": null,
   "missing-cost": null,
   "approximate-conversion": null,
   "manual-source": null,
