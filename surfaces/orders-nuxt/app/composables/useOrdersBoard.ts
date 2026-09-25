@@ -156,6 +156,8 @@ export function useOrdersBoard() {
   // Maquininhas na rua: o quadro responde "onde está" sem abrir card.
   const equipmentAvailable = computed(() => queue.value?.equipment_available ?? []);
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
+  // A impressora desta estação — a DANFE da sacola sai por ela (useDanfePrint).
+  const deviceAgent = computed(() => data.value?.device_agent ?? null);
 
   // Realtime + polling (client only). `realtime` diz honestamente ao operador se o board
   // recebe pushes ao vivo (SSE aberto) ou caiu no poll de 30s — a bolinha "ao vivo" só
@@ -575,7 +577,7 @@ export function useOrdersBoard() {
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
   return {
-    readMetadata, queue, zones, totalCount, preorders, realtime, pending, error,
+    readMetadata, queue, zones, totalCount, deviceAgent, preorders, realtime, pending, error,
     refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
     fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
     equipmentAvailable, assign, unassign, confirmMany, advanceMany,

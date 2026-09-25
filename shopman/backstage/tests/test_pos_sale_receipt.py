@@ -117,7 +117,7 @@ class POSSaleReceiptTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertFalse(first.json()["reprint"])
         self.assertNotIn(
-            "2a VIA", base64.b64decode(first.json()["payload_b64"]).decode("cp860", "replace")
+            "REIMPRESSÃO", base64.b64decode(first.json()["payload_b64"]).decode("cp860", "replace")
         )
         order.refresh_from_db()
         self.assertTrue(order.data.get("danfe_printed_at"))
@@ -126,7 +126,7 @@ class POSSaleReceiptTests(TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertTrue(second.json()["reprint"])
         self.assertIn(
-            "2a VIA", base64.b64decode(second.json()["payload_b64"]).decode("cp860", "replace")
+            "REIMPRESSÃO", base64.b64decode(second.json()["payload_b64"]).decode("cp860", "replace")
         )
 
     def test_unknown_order_is_404(self) -> None:

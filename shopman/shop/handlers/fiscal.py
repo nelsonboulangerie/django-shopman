@@ -452,6 +452,12 @@ class NFCeEmitHandler:
         # O objeto do chamador segue em uso (guarda de idempotência, logs).
         order.data = data
 
+        # A nota nasce no despacho da entrega e a DANFE vai na sacola: o
+        # Gestor precisa saber AGORA, não no próximo poll.
+        from shopman.shop.handlers._sse_emitters import emit_fiscal_update
+
+        emit_fiscal_update(locked)
+
 
 class NFCeCancelHandler:
     """Directive handler para cancelamento de NFC-e. Topic: fiscal.cancel_nfce"""

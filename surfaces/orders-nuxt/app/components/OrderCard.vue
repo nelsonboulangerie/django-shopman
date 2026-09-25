@@ -18,11 +18,12 @@ import {
   type AffordanceRef,
   type Tone,
 } from "~/presentation/board";
+import { danfeLine } from "~/presentation/danfe";
 
-const props = defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean; negotiationOnly?: boolean }>();
+const props = defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean; negotiationOnly?: boolean; danfePrinting?: boolean }>();
 const emit = defineEmits<{
   (e: "action", ref: AffordanceRef): void;
-  (e: "dismiss-error" | "toggle-select" | "toggle-assign"): void;
+  (e: "dismiss-error" | "toggle-select" | "toggle-assign" | "print-danfe"): void;
 }>();
 
 const code = computed(() => splitRef(props.card.ref));
@@ -50,6 +51,9 @@ const paymentPillIcon = computed(() => {
   }[props.card.payment_tone] || "lucide:banknote");
 });
 const tTone = computed(() => timerTone(props.card.timer_class));
+// A DANFE da nota autorizada: vai na sacola da entrega (sai sozinha) e fica à
+// mão na retirada, para o cliente que pede no balcão.
+const danfe = computed(() => props.negotiationOnly ? null : danfeLine(props.card));
 
 // Countdown do prazo da confirmação otimista (só em cards com timer agendado).
 // Usa o relógio compartilhado (um só interval no board, não um por card).
@@ -264,6 +268,21 @@ function buttonClass(priority: string): string {
         {{ card.payment_method_label }}
       </span>
       <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
+    </div>
+
+    <div v-if="danfe" class="flex items-center gap-1.5 text-xs text-muted-foreground" data-danfe>
+      <Icon :name="card.danfe_printed ? 'lucide:receipt-text' : 'lucide:receipt'" class="size-3.5 shrink-0" />
+      <span class="truncate" data-danfe-status>{{ danfe.status }}</span>
+      <button
+        type="button"
+        class="ml-auto inline-flex min-h-control shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-foreground transition hover:bg-accent disabled:opacity-60"
+        :disabled="danfePrinting"
+        data-danfe-print
+        @click="emit('print-danfe')"
+      >
+        <Icon name="lucide:printer" class="size-3.5" />
+        {{ danfePrinting ? "Imprimindo…" : danfe.action }}
+      </button>
     </div>
 
     <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" class="min-h-control block rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" data-ifood-negotiation-link>
