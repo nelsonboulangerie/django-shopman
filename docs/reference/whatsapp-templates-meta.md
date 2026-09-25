@@ -5,10 +5,10 @@
 > O dono revisou todas as frases de uma vez e fechou. Os corpos abaixo são a coluna
 > WhatsApp daquela revisão. **Dá para submeter.**
 >
-> Duas coisas que ainda não fecham, e que estão marcadas onde aparecem: **seis botões sem
-> destino** (seção própria) e **um campo personalizado sem nome** (a quantidade do
-> `saiu_do_forno`). Nenhuma das duas impede submeter os outros; a de botão impede submeter
-> aqueles seis.
+> **Dois templates ainda não dá para submeter**, e estão marcados onde aparecem:
+> `anuncio_novidade` (o destino do botão `Ver novidade` é decisão do Marketing) e
+> `saiu_do_forno` (o campo da frase de disponibilidade ainda não tem nome fechado). **Os
+> outros 23 estão prontos.**
 >
 > Antes desta revisão a redação mudou duas vezes em 24 horas. Se mudar de novo, **pare de
 > submeter antes de continuar**: template aprovado com texto errado não se edita, reaprova,
@@ -185,7 +185,7 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > - **O texto não repete o botão.** Sumiu todo "Toque no botão abaixo"; a ação fica escrita
 >   só no botão ("Pagar pedido", "Tentar de novo", "Confirmar recebimento", "Pedir de novo",
 >   "Ver saldo", "Garantir já", "Ver nota fiscal").
-> - **`order_note` é a variável que nunca fica vazia.** Onde o texto precisaria de um dado
+> - **`status_note` é a variável que nunca fica vazia.** Onde o texto precisaria de um dado
 >   opcional (a hora prevista, o motivo), entra ela — e sem o dado ela traz uma frase-padrão
 >   em vez de sumir. É o que permite à hora e ao motivo viajarem no template, coisa que a
 >   regra 9 proibia enquanto eram sufixos auto-suprimíveis.
@@ -214,10 +214,10 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 
 ### `pedido_em_preparo` — evento `order_preparing`
 - Corpo: `Estamos preparando seu pedido {{1}}. {{2}}.`
-- Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Previsto para ficar pronto às 18h20. Mas avisamos assim que estiver` (`order_note`)
+- Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Previsto para ficar pronto às 18h20. Mas avisamos assim que estiver` (`status_note`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
-> ⚠️ **O ponto final é FIXO, fora da variável** — o `order_note` entra sem ponto. É o que
+> ⚠️ **O ponto final é FIXO, fora da variável** — o `status_note` entra sem ponto. É o que
 > impede o corpo de terminar em variável (regra 2). O ✨ que fazia esse papel saiu por
 > decisão do dono em 25/09.
 >
@@ -226,7 +226,7 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > só um ponto literal separa. Deve passar, mas se algum reprovar por isso vai ser este — e
 > é melhor descobrir com o padrão já provado pelos outros.
 >
-> ℹ️ Sem hora calculável, o `order_note` diz "Avisamos assim que estiver pronto". Nunca
+> ℹ️ Sem hora calculável, o `status_note` diz "Avisamos assim que estiver pronto". Nunca
 > chega vazio, que é o ponto dele.
 
 ### `pedido_pronto_retirada` — evento `order_ready_pickup`
@@ -263,14 +263,14 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 ### `nota_fiscal_disponivel` — evento `fiscal_note_ready` 🆕
 - Corpo: `A nota fiscal do pedido {{1}} está disponível.`
 - Vars: `{{1}}`=`A47` (`order_ref_short`)
-- Botão URL: `Ver nota fiscal` → **destino a decidir** (ver "Botões sem destino fechado")
+- Botão URL: `Ver nota fiscal` → `/pedido/{{1}}` (`order_ref`)
 
 ### `pedido_cancelado` — evento `order_cancelled`
 - Corpo: `Oi, {{1}}. Seu pedido {{2}} foi cancelado. {{3}} Qualquer dúvida, estamos à disposição. 😌`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`Motivo: item indisponível.` (`order_note`)
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`Motivo: item indisponível.` (`status_note`)
 - Botão URL: `Ver detalhes` → `/pedido/{{1}}` (`order_ref`)
 
-> ℹ️ Aqui o `order_note` fica no **meio** do texto, então ele vem **com** ponto final — ao
+> ℹ️ Aqui o `status_note` fica no **meio** do texto, então ele vem **com** ponto final — ao
 > contrário do `pedido_em_preparo`, onde o ponto é fixo. Sem motivo informado, diz "Os
 > detalhes estão no pedido.".
 >
@@ -278,7 +278,7 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Oi, {{1}}. Não conseguimos confirmar seu pedido {{2}} desta vez. {{3}} Se houve cobrança, devolvemos o valor. Qualquer dúvida, estamos à disposição. 😌`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`Motivo: item indisponível.` (`order_note`)
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`Motivo: item indisponível.` (`status_note`)
 - Botão URL: `Ver detalhes` → `/pedido/{{1}}` (`order_ref`)
 
 > ℹ️ Saiu o "Nada foi cobrado": quem pagou no checkout e teve o pedido recusado **foi**
@@ -322,7 +322,7 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 ### `pagamento_expirado` — evento `payment_expired`
 - Corpo: `Oi, {{1}}. O prazo para pagar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
-- Botão URL: `Pedir de novo` → **destino a decidir** (ver "Botões sem destino fechado")
+- Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
 
 ### `pagamento_falhou` — evento `payment_failed`
 - Corpo: `Oi, {{1}}. Não conseguimos gerar o pagamento do seu pedido {{2}}.`
@@ -352,7 +352,7 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 ### `fila_vaga_liberada` — evento `waitlist_released`
 - Corpo: `Oi, {{1}}. O prazo para confirmar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
-- Botão URL: `Pedir de novo` → **destino a decidir** (ver "Botões sem destino fechado")
+- Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
 
 > ℹ️ Mesma forma do `pagamento_expirado`, de propósito: os dois dizem a mesma coisa ao
 > cliente (o prazo passou, a reserva voltou, ninguém cobrou) e devem falar igual.
@@ -369,7 +369,7 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 ### `produto_chegou` — evento `stock_arrived`
 - Corpo: `Oi, {{1}}! Você pediu pra avisar quando {{2}} estivesse disponível e agora está! 💛✨`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`Croissant` (`product_name`)
-- Botão URL: `Garantir já` → **destino a decidir** (ver "Botões sem destino fechado")
+- Botão URL: `Garantir já` → `https://www.nelsonboulangerie.com.br/produto/{{1}}` (`product_sku`)
 
 > ⚠️ **O prazo da reserva não viaja neste template.** O `stock_arrived` sai por dois
 > caminhos — com reserva materializada e prazo (`handlers/_stock_receivers.py`) e pelo "Me
@@ -382,28 +382,41 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 
 ---
 
-## Botões sem destino fechado
+## Botões: para onde cada um aponta
 
-Seis botões novos que a revisão de 25/09 criou **não apontam para `/pedido/{ref}`**, e por
-isso não têm destino ainda. Não é detalhe de acabamento: o destino é **fixo dentro do
-template aprovado**, então errar custa reaprovação.
+Destino é **fixo dentro do template aprovado**, então errar custa reaprovação. A restrição
+que fecha as opções vem da decisão de segurança (ver "ANTES DE SUBMETER"): **URL não vira
+campo personalizado**. Sobram dois formatos:
 
-A restrição que fecha as opções, e que vem de decisão de segurança (ver "ANTES DE SUBMETER"):
-**URL não vira campo personalizado.** Sobram dois formatos de botão:
-
-1. **prefixo fixo + variável segura** — hoje só existe um par que funciona:
-   `…/pedido/{{1}}` com `order_ref`;
+1. **prefixo fixo + variável segura** — a variável é um identificador curto, nunca uma URL;
 2. **URL estática**, sem variável nenhuma.
 
-| Botão | Onde | O que trava | Saída possível |
-|---|---|---|---|
-| `Ver nota fiscal` | `nota_fiscal_disponivel` | não há rota de DANFE em `storefront_links` | apontar para `/pedido/{{1}}`, onde a nota está |
-| `Pedir de novo` | `pagamento_expirado`, `fila_vaga_liberada` | não há `path_reorder`; `reorder_url` é link pessoal e não pode virar campo | `/pedido/{{1}}` (o pedido tem "pedir de novo"), ou `/menu` estático |
-| `Garantir já` | `produto_chegou`, `saiu_do_forno` | `/produto/{sku}` é a rota certa, mas **`sku` está na denylist** de campos personalizados (`_FIELD_DENYLIST`) — nunca chega ao ManyChat | `/menu` estático, ou tirar `sku` da denylist (decisão da frente do adapter) |
-| `Ver novidade` | `anuncio_novidade` | o destino é o `action_url` da campanha, que é link pessoal | `/menu` estático |
+| Botão | Onde | Destino |
+|---|---|---|
+| `Acompanhar pedido` · `Ver pedido` · `Ver detalhes` · `Pagar pedido` · `Tentar de novo` · `Confirmar pedido` · `Confirmar recebimento` · `Ver nota fiscal` | a maioria | `…/pedido/{{n}}` + `order_ref` |
+| `Pagar pedido` (só no `link_pagamento_enviado`) | pedido do PDV | a URL da cobrança inteira (`checkout_url`) — sessão do gateway, não página da loja |
+| `Garantir já` | `produto_chegou`, `saiu_do_forno` | `…/produto/{{n}}` + **`product_sku`** |
+| `Pedir de novo` | `pagamento_expirado`, `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
+| `Ver saldo` | `pontos_fidelidade` | `…/conta` — **estático** |
+| `Como chegar` | `pedido_pronto_retirada` | Google Maps da loja — **estático** |
+| `Ver novidade` | `anuncio_novidade` | ⚠️ **ainda não decidido** — ver abaixo |
 
-⚠️ `Ver saldo` (`/conta`) e `Como chegar` (Google Maps) **já estão resolvidos**: são URLs
-estáticas, sem variável, e por isso não entram nesta lista.
+⚠️ **`product_sku`, não `sku`.** As duas chaves existem no contexto e são o mesmo valor, mas
+`sku` está em `_FIELD_DENYLIST` e nunca chega ao ManyChat — `product_sku` existe justamente
+para isto ("o sufixo que o template gruda no fim do link do botão", diz o comentário em
+`storefront/services/stock_alerts.py`), e está em `_ALERT_FLOW_FIELDS` para os dois eventos.
+Ligar o botão ao `sku` produz um botão em branco, em silêncio.
+
+⚠️ **`Pedir de novo` é estático de propósito.** O `reorder_url` do contexto é link pessoal e
+não pode virar campo personalizado. `…/conta/pedidos` (`storefront_links.path_order_history`)
+resolve sem token: sem sessão, a loja pede o telefone e devolve a pessoa para lá.
+
+### O que falta decidir: `Ver novidade`
+
+O destino natural é o `action_url` da campanha, que é link pessoal e por isso não viaja. A
+sugestão é a **home, estática** — mas o `anuncio_novidade` ficou fora da revisão de voz de
+25/09, e o destino de um botão de campanha é decisão de quem cuida do Marketing, não desta
+frente. Enquanto não fechar, **este é o único template do pacote que não dá para submeter.**
 
 ---
 
@@ -449,21 +462,29 @@ Audiência diferente: quem recebe é o contato comercial do fornecedor, não um 
 Categoria e custo diferentes. **Não misture com Utility** — nem "para passar".
 
 ### `saiu_do_forno` — evento `production_ready`
-- Corpo: `Olha só o que acabou de sair do forno: {{1}}! No momento temos {{2}} un. disponíveis.`
-- Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`12` (quantidade disponível)
-- Botão URL: `Garantir já` → **destino a decidir** (ver "Botões sem destino fechado")
+- Corpo: `Olha só o que acabou de sair do forno: {{1}}! {{2}}.`
+- Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`Neste momento ainda temos 12 unidades` (`availability_phrase`, **nome a confirmar**)
+- Botão URL: `Garantir já` → `https://www.nelsonboulangerie.com.br/produto/{{1}}` (`product_sku`)
 
 > ℹ️ A quantidade **sempre existe** quando a fornada sai, então é variável fixa do template,
 > sem frase condicional. Com zero disponível o aviso não sai.
 >
-> ⚠️ A variável da quantidade precisa de um campo personalizado novo, e ele ainda não tem
-> nome fechado no código — combinar com a frente do adapter, como se fez com o
-> `order_ref_short`.
+> ⚠️ **O nome do campo da quantidade ainda não fechou, e há um candidato que já existe.**
+> `shop/services/availability_copy.availability_phrase` faz exatamente isto — devolve
+> "Neste momento ainda temos 12 unidades." e, sem quantidade, "Já está disponível para
+> pedido." — e já está em `_ALERT_FLOW_FIELDS` para `production_ready` **e** `stock_arrived`.
+> Criar um campo novo ao lado dele repetiria a confusão que acabou de fazer o `order_note`
+> virar `status_note`.
+>
+> A única diferença é o ponto final: o existente já traz o ponto, e o desenho daqui o quer
+> fixo no template (como no `pedido_em_preparo`). Tirar o ponto de lá mexe em quem já usa a
+> função — campanha e `marketing_delivery_whatsapp` — então a escolha é da frente do adapter,
+> não desta. Enquanto não fechar, este template não é submetível.
 
 ### `anuncio_novidade` — evento `announcement_published`
 - Corpo: `Oi, {{1}}! Tem novidade na Nelson Boulangerie hoje: {{2}}. Passe na loja ou peça pelo nosso site.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`o pão de campanha voltou às quartas` (`body`)
-- Botão URL: `Ver novidade` → **destino a decidir** (ver "Botões sem destino fechado")
+- Botão URL: `Ver novidade` → **destino a decidir** — sugestão: a home, estática (ver "Botões: para onde cada um aponta")
 
 > ⚠️ **Submeta este por último.** No código, `announcement_published` é só um envelope: o
 > corpo inteiro vem pronto do `AnnouncementTemplate` (`"{body}\n\n{cta} {action_url}"`). Um
@@ -563,9 +584,9 @@ nome**, senão a variável sai em branco e nada falha.
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
-| Frase que nunca fica vazia | `order_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
+| Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
 | Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
-| Quantidade da fornada | *(nome a combinar)* | `saiu_do_forno` |
+| Frase de disponibilidade | `availability_phrase` *(a confirmar)* | `saiu_do_forno` |
 | Nome da loja | `shop_name` | `pedido_compra` |
 | Ref da compra | `purchase_ref` | `pedido_compra` |
 | Material | `material_name` | `pedido_compra` |
