@@ -2034,6 +2034,38 @@ o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
 escrevendo a mesma verdade é exatamente como ela diverge; unificá-lo com
 `source`/`reviewed` é do WP de rename.
 
+## Marketing — `platform_content` / `platform_variants` por plataforma
+
+`AnnouncementTemplate.platform_variants` (o modelo), `Announcement.platform_content`
+(o anúncio) e `provider_fields` do artefato selado (`MarketingContentArtifact.payload
+["resolved_artifacts"][<plataforma>]`) usam o MESMO schema fechado por formato, dono
+`shopman/shop/services/marketing_capabilities.py`. Chave fora do formato escolhido é
+recusada (`unsupported_provider_field`); `body`, `hashtags`, `image_url` e `link` são
+conteúdo, não opção de provedor.
+
+### `google_business` — post do Google Meu Negócio
+
+Regras e limites: `shopman/shop/services/marketing_google_post.py` (conferidos na
+documentação oficial do Google em 25/09/2026).
+
+| Chave | Tipo | Formatos | Quem escreve | Observação |
+|---|---|---|---|---|
+| `publication_format` | `"standard"` \| `"event"` \| `"offer"` | todos | modelo (padrão `standard`) ou revisão | vira `topicType` `STANDARD`/`EVENT`/`OFFER`; `ALERT` fica de fora |
+| `call_to_action` | `"none"` \| `"book"` \| `"order"` \| `"shop"` \| `"learn_more"` \| `"sign_up"` \| `"call"` | `standard`, `event` | modelo ou revisão | ausente = `none`: **link nunca vira botão sozinho**. `order`/`shop` só com link `/produto/` ou `/oferta/`; `call` vai sem URL (telefone do perfil) |
+| `event_title` | `string` | `event` (obrigatório) | revisão | |
+| `event_start`, `event_end` | `"YYYY-MM-DDTHH:MM"` | `event` (obrigatório) | revisão | hora LOCAL da loja, sem fuso — é o que o Google recebe (`Date` + `TimeOfDay`) |
+| `offer_title` | `string` | `offer` | **servidor**, na prévia e na aprovação | `Promotion.name` da campanha (fatos selados); o que vier do cliente é sobrescrito |
+| `offer_start`, `offer_end` | `"YYYY-MM-DDTHH:MM"` | `offer` | **servidor** | `max(Promotion.valid_from, agora)` e `Promotion.valid_until`, no fuso da loja |
+| `offer_terms` | `string` | `offer` (opcional) | revisão | vira `termsConditions` |
+
+Sem cupom: promoção com cupom não pode ser anunciada pelo Marketing
+(`marketing_promotion_requires_coupon`), então `couponCode` nunca sai. O link de
+resgate da oferta (`redeemOnlineUrl`) é o `link` do conteúdo, que precisa ser a página
+`/oferta/<ref>`. A revisão envia as chaves que escreve em `google_business` no corpo da
+aprovação (`_GOOGLE_BUSINESS_EDIT_KEYS` em `backstage/api/marketing.py`).
+
+---
+
 ## IdempotencyKey.response_body — intenções locais versionadas
 
 `remote_mutations.run_idempotent_mutation(..., fingerprint=...)` usa, somente em escopos

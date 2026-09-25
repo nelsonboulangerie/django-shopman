@@ -305,3 +305,44 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 });
+
+describe("AnnouncementPreview — post do Google", () => {
+  function googleBatch(providerFields: Record<string, unknown>) {
+    const value = batch({ google_business: "Pão quente saindo agora" });
+    value.previews.google_business!.artifact.provider_fields = providerFields;
+    value.previews.google_business!.artifact.image_url =
+      "https://img.example.test/home/facade2.jpg";
+    return value;
+  }
+
+  async function renderGoogle(providerFields: Record<string, unknown>) {
+    vi.stubGlobal("$fetch", vi.fn(async () => googleBatch(providerFields)));
+    const wrapper = mountPreview({
+      platforms: ["google_business"],
+      platformLabels: { google_business: "Google Meu Negócio" },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("mostra o botão escolhido, e o link só existe atrás dele", async () => {
+    const wrapper = await renderGoogle({
+      publication_format: "standard",
+      call_to_action: "learn_more",
+    });
+    const post = wrapper.get("[data-testid=google-post-preview]");
+
+    expect(post.get("[data-testid=google-post-button]").text()).toBe("Saiba mais");
+    expect(post.text()).not.toContain("/produto/croissant");
+    expect(wrapper.text()).toContain("Google Meu Negócio · Atualização");
+    expect(wrapper.text()).toContain("Não ponha texto dentro da imagem");
+  });
+
+  it("sem botão, avisa que o link não aparece no post", async () => {
+    const wrapper = await renderGoogle({ publication_format: "standard" });
+
+    expect(wrapper.find("[data-testid=google-post-button]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Sem botão, o link não aparece no post.");
+  });
+});

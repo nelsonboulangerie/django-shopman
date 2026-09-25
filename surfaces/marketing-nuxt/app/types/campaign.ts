@@ -401,6 +401,8 @@ export interface AnnouncementEdits {
   platforms?: string[];
   image_url?: string;
   publish_at?: string;
+  /** Tipo e botão do post do Google; só vai quando o Google está entre as plataformas. */
+  google_business?: Record<string, string>;
   /** Trace only; publishing still requires the independent approval command. */
   ai_suggestion_ref?: string;
 }

@@ -12,6 +12,12 @@
  *  destinatário e não se apaga; a postagem fica num mural público e se apaga. O
  *  simulador honra essa diferença porque é ela que muda a decisão. */
 
+import {
+  googleCallToActionLabel,
+  googlePeriodLabel,
+  googlePostTypeLabel,
+} from "~/presentation/googleBusinessPost";
+
 export type SimulatedSceneKind =
   | "story"
   | "feed"
@@ -25,7 +31,42 @@ export type SimulatedPreviewContent = {
   hashtags: string[];
   imageUrl: string;
   link: string;
+  /** Só no post do Google: o tipo, o botão e o evento/oferta como o Google mostra. */
+  google?: GoogleSceneDetails;
 };
+
+export type GoogleSceneDetails = {
+  /** "Atualização", "Evento" ou "Oferta". */
+  postTypeLabel: string;
+  /** Rótulo pt-BR do botão; vazio quando o post sai sem botão. */
+  buttonLabel: string;
+  /** Título do evento ou da oferta. */
+  title: string;
+  /** "sáb., 27/09, 08:00 – 12:00". */
+  period: string;
+};
+
+/** O que o Google mostra no post, a partir das opções seladas do artefato. */
+export function googleSceneDetails(
+  fields: Record<string, unknown> | undefined,
+): GoogleSceneDetails {
+  const raw = fields || {};
+  const format = String(raw.publication_format || "standard");
+  const offer = format === "offer";
+  return {
+    postTypeLabel: googlePostTypeLabel(format),
+    buttonLabel: offer
+      ? "Ver oferta"
+      : googleCallToActionLabel(raw.call_to_action),
+    title: String((offer ? raw.offer_title : raw.event_title) || ""),
+    period:
+      format === "event"
+        ? googlePeriodLabel(raw.event_start, raw.event_end)
+        : offer
+          ? googlePeriodLabel(raw.offer_start, raw.offer_end)
+          : "",
+  };
+}
 
 export type SimulatedSceneInput = {
   platform: string;
@@ -51,6 +92,8 @@ const FORMAT_KINDS: Record<string, SimulatedSceneKind> = {
   story: "story",
   feed: "feed",
   standard: "google_update",
+  event: "google_update",
+  offer: "google_update",
 };
 
 /** O formato manda; a plataforma decide quando o artefato não declarou formato.
@@ -68,8 +111,15 @@ export function simulatedSceneKind(input: {
 
 /** Google e WhatsApp já dizem a plataforma no nome do formato; repeti-la viraria
  *  "Atualização do Google no Google". */
-function sceneLabel(kind: SimulatedSceneKind, platformsLabel: string): string {
-  if (kind === "google_update") return "Atualização do Google";
+function sceneLabel(
+  kind: SimulatedSceneKind,
+  platformsLabel: string,
+  google?: GoogleSceneDetails,
+): string {
+  if (kind === "google_update") {
+    const type = google?.postTypeLabel || "Atualização";
+    return type === "Atualização" ? "Atualização do Google" : `${type} no Google`;
+  }
   if (kind === "whatsapp_message") return "Mensagem no WhatsApp";
   return `${kind === "story" ? "Story" : "Feed"} no ${platformsLabel}`;
 }
@@ -86,6 +136,7 @@ function contentFingerprint(content: SimulatedPreviewContent): string {
     content.hashtags.join(" "),
     content.imageUrl,
     content.link,
+    JSON.stringify(content.google || {}),
   ].join("");
 }
 
@@ -135,7 +186,7 @@ export function simulatedScenes(
       ...group.content,
       key: `${group.kind}:${group.platforms.join("+")}`,
       kind: group.kind,
-      label: sceneLabel(group.kind, platformsLabel),
+      label: sceneLabel(group.kind, platformsLabel, group.content.google),
       platformsLabel,
       directMessage: group.kind === "whatsapp_message",
     };
@@ -172,6 +223,9 @@ export function scenesFromDraftArtifacts(input: {
           hashtags: displaySimulatedHashtags(artifact.hashtags || []),
           imageUrl: String(artifact.image_url || ""),
           link: String(artifact.link || ""),
+          ...(platform === "google_business"
+            ? { google: googleSceneDetails(artifact.provider_fields) }
+            : {}),
         },
       };
     }),
@@ -203,7 +257,15 @@ export function scenesFromFrozenCommand(input: {
   );
   return simulatedScenes(
     input.platforms.map((platform) => {
-      const variant = input.platformContent?.[platform] || {};
+      const stored = input.platformContent?.[platform] || {};
+      // A escolha da revisão viaja no comando; é ela que vale, não a do modelo.
+      const frozenGoogle =
+        platform === "google_business" &&
+        input.frozenBody?.google_business &&
+        typeof input.frozenBody.google_business === "object"
+          ? (input.frozenBody.google_business as Record<string, unknown>)
+          : null;
+      const variant = frozenGoogle ? { ...stored, ...frozenGoogle } : stored;
       return {
         platform,
         platformLabel: input.platformLabels[platform] || platform,
@@ -213,6 +275,9 @@ export function scenesFromFrozenCommand(input: {
           hashtags,
           imageUrl: String(variant.image_url || input.imageUrl || ""),
           link: "",
+          ...(platform === "google_business"
+            ? { google: googleSceneDetails(variant) }
+            : {}),
         },
       };
     }),

@@ -227,6 +227,7 @@ def all_formats_announcement() -> dict:
         },
         "google_business": {
             "publication_format": "standard",
+            "call_to_action": "call",
             "image_url": VISUAL_WIDE_IMAGE,
         },
         "whatsapp": {"image_url": VISUAL_SQUARE_IMAGE},

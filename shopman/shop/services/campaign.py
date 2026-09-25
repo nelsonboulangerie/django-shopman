@@ -1097,6 +1097,16 @@ def preview_platforms(
         platforms=normalized_platforms,
         platform_content=rendered_variants,
     )
+    if "google_business" in normalized_platforms:
+        from shopman.shop.services import marketing_google_post, marketing_time
+
+        rendered_variants = marketing_google_post.prepare_platform_content(
+            rendered_variants,
+            facts=facts.as_payload(),
+            image_url=variables["product_image_url"],
+            timezone_name=marketing_time.configured_timezone_name(),
+            now=timezone.now(),
+        )
     flow_binding = (
         verified_whatsapp_flow_binding()
         if "whatsapp" in normalized_platforms

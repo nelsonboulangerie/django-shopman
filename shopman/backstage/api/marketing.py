@@ -579,6 +579,7 @@ class AnnouncementApproveView(_CampaignBase):
             "hashtags",
             "image_url",
             "platforms",
+            "google_business",
             "publish_at",
             "publish_mode",
             "publish_timezone",
@@ -655,6 +656,10 @@ class AnnouncementApproveView(_CampaignBase):
             # changed after the announcement was created would approve content
             # different from what the operator reviewed.
             platform_content = dict(announcement.platform_content or {})
+            if "google_business" in edits:
+                platform_content = _with_google_business_edits(
+                    platform_content, edits["google_business"]
+                )
 
         try:
             result = marketing_approval.approve_command(
@@ -1945,8 +1950,53 @@ def _announcement_edits(data) -> tuple[dict, dict | None]:
         if not platforms:
             return {}, {"detail": "Escolha ao menos uma plataforma.", "field": "platforms"}
         edits["platforms"] = platforms
+    if "google_business" in data:
+        options = data.get("google_business")
+        if not isinstance(options, dict):
+            return {}, {
+                "detail": "As opções do Google precisam ser um objeto.",
+                "field": "google_business",
+            }
+        unknown = sorted(set(options) - _GOOGLE_BUSINESS_EDIT_KEYS)
+        if unknown:
+            return {}, {
+                "detail": "Há uma opção do Google que a revisão não altera.",
+                "field": f"google_business.{unknown[0]}",
+            }
+        if any(not isinstance(value, str) for value in options.values()):
+            return {}, {
+                "detail": "As opções do Google precisam ser texto.",
+                "field": "google_business",
+            }
+        edits["google_business"] = {key: value.strip() for key, value in options.items()}
 
     return edits, None
+
+
+#: O que a revisão escolhe no post do Google. Título e período da oferta ficam de
+#: fora: vêm da promoção da campanha, selados na aprovação.
+_GOOGLE_BUSINESS_EDIT_KEYS = frozenset({
+    "publication_format",
+    "call_to_action",
+    "event_title",
+    "event_start",
+    "event_end",
+    "offer_terms",
+})
+
+
+def _with_google_business_edits(platform_content: dict, options: dict) -> dict:
+    """A escolha da revisão substitui as opções do modelo; campo vazio sai."""
+
+    merged = dict(platform_content)
+    variant = {
+        key: value
+        for key, value in dict(merged.get("google_business") or {}).items()
+        if key not in _GOOGLE_BUSINESS_EDIT_KEYS
+    }
+    variant.update({key: value for key, value in options.items() if value})
+    merged["google_business"] = variant
+    return merged
 
 
 def _is_approval_command(request) -> bool:
