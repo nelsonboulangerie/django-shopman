@@ -719,7 +719,7 @@ SHOPMAN_WHATSAPP = {
     "timeout": MANYCHAT_API_TIMEOUT,
     # event → Meta template config. Vazio = manda texto (só dentro da janela 24h).
     # Preencher com os templates Utility/Auth aprovados na Meta:
-    #   "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref_short", "total"]},
+    #   "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref_short", "order_total_display"]},
     # (no corpo o pedido é o FINAL do ref, `order_ref_short`; o ref completo vai no botão)
     "templates": {},
 }

@@ -15,7 +15,7 @@ _CFG = {
     "DEFAULT_LANG": "pt_BR",
     "timeout": 5,
     "templates": {
-        "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref", "total"]},
+        "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref", "order_total_display"]},
     },
 }
 
@@ -53,7 +53,7 @@ def test_send_uses_template_payload_when_mapped():
         return _ok_response()
 
     with mock.patch.object(wa, "urlopen", fake_urlopen):
-        ok = wa.send("+55 43 99999-0000", "order_accepted", {"order_ref": "ORD-1", "total": "R$ 15,00"})
+        ok = wa.send("+55 43 99999-0000", "order_accepted", {"order_ref": "ORD-1", "order_total_display": "R$ 15,00"})
 
     assert ok is True
     assert captured["url"] == "https://graph.facebook.com/v21.0/1234567890/messages"
