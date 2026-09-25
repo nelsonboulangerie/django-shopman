@@ -93,15 +93,37 @@ Eles não gravam nada em lugar nenhum.
 
 ### Sample values do pacote
 
-| Variável | Sample |
-|---|---|
-| Nome do cliente | `Ana` |
-| Ref do pedido | `NB-260902-A17` |
-| Total | `R$ 38,00` |
+| Variável | Sample | Onde |
+|---|---|---|
+| Nome do cliente | `Ana` | corpo |
+| **Código do pedido** | `A17` | **corpo** |
+| **Ref do pedido** | `NB-260902-A17` | **botão de URL** |
+| Total | `R$ 38,00` | corpo |
 
+> ### ⛔ O corpo diz o código curto; o botão leva a ref inteira
+>
+> Decisão do dono, 25/09/2026: no texto que o cliente lê, o pedido é chamado só pelo
+> **final da ref** — "A17", não "NB-260925-A17". O botão continua levando a ref inteira,
+> porque é ela que abre `/pedido/{ref}` na loja.
+>
+> Isso **não** é a mesma variável escrita de dois jeitos: são duas, de campos
+> personalizados diferentes. No corpo, `order_ref_short`; no botão, `order_ref`. Ligar o
+> corpo ao `order_ref` devolve a ref inteira no texto, e ligar o botão ao
+> `order_ref_short` produz `…/pedido/A17`, que **não abre** — a loja resolve pedido pela
+> ref completa.
+>
+> O valor curto sai do `short_ref()` que a casa já tem
+> (`shop/services/operator_orders.py`), o mesmo que o card do gestor de pedidos mostra em
+> destaque. Então operador e cliente falam o mesmo código por construção, não por
+> coincidência.
+>
 > ⚠️ A ref **não** é `NB-1042`. O formato real é `{PREFIXO}-{AAMMDD}-{L##}`
 > (`orderman/ids.py::generate_order_ref`), com o prefixo `NB` vindo de `order_ref_prefix`
 > na config do canal. Sample com formato irreal atrapalha a revisão do botão.
+>
+> ⚠️ O código curto é único **por dia**, não para sempre: são 1 letra + 2 dígitos, e o
+> `A17` de hoje volta a existir semana que vem. Serve para o cliente falar do pedido do
+> dia, que é o caso de toda mensagem deste pacote — não para busca histórica.
 
 ---
 
@@ -117,7 +139,13 @@ pergunta aberta. Não há template de OTP a submeter.
 
 Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **Utility**.
 Onde há botão, ele é sempre `https://www.nelsonboulangerie.com.br/pedido/{{1}}`,
-com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
+com `{{1}}` mapeado ao campo personalizado `order_ref` (a ref **inteira**) e sample
+`NB-260902-A17`.
+
+⚠️ A numeração do botão é **independente** da do corpo: o `{{1}}` do botão não é o `{{1}}`
+do corpo. Num template onde o corpo já usa `{{1}}` para o código curto, o botão continua
+tendo o seu próprio `{{1}}`, ligado ao `order_ref`. É o erro mais fácil de cometer aqui, e
+o sintoma é um botão que abre `/pedido/A17` e não encontra o pedido.
 
 > ### ⛔ Os corpos daqui seguem a VOZ APROVADA de 24-25/09/2026
 >
@@ -150,12 +178,12 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_recebido` — evento `order_received`
 - Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Estamos conferindo a disponibilidade e avisamos em seguida.`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_confirmado` — evento `order_accepted`
 - Corpo: `Seu pedido {{1}} está confirmado. Total: {{2}}. Já vamos preparar.`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`) · `{{2}}`=`R$ 38,00` (`total`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido`
 
 > ⚠️ **Sem cumprimento e sem agradecimento, e os dois são decisão do dono.** O
@@ -166,12 +194,12 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Olá, {{1}}! Não conseguimos confirmar o seu pedido {{2}} desta vez. Nada foi cobrado. Se quiser entender o motivo, é só falar com a gente por aqui.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Ver pedido`
 
 ### `pedido_em_preparo` — evento `order_preparing`
 - Corpo: `Estamos preparando o seu pedido {{1}}. Avisamos assim que estiver pronto.`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 > ⚠️ **O `{eta_note}` não viaja neste template**, e é o mesmo motivo do `produto_chegou`:
@@ -186,17 +214,17 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_pronto_retirada` — evento `order_ready_pickup`
 - Corpo: `Seu pedido {{1}} está pronto e esperando por você no balcão. 🥐`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Endereço e detalhes`
 
 ### `pedido_pronto_entrega` — evento `order_ready_delivery`
 - Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair. 📦`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
 - Corpo: `Seu pedido {{1}} saiu para entrega e chega logo.`
-- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 > ✅ **Destravado em 25/09/2026 por decisão do dono:** sem cumprimento, como os outros
@@ -211,25 +239,25 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
 ### `pedido_entregue` — evento `order_delivered`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 
 ### `pedido_cancelado` — evento `order_cancelled`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado. Se tiver qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 
 ### `pedido_agendado_lembrete` — evento `preorder_reminder`
 - Corpo: `Olá, {{1}}! Lembrando que o seu pedido {{2}} está agendado para amanhã. Já estamos preparando tudo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Pagar pedido`
 
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
 - Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para garantir o pedido, é só pagar pelo botão abaixo até {{4}}. Depois disso a reserva é liberada. Qualquer coisa, é só responder esta mensagem.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
 - Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
 - No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
 
@@ -243,32 +271,32 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 
 ### `pagamento_confirmado` — evento `payment_confirmed`
 - Corpo: `Olá, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Avisamos a cada passo daqui em diante.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 
 ### `pagamento_lembrete` — evento `payment_reminder`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} ainda aguarda o pagamento via PIX. Toque abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Concluir pagamento`
 
 ### `pagamento_expirado` — evento `payment_expired`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado porque o pagamento via PIX não foi confirmado a tempo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 
 ### `pagamento_falhou` — evento `payment_failed`
 - Corpo: `Olá, {{1}}! Não conseguimos preparar o pagamento do seu pedido {{2}}. Abra o pedido pelo botão abaixo para tentar de novo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Abrir pedido`
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
 - Corpo: `Olá, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} pelo botão abaixo para garantir o seu.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Confirmar pedido`
 
 > ⚠️ Não ligar `waitlist.enabled` antes do #392 estar no ar — ver a política de fila.
 
 ### `fila_vaga_liberada` — evento `waitlist_released`
 - Corpo: `Olá, {{1}}! O prazo de confirmação do pedido {{2}} passou e liberamos a sua vaga. Nada foi cobrado, e é só entrar na fila da próxima fornada.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Ver pedido`
 
 ### `produto_chegou` — evento `stock_arrived`
@@ -308,8 +336,13 @@ Audiência diferente: quem recebe é o contato comercial do fornecedor, não um 
 
 ### `pedido_compra` — evento `purchase_request`
 - Corpo: `Olá! Chegou um pedido de compra da {{1}}, número {{2}}: {{3}}, quantidade {{4}}. Por favor, confirme disponibilidade, prazo e valor final por aqui.`
-- Vars: `{{1}}`=`Nelson Boulangerie` · `{{2}}`=`PC-260902-9C4A1F` · `{{3}}`=`Farinha de trigo tipo 1` · `{{4}}`=`5 sc`
+- Vars: `{{1}}`=`Nelson Boulangerie` (`shop_name`) · `{{2}}`=`PC-260902-9C4A1F` (`purchase_ref`) · `{{3}}`=`Farinha de trigo tipo 1` (`material_name`) · `{{4}}`=`5 sc` (`purchase_qty_display`)
 - Sem botão (o fornecedor responde na conversa; não há tela dele).
+
+> ⚠️ **A ref aqui fica INTEIRA, e não é esquecimento.** A regra do código curto é do
+> pedido do cliente; esta é a ref da **compra** (`purchase_ref`), e quem lê é o contato
+> comercial do fornecedor, que vai procurar esse número no sistema dele. Encurtar deixaria
+> o fornecedor com `9C4A1F` e sem botão — este template não tem tela para onde mandar.
 
 ---
 
@@ -411,7 +444,8 @@ nome**, senão a variável sai em branco e nada falha.
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
 | Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
-| Ref do pedido | `order_ref` | todos os de pedido **e todo botão de URL** |
+| Código do pedido (curto) | `order_ref_short` | o **corpo** de todos os de pedido |
+| Ref do pedido (inteira) | `order_ref` | **todo botão de URL**, e o corpo do `pedido_compra` |
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
@@ -424,6 +458,10 @@ nome**, senão a variável sai em branco e nada falha.
 
 ⚠️ **Nunca** mapeie um botão de URL para `tracking_url` ou `payment_url`. O botão leva
 `order_ref`; o prefixo já está fixo no template. Ver "ANTES DE SUBMETER".
+
+⚠️ **Nem para `order_ref_short`.** O curto é do corpo; no botão ele produz
+`…/pedido/A17`, que não resolve pedido nenhum. Os dois campos existem de propósito e não
+são intercambiáveis.
 
 ⚠️ **Crie todos como tipo Texto**, inclusive `total`. O adapter grava por
 `setCustomFieldByName` com o valor já formatado (`R$ 38,00`, `5 sc`) — campo criado como
