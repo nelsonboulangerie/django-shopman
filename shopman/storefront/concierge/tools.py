@@ -780,12 +780,26 @@ def set_fulfillment(
     slot_ref: str = "",
     address: str = "",
     tax_id: str = "",
+    use_shared_location: bool = False,
+    street: str = "",
+    street_number: str = "",
+    complement: str = "",
+    neighborhood: str = "",
+    postal_code: str = "",
+    city: str = "",
+    state: str = "",
 ) -> dict:
     """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
 
     Na entrega, ``tax_id`` é o CPF/CNPJ PEDIDO para a nota (``fiscal.tax_id``):
     a nota da entrega a domicílio não sai sem ele, e a porta do pedido recusa
     (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
+
+    O endereço é montado na conversa (``concierge/address.py``): pela
+    localização enviada no WhatsApp (``use_shared_location``), pelo texto
+    (``address``) ou pelas partes ditas depois (rua, número, complemento,
+    bairro, CEP, cidade, UF), por cima do que já está na sacola. O resultado
+    traz ``address_question``: o que ainda falta perguntar, pela régua da nota.
     """
     from shopman.shop.services import cart as cart_service
     from shopman.storefront.intents.checkout import _validate_preorder
@@ -847,23 +861,43 @@ def set_fulfillment(
                 values["fiscal"] = {"tax_id": tax_digits}
             else:
                 errors["fiscal_tax_id"] = TAX_ID_INVALID_MESSAGE
+        from shopman.storefront.concierge import address as delivery_address
+
         address = " ".join(str(address or "").split()).strip()
-        if not address:
-            errors["delivery_address"] = "Preciso do endereço completo, com número."
+        parts = {
+            "street": street, "street_number": street_number, "complement": complement,
+            "neighborhood": neighborhood, "postal_code": postal_code, "city": city, "state": state,
+        }
+        pin = None
+        if use_shared_location:
+            pin = _shared_location(ctx)
+            if pin is None:
+                return _error(
+                    "no_shared_location",
+                    "Não recebi sua localização por aqui. Pode enviar pelo clipe do WhatsApp (Localização) "
+                    "ou escrever o endereço com rua, número, bairro e CEP?",
+                )
+        data = session.data or {}
+        current = data.get("delivery_address_structured") if data.get("fulfillment_type") == "delivery" else None
+        if pin is None and not address and not any(str(v or "").strip() for v in parts.values()) and not current:
+            errors["delivery_address"] = (
+                "Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever "
+                "rua, número, bairro e CEP."
+            )
         else:
-            structured = _structured_address(address)
-            if "latitude" not in structured:
+            try:
+                structured = delivery_address.compose(current=current, pin=pin, text=address, parts=parts)
+            except delivery_address.AddressNotLocated:
                 # Sem coordenada não há taxa honesta: o motor de faixas precisa da
                 # distância, e cobrar "taxa padrão" por um endereço que não se sabe
-                # onde fica é chute com dinheiro. Falha fechado e aponta o site,
-                # onde o endereço é escolhido no mapa.
+                # onde fica é chute com dinheiro. Falha fechado e pede o que resolve.
                 return _error(
                     "address_not_located",
-                    "Não consegui localizar esse endereço para calcular a entrega. Peça para conferir o "
-                    "endereço com número e bairro, ou ofereça o site (send_web_link) ou a retirada.",
+                    "Não consegui localizar esse endereço para calcular a entrega. Confira a rua, o número "
+                    "e o bairro, ou envie sua localização pelo WhatsApp.",
                     address=address,
                 )
-            values["delivery_address"] = address
+            values["delivery_address"] = structured["formatted_address"]
         if slot_ref:
             from shopman.shop.services.business_calendar import delivery_slots_for
 
@@ -893,21 +927,36 @@ def set_fulfillment(
         result["pickup_slots"] = list_fulfillment_slots(ctx, when).get("pickup_slots", [])
     if fulfillment_type == "delivery" and payload.get("delivery_out_of_zone"):
         result["message"] = "Esse endereço está fora da nossa área de entrega."
+    elif fulfillment_type == "delivery" and structured:
+        from shopman.storefront.concierge import address as delivery_address
+
+        result["address_missing"] = delivery_address.missing_words(structured)
+        result["address_question"] = delivery_address.question(structured, from_pin=pin is not None)
     return result
 
 
-def _structured_address(address: str) -> dict:
-    from shopman.shop.services.geocoding import forward_geocode
+def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
+    """A última localização (pin) que o cliente mandou NESTA conversa.
 
-    structured = {"formatted_address": address, "is_verified": False}
-    try:
-        coords = forward_geocode(address)
-    except Exception:
-        logger.debug("concierge.forward_geocode degraded", exc_info=True)
-        coords = None
-    if coords:
-        structured["latitude"], structured["longitude"] = coords
-    return structured
+    O servidor lê a coordenada do envelope da entrada (``transport``); o
+    modelo nunca a digita. ``None`` quando não houve pin.
+    """
+    from shopman.shop.models import ConversationMessage as Message
+
+    inbound = Message.objects.filter(
+        conversation=ctx.conversation, kind=Message.Kind.INBOUND, envelope__message_type="location",
+    )
+    limit = getattr(ctx.conversation, "_inbound_max_id", None)
+    if limit is not None:
+        inbound = inbound.filter(pk__lte=limit)
+    message = inbound.order_by("-pk").first()
+    location = (message.envelope or {}).get("location") if message is not None else None
+    if not isinstance(location, dict):
+        return None
+    latitude, longitude = location.get("latitude"), location.get("longitude")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (latitude, longitude)):
+        return None
+    return float(latitude), float(longitude)
 
 
 def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | None = None) -> dict:
@@ -951,6 +1000,17 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
             missing.append("delivery_out_of_zone")
     if fulfillment_type == "delivery":
         missing.extend(_delivery_fiscal_missing(ctx, session))
+        from shopman.storefront.concierge import address as delivery_address
+
+        structured = data.get("delivery_address_structured") or {}
+        if data.get("delivery_address"):
+            words = delivery_address.missing_words(structured)
+            if words:
+                # A entrega pelo WhatsApp fecha com o endereço inteiro (decisão do
+                # dono, 25/09): com nota ou sem, o entregador precisa do número.
+                if "delivery_address_details" not in missing:
+                    missing.append("delivery_address_details")
+                payload["address_missing"] = words
     if not ctx.conversation.phone:
         missing.append("customer_phone")
     if data.get("delivery_date"):
@@ -1005,8 +1065,8 @@ def _delivery_fiscal_missing(ctx: ToolContext, session) -> list[str]:
 
     ``fiscal_tax_id``: pedir o CPF ou CNPJ e gravar com set_fulfillment.
     ``delivery_address_details``: o endereço dito na conversa não tem rua,
-    número, bairro, cidade, estado e CEP separados, que a nota exige; o caminho
-    é o site (onde o endereço é escolhido no mapa) ou a retirada.
+    número, bairro, cidade, estado e CEP separados, que a nota exige; o
+    concierge pergunta o que falta (``set_fulfillment`` com as partes).
     """
     from shopman.shop.services import delivery_fiscal_identity as identity
 
@@ -1597,13 +1657,19 @@ def render_result(name: str, result: dict) -> str:
             rows.append(f"Observação: {_display_text(result['order_notes'])}")
         if result.get("delivery_fee"):
             rows.append(f"Entrega: {result['delivery_fee']}")
+        if name == "set_fulfillment" and result.get("address_question"):
+            rows.append(_display_text(result["address_question"]))
         if name == "review_order":
             methods = ", ".join(p["label"] for p in result.get("payment_methods", []))
             rows.append(f"Pagamento: {PAYMENT_LABELS.get(result.get('payment_method'), '') or methods}.")
             if result.get("ready"):
                 rows.append("Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘confirmo’ para registrar.")
             else:
-                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "informar o CPF ou CNPJ para a nota fiscal da entrega (sem ele, só a retirada)", "delivery_address_details": "completar o endereço pelo site, com rua, número, bairro e CEP (ou escolher a retirada)", "cart": "conferir a sacola"}
+                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "informar o CPF ou CNPJ para a nota fiscal da entrega (sem ele, só a retirada)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
+                if result.get("address_missing"):
+                    from shopman.shop.services.delivery_fiscal_identity import join_words
+
+                    labels["delivery_address_details"] = f"completar o endereço da entrega: {join_words(result['address_missing'])}"
                 rows.append("Ainda falta: " + ", ".join(labels.get(field, "conferir a disponibilidade da sacola") for field in result.get("missing", [])))
         return "\n".join(rows)
     if name == "place_order":
@@ -1714,16 +1780,28 @@ TOOL_SPECS: list[dict] = [
         "description": (
             "Grava retirada (pickup) ou entrega (delivery), a data (AAAA-MM-DD, \"\" = hoje), o "
             "horário (slot_ref de list_fulfillment_slots, \"\" se ainda não escolhido) e, na entrega, o "
-            "endereço completo com número e o CPF ou CNPJ para a nota fiscal. Valida como o site e "
-            "devolve a taxa de entrega."
+            "endereço e o CPF ou CNPJ para a nota fiscal. Valida como o site e devolve a taxa de entrega. "
+            "O endereço se monta aos poucos: `use_shared_location` usa a localização que o cliente enviou "
+            "no WhatsApp; `address` é o endereço escrito; as partes (street, street_number, complement, "
+            "neighborhood, postal_code, city, state) são o que o cliente disse depois e vão por cima do "
+            "endereço já gravado. Chamadas seguintes só precisam das partes novas. O resultado traz "
+            "`address_question`: o que ainda falta perguntar."
         ),
         "input_schema": _schema(
             {
                 "fulfillment_type": {"type": "string", "enum": ["pickup", "delivery"]},
                 "delivery_date": {"type": "string", "description": "AAAA-MM-DD ou \"\"."},
                 "slot_ref": {"type": "string", "description": "Ref do horário, ou \"\"."},
-                "address": {"type": "string", "description": "Endereço completo (entrega), ou \"\"."},
+                "address": {"type": "string", "description": "Endereço escrito pelo cliente (entrega), ou \"\"."},
                 "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (obrigatório para entregar), ou \"\"."},
+                "use_shared_location": {"type": "boolean", "description": "true quando o cliente enviou a localização pelo WhatsApp e ela é o endereço da entrega."},
+                "street": {"type": "string", "description": "Rua dita/corrigida pelo cliente, ou \"\"."},
+                "street_number": {"type": "string", "description": "Número da casa/prédio (ou \"S/N\" se o cliente disser que não tem), ou \"\"."},
+                "complement": {"type": "string", "description": "Complemento (apto, bloco, fundos); \"sem complemento\" quando o cliente disser que não tem; \"\" se não foi dito."},
+                "neighborhood": {"type": "string", "description": "Bairro, ou \"\"."},
+                "postal_code": {"type": "string", "description": "CEP, ou \"\"."},
+                "city": {"type": "string", "description": "Cidade, ou \"\"."},
+                "state": {"type": "string", "description": "UF (ex.: PR), ou \"\"."},
             },
             ["fulfillment_type"],
         ),

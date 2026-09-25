@@ -170,10 +170,23 @@ def forward_geocode(address: str) -> tuple[float, float] | None:
 
     Caminho feliz da entrega: quando o endereço chega SEM coordenada (fallback ViaCEP /
     digitação manual), resolve lat/lng para o motor de distância — assim o cálculo por
-    faixa funciona e a taxa-padrão fica como último recurso. Cache 24h por endereço
-    normalizado (inclui cache negativo p/ não martelar o Google). Usa a chave
-    privada de servidor; ela nunca é projetada para o navegador.
+    faixa funciona e a taxa-padrão fica como último recurso. É a coordenada do
+    resultado de ``forward_geocode_structured``: uma chamada ao Google, um cache.
     NUNCA levanta: o chamador cai no fallback se vier None.
+    """
+    result = forward_geocode_structured(address)
+    return (result.latitude, result.longitude) if result is not None else None
+
+
+def forward_geocode_structured(address: str) -> ReverseGeocodeResult | None:
+    """Geocode um endereço em TEXTO → o endereço canônico (partes + coordenada).
+
+    Mesma forma do reverso (``ReverseGeocodeResult``), para quem precisa das
+    PARTES do endereço (rua, bairro, cidade, UF, CEP) e não só da coordenada: o
+    concierge do WhatsApp recebe o endereço como texto e a nota da entrega exige
+    as partes separadas. Cache 24h por endereço normalizado (inclui cache
+    negativo p/ não martelar o Google). Usa a chave privada de servidor; ela
+    nunca é projetada para o navegador. NUNCA levanta: devolve None.
     """
     address = " ".join((address or "").split()).strip()
     if not address:
@@ -182,10 +195,10 @@ def forward_geocode(address: str) -> tuple[float, float] | None:
     if not api_key:
         return None
 
-    key = "geocode:fwd:" + hashlib.sha1(address.lower().encode("utf-8")).hexdigest()
+    key = "geocode:fwd:v2:" + hashlib.sha1(address.lower().encode("utf-8")).hexdigest()
     cached = cache.get(key)
     if cached is not None:
-        return (float(cached[0]), float(cached[1])) if cached else None  # [] = negativo
+        return ReverseGeocodeResult(**cached) if cached else None  # {} = negativo
 
     params = {"address": address, "key": api_key, "language": "pt-BR", "region": "br"}
     url = f"{GEOCODE_URL}?{urllib.parse.urlencode(params)}"
@@ -208,9 +221,9 @@ def forward_geocode(address: str) -> tuple[float, float] | None:
             # negativo — na próxima janela o mesmo endereço volta a resolver.
             _record_failure("forward_geocode", f"status={status}")
             return None
-        cache.set(key, [], CACHE_TTL_SECONDS)  # cache negativo: endereço sem coordenada
+        cache.set(key, {}, CACHE_TTL_SECONDS)  # cache negativo: endereço sem coordenada
         return None
 
-    coords = (float(lat), float(lng))
-    cache.set(key, [coords[0], coords[1]], CACHE_TTL_SECONDS)
-    return coords
+    parsed = _parse_result(results[0], float(lat), float(lng))
+    cache.set(key, parsed.to_dict(), CACHE_TTL_SECONDS)
+    return parsed

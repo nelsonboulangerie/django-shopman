@@ -121,9 +121,18 @@ def _join(words: list[str]) -> str:
     return ", ".join(words[:-1]) + " e " + words[-1]
 
 
+def address_gap_words(gaps: list[RecipientGap]) -> list[str]:
+    """As lacunas de endereço como quem CONSERTA lê ("o número (ou S/N)", "o CEP")."""
+    return [_ADDRESS_WORDS.get(gap.label, gap.label) for gap in gaps if gap.field == ADDRESS_FIELD]
+
+
+def join_words(words: list[str]) -> str:
+    """``["a rua", "o CEP"]`` → ``"a rua e o CEP"``."""
+    return _join(words)
+
+
 def address_gap_message(gaps: list[RecipientGap]) -> str:
-    words = [_ADDRESS_WORDS.get(gap.label, gap.label) for gap in gaps if gap.field == ADDRESS_FIELD]
-    return f"Para a nota fiscal da entrega, falta no endereço: {_join(words)}."
+    return f"Para a nota fiscal da entrega, falta no endereço: {_join(address_gap_words(gaps))}."
 
 
 def order_view(*, data: dict, channel_ref: str = "", total_q: int = 0, ref: str = ""):
