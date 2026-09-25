@@ -1435,7 +1435,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     custody = equipment_custody(order)
     if custody.equipment:
         actions.append(Action(
-            ref="equipment-back", kind="mutation", label="Registrar devolução da maquininha",
+            ref="equipment-back", kind="mutation", label="Maquininha voltou",
             enabled=authorized and custody.pending,
             reason=(permission_reason if not authorized else "A maquininha deste pedido já voltou." if not custody.pending else ""),
             method="POST", idempotency="required",

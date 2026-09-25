@@ -786,7 +786,7 @@ function printQueue() {
           aria-label="Motivo da recusa"
         />
         <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Voltar</button>
           <button
             type="button"
             :disabled="!canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))"
@@ -853,7 +853,7 @@ function printQueue() {
           <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Voltar</button>
           <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
             Confirmar acerto
           </button>

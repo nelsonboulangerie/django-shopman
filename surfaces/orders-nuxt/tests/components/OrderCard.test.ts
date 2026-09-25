@@ -309,3 +309,15 @@ describe("OrderCard: a NFC-e que não autorizou", () => {
     expect(mountCard({ card: card({ fiscal_status: "authorized" }) }).find("[data-fiscal-failed]").exists()).toBe(false);
   });
 });
+
+describe("OrderCard: por que o botão está travado", () => {
+  it("a frase inteira fica à vista, não só no tooltip", () => {
+    const w = mountCard({
+      card: card({ advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }),
+    });
+    expect(w.get("[data-advance-block]").text()).toBe("Encomenda para uma data futura. O preparo abre no dia combinado.");
+  });
+  it("sem bloqueio, nada", () => {
+    expect(mountCard({ card: card({ advance_block_reason: "" }) }).find("[data-advance-block]").exists()).toBe(false);
+  });
+});
