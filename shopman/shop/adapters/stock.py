@@ -656,6 +656,27 @@ def extend_hold(hold_id: str, *, expires_at=None) -> bool:
     return StockHolds.extend(hold_id, expires_at=expires_at)
 
 
+def hold_state(hold_id: str) -> str | None:
+    """O estado do hold (``pending``/``confirmed``/``fulfilled``/``released``).
+
+    ``None`` quando o hold não existe mais (ou o id não é de hold). Leitura pura,
+    e a pergunta que a reconciliação de itens precisa fazer ANTES de agir: uma
+    reserva ainda ativa se LIBERA, uma já baixada se DEVOLVE ao ledger, e
+    confundir as duas ou some com pão do sistema ou inventa pão que não existe.
+
+    Descobrir isso por tentativa e erro (chamar ``return_fulfilled_hold`` e ver
+    se dá ``False``) funcionaria, mas faz o efeito colateral vir antes da
+    decisão — e é o tipo de código que ninguém consegue ler depois.
+    """
+    from shopman.stockman import Hold
+
+    try:
+        pk = int(str(hold_id).split(":")[1])
+    except (AttributeError, IndexError, ValueError):
+        return None
+    return Hold.objects.filter(pk=pk).values_list("status", flat=True).first()
+
+
 def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason: str) -> bool:
     """Devolve ao ledger o estoque de um hold FULFILLED (cancelamento tardio).
 

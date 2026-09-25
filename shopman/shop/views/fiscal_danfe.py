@@ -185,8 +185,11 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
     key = str(data.get("nfce_access_key") or "")
     qr_content = str(data.get("nfce_qrcode_url") or "")
 
+    # Pedido + ajustes: o DANFE mostra o pedido que vale, não o que nasceu.
+    from shopman.shop.services import order_composition
+
     items: list[DanfeItem] = []
-    for i, it in enumerate(order.items.all(), start=1):
+    for i, it in enumerate(order_composition.effective_items(order), start=1):
         qty = it.qty.normalize() if hasattr(it.qty, "normalize") else it.qty
         items.append(
             DanfeItem(

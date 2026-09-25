@@ -50,7 +50,13 @@ class ReturnService:
                 context={"current_status": order.status, "valid_statuses": [s.value for s in valid_statuses]},
             )
 
-        order_items_by_line = {item.line_id: item for item in order.items.all()}
+        # Pedido + ajustes: devolver linha que o cliente já tinha tirado, ou
+        # recusar linha que ele acrescentou, seria devolver o pedido errado.
+        from shopman.shop.services import order_composition
+
+        order_items_by_line = {
+            item.line_id: item for item in order_composition.effective_items(order)
+        }
         items_detail = []
         refund_total_q = 0
 

@@ -286,6 +286,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     from shopman.utils.monetary import format_money
 
     from shopman.backstage.presentation.status import payment_method_label
+    from shopman.shop.services import order_composition
 
     data = order.data or {}
     out = bytearray()
@@ -309,7 +310,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
         out += _line(f"Cliente: {customer_name}"[:COLUMNS])
     out += _rule()
 
-    for item in order.items.all():
+    for item in order_composition.effective_items(order):
         for pedaco in _wrap(item.name, COLUMNS):
             out += _line(pedaco)
         qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
@@ -320,7 +321,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += _rule()
 
     out += _line("")
-    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
+    out += _double(f"TOTAL R$ {format_money(order_composition.effective_total_q(order))}")
     out += _line("")
 
     payment = data.get("payment") or {}
@@ -341,7 +342,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     elif payment.get("method"):
         out += _pair(
             payment_method_label(str(payment.get("method")))[: COLUMNS // 2],
-            f"R$ {format_money(int(payment.get('amount_q') or order.total_q or 0))}",
+            f"R$ {format_money(int(payment.get('amount_q') or order_composition.effective_total_q(order)))}",
         )
     tendered_q = payment.get("tendered_q")
     change_q = payment.get("change_q")
@@ -462,6 +463,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     from shopman.utils.monetary import format_money
 
     from shopman.backstage.presentation.status import payment_method_label, payment_status_label
+    from shopman.shop.services import order_composition
     from shopman.shop.services import payment as payment_svc
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
@@ -517,7 +519,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
                 out += _line(pedaco)
         out += _rule()
 
-    itens = list(order.items.all())
+    itens = list(order_composition.effective_items(order))
     out += _line(f"ITENS ({len(itens)})")
     for item in itens:
         qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
@@ -550,7 +552,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _rule()
 
     out += _line("")
-    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
+    out += _double(f"TOTAL R$ {format_money(order_composition.effective_total_q(order))}")
     out += _line("")
 
     payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
@@ -628,11 +630,14 @@ def _charge_at_the_door_lines(order, payment: dict) -> bytes:
     from shopman.utils.monetary import format_money
 
     from shopman.backstage.presentation.status import payment_method_label
+    from shopman.shop.services import order_composition
     from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
 
     out = bytearray()
     out += _centered("COBRAR NA ENTREGA")
-    tenders = payment.get("tenders") or [{"method": payment.get("method") or "", "amount_q": order.total_q}]
+    tenders = payment.get("tenders") or [
+        {"method": payment.get("method") or "", "amount_q": order_composition.effective_total_q(order)}
+    ]
     a_receber = [
         tender for tender in tenders
         if tender.get("status") not in {"received", "captured", "paid"}
@@ -711,6 +716,7 @@ def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> byte
     informação, e o silêncio no lugar dela é o entregador pedindo dinheiro de um
     pedido já pago.
     """
+    from shopman.shop.services import order_composition
     from shopman.shop.services import payment as payment_svc
     from shopman.shop.services.order_helpers import (
         COURIER_TICKET_IDENTIFIED,
@@ -810,7 +816,7 @@ def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> byte
         out += _rule()
 
     # ── O que vai na sacola ───────────────────────────────────────────
-    itens = list(order.items.all())
+    itens = list(order_composition.effective_items(order))
     # "produtos", não "itens": a contagem é de LINHAS, e a linha de baixo diz
     # "2 x Pão". "1 item" ao lado de "2 x" faz o entregador conferir errado —
     # rótulo que mente é rótulo pior do que rótulo ausente.

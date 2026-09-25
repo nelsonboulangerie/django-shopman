@@ -27,6 +27,7 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
 
     from shopman.backstage.projections.bi_payments import payment_method_label
     from shopman.backstage.services.payments import iter_order_payments
+    from shopman.shop.services import order_composition
     from shopman.shop.services.order_helpers import exclude_test_orders
     from shopman.shop.services.payment_provenance import exclude_provider_simulated_orders
 
@@ -48,6 +49,12 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
             continue
         local = timezone.localtime(created_at)
         data = data or {}
+        # Pedido + ajustes: o faturamento é o que a plataforma paga pelo pedido
+        # que VALE. ``data`` já veio na consulta, então a composição sai daqui
+        # mesmo — o B.I. não pode somar por conta própria.
+        adjustment = data.get(order_composition.KEY)
+        if isinstance(adjustment, dict) and adjustment.get("total_q") is not None:
+            total_q = int(adjustment["total_q"])
         payment = data.get("payment") or {}
         payments = tuple(
             CanonicalPayment(
@@ -89,20 +96,28 @@ def read_lines(window) -> list[CanonicalSaleLine]:
     # the relation for line reads so simulated test baskets cannot leak into
     # product/revenue consumers.
     from django.db.models import Q
-    from shopman.orderman.models import OrderItem
+    from shopman.orderman.models import Order, OrderItem
 
+    from shopman.shop.services import order_composition
     from shopman.shop.services.payment_provenance import PROVIDER_SIMULATED_CONFIRMATION_MODE
 
-    rows = (
-        OrderItem.objects.filter(order__created_at__range=window)
-        .exclude(order__status__in=_excluded_statuses())
+    eligible = (
+        Order.objects.filter(created_at__range=window)
+        .exclude(status__in=_excluded_statuses())
         .filter(
-            Q(order__data__payment__confirmation_mode__isnull=True)
-            | ~Q(order__data__payment__confirmation_mode=PROVIDER_SIMULATED_CONFIRMATION_MODE)
+            Q(data__payment__confirmation_mode__isnull=True)
+            | ~Q(data__payment__confirmation_mode=PROVIDER_SIMULATED_CONFIRMATION_MODE)
         )
+    )
+    # Pedido + ajustes: o pedido que o cliente alterou tem as linhas dele lidas
+    # do ajuste. Ler as duas fontes somaria o item removido ao item que ficou.
+    adjusted = order_composition.adjusted_order_ids(eligible.values_list("pk", flat=True))
+    rows = (
+        OrderItem.objects.filter(order_id__in=eligible.values("pk"))
+        .exclude(order_id__in=adjusted)
         .values_list("order_id", "sku", "name", "qty", "line_total_q")
     )
-    return [
+    lines = [
         CanonicalSaleLine(
             source=SOURCE,
             sale_key=order_id,
@@ -115,3 +130,18 @@ def read_lines(window) -> list[CanonicalSaleLine]:
         )
         for order_id, sku, name, qty, line_total_q in rows
     ]
+    for order_id, items in order_composition.effective_items_by_order_id(adjusted).items():
+        lines.extend(
+            CanonicalSaleLine(
+                source=SOURCE,
+                sale_key=order_id,
+                product_ref=item.sku,
+                external_sku="",
+                name=item.name,
+                category="",
+                qty=item.qty,
+                line_total_q=item.line_total_q,
+            )
+            for item in items
+        )
+    return lines

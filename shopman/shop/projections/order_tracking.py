@@ -277,6 +277,8 @@ def _slot_label(slot_ref: str | None) -> str | None:
 
 def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     """Build the full tracking data projection for an order."""
+    from shopman.shop.services import order_composition
+
     interaction = InteractionContext.from_order(order, surface_ref="tracking")
     server_now = timezone.now()
     payment_expired = _is_payment_timeout_cancelled(order)
@@ -364,7 +366,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         progress_steps=progress_steps,
         timeline=timeline,
         items=items,
-        total_q=int(order.total_q),
+        total_q=order_composition.effective_total_q(order),
         delivery_fee_q=delivery_fee_q,
         delivery_distance_km=delivery_distance_km,
         delivery_fulfillments=delivery_fulfillments,
@@ -1391,6 +1393,9 @@ def _payment_confirmed_timestamp(order) -> str | None:
 def _build_items(order) -> tuple[TrackingItemData, ...]:
     # A linha __DELIVERY_FEE__ é cobrança, não item: a taxa aparece no campo
     # próprio (delivery_fee_q), nunca duplicada na lista de itens.
+    # Pedido + ajustes: o acompanhamento mostra o pedido que vale agora.
+    from shopman.shop.services import order_composition
+
     return tuple(
         TrackingItemData(
             sku=item.sku,
@@ -1399,7 +1404,7 @@ def _build_items(order) -> tuple[TrackingItemData, ...]:
             unit_price_q=int(item.unit_price_q),
             line_total_q=int(item.line_total_q),
         )
-        for item in order.items.all()
+        for item in order_composition.effective_items(order)
         if item.sku != "__DELIVERY_FEE__"
     )
 

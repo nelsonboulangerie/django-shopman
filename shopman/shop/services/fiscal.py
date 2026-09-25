@@ -12,6 +12,7 @@ import logging
 from shopman.shop import directives, fiscal_intermediary
 from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
+from shopman.shop.services import order_composition
 from shopman.shop.services.order_helpers import is_test_order
 
 logger = logging.getLogger(__name__)
@@ -279,7 +280,7 @@ def _fiscal_payment(order, data: dict) -> dict:
     if amounts is not None:
         payment["amount_q"] = int(amounts["base_q"])
         return payment
-    payment.setdefault("amount_q", order.total_q)
+    payment.setdefault("amount_q", order_composition.effective_total_q(order))
     return payment
 
 
@@ -412,7 +413,11 @@ def note_base_q(order) -> int:
     amounts = fiscal_intermediary.seller_amounts(order)
     if amounts is not None:
         return int(amounts["base_q"])
-    return int(order.total_q or 0)
+    # Pedido + ajustes: a nota é do pedido que VALE. Um pedido cujo cliente
+    # tirou um item e cuja NFC-e ainda não saiu declara a lista de agora — a que
+    # já saiu é decisão fiscal e nem chega aqui
+    # (``ifood_events._patch_block_reason`` para em ``fiscal_authorized``).
+    return order_composition.effective_total_q(order)
 
 
 def _payment_below_total(payment: dict, order) -> bool:
@@ -839,7 +844,11 @@ def _build_fiscal_items(order) -> list[dict]:
     :func:`_kit_lines`). Kit sem mercadoria (só a caixa, ou nada) não chega
     aqui vendido: fica ``is_sellable=False`` (``apply_grocery_catalog``).
     """
-    order_items = list(order.items.all())
+    # Pedido + ajustes: a nota é do pedido que VALE, não do que nasceu. Um
+    # pedido cujo cliente tirou um item e cuja NFC-e ainda não saiu declara a
+    # lista de agora; o que já saiu é decisão fiscal e nem chega aqui
+    # (``ifood_events._patch_block_reason`` para em ``fiscal_authorized``).
+    order_items = list(order_composition.effective_items(order))
     skus = [item.sku for item in order_items]
     products_by_sku = _products_by_sku(skus)
     components_by_sku = _kit_components_by_sku(skus)
