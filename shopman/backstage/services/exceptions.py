@@ -32,6 +32,14 @@ class KDSTicketNotFound(KDSError):
     """
 
 
+class KDSInstanceNotFound(KDSError):
+    """Estação de KDS inexistente ou desativada (ref que sumiu num reseed ou no Admin).
+
+    A camada HTTP mapeia por TIPO para 404: o kiosk que segue pedindo a estação
+    antiga recebe "não existe", não um 500.
+    """
+
+
 class KDSOrderNotFound(KDSError):
     """Pedido inexistente numa ação de expedição. A camada HTTP mapeia para 404."""
 

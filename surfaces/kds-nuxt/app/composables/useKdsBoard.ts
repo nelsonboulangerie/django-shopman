@@ -94,6 +94,12 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   });
 
   const board = computed<KDSBoardProjection | null>(() => data.value?.board ?? null);
+  // A estação sumiu do cadastro (reseed, renomeada, desativada no Admin): o Django
+  // responde 404. Não é "sem conexão" — tentar de novo não traz a estação de volta,
+  // e o board em cache seria de uma estação que não existe. A tela troca para
+  // "escolha outra estação". O poll continua (barato): se a estação voltar com o
+  // mesmo ref, o quadro volta sozinho.
+  const stationMissing = computed(() => httpError(error.value).status === 404);
   // Finalizados dentro da janela de "Desfazer": o servidor ainda os tem abertos,
   // e a grade também — apagados, no mesmo lugar, com o "Desfazer" ali. A view os
   // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
@@ -397,6 +403,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     readOnly,
     pending,
     error,
+    stationMissing,
     refresh,
     soundOn,
     soundBlocked,

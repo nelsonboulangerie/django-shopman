@@ -25,6 +25,7 @@ const {
   readOnly,
   pending,
   error,
+  stationMissing,
   soundOn,
   soundBlocked,
   attentionPending,
@@ -380,8 +381,23 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       </p>
       <!-- Erro com dados em cache NUNCA apaga o board: um blip de 1 poll não
            pode esconder os tickets da cozinha — banner acima, cards embaixo. -->
+      <!-- Estação que não existe mais (404): não é falha de conexão, e o board em
+           cache seria de uma estação que sumiu. Diz o que houve e leva à lista. -->
+      <div
+        v-if="stationMissing"
+        class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-300"
+      >
+        <p>Esta estação não existe mais. Escolha a estação deste dispositivo na lista.</p>
+        <NuxtLink
+          to="/"
+          class="mt-3 inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-medium text-foreground transition hover:bg-accent"
+        >
+          <Icon name="lucide:list" class="size-4" />
+          Ver estações
+        </NuxtLink>
+      </div>
       <p
-        v-if="error && !view"
+        v-else-if="error && !view"
         class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-300"
       >
         Não deu para carregar os pedidos desta estação. Tentando de novo.
@@ -392,7 +408,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       >
         Sem conexão — mostrando o último estado. Reconectando…
       </p>
-      <template v-if="view">
+      <template v-if="view && !stationMissing">
         <!-- cancelled (loud — único lugar onde o vermelho é alerta de verdade) -->
         <TransitionGroup
           v-if="view.cancelled.length"

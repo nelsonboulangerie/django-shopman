@@ -90,6 +90,20 @@ describe("useKdsBoard — read derivations", () => {
     expect(b.value).toBeNull();
     expect(view.value).toBeNull();
   });
+
+  it("404 é estação que não existe mais, não queda de conexão", () => {
+    // Depois de um reseed o kiosk seguia pedindo /kds/lanches/ e mostrava
+    // "Tentando de novo" para sempre (SHOPMAN-7).
+    env.fetchError.value = { status: 404, data: { detail: "Estação de KDS não encontrada." } };
+    const { stationMissing } = useKdsBoard("lanches");
+    expect(stationMissing.value).toBe(true);
+  });
+
+  it("falha transitória não vira estação inexistente", () => {
+    env.fetchError.value = { status: 502, data: null };
+    const { stationMissing } = useKdsBoard("bancada");
+    expect(stationMissing.value).toBe(false);
+  });
 });
 
 describe("useKdsBoard — start (optimistic + rollback)", () => {

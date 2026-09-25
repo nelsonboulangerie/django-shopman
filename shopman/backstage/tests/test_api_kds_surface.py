@@ -113,6 +113,24 @@ def test_board_rejects_invalid_or_past_service_date(client, kds_operator, kds_se
     assert client.get(url, {"date": "2000-01-01"}).status_code == 400
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("state", ["unknown", "inactive"])
+def test_board_of_a_station_that_no_longer_exists_is_404(client, kds_operator, kds_setup, state):
+    """SHOPMAN-7: depois do reseed o kiosk seguia pedindo /kds/lanches/ e levava 500."""
+    prep = kds_setup[0]
+    ref = "lanches"
+    if state == "inactive":
+        prep.is_active = False
+        prep.save(update_fields=["is_active"])
+        ref = prep.ref
+    client.force_login(kds_operator)
+
+    response = client.get(reverse("api-backstage-kds-board", args=[ref]))
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Esta estação não existe mais. Escolha outra na lista de estações."}
+
+
 # ── Write actions ──────────────────────────────────────────────────────────
 
 

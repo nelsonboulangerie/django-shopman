@@ -215,8 +215,11 @@ def build_kds_index() -> tuple[KDSInstanceSummaryProjection, ...]:
 def build_kds_board(instance_ref: str, *, service_date: date | None = None) -> KDSBoardProjection:
     """Build the KDS board projection for a specific instance."""
     from shopman.backstage.models import KDSInstance, KDSTicket
+    from shopman.backstage.services.exceptions import KDSInstanceNotFound
 
-    instance = KDSInstance.objects.get(ref=instance_ref, is_active=True)
+    instance = KDSInstance.objects.filter(ref=instance_ref, is_active=True).first()
+    if instance is None:
+        raise KDSInstanceNotFound(f"Estação de KDS não encontrada: {instance_ref}.")
 
     today = timezone.localdate()
     selected_date = service_date or today

@@ -31,7 +31,7 @@ Implementação:
   DRF cru `{"phone": ["..."]}` nunca chega ao front. Mensagens dos validators
   chegam em pt-br via i18n (`LANGUAGE_CODE = "pt-br"` + locale `pt_BR` do DRF).
 - **Não encontrado mapeia por TIPO de exceção**, nunca por string: `PosRecentSaleNotFound`,
-  `KDSTicketNotFound`, `KDSOrderNotFound` → 404; conflito de estado
+  `KDSTicketNotFound`, `KDSOrderNotFound`, `KDSInstanceNotFound` → 404; conflito de estado
   (`OrderConflict`/`OrderStateConflict`) → 409.
 
 ### Superset do PDV (deliberado)
