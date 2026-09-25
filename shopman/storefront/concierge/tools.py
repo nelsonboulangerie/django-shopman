@@ -788,6 +788,9 @@ def set_fulfillment(
     postal_code: str = "",
     city: str = "",
     state: str = "",
+    use_saved_address: bool = False,
+    saved_address_label: str = "",
+    list_saved_addresses: bool = False,
 ) -> dict:
     """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
 
@@ -795,11 +798,17 @@ def set_fulfillment(
     a nota da entrega a domicílio não sai sem ele, e a porta do pedido recusa
     (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
 
-    O endereço é montado na conversa (``concierge/address.py``): pela
-    localização enviada no WhatsApp (``use_shared_location``), pelo texto
-    (``address``) ou pelas partes ditas depois (rua, número, complemento,
-    bairro, CEP, cidade, UF), por cima do que já está na sacola. O resultado
-    traz ``address_question``: o que ainda falta perguntar, pela régua da nota.
+    O endereço é montado na conversa (``concierge/address.py``): pelo
+    endereço do cadastro do cliente (``use_saved_address``, o padrão, ou
+    ``saved_address_label``), pela localização enviada no WhatsApp
+    (``use_shared_location``), pelo texto (``address``) ou pelas partes ditas
+    depois (rua, número, complemento, bairro, CEP, cidade, UF), por cima do
+    que já está na sacola. O resultado traz ``address_question``: o que ainda
+    falta perguntar, pela régua da nota.
+
+    Entrega pedida sem endereço nenhum, por quem tem endereço cadastrado, não
+    grava nada: devolve a OFERTA do endereço padrão (``saved_address_offer``),
+    para o cliente responder antes de qualquer pergunta.
     """
     from shopman.shop.services import cart as cart_service
     from shopman.storefront.intents.checkout import _validate_preorder
@@ -850,6 +859,7 @@ def set_fulfillment(
             else:
                 values["delivery_time_slot"] = slot_ref
         values["delivery_address"] = ""
+        values["saved_address_id"] = None
     else:
         tax_digits = "".join(ch for ch in str(tax_id or "") if ch.isdigit())
         if tax_digits:
@@ -877,16 +887,49 @@ def set_fulfillment(
                     "Não recebi sua localização por aqui. Pode enviar pelo clipe do WhatsApp (Localização) "
                     "ou escrever o endereço com rua, número, bairro e CEP?",
                 )
+        said_parts = any(str(v or "").strip() for v in parts.values())
+        wants_saved = pin is None and not address and (use_saved_address or str(saved_address_label or "").strip())
         data = session.data or {}
         current = data.get("delivery_address_structured") if data.get("fulfillment_type") == "delivery" else None
-        if pin is None and not address and not any(str(v or "").strip() for v in parts.values()) and not current:
+        asks_nothing = pin is None and not address and not said_parts and not current and not wants_saved
+        saved_list: list = []
+        saved_choice = None
+        if list_saved_addresses or wants_saved or asks_nothing:
+            # Só o cadastro do cliente desta conversa, com a identidade ainda válida.
+            _assert_authority(ctx, for_mutation=False)
+            saved_list = delivery_address.saved_addresses(ctx.conversation.customer_ref)
+        if list_saved_addresses or wants_saved:
+            if not saved_list:
+                return _error(
+                    "no_saved_address",
+                    "Não há endereço no seu cadastro. Pode enviar a localização pelo WhatsApp ou escrever "
+                    "rua, número, bairro e CEP.",
+                )
+            saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
+            if saved_choice is None:
+                prefix = "" if list_saved_addresses and not wants_saved else "Não achei esse endereço no seu cadastro. "
+                return _saved_addresses_result("saved_addresses", prefix + delivery_address.saved_listing(saved_list), saved_list)
+        if asks_nothing and saved_list:
+            return _saved_addresses_result("saved_address_offer", delivery_address.saved_offer(saved_list), saved_list)
+        if saved_choice is not None or pin is not None or address or said_parts:
+            # O endereço do cadastro só vale INTEIRO: completado ou trocado na
+            # conversa, o pedido leva o endereço novo (e o checkout o cadastra).
+            values["saved_address_id"] = saved_choice.pk if saved_choice is not None and not said_parts else None
+        if asks_nothing:
             errors["delivery_address"] = (
                 "Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever "
                 "rua, número, bairro e CEP."
             )
         else:
             try:
-                structured = delivery_address.compose(current=current, pin=pin, text=address, parts=parts)
+                if saved_choice is not None:
+                    current = delivery_address.from_saved(saved_choice)
+                if saved_choice is not None and not said_parts:
+                    # Inteiro, com o texto do cadastro: o pedido reconhece o
+                    # endereço como o mesmo e não cadastra uma cópia.
+                    structured = current
+                else:
+                    structured = delivery_address.compose(current=current, pin=pin, text=address, parts=parts)
             except delivery_address.AddressNotLocated:
                 # Sem coordenada não há taxa honesta: o motor de faixas precisa da
                 # distância, e cobrar "taxa padrão" por um endereço que não se sabe
@@ -933,6 +976,18 @@ def set_fulfillment(
         result["address_missing"] = delivery_address.missing_words(structured)
         result["address_question"] = delivery_address.question(structured, from_pin=pin is not None)
     return result
+
+
+def _saved_addresses_result(code: str, message: str, saved_list: list) -> dict:
+    """Oferta ou lista do cadastro: nada gravado, só a frase ao cliente.
+
+    O modelo recebe os rótulos para repassar a escolha em
+    ``saved_address_label``; o cliente recebe a frase (``render_result``).
+    """
+    return {
+        "ok": True, "code": code, "message": message,
+        "saved_address_labels": [saved.display_label for saved in saved_list],
+    }
 
 
 def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
@@ -1785,7 +1840,12 @@ TOOL_SPECS: list[dict] = [
             "no WhatsApp; `address` é o endereço escrito; as partes (street, street_number, complement, "
             "neighborhood, postal_code, city, state) são o que o cliente disse depois e vão por cima do "
             "endereço já gravado. Chamadas seguintes só precisam das partes novas. O resultado traz "
-            "`address_question`: o que ainda falta perguntar."
+            "`address_question`: o que ainda falta perguntar. Entrega sem endereço nenhum, para quem tem "
+            "endereço cadastrado, não grava nada e devolve a oferta desse endereço (`saved_address_offer`): "
+            "se o cliente aceitar, chame de novo com `use_saved_address=true` (e a data, o horário e o CPF já "
+            "ditos); outro endereço cadastrado vai em `saved_address_label` (um dos `saved_address_labels`); "
+            "`list_saved_addresses=true` mostra os endereços cadastrados; recusou, siga pela localização ou "
+            "pelo texto."
         ),
         "input_schema": _schema(
             {
@@ -1802,6 +1862,9 @@ TOOL_SPECS: list[dict] = [
                 "postal_code": {"type": "string", "description": "CEP, ou \"\"."},
                 "city": {"type": "string", "description": "Cidade, ou \"\"."},
                 "state": {"type": "string", "description": "UF (ex.: PR), ou \"\"."},
+                "use_saved_address": {"type": "boolean", "description": "true quando o cliente aceitou entregar no endereço do cadastro oferecido."},
+                "saved_address_label": {"type": "string", "description": "Rótulo do endereço cadastrado que o cliente escolheu (de `saved_address_labels`), ou \"\" para o padrão."},
+                "list_saved_addresses": {"type": "boolean", "description": "true quando o cliente pede para ver os endereços cadastrados."},
             },
             ["fulfillment_type"],
         ),

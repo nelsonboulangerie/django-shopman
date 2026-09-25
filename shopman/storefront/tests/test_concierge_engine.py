@@ -886,6 +886,141 @@ def test_complete_address_passes_the_delivery_door_of_1118(
     assert order.data["delivery_address"] == "Avenida Higienópolis, 1100 - Centro, Londrina - PR, CEP 86020-080"
 
 
+# ── Endereço do cadastro oferecido antes de perguntar (decisão do dono, 25/09/2026) ──
+
+
+def _saved_address(customer, **overrides):
+    from shopman.guestman.models import CustomerAddress
+
+    values = {
+        "label": "home", "route": "Rua Pará", "street_number": "120", "neighborhood": "Centro",
+        "city": "Londrina", "state": "Paraná", "state_code": "PR", "postal_code": "86010-100",
+        "formatted_address": "Rua Pará, 120 - Centro, Londrina - PR, 86010-100",
+        "latitude": Decimal("-23.3101"), "longitude": Decimal("-51.1622"), "is_default": True,
+    }
+    values.update(overrides)
+    return CustomerAddress.objects.create(customer=customer, **values)
+
+
+def test_delivery_offers_the_saved_address_before_asking_anything(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)  # nenhuma geocodificação: o cadastro já tem a coordenada
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    offer = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert offer["ok"] and offer["code"] == "saved_address_offer"
+    assert tools.render_result("set_fulfillment", offer) == (
+        "Entregamos no endereço do seu cadastro, Rua Pará, 120 - Centro?"
+    )
+    # A oferta não grava nada: a resposta do cliente decide.
+    assert tools.view_cart(ctx)["fulfillment"]["type"] == ""
+
+
+def test_accepted_saved_address_passes_the_delivery_door(
+    ctx, customer, monkeypatch, settings, django_capture_on_commit_callbacks,
+):
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    _delivery_note_expected(monkeypatch, settings)
+    _geocode_text(monkeypatch)
+    saved = _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    assert tools.set_fulfillment(ctx, "delivery", _tomorrow())["code"] == "saved_address_offer"
+    accepted = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "", "529.982.247-25", use_saved_address=True)
+    assert accepted["ok"], accepted
+    assert accepted["address_missing"] == [] and accepted["address_question"] == ""
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    structured = session.data["delivery_address_structured"]
+    assert (structured["latitude"], structured["longitude"]) == (-23.3101, -51.1622)
+    assert structured["coordinates_source"] == "saved"
+    assert session.data["saved_address_id"] == saved.pk
+    assert identity.recipient_gaps(tax_id="52998224725", address=structured) == []
+    review = tools.review_order(ctx, "pix")
+    assert review["ready"], review
+    _accept_review(ctx, review)
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = tools.place_order(ctx, review["quote_token"], "pix", "")
+    assert placed["ok"], placed
+    order = Order.objects.get(ref=placed["order_ref"])
+    assert order.data["delivery_address"] == saved.formatted_address
+    # Usou o cadastrado: nenhum endereço duplicado nasce no cadastro.
+    assert customer.addresses.count() == 1
+
+
+def test_saved_address_without_postal_code_is_asked_by_the_same_rule(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)
+    _saved_address(customer, postal_code="")
+    tools.set_item(ctx, SKU, 1)
+    accepted = tools.set_fulfillment(ctx, "delivery", _tomorrow(), use_saved_address=True)
+    assert accepted["ok"] and accepted["address_missing"] == ["o CEP"]
+    assert "Para a entrega, me diga o CEP." in tools.render_result("set_fulfillment", accepted)
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert "delivery_address_details" in tools.review_order(ctx, "pix")["missing"]
+    completed = tools.set_fulfillment(ctx, "delivery", _tomorrow(), postal_code="86010100")
+    assert completed["ok"] and completed["address_missing"] == []
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    # Completado na conversa, o pedido leva o endereço novo (o checkout o cadastra).
+    assert session.data.get("saved_address_id") is None
+    assert session.data["delivery_address_structured"]["postal_code"] == "86010-100"
+
+
+def test_refused_saved_address_falls_back_to_pin_or_text(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch, route="Rua das Flores", neighborhood="Centro", city="Londrina", state_code="PR")
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    assert tools.set_fulfillment(ctx, "delivery", _tomorrow())["code"] == "saved_address_offer"
+    # "Não, é em outro lugar": o texto segue o fluxo da conversa e pergunta o que falta.
+    other = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "rua das flores centro")
+    assert other["ok"], other
+    assert "Para a entrega, me diga o número (ou S/N) e o CEP." in tools.render_result("set_fulfillment", other)
+    session = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert session.data["delivery_address_structured"]["route"] == "Rua das Flores"
+    assert session.data.get("saved_address_id") is None
+
+
+def test_without_saved_address_the_conversation_asks_for_pin_or_text(ctx):
+    tools.set_item(ctx, SKU, 1)
+    asked = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert asked["ok"] is False and "delivery_address" in asked["errors"]
+    assert "localização pelo WhatsApp" in tools.render_result("set_fulfillment", asked)
+    refused = tools.set_fulfillment(ctx, "delivery", _tomorrow(), use_saved_address=True)
+    assert refused["ok"] is False and refused["error"] == "no_saved_address"
+
+
+def test_two_saved_addresses_offer_the_default_and_let_the_customer_pick(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)
+    _saved_address(customer, label="work", route="Avenida Paraná", street_number="500", is_default=False,
+                   formatted_address="Avenida Paraná, 500 - Centro, Londrina - PR")
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    offer = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert offer["saved_address_labels"] == ["Casa", "Trabalho"]
+    assert tools.render_result("set_fulfillment", offer) == (
+        "Entregamos no endereço do seu cadastro, Rua Pará, 120 - Centro? "
+        "Se preferir outro endereço cadastrado, é só dizer qual."
+    )
+    listed = tools.set_fulfillment(ctx, "delivery", _tomorrow(), list_saved_addresses=True)
+    assert tools.render_result("set_fulfillment", listed) == (
+        "Seus endereços cadastrados: Casa: Rua Pará, 120 - Centro; Trabalho: Avenida Paraná, 500 - Centro. "
+        "Em qual entregamos?"
+    )
+    picked = tools.set_fulfillment(ctx, "delivery", _tomorrow(), saved_address_label="trabalho")
+    assert picked["ok"], picked
+    assert picked["fulfillment"]["address"].startswith("Avenida Paraná, 500 - Centro")
+
+
+def test_saved_addresses_of_another_customer_never_show_up(ctx, monkeypatch):
+    from shopman.guestman.models import Customer
+    from shopman.guestman.services import customer as customer_service
+
+    stranger = customer_service.create(
+        ref=Customer.generate_ref(), first_name="Bia", phone="+5543999990000", source_system="test",
+    )
+    _saved_address(stranger)
+    tools.set_item(ctx, SKU, 1)
+    asked = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert asked["ok"] is False and "Rua Pará" not in tools.render_result("set_fulfillment", asked)
+
+
 def test_order_status_reads_the_customer_orders_through_the_projection(ctx, django_capture_on_commit_callbacks):
     review = _pickup_ready(ctx)
     _accept_review(ctx, review)
