@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // VARREDURA: todo link de um app de operador para OUTRO app tem que passar pela regra
 // do kit (`crossAppLinkAttrs`). Um `<a :href="hubUrl">` sem `:target` navega a própria
@@ -10,16 +11,6 @@ import { describe, expect, it } from "vitest";
 // a tela de "sem acesso" do Marketing); é o tipo de coisa que volta pela porta dos
 // fundos num app novo, então quem lembra é o CI.
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const OPERATOR_APPS = [
-  "pos-nuxt",
-  "kds-nuxt",
-  "orders-nuxt",
-  "production-nuxt",
-  "hub-nuxt",
-  "marketing-nuxt",
-  "purchase-nuxt",
-  "bi-nuxt",
-] as const;
 
 /**
  * Href que sai da própria origem: a URL de outro app de operador.

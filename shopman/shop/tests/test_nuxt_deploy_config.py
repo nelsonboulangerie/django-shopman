@@ -8,16 +8,9 @@ import pathlib
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
-SURFACES = (
-    "storefront-nuxt",
-    "hub-nuxt",
-    "pos-nuxt",
-    "kds-nuxt",
-    "orders-nuxt",
-    "production-nuxt",
-    "purchase-nuxt",
-    "marketing-nuxt",
-    "bi-nuxt",
+# A lista vem do registro único; cópia à mão aqui era mais um lugar para esquecer.
+SURFACES = tuple(
+    surface["dir"] for surface in json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"].values()
 )
 NUXT_RUNTIMES = (*SURFACES, "operator-kit")
 

@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // Guardrails de CONSISTÊNCIA do design system canônico do backstage (Lente 7).
 // Fonte: docs/engineering/backstage-design-system.md. Estes testes travam a DRIFT
@@ -11,16 +12,6 @@ import { describe, expect, it } from "vitest";
 // ninguém volte a copiar o núcleo. Storefront fica FORA (sistema branded próprio).
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const OPERATOR_APPS = [
-  "pos-nuxt",
-  "kds-nuxt",
-  "orders-nuxt",
-  "production-nuxt",
-  "hub-nuxt",
-  "marketing-nuxt",
-  "purchase-nuxt",
-  "bi-nuxt",
-] as const;
 
 // Tokens canônicos que vivem no tema central e chegam aos 5 apps pela importação.
 // Cada app pode ter tokens ADICIONAIS (print no POS, dark no KDS) — o guardrail checa

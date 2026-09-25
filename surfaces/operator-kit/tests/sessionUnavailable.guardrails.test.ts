@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 // ERRO DE REDE NÃO É SESSÃO MORTA.
 //
@@ -23,17 +24,13 @@ import { describe, expect, it } from "vitest";
 // app de operador voltar a montar a tela de senha sem distinguir as duas coisas.
 const surfaces = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** Onde cada app decide mostrar a tela de senha. */
-const GATES: Record<string, string> = {
-  "bi-nuxt": "app/app.vue",
-  "kds-nuxt": "app/app.vue",
-  "orders-nuxt": "app/app.vue",
-  "production-nuxt": "app/app.vue",
-  "purchase-nuxt": "app/app.vue",
-  "marketing-nuxt": "app/app.vue",
-  "hub-nuxt": "app/app.vue",
+/** Onde cada app decide mostrar a tela de senha: `app/app.vue`, salvo exceção nomeada. */
+const GATE_OVERRIDES: Record<string, string> = {
   "pos-nuxt": "app/components/PosOperatorShell.vue",
 };
+const GATES: Record<string, string> = Object.fromEntries(
+  OPERATOR_SURFACES.map((app) => [app, GATE_OVERRIDES[app] ?? "app/app.vue"]),
+);
 
 /**
  * Cada app tem o direito de classificar a falha do seu jeito — o que ele NÃO
