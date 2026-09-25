@@ -832,13 +832,11 @@ export interface CheckoutProjection {
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
-  // NOTA DA ENTREGA: a entrega deste canal vai com NFC-e, e a nota de entrega
-  // não sai sem CPF/CNPJ (o servidor pergunta ao mesmo resolver da emissão).
-  // `saved_tax_id` pré-preenche; `offer_save_tax_id` libera a PERGUNTA de
-  // guardar (o cadastro ainda não tem documento). Opcionais: servidor antigo.
-  delivery_requires_tax_id?: boolean
-  saved_tax_id?: string
-  offer_save_tax_id?: boolean
+  // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
+  // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
+  // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
+  prefill_tax_id?: string
+  prefill_tax_id_source?: '' | 'document' | 'last_delivery'
 }
 
 export interface StripeTestCard {

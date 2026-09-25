@@ -30,8 +30,6 @@ export interface CheckoutFormState {
   // CPF/CNPJ da nota da ENTREGA (vira `fiscal.tax_id` no pedido). Nunca vai
   // para o rascunho do localStorage: documento não fica guardado no aparelho.
   fiscal_tax_id: string
-  // A pessoa respondeu SIM a "guardar para as próximas entregas".
-  save_fiscal_tax_id: boolean
 }
 
 export interface CheckoutSubmitPayload extends CheckoutFormState {
@@ -81,7 +79,6 @@ export function buildCheckoutPayload (
     save_as_default: state.save_as_default,
     // O CPF da nota é da ENTREGA: retirada não o leva, e só dígitos viajam.
     fiscal_tax_id: state.fulfillment_type === 'delivery' ? taxIdDigits(state.fiscal_tax_id) : '',
-    save_fiscal_tax_id: state.fulfillment_type === 'delivery' && !!taxIdDigits(state.fiscal_tax_id) && state.save_fiscal_tax_id,
     use_loyalty: useLoyalty,
     expected_total_q: expectedTotalQ
   }

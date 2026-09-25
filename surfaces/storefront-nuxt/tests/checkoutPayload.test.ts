@@ -32,8 +32,7 @@ const deliveryState: CheckoutFormState = {
   gift_hide_values: false,
   save_as_default: true,
   change_for: '',
-  fiscal_tax_id: '529.982.247-25',
-  save_fiscal_tax_id: false
+  fiscal_tax_id: '529.982.247-25'
 }
 
 describe('checkout payload contract', () => {
@@ -84,21 +83,15 @@ describe('checkout payload contract', () => {
   })
 
   it('sends the delivery tax id as digits, and only on delivery', () => {
-    const delivery = buildCheckoutPayload({ ...deliveryState, save_fiscal_tax_id: true }, 'k', false)
+    const delivery = buildCheckoutPayload(deliveryState, 'k', false)
     expect(delivery.fiscal_tax_id).toBe('52998224725')
-    expect(delivery.save_fiscal_tax_id).toBe(true)
 
-    const pickup = buildCheckoutPayload(
-      { ...deliveryState, fulfillment_type: 'pickup', save_fiscal_tax_id: true },
-      'k',
-      false
-    )
+    const pickup = buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup' }, 'k', false)
     expect(pickup.fiscal_tax_id).toBe('')
-    expect(pickup.save_fiscal_tax_id).toBe(false)
   })
 
-  it('never asks to save an empty tax id', () => {
-    const payload = buildCheckoutPayload({ ...deliveryState, fiscal_tax_id: '', save_fiscal_tax_id: true }, 'k', false)
-    expect(payload.save_fiscal_tax_id).toBe(false)
+  it('has no save-to-profile flag: the tax id only travels with the order', () => {
+    const payload = buildCheckoutPayload(deliveryState, 'k', false)
+    expect(Object.keys(payload).filter(key => key.startsWith('save_'))).toEqual(['save_as_default'])
   })
 })

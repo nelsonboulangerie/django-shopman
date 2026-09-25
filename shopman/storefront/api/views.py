@@ -516,9 +516,6 @@ class CheckoutView(APIView):
                 )
             raise
 
-        if fiscal_tax_id and validated_data.get("save_fiscal_tax_id"):
-            _save_fiscal_tax_id(request, fiscal_tax_id, order_ref=result.order_ref)
-
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
         order_service.mark_just_placed(request, result.order_ref)
@@ -567,30 +564,6 @@ class CheckoutView(APIView):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(CHECKOUT_RATE_LIMIT_RETRY_SECONDS)},
         )
-
-
-def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
-    """Guarda o CPF da nota no cadastro porque a pessoa respondeu que sim.
-
-    Nunca derruba o pedido já confirmado: a nota sai com o CPF informado de
-    qualquer jeito, e o que falha aqui é só a conveniência da próxima vez.
-    Sessão que só conhece o número (link de campanha) não grava identidade
-    fiscal: a tela nem oferece.
-    """
-    from django.db import transaction
-
-    from shopman.shop.services import delivery_fiscal_identity
-
-    customer = getattr(request, "customer", None)
-    if customer is None or knows_only_the_number(request):
-        return
-    try:
-        with transaction.atomic():
-            outcome = delivery_fiscal_identity.save_tax_id_to_customer(customer.uuid, tax_id)
-    except Exception:
-        logger.warning("storefront.checkout save_fiscal_tax_id failed order=%s", order_ref, exc_info=True)
-        return
-    logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=%s", order_ref, outcome)
 
 
 def _closed_shop_hint() -> dict:

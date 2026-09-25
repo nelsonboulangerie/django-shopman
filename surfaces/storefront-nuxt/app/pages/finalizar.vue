@@ -85,8 +85,7 @@ const state = reactive<CheckoutFormState>({
   gift_message: '',
   gift_hide_values: false,
   save_as_default: true,
-  fiscal_tax_id: '',
-  save_fiscal_tax_id: false
+  fiscal_tax_id: ''
 })
 
 const chosenDate = ref<Date | null>(null)
@@ -184,22 +183,20 @@ watch(() => state.payment_method, value => {
   if (value) clearFieldError('payment_method')
 })
 
-// NOTA DA ENTREGA (decisão do dono, 24/09/2026): a nota da entrega a domicílio
-// não sai sem o CPF ou CNPJ de quem compra, então pedimos no MESMO passo do
-// endereço. Quem decide se a entrega pede é o servidor (a mesma regra da
-// emissão); a tela confere o que foi digitado, cedo e no campo. Sem CPF, a
-// entrega não fecha e a retirada continua a um toque.
-const deliveryRequiresTaxId = computed(() => !!checkout.value?.delivery_requires_tax_id)
-// A recusa do servidor também abre o campo: se ele disse que falta, a tela
-// precisa do lugar para consertar, mesmo que a projeção tenha dito o contrário.
-const showTaxIdField = computed(() => state.fulfillment_type === 'delivery' &&
-  (deliveryRequiresTaxId.value || !!fieldErrors.value.fiscal_tax_id))
-const taxIdFromCadastro = computed(() => {
-  const saved = taxIdDigits(checkout.value?.saved_tax_id)
-  return !!saved && saved === taxIdDigits(state.fiscal_tax_id)
+// NOTA DA ENTREGA (decisões do dono, 24 e 25/09/2026): toda entrega pede o CPF
+// ou CNPJ de quem compra, no MESMO passo do endereço. A tela confere o que foi
+// digitado, cedo e no campo; a trava do servidor continua sendo a da emissão.
+// Sem CPF, a entrega não fecha e a retirada continua a um toque. Na próxima
+// entrega o documento já vem no campo (do cadastro ou da última entrega) e
+// vale, sem pergunta de "guardar".
+const showTaxIdField = computed(() => state.fulfillment_type === 'delivery')
+const taxIdPrefillNote = computed(() => {
+  const prefill = taxIdDigits(checkout.value?.prefill_tax_id)
+  if (!prefill || prefill !== taxIdDigits(state.fiscal_tax_id)) return ''
+  return checkout.value?.prefill_tax_id_source === 'last_delivery'
+    ? 'O mesmo da sua última entrega. Se a nota for para outra pessoa, troque aqui.'
+    : 'Do seu cadastro. Se a nota for para outra pessoa, troque aqui.'
 })
-// Guardar é PERGUNTA, e só existe quando o cadastro ainda não tem documento.
-const offerSaveTaxId = computed(() => !!checkout.value?.offer_save_tax_id && !!taxIdDigits(state.fiscal_tax_id))
 const taxIdIssue = computed(() => deliveryTaxIdError(state.fiscal_tax_id, showTaxIdField.value))
 function onTaxIdInput (value: string | number) {
   state.fiscal_tax_id = formatTaxId(String(value ?? ''))
@@ -217,10 +214,7 @@ watch(() => state.fiscal_tax_id, value => {
   else if (taxIdLooksComplete(value)) fieldErrors.value = { ...fieldErrors.value, fiscal_tax_id: taxIdIssue.value }
 })
 watch(() => state.fulfillment_type, value => {
-  if (value !== 'delivery') {
-    clearFieldError('fiscal_tax_id')
-    state.save_fiscal_tax_id = false
-  }
+  if (value !== 'delivery') clearFieldError('fiscal_tax_id')
 })
 
 // Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + ocultar valores.
@@ -660,7 +654,7 @@ function saveCheckoutDraft () {
       context: cart.value?.draft_context || '',
       attemptKey: attemptKey.value,
       // Documento não fica guardado no aparelho: o CPF sai do rascunho.
-      state: { ...state, fiscal_tax_id: '', save_fiscal_tax_id: false },
+      state: { ...state, fiscal_tax_id: '' },
       activeStep: activeStep.value,
       pendingAddressLabel: pendingAddressLabel.value,
       addressSelection: addressSelection.value,
@@ -718,9 +712,10 @@ watch(() => checkout.value, value => {
     state.phone = value.customer_phone || ''
   }
   if (!state.payment_method) state.payment_method = value.default_payment_method || methods[0]?.ref || ''
-  // O CPF do cadastro pré-preenche a nota da entrega (a pessoa confere, ou troca
-  // para a nota sair no documento de outra pessoa). Nunca sobre o que já digitou.
-  if (!state.fiscal_tax_id && value.saved_tax_id) state.fiscal_tax_id = formatTaxId(value.saved_tax_id)
+  // O CPF que a casa já conhece (cadastro ou última entrega) vem na nota da
+  // entrega e vale; a pessoa troca aqui para a nota sair no documento de outra
+  // pessoa. Nunca sobre o que já digitou.
+  if (!state.fiscal_tax_id && value.prefill_tax_id) state.fiscal_tax_id = formatTaxId(value.prefill_tax_id)
   if (!state.delivery_time_slot) state.delivery_time_slot = value.earliest_slot_ref || projectedSlots.find(slot => slot.enabled)?.ref || ''
   if (!checkoutHydrated && !fulfillments.includes(state.fulfillment_type)) {
     state.fulfillment_type = fulfillments[0] || 'pickup'
@@ -1654,23 +1649,9 @@ useSeoMeta({
                   @update:model-value="onTaxIdInput"
                 />
                 <UiFieldError v-if="fieldErrors.fiscal_tax_id" :errors="fieldErrors.fiscal_tax_id" />
-                <p v-else-if="taxIdFromCadastro" class="shop-meta">
-                  Do seu cadastro. Se a nota for para outra pessoa, troque aqui.
+                <p v-else-if="taxIdPrefillNote" class="shop-meta" data-checkout-tax-id-prefill>
+                  {{ taxIdPrefillNote }}
                 </p>
-                <UiFieldLabel
-                  v-if="offerSaveTaxId"
-                  for="checkout-save-tax-id"
-                  class="mt-1 bg-card has-data-[state=checked]:bg-card"
-                  data-checkout-save-tax-id
-                >
-                  <UiField orientation="horizontal">
-                    <UiFieldContent class="gap-1">
-                      <UiFieldTitle>Guardar para as próximas entregas?</UiFieldTitle>
-                      <UiFieldDescription>Fica no seu cadastro e já vem preenchido da próxima vez.</UiFieldDescription>
-                    </UiFieldContent>
-                    <UiSwitch id="checkout-save-tax-id" v-model="state.save_fiscal_tax_id" />
-                  </UiField>
-                </UiFieldLabel>
                 <UiButton
                   v-if="availableFulfillment.includes('pickup')"
                   variant="link"
