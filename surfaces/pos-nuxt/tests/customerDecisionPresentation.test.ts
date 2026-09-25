@@ -264,7 +264,7 @@ describe("customerDecisionCopy — voz de balcão, e as saídas dizem o que fica
   // operador só podia escolher UM dos dois cadastros duplicados do cliente.
   it("o conflito oferece unificar os cadastros", () => {
     const copy = customerDecisionCopy(conflict);
-    expect(copy.merge?.label).toBe("É a mesma pessoa — unificar cadastros");
+    expect(copy.merge?.label).toBe("É a mesma pessoa: unificar cadastros");
     expect(copy.release).toBeNull();
   });
 
@@ -408,7 +408,7 @@ describe("customerMergeDescription", () => {
     });
     expect(frase).toBe(
       "2 contatos e 3 pedidos passaram para este cadastro. "
-      + "Dá para desfazer até amanhã às 14:30 — com o gerente, em Clientes → Unificações de cadastro.",
+      + "Dá para desfazer até amanhã às 14:30, com o gerente, em Clientes → Unificações de cadastro.",
     );
   });
 
@@ -436,7 +436,7 @@ describe("customerMergeDescription", () => {
       undoDeadline: iso(new Date(2026, 8, 9, 9, 5)),
       now: agora,
     });
-    expect(frase).toBe("Dá para desfazer até amanhã às 09:05 — com o gerente, em Clientes → Unificações de cadastro.");
+    expect(frase).toBe("Dá para desfazer até amanhã às 09:05, com o gerente, em Clientes → Unificações de cadastro.");
   });
 
   it("o prazo se lê de relance: hoje, amanhã, ou a data", () => {

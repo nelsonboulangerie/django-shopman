@@ -883,7 +883,7 @@ onBeforeUnmount(() => {
           v-if="inSaleView && !checkoutMode && unsaved"
           class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
           role="status"
-          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não pôde ser salva — tentando de novo'"
+          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
         >
           <Icon name="lucide:cloud-off" class="size-3.5" /> Não salvo
         </span>

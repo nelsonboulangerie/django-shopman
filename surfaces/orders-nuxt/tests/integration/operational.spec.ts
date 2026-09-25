@@ -309,7 +309,7 @@ test("product same-field dispute preserves draft until explicit reviewed save", 
   const concurrent = await page.request.patch(path, { headers: { "Idempotency-Key": crypto.randomUUID() }, data: { ...before.action.payload_schema, patch: { name: "Outra estação do catálogo" } } });
   expect(concurrent.status()).toBe(200);
   await page.getByRole("button", { name: "Salvar", exact: true }).click();
-  await expect(page.getByText("Nome — atual: Outra estação do catálogo")).toBeVisible();
+  await expect(page.getByText("Nome. Valor atual: Outra estação do catálogo")).toBeVisible();
   await expect(name).toHaveValue("Rascunho do catálogo");
   await expect(page.getByRole("button", { name: "Salvar", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Manter meu rascunho", exact: true }).click();

@@ -31,7 +31,7 @@ describe("rascunho do produto", () => {
     await w.find('input[type="text"]').setValue("Meu rascunho");
     await w.setProps({ conflict: { product: { ...detail, name: "Outra pessoa" }, conflicting_fields: ["name"] } });
     expect((w.find('input[type="text"]').element as HTMLInputElement).value).toBe("Meu rascunho");
-    expect(w.text()).toContain("Nome — atual: Outra pessoa");
+    expect(w.text()).toContain("Nome. Valor atual: Outra pessoa");
     expect(w.findAll("button").find(b => b.text() === "Salvar")!.attributes("disabled")).toBeDefined();
     await w.findAll("button").find(b => b.text() === "Manter meu rascunho")!.trigger("click");
     expect(w.emitted("review-conflict")).toEqual([[true]]);

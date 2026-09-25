@@ -76,7 +76,7 @@ async function goToCashSession() {
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">
         <div class="mx-auto grid w-full max-w-3xl gap-4 p-4 md:py-8">
           <p class="text-sm text-muted-foreground">
-            Comprovante do pedido remoto — entrega, retirada ou encomenda — para pendurar no painel.
+            Comprovante do pedido remoto (entrega, retirada ou encomenda) para pendurar no painel.
             Não é nota fiscal e não comprova pagamento; o papel diz isso.
           </p>
 

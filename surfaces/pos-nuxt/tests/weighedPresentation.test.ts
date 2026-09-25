@@ -97,7 +97,7 @@ describe("a prévia", () => {
     const preview = weighedPreview({ kind: "label", buffer: "28,00", pricePerKgQ: PRECO_KG });
     expect(preview.totalQ).toBe(2796);
     expect(preview.gapQ).toBe(4);
-    expect(preview.gapNote).toContain("confira o preço do quilo");
+    expect(preview.gapNote).toContain("Confira o preço do quilo");
   });
 
   it("peso (balança ligada): o valor sai do peso × preço do quilo", () => {

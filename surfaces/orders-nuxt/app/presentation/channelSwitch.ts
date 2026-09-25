@@ -115,5 +115,5 @@ export function rangeLine(draft: ChannelSwitchDraft): string {
     return `${weekday} ${day}/${month} às ${clock}`;
   };
   const start = `de ${when(draft.startDate, draft.startTime)}`;
-  return draft.endDate ? `${start} a ${when(draft.endDate, draft.endTime)}` : `${start} — escolha quando termina`;
+  return draft.endDate ? `${start} a ${when(draft.endDate, draft.endTime)}` : `${start}. Falta escolher quando termina.`;
 }

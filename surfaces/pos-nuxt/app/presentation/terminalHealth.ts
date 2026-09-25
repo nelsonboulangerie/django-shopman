@@ -75,7 +75,7 @@ export function terminalHealthRows(
       label: "Trava da gaveta",
       status: armed ? "ready" : "warning",
       message: armed
-        ? "armada — a próxima venda não começa com a gaveta aberta"
+        ? "armada: a próxima venda não começa com a gaveta aberta"
         : "sem medição: a trava não age neste balcão. Meça em Terminais do PDV, no gestor.",
     });
   }

@@ -214,7 +214,7 @@ function runClear() {
         ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : 'border-border'"
       aria-haspopup="dialog"
-      :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
+      :title="customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : undefined"
       @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
     >
       <Icon
@@ -327,7 +327,7 @@ function runClear() {
           <UiDialogDescription>
             <template v-if="hasFiredItems">
               Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha
-              é cancelado — avise quem está lá dentro. Não dá para desfazer.
+              é cancelado: avise quem está lá dentro. Não dá para desfazer.
             </template>
             <template v-else>
               Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.

@@ -23,9 +23,9 @@ export function receiptRequestNote(input: { print: boolean; email: boolean; emit
   const { print, email, emits } = input;
   if (!print && !email) return "";
   if (emits) {
-    if (print && email) return "Papel e e-mail já pedem a nota — imprime sozinha e o e-mail sai assim que autorizar.";
-    if (print) return "Pedir papel já pede a nota — imprime sozinha assim que autorizar.";
-    return "Pedir por e-mail já pede a nota — o e-mail sai assim que autorizar.";
+    if (print && email) return "Papel e e-mail já pedem a nota: ela imprime sozinha, e o e-mail sai assim que ela for autorizada.";
+    if (print) return "Pedir papel já pede a nota: ela imprime sozinha assim que for autorizada.";
+    return "Pedir por e-mail já pede a nota: o e-mail sai assim que ela for autorizada.";
   }
   // Sem a palavra do servidor, a nota só nasce por outra regra. Prometer que o
   // papel ou o e-mail saem num dinheiro sem CPF seria a promessa que não se cumpre.

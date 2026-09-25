@@ -757,7 +757,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         paymentTotalQ: 1000,
       }),
     });
-    expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
+    expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota: ela imprime sozinha assim que for autorizada.");
     expect(avisos(wrapper).text()).toContain("Dinheiro pendente. O troco calculado será separado no despacho.");
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");
@@ -793,7 +793,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         receiptChannels: ["print"],
       }),
     });
-    expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
+    expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota: ela imprime sozinha assim que for autorizada.");
     comPalavra.unmount();
   });
 
@@ -821,7 +821,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         receiptEmail: "cliente@example.org",
       }),
     });
-    expect(avisos(soEmail).text()).toContain("Pedir por e-mail já pede a nota — o e-mail sai assim que autorizar.");
+    expect(avisos(soEmail).text()).toContain("Pedir por e-mail já pede a nota: o e-mail sai assim que ela for autorizada.");
     soEmail.unmount();
 
     const osDois = await mountSuspended(PosPaymentWorkspace, {
@@ -1080,7 +1080,7 @@ describe("PosPaymentWorkspace — a tela não promete o que não confere", () =>
     // Onze dígitos quaisquer viravam um check verde. O operador lia de volta com
     // confiança e a rejeição da NFC-e chegava com o cliente já na rua.
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: fiscal("11111111111") });
-    expect(wrapper.text()).toContain("Documento inválido — confira com o cliente.");
+    expect(wrapper.text()).toContain("Documento inválido. Confira com o cliente.");
     expect(wrapper.text()).not.toContain("Sai na nota");
   });
 
