@@ -13,6 +13,7 @@
 | [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
+| [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
@@ -369,6 +370,28 @@ Roda no ciclo do `maintenance_worker`, entre `cleanup_stale_sessions` e `cleanup
 ```bash
 python manage.py sweep_orphan_holds --dry-run
 python manage.py sweep_orphan_holds
+```
+
+---
+
+### relocate_resale_stock
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/relocate_resale_stock.py`
+
+Para cada SKU de revenda (à venda e não produzido aqui), transfere o saldo PRESENTE e livre que
+está numa posição que não vende para a posição de recebimento da revenda
+(`shop/services/receiving_position.py`, padrão `vitrine`), com `Move.kind=TRANSFER`. Conserta o
+que o recebimento antigo (posição padrão `massa`) e o saldo de abertura do seed (`deposito`)
+deixaram fora da venda. Estoque planejado e reservado não é mexido. Idempotente.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--apply` | — | Transfere. Sem isto, só mostra o que moveria |
+
+```bash
+python manage.py relocate_resale_stock
+python manage.py relocate_resale_stock --apply
 ```
 
 ---

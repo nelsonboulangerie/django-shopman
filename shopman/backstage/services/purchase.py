@@ -26,6 +26,7 @@ from django.utils.module_loading import import_string
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
+from shopman.shop.services.receiving_position import receiving_position
 from shopman.shop.services.remote_mutations import (
     RemoteMutationInProgress,
     run_idempotent_mutation,
@@ -196,7 +197,6 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
     note = str(payload.get("note") or "").strip()
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
-    position = _default_receive_position()
 
     def _receber() -> tuple[dict[str, Any], int]:
         _write_receipt(
@@ -206,7 +206,6 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
             lines=lines,
             note=note,
             source_ref=source_ref,
-            position=position,
             user=user,
         )
         return (
@@ -278,7 +277,7 @@ def _format_receipt_moment(raw: str) -> str:
     return momento.strftime("%d/%m às %H:%M")
 
 
-def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, position, user) -> None:
+def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user) -> None:
     """O corpo do recebimento — o que era o `with transaction.atomic()` de sempre."""
     Batch = apps.get_model("stockman", "Batch")
     Move = apps.get_model("stockman", "Move")
@@ -303,7 +302,9 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
             stock.receive(
                 quantity=line.base_qty,
                 sku=line.sku,
-                position=position,
+                # Revenda entra onde se vende; insumo, no estoque de insumos
+                # (``shop/services/receiving_position.py``).
+                position=receiving_position(line.sku),
                 batch=batch_ref,
                 user=user,
                 reason=_receipt_reason(mode=mode, source_ref=source_ref),
@@ -1620,15 +1621,6 @@ def _mapped_material_sku(entry: Any) -> str:
             if entry.get(key):
                 return str(entry[key]).strip()
     return ""
-
-
-def _default_receive_position():
-    Position = apps.get_model("stockman", "Position")
-    return (
-        Position.objects.filter(is_default=True).first()
-        or Position.objects.filter(kind="physical").order_by("ref").first()
-        or Position.objects.order_by("ref").first()
-    )
 
 
 def _invoice_reader_draft(*, access_key: str, qr_payload: str) -> dict[str, Any]:

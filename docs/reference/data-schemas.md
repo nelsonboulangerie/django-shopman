@@ -1121,6 +1121,8 @@ NÃO é chave de política: é computado da mediana do histórico real (Directiv
 | `purchase.lead_time_max_days` | `int` | Amostras acima disso são descartadas como ruído. Default `45` |
 | `purchase.resale_markup_pct` | `int` (%) | Markup padrão da revenda, sobre o CUSTO: preço sugerido = custo × (1 + markup/100). 50 ⇒ ×1,5 (margem 33%); 150 ⇒ ×2,5. Sugere o preço ao ligar "Permitir revenda" no Compras (pré-preenchido, editável), arredondado para cima até o real inteiro. Default `50` (dono, 24/09/2026). Fonte: `shop/resale_markup.py` |
 | `purchase.resale_markup_by_collection` | `dict[str, int]` | Markup por categoria: `{ref da coleção: %}`. A categoria é a coleção principal do produto; item que ainda não se vende usa a coleção onde "Permitir revenda" o põe (`mercearia`). Ausente = padrão. Editado no Admin (página Compras) como `mercearia: 60; frios: 80`, com o código conferido |
+| `purchase.receive_position_resale` | `str` (`Position.ref`) | Onde o Compras recebe a **revenda** (SKU à venda e não produzido aqui) — e onde nascem a sobra de contagem e o saldo de abertura do seed. Tem de ser posição física **que vende** (`is_saleable`), senão a mercadoria não aparece na loja/PDV. Ausente ou inválida = `vitrine` (a primeira física que vende). Fonte: `shop/services/receiving_position.py` |
+| `purchase.receive_position_material` | `str` (`Position.ref`) | Onde o Compras recebe o **insumo** (só comprável). Posição física que **não** vende, de onde a Produção consome. Ausente ou inválida = `deposito`. Nunca a `massa` (WIP, a padrão do Stockman) — era ali que tudo caía antes |
 
 Derivados por insumo (expostos na projection `materials`): `leadTimeDays`,
 `replenishAtDays` (= lead + revisão + segurança; limiar do selo "Reposição" e

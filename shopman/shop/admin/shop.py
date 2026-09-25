@@ -567,6 +567,20 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=purchase_help[key] + " Em branco = padrão do sistema.",
         )
+    fields["defaults_purchase_receive_position_resale"] = forms.ChoiceField(
+        label="Onde a revenda é recebida",
+        required=False,
+        choices=[("", "Padrão: a loja (vitrine)")],
+        widget=UnfoldAdminSelectWidget,
+        help_text="Posição que conta para a venda. A geleia recebida já aparece na loja e no PDV.",
+    )
+    fields["defaults_purchase_receive_position_material"] = forms.ChoiceField(
+        label="Onde o insumo é recebido",
+        required=False,
+        choices=[("", "Padrão: o depósito")],
+        widget=UnfoldAdminSelectWidget,
+        help_text="Posição de estoque que não vende, de onde a Produção consome.",
+    )
     fields["defaults_purchase_resale_markup_pct"] = forms.IntegerField(
         label="Markup padrão da revenda (%)",
         required=False,
@@ -1198,6 +1212,18 @@ class ShopForm(forms.ModelForm):
             for field_name, key in DEFAULTS_PURCHASE_FIELDS:
                 self.fields[field_name].initial = getattr(purchase_policy, key)
 
+        if self._has("defaults_purchase_receive_position_resale"):
+            from shopman.stockman import Position
+
+            purchase_block = defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {}
+            for key, saleable in (("resale", True), ("material", False)):
+                field = self.fields[f"defaults_purchase_receive_position_{key}"]
+                field.choices = [field.choices[0], *(
+                    (position.ref, position.name)
+                    for position in Position.objects.filter(kind="physical", is_saleable=saleable).order_by("name")
+                )]
+                field.initial = str(purchase_block.get(f"receive_position_{key}") or "")
+
         if self._has("defaults_purchase_resale_markup_pct"):
             markup = ResaleMarkup.from_defaults(defaults)
             self.fields["defaults_purchase_resale_markup_pct"].initial = markup.default_pct
@@ -1744,6 +1770,16 @@ class ShopForm(forms.ModelForm):
                 purchase_cfg[key] = int(value) if value is not None else getattr(fallback, key)
             defaults["purchase"] = purchase_cfg
 
+        if self._has("defaults_purchase_receive_position_resale"):
+            purchase_cfg = dict(defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {})
+            for key in ("resale", "material"):
+                ref = (self.cleaned_data.get(f"defaults_purchase_receive_position_{key}") or "").strip()
+                if ref:
+                    purchase_cfg[f"receive_position_{key}"] = ref
+                else:
+                    purchase_cfg.pop(f"receive_position_{key}", None)
+            defaults["purchase"] = purchase_cfg
+
         if self._has("defaults_purchase_resale_markup_pct"):
             purchase_cfg = dict(defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {})
             pct = self.cleaned_data.get("defaults_purchase_resale_markup_pct")
@@ -2120,6 +2156,7 @@ _PURCHASE_FIELDSETS = (
                 ("defaults_purchase_safety_days", "defaults_purchase_min_lead_time_days"),
                 ("defaults_purchase_lead_time_history_days", "defaults_purchase_lead_time_max_days"),
                 ("defaults_purchase_resale_markup_pct", "defaults_purchase_resale_markup_by_collection"),
+                ("defaults_purchase_receive_position_resale", "defaults_purchase_receive_position_material"),
             ),
             "description": (
                 "Política de reposição do app Compras. A sugestão de compra cobre o "

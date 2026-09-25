@@ -23,9 +23,9 @@ from shopman.backstage.projections.purchase_count import (
 )
 from shopman.backstage.services.purchase import (
     PurchaseError,
-    _default_receive_position,
     parse_qty_input,
 )
+from shopman.shop.services.receiving_position import receiving_position
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +123,8 @@ def _apply_count(line: ResolvedCountLine, *, user) -> bool:
         )
 
     if delta > 0:
-        # Sobra encontrada entra no quant mais novo; sem quant, nasce um no
-        # depósito padrão — mesmo destino do recebimento, kind=ADJUST.
+        # Sobra encontrada entra no quant mais novo; sem quant, nasce onde o
+        # recebimento a poria — pelo papel do SKU, kind=ADJUST.
         if quants:
             target = quants[-1]
             stock.adjust(target, target.quantity + delta, line.reason, user=user)
@@ -132,7 +132,7 @@ def _apply_count(line: ResolvedCountLine, *, user) -> bool:
             stock.receive(
                 quantity=delta,
                 sku=sku,
-                position=_default_receive_position(),
+                position=receiving_position(sku),
                 user=user,
                 reason=f"Ajuste: {line.reason}",
                 kind=Move.Kind.ADJUST,
