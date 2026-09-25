@@ -121,6 +121,7 @@ def test_nota_do_balcao_nao_vira_aviso_de_whatsapp():
 def test_aviso_leva_o_link_da_danfe(settings):
     from shopman.shop.adapters import notification_manychat
     from shopman.shop.services.notification import _build_context
+    from shopman.shop.services.operator_orders import short_ref
 
     settings.SHOPMAN_FOCUS_NFE = {"environment": "producao"}
     order = _order("web")
@@ -128,7 +129,8 @@ def test_aviso_leva_o_link_da_danfe(settings):
     assert ctx["danfe_url"] == "https://api.focusnfe.com.br/notas_fiscais_consumidor/NFe1.html"
     message = notification_manychat._build_message("fiscal_note_ready", ctx)
     assert message == (
-        f"A nota fiscal do pedido {order.ref} está pronta: "
+        # A mensagem chama o pedido pelo final do ref; o link é que leva o ref inteiro.
+        f"A nota fiscal do pedido {short_ref(order.ref)} está pronta: "
         "https://api.focusnfe.com.br/notas_fiscais_consumidor/NFe1.html"
     )
 
