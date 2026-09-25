@@ -358,6 +358,22 @@ def emit_fiscal_update(order) -> None:
     )
 
 
+def emit_danfe_update(order) -> None:
+    """A impressão da DANFE da entrega mudou (enviada, saiu, não saiu): o quadro relê.
+
+    Quem imprime é o relay do servidor (``backstage/services/order_danfe.py``);
+    o card acompanha pelo mesmo canal dos pedidos, sem esperar o poll.
+    """
+    if _is_pos_counter_order(order):
+        return
+    _emit_backstage(
+        "orders",
+        "backstage-orders-update",
+        {"ref": order.ref, "status": order.status, "kind": "danfe_changed"},
+        scope=_scope_for_order(order),
+    )
+
+
 def _on_payment_changed(sender, intent=None, order_ref=None, **kwargs):
     order_ref = order_ref or getattr(intent, "order_ref", "")
     if not order_ref:

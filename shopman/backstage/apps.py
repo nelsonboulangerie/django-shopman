@@ -71,6 +71,26 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # A DANFE da entrega sai pela impressora do despacho, pelo relay, sem
+        # depender de onde o Gestor está aberto. Duas portas, porque a ordem
+        # varia: a nota autoriza depois do despacho (o normal) ou o pedido é
+        # despachado com a nota já autorizada. Ver services/order_danfe.py.
+        from shopman.orderman.signals import order_changed
+
+        from shopman.backstage.services.order_danfe import on_nfce_authorized, on_order_changed
+        from shopman.shop.signals import nfce_authorized
+
+        nfce_authorized.connect(
+            on_nfce_authorized,
+            dispatch_uid="backstage.order_danfe.on_nfce_authorized",
+            weak=False,
+        )
+        order_changed.connect(
+            on_order_changed,
+            dispatch_uid="backstage.order_danfe.on_order_changed",
+            weak=False,
+        )
+
         # Trilha de acesso: quem entrou, por qual porta, de onde. O sucesso vem
         # do signal do PRÓPRIO Django — os quatro caminhos de operador (senha do
         # Admin, senha do app, PIN, crachá) terminam todos em `login()`, então

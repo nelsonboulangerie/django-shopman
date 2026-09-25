@@ -34,8 +34,8 @@ import type { CancellationReason } from "~/composables/useOrdersBoard";
 
 const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
 
-// A DANFE da sacola: sai sozinha na entrega despachada, e à mão pelo card.
-const danfePrint = useDanfePrint(queue, deviceAgent, refresh);
+// A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
+const danfePrint = useDanfePrint(deviceAgent, refresh);
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {

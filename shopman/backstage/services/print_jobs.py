@@ -888,6 +888,12 @@ def acknowledge_job(
         credential.last_seen_at = timezone.now()
         credential.last_build = attempt.agent_build
         credential.save(update_fields=("last_seen_at", "last_build"))
+        if job.kind == PrintJob.Kind.ORDER_DANFE:
+            # A DANFE da entrega: o card do Gestor e o alerta acompanham a
+            # resposta do agente (services/order_danfe.py).
+            from shopman.backstage.services import order_danfe
+
+            transaction.on_commit(lambda: order_danfe.on_job_changed(job))
         return job
 
 

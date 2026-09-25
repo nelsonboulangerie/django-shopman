@@ -1,45 +1,51 @@
-// A DANFE da NFC-e no card do Gestor — a que vai na sacola da entrega.
+// A DANFE da NFC-e no card do Gestor, a que vai na sacola da entrega.
 //
-// Quem decide é o servidor (`backstage/services/order_danfe.py`): a nota existe
-// (`danfe_printable`), já saiu (`danfe_printed`), deve sair sozinha agora
-// (`danfe_auto_print`). Esta camada só traduz isso em linha de card e escolhe
-// quais pedidos a estação deve imprimir sem ninguém pedir.
-import type { OrderCardProjection, TwoZoneQueueProjection } from "~/types/orders";
+// Quem decide é o servidor (`backstage/services/order_danfe.py`): a DANFE da
+// entrega sai sozinha pela impressora do despacho, e o card só acompanha. Esta
+// camada traduz o estado em linha de card: o fato, o motivo quando não saiu e
+// o gesto do botão.
+import type { OrderCardProjection } from "~/types/orders";
 
-type DanfeFields = Pick<OrderCardProjection, "ref" | "danfe_printable" | "danfe_printed" | "danfe_auto_print">;
+type DanfeFields = Pick<
+  OrderCardProjection,
+  "ref" | "danfe_printable" | "danfe_printed" | "danfe_state" | "danfe_problem"
+>;
 
 export interface DanfeLine {
-  /** O fato, à vista: a DANFE já saiu ou ainda não. */
+  /** O fato, à vista. */
   status: string;
+  /** Por que não saiu e o que fazer. Vazio quando está tudo certo. */
+  problem: string;
   /** O gesto do botão. */
   action: string;
+  /** A DANFE está na fila da impressora: o botão espera, para não sair duas. */
+  sending: boolean;
+  /** Não saiu e precisa de alguém. */
+  attention: boolean;
 }
 
 /** A linha da DANFE no card, ou `null` quando não há nota (ou é iFood). */
 export function danfeLine(card: DanfeFields): DanfeLine | null {
   if (!card.danfe_printable) return null;
-  if (card.danfe_printed) return { status: "DANFE impressa", action: "Reimprimir DANFE" };
-  if (card.danfe_auto_print) return { status: "DANFE saindo para a sacola", action: "Imprimir DANFE" };
-  return { status: "DANFE não impressa", action: "Imprimir DANFE" };
-}
-
-/**
- * Os pedidos cuja DANFE esta estação deve imprimir AGORA, sem ninguém pedir.
- *
- * `attempted` são os que esta aba já tentou: uma tentativa por pedido por aba.
- * Se o papel não sair, o operador fica sabendo pelo aviso e reimprime no card —
- * repetir sozinho a cada leitura do quadro encheria a bobina de REIMPRESSÃO.
- */
-export function danfeAutoPrintRefs(
-  queue: TwoZoneQueueProjection | null | undefined,
-  attempted: ReadonlySet<string>,
-): string[] {
-  if (!queue) return [];
-  const cards: DanfeFields[] = [
-    ...queue.expedition_delivery_transit,
-    ...queue.expedition_delivery,
-    ...queue.expedition_pickup,
-  ];
-  return [...new Set(cards.filter((card) => card.danfe_auto_print).map((card) => card.ref))]
-    .filter((ref) => !attempted.has(ref));
+  const action = card.danfe_printed ? "Reimprimir DANFE" : "Imprimir DANFE";
+  const line = (status: string, extra: Partial<DanfeLine> = {}): DanfeLine => ({
+    status,
+    problem: "",
+    action,
+    sending: false,
+    attention: false,
+    ...extra,
+  });
+  switch (card.danfe_state) {
+    case "printed":
+      return line("DANFE impressa", { action: "Reimprimir DANFE" });
+    case "sending":
+      return line("DANFE saindo na impressora", { sending: true });
+    case "not_printed":
+      return line("DANFE não impressa", { problem: card.danfe_problem || "", attention: true });
+    case "on_dispatch":
+      return line("A DANFE sai sozinha quando a entrega sair");
+    default:
+      return line("DANFE disponível");
+  }
 }
