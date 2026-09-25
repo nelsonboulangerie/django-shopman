@@ -422,6 +422,11 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
+# Google ligado em 25/09/2026, com fila e destinos vazios (nada antigo a soltar).
+- key: SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
 - key: SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED
   scope: RUN_TIME
   value: 'false'
@@ -573,7 +578,7 @@ envs:
 # Google Business Profile (posts do Marketing). API aprovada em 25/09/2026 para o
 # projeto 528240639893 (nelson-shopman-marketing, público Interno). Os dois IDs vêm de
 # accounts.list / locations.list; o cliente OAuth é o 'Nelson Shopman Marketing Server'.
-# Credencial presente não publica: SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED segue false.
+# A publicação liga pela SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED (junto das outras flags).
 - key: GOOGLE_BUSINESS_OAUTH_CLIENT_ID
   scope: RUN_TIME
   value: '528240639893-c6kvbdkda46n80k9s4rdb3kecfeucas2.apps.googleusercontent.com'
