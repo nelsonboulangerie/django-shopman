@@ -65,21 +65,21 @@ BODY_TEMPLATES: dict[str, str] = {
     ),
     "order_ready_pickup": (
         "Seu pedido {order_ref} está pronto e esperando por você no balcão. \U0001f950\n"
-        "Endereço e detalhes: {tracking_url}\n"
+        "Endereço e detalhes: {tracking_url}{fiscal_note_suffix}\n"
     ),
     "order_ready_delivery": (
         "Seu pedido {order_ref} está pronto e aguardando o entregador.\n"
         "Avisamos assim que sair. \U0001f4e6\n"
-        "Acompanhe por aqui: {tracking_url}\n"
+        "Acompanhe por aqui: {tracking_url}{fiscal_note_suffix}\n"
     ),
     "order_dispatched": (
         "Seu pedido {order_ref} saiu para entrega."
         "{courier_tracking_suffix}\n"
-        "Quando receber, é só confirmar por aqui: {tracking_url}\n"
+        "Quando receber, é só confirmar por aqui: {tracking_url}{fiscal_note_suffix}\n"
     ),
     "order_delivered": (
         "Olá{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} foi entregue.\n\nObrigado pela preferência!\n"
+        "Seu pedido {order_ref} foi entregue.{fiscal_note_suffix}\n\nObrigado pela preferência!\n"
     ),
     "fiscal_note_ready": (
         "A nota fiscal do pedido {order_ref} está pronta: {danfe_url}{fiscal_test_note}\n"

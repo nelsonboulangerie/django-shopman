@@ -58,6 +58,14 @@ def test_documento_de_outra_conta_nunca_entra():
     assert not customer_tax_id.is_in_profile(outcome)
     ana.refresh_from_db()
     assert ana.document == ""
+    # Para ela, o documento "está no cadastro": fica como preferência da nota,
+    # e o próximo checkout o traz como se fosse do cadastro (nada denuncia a
+    # outra conta na próxima visita).
+    assert ana.metadata["note_tax_id"] == CPF
+    from shopman.shop.projections.delivery_fiscal import FROM_DOCUMENT, delivery_tax_id_prefill
+
+    prefill = delivery_tax_id_prefill(ana.uuid)
+    assert (prefill.tax_id, prefill.source) == (CPF, FROM_DOCUMENT)
 
 
 def test_documento_invalido_ou_sem_cliente_nao_grava():

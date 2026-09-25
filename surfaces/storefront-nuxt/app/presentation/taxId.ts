@@ -18,9 +18,6 @@ export const TAX_ID_WHY = 'A nota fiscal vai junto com a entrega e precisa do CP
 // Retirada: o "CPF na nota?" do balcão. A nota sai de qualquer jeito; o
 // documento só vai nela se a pessoa pedir.
 export const PICKUP_TAX_ID_WHY = 'Opcional. Informe se quiser a nota fiscal no seu CPF ou CNPJ.'
-// Pediu para guardar e não entrou. A MESMA frase em todo caso: a loja nunca
-// diz que um documento pertence a outra conta.
-export const TAX_ID_NOT_SAVED_MESSAGE = 'O documento vale para a nota deste pedido, mas não entrou no seu cadastro.'
 
 export function taxIdDigits (value: string | null | undefined): string {
   return String(value || '').replace(/\D/g, '')

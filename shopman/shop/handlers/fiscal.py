@@ -24,9 +24,6 @@ from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 
 logger = logging.getLogger(__name__)
 
-#: O aviso ao cliente da loja online de que a NFC-e dele está autorizada.
-FISCAL_NOTE_READY_TEMPLATE = "fiscal_note_ready"
-
 # Códigos que retry pode curar: transporte fora do ar, 5xx, rate limit e
 # "processando_autorizacao" (async da SEFAZ). Qualquer 4xx/payload é terminal.
 _TRANSIENT_PREFIXES = ("focus_nfe_http_5",)
@@ -361,29 +358,26 @@ class NFCeEmitHandler:
 
     @staticmethod
     def _notify_online_customer(order) -> None:
-        """Pedido da loja online: a nota vai ao cliente pelo aviso de pedido.
+        """Pedido da loja online: a nota vai ao cliente, e numa mensagem só.
 
-        Decisão do dono (25/09/2026): a loja online não imprime nem pede e-mail;
-        a nota chega DIGITAL — na página do pedido e numa mensagem com o link da
-        DANFE, pela cadeia de avisos do pedido (WhatsApp primeiro). Só o canal da
-        loja: o balcão entrega a nota no papel ou no e-mail que o operador
-        anotou, e o marketplace não é contato nosso. A mensagem é a da nota
-        AUTORIZADA, e não um pedaço do aviso de despacho: na entrega a nota nasce
-        no despacho, depois de o aviso já ter saído.
+        Decisões do dono (25/09/2026): a loja online não imprime nem pede e-mail;
+        a nota chega DIGITAL — na página do pedido e com o link da DANFE pela
+        cadeia de avisos do pedido (WhatsApp primeiro). E menos mensagens: o link
+        vai DENTRO da mensagem de status que ainda vai sair (pronto, saiu,
+        entregue); o aviso avulso ``fiscal_note_ready`` só sai quando a nota
+        autoriza depois da última delas. Quem decide é
+        ``notification.send_fiscal_note_unless_carried`` (só o canal da loja: o
+        balcão entrega a nota no papel ou no e-mail que o operador anotou, e o
+        marketplace não é contato nosso).
 
         Best-effort, como o e-mail: a nota já existe, e o aviso não pode derrubar
-        a directive de emissão. ``notification.send`` é deduplicado por pedido e
-        evento, então o retry da directive não repete a mensagem.
+        a directive de emissão. A menção é reservada no pedido, então o retry da
+        directive não repete a mensagem.
         """
-        from django.conf import settings
-
-        storefront_channel = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
-        if (order.channel_ref or "") != storefront_channel:
-            return
         try:
             from shopman.shop.services import notification
 
-            notification.send(order, FISCAL_NOTE_READY_TEMPLATE)
+            notification.send_fiscal_note_unless_carried(order)
         except Exception:
             logger.warning("fiscal.notify: aviso da nota não agendado order=%s", order.ref, exc_info=True)
 

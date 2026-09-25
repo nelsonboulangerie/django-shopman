@@ -4,7 +4,7 @@ import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutRe
 import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
-import { PICKUP_TAX_ID_WHY, TAX_ID_NOT_SAVED_MESSAGE, TAX_ID_WHY, deliveryTaxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
+import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, deliveryTaxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -1227,9 +1227,9 @@ async function submitCheckout () {
       body: { ...buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null, cart.value?.revision), ...(pendingAddressLabel.value ? { address_label: pendingAddressLabel.value } : {}) }
     })
     if (response.convenience_pending?.length && import.meta.client) useSonner.info('Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez.')
-    // Pediu para guardar e não entrou: a mesma frase em todo caso (documento de
-    // outra conta nunca se revela). A nota sai com o documento de qualquer jeito.
-    if (response.tax_id_saved === false && import.meta.client) useSonner.info(TAX_ID_NOT_SAVED_MESSAGE)
+    // "Guardar no seu cadastro?" não tem resposta na tela, de propósito: dizer
+    // que não entrou deixaria inferir que o documento é de outra conta (a loja
+    // nunca revela isso). A nota sai com o documento de qualquer jeito.
     confirmedTrackingUrl.value = response.next_url || `/pedido/${encodeURIComponent(response.order_ref)}`
     clearCart()
     clearCheckoutDraft()

@@ -32,6 +32,11 @@
               <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
                 Seu pedido <strong>{{ order_ref }}</strong> saiu para entrega e está a caminho.
               </p>
+              {% if fiscal_note_url %}
+              <p style="margin:0 0 16px;font-size:15px;color:#3d2b1f;line-height:1.6;">
+                Nota fiscal do pedido: <a href="{{ fiscal_note_url }}" style="color:#7c5c3a;font-weight:600;">abrir a nota fiscal</a>{% if fiscal_test_note %}<br><span style="font-size:13px;color:#6b5b4f;">Nota de teste, sem valor fiscal.</span>{% endif %}
+              </p>
+              {% endif %}
               {% if tracking_url %}
               <p style="margin:24px 0;text-align:center;">
                 <a href="{{ tracking_url }}"

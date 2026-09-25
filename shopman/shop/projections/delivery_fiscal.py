@@ -10,7 +10,10 @@ grava nada; gravar no cadastro é outra coisa, só com o "sim" da pessoa
 (``shop/services/customer_tax_id``). A ordem da procura:
 
 1. ``customer.document`` — o documento do cadastro, quando existe;
-2. senão, o ``fiscal.tax_id`` do último pedido de ENTREGA do mesmo cliente.
+2. senão, ``Customer.metadata.note_tax_id`` — o documento que a pessoa pediu
+   para guardar e que é de outro cadastro (``shop/services/customer_tax_id``);
+   para ela, é o do cadastro;
+3. senão, o ``fiscal.tax_id`` do último pedido de ENTREGA do mesmo cliente.
 
 O segundo é LIDO do pedido e devolvido só para a própria pessoa, no campo dela;
 nunca vira ``customer.document`` (pode ser o CPF do marido, o da empresa — ver
@@ -53,6 +56,15 @@ def delivery_tax_id_prefill(customer_uuid) -> DeliveryTaxIdPrefill:
 
     from shopman.orderman.models import Order
     from shopman.utils.documents import is_valid_tax_id
+
+    from shopman.shop.services.customer_tax_id import NOTE_TAX_ID_KEY
+
+    # A pessoa pediu para guardar um documento que é de outro cadastro: para
+    # ela, ele "está no cadastro" (mesma origem, sem a pergunta de guardar). Se
+    # a tela a tratasse diferente, a próxima visita revelaria a outra conta.
+    note_tax_id = _digits((customer.metadata or {}).get(NOTE_TAX_ID_KEY))
+    if note_tax_id and is_valid_tax_id(note_tax_id):
+        return DeliveryTaxIdPrefill(tax_id=note_tax_id, source=FROM_DOCUMENT)
 
     last_fiscal = (
         Order.objects.filter(

@@ -79,10 +79,6 @@ class CheckoutResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     next_url = serializers.CharField(required=False)
     convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
-    # Só presente quando a pessoa pediu para guardar o CPF no cadastro: ``True``
-    # = está no cadastro; ``False`` = vale só para esta nota. O motivo do
-    # ``False`` nunca sai daqui (documento de outra conta não se revela).
-    tax_id_saved = serializers.BooleanField(required=False)
 
 
 class DetailSerializer(serializers.Serializer):
