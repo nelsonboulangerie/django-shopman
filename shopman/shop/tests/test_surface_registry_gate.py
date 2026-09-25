@@ -37,6 +37,7 @@ FILES = (
     "config/settings.py",
     "shopman/backstage/projections/hub.py",
     "surfaces/operator-kit/app-identity.json",
+    "tools/pwa-gate/check.mjs",
     "CLAUDE.md",
     "README.md",
 )
@@ -114,6 +115,7 @@ def test_a_new_registry_entry_lists_every_place_that_still_lacks_it(repo: Path):
         "config/settings.py",
         "shopman/backstage/projections/hub.py",
         "surfaces/operator-kit/app-identity.json",
+        "tools/pwa-gate/check.mjs",
         "CLAUDE.md",
         "README.md",
     }

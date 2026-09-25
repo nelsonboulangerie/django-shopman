@@ -43,7 +43,9 @@ def test_nuxt_ssr_runtime_imports_resolve_to_compatible_packages():
 
         assert vue_version == renderer_version, f"{surface} mixes vue {vue_version} with renderer {renderer_version}"
         assert _version_tuple(vue_version) >= (3, 5, 41), f"{surface} pins SSR-incompatible vue {vue_version}"
-        assert _version_tuple(nostics_version) >= (1, 2, 0), f"{surface} hoists SSR-incompatible nostics {nostics_version}"
+        assert _version_tuple(nostics_version) >= (1, 2, 0), (
+            f"{surface} hoists SSR-incompatible nostics {nostics_version}"
+        )
 
 
 def test_make_surfaces_includes_all_nuxt_apps():
@@ -87,9 +89,11 @@ def test_operator_groups_cover_every_operator_surface_exactly_once():
     members = [app["surface"] for apps in groups.values() for app in apps]
     assert sorted(members) == sorted(s for s in SURFACES if s != "storefront-nuxt")
     assert len(members) == len(set(members))
-    assert [app["surface"] for app in groups["operator-floor"]] == [
-        "pos-nuxt", "kds-nuxt", "orders-nuxt", "production-nuxt", "hub-nuxt",
-    ]
+    registry = json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"]
+    for name, apps in groups.items():
+        assert sorted(app["surface"] for app in apps) == sorted(
+            s["dir"] for s in registry.values() if s["service"] == name
+        ), f"{name} diverge do registro de superfícies"
     for apps in groups.values():
         for app in apps:
             assert app["id"] == app["surface"].removesuffix("-nuxt"), (

@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -331,6 +331,15 @@ test-surface-versions: ## Gate: mesma versão dos pacotes compartilhados nas 10 
 test-surface-registry: ## Gate: todo lugar concorda com surfaces/registry.json
 	@echo "── Registro de superfícies ──"
 	$(PYTHON) scripts/check_surface_registry.py
+
+# Cria um app de operador em surfaces/ a partir do molde e o registra em todos os
+# lugares que a trava acima confere. O subdomínio é argumento: hostname é do dono.
+new-surface: ## Novo app de operador: make new-surface name=x label="X" subdomain=x group=operator-office perm=app.codename color=#RRGGBB symbol=lucide:nome
+	@test -n "$(name)" -a -n "$(label)" -a -n "$(subdomain)" -a -n "$(group)" -a -n "$(perm)" -a -n "$(color)" -a -n "$(symbol)" || \
+		(echo 'uso: make new-surface name=<id> label="<Rótulo>" subdomain=<rótulo do host> group=<operator-floor|operator-office> perm=<app.codename> color=<#RRGGBB> symbol=<lucide:nome> [article=o|a|as] [dry=1]' >&2; exit 2)
+	$(PYTHON) scripts/new_surface.py --name "$(name)" --label "$(label)" --subdomain "$(subdomain)" \
+		--group "$(group)" --perm "$(perm)" --color "$(color)" --symbol "$(symbol)" \
+		$(if $(article),--article "$(article)") $(if $(dry),--dry-run)
 
 # Gate da meia-correção: arquivo que grita numa linha e se cala na irmã.
 # Escopo = só o que o PR toca (diff contra o main). `all=1` varre o repositório

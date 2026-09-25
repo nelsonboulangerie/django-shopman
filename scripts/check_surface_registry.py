@@ -334,6 +334,13 @@ def check_app_identity(reg: Registry) -> list[str]:
     return _diff(where, "a identidade do app", {s.id for s in reg.operators}, apps)
 
 
+def check_pwa_gate(reg: Registry) -> list[str]:
+    where = "tools/pwa-gate/check.mjs"
+    match = re.search(r"^const profiles = \{(.*?)^\}", reg.read(where), re.M | re.S)
+    profiles = set(re.findall(r"^  (\w+): ", match.group(1) if match else "", re.M))
+    return _diff(f"{where} (profiles)", "o perfil", {s.id for s in reg.surfaces}, profiles)
+
+
 # ── documentação ────────────────────────────────────────────────────────────
 
 
@@ -364,6 +371,7 @@ CHECKS = (
     check_django_settings,
     check_hub_projection,
     check_app_identity,
+    check_pwa_gate,
     check_docs_tree,
 )
 

@@ -22,21 +22,24 @@ from shopman.backstage.projections.hub import _REGISTRY
 from shopman.shop.models.push_subscription import PushSurface
 from shopman.shop.services.operator_capacity import SERVICE_LABELS
 
-IDENTITY_PATH = (
-    Path(__file__).resolve().parents[3] / "surfaces" / "operator-kit" / "app-identity.json"
-)
+SURFACES_DIR = Path(__file__).resolve().parents[3] / "surfaces"
+IDENTITY_PATH = SURFACES_DIR / "operator-kit" / "app-identity.json"
+REGISTRY_PATH = SURFACES_DIR / "registry.json"
 
-# `ref` do tile no launcher → chave do app na identidade das superfícies. A Loja não
-# entra: é superfície de cliente, fora da família de operador.
-TILE_TO_APP = {
-    "pos": "pos",
-    "kds": "kds",
-    "gestor": "orders",
-    "production": "production",
-    "purchase": "purchase",
-    "marketing": "marketing",
-    "bi": "bi",
-}
+
+def _tile_to_app() -> dict[str, str]:
+    """`ref` do tile no launcher → chave do app, lido do registro único das superfícies.
+
+    A Loja não entra: é superfície de cliente, fora da família de operador. Fora do
+    repositório (sem `surfaces/`) não há o que comparar.
+    """
+    if not REGISTRY_PATH.exists():  # pragma: no cover - só fora do repositório
+        return {}
+    surfaces = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))["surfaces"]
+    return {s["hub_tile"]: app for app, s in surfaces.items() if s["kind"] == "operator" and s["hub_tile"]}
+
+
+TILE_TO_APP = _tile_to_app()
 
 
 def _identity() -> dict:
