@@ -40,9 +40,6 @@ class CheckoutSerializer(serializers.Serializer):
     # entrega a domicílio não sai sem ele; a exigência é do servidor
     # (``DeliveryFiscalIdentityRule``), aqui só chega o dado. Retirada ignora.
     fiscal_tax_id = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
-    # A pessoa RESPONDEU "sim" a "guardar para as próximas entregas". Nunca se
-    # grava o documento no cadastro sem essa resposta.
-    save_fiscal_tax_id = serializers.BooleanField(required=False, default=False)
     # Total (centavos) que o cliente VIU ao confirmar — o servidor rejeita o
     # commit se a repricing final divergir (cupom expirou, preço mudou).
     #

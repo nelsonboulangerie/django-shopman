@@ -9,8 +9,7 @@ aparecia na emissão, com o entregador na rua. Estes testes provam:
 - a trava do commit recusa com o campo certo, e deixa passar retirada e
   entrega sem nota;
 - o PDV recusa no fechamento com o campo "CPF na nota" e publica a exigência
-  na review;
-- guardar o CPF no cadastro só preenche lacuna, e nunca o documento alheio.
+  na review.
 """
 
 from __future__ import annotations
@@ -135,15 +134,6 @@ def test_cpf_errado_e_recusado_mesmo_onde_a_regra_nao_emitiria(monkeypatch, sett
     assert identity.refusal(identity.delivery_fiscal_gaps(order))[0] == "delivery_tax_id_invalid"
 
 
-def test_a_loja_sabe_antes_do_pagamento_se_a_entrega_pede_cpf(monkeypatch, settings):
-    monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda: Mock())
-    settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
-    assert identity.delivery_tax_id_required_for_methods(channel_ref="web", methods=["cash"]) is False
-    settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = ELECTRONIC_OR_ON_DELIVERY
-    assert identity.delivery_tax_id_required_for_methods(channel_ref="web", methods=["cash"]) is True
-    assert identity.delivery_tax_id_required_for_methods(channel_ref="web", methods=["pix", "card"]) is True
-
-
 # ── A trava do commit ─────────────────────────────────────────────────────
 
 
@@ -200,30 +190,41 @@ def test_erro_do_checkout_chega_no_campo_do_cpf():
     assert map_checkout_error(exc) == {"fiscal_tax_id": "m"}
 
 
-# ── Guardar no cadastro: só quando perguntado, só lacuna ──────────────────
+# ── Pré-preenchimento da próxima entrega: lê, nunca grava ─────────────────
 
 
 @pytest.mark.django_db
-def test_guardar_cpf_preenche_so_cadastro_sem_documento():
+def test_pre_preenche_com_a_ultima_entrega_da_propria_pessoa():
     from shopman.guestman.models import Customer
+    from shopman.orderman.models import Order
+
+    from shopman.shop.projections.delivery_fiscal import FROM_LAST_DELIVERY, delivery_tax_id_prefill
 
     ana = Customer.objects.create(ref="ANA", first_name="Ana", phone="+5543999990001")
-    assert identity.save_tax_id_to_customer(ana.uuid, "529.982.247-25") == identity.SAVED
-    ana.refresh_from_db()
-    assert ana.document == CPF
-    assert identity.saved_tax_id(ana.uuid) == CPF
+    assert delivery_tax_id_prefill(ana.uuid).tax_id == ""
 
-    assert identity.save_tax_id_to_customer(ana.uuid, "11144477735") == identity.KEPT_EXISTING
-    ana.refresh_from_db()
-    assert ana.document == CPF
+    def pedido(ref, *, customer_ref, fulfillment_type, tax_id):
+        Order.objects.create(ref=ref, channel_ref="web", status="new", total_q=100, data={
+            "customer_ref": customer_ref, "fulfillment_type": fulfillment_type, "fiscal": {"tax_id": tax_id},
+        })
 
+    pedido("E-1", customer_ref="ANA", fulfillment_type="delivery", tax_id="11144477735")
+    pedido("E-2", customer_ref="ANA", fulfillment_type="delivery", tax_id=CPF)
+    pedido("R-1", customer_ref="ANA", fulfillment_type="pickup", tax_id="11222333000181")
+    pedido("J-1", customer_ref="JOAO", fulfillment_type="delivery", tax_id="11222333000181")
 
-@pytest.mark.django_db
-def test_guardar_cpf_de_outro_cadastro_nao_grava():
-    from shopman.guestman.models import Customer
-
-    Customer.objects.create(ref="JOAO", first_name="João", phone="+5543999990002", document=CPF)
-    ana = Customer.objects.create(ref="ANA", first_name="Ana", phone="+5543999990001")
-    assert identity.save_tax_id_to_customer(ana.uuid, CPF) == identity.OWNED_BY_OTHER
+    prefill = delivery_tax_id_prefill(ana.uuid)
+    assert (prefill.tax_id, prefill.source) == (CPF, FROM_LAST_DELIVERY)
     ana.refresh_from_db()
     assert ana.document == ""
+
+
+@pytest.mark.django_db
+def test_documento_do_cadastro_vem_antes_da_ultima_entrega():
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.projections.delivery_fiscal import FROM_DOCUMENT, delivery_tax_id_prefill
+
+    ana = Customer.objects.create(ref="ANA", first_name="Ana", phone="+5543999990001", document=CPF)
+    prefill = delivery_tax_id_prefill(ana.uuid)
+    assert (prefill.tax_id, prefill.source) == (CPF, FROM_DOCUMENT)

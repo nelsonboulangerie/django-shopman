@@ -1,8 +1,12 @@
-"""Loja: entrega com nota pede o CPF/CNPJ no checkout, e só grava no cadastro quando perguntado.
+"""Loja: entrega com nota pede o CPF/CNPJ no checkout; na próxima ele já vem preenchido.
 
 Decisão do dono (24/09/2026): pedir o CPF na ENTRADA do pedido; sem CPF, a
 entrega não fica disponível e a retirada continua. A trava é do commit
 (``DeliveryFiscalIdentityRule``); a loja manda o dado e lê a recusa no campo.
+
+Decisão do dono (25/09/2026): sem pergunta de "guardar". Na próxima entrega o
+campo vem com o documento do cadastro ou, sem ele, com o da última entrega — e
+o cadastro nunca é escrito pelo checkout.
 """
 
 from __future__ import annotations
@@ -101,21 +105,29 @@ def test_entrega_com_cpf_vira_pedido_e_nao_mexe_no_cadastro(client, delivery_wit
     assert delivery_with_note.document == ""
 
 
-def test_guardar_para_as_proximas_entregas_so_com_o_sim(client, delivery_with_note):
-    resp = _post(client, fiscal_tax_id=CPF, save_fiscal_tax_id=True)
+def test_projecao_pre_preenche_com_o_cpf_da_ultima_entrega_sem_gravar_no_cadastro(client, delivery_with_note):
+    checkout = client.get("/api/v1/storefront/checkout/").json()["checkout"]
+    assert checkout["prefill_tax_id"] == ""
+    assert checkout["prefill_tax_id_source"] == ""
+    assert "delivery_requires_tax_id" not in checkout
+    assert "offer_save_tax_id" not in checkout
+
+    resp = _post(client, fiscal_tax_id=CPF)
     assert resp.status_code == 201, resp.content
+
+    add = client.put("/api/v1/cart/skus/PAO-FRANCES/", data={"qty": 1}, content_type="application/json")
+    assert add.status_code == 200, add.content
+    checkout = client.get("/api/v1/storefront/checkout/").json()["checkout"]
+    assert checkout["prefill_tax_id"] == CPF
+    assert checkout["prefill_tax_id_source"] == "last_delivery"
     delivery_with_note.refresh_from_db()
-    assert delivery_with_note.document == CPF
+    assert delivery_with_note.document == ""
 
 
-def test_projecao_do_checkout_avisa_que_a_entrega_pede_cpf(client, delivery_with_note):
-    checkout = client.get("/api/v1/storefront/checkout/").json()["checkout"]
-    assert checkout["delivery_requires_tax_id"] is True
-    assert checkout["saved_tax_id"] == ""
-    assert checkout["offer_save_tax_id"] is True
-
-    delivery_with_note.document = CPF
+def test_projecao_prefere_o_documento_do_cadastro(client, delivery_with_note):
+    delivery_with_note.document = "11144477735"
     delivery_with_note.save(update_fields=["document"])
+    _post(client, fiscal_tax_id=CPF)
     checkout = client.get("/api/v1/storefront/checkout/").json()["checkout"]
-    assert checkout["saved_tax_id"] == CPF
-    assert checkout["offer_save_tax_id"] is False
+    assert checkout["prefill_tax_id"] == "11144477735"
+    assert checkout["prefill_tax_id_source"] == "document"

@@ -1,13 +1,11 @@
 /**
  * CPF/CNPJ da nota fiscal da ENTREGA, do lado da tela.
  *
- * Decisão do dono (24/09/2026): a nota da entrega a domicílio não sai sem o
- * CPF ou CNPJ de quem compra (a SEFAZ recusa, 787/788), então a loja pede o
- * documento no passo do endereço. Sem ele a entrega não fecha; a retirada
- * continua aberta. Quem decide SE a entrega pede CPF é o servidor
- * (`delivery_requires_tax_id` na projeção do checkout, perguntado ao mesmo
- * resolver que decide a emissão); aqui só se confere o que foi digitado, cedo
- * e no campo, com as MESMAS frases da recusa do servidor.
+ * Decisões do dono (24 e 25/09/2026): a nota da entrega a domicílio não sai
+ * sem o CPF ou CNPJ de quem compra (a SEFAZ recusa, 787/788), então a loja pede
+ * o documento no passo do endereço, em TODA entrega. Sem ele a entrega não
+ * fecha; a retirada continua aberta. Aqui só se confere o que foi digitado,
+ * cedo e no campo, com as MESMAS frases da recusa do servidor.
  *
  * Os nomes ficam em português porque `cpf` e `cnpj` são nome próprio de
  * documento brasileiro.
