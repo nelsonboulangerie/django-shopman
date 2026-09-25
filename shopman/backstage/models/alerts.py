@@ -158,7 +158,7 @@ class OperatorAlert(models.Model):
         # A SEFAZ recusou o GTIN de um produto: a nota já foi reemitida "SEM
         # GTIN" (a venda não espera) e o produto ficou marcado
         # (``metadata.gtin_nf_rejected``). O que sobra é gente conferir o
-        # código na embalagem e limpar a marca.
+        # código na embalagem, no Catálogo do Gestor (corrigir ou manter sem GTIN).
         ("fiscal_gtin_rejected", "GTIN recusado pela SEFAZ; nota saiu SEM GTIN"),
         # A DANFE da entrega não saiu na impressora do despacho (sem impressora,
         # agente parado, recusa). Não é fiscal: a nota está autorizada. O que

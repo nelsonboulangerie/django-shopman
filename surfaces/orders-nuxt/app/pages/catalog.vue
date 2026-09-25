@@ -403,6 +403,19 @@ async function openDetail(row: CatalogRowProjection, tab = "geral") {
     if (request === detailRequest) detailLoading.value = false;
   }
 }
+// Chegando de um alerta (`?sku=AGUA-500&tab=social`, o GTIN que a SEFAZ recusou),
+// a tela abre aquele produto já na aba certa. Espera a matriz ter a linha.
+const route = useRoute();
+const queryText = (value: unknown) => (typeof value === "string" ? value : "");
+const skuFromLink = ref(queryText(route.query.sku));
+watch(() => route.query.sku, (value) => { skuFromLink.value = queryText(value); });
+watch([skuFromLink, () => matrix.value?.rows], ([sku, rows]) => {
+  if (import.meta.server || !sku || !rows) return;
+  const row = rows.find((candidate) => candidate.sku === sku);
+  if (!row) return;
+  skuFromLink.value = "";
+  void openDetail(row, queryText(route.query.tab) || "geral");
+}, { immediate: true });
 function closeDetail() {
   detailRequest++;
   detailRoles.value = null;

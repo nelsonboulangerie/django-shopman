@@ -130,19 +130,32 @@ _ORDERS_SURFACE_LABELS = {
 }
 
 
+def _catalog_product_href(alert) -> str:
+    """GTIN recusado: o produto aberto no Catálogo do Gestor, na aba do GTIN."""
+    from shopman.shop.services.fiscal import GTIN_REJECTED_ALERT_TYPE, gtin_rejected_alert_sku
+
+    if alert.type != GTIN_REJECTED_ALERT_TYPE:
+        return ""
+    sku = gtin_rejected_alert_sku(alert.message)
+    return f"/catalog?{urlencode({'sku': sku, 'tab': 'social'})}" if sku else ""
+
+
 def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[ProductionActionProjection, ...]:
     actions = []
     path = _PRODUCTION_CONTEXT_PATHS.get(alert.type) or _ORDER_CONTEXT_PATHS.get(alert.type)
     label = "Resolver no contexto"
     exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
-    if surface == "orders" and alert.order_ref and alert.type not in _PRODUCTION_CONTEXT_PATHS:
+    catalog_href = _catalog_product_href(alert) if surface == "orders" else ""
+    if catalog_href:
+        actions.append(_open_context_action(alert, label="Conferir o GTIN no Catálogo", href=catalog_href))
+    elif surface == "orders" and alert.order_ref and alert.type not in _PRODUCTION_CONTEXT_PATHS:
         # No Gestor de pedidos, todo alerta de pedido leva ao pedido: é lá que
         # estão o contato do cliente, a nota, a corrida e o cancelamento.
         label = _ORDERS_SURFACE_LABELS.get(alert.type, "Abrir o pedido")
         if path is None:
             path = "/"
             exact_order_path = True
-    if path is not None:
+    if path is not None and not catalog_href:
         if exact_order_path:
             path = f"/{quote(alert.order_ref, safe='')}"
         query_params = {}
@@ -152,34 +165,7 @@ def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[
             query_params["date"] = target_date
         query = urlencode(query_params)
         href = f"{path}?{query}" if query else path
-        actions.append(
-            ProductionActionProjection(
-                ref=f"open-context:{alert.pk}",
-                kind="open_alert_context",
-                label=label,
-                priority=10,
-                enabled=True,
-                reason="",
-                method="GET",
-                href=href,
-                payload_schema="",
-                expected_rev=None,
-                idempotency=ProductionActionIdempotencyProjection(
-                    required=False,
-                    key_scope="",
-                ),
-                confirmation=ProductionActionConfirmationProjection(
-                    required=False,
-                    reason_required=False,
-                    title="",
-                    confirm_label="Abrir",
-                ),
-                approval_requirement=None,
-                source_alert_ref=str(alert.pk),
-                source_alert_effect="keeps_open",
-                proof="",
-            )
-        )
+        actions.append(_open_context_action(alert, label=label, href=href))
     if not alert.acknowledged:
         actions.append(
             ProductionActionProjection(
@@ -210,3 +196,32 @@ def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[
             )
         )
     return tuple(actions)
+
+
+def _open_context_action(alert, *, label: str, href: str) -> ProductionActionProjection:
+    return ProductionActionProjection(
+        ref=f"open-context:{alert.pk}",
+        kind="open_alert_context",
+        label=label,
+        priority=10,
+        enabled=True,
+        reason="",
+        method="GET",
+        href=href,
+        payload_schema="",
+        expected_rev=None,
+        idempotency=ProductionActionIdempotencyProjection(
+            required=False,
+            key_scope="",
+        ),
+        confirmation=ProductionActionConfirmationProjection(
+            required=False,
+            reason_required=False,
+            title="",
+            confirm_label="Abrir",
+        ),
+        approval_requirement=None,
+        source_alert_ref=str(alert.pk),
+        source_alert_effect="keeps_open",
+        proof="",
+    )

@@ -8,6 +8,7 @@ Smart no-op when fiscal_pool is empty (no backend configured).
 from __future__ import annotations
 
 import logging
+import re
 
 from shopman.utils.monetary import format_money
 
@@ -1104,6 +1105,27 @@ SEFAZ_GTIN_REJECTION_CODES = frozenset({
 # (``fiscal_focusnfe._document_result``: ``sefaz_<cStat>``).
 SEFAZ_REJECTION_PREFIX = "sefaz_"
 GTIN_NF_REJECTED_KEY = "gtin_nf_rejected"
+# Um alerta por produto recusado: cada produto tem o seu gesto no Catálogo
+# ("Conferir o GTIN"), e o alerta fecha quando AQUELE produto se resolve. O SKU
+# fica no fim do marcador de dedupe, que é a identidade da causa.
+GTIN_REJECTED_ALERT_TYPE = "fiscal_gtin_rejected"
+_GTIN_ALERT_SKU = re.compile(r"Dedupe: fiscal_gtin_rejected:[^\n]*:sku=(\S+)\s*$")
+
+
+def gtin_rejected_alert_dedupe_key(order_ref: str, sku: str) -> str:
+    """Marcador do alerta de GTIN recusado; termina em ``:sku=<SKU>``."""
+    return f"{GTIN_REJECTED_ALERT_TYPE}:{order_ref}:sku={sku}"
+
+
+def gtin_rejected_alert_suffix(sku: str) -> str:
+    """O fim exato da mensagem do alerta daquele produto (para achá-lo e fechá-lo)."""
+    return f":sku={sku}"
+
+
+def gtin_rejected_alert_sku(message: str) -> str:
+    """O SKU de um alerta de GTIN recusado, lido do marcador; ``""`` sem marcador."""
+    match = _GTIN_ALERT_SKU.search(str(message or ""))
+    return match.group(1) if match else ""
 
 
 def sefaz_gtin_rejection_code(error_code: str | None) -> str:
