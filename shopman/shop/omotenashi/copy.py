@@ -575,7 +575,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebido")},
     },
     "TRACKING_STEP_AVAILABILITY_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Confirmado")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Aceito")},
     },
     "TRACKING_STEP_PAYMENT_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pago")},

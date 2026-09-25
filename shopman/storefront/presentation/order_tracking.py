@@ -105,7 +105,7 @@ PAYMENT_STATUS_LABELS: dict[str, str] = {
 # de ficarem coerentes cada uma no seu registro.
 STEP_LABEL_COPY: dict[str, tuple[str, str]] = {
     "received": ("TRACKING_STEP_RECEIVED", "Recebido"),
-    "availability": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Confirmado"),
+    "availability": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Aceito"),
     "payment": ("TRACKING_STEP_PAYMENT_CONFIRMED", "Pago"),
     "preparing": ("TRACKING_STEP_PREPARING", "Em preparo"),
     "ready_delivery": ("TRACKING_STEP_READY_DELIVERY", "Pronto"),
