@@ -741,7 +741,7 @@ def _build_context(order, payload: dict, template: str) -> dict:
     if order.total_q:
         # ⚠️ Era `:,.2f` cru — "R$ 38.00", ponto decimal americano, na mensagem
         # que o cliente recebe. O formatador da casa é um só.
-        context["total"] = f"R$ {format_money(order.total_q)}"
+        context["order_total_display"] = f"R$ {format_money(order.total_q)}"
 
     from shopman.shop.services import storefront_links
 

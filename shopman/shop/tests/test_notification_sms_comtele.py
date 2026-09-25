@@ -53,7 +53,7 @@ def test_send_posts_to_comtele_and_trusts_haserror_flag():
         ok = notification_sms.send(
             "+55 (43) 99999-0001",
             "order_accepted",
-            {"order_ref": "ORD-260925-A47", "total": "R$ 56,00"},
+            {"order_ref": "ORD-260925-A47", "order_total_display": "R$ 56,00"},
         )
 
     assert ok is True

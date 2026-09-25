@@ -483,7 +483,7 @@ def test_falha_ao_enfileirar_nao_derruba_a_venda(counter):
 # ══════════════════════════════════════════════════════════════════════
 
 #: Os nomes EXATOS que o Pablo cria no painel do ManyChat.
-MANYCHAT_FIELDS = {"order_ref", "customer_name_greeting", "total", "checkout_url", "payment_deadline"}
+MANYCHAT_FIELDS = {"order_ref", "customer_name_greeting", "order_total_display", "checkout_url", "payment_deadline"}
 
 
 @pytest.fixture
@@ -525,7 +525,7 @@ def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
     assert fields["order_ref"] == "PDV-260925-A47"
     assert fields["order_ref_short"] == "A47"
     assert fields["customer_name_greeting"] == ", Joyce"
-    assert fields["total"] == "R$ 38,00"
+    assert fields["order_total_display"] == "R$ 38,00"
     assert fields["checkout_url"] == CHECKOUT_URL
     assert fields["payment_deadline"].startswith(("hoje às", "amanhã às"))
     assert "phone" not in fields, "no ManyChat o `phone` é NULO; nunca sai daqui"

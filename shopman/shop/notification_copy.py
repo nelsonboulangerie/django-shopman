@@ -48,8 +48,8 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "order_accepted": {
         "subject": "Pedido {order_ref_short} confirmado",
         "body": (
-            "Seu pedido *{order_ref_short}* está confirmado. O total é *{total}*. "
-            "Vamos preparar tudo com muito carinho. ✨\n"
+            "Seu pedido *{order_ref_short}* está confirmado. O total é *{order_total_display}*. "
+            "Vamos preparar com todo carinho. ✨\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
@@ -112,7 +112,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
         "subject": "Lembrete: pedido {order_ref_short} agendado para amanhã",
         "body": (
             "Oi{customer_name_greeting}! Lembrando que seu pedido *{order_ref_short}* está agendado para amanhã. "
-            "Vamos preparar tudo com muito carinho. ✨\n"
+            "Vamos preparar com todo carinho. ✨\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
@@ -133,7 +133,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "payment_link_sent": {
         "subject": "Pedido {order_ref_short}: link de pagamento",
         "body": (
-            "Oi{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* no valor de *{total}*. "
+            "Oi{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* no valor de *{order_total_display}*. "
             "Pague por aqui para garantir: {checkout_url}{payment_deadline_note}"
         ),
     },
@@ -170,7 +170,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "payment_refunded": {
         "subject": "Reembolso do pedido {order_ref_short} processado",
         "body": (
-            "Oi{customer_name_greeting}! O reembolso do pedido *{order_ref_short}*, no valor de *{total}*, "
+            "Oi{customer_name_greeting}! O reembolso do pedido *{order_ref_short}*, no valor de *{order_total_display}*, "
             "foi processado. Qualquer dúvida, estamos à disposição."
         ),
     },

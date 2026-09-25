@@ -105,10 +105,10 @@ def derive_context(context: dict | None) -> dict:
     )
 
     total_q = ctx.get("total_q")
-    if total_q and not ctx.get("total"):
+    if total_q and not ctx.get("order_total_display"):
         from shopman.utils.monetary import format_money
 
-        ctx["total"] = f"R$ {format_money(int(total_q))}"
+        ctx["order_total_display"] = f"R$ {format_money(int(total_q))}"
 
     # Prazo do pagamento ("hoje às 18h", "amanhã às 9h"), lido do `expires_at` que
     # `payment.initiate()` grava em `order.data["payment"]`. Duas chaves de
