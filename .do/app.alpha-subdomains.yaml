@@ -570,6 +570,28 @@ envs:
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET
+# Google Business Profile (posts do Marketing). API aprovada em 25/09/2026 para o
+# projeto 528240639893 (nelson-shopman-marketing, público Interno). Os dois IDs vêm de
+# accounts.list / locations.list; o cliente OAuth é o 'Nelson Shopman Marketing Server'.
+# Credencial presente não publica: SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED segue false.
+- key: GOOGLE_BUSINESS_OAUTH_CLIENT_ID
+  scope: RUN_TIME
+  value: '528240639893-c6kvbdkda46n80k9s4rdb3kecfeucas2.apps.googleusercontent.com'
+  type: GENERAL
+- key: GOOGLE_BUSINESS_ACCOUNT_ID
+  scope: RUN_TIME
+  value: '115642419325714529817'
+  type: GENERAL
+- key: GOOGLE_BUSINESS_LOCATION_ID
+  scope: RUN_TIME
+  value: '16932843135625825567'
+  type: GENERAL
+- key: GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET
+  scope: RUN_TIME
+  type: SECRET
+- key: GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN
+  scope: RUN_TIME
+  type: SECRET
 - key: SHOPMAN_PREPROD_URL
   scope: RUN_TIME
   value: 'https://www.nelsonboulangerie.com.br'
