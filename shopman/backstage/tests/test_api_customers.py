@@ -346,3 +346,23 @@ def test_preview_and_history_speak_of_loyalty_only_when_there_is_loyalty(client,
 
     client.post(MERGE_URL, {"source_ref": "IF-AAAA0001", "target_ref": "CLI-MARIA"}, content_type="application/json")
     assert client.get(MERGES_URL).json()["merges"]["items"][0]["loyalty_merged"] is True
+
+
+# ── A aba só para quem pode ───────────────────────────────────────────
+
+SESSION_URL = "/api/v1/backstage/operator/session/"
+
+
+def test_session_answers_whether_the_operator_can_manage_customers(client, manager, plain_staff):
+    """A barra do Gestor pergunta à antessala se mostra a aba Clientes.
+
+    Sem ``shop.manage_customers`` na allowlist a pergunta seria 400 e a aba
+    sumiria para todos, inclusive o gerente.
+    """
+    client.force_login(manager)
+    response = client.get(SESSION_URL, {"perm": "shop.manage_customers"})
+    assert response.status_code == 200
+    assert response.json()["authorized"] is True
+
+    client.force_login(plain_staff)
+    assert client.get(SESSION_URL, {"perm": "shop.manage_customers"}).json()["authorized"] is False
