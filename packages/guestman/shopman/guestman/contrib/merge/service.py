@@ -910,9 +910,15 @@ class MergeService:
             | Q(data__customer__ref=source.ref)
             | Q(data__customer__uuid=source_uuid)
             | Q(data__customer__id=source_uuid)
-            | Q(handle_type__in=["phone", "whatsapp"], handle_ref=source.phone)
             | Q(handle_type="customer", handle_ref=source_uuid)
         )
+        # ⚠️ Só com telefone. O doador sem telefone é o caso mais comum de
+        # unificação — o cadastro do iFood nasce com ``phone=""`` e o fantasma
+        # do balcão só tem CPF —, e ``handle_ref=""`` casava TODO pedido de
+        # telefone sem handle: pedidos de outras pessoas trocavam de dono e
+        # ganhavam o telefone do sobrevivente.
+        if source.phone:
+            identity_query |= Q(handle_type__in=["phone", "whatsapp"], handle_ref=source.phone)
 
         moved: list[dict] = []
         migrated = 0
@@ -929,7 +935,7 @@ class MergeService:
             data = cls._order_data_for_merge(order.data or {}, source, target)
             handle_ref = order.handle_ref
 
-            if order.handle_type in {"phone", "whatsapp"} and order.handle_ref == source.phone:
+            if source.phone and order.handle_type in {"phone", "whatsapp"} and order.handle_ref == source.phone:
                 handle_ref = target.phone
             elif order.handle_type == "customer" and str(order.handle_ref or "") == source_uuid:
                 handle_ref = target_uuid
@@ -966,7 +972,7 @@ class MergeService:
             for key in ("uuid", "id"):
                 if str(customer_next.get(key) or "") == source_uuid:
                     customer_next[key] = target_uuid
-            if customer_next.get("phone") == source.phone:
+            if source.phone and customer_next.get("phone") == source.phone:
                 customer_next["phone"] = target.phone
             next_data["customer"] = customer_next
 
