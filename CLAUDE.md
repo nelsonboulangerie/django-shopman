@@ -223,11 +223,11 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro 
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
 ├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
-└── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
-                       retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
-                       BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
-                       tw-helper/translucent, harness de teste (tests/support/composableEnv).
-                       Storefront fica de fora (superfície de cliente, branded, harness próprio).
+├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
+│                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
+│                      BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
+│                      tw-helper/translucent, harness de teste (tests/support/composableEnv).
+│                      Storefront fica de fora (superfície de cliente, branded, harness próprio).
 └── operator-router/   roteador por Host dos grupos de operador (ADR-030, zero dependências):
                        `groups.json` diz qual app mora em `operator-floor`/`operator-office`.
     Cada app: BFF Nitro (proxy da layer; storefront mantém o próprio djangoProxy.ts, CSRF),
@@ -362,7 +362,10 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   defaults de dev do `projections/hub.py` e `SHOPMAN_SURFACE_URLS`. Faltar em um não acusa
   nada e envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente do
   Dependabot desde que nasceu e atrasado em 16 pacotes de uma vez; e com o Marketing e o
-  B.I., fora das origens de dev do CSRF até 24/09. Exceção existe, mas é **declarada com motivo** no
+  B.I., fora das origens de dev do CSRF até 24/09. **Nasce por `make new-surface`**, que
+  gera o app do molde (estende o `operator-kit`) e escreve em todos esses lugares; a
+  trava `scripts/check_surface_registry.py` (`make test-surface-registry`, no job de
+  versões do `surfaces-gate.yml`) reprova o que divergir, com o nome do arquivo. Exceção existe, mas é **declarada com motivo** no
   `EXCEPTIONS` do guard (hoje uma: o pino exato do `operator-kit`), e nunca autoriza ficar
   para trás.
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
