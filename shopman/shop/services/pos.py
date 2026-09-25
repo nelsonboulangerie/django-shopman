@@ -786,11 +786,17 @@ def review_sale(
 
     approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
 
-    # Aviso não-bloqueante de disponibilidade (Q1): no balcão a venda vale mesmo
-    # sem estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita),
-    # mas o operador deve VER a falta em vez de descobrir depois.
+    # Aviso não-bloqueante de disponibilidade: no balcão a venda vale mesmo sem
+    # estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita), mas
+    # o operador deve VER a falta em vez de descobrir depois.
+    #
+    # A pergunta é feita PARA A DATA DO PEDIDO. Sem `target_date`, o `decide`
+    # cai em ``timezone.localdate()`` e a encomenda para sexta era conferida
+    # contra o estoque de hoje — o aviso saía errado nos dois sentidos: gritava
+    # falta que a fornada de sexta cobre, e calava falta real da data.
     from shopman.shop.services import availability
 
+    target_date = _payload_commitment_date(payload)
     for item in payload.get("items", []):
         if _is_delivery_fee_item(item):
             continue
@@ -798,18 +804,16 @@ def review_sale(
         qty = _line_qty(item)
         if not sku or qty <= 0:
             continue
-        decision = availability.decide(sku, qty, channel_ref=channel.ref)
+        decision = availability.decide(
+            sku, qty, channel_ref=channel.ref, target_date=target_date,
+        )
         if decision.get("approved"):
             continue
-        try:
-            available = int(decision.get("available_qty") or 0)
-        except (TypeError, ValueError):
-            available = 0
         name = str(item.get("name") or sku)
         warnings.append({
             "code": "item_low_stock",
             "field": "items",
-            "message": f"{name}: só {available} em estoque. A venda de balcão vale; confira o estoque depois.",
+            "message": f"{name}: {_availability_shortfall(decision)}",
         })
 
     return PosSaleReview(
@@ -894,6 +898,65 @@ def _schedule_review_context(payload: dict):
 
     context = fulfillment_window.annotate(day, _payload_skus(payload))
     return day, tuple(context["windows"]), context["earliest_ref"]
+
+
+def _payload_commitment_date(payload: dict):
+    """A data PARA A QUAL o pedido é — hoje quando o balcão não agendou nada.
+
+    É o mesmo ``delivery_date`` que o agendamento grava (``_append_schedule_ops``)
+    e que ``get_commitment_date`` lê no pedido já criado; aqui ele é lido do
+    payload porque a review acontece ANTES de o pedido existir.
+    """
+    from datetime import date as _date
+
+    raw = str(payload.get("delivery_date") or "").strip()
+    if raw:
+        try:
+            return _date.fromisoformat(raw)
+        except ValueError:  # silêncio-deliberado: data ilegível é recusada com
+            pass            # motivo por `_validate_schedule`; aqui só decide para
+    return timezone.localdate()  # QUE DIA perguntar o estoque, e hoje é o certo.
+
+
+def _qty_display(value) -> str:
+    """Quantidade na língua do balcão: ``3``, ``0,5``, ``1,25``.
+
+    Vírgula porque é texto que o operador lê, e sem zero à toa porque
+    "só 3,00 em estoque" soa a sistema, não a padaria.
+    """
+    from decimal import Decimal as _D
+    from decimal import InvalidOperation
+
+    try:
+        number = _D(str(value)).normalize()
+    except (InvalidOperation, ValueError, TypeError):
+        return "0"
+    text = format(number, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return (text or "0").replace(".", ",")
+
+
+def _availability_shortfall(decision: dict) -> str:
+    """Por que este item não foi aprovado — na língua do balcão.
+
+    Quatro causas distintas saíam com a MESMA frase ("só N em estoque"), o que
+    mandava o operador conferir a gôndola quando o problema era o produto estar
+    pausado ou fora do cardápio do PDV. E ``int(available_qty)`` truncava: meio
+    quilo de queijo virava "só 0 em estoque" numa venda que estava correta.
+    """
+    if decision.get("is_paused"):
+        return "pausado no cardápio do balcão. A venda vale; confira o cadastro."
+    if decision.get("reason_code") == "not_in_listing":
+        return "fora do cardápio do balcão. A venda vale; confira o cadastro."
+    if decision.get("is_planned"):
+        # Não é falta: o que cobre a data é produção ainda por fazer. Quem lê
+        # isto precisa combinar a espera com o cliente, não caçar unidade na
+        # prateleira. (Na tela de operador o objeto chama-se LOTE — decisão do
+        # dono, 22/09/2026 —, e "fornada" ficou só para a loja.)
+        return "ainda não está pronto: sai do lote planejado para a data."
+    available = decision.get("available_qty") or 0
+    return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 
 
 def _validate_schedule(payload: dict) -> None:

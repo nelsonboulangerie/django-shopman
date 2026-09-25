@@ -848,6 +848,15 @@ def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     """Baixa de estoque liberada: pagamento no balcão ou já capturado."""
     if _ifood_cancellation_pending(order) or not ifood_schedule.is_due(order):
         return False
+    # Não se dá baixa no que não saiu do forno. A reserva em fermata aponta
+    # para um quant PLANEJADO; mandar ``fulfill`` nela falha por construção e
+    # vira alerta crítico. Quem completa a baixa é a materialização da fornada
+    # (receiver de ``holds_materialized``), que é justamente quem sabe que o
+    # pão existe.
+    from shopman.shop.services import waitlist
+
+    if waitlist.is_in_fermata(order):
+        return False
     payment_data = (order.data or {}).get("payment") or {}
     if (
         config.payment.timing == "external"

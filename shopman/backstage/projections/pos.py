@@ -2211,6 +2211,15 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
     storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
     query para a grade inteira. Silencioso quando o stockman não responde: a
     grade do balcão nunca quebra por causa de um selo.
+
+    ⚠️ Este selo NÃO distingue "tem pão na prateleira" de "sai da próxima
+    fornada", e a diferença não está ao alcance daqui: para o stockman um quant
+    datado de HOJE já conta como pronto (``_planned_supply_for_target`` só
+    soma ``target_date > hoje``), então ``is_planned`` nunca responde por hoje.
+    Quem sabe a que HORA o pão fica pronto é a prontidão
+    (``fulfillment_window.annotate`` → ``product_readiness``), que é cara por
+    produto e que a grade do balcão deliberadamente não paga. Ver o comentário
+    em ``shop/services/pos.py`` sobre o custo dessa pergunta.
     """
     if not skus:
         return set()
