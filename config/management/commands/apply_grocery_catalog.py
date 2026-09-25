@@ -826,7 +826,8 @@ class Opening:
 
 
 OPENINGS: tuple[Opening, ...] = (
-    # O tablete de 200 g abre em 0,200 kg de MANTEIGA-PRESIDENT-COM-SAL, o insumo
+    # O tablete de 200 g abre em 200 g de MANTEIGA-PRESIDENT-COM-SAL (a base dos
+    # insumos é a GRAMA desde 24/09 — #1082/#1083; em kg, "0.200" viraria 0,2 g), o insumo
     # que as fichas das montagens já usam (a manteiga de wasabi) — então nenhuma
     # ficha muda. As massas usam OUTRA manteiga (a sem sal, a granel) e ficam
     # como estão. Validade depois de aberta: 30 dias refrigerada — orientação
@@ -834,8 +835,8 @@ OPENINGS: tuple[Opening, ...] = (
     # conserva); o lote do aberto nunca passa da validade da embalagem
     # (``package_opening._opened_batch``). ⚠️ Conferir no rótulo da Président
     # que chega: se ele disser menos, vale o rótulo.
-    Opening("MANTEIGA-SAL-PRESIDENT-200", "MANTEIGA-PRESIDENT-COM-SAL", "Manteiga President com sal", "kg",
-            "0.200", 30, "orientação usual de rótulo de manteiga com sal refrigerada (conferir no rótulo)"),
+    Opening("MANTEIGA-SAL-PRESIDENT-200", "MANTEIGA-PRESIDENT-COM-SAL", "Manteiga President com sal", "g",
+            "200", 30, "orientação usual de rótulo de manteiga com sal refrigerada (conferir no rótulo)"),
 )
 
 
