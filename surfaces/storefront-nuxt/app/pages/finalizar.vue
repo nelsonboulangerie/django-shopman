@@ -4,6 +4,7 @@ import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutRe
 import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
+import { TAX_ID_WHY, deliveryTaxIdError, formatTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -83,7 +84,9 @@ const state = reactive<CheckoutFormState>({
   recipient_phone: '',
   gift_message: '',
   gift_hide_values: false,
-  save_as_default: true
+  save_as_default: true,
+  fiscal_tax_id: '',
+  save_fiscal_tax_id: false
 })
 
 const chosenDate = ref<Date | null>(null)
@@ -179,6 +182,45 @@ watch(() => state.phone, value => {
 })
 watch(() => state.payment_method, value => {
   if (value) clearFieldError('payment_method')
+})
+
+// NOTA DA ENTREGA (decisão do dono, 24/09/2026): a nota da entrega a domicílio
+// não sai sem o CPF ou CNPJ de quem compra, então pedimos no MESMO passo do
+// endereço. Quem decide se a entrega pede é o servidor (a mesma regra da
+// emissão); a tela confere o que foi digitado, cedo e no campo. Sem CPF, a
+// entrega não fecha e a retirada continua a um toque.
+const deliveryRequiresTaxId = computed(() => !!checkout.value?.delivery_requires_tax_id)
+// A recusa do servidor também abre o campo: se ele disse que falta, a tela
+// precisa do lugar para consertar, mesmo que a projeção tenha dito o contrário.
+const showTaxIdField = computed(() => state.fulfillment_type === 'delivery' &&
+  (deliveryRequiresTaxId.value || !!fieldErrors.value.fiscal_tax_id))
+const taxIdFromCadastro = computed(() => {
+  const saved = taxIdDigits(checkout.value?.saved_tax_id)
+  return !!saved && saved === taxIdDigits(state.fiscal_tax_id)
+})
+// Guardar é PERGUNTA, e só existe quando o cadastro ainda não tem documento.
+const offerSaveTaxId = computed(() => !!checkout.value?.offer_save_tax_id && !!taxIdDigits(state.fiscal_tax_id))
+const taxIdIssue = computed(() => deliveryTaxIdError(state.fiscal_tax_id, showTaxIdField.value))
+function onTaxIdInput (value: string | number) {
+  state.fiscal_tax_id = formatTaxId(String(value ?? ''))
+}
+watch(() => state.fiscal_tax_id, value => {
+  // O erro some quando o documento fecha certo; enquanto se digita, não se
+  // acusa um CPF pela metade (ele só é "errado" quando o tamanho fecha).
+  if (!fieldErrors.value.fiscal_tax_id) {
+    if (taxIdLooksComplete(value) && taxIdIssue.value) {
+      fieldErrors.value = { ...fieldErrors.value, fiscal_tax_id: taxIdIssue.value }
+    }
+    return
+  }
+  if (!taxIdIssue.value) clearFieldError('fiscal_tax_id')
+  else if (taxIdLooksComplete(value)) fieldErrors.value = { ...fieldErrors.value, fiscal_tax_id: taxIdIssue.value }
+})
+watch(() => state.fulfillment_type, value => {
+  if (value !== 'delivery') {
+    clearFieldError('fiscal_tax_id')
+    state.save_fiscal_tax_id = false
+  }
 })
 
 // Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + ocultar valores.
@@ -545,7 +587,9 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
         ? 'Escolha ou informe o endereço de entrega.'
         : deliveryUncovered.value
           ? 'Ainda não entregamos nesse endereço.'
-          : '',
+          : showTaxIdField.value && !taxIdDigits(state.fiscal_tax_id)
+            ? 'Falta o CPF ou CNPJ para a nota fiscal.'
+            : '',
       run: continueFromAddress
     }
   }
@@ -615,7 +659,8 @@ function saveCheckoutDraft () {
       version: 2,
       context: cart.value?.draft_context || '',
       attemptKey: attemptKey.value,
-      state,
+      // Documento não fica guardado no aparelho: o CPF sai do rascunho.
+      state: { ...state, fiscal_tax_id: '', save_fiscal_tax_id: false },
       activeStep: activeStep.value,
       pendingAddressLabel: pendingAddressLabel.value,
       addressSelection: addressSelection.value,
@@ -673,6 +718,9 @@ watch(() => checkout.value, value => {
     state.phone = value.customer_phone || ''
   }
   if (!state.payment_method) state.payment_method = value.default_payment_method || methods[0]?.ref || ''
+  // O CPF do cadastro pré-preenche a nota da entrega (a pessoa confere, ou troca
+  // para a nota sair no documento de outra pessoa). Nunca sobre o que já digitou.
+  if (!state.fiscal_tax_id && value.saved_tax_id) state.fiscal_tax_id = formatTaxId(value.saved_tax_id)
   if (!state.delivery_time_slot) state.delivery_time_slot = value.earliest_slot_ref || projectedSlots.find(slot => slot.enabled)?.ref || ''
   if (!checkoutHydrated && !fulfillments.includes(state.fulfillment_type)) {
     state.fulfillment_type = fulfillments[0] || 'pickup'
@@ -860,6 +908,9 @@ const reviewSummaryRows = computed(() => {
   ]
   if (state.fulfillment_type === 'delivery') {
     rows.push({ icon: 'lucide:map-pin', lines: deliveryAddressLines.value, muted: state.delivery_complement || undefined })
+    if (taxIdDigits(state.fiscal_tax_id)) {
+      rows.push({ icon: 'lucide:receipt-text', lines: [`Nota fiscal no documento ${formatTaxId(state.fiscal_tax_id)}`] })
+    }
   }
   rows.push({ icon: paymentIcon(state.payment_method), lines: [paymentMethodLabel.value] })
   rows.push({ icon: 'lucide:user-round', lines: [contactSummary.value] })
@@ -903,9 +954,11 @@ function validateFulfillmentStep (): boolean {
 function validateAddressStep (): boolean {
   const errors = { ...fieldErrors.value }
   delete errors.delivery_address
+  delete errors.fiscal_tax_id
   if (state.fulfillment_type === 'delivery' && !state.delivery_address.trim()) errors.delivery_address = 'Escolha ou informe o endereço de entrega.'
+  if (state.fulfillment_type === 'delivery' && taxIdIssue.value) errors.fiscal_tax_id = taxIdIssue.value
   fieldErrors.value = errors
-  if (errors.delivery_address) {
+  if (errors.delivery_address || errors.fiscal_tax_id) {
     activeStep.value = 'address'
     return false
   }
@@ -983,6 +1036,17 @@ async function continueFromFulfillment () {
   // o endereço (applyDeliveryDraft no passo seguinte).
   if (state.fulfillment_type === 'pickup') await applyDeliveryDraft()
   activeStep.value = state.fulfillment_type === 'delivery' ? 'address' : 'when'
+}
+
+// O picker confirma o endereço e o fluxo avançaria sozinho. Com o CPF ainda em
+// branco, o próximo gesto é o CPF, no mesmo passo: a página vai até ele sem
+// acusar erro (ninguém errou ainda). O erro fica para quem tenta seguir sem ele.
+function onAddressConfirmed () {
+  if (showTaxIdField.value && !taxIdDigits(state.fiscal_tax_id)) {
+    reveal(() => document.getElementById('checkout-tax-id'), { align: 'center' })
+    return
+  }
+  void continueFromAddress()
 }
 
 async function continueFromAddress () {
@@ -1528,7 +1592,7 @@ useSeoMeta({
                 context="checkout"
                 :saved-addresses="savedAddresses"
                 :preselected-id="checkout.preselected_address_id"
-                @confirmed="continueFromAddress"
+                @confirmed="onAddressConfirmed"
                 @addresses-changed="refresh"
               />
               <UiFieldError v-if="fieldErrors.delivery_address" :errors="fieldErrors.delivery_address" />
@@ -1565,6 +1629,58 @@ useSeoMeta({
                   </span>
                 </div>
                 <UiProgress :model-value="freeDeliveryUpsell.percent" />
+              </div>
+
+              <!-- NOTA DA ENTREGA: o CPF/CNPJ no mesmo passo do endereço, com o
+                   porquê numa linha. Sem ele a entrega não fecha; a retirada fica
+                   a um toque, sem CPF. -->
+              <div
+                v-if="showTaxIdField"
+                class="shop-stack-tight rounded-lg border bg-card p-4"
+                data-checkout-tax-id
+              >
+                <UiLabel for="checkout-tax-id">CPF ou CNPJ para a nota fiscal</UiLabel>
+                <p class="shop-meta">{{ TAX_ID_WHY }}</p>
+                <UiInput
+                  id="checkout-tax-id"
+                  :model-value="state.fiscal_tax_id"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  :maxlength="18"
+                  placeholder="000.000.000-00"
+                  :aria-invalid="!!fieldErrors.fiscal_tax_id"
+                  class="bg-background"
+                  data-focus-control
+                  @update:model-value="onTaxIdInput"
+                />
+                <UiFieldError v-if="fieldErrors.fiscal_tax_id" :errors="fieldErrors.fiscal_tax_id" />
+                <p v-else-if="taxIdFromCadastro" class="shop-meta">
+                  Do seu cadastro. Se a nota for para outra pessoa, troque aqui.
+                </p>
+                <UiFieldLabel
+                  v-if="offerSaveTaxId"
+                  for="checkout-save-tax-id"
+                  class="mt-1 bg-card has-data-[state=checked]:bg-card"
+                  data-checkout-save-tax-id
+                >
+                  <UiField orientation="horizontal">
+                    <UiFieldContent class="gap-1">
+                      <UiFieldTitle>Guardar para as próximas entregas?</UiFieldTitle>
+                      <UiFieldDescription>Fica no seu cadastro e já vem preenchido da próxima vez.</UiFieldDescription>
+                    </UiFieldContent>
+                    <UiSwitch id="checkout-save-tax-id" v-model="state.save_fiscal_tax_id" />
+                  </UiField>
+                </UiFieldLabel>
+                <UiButton
+                  v-if="availableFulfillment.includes('pickup')"
+                  variant="link"
+                  size="sm"
+                  class="h-auto self-start p-0"
+                  data-checkout-tax-id-pickup
+                  @click="switchToPickup"
+                >
+                  Prefere não informar? Retire na loja, sem CPF.
+                </UiButton>
               </div>
             </CheckoutProgressSection>
 

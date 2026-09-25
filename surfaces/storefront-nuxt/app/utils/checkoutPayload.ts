@@ -1,4 +1,5 @@
 import { newRemoteMutationKey } from './remoteMutations'
+import { taxIdDigits } from '~/presentation/taxId'
 import type { StructuredAddressProjection } from '~/types/shopman'
 
 export type FulfillmentType = 'pickup' | 'delivery'
@@ -26,6 +27,11 @@ export interface CheckoutFormState {
   // agenda do cliente sempre; este toggle controla só os padrões (qual endereço
   // vem escolhido, forma de pagamento, horário).
   save_as_default: boolean
+  // CPF/CNPJ da nota da ENTREGA (vira `fiscal.tax_id` no pedido). Nunca vai
+  // para o rascunho do localStorage: documento não fica guardado no aparelho.
+  fiscal_tax_id: string
+  // A pessoa respondeu SIM a "guardar para as próximas entregas".
+  save_fiscal_tax_id: boolean
 }
 
 export interface CheckoutSubmitPayload extends CheckoutFormState {
@@ -73,6 +79,9 @@ export function buildCheckoutPayload (
     gift_message: state.is_gift ? state.gift_message.trim() : '',
     gift_hide_values: state.is_gift ? state.gift_hide_values : false,
     save_as_default: state.save_as_default,
+    // O CPF da nota é da ENTREGA: retirada não o leva, e só dígitos viajam.
+    fiscal_tax_id: state.fulfillment_type === 'delivery' ? taxIdDigits(state.fiscal_tax_id) : '',
+    save_fiscal_tax_id: state.fulfillment_type === 'delivery' && !!taxIdDigits(state.fiscal_tax_id) && state.save_fiscal_tax_id,
     use_loyalty: useLoyalty,
     expected_total_q: expectedTotalQ
   }

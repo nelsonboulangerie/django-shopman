@@ -325,9 +325,10 @@ def _register_pricing_modifiers() -> None:
 
 
 def _register_validators() -> None:
-    from shopman.shop.rules.validation import DeliveryZoneRule, PricedItemsRule
+    from shopman.shop.rules.validation import DeliveryFiscalIdentityRule, DeliveryZoneRule, PricedItemsRule
     registry.register_validator(DeliveryZoneRule())
     registry.register_validator(PricedItemsRule())
+    registry.register_validator(DeliveryFiscalIdentityRule())
 
 
 def _register_sse_emitters() -> None:

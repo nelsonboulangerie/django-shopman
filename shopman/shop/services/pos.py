@@ -113,6 +113,10 @@ class PosSaleReview:
     #: A primeira janela oferecível deste dia para este carrinho, ou "". A tela
     #: usa para pré-selecionar sem ter que refazer a conta do servidor.
     delivery_earliest_slot: str = ""
+    #: ENTREGA COM NOTA: esta entrega vai ter NFC-e mesmo sem CPF, e a nota de
+    #: entrega não sai sem ele. A tela trava o fechamento enquanto "CPF na
+    #: nota" estiver vazio (a review não é refeita quando o CPF muda).
+    delivery_tax_id_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -325,6 +329,7 @@ def close_sale(
     _require_customer_if_scheduled(payload)
     _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
+    _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
     _require_house_account_if_on_account(
         payload,
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
@@ -699,6 +704,11 @@ def review_sale(
                 "Confira o combinado antes de finalizar."
             ),
         })
+    # Endereço incompleto para a nota da entrega: aviso aqui (a review é tela);
+    # a recusa mora em `_require_delivery_fiscal_identity`, no `close_sale`.
+    address_warning = _delivery_address_warning(payload, channel_ref=channel.ref)
+    if address_warning:
+        warnings.append(address_warning)
     # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
     # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
     # no `close_sale` — mesmo code/field, para a UI apontar o mesmo lugar.
@@ -837,6 +847,7 @@ def review_sale(
         delivery_date=delivery_day.isoformat() if delivery_day else "",
         delivery_slots=delivery_slots,
         delivery_earliest_slot=delivery_earliest_slot,
+        delivery_tax_id_required=_delivery_tax_id_required(payload, channel_ref=channel.ref),
     )
 
 
@@ -980,6 +991,119 @@ def _require_contact_if_payment_link(payload: dict) -> None:
         focus="customer",
         recovery="Identifique o cliente com telefone ou e-mail.",
     )
+
+
+def _delivery_fiscal_order_view(payload: dict, *, channel_ref: str, require_complete: bool, with_tax_id: bool = True):
+    """O pedido de entrega que ainda não existe, como a regra fiscal o lê.
+
+    A pergunta "vai ter nota?" é a da emissão: ela lê o pagamento (as linhas),
+    o pedido de comprovante e o CPF. Então o pedido é montado com os mesmos
+    dados que o ``build_session_ops`` vai gravar.
+    """
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    payment_collection = _payload_payment_collection(payload, "delivery")
+    total_q = _payload_total_q(payload)
+    tenders = _payload_tenders(
+        payload,
+        payment_collection=payment_collection,
+        total_q=total_q,
+        pos_terminal_ref=str(payload.get("pos_terminal_ref") or "").strip(),
+        require_complete=require_complete,
+    )
+    structured = payload.get("delivery_address_structured")
+    data = {
+        "fulfillment_type": "delivery",
+        "payment": {
+            "method": _legacy_payment_method(payload, tenders),
+            "collection": payment_collection,
+            "amount_q": total_q,
+            **({"tenders": tenders} if tenders else {}),
+        },
+        "receipt": {"channels": list(payload.get("receipt_channels") or [])},
+        "delivery_address_structured": structured if isinstance(structured, dict) else {},
+    }
+    tax_id = str(payload.get("fiscal_tax_id") or "").strip()
+    if with_tax_id and tax_id:
+        data["fiscal"] = {"tax_id": tax_id}
+    return identity.order_view(data=data, channel_ref=channel_ref, total_q=total_q)
+
+
+def _delivery_tax_id_required(payload: dict, *, channel_ref: str) -> bool:
+    """Esta entrega vai ter nota MESMO sem CPF? Então o CPF é obrigatório.
+
+    Publicado na review para a tela travar o botão ao vivo: o "CPF na nota"
+    não refaz a review (não muda o total), então a tela confere o campo por
+    conta própria contra esta resposta.
+    """
+    if _payload_fulfillment_type(payload) != "delivery":
+        return False
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    return identity.requires_delivery_fiscal_identity(
+        _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=False, with_tax_id=False)
+    )
+
+
+def _delivery_address_warning(payload: dict, *, channel_ref: str) -> dict | None:
+    """A ressalva de endereço incompleto para a nota, na review (não trava a conta)."""
+    if _payload_fulfillment_type(payload) != "delivery":
+        return None
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    order = _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=False)
+    if not identity.requires_delivery_fiscal_identity(order):
+        return None
+    structured = (order.data or {}).get("delivery_address_structured") or {}
+    gaps = [
+        gap for gap in identity.recipient_gaps(tax_id="", address=structured)
+        if gap.field == identity.ADDRESS_FIELD
+    ]
+    if not gaps:
+        return None
+    return {
+        "code": "delivery_address_incomplete",
+        "field": "delivery_address",
+        "message": identity.address_gap_message(gaps),
+    }
+
+
+def _require_delivery_fiscal_identity(payload: dict, *, channel_ref: str) -> None:
+    """Entrega com nota não fecha sem o CPF/CNPJ e o endereço completo.
+
+    A mesma trava do commit (``rules.validation.DeliveryFiscalIdentityRule``),
+    perguntada antes do commit para a recusa chegar no campo em que o operador
+    conserta, e não como erro genérico.
+    """
+    if _payload_fulfillment_type(payload) != "delivery":
+        return
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    order = _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=True)
+    gaps = identity.delivery_fiscal_gaps(order)
+    refused = identity.refusal(gaps)
+    if refused is None:
+        return
+    code, field, _customer_message = refused
+    if field == identity.TAX_ID_FIELD:
+        raise PosIntentError(
+            code=code,
+            message=DELIVERY_TAX_ID_REQUIRED_MESSAGE,
+            field="fiscal_tax_id",
+            focus="receipt",
+            recovery="Preencha \"CPF na nota\". Sem o documento, a entrega não fecha; a retirada continua.",
+        )
+    raise PosIntentError(
+        code=code,
+        message=identity.address_gap_message(gaps),
+        field="delivery_address",
+        focus="delivery_address",
+        recovery="Complete o endereço da entrega. A nota fiscal sai com ele.",
+    )
+
+
+#: A frase do balcão para a entrega com nota sem CPF (a tela usa a mesma).
+DELIVERY_TAX_ID_REQUIRED_MESSAGE = "Entrega com nota fiscal: a SEFAZ exige o CPF ou CNPJ do cliente."
 
 
 def _payload_payment_method_set(payload: dict) -> set[str]:

@@ -152,6 +152,16 @@ class CheckoutProjection:
     # partir desta tupla, chave `live` não deixa os números nem no HTML.
     stripe_test_cards: tuple[StripeTestCardProjection, ...] = ()
 
+    # NOTA DA ENTREGA. ``delivery_requires_tax_id``: a entrega deste canal vai
+    # com NFC-e, e a nota de entrega não sai sem CPF/CNPJ (a pergunta é feita ao
+    # mesmo resolver que decide a emissão). ``saved_tax_id``: o documento do
+    # cadastro, para pré-preencher (vazio em sessão que só conhece o número).
+    # ``offer_save_tax_id``: a tela pode PERGUNTAR se guarda o CPF digitado,
+    # porque o cadastro ainda não tem nenhum.
+    delivery_requires_tax_id: bool = False
+    saved_tax_id: str = ""
+    offer_save_tax_id: bool = False
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Builder
@@ -210,6 +220,12 @@ def build_checkout(
 
     is_authenticated = customer_info is not None
     requires_authentication = _requires_authentication(channel_ref)
+    delivery_requires_tax_id, saved_tax_id, offer_save_tax_id = _delivery_tax_id_context(
+        channel_ref,
+        methods=[m.ref for m in payment_methods],
+        customer_info=customer_info,
+        reduced=knows_only_the_number(request) if customer_info else True,
+    )
 
     return CheckoutProjection(
         copy=_checkout_copy(),
@@ -248,6 +264,9 @@ def build_checkout(
         card_provider=_card_provider(),
         stripe_test_cards=_stripe_test_cards(),
         default_ddd=get_default_ddd(),
+        delivery_requires_tax_id=delivery_requires_tax_id,
+        saved_tax_id=saved_tax_id,
+        offer_save_tax_id=offer_save_tax_id,
     )
 
 
@@ -390,6 +409,26 @@ def _payment_methods(channel_ref: str) -> tuple[PaymentMethodOptionProjection, .
         )
         for i, m in enumerate(methods)
     )
+
+
+def _delivery_tax_id_context(
+    channel_ref: str, *, methods: list[str], customer_info, reduced: bool,
+) -> tuple[bool, str, bool]:
+    """``(exige CPF na entrega, CPF do cadastro, pode perguntar se guarda)``.
+
+    Falha FECHADO: se a pergunta ao resolver quebrar, a tela pede o CPF. Pedir
+    a mais custa um campo; pedir a menos custa o pedido recusado no fim. Sessão
+    que só conhece o número não vê nem grava documento.
+    """
+    from shopman.shop.projections.delivery_fiscal import delivery_tax_id_context
+
+    customer_uuid = None if customer_info is None or reduced else customer_info.uuid
+    try:
+        context = delivery_tax_id_context(channel_ref=channel_ref, methods=methods, customer_uuid=customer_uuid)
+    except Exception:
+        logger.warning("checkout_projection_delivery_tax_id_failed channel=%s", channel_ref, exc_info=True)
+        return True, "", False
+    return context.required, context.saved_tax_id, context.offer_save
 
 
 def _payment_constraints() -> dict:
