@@ -60,10 +60,10 @@ function projection(overrides: Partial<DayClosingProjection> = {}): DayClosingPr
 let servido: DayClosingProjection;
 registerEndpoint("/api/v1/backstage/closing/", () => ({ closing: servido }));
 
-async function abrirTela(closing: DayClosingProjection) {
+async function abrirTela(closing: DayClosingProjection, options: { attachTo?: HTMLElement } = {}) {
   servido = closing;
   clearNuxtData("day-closing");
-  return mountSuspended(ClosingPage);
+  return mountSuspended(ClosingPage, options);
 }
 
 describe("fechamento do dia — a contagem é cega ANTES de registrar", () => {
@@ -164,5 +164,34 @@ describe("fechamento do dia — a travessia para a Produção carrega o contexto
     // Aba comum (o teste não roda instalado): a troca de app fica na mesma
     // janela, que é o que o operador espera do navegador.
     expect(page.find("[data-work-order-link]").attributes("target")).toBe("_self");
+  });
+});
+
+describe("fechamento do dia — a contagem é um corredor", () => {
+  const dois = () => projection({
+    items: [
+      { sku: "ZZ-01", name: "Baguete", qty_available: 4, classification: "keep", qty_expiring: 0, qty_nonconforming: 0 },
+      { sku: "AA-01", name: "Pão francês", qty_available: 12, classification: "keep", qty_expiring: 0, qty_nonconforming: 0 },
+    ],
+  });
+
+  it("na ordem do NOME, com o progresso e sem zero cinza fingindo contagem", async () => {
+    const page = await abrirTela(dois());
+    const labels = page.findAll("input[data-count-input]").map((i) => i.attributes("aria-label"));
+    expect(labels).toEqual(["Sobras de Baguete", "Sobras de Pão francês"]);
+    expect(page.find("[data-count-progress]").text()).toBe("0 de 2 contados");
+    expect(page.find("input[data-count-input]").attributes("placeholder")).toBeUndefined();
+    expect(page.text()).toContain("revenda não entra");
+  });
+
+  it("Enter leva ao próximo campo, e o progresso anda", async () => {
+    // Foco só existe no documento: a página precisa estar montada nele.
+    const page = await abrirTela(dois(), { attachTo: document.body });
+    const [primeiro, segundo] = page.findAll("input[data-count-input]");
+    await primeiro!.setValue("3");
+    await primeiro!.trigger("keydown", { key: "Enter" });
+    expect(document.activeElement).toBe(segundo!.element);
+    expect(page.find("[data-count-progress]").text()).toBe("1 de 2 contados");
+    page.unmount();
   });
 });

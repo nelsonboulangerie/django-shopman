@@ -40,7 +40,9 @@ if (
   && requiresOpenShiftForSale(pos.value.checkout?.capabilities?.cash_management)
   && !pos.value.has_open_cash_session
 ) {
-  await navigateTo("/session", { replace: true });
+  // `open=1`: quem veio vender cai direto no diálogo de abertura, com o
+  // campo do fundo de troco focado — um toque a menos no começo do dia.
+  await navigateTo({ path: "/session", query: { open: "1" } }, { replace: true });
 }
 
 // Identidade do operador — mesmo estado compartilhado do shell (useFetch deduplicado).

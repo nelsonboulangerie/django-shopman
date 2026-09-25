@@ -153,21 +153,29 @@ describe("antesala — turno aberto, organização da tela", () => {
     expect(block.text()).toContain("Precisa de você");
     // ⚠️ SEM crachá único: devolução, pedido de troco e conta na casa são três
     // naturezas com três urgências, e "3 pendências" decidia se o operador
-    // largava o balcão sem dizer para quê.
-    expect(block.text()).toContain("Devoluções em dinheiro pendentes · 1");
-    expect(block.text()).toContain("Pedidos de troco pendentes · 1");
-    expect(block.text()).toContain("Contas na casa · 1");
+    // largava o balcão sem dizer para quê. Um CARD por natureza, cada um com
+    // o seu selo.
+    const badge = (key: string) => tile(wrapper, key).find("[data-session-tile-badge]").text();
+    expect(badge("attention:refunds")).toBe("1");
+    expect(badge("attention:change")).toBe("1");
+    expect(badge("attention:accounts")).toBe("1");
     expect(block.text()).not.toContain("pendências");
-    // As ações de cada pendência continuam onde estavam.
-    expect(block.text()).toContain("Devolver");
-    expect(block.text()).toContain("Atender");
-    expect(block.text()).toContain("Cancelar pedido");
-    expect(block.text()).toContain("Receber acerto");
-    expect(block.find("[data-house-accounts]").exists()).toBe(true);
-    expect(block.find('[aria-label="Pedidos de troco pendentes"]').exists()).toBe(true);
+    // As ações de cada pendência moram no diálogo do card — nenhuma na tela.
+    expect(block.text()).not.toContain("Devolver");
+    await tile(wrapper, "attention:refunds").trigger("click");
+    await flushPromises();
+    expect(dialog("attention:refunds")?.textContent).toContain("Devolver");
+    await tile(wrapper, "attention:change").trigger("click");
+    await flushPromises();
+    expect(dialog("attention:change")?.textContent).toContain("Atender");
+    expect(dialog("attention:change")?.textContent).toContain("Cancelar pedido");
+    await tile(wrapper, "attention:accounts").trigger("click");
+    await flushPromises();
+    expect(dialog("attention:accounts")?.textContent).toContain("Receber acerto");
+    expect(dialog("attention:accounts")?.querySelector("[data-house-accounts]")).not.toBeNull();
     // O bloco vem ANTES da gaveta: pendência primeiro, ação rara depois.
     const html = wrapper.html();
-    expect(html.indexOf("data-needs-you")).toBeLessThan(html.indexOf("data-session-tile"));
+    expect(html.indexOf("data-needs-you")).toBeLessThan(html.indexOf('data-session-tile="request_change"'));
   });
 
   it("(c) o tile de saída abre o diálogo de movimento com 'sangria' já escolhido", async () => {
@@ -220,7 +228,8 @@ describe("antesala — turno aberto, organização da tela", () => {
     let wrapper = await openLobby();
     expect(tile(wrapper, "cash_report").exists()).toBe(false);
     expect(tile(wrapper, "day_closing").exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("Fim do expediente");
+    // Fechar caixa mora no fim do expediente, e é o único card ali.
+    expect(wrapper.findAll("[data-session-tile]").filter((t) => ["close_shift", "day_closing", "cash_report"].includes(t.attributes("data-session-tile")!)).map((t) => t.attributes("data-session-tile"))).toEqual(["close_shift"]);
     wrapper.unmount();
     mounted.splice(0);
 
@@ -235,8 +244,16 @@ describe("antesala — turno aberto, organização da tela", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("Fim do expediente");
     expect(tile(wrapper, "cash_report").text()).toContain("Relatório de caixa");
-    expect(tile(wrapper, "day_closing").text()).toContain("Fazer o fechamento");
+    expect(tile(wrapper, "day_closing").text()).toContain("Fechamento do dia");
     expect(tile(wrapper, "day_closing").text()).toContain("16/09/2026");
+  });
+
+  it("'Continuar vendendo' é o card cheio do topo, e diz quando o turno abriu", async () => {
+    const wrapper = await openLobby();
+    const card = tile(wrapper, "continue_selling");
+    expect(card.attributes("data-tone")).toBe("primary");
+    expect(card.text()).toContain("Continuar vendendo");
+    expect(card.text()).toContain("7 vendas hoje na loja");
   });
 
   it("o PIN do gerente sobe POR CIMA do diálogo aberto, e o formulário digitado fica", async () => {
@@ -264,5 +281,57 @@ describe("antesala — turno aberto, organização da tela", () => {
     // O PIN veio DEPOIS no body: é o que fica por cima.
     const stack = [...document.body.querySelectorAll("[data-session-dialog], [data-drawer-manager-auth]")];
     expect(stack.indexOf(movementDialog!)).toBeLessThan(stack.indexOf(pinDialog!));
+  });
+});
+
+describe("antesala — caixa fechado, tudo é card", () => {
+  beforeEach(() => {
+    cash = makeCashSession();
+    projection = makeProjection({ has_open_cash_session: false });
+    servedClosing = null;
+  });
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount();
+    document.body.innerHTML = "";
+  });
+
+  it("'Abrir caixa' é card, não formulário; o formulário mora no diálogo", async () => {
+    const wrapper = await openLobby();
+    expect(tile(wrapper, "open_shift").exists()).toBe(true);
+    expect(tile(wrapper, "open_shift").attributes("data-tone")).toBe("primary");
+    expect(wrapper.find("input").exists()).toBe(false);
+    expect(dialog("open_shift")).toBeNull();
+
+    await tile(wrapper, "open_shift").trigger("click");
+    await flushPromises();
+    expect(dialog("open_shift")?.textContent).toContain("Abrir caixa e vender");
+    expect(dialog("open_shift")?.querySelector('input[inputmode="decimal"]')).not.toBeNull();
+  });
+
+  it("sem turno, a gaveta e o 'Precisa de você' não existem", async () => {
+    cash.pendingCashRefunds.value = [
+      { order_ref: "o-9", amount_q: 2500, amount_display: "R$ 25,00", customer_name: "Bia", cancelled_at: "" },
+    ];
+    const wrapper = await openLobby();
+    expect(tile(wrapper, "request_change").exists()).toBe(false);
+    expect(wrapper.find("[data-needs-you]").exists()).toBe(false);
+  });
+
+  it("fechamento do dia e relatório também são cards", async () => {
+    projection = makeProjection({
+      has_open_cash_session: false,
+      cash_runtime: { ...makeProjection().cash_runtime, can_audit_cash: true } as POSProjection["cash_runtime"],
+    });
+    servedClosing = {
+      today: "2026-09-16", today_display: "16/09/2026", items: [], has_items: false,
+      already_closed: false, existing_closing_display: "", total_available: 0,
+      production_summary: {}, reconciliation_errors: [], pending_production: [],
+      has_pending_production: false, upcoming_preorders: [], has_upcoming_preorders: false,
+    };
+    const wrapper = await openLobby();
+    await flushPromises();
+    expect(tile(wrapper, "day_closing").exists()).toBe(true);
+    expect(tile(wrapper, "cash_report").exists()).toBe(true);
+    expect(tile(wrapper, "close_shift").exists()).toBe(false);
   });
 });
