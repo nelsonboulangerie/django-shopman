@@ -426,6 +426,12 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
+# Publicação na Página do Facebook: o spec versionado nunca pré-arma via pública;
+# liga só no app vivo, depois do ensaio aprovado pelo dono (WP-MKT-FACEBOOK-E-GOOGLE-FERRAMENTAL).
+- key: SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
 - key: SHOPMAN_MARKETING_MEDIA_HOSTS
   scope: RUN_TIME
   value: mkt.boulangerie.com.br,img.nelsonboulangerie.com.br
