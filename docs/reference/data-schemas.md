@@ -309,7 +309,7 @@ contrato de negocio em producao.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `edge_case` | `string` | Nelson seed | QA manual/automatizado, relatorios de auditoria | Marcador deterministico de cenario adversarial. Ex: `"low_attention_payment_pending"`, `"late_payment_after_cancel"`, `"marketplace_stale_confirmation"` |
+| `edge_case` | `string` | Nelson seed | QA manual/automatizado, relatorios de auditoria | Marcador deterministico de cenario adversarial. Ex: `"low_attention_payment_pending"`, `"low_attention_payment_expired"`, `"marketplace_stale_confirmation"` |
 
 
 ### Chaves lidas por views (convenience — fallback para vazio)

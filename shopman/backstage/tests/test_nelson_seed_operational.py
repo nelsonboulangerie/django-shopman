@@ -16,7 +16,7 @@ from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderIte
 from shopman.craftsman.models.recipe import _item_mass_in_kg
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
-from shopman.orderman.models import IdempotencyKey, Order, OrderItem, Session
+from shopman.orderman.models import Order, OrderItem, Session
 from shopman.payman.models import PaymentIntent
 from shopman.stockman.models import Batch, Move, Position
 from shopman.utils import units
@@ -464,21 +464,18 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert edge_keys >= {
         "security:payment-pending-near-expiry",
         "security:payment-expired-low-attention",
-        "security:payment-after-cancel",
     }
     assert "security:ifood-stale-confirmation" not in edge_keys
 
     edge_order_refs = {order.ref for order in edge_orders}
     assert PaymentIntent.objects.filter(order_ref__in=edge_order_refs, status=PaymentIntent.Status.PENDING).count() >= 2
-    assert PaymentIntent.objects.filter(order_ref__in=edge_order_refs, status=PaymentIntent.Status.CAPTURED).exists()
+    assert not PaymentIntent.objects.filter(order_ref__in=edge_order_refs, status=PaymentIntent.Status.CAPTURED).exists()
     for intent in PaymentIntent.objects.filter(status=PaymentIntent.Status.CAPTURED):
         order = Order.objects.get(ref=intent.order_ref)
         assert ((order.data or {}).get("payment") or {}).get("intent_ref") == intent.ref
-    assert OperatorAlert.objects.filter(type="payment_after_cancel", severity="critical", acknowledged=False).exists()
-    # (alerta stale_new_order + webhook:ifood saíram junto com o edge iFood parado — Entrada vazia)
-    assert IdempotencyKey.objects.filter(scope="webhook:efi-pix", status="done").exists()
+    assert not OperatorAlert.objects.filter(type="payment_after_cancel").exists()
     # A cobrança Pix semeada nasce no gateway do adapter em uso, e a Efí com o
-    # ambiente de origem: o estorno do pedido cancelado não pode cair na trava
+    # ambiente de origem: o estorno de um pedido semeado não pode cair na trava
     # de ambiente (``payment_reconciliation_failed`` crítico a cada reseed).
     from shopman.shop.adapters import get_adapter
     from shopman.shop.services.payment import _gateway_for_adapter
@@ -500,6 +497,13 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         report = build_financial_reconciliation(reconciliation_date=day)
         missing = [i.order_ref for i in report.issues if i.code == "digital_order_missing_intent"]
         assert not [ref for ref in missing if ref.startswith("BIV-")], (day, missing[:5])
+    # Pedido cancelado com pagamento capturado é alerta crítico real na
+    # conciliação (e-mail do ti@): o seed não planta nenhum.
+    today_report = build_financial_reconciliation(reconciliation_date=timezone.localdate())
+    captured_on_terminal = [
+        i.order_ref for i in today_report.issues if i.code == "terminal_order_with_captured_balance"
+    ]
+    assert not captured_on_terminal, captured_on_terminal
 
     low_attention = Customer.objects.get(ref="CLI-001")
     assert low_attention.metadata["seed_persona"] == "low_attention"
