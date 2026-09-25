@@ -48,7 +48,8 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "order_accepted": {
         "subject": "Pedido {order_ref_short} confirmado",
         "body": (
-            "Seu pedido *{order_ref_short}* está confirmado. O total é *{total}*. Já vamos preparar.\n"
+            "Seu pedido *{order_ref_short}* está confirmado. O total é *{total}*. "
+            "Vamos preparar tudo com muito carinho. ✨\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
@@ -132,7 +133,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "payment_link_sent": {
         "subject": "Pedido {order_ref_short}: link de pagamento",
         "body": (
-            "Oi{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* ({total}). "
+            "Oi{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* no valor de *{total}*. "
             "Pague por aqui para garantir: {checkout_url}{payment_deadline_note}"
         ),
     },
@@ -221,7 +222,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
         "subject": "{product_name} saiu do forno",
         "body": (
             "Olha só o que acabou de sair do forno: *{product_name}*! {availability_note}.\n"
-            "Garanta o seu: {action_url}{management_note}"
+            "Garanta já o seu: {action_url}{management_note}"
         ),
     },
 }

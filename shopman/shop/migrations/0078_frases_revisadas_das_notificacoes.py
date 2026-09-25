@@ -32,7 +32,7 @@ TEXTS = [
         "Pedido {order_ref_short} confirmado",
         "Pedido {order_ref_short} confirmado",
         "Seu pedido *{order_ref_short}* está confirmado. Total: *{total}*.\nJá vamos preparar.\nAcompanhe por aqui: {tracking_url}",
-        "Seu pedido *{order_ref_short}* está confirmado. O total é *{total}*. Já vamos preparar.\nAcompanhe por aqui: {tracking_url}",
+        "Seu pedido *{order_ref_short}* está confirmado. O total é *{total}*. Vamos preparar tudo com muito carinho. ✨\nAcompanhe por aqui: {tracking_url}",
     ),
     (
         "order_preparing",
@@ -95,7 +95,7 @@ TEXTS = [
         "Pedido {order_ref_short}: link de pagamento",
         "Pedido {order_ref_short}: link de pagamento",
         "Olá{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* — total *{total}*.\n\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}\n\nQualquer coisa, é só responder esta mensagem. 🥖",
-        "Oi{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* ({total}). Pague por aqui para garantir: {checkout_url}{payment_deadline_note}",
+        "Oi{customer_name_greeting}! Anotamos seu pedido *{order_ref_short}* no valor de *{total}*. Pague por aqui para garantir: {checkout_url}{payment_deadline_note}",
     ),
     (
         "payment_confirmed",
@@ -172,7 +172,7 @@ TEXTS = [
         "{product_name} saiu do forno",
         "{product_name} saiu do forno",
         "Olá{customer_name_greeting}! O {product_name} acabou de sair do forno: {action_url}{management_note}",
-        "Olha só o que acabou de sair do forno: *{product_name}*! {availability_note}.\nGaranta o seu: {action_url}{management_note}",
+        "Olha só o que acabou de sair do forno: *{product_name}*! {availability_note}.\nGaranta já o seu: {action_url}{management_note}",
     ),
 ]
 
