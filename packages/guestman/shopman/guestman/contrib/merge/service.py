@@ -69,6 +69,37 @@ class MergeResult:
     audit_id: str = ""
 
 
+@dataclass(frozen=True)
+class MergePreview:
+    """O que uma unificação FARIA — mesmas contagens do ``MergeResult``, sem auditoria.
+
+    ``identity_filled`` é o que o doador tapa na ficha do sobrevivente (campo →
+    valor, datas em ISO); ``loyalty_points_absorbed`` são os pontos que somam.
+    """
+
+    source_ref: str
+    target_ref: str
+    migrated_contact_points: int
+    migrated_external_identities: int
+    migrated_identifiers: int
+    migrated_addresses: int
+    migrated_preferences: int
+    migrated_consents: int
+    migrated_timeline_events: int
+    migrated_orders: int
+    loyalty_merged: bool
+    loyalty_points_absorbed: int
+    identity_filled: dict
+
+
+class _PreviewRollback(Exception):
+    """Carrega a prévia para fora do savepoint que a desfaz."""
+
+    def __init__(self, preview: MergePreview) -> None:
+        super().__init__("merge preview rollback")
+        self.preview = preview
+
+
 class MergeService:
     """
     Service for merging duplicate customers.
@@ -102,6 +133,80 @@ class MergeService:
         Raises:
             CustomerError: If gate validation fails or customers are invalid.
         """
+        cls._validate(source_customer, target_customer, evidence)
+
+        with transaction.atomic():
+            result, _snapshot = cls._apply(source_customer, target_customer, evidence, actor)
+
+        logger.info(
+            "Merged customer %s → %s by %s: %s (audit=%s)",
+            result.source_ref,
+            result.target_ref,
+            actor,
+            result,
+            result.audit_id,
+        )
+        return result
+
+    @classmethod
+    def preview(
+        cls,
+        source_customer: Customer,
+        target_customer: Customer,
+        evidence: dict,
+    ) -> MergePreview:
+        """O que ``merge`` FARIA, sem fazer nada.
+
+        Quem vai unificar precisa ver, antes do "confirmo", quantos contatos,
+        pedidos e endereços trocam de dono e qual lacuna do sobrevivente o doador
+        tapa. Contar isso por fora seria uma segunda régua para a mesma verdade:
+        cada ``_migrate_*`` tem sua regra de duplicata, de conflito global e de
+        consentimento mais restritivo, e uma prévia que as reescrevesse mentiria
+        no primeiro caso que só uma delas conhece.
+
+        Por isso a prévia RODA a unificação — a mesma ``_apply`` — dentro de um
+        savepoint que sempre volta. O que ela devolve é o que a unificação teria
+        devolvido; o banco termina como começou. Efeito fora do banco não há
+        para voltar: os ``on_commit`` registrados lá dentro morrem com o
+        savepoint, e o ``MergeAudit`` criado nunca chega a existir.
+
+        Mesmo gate da ida (G6): prévia de unificação que o gate recusaria
+        prometeria um resultado que o "confirmo" não entrega.
+        """
+        cls._validate(source_customer, target_customer, evidence)
+
+        try:
+            with transaction.atomic():
+                result, snapshot = cls._apply(source_customer, target_customer, evidence, actor="")
+                raise _PreviewRollback(
+                    MergePreview(
+                        source_ref=result.source_ref,
+                        target_ref=result.target_ref,
+                        migrated_contact_points=result.migrated_contact_points,
+                        migrated_external_identities=result.migrated_external_identities,
+                        migrated_identifiers=result.migrated_identifiers,
+                        migrated_addresses=result.migrated_addresses,
+                        migrated_preferences=result.migrated_preferences,
+                        migrated_consents=result.migrated_consents,
+                        migrated_timeline_events=result.migrated_timeline_events,
+                        migrated_orders=result.migrated_orders,
+                        loyalty_merged=result.loyalty_merged,
+                        loyalty_points_absorbed=int(
+                            (snapshot.get("loyalty") or {}).get("source_points") or 0
+                        ),
+                        identity_filled=dict(snapshot.get("identity_filled") or {}),
+                    )
+                )
+        except _PreviewRollback as done:
+            return done.preview
+
+    @classmethod
+    def _validate(
+        cls,
+        source_customer: Customer,
+        target_customer: Customer,
+        evidence: dict,
+    ) -> None:
         # --- Validate via G6 ---
         Gates.merge_safety(
             source_id=str(source_customer.pk),
@@ -120,73 +225,76 @@ class MergeService:
                 message="Target customer is inactive.",
             )
 
-        with transaction.atomic():
-            # Lock both canonical rows in deterministic order before any child.
-            # The checks above were only hints: deletion may have won while this
-            # request waited, so active state must be revalidated under lock.
-            locked = {
-                customer.pk: customer
-                for customer in Customer.objects.select_for_update()
-                .filter(pk__in=(source_customer.pk, target_customer.pk))
-                .order_by("pk")
-            }
-            source = locked.get(source_customer.pk)
-            target = locked.get(target_customer.pk)
-            if source is None or not source.is_active:
-                raise CustomerError("MERGE_FAILED", message="Source customer is inactive.")
-            if target is None or not target.is_active:
-                raise CustomerError("MERGE_FAILED", message="Target customer is inactive.")
+    @classmethod
+    def _apply(
+        cls,
+        source_customer: Customer,
+        target_customer: Customer,
+        evidence: dict,
+        actor: str,
+    ) -> tuple[MergeResult, dict]:
+        """O corpo da unificação. Exige transação aberta por quem chama.
 
-            # Snapshot tracks migrated PKs for undo
-            snapshot: dict[str, list] = {}
+        ``merge`` a confirma; ``preview`` a desfaz. É por isso que existe
+        separada: as duas leem o mesmo resultado da mesma execução.
+        """
+        # Lock both canonical rows in deterministic order before any child.
+        # The checks above were only hints: deletion may have won while this
+        # request waited, so active state must be revalidated under lock.
+        locked = {
+            customer.pk: customer
+            for customer in Customer.objects.select_for_update()
+            .filter(pk__in=(source_customer.pk, target_customer.pk))
+            .order_by("pk")
+        }
+        source = locked.get(source_customer.pk)
+        target = locked.get(target_customer.pk)
+        if source is None or not source.is_active:
+            raise CustomerError("MERGE_FAILED", message="Source customer is inactive.")
+        if target is None or not target.is_active:
+            raise CustomerError("MERGE_FAILED", message="Target customer is inactive.")
 
-            counts = {
-                "contact_points": cls._migrate_contact_points(source, target, snapshot),
-                "external_identities": cls._migrate_external_identities(source, target, snapshot),
-                "identifiers": cls._migrate_identifiers(source, target, snapshot),
-                "addresses": cls._migrate_addresses(source, target, snapshot),
-                "preferences": cls._migrate_preferences(source, target, snapshot),
-                "consents": cls._migrate_consents(source, target, snapshot),
-                "timeline_events": cls._migrate_timeline_events(source, target, snapshot),
-                "orders": cls._migrate_orders(source, target, snapshot),
-            }
-            loyalty_merged = cls._merge_loyalty(source, target, snapshot)
+        # Snapshot tracks migrated PKs for undo
+        snapshot: dict[str, list] = {}
 
-            # Recalculate insights for target
-            cls._recalculate_insights(target)
+        counts = {
+            "contact_points": cls._migrate_contact_points(source, target, snapshot),
+            "external_identities": cls._migrate_external_identities(source, target, snapshot),
+            "identifiers": cls._migrate_identifiers(source, target, snapshot),
+            "addresses": cls._migrate_addresses(source, target, snapshot),
+            "preferences": cls._migrate_preferences(source, target, snapshot),
+            "consents": cls._migrate_consents(source, target, snapshot),
+            "timeline_events": cls._migrate_timeline_events(source, target, snapshot),
+            "orders": cls._migrate_orders(source, target, snapshot),
+        }
+        loyalty_merged = cls._merge_loyalty(source, target, snapshot)
 
-            # Audit trail — timeline event on target
-            cls._log_merge_event(source, target, evidence, actor)
+        # Recalculate insights for target
+        cls._recalculate_insights(target)
 
-            # ⚠️ DEPOIS do evento de timeline, e isso é ordem, não estilo: o
-            # evento nomeia o doador ("Customer X (Ana) merged into…") e esta
-            # etapa esvazia a linha dele. Invertida, a trilha registraria um
-            # doador sem nome — justo no lugar onde alguém vai procurar o que
-            # foi desfeito.
-            cls._fill_identity_gaps(source, target, snapshot)
+        # Audit trail — timeline event on target
+        cls._log_merge_event(source, target, evidence, actor)
 
-            # Deactivate source — use .update() to bypass _sync_contact_points()
-            # which would fail since source's CPs were migrated to target.
-            merge_note = f"{source.notes}\n[MERGED] → {target.ref} by {actor}".strip()
-            Customer.objects.filter(pk=source.pk).update(
-                is_active=False,
-                notes=merge_note,
-            )
-            source.refresh_from_db()
+        # ⚠️ DEPOIS do evento de timeline, e isso é ordem, não estilo: o
+        # evento nomeia o doador ("Customer X (Ana) merged into…") e esta
+        # etapa esvazia a linha dele. Invertida, a trilha registraria um
+        # doador sem nome — justo no lugar onde alguém vai procurar o que
+        # foi desfeito.
+        cls._fill_identity_gaps(source, target, snapshot)
 
-            # Create audit record
-            audit = cls._create_audit(source, target, evidence, actor, counts, loyalty_merged, snapshot)
-
-        logger.info(
-            "Merged customer %s → %s by %s: %s (audit=%s)",
-            source.ref,
-            target.ref,
-            actor,
-            counts,
-            audit.pk,
+        # Deactivate source — use .update() to bypass _sync_contact_points()
+        # which would fail since source's CPs were migrated to target.
+        merge_note = f"{source.notes}\n[MERGED] → {target.ref} by {actor}".strip()
+        Customer.objects.filter(pk=source.pk).update(
+            is_active=False,
+            notes=merge_note,
         )
+        source.refresh_from_db()
 
-        return MergeResult(
+        # Create audit record
+        audit = cls._create_audit(source, target, evidence, actor, counts, loyalty_merged, snapshot)
+
+        result = MergeResult(
             source_ref=source.ref,
             target_ref=target.ref,
             migrated_contact_points=counts["contact_points"],
@@ -200,6 +308,7 @@ class MergeService:
             migrated_orders=counts["orders"],
             audit_id=str(audit.pk),
         )
+        return result, snapshot
 
     @classmethod
     def undo(cls, audit_id: str, actor: str = "") -> None:

@@ -36,6 +36,14 @@ from .catalog import (
 )
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
+from .customers import (
+    CustomerDetailView,
+    CustomerListView,
+    CustomerMergeListView,
+    CustomerMergePreviewView,
+    CustomerMergeUndoView,
+    CustomerMergeView,
+)
 from .feeds import (
     ChannelAttentionView,
     FeedBoardView,
@@ -501,6 +509,14 @@ urlpatterns = [
     path("catalog/channels/<str:ref>/review/", CatalogBindingReviewView.as_view(), name="api-backstage-catalog-binding-review"),
     path("catalog/channels/<str:ref>/snapshots/", CatalogSnapshotImportView.as_view(), name="api-backstage-catalog-snapshot-import"),
     path("catalog/channels/<str:ref>/bindings/", CatalogBindingConfirmView.as_view(), name="api-backstage-catalog-binding-confirm"),
+    # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
+    # se chama "merge", mas a ordem não deveria depender disso.
+    path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
+    path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
+    path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
+    path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),
+    path("customers/merges/<str:audit_id>/undo/", CustomerMergeUndoView.as_view(), name="api-backstage-customers-merge-undo"),
+    path("customers/<str:ref>/", CustomerDetailView.as_view(), name="api-backstage-customer-detail"),
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
