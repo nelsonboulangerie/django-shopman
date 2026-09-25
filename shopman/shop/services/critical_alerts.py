@@ -17,7 +17,14 @@ logger = logging.getLogger(__name__)
 def enqueue(alert):
     recipient = str(getattr(settings, "SHOPMAN_ALERT_EMAIL", "") or "").strip()
     if not recipient:
-        logger.warning("operator_alert.external_recipient_missing")
+        # Alerta crítico sem ninguém para receber o e-mail: só a tela sabe dele.
+        # Isto é defeito de configuração, e grita (o `operator_alert.created`
+        # é rastro justamente porque conta com este e-mail).
+        logger.error(
+            "operator_alert.external_recipient_missing: SHOPMAN_ALERT_EMAIL vazio; "
+            "alerta crítico %s só na tela",
+            getattr(alert, "type", ""),
+        )
         return None
     with transaction.atomic():
         receipt, created = IdempotencyKey.objects.get_or_create(

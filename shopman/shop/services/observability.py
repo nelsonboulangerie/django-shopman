@@ -104,9 +104,15 @@ def create_operator_alert(
         )
         return None
 
+    # O registro do alerta é rastro (WARNING), em qualquer severidade. O humano
+    # é avisado pelo próprio alerta: na tela sempre e, quando crítico, pelo
+    # e-mail durável do `critical_alerts` ao SHOPMAN_ALERT_EMAIL. Um ERROR aqui
+    # virava evento no Sentry — que manda e-mail para a MESMA caixa — e juntava
+    # todo alerta crítico de todo tipo numa issue só (SHOPMAN-A): o mesmo aviso
+    # duas vezes, sem dizer nada que o e-mail do alerta já não diga.
     operational_event(
         "operator_alert.created",
-        level=logging.WARNING if severity != "critical" else logging.ERROR,
+        level=logging.WARNING,
         alert_type=type,
         severity=severity,
         order_ref=order_ref,
