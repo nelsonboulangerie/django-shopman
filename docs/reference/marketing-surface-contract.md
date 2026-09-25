@@ -242,7 +242,7 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` | Platform Owner | vazio; `canary` sem lista fica bloqueado | esvaziar ao fim do ensaio |
 | `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` | Platform Owner | `120`; inválido volta ao padrão | revisar com a latência observada no ensaio |
 | `SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
-| `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
+| `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado. No alpha: `true` só no spec vivo desde 2026-09-25 (ensaio publicado) | desligar se o token da Página for anulado |
 | `SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter experimental nem é registrado | somente após OAuth, revisão e gate TikTok |
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY` e versão | Segurança | vazio bloqueia materialização segura | rotação versionada |
@@ -305,6 +305,17 @@ contínua exige decidir e validar seu ciclo de renovação. Credencial presente 
 publicação: a flag da plataforma e os consumidores duráveis — ou o canário unitário
 explicitamente armado — permanecem gates independentes. Em `DEBUG`, adapter externo
 também exige o opt-in geral de saída externa.
+
+O `META_PAGE_ACCESS_TOKEN` do alpha é token de **Página** derivado do usuário de
+sistema `shopman-api` do Business Manager (app "App Nelson"), com expiração **Nunca** e
+os escopos `pages_manage_posts`, `pages_read_engagement`, `pages_show_list`,
+`instagram_basic` e `instagram_content_publish`. Token de Página derivado de token de
+usuário pessoal vence junto com ele (o Graph API Explorer usa o token pessoal por
+padrão): confira no Access Token Debugger que o usuário é `shopman-api` e "Expira:
+Nunca" antes de colar no painel. Ensaio de 2026-09-25: anúncio 34 (campanha "Ensaio
+Facebook", só Facebook, revisão ligada) publicou foto + legenda na Página
+`764222643620409`, recibo `accepted` no ledger e post conferido na Página. O adapter
+chama a Graph API `v21.0` (`META_API_VERSION`), que expira em 2027-01-21.
 
 O app OAuth do Google é do tipo **Interno** no Google Cloud: o Google não pede página
 inicial pública nem verificação do app, então o Storefront não tem página própria para
