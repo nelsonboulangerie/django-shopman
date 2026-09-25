@@ -166,6 +166,21 @@ class ReceiptConversionSuggestionProjection:
 
 
 @dataclass(frozen=True)
+class ReceiptFiscalDivergenceProjection:
+    """A nota discorda do cadastro fiscal do produto — aviso, nunca correção.
+
+    ``sku`` é o produto contra o qual a nota foi conferida: se o operador troca
+    o item da linha, a divergência não é mais dele e a tela para de mostrá-la.
+    """
+
+    sku: str
+    field: str
+    catalogValue: str
+    invoiceValue: str
+    message: str
+
+
+@dataclass(frozen=True)
 class ReceiptLineProjection:
     id: str
     materialSku: str
@@ -193,6 +208,12 @@ class ReceiptLineProjection:
     invoicePackageEan: str
     invoiceNcm: str
     invoiceCest: str
+    #: Grupo ICMS do item na nota: CST (regime normal) ou CSOSN (Simples), e o
+    #: valor de ST em centavos. Voltam no confirmar para o servidor reconferir.
+    invoiceIcmsCst: str
+    invoiceIcmsCsosn: str
+    invoiceStValueQ: int
+    fiscalDivergences: tuple[ReceiptFiscalDivergenceProjection, ...]
     checked: bool
 
 
@@ -653,6 +674,20 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         invoicePackageEan=str(line.get("invoicePackageEan") or line.get("invoice_package_ean") or ""),
         invoiceNcm=str(line.get("invoiceNcm") or line.get("invoice_ncm") or ""),
         invoiceCest=str(line.get("invoiceCest") or line.get("invoice_cest") or ""),
+        invoiceIcmsCst=str(line.get("invoiceIcmsCst") or ""),
+        invoiceIcmsCsosn=str(line.get("invoiceIcmsCsosn") or ""),
+        invoiceStValueQ=int(_decimal(line.get("invoiceStValueQ") or 0)),
+        fiscalDivergences=tuple(
+            ReceiptFiscalDivergenceProjection(
+                sku=str(raw.get("sku") or ""),
+                field=str(raw.get("field") or ""),
+                catalogValue=str(raw.get("catalogValue") or ""),
+                invoiceValue=str(raw.get("invoiceValue") or ""),
+                message=str(raw.get("message") or ""),
+            )
+            for raw in line.get("fiscalDivergences") or ()
+            if isinstance(raw, dict) and raw.get("message")
+        ),
         checked=bool(line.get("checked")),
     )
 

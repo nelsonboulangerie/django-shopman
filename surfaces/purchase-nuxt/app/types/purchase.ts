@@ -281,7 +281,25 @@ export interface ReceiptLine {
   invoicePackageEan?: string;
   invoiceNcm?: string;
   invoiceCest?: string;
+  // Grupo ICMS do item na nota (CST ou CSOSN) e o valor de ST em centavos.
+  // Voltam no confirmar: o servidor reconfere a nota contra o cadastro fiscal.
+  invoiceIcmsCst?: string;
+  invoiceIcmsCsosn?: string;
+  invoiceStValueQ?: number;
+  // A nota discorda do cadastro fiscal do produto (NCM, CEST, ICMS-ST). Aviso,
+  // nunca correcao: o cadastro so muda quando alguem aceita no Admin.
+  fiscalDivergences?: ReceiptFiscalDivergence[];
   checked: boolean;
+}
+
+export interface ReceiptFiscalDivergence {
+  // O produto contra o qual a nota foi conferida. Se a linha passa a apontar
+  // para outro item, a divergencia deixa de ser dele e some da tela.
+  sku: string;
+  field: "ncm" | "cest" | "st";
+  catalogValue: string;
+  invoiceValue: string;
+  message: string;
 }
 
 export interface ReceiptLineSuggestion {
@@ -325,6 +343,8 @@ export interface ReceiptLinePreview {
   // "usar o que a NF diz" mesmo sem o fator calculado aqui.
   invoiceAxes: string;
   conversionDiverges: boolean;
+  // O que a nota diz de diferente do cadastro fiscal do item desta linha.
+  fiscalDivergences: ReceiptFiscalDivergence[];
   warnings: ReceiptWarning[];
 }
 
@@ -334,6 +354,7 @@ export interface ReceiptWarning {
     | "confirm-suggestion"
     | "confirm-conversion"
     | "diverging-conversion"
+    | "fiscal-divergence"
     | "missing-conversion"
     | "missing-cost"
     | "missing-expiry"

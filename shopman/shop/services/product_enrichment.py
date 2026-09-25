@@ -400,12 +400,18 @@ def suggestion_from_invoice(
     cest: str = "",
     unit: str = "",
     access_key: str = "",
+    details: dict[str, str] | None = None,
 ) -> EnrichmentSuggestion:
     """O que a NF-e de compra declara sobre o item: GTIN, NCM, CEST e unidade.
 
     Não consulta rede. O GTIN chega já conferido pelo leitor da nota (dígito
     verificador GS1); NCM e CEST só entram no formato certo.
+
+    ``details`` é o porquê por campo, quando há um — hoje, a divergência entre
+    a nota e o cadastro fiscal (``invoice_fiscal_check``): "NCM diverge: o
+    cadastro diz X, a nota diz Y." vai para o ``detail`` do campo sugerido.
     """
+    details = details or {}
     from shopman.offerman import gtin_is_valid
 
     s = EnrichmentSuggestion(gtin=gtin if gtin and gtin_is_valid(gtin) else "")
@@ -420,10 +426,10 @@ def suggestion_from_invoice(
         s.add("gtin", s.gtin, SOURCE_NFE, detail=detail, **ref)
     ncm = re.sub(r"\D", "", ncm or "")
     if _NCM_RE.match(ncm):
-        s.add("ncm", ncm, SOURCE_NFE, **ref)
+        s.add("ncm", ncm, SOURCE_NFE, detail=details.get("ncm", ""), **ref)
     cest = re.sub(r"\D", "", cest or "")
     if _CEST_RE.match(cest):
-        s.add("cest", cest, SOURCE_NFE, **ref)
+        s.add("cest", cest, SOURCE_NFE, detail=details.get("cest", ""), **ref)
     unit = (unit or "").strip().upper()
     if unit:
         s.add("fiscal_unit", unit, SOURCE_NFE, **ref)

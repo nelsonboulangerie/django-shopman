@@ -286,6 +286,20 @@ function onCheck(checked: boolean) {
             {{ warning.label }}
           </span>
         </div>
+
+        <!-- O selo diz QUE a nota discorda do cadastro fiscal; aqui ela diz
+             DO QUÊ. A entrada não trava: o cadastro se confere no Admin, onde
+             o recebimento deixa a sugestão e o aviso. -->
+        <div
+          v-if="preview.fiscalDivergences.length"
+          data-receipt-fiscal-divergences
+          class="space-y-1 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <p v-for="divergence in preview.fiscalDivergences" :key="`${preview.line.id}-${divergence.field}`">
+            {{ divergence.message }}
+          </p>
+          <p class="text-muted-foreground">Nada muda no cadastro ao confirmar: fica como sugestão e aviso para conferir no Admin.</p>
+        </div>
       </div>
 
       <!-- Conferir fecha o item e a gaveta: o gesto termina onde começou, e a

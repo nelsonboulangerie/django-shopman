@@ -12,6 +12,7 @@ import type {
   ReceiptBlocker,
   ReceiptConversionSuggestion,
   ReceiptFieldAnchor,
+  ReceiptFiscalDivergence,
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptLineRow,
@@ -303,6 +304,7 @@ const BLOCKER_FIELD: Record<ReceiptWarning["key"], ReceiptFieldAnchor | null> = 
   "invalid-qty": "qty",
   "missing-expiry": "expiry",
   "diverging-conversion": null,
+  "fiscal-divergence": null,
   "missing-cost": null,
   "approximate-conversion": null,
   "manual-source": null,
@@ -337,6 +339,7 @@ export function receiptLineLabel(preview: ReceiptLinePreview): string {
  */
 const ATTENTION_WARNINGS = new Set<ReceiptWarning["key"]>([
   "diverging-conversion",
+  "fiscal-divergence",
   "approximate-conversion",
   "missing-cost",
 ]);
@@ -524,6 +527,18 @@ export function receiptInvoiceAxes(line: ReceiptLine): string {
   return `${quantityFormatter.format(qty)} ${line.invoiceUnit} = ${quantityFormatter.format(taxQty)} ${line.invoiceTaxUnit}`;
 }
 
+/**
+ * As divergências fiscais que valem para o item que a linha aponta AGORA.
+ *
+ * O servidor confere a nota contra o produto resolvido (ou sugerido) no scan;
+ * trocar o item da linha torna a conferência de outro produto, e ela se cala.
+ */
+export function receiptFiscalDivergences(line: ReceiptLine): ReceiptFiscalDivergence[] {
+  const sku = line.materialSku;
+  if (!sku) return [];
+  return (line.fiscalDivergences ?? []).filter((divergence) => divergence.sku === sku);
+}
+
 export function receiptLineWarnings(
   line: ReceiptLine,
   mode: ReceiptMode,
@@ -550,6 +565,11 @@ export function receiptLineWarnings(
   }
   if (receiptConversionDiverges(line, conversion)) {
     warnings.push({ key: "diverging-conversion", label: "NF diverge da conversão", tone: "watch" });
+  }
+  if (receiptFiscalDivergences(line).length) {
+    // Não bloqueia: a mercadoria entra. O cadastro fiscal é conferido depois,
+    // no Admin, e o recebimento deixa a sugestão e o aviso para isso.
+    warnings.push({ key: "fiscal-divergence", label: "NF diverge do cadastro fiscal", tone: "watch" });
   }
   if (parseMoneyInput(line.costInput) <= 0) {
     warnings.push({ key: "missing-cost", label: "Conferir valor", tone: "watch" });
@@ -629,6 +649,7 @@ export function receiptLinePreview(
     conversionSuggestion: receiptConversionSuggestion(line),
     invoiceAxes: receiptInvoiceAxes(line),
     conversionDiverges: receiptConversionDiverges(line, conversion),
+    fiscalDivergences: receiptFiscalDivergences(line),
     warnings,
   };
 }
