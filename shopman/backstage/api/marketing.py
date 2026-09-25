@@ -579,6 +579,7 @@ class AnnouncementApproveView(_CampaignBase):
             "hashtags",
             "image_url",
             "platforms",
+            "google_business",
             "publish_at",
             "publish_mode",
             "publish_timezone",
@@ -655,6 +656,14 @@ class AnnouncementApproveView(_CampaignBase):
             # changed after the announcement was created would approve content
             # different from what the operator reviewed.
             platform_content = dict(announcement.platform_content or {})
+            if "google_business" in edits:
+                from shopman.shop.services.marketing_google_post import (
+                    with_review_options,
+                )
+
+                platform_content = with_review_options(
+                    platform_content, edits["google_business"]
+                )
 
         try:
             result = marketing_approval.approve_command(
@@ -1211,6 +1220,8 @@ class PreviewView(_CampaignBase):
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
+        if payload.get("announcement") not in (None, ""):
+            return self._announcement_preview(payload)
         try:
             common = {
                 "sku": str(payload.get("sku") or ""),
@@ -1238,6 +1249,48 @@ class PreviewView(_CampaignBase):
                     platform=str(payload.get("platform") or "instagram"),
                     **common,
                 )
+        except MarketingContractError as exc:
+            return _command_error_response(exc)
+        return Response(preview)
+
+    def _announcement_preview(self, payload):
+        """Revisão de anúncio que JÁ existe: o conteúdo gravado + as edições do card.
+
+        Sem produto de exemplo: o exemplo explica um modelo no formulário, e aqui mentiria
+        sobre o que a aprovação publica (ver `campaign.preview_announcement`).
+        """
+        pk = _command_int(payload.get("announcement"))
+        announcement = _announcement_or_none(pk) if pk and pk > 0 else None
+        if announcement is None:
+            return Response(
+                {"code": "announcement_not_found", "detail": "Anúncio não encontrado."},
+                status=404,
+            )
+        edits, error = _announcement_edits(
+            {
+                key: payload[key]
+                for key in ("body", "hashtags", "platforms", "google_business")
+                if key in payload
+            }
+        )
+        if error:
+            field = str(error.get("field") or "payload")
+            return Response(
+                {
+                    "code": "invalid_preview_content",
+                    "detail": error["detail"],
+                    "field_errors": {field: [error["detail"]]},
+                },
+                status=422,
+            )
+        try:
+            preview = campaign_service.preview_announcement(
+                announcement,
+                platforms=edits.get("platforms", list(announcement.platforms or [])),
+                body=edits.get("body"),
+                hashtags=edits.get("hashtags"),
+                google_business=edits.get("google_business"),
+            )
         except MarketingContractError as exc:
             return _command_error_response(exc)
         return Response(preview)
@@ -1945,6 +1998,27 @@ def _announcement_edits(data) -> tuple[dict, dict | None]:
         if not platforms:
             return {}, {"detail": "Escolha ao menos uma plataforma.", "field": "platforms"}
         edits["platforms"] = platforms
+    if "google_business" in data:
+        options = data.get("google_business")
+        if not isinstance(options, dict):
+            return {}, {
+                "detail": "As opções do Google precisam ser um objeto.",
+                "field": "google_business",
+            }
+        from shopman.shop.services.marketing_google_post import REVIEW_OPTION_KEYS
+
+        unknown = sorted(set(options) - REVIEW_OPTION_KEYS)
+        if unknown:
+            return {}, {
+                "detail": "Há uma opção do Google que a revisão não altera.",
+                "field": f"google_business.{unknown[0]}",
+            }
+        if any(not isinstance(value, str) for value in options.values()):
+            return {}, {
+                "detail": "As opções do Google precisam ser texto.",
+                "field": "google_business",
+            }
+        edits["google_business"] = {key: value.strip() for key, value in options.items()}
 
     return edits, None
 

@@ -1,12 +1,21 @@
 <script setup lang="ts">
 // Preview fiel: uma resposta batch usa um único snapshot factual para todos os canais.
 // Epoch + AbortController impedem que uma resposta antiga substitua o texto mais recente.
-import { scenesFromDraftArtifacts } from "~/presentation/simulatedPreview";
+import {
+  googleSceneDetails,
+  scenesFromDraftArtifacts,
+} from "~/presentation/simulatedPreview";
 
 const props = defineProps<{
   body: string;
-  /** SKU da ocorrência real. Vazio usa somente a amostra do formulário. */
-  sku?: string;
+  /** Revisão de anúncio que JÁ existe: a prévia sai do conteúdo gravado dele (+ as
+   *  edições), como a aprovação monta — nunca de um produto de exemplo. Ausente = o
+   *  formulário de campanha/modelo, onde o exemplo explica o modelo. */
+  announcementId?: number;
+  /** Hashtags editadas na revisão (só com `announcementId`). */
+  hashtags?: string[];
+  /** Tipo e botão do post do Google escolhidos na revisão (só com `announcementId`). */
+  googleBusiness?: Record<string, string>;
   platforms: string[];
   platformContent?: Record<string, Record<string, unknown>>;
   promotionRef?: string;
@@ -45,6 +54,7 @@ type PreviewBatch = {
   product_name: string;
   fields: Record<string, string>;
   ai_writes: boolean;
+  /** `null` na revisão de anúncio sem fatos gravados (nenhuma variável de catálogo). */
   facts: {
     schema_version: number;
     as_of: string;
@@ -59,7 +69,7 @@ type PreviewBatch = {
     availability: Record<string, Scalar>;
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
-  };
+  } | null;
   previews: Record<
     string,
     {
@@ -91,7 +101,9 @@ let epoch = 0;
 watch(
   () => [
     props.body,
-    props.sku || "",
+    props.announcementId ?? "",
+    (props.hashtags || []).join("\u001f"),
+    JSON.stringify(props.googleBusiness || {}),
     props.promotionRef || "",
     props.useAi ? "1" : "0",
     props.platforms.join("\u001f"),
@@ -148,14 +160,23 @@ async function load(requestEpoch: number) {
       {
         method: "POST",
         signal: requestController.signal,
-        body: {
-          body: props.body,
-          sku: props.sku || "",
-          platforms: normalizedPlatforms(),
-          platform_content: props.platformContent || {},
-          promotion_ref: props.promotionRef || "",
-          use_ai: props.useAi,
-        },
+        body: props.announcementId
+          ? {
+              announcement: props.announcementId,
+              body: props.body,
+              hashtags: props.hashtags || [],
+              platforms: normalizedPlatforms(),
+              ...(props.googleBusiness
+                ? { google_business: props.googleBusiness }
+                : {}),
+            }
+          : {
+              body: props.body,
+              platforms: normalizedPlatforms(),
+              platform_content: props.platformContent || {},
+              promotion_ref: props.promotionRef || "",
+              use_ai: props.useAi,
+            },
       },
     );
     if (requestEpoch !== epoch) return;
@@ -187,7 +208,9 @@ function previewProblem(error: unknown): PreviewProblem {
   const data = failure?.data || failure?.response?._data || {};
   const code = typeof data.code === "string" ? data.code : "";
   const isMediaProblem =
-    code.startsWith("marketing_media_") || code === "instagram_media_required";
+    code.startsWith("marketing_media_") ||
+    code.startsWith("google_media_") ||
+    code === "instagram_media_required";
   const retryable = data.retryable === true;
   const rawFields = data.field_errors;
   let fieldDetail = "";
@@ -224,6 +247,10 @@ const isWhatsapp = computed(() => activePlatform.value === "whatsapp");
 const publicationFormat = computed(() =>
   String(artifact.value?.provider_fields.publication_format || ""),
 );
+const isGoogle = computed(() => activePlatform.value === "google_business");
+const google = computed(() =>
+  isGoogle.value ? googleSceneDetails(artifact.value?.provider_fields) : null,
+);
 const isInstagramStory = computed(
   () =>
     activePlatform.value === "instagram" && publicationFormat.value === "story",
@@ -236,12 +263,12 @@ const emptyFields = computed(() =>
   Object.entries(preview.value?.fields || {})
     .filter(
       ([key, value]) =>
-        preview.value?.facts.referenced_variables.includes(key) && !value,
+        preview.value?.facts?.referenced_variables.includes(key) && !value,
     )
     .map(([key]) => key),
 );
 const factTime = computed(() => {
-  const raw = preview.value?.facts.as_of;
+  const raw = preview.value?.facts?.as_of;
   if (!raw) return "";
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -444,14 +471,67 @@ const simulatedScenes = computed(() =>
         </div>
       </div>
 
+      <!-- GOOGLE: o post como o perfil mostra — tipo, título/período, foto no
+           recorte do cartão, texto, e o botão ESCOLHIDO (ou nenhum). O link não
+           aparece solto no post do Google: ele só existe atrás do botão. -->
+      <div v-else-if="isGoogle && google" class="mt-3" role="tabpanel">
+        <p class="mb-1 text-xs font-medium text-muted-foreground">
+          {{ platformLabel }} · {{ google.postTypeLabel }}
+        </p>
+        <div
+          class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-card"
+          data-testid="google-post-preview"
+        >
+          <div v-if="artifact.image_url" class="relative">
+            <img
+              :src="artifact.image_url"
+              :alt="preview.product_name"
+              class="aspect-[4/3] w-full object-cover"
+            />
+          </div>
+          <div class="px-3 py-2">
+            <p v-if="google.title" class="text-sm font-semibold">
+              {{ google.title }}
+            </p>
+            <p v-if="google.period" class="text-xs text-muted-foreground">
+              {{ google.period }}
+            </p>
+            <p class="whitespace-pre-line text-sm" :class="google.title ? 'mt-1' : ''">
+              {{ artifact.body }}
+            </p>
+            <p
+              v-if="artifact.hashtags.length"
+              class="mt-1 break-words text-xs text-primary"
+            >
+              {{ artifact.hashtags.map((tag) => `#${tag}`).join(" ") }}
+            </p>
+            <span
+              v-if="google.buttonLabel"
+              class="mt-2 inline-flex min-h-8 items-center rounded-full border border-border px-3 text-xs font-medium text-primary"
+              data-testid="google-post-button"
+            >
+              {{ google.buttonLabel }}
+            </span>
+          </div>
+        </div>
+        <ul class="mt-2 space-y-1 text-xs text-muted-foreground">
+          <li v-if="artifact.image_url">
+            O Google recorta a foto para caber no cartão, e o recorte muda entre
+            a Busca e o Maps: o que estiver perto das bordas pode sumir. Não ponha
+            texto dentro da imagem — escreva no texto do post.
+          </li>
+          <li v-if="!google.buttonLabel && artifact.link">
+            Sem botão, o link não aparece no post.
+          </li>
+        </ul>
+      </div>
+
       <div v-else class="mt-3" role="tabpanel">
         <p class="mb-1 text-xs font-medium text-muted-foreground">
           {{ platformLabel
           }}<template v-if="publicationFormat">
             ·
-            {{
-              publicationFormat === "feed" ? "Feed" : "Atualização padrão"
-            }}</template
+            {{ publicationFormat === "feed" ? "Feed" : "Atualização" }}</template
           >
         </p>
         <div
@@ -535,7 +615,7 @@ const simulatedScenes = computed(() =>
         <div v-if="factTime" class="flex gap-1">
           <dt>Dados conferidos às:</dt>
           <dd
-            :title="`Dados de ${preview.facts.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
+            :title="`Dados de ${preview.facts?.as_of}${shortHash ? ` · versão ${shortHash}` : ''}`"
           >
             {{ factTime }}
           </dd>

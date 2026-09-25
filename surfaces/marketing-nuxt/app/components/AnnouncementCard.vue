@@ -40,6 +40,13 @@ import {
   readinessPillClass,
 } from "~/presentation/platformReadiness";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
+import {
+  googleBusinessEdits,
+  googleBusinessOptions,
+  googleCallToActionLabel,
+  googlePostTypeLabel,
+} from "~/presentation/googleBusinessPost";
+import type { GoogleBusinessOptions } from "~/presentation/googleBusinessPost";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -72,6 +79,10 @@ const hashtagsText = ref(
   props.announcement.hashtags.map(displayHashtag).join(" "),
 );
 const platforms = ref<string[]>([...props.announcement.platforms]);
+// O post do Google (tipo e botão) parte do que o modelo gravou e é decidido aqui.
+const googleOptions = ref<GoogleBusinessOptions>(
+  googleBusinessOptions(props.announcement.platform_content?.google_business),
+);
 const scheduling = ref(false);
 const publishAt = ref("");
 const publishFold = ref<ScheduleFold>("");
@@ -174,6 +185,9 @@ watch(
       .map(displayHashtag)
       .join(" ");
     platforms.value = [...props.announcement.platforms];
+    googleOptions.value = googleBusinessOptions(
+      props.announcement.platform_content?.google_business,
+    );
     scheduling.value = false;
     publishAt.value = "";
     publishFold.value = "";
@@ -190,6 +204,9 @@ function editorBase(): MarketingDraftPayload {
     body: props.announcement.body,
     hashtags: props.announcement.hashtags.map(displayHashtag).join(" "),
     platforms: [...props.announcement.platforms],
+    google_business: googleBusinessOptions(
+      props.announcement.platform_content?.google_business,
+    ),
     scheduling: false,
     publish_at: "",
     publish_fold: "",
@@ -201,6 +218,7 @@ function editorCurrent(): MarketingDraftPayload {
     body: body.value,
     hashtags: hashtagsText.value,
     platforms: [...platforms.value],
+    google_business: { ...googleOptions.value },
     scheduling: scheduling.value,
     publish_at: publishAt.value,
     publish_fold: publishFold.value,
@@ -217,6 +235,11 @@ function applyEditorDraft(payload: MarketingDraftPayload) {
   platforms.value = Array.isArray(payload.platforms)
     ? payload.platforms.map(String)
     : [...props.announcement.platforms];
+  googleOptions.value = googleBusinessOptions(
+    payload.google_business && typeof payload.google_business === "object"
+      ? (payload.google_business as Record<string, unknown>)
+      : props.announcement.platform_content?.google_business,
+  );
   scheduling.value = Boolean(payload.scheduling);
   publishAt.value =
     typeof payload.publish_at === "string" ? payload.publish_at : "";
@@ -239,6 +262,7 @@ const DRAFT_LABELS = {
   body: "Texto",
   hashtags: "Hashtags",
   platforms: "Plataformas",
+  google_business: "Post no Google",
   scheduling: "Agendamento",
   publish_at: "Data e hora",
   publish_fold: "Ocorrência do horário",
@@ -280,6 +304,15 @@ function describeDraftValue(field: string, value: unknown): string | undefined {
   // rascunho: sim", que não quer dizer nada. A porta para traduzir já existia; só
   // estava servindo a plataforma e mais ninguém.
   if (field === "scheduling") return value ? "agendado" : "disparar agora";
+  if (field === "google_business" && value && typeof value === "object") {
+    const options = googleBusinessOptions(value as Record<string, unknown>);
+    const button = googleCallToActionLabel(options.call_to_action);
+    return `${googlePostTypeLabel(options.publication_format)}${
+      options.publication_format === "offer"
+        ? ""
+        : ` · botão ${button ? `“${button}”` : "nenhum"}`
+    }`;
+  }
   return undefined;
 }
 
@@ -370,11 +403,22 @@ function togglePlatform(value: string) {
   else platforms.value.push(value);
 }
 
+const publishesOnGoogle = computed(() =>
+  platforms.value.includes("google_business"),
+);
+/** A prévia confere o post do Google com as escolhas feitas aqui, antes de aprovar. */
+const previewGoogleBusiness = computed(() =>
+  publishesOnGoogle.value ? googleBusinessEdits(googleOptions.value) : undefined,
+);
+
 function edits(): AnnouncementEdits {
   return {
     body: body.value.trim(),
     hashtags: parseHashtags(hashtagsText.value),
     platforms: [...platforms.value],
+    ...(publishesOnGoogle.value
+      ? { google_business: googleBusinessEdits(googleOptions.value) }
+      : {}),
     ...(acceptedSuggestionRef.value
       ? { ai_suggestion_ref: acceptedSuggestionRef.value }
       : {}),
@@ -734,15 +778,25 @@ function askToReject() {
           </ul>
         </fieldset>
 
+        <GoogleBusinessPostOptions
+          v-if="publishesOnGoogle"
+          v-model="googleOptions"
+          :id-prefix="`google-${announcement.pk}`"
+          :has-link="!!announcement.link"
+        />
+
         <!-- A decisão e a representação enviada não podem morar em telas diferentes.
              A mesma prévia batch/cancelável usada no formulário de campanha acompanha
-             toda edição deste rascunho, por plataforma. -->
+             toda edição deste rascunho, por plataforma — mas lida do conteúdo GRAVADO
+             do anúncio (`announcement-id`), montado como a aprovação monta. Com o
+             produto de exemplo do formulário ela mostrava link que o post não teria. -->
         <AnnouncementPreview
           :body="body"
-          :sku="announcement.sku"
+          :announcement-id="announcement.pk"
+          :hashtags="parseHashtags(hashtagsText)"
           :platforms="platforms"
           :platform-labels="platformLabels"
-          :platform-content="announcement.platform_content"
+          :google-business="previewGoogleBusiness"
         />
 
         <!-- Audiência só governa mensagens diretas. Publicações não têm destinatário individual. -->

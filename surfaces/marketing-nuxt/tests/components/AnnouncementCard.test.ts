@@ -10,7 +10,9 @@ import {
   vi,
 } from "vitest";
 import AnnouncementCard from "~/components/AnnouncementCard.vue";
+import AnnouncementPreview from "~/components/AnnouncementPreview.vue";
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
+import GoogleBusinessPostOptions from "~/components/GoogleBusinessPostOptions.vue";
 import type { Announcement } from "~/types/campaign";
 import { installMemoryLocalStorage } from "../support/localStorage";
 
@@ -95,7 +97,7 @@ function mountCard(
       ...extra,
     },
     global: {
-      components: { DraftRecoveryNotice },
+      components: { DraftRecoveryNotice, GoogleBusinessPostOptions },
       stubs: { Icon: true, NuxtLink: true },
     },
   });
@@ -248,6 +250,41 @@ describe("AnnouncementCard", () => {
     expect(edits.hashtags).toEqual(["paes", "fornada"]);
     expect(edits.platforms).toEqual(["instagram"]);
     expect(wrapper.emitted("approve")![0]![2]).toBe("now");
+  });
+
+  it("a prévia da revisão pede o anúncio gravado com as mesmas edições da aprovação", async () => {
+    // Sem `announcement`, o servidor caía na prévia do formulário e inventava um produto
+    // de exemplo (com link) para um anúncio que não tinha produto — medido em 25/09/2026.
+    const fetch = vi.fn().mockReturnValue(new Promise(() => {}));
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mount(AnnouncementCard, {
+      props: {
+        announcement: makeAnnouncement({ sku: "" }),
+        platformOptions: PLATFORMS,
+        draftOwner: "",
+        shopTimezone: "America/Sao_Paulo",
+        aiAssistAvailable: false,
+        quietHoursSuspendedForLocalSimulation: false,
+      },
+      global: {
+        components: { AnnouncementPreview, DraftRecoveryNotice },
+        stubs: { AnnouncementSimulatedPreview: true, Icon: true, NuxtLink: true },
+      },
+    });
+    await wrapper.find("textarea").setValue("Texto revisado");
+    await wrapper.find("input[type=text]").setValue("#paes #fornada");
+    await vi.advanceTimersByTimeAsync(400);
+
+    const previews = fetch.mock.calls.filter(
+      ([url]) => url === "/api/v1/backstage/marketing/preview/",
+    );
+    expect(previews.at(-1)![1].body).toEqual({
+      announcement: 7,
+      body: "Texto revisado",
+      hashtags: ["paes", "fornada"],
+      platforms: ["instagram"],
+    });
+    wrapper.unmount();
   });
 
   it("refuses to publish an empty announcement", async () => {
@@ -741,5 +778,76 @@ describe("AnnouncementCard", () => {
     expect(
       (conflicted.find("textarea").element as HTMLTextAreaElement).value,
     ).toBe("Minha revisão");
+  });
+});
+
+describe("AnnouncementCard — post do Google", () => {
+  it("só pergunta pelo post do Google quando o Google está entre as plataformas", () => {
+    expect(
+      mountCard(makeAnnouncement({ platforms: ["instagram"] })).find(
+        "[data-testid=google-business-options]",
+      ).exists(),
+    ).toBe(false);
+    expect(
+      mountCard(makeAnnouncement({ platforms: ["google_business"] })).find(
+        "[data-testid=google-business-options]",
+      ).exists(),
+    ).toBe(true);
+  });
+
+  it("parte do botão do modelo e manda a escolha junto da aprovação", async () => {
+    const wrapper = mountCard(
+      makeAnnouncement({
+        platforms: ["google_business"],
+        platform_content: {
+          google_business: { publication_format: "standard", call_to_action: "learn_more" },
+        },
+      }),
+    );
+    const options = wrapper.get("[data-testid=google-business-options]");
+    const call = options
+      .findAll('[role="radio"]')
+      .find((radio) => radio.text().startsWith("Ligar agora"))!;
+    await call.trigger("click");
+    await wrapper.get("[data-testid=publish-now]").trigger("click");
+
+    const [, edits] = wrapper.emitted("approve")![0] as [
+      number,
+      Record<string, unknown>,
+    ];
+    expect(edits.google_business).toEqual({
+      publication_format: "standard",
+      call_to_action: "call",
+    });
+  });
+
+  it("sem link, só sobra Ligar agora ou nenhum botão", () => {
+    const wrapper = mountCard(
+      makeAnnouncement({ platforms: ["google_business"], link: "" }),
+    );
+    const radios = wrapper
+      .get("[data-testid=google-business-options]")
+      .findAll('[role="radio"]');
+    const enabled = radios
+      .filter((radio) => !(radio.element as HTMLButtonElement).disabled)
+      .map((radio) => radio.text());
+
+    expect(enabled.some((text) => text.startsWith("Nenhum"))).toBe(true);
+    expect(enabled.some((text) => text.startsWith("Ligar agora"))).toBe(true);
+    expect(enabled.some((text) => text.startsWith("Saiba mais"))).toBe(false);
+    expect(wrapper.text()).toContain(
+      "Este anúncio não tem link: só “Ligar agora” ou nenhum botão.",
+    );
+  });
+
+  it("sem o Google, a aprovação não leva opções do Google", async () => {
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
+    await wrapper.get("[data-testid=publish-now]").trigger("click");
+
+    const [, edits] = wrapper.emitted("approve")![0] as [
+      number,
+      Record<string, unknown>,
+    ];
+    expect(edits).not.toHaveProperty("google_business");
   });
 });

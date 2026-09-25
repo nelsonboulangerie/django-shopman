@@ -11,6 +11,11 @@ import type {
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import { marketingVariableLabel } from "~/presentation/marketingVariables";
+import {
+  GOOGLE_CALL_TO_ACTIONS,
+  googleBusinessOptions,
+} from "~/presentation/googleBusinessPost";
+import type { GoogleCallToAction } from "~/presentation/googleBusinessPost";
 
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
@@ -35,6 +40,8 @@ const aiPrompt = ref("");
 const isActive = ref(true);
 const platformVariants = ref<Record<string, Record<string, unknown>>>({});
 const instagramFormat = ref("story");
+/** Botão padrão do post do Google deste modelo; a revisão pode trocar. */
+const googleCallToAction = ref<GoogleCallToAction>("none");
 const customImageUrl = ref("");
 
 const platformCapabilities = computed(() => props.deliveryCapabilities ?? []);
@@ -147,6 +154,11 @@ function publicationVariants(): Record<string, Record<string, unknown>> {
     }
     variants[capability.platform] = variant;
   }
+  const google = { ...(variants.google_business || {}) };
+  if (googleCallToAction.value === "none")
+    Reflect.deleteProperty(google, "call_to_action");
+  else google.call_to_action = googleCallToAction.value;
+  variants.google_business = google;
   for (const platform of knownPlatforms.value) {
     const variant = { ...(variants[platform] || {}) };
     if (imageSource.value === "custom" && customImageUrl.value.trim())
@@ -175,6 +187,9 @@ watch(
         "story",
     ).toLowerCase();
     instagramFormat.value = storedFormat === "feed" ? "feed" : "story";
+    googleCallToAction.value = googleBusinessOptions(
+      t?.platform_variants?.google_business,
+    ).call_to_action;
     customImageUrl.value = imageFromVariants(platformVariants.value);
   },
   { immediate: true },
@@ -238,6 +253,9 @@ function applyTemplateDraft(payload: MarketingDraftPayload) {
       "story",
   ).toLowerCase();
   instagramFormat.value = restoredFormat === "feed" ? "feed" : "story";
+  googleCallToAction.value = googleBusinessOptions(
+    platformVariants.value.google_business,
+  ).call_to_action;
   customImageUrl.value = imageFromVariants(platformVariants.value);
 }
 
@@ -395,6 +413,33 @@ function submit() {
       />
       <p class="mt-2 text-xs text-muted-foreground">
         Facebook publica na página; Google, uma atualização do estabelecimento.
+      </p>
+    </fieldset>
+
+    <fieldset class="rounded-lg border border-border bg-card p-4">
+      <legend class="px-1 text-xs font-medium text-muted-foreground">
+        Botão no Google
+      </legend>
+      <label for="tpl-google-button" class="sr-only">Botão no post do Google</label>
+      <UiNativeSelect
+        id="tpl-google-button"
+        v-model="googleCallToAction"
+        class="w-full"
+      >
+        <option
+          v-for="option in GOOGLE_CALL_TO_ACTIONS"
+          :key="option.value"
+          :value="option.value"
+        >
+          {{ option.label }}
+        </option>
+      </UiNativeSelect>
+      <p class="mt-2 text-xs text-muted-foreground">
+        {{
+          GOOGLE_CALL_TO_ACTIONS.find((option) => option.value === googleCallToAction)
+            ?.hint
+        }}
+        Na revisão dá para trocar o botão e publicar como evento ou oferta.
       </p>
     </fieldset>
 
