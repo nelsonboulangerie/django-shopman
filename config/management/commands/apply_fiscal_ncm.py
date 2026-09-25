@@ -97,6 +97,10 @@ HOUSE_CEST_BY_NCM: dict[str, str] = {
     "19059090": "1706200",
     "19059010": "1706000",
     "20059900": "1709200",
+    "20057000": "1709200",
+    # Sanduíches com embutido predominante (auditoria de 24/09, Cosit 98.067/2024).
+    "16010000": "1707600",
+    "16024100": "1707904",
 }
 
 
@@ -112,6 +116,55 @@ HOUSE_CEST_BY_NCM: dict[str, str] = {
 #: 1905.90.20 é "biscoitos e bolachas ... cream cracker e água e sal" (17.056.00)
 #: e o 17.053.00 é biscoito de 1905.31.00. Viennoiserie é 1905.90.90; o pão de
 #: forma, 1905.90.10.
+#: NCM corrigido de produto de revenda e da despensa (auditoria do alpha,
+#: 24/09/2026). O CEST continua o mesmo em todos.
+NCM_CORRECTIONS: tuple[tuple[str, str, str], ...] = (
+    ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069030",
+     "Camembert é queijo de massa mole, como o Mini Brie (0406.90.30), não 0406.90.20"),
+    ("GELEIA-DAMASCO-STDALFOUR-28", "20079910",
+     "a mini de damasco é a mesma geleia da de 284 g, no mesmo NCM"),
+    ("TPND", "20057000", "tapenade é azeitona preparada (2005.70.00); o CEST 17.092.00 continua"),
+    # Sanduíches: com mais de 20% de carne/embutido em peso, a Nota 2 do Cap. 16
+    # manda o produto para o Cap. 16 (e a Nota 1 a) do Cap. 19 o tira do 19.05).
+    # Precedente: Solução de Consulta Cosit 98.067/2024 (embutido predominante).
+    ("HOD", "16010000", "hot dog: a salsicha passa de 20% do peso — Cap. 16, 1601.00.00 (Cosit 98.067/2024)"),
+    ("HODP", "16010000", "mini hot dog: mesma composição do hot dog — 1601.00.00"),
+    ("JB", "16024100", "jambon-beurre: o presunto cozido passa de 20% do peso — 1602.41.00 (pernil suíno)"),
+)
+
+#: Limite fiscal da ficha do croque (Nota 2 do Cap. 16 da NCM): vai para
+#: ``Recipe.meta["fiscal_note"]`` das fichas ``croque-*``.
+CROQUE_FISCAL_NOTE = (
+    "NCM 1905.90.90 enquanto o presunto for no máximo 20% do peso do sanduíche; "
+    "acima disso o croque vai para o Cap. 16 (1602). Ao mudar a ficha, confira."
+)
+
+
+def fill_recipe_fiscal_notes() -> list[str]:
+    """Anota o limite fiscal nas fichas de croque onde ele não está."""
+    from shopman.craftsman.models import Recipe
+
+    noted: list[str] = []
+    for recipe in Recipe.objects.filter(ref__startswith="croque-"):
+        meta = dict(recipe.meta or {})
+        if meta.get("fiscal_note") == CROQUE_FISCAL_NOTE:
+            continue
+        meta["fiscal_note"] = CROQUE_FISCAL_NOTE
+        recipe.meta = meta
+        recipe.save(update_fields=["meta"])
+        noted.append(recipe.ref)
+    return noted
+
+
+#: Insumo comprado: o NCM é o que a NF do fornecedor declara. A salsicha vem da
+#: Defumados Strass como 1602.41.00, CSOSN sem ST retida, CFOP 5101 (dono,
+#: 24/09) — incomum para salsicha Viena, mas é o que a nota diz; o recebimento
+#: confere a próxima nota. Não muda o NCM do NOSSO hot dog (1601.00.00).
+MATERIAL_NCM: tuple[tuple[str, str, str], ...] = (
+    ("SALSICHA-VIENNA", "16024100", "NF de compra da Defumados Strass (Salsicha Viena Fina)"),
+)
+
+
 BREAD_NCM: tuple[tuple[str, str, str], ...] = tuple(
     (sku, "19059090", "1905.90.10 é pão de forma; este é outro pão (1905.90.90)")
     for sku in (
@@ -133,6 +186,21 @@ AVISOS: tuple[str, ...] = (
     "Imposto Seletivo na primeira operação, sem crédito a aproveitar. Servida no "
     "copo, nada disso acontece.",
 )
+
+
+def fill_material_ncm() -> list[tuple[str, str]]:
+    """NCM da nota no cadastro de compra, onde ele está vazio."""
+    from shopman.buyman.models import Material
+
+    filled: list[tuple[str, str]] = []
+    for sku, ncm, _source in MATERIAL_NCM:
+        material = Material.objects.filter(sku=sku).first()
+        if material is None or (material.metadata or {}).get("ncm"):
+            continue
+        material.metadata = {**(material.metadata or {}), "ncm": ncm}
+        material.save(update_fields=["metadata"])
+        filled.append((sku, ncm))
+    return filled
 
 
 def house_cest_for(ncm: str) -> str:
@@ -175,14 +243,16 @@ class Command(BaseCommand):
 
         produtos = {
             p.sku: p
-            for p in Product.objects.filter(sku__in=[s for s, _n, _p in (*NCM_REVISADO, *BREAD_NCM)])
+            for p in Product.objects.filter(sku__in=[s for s, _n, _p in (*NCM_REVISADO, *BREAD_NCM, *NCM_CORRECTIONS)])
         }
 
         trocas: list[tuple[str, str, str, str, str]] = []
         ausentes: list[str] = []
         cests: list[tuple[str, str, str]] = []
+        materiais: list[tuple[str, str]] = []
+        fichas: list[str] = []
         with transaction.atomic():
-            for sku, ncm, porque in (*NCM_REVISADO, *BREAD_NCM):
+            for sku, ncm, porque in (*NCM_REVISADO, *BREAD_NCM, *NCM_CORRECTIONS):
                 produto = produtos.get(sku)
                 if produto is None:
                     ausentes.append(sku)
@@ -204,6 +274,8 @@ class Command(BaseCommand):
                 produto.save(update_fields=["metadata"])
                 trocas.append((sku, produto.name, atual or "(vazio)", ncm, porque))
             cests = fill_house_cest()
+            materiais = fill_material_ncm()
+            fichas = fill_recipe_fiscal_notes()
             if not apply:
                 transaction.set_rollback(True)
 
@@ -215,6 +287,14 @@ class Command(BaseCommand):
                 out.write(f"           {porque}")
         else:
             out.write(self.style.SUCCESS("\nNada a revisar: todos já estão no NCM revisado."))
+
+        if fichas:
+            out.write(self.style.SUCCESS(f"\n{verbo}: limite de 20% de presunto anotado em {', '.join(fichas)}."))
+
+        if materiais:
+            out.write(self.style.SUCCESS(f"\n{verbo}: NCM em {len(materiais)} insumo(s)."))
+            for sku, ncm in materiais:
+                out.write(f"  {sku} → NCM {ncm}")
 
         if cests:
             out.write(self.style.SUCCESS(f"\n{verbo}: CEST em {len(cests)} produto(s) da casa."))

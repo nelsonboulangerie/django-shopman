@@ -35,6 +35,7 @@ VALE_DO_TESTO = "QUEIJO-VALEDOTESTO-POMERODE"
 @pytest.fixture
 def catalog(db):
     Collection.objects.create(ref="mercearia", name="Mercearia", is_active=True)
+    Collection.objects.create(ref="bebidas-geladas", name="Bebidas geladas", is_active=True)
     for ref in ("pdv", "web", "whatsapp", "ifood"):
         Listing.objects.create(ref=ref, name=ref, is_active=True)
 
@@ -97,9 +98,9 @@ def test_a_manteiga_president_abre_em_insumo_pesado_e_quem_declarou_manda(catalo
     tablete = Material.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200")
     # Abre no insumo que as fichas já usam: nenhuma ficha precisa mudar.
     assert tablete.metadata["opens_into"] == {
-        "sku": "MANTEIGA-PRESIDENT-COM-SAL", "quantity": "0.200", "shelf_life_days": 30,
+        "sku": "MANTEIGA-PRESIDENT-COM-SAL", "quantity": "200", "shelf_life_days": 30,
     }
-    assert Material.objects.get(sku="MANTEIGA-PRESIDENT-COM-SAL").unit == "kg"
+    assert Material.objects.get(sku="MANTEIGA-PRESIDENT-COM-SAL").unit == "g"
 
     # O que o operador mudar no Compras não é desfeito por rodar de novo.
     tablete.metadata = {**tablete.metadata, "opens_into": {"sku": "OUTRO", "quantity": "0.2"}}
@@ -117,7 +118,10 @@ def test_cria_a_revenda_so_no_pdv(catalog):
     )
     assert dijon.is_sellable and not dijon.is_published
     # Mostarda preparada está na ST do PR (17.038.00): revenda com ST.
-    assert dijon.metadata["fiscal"] == {"profile": "tax_substitution", "ncm": "21033021", "unit": "UN", "cest": "1703800"}
+    # Importada, comprada de distribuidor no Brasil: origem 2.
+    assert dijon.metadata["fiscal"] == {
+        "profile": "tax_substitution", "ncm": "21033021", "unit": "UN", "cest": "1703800", "origin": "2",
+    }
     assert "purchase" not in dijon.metadata
     # Comprável: o cadastro de compra do MESMO SKU, na mesma unidade.
     compra = Material.objects.get(sku=DIJON)
@@ -446,9 +450,9 @@ def test_mercearia_no_perfil_antigo_e_reclassificada(catalog):
 
     queijo.refresh_from_db()
     assert queijo.metadata["fiscal"] == {
-        "profile": "standard", "ncm": "04069030", "unit": "UN", "cest": "1702400",
+        "profile": "standard", "ncm": "04069030", "unit": "UN", "cest": "1702400", "origin": "2",
     }
-    assert any(sku == queijo.sku and "fiscal: perfil standard" in lines[0]
+    assert any(sku == queijo.sku and any("fiscal: perfil standard" in line for line in lines)
                for sku, lines in report["updated"])
 
 
@@ -512,3 +516,85 @@ def test_agua_mineral_de_revenda_tem_st_e_o_cest_do_anexo_iii(catalog):
     fiscal = Product.objects.get(sku="AGUA-MINERAL-PRATA-310").metadata["fiscal"]
     assert fiscal == {"profile": "tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500"}
     assert resolve_fiscal_item(from_metadata({"fiscal": fiscal}))["cfop"] == "5405"
+
+
+def test_os_importados_saem_com_origem_2_e_os_nacionais_sem_origem(catalog):
+    apply_grocery(apply=True)
+
+    importados = {i.sku for i in GROCERY if i.origin == "2"}
+    assert len(importados) == 12  # + o Camembert, que o seed semeia: 13
+    assert Product.objects.get(sku="GELEIA-FIGO-STDALFOUR-284").metadata["fiscal"]["origin"] == "2"
+    # A Président é fabricada no Brasil (dono, 24/09): origem 0, que não se grava.
+    assert "MANTEIGA-SAL-PRESIDENT-200" not in importados
+    assert "origin" not in Product.objects.get(sku="MANTEIGA-SAL-PRESIDENT-200").metadata["fiscal"]
+    assert "origin" not in Product.objects.get(sku="RELISH-PEPINO-DUGA-320").metadata["fiscal"]
+
+
+def test_origem_ausente_e_preenchida_sem_mexer_no_resto(catalog):
+    Product.objects.create(
+        sku="QUEIJO-CAMEMBERT-ILEDEFRANCE-125", name="Camembert", unit="un", base_price_q=4000,
+        metadata={"fiscal": {"profile": "standard", "ncm": "04069020", "unit": "UN", "cest": "1702400"}},
+    )
+
+    report = apply_grocery(apply=True)
+
+    fiscal = Product.objects.get(sku="QUEIJO-CAMEMBERT-ILEDEFRANCE-125").metadata["fiscal"]
+    assert fiscal["origin"] == "2"
+    assert ("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", ["origem: → 2"]) in report["updated"]
+    assert resolve_fiscal_item(from_metadata({"fiscal": fiscal}))["icms_origem"] == "2"
+
+
+# ── A Água Prata em dois SKUs ──────────────────────────────────────────────
+
+
+def test_agua_com_gas_e_sku_proprio_com_st_na_colecao_de_bebidas(catalog):
+    apply_grocery(apply=True)
+
+    com_gas = Product.objects.get(sku="AGUA-GAS-PRATA-310")
+    assert (com_gas.name, com_gas.base_price_q) == ("Água Mineral com Gás Prata 310ml", 700)
+    assert get_social_attributes(com_gas).gtin == "7897123884043"
+    assert com_gas.metadata["fiscal"] == {
+        "profile": "tax_substitution", "ncm": "22011000", "unit": "UN", "cest": "0300500",
+    }
+    assert com_gas.collection_items.get().collection.ref == "bebidas-geladas"
+
+
+def test_a_agua_de_antes_vira_a_sem_gas_e_a_venda_com_gas_muda_de_sku(catalog):
+    from shopman.backstage.models import ProductAlias
+
+    agua = Product.objects.create(
+        sku="AGUA-MINERAL-PRATA-310", name="Água", unit="un", base_price_q=600, unit_weight_g=500,
+        metadata={"fiscal": {"profile": "standard", "ncm": "22011000", "unit": "UN"}},
+    )
+    sem = ProductAlias.objects.create(
+        source="yooga", external_name="Água Mineral Prata 310ml", status="confirmed", product=agua,
+    )
+    com = ProductAlias.objects.create(
+        source="yooga", external_name="Água Mineral Com Gás Prata 310ml", status="confirmed", product=agua,
+    )
+
+    apply_grocery(apply=True)
+
+    agua.refresh_from_db()
+    sem.refresh_from_db()
+    com.refresh_from_db()
+    assert (agua.name, agua.unit_weight_g) == ("Água Mineral Prata 310ml", 310)
+    assert sem.product.sku == "AGUA-MINERAL-PRATA-310"
+    assert com.product.sku == "AGUA-GAS-PRATA-310"
+
+
+def test_os_gtins_da_agua_fecham_o_digito():
+    from config.management.commands.apply_product_brands import RESALE
+
+    assert gtin_is_valid(RESALE["AGUA-MINERAL-PRATA-310"]["gtin"])
+    assert gtin_is_valid(next(i for i in GROCERY if i.sku == "AGUA-GAS-PRATA-310").gtin)
+
+
+def test_a_manteiga_abre_na_unidade_do_insumo_que_ela_vira():
+    """O tablete de 200 g abre em 200 g — a base dos insumos é a grama."""
+    from decimal import Decimal
+
+    for opening in command.OPENINGS:
+        assert opening.opened_unit == "g", opening.sku
+        weight = next(i.weight_g for i in GROCERY if i.sku == opening.sku)
+        assert Decimal(opening.quantity) == Decimal(weight), opening.sku

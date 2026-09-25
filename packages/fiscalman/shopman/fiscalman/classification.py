@@ -26,8 +26,12 @@ Design (decisions locked with the owner, 2026-06-28):
   enviado na NFC-e sempre que presente, obrigatório só com ST, e conferido
   contra o NCM pela tabela do Anexo como **aviso** (:mod:`.cest_table`).
 - A product carries only what *varies per product*: ``profile`` + ``ncm`` +
-  ``cest`` + ``unit``. The profile supplies CFOP/CSOSN/origem and PIS/COFINS
-  CST. ``resolve_fiscal_item`` merges both into the flat dict the fiscal
+  ``cest`` + ``origin`` + ``unit``. The profile supplies CFOP/CSOSN and
+  PIS/COFINS CST. **A origem é do produto** (tabela de origem da mercadoria,
+  campo ``orig`` do ICMS): nacional é ``0``; o importado que a casa compra de
+  um distribuidor no Brasil é ``2`` ("estrangeira, adquirida no mercado
+  interno") — os queijos Ile de France, as mostardas Maille e as geleias St.
+  Dalfour (a manteiga Président é fabricada no Brasil: 0). ``resolve_fiscal_item`` merges both into the flat dict the fiscal
   adapter consumes.
 
 PIS/COFINS CST = ``99`` (outras operações) — conforme a parametrização do contador
@@ -43,13 +47,28 @@ from dataclasses import dataclass
 NCM_RE = re.compile(r"^\d{8}$")   # NCM: 8 digits.
 CEST_RE = re.compile(r"^\d{7}$")  # CEST: 7 digits (format SS.III.DD).
 
+#: Origem da mercadoria (campo ``orig`` do ICMS, tabela A do Anexo do Ajuste
+#: SINIEF 07/05 — a mesma do Manual de Orientação da NF-e).
+ORIGINS: dict[str, str] = {
+    "0": "0 — Nacional",
+    "1": "1 — Estrangeira, importação direta",
+    "2": "2 — Estrangeira, adquirida no mercado interno",
+    "3": "3 — Nacional, conteúdo de importação acima de 40% e até 70%",
+    "4": "4 — Nacional, produzida conforme processos produtivos básicos",
+    "5": "5 — Nacional, conteúdo de importação de até 40%",
+    "6": "6 — Estrangeira, importação direta, sem similar nacional (lista CAMEX)",
+    "7": "7 — Estrangeira, mercado interno, sem similar nacional (lista CAMEX)",
+    "8": "8 — Nacional, conteúdo de importação acima de 70%",
+}
+DEFAULT_ORIGIN = "0"
+
 
 @dataclass(frozen=True)
 class FiscalProfile:
     """A reusable, named fiscal preset shared by many products.
 
     Holds the fields that depend on the *operation* (not the individual
-    product): CFOP, CSOSN, origem, PIS/COFINS CST. CFOP comes in two flavours —
+    product): CFOP, CSOSN, PIS/COFINS CST. CFOP comes in two flavours —
     intrastate and interstate — and the emission layer picks one by the buyer's
     UF (see ``resolve_fiscal_item``).
 
@@ -68,7 +87,6 @@ class FiscalProfile:
     csosn: str             # ICMS situação tributária no Simples (e.g. "102", "500").
     cfop_internal: str     # Operação interna (mesmo estado), e.g. "5102".
     cfop_interstate: str   # Operação interestadual, e.g. "6102".
-    icms_origem: str = "0"     # 0 = Nacional.
     pis_cst: str = "99"        # Simples (CRT-01): 99 = outras operações (parametrização do contador).
     cofins_cst: str = "99"
     requires_cest: bool = False
@@ -107,6 +125,7 @@ class ProductFiscalClassification:
     ncm: str = ""
     cest: str = ""
     unit: str = "UN"
+    origin: str = DEFAULT_ORIGIN
 
     @property
     def fiscal_profile(self) -> FiscalProfile | None:
@@ -125,6 +144,8 @@ class ProductFiscalClassification:
             problems.append("CEST deve ter 7 dígitos.")
         elif profile.requires_cest and not self.cest:
             problems.append("CEST (7 dígitos) é obrigatório com substituição tributária.")
+        if self.origin not in ORIGINS:
+            problems.append("Origem da mercadoria deve ser um código de 0 a 8.")
         return problems
 
     def warnings(self) -> list[str]:
@@ -148,6 +169,7 @@ def from_metadata(metadata: dict | None) -> ProductFiscalClassification:
         ncm=str(raw.get("ncm") or raw.get("codigo_ncm") or ""),
         cest=str(raw.get("cest") or ""),
         unit=str(raw.get("unit") or raw.get("unidade_comercial") or "UN"),
+        origin=str(raw.get("origin") or DEFAULT_ORIGIN),
     )
 
 
@@ -182,6 +204,8 @@ def to_metadata_fiscal(classification: ProductFiscalClassification) -> dict:
     }
     if classification.cest:
         data["cest"] = classification.cest
+    if classification.origin != DEFAULT_ORIGIN:
+        data["origin"] = classification.origin
     return data
 
 
@@ -204,7 +228,7 @@ def resolve_fiscal_item(
         "ncm": classification.ncm,
         "cfop": profile.cfop_interstate if interstate else profile.cfop_internal,
         "unit": classification.unit,
-        "icms_origem": profile.icms_origem,
+        "icms_origem": classification.origin,
         "icms_situacao_tributaria": profile.csosn,
         "pis_situacao_tributaria": profile.pis_cst,
         "cofins_situacao_tributaria": profile.cofins_cst,

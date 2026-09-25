@@ -11,6 +11,7 @@ import pytest
 from django.core.management import call_command
 from shopman.offerman.models import Collection, CollectionItem, Product
 
+from config.management.commands.apply_catalog_decisions import UNPUBLISH
 from shopman.shop.models import RetiredProduct
 
 pytestmark = pytest.mark.django_db
@@ -65,3 +66,26 @@ def test_a_cream_soda_sai_apagada_mesmo_tendo_saido_em_pedido():
     assert not Product.objects.filter(sku="CV").exists()
     assert OrderItem.objects.filter(sku="CV").exists()
     assert RetiredProduct.objects.get(sku="CV").collection_refs == "bebidas-geladas"
+
+
+def test_a_decisao_de_despublicar_nao_depende_de_ficha():
+    """Produto fora da loja por DECISÃO continua fora depois de ganhar ficha.
+
+    A Focaccia Cebola Roxa e a mini dela já nasciam despublicadas no seed, mas
+    por um motivo de passagem: estavam no `sem_ficha`, que é a lista de quem
+    ainda não tem alergênico e tabela nutricional. Quem preenchesse a ficha
+    delas as publicaria de novo — e desfaria, sem querer, a decisão que o dono
+    tomou em 24/09.
+    """
+    from pathlib import Path
+
+    from django.conf import settings
+
+    fonte = Path(settings.BASE_DIR, "config/management/commands/seed.py").read_text()
+    assert 'fora_da_loja = {"FOC", "FOCP"}' in fonte
+    assert '"is_published": sku not in sem_ficha and sku not in fora_da_loja,' in fonte
+    despublicados = {sku for sku, _motivo in UNPUBLISH}
+    assert {"FOC", "FOCP"} <= despublicados, (
+        "a decisão mora em DOIS lugares e os dois precisam concordar: o seed, "
+        "para um banco novo, e a tabela, para um banco que já roda"
+    )

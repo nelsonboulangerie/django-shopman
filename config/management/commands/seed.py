@@ -20,6 +20,7 @@ import random
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
+from unittest import mock
 
 from django.conf import settings
 
@@ -70,7 +71,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
-from config.management.commands.apply_fiscal_ncm import house_cest_for
+from config.management.commands.apply_fiscal_ncm import CROQUE_FISCAL_NOTE, house_cest_for
 from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
 from config.management.commands.apply_search_presence import (
@@ -1837,8 +1838,10 @@ class Command(BaseCommand):
             # ── Bebidas · Geladas ──
             ("FRAP", "Frappé", "Batido gelado: café, chocolate ou frutas vermelhas", 1800, "un", None, True,
              unsplash("photo-1719953107038-da34352e407e"), 400, ""),
-            ("AGUA-MINERAL-PRATA-310", "Água", "Água mineral, com ou sem gás", 600, "un", None, True,
-             unsplash("photo-1553564552-02656d6a2390"), 500, ""),
+            # Sem gás; a com gás é outro SKU (outro GTIN), criado pelo
+            # `apply_grocery_catalog` (AGUA-GAS-PRATA-310).
+            ("AGUA-MINERAL-PRATA-310", "Água Mineral Prata 310ml", "Água mineral sem gás", 600, "un", None, True,
+             unsplash("photo-1553564552-02656d6a2390"), 310, ""),
             # ── Bebidas · Especialidades na torneira ──
             ("SDLA", "Soda de Laranja", "Soda artesanal de laranja, feita na casa", 1400, "un", None, True,
              unsplash("photo-1598830853058-3474f6a66003"), 300, ""),
@@ -2287,7 +2290,7 @@ class Command(BaseCommand):
                 "allergens": [],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
-                "approx_dimensions": "garrafa 500 ml",
+                "approx_dimensions": "garrafa 310 ml",
             },
             "SDLA": {
                 "allergens": [],
@@ -2411,6 +2414,12 @@ class Command(BaseCommand):
             "default": "19059090",
             # Só o pão de forma de verdade fica em 1905.90.10.
             "FORMA": "19059010",
+            # Sanduíche com embutido predominante é Cap. 16 (ver
+            # `apply_fiscal_ncm.NCM_CORRECTIONS`); croques, queijo-quente e
+            # pain perdu seguem 1905.90.90.
+            "HOD": "16010000",
+            "HODP": "16010000",
+            "JB": "16024100",
             # ── Bebidas PREPARADAS na loja (revisão de 23/09/2026) ───────────
             # O capítulo 22 é o das bebidas PRONTAS; o 21.01 e o 21.06 são das
             # preparações que servem para FAZER bebida (pó solúvel, extrato,
@@ -2443,9 +2452,9 @@ class Command(BaseCommand):
             ),
             "AGUA-MINERAL-PRATA-310": "22011000",
             # Mercearia (revenda/produção própria — validar com o contador).
-            "TPND": "20059900",
+            "TPND": "20057000",
             "RTAT": "20059900",
-            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069020",
+            "QUEIJO-CAMEMBERT-ILEDEFRANCE-125": "04069030",
             # ── Linha Chai Kãnfa (19/08) ──
             # ⚠️ Sem isto os 12 cairiam no default de PANIFICAÇÃO (1905.90.90),
             # que é o NCM errado para chá.
@@ -2487,6 +2496,14 @@ class Command(BaseCommand):
         # e do tipo que ninguém inventa. Nascem despublicados de propósito; o
         # portão de completude lá embaixo é justamente quem cobra isso, e ele
         # está certo. Publicar é um passo do gestor, depois de preencher a ficha.
+        # ⚠️ DECISÃO do dono, não consequência de ficha faltando. Estes saem da
+        # loja e FICAM no cadastro, e continuam fora mesmo depois de alguém
+        # preencher a ficha deles — que é o que os distingue do `sem_ficha`
+        # abaixo. A Focaccia Cebola Roxa vendeu 34 em 12 meses (a de bacon,
+        # 1.367) e a mini dela 16; ele decidiu em 24/09 tirá-las da vitrine sem
+        # apagá-las. Ver `apply_catalog_decisions.UNPUBLISH`.
+        fora_da_loja = {"FOC", "FOCP"}
+
         sem_ficha = {
             # Seguem todos aqui, mesmo os que herdaram ficha dos "do dia". O Chá
             # Hibisco e o Chá Tônica saíram em 24/09: têm ingredientes, tabela
@@ -2535,7 +2552,7 @@ class Command(BaseCommand):
                     "base_price_q": price_q,
                     "unit": unit,
                     "shelf_life_days": shelf_life,
-                    "is_published": sku not in sem_ficha,
+                    "is_published": sku not in sem_ficha and sku not in fora_da_loja,
                     "is_sellable": sellable,
                     "availability_policy": AvailabilityPolicy.PLANNED_OK,
                     "image_url": image,
@@ -4782,6 +4799,9 @@ class Command(BaseCommand):
             "MANTEIGA-PRESIDENT-COM-SAL": ("g", 60), "WASABI": ("g", 365),
             "PEPINO-CORNICHO-CONSERVA": ("g", 365), "FLOR-DE-SAL": ("g", None),
         }
+        from config.management.commands.apply_fiscal_ncm import MATERIAL_NCM
+
+        material_ncm = {sku: ncm for sku, ncm, _source in MATERIAL_NCM}
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
             metadata = {k: v for k, v in profile.items() if k != "label"}
@@ -4795,6 +4815,8 @@ class Command(BaseCommand):
                     metadata["alt_suppliers"] = alternativos
             elif sku == "PRESUNTO-CASA":
                 metadata["supplier_note"] = "produção própria (jambon blanc da casa)"
+            if sku in material_ncm:
+                metadata["ncm"] = material_ncm[sku]
             Material.objects.update_or_create(
                 sku=sku,
                 defaults={
@@ -5001,6 +5023,11 @@ class Command(BaseCommand):
                         # invariante de massa da ficha (`Recipe.clean`) e impede
                         # que uma massa volte a render mais do que pesa.
                         **({"output_unit": "g"} if _is_preparation(rd["ref"]) else {}),
+                        # O croque sai na nota como produto de padaria (1905.90.90)
+                        # enquanto o presunto não passar de 20% do peso do
+                        # sanduíche: acima disso a Nota 2 do Cap. 16 o leva para
+                        # 1602 (auditoria fiscal de 24/09).
+                        **({"fiscal_note": CROQUE_FISCAL_NOTE} if rd["ref"].startswith("croque-") else {}),
                     },
                 },
             )
@@ -5144,12 +5171,16 @@ class Command(BaseCommand):
         # prateleira para insumo ainda sem ficha). O refresh_seed_dates repõe
         # ao MESMO alvo num banco envelhecido — fonte única.
         # kind default (ADJUST = saldo de abertura), igual ao estoque de produto.
+        # Onde o Compras receberia: revenda na loja (conta para a venda),
+        # insumo no depósito (``shop/services/receiving_position.py``).
+        from shopman.shop.services.receiving_position import receiving_position
+
         abertura = material_opening_targets()
         for sku, quantidade in abertura.items():
             stock.receive(
                 quantity=quantidade,
                 sku=sku,
-                position=deposito,
+                position=receiving_position(sku),
                 reason="Saldo de abertura de insumo (seed)",
             )
         maiores = ", ".join(
@@ -6078,10 +6109,17 @@ class Command(BaseCommand):
             "notifications": _remote_notifications,
         }
         _marketplace_config = {
-            # stale_new_alert < hold_ttl_minutes (20 < 30): o operador é cutucado
-            # ENQUANTO a reserva de estoque ainda vale, não no exato minuto em que
-            # ela expira (senão o alerta chega tarde demais para ser útil).
-            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 20},
+            # O iFood cancela o pedido que ninguém confirma em 8 minutos (SLA da
+            # doc; medido a 8min10s em 19/09/2026, seis pedidos seguidos). O card
+            # conta esse prazo a partir do `createdAt` deles, e o alerta de pedido
+            # esquecido tem de tocar ANTES: com 20 ele tocava doze minutos depois
+            # de o pedido já ter sido recolhido, sobre algo que não dava mais para
+            # salvar. Cinco deixa três minutos para o operador agir.
+            "confirmation": {
+                "mode": "manual",
+                "stale_new_alert_minutes": 5,
+                "external_sla_minutes": 8,
+            },
             "payment": {"method": "external", "timing": "external"},
             # Marketplace: o pedido já foi comitado e PAGO no iFood. Não rejeitar
             # localmente por estoque/listing — aceitar e deixar o operador tratar
@@ -6732,7 +6770,7 @@ class Command(BaseCommand):
                 pending,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.PENDING,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-pending",
                 expires_at=now + timedelta(minutes=6),
             )
@@ -6763,7 +6801,7 @@ class Command(BaseCommand):
                 expired,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.PENDING,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-expired",
                 expires_at=now - timedelta(minutes=3),
             )
@@ -6795,7 +6833,7 @@ class Command(BaseCommand):
                 late_paid,
                 method=PaymentIntent.Method.PIX,
                 status=PaymentIntent.Status.CAPTURED,
-                gateway="efi",
+                gateway=self._pix_gateway(),
                 gateway_id="seed-edge-pix-after-cancel",
                 captured_at=now - timedelta(minutes=5),
             )
@@ -6918,6 +6956,27 @@ class Command(BaseCommand):
         )
         return order
 
+    def _pix_gateway(self) -> str:
+        """Gateway do adapter de Pix EM USO — a cobrança semeada nasce como ele a criaria.
+
+        O seed gravava ``efi`` fixo. Num ambiente com o Pix simulado (o alpha),
+        o estorno de um pedido cancelado ia para o caminho da Efí com uma cobrança
+        que nunca existiu lá, a trava de ambiente recusava e o Gestor recebia
+        ``payment_reconciliation_failed`` crítico a cada reseed.
+        """
+        from shopman.shop.adapters import get_adapter
+        from shopman.shop.services.payment import _gateway_for_adapter
+
+        return _gateway_for_adapter(get_adapter("payment", method="pix")) or "mock"
+
+    @staticmethod
+    def _pix_gateway_data(gateway: str) -> dict:
+        """Cobrança Efí carrega o ambiente de origem, como o adapter grava."""
+        if gateway != "efi":
+            return {}
+        sandbox = (getattr(settings, "SHOPMAN_EFI", {}) or {}).get("sandbox", True)
+        return {"provider_environment": "sandbox" if sandbox else "production"}
+
     def _attach_edge_payment_intent(
         self,
         order: Order,
@@ -6936,6 +6995,7 @@ class Command(BaseCommand):
             status=status,
             amount_q=order.total_q,
             gateway=gateway,
+            gateway_data=self._pix_gateway_data(gateway),
             gateway_id=f"{gateway_id}-{order.ref}",
             expires_at=expires_at,
             captured_at=captured_at,
@@ -7217,7 +7277,7 @@ class Command(BaseCommand):
             paid_pix,
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.CAPTURED,
-            gateway="efi",
+            gateway=self._pix_gateway(),
             gateway_id="seed-qa-pix-captured",
             captured_at=paid_pix.created_at + timedelta(minutes=3),
         )
@@ -7263,7 +7323,8 @@ class Command(BaseCommand):
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.REFUNDED,
             amount_q=returned.total_q,
-            gateway="efi",
+            gateway=self._pix_gateway(),
+            gateway_data=self._pix_gateway_data(self._pix_gateway()),
             gateway_id=f"seed-qa-refunded-{returned.ref}",
             captured_at=returned.created_at + timedelta(minutes=5),
         )
@@ -7314,7 +7375,7 @@ class Command(BaseCommand):
             pix_pending,
             method=PaymentIntent.Method.PIX,
             status=PaymentIntent.Status.PENDING,
-            gateway="efi",
+            gateway=self._pix_gateway(),
             gateway_id="seed-qa-pix-pending",
             expires_at=timezone.now() + timedelta(minutes=8),
         )
@@ -7844,7 +7905,7 @@ class Command(BaseCommand):
                 continue
 
             method = PaymentIntent.Method.PIX if i % 10 < 7 else PaymentIntent.Method.CARD
-            gateway = "efi" if method == PaymentIntent.Method.PIX else "stripe"
+            gateway = self._pix_gateway() if method == PaymentIntent.Method.PIX else "stripe"
             intent_ref = f"PI-{uuid.uuid4().hex[:12].upper()}"
 
             intent = PaymentIntent(
@@ -7854,6 +7915,7 @@ class Command(BaseCommand):
                 status=PaymentIntent.Status.CAPTURED,
                 amount_q=order.total_q,
                 gateway=gateway,
+                gateway_data=self._pix_gateway_data(gateway),
                 gateway_id=f"gw-{uuid.uuid4().hex[:16]}",
                 captured_at=order.created_at + timedelta(minutes=5),
             )
@@ -8829,16 +8891,38 @@ class Command(BaseCommand):
             identification="DEMO-COURIER-READER", defaults={"label": "Maquininha de demonstração"},
         )
         equipment_ref = f"card_machine:{device.ref}"
+        # Entrega a domicílio sai com NFC-e (a cobrança na porta a emite na
+        # conclusão), e a SEFAZ exige CPF e endereço completo do destinatário.
+        # Sem os dois, o seed plantava uma nota recusada e um alerta crítico
+        # ``fiscal_emit_failed`` a cada reseed — defeito que a casa nunca teve.
+        # Por isso o pedido é de telefone pelo PDV (o único lugar que pede o CPF
+        # da nota) e o endereço é o cadastrado do cliente.
+        home = CustomerAddress.objects.filter(customer=customer, is_default=True).first()
+        if home is None:
+            return
+        structured = {
+            "formatted_address": home.formatted_address,
+            "route": home.route,
+            "street_number": home.street_number,
+            "complement": home.complement,
+            "neighborhood": home.neighborhood,
+            "city": home.city,
+            "state_code": home.state_code,
+            "postal_code": home.postal_code,
+        }
         base_data = {
             "customer_ref": customer.ref,
             "customer": {"name": customer.name, "phone": customer.phone or ""},
             "fulfillment_type": "delivery",
-            "delivery_address": "Rua das Flores, 120 - Centro",
+            "delivery_address": home.formatted_address,
+            "delivery_address_structured": {k: v for k, v in structured.items() if v},
+            # CPF sintético de dígito verificador válido: dado de demonstração.
+            "fiscal": {"issue_document": True, "tax_id": "12345678909"},
         }
 
         settled = self._make_qa_order(
             ref="DLV-ACERTADA",
-            channel_ref=STOREFRONT_REF,
+            channel_ref="pdv",
             status=Order.Status.READY,
             items=[self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}},
@@ -8858,7 +8942,7 @@ class Command(BaseCommand):
 
         on_the_road = self._make_qa_order(
             ref="DLV-NARUA",
-            channel_ref=STOREFRONT_REF,
+            channel_ref="pdv",
             status=Order.Status.READY,
             items=[self._qa_line(baguete, 3), self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 10000}},
@@ -10157,6 +10241,11 @@ class Command(BaseCommand):
         Os pedidos de QA continuam onde estão; estes só somam o movimento que
         uma casa em operação teria. Vão em lote, sem passar pelo lifecycle:
         aqui interessa a série de vendas, não o ciclo do pedido.
+
+        A venda por Pix/cartão ganha o pagamento que o PDV registra no Payman
+        (atestado no terminal, ``PaymentService.settle``). Sem ele, a
+        conciliação diária achava um ``digital_order_missing_intent`` por venda
+        e mandava ``payment_reconciliation_failed`` ao gestor todo dia.
         """
         from shopman.orderman.models import OrderItem
 
@@ -10165,6 +10254,7 @@ class Command(BaseCommand):
             return 0
 
         Order.objects.filter(ref__startswith="BIV-").delete()
+        PaymentIntent.objects.filter(order_ref__startswith="BIV-").delete()
         today = timezone.localdate()
         rng = random.Random(20260821)
         contexts = {
@@ -10184,7 +10274,8 @@ class Command(BaseCommand):
                 day, context, offset=offset, days=self.BI_LONG_DAYS, rng=rng
             )
             price_factor = self._bi_price_factor(offset=offset, days=self.BI_LONG_DAYS)
-            orders, lines_by_ref = [], {}
+            orders, lines_by_ref, intents = [], {}, []
+            sold_at = self._at(day, 11)
             for index in range(count):
                 # Convenção de ref da casa: PREFIXO-aammdd-sufixo (há teste cobrando).
                 ref = f"BIV-{day:%y%m%d}-{index}"
@@ -10195,12 +10286,26 @@ class Command(BaseCommand):
                     )
                 ]
                 total_q = sum(unit * qty for _p, qty, unit in lines)
+                data = self._bi_native_payment(day, total_q, rng)
+                method = data["payment"]["method"]
+                if method in (PaymentIntent.Method.PIX, PaymentIntent.Method.CARD):
+                    intent_ref = f"PI-{ref}"
+                    data["payment"]["intent_ref"] = intent_ref
+                    intents.append(
+                        PaymentIntent(
+                            ref=intent_ref, order_ref=ref, method=method,
+                            status=PaymentIntent.Status.CAPTURED, amount_q=total_q,
+                            gateway="", gateway_id="",
+                            gateway_data={"asserted_at_terminal": True},
+                            captured_at=sold_at,
+                        )
+                    )
                 orders.append(
                     Order(
                         ref=ref, channel_ref="pdv", session_key=f"seed-{ref}",
                         status=Order.Status.COMPLETED,
                         total_q=total_q,
-                        data=self._bi_native_payment(day, total_q, rng),
+                        data=data,
                         snapshot={"seed": "nelson", "source": "bi_native_volume"},
                     )
                 )
@@ -10222,10 +10327,21 @@ class Command(BaseCommand):
                 ],
                 batch_size=500,
             )
+            # A transação é imutável (nem ``update`` passa): a data da venda entra
+            # no próprio insert, com o relógio do ``auto_now_add`` na hora dela.
+            with mock.patch("django.utils.timezone.now", return_value=sold_at):
+                PaymentIntent.objects.bulk_create(intents, batch_size=500)
+                PaymentTransaction.objects.bulk_create(
+                    [
+                        PaymentTransaction(
+                            intent=intent, type=PaymentTransaction.Type.CAPTURE, amount_q=intent.amount_q,
+                        )
+                        for intent in PaymentIntent.objects.filter(order_ref__startswith=f"BIV-{day:%y%m%d}-")
+                    ],
+                    batch_size=500,
+                )
             # created_at é auto_now_add: só depois do insert dá para datar.
-            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(
-                created_at=self._at(day, 11)
-            )
+            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(created_at=sold_at)
             created += len(orders)
         return created
 

@@ -114,6 +114,12 @@ class GroceryItem:
     gtin_source: str = ""
     #: Perfil fiscal: ``standard`` (sem ST) ou ``tax_substitution`` (na ST do PR).
     profile: str = "standard"
+    #: Origem da mercadoria (``orig`` do ICMS). ``2`` = importado comprado de
+    #: distribuidor no Brasil.
+    origin: str = "0"
+    #: Coleção principal. A mercearia é a casa de quase todos; bebida
+    #: industrializada mora em ``bebidas-geladas``.
+    collection: str = "mercearia"
 
 
 #: O GTIN que veio da web: duas fontes ou mais concordando, e ninguém leu a
@@ -121,6 +127,13 @@ class GroceryItem:
 WEB_UNCONFIRMED = "web, a confirmar na embalagem"
 #: O GTIN que o dono leu na embalagem — a fonte que decide.
 OWNER_PACKAGE = "embalagem, dono, 24/09"
+
+
+#: Origem 2 — "estrangeira, adquirida no mercado interno": o importado que a
+#: casa compra de distribuidor no Brasil (Ile de France, Maille, St. Dalfour).
+#: A manteiga Président é FABRICADA NO BRASIL: origem 0 (dono, 24/09/2026). A
+#: próxima NF-e de compra confere o ``orig`` do fornecedor.
+IMPORTED_BOUGHT_HERE = "2"
 
 
 #: Revenda real da Mercearia. Nome e preço: Yooga (preço mais praticado);
@@ -166,46 +179,46 @@ GROCERY: tuple[GroceryItem, ...] = (
     #   francês diz quatro frutas, o brasileiro diz frutas vermelhas (dono,
     #   24/09). Um produto só; "4 frutas" entra como palavra de busca.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-284", "Geleia Damasco St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380957543", "20079910", "1709400", 284, ("geleia", "damasco", "fruta")),
+                "084380957543", "20079910", "1709400", 284, ("geleia", "damasco", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FIGO-STDALFOUR-284", "Geleia Figo St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380959042", "20079910", "1709400", 284, ("geleia", "figo", "fruta")),
+                "084380959042", "20079910", "1709400", 284, ("geleia", "figo", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-284", "Geleia Frutas Vermelhas St. Dalfour 284g", 4200,
-                "St. Dalfour", "084380957840", "20079910", "1709400", 284, ("geleia", "frutas vermelhas", "4 frutas", "fruta")),
+                "St. Dalfour", "084380957840", "20079910", "1709400", 284, ("geleia", "frutas vermelhas", "4 frutas", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-LARANJA-STDALFOUR-284", "Geleia Laranja St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380957949", "20079100", "1709400", 284, ("geleia", "laranja", "fruta")),
+                "084380957949", "20079100", "1709400", 284, ("geleia", "laranja", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-LIMAO-STDALFOUR-284", "Geleia Limão St. Dalfour 284g", 4200, "St. Dalfour",
-                "810019371295", "20079100", "1709400", 284, ("geleia", "limao", "fruta")),
+                "810019371295", "20079100", "1709400", 284, ("geleia", "limao", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-MORANGO-STDALFOUR-284", "Geleia Morango St. Dalfour 284g", 4200, "St. Dalfour",
-                "084380957444", "20079910", "1709400", 284, ("geleia", "morango", "fruta")),
+                "084380957444", "20079910", "1709400", 284, ("geleia", "morango", "fruta"), origin=IMPORTED_BOUGHT_HERE),
     # Os dois minis nascem no lugar do `GL` (placeholder de sabor indefinido,
     # que o dono mandou sair em 22/09 — ver `apply_catalog_decisions`). O NCM do
     # de damasco veio da nota como 2007.99.90 e sem CEST; o de frutas
     # vermelhas, como os potes grandes.
     GroceryItem("GELEIA-DAMASCO-STDALFOUR-28", "Mini Geleia Damasco St. Dalfour 28g", 900, "St. Dalfour",
-                "084380980428", "20079990", "1709400", 28, ("geleia", "damasco", "fruta", "mini")),
+                "084380980428", "20079910", "1709400", 28, ("geleia", "damasco", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("GELEIA-FRUTASVERM-STDALFOUR-28", "Mini Geleia Frutas Vermelhas St. Dalfour 28g", 900,
                 "St. Dalfour", "084380980626", "20079910", "1709400", 28,
-                ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini")),
+                ("geleia", "frutas vermelhas", "4 frutas", "fruta", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Laticínios ──
     GroceryItem("MANTEIGA-SAL-PRESIDENT-200", "Manteiga Extra com Sal Président 200g", 1500, "Président",
                 "3228020355741", "04051000", "1702500", 200, ("manteiga", "com sal")),
     GroceryItem("QUEIJO-BRIE-ILEDEFRANCE-25", "Queijo Mini Brie Ile de France 25g", 1000, "Ile de France",
-                "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini")),
+                "3161712002113", "04069030", "1702400", 25, ("queijo", "brie", "mini"), origin=IMPORTED_BOUGHT_HERE),
     # ── Mostardas Maille ──
     GroceryItem("MOSTARDA-MEL-MAILLE-215", "Mostarda com Mel Maille 215g", 4200, "Maille",
-                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="tax_substitution"),
+                "3036810204014", "21033021", "1703800", 215, ("mostarda", "mel"), profile="tax_substitution", origin=IMPORTED_BOUGHT_HERE),
     GroceryItem("MOSTARDA-DIJON-MAILLE-215", "Mostarda Dijon Maille 215g", 3500, "Maille",
-                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="tax_substitution"),
+                "3036810201280", "21033021", "1703800", 215, ("mostarda", "dijon"), profile="tax_substitution", origin=IMPORTED_BOUGHT_HERE),
     # A embalagem (lida pelo dono em 24/09) confirma o 3036810207589 que
     # Auchan PT, Covabra e Open Food Facts davam; o Cosmos (…7558) errava.
     GroceryItem("MOSTARDA-ANCIENNE-MAILLE-210", "Mostarda à l'Ancienne Maille 210g", 4200, "Maille",
                 "3036810207589", "21033021", "1703800", 210, ("mostarda", "ancienne", "graos"),
-                gtin_source=OWNER_PACKAGE, profile="tax_substitution"),
+                gtin_source=OWNER_PACKAGE, profile="tax_substitution", origin=IMPORTED_BOUGHT_HERE),
     # ── Mirante ──
     # 120 g e R$ 26 (dono, 24/09). GTIN-12 602883466111 (a embalagem traz
     # 0602883466111), guardado como os outros Mirante.
     GroceryItem("CHURRASQUINHO-PIMENTA-MIRANTE-120", "Churrasquinho de Pimenta Mirante 120g", 2600,
-                "Mirante", "602883466111", "21039099", "", 120,
+                "Mirante", "602883466111", "20059900", "1709200", 120,
                 ("churrasquinho", "pimenta", "conserva"), gtin_source=OWNER_PACKAGE),
     # ── Chá Kãnfa em lata ──
     # A lata de Chalosofia (dono, embalagem, 24/09). ⚠️ Na loja da Kãnfa o
@@ -220,6 +233,14 @@ GROCERY: tuple[GroceryItem, ...] = (
     GroceryItem("CHA-VITAL-KANFA-L70", "Vital Chai Kãnfa — Lata 70g", 7300, "Kãnfa",
                 "7898708850743", "09021000", "1709700", 70, ("cha", "vital", "chai", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
+    # ── Água com gás ──
+    # A Água Prata virou dois SKUs (auditoria de 24/09): a sem gás segue
+    # AGUA-MINERAL-PRATA-310 (a do seed); esta é a com gás. GTIN da
+    # PlanilhaProdutos2024 (dígito conferido), preço da planilha consolidada.
+    # Água mineral está na ST do PR: 500/5405, CEST 03.005.00.
+    GroceryItem("AGUA-GAS-PRATA-310", "Água Mineral com Gás Prata 310ml", 700, "Prata",
+                "7897123884043", "22011000", "0300500", None, ("agua", "mineral", "com gas", "bebida", "frio"),
+                profile="tax_substitution", collection="bebidas-geladas"),
     # ── Frios ──
     GroceryItem("PRESUNTO-CRU-VITOBAUDUCCI-100", "Presunto Cru Fatiado Vito Bauducci 100g", 3800,
                 "Vito Bauducci", "7890203650002", "02101900", "1708701", 100, ("presunto", "cru", "fatiado")),
@@ -326,9 +347,9 @@ FISCAL_NOTES: dict[str, str] = {
         "como a casa já praticava (1702300 no Yooga). A alternativa seria 17.024.00."
     ),
     "churrasquinho": (
-        "2103.90.99 (outros molhos) não está no Anexo XVII: sem CEST. O Yooga usava "
-        "1709200, que é do 2005 — incoerente. Se a NF-e de compra trouxer 2103.90.91 "
-        "(molho de pimenta), vira 17.035.00 e ST."
+        "Churrasquinho de Pimenta Mirante: pimenta em conserva em óleo, não molho — "
+        "hortícola preparado, 2005.99.00, CEST 17.092.00, sem ST (auditoria de 24/09). "
+        "A casa faturava 2103.90.99 + 17.092.00, incoerente; a próxima NF de compra confere."
     ),
 }
 
@@ -343,6 +364,7 @@ class SeedResaleFiscal:
     profile: str = "standard"
     #: Peso líquido confirmado pelo dono (latas, 24/09). ``None`` = não mexe.
     weight_g: int | None = None
+    origin: str = "0"
 
 
 #: Os chás Kãnfa voltam ao NCM da NF-e (0902.10.00, chá verde em embalagem
@@ -359,7 +381,7 @@ SEED_RESALE_FISCAL: tuple[SeedResaleFiscal, ...] = (
         "CHA-ACONCHEGO-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-INTIMIDADE-KANFA-P50",
         "CHA-INTUICAO-KANFA-P50", "CHA-MAMA-KANFA-P50", "CHA-NAMASTE-KANFA-P50", "CHA-VITAL-KANFA-P50",
     )),
-    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069020", "1702400"),
+    SeedResaleFiscal("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "04069030", "1702400", origin=IMPORTED_BOUGHT_HERE),
     # Água mineral está na ST do PR, e a casa a faturava com 500/5405 e o CEST
     # 03.005.00 (água em embalagem plástica até 500 ml — Anexo III do Conv.
     # 142/2018; se a garrafa de 310 ml for de VIDRO, o CEST é 03.001.00).
@@ -441,6 +463,7 @@ YOOGA_NAMES: dict[str, str] = {
     # parecido"); o placeholder sai e a venda volta para o queijo que ela é.
     "Queijo Vale do Testo Pomerode  3m": "QUEIJO-VALEDOTESTO-POMERODE",
     "Caixa Presente Lille": "LILLE",
+    "Água Mineral Com Gás Prata 310ml": "AGUA-GAS-PRATA-310",
     "Caixa Presente Nice": "NICE",
 }
 
@@ -449,9 +472,17 @@ YOOGA_NAMES: dict[str, str] = {
 #: curadoria de alguém, e fica.
 LEAVING_PLACEHOLDERS: frozenset[str] = frozenset({"MT", "QP", "CX", "BK", "GR", "LN", "THL"})
 
+#: De-para que apontava para um SKU que se dividiu: o nome do Yooga diz a qual
+#: metade a venda pertence (a com gás estava no SKU único da água).
+SPLIT_FROM: dict[str, str] = {
+    "Água Mineral Com Gás Prata 310ml": "AGUA-MINERAL-PRATA-310",
+}
+
 
 REAL_PLACEHOLDERS: tuple[RealPlaceholder, ...] = (
     RealPlaceholder("RTAT", "Patê de Ratatouille", 2400, "Ratatouille 90g", 1800, 90),
+    # A água deixa de ser "com ou sem gás": este SKU é a sem gás.
+    RealPlaceholder("AGUA-MINERAL-PRATA-310", "Água", 600, "Água Mineral Prata 310ml", 600, 310),
     RealPlaceholder("TPND", "Tapenade", 2400, "Tapenade Azeitonas Pretas 100g", 2900, 100),
     RealPlaceholder("QUEIJO-CAMEMBERT-ILEDEFRANCE-125", "Camembert", 3800,
                     "Queijo Camembert Ile de France 125g", 4000, 125),
@@ -487,8 +518,12 @@ def _ensure_collection(product, collection) -> None:
     )
 
 
-def _wanted_fiscal(profile: str, ncm: str, cest: str, unit: str) -> dict:
-    return {"profile": profile, "ncm": ncm, "unit": unit.upper(), **({"cest": cest} if cest else {})}
+def _wanted_fiscal(profile: str, ncm: str, cest: str, unit: str, origin: str = "0") -> dict:
+    return {
+        "profile": profile, "ncm": ncm, "unit": unit.upper(),
+        **({"cest": cest} if cest else {}),
+        **({"origin": origin} if origin != "0" else {}),
+    }
 
 
 def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
@@ -500,21 +535,28 @@ def _sync_fiscal(product, wanted: dict, report: dict) -> list[str]:
     """
     metadata = _metadata(product)
     current = dict(metadata.get("fiscal") or {})
-    if all((current.get(k) or "") == (wanted.get(k) or "") for k in ("profile", "ncm", "cest", "unit")):
-        return []
+    lines: list[str] = []
+    # A origem ausente é o "0" padrão, não uma curadoria: a tabela a preenche.
+    if wanted.get("origin") and "origin" not in current:
+        current["origin"] = wanted["origin"]
+        metadata["fiscal"] = current
+        product.metadata = metadata
+        lines.append(f"origem: → {wanted['origin']}")
+    if all((current.get(k) or "") == (wanted.get(k) or "") for k in ("profile", "ncm", "cest", "unit", "origin")):
+        return lines
     legacy = not current or (current.get("profile", "standard") == "standard"
                              and not current.get("cest"))
     if not legacy:
-        for field in ("profile", "ncm", "cest"):
+        for field in ("profile", "ncm", "cest", "origin"):
             if (current.get(field) or "") != (wanted.get(field) or ""):
                 report["conflicts"].append((product.sku, field, current.get(field) or "", wanted.get(field) or ""))
-        return []
+        return lines
     metadata["fiscal"] = {**{k: v for k, v in current.items() if k != "cest"}, **wanted}
     product.metadata = metadata
     parts = [f"perfil {wanted['profile']}", f"ncm {wanted['ncm']}"]
     if wanted.get("cest"):
         parts.append(f"cest {wanted['cest']}")
-    return ["fiscal: " + ", ".join(parts)]
+    return [*lines, "fiscal: " + ", ".join(parts)]
 
 
 def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int | None,
@@ -571,7 +613,7 @@ def _apply_item(item: GroceryItem, collection, report: dict) -> None:
     lines: list[str] = []
     metadata = _metadata(product)
     product.metadata = metadata
-    fiscal_lines = _sync_fiscal(product, _wanted_fiscal(item.profile, item.ncm, item.cest, item.unit), report)
+    fiscal_lines = _sync_fiscal(product, _wanted_fiscal(item.profile, item.ncm, item.cest, item.unit, item.origin), report)
     if not is_new:
         lines.extend(fiscal_lines)
     metadata = _metadata(product)
@@ -695,8 +737,13 @@ def _link_aliases(report: dict) -> None:
     products = {p.sku: p for p in Product.objects.filter(sku__in=set(YOOGA_NAMES.values()))}
     aliases = ProductAlias.objects.filter(source="yooga", external_name__in=YOOGA_NAMES).filter(
         Q(product__isnull=True) | Q(product__sku__in=LEAVING_PLACEHOLDERS)
+        | Q(product__sku__in=set(SPLIT_FROM.values()), external_name__in=SPLIT_FROM)
     ).select_related("product")
     for alias in aliases:
+        if alias.product_id and alias.product.sku in SPLIT_FROM.values() and (
+            SPLIT_FROM.get(alias.external_name) != alias.product.sku
+        ):
+            continue
         target = products.get(YOOGA_NAMES[alias.external_name])
         if target is None:
             continue
@@ -713,7 +760,7 @@ def _apply_seed_resale_fiscal(entry: SeedResaleFiscal, report: dict) -> None:
     if product is None:
         report["missing"].append(entry.sku)
         return
-    lines = _sync_fiscal(product, _wanted_fiscal(entry.profile, entry.ncm, entry.cest, "UN"), report)
+    lines = _sync_fiscal(product, _wanted_fiscal(entry.profile, entry.ncm, entry.cest, "UN", entry.origin), report)
     if entry.weight_g is not None and product.unit_weight_g != entry.weight_g:
         lines.append(f"peso: {product.unit_weight_g} g → {entry.weight_g} g")
         product.unit_weight_g = entry.weight_g
@@ -779,7 +826,8 @@ class Opening:
 
 
 OPENINGS: tuple[Opening, ...] = (
-    # O tablete de 200 g abre em 0,200 kg de MANTEIGA-PRESIDENT-COM-SAL, o insumo
+    # O tablete de 200 g abre em 200 g de MANTEIGA-PRESIDENT-COM-SAL (a base dos
+    # insumos é a GRAMA desde 24/09 — #1082/#1083; em kg, "0.200" viraria 0,2 g), o insumo
     # que as fichas das montagens já usam (a manteiga de wasabi) — então nenhuma
     # ficha muda. As massas usam OUTRA manteiga (a sem sal, a granel) e ficam
     # como estão. Validade depois de aberta: 30 dias refrigerada — orientação
@@ -787,8 +835,8 @@ OPENINGS: tuple[Opening, ...] = (
     # conserva); o lote do aberto nunca passa da validade da embalagem
     # (``package_opening._opened_batch``). ⚠️ Conferir no rótulo da Président
     # que chega: se ele disser menos, vale o rótulo.
-    Opening("MANTEIGA-SAL-PRESIDENT-200", "MANTEIGA-PRESIDENT-COM-SAL", "Manteiga President com sal", "kg",
-            "0.200", 30, "orientação usual de rótulo de manteiga com sal refrigerada (conferir no rótulo)"),
+    Opening("MANTEIGA-SAL-PRESIDENT-200", "MANTEIGA-PRESIDENT-COM-SAL", "Manteiga President com sal", "g",
+            "200", 30, "orientação usual de rótulo de manteiga com sal refrigerada (conferir no rótulo)"),
 )
 
 
@@ -831,13 +879,16 @@ def apply_grocery(*, apply: bool) -> dict[str, list]:
         "refused": [], "no_price": [], "aliases": [], "missing": [],
         "left_out": sorted(LEFT_OUT.items()),
     }
-    collection = Collection.objects.filter(ref=COLLECTION_REF).first()
-    if collection is None:
-        raise CommandError(f"A coleção `{COLLECTION_REF}` não existe neste banco.")
+    refs = {COLLECTION_REF, *(item.collection for item in GROCERY)}
+    collections = {c.ref: c for c in Collection.objects.filter(ref__in=refs)}
+    missing = sorted(refs - set(collections))
+    if missing:
+        raise CommandError(f"Coleção inexistente neste banco: {', '.join(missing)}.")
+    collection = collections[COLLECTION_REF]
 
     with transaction.atomic():
         for item in GROCERY:
-            _apply_item(item, collection, report)
+            _apply_item(item, collections[item.collection], report)
         for box in GIFT_BOXES:
             _apply_gift_box(box, collection, report)
         for real in REAL_PLACEHOLDERS:

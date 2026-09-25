@@ -86,7 +86,7 @@ def test_tres_fichas_de_50_100_e_80_gramas_abrem_dois_tabletes(casa):
     assert _saldo(TABLETE, deposito) == Decimal("1")  # abriu o 2º só quando o aberto acabou
     assert _saldo(ABERTO) == Decimal("0.170")  # 0,050 + 0,200 − 0,080
 
-    # A vitrine nunca é aberta: o tablete exposto fica para o cliente.
+    # A loja só é aberta por último: enquanto o depósito tem, a vitrine fica intacta.
     assert _saldo(TABLETE, vitrine) == Decimal("2")
     # Revenda nunca vende o aberto: ele não tem cadastro de venda.
     assert not Product.objects.filter(sku=ABERTO).exists()
@@ -114,22 +114,36 @@ def test_a_abertura_conta_como_consumo_do_tablete_para_a_reposicao(casa):
     assert entrada.metadata["opened_from_sku"] == TABLETE
 
 
-def test_o_guardrail_conta_o_que_ainda_esta_fechado_fora_da_vitrine(casa):
-    assert openable_content(ABERTO) == Decimal("0.600")  # 3 tabletes do depósito, não os 2 da vitrine
+def test_o_guardrail_conta_todo_tablete_fechado_presente(casa):
+    # 3 do depósito + 2 da loja: abrir tira da venda, e a loja entra por último.
+    assert openable_content(ABERTO) == Decimal("1.000")
 
     from shopman.craftsman.protocols.inventory import MaterialNeed
 
     result = InventoryAvailabilityBackend().available([MaterialNeed(sku=ABERTO, quantity=Decimal("0.5"))])
     assert result.all_available is True
-    result = InventoryAvailabilityBackend().available([MaterialNeed(sku=ABERTO, quantity=Decimal("0.7"))])
+    result = InventoryAvailabilityBackend().available([MaterialNeed(sku=ABERTO, quantity=Decimal("1.1"))])
     assert result.all_available is False
 
 
-def test_sem_tablete_fechado_nao_abre_e_a_falta_segue_para_o_guardrail(casa):
-    deposito, _vitrine = casa
+def test_acabou_o_deposito_abre_da_loja_e_o_aberto_vai_para_o_estoque_de_insumo(casa):
+    deposito, vitrine = casa
     from shopman.stockman.services.movements import StockMovements
 
     StockMovements.issue(quantity=Decimal("3"), quant=Quant.objects.get(sku=TABLETE, position=deposito), reason="venda")
+    _fecha(_ficha("croissant", "50"))
+
+    assert _saldo(TABLETE, vitrine) == Decimal("1")  # 1 un saiu da venda
+    assert _saldo(ABERTO, vitrine) == Decimal("0")  # o aberto nunca fica na loja
+    assert _saldo(ABERTO, deposito) == Decimal("0.150")
+
+
+def test_sem_tablete_fechado_nao_abre_e_a_falta_segue_para_o_guardrail(casa):
+    deposito, vitrine = casa
+    from shopman.stockman.services.movements import StockMovements
+
+    StockMovements.issue(quantity=Decimal("3"), quant=Quant.objects.get(sku=TABLETE, position=deposito), reason="venda")
+    StockMovements.issue(quantity=Decimal("2"), quant=Quant.objects.get(sku=TABLETE, position=vitrine), reason="venda")
 
     from shopman.shop.services.package_opening import ensure_open_stock
 

@@ -153,8 +153,8 @@ const waGlimpse = computed(() => {
   return copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.')
 })
 const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'É prático e seguro, e não exige senha.'))
-const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Quer fazer você mesmo?'))
-const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Envie esta mensagem diretamente para o nosso WhatsApp'))
+const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Ou envie você mesmo'))
+const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
   hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'

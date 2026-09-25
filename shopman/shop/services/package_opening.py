@@ -28,9 +28,10 @@ no aberto (``MAKE``), no mesmo lugar e com lote próprio quando há validade
 depois de aberto. O consumo da ficha já tira do mais antigo primeiro
 (``consumable_quants``), então o aberto que sobrou é usado antes do novo.
 
-Nunca se abre embalagem da vitrine (``Position.is_saleable``): o que está
-exposto para o cliente fica para o cliente — a mesma régua do consumo da
-Produção.
+Abre-se primeiro do estoque interno; da loja (``Position.is_saleable``), por
+último — a revenda é recebida onde se vende (``receiving_position``), e abrir é
+tirar a unidade da venda ("1 un sai do estoque vendável", dono, 24/09). O
+aberto vai para o estoque de insumos, de onde a ficha consome.
 
 Cores não se importam (ADR-001): o Craftsman não sabe de embalagem nem o Buyman
 de receita. Abrir é composição, e mora no orquestrador — chamado antes do
@@ -90,14 +91,20 @@ def packages_opening_into(opened_sku: str) -> list[Package]:
 
 
 def _sealed_quants(package_sku: str):
-    """Embalagens fechadas que a produção pode abrir: fora da vitrine, mais antiga primeiro."""
-    from django.db.models import F
+    """Embalagens fechadas que a produção pode abrir: estoque interno primeiro, a loja por último.
+
+    A revenda é recebida onde se vende (``receiving_position``), então o
+    tablete costuma estar na loja — e abrir é justamente tirá-lo da venda
+    ("1 un sai do estoque vendável", dono, 24/09). Só estoque presente: o
+    planejado (``target_date``) não se abre.
+    """
+    from django.db.models import Case, IntegerField, Value, When
     from shopman.stockman.services.queries import StockQueries
 
     return (
-        StockQueries.list_quants(package_sku, include_empty=False)
-        .exclude(position__is_saleable=True)
-        .order_by(F("target_date").asc(nulls_first=True), "pk")
+        StockQueries.list_quants(package_sku, include_future=False, include_empty=False)
+        .annotate(_shop=Case(When(position__is_saleable=True, then=Value(1)), default=Value(0), output_field=IntegerField()))
+        .order_by("_shop", "pk")
     )
 
 
@@ -159,6 +166,8 @@ def open_package(package: Package, *, reason: str, user=None) -> bool:
     from shopman.stockman import Move
     from shopman.stockman.services.movements import StockMovements
 
+    from shopman.shop.services.receiving_position import MATERIAL, position_for_role
+
     for sealed in _sealed_quants(package.sku):
         if sealed.available < 1:
             continue
@@ -170,7 +179,8 @@ def open_package(package: Package, *, reason: str, user=None) -> bool:
             StockMovements.receive(
                 quantity=package.content,
                 sku=package.opened_sku,
-                position=sealed.position,
+                # O aberto é insumo: vai para onde o insumo mora, nunca fica na loja.
+                position=position_for_role(MATERIAL) if sealed.position.is_saleable else sealed.position,
                 batch=_opened_batch(package, sealed),
                 user=user,
                 reason=f"Aberto de {package.sku}: {reason}",

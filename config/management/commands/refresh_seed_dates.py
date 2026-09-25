@@ -126,11 +126,15 @@ class Command(BaseCommand):
             shop.save(update_fields=["defaults"])
 
         # ── 2. Despensa de insumos: repõe até o alvo (só o delta) ───────────
+        from shopman.shop.services.receiving_position import receiving_position
+
         deposito = Position.objects.filter(ref="deposito").first()
         if deposito is None:
             raise CommandError("Posição 'deposito' não existe — este banco não foi semeado.")
         for sku, alvo in sorted(material_opening_targets().items()):
-            atual = stock.available(sku, position=deposito)
+            # Revenda repõe na loja, insumo no depósito — onde o Compras recebe.
+            onde = receiving_position(sku)
+            atual = stock.available(sku, position=onde)
             delta = alvo - atual
             if delta <= 0:
                 continue
@@ -139,7 +143,7 @@ class Command(BaseCommand):
                 stock.receive(
                     quantity=delta,
                     sku=sku,
-                    position=deposito,
+                    position=onde,
                     reason="Rejuvenescimento: reposição ao alvo de abertura",
                     suppress_notifications=True,
                     synthetic_source="refresh_seed_dates",

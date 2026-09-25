@@ -1,5 +1,10 @@
 # Backstage POS Surface Contract
 
+> **Vocabulário fechado do PDV:** objeto, atos e grandezas estão em
+> [`suite-vocabulary.md`](suite-vocabulary.md) §3 — inclusive as decisões do dono que não se
+> reabrem (*validar* fica; comanda se **divide**, **transfere** e **junta**; **item é
+> unidade, nunca linha**).
+
 Status: canonical backend/projection/action contract  
 Date: 2026-05-23  
 Surface class: backstage operational POS surfaces (`/gestor/pos/`, `surfaces/pos-nuxt`, future POS clients)

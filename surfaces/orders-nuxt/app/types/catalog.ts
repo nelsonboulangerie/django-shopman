@@ -121,12 +121,19 @@ export interface NutritionFacts {
 }
 
 // Classificação fiscal do produto — espelha `fiscalman.classification`.
-// O que NÃO é por produto (CFOP, CSOSN, origem, PIS/COFINS) vem do perfil.
+// O que NÃO é por produto (CFOP, CSOSN, PIS/COFINS) vem do perfil.
 export interface ProductFiscal {
   profile: string;
   ncm: string;
   cest: string;
   unit: string;
+  /** Origem da mercadoria (orig do ICMS): 0 nacional, 2 importado comprado no Brasil… */
+  origin: string;
+}
+
+export interface FiscalOriginChoice {
+  key: string;
+  name: string;
 }
 
 export interface FiscalProfileChoice {
@@ -174,6 +181,7 @@ export interface ProductDetailProjection {
   readonly dietary_from_recipe: boolean;
   readonly nutrition_auto_filled: boolean;
   readonly fiscal_profiles: FiscalProfileChoice[];
+  readonly fiscal_origins?: FiscalOriginChoice[];
   /** Avisos do servidor (não bloqueiam): CEST incompatível com o NCM. */
   readonly fiscal_warnings?: string[];
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
@@ -201,6 +209,7 @@ export type ProductDetailPatch = Partial<
     | "dietary_from_recipe"
     | "nutrition_auto_filled"
     | "fiscal_profiles"
+    | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
     | "social"
