@@ -639,7 +639,7 @@ export interface MergePreviewProjection {
   actions: Action[];
 }
 
-/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', can_undo: 'bool', undo_label: 'str') */
+/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', loyalty_merged: 'bool', can_undo: 'bool', undo_label: 'str') */
 export interface MergeAuditRowProjection {
   id: string;
   source_ref: string;
@@ -650,6 +650,7 @@ export interface MergeAuditRowProjection {
   status: string;
   status_label: string;
   moved_label: string;
+  loyalty_merged: boolean;
   can_undo: boolean;
   undo_label: string;
 }

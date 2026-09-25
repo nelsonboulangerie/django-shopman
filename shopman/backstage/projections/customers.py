@@ -231,6 +231,9 @@ class MergeAuditRowProjection:
     status: str
     status_label: str
     moved_label: str
+    # Houve fidelidade somada? O desfazer não a devolve, e a confirmação só diz
+    # isso quando é verdade.
+    loyalty_merged: bool
     can_undo: bool
     # "Dá para desfazer por mais 6h12" / "Desfeita por ana em 24/09 às 10:00".
     undo_label: str
@@ -721,8 +724,8 @@ def build_merge_preview(source, target, preview) -> MergePreviewProjection:
             f"Tudo o que é dele passa para {target_name} ({target.ref})."
         ),
         undo_notice=(
-            f"Dá para desfazer por {MergeAudit.UNDO_WINDOW_HOURS} horas, em Clientes › Unificações. "
-            "Os pontos de fidelidade somados não voltam sozinhos."
+            f"Dá para desfazer por {MergeAudit.UNDO_WINDOW_HOURS} horas, em Clientes › Unificações."
+            + (" Os pontos de fidelidade somados não voltam com o desfazer." if preview.loyalty_merged else "")
         ),
         actions=(
             Action(
@@ -789,6 +792,7 @@ def build_merge_audit_list(limit: int = 50) -> MergeAuditListProjection:
                 status=str(audit.status),
                 status_label=str(status_labels.get(audit.status, audit.status)),
                 moved_label=", ".join(moved) if moved else "Nada além do próprio cadastro",
+                loyalty_merged=bool(audit.loyalty_merged),
                 can_undo=can_undo,
                 undo_label=undo_label,
             )

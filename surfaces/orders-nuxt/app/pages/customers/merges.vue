@@ -41,7 +41,7 @@ async function confirmUndo() {
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
       <p v-if="merges" class="mb-3 text-sm text-muted-foreground">
-        Cada unificação pode ser desfeita por {{ merges.undo_window_hours }} horas. Os pontos de fidelidade somados não voltam sozinhos.
+        Cada unificação pode ser desfeita por {{ merges.undo_window_hours }} horas. Pontos de fidelidade somados numa unificação não voltam com o desfazer.
       </p>
       <p v-if="message" role="alert" class="mb-3 text-sm text-destructive">{{ message }}</p>
       <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
@@ -58,7 +58,7 @@ async function confirmUndo() {
           <div class="min-w-0 text-sm">
             <p>
               <span class="font-mono text-xs">{{ row.source_ref }}</span>
-              <Icon name="lucide:arrow-right" class="mx-1 inline size-3.5 text-muted-foreground" />
+              <Icon name="lucide:arrow-right" class="mx-1 inline-block size-3.5 align-middle text-muted-foreground" />
               <NuxtLink :to="`/customers/${encodeURIComponent(row.target_ref)}`" class="font-medium hover:underline">
                 {{ row.target_name || row.target_ref }}
               </NuxtLink>
@@ -93,7 +93,7 @@ async function confirmUndo() {
           <UiDialogTitle>Desfazer a unificação?</UiDialogTitle>
           <UiDialogDescription v-if="confirming">
             {{ confirming.source_ref }} volta a ser um cadastro separado, com {{ confirming.moved_label }}.
-            Os pontos de fidelidade somados ficam em {{ confirming.target_ref }}.
+            <template v-if="confirming.loyalty_merged">Os pontos de fidelidade somados ficam em {{ confirming.target_ref }}: o desfazer não os devolve.</template>
           </UiDialogDescription>
         </UiDialogHeader>
         <UiDialogFooter>
