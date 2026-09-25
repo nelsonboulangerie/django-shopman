@@ -43,6 +43,21 @@ from shopman.backstage.projections.channel_health import (
     ChannelHealthLink,
     ChannelHealthProjection,
 )
+from shopman.backstage.projections.customers import (
+    CustomerCandidateProjection,
+    CustomerDetailProjection,
+    CustomerFilterOption,
+    CustomerIdentifierProjection,
+    CustomerListProjection,
+    CustomerOrderRowProjection,
+    CustomerRowProjection,
+    MergeAuditListProjection,
+    MergeAuditRowProjection,
+    MergeFillProjection,
+    MergeMoveProjection,
+    MergePreviewProjection,
+    MergeSideProjection,
+)
 from shopman.backstage.projections.feeds import (
     CatalogChannelProjection,
     ChannelPeriodOption,
@@ -105,6 +120,19 @@ CONTRACT_DATACLASSES = (
     OperatorOrderProjection,
     OrderQueueProjection,
     TwoZoneQueueProjection,
+    CustomerFilterOption,
+    CustomerRowProjection,
+    CustomerListProjection,
+    CustomerIdentifierProjection,
+    CustomerOrderRowProjection,
+    CustomerCandidateProjection,
+    CustomerDetailProjection,
+    MergeSideProjection,
+    MergeMoveProjection,
+    MergeFillProjection,
+    MergePreviewProjection,
+    MergeAuditRowProjection,
+    MergeAuditListProjection,
 )
 
 
@@ -118,6 +146,7 @@ def render_orders_contract_ts() -> str:
         source=(
             "shopman/backstage/projections/order_queue.py"
             " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py"
+            " + shopman/backstage/projections/customers.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,
