@@ -202,7 +202,7 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > não é avisado no WhatsApp fora da janela de 24h — que é justamente quando ele acontece.
 
 ### `pedido_confirmado` — evento `order_accepted`
-- Corpo: `Seu pedido {{1}} está confirmado. O total é {{2}}. Vamos preparar tudo com muito carinho. ✨`
+- Corpo: `Seu pedido {{1}} está confirmado. O total é {{2}}. Vamos preparar com todo carinho. ✨`
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
@@ -283,7 +283,7 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > cobrado e recebe estorno. "Se houve cobrança, devolvemos o valor" serve aos dois casos.
 
 ### `pedido_agendado_lembrete` — evento `preorder_reminder`
-- Corpo: `Oi, {{1}}! Lembrando que seu pedido {{2}} está agendado para amanhã. Vamos preparar tudo com muito carinho. ✨`
+- Corpo: `Oi, {{1}}! Lembrando que seu pedido {{2}} está agendado para amanhã. Vamos preparar com todo carinho. ✨`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
@@ -582,7 +582,7 @@ nome**, senão a variável sai em branco e nada falha.
 | Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
 | Pedido, no corpo | `order_ref_short` | todos os de pedido (o final do ref: `A17`) |
 | Ref do pedido | `order_ref` | **todo botão de URL** — nunca no corpo |
-| Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
+| Total | `total` → **`order_total_display`** (rename pendente) | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
 | Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
