@@ -374,8 +374,16 @@ def _reconciliation_errors(*, closing_date: date, items: list[dict]) -> list[dic
         for item in order_composition.effective_items(order):
             sold_by_sku[item.sku] = sold_by_sku.get(item.sku, 0) + int(item.qty)
 
+    # O confronto vendido × disponível é do que se CONTA: a revenda fica fora
+    # da contagem (só o produzido na casa entra), e sem contagem não há
+    # "disponível" para confrontar — ela apareceria como déficit inventado.
+    from shopman.shop.services.sku_records import sku_roles_map
+
+    roles = sku_roles_map(sold_by_sku)
     errors: list[dict] = []
     for sku, sold in sorted(sold_by_sku.items()):
+        if not (roles.get(sku) and roles[sku].produced):
+            continue
         available = saleable_by_sku.get(sku, 0) + produced_by_sku.get(sku, 0)
         if sold > available:
             errors.append(

@@ -243,8 +243,18 @@ def _episode_options() -> tuple:
 
 
 def _build_items() -> list[ClosingItemProjection]:
-    """Build list of SKUs with saleable stock for closing."""
-    quants = (
+    """SKUs PRODUZIDOS NA CASA com estoque vendável — o que se conta no fechamento.
+
+    ⚠️ Só entra o que tem ficha ativa (``sku_roles_map(...).produced``). A
+    revenda (o pote de geleia, o chá em lata, a água) não se conta todo dia:
+    não vence de um dia para o outro, o estoque dela anda pela venda e pelo
+    recebimento, e contá-la toda noite era a lista que o operador pulava
+    digitando qualquer coisa — contagem cega que ninguém faz de verdade é
+    pior que contagem nenhuma. Decisão do dono, 25/09/2026.
+    """
+    from shopman.shop.services.sku_records import sku_roles_map
+
+    quants = list(
         Quant.objects.filter(
             position__is_saleable=True,
             _quantity__gt=0,
@@ -253,6 +263,8 @@ def _build_items() -> list[ClosingItemProjection]:
         .annotate(total_qty=Sum("_quantity"))
         .order_by("sku")
     )
+    roles = sku_roles_map(row["sku"] for row in quants)
+    quants = [row for row in quants if roles.get(row["sku"]) and roles[row["sku"]].produced]
 
     from shopman.backstage.services.closing import (
         day_product_expires_on_close,
