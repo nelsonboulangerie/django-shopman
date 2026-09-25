@@ -36,10 +36,14 @@ class CheckoutSerializer(serializers.Serializer):
     # Troco para entrega em dinheiro ("50", "50,00") — o entregador precisa saber.
     change_for = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     use_loyalty = serializers.BooleanField(required=False, default=False)
-    # CPF/CNPJ PEDIDO para a nota da ENTREGA (vira ``fiscal.tax_id``). A nota de
-    # entrega a domicílio não sai sem ele; a exigência é do servidor
-    # (``DeliveryFiscalIdentityRule``), aqui só chega o dado. Retirada ignora.
+    # CPF/CNPJ PEDIDO na nota (vira ``fiscal.tax_id``). Na ENTREGA a nota não
+    # sai sem ele; a exigência é do servidor (``DeliveryFiscalIdentityRule``),
+    # aqui só chega o dado. Na RETIRADA é o "CPF na nota?" do balcão: opcional.
     fiscal_tax_id = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
+    # A pessoa RESPONDEU "sim" a "guardar no seu cadastro?". Nunca se grava o
+    # documento no cadastro sem essa resposta, e mesmo com ela só se preenche
+    # cadastro SEM documento (``shop/services/customer_tax_id``).
+    save_fiscal_tax_id = serializers.BooleanField(required=False, default=False)
     # Total (centavos) que o cliente VIU ao confirmar — o servidor rejeita o
     # commit se a repricing final divergir (cupom expirou, preço mudou).
     #
@@ -75,6 +79,10 @@ class CheckoutResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     next_url = serializers.CharField(required=False)
     convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
+    # Só presente quando a pessoa pediu para guardar o CPF no cadastro: ``True``
+    # = está no cadastro; ``False`` = vale só para esta nota. O motivo do
+    # ``False`` nunca sai daqui (documento de outra conta não se revela).
+    tax_id_saved = serializers.BooleanField(required=False)
 
 
 class DetailSerializer(serializers.Serializer):
@@ -386,6 +394,15 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     waitlist_released_message = serializers.CharField()
 
 
+class FiscalNoteSerializer(serializers.Serializer):
+    title = serializers.CharField()
+    number_display = serializers.CharField()
+    access_key_display = serializers.CharField()
+    url = serializers.CharField(allow_blank=True)
+    link_label = serializers.CharField(allow_blank=True)
+    note = serializers.CharField(allow_blank=True)
+
+
 class OrderTrackingSerializer(serializers.Serializer):
     convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
     ref = serializers.CharField()
@@ -419,6 +436,9 @@ class OrderTrackingSerializer(serializers.Serializer):
     cancellation_note = serializers.CharField(allow_blank=True, required=False)
     refund_status_label = serializers.CharField(allow_null=True, required=False)
     cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
+    # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
+    # pede e-mail). ``None`` enquanto não há nota.
+    fiscal_note = FiscalNoteSerializer(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.

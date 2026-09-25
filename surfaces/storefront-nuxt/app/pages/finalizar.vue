@@ -4,10 +4,10 @@ import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutRe
 import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
-import { TAX_ID_WHY, deliveryTaxIdError, formatTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
+import { PICKUP_TAX_ID_WHY, TAX_ID_NOT_SAVED_MESSAGE, TAX_ID_WHY, deliveryTaxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
-import { buildCheckoutPayload, createCheckoutAttemptKey, type CheckoutFormState } from '~/utils/checkoutPayload'
+import { buildCheckoutPayload, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import {
   addressSummary as buildAddressSummary,
@@ -85,7 +85,9 @@ const state = reactive<CheckoutFormState>({
   gift_message: '',
   gift_hide_values: false,
   save_as_default: true,
-  fiscal_tax_id: ''
+  fiscal_tax_id: '',
+  fiscal_tax_id_on_pickup: false,
+  save_fiscal_tax_id: false
 })
 
 const chosenDate = ref<Date | null>(null)
@@ -183,20 +185,36 @@ watch(() => state.payment_method, value => {
   if (value) clearFieldError('payment_method')
 })
 
-// NOTA DA ENTREGA (decisões do dono, 24 e 25/09/2026): toda entrega pede o CPF
-// ou CNPJ de quem compra, no MESMO passo do endereço. A tela confere o que foi
-// digitado, cedo e no campo; a trava do servidor continua sendo a da emissão.
-// Sem CPF, a entrega não fecha e a retirada continua a um toque. Na próxima
-// entrega o documento já vem no campo (do cadastro ou da última entrega) e
-// vale, sem pergunta de "guardar".
+// CPF/CNPJ NA NOTA (decisões do dono, 24 e 25/09/2026). Toda ENTREGA pede o
+// documento de quem compra, no MESMO passo do endereço; sem ele a entrega não
+// fecha e a retirada continua a um toque. Na RETIRADA é o "CPF na nota?" do
+// balcão: opcional, no passo do pagamento. O campo é um só (`fiscal_tax_id`) e
+// já vem com o documento que a casa conhece (cadastro ou última entrega). A
+// tela confere o que foi digitado, cedo e no campo; a trava do servidor
+// continua sendo a da emissão.
 const showTaxIdField = computed(() => state.fulfillment_type === 'delivery')
+const showPickupTaxIdField = computed(() => state.fulfillment_type === 'pickup' && state.fiscal_tax_id_on_pickup)
 const taxIdPrefillNote = computed(() => {
   const prefill = taxIdDigits(checkout.value?.prefill_tax_id)
-  if (!prefill || prefill !== taxIdDigits(state.fiscal_tax_id)) return ''
-  return checkout.value?.prefill_tax_id_source === 'last_delivery'
-    ? 'O mesmo da sua última entrega. Se a nota for para outra pessoa, troque aqui.'
-    : 'Do seu cadastro. Se a nota for para outra pessoa, troque aqui.'
+  const typed = taxIdDigits(state.fiscal_tax_id)
+  if (!prefill) return ''
+  if (prefill === typed) {
+    return checkout.value?.prefill_tax_id_source === 'last_delivery'
+      ? 'O mesmo da sua última entrega. Se a nota for para outra pessoa, troque aqui.'
+      : 'Do seu cadastro. Se a nota for para outra pessoa, troque aqui.'
+  }
+  // Diferente do cadastro: CPF não muda, então é a nota de outra pessoa. Vale
+  // só aqui, e a tela diz que o cadastro não muda (no PDV a troca existe, com
+  // atrito, porque há operador; aqui não é gesto de checkout).
+  if (checkout.value?.prefill_tax_id_source === 'document' && isValidTaxId(typed)) {
+    return 'Vale só para esta nota. O documento do seu cadastro continua o mesmo.'
+  }
+  return ''
 })
+// Guardar no cadastro é PERGUNTA, desmarcada, e só existe quando a pessoa é
+// conhecida, o cadastro dela ainda não tem documento e há um documento certo
+// indo para a nota.
+const offerSaveTaxId = computed(() => !!checkout.value?.offer_save_tax_id && isValidTaxId(noteTaxId(state)))
 const taxIdIssue = computed(() => deliveryTaxIdError(state.fiscal_tax_id, showTaxIdField.value))
 function onTaxIdInput (value: string | number) {
   state.fiscal_tax_id = formatTaxId(String(value ?? ''))
@@ -214,7 +232,10 @@ watch(() => state.fiscal_tax_id, value => {
   else if (taxIdLooksComplete(value)) fieldErrors.value = { ...fieldErrors.value, fiscal_tax_id: taxIdIssue.value }
 })
 watch(() => state.fulfillment_type, value => {
-  if (value !== 'delivery') clearFieldError('fiscal_tax_id')
+  if (value !== 'delivery' && !state.fiscal_tax_id_on_pickup) clearFieldError('fiscal_tax_id')
+})
+watch(() => state.fiscal_tax_id_on_pickup, on => {
+  if (!on && state.fulfillment_type === 'pickup') clearFieldError('fiscal_tax_id')
 })
 
 // Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + ocultar valores.
@@ -654,7 +675,7 @@ function saveCheckoutDraft () {
       context: cart.value?.draft_context || '',
       attemptKey: attemptKey.value,
       // Documento não fica guardado no aparelho: o CPF sai do rascunho.
-      state: { ...state, fiscal_tax_id: '' },
+      state: { ...state, fiscal_tax_id: '', fiscal_tax_id_on_pickup: false, save_fiscal_tax_id: false },
       activeStep: activeStep.value,
       pendingAddressLabel: pendingAddressLabel.value,
       addressSelection: addressSelection.value,
@@ -903,9 +924,9 @@ const reviewSummaryRows = computed(() => {
   ]
   if (state.fulfillment_type === 'delivery') {
     rows.push({ icon: 'lucide:map-pin', lines: deliveryAddressLines.value, muted: state.delivery_complement || undefined })
-    if (taxIdDigits(state.fiscal_tax_id)) {
-      rows.push({ icon: 'lucide:receipt-text', lines: [`Nota fiscal no documento ${formatTaxId(state.fiscal_tax_id)}`] })
-    }
+  }
+  if (noteTaxId(state)) {
+    rows.push({ icon: 'lucide:receipt-text', lines: [`Nota fiscal no documento ${formatTaxId(state.fiscal_tax_id)}`] })
   }
   rows.push({ icon: paymentIcon(state.payment_method), lines: [paymentMethodLabel.value] })
   rows.push({ icon: 'lucide:user-round', lines: [contactSummary.value] })
@@ -983,6 +1004,7 @@ function validatePaymentStep (): boolean {
   delete errors.payment_method
   delete errors.recipient_name
   delete errors.recipient_phone
+  if (state.fulfillment_type === 'pickup') delete errors.fiscal_tax_id
   if (!state.payment_method) errors.payment_method = 'Escolha o pagamento.'
   else if (pixProviderTestExceeded.value) errors.payment_method = pixProviderTestMessage.value
   // Presente em ENTREGA exige destinatário — validado JÁ aqui (no "Revisar
@@ -1000,8 +1022,10 @@ function validatePaymentStep (): boolean {
       errors.recipient_phone = 'Telefone do destinatário inválido. Ex: (43) 99999-9999'
     }
   }
+  // CPF na nota da retirada: opcional; digitado errado é erro (o servidor recusa).
+  if (showPickupTaxIdField.value && taxIdIssue.value) errors.fiscal_tax_id = taxIdIssue.value
   fieldErrors.value = errors
-  if (errors.payment_method || errors.recipient_name || errors.recipient_phone) {
+  if (errors.payment_method || errors.recipient_name || errors.recipient_phone || (showPickupTaxIdField.value && errors.fiscal_tax_id)) {
     activeStep.value = 'payment'
     return false
   }
@@ -1203,6 +1227,9 @@ async function submitCheckout () {
       body: { ...buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null, cart.value?.revision), ...(pendingAddressLabel.value ? { address_label: pendingAddressLabel.value } : {}) }
     })
     if (response.convenience_pending?.length && import.meta.client) useSonner.info('Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez.')
+    // Pediu para guardar e não entrou: a mesma frase em todo caso (documento de
+    // outra conta nunca se revela). A nota sai com o documento de qualquer jeito.
+    if (response.tax_id_saved === false && import.meta.client) useSonner.info(TAX_ID_NOT_SAVED_MESSAGE)
     confirmedTrackingUrl.value = response.next_url || `/pedido/${encodeURIComponent(response.order_ref)}`
     clearCart()
     clearCheckoutDraft()
@@ -1309,7 +1336,10 @@ async function submitCheckout () {
         confirmOpen.value = false
       } else {
         fieldErrors.value = { ...fieldErrors.value, [field]: serverError.value }
-        const step = checkoutStepForField(field)
+        // O CPF da retirada mora no passo do pagamento, não no do endereço.
+        const step = field === 'fiscal_tax_id' && state.fulfillment_type === 'pickup'
+          ? 'payment'
+          : checkoutStepForField(field)
         if (step) activeStep.value = step
         if (field === 'name' || field === 'phone') contactEditing.value = true
       }
@@ -1652,6 +1682,20 @@ useSeoMeta({
                 <p v-else-if="taxIdPrefillNote" class="shop-meta" data-checkout-tax-id-prefill>
                   {{ taxIdPrefillNote }}
                 </p>
+                <UiFieldLabel
+                  v-if="offerSaveTaxId"
+                  for="checkout-save-tax-id"
+                  class="mt-1 bg-background has-data-[state=checked]:bg-background"
+                  data-checkout-save-tax-id
+                >
+                  <UiField orientation="horizontal">
+                    <UiFieldContent class="gap-1">
+                      <UiFieldTitle>Guardar no seu cadastro?</UiFieldTitle>
+                      <UiFieldDescription>Da próxima vez ele já vem preenchido.</UiFieldDescription>
+                    </UiFieldContent>
+                    <UiSwitch id="checkout-save-tax-id" v-model="state.save_fiscal_tax_id" />
+                  </UiField>
+                </UiFieldLabel>
                 <UiButton
                   v-if="availableFulfillment.includes('pickup')"
                   variant="link"
@@ -1879,6 +1923,51 @@ useSeoMeta({
                   </UiFieldContent>
                   <UiSwitch id="checkout-loyalty" v-model="useLoyalty" />
                 </UiField>
+              </UiFieldLabel>
+
+              <!-- CPF NA NOTA da retirada: o "CPF na nota?" do balcão, opcional.
+                   Desligado por padrão (a nota sai de qualquer jeito; o documento
+                   só vai se a pessoa pedir). Ligar abre o mesmo campo da entrega,
+                   já com o documento que a casa conhece. -->
+              <UiFieldLabel
+                v-if="isPickup"
+                for="checkout-pickup-tax-id-toggle"
+                class="bg-card has-data-[state=checked]:bg-card"
+                data-checkout-pickup-tax-id
+              >
+                <UiField orientation="horizontal">
+                  <UiFieldContent class="gap-1">
+                    <UiFieldTitle>CPF ou CNPJ na nota?</UiFieldTitle>
+                    <UiFieldDescription>{{ PICKUP_TAX_ID_WHY }}</UiFieldDescription>
+                  </UiFieldContent>
+                  <UiSwitch id="checkout-pickup-tax-id-toggle" v-model="state.fiscal_tax_id_on_pickup" />
+                </UiField>
+                <div v-if="state.fiscal_tax_id_on_pickup" class="shop-stack-tight px-4 pb-4" @click.stop>
+                  <UiLabel for="checkout-pickup-tax-id" class="sr-only">CPF ou CNPJ na nota</UiLabel>
+                  <UiInput
+                    id="checkout-pickup-tax-id"
+                    :model-value="state.fiscal_tax_id"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    :maxlength="18"
+                    placeholder="000.000.000-00"
+                    :aria-invalid="!!fieldErrors.fiscal_tax_id"
+                    class="bg-background"
+                    @update:model-value="onTaxIdInput"
+                  />
+                  <UiFieldError v-if="fieldErrors.fiscal_tax_id" :errors="fieldErrors.fiscal_tax_id" />
+                  <p v-else-if="taxIdPrefillNote" class="shop-meta" data-checkout-tax-id-prefill>
+                    {{ taxIdPrefillNote }}
+                  </p>
+                  <!-- Dentro do cartão (que já é um label): div, não outro label. -->
+                  <div v-if="offerSaveTaxId" class="flex items-center justify-between gap-3 pt-1" data-checkout-save-tax-id>
+                    <div class="min-w-0 space-y-1">
+                      <UiLabel for="checkout-pickup-save-tax-id">Guardar no seu cadastro?</UiLabel>
+                      <p class="shop-meta">Da próxima vez ele já vem preenchido.</p>
+                    </div>
+                    <UiSwitch id="checkout-pickup-save-tax-id" v-model="state.save_fiscal_tax_id" />
+                  </div>
+                </div>
               </UiFieldLabel>
 
               <!-- Cupom: toggle-card único (igual fidelidade). Aplicado → título "Cupom

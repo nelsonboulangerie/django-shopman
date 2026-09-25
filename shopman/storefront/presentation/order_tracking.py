@@ -257,6 +257,23 @@ class CancellationRequestProjection:
 
 
 @dataclass(frozen=True)
+class FiscalNoteProjection:
+    """A nota fiscal do pedido, pronta para o cliente abrir.
+
+    ``access_key_display``: a chave em grupos de 4, como no papel — é o que se
+    digita na consulta da SEFAZ se o link falhar. ``url``: vazio quando a nota
+    foi cancelada (não se oferece nota que não vale).
+    """
+
+    title: str
+    number_display: str
+    access_key_display: str
+    url: str
+    link_label: str
+    note: str
+
+
+@dataclass(frozen=True)
 class OrderTrackingProjection:
     """Canonical full tracking projection, rendered."""
 
@@ -314,6 +331,7 @@ class OrderTrackingProjection:
     cancellation_note: str = ""
     refund_status_label: str | None = None
     cancellation_request: CancellationRequestProjection | None = None
+    fiscal_note: FiscalNoteProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -416,6 +434,31 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         waitlist_deadline=data.waitlist_deadline,
         waitlist_planned_for_display=_waitlist_planned_for_display(data.waitlist_planned_for),
         mock_payment_enabled=data.can_mock_confirm_payment,
+        fiscal_note=_present_fiscal_note(data.fiscal_note),
+    )
+
+
+def _present_fiscal_note(note) -> FiscalNoteProjection | None:
+    if note is None:
+        return None
+    digits = note.access_key
+    access_key_display = " ".join(digits[i : i + 4] for i in range(0, len(digits), 4))
+    if note.cancelled:
+        return FiscalNoteProjection(
+            title="Nota fiscal",
+            number_display=f"NFC-e nº {note.number}" if note.number else "NFC-e",
+            access_key_display=access_key_display,
+            url="",
+            link_label="",
+            note="Esta nota foi cancelada e não vale mais.",
+        )
+    return FiscalNoteProjection(
+        title="Nota fiscal",
+        number_display=f"NFC-e nº {note.number}" if note.number else "NFC-e",
+        access_key_display=access_key_display,
+        url=note.url,
+        link_label="Abrir a nota fiscal",
+        note="Nota de teste, sem valor fiscal." if note.is_test else "",
     )
 
 

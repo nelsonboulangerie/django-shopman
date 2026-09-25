@@ -39,6 +39,7 @@ from shopman.shop.services.conversation import RemoteConversationProjection
 from shopman.storefront.api import serializers as api_serializers
 from shopman.storefront.presentation.order_tracking import (
     CancellationRequestProjection,
+    FiscalNoteProjection,
     OrderTrackingCopyProjection,
     OrderTrackingProjection,
     OrderTrackingPromiseProjection,
@@ -61,6 +62,7 @@ MIRROR_CONTRACTS = [
         CancellationRequestProjection,
         set(),
     ),
+    (api_serializers.FiscalNoteSerializer, FiscalNoteProjection, set()),
     (api_serializers.OrderProgressStepSerializer, OrderProgressStepProjection, set()),
     # O cliente recebe os ISOs crus (dispatched_at/delivered_at); os *_display são internos.
     (

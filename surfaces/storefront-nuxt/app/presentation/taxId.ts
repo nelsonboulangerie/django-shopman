@@ -1,11 +1,12 @@
 /**
- * CPF/CNPJ da nota fiscal da ENTREGA, do lado da tela.
+ * CPF/CNPJ da nota fiscal, do lado da tela.
  *
  * Decisões do dono (24 e 25/09/2026): a nota da entrega a domicílio não sai
  * sem o CPF ou CNPJ de quem compra (a SEFAZ recusa, 787/788), então a loja pede
  * o documento no passo do endereço, em TODA entrega. Sem ele a entrega não
- * fecha; a retirada continua aberta. Aqui só se confere o que foi digitado,
- * cedo e no campo, com as MESMAS frases da recusa do servidor.
+ * fecha; a retirada continua aberta, e nela o documento é o "CPF na nota?" do
+ * balcão, opcional. Aqui só se confere o que foi digitado, cedo e no campo,
+ * com as MESMAS frases da recusa do servidor.
  *
  * Os nomes ficam em português porque `cpf` e `cnpj` são nome próprio de
  * documento brasileiro.
@@ -14,6 +15,12 @@
 export const TAX_ID_REQUIRED_MESSAGE = 'Para entregar, precisamos do CPF ou CNPJ para a nota fiscal.'
 export const TAX_ID_INVALID_MESSAGE = 'Confira o CPF ou CNPJ: os números não conferem.'
 export const TAX_ID_WHY = 'A nota fiscal vai junto com a entrega e precisa do CPF ou CNPJ de quem compra.'
+// Retirada: o "CPF na nota?" do balcão. A nota sai de qualquer jeito; o
+// documento só vai nela se a pessoa pedir.
+export const PICKUP_TAX_ID_WHY = 'Opcional. Informe se quiser a nota fiscal no seu CPF ou CNPJ.'
+// Pediu para guardar e não entrou. A MESMA frase em todo caso: a loja nunca
+// diz que um documento pertence a outra conta.
+export const TAX_ID_NOT_SAVED_MESSAGE = 'O documento vale para a nota deste pedido, mas não entrou no seu cadastro.'
 
 export function taxIdDigits (value: string | null | undefined): string {
   return String(value || '').replace(/\D/g, '')
