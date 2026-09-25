@@ -1208,6 +1208,108 @@ class TestOptions:
         assert response.json()["retryable"] is True
 
 
+class TestAnnouncementReviewPreview:
+    """A prévia da revisão é o conteúdo GRAVADO do anúncio, não o produto de exemplo.
+
+    Medido em 25/09/2026 (anúncio 31, disparo manual só no Google, modelo sem ``[Link]``):
+    o conteúdo gravado não tinha link e a aprovação publicou sem link, mas a prévia
+    mostrava o link e o nome de um produto de exemplo da loja.
+    """
+
+    @pytest.fixture(autouse=True)
+    def sample_product(self):
+        from shopman.offerman.models import Product
+
+        # O produto que a prévia do formulário escolheria como exemplo.
+        return Product.objects.create(
+            sku="AGUA-EXEMPLO",
+            name="Água de exemplo",
+            base_price_q=500,
+            is_published=True,
+            is_sellable=True,
+            image_url="/media/agua.jpg",
+        )
+
+    def test_announcement_without_product_previews_without_link(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(
+            rule,
+            template,
+            content={"body": "Ensaio do Google", "hashtags": [], "link": "", "image_url": ""},
+            platforms=["google_business"],
+            trigger_context={},
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Ensaio do Google revisado",
+                "hashtags": [],
+                "platforms": ["google_business"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["sample"] is False
+        assert payload["sku"] == ""
+        assert payload["product_name"] == ""
+        artifact = payload["previews"]["google_business"]["artifact"]
+        assert artifact["body"] == "Ensaio do Google revisado"
+        assert artifact["link"] == ""
+        assert "AGUA-EXEMPLO" not in json.dumps(payload)
+
+    def test_preview_matches_what_approval_seals(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["instagram"])
+        client.force_login(gestor)
+
+        preview = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Texto revisado",
+                "hashtags": ["paes"],
+                "platforms": ["instagram"],
+            },
+            content_type="application/json",
+        ).json()["previews"]["instagram"]
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {
+                "base_version": announcement.version,
+                "publish_mode": "now",
+                "body": "Texto revisado",
+                "hashtags": ["paes"],
+                "platforms": ["instagram"],
+            },
+            key="review-preview-equals-approval",
+        )
+        assert response.status_code == 200, response.content
+        sealed = MarketingContentArtifact.objects.get(
+            announcement=announcement
+        ).payload["resolved_artifacts"]["instagram"]
+        for key in ("body", "link", "hashtags", "image_url"):
+            assert preview["artifact"][key] == sealed[key], key
+        assert sealed["link"] == "/produto/cro"
+
+    def test_unknown_announcement_is_404(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={"announcement": 999999, "body": "x", "platforms": ["instagram"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 404
+
+
 class TestScheduledPublishing:
     """"Agendar" no card: a decisão é agora, a publicação é na hora marcada."""
 

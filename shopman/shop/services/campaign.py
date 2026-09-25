@@ -1155,6 +1155,94 @@ def preview_platforms(
     }
 
 
+def preview_announcement(
+    announcement,
+    *,
+    platforms,
+    body: str | None = None,
+    hashtags: list[str] | None = None,
+) -> dict:
+    """Prévia da REVISÃO: o conteúdo gravado do anúncio, montado como a aprovação monta.
+
+    ⚠️ Não passa por `preview_platforms`. Aquela é a prévia do formulário, onde ainda não
+    existe anúncio e um produto de exemplo explica o modelo; aqui o anúncio existe e o que
+    sai é `announcement.content` + as edições (texto, hashtags, plataformas), sem ler
+    catálogo de novo. Medido em 25/09/2026 (anúncio 31, só Google, sem ``[Link]``): o
+    conteúdo gravado não tinha link, a aprovação publicou sem link, e a prévia mostrava o
+    link de um produto de exemplo — "o que você conferir é o que será disparado", mentindo.
+    """
+    from shopman.shop.services import marketing_facts
+    from shopman.shop.services.marketing_artifacts import (
+        normalize_platform_content,
+        resolve_all_dispatch_artifacts,
+    )
+    from shopman.shop.services.marketing_platform_configuration import (
+        verified_whatsapp_flow_binding,
+    )
+
+    normalized_platforms = tuple(dict.fromkeys(
+        str(value or "").strip() for value in platforms if str(value or "").strip()
+    ))
+    if not normalized_platforms:
+        raise MarketingContractError(
+            code="preview_platform_required",
+            detail="Escolha ao menos uma plataforma para a prévia.",
+            field_errors={"platforms": ("Escolha ao menos uma plataforma.",)},
+        )
+    # O mesmo recorte do approve (`backstage/api/marketing.py`, `_post_command`).
+    content = dict(announcement.content or {})
+    if body is not None:
+        content["body"] = body
+    if hashtags is not None:
+        content["hashtags"] = list(hashtags)
+    platform_content = normalize_platform_content(
+        platforms=normalized_platforms,
+        platform_content=dict(announcement.platform_content or {}),
+    )
+    raw_facts = content.get("facts")
+    facts = marketing_facts.from_payload(raw_facts) if raw_facts is not None else None
+    flow_binding = (
+        verified_whatsapp_flow_binding()
+        if "whatsapp" in normalized_platforms
+        else None
+    )
+    artifacts = resolve_all_dispatch_artifacts(
+        platforms=normalized_platforms,
+        content=content,
+        platform_content=platform_content,
+        content_version=announcement.version + 1,
+        facts_as_of=facts.as_of.isoformat() if facts is not None else "",
+        facts_hash=facts.source_hash if facts is not None else "",
+        platform_bindings=(
+            {"whatsapp": flow_binding.artifact_payload()}
+            if flow_binding is not None
+            else {}
+        ),
+    )
+    sku = str((announcement.trigger_context or {}).get("sku") or "")
+    variables = facts.variable_values() if facts is not None else {}
+    return {
+        "sku": sku,
+        "sample": False,
+        "product_name": variables.get("product_name", ""),
+        "fields": {},
+        "ai_writes": False,
+        "facts": facts.as_payload() if facts is not None else None,
+        "previews": {
+            artifact.platform: {
+                "artifact": artifact.as_payload(),
+                "artifact_hash": artifact.artifact_hash,
+                **(
+                    {"flow": flow_binding.display_payload()}
+                    if artifact.platform == "whatsapp" and flow_binding is not None
+                    else {}
+                ),
+            }
+            for artifact in artifacts
+        },
+    }
+
+
 def _sample_sku() -> str:
     """Um produto real para a prévia, ou vazio numa loja sem catálogo."""
     try:
