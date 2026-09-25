@@ -1659,7 +1659,25 @@ class OrderQueueView(OperationalObservationMixin, APIView):
 
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
-        return Response(read_data(queue=projection_data(queue)))
+        return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
+
+
+def _station_device_agent(request) -> dict:
+    """A impressora DESTA estação, para o Gestor mandar a DANFE da sacola.
+
+    O mesmo bloco que o PDV recebe (``DeviceAgentConfig.surface_payload``):
+    quem alcança a loopback do balcão é a página. Sem estação confiável, ou
+    estação sem agente, a resposta diz que não imprime — e o card oferece o
+    botão assim mesmo, para o operador saber que a DANFE existe.
+    """
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage import station_trust
+    from shopman.backstage.services.pos_hardware import DeviceAgentConfig
+
+    station_ref = station_trust.station_ref(request)
+    terminal = Terminal.objects.filter(ref=station_ref, is_active=True).first() if station_ref else None
+    return DeviceAgentConfig.from_terminal(terminal).surface_payload()
 
 
 # ── Order action endpoints ────────────────────────────────────────────
@@ -2404,6 +2422,45 @@ class OrderTicketEscposView(APIView):
                 "payload_b64": base64.b64encode(payload).decode("ascii"),
                 "title": f"filipeta:{ref}",
                 "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="DANFE NFC-e bytes (ESC/POS, base64) for the Gestor station agent",
+        responses={200: OpenApiResponse(description="DANFE payload.")},
+    ),
+)
+class OrderDanfeEscposView(APIView):
+    """A DANFE que vai na sacola do pedido de entrega, pedida pelo Gestor.
+
+    Mesmo compositor e mesmo carimbo do balcão (``POSDanfeEscposView``); muda a
+    permissão (quem cuida da fila) e a pergunta ``auto``: a impressão que
+    ninguém pediu só sai uma vez, e só enquanto a sacola ainda está na casa —
+    ver ``services/order_danfe.py``. POST porque grava o carimbo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        import base64
+
+        from shopman.backstage.services import order_danfe
+
+        auto = request.data.get("auto") is True
+        try:
+            printed = order_danfe.claim_print(ref, auto=auto)
+        except order_danfe.DanfeRefused as refused:
+            return Response({"detail": refused.message, "code": refused.code}, status=refused.status)
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(printed.payload).decode("ascii"),
+                "title": f"danfe:{ref}",
+                "reprint": printed.reprint,
             }
         )
 

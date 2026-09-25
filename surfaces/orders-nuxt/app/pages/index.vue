@@ -32,7 +32,10 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+
+// A DANFE da sacola: sai sozinha na entrega despachada, e à mão pelo card.
+const danfePrint = useDanfePrint(queue, deviceAgent, refresh);
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {
@@ -585,10 +588,12 @@ function printQueue() {
               :busy="isBusy(card.ref)"
               :error="actionError(card.ref)"
               :selected="isSelected(card.ref)"
+              :danfe-printing="danfePrint.isPrinting(card.ref)"
               @action="(action) => onAction(card.ref, action)"
               @dismiss-error="clearActionError(card.ref)"
               @toggle-select="toggleSelect(card.ref)"
               @toggle-assign="onToggleAssign(card)"
+              @print-danfe="danfePrint.printDanfe(card.ref)"
             />
           </section>
         </div>
@@ -732,10 +737,12 @@ function printQueue() {
                 :busy="isBusy(card.ref)"
                 :error="actionError(card.ref)"
                 :selected="isSelected(card.ref)"
+                :danfe-printing="danfePrint.isPrinting(card.ref)"
                 @action="(action) => onAction(card.ref, action)"
                 @dismiss-error="clearActionError(card.ref)"
                 @toggle-select="toggleSelect(card.ref)"
                 @toggle-assign="onToggleAssign(card)"
+                @print-danfe="danfePrint.printDanfe(card.ref)"
               />
             </div>
           </div>

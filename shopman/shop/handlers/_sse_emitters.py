@@ -341,6 +341,23 @@ def emit_courier_update(order, payload: dict) -> None:
     )
 
 
+def emit_fiscal_update(order) -> None:
+    """A NFC-e do pedido mudou (autorizou): o quadro do Gestor relê.
+
+    Sem este sinal o card só descobria a nota no poll de 30 s — e a DANFE da
+    entrega, que sai sozinha quando a autorização chega
+    (``backstage/services/order_danfe.py``), saía depois de a sacola ir embora.
+    """
+    if _is_pos_counter_order(order):
+        return
+    _emit_backstage(
+        "orders",
+        "backstage-orders-update",
+        {"ref": order.ref, "status": order.status, "kind": "fiscal_changed"},
+        scope=_scope_for_order(order),
+    )
+
+
 def _on_payment_changed(sender, intent=None, order_ref=None, **kwargs):
     order_ref = order_ref or getattr(intent, "order_ref", "")
     if not order_ref:

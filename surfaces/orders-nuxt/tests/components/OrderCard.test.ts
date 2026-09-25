@@ -265,3 +265,21 @@ describe("OrderCard — maquininha na rua", () => {
     expect(mountCard({ card: card() }).find("[data-equipment-label]").exists()).toBe(false);
   });
 });
+
+describe("OrderCard — a DANFE da sacola", () => {
+  it("sem nota autorizada (ou no iFood), nenhuma linha", () => {
+    expect(mountCard({ card: card() }).find("[data-danfe]").exists()).toBe(false);
+  });
+  it("entrega recém-despachada: diz que está saindo e deixa imprimir", async () => {
+    const w = mountCard({ card: card({ status: "dispatched", danfe_printable: true, danfe_auto_print: true }) });
+    expect(w.get("[data-danfe-status]").text()).toBe("DANFE saindo para a sacola");
+    await w.get("[data-danfe-print]").trigger("click");
+    expect(w.emitted("print-danfe")).toHaveLength(1);
+  });
+  it("já impressa: o gesto é reimprimir, e fica travado enquanto imprime", () => {
+    const w = mountCard({ card: card({ danfe_printable: true, danfe_printed: true }), danfePrinting: true });
+    expect(w.get("[data-danfe-status]").text()).toBe("DANFE impressa");
+    expect(w.get("[data-danfe-print]").attributes("disabled")).toBeDefined();
+    expect(w.get("[data-danfe-print]").text()).toBe("Imprimindo…");
+  });
+});

@@ -82,8 +82,18 @@ export interface TwoZoneQueueProjection extends TwoZoneQueueContract {
   preorders: OrderCardProjection[];
 }
 
+/** A impressora DESTA estação (``DeviceAgentConfig.surface_payload``, o mesmo
+ *  bloco do PDV). Sem estação ou sem agente: `can_print: false` e a frase. */
+export interface StationDeviceAgent {
+  can_print: boolean;
+  agent_url?: string;
+  token?: string;
+  reason: string;
+}
+
 export interface OrderQueueResponse extends ReadMetadata {
   queue: TwoZoneQueueProjection;
+  device_agent?: StationDeviceAgent;
 }
 
 export interface OrderDetailResponse extends ReadMetadata {

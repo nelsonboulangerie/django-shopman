@@ -28,6 +28,7 @@ from shopman.backstage.presentation.status import (
 )
 from shopman.backstage.projections import ifood as ifood_projection
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
+from shopman.backstage.services import order_danfe
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -302,6 +303,14 @@ class OrderCardProjection:
     # frase inteira. Vazios no pedido de verdade.
     test_order_label: str = ""
     test_order_notice: str = ""
+    # A DANFE da NFC-e (services/order_danfe.py). ``danfe_printable``: a nota
+    # está autorizada e o Gestor pode imprimi-la (o iFood fica de fora).
+    # ``danfe_printed``: já saiu uma vez — a próxima é REIMPRESSÃO.
+    # ``danfe_auto_print``: entrega despachada há pouco e ainda sem DANFE — a
+    # estação com impressora imprime sozinha, para o papel ir na sacola.
+    danfe_printable: bool = False
+    danfe_printed: bool = False
+    danfe_auto_print: bool = False
 
 
 @dataclass(frozen=True)
@@ -1411,6 +1420,7 @@ def _build_card(
     is_preorder = commitment is not None and commitment > timezone.localdate()
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
+    danfe = order_danfe.danfe_state(order, now=now)
 
     actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
     # Reuse only this read's canonical action revisions; commands still recompute under lock.
@@ -1487,6 +1497,9 @@ def _build_card(
         waitlist_state=waitlist_state,
         waitlist_deadline_iso=waitlist_deadline_iso,
         waitlist_label=waitlist_label,
+        danfe_printable=danfe.printable,
+        danfe_printed=danfe.printed,
+        danfe_auto_print=danfe.auto_print,
     )
 
 
