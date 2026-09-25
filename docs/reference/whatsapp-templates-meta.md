@@ -5,10 +5,8 @@
 > O dono revisou todas as frases de uma vez e fechou. Os corpos abaixo são a coluna
 > WhatsApp daquela revisão. **Dá para submeter.**
 >
-> **Dois templates ainda não dá para submeter**, e estão marcados onde aparecem:
-> `anuncio_novidade` (o destino do botão `Ver novidade` é decisão do Marketing) e
-> `saiu_do_forno` (o campo da frase de disponibilidade ainda não tem nome fechado). **Os
-> outros 23 estão prontos.**
+> **Um template ainda não dá para submeter:** o `anuncio_novidade`, porque o destino do
+> botão `Ver novidade` é decisão de quem cuida do Marketing. **Os outros 24 estão prontos.**
 >
 > Antes desta revisão a redação mudou duas vezes em 24 horas. Se mudar de novo, **pare de
 > submeter antes de continuar**: template aprovado com texto errado não se edita, reaprova,
@@ -463,23 +461,20 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 
 ### `saiu_do_forno` — evento `production_ready`
 - Corpo: `Olha só o que acabou de sair do forno: {{1}}! {{2}}.`
-- Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`Neste momento ainda temos 12 unidades` (`availability_phrase`, **nome a confirmar**)
+- Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`No momento temos 12 un. disponíveis` (`availability_note`)
 - Botão URL: `Garantir já` → `https://www.nelsonboulangerie.com.br/produto/{{1}}` (`product_sku`)
 
 > ℹ️ A quantidade **sempre existe** quando a fornada sai, então é variável fixa do template,
 > sem frase condicional. Com zero disponível o aviso não sai.
 >
-> ⚠️ **O nome do campo da quantidade ainda não fechou, e há um candidato que já existe.**
-> `shop/services/availability_copy.availability_phrase` faz exatamente isto — devolve
-> "Neste momento ainda temos 12 unidades." e, sem quantidade, "Já está disponível para
-> pedido." — e já está em `_ALERT_FLOW_FIELDS` para `production_ready` **e** `stock_arrived`.
-> Criar um campo novo ao lado dele repetiria a confusão que acabou de fazer o `order_note`
-> virar `status_note`.
+> ⚠️ **O ponto final é FIXO, fora da variável**, como no `pedido_em_preparo`: o
+> `availability_note` entra sem ponto. É o que impede o corpo de terminar em variável.
 >
-> A única diferença é o ponto final: o existente já traz o ponto, e o desenho daqui o quer
-> fixo no template (como no `pedido_em_preparo`). Tirar o ponto de lá mexe em quem já usa a
-> função — campanha e `marketing_delivery_whatsapp` — então a escolha é da frente do adapter,
-> não desta. Enquanto não fechar, este template não é submetível.
+> ℹ️ **Uma redação só, em duas formas.** `availability_note` é o texto sem ponto (para este
+> template) e `availability_phrase` é o mesmo texto **com** ponto (para campanha e e-mail,
+> onde a frase fecha sozinha). Não são dois textos concorrentes — o segundo é literalmente
+> `f"{availability_note(qty)}."` em `shop/services/availability_copy.py`. Use
+> `availability_note` aqui; ligar no `availability_phrase` produz dois pontos finais.
 
 ### `anuncio_novidade` — evento `announcement_published`
 - Corpo: `Oi, {{1}}! Tem novidade na Nelson Boulangerie hoje: {{2}}. Passe na loja ou peça pelo nosso site.`
@@ -586,7 +581,7 @@ nome**, senão a variável sai em branco e nada falha.
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
 | Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
 | Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
-| Frase de disponibilidade | `availability_phrase` *(a confirmar)* | `saiu_do_forno` |
+| Frase de disponibilidade | `availability_note` | `saiu_do_forno` |
 | Nome da loja | `shop_name` | `pedido_compra` |
 | Ref da compra | `purchase_ref` | `pedido_compra` |
 | Material | `material_name` | `pedido_compra` |
