@@ -1704,7 +1704,7 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
         key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
         base = str(request.data.get("base_revision") or "")
         if not key or len(key) > 128 or not base:
-            return Response({"detail": "Atualize o pedido: a gravação exige intenção e revisão.", "code": "intention_required"}, status=400)
+            return Response({"detail": "Esta tela está desatualizada. Atualize o pedido e tente de novo.", "code": "intention_required"}, status=400)
         scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": order.ref})
         fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
 
@@ -1817,7 +1817,7 @@ class OrderAdvanceView(_OrderActionBase):
         base = str(body.get("base_revision") or request.headers.get("If-Match") or "").strip('"')
         target = body.get("target_status")
         if not key or len(key) > 128 or not base or not isinstance(target, str) or not target or body.get("expected_actor_id") != request.user.pk:
-            return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
+            return Response({"detail": "Esta tela está desatualizada. Atualize o pedido e tente de novo.", "code": "intention_required"}, status=400)
         equipment = body.get("equipment") or []
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
             return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)

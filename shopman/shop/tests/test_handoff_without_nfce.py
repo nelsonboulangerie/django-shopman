@@ -66,7 +66,7 @@ def test_o_gestor_despacha_e_o_alerta_nasce_sem_barrar():
     order.refresh_from_db()
     assert order.status == Order.Status.DISPATCHED
     assert _alertas(order.ref).count() == 1
-    assert "saiu sem NFC-e autorizada" in _alertas(order.ref).get().message
+    assert "sem NFC-e autorizada" in _alertas(order.ref).get().message
 
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)

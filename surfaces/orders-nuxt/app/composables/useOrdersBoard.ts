@@ -492,7 +492,7 @@ export function useOrdersBoard() {
       const conflict = httpError(error).status === 409;
       const message = conflict
         ? httpErrorMessage(error, "O pedido mudou de estado antes da ação chegar.") +
-          " Ele pode ter sido confirmado automaticamente. Atualizamos o quadro."
+          " Atualizamos o quadro: confira o pedido antes de tentar de novo."
         : httpErrorMessage(error, "Falha na ação. Tente de novo.");
       setActionError(ref_, message);
       useSonner.error(message);

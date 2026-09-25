@@ -115,10 +115,16 @@ export interface AlertProjection {
     label: string;
     enabled: boolean;
     href: string;
+    expected_rev?: number | null;
+    proof?: string;
   }>;
 }
 
 export interface AlertsResponse {
   alerts: AlertProjection[];
   counts: { active: number; critical: number };
+  generated_at?: string;
+  source_revision?: string;
+  fresh_until?: string;
+  contract_version?: number;
 }

@@ -169,7 +169,11 @@ class ReturnHandler:
                 ref = (message.payload or {}).get("order_ref", "")
                 create_operator_alert(
                     type="lifecycle_phase_stuck", severity="critical", order_ref=ref,
-                    message=f"Devolução {ref} pendente. Confira estoque e estorno antes de retomar. {exc}",
+                    message=(
+                        f"A devolução do pedido {ref} não terminou: o estoque e o estorno podem não ter "
+                        "saído. O suporte recebeu este aviso por e-mail; até ele conferir, não refaça a "
+                        f"devolução à mão. Detalhe técnico: {exc}"
+                    ),
                     dedupe_key=f"return_processing:{message.pk}",
                 )
             raise

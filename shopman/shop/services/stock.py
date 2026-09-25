@@ -385,9 +385,9 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
             type="stock_fulfill_failed",
             severity="critical",
             message=(
-                f"Baixa de estoque FALHOU para o pedido {order.ref} "
-                f"({errors} item(ns): {', '.join(failed_skus) or 'ver logs'}). "
-                "O estoque do sistema está acima do físico — conferir e ajustar."
+                f"A baixa de estoque do pedido {order.ref} não saiu "
+                f"({errors} item(ns): {', '.join(failed_skus) or 'ver logs'}). O estoque do sistema "
+                "ficou acima do que há na prateleira. Conte esses itens e ajuste no Estoque."
             ),
             order_ref=order.ref,
             dedupe_key=f"stock_fulfill_failed:{order.ref}",

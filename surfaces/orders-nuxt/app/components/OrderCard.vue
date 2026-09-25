@@ -134,8 +134,8 @@ function buttonClass(priority: string): string {
         type="button"
         class="ml-auto inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
         :class="card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
-        :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator} — liberar` : 'Atender este pedido'"
-        :title="card.assigned_operator ? `${card.assigned_operator} — liberar` : 'Atender'"
+        :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator}. Toque para liberar` : 'Atender este pedido'"
+        :title="card.assigned_operator ? `${card.assigned_operator}: toque para liberar` : 'Atender'"
         @click="emit('toggle-assign')"
       >
         <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
@@ -288,6 +288,18 @@ function buttonClass(priority: string): string {
       <p v-if="danfe.problem" class="text-warning" data-danfe-problem>{{ danfe.problem }}</p>
     </div>
 
+    <!-- A nota que não autorizou: o gesto (Reprocessar NFC-e) mora no detalhe,
+         a um toque daqui. Antes o card recebia o estado fiscal e não mostrava. -->
+    <NuxtLink
+      v-if="!negotiationOnly && card.fiscal_status === 'failed'"
+      :to="`/${card.ref}`"
+      class="min-h-control flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm font-medium text-warning"
+      data-fiscal-failed
+    >
+      <Icon name="lucide:triangle-alert" class="size-4 shrink-0" />
+      NFC-e não autorizada · abrir e reprocessar
+    </NuxtLink>
+
     <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" class="min-h-control block rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" data-ifood-negotiation-link>
       Negociação iFood · abrir solicitação e conferir prazo
     </NuxtLink>
@@ -368,5 +380,11 @@ function buttonClass(priority: string): string {
         {{ aff.label }}
       </button>
     </div>
+    <!-- Por que o botão está travado, à vista: antes só no tooltip, que o
+         tablet não tem. A frase inteira, e não o rótulo curto, que dizia
+         "Encomenda do dia…" e deixava o operador completar o sentido. -->
+    <p v-if="!negotiationOnly && card.advance_block_reason" class="text-xs text-muted-foreground" data-advance-block>
+      {{ card.advance_block_reason }}
+    </p>
   </article>
 </template>

@@ -294,6 +294,13 @@ def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
     if current is None or current.status not in {"queued", "running"}:
         raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
     order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE, "previous_error": previous_error})
+    # O operador agiu: a nota voltou para a fila. O alerta de emissão falha
+    # fecha, e o pedido deixa de aparecer como "NFC-e não autorizada" (é o
+    # alerta aberto que ``fiscal_state`` lê). Se falhar de novo, o handler abre
+    # um alerta novo.
+    from shopman.shop.handlers.alert_resolution import resolve_on_commit
+
+    resolve_on_commit(order.ref, ("fiscal_emit_failed",), actor=f"fiscal-requeue:{actor}")
     return current
 
 

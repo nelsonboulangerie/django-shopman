@@ -344,7 +344,7 @@ class OrderQueueSurfaceTests(TestCase):
         self.assertTrue(card.can_settle_delivery_cash)
         self.assertEqual(card.payment_method_label, "Dinheiro na retirada")
         action = next(action for action in card.actions if action.ref == "settle-delivery-cash")
-        self.assertEqual(action.label, "Registrar pagamento na retirada")
+        self.assertEqual(action.label, "Receber na retirada")
 
     def test_web_pay_on_pickup_cash_stays_neutral(self) -> None:
         """Pedido web para pagar na retirada não tem tender ainda: neutro, não verde."""

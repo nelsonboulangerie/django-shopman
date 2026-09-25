@@ -297,3 +297,27 @@ describe("OrderCard — a DANFE da sacola", () => {
     expect(w.get("[data-danfe-print]").text()).toBe("Imprimindo…");
   });
 });
+
+describe("OrderCard: a NFC-e que não autorizou", () => {
+  it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", () => {
+    const w = mountCard({ card: card({ fiscal_status: "failed", fiscal_status_label: "NFC-e não autorizada" }) });
+    const link = w.get("[data-fiscal-failed]");
+    expect(link.text()).toContain("NFC-e não autorizada");
+    expect(link.text()).toContain("reprocessar");
+  });
+  it("nota em dia não ocupa o card", () => {
+    expect(mountCard({ card: card({ fiscal_status: "authorized" }) }).find("[data-fiscal-failed]").exists()).toBe(false);
+  });
+});
+
+describe("OrderCard: por que o botão está travado", () => {
+  it("a frase inteira fica à vista, não só no tooltip", () => {
+    const w = mountCard({
+      card: card({ advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }),
+    });
+    expect(w.get("[data-advance-block]").text()).toBe("Encomenda para uma data futura. O preparo abre no dia combinado.");
+  });
+  it("sem bloqueio, nada", () => {
+    expect(mountCard({ card: card({ advance_block_reason: "" }) }).find("[data-advance-block]").exists()).toBe(false);
+  });
+});

@@ -430,8 +430,8 @@ function printQueue() {
           type="button"
           class="relative grid size-control place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
           :class="soundOn && soundBlocked ? 'border-warning/50 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
-          :aria-label="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
-          :title="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : 'Som de pedido novo'"
+          :aria-label="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
+          :title="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : 'Som de pedido novo'"
           data-sound-toggle
           @click="handleSoundAction"
         >
@@ -678,8 +678,8 @@ function printQueue() {
                       :disabled="isBusy(row.card.ref)"
                       class="grid size-control place-items-center rounded border transition disabled:opacity-50"
                       :class="row.card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
-                      :aria-label="row.card.assigned_operator ? `Atendido por ${row.card.assigned_operator} — liberar` : 'Atender'"
-                      :title="row.card.assigned_operator ? `${row.card.assigned_operator} — liberar` : 'Atender'"
+                      :aria-label="row.card.assigned_operator ? `Atendido por ${row.card.assigned_operator}. Toque para liberar` : 'Atender'"
+                      :title="row.card.assigned_operator ? `${row.card.assigned_operator}: toque para liberar` : 'Atender'"
                       @click="onToggleAssign(row.card)"
                     >
                       <Icon :name="row.card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
@@ -756,7 +756,7 @@ function printQueue() {
         <UiDialogHeader>
           <UiDialogTitle>Recusar pedido {{ rejectRef }}</UiDialogTitle>
           <UiDialogDescription>
-            {{ isMarketplaceReject ? "Escolha o motivo exigido pelo iFood — ele é enviado ao marketplace." : "Informe o motivo — o cliente é avisado." }}
+            {{ isMarketplaceReject ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood." : "Informe o motivo. O cliente recebe o aviso com ele." }}
           </UiDialogDescription>
         </UiDialogHeader>
         <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
@@ -786,7 +786,7 @@ function printQueue() {
           aria-label="Motivo da recusa"
         />
         <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Voltar</button>
           <button
             type="button"
             :disabled="!canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))"
@@ -853,7 +853,7 @@ function printQueue() {
           <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Voltar</button>
           <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
             Confirmar acerto
           </button>

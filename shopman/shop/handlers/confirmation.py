@@ -164,7 +164,8 @@ class StaleNewOrderAlertHandler:
             alert_adapter.create(
                 "stale_new_order",
                 "warning",
-                f"Pedido {order.ref} aguardando decisão há muito tempo",
+                f"O pedido {order.ref} espera aceite há tempo demais. Aceite ou recuse no quadro; "
+                "o cliente está esperando a resposta.",
                 order_ref=order.ref,
             )
         except Exception as exc:

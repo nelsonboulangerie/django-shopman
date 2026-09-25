@@ -701,7 +701,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     if courier_block:
         from shopman.shop.services.courier import dispatch_revision
 
-        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Solicitar entregador",
+        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
             enabled=authorized and courier_block["can_dispatch"],
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
                 "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
@@ -722,14 +722,14 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
-        extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar fiscal", enabled=authorized,
+        extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar NFC-e", enabled=authorized,
             reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.", method="POST", idempotency="required",
             payload_schema={"base_revision": fiscal_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     if method == "link":
         from shopman.shop.services import notification as notification_svc
 
         refusal = notification_svc.payment_link_resend_refusal(order)
-        extra_actions.append(Action(ref="resend-payment-link", kind="mutation", label="Reenviar link", enabled=authorized and refusal is None,
+        extra_actions.append(Action(ref="resend-payment-link", kind="mutation", label="Reenviar link de pagamento", enabled=authorized and refusal is None,
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else refusal.message if refusal else ""),
             method="POST", idempotency="required",
             payload_schema={"base_revision": notification_svc.payment_link_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
@@ -802,7 +802,7 @@ COURIER_STATUS_LABELS = {
     "F": "Entregue",
     "N": "Não atendida",
     "C": "Corrida cancelada",
-    "U": "Agrupada",
+    "U": "Junto com outra corrida",
 }
 
 
@@ -1813,7 +1813,7 @@ def _payment_method_label(method: str, payment_data: dict, *, labels: dict | Non
         )
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
-            return f"{label} — pagamento confirmado"
+            return f"{label} · pagamento confirmado"
         handoff = "retirada" if order is not None and not _is_delivery(order) else "entrega"
         return f"{label} na {handoff}"
     return label
@@ -1846,12 +1846,22 @@ def _cash_settlement_actions(order, user, context):
         reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
     is_pickup = not _is_delivery(order)
     return (Action(ref="settle-delivery-cash", kind="mutation", label=(
-        "Registrar pagamento na retirada" if is_pickup else "Registrar pagamento da entrega"
+        "Receber na retirada" if is_pickup else "Acertar entrega"
     ),
         enabled=authorized and not reason, reason=reason, method="POST", idempotency="required",
         payload_schema={"base_revision": operator_orders.cash_settlement_revision(order, shift),
             "expected_actor_id": getattr(user, "pk", None), "cash_shift_id": shift.pk if shift else None},
-        confirmation={"required": True, "description": f"Recebimento no caixa {shift.terminal.label}, turno {shift.pk}." if shift else reason}),)
+        confirmation={"required": True, "description": _settlement_description(shift) if shift else reason}),)
+
+
+def _settlement_description(shift) -> str:
+    """Onde o dinheiro entra, como o operador reconhece: o caixa e quando abriu.
+
+    Antes dizia "turno 42", o número interno do turno, que ninguém no balcão vê.
+    """
+    opened = timezone.localtime(shift.opened_at)
+    terminal = shift.terminal.label or shift.terminal.ref
+    return f"O dinheiro entra no caixa {terminal}, no turno aberto às {opened:%H:%M}."
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
@@ -1933,14 +1943,14 @@ def _format_time_of_day(dt) -> str:
 #: A copy segue o PONTO em que a nota nasce, não o status do pedido: pix/link
 #: emitem na captura (``lifecycle._on_paid``), e "Fiscal na conclusão" mentia
 #: para eles. ``fiscal_status`` mantém as chaves que a tela do Gestor já lê
-#: (``failed`` liga o "Reprocessar fiscal"); ``fiscal_state`` é o vocabulário
+#: (``failed`` liga o "Reprocessar NFC-e"); ``fiscal_state`` é o vocabulário
 #: canônico, o mesmo do PDV.
 _FISCAL_PILL = {
     "authorized": ("authorized", "NFC-e autorizada"),
-    "failed": ("failed", "NFC-e falhou"),
-    "queued": ("pending", "NFC-e na fila"),
+    "failed": ("failed", "NFC-e não autorizada"),
+    "queued": ("pending", "NFC-e em emissão"),
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
-    "not_expected": ("not_requested", "Emissão não estabelecida"),
+    "not_expected": ("not_requested", "Sem NFC-e neste pedido"),
 }
 
 

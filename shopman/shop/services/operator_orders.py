@@ -44,10 +44,12 @@ class ChangeOutRequired(ValueError):
     """
 
     def __init__(self, suggested_q: int):
+        from shopman.utils.monetary import format_money
+
         self.suggested_q = int(suggested_q)
         super().__init__(
             "Informe o troco que o entregador leva da gaveta (pode ser zero). "
-            f"Sugestão: {self.suggested_q} centavos."
+            f"Sugestão: R$ {format_money(self.suggested_q)}."
         )
 
 
@@ -524,7 +526,7 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
     if expected_revision is not None and operational_revision(order, field="equipment") != expected_revision:
-        raise OrderStateConflict("A custódia mudou. Confira a maquininha antes de registrar a devolução.")
+        raise OrderStateConflict("A maquininha deste pedido mudou em outra tela. Atualize e confira antes de registrar a volta.")
     custody = equipment_custody(order)
     if not custody.equipment:
         raise ValueError("Este pedido não levou maquininha.")
@@ -561,6 +563,10 @@ def _stamp_equipment_back(order: Order, *, actor: str) -> None:
     order.data = data
     order.save(update_fields=["data", "updated_at"])
     order.emit_event(event_type="equipment_returned", actor=actor, payload={"equipment": list(custody.equipment)})
+    # A maquininha voltou: "maquininha fora há 2 h" deixa de ser verdade.
+    from shopman.shop.handlers.alert_resolution import resolve_on_commit
+
+    resolve_on_commit(order.ref, ("card_machine_overdue",), actor=f"equipment-back:{actor}")
 
 
 # ── A saída: um entregador, uma maquininha, um ou mais pedidos ───────────
@@ -1429,7 +1435,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     custody = equipment_custody(order)
     if custody.equipment:
         actions.append(Action(
-            ref="equipment-back", kind="mutation", label="Registrar devolução da maquininha",
+            ref="equipment-back", kind="mutation", label="Maquininha voltou",
             enabled=authorized and custody.pending,
             reason=(permission_reason if not authorized else "A maquininha deste pedido já voltou." if not custody.pending else ""),
             method="POST", idempotency="required",

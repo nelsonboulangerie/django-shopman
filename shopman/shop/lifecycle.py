@@ -99,7 +99,7 @@ def ensure_confirmable(order, *, channel_config=None) -> None:
 
     raise InvalidTransition(
         code="availability_not_approved",
-        message="Pedido não pode ser confirmado sem decisão positiva de disponibilidade",
+        message="O pedido não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. Atualize o quadro.",
         context={
             "order_ref": order.ref,
             "status": order.status,
@@ -166,7 +166,7 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
 
     raise InvalidTransition(
         code="payment_not_captured",
-        message="Pagamento ainda não foi confirmado. Aguarde a captura antes de confirmar o pedido.",
+        message="Pagamento ainda não confirmado. Aceite o pedido quando o dinheiro entrar.",
         context={
             "order_ref": order.ref,
             "status": order.status,
@@ -225,6 +225,35 @@ def secure_stock(order) -> None:
 # perde a fase inteira (hold, fulfill, ticket KDS, notificação). dispatch()
 # grava o marcador após o handler retornar; sweep_stuck_orders re-despacha,
 # idempotente, as fases sem marcador.
+#: A etapa do ciclo, como o Gestor a chama. Os nomes internos (``on_paid``)
+#: apareciam crus no alerta de etapa travada.
+PHASE_LABELS = {
+    "on_commit": "entrada do pedido",
+    "on_accepted": "aceite",
+    "on_paid": "pagamento",
+    "on_preparing": "início do preparo",
+    "on_ready": "pedido pronto",
+    "on_dispatched": "saída para entrega",
+    "on_delivered": "entrega",
+    "on_completed": "conclusão",
+    "on_cancelled": "cancelamento",
+    "on_returned": "devolução",
+}
+
+
+def phase_stuck_message(ref: str, phase: str, detail: str = "") -> str:
+    """O alerta de etapa travada: o que houve, o que pode ter faltado, quem cuida."""
+    label = PHASE_LABELS.get(phase, phase)
+    message = (
+        f"O pedido {ref} travou na etapa automática de {label}. O que o sistema faz sozinho "
+        "nessa hora (estoque, nota, aviso ao cliente) pode não ter acontecido. O suporte "
+        "recebeu este aviso por e-mail; até ele conferir, não refaça a etapa à mão."
+    )
+    if detail:
+        message += f" Detalhe técnico: {detail}"
+    return message
+
+
 QUEUED_PHASES = frozenset({"on_preparing", "on_ready", "on_dispatched", "on_delivered", "on_completed", "on_returned"})
 DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"}) | QUEUED_PHASES
 LIFECYCLE_DATA_KEY = "lifecycle"
@@ -1142,6 +1171,28 @@ def _record_availability_decision(
     order.save(update_fields=["data", "updated_at"])
 
 
+#: O que o alerta diz ao Gestor: o que houve e o que fazer. Antes a mensagem
+#: era o nome do tipo com espaço no lugar do sublinhado ("Pedido X: payment
+#: awaiting confirmation"), em inglês e sem gesto nenhum.
+_ALERT_MESSAGES = {
+    "payment_after_cancel": (
+        "O pagamento do pedido {ref} chegou depois do cancelamento. O estorno ao cliente "
+        "foi pedido automaticamente; se ele falhar, chega outro alerta."
+    ),
+    "payment_awaiting_confirmation": "O pedido {ref} já está pago e espera você aceitar.",
+    "preorder_activation_blocked_unpaid": (
+        "A encomenda {ref} chegou ao dia do preparo sem pagamento e não foi para a cozinha. "
+        "Cobre o cliente ou cancele a encomenda."
+    ),
+    "rejected_unavailable": (
+        "O pedido {ref} foi recusado automaticamente: um item ficou indisponível antes da reserva."
+    ),
+    "rejected_oos": (
+        "O pedido {ref} foi recusado automaticamente: a reserva de estoque de um item não se confirmou."
+    ),
+}
+
+
 def _create_alert(order, alert_type: str) -> None:
     """Create an OperatorAlert for exceptional situations.
 
@@ -1153,7 +1204,7 @@ def _create_alert(order, alert_type: str) -> None:
     """
     from shopman.shop.adapters import alert as alert_adapter
 
-    message = f"Pedido {order.ref}: {alert_type.replace('_', ' ')}"
+    message = _ALERT_MESSAGES[alert_type].format(ref=order.ref)
     try:
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)
     except Exception:

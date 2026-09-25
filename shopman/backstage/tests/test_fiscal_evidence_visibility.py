@@ -63,7 +63,7 @@ def _backend_present():
         # dizia "Fiscal na conclusão" e mentia.
         ({"method": "pix"}, {}, ("awaiting_payment", "NFC-e sai quando o pagamento confirmar", "awaiting_payment")),
         # COD aceito: a nota sai na conclusão; até lá está na fila.
-        ({"method": "cash", "collection": "on_delivery"}, {"fulfillment_type": "delivery"}, ("pending", "NFC-e na fila", "queued")),
+        ({"method": "cash", "collection": "on_delivery"}, {"fulfillment_type": "delivery"}, ("pending", "NFC-e em emissão", "queued")),
         ({"method": "cash"}, {"nfce_access_key": "chave"}, ("authorized", "NFC-e autorizada", "authorized")),
         ({"method": "cash"}, {"nfce_access_key": "chave", "nfce_cancelled": True}, ("cancelled", "NFC-e cancelada", "authorized")),
     ],
@@ -87,7 +87,7 @@ def test_a_failed_emission_reads_as_failed_in_both_vocabularies(_backend_present
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
     Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref})
 
-    assert order_queue._fiscal_status(order)[:3] == ("failed", "NFC-e falhou", "failed")
+    assert order_queue._fiscal_status(order)[:3] == ("failed", "NFC-e não autorizada", "failed")
 
 
 def test_not_requested_stays_not_requested(_backend_present, settings):
@@ -96,4 +96,4 @@ def test_not_requested_stays_not_requested(_backend_present, settings):
     order = Order.objects.create(ref="LAB-FISCAL-NOT", status="accepted", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
 
-    assert order_queue._fiscal_status(order)[:3] == ("not_requested", "Emissão não estabelecida", "not_expected")
+    assert order_queue._fiscal_status(order)[:3] == ("not_requested", "Sem NFC-e neste pedido", "not_expected")

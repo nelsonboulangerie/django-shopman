@@ -332,7 +332,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
               <span v-if="order.delivery_instructions" class="block text-muted-foreground">{{ order.delivery_instructions }}</span>
             </span>
           </p>
-          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status_label || "—" }}</p>
+          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "Pagamento não informado" }}<template v-if="order.payment_status_label"> · {{ order.payment_status_label }}</template></p>
           <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" :operation-summary="order.ifood_operation_summary" />
           <OrderIFoodNegotiations v-if="order.ifood_negotiations?.length" :order-ref="order.ref" :negotiations="order.ifood_negotiations" @refresh="refresh" @dirty-change="negotiationDirty = $event" />
           <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
@@ -452,7 +452,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
         </button>
         <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
-          <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
+          <Icon name="lucide:file-text" class="size-4" /> Reprocessar NFC-e
         </button>
         <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
              não pago, não vencido) — o servidor decide, a tela obedece. A
