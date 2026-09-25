@@ -607,6 +607,7 @@ class OrderReorderView(APIView):
         summary="Claim an announced offer — assembles the bag, resolving price now",
         responses={
             200: OpenApiResponse(description="Cart projection after the offer was claimed."),
+            400: DetailSerializer,
             404: DetailSerializer,
             409: DetailSerializer,
         },
@@ -623,8 +624,10 @@ class OfferClaimView(APIView):
     oferta; a autenticação acontece no checkout, onde já acontecia. Ninguém precisa estar
     logado para encher uma sacola.
 
-    Mesmo contrato do `reorder`: 409 quando a sacola já tem itens e o cliente não disse
-    se quer somar ou trocar — decidir por ele apagaria uma sacola que ele montou.
+    **A oferta sempre soma** (decisão do dono, 24/09/2026): o que já estava na sacola
+    fica, e a resposta diz `kept_existing_items` para a tela perguntar DEPOIS se o
+    cliente quer manter tudo. Quem responde "só a oferta" volta com `mode=replace`, que
+    esvazia a sacola e remonta a oferta. Nunca se troca sem esse pedido explícito.
     """
 
     permission_classes = [AllowAny]
@@ -647,6 +650,11 @@ class OfferClaimView(APIView):
             )
 
         mode = str((request.data.get("mode") if hasattr(request, "data") else "") or "").strip().lower()
+        if mode not in {"", "replace"}:
+            return Response(
+                {"detail": "Modo de oferta desconhecido.", "error_code": "invalid_mode"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         key = remote_mutations.idempotency_key_from_request(
             request,
@@ -682,20 +690,15 @@ class OfferClaimView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            # ⚠️ A pergunta "sua sacola já tem itens" mora AQUI, dentro da execução, e não
-            # antes dela. Fora, o segundo toque no mesmo link cairia neste 409 em vez de
-            # repetir a resposta guardada — e aí a idempotência que a Action promete não
-            # existiria justamente no caso que ela existe para cobrir.
-            if CartService.has_items(request) and mode not in {"replace", "append"}:
-                return (
-                    {
-                        "detail": "Você já tem itens na sacola. Somar a oferta ou trocar?",
-                        "error_code": "cart_not_empty",
-                    },
-                    status.HTTP_409_CONFLICT,
-                )
+            # ⚠️ "A sacola já tinha itens" é lido AQUI, dentro da execução e antes de
+            # somar: depois não há como saber (um item que já estava lá E está na oferta
+            # volta em `added`). E dentro da execução, o toque repetido no mesmo link
+            # repete a resposta guardada — com o mesmo `kept_existing_items`.
             if mode == "replace":
                 CartService.clear_items(request)
+                kept_existing_items = False
+            else:
+                kept_existing_items = CartService.has_items(request)
             result = offer_service.add_offer_items(
                 request, promotion,
                 cart_service=CartService,
@@ -707,6 +710,7 @@ class OfferClaimView(APIView):
                     "offer": {"ref": promotion.ref, "name": promotion.name},
                     "added": list(result.added),
                     "skipped": _skipped_offer_items(result.skipped, request=request),
+                    "kept_existing_items": kept_existing_items,
                     "cart": _cart_payload(request),
                 },
                 status.HTTP_200_OK,
