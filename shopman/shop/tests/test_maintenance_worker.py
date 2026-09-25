@@ -29,7 +29,6 @@ from shopman.payman.models import PaymentIntent
 from shopman.stockman.models import Hold, HoldStatus, Quant
 
 from shopman.shop.management.commands.maintenance_worker import (
-    DIVERGENCIAS_LEMBRADAS,
     MAINTENANCE_COMMANDS,
     MARKETING_DELIVERY_BATCH,
     MARKETING_DELIVERY_LEASE_SECONDS,
@@ -320,11 +319,14 @@ def test_every_task_failing_still_completes_the_cycle(caplog):
         assert any(nome in message for message in logged), f"faltou log de {nome}"
 
 
-# ── (b1) Divergência financeira repetida: grita uma vez por data ────────────
+# ── (b1) Divergência financeira repetida: o worker não grita ─────────────────
 #
 # O `reconcile_financial_day` re-reconcilia ontem a cada ciclo e, enquanto a
 # divergência estiver aberta, levanta o MESMO CommandError. Em 22/09 foram 178
-# eventos no Sentry para uma divergência que já era OperatorAlert com dedupe.
+# eventos no Sentry para uma divergência que já era OperatorAlert com dedupe; a
+# memória em processo que veio depois esquecia a cada deploy. O grito agora é
+# do comando, uma vez por OperatorAlert aberto (ver
+# `shopman/backstage/tests/test_financial_reconciliation.py`); aqui é rastro.
 
 RECONCILE = "reconcile_financial_day"
 
@@ -353,34 +355,31 @@ def _avisos(caplog, command):
     ]
 
 
-def test_divergencia_financeira_repetida_grita_uma_vez_por_data(caplog):
-    worker = WorkerCommand()
+def test_divergencia_financeira_no_worker_e_rastro_mesmo_no_primeiro_ciclo(caplog):
+    """Nem o primeiro ciclo de um processo novo grita: restart/deploy não repete."""
     ontem = "Reconciliação financeira de 2026-09-21 encontrou divergências."
     hoje = "Reconciliação financeira de 2026-09-22 encontrou divergências."
+    mensagens = [ontem, ontem, hoje, hoje]
     with (
         patch(
             "shopman.shop.management.commands.maintenance_worker.call_command",
-            side_effect=_call_command_que_diverge([ontem, ontem, ontem, hoje, hoje]),
+            side_effect=_call_command_que_diverge(mensagens),
         ),
         _capture_worker_logs(caplog, level=logging.WARNING),
     ):
-        for _ in range(5):
-            worker._run_cycle()
+        for _ in range(4):
+            # Um worker novo a cada ciclo = um deploy entre cada ciclo.
+            WorkerCommand()._run_cycle()
 
-    gritos = _gritos(caplog, RECONCILE)
-    # Um grito por data, com traceback (é o que o Sentry transforma em evento).
-    assert len(gritos) == 2
-    assert all(r.exc_info is not None for r in gritos)
-    assert "2026-09-21" in str(gritos[0].exc_info[1])
-    assert "2026-09-22" in str(gritos[1].exc_info[1])
-    # As repetições ficam no log como aviso, sem traceback — rastro, não evento.
+    assert not _gritos(caplog, RECONCILE)
     avisos = _avisos(caplog, RECONCILE)
-    assert len(avisos) == 3
+    assert len(avisos) == 4
     assert all(r.exc_info is None for r in avisos)
+    assert "2026-09-22" in avisos[-1].getMessage()
 
 
 def test_excecao_inesperada_da_reconciliacao_grita_sempre(caplog):
-    """Só a divergência (CommandError) é deduplicada; o defeito de verdade grita."""
+    """Só a divergência (CommandError) vira rastro; o defeito de verdade grita."""
     worker = WorkerCommand()
 
     def fake(command, **kwargs):
@@ -415,16 +414,6 @@ def test_command_error_de_outro_comando_segue_gritando_sempre(caplog):
         worker._run_cycle()
 
     assert len(_gritos(caplog, "sweep_stuck_orders")) == 2
-
-
-def test_memoria_de_divergencias_tem_teto():
-    worker = WorkerCommand()
-    for dia in range(DIVERGENCIAS_LEMBRADAS + 5):
-        assert not worker._ja_gritada(RECONCILE, CommandError(f"dia {dia}"))
-    assert len(worker._divergencias_gritadas) == DIVERGENCIAS_LEMBRADAS
-    # A mais antiga saiu; a mais recente continua lembrada.
-    assert not worker._ja_gritada(RECONCILE, CommandError("dia 0"))
-    assert worker._ja_gritada(RECONCILE, CommandError(f"dia {DIVERGENCIAS_LEMBRADAS + 4}"))
 
 
 # ── (b2) Entrega de Marketing: dentro do ciclo, sem componente próprio ───────

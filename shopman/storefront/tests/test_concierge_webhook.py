@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from copy import deepcopy
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -289,6 +290,61 @@ def test_disabled_still_authenticates_before_ack(url, intake, settings):
     response = post(url, event())
     assert response.json() == {"status": "disabled", "reason": "switch_off"}
     assert intake == []
+
+
+def _webhook_errors(url, caplog):
+    """Posta uma mensagem e devolve os ERROR do logger do webhook (``shopman`` não propaga)."""
+    webhook_logger = logging.getLogger(webhook.__name__)
+    webhook_logger.addHandler(caplog.handler)
+    previous = (webhook_logger.level, webhook_logger.propagate)
+    webhook_logger.setLevel(logging.DEBUG)
+    # Captura única: com propagação ligada (varia por ambiente; na CI está), o
+    # handler-raiz do caplog pegaria o MESMO record de novo.
+    webhook_logger.propagate = False
+    try:
+        response = post(url, event())
+    finally:
+        webhook_logger.removeHandler(caplog.handler)
+        webhook_logger.setLevel(previous[0])
+        webhook_logger.propagate = previous[1]
+    # Mensagens distintas: a asserção não depende de quantas vezes um mesmo
+    # record foi capturado.
+    errors = sorted({
+        r.getMessage() for r in caplog.records
+        if r.name == webhook.__name__ and r.levelno >= logging.ERROR
+    })
+    return response, errors
+
+
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [({"enabled": False}, "switch_off"), ({"operation_mode": "observe"}, "observation_only")],
+)
+def test_deliberate_standby_does_not_raise_an_error_per_message(url, intake, settings, caplog, override, reason):
+    """SHOPMAN-E: com o modo observação ligado de propósito, cada mensagem do
+    fluxo antigo (sem ``X-Concierge-Mode: observe``) virava um evento no Sentry."""
+    settings.SHOPMAN_CONCIERGE = {**CONFIG, **override}
+    response, errors = _webhook_errors(url, caplog)
+    assert response.json() == {"status": "disabled", "reason": reason}
+    assert errors == []
+    assert intake == []
+
+
+@pytest.mark.parametrize(
+    ("override", "api_key", "reason"),
+    [
+        ({"contract_version": 2}, "fake", "contract_gate"),
+        ({"operation_mode": "whatever"}, "fake", "operation_mode_gate"),
+        ({}, "", "ai_key_missing"),
+    ],
+)
+def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, override, api_key, reason):
+    settings.SHOPMAN_CONCIERGE = {**CONFIG, **override}
+    settings.AI_ASSIST_API_KEY = api_key
+    response, errors = _webhook_errors(url, caplog)
+    assert response.json() == {"status": "disabled", "reason": reason}
+    assert len(errors) == 1
+    assert reason in errors[0]
 
 
 def test_no_network_lookup_in_ack(url, intake, monkeypatch):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import logging
 from io import StringIO
 from types import SimpleNamespace
 
@@ -191,6 +193,77 @@ def test_financial_reconciliation_alerts_cancelled_order_with_captured_balance()
         severity="critical",
         acknowledged=False,
     ).exists()
+
+
+RECONCILE_LOGGER = "shopman.backstage.management.commands.reconcile_financial_day"
+OPERATIONAL_LOGGER = "shopman.operational"
+
+
+@contextlib.contextmanager
+def _capture(caplog, *names):
+    """Anexa o handler do caplog direto nos loggers (``shopman`` não propaga)."""
+    loggers = [logging.getLogger(name) for name in names]
+    previous = [(lg, lg.level, lg.propagate) for lg in loggers]
+    for lg in loggers:
+        lg.addHandler(caplog.handler)
+        lg.setLevel(logging.DEBUG)
+        lg.propagate = False
+    try:
+        yield
+    finally:
+        for lg, level, propagate in previous:
+            lg.removeHandler(caplog.handler)
+            lg.setLevel(level)
+            lg.propagate = propagate
+
+
+def _reconcile_divergente(today):
+    with pytest.raises(CommandError):
+        call_command("reconcile_financial_day", date=today.isoformat(), stdout=StringIO())
+
+
+@pytest.mark.django_db
+def test_divergencia_grita_uma_vez_por_alerta_aberto_nao_por_ciclo(caplog):
+    """SHOPMAN-2: 201 eventos no Sentry para a divergência de UM dia.
+
+    O worker reroda a conciliação a cada 5 min e um deploy reinicia o processo.
+    O grito (ERROR, que o Sentry vira evento) sai só no ciclo que ABRE o
+    OperatorAlert; enquanto ele está aberto, nenhum ciclo — de nenhum processo —
+    grita de novo. Resolvido o alerta com a divergência ainda lá, abre alerta
+    novo e grita de novo: nunca cala um problema vivo.
+    """
+    today = timezone.localdate()
+    _paid_order(ref="FIN-GRITO", status=Order.Status.CANCELLED)
+    DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
+
+    def gritos():
+        return [
+            r for r in caplog.records
+            if r.name == RECONCILE_LOGGER and r.levelno >= logging.ERROR
+        ]
+
+    with _capture(caplog, RECONCILE_LOGGER, OPERATIONAL_LOGGER):
+        for _ in range(3):
+            _reconcile_divergente(today)
+        assert len(gritos()) == 1
+        assert today.isoformat() in gritos()[0].getMessage()
+        assert "1 crítica(s)" in gritos()[0].getMessage()
+        assert OperatorAlert.objects.filter(type="payment_reconciliation_failed").count() == 1
+
+        # O registro do alerta crítico é rastro: o aviso ao humano é o e-mail
+        # do critical_alerts, não um segundo evento no Sentry (SHOPMAN-A).
+        created = [
+            r for r in caplog.records
+            if r.name == OPERATIONAL_LOGGER and r.getMessage() == "operator_alert.created"
+        ]
+        assert len(created) == 1
+        assert created[0].levelno == logging.WARNING
+
+        OperatorAlert.objects.filter(type="payment_reconciliation_failed").update(
+            resolved_at=timezone.now()
+        )
+        _reconcile_divergente(today)
+        assert len(gritos()) == 2
 
 
 @pytest.mark.django_db
