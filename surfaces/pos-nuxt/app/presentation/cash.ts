@@ -246,13 +246,25 @@ export function sessionScreenState(
   return hasOpenShift ? "open" : "closed";
 }
 
-// ── Antesala do turno aberto: pendências e tiles ──────────────────────────
+// ── Antesala: tudo é card ──────────────────────────────────────────────────
 //
-// Com o turno aberto a antesala respondia tudo de uma vez: dois formulários
-// grandes abertos o turno inteiro, e as ações raras misturadas com as
-// pendências que precisam de gente. O que vai aqui é a ORGANIZAÇÃO dessa
-// tela: quantas coisas pedem uma pessoa agora, e quais ações viram tile. As
-// funções são puras para a página só desenhar.
+// A antesala respondia tudo de uma vez: formulários grandes abertos o turno
+// inteiro, pendências em listas no meio das ações raras, e — com o caixa
+// fechado — um formulário de abertura e dois cartões com botão dentro. Pedido
+// do dono (25/09/2026): TODAS as opções são cards que abrem. A tela vira uma
+// grade de atos com nome, ícone e uma linha dizendo o que vai acontecer; o
+// formulário (ou a lista) só aparece quando o operador escolhe.
+//
+// As seções, de cima para baixo, na ordem em que o balcão pergunta:
+//
+//   Caixa             — abrir (fechado) ou continuar vendendo (aberto)
+//   Precisa de você   — só existe com pendência; um card por natureza
+//   Gaveta            — pedir troco, entrada/saída, abrir sem venda
+//   Fim do expediente — fechar caixa → fechamento do dia → relatório
+//
+// "Fechar caixa" saiu da Gaveta para o Fim do expediente: é o primeiro passo
+// do corredor da noite, não um ato de gaveta no meio do turno. As funções são
+// puras para a página só desenhar.
 
 /**
  * SE o bloco "Precisa de você" existe — nunca o número que ele mostra.
@@ -261,8 +273,8 @@ export function sessionScreenState(
  * em dinheiro (gaveta aberta, PIN de gerente), pedido de troco (alguém precisa
  * trazer cédulas ao balcão) e conta na casa (saldo que pode esperar a semana
  * inteira). Como crachá — "4 pendências" — ela decidia se o operador largava o
- * balcão sem dizer para quê. Cada seção da tela carrega o próprio número; aqui
- * só interessa se zero ou não.
+ * balcão sem dizer para quê. Cada card carrega o próprio número; aqui só
+ * interessa se zero ou não.
  */
 export function attentionCount(input: {
   pendingCashRefunds: readonly unknown[];
@@ -274,17 +286,29 @@ export function attentionCount(input: {
     + input.accountBalances.length;
 }
 
-export interface SessionActionTile {
-  /** Identidade do tile (e do diálogo que ele abre). Movimento leva o tipo: `movement:sangria`. */
+/**
+ * Um card da antesala. A `key` é a identidade do card E do que ele abre (o
+ * diálogo `data-session-dialog`, ou a página): a página só faz o `switch`.
+ * Movimento leva o tipo na chave e em `kind`: `movement:sangria`.
+ */
+export interface SessionTile {
   key: string;
-  action: "request_change" | "movement" | "open_drawer" | "close_shift";
-  /** Só para `movement`: o tipo pré-escolhido ao abrir o diálogo. */
-  kind?: string;
   icon: string;
   label: string;
   description: string;
   disabled: boolean;
-  tone: "default" | "destructive";
+  /**
+   * - `primary`: o próximo gesto óbvio da tela (abrir caixa, continuar
+   *   vendendo, o passo seguinte do fim de dia) — card cheio;
+   * - `attention`: pendência que pede gente;
+   * - `destructive`: encerra algo — vermelho SÓ no ícone, nunca no card todo;
+   * - `default`: o resto.
+   */
+  tone: "default" | "primary" | "attention" | "destructive";
+  /** Só para movimento: o tipo pré-escolhido ao abrir o diálogo. */
+  kind?: string;
+  /** Selo curto no canto (quantidade de pendências, "Próximo passo", "Feito"). */
+  badge?: string;
 }
 
 // O tile de movimento fala pelo TIPO. O rótulo continua o de `movementLabel`
@@ -297,10 +321,81 @@ const MOVEMENT_TILES: Record<string, { icon: string; description: string }> = {
 };
 
 /**
- * Os tiles da seção "Gaveta", na ordem em que o balcão os usa: pedir troco,
- * os movimentos que a capability oferece, abrir a gaveta e fechar o caixa.
+ * O card da seção "Caixa" com o caixa FECHADO: abrir. É o gesto óbvio de quem
+ * chega, e por isso `primary` — a não ser que o fim de dia esteja em curso
+ * (acabou de fechar e o fechamento do dia está pendente), quando o destaque
+ * passa ao próximo passo do corredor.
+ */
+export function openShiftTile(input: {
+  floatSuggestionDisplay: string;
+  endOfDayInProgress: boolean;
+}): SessionTile {
+  return {
+    key: "open_shift",
+    icon: "lucide:wallet",
+    label: "Abrir caixa",
+    description: input.floatSuggestionDisplay
+      ? `Conferir o fundo de troco (${input.floatSuggestionDisplay}) e vender`
+      : "Informar o fundo de troco e vender",
+    disabled: false,
+    tone: input.endOfDayInProgress ? "default" : "primary",
+  };
+}
+
+/**
+ * Os cards de "Precisa de você" — um por natureza, cada um com o SEU número.
+ * Natureza sem pendência não vira card: dado opcional faz a tela crescer.
+ */
+export function attentionTiles(input: {
+  pendingCashRefunds: readonly unknown[];
+  pendingChangeRequests: readonly unknown[];
+  accountBalances: readonly unknown[];
+}): SessionTile[] {
+  const tiles: SessionTile[] = [];
+  const refunds = input.pendingCashRefunds.length;
+  if (refunds) {
+    tiles.push({
+      key: "attention:refunds",
+      icon: "lucide:rotate-ccw",
+      label: refunds === 1 ? "Devolução em dinheiro" : "Devoluções em dinheiro",
+      description: "Venda cancelada · o dinheiro sai desta gaveta com PIN do gerente",
+      disabled: false,
+      tone: "attention",
+      badge: String(refunds),
+    });
+  }
+  const change = input.pendingChangeRequests.length;
+  if (change) {
+    tiles.push({
+      key: "attention:change",
+      icon: "lucide:coins",
+      label: change === 1 ? "Pedido de troco" : "Pedidos de troco",
+      description: "Troco a caminho do balcão · atender quando chegar",
+      disabled: false,
+      tone: "attention",
+      badge: String(change),
+    });
+  }
+  const accounts = input.accountBalances.length;
+  if (accounts) {
+    tiles.push({
+      key: "attention:accounts",
+      icon: "lucide:book-user",
+      label: "Contas na casa",
+      description: accounts === 1 ? "Um cliente com saldo em aberto" : `${accounts} clientes com saldo em aberto`,
+      disabled: false,
+      tone: "attention",
+      badge: String(accounts),
+    });
+  }
+  return tiles;
+}
+
+/**
+ * Os cards da seção "Gaveta", na ordem em que o balcão os usa: pedir troco,
+ * os movimentos que a capability oferece e abrir a gaveta.
  *
- * ⚠️ Sem caminho de software a gaveta NÃO some: o tile fica desabilitado e a
+ * ⚠️ Sem caminho de software a gaveta NÃO some: o card fica desabilitado e a
  * descrição diz por quê. Sumir calado fez o dono procurar um botão que nunca
  * ia aparecer, achando que o PDV estava quebrado.
  */
@@ -308,11 +403,10 @@ export function sessionActionTiles(input: {
   movementKinds: readonly string[];
   canOpenDrawer: boolean;
   drawerUnavailableReason: string;
-}): SessionActionTile[] {
-  const tiles: SessionActionTile[] = [
+}): SessionTile[] {
+  const tiles: SessionTile[] = [
     {
       key: "request_change",
-      action: "request_change",
       icon: "lucide:coins",
       label: "Pedir troco",
       description: "O troco vem até o balcão",
@@ -324,7 +418,6 @@ export function sessionActionTiles(input: {
     const tile = MOVEMENT_TILES[kind];
     tiles.push({
       key: `movement:${kind}`,
-      action: "movement",
       kind,
       icon: tile?.icon || "lucide:banknote",
       label: movementLabel(kind),
@@ -333,65 +426,71 @@ export function sessionActionTiles(input: {
       tone: "default",
     });
   }
-  tiles.push(
-    {
-      key: "open_drawer",
-      action: "open_drawer",
-      icon: "lucide:archive",
-      label: "Abrir gaveta",
-      description: input.canOpenDrawer ? "Sem venda, com motivo registrado" : input.drawerUnavailableReason,
-      disabled: !input.canOpenDrawer,
-      tone: "default",
-    },
-    {
+  tiles.push({
+    key: "open_drawer",
+    icon: "lucide:archive",
+    label: "Abrir gaveta",
+    description: input.canOpenDrawer ? "Sem venda, com motivo registrado" : input.drawerUnavailableReason,
+    disabled: !input.canOpenDrawer,
+    tone: "default",
+  });
+  return tiles;
+}
+
+/**
+ * Os cards de "Fim do expediente", na ordem do corredor da noite: fechar o
+ * caixa (só com turno aberto), o fechamento do dia (quem a API deixou entrar —
+ * `dayClosing` nulo = 401/403 na sondagem) e o relatório (quem AUDITA).
+ *
+ * O PRÓXIMO PASSO se destaca sozinho: fechado o caixa, com o dia por fechar, o
+ * card do fechamento do dia vira `primary` com o selo "Próximo passo". Três
+ * telas que não se falavam viravam três lembranças; agora são um corredor.
+ */
+export function endOfDayTiles(input: {
+  shiftOpen?: boolean;
+  justClosedShift?: boolean;
+  canAuditCash: boolean;
+  dayClosing: { already_closed: boolean; today_display: string; existing_closing_display: string } | null;
+}): SessionTile[] {
+  const tiles: SessionTile[] = [];
+  if (input.shiftOpen) {
+    tiles.push({
       key: "close_shift",
-      action: "close_shift",
       icon: "lucide:lock",
       label: "Fechar caixa",
       description: "Contagem cega · encerra o turno",
       disabled: false,
-      // Destrutivo no ÍCONE, não no tile inteiro: é a ação que encerra, e a
+      // Destrutivo no ÍCONE, não no card inteiro: é a ação que encerra, e a
       // tela precisa dizer isso sem pintar um quadrado de vermelho na frente
       // do operador o turno todo.
       tone: "destructive",
-    },
-  );
-  return tiles;
-}
-
-export interface SessionNavTile {
-  key: "cash_report" | "day_closing";
-  icon: string;
-  label: string;
-  description: string;
-}
-
-/**
- * Os tiles de "Fim do expediente" — só para quem pode. O relatório é de quem
- * AUDITA (`can_audit_cash`), o fechamento do dia de quem a API deixou entrar
- * (`dayClosing` nulo = 401/403 na sondagem). Lista vazia = seção não existe.
- */
-export function endOfDayTiles(input: {
-  canAuditCash: boolean;
-  dayClosing: { already_closed: boolean; today_display: string; existing_closing_display: string } | null;
-}): SessionNavTile[] {
-  const tiles: SessionNavTile[] = [];
+    });
+  }
+  if (input.dayClosing) {
+    const done = input.dayClosing.already_closed;
+    const nextStep = !done && !input.shiftOpen && !!input.justClosedShift;
+    tiles.push({
+      key: "day_closing",
+      icon: done ? "lucide:circle-check" : "lucide:clipboard-check",
+      label: done ? "Ver fechamento do dia" : "Fechamento do dia",
+      description: done
+        ? input.dayClosing.existing_closing_display
+        : `${input.dayClosing.today_display} · contar as sobras do que a casa produz`,
+      disabled: false,
+      tone: nextStep ? "primary" : "default",
+      badge: nextStep ? "Próximo passo" : done ? "Feito" : undefined,
+    });
+  }
   if (input.canAuditCash) {
     tiles.push({
       key: "cash_report",
       icon: "lucide:receipt-text",
       label: "Relatório de caixa",
-      description: "Leitura X do turno aberto, leituras Z dos turnos fechados e o histórico do dia.",
-    });
-  }
-  if (input.dayClosing) {
-    tiles.push({
-      key: "day_closing",
-      icon: "lucide:clipboard-check",
-      label: input.dayClosing.already_closed ? "Ver fechamento" : "Fazer o fechamento",
-      description: input.dayClosing.already_closed
-        ? input.dayClosing.existing_closing_display
-        : `${input.dayClosing.today_display} · contagem cega de sobras e perdas.`,
+      description: input.shiftOpen
+        ? "Parcial do turno aberto, turnos fechados e o total do dia"
+        : "Turnos fechados e o total do dia",
+      disabled: false,
+      tone: "default",
     });
   }
   return tiles;

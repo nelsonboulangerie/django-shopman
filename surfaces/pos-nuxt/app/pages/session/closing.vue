@@ -21,10 +21,21 @@
 // que ser resolvida antes de encerrar. Antes da contagem ela aparece como
 // aviso e contagem de ordens, sem SKU e sem quantidade; a tabela inteira volta
 // depois.
+//
+// ⚠️ SÓ SE CONTA O QUE A CASA PRODUZ (decisão do dono, 25/09/2026). A lista
+// vem filtrada do servidor (ficha ativa); revenda não entra, porque não vence
+// de um dia para o outro e o estoque dela anda pela venda e pelo recebimento.
+//
+// A contagem é um corredor: ordem do NOME (é o que está na etiqueta), Enter
+// leva ao próximo campo, o progresso diz quanto falta, e o botão de registrar
+// fica preso ao pé da tela — contar trinta itens não pode terminar numa
+// rolagem à procura do botão.
 import {
   allQuantitiesFilled,
   buildQuantitiesPayload,
   closingBadge,
+  closingCountOrder,
+  countedItems,
   firstUnfilledItemName,
   pendingStatusDisplay,
   productionRows,
@@ -66,6 +77,11 @@ const productionGrid = computed(() =>
   ),
 );
 
+// A ordem da tela (pelo nome) é a ordem de TUDO: da lista, do Enter e da dica
+// que acusa o item que falta — a dica na ordem do servidor apontava um item
+// lá embaixo enquanto o de cima estava vazio.
+const countItems = computed(() => closingCountOrder(closing.value?.items ?? []));
+
 // Contagem cega: um input por SKU, começa VAZIO (contar de verdade, não
 // aceitar default). O CTA só arma quando toda linha tem um número.
 const quantities = reactive<Record<string, string>>({});
@@ -76,13 +92,30 @@ const canSubmit = computed(
 // A dica acusa O ITEM que falta, não "todos": um "1,5" colado deixava a tela
 // aparentemente preenchida e a dica mandava procurar sem dizer onde.
 const unfilledItemName = computed(
-  () => (closing.value ? firstUnfilledItemName(closing.value.items, quantities) : ""),
+  () => (closing.value ? firstUnfilledItemName(countItems.value, quantities) : ""),
 );
 
 // Só dígitos no @input: quantidade é inteira e nunca negativa, e o que não
 // for número não deve nem chegar a morar no campo.
 function setQuantity(sku: string, raw: string) {
   quantities[sku] = sanitizeQtyInput(raw);
+}
+
+const countedTotal = computed(() => countedItems(countItems.value, quantities));
+
+// Enter leva ao PRÓXIMO campo; no último, ao botão de registrar. Contar é
+// olhar a vitrine e digitar — a mão não deveria ir ao mouse entre um e outro.
+const countList = useTemplateRef<HTMLElement>("countList");
+const registerButton = useTemplateRef<{ $el: HTMLElement }>("registerButton");
+function focusNextCount(index: number) {
+  const inputs = countList.value?.querySelectorAll<HTMLInputElement>("input[data-count-input]") ?? [];
+  const next = inputs[index + 1];
+  if (next) {
+    next.focus();
+    next.select();
+  } else {
+    registerButton.value?.$el?.focus();
+  }
 }
 
 const confirming = ref(false);
@@ -122,7 +155,7 @@ async function confirmSubmit() {
       </UiButton>
       <h1 class="min-w-0 truncate text-lg font-semibold">Fechamento do dia</h1>
       <span v-if="closing" class="ml-auto truncate text-sm text-muted-foreground">
-        {{ closing.today_display }} · contagem cega de sobras e perdas
+        {{ closing.today_display }} · contagem cega do que a casa produz
       </span>
     </header>
 
@@ -337,14 +370,22 @@ async function confirmSubmit() {
 
         <!-- Contagem final (cega) -->
         <section class="grid gap-2 rounded-md border bg-card p-4">
-          <h2 class="text-base font-semibold">Contagem final</h2>
+          <div class="flex items-baseline justify-between gap-2">
+            <h2 class="text-base font-semibold">Contagem final</h2>
+            <span
+              v-if="closing.has_items && !closing.already_closed"
+              class="text-sm tabular-nums text-muted-foreground"
+              data-count-progress
+            >{{ countedTotal }} de {{ countItems.length }} contados</span>
+          </div>
           <p class="text-sm text-muted-foreground">
-            Informe apenas o que sobrou fisicamente. O sistema trata destino e perdas automaticamente.
+            Conte o que sobrou do que a casa produz — revenda não entra. Nada sobrou? Digite 0.
+            O sistema trata destino e perdas.
           </p>
-          <p v-if="!closing.has_items" class="text-sm text-muted-foreground">Nada em estoque vendável para contar.</p>
-          <div v-else class="grid gap-1.5">
+          <p v-if="!closing.has_items" class="text-sm text-muted-foreground">Nada produzido na casa em estoque para contar.</p>
+          <div v-else ref="countList" class="grid gap-1.5">
             <div
-              v-for="item in closing.items"
+              v-for="(item, index) in countItems"
               :key="item.sku"
               class="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
             >
@@ -360,21 +401,29 @@ async function confirmSubmit() {
               </span>
               <!-- Só dígitos no @input: o "1,5" colado não chega a morar no
                    campo, e o CTA não trava por um caractere invisível. -->
+              <!-- Sem placeholder "0": um zero cinza parece contado, e a
+                   contagem cega começa VAZIA. -->
               <UiInput
                 :model-value="quantities[item.sku]"
                 inputmode="numeric"
-                placeholder="0"
-                class="w-20 text-right tabular-nums"
+                enterkeyhint="next"
+                class="h-11 w-20 text-right text-base tabular-nums"
                 :disabled="closing.already_closed || submitting"
                 :aria-label="`Sobras de ${item.name}`"
+                data-count-input
                 @update:model-value="setQuantity(item.sku, $event)"
+                @keydown.enter.prevent="focusNextCount(index)"
               />
             </div>
           </div>
 
           <template v-if="closing.has_items && !closing.already_closed">
-            <div v-if="!confirming" class="mt-1">
-              <UiButton class="w-full" :disabled="!canSubmit || submitting" @click="confirming = true">
+            <!-- Preso ao pé da tela: o botão acompanha a lista. -->
+            <div
+              v-if="!confirming"
+              class="sticky bottom-0 -mx-4 -mb-4 mt-1 border-t bg-card/95 px-4 py-3 backdrop-blur"
+            >
+              <UiButton ref="registerButton" size="lg" class="w-full" :disabled="!canSubmit || submitting" @click="confirming = true">
                 <Icon name="lucide:clipboard-check" class="size-5" />
                 Registrar contagem final
               </UiButton>
@@ -385,7 +434,7 @@ async function confirmSubmit() {
                 <template v-else>Preencha a contagem de todos os itens para registrar.</template>
               </p>
             </div>
-            <div v-else class="mt-1 grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+            <div v-else class="sticky bottom-0 mt-1 grid gap-2 rounded-md border border-destructive/40 bg-card p-3 shadow-lg">
               <p class="text-sm font-medium">
                 Confirmar o fechamento do dia {{ closing.today_display }}? Sobras viram "Ontem" ou perda e a contagem é registrada.
               </p>
