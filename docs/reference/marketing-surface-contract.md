@@ -53,6 +53,14 @@ explicitamente escolhido. Artefato histórico sem formato continua legível, mas
 adapter real o recusa antes da rede — nunca adivinha um efeito novo. A prévia de Story
 mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automaticamente.
 
+`/marketing/preview/` tem dois modos. Sem `announcement`, é a prévia do formulário de
+campanha/modelo: ainda não existe anúncio, e um produto real da loja serve de exemplo
+(`sample: true`, "Exemplo com: …"). Com `announcement: <id>` (tela de revisão), a prévia
+sai do conteúdo GRAVADO do anúncio mais as edições do card (`body`, `hashtags`,
+`platforms`), montada como a aprovação monta — nunca com produto de exemplo. Se o
+anúncio não tem link, a prévia não mostra link, porque o post não terá
+(`campaign.preview_announcement`).
+
 ## Rotas Nuxt
 
 <!-- marketing-ui-routes:start -->

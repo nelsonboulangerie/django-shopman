@@ -1211,6 +1211,8 @@ class PreviewView(_CampaignBase):
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
+        if payload.get("announcement") not in (None, ""):
+            return self._announcement_preview(payload)
         try:
             common = {
                 "sku": str(payload.get("sku") or ""),
@@ -1238,6 +1240,43 @@ class PreviewView(_CampaignBase):
                     platform=str(payload.get("platform") or "instagram"),
                     **common,
                 )
+        except MarketingContractError as exc:
+            return _command_error_response(exc)
+        return Response(preview)
+
+    def _announcement_preview(self, payload):
+        """Revisão de anúncio que JÁ existe: o conteúdo gravado + as edições do card.
+
+        Sem produto de exemplo: o exemplo explica um modelo no formulário, e aqui mentiria
+        sobre o que a aprovação publica (ver `campaign.preview_announcement`).
+        """
+        pk = _command_int(payload.get("announcement"))
+        announcement = _announcement_or_none(pk) if pk and pk > 0 else None
+        if announcement is None:
+            return Response(
+                {"code": "announcement_not_found", "detail": "Anúncio não encontrado."},
+                status=404,
+            )
+        edits, error = _announcement_edits(
+            {key: payload[key] for key in ("body", "hashtags", "platforms") if key in payload}
+        )
+        if error:
+            field = str(error.get("field") or "payload")
+            return Response(
+                {
+                    "code": "invalid_preview_content",
+                    "detail": error["detail"],
+                    "field_errors": {field: [error["detail"]]},
+                },
+                status=422,
+            )
+        try:
+            preview = campaign_service.preview_announcement(
+                announcement,
+                platforms=edits.get("platforms", list(announcement.platforms or [])),
+                body=edits.get("body"),
+                hashtags=edits.get("hashtags"),
+            )
         except MarketingContractError as exc:
             return _command_error_response(exc)
         return Response(preview)

@@ -736,13 +736,15 @@ function askToReject() {
 
         <!-- A decisão e a representação enviada não podem morar em telas diferentes.
              A mesma prévia batch/cancelável usada no formulário de campanha acompanha
-             toda edição deste rascunho, por plataforma. -->
+             toda edição deste rascunho, por plataforma — mas lida do conteúdo GRAVADO
+             do anúncio (`announcement-id`), montado como a aprovação monta. Com o
+             produto de exemplo do formulário ela mostrava link que o post não teria. -->
         <AnnouncementPreview
           :body="body"
-          :sku="announcement.sku"
+          :announcement-id="announcement.pk"
+          :hashtags="parseHashtags(hashtagsText)"
           :platforms="platforms"
           :platform-labels="platformLabels"
-          :platform-content="announcement.platform_content"
         />
 
         <!-- Audiência só governa mensagens diretas. Publicações não têm destinatário individual. -->
