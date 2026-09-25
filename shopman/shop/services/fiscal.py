@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from shopman.shop import directives
+from shopman.shop import directives, fiscal_intermediary
 from shopman.shop.directives import FISCAL_CANCEL_NFCE, FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.services.order_helpers import is_test_order
@@ -212,8 +212,7 @@ def emit(order) -> None:
         _alert_receipt_promised_without_emission(order, data)
         return
 
-    payment = dict(data.get("payment", {}) or {})
-    payment.setdefault("amount_q", order.total_q)
+    payment = _fiscal_payment(order, data)
 
     if _payment_below_total(payment, order):
         _alert_payment_mismatch(order, payment)
@@ -232,19 +231,124 @@ def emit(order) -> None:
 def build_emission_payload(order) -> dict:
     """Snapshot canônico tanto da primeira emissão quanto do reprocessamento."""
     data = order.data or {}
-    payment = dict(data.get("payment") or {})
-    payment.setdefault("amount_q", order.total_q)
+    payment = _fiscal_payment(order, data)
     if _payment_below_total(payment, order):
-        raise ValueError("Pagamento fiscal abaixo do total do pedido. Corrija antes de reprocessar.")
-    payment = _payment_net_of_change(payment, int(order.total_q or 0))
+        raise ValueError("Pagamento fiscal abaixo da base da nota. Corrija antes de reprocessar.")
+    payment = _payment_net_of_change(payment, note_base_q(order))
+    customer = _fiscal_customer(data)
+    # Entrega intermediada sem documento sai presencial, sem destinatário nem
+    # frete — ver fiscal_intermediary.issues_as_presential. Canal próprio nunca.
+    presential = fiscal_intermediary.issues_as_presential(
+        order, requested_tax_id=customer.get("tax_id") or "",
+    )
     delivery = None
-    if data.get("fulfillment_type") == "delivery":
+    if data.get("fulfillment_type") == "delivery" and not presential:
         delivery = {"address": dict(data.get("delivery_address_structured") or {})}
     payload = {"order_ref": order.ref}
     if order.channel_ref:
         payload["channel_ref"] = order.channel_ref
-    payload.update(items=_build_fiscal_items(order), payment=payment, customer=_fiscal_customer(data), delivery=delivery)
+    items = _build_fiscal_items(order)
+    amounts = fiscal_intermediary.seller_amounts(order)
+    if amounts is not None and amounts["freight_q"] > 0:
+        items.append(_intermediary_freight_item(amounts["freight_q"], as_other_expense=presential))
+    payload.update(items=items, payment=payment, customer=customer, delivery=delivery)
+    intermediary = fiscal_intermediary.intermediary_for(order)
+    if intermediary is not None:
+        payload["intermediary"] = intermediary
+    else:
+        _alert_intermediary_not_declared(order)
+    _alert_intermediary_base_unknown(order)
     return payload
+
+
+def _fiscal_payment(order, data: dict) -> dict:
+    """O pagamento **da nota** — que não é sempre o total do pedido.
+
+    Numa venda direta os dois são a mesma coisa, e o ``amount_q`` gravado pelo
+    canal é quem manda. Numa venda por intermediador o total do pedido carrega
+    dinheiro que não é da casa (receita da plataforma, e o frete de quem não
+    entregou), e a nota declara só a parte da casa — ver
+    :mod:`shopman.shop.fiscal_intermediary`.
+
+    A base calculada **sobrescreve**, e não é ``setdefault``: o ingest do
+    marketplace grava ``payment`` sem valor nenhum (método ``external``), e um
+    default teria deixado passar justamente o número errado.
+    """
+    payment = dict(data.get("payment") or {})
+    amounts = fiscal_intermediary.seller_amounts(order)
+    if amounts is not None:
+        payment["amount_q"] = int(amounts["base_q"])
+        return payment
+    payment.setdefault("amount_q", order.total_q)
+    return payment
+
+
+def _intermediary_freight_item(freight_q: int, *, as_other_expense: bool = False) -> dict:
+    """A taxa de entrega que É DA CASA vira a linha de frete da nota.
+
+    Pedido de marketplace não tem a linha ``__DELIVERY_FEE__`` que o carrinho
+    da casa monta: a plataforma manda a taxa no detalhamento financeiro, não
+    como item. O adapter fiscal separa frete de mercadoria por esta marca e
+    nunca mapeia a linha como produto — por isso ela não precisa (nem deve ter)
+    classificação fiscal.
+
+    ``as_other_expense``: a nota sai presencial, sem frete
+    (``fiscal_intermediary.issues_as_presential``), e a mesma taxa entra como
+    **outras despesas** (``vOutro``). A linha ganha outra marca, e o adapter a
+    declara em ``valor_outras_despesas``, nunca como frete nem como mercadoria.
+    """
+    if as_other_expense:
+        return {
+            "sku": "__OTHER_EXPENSE__",
+            "name": "Taxa de entrega",
+            "qty": "1",
+            "unit": "UN",
+            "unit_price_q": int(freight_q),
+            "total_q": int(freight_q),
+            "meta": {"type": "other_expense"},
+            "fiscal": {},
+        }
+    return {
+        "sku": "__DELIVERY_FEE__",
+        "name": "Taxa de entrega",
+        "qty": "1",
+        "unit": "UN",
+        "unit_price_q": int(freight_q),
+        "total_q": int(freight_q),
+        "meta": {"type": "delivery_fee"},
+        "fiscal": {},
+    }
+
+
+def _alert_intermediary_not_declared(order) -> None:
+    """Venda intermediada indo para a nota SEM o grupo do intermediador: grite.
+
+    Emitir assim produz uma NFC-e válida e fora do Ajuste SINIEF 22/20 — o pior
+    tipo de defeito fiscal, porque nada reclama. Só fala quando o canal está
+    declarado como intermediado e a configuração não fecha; venda direta não
+    passa por aqui.
+    """
+    missing = fiscal_intermediary.missing_configuration(order)
+    if not missing:
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    logger.error(
+        "fiscal.intermediary_not_declared order=%s channel=%s missing=%s",
+        order.ref, order.channel_ref, missing,
+    )
+    create_operator_alert(
+        type="fiscal_intermediary_not_declared",
+        severity="critical",
+        message=(
+            f"A NFC-e do pedido {order.ref} vai sair SEM identificar o "
+            f"intermediador da venda, o que o Ajuste SINIEF 22/20 exige. "
+            f"Falta configurar: {missing}."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"fiscal_intermediary_not_declared:{order.ref}",
+    )
 
 
 def _declared_payment_q(payment: dict) -> int:
@@ -298,8 +402,21 @@ def _payment_net_of_change(payment: dict, total_q: int) -> dict:
     return net
 
 
+def note_base_q(order) -> int:
+    """Quanto esta venda deve declarar na nota, em centavos.
+
+    Venda direta: o total do pedido. Venda por intermediador: a parte da casa
+    — o total do pedido menos a receita da plataforma e menos o frete que não
+    foi a casa que prestou.
+    """
+    amounts = fiscal_intermediary.seller_amounts(order)
+    if amounts is not None:
+        return int(amounts["base_q"])
+    return int(order.total_q or 0)
+
+
 def _payment_below_total(payment: dict, order) -> bool:
-    """O pagamento gravado ficou ABAIXO do total do pedido?
+    """O pagamento gravado ficou ABAIXO da base da nota?
 
     **Invariante de canal: quem escreve ``order.data['payment']`` escreve o valor
     FINAL.** O adapter deriva ``valor_desconto = produtos + frete − pagamento``,
@@ -307,12 +424,16 @@ def _payment_below_total(payment: dict, order) -> bool:
     ``_reconcile_order_payment_to_total`` do PDV) não vira erro: vira um
     **desconto que não houve** dentro de um XML válido, subdeclarando a venda.
 
-    Só o lado de baixo é guardado aqui. Pagamento ACIMA do total por troco em
+    A régua é a base DA NOTA (:func:`note_base_q`), não ``Order.total_q``: numa
+    venda por marketplace o total do pedido inclui dinheiro que nunca foi da
+    casa, e comparar com ele recusaria para sempre justamente a nota corrigida.
+
+    Só o lado de baixo é guardado aqui. Pagamento ACIMA da base por troco em
     dinheiro é acertado na montagem (``_payment_net_of_change``); o excedente
     que não é troco gera ``valor_total > valor_produtos`` sem desconto, e a
     própria SEFAZ recusa — falha ruidosa não precisa de guarda nossa.
     """
-    return 0 < _declared_payment_q(payment) < int(order.total_q or 0)
+    return 0 < _declared_payment_q(payment) < note_base_q(order)
 
 
 def _requested_receipt_channels(data: dict) -> list[str]:
@@ -361,21 +482,57 @@ def _alert_receipt_promised_without_emission(order, data: dict) -> None:
     )
 
 
+def _alert_intermediary_base_unknown(order) -> None:
+    """Venda intermediada cuja BASE não pôde ser corrigida: grite igual.
+
+    Irmão de :func:`_alert_intermediary_not_declared`, e existe porque as duas
+    omissões da mesma família falhavam em sentidos opostos: faltar a
+    configuração do grupo gritava, faltar o detalhamento financeiro saía calado
+    pelo total cheio — com a receita da plataforma dentro da base, que é o
+    defeito de origem.
+
+    Silêncio legítimo (venda direta, e pedido do iFood sem ``totals``, cujo
+    total já vem da soma dos itens) é decidido em
+    ``fiscal_intermediary.unreadable_breakdown``, não aqui.
+    """
+    missing = fiscal_intermediary.unreadable_breakdown(order)
+    if not missing:
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    logger.error(
+        "fiscal.intermediary_base_unknown order=%s channel=%s motivo=%s",
+        order.ref, order.channel_ref, missing,
+    )
+    create_operator_alert(
+        type="fiscal_intermediary_base_unknown",
+        severity="critical",
+        message=(
+            f"A NFC-e do pedido {order.ref} vai declarar o total CHEIO do pedido: "
+            f"{missing}."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"fiscal_intermediary_base_unknown:{order.ref}",
+    )
+
+
 def _alert_payment_mismatch(order, payment: dict) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
     declared_q = _declared_payment_q(payment)
+    base_q = note_base_q(order)
     logger.error(
-        "fiscal.emit: pagamento (%s) abaixo do total (%s) em %s — NFC-e não emitida",
-        declared_q, order.total_q, order.ref,
+        "fiscal.emit: pagamento (%s) abaixo da base da nota (%s) em %s — NFC-e não emitida",
+        declared_q, base_q, order.ref,
     )
     create_operator_alert(
         type="fiscal_payment_mismatch",
         severity="critical",
         message=(
             f"NFC-e do pedido {order.ref} NÃO foi emitida: o pagamento gravado "
-            f"(R$ {declared_q / 100:.2f}) está abaixo do total do pedido "
-            f"(R$ {int(order.total_q or 0) / 100:.2f}). Emitir assim colocaria no "
+            f"(R$ {declared_q / 100:.2f}) está abaixo do valor que a nota deve "
+            f"declarar (R$ {base_q / 100:.2f}). Emitir assim colocaria no "
             "documento um desconto que não houve. Acerte o pagamento do pedido e "
             "emita de novo."
         ),

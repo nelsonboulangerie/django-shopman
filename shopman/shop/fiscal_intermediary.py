@@ -1,0 +1,276 @@
+"""Venda por intermediador: o que é dinheiro da casa, e quem intermediou.
+
+Uma venda por plataforma de terceiro tem **dois donos de dinheiro dentro do
+mesmo total**. O ``orderAmount`` do iFood é, pela composição oficial deles,
+``subTotal + deliveryFee + additionalFees − benefits``, e a própria plataforma
+diz das ``additionalFees`` que "todas representam receita do iFood e não devem
+ser adicionadas à nota fiscal". A nota da casa declara a venda da casa — quem
+emite é o estabelecimento, o intermediador só intermedeia.
+
+Além do valor, a nota precisa **dizer que houve intermediação**: o Ajuste
+SINIEF 22/20 (CONFAZ, efeitos desde abr/2021) pede o ``indIntermed`` e o grupo
+``infIntermed`` (CNPJ do intermediador + identificador do cadastro da loja na
+plataforma).
+
+**Este módulo é sobre INTERMEDIADOR, não sobre iFood.** O conceito é da nota e
+vale para qualquer marketplace; por isso a camada fiscal não ganha nenhum
+``if channel == "ifood"``. O que é por plataforma é só a *leitura* do
+detalhamento financeiro, porque cada uma entrega o dela com um nome próprio —
+e hoje existe uma só, lida aqui pelo nome dela, sem registry plugável para um
+segundo consumidor que não existe.
+
+Quem é intermediador não é palpite do código: é a configuração
+``settings.SHOPMAN_FISCAL_INTERMEDIARIES`` (canal → CNPJ/identificador), porque
+o CNPJ do intermediador é dado do deployment, não do pedido.
+
+**Duas omissões, um único modo de falhar.** Uma venda intermediada pode chegar
+aqui faltando duas coisas diferentes, e as duas são graves do mesmo jeito:
+
+- falta a **configuração** do grupo (CNPJ/identificador) → a nota sai fora do
+  Ajuste SINIEF 22/20; grita por :func:`missing_configuration`;
+- falta o **detalhamento financeiro** que sustenta a base → a nota sai pelo
+  total cheio, com a receita da plataforma dentro; grita por
+  :func:`unreadable_breakdown`.
+
+Nenhuma das duas pode sair calada, e é fácil que a segunda saia: ela se
+disfarça de "não há o que corrigir". A ausência de registry (correta: não se
+cria backend plugável sem dois consumidores reais) não pode virar silêncio no
+dia em que um segundo marketplace for declarado — ver
+:data:`READABLE_BREAKDOWN_CHANNELS`, que é esse seam, nomeado.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+#: Os canais cujo detalhamento financeiro este módulo sabe LER.
+#:
+#: ⚠️ **Este é o seam por onde um segundo marketplace entra.** O conceito de
+#: intermediador é genérico, mas a *leitura* do detalhamento não pode ser: cada
+#: plataforma entrega o dela com um nome próprio. Não há registry plugável
+#: porque não há segundo consumidor real — a casa não cria backend plugável
+#: para o futuro.
+#:
+#: O que a ausência de registry **não** pode virar é silêncio. Um canal
+#: declarado como intermediado que não esteja aqui é justamente o caso grave:
+#: a base da nota não seria corrigida, e a receita da plataforma entraria no
+#: documento — o defeito que este módulo existe para consertar, de volta
+#: inteiro, para o canal novo. Por isso ele **grita**, em
+#: :func:`unreadable_breakdown`.
+READABLE_BREAKDOWN_CHANNELS = frozenset({"ifood"})
+
+#: Onde o iFood guarda o detalhamento, dentro de ``Order.data``.
+IFOOD_DATA_KEY = "ifood"
+
+#: O valor de ``deliveredBy`` — vocabulário **do iFood** — que responde "sim" à
+#: pergunta genérica *o transporte foi da casa?*.
+#:
+#: A regra fiscal é sobre quem prestou o transporte: entrega da **loja** ⇒ a
+#: taxa é receita da loja e consta na nota; entrega da **plataforma** ⇒ não
+#: consta, porque nem o serviço nem o dinheiro são da casa. Hoje, na Nelson,
+#: todo pedido do iFood é entregue pelo iFood — mas a regra é lida do campo, e
+#: não cravada, justamente para que o dia em que a entrega própria for ligada a
+#: nota saia certa em vez de errada em silêncio.
+#:
+#: O nome privado é deliberado: a pergunta da casa é :func:`house_delivered`;
+#: esta constante é só a palavra com que UMA plataforma a responde. Um segundo
+#: marketplace responderá com outra palavra, e ela entra junto com o leitor do
+#: detalhamento dele.
+_IFOOD_DELIVERED_BY_HOUSE = "MERCHANT"
+
+
+def _configured(channel_ref: str) -> dict:
+    mapping = dict(getattr(settings, "SHOPMAN_FISCAL_INTERMEDIARIES", {}) or {})
+    entry = mapping.get(str(channel_ref or ""))
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def _digits(value: object) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def is_intermediated(order) -> bool:
+    """Esta venda veio por plataforma de terceiro?
+
+    A pergunta é do canal, não do conteúdo do pedido: quem declara que um canal
+    é marketplace é o deployment.
+    """
+    return bool(_configured(getattr(order, "channel_ref", "")))
+
+
+def intermediary_for(order) -> dict | None:
+    """Grupo do intermediador desta venda, ou ``None``.
+
+    ``None`` cobre dois casos diferentes de propósito, e ambos significam "não
+    mande o grupo": a casa vendeu direto (canal não intermediado), ou o canal é
+    intermediado e **falta configuração** para preencher o grupo.
+
+    Os dois campos são obrigatórios juntos — a Focus NF-e documenta
+    ``cnpj_intermediario`` e ``id_intermediario`` como obrigatórios quando
+    ``indicador_intermediario = 1``. Meio grupo não é meio-certo: é nota
+    recusada. Sem o identificador do cadastro da loja na plataforma (que é
+    pergunta em aberto para o contador), o grupo não sai — e a ausência
+    **grita**, em :func:`missing_configuration`, em vez de virar uma nota
+    silenciosamente fora do Ajuste SINIEF 22/20.
+    """
+    entry = _configured(getattr(order, "channel_ref", ""))
+    if not entry:
+        return None
+    cnpj = _digits(entry.get("cnpj"))
+    id_cad = str(entry.get("id_cad_int_tran") or "").strip()
+    if len(cnpj) != 14 or len(id_cad) < 2:
+        return None
+    return {"cnpj": cnpj, "id_cad_int_tran": id_cad[:60]}
+
+
+def missing_configuration(order) -> str:
+    """Por que o grupo do intermediador não pode ser montado nesta venda.
+
+    ``""`` quando não há nada faltando (inclusive quando a venda não é
+    intermediada). Texto para humano quando falta — é o que o alerta do
+    operador mostra.
+    """
+    entry = _configured(getattr(order, "channel_ref", ""))
+    if not entry:
+        return ""
+    missing = []
+    if len(_digits(entry.get("cnpj"))) != 14:
+        missing.append("CNPJ do intermediador (14 dígitos)")
+    if len(str(entry.get("id_cad_int_tran") or "").strip()) < 2:
+        missing.append("identificador do cadastro da loja na plataforma (idCadIntTran, 2 a 60 caracteres)")
+    return ", ".join(missing)
+
+
+def house_delivered(order) -> bool:
+    """O transporte desta venda foi da CASA, e não da plataforma?
+
+    A pergunta é genérica; a palavra que a responde é de cada plataforma.
+    """
+    data = (order.data or {}).get(IFOOD_DATA_KEY) or {}
+    return str(data.get("delivered_by") or "").strip().upper() == _IFOOD_DELIVERED_BY_HOUSE
+
+
+def unreadable_breakdown(order) -> str:
+    """Por que a base desta venda intermediada NÃO pôde ser corrigida. GRITA.
+
+    ``""`` quando não há nada a dizer — e são dois silêncios **diferentes**,
+    os dois legítimos:
+
+    - **Venda direta.** Não é intermediada; não há base a corrigir.
+    - **Pedido do iFood sem o detalhamento** (simulação de dev, payload
+      antigo). Este é silêncio *merecido*, não suposto: sem ``totals``, o
+      ``ifood_ingest`` monta ``total_q`` a partir da soma dos itens
+      (``total_q = order_amount_q or items_subtotal_q``) — ou seja, não há
+      receita de plataforma dentro dele, e a base já está certa.
+
+    O que NÃO é silêncio é o caso que a ausência de registry criaria: canal
+    declarado como intermediado que este módulo **não sabe ler**. Aí a base
+    ficaria sem correção com a receita da plataforma dentro dela, que é
+    exatamente o defeito de origem — e ele voltaria mudo, para o canal novo.
+    """
+    if not is_intermediated(order):
+        return ""
+    channel = str(getattr(order, "channel_ref", "") or "")
+    if channel in READABLE_BREAKDOWN_CHANNELS:
+        return ""
+    return (
+        f"o canal '{channel}' está declarado como intermediado em "
+        "SHOPMAN_FISCAL_INTERMEDIARIES, mas shopman.shop.fiscal_intermediary não "
+        "sabe ler o detalhamento financeiro dele (hoje só o iFood tem leitor). "
+        "Sem isso a base da nota não é corrigida e a receita da plataforma entra "
+        "no documento"
+    )
+
+
+def issues_as_presential(order, *, requested_tax_id: str) -> bool:
+    """Esta entrega intermediada sai como NFC-e PRESENCIAL, sem destinatário?
+
+    Decisão do dono (24/09/2026), praxe do mercado (ERPs de restaurante fazem
+    assim); a confirmação do contador fica registrada como pendência dele.
+
+    A nota de entrega a domicílio (``indPres=4``) exige destinatário
+    identificado (E01-20 → 787), endereço (E05-20 → 788) e transportador
+    (X03-20 → 786). O marketplace só repassa o documento quando o cliente pede
+    a nota — o caso comum é chegar sem CPF, e o cliente já foi embora com o
+    pedido fechado no app de outro. Nesse caso a venda é declarada como
+    **presencial** (``indPres=1``), consumidor não identificado, sem endereço,
+    sem frete e sem transportador. A taxa de entrega que foi da casa não some
+    da nota: vira **outras despesas** (``vOutro``), para o total bater com o que
+    o cliente pagou à casa.
+
+    **Só vale para canal intermediado.** Nos canais próprios (loja, PDV,
+    WhatsApp) o dono decidiu o contrário: o CPF é exigido na ENTRADA do pedido
+    de entrega, e entrega sem ele continua recusada e gritando. Com documento,
+    a venda intermediada segue a nota de entrega completa.
+
+    ``requested_tax_id`` é o documento PEDIDO para esta nota (``fiscal.tax_id``),
+    nunca o do cadastro. Documento informado e inválido **não** entra aqui: é
+    pedido de nota com dado errado, e a recusa ruidosa do adapter continua
+    sendo a resposta certa.
+    """
+    if not is_intermediated(order):
+        return False
+    if (order.data or {}).get("fulfillment_type") != "delivery":
+        return False
+    return not _digits(requested_tax_id)
+
+
+def seller_amounts(order) -> dict | None:
+    """A base da nota desta venda intermediada: ``{"base_q", "freight_q"}``.
+
+    ``None`` = **nada a corrigir**, e a nota segue pelo total do pedido. Os
+    casos em que isso é verdade — e o caso em que parece verdade e não é —
+    estão em :func:`unreadable_breakdown`, que é quem grita pelo último.
+    Sozinha, esta função nunca inventa número.
+
+    ``base_q`` é o que a nota declara: o total do pedido **menos** a receita da
+    plataforma, e menos a taxa de entrega quando quem entregou foi a
+    plataforma. ``freight_q`` é a taxa que sobra para a nota — zero quando não
+    é da casa.
+
+    ⚠️ ``Order.total_q`` continua sendo o total do PEDIDO (o que o cliente
+    pagou ao iFood), e nada aqui o altera: B.I., fechamento e telas leem o
+    total do pedido e ele não mudou de significado. O que muda é só a base
+    **da nota**.
+    """
+    if not is_intermediated(order):
+        return None
+    if str(getattr(order, "channel_ref", "") or "") not in READABLE_BREAKDOWN_CHANNELS:
+        # Canal intermediado sem leitor: não há o que calcular, e o silêncio
+        # daqui é coberto pelo grito de unreadable_breakdown().
+        return None
+
+    totals = (((order.data or {}).get(IFOOD_DATA_KEY) or {}).get("totals") or {})
+    order_amount_q = int(totals.get("order_amount_q") or 0)
+    if order_amount_q <= 0:
+        return None
+
+    additional_fees_q = max(0, int(totals.get("additional_fees_q") or 0))
+    delivery_fee_q = max(0, int(totals.get("delivery_fee_q") or 0))
+
+    freight_q = delivery_fee_q if house_delivered(order) else 0
+    # O que sai da base: a receita da plataforma, sempre; e a taxa de entrega
+    # quando o transporte não foi da casa. Os ``benefits`` continuam onde já
+    # estavam — dentro do ``orderAmount``, portanto reduzindo a base, que é a
+    # leitura de cupom patrocinado pela LOJA. Cupom patrocinado pelo iFood tem
+    # outra leitura (repasse, ou seja, pagamento) e muda a base tributável:
+    # decisão do contador, não deste módulo. Ver a pergunta aberta no PR.
+    base_q = order_amount_q - additional_fees_q - (delivery_fee_q - freight_q)
+    return {"base_q": base_q, "freight_q": freight_q}
+
+
+__all__ = [
+    "IFOOD_DATA_KEY",
+    "READABLE_BREAKDOWN_CHANNELS",
+    "house_delivered",
+    "intermediary_for",
+    "is_intermediated",
+    "issues_as_presential",
+    "missing_configuration",
+    "seller_amounts",
+    "unreadable_breakdown",
+]
