@@ -607,6 +607,27 @@ morde onde o dado é opcional: `customer_name` (o checkout da loja o exige, mas 
 anotado no PDV e ingestão do iFood não) e `payment_deadline`. Onde o dado é obrigatório
 (`order_ref`, `order_ref_short`, `total`) não há caso.
 
+> ### 🔤 Rename pendente: `total` → `order_total_display`
+>
+> Decisão do dono em 25/09/2026, montando o primeiro template no painel. `total` é vago
+> demais para um espaço de nomes compartilhado — e é pior do que parece: medido no painel,
+> **a conta já tem `order_total` e `total_amount`** (ambos Número, pasta Coffee Week), então
+> `total` vive entre dois vizinhos parecidos.
+>
+> O nome que ele sugeriu, `order_total`, está ocupado justamente por um deles. Fica
+> **`order_total_display`**: além de livre, diz o que o valor é — a forma **formatada**
+> (`R$ 38,00`), não o número. Mesma lógica do `purchase_qty_display`, que já existe.
+>
+> ⚠️ **O rename é nos DOIS lados, no mesmo dia.** O adapter grava por
+> `setCustomFieldByName`, então o nome do campo no ManyChat e a chave do contexto em
+> `derive_context` têm de ser a mesma palavra. Trocar só um lado faz a variável sair em
+> branco, **em silêncio** — a falha mais cara deste pacote.
+>
+> ✅ **Não custa reaprovação.** O template compilado referencia o campo pelo **id interno**
+> do ManyChat (`{{cuf_15003510}}`), não pelo nome — lido na própria tela de criação.
+> Renomear preserva o id, então template já aprovado segue valendo. Por isso dá para
+> submeter os outros agora e renomear depois.
+
 ### Critério de aceite
 
 Template **aprovado** e **mapeado**. Só depois disso faz sentido inverter a ordem de
