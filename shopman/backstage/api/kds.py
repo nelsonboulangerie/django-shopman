@@ -26,7 +26,12 @@ from shopman.backstage.projections.kds import (
     build_kds_ticket,
 )
 from shopman.backstage.services import kds as kds_service
-from shopman.backstage.services.exceptions import KDSError, KDSOrderNotFound, KDSTicketNotFound
+from shopman.backstage.services.exceptions import (
+    KDSError,
+    KDSInstanceNotFound,
+    KDSOrderNotFound,
+    KDSTicketNotFound,
+)
 
 from .permissions import HasBackstagePermission
 from .projections import projection_data
@@ -59,7 +64,10 @@ class KDSIndexView(APIView):
     get=extend_schema(
         tags=["backstage"],
         summary="KDS board for a station",
-        responses={200: OpenApiResponse(description="KDS board projection.")},
+        responses={
+            200: OpenApiResponse(description="KDS board projection."),
+            404: OpenApiResponse(description="Estação inexistente ou desativada."),
+        },
     ),
 )
 class KDSBoardView(APIView):
@@ -74,7 +82,15 @@ class KDSBoardView(APIView):
             return Response({"detail": "Data inválida."}, status=status.HTTP_400_BAD_REQUEST)
         if service_date is not None and service_date < timezone.localdate():
             return Response({"detail": "Escolha hoje ou uma data futura."}, status=status.HTTP_400_BAD_REQUEST)
-        board = build_kds_board(ref, service_date=service_date)
+        try:
+            board = build_kds_board(ref, service_date=service_date)
+        except KDSInstanceNotFound:
+            # Kiosk com a estação antiga (reseed, renomeada, desativada): 404 no
+            # dialeto canônico, e o app troca para "escolha outra estação".
+            return Response(
+                {"detail": "Esta estação não existe mais. Escolha outra na lista de estações."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response({"board": projection_data(board)})
 
 
