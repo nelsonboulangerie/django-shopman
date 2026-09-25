@@ -45,6 +45,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "order_delivered": (
         "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
     ),
+    # A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): o link
+    # da DANFE, sem pedir e-mail. O ManyChat não manda arquivo no WhatsApp, então
+    # vai o link. Fora da janela de 24h só sai com template aprovado (flow).
+    "fiscal_note_ready": (
+        "A nota fiscal do pedido {order_ref} está pronta: {danfe_url}{fiscal_test_note}"
+    ),
     "order_cancelled": (
         "Seu pedido {order_ref} foi cancelado.{reason_note}"
         "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"

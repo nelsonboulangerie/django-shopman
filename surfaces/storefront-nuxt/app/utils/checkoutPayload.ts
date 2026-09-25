@@ -27,12 +27,18 @@ export interface CheckoutFormState {
   // agenda do cliente sempre; este toggle controla só os padrões (qual endereço
   // vem escolhido, forma de pagamento, horário).
   save_as_default: boolean
-  // CPF/CNPJ da nota da ENTREGA (vira `fiscal.tax_id` no pedido). Nunca vai
-  // para o rascunho do localStorage: documento não fica guardado no aparelho.
+  // CPF/CNPJ na nota (vira `fiscal.tax_id` no pedido). Na entrega é
+  // obrigatório; na retirada é o "CPF na nota?" do balcão, e só vai se a pessoa
+  // ligou `fiscal_tax_id_on_pickup`. Nunca vai para o rascunho do localStorage:
+  // documento não fica guardado no aparelho.
   fiscal_tax_id: string
+  fiscal_tax_id_on_pickup: boolean
+  // A pessoa respondeu SIM a "guardar no seu cadastro?" (só perguntado quando
+  // o cadastro dela ainda não tem documento). Desmarcado por padrão.
+  save_fiscal_tax_id: boolean
 }
 
-export interface CheckoutSubmitPayload extends CheckoutFormState {
+export interface CheckoutSubmitPayload extends Omit<CheckoutFormState, 'fiscal_tax_id_on_pickup'> {
   idempotency_key: string
   use_loyalty: boolean
   // Total (centavos) exibido ao cliente no momento do confirmar — o servidor
@@ -43,6 +49,12 @@ export interface CheckoutSubmitPayload extends CheckoutFormState {
 
 export function createCheckoutAttemptKey (): string {
   return newRemoteMutationKey('checkout')
+}
+
+/** O documento que vai na nota: o da entrega, ou o da retirada que a pessoa pediu. */
+export function noteTaxId (state: Pick<CheckoutFormState, 'fulfillment_type' | 'fiscal_tax_id' | 'fiscal_tax_id_on_pickup'>): string {
+  if (state.fulfillment_type === 'delivery') return taxIdDigits(state.fiscal_tax_id)
+  return state.fiscal_tax_id_on_pickup ? taxIdDigits(state.fiscal_tax_id) : ''
 }
 
 export function buildCheckoutPayload (
@@ -77,8 +89,9 @@ export function buildCheckoutPayload (
     gift_message: state.is_gift ? state.gift_message.trim() : '',
     gift_hide_values: state.is_gift ? state.gift_hide_values : false,
     save_as_default: state.save_as_default,
-    // O CPF da nota é da ENTREGA: retirada não o leva, e só dígitos viajam.
-    fiscal_tax_id: state.fulfillment_type === 'delivery' ? taxIdDigits(state.fiscal_tax_id) : '',
+    // Só dígitos viajam; na retirada, só se a pessoa pediu CPF na nota.
+    fiscal_tax_id: noteTaxId(state),
+    save_fiscal_tax_id: !!noteTaxId(state) && state.save_fiscal_tax_id,
     use_loyalty: useLoyalty,
     expected_total_q: expectedTotalQ
   }

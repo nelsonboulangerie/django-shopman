@@ -29,6 +29,7 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "order_ready_delivery": "Pedido {order_ref} pronto — aguardando entregador",
     "order_dispatched": "Pedido {order_ref} saiu para entrega",
     "order_delivered": "Pedido {order_ref} entregue",
+    "fiscal_note_ready": "Nota fiscal do pedido {order_ref}",
     "order_cancelled": "Pedido {order_ref} cancelado",
     "order_rejected": "Pedido {order_ref} não confirmado",
     "payment_confirmed": "Pagamento do pedido {order_ref} recebido",
@@ -80,6 +81,9 @@ BODY_TEMPLATES: dict[str, str] = {
     "order_delivered": (
         "Olá{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} foi entregue.\n\nObrigado pela preferência!\n"
+    ),
+    "fiscal_note_ready": (
+        "A nota fiscal do pedido {order_ref} está pronta: {danfe_url}{fiscal_test_note}\n"
     ),
     "order_cancelled": (
         "Olá{customer_name_greeting}!\n\n"
