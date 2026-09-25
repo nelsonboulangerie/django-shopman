@@ -119,28 +119,29 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 Onde há botão, ele é sempre `https://www.nelsonboulangerie.com.br/pedido/{{1}}`,
 com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
-> ### ⛔ Os corpos daqui seguem a VOZ APROVADA de 24/09/2026
+> ### ⛔ Os corpos daqui seguem a VOZ APROVADA de 24-25/09/2026
 >
 > O dono aprovou em bloco um padrão de voz e cinco textos do ciclo do pedido (Mesa de
 > pendências, item 11), que entraram pela PR #1122 — `seed.py` + a migração de dados
-> `shop.0075_voz_dos_avisos_do_pedido`. **Sete eventos** mudaram de texto ali, e **cinco
-> deles têm template Meta**: `pedido_recebido`, `pedido_confirmado`, `pedido_em_preparo`,
-> `pedido_pronto_retirada` e `pedido_pronto_entrega`. Os corpos abaixo já são os novos.
+> `shop.0075_voz_dos_avisos_do_pedido`. Sete eventos mudaram de texto ali; em 25/09 ele
+> fechou o sexto template afetado, o `pedido_saiu_entrega`, que a #1122 tinha deixado de
+> fora. **Seis templates Meta** carregam a voz nova: `pedido_recebido`,
+> `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`,
+> `pedido_pronto_entrega` e `pedido_saiu_entrega`. Os corpos abaixo já são os novos.
 >
 > O que a voz nova fez, e que muda o jeito de montar o template:
 >
-> - **O cumprimento saiu de quatro deles.** Onde saiu, o corpo **não usa `customer_name`** e
->   a numeração andou: `{{1}}` passa a ser a **ref**. Conferir variável por variável, porque
->   ligar `{{1}}` ao nome num corpo que começa com "Seu pedido " produz "Seu pedido Ana".
+> - **O cumprimento saiu de cinco deles** — todos menos o `pedido_recebido`, que é a
+>   primeira mensagem do pedido e continua se apresentando. Onde saiu, o corpo **não usa
+>   `customer_name`** e a numeração andou: `{{1}}` passa a ser a **ref**. Conferir variável
+>   por variável, porque ligar `{{1}}` ao nome num corpo que começa com "Seu pedido "
+>   produz "Seu pedido Ana".
 > - **"Obrigado pela preferência" é exclusivo do `pedido_entregue`.** Saiu do
 >   `pedido_confirmado` e não volta em nenhum outro.
 > - **`order_rejected` já nasceu certo** neste doc ("Não conseguimos confirmar"): a PR só
 >   trocou o "O estabelecimento não conseguiu" que vivia no `seed`. Nada a fazer aqui.
 > - **`payment_confirmed` mudou só o ASSUNTO**, que é coisa de e-mail. O corpo do
->   `pagamento_confirmado` fica como está.
->
-> ⚠️ Os outros dois eventos do pacote de voz (`order_dispatched` e o assunto do
-> `payment_confirmed`) estão tratados nas suas próprias entradas abaixo.
+>   `pagamento_confirmado` fica como está — template Meta não tem assunto.
 >
 > ⚠️ **No WhatsApp o texto do Admin não alcança o cliente** — quem fala é o template
 > aprovado na Meta. SMS e e-mail ganham a voz nova no deploy da #1122; o WhatsApp só ganha
@@ -194,19 +195,19 @@ com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} saiu para entrega e chega logo.`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`NB-260902-A17` (`order_ref`)
+- Corpo: `Seu pedido {{1}} saiu para entrega e chega logo.`
+- Vars: `{{1}}`=`NB-260902-A17` (`order_ref`)
+- Botão URL: `Acompanhar pedido`
 
-> ⛔ **SUBMETER ESTE POR ÚLTIMO — o texto dele não está decidido.** É o único evento do
-> ciclo que o pacote de voz de 24/09 **não** cobriu: o `order_dispatched` segue abrindo com
-> "Olá{customer_name_greeting}!" no `seed` e nos fallbacks, contra a regra que tirou o
-> cumprimento dos outros quatro. A própria PR #1122 registra isso como fora de escopo, sem
-> decisão.
+> ✅ **Destravado em 25/09/2026 por decisão do dono:** sem cumprimento, como os outros
+> quatro. Era o único evento do ciclo que o pacote de voz de 24/09 não cobria — ele seguia
+> abrindo com "Olá{customer_name_greeting}!" no `seed` e nos fallbacks, e a PR #1122
+> registrou o caso como fora de escopo. Ficou travado aqui até a palavra dele justamente
+> porque escolher entre as duas versões custaria um ciclo de reaprovação, não uma edição.
 >
-> Submetê-lo agora é apostar em qual das duas versões vence, e a aposta errada custa um
-> ciclo de reaprovação. O corpo acima é o antigo, mantido de propósito: se a regra valer
-> aqui também, ele vira `Seu pedido {{1}} saiu para entrega e chega logo.` — com a
-> numeração andando, como nos outros. Alinhar com o dono antes.
+> Como nos outros quatro, o corpo **não usa `customer_name`** e a numeração andou: `{{1}}`
+> é a **ref**. O `seed` e a migração de dados vão receber o mesmo texto em PR própria, para
+> o aviso e o template aprovado dizerem a mesma coisa.
 
 ### `pedido_entregue` — evento `order_delivered`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
@@ -409,7 +410,7 @@ nome**, senão a variável sai em branco e nada falha.
 
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
-| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada` e `pedido_pronto_entrega` (a voz de 24/09 tirou o cumprimento desses quatro) |
+| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
 | Ref do pedido | `order_ref` | todos os de pedido **e todo botão de URL** |
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
