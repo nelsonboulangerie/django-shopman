@@ -302,11 +302,25 @@ def _delivery_address_structured(delivery: dict) -> dict:
 
     O endereço formatado NÃO é repetido aqui: ele já é ``delivery_address``, e
     dois donos do mesmo texto é divergência esperando acontecer.
+
+    Os COMPONENTES (logradouro, número, bairro, município, UF) entram pelo
+    vocabulário canônico da casa — o mesmo que o checkout da loja grava e que o
+    adapter fiscal lê. Não é repetir o texto formatado com outro nome: o
+    destinatário da NFC-e de entrega a domicílio é montado de componente, e sem
+    eles o pedido iFood de entrega era recusado antes do HTTP, por "confira
+    logradouro, número, bairro, município, UF" — ou seja, não emitia nota
+    nenhuma. Quem imprime a comanda continua lendo ``delivery_address`` e o
+    complemento, e não vê diferença.
     """
     fields = {
         "complement": delivery.get("complement", ""),
         "delivery_instructions": delivery.get("reference", ""),
         "postal_code": delivery.get("postal_code", ""),
+        "route": delivery.get("street", ""),
+        "street_number": delivery.get("number", ""),
+        "neighborhood": delivery.get("neighborhood", ""),
+        "city": delivery.get("city", ""),
+        "state_code": delivery.get("state", ""),
     }
     return {key: str(value).strip() for key, value in fields.items() if str(value or "").strip()}
 

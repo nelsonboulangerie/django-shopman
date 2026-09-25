@@ -1728,6 +1728,28 @@ SHOPMAN_FISCAL_EMISSION_RESOLVER = (
 # `manage.py fiscal_audit_catalog`.
 SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool("SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False)
 
+# Intermediador da transação (Ajuste SINIEF 22/20 — CONFAZ, efeitos desde abr/2021):
+# a NFC-e de venda feita em plataforma de terceiro tem que identificar QUEM intermediou
+# (indIntermed + grupo infIntermed: CNPJ do intermediador e o identificador do cadastro
+# da LOJA na plataforma). Mapa canal → dados do intermediador; canal ausente aqui é
+# venda direta da casa, e a nota dele não muda em nada.
+#
+# Declarar o canal aqui também corrige a BASE da nota: o total de um pedido de
+# marketplace carrega receita da plataforma (o iFood documenta que as `additionalFees`
+# "não devem ser adicionadas à nota fiscal") e uma taxa de entrega que só é da casa
+# quando foi a casa que entregou. Motor em shopman.shop.fiscal_intermediary.
+#
+# ⚠️ `id_cad_int_tran` NASCE VAZIO de propósito: o que o Paraná aceita ali é pergunta
+# em aberto para o contador, e sem ele o grupo não sai (a Focus exige os dois juntos).
+# Enquanto estiver vazio, toda NFC-e de venda intermediada gera alerta de operador.
+SHOPMAN_FISCAL_INTERMEDIARIES = {
+    "ifood": {
+        # iFood.com Agência de Restaurantes Online S.A.
+        "cnpj": os.environ.get("FISCAL_INTERMEDIARY_IFOOD_CNPJ", "14380200000121"),
+        "id_cad_int_tran": os.environ.get("FISCAL_INTERMEDIARY_IFOOD_ID_CAD", "").strip(),
+    },
+}
+
 SHOPMAN_FOCUS_NFE = {
     "environment": os.environ.get("FOCUS_NFE_ENVIRONMENT", "homologacao").strip().lower() or "homologacao",
     "token": os.environ.get("FOCUS_NFE_TOKEN", ""),

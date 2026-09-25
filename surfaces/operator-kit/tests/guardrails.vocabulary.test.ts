@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de VOCABULÁRIO: a palavra da casa para o objeto que o operador segura é
 // **dispositivo**; a do cartão é **maquininha**. "Aparelho" não é nenhuma das duas. É o
@@ -229,18 +230,7 @@ describe("a palavra da casa é dispositivo — e a do cartão é maquininha", ()
     expect(SOURCES.length).toBeGreaterThan(400);
 
     const apps = new Set(SOURCES.map((file) => relative(surfacesDir, file).split("/")[0]));
-    expect([...apps].sort()).toEqual([
-      "bi-nuxt",
-      "hub-nuxt",
-      "kds-nuxt",
-      "marketing-nuxt",
-      "operator-kit",
-      "operator-router",
-      "orders-nuxt",
-      "pos-nuxt",
-      "production-nuxt",
-      "purchase-nuxt",
-    ]);
+    expect([...apps].sort()).toEqual([...OPERATOR_SURFACES, "operator-kit", "operator-router"].sort());
   });
 });
 

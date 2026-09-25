@@ -78,6 +78,7 @@ class FocusNFeBackend:
         payment: dict,
         additional_info: str | None = None,
         delivery: dict | None = None,
+        intermediary: dict | None = None,
     ) -> FiscalDocumentResult:
         config = _get_config()
         missing = _missing_config(config)
@@ -98,6 +99,7 @@ class FocusNFeBackend:
                 payment=payment,
                 additional_info=additional_info,
                 delivery=delivery,
+                intermediary=intermediary,
             )
             response = _request("POST", _nfce_path(reference, config), payload, config)
         except FocusNFePayloadError as exc:
@@ -270,25 +272,34 @@ def _build_nfce_payload(
     payment: dict,
     additional_info: str | None,
     delivery: dict | None = None,
+    intermediary: dict | None = None,
 ) -> dict:
     # Entrega é fato do pedido, inclusive grátis; taxa não decide indPres.
     # Dados fiscais incompletos recusam a emissão antes do HTTP, sem reclassificar
     # a operação nem reduzir o valor declarado para contornar validações.
     fee_items = [item for item in items if _is_delivery_fee_item(item)]
-    merchandise = [item for item in items if not _is_delivery_fee_item(item)]
+    expense_items = [item for item in items if _is_other_expense_item(item)]
+    merchandise = [
+        item for item in items if not _is_delivery_fee_item(item) and not _is_other_expense_item(item)
+    ]
     freight_q = sum(int(item.get("total_q") or 0) for item in fee_items)
+    other_q = sum(int(item.get("total_q") or 0) for item in expense_items)
 
     if not merchandise:
         raise FocusNFePayloadError("NFC-e exige ao menos um item.")
 
     if freight_q and delivery is None:
         raise FocusNFePayloadError("Pedido com taxa de entrega sem indicação de entrega a domicílio.")
+    if other_q and delivery is not None:
+        # Outras despesas é a taxa da nota PRESENCIAL; na nota de entrega a
+        # mesma taxa é frete. As duas juntas contariam o dinheiro duas vezes.
+        raise FocusNFePayloadError("Taxa de entrega como outras despesas numa nota de entrega a domicílio.")
     home_delivery = _home_delivery_fields(config, customer, delivery) if delivery is not None else None
 
     mapped_items = [_map_item(idx, item, config) for idx, item in enumerate(merchandise, start=1)]
     product_total_q = _sum_focus_money_q(mapped_items, "valor_bruto")
     payment_total_q = _payment_total_q(payment)
-    note_total_q = payment_total_q or (product_total_q + freight_q)
+    note_total_q = payment_total_q or (product_total_q + freight_q + other_q)
 
     payload = {
         "cnpj_emitente": _focus_cnpj_emitente(config),
@@ -314,13 +325,27 @@ def _build_nfce_payload(
         _apportion_over_items(mapped_items, freight_q, field="valor_frete")
         payload.update(home_delivery)
 
+    if other_q:
+        # vOutro no total (W15) e rateado por item (I17a): a regra W15-10
+        # confere o total contra o somatório dos itens, como o vDesc. Nome do
+        # campo conferido na referência canônica da Focus
+        # (campos.focusnfe.com.br, NotaFiscalXML e ItemNotaFiscalXML):
+        # ``valor_outras_despesas`` nos dois níveis.
+        payload["valor_outras_despesas"] = _money_q(other_q)
+        _apportion_over_items(mapped_items, other_q, field="valor_outras_despesas")
+
     # SEFAZ valida vDesc do TOTAL contra o somatório dos itens (confirmado em
     # homologação): o desconto é rateado por item, proporcional ao valor
     # bruto, com o resíduo do arredondamento no último item.
-    discount_q = product_total_q + freight_q - note_total_q
+    discount_q = product_total_q + freight_q + other_q - note_total_q
     if discount_q > 0:
         payload["valor_desconto"] = _money_q(discount_q)
         _apportion_over_items(mapped_items, discount_q, field="valor_desconto")
+    # Só o grupo. O indPres NÃO se mexe aqui — ver NFCE_INDPRES e
+    # INTERMEDIARY_INDPRES: marketplace com retirada continua indPres=1.
+    if intermediary:
+        payload.update(_intermediary_fields(intermediary))
+    _assert_nfce_indpres(payload["presenca_comprador"], intermediary=bool(intermediary))
     if config.get("serie_nfce"):
         payload["serie"] = str(config["serie_nfce"])
     if additional_info:
@@ -330,6 +355,97 @@ def _build_nfce_payload(
         payload.get("informacoes_adicionais_contribuinte") or f"Pedido {reference}"
     )
     return payload
+
+
+#: Os ``indPres`` que a NFC-e (modelo 65) aceita.
+#:
+#: Regra de validação **B25b-20**, modelo 65 → **Rejeição 717**: recusa todo
+#: ``indPres`` fora de **1, 4 e 5**.
+#:
+#: ⚠️ O MOC 7.00 Anexo I (nov/2020), que o CONFAZ ainda publica em PDF, traz a
+#: versão ANTIGA desta regra (``indPres<>1 e 4``). O ``5`` entrou pela
+#: NT 2025.002-RTC v1.51 (jul/2026; produção desde 03/08/2026), e quem está
+#: vivo é o MOC Online da SEFAZ-PR, "atualizado até a NT 2026.002 v1.10a".
+#: Em TODAS as versões, porém, o ``2`` é recusado — que é o que importa aqui.
+#:
+#: ⚠️ É tentador raciocinar que "pedido feito no app não é balcão, logo é
+#: operação não presencial (2 = pela Internet)". A SEFAZ recusa a nota inteira
+#: por isso: a retirada de um pedido do iFood é ``indPres=1``.
+NFCE_INDPRES = frozenset({"1", "4", "5"})
+
+#: Os ``indPres`` com os quais o intermediador PODE ser declarado.
+#:
+#: Regra **B25c-20** (modelo 55/65) → **Rejeição 435**: ``indIntermed=1`` é
+#: proibido quando ``indPres`` está fora de {1, 2, 3, 4, 9}. Cruzando com a
+#: B25b-20, o que isso recorta na NFC-e é exatamente o ``5``.
+#:
+#: ⚠️ **Não existe a regra inversa.** A referência de campos da Focus sugere
+#: que o grupo "apenas pode ser informado se a operação for não-presencial
+#: (2, 3, 4 ou 9)" — mas aquela página é compartilhada com a NF-e modelo 55, e
+#: nenhuma regra numerada exige isso. A NT 2020.006 v1.31 diz o contrário na
+#: letra: *"Se em alguma operação presencial (indPres=1) houver intermediador,
+#: deve a empresa preencher indIntermed=1 e as informações do intermediador,
+#: por força da legislação tributária"*. E o Ajuste SINIEF 22/20 fala em
+#: transação *"realizada em ambiente virtual ou presencial"*.
+#:
+#: (A regra irmã, **B25c-10** → Rejeição 434, torna ``indIntermed`` obrigatório
+#: em toda NF-e/NFC-e de saída com finalidade normal desde 04/04/2022. A casa
+#: atende isso sem escrever nada: a Focus documenta ``0`` — operação sem
+#: intermediador — como valor default do campo.)
+INTERMEDIARY_INDPRES = frozenset({"1", "2", "3", "4", "9"})
+
+
+def _assert_nfce_indpres(value: str, *, intermediary: bool) -> None:
+    """Recusa aqui, nominalmente, o que a SEFAZ recusaria lá com 717 ou 435.
+
+    Cobre também ``FOCUS_NFE_NFCE_PRESENCA_COMPRADOR`` mal configurado no
+    deployment: o valor é env, e env errada viraria nota recusada em produção
+    com uma mensagem que não diz de onde veio.
+    """
+    value = str(value)
+    if value not in NFCE_INDPRES:
+        raise FocusNFePayloadError(
+            f"presenca_comprador={value} não vale em NFC-e (modelo 65): a regra "
+            "B25b-20 aceita 1 (presencial), 4 (não presencial com entrega) ou 5 "
+            "(presencial fora do estabelecimento), e rejeita o resto com 717. "
+            "Confira FOCUS_NFE_NFCE_PRESENCA_COMPRADOR."
+        )
+    if intermediary and value not in INTERMEDIARY_INDPRES:
+        raise FocusNFePayloadError(
+            f"presenca_comprador={value} proíbe declarar o intermediador da venda "
+            "(regra B25c-20, rejeição 435). Venda por plataforma de terceiro não "
+            "pode ser emitida como operação presencial fora do estabelecimento."
+        )
+
+
+def _intermediary_fields(intermediary: dict) -> dict:
+    """Grupo do intermediador da transação, no dialeto da Focus NF-e.
+
+    Layout SEFAZ (Ajuste SINIEF 22/20 / NT 2020.006) → nome da Focus, conforme
+    a referência de campos 4.00 deles (campos.focusnfe.com.br), que os põe
+    PLANOS na raiz do JSON, sem objeto ``infIntermed``:
+
+    - ``indIntermed`` (B25b)              → ``indicador_intermediario``
+      (``0`` sem intermediador, ``1`` em plataforma de terceiros)
+    - ``infIntermed/CNPJ`` (YB02)         → ``cnpj_intermediario``
+    - ``infIntermed/idCadIntTran`` (YB03) → ``id_intermediario`` (String[2-60])
+
+    ⚠️ É ``intermediario``, com "i" — não ``intermediador``. Os dois últimos são
+    documentados como obrigatórios quando ``indicador_intermediario = 1``, e é
+    por isso que quem monta o payload só manda o grupo com os dois preenchidos.
+    """
+    cnpj = _digits(intermediary.get("cnpj"))
+    id_cad = str(intermediary.get("id_cad_int_tran") or "").strip()
+    if len(cnpj) != 14 or len(id_cad) < 2:
+        raise FocusNFePayloadError(
+            "Intermediador da venda incompleto: o grupo exige CNPJ de 14 dígitos "
+            "e o identificador do cadastro da loja na plataforma (2 a 60 caracteres)."
+        )
+    return {
+        "indicador_intermediario": "1",
+        "cnpj_intermediario": cnpj,
+        "id_intermediario": id_cad[:60],
+    }
 
 
 def _home_delivery_fields(config: dict, customer: dict, delivery: dict) -> dict:
@@ -410,6 +526,16 @@ def _money_to_q(value) -> int:
 def _is_delivery_fee_item(item: dict) -> bool:
     meta = item.get("meta") or {}
     return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
+
+
+def _is_other_expense_item(item: dict) -> bool:
+    """Linha que a nota declara em outras despesas (``vOutro``), não como produto.
+
+    Hoje nasce só em ``services.fiscal._intermediary_freight_item``: a taxa de
+    entrega da casa numa venda intermediada emitida como presencial.
+    """
+    meta = item.get("meta") or {}
+    return item.get("sku") == "__OTHER_EXPENSE__" or meta.get("type") == "other_expense"
 
 
 # Campos tributários que o adapter NÃO adivinha. Cada um chega resolvido pelo

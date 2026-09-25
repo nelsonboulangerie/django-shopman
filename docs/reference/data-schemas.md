@@ -722,6 +722,7 @@ preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
 | `customer` | `dict` | hooks (opcional) | NFCeEmitHandler |
 | `additional_info` | `string` | hooks (opcional) | NFCeEmitHandler |
 | `delivery` | `dict` ou `null` | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
+| `intermediary` | `dict` (ausente na venda direta) | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
 
 Cada linha de `items` leva `gtin` (`str`): o GTIN confiável do produto
 (`fiscal._trusted_gtin`, regra na linha `gtin_source` de `Product.metadata`) ou
@@ -734,6 +735,37 @@ reenvio com a mesma referência — ver `gtin_nf_rejected` em `Product.metadata`
 `delivery={"address": delivery_address_structured}` indica entrega a domicílio,
 inclusive frete zero; `null` indica retirada. Dado insuficiente impede emitir,
 sem substituir por operação presencial ou retirar o frete dos valores.
+
+⚠️ **Uma exceção, só para canal intermediado** (decisão do dono, 24/09/2026,
+praxe do mercado; confirmação do contador pendente): entrega de canal
+declarado em `SHOPMAN_FISCAL_INTERMEDIARIES` **sem** `fiscal.tax_id` sai com
+`delivery=null` — NFC-e presencial (`indPres=1`), consumidor não identificado,
+sem endereço, `modalidade_frete=9`, sem transportador
+(`fiscal_intermediary.issues_as_presential`). Se a entrega foi da casa, a taxa
+vai como linha `sku="__OTHER_EXPENSE__"` (`meta.type="other_expense"`) e o
+adapter a declara em `valor_outras_despesas` (vOutro, W15/I17a), para o total
+bater com o pagamento; se foi a plataforma, a taxa fica fora. Documento
+informado e inválido não entra na exceção (recusa ruidosa). Canal próprio
+nunca: lá o CPF é exigido na entrada do pedido de entrega.
+
+⚠️ **Fonte da verdade das regras de NFC-e: NT + XSD, nunca o MOC 7.00 em PDF.**
+O PDF que o CONFAZ publica (Anexo I, nov/2020) é o último MOC consolidado e
+está defasado em pelo menos três pontos que tocam este payload: traz a B25b-20
+antiga (`indPres<>1 e 4`, sem o `5` que a NT 2025.002-RTC v1.51 acrescentou),
+marca as regras YB só para o modelo 55 (a NT 2020.006 **v1.10** as estendeu ao
+65) e dá `idCadIntTran` com tamanho `60` quando o XSD vigente exige `2-60`.
+Quem programar pelo PDF erra nos três. O que está vivo é o **MOC Online** da
+SEFAZ-PR e as Notas Técnicas do Portal da NF-e.
+
+`intermediary={"cnpj", "id_cad_int_tran"}` identifica o intermediador da
+transação quando a venda veio de plataforma de terceiro (Ajuste SINIEF 22/20).
+A chave **não existe** na venda direta da casa, e também não existe quando o
+canal é intermediado mas a configuração está incompleta — nesse caso a emissão
+segue e o alerta `fiscal_intermediary_not_declared` grita. Quem declara o canal
+como intermediado é `settings.SHOPMAN_FISCAL_INTERMEDIARIES`; o mesmo ajuste
+corrige a BASE da nota (`payment.amount_q` sem a receita da plataforma, e sem o
+frete de quem não entregou) — motor em `shopman.shop.fiscal_intermediary`.
+⚠️ Nada disso altera `Order.total_q`, que continua sendo o total do pedido.
 
 #### `fiscal.cancel_nfce`
 

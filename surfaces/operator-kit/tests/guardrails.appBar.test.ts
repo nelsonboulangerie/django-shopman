@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES as APPS } from "./support/surfaceRegistry";
 
 // Guardrail do CABEÇALHO: a barra de seções do app é peça da layer, não markup de cada
 // app.
@@ -46,7 +47,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS = [
   "hub-nuxt/app/app.vue",
 ].sort();
 
-const APPS = ["bi-nuxt", "hub-nuxt", "kds-nuxt", "marketing-nuxt", "orders-nuxt", "pos-nuxt", "production-nuxt", "purchase-nuxt"];
 
 function vueFiles(dir: string): string[] {
   let found: string[] = [];

@@ -45,9 +45,11 @@ class SequenceBackend:
         self.results = list(results)
         self.sent_items: list[list[dict]] = []
         self.references: list[str] = []
+        self.kwargs: list[dict] = []
 
     def emit(self, *, reference, items, **kwargs):
         self.references.append(reference)
+        self.kwargs.append(kwargs)
         self.sent_items.append(copy.deepcopy(items))
         return self.results.pop(0)
 
@@ -179,6 +181,19 @@ def test_item_number_skips_the_delivery_fee_line(order):
     resent = {item["sku"]: item["gtin"] for item in backend.sent_items[1]}
     assert resent["GELEIA-DALFOUR"] == ""
     assert resent["AGUA-500"] == GTIN_AGUA
+
+
+def test_reemission_keeps_the_rest_of_the_note(order):
+    intermediary = {"cnpj": "14380200000121", "id_cadastro": "loja-1"}
+    directive = _directive(order, _items())
+    directive.payload["intermediary"] = intermediary
+    directive.save(update_fields=["payload"])
+    backend = SequenceBackend(_rejected("890", "Rejeicao: GTIN inexistente no CCG [nItem:2]"), AUTHORIZED)
+
+    NFCeEmitHandler(backend).handle(message=directive, ctx={})
+
+    assert [call["intermediary"] for call in backend.kwargs] == [intermediary, intermediary]
+    assert backend.kwargs[0]["payment"] == backend.kwargs[1]["payment"]
 
 
 def test_rejection_that_is_not_about_gtin_keeps_current_behaviour(order):
