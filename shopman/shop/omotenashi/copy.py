@@ -1504,7 +1504,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # finalizados no momento de servir. Diz o que o item É, e o que é, é bom.
     # ⚠️ Não é dedução da política de estoque: um croque da vitrine tem o selo, e
     # um pão que vende sem saldo (``demand_ok``) não tem.
-    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Preparado na hora")}},
+    # Nasceu como ``CART_``, e o prefixo virou mentira quando a ficha do produto
+    # passou a dizer a mesma coisa: a frase é do PRODUTO, e a sacola é só uma das
+    # telas que a repete.
+    "PRODUCT_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Preparado na hora")}},
     "AVAILABILITY_UNAVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Indisponível")}},
 }
 
