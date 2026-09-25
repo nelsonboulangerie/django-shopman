@@ -69,7 +69,9 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 |---|---|---|---|
 | Pão de forma | `1905.90.10` | 17.060.00 | Shokupan (`FORMA`) — o único pão de forma |
 | Pães, folhados, doces, salgados de forno | `1905.90.90` | 17.062.00 | baguetes, ciabatta, campagne, focaccias, brioches, pães de hambúrguer e hot dog, croissant, pain au chocolat, madeleine… |
-| Sanduíches e pratos montados | `1905.90.90` ⚠️ | 17.062.00 | croque, jambon-beurre, tartines — *ou* `2106.90.90` (confirmar com o contador) |
+| Sanduíches sem embutido predominante | `1905.90.90` | 17.062.00 | croques, queijo-quente, pain perdu — ⚠️ o croque fica no Cap. 19 enquanto o presunto não passar de **20% do peso** (Nota 2 do Cap. 16); a ficha do croque carrega esse limite |
+| Hot dog (inteiro e mini) | `1601.00.00` | 17.076.00 | salsicha acima de 20% do peso → Cap. 16 (Cosit 98.067/2024, embutido predominante) |
+| Jambon-beurre | `1602.41.00` | 17.079.04 | presunto cozido (pernil) acima de 20% do peso |
 | Caixas presente | `1905.90.90` ⚠️ | 17.062.00 | DIJON, LILLE, MIMO, NICE — composição ainda indefinida (confirmar com o contador) |
 | Despensa da casa | `2005.99.00` / `2005.70.00` | 17.092.00 | Ratatouille (`RTAT`) / Tapenade (`TPND`, azeitona preparada) |
 | Bebidas preparadas no balcão | `2202.99.00` | — | cafés, chás de bule, chocolate, sodas da torneira ([revisão](ncm-bebidas-preparadas.md)) |
@@ -83,12 +85,12 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 | Cremes de queijo Pomerode (Gorgonzola, Parmesão, Brie) | `0406.30.00` | 17.023.00 | `tax_substitution` | 0 |
 | Queijos: Camembert, Mini Brie Ile de France | `0406.90.30` | 17.024.00 | `standard` | 2 |
 | Queijo Vale do Testo Pomerode (a quilo) | `0406.90.20` | 17.024.00 | `standard` | 0 |
-| Manteiga Président | `0405.10.00` | 17.025.00 | `standard` | 2 |
+| Manteiga Président | `0405.10.00` | 17.025.00 | `standard` | 0 |
 | Geleias St. Dalfour (6 × 284 g, 2 × 28 g) | `2007.99.10` / `2007.91.00` (cítricos) | 17.094.00 | `standard` | 2 |
 | Azeites Mirante | `1509.20.00` ⚠️ | 17.067.00 | `standard` | 0 |
 | Relish Duga | `2001.90.00` | 17.090.00 | `standard` | 0 |
 | Berinjela Duga | `2005.99.00` ⚠️ | 17.092.00 | `standard` | 0 |
-| Churrasquinho de Pimenta Mirante | `2103.90.99` ⚠️ | — | `standard` | 0 |
+| Churrasquinho de Pimenta Mirante | `2005.99.00` | 17.092.00 | `standard` | 0 |
 | Presunto cru Vito Bauducci | `0210.19.00` | 17.087.01 | `standard` | 0 |
 | Chás Kãnfa (latas e pouches) | `0902.10.00` ⚠️ | 17.097.00 | `standard` | 0 |
 
@@ -96,10 +98,14 @@ obrigatório só com ST, e o sistema o confere contra o NCM pela tabela do Anexo
 
 - **Chás Kãnfa:** fica o NCM que o fabricante declara na nota (0902.10.00, chá verde). Um chai de chá
   preto seria 0902.30.00 — confirmar com o contador; a próxima NF-e da Kãnfa é comparada.
-- **Churrasquinho de Pimenta:** 2103.90.99 não tem CEST; se a nota vier como 2103.90.91 (molho de
-  pimenta), vira 17.035.00 e ST.
+- **Churrasquinho de Pimenta:** decidido (24/09) — pimenta em conserva em óleo, 2005.99.00 + 17.092.00,
+  sem ST. A próxima NF de compra confere.
+- **Salsicha do hot dog:** comprada da Defumados Strass como **1602.41.00**, sem ST retida (CFOP 5101 do
+  fornecedor); o cadastro de compra guarda esse NCM. O NOSSO hot dog segue 1601.00.00 — se o contador
+  preferir alinhar ao fornecedor (1602.49/1602.41), não muda imposto no Simples. Embutido na ST do PR
+  não é pendência: ninguém retém ST sobre essa salsicha.
 - **Berinjela Duga:** a nota trazia 2103.90.99; o cadastro usa 2005.99.00 (hortícola preparado).
-- **Sanduíches e caixas presente:** 1905 × 2106 — decisão do contador.
+- **Caixas presente:** são KIT — cada componente sai na nota com a própria tributação (PR do kit).
 - **Azeite:** 1509.20 (extravirgem) × 1509.90 (outros) — a nota do fornecedor decide.
 - **Água Prata:** 03.005.00 é embalagem plástica até 500 ml; se a garrafa for de vidro, 03.001.00.
 

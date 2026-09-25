@@ -218,7 +218,7 @@ GROCERY: tuple[GroceryItem, ...] = (
     # 120 g e R$ 26 (dono, 24/09). GTIN-12 602883466111 (a embalagem traz
     # 0602883466111), guardado como os outros Mirante.
     GroceryItem("CHURRASQUINHO-PIMENTA-MIRANTE-120", "Churrasquinho de Pimenta Mirante 120g", 2600,
-                "Mirante", "602883466111", "21039099", "", 120,
+                "Mirante", "602883466111", "20059900", "1709200", 120,
                 ("churrasquinho", "pimenta", "conserva"), gtin_source=OWNER_PACKAGE),
     # ── Chá Kãnfa em lata ──
     # A lata de Chalosofia (dono, embalagem, 24/09). ⚠️ Na loja da Kãnfa o
@@ -347,9 +347,9 @@ FISCAL_NOTES: dict[str, str] = {
         "como a casa já praticava (1702300 no Yooga). A alternativa seria 17.024.00."
     ),
     "churrasquinho": (
-        "2103.90.99 (outros molhos) não está no Anexo XVII: sem CEST. O Yooga usava "
-        "1709200, que é do 2005 — incoerente. Se a NF-e de compra trouxer 2103.90.91 "
-        "(molho de pimenta), vira 17.035.00 e ST."
+        "Churrasquinho de Pimenta Mirante: pimenta em conserva em óleo, não molho — "
+        "hortícola preparado, 2005.99.00, CEST 17.092.00, sem ST (auditoria de 24/09). "
+        "A casa faturava 2103.90.99 + 17.092.00, incoerente; a próxima NF de compra confere."
     ),
 }
 
