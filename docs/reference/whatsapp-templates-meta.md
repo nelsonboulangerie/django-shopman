@@ -1,18 +1,18 @@
 # WhatsApp — Pacote de templates Meta
 
-> ## ⛔ SUBMISSÃO PAUSADA em 25/09/2026 — não submeta nada a partir deste doc
+> ## ✅ Texto LIBERADO — a revisão fechou em 25/09/2026
 >
-> Decisão do dono: **todas as frases vão ser revistas de uma vez** antes de qualquer
-> submissão. A revisão é da sessão da voz das notificações, e depois dela o texto desce em
-> cascata — `seed`, migração de dados e este doc. **Só então os templates vão à Meta.**
+> O dono revisou todas as frases de uma vez e fechou. Os corpos abaixo são a coluna
+> WhatsApp daquela revisão. **Dá para submeter.**
 >
-> Por que a pausa existe, e por que ela é barata: a redação do ciclo do pedido mudou **duas
-> vezes em 24 horas** (o pacote de voz de 24/09 e a exceção da confirmação em 25/09). Um
-> template aprovado com o texto errado **não se edita** — reaprova, e a fila da Meta leva
-> 24-48h por rodada. Esperar a revisão custa horas; submeter no meio dela custa dias, vezes
-> o número de templates.
+> Duas coisas que ainda não fecham, e que estão marcadas onde aparecem: **seis botões sem
+> destino** (seção própria) e **um campo personalizado sem nome** (a quantidade do
+> `saiu_do_forno`). Nenhuma das duas impede submeter os outros; a de botão impede submeter
+> aqueles seis.
 >
-> Quando a revisão fechar, remova este bloco junto com a cascata.
+> Antes desta revisão a redação mudou duas vezes em 24 horas. Se mudar de novo, **pare de
+> submeter antes de continuar**: template aprovado com texto errado não se edita, reaprova,
+> e a fila da Meta leva 24-48h por rodada.
 
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
@@ -163,211 +163,263 @@ pergunta aberta. Não há template de OTP a submeter.
 ## Utility — cliente
 
 Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **Utility**.
-Onde há botão, ele é sempre `https://www.nelsonboulangerie.com.br/pedido/{{1}}`,
-com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
-> ### ⛔ Os corpos daqui seguem a VOZ APROVADA de 24-25/09/2026
+> ### ✅ Estes corpos são a VOZ FECHADA de 25/09/2026
 >
-> O dono aprovou em bloco um padrão de voz e cinco textos do ciclo do pedido (Mesa de
-> pendências, item 11), que entraram pela PR #1122 — `seed.py` + a migração de dados
-> `shop.0075_voz_dos_avisos_do_pedido`. Sete eventos mudaram de texto ali; em 25/09 ele
-> fechou o sexto template afetado, o `pedido_saiu_entrega`, que a #1122 tinha deixado de
-> fora. **Seis templates Meta** carregam a voz nova: `pedido_recebido`,
-> `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`,
-> `pedido_pronto_entrega` e `pedido_saiu_entrega`. Os corpos abaixo já são os novos.
+> O dono revisou **todas** as frases de uma vez e fechou. O que está abaixo é a coluna
+> WhatsApp daquela revisão, transposta para o formato do template. A coluna SMS/e-mail
+> vira `seed` + migração, em PR da sessão da voz.
 >
-> O que a voz nova fez, e que muda o jeito de montar o template:
+> Por que os dois textos diferem de propósito: o SMS e o e-mail interpolam na hora e
+> carregam link solto; o template aprovado não pode ter link no corpo (regra 5) nem
+> variável que chegue vazia (regra 9). **Onde o SMS diz "Acompanhe por aqui: (link)", o
+> template não diz nada — quem diz é o botão.**
 >
-> - **O cumprimento saiu de cinco deles** — todos menos o `pedido_recebido`, que é a
->   primeira mensagem do pedido e continua se apresentando. Onde saiu, o corpo **não usa
->   `customer_name`** e a numeração andou: `{{1}}` passa a ser a **ref**. Conferir variável
->   por variável, porque ligar `{{1}}` ao nome num corpo que começa com "Seu pedido "
->   produz "Seu pedido Ana".
-> - **"Obrigado pela preferência" é exclusivo do `pedido_entregue`.** Saiu do
->   `pedido_confirmado` e não volta em nenhum outro.
-> - **`order_rejected` já nasceu certo** neste doc ("Não conseguimos confirmar"): a PR só
->   trocou o "O estabelecimento não conseguiu" que vivia no `seed`. Nada a fazer aqui.
-> - **`payment_confirmed` mudou só o ASSUNTO**, que é coisa de e-mail. O corpo do
->   `pagamento_confirmado` fica como está — template Meta não tem assunto.
+> As regras que a voz aplicou, e que valem para ler qualquer corpo daqui:
 >
-> ⚠️ **No WhatsApp o texto do Admin não alcança o cliente** — quem fala é o template
-> aprovado na Meta. SMS e e-mail ganham a voz nova no deploy da #1122; o WhatsApp só ganha
-> quando **estes** templates forem aprovados. É por isso que submeter na voz velha custa
-> um ciclo de reaprovação, não uma edição.
+> - **"Oi, {{1}}!" para abrir; "Oi, {{1}}." com ponto na notícia ruim** (cancelado, não
+>   confirmado, prazo vencido, falha). Sem nome, o SMS/e-mail dizem "Oi!" sozinho — mas o
+>   template **não tem esse recurso**, e é por isso que pedido sem nome sai por SMS.
+> - **Voz feminina, é a concierge: "Obrigada".**
+> - **Emoji só os da casa** — 💛✨, e 😌 nas notícias ruins. Saíram 🥐, 🥖 e 📦.
+> - **O texto não repete o botão.** Sumiu todo "Toque no botão abaixo"; a ação fica escrita
+>   só no botão ("Pagar pedido", "Tentar de novo", "Confirmar recebimento", "Pedir de novo",
+>   "Ver saldo", "Garantir já", "Ver nota fiscal").
+> - **`order_note` é a variável que nunca fica vazia.** Onde o texto precisaria de um dado
+>   opcional (a hora prevista, o motivo), entra ela — e sem o dado ela traz uma frase-padrão
+>   em vez de sumir. É o que permite à hora e ao motivo viajarem no template, coisa que a
+>   regra 9 proibia enquanto eram sufixos auto-suprimíveis.
 
 ### `pedido_recebido` — evento `order_received`
-- Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Estamos conferindo a disponibilidade e avisamos em seguida.`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
-- Botão URL: `Acompanhar pedido`
+- Corpo: `Oi, {{1}}! Recebemos seu pedido {{2}}. Estamos conferindo a disponibilidade e avisamos em seguida.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+### `pedido_recebido_fora_horario` — evento `order_received_outside_hours` 🆕
+- Corpo: `Oi, {{1}}! Recebemos seu pedido {{2}} fora do nosso horário. Vamos conferir assim que abrirmos e avisamos por aqui.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> 🆕 Template novo. Faltava por esquecimento: sem ele, o pedido que entra fora do horário
+> não é avisado no WhatsApp fora da janela de 24h — que é justamente quando ele acontece.
 
 ### `pedido_confirmado` — evento `order_accepted`
-- Corpo: `Seu pedido {{1}} está confirmado. Total: {{2}}. Já vamos preparar.`
-- Vars: `{{1}}`=`A17` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
-- Botão URL: `Acompanhar pedido`
+- Corpo: `Seu pedido {{1}} está confirmado. O total é {{2}}. Vamos preparar tudo com muito carinho. ✨`
+- Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
-> ⚠️ **Sem cumprimento e sem agradecimento, e os dois são decisão do dono.** O
-> cumprimento saiu (o aviso não precisa se apresentar a cada passo) e o "Obrigado pela
-> preferência" ficou **só** no `pedido_entregue`. Consequência para quem monta o template:
-> este corpo **não usa `customer_name`**, e a numeração andou — `{{1}}` aqui é a **ref**,
-> não o nome.
-
-### `pedido_nao_confirmado` — evento `order_rejected`
-- Corpo: `Olá, {{1}}! Não conseguimos confirmar o seu pedido {{2}} desta vez. Nada foi cobrado. Se quiser entender o motivo, é só falar com a gente por aqui.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
-- Botão URL: `Ver pedido`
+> ⚠️ **Sem cumprimento e sem `customer_name`** — a numeração andou, `{{1}}` é o código do
+> pedido. Este texto passou por três versões em dois dias (24/09 sem agradecimento, 25/09
+> com "Oi, Ana!" e "Obrigado por nos prestigiar", e a revisão final); esta é a que vale.
 
 ### `pedido_em_preparo` — evento `order_preparing`
-- Corpo: `Estamos preparando o seu pedido {{1}}. Avisamos assim que estiver pronto.`
-- Vars: `{{1}}`=`A17` (`order_ref_short`)
-- Botão URL: `Acompanhar pedido`
+- Corpo: `Estamos preparando seu pedido {{1}}. {{2}}.`
+- Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Previsto para ficar pronto às 18h20. Mas avisamos assim que estiver` (`order_note`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
-> ⚠️ **O `{eta_note}` não viaja neste template**, e é o mesmo motivo do `produto_chegou`:
-> ele é sufixo **auto-suprimível** (`"\nDeve ficar pronto às 18h20."`, de
-> `services/notification._eta_note`) e a Meta não aceita variável vazia. Um corpo aprovado
-> com a hora dentro fica quebrado em todo pedido sem ETA calculável. A hora continua
-> saindo inteira por SMS e e-mail, que interpolam na hora.
+> ⚠️ **O ponto final é FIXO, fora da variável** — o `order_note` entra sem ponto. É o que
+> impede o corpo de terminar em variável (regra 2). O ✨ que fazia esse papel saiu por
+> decisão do dono em 25/09.
 >
-> O fecho "Avisamos assim que estiver pronto." não é invenção: é a mesma construção que a
-> voz aprovada usa no `pedido_pronto_entrega` ("Avisamos assim que sair."). Sem ele o corpo
-> terminaria logo depois da variável — quase-só-variável reprova (regra de ouro 6).
+> ⚠️ **Submeta este depois de dois ou três já aprovados.** Terminar em `{{2}}.` é o corpo
+> mais justo do pacote na regra 2: a Meta recusa corpo que **termine em variável**, e aqui
+> só um ponto literal separa. Deve passar, mas se algum reprovar por isso vai ser este — e
+> é melhor descobrir com o padrão já provado pelos outros.
+>
+> ℹ️ Sem hora calculável, o `order_note` diz "Avisamos assim que estiver pronto". Nunca
+> chega vazio, que é o ponto dele.
 
 ### `pedido_pronto_retirada` — evento `order_ready_pickup`
-- Corpo: `Seu pedido {{1}} está pronto e esperando por você no balcão. 🥐`
-- Vars: `{{1}}`=`A17` (`order_ref_short`)
-- Botão URL: `Endereço e detalhes`
+- Corpo: `Seu pedido {{1}} está pronto e esperando por você no balcão. ✨`
+- Vars: `{{1}}`=`A47` (`order_ref_short`)
+- **Dois** botões URL: `Como chegar` (link FIXO do Google Maps da loja, sem variável) · `Ver pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> ℹ️ A Meta aceita **até dois** botões de URL por template. O `Como chegar` é estático — não
+> tem variável nenhuma, é a URL do Maps colada inteira. É o único template do pacote com
+> dois botões.
 
 ### `pedido_pronto_entrega` — evento `order_ready_delivery`
-- Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair. 📦`
-- Vars: `{{1}}`=`A17` (`order_ref_short`)
-- Botão URL: `Acompanhar pedido`
+- Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair.`
+- Vars: `{{1}}`=`A47` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
-- Corpo: `Seu pedido {{1}} saiu para entrega.`
-- Vars: `{{1}}`=`A17` (`order_ref_short`)
-- Botão URL: `Acompanhar pedido`
+- Corpo: `Seu pedido {{1}} saiu para entrega. Quando receber, é só confirmar.`
+- Vars: `{{1}}`=`A47` (`order_ref_short`)
+- Botão URL: `Confirmar recebimento` → `/pedido/{{1}}` (`order_ref`)
 
-> ✅ **Destravado em 25/09/2026 por decisão do dono:** sem cumprimento, como os outros
-> quatro. Era o único evento do ciclo que o pacote de voz de 24/09 não cobria — ele seguia
-> abrindo com "Olá{customer_name_greeting}!" no `seed` e nos fallbacks, e a PR #1122
-> registrou o caso como fora de escopo. Ficou travado aqui até a palavra dele justamente
-> porque escolher entre as duas versões custaria um ciclo de reaprovação, não uma edição.
->
-> Como nos outros quatro, o corpo **não usa `customer_name`** e a numeração andou: `{{1}}`
-> é a **ref**. O `seed`, os fallbacks e a migração de dados
-> `shop.0076_saiu_para_entrega_sem_cumprimento` dizem o mesmo texto. O
-> `{courier_tracking_suffix}` (rastreio do entregador) é auto-suprimível e não viaja no
-> template, pelo mesmo motivo do `{eta_note}`.
+> ℹ️ O rastreio do entregador (`courier_tracking_suffix`) **fica fora**: nem toda entrega tem
+> corrida com rastreio, e sufixo auto-suprimível não vira variável (regra 9). Ele continua
+> saindo por SMS e e-mail.
 
 ### `pedido_entregue` — evento `order_delivered`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+- Corpo: `Seu pedido {{1}} foi entregue. Esperamos que tenha gostado, {{2}}! Obrigada por nos prestigiar! 💛✨`
+- Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Ana` (`customer_name`)
+- Sem botão.
 
-### `nota_fiscal_disponivel` — evento `fiscal_note_ready` (NOVO, 25/09/2026 — ainda não submetido)
-A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): sem papel e sem pedir
-e-mail. A API do ManyChat não manda arquivo no WhatsApp, então vai o link. Dentro da janela
-de 24h o código já manda o texto livre com o link da DANFE (`danfe_url`); fora dela só sai
-com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_flow_ns`.
+> ⚠️ **O nome está no MEIO e é `{{2}}`, não `{{1}}`.** É o único template do pacote com essa
+> ordem. Ligar na ordem de costume produz "Seu pedido Ana foi entregue".
 
-> **É a REDE, não o caminho normal** (decisão do dono, 25/09/2026: menos mensagens). O link
-> da nota vai DENTRO da mensagem de status que sai quando a nota já existe ("saiu para
-> entrega", "entregue", "pronto"), como uma linha a mais no fim do texto livre
-> (`Nota fiscal do pedido: <link>`). Este aviso avulso só sai quando a nota autoriza DEPOIS
-> da última mensagem que a levaria — na retirada é o caso de sempre, porque a nota nasce
-> na conclusão. Os templates aprovados de status (`pedido_pronto_retirada`,
-> `pedido_saiu_entrega`, `pedido_entregue`) **não mudam**: o texto de um flow é fixo e não
-> leva o link; quando o status sai por flow, o código não conta com ele e manda este
-> avulso. Nenhum template novo além deste.
-- Corpo: `A nota fiscal do seu pedido {{1}} está disponível. Toque no botão abaixo para abrir.`
-- Vars: `{{1}}`=`A17` (`order_ref_short`); o botão leva `order_ref` (`NB-260902-A17`)
-- Botão URL: `Ver nota fiscal` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (a página do
-  pedido mostra a nota com o link da DANFE e a chave de acesso). O prefixo fixo é o NOSSO, não
-  o do provedor fiscal: trocar de provedor não custa reaprovação.
+### `nota_fiscal_disponivel` — evento `fiscal_note_ready` 🆕
+- Corpo: `A nota fiscal do pedido {{1}} está disponível.`
+- Vars: `{{1}}`=`A47` (`order_ref_short`)
+- Botão URL: `Ver nota fiscal` → **destino a decidir** (ver "Botões sem destino fechado")
 
 ### `pedido_cancelado` — evento `order_cancelled`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado. Se tiver qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+- Corpo: `Oi, {{1}}. Seu pedido {{2}} foi cancelado. {{3}} Qualquer dúvida, estamos à disposição. 😌`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`Motivo: item indisponível.` (`order_note`)
+- Botão URL: `Ver detalhes` → `/pedido/{{1}}` (`order_ref`)
+
+> ℹ️ Aqui o `order_note` fica no **meio** do texto, então ele vem **com** ponto final — ao
+> contrário do `pedido_em_preparo`, onde o ponto é fixo. Sem motivo informado, diz "Os
+> detalhes estão no pedido.".
+>
+> ℹ️ "Oi, {{1}}." com **ponto**, não com exclamação: é notícia ruim.
+
+### `pedido_nao_confirmado` — evento `order_rejected`
+- Corpo: `Oi, {{1}}. Não conseguimos confirmar seu pedido {{2}} desta vez. {{3}} Se houve cobrança, devolvemos o valor. Qualquer dúvida, estamos à disposição. 😌`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`Motivo: item indisponível.` (`order_note`)
+- Botão URL: `Ver detalhes` → `/pedido/{{1}}` (`order_ref`)
+
+> ℹ️ Saiu o "Nada foi cobrado": quem pagou no checkout e teve o pedido recusado **foi**
+> cobrado e recebe estorno. "Se houve cobrança, devolvemos o valor" serve aos dois casos.
 
 ### `pedido_agendado_lembrete` — evento `preorder_reminder`
-- Corpo: `Olá, {{1}}! Lembrando que o seu pedido {{2}} está agendado para amanhã. Já estamos preparando tudo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+- Corpo: `Oi, {{1}}! Lembrando que seu pedido {{2}} está agendado para amanhã. Vamos preparar tudo com muito carinho. ✨`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 ### `pagamento_solicitado` — evento `payment_requested`
-- Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
-- Botão URL: `Pagar pedido`
+- Corpo: `Oi, {{1}}! Seu pedido {{2}} está reservado. Falta só o pagamento.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> ℹ️ O código Pix copia-e-cola **não** viaja no template (é longo e opcional). Fica no
+> SMS/e-mail; aqui a pessoa chega pela tela do pedido, onde o Pix e o cartão estão inline.
 
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
-- Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para garantir o pedido, é só pagar pelo botão abaixo até {{4}}. Depois disso a reserva é liberada. Qualquer coisa, é só responder esta mensagem.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
-- Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
-- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref_short`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
+- Corpo: `Oi, {{1}}! Anotamos seu pedido {{2}} no valor de {{3}}. Pague até {{4}} para garantir. Depois disso liberamos a reserva.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`R$ 38,00` (`total`) · `{{4}}`=`hoje às 18h` (`payment_deadline`)
+- Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (`checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
 
-> ⚠️ É `customer_name` (`Ana`), **não** `customer_name_greeting`. As duas chaves existem no
-> contexto e as duas viram campo personalizado, mas `customer_name_greeting` já vem com a
-> vírgula colada (`, Ana`) porque foi feita para o texto livre `Olá{customer_name_greeting}!`.
-> Ligada a um `{{1}}` que já tem `Olá, ` literal na frente, ela renderiza `Olá, , Ana!`.
-> Vale para **todo** template deste doc: o corpo aprovado diz `Olá, {{1}}!`, então `{{1}}`
-> é sempre `customer_name`.
-- ⚠️ `{{4}}` é o `payment_deadline` cru ("hoje às 16h"), e a Meta não aceita variável vazia nem com quebra de linha — o template aprovado PRESSUPÕE prazo. Todo link nasce com `expires_at` (`min(agora + janela do canal, corte do atendimento)`, ver `docs/guides/payments.md`); o único caso sem prazo é um adapter que falhou ao gravá-lo, e aí o texto direto (`sendContent`) sai com a frase auto-suprimida.
+> ⚠️ **`{{4}}` pressupõe prazo, e este é o único template que depende de um dado que pode
+> faltar.** A Meta não aceita variável vazia. Todo link nasce com `expires_at`
+> (`min(agora + janela do canal, corte do atendimento)`, ver `docs/guides/payments.md`), e o
+> único caso sem prazo é um adapter que falhou ao gravá-lo. A sessão da voz ficou de
+> confirmar no código que **todo** link de pagamento grava o prazo antes de isto ir ao ar.
 
 ### `pagamento_confirmado` — evento `payment_confirmed`
-- Corpo: `Olá, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Avisamos a cada passo daqui em diante.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+- Corpo: `Obrigada, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Vamos atualizando você por aqui.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 ### `pagamento_lembrete` — evento `payment_reminder`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} ainda aguarda o pagamento via PIX. Toque abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
-- Botão URL: `Concluir pagamento`
+- Corpo: `Oi, {{1}}! Seu pedido {{2}} ainda aguarda o pagamento via Pix.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 ### `pagamento_expirado` — evento `payment_expired`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado porque o pagamento via PIX não foi confirmado a tempo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+- Corpo: `Oi, {{1}}. O prazo para pagar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Pedir de novo` → **destino a decidir** (ver "Botões sem destino fechado")
 
 ### `pagamento_falhou` — evento `payment_failed`
-- Corpo: `Olá, {{1}}! Não conseguimos preparar o pagamento do seu pedido {{2}}. Abra o pedido pelo botão abaixo para tentar de novo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
-- Botão URL: `Abrir pedido`
+- Corpo: `Oi, {{1}}. Não conseguimos gerar o pagamento do seu pedido {{2}}.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Tentar de novo` → `/pedido/{{1}}` (`order_ref`)
+
+> ℹ️ O botão abre o pedido, onde ficam o Pix e o cartão. Não há tela de pagamento separada
+> (PAYMENT-TRACKING-MERGE).
+
+### `reembolso_processado` — evento `payment_refunded` 🆕
+- Corpo: `Oi, {{1}}! O reembolso do pedido {{2}}, no valor de {{3}}, foi processado. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`R$ 38,00` (`total`)
+- Sem botão.
+
+> ⚠️ **Nada emite este evento hoje.** O sinal `payment_refunded` existe no `payman` e está
+> ligado só aos emissores de SSE (`handlers/_sse_emitters.py`) — não há despacho de
+> notificação ao cliente. O template pode ser aprovado e mapeado, mas **não vai disparar**
+> até alguém ligar o evento à notificação. Ver "Templates aprovados que ainda não disparam".
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
-- Corpo: `Olá, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} pelo botão abaixo para garantir o seu.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
-- Botão URL: `Confirmar pedido`
+- Corpo: `Oba! 💛✨ Acabou de sair do forno, {{1}}! Confirme o pedido {{2}} para garantir.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Confirmar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 > ⚠️ Não ligar `waitlist.enabled` antes do #392 estar no ar — ver a política de fila.
 
 ### `fila_vaga_liberada` — evento `waitlist_released`
-- Corpo: `Olá, {{1}}! O prazo de confirmação do pedido {{2}} passou e liberamos a sua vaga. Nada foi cobrado, e é só entrar na fila da próxima fornada.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
-- Botão URL: `Ver pedido`
+- Corpo: `Oi, {{1}}. O prazo para confirmar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Pedir de novo` → **destino a decidir** (ver "Botões sem destino fechado")
+
+> ℹ️ Mesma forma do `pagamento_expirado`, de propósito: os dois dizem a mesma coisa ao
+> cliente (o prazo passou, a reserva voltou, ninguém cobrou) e devem falar igual.
+
+### `pontos_fidelidade` — evento `loyalty_earned` 🆕
+- Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
+- Botão URL: `Ver saldo` → `/conta` (link **fixo**, sem variável)
+
+> ⚠️ **Nada emite este evento hoje.** `loyalty_earned` só existe no `seed` e num teste; o
+> `handlers/loyalty.py` não manda notificação nenhuma. Ver "Templates aprovados que ainda
+> não disparam".
 
 ### `produto_chegou` — evento `stock_arrived`
-- Corpo: `Olá, {{1}}! O {{2}} que você pediu para ser avisado chegou. Toque abaixo para ver na loja.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`Croissant`
-- Sem botão de URL (ver ressalva).
+- Corpo: `Oi, {{1}}! Você pediu pra avisar quando {{2}} estivesse disponível e agora está! 💛✨`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`Croissant` (`product_name`)
+- Botão URL: `Garantir já` → **destino a decidir** (ver "Botões sem destino fechado")
 
-> ⚠️ **Este template atende DUAS situações diferentes, e é por isso que o corpo é curto.**
-> `stock_arrived` sai por dois caminhos: com **reserva materializada** e prazo
-> (`handlers/_stock_receivers.py` — `reserve_note=" Sua reserva esta garantida."`,
-> `deadline_note=" Confirme até as 18:30."`) e pelo **"Me avise"** puro
-> (`storefront/services/stock_alerts.py`), onde os dois vêm **vazios**.
+> ⚠️ **O prazo da reserva não viaja neste template.** O `stock_arrived` sai por dois
+> caminhos — com reserva materializada e prazo (`handlers/_stock_receivers.py`) e pelo "Me
+> avise" puro (`storefront/services/stock_alerts.py`), onde os dois vêm vazios. Um corpo que
+> prometesse prazo ficaria falso no segundo caminho, e `whatsapp_flow_ns` é um por evento
+> (regra 8). O prazo continua saindo por SMS e e-mail.
 >
-> Um corpo aprovado que diga "a sua reserva está garantida até {{3}}" fica **falso** no
-> segundo caminho e **quebrado** quando a variável chega vazia. E não dá para ter um
-> template por situação: `whatsapp_flow_ns` é **um por evento**, e o evento é o mesmo.
->
-> Consequência aceita: **o prazo da reserva não viaja no WhatsApp** por este template. Ele
-> continua saindo inteiro por SMS e e-mail, que interpolam o texto na hora. Recuperar o
-> prazo aqui pede uma variável nova com só a hora (`18:30`, sem a frase pronta em volta) e
-> um evento separado para a reserva — WP próprio, não este.
->
-> ⚠️ **Categoria é o risco real deste.** Aviso de disponibilidade de produto costuma ser
-> lido como Marketing pela Meta, e sem a reserva no corpo o argumento de Utility fica mais
-> fraco. Submeta como Utility; se reprovar, o corpo não muda — só a categoria.
->
-> ⚠️ O botão fica de fora de propósito: o destino deste aviso não é `/pedido/{ref}`, é o
-> produto ou a sacola (o código entrega esse link em `action_url`). Um botão aqui exigiria
-> um segundo prefixo fixo — decidir isso é WP próprio.
+> ⚠️ **Categoria é o risco real deste.** Aviso de disponibilidade costuma ser lido como
+> Marketing pela Meta. Submeta como Utility; se reprovar, o corpo não muda — só a categoria.
+
+---
+
+## Botões sem destino fechado
+
+Seis botões novos que a revisão de 25/09 criou **não apontam para `/pedido/{ref}`**, e por
+isso não têm destino ainda. Não é detalhe de acabamento: o destino é **fixo dentro do
+template aprovado**, então errar custa reaprovação.
+
+A restrição que fecha as opções, e que vem de decisão de segurança (ver "ANTES DE SUBMETER"):
+**URL não vira campo personalizado.** Sobram dois formatos de botão:
+
+1. **prefixo fixo + variável segura** — hoje só existe um par que funciona:
+   `…/pedido/{{1}}` com `order_ref`;
+2. **URL estática**, sem variável nenhuma.
+
+| Botão | Onde | O que trava | Saída possível |
+|---|---|---|---|
+| `Ver nota fiscal` | `nota_fiscal_disponivel` | não há rota de DANFE em `storefront_links` | apontar para `/pedido/{{1}}`, onde a nota está |
+| `Pedir de novo` | `pagamento_expirado`, `fila_vaga_liberada` | não há `path_reorder`; `reorder_url` é link pessoal e não pode virar campo | `/pedido/{{1}}` (o pedido tem "pedir de novo"), ou `/menu` estático |
+| `Garantir já` | `produto_chegou`, `saiu_do_forno` | `/produto/{sku}` é a rota certa, mas **`sku` está na denylist** de campos personalizados (`_FIELD_DENYLIST`) — nunca chega ao ManyChat | `/menu` estático, ou tirar `sku` da denylist (decisão da frente do adapter) |
+| `Ver novidade` | `anuncio_novidade` | o destino é o `action_url` da campanha, que é link pessoal | `/menu` estático |
+
+⚠️ `Ver saldo` (`/conta`) e `Como chegar` (Google Maps) **já estão resolvidos**: são URLs
+estáticas, sem variável, e por isso não entram nesta lista.
+
+---
+
+## Templates aprovados que ainda não disparam
+
+Dois dos templates novos são de eventos que **nenhum código emite hoje**:
+
+| Template | Evento | Estado |
+|---|---|---|
+| `reembolso_processado` | `payment_refunded` | o sinal existe no `payman`, mas só alimenta os emissores de SSE — não há notificação ao cliente |
+| `pontos_fidelidade` | `loyalty_earned` | só existe no `seed` e num teste; `handlers/loyalty.py` não notifica |
+
+Submeter os dois é legítimo — o template fica pronto para quando o código ligar, e a
+aprovação leva 24-48h que não se quer pagar depois. Mas é bom saber que **mapear o flow deles
+não faz nada** até o evento passar a ser emitido, e que um teste de ponta a ponta neles vai
+dar silêncio, não falha.
 
 ---
 
@@ -378,8 +430,17 @@ Audiência diferente: quem recebe é o contato comercial do fornecedor, não um 
 
 ### `pedido_compra` — evento `purchase_request`
 - Corpo: `Olá! Chegou um pedido de compra da {{1}}, número {{2}}: {{3}}, quantidade {{4}}. Por favor, confirme disponibilidade, prazo e valor final por aqui.`
-- Vars: `{{1}}`=`Nelson Boulangerie` · `{{2}}`=`PC-260902-9C4A1F` · `{{3}}`=`Farinha de trigo tipo 1` · `{{4}}`=`5 sc`
+- Vars: `{{1}}`=`Nelson Boulangerie` (`shop_name`) · `{{2}}`=`PC-260902-9C4A1F` (`purchase_ref`) · `{{3}}`=`Farinha de trigo tipo 1` (`material_name`) · `{{4}}`=`5 sc` (`purchase_qty_display`)
 - Sem botão (o fornecedor responde na conversa; não há tela dele).
+
+> ⚠️ **A ref aqui fica INTEIRA, e não é esquecimento.** A regra do código curto é do pedido
+> do cliente; esta é a ref da **compra** (`purchase_ref`), e quem lê é o contato comercial do
+> fornecedor, que vai procurar esse número no sistema dele. Encurtar deixaria o fornecedor
+> com `9C4A1F` e sem botão — este template não tem tela para onde mandar.
+>
+> ⚠️ **A revisão de voz de 25/09 não passou por aqui.** Ela cobriu as mensagens ao cliente; o
+> fornecedor é outra audiência e outro tom. Se a casa quiser revisar este texto também, é
+> rodada própria.
 
 ---
 
@@ -388,18 +449,26 @@ Audiência diferente: quem recebe é o contato comercial do fornecedor, não um 
 Categoria e custo diferentes. **Não misture com Utility** — nem "para passar".
 
 ### `saiu_do_forno` — evento `production_ready`
-- Corpo: `Oi, {{1}}! Acabou de sair do forno: {{2}}. Ainda quentinho, enquanto durar.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`Pão de fermentação natural`
-- Sem botão de URL (mesmo motivo do `produto_chegou`: o destino é o produto).
+- Corpo: `Olha só o que acabou de sair do forno: {{1}}! No momento temos {{2}} un. disponíveis.`
+- Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`12` (quantidade disponível)
+- Botão URL: `Garantir já` → **destino a decidir** (ver "Botões sem destino fechado")
+
+> ℹ️ A quantidade **sempre existe** quando a fornada sai, então é variável fixa do template,
+> sem frase condicional. Com zero disponível o aviso não sai.
+>
+> ⚠️ A variável da quantidade precisa de um campo personalizado novo, e ele ainda não tem
+> nome fechado no código — combinar com a frente do adapter, como se fez com o
+> `order_ref_short`.
 
 ### `anuncio_novidade` — evento `announcement_published`
 - Corpo: `Oi, {{1}}! Tem novidade na Nelson Boulangerie hoje: {{2}}. Passe na loja ou peça pelo nosso site.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`o pão de campanha voltou às quartas`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`o pão de campanha voltou às quartas` (`body`)
+- Botão URL: `Ver novidade` → **destino a decidir** (ver "Botões sem destino fechado")
 
 > ⚠️ **Submeta este por último.** No código, `announcement_published` é só um envelope: o
 > corpo inteiro vem pronto do `AnnouncementTemplate` (`"{body}\n\n{cta} {action_url}"`). Um
 > template aprovado **não** aceita corpo livre — a Meta precisa ler o que a mensagem diz, e
-> um `{{1}}` que é a mensagem toda reprova.
+> um `{{2}}` que é a mensagem toda reprova.
 >
 > O corpo acima é a adaptação: moldura fixa + uma variável curta. Isso **restringe** o que
 > uma campanha pode dizer pelo WhatsApp — o `{{2}}` passa a ser uma frase, não um texto. Se
@@ -422,12 +491,17 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 ## Mapa evento interno → template
 
 ⚠️ Conferido chave a chave contra `notification_manychat.MESSAGE_TEMPLATES` e
-`notification_email.SUBJECT_TEMPLATES` em 02/09/2026. O mapa antigo trazia
-**`order_confirmed`, que o código nunca emitiu** — o evento é `order_accepted`.
+`notification_email.SUBJECT_TEMPLATES` em 02/09/2026, e de novo em 25/09/2026 contra os
+eventos realmente emitidos. O mapa antigo trazia **`order_confirmed`, que o código nunca
+emitiu** — o evento é `order_accepted`.
+
+**São 25 templates**: 22 Utility de cliente, 1 Utility de fornecedor e 2 Marketing. Quatro
+nasceram na revisão de 25/09 (🆕), e dois deles são de eventos que ainda não disparam.
 
 | Evento interno | Template Meta | Categoria |
 |---|---|---|
 | `order_received` | `pedido_recebido` | Utility |
+| `order_received_outside_hours` | `pedido_recebido_fora_horario` | Utility 🆕 |
 | `order_accepted` | `pedido_confirmado` | Utility |
 | `order_rejected` | `pedido_nao_confirmado` | Utility |
 | `order_preparing` | `pedido_em_preparo` | Utility |
@@ -444,8 +518,10 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 | `payment_reminder` | `pagamento_lembrete` | Utility |
 | `payment_expired` | `pagamento_expirado` | Utility |
 | `payment_failed` | `pagamento_falhou` | Utility |
+| `payment_refunded` | `reembolso_processado` | Utility 🆕 (não emitido ainda) |
 | `waitlist_available` | `fila_vaga_disponivel` | Utility |
 | `waitlist_released` | `fila_vaga_liberada` | Utility |
+| `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |
 | `stock_arrived` | `produto_chegou` | Utility |
 | `purchase_request` | `pedido_compra` | Utility (fornecedor) |
 | `production_ready` | `saiu_do_forno` | Marketing |
@@ -487,7 +563,9 @@ nome**, senão a variável sai em branco e nada falha.
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
+| Frase que nunca fica vazia | `order_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
 | Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
+| Quantidade da fornada | *(nome a combinar)* | `saiu_do_forno` |
 | Nome da loja | `shop_name` | `pedido_compra` |
 | Ref da compra | `purchase_ref` | `pedido_compra` |
 | Material | `material_name` | `pedido_compra` |
