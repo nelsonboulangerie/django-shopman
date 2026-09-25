@@ -199,6 +199,44 @@ class PricedItemsRule(BaseRule):
                 )
 
 
+class DeliveryFiscalIdentityRule(BaseRule):
+    """Entrega com NFC-e não entra sem CPF/CNPJ válido e endereço completo.
+
+    Decisão do dono, 24/09/2026: a SEFAZ recusa a nota de entrega sem isso
+    (787/788), e a recusa aparecia na emissão, com o entregador na rua. Aqui
+    ela aparece na porta. A régua é a da emissão e a pergunta "vai ter nota?"
+    é a do resolver fiscal (``services/delivery_fiscal_identity``).
+
+    Registrado sempre (``handlers._register_validators``), fora do
+    ``RuleConfig``: é exigência da SEFAZ, não política que o Admin desliga.
+    Nunca toca o despacho: pedido que já entrou segue o caminho de sempre.
+    """
+
+    code = "shop.delivery_fiscal_identity"
+    label = "CPF e endereço da nota de entrega"
+    rule_type = "validator"
+    stage = "commit"
+    default_params = {}
+
+    def validate(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        from shopman.orderman.exceptions import ValidationError as OrderValidationError
+
+        from shopman.shop.services import delivery_fiscal_identity as identity
+
+        data = getattr(session, "data", None) or {}
+        if data.get("fulfillment_type") != "delivery":
+            return
+        total_q = sum(int(item.get("line_total_q") or 0) for item in (getattr(session, "items", None) or []))
+        order = identity.order_view(
+            data=data, channel_ref=getattr(channel, "ref", "") or "", total_q=total_q,
+        )
+        refused = identity.refusal(identity.delivery_fiscal_gaps(order))
+        if refused is None:
+            return
+        code, field, message = refused
+        raise OrderValidationError(code=code, message=message, context={"field": field})
+
+
 class DeliveryZoneRule(BaseRule):
     """Gate de entrega no commit — cobertura de zona + pedido mínimo de entrega.
 

@@ -149,7 +149,7 @@ def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch):
     backend.emit.return_value = FiscalDocumentResult(success=True, access_key="1" * 44, status="authorized")
     monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda: backend)
     monkeypatch.setattr(fiscal, "emission_resolver", lambda order: True)
-    address = {"formatted_address": "Rua Pará, 86", "route": "Rua Pará", "street_number": "86", "neighborhood": "Centro", "postal_code": "86010000", "city": "Londrina", "state": "PR"}
+    address = {"formatted_address": "Rua Pará, 86", "route": "Rua Pará", "street_number": "86", "neighborhood": "Centro", "postal_code": "86010000", "city": "Londrina", "state_code": "PR"}
     result = _close(operator, _delivery_payload(shift, client_request_id="cpf-delivery", fiscal_tax_id="52998224725", receipt_identity_choices=[{
         "field": "tax_id", "value": "52998224725", "customer_ref": "", "owner_ref": "",
         "choice": "receipt_only", "client_request_id": "cpf-delivery",

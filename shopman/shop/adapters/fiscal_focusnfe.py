@@ -449,29 +449,27 @@ def _intermediary_fields(intermediary: dict) -> dict:
 
 
 def _home_delivery_fields(config: dict, customer: dict, delivery: dict) -> dict:
-    """Exige identificação e endereço reais para entrega a domicílio."""
-    from shopman.utils.documents import is_valid_tax_id
+    """Exige identificação e endereço reais para entrega a domicílio.
+
+    A régua é ``delivery_fiscal_identity.recipient_gaps``, a mesma que a porta do
+    pedido aplica antes do commit (``DeliveryFiscalIdentityRule``): o que passa
+    lá passa aqui.
+    """
+    from shopman.shop.services.delivery_fiscal_identity import recipient_gaps
 
     if not isinstance(delivery, dict) or not isinstance(delivery.get("address"), dict):
         raise FocusNFePayloadError("Entrega a domicílio: informe o endereço estruturado do destinatário.")
     address = delivery["address"]
     tax_id = _digits(customer.get("tax_id") or customer.get("cpf") or customer.get("cnpj"))
+    gaps = recipient_gaps(tax_id=tax_id, address=address)
+    if gaps:
+        raise FocusNFePayloadError("Entrega a domicílio: confira " + ", ".join(gap.label for gap in gaps) + ".")
     street = str(address.get("route") or "").strip()
     city = str(address.get("city") or "").strip()
     state = str(address.get("state_code") or "").strip()
     cep = _digits(address.get("postal_code"))
     number = str(address.get("street_number") or "").strip()
     neighborhood = str(address.get("neighborhood") or "").strip()
-    valid_states = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
-                    "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"}
-    missing = [label for label, valid in (
-        ("CPF/CNPJ solicitado para a nota", tax_id and is_valid_tax_id(tax_id)),
-        ("logradouro", street), ("número (ou S/N explicitamente informado)", number),
-        ("bairro", neighborhood), ("município", city), ("UF válida", state.upper() in valid_states),
-        ("CEP de 8 dígitos", len(cep) == 8),
-    ) if not valid]
-    if missing:
-        raise FocusNFePayloadError("Entrega a domicílio: confira " + ", ".join(missing) + ".")
 
     fields = {
         "logradouro_destinatario": street[:60],
