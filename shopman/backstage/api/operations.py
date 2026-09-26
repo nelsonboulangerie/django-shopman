@@ -2277,6 +2277,68 @@ class POSRecentSalesView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
+        summary="POS preorders: every order with pickup/delivery by committed date",
+        responses={200: OpenApiResponse(description="Preorders grouped by committed date.")},
+    ),
+)
+class POSPreorderListView(APIView):
+    """A seção Encomendas do PDV: busca, o dia e a grade semanal numa rota só.
+
+    ``GET ?date_from=&date_to=&q=`` — a janela na régua canônica da casa
+    (``order_ticket.parse_period``: padrão hoje + 6, ilegível cai no padrão,
+    invertido é trocado) com o teto de ``preorders.MAX_SPAN_DAYS``. O corte e o
+    saldo moram em ``projections.preorders``.
+
+    Duas permissões: a do balcão (é tela do PDV) e a do pedido (o documento é
+    do pedido, como na Via Pedido — o grupo Caixa tem as duas).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        date_from, date_to = preorders.parse_range(request.GET.get("date_from"), request.GET.get("date_to"))
+        projection = preorders.build_preorder_list(
+            date_from=date_from, date_to=date_to, query=str(request.GET.get("q") or ""),
+        )
+        return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="POS preorder detail (read-only)",
+        responses={200: OpenApiResponse(description="One preorder."), 404: OpenApiResponse(description="Not a preorder.")},
+    ),
+)
+class POSPreorderDetailView(APIView):
+    """Uma encomenda: cliente, recebimento, itens, total, saldo e situação.
+
+    404 para pedido que não existe E para pedido fora do corte (venda de
+    Balcão, cancelado, devolvido): o detalhe da seção não lê qualquer pedido.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request, ref: str):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        projection = preorders.build_preorder_detail(ref)
+        if projection is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
         summary="DANFE NFC-e bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="DANFE payload.")},
     ),

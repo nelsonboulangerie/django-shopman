@@ -310,6 +310,9 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
         projections=(
             ROOT / "shopman/backstage/projections/pos.py",
             ROOT / "shopman/backstage/projections/pos_payment_delivery.py",
+            # A seção Encomendas do PDV (ENCOMENDAS-PDV-PLAN): API headless
+            # `/api/v1/backstage/pos/preorders/`, consumida pelo pos-nuxt.
+            ROOT / "shopman/backstage/projections/preorders.py",
         ),
         replacement="POS is registered runtime UI; management screens must use Admin/Unfold.",
     ),

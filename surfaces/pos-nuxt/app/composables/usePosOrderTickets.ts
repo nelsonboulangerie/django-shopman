@@ -6,22 +6,23 @@ import {
   canPrintBatch,
   isoDate,
   resolveRange,
+  ticketCountLabel,
   type TicketPreset,
   type TicketRange,
   type TicketRow,
 } from "~/presentation/orderTickets";
 
 /**
- * As fichas do painel: escolher o intervalo, conferir o lote, mandar à bobina.
+ * A Via Pedido do painel: escolher o intervalo, conferir o lote, mandar à bobina.
  *
  * O desenho é o mesmo do recibo e da DANFE (`pages/index.vue`): o SERVIDOR
  * compõe os bytes ESC/POS, esta camada só relaia ao agente do balcão. A
  * diferença é que o lote sai num trabalho só — os bytes já vêm concatenados,
- * com o corte parcial entre uma ficha e a seguinte.
+ * com o corte parcial entre uma via e a seguinte.
  *
  * ⚠️ **Não há queda para `window.print()` aqui, e é deliberado.** No recibo a
  * queda existe porque há um recibo DESENHADO na tela para o diálogo do
- * navegador imprimir. A ficha não tem gêmea em HTML, e inventar uma criaria
+ * navegador imprimir. A Via Pedido não tem gêmea em HTML, e inventar uma criaria
  * um segundo leiaute com um segundo dono — exatamente o que a docstring do
  * `receipt_escpos` proíbe ("se cada máquina compusesse, dois balcões
  * imprimiriam diferente"). Então a falha é ALTA e explicada, nunca silenciosa:
@@ -79,7 +80,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
   function warnNoAgent() {
     toast.error(
       `Esta estação não imprime: ${agent.printUnavailableReason.value} `
-      + "As fichas saem no balcão que tem impressora.",
+      + "A Via Pedido sai no balcão que tem impressora.",
     );
   }
 
@@ -90,7 +91,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
     });
   }
 
-  /** O lote inteiro, em fichas consecutivas. */
+  /** O lote inteiro, em vias consecutivas. */
   async function printBatch(): Promise<boolean> {
     if (!import.meta.client || printing.value || !canPrint.value) return false;
     if (!agent.canPrint.value) {
@@ -102,25 +103,25 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
       const job = await fetchPrintable("/api/v1/backstage/orders/tickets/escpos/", query.value);
       const outcome = await agent.print(job.payload_b64, job.title);
       if (outcome.status !== "printed") {
-        toast.error(`As fichas não saíram: ${outcome.detail || "o agente do balcão não respondeu"}.`);
+        toast.error(`As vias não saíram: ${outcome.detail || "o agente do balcão não respondeu"}.`);
         return false;
       }
       const reimpressas = job.reprint_count || 0;
       toast.success(
-        `${job.count ?? count.value} fichas na bobina.`
+        `${ticketCountLabel(job.count ?? count.value)} na bobina.`
         + (reimpressas ? ` ${reimpressas} saíram marcadas como 2ª via.` : ""),
       );
       if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, "O servidor não montou as fichas.")} Nada saiu na bobina. Tente de novo.`);
+      toast.error(`${httpErrorMessage(error, "O servidor não montou as vias.")} Nada saiu na bobina. Tente de novo.`);
       return false;
     } finally {
       printing.value = false;
     }
   }
 
-  /** Uma ficha só — a que caiu, a que rasgou, a que chegou agora. */
+  /** Uma via só — a que caiu, a que rasgou, a que chegou agora. */
   async function printOne(ref: string): Promise<boolean> {
     if (!import.meta.client || printingRef.value) return false;
     if (!agent.canPrint.value) {
@@ -134,14 +135,14 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
       );
       const outcome = await agent.print(job.payload_b64, job.title);
       if (outcome.status !== "printed") {
-        toast.error(`A ficha do pedido ${ref} não saiu: ${outcome.detail || "o agente do balcão não respondeu"}.`);
+        toast.error(`A Via Pedido de ${ref} não saiu: ${outcome.detail || "o agente do balcão não respondeu"}.`);
         return false;
       }
-      toast.success(`Ficha do pedido ${ref} na bobina.`);
+      toast.success(`Via Pedido de ${ref} na bobina.`);
       if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, "O servidor não montou a ficha.")} Nada saiu na bobina. Tente de novo.`);
+      toast.error(`${httpErrorMessage(error, "O servidor não montou a Via Pedido.")} Nada saiu na bobina. Tente de novo.`);
       return false;
     } finally {
       printingRef.value = "";

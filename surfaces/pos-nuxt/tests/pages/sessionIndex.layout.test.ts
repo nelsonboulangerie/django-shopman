@@ -1,10 +1,12 @@
 import { mockNuxtImport, mountSuspended, registerEndpoint } from "@nuxt/test-utils/runtime";
 import { flushPromises, type VueWrapper } from "@vue/test-utils";
+import { createError } from "h3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, nextTick, ref } from "vue";
 
 import SessionPage from "~/pages/session/index.vue";
 import type { DayClosingProjection } from "~/types/closing";
+import type { PreorderListResponse } from "~/types/preorders";
 import type {
   POSAccountBalanceProjection,
   POSChangeRequestProjection,
@@ -50,6 +52,26 @@ function makeCashSession() {
 let cash: ReturnType<typeof makeCashSession>;
 let projection: POSProjection | null;
 let servedClosing: DayClosingProjection | null;
+// `null` = a rota recusa (403: operador sem `shop.manage_orders`).
+let servedPreorders: PreorderListResponse | null;
+
+function preordersResponse(todayCount: number, weekCount: number): PreorderListResponse {
+  const days = Array.from({ length: 7 }, (_, i) => ({
+    date: `2026-09-${String(26 + i).padStart(2, "0")}`,
+    date_display: "",
+    weekday_display: "",
+    day_display: "",
+    is_today: i === 0,
+    orders_count: i === 0 ? todayCount : 0,
+    total_q: 0,
+    total_display: "R$ 0,00",
+    orders: [],
+  }));
+  return {
+    ok: true, date_from: "2026-09-26", date_to: "2026-10-02", today: "2026-09-26", query: "",
+    count: weekCount, total_q: 0, total_display: "R$ 0,00", days,
+  };
+}
 
 mockNuxtImport("usePosCashSession", () => () => cash);
 mockNuxtImport("usePosTerminal", () => async () => ({
@@ -66,6 +88,10 @@ mockNuxtImport("useOperatorLock", () => () => ({
 mockNuxtImport("usePosAction", () => () => ({ call: vi.fn() }));
 
 registerEndpoint("/api/v1/backstage/closing/", () => ({ closing: servedClosing }));
+registerEndpoint("/api/v1/backstage/pos/preorders/", () => {
+  if (!servedPreorders) throw createError({ statusCode: 403, statusMessage: "Forbidden" });
+  return servedPreorders;
+});
 
 function openShiftProjection(overrides: Partial<POSProjection["cash_runtime"]> = {}): POSProjection {
   return makeProjection({
@@ -86,6 +112,7 @@ function openShiftProjection(overrides: Partial<POSProjection["cash_runtime"]> =
 const mounted: VueWrapper[] = [];
 async function openLobby() {
   clearNuxtData("day-closing-entry");
+  clearNuxtData("preorders-entry");
   const wrapper = await mountSuspended(SessionPage, {
     global: { stubs: { PosFunctionRail: true, RailToggle: true } },
   });
@@ -106,6 +133,7 @@ describe("antesala — turno aberto, organização da tela", () => {
     cash = makeCashSession();
     projection = openShiftProjection();
     servedClosing = null;
+    servedPreorders = null;
   });
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
@@ -289,6 +317,7 @@ describe("antesala — caixa fechado, tudo é card", () => {
     cash = makeCashSession();
     projection = makeProjection({ has_open_cash_session: false });
     servedClosing = null;
+    servedPreorders = null;
   });
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
@@ -335,3 +364,48 @@ describe("antesala — caixa fechado, tudo é card", () => {
     expect(tile(wrapper, "close_shift").exists()).toBe(false);
   });
 });
+
+describe("antesala — a seção Encomendas", () => {
+  beforeEach(() => {
+    cash = makeCashSession();
+    servedClosing = null;
+    servedPreorders = null;
+  });
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount();
+    document.body.innerHTML = "";
+  });
+
+  it("sem permissão de pedidos (403) a seção não existe", async () => {
+    projection = openShiftProjection();
+    const wrapper = await openLobby();
+    expect(wrapper.find("[data-preorders-section]").exists()).toBe(false);
+    expect(tile(wrapper, "preorders:search").exists()).toBe(false);
+  });
+
+  it("com caixa ABERTO: os quatro cards, com a contagem de hoje e da semana", async () => {
+    projection = openShiftProjection();
+    servedPreorders = preordersResponse(2, 5);
+    const wrapper = await openLobby();
+    const section = wrapper.find("[data-preorders-section]");
+    expect(section.exists()).toBe(true);
+    expect(section.text()).toContain("Encomendas");
+    expect(section.text()).toContain("Retiradas e entregas de todos os canais");
+    expect(section.findAll("[data-session-tile]").map((t) => t.attributes("data-session-tile"))).toEqual([
+      "preorders:search", "preorders:today", "preorders:week", "preorders:panel",
+    ]);
+    expect(tile(wrapper, "preorders:today").find("[data-session-tile-badge]").text()).toBe("2");
+    expect(tile(wrapper, "preorders:week").find("[data-session-tile-badge]").text()).toBe("5");
+  });
+
+  it("com caixa FECHADO a seção continua: quem vem buscar não espera o turno", async () => {
+    projection = makeProjection({ has_open_cash_session: false });
+    servedPreorders = preordersResponse(0, 0);
+    const wrapper = await openLobby();
+    expect(wrapper.find("[data-preorders-section]").exists()).toBe(true);
+    // Zero não é selo: a descrição diz por extenso.
+    expect(tile(wrapper, "preorders:today").find("[data-session-tile-badge]").exists()).toBe(false);
+    expect(tile(wrapper, "preorders:today").text()).toContain("Nenhuma encomenda para hoje");
+  });
+});
+

@@ -374,14 +374,19 @@ def _pending_production(today: date) -> tuple[PendingProductionProjection, ...]:
 def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...]:
     """Encomendas vivas para datas futuras, agregadas por data combinada.
 
-    Vendido hoje ≠ sai hoje: o dinheiro conta no caixa do dia da venda e o
-    estoque na data da entrega. O fechamento informa para o operador saber o
-    que já está comprometido nos próximos dias.
+    ⚠️ Conta TODA encomenda a confirmar ou confirmada (``new``/``accepted``) com
+    data combinada depois de hoje, qualquer que seja o dia em que foi feita — e
+    não "as vendidas hoje", como a tela chegou a dizer. O fechamento informa
+    para o operador saber o que já está comprometido nos próximos dias.
+
+    O total é o EFETIVO (``order_composition.effective_total_q``): o pedido do
+    iFood ajustado depois de aceito vale o que a plataforma paga, não o selado.
     """
     try:
         from shopman.orderman.models import Order
         from shopman.utils.monetary import format_money
 
+        from shopman.shop.services import order_composition
         from shopman.shop.services.order_helpers import get_commitment_date
 
         by_date: dict[date, dict] = {}
@@ -397,7 +402,7 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
                 continue
             row = by_date.setdefault(commitment, {"orders_count": 0, "total_q": 0})
             row["orders_count"] += 1
-            row["total_q"] += int(order.total_q or 0)
+            row["total_q"] += order_composition.effective_total_q(order)
 
         rows = []
         for commitment in sorted(by_date):

@@ -12,13 +12,12 @@ defineProps<{
   operatorName: string;
   pending: boolean;
   /** qual tela de trabalho está ativa, para acender o item correspondente. */
-  view: "board" | "sale" | "checkout" | "session" | "tickets";
+  view: "board" | "sale" | "checkout" | "session";
 }>();
 
 const emit = defineEmits<{
   board: [];
   cash: [];
-  tickets: [];
   display: [];
   lock: [];
   refresh: [];
@@ -48,14 +47,9 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
         :attention="!hasOpenCashSession"
         @activate="emit('cash')"
       />
-      <!-- Fichas de pedido: o pedido remoto virando papel para o painel de parede. Mora
-           no rail do PDV porque a bobina e o agente do balcão moram aqui. -->
-      <RailItem
-        icon="printer"
-        label="Fichas de pedido"
-        :active="view === 'tickets'"
-        @activate="emit('tickets')"
-      />
+      <!-- A Via Pedido – painel (que morava aqui como "Fichas de pedido") virou card
+           da seção Encomendas, na antesala: é lá que o balcão procura o que a casa
+           prometeu (ENCOMENDAS-PDV-PLAN, WP-E2). -->
       <!-- Tela do cliente: o segundo monitor da MESMA máquina e navegador. Morava só
            no cabeçalho da antessala de caixa, onde só se chega abrindo o turno — e a
            janela, uma vez fechada sem querer, não tinha volta de dentro da venda.
