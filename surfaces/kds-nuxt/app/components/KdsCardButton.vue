@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// O botão da base do card, nas estações e na expedição: largura inteira, DENTRO da
+// O botão da base do card, nas estações e na Saída: largura inteira, DENTRO da
 // moldura (com a margem do card em volta), cantos arredondados, o ato escrito.
 // Numa linha da grade todos caem na mesma altura, ao alcance do polegar.
 //

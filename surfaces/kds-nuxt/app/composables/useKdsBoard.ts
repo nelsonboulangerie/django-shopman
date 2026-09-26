@@ -125,6 +125,10 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: ResilientEventSource | null = null;
+  // A Saída vê o pedido de TODAS as estações ("Em preparo") e o pedido que
+  // fica pronto: o canal da própria estação não recebe nada disso (nenhum
+  // ticket é da Saída). Ela assina o canal geral dos tickets e o dos pedidos.
+  let exitSources: ResilientEventSource[] = [];
   let attentionReady = false;
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
@@ -226,6 +230,34 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     });
   }
 
+  function connectExitSse() {
+    if (exitSources.length) return;
+    const onEvent = () => { refresh(); };
+    const onOpen = (reconnected: boolean) => { if (reconnected) refresh(); };
+    exitSources = [
+      openResilientEventSource({
+        url: ssePath("/sse/kds/main", config.app.baseURL),
+        events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
+        onEvent,
+        onOpen,
+      }),
+      openResilientEventSource({
+        url: ssePath("/sse/orders", config.app.baseURL),
+        events: ["backstage-orders-update"],
+        onEvent,
+        onOpen,
+      }),
+    ];
+  }
+
+  // Só no cliente e depois de montado (EventSource é API do browser); o tipo da
+  // estação chega com o primeiro fetch, que no SSR já veio pronto.
+  const clientMounted = ref(false);
+  watch(
+    () => clientMounted.value && Boolean(board.value?.is_expedition),
+    (on) => { if (on) connectExitSse(); },
+  );
+
   let removeVisibilityListeners: (() => void) | null = null;
 
   onMounted(() => {
@@ -233,6 +265,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (view.value) alertForUnseenWork(view.value);
     pollTimer = setInterval(() => refresh(), 15_000);
     connectSse();
+    clientMounted.value = true;
     // Tablet dormiu / voltou à aba: refetch imediato (setInterval é throttlado em
     // aba oculta), em vez de esperar até 15s por dados possivelmente muito velhos.
     // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
@@ -241,6 +274,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       if (document.visibilityState === "visible") {
         refresh();
         source?.reconnectNow();
+        for (const exitSource of exitSources) exitSource.reconnectNow();
       } else flushFinishes();
     };
     const onPageHide = () => flushFinishes();
@@ -378,6 +412,40 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (readOnly.value) return;
     removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/expedition/${pk}/action/`, { action });
   };
+  // Saída: "Pronto" pela estação sem tela. Otimista — o chip vira "pronto" na
+  // hora e o botão some; se era a última estação, a reconciliação (e o SSE)
+  // move o card para "Prontos para sair". Em falha, volta e diz o porquê.
+  const busyStations = ref<Set<string>>(new Set());
+  const markStationReady = (orderPk: number, stationRef: string) => {
+    if (readOnly.value) return;
+    const key = `${orderPk}:${stationRef}`;
+    if (busyStations.value.has(key)) return;
+    const card = data.value?.board?.preparing?.find((c) => c.pk === orderPk);
+    const chip = card?.stations.find((c) => c.station_ref === stationRef);
+    if (!card || !chip || !chip.can_mark_ready) return;
+    const before = { state: chip.state, state_label: chip.state_label, can_mark_ready: chip.can_mark_ready };
+    chip.state = "done";
+    chip.state_label = "pronto";
+    chip.can_mark_ready = false;
+    busyStations.value = new Set(busyStations.value).add(key);
+    const release = () => {
+      const next = new Set(busyStations.value);
+      next.delete(key);
+      busyStations.value = next;
+    };
+    enqueue(`/api/v1/backstage/kds/expedition/${orderPk}/printed-stations/${encodeURIComponent(stationRef)}/done/`)
+      .then(async () => {
+        await refresh();
+        release();
+      })
+      .catch((err) => {
+        Object.assign(chip, before);
+        release();
+        useSonner.error(httpErrorMessage(err, "Falha ao marcar como pronto. Tente de novo."));
+        refresh();
+      });
+  };
+
   // Recall: o concluído sai da lista de recentes; a reconciliação o traz de volta ao board ativo.
   const recall = (pk: number) => {
     if (readOnly.value) return;
@@ -394,6 +462,8 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (pollTimer) clearInterval(pollTimer);
     if (reconcileTimer) clearTimeout(reconcileTimer);
     if (source) { source.close(); source = null; }
+    for (const exitSource of exitSources) exitSource.close();
+    exitSources = [];
     if (removeVisibilityListeners) removeVisibilityListeners();
   });
 
@@ -415,6 +485,8 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     finalize,
     undoFinish,
     expedite,
+    markStationReady,
+    busyStations,
     recall,
     acknowledge,
   };

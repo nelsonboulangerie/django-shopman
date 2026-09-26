@@ -894,6 +894,12 @@ def acknowledge_job(
             from shopman.backstage.services import order_danfe
 
             transaction.on_commit(lambda: order_danfe.on_job_changed(job))
+        elif job.kind == PrintJob.Kind.KITCHEN_TICKET:
+            # A Via Cozinha do posto sem tela: o alerta acompanha a resposta
+            # do agente (services/kitchen_ticket_print.py).
+            from shopman.backstage.services import kitchen_ticket_print
+
+            transaction.on_commit(lambda: kitchen_ticket_print.on_job_changed(job))
         return job
 
 

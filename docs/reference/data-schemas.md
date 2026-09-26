@@ -47,8 +47,8 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `fired_qty` | `dict[str, int]` | POS `fire_pos_tab` (`session.save`) | `_tab_payload` (`fired_qty` por item) | QUANTAS unidades de cada `line_id` foram à cozinha, escrito no disparo. O `fired_lines` acima já responde "foi?" (a linha vai INTEIRA — não existe meia-linha); este número responde a outra pergunta: a linha enviada **encolheu** depois? Reduzir de 3 para 2 algo que a cozinha já está fazendo é a SOBRA que o balcão precisa ver antes de fechar. Gravado só para a linha que o ledger confirmou; apagado por `line_id` no unfire. **Não propagado ao Order.data** |
 | `fiscal` | `dict` | POS checkout · checkout da loja (`storefront/api/views.CheckoutView`, entrega E retirada; sempre gravada, `{}` quando não há CPF) · concierge (`set_fulfillment`, `tax_id`) | Order.data · `DeliveryFiscalIdentityRule` (commit) | Preferências fiscais capturadas no checkout: `{issue_document, tax_id}`. ⚠️ Entrega a domicílio cuja NFC-e vai sair (`fiscal.emission_expected`) não entra sem `tax_id` válido e endereço estruturado completo (`shop/services/delivery_fiscal_identity.py`, a mesma régua do adapter Focus; decisão do dono, 24/09/2026). ⚠️ `fiscal.tax_id` é o CPF PEDIDO nesta nota, não identidade: nunca vira `customer.document` sozinho (pode ser o do marido, o da empresa) — só com a ordem explícita `save_receipt_tax_id` no payload do intent (PDV) ou `save_fiscal_tax_id` no checkout da loja (a pessoa respondeu "guardar no seu cadastro?"; a ordem não é persistida). Na loja (decisões do dono, 25/09/2026): na RETIRADA o `tax_id` é o "CPF na nota?" do balcão, opcional; guardar só preenche cadastro SEM documento — igual ao do cadastro só usa, diferente vale só para a nota, e documento de OUTRA conta nunca vira identidade nem é revelado: a resposta do checkout não diz nada sobre o guardar (é a mesma, byte a byte, tenha gravado ou não; o desfecho fica só no log do servidor, sem dado pessoal), e o documento fica como preferência da nota (`Customer.metadata.note_tax_id`) para a próxima visita também não denunciar a diferença (`shop/services/customer_tax_id.save_to_customer`; decisão do dono, 25/09/2026). Na próxima vez a loja LÊ `customer.document`, sem ele o `Customer.metadata.note_tax_id`, ou, sem os dois, o `fiscal.tax_id` do último pedido de entrega do mesmo `customer_ref` e pré-preenche o campo, só para a própria pessoa (`shop/projections/delivery_fiscal.delivery_tax_id_prefill`) |
 | `receipt` | `dict` | POS checkout | Order.data, NFCeEmitHandler (e-mail da nota) | Preferência de comprovante: `{channels: [print\|email], email}` — canais MULTI: imprimir E enviar não competem; lista vazia = sem comprovante. ⚠️ `receipt.email` é fato DA VENDA e NUNCA vira `customer.email` sozinho (pode ser o do contador, o do marido); só com a ordem explícita `save_receipt_contact` no payload do intent — que não é persistida, é decisão de quem fecha |
-| `is_gift` | `bool` | CheckoutView, API (`set_data`) | CommitService, KDS/expedição | `True` quando o pedido é presente (entrega para terceiro). Só presente quando é presente. Ver [GIFT-UX-PLAN](../plans/GIFT-UX-PLAN.md) |
-| `recipient` | `dict` | CheckoutView, API (`set_data`) | CommitService, KDS/expedição | Destinatário do presente: `{name, phone}`. **Não** é identidade (não vira Customer) nem sobrescreve o comprador. Integridade garantida por `intents.gift.build_gift_data` (nunca parcial). **Obrigatório só na ENTREGA**; em retirada ("embalar para presente") é opcional/omitido |
+| `is_gift` | `bool` | CheckoutView, API (`set_data`) | CommitService, KDS/Saída | `True` quando o pedido é presente (entrega para terceiro). Só presente quando é presente. Ver [GIFT-UX-PLAN](../plans/GIFT-UX-PLAN.md) |
+| `recipient` | `dict` | CheckoutView, API (`set_data`) | CommitService, KDS/Saída | Destinatário do presente: `{name, phone}`. **Não** é identidade (não vira Customer) nem sobrescreve o comprador. Integridade garantida por `intents.gift.build_gift_data` (nunca parcial). **Obrigatório só na ENTREGA**; em retirada ("embalar para presente") é opcional/omitido |
 | `gift_message` | `string` | CheckoutView, API (`set_data`) | CommitService | Mensagem do presente para o destinatário. **Separada** de `order_notes` (operacional/cozinha). Opcional; só presente quando informada |
 | `gift_hide_values` | `bool` | CheckoutView, API (`set_data`) | CommitService, nota/etiqueta, KDS | `True` para ocultar valores na nota/etiqueta do presente. Só presente quando `True` (ausência = mostrar valores) |
 | `legal` | `dict` | CheckoutView do storefront (`presentation.legal.order_legal_snapshot`, via `set_data`) | ninguém edita; chega selado em `Order.snapshot["data"]["legal"]` (NÃO é copiado para `Order.data`) | Quais Termos e Privacidade valiam quando o pedido foi feito: `{version: "AAAA-MM-DD", archived: bool, privacy_url, terms_url, privacy_sha256?, terms_sha256?}`. URL = cópia permanente em `/documentos-legais/<privacidade\|termos>/<versão>.html` (append-only, `scripts/check_legal_archive.py`). Os `*_sha256` só existem com `archived: true` — a versão é arquivada depois do deploy, porque a lista de operadores depende do ambiente. Sem PII |
@@ -219,7 +219,6 @@ for key in (
 | `danfe_printed_at` | `string` | `POSDanfeEscposView` (`_stamp_first_print`); `order_danfe.enqueue_auto_print` (a DANFE da entrega que o servidor manda sozinha pelo relay, sob lock) e `order_danfe.print_on_demand` (botão do card do Gestor) | `POSDanfeEscposView` (decisão de REIMPRESSÃO); `order_danfe.danfe_state` (a DANFE da entrega sai sozinha só enquanto a chave está vazia); `order_danfe._paper_may_exist` | ISO datetime da PRIMEIRA composição da DANFE em bobina, no PDV ou no Gestor: um carimbo só para o mesmo papel, e é ele que impede a automática de sair duas vezes. No Gestor a reimpressão também olha os `PrintJob` do pedido (`kind=order_danfe`): trabalho que o agente recusou, que expirou na fila ou que foi cancelado nunca virou papel, e a composição seguinte não sai REIMPRESSÃO |
 | `ticket_printed_at` | `string` | `OrderTicketEscposView` · `OrderTicketBatchEscposView` (`_stamp_first_print`) | as duas views (decisão de 2ª via) · `order_ticket.preview_rows` (`already_printed`) | ISO datetime da PRIMEIRA composição da **filipeta** do pedido remoto (`ticket-escpos`). Mesma semântica de `receipt_printed_at`, e o lote carimba pedido a pedido: reimprimir a semana devolve as filipetas já impressas marcadas "2a VIA", para o painel não ganhar cópia que passa por original |
 | `courier_ticket_printed_at` | `string` | `CourierTicketEscposView` (`_stamp_first_print`) | `CourierTicketEscposView` (decisão de 2ª via) | ISO datetime da PRIMEIRA composição da **via do entregador** (`courier-ticket-escpos`). Carimbo PRÓPRIO, separado de `ticket_printed_at`: são dois papéis com destinatários diferentes, e a ficha já ter ido para o painel não faz da primeira via do entregador uma segunda |
-| `kitchen_ticket_printed_at` | `string` | — (reservada) | — (reservada) | ⚠️ **Chave RESERVADA, sem escritor ainda.** É o carimbo de 2ª via da **via da cozinha**, declarada no registro de vias (`backstage/services/order_documents.py`) antes de o papel existir — o KDS ainda só existe em tela, e o posto com impressora e sem tela é o caso que falta servir. Está aqui para que a migração dessa via não escolha um nome sob pressão, e para que ninguém escolha outro. Quando o papel nascer, esta linha ganha os donos das outras quatro |
 | `fiscal.tax_id` | `string` | POS checkout ("CPF na nota") · checkout da loja na entrega (`fiscal_tax_id` do payload, só dígitos) · concierge `set_fulfillment(tax_id)` | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão), `DeliveryFiscalIdentityRule` (porta do pedido de entrega) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `fiscal.issue_override` | `dict` | `backstage.services.orders.emit_fiscal_on_demand` (Últimas vendas do PDV, `POST pos/orders/<ref>/emit-fiscal/`, sempre após `validate_manager_override`) | `shop.services.fiscal.emission_resolver` (passa por cima da regra), `fiscal.issue_override` | Emissão AVULSA da NFC-e que a regra da casa não emitiu: `{approved_by, requested_by, at}` — `approved_by` é o username do gerente VERIFICADO pelo desafio (crachá ou PIN), `requested_by` o ator do PDV, `at` ISO datetime. Presente ⇒ `emission_resolver` diz sim para ESTE pedido. Escritor único; gravada na mesma transação da Directive (sem Directive, a chave não fica). Evento `fiscal_issue_override` no OrderEvent. Só vale para venda sem nota em andamento (`fiscal_state == not_expected`), do dia de operação da venda, ou até `pos.late_fiscal_emission_days` dias depois (Shop.defaults) e com pagamento capturado quando a cobrança exige. ⚠️ A nota sai com a data e a hora da emissão, não da venda |
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
@@ -1598,6 +1597,37 @@ No modo `blind`, cada ticket físico contém exatamente um ingrediente e não
 serializa receita/SKU de saída. No modo `explicit`, o documento não serializa
 ingredientes nem alvos individuais; ele declara **uso interno**. Um rótulo
 comercial futuro é outro contrato (ADR-028).
+
+### `kind=kitchen_ticket` — a Via Cozinha do posto sem tela
+
+Escrito por `backstage/services/kitchen_ticket_print._create_job`, um por
+ticket do KDS por momento. Lido pelo alerta (`kitchen_print_failed`) para achar
+o ticket. ⚠️ Não existe carimbo em `Order.data` para a Via Cozinha: o papel é
+por TICKET (um pedido tem um ticket por posto por disparo, e a comanda aberta
+nem tem Order), e o "já saiu" é a série do trabalho —
+`series_ref = kitchen_ticket_print.series_ref_for(ticket, moment)`, única com a
+via 1.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `purpose` | `kitchen_ticket` | Finalidade do papel. |
+| `kds_ticket` | `int` | PK do `KDSTicket` impresso. |
+| `kds_instance` | `str` | `ref` da estação. |
+| `session_key` | `str` | A venda do ticket (comanda ou pedido). |
+| `moment` | `fired\|cancelled` | `fired` = o papel do pedido; `cancelled` = o papel CANCELADO dos itens retirados. |
+| `items` | `list[dict]` | Os itens do ticket no instante do papel (`{sku, name, qty, notes, line_id}`). |
+| `reprint` | `bool` | Sempre `false` hoje: não há gesto de reimpressão. |
+
+---
+
+## backstage.KDSInstance.config
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `on_print` | `str` | O que a estação sem tela faz com o ticket quando a Via Cozinha sai. Único valor: `keep` (o ticket segue como está). **Decidido pelo dono (26/09/2026): imprimir não dá baixa** — quem conclui é a Saída ("Pronto" no chip da estação), o PDV (card do ticket) ou o leitor de código da bancada (QR do papel). Lida por `kitchen_ticket_print.on_print_behavior`. |
+
+As demais chaves citadas no `help_text` do campo (`text_size`, `dark_mode`,
+`refresh_interval`) não têm leitor no código hoje.
 
 ---
 

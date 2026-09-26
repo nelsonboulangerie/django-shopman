@@ -23,7 +23,7 @@ registro é o índice, não a gráfica.
 ## Três vias, por AUDIÊNCIA
 
 - **Via Cozinha** — o KDS materializado, para o posto que tem impressora e não
-  tem tela.
+  tem tela. Sai sozinha, um papel por ticket (``kitchen_ticket_print``).
 - **Via Pedido** — nasce no painel físico e viaja com a sacola. **Um papel
   só, com duas fases de vida**: ela fica pregada enquanto o pedido espera, e
   sai com a mercadoria quando ele parte.
@@ -438,7 +438,12 @@ DOCUMENTS: tuple[OrderDocument, ...] = (
         # outras duas. É a separação mais dura das três — o posto de preparo
         # não alcança endereço de cliente nem recibo de venda.
         permission="backstage.operate_kds",
-        print_stamp_key="kitchen_ticket_printed_at",
+        # Sem carimbo em ``Order.data``, e de propósito: a Via Cozinha é um
+        # papel por TICKET, não por pedido — um pedido tem um ticket por posto
+        # por disparo, e a comanda disparada antes de pagar nem tem Order. O
+        # "este papel já saiu" mora na série do ``PrintJob`` de cada ticket
+        # (``kitchen_ticket_print.series_ref_for``).
+        print_stamp_key="",
         contexts=(CONTEXT_KITCHEN_STATION,),
         # Sujeita a filtro nenhum, e isso é declaração: o papel fica no posto,
         # e o que ele mostra do cliente (o nome pelo qual a cozinha chama o
@@ -446,10 +451,13 @@ DOCUMENTS: tuple[OrderDocument, ...] = (
         # acontecer. Valor não entra — preço na cozinha não decide nada e
         # atravanca a leitura de longe.
         filters=(),
-        # ⚠️ Sem papel ainda. O KDS existe em tela (`projections/kds.py`); o
-        # posto com impressora e sem tela é o caso que ainda não foi servido.
-        # A chave do carimbo já está reservada acima para a migração não ter de
-        # escolher um nome sob pressão — e para ninguém escolher outro.
+        # O papel existe (26/09/2026) e sai SOZINHO: o posto sem tela escolhe
+        # a impressora (``KDSInstance.print_terminal``) e cada ticket que cai
+        # nele vai pelo relay, composto por ``receipt_escpos.kitchen_ticket``
+        # (``services/kitchen_ticket_print.py``). Nenhuma tela oferece botão
+        # para ela — o posto não tem tela —, e por isso a rota fica vazia e
+        # ``documents_for`` não a oferece. Reimprimir sob demanda é gesto que
+        # ainda não existe.
         route_name="",
     ),
     OrderDocument(

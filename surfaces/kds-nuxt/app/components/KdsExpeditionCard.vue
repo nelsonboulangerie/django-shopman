@@ -35,7 +35,7 @@ const scheduledDate = computed(() =>
 // Bloqueio do servidor (payment_gate), já resolvido na projection: quando há
 // rótulo, a ação de saída NÃO é oferecida.
 const blocked = computed(() => Boolean(props.card.advance_block_label));
-// Conferência de itens na expedição: colapsado por padrão (board scannable),
+// Conferência de itens na Saída: colapsado por padrão (board scannable),
 // expande pra conferir o que entregar/despachar.
 const showItems = ref(false);
 const d = computed(() => cardScale(props.density));
@@ -46,7 +46,7 @@ const d = computed(() => cardScale(props.density));
     class="flex w-full flex-col overflow-hidden rounded-md border bg-card shadow-sm"
     :class="[d.inset, d.padT, d.padB, d.gap]"
   >
-    <!-- Pedido de teste da homologação do iFood: a Expedição é o card do PEDIDO,
+    <!-- Pedido de teste da homologação do iFood: a Saída é o card do PEDIDO,
          não do ticket, então ele chega aqui mesmo sem passar pela cozinha — e é
          aqui que alguém entregaria a sacola. O aviso vem antes do código. -->
     <KdsTestOrderBanner

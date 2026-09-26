@@ -25,6 +25,9 @@ class PrintJob(models.Model):
         # aberta: um Gestor num tablet sem impressora não pode deixar a sacola
         # sair sem o papel.
         ORDER_DANFE = "order_danfe", "DANFE da entrega"
+        # A Via Cozinha do posto sem tela (services/kitchen_ticket_print.py):
+        # um papel por ticket do KDS, na impressora escolhida no posto.
+        KITCHEN_TICKET = "kitchen_ticket", "Via Cozinha"
 
     class Status(models.TextChoices):
         PREPARED = "prepared", "Preparada no navegador"

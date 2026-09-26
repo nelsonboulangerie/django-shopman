@@ -99,6 +99,18 @@ class AgentInstallGuide:
     #: bearer. Não é persistido, não entra em URL e não reaparece no GET.
     relay_install_command: str = ""
     relay_secret_once: str = ""
+    #: O terminal é a impressora de uma estação do KDS sem tela (a Via
+    #: Cozinha). Ela não tem agente próprio: entra como ``extra_printers`` no
+    #: agente do PC do balcão (PR #1166). O ``--install`` desta página, rodado
+    #: lá, TROCARIA o token e a credencial do relay do balcão pelos desta
+    #: impressora — o PDV passaria a levar 401 e a gaveta pararia de abrir. Por
+    #: isso, aqui, a página mostra o trecho do ``agent.json`` em vez do comando.
+    extra_printer: bool = False
+    #: As estações que imprimem aqui ("Lanches"), para a página dizer de quem é.
+    extra_printer_stations: str = ""
+    #: O trecho ``extra_printers`` pronto para colar — com o segredo só na
+    #: resposta que acabou de emitir a credencial.
+    extra_printer_snippet: str = ""
 
 
 def build_agent_install(
@@ -142,18 +154,26 @@ def build_agent_install(
     # fronteira de segurança e deve falhar fechada por conta própria.
     effective_relay_bearer = relay_bearer if not relay_blocker and not blocker else ""
     label = next(lbl for key, lbl, _ in OS_CHOICES if key == os_key)
-    steps = (
-        _steps(
-            config,
-            os_key,
-            relay_server_url=relay_server_url,
-            station_ref=terminal.ref,
-            relay_bearer=effective_relay_bearer,
+    stations = _kitchen_stations_printing_to(terminal)
+    extra_printer = bool(stations)
+    snippet = ""
+    if extra_printer:
+        snippet = extra_printer_snippet(terminal, relay_bearer=effective_relay_bearer)
+        steps = _extra_printer_steps(terminal, os_key, snippet=snippet) if not blocker else ()
+        install_command = snippet if effective_relay_bearer else ""
+    else:
+        steps = (
+            _steps(
+                config,
+                os_key,
+                relay_server_url=relay_server_url,
+                station_ref=terminal.ref,
+                relay_bearer=effective_relay_bearer,
+            )
+            if not blocker
+            else ()
         )
-        if not blocker
-        else ()
-    )
-    install_command = next((step.command for step in steps if "--install" in step.command), "")
+        install_command = next((step.command for step in steps if "--install" in step.command), "")
     return AgentInstallGuide(
         terminal_ref=terminal.ref,
         terminal_label=terminal.label or terminal.ref,
@@ -186,6 +206,97 @@ def build_agent_install(
         relay_blocker=relay_blocker,
         relay_install_command=install_command if effective_relay_bearer else "",
         relay_secret_once=effective_relay_bearer,
+        extra_printer=extra_printer,
+        extra_printer_stations=", ".join(stations),
+        extra_printer_snippet=snippet,
+    )
+
+
+#: O que o trecho mostra no lugar do segredo antes de ele ser emitido.
+SECRET_PLACEHOLDER = "SEGREDO-GERADO-NESTA-PÁGINA"
+
+
+def _kitchen_stations_printing_to(terminal) -> list[str]:
+    """As estações do KDS que imprimem a Via Cozinha neste terminal."""
+    from shopman.backstage.models import KDSInstance
+
+    return list(KDSInstance.objects.filter(print_terminal=terminal).order_by("name").values_list("name", flat=True))
+
+
+def extra_printer_snippet(terminal, *, relay_bearer: str = "") -> str:
+    """O item de ``extra_printers`` desta impressora, pronto para colar no ``agent.json``.
+
+    ``queue`` sugere o ``ref`` do terminal — é o nome que o passo anterior manda
+    dar à fila no sistema, para os dois baterem sem ninguém transcrever nada.
+    ``server_url`` e ``agent_id`` ficam de fora: o agente herda os do balcão.
+    """
+    import json
+
+    item = {
+        "ref": terminal.ref,
+        "queue": terminal.ref,
+        "station_ref": terminal.ref,
+        "relay_token": relay_bearer or SECRET_PLACEHOLDER,
+    }
+    body = json.dumps(item, ensure_ascii=False, indent=2)
+    indented = "\n".join(f"    {line}" for line in body.splitlines())
+    return f'"extra_printers": [\n{indented}\n]'
+
+
+def _extra_printer_steps(terminal, os_key: str, *, snippet: str) -> tuple[AgentStep, ...]:
+    """Os passos da impressora de estação: fila no PC do balcão, trecho no agent.json, reiniciar."""
+    runtime = _OS_RUNTIME[os_key]
+    queue = terminal.ref
+    if os_key == "windows":
+        queue_step = AgentStep(
+            title="Cadastre a impressora no PC do balcão",
+            detail=(
+                "Configurações → Impressoras e scanners → Adicionar dispositivo → “A impressora que eu quero "
+                "não está na lista” → endereço TCP/IP. Use o IP da impressora (fixe esse IP no roteador), "
+                f"porta 9100, driver “Generic / Text Only”, e dê a ela o nome {queue}: esse nome é a fila."
+            ),
+        )
+    else:
+        queue_step = AgentStep(
+            title="Cadastre a impressora no PC do balcão",
+            detail=(
+                "A impressora entra como fila do sistema, com o mesmo nome deste terminal. Troque o IP pelo "
+                "da impressora (e fixe esse IP no roteador). A segunda linha deve responder “accepting requests”."
+            ),
+            command=f"sudo lpadmin -p {queue} -E -v socket://IP_DA_IMPRESSORA:9100 -m raw\nlpstat -a {queue}",
+        )
+    restart = {
+        "linux": "systemctl --user restart nelson-pos-counter",
+        "macos": "launchctl kickstart -k gui/$(id -u)/com.nelson.pos-counter",
+        "windows": 'schtasks /end /tn "NelsonPosCounter" & schtasks /run /tn "NelsonPosCounter"',
+    }[os_key]
+    config_file = {
+        "linux": "~/.config/nelson-pos-counter/agent.json",
+        "macos": "~/.config/nelson-pos-counter/agent.json",
+        "windows": "%LOCALAPPDATA%\\NelsonPosCounter\\agent.json",
+    }[os_key]
+    agente = f"{runtime['python']} {runtime['installed']}"
+    return (
+        queue_step,
+        AgentStep(
+            title="Acrescente esta impressora ao agente do balcão",
+            detail=(
+                f"Esta impressora não tem agente próprio: quem busca o papel dela é o agente que já roda no PC "
+                f"do balcão. Abra {config_file} e acrescente o trecho abaixo, sem mexer no resto (uma vírgula "
+                "depois do item anterior). Não rode o instalador desta página no balcão: ele trocaria o token e a "
+                "credencial do balcão pelos desta impressora, e o PDV pararia de abrir a gaveta. "
+                "O segredo sai no botão “Ativar impressão por tablets”, uma vez só."
+            ),
+            command=snippet,
+        ),
+        AgentStep(
+            title="Confira e reinicie o agente",
+            detail=(
+                "O relatório aponta o item errado sem derrubar o balcão. Depois de reiniciar, esta página deve "
+                "mostrar “Relay conectado”, e a estação do KDS, “Pronta”."
+            ),
+            command=f"{agente} --doctor\n{restart}",
+        ),
     )
 
 

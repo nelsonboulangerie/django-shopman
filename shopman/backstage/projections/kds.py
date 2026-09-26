@@ -1,6 +1,6 @@
 """KDSBoardProjection — read models for the Kitchen Display System (Fase 4).
 
-Translates KDS instances, tickets, and expedition orders into immutable
+Translates KDS instances, tickets, and the Saída (``expedition``) orders into immutable
 projections. Replaces the inline ``_enrich_ticket`` / ``_enrich_expedition_order``
 logic from ``shopman.backstage.views.kds``.
 
@@ -76,8 +76,8 @@ class KDSTicketProjection:
     # Encomenda futura projetada sem KDSTicket: visível para planejamento, mas
     # deliberadamente sem check/finalização nem som até chegar a data.
     is_scheduled: bool = False
-    # Discriminante explícito da união ticket|expedição no front (nunca inferir por
-    # presença de campo: foi o que quebrou a Expedição quando `items` passou a existir
+    # Discriminante explícito da união ticket|Saída no front (nunca inferir por
+    # presença de campo: foi o que quebrou a Saída quando `items` passou a existir
     # nos dois). Ticket de preparo é sempre False.
     is_expedition: bool = False
     status_label: str = ""
@@ -97,7 +97,7 @@ class KDSTicketProjection:
 
 @dataclass(frozen=True)
 class KDSExpeditionCardProjection:
-    """An order card in the expedition (dispatch) board."""
+    """An order card in the Saída board (``expedition``: hand over / dispatch)."""
 
     pk: int
     order_ref: str
@@ -113,8 +113,8 @@ class KDSExpeditionCardProjection:
     # Datas futuras são uma prévia operacional: nenhum card pode despachar ou
     # concluir antes do compromisso chegar, inclusive cards já materializados.
     is_scheduled: bool = False
-    # Discriminante explícito da união ticket|expedição (ver KDSTicketProjection).
-    # Card de expedição é sempre True.
+    # Discriminante explícito da união ticket|Saída (ver KDSTicketProjection).
+    # Card da Saída é sempre True.
     is_expedition: bool = True
     # A gêmea na tela do gate de pagamento (``payment_gate``): quando o servidor
     # vai recusar a saída da mercadoria, o card diz isso ANTES do toque, com o
@@ -123,8 +123,58 @@ class KDSExpeditionCardProjection:
     # "" quando a ação está liberada.
     advance_block_label: str = ""
     advance_block_reason: str = ""
-    # O pedido de teste chega à Expedição como qualquer outro (o card é do
+    # O pedido de teste chega à Saída como qualquer outro (o card é do
     # PEDIDO, não do ticket) — e é aqui que alguém entregaria a sacola.
+    test_order_label: str = ""
+
+
+@dataclass(frozen=True)
+class KDSExitStationChipProjection:
+    """Uma estação do pedido, vista da Saída: em que pé ela está com ele.
+
+    A estação de tela dá baixa sozinha — o chip só mostra o estado. A estação
+    SEM tela (tem impressora, ``KDSInstance.print_terminal``) recebeu o pedido
+    em papel, e quem dá a baixa dela é a Saída: o chip diz quando o papel saiu
+    e oferece "Pronto" (decisão do dono, 26/09/2026).
+    """
+
+    station_ref: str
+    station_name: str
+    #: A estação recebe o pedido impresso (não tem tela).
+    prints: bool
+    #: "pending" · "in_progress" · "done" — o MENOS avançado dos tickets da
+    #: estação neste pedido: ela só está pronta quando todos estão.
+    state: str
+    #: "na fila" · "em preparo" · "pronto"
+    state_label: str
+    #: Só na estação sem tela, com ticket aberto: "impresso às 10:42" ·
+    #: "na fila da impressora" · "não imprimiu". Vazio quando não há papel.
+    paper_label: str = ""
+    #: True quando o papel não saiu (falhou, expirou): a Saída avisa a estação.
+    paper_failed: bool = False
+    #: Itens desta estação retirados do pedido depois do disparo (o papel
+    #: CANCELADO saiu na bancada). Zero quando não há.
+    cancelled_items: int = 0
+    #: A Saída pode dar "Pronto" por esta estação agora.
+    can_mark_ready: bool = False
+
+
+@dataclass(frozen=True)
+class KDSExitPreparingCardProjection:
+    """Um pedido que ainda espera alguma estação — a coluna "Em preparo" da Saída."""
+
+    pk: int
+    order_ref: str
+    channel_icon: str
+    customer_name: str
+    fulfillment_icon: str
+    fulfillment_label: str
+    is_delivery: bool
+    #: Desde quando a cozinha tem o pedido (o primeiro disparo), "HH:MM".
+    fired_at_display: str
+    elapsed_seconds: int
+    stations: tuple[KDSExitStationChipProjection, ...]
+    is_scheduled: bool = False
     test_order_label: str = ""
 
 
@@ -162,6 +212,9 @@ class KDSBoardProjection:
     available_dates: tuple[str, ...] = ()
     cancelled_tickets: tuple[KDSTicketProjection, ...] = ()
     recent_done: tuple[KDSTicketProjection, ...] = ()  # para recall (desfazer finalização)
+    # Só na Saída: os pedidos que ainda esperam alguma estação. ``tickets``
+    # continua sendo a coluna "Prontos para sair" (pedidos READY).
+    preparing: tuple[KDSExitPreparingCardProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -356,6 +409,103 @@ def build_kds_ticket(ticket_pk: int) -> KDSTicketProjection:
     return _build_ticket(ticket, ticket.kds_instance)
 
 
+@dataclass(frozen=True)
+class KitchenPaperProjection:
+    """O card do KDS, para o posto que não tem tela: a Via Cozinha impressa.
+
+    Nasce do MESMO ``_build_ticket`` que monta o card da tela — referência do
+    pedido, comanda anterior, nome de chamada, itens, observações e as duas
+    notas —, para o papel nunca chamar o pedido por um nome e a tela por outro.
+    O que só o papel precisa (nome do posto, canal por extenso, recebimento)
+    vem ao lado. Nenhum valor: preço na cozinha não decide nada.
+    """
+
+    station_name: str
+    card: KDSTicketProjection
+    channel_label: str
+    #: "ENTREGA" · "RETIRADA" · "" — o mesmo corte do ícone do card
+    #: (``fulfillment_icon``), com a retirada dita só quando o pedido a declara.
+    fulfillment_label: str
+    fired_at_display: str
+
+
+def build_kitchen_paper(ticket) -> KitchenPaperProjection:
+    """O que a Via Cozinha deste ticket imprime (``receipt_escpos.kitchen_ticket``)."""
+    from shopman.shop.models import Channel
+
+    instance = ticket.kds_instance
+    source = _resolve_ticket_source(ticket)
+    card = _build_ticket(ticket, instance, source=source)
+    source_data = (getattr(source, "data", None) or {}) if source is not None else {}
+    channel_ref = str(getattr(source, "channel_ref", "") or "")
+    channel_label = ""
+    if channel_ref:
+        channel_label = (
+            Channel.objects.filter(ref=channel_ref).values_list("name", flat=True).first() or channel_ref
+        )
+    fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
+    if fulfillment_type == "delivery":
+        fulfillment_label = "ENTREGA"
+    elif fulfillment_type == "pickup":
+        fulfillment_label = "RETIRADA"
+    else:
+        fulfillment_label = ""
+    return KitchenPaperProjection(
+        station_name=str(instance.name),
+        card=card,
+        channel_label=str(channel_label),
+        fulfillment_label=fulfillment_label,
+        fired_at_display=_format_time(ticket.created_at),
+    )
+
+
+@dataclass(frozen=True)
+class KDSPrintedTicketReceiptProjection:
+    """O que o balcão diz depois do "Pronto" de uma estação sem tela.
+
+    O PDV e o leitor de código fecham o ticket sem olhar para ele: o aviso
+    precisa dizer, numa linha, QUAL pedido de QUAL estação ficou pronto —
+    "Lanches pronto · Ana · #1234". ``completed_now`` separa a baixa de agora
+    do ticket que outra porta já tinha concluído.
+    """
+
+    ticket_pk: int
+    station_name: str
+    order_ref: str
+    #: O código curto que o balcão fala ("1234", "A47") — o fim do ref.
+    order_code: str
+    customer_name: str
+    status: str
+    completed_now: bool
+    #: A linha do aviso, pronta: "Lanches pronto · Ana · #1234".
+    message: str
+
+
+def build_printed_ticket_receipt(ticket, *, completed_now: bool) -> KDSPrintedTicketReceiptProjection:
+    """O aviso do "Pronto" dado pelo PDV ou pelo leitor (``api/kds.py``)."""
+    from shopman.shop.services.operator_orders import short_ref
+
+    instance = ticket.kds_instance
+    card = _build_ticket(ticket, instance)
+    order_code = short_ref(card.order_ref) if card.order_ref else ""
+    verb = "pronto" if completed_now else "já estava pronto"
+    parts = [f"{instance.name} {verb}"]
+    if card.customer_name:
+        parts.append(card.customer_name)
+    if order_code:
+        parts.append(f"#{order_code}")
+    return KDSPrintedTicketReceiptProjection(
+        ticket_pk=ticket.pk,
+        station_name=str(instance.name),
+        order_ref=card.order_ref,
+        order_code=order_code,
+        customer_name=card.customer_name,
+        status=ticket.status,
+        completed_now=completed_now,
+        message=" · ".join(parts),
+    )
+
+
 def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection:
     """Build a public pickup board without customer names, phones, totals, or addresses.
 
@@ -482,6 +632,7 @@ def _build_expedition_board(instance, *, service_date: date, today: date) -> KDS
     cards = tuple(
         _build_expedition_card(o, is_scheduled=service_date > today) for o in orders
     )
+    preparing_orders, preparing = _build_exit_preparing(service_date=service_date, today=today)
 
     return KDSBoardProjection(
         instance_ref=instance.ref,
@@ -493,16 +644,159 @@ def _build_expedition_board(instance, *, service_date: date, today: date) -> KDS
             "pending": len(cards),
             "in_progress": 0,
             "total": len(cards),
+            "preparing": len(preparing),
             "cancelled_recent": 0,
         },
         service_date=service_date.isoformat(),
         service_date_display=_service_date_display(service_date, today=today),
         today=today.isoformat(),
         available_dates=_available_service_dates(
-            all_orders,
+            [*all_orders, *preparing_orders],
             today=today,
             selected_date=service_date,
         ),
+        preparing=preparing,
+    )
+
+
+#: Enquanto o pedido está num destes, a Saída o vê "em preparo" — se alguma
+#: estação ainda tem ticket aberto dele. READY já é a outra coluna.
+_EXIT_PREPARING_STATUSES = (Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING)
+
+_EXIT_STATE_LABELS = {"pending": "na fila", "in_progress": "em preparo", "done": "pronto"}
+
+
+def _build_exit_preparing(*, service_date: date, today: date):
+    """A coluna "Em preparo" da Saída: pedido com estação ainda por concluir.
+
+    Cobre o que a coluna de prontos cobre — pedidos (``Order``). A comanda
+    aberta, disparada antes do pagamento, ainda não é pedido: ela aparece aqui
+    quando vira pedido, e antes disso a baixa da estação sem tela é pelo PDV
+    ou pelo leitor de código.
+
+    Devolve ``(pedidos, cards)``: os pedidos alimentam as datas disponíveis do
+    seletor, os cards são a coluna.
+    """
+    from shopman.backstage.models import KDSTicket
+
+    open_keys = set(
+        KDSTicket.objects.filter(status__in=ACTIVE_TICKET_STATUSES)
+        .exclude(kds_instance__type="expedition")
+        .values_list("session_key", flat=True)
+    )
+    open_keys.discard("")
+    if not open_keys:
+        return [], ()
+
+    latest_by_key: dict[str, Order] = {}
+    for order in Order.objects.filter(session_key__in=open_keys).order_by("id"):
+        latest_by_key[order.session_key] = order
+    orders = [order for order in latest_by_key.values() if order.status in _EXIT_PREPARING_STATUSES]
+    if not orders:
+        return [], ()
+
+    tickets_by_key: dict[str, list] = {}
+    for ticket in (
+        KDSTicket.objects.filter(session_key__in=[order.session_key for order in orders])
+        .exclude(kds_instance__type="expedition")
+        .select_related("kds_instance")
+        .order_by("created_at", "pk")
+    ):
+        tickets_by_key.setdefault(ticket.session_key, []).append(ticket)
+
+    from shopman.backstage.services import kitchen_ticket_print
+
+    printed_open_pks = [
+        ticket.pk
+        for tickets in tickets_by_key.values()
+        for ticket in tickets
+        if ticket.status in ACTIVE_TICKET_STATUSES and ticket.kds_instance.print_terminal_id
+    ]
+    papers = kitchen_ticket_print.paper_states(printed_open_pks)
+
+    is_scheduled = service_date > today
+    now = timezone.now()
+    cards: list[tuple] = []
+    for order in orders:
+        if not _source_matches_service_date(order, selected_date=service_date, today=today):
+            continue
+        tickets = tickets_by_key.get(order.session_key) or []
+        live = [ticket for ticket in tickets if ticket.status != "cancelled"]
+        if not any(ticket.status in ACTIVE_TICKET_STATUSES for ticket in live):
+            continue
+        first_fired = min(ticket.created_at for ticket in live)
+        card = _build_exit_preparing_card(
+            order, tickets, papers=papers, is_scheduled=is_scheduled, first_fired=first_fired, now=now,
+        )
+        cards.append((first_fired, card))
+    cards.sort(key=lambda pair: pair[0])
+    return orders, tuple(card for _, card in cards)
+
+
+def _build_exit_preparing_card(order: Order, tickets, *, papers, is_scheduled: bool, first_fired, now):
+    by_station: dict[int, list] = {}
+    for ticket in tickets:
+        by_station.setdefault(ticket.kds_instance_id, []).append(ticket)
+
+    chips: list[KDSExitStationChipProjection] = []
+    for station_tickets in by_station.values():
+        station = station_tickets[0].kds_instance
+        live = [ticket for ticket in station_tickets if ticket.status != "cancelled"]
+        if not live:
+            continue  # estação que só tem item retirado não espera nada
+        cancelled_items = sum(
+            len(ticket.items or [])
+            for ticket in station_tickets
+            if ticket.status == "cancelled" and ticket.acknowledged_at is None
+        )
+        open_tickets = [ticket for ticket in live if ticket.status in ACTIVE_TICKET_STATUSES]
+        if any(ticket.status == "pending" for ticket in open_tickets):
+            state = "pending"
+        elif open_tickets:
+            state = "in_progress"
+        else:
+            state = "done"
+        prints = bool(station.print_terminal_id)
+        paper_label = ""
+        paper_failed = False
+        if prints and open_tickets:
+            # O papel mais recente da estação neste pedido é o que está na bancada.
+            paper = next(
+                (papers[ticket.pk] for ticket in reversed(open_tickets) if ticket.pk in papers),
+                None,
+            )
+            if paper is not None:
+                paper_label, paper_failed = paper.label, paper.failed
+        chips.append(
+            KDSExitStationChipProjection(
+                station_ref=station.ref,
+                station_name=station.name,
+                prints=prints,
+                state=state,
+                state_label=_EXIT_STATE_LABELS[state],
+                paper_label=paper_label,
+                paper_failed=paper_failed,
+                cancelled_items=cancelled_items,
+                can_mark_ready=prints and bool(open_tickets) and not is_scheduled,
+            )
+        )
+    # Quem ainda falta vem primeiro; a ordem entre estações é a do nome.
+    chips.sort(key=lambda chip: (chip.state == "done", chip.station_name))
+
+    is_delivery = get_fulfillment_type(order) == "delivery"
+    return KDSExitPreparingCardProjection(
+        pk=order.pk,
+        order_ref=order.ref,
+        channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
+        customer_name=(order.data or {}).get("customer", {}).get("name", "") or order.handle_ref or "",
+        fulfillment_icon="local_shipping" if is_delivery else "storefront",
+        fulfillment_label="Entrega" if is_delivery else "Retirada",
+        is_delivery=is_delivery,
+        fired_at_display=_format_time(first_fired),
+        elapsed_seconds=max(0, int((now - first_fired).total_seconds())),
+        stations=tuple(chips),
+        is_scheduled=is_scheduled,
+        test_order_label=_test_order_label(order),
     )
 
 
@@ -731,11 +1025,11 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         or ""
     )
     is_delivery = get_fulfillment_type(order) == "delivery"
-    # Pedido + ajustes: a conferência da expedição é sobre a sacola que sai
+    # Pedido + ajustes: a conferência da Saída é sobre a sacola que sai
     # hoje, não sobre a lista com que o pedido nasceu.
     items = tuple(order_composition.effective_items(order))
     units_count = sum((Decimal(str(item.qty)) for item in items), Decimal("0"))
-    # Itens para conferência na expedição (despacho/entrega): qty × nome, sem check/SLA.
+    # Itens para conferência na Saída (despacho/entrega): qty × nome, sem check/SLA.
     item_projections = tuple(
         KDSItemProjection(
             sku=getattr(item, "sku", "") or "",

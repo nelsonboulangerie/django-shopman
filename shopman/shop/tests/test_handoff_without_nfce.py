@@ -1,7 +1,7 @@
 """As duas portas por onde a mercadoria sai gritam quando a NFC-e não está autorizada.
 
 Nenhum portão de expedição conferia ``nfce_access_key``: um pedido podia ser
-despachado pelo Gestor ou concluído pela expedição do KDS com a nota na fila
+despachado pelo Gestor ou concluído pela Saída do KDS com a nota na fila
 (ou morta) e ninguém ficava sabendo. O aviso é alerta por pedido, sem barrar —
 barrar é decisão do dono, porque a nota do COD só nasce na conclusão por
 desenho.
@@ -70,7 +70,7 @@ def test_o_gestor_despacha_e_o_alerta_nasce_sem_barrar():
 
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
-def test_a_expedicao_do_kds_conclui_e_o_alerta_nasce_sem_barrar():
+def test_a_saida_do_kds_conclui_e_o_alerta_nasce_sem_barrar():
     order = _cod("HANDOFF-KDS", fulfillment_type="pickup")
     order.data["payment"]["cod_settled_at"] = "2026-09-16T10:00:00Z"
     order.save(update_fields=["data"])

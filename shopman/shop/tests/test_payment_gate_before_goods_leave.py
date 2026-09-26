@@ -6,7 +6,7 @@ Havia quatro portas por onde a sacola saía sem um centavo capturado:
    então ``PREPARING → READY → DISPATCHED`` passava à mão sem consulta nenhuma;
 2. o gate do operador não conhecia o ``link`` (só ``pix``/``card``), embora o
    lifecycle já soubesse que link é cobrança remota;
-3. a expedição do KDS — o painel por onde a mercadoria FISICAMENTE sai — chamava
+3. a Saída do KDS — o painel por onde a mercadoria FISICAMENTE sai — chamava
    ``transition_status`` direto, sem régua de pagamento alguma;
 4. nada no código distinguia "não pago porque é dinheiro na porta" de "não pago
    porque o link venceu".
@@ -258,11 +258,11 @@ def test_manager_and_expedition_answer_the_same(make, action):
 
     bloqueio = operator_orders.advance_block(order)
     gestor = operator_orders.advance_block_message(bloqueio)
-    expedicao = kds.expedition_block_reason(order, action=action)
+    saida = kds.expedition_block_reason(order, action=action)
 
     # Mesmo veredito E mesma frase: duas réguas foi exatamente o problema.
-    assert bool(gestor) == bool(expedicao)
-    assert gestor == expedicao
+    assert bool(gestor) == bool(saida)
+    assert gestor == saida
 
 
 # ── O gate não é mais "só em ACCEPTED" ─────────────────────────────────────

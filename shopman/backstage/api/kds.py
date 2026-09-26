@@ -5,6 +5,10 @@ GET  /api/v1/backstage/kds/<ref>/                 → KDS board projection
 POST /api/v1/backstage/kds/tickets/<pk>/start/    → put ticket in progress
 POST /api/v1/backstage/kds/tickets/<pk>/done/     → mark ticket done
 POST /api/v1/backstage/kds/expedition/<pk>/action/ → dispatch/complete
+POST /api/v1/backstage/kds/expedition/<pk>/printed-stations/<ref>/done/
+                                                   → "Pronto" da Saída pela estação sem tela
+POST /api/v1/backstage/kds/printed-tickets/<pk>/done/ → "Pronto" do PDV no card do ticket
+POST /api/v1/backstage/kds/printed-tickets/scan/  → "Pronto" pelo leitor de código (QR do papel)
 GET  /api/v1/backstage/kds/pickup/               → customer pickup board
 """
 
@@ -24,6 +28,7 @@ from shopman.backstage.projections.kds import (
     build_kds_customer_status,
     build_kds_index,
     build_kds_ticket,
+    build_printed_ticket_receipt,
 )
 from shopman.backstage.services import kds as kds_service
 from shopman.backstage.services.exceptions import (
@@ -33,7 +38,7 @@ from shopman.backstage.services.exceptions import (
     KDSTicketNotFound,
 )
 
-from .permissions import HasBackstagePermission
+from .permissions import HasAnyBackstagePermission, HasBackstagePermission
 from .projections import projection_data
 
 logger = logging.getLogger(__name__)
@@ -215,6 +220,105 @@ class KDSExpeditionActionView(APIView):
             )
             return Response({"detail": str(exc) or "Falha na ação."}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"ok": True, "action": action, "order_pk": order_pk})
+
+
+#: Quem pode dar o "Pronto" da estação sem tela: a Saída (KDS) e o PDV. O
+#: grupo Caixa tem ``operate_pos`` e não ``operate_kds`` — e o balcão é uma das
+#: três portas da baixa (decisão do dono, 26/09/2026).
+PRINTED_STATION_PERMISSIONS = ("backstage.operate_kds", "cashman.operate_pos")
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Saída: a estação sem tela terminou a parte dela neste pedido",
+        responses={
+            200: OpenApiResponse(description="Tickets concluídos."),
+            400: OpenApiResponse(description="Estação com tela, ticket cancelado ou pedido travado."),
+            404: OpenApiResponse(description="Pedido ou estação inexistente."),
+        },
+    ),
+)
+class KDSExitPrintedStationDoneView(APIView):
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = PRINTED_STATION_PERMISSIONS
+
+    def post(self, request, order_pk: int, station_ref: str):
+        try:
+            completed = kds_service.mark_printed_station_done_for_order(
+                order_id=order_pk,
+                station_ref=station_ref,
+                actor=_actor(request),
+            )
+        except (KDSOrderNotFound, KDSInstanceNotFound) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            logger.debug(
+                "kds_exit_printed_station_done_failed order_pk=%s station=%s", order_pk, station_ref, exc_info=True
+            )
+            return Response({"detail": str(exc) or "Falha ao marcar como pronto."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True, "order_pk": order_pk, "station_ref": station_ref, "completed": completed})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="PDV: pronto no ticket de uma estação sem tela",
+        responses={
+            200: OpenApiResponse(description="O ticket, como o aviso do balcão o diz."),
+            400: OpenApiResponse(description="Estação com tela, ticket cancelado ou pedido travado."),
+            404: OpenApiResponse(description="Ticket inexistente."),
+        },
+    ),
+)
+class KDSPrintedTicketDoneView(APIView):
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = PRINTED_STATION_PERMISSIONS
+
+    def post(self, request, ticket_pk: int):
+        from shopman.backstage.models import KDSTicket
+
+        try:
+            ticket, completed = kds_service.mark_printed_ticket_done(
+                ticket_pk=ticket_pk,
+                actor=_actor(request),
+                via=KDSTicket.COMPLETED_VIA_POS,
+            )
+        except KDSTicketNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            logger.debug("kds_printed_ticket_done_failed ticket_pk=%s", ticket_pk, exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao marcar como pronto."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ticket": projection_data(build_printed_ticket_receipt(ticket, completed_now=completed))})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Leitor de código: pronto no ticket do QR da Via Cozinha",
+        responses={
+            200: OpenApiResponse(description="O ticket, como o aviso do balcão o diz."),
+            400: OpenApiResponse(description="Ticket cancelado ou pedido travado."),
+            404: OpenApiResponse(description="Código que não é de uma Via Cozinha desta loja."),
+        },
+    ),
+)
+class KDSPrintedTicketScanView(APIView):
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = PRINTED_STATION_PERMISSIONS
+
+    def post(self, request):
+        code = str(request.data.get("code") or "").strip()
+        if not code:
+            return Response({"detail": "Leia o código da Via Cozinha."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ticket, completed = kds_service.mark_scanned_ticket_done(code=code, actor=_actor(request))
+        except KDSTicketNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            logger.debug("kds_printed_ticket_scan_failed", exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao marcar como pronto."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ticket": projection_data(build_printed_ticket_receipt(ticket, completed_now=completed))})
 
 
 @extend_schema_view(

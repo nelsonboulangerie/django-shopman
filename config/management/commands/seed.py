@@ -8189,11 +8189,14 @@ class Command(BaseCommand):
             },
         )
 
-        # KDS Expedição — pedidos prontos para balcão/despacho
+        # KDS Saída — pedidos prontos para entregar no balcão ou despachar.
+        # "Expedição" é o fechamento de lote da Produção (decisão do dono,
+        # 26/09/2026); a migração backstage.0076 renomeia a estação de quem já
+        # tinha a antiga.
         KDSInstance.objects.update_or_create(
-            ref="expedicao",
+            ref="saida",
             defaults={
-                "name": "Expedição",
+                "name": "Saída",
                 "type": "expedition",
                 "target_time_minutes": 2,
                 "sound_enabled": True,
@@ -8203,7 +8206,7 @@ class Command(BaseCommand):
 
         KDSInstance.objects.filter(ref__in=["padaria"]).delete()
 
-        self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Expedição)")
+        self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Saída)")
 
     # ────────────────────────────────────────────────────────────────
     # Etiquetas de cliente
