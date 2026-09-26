@@ -72,6 +72,10 @@ class PaidOnline(Exception):
         super().__init__(message)
 
 
+class LateRefundPending(RuntimeError):
+    """O dinheiro foi registrado, mas o estorno ainda precisa de retry."""
+
+
 @dataclass(frozen=True)
 class Takeover:
     """O que o balcão assumiu (ou ``taken_over=False`` quando não havia o que assumir)."""
@@ -119,11 +123,14 @@ def taken_over(order) -> bool:
 
 def cancelled_by_takeover(order, intent_ref: str) -> bool:
     """Este intent é a cobrança digital que o balcão cancelou neste pedido?"""
-    record = _payment(order).get("counter_takeover") or {}
-    return bool(intent_ref) and str(record.get("cancelled_intent_ref") or "") == str(intent_ref)
+    payment = _payment(order)
+    records = (payment.get("counter_takeover") or {}, payment.get("counter_takeover_intent") or {})
+    return bool(intent_ref) and any(
+        str(record.get("cancelled_intent_ref") or "") == str(intent_ref) for record in records
+    )
 
 
-def take_over_pending_digital_charge(order, *, actor: str) -> Takeover:
+def take_over_pending_digital_charge(order, *, actor: str, attempt_id: str = "") -> Takeover:
     """Assumir no balcão a cobrança digital pendente — ou recusar sem mudar nada.
 
     Levanta :class:`PaidOnline` quando o provedor diz que o cliente já pagou (o
@@ -156,6 +163,11 @@ def take_over_pending_digital_charge(order, *, actor: str) -> Takeover:
     if outcome != "unpaid":
         raise TakeoverFailed(GATEWAY_UNCERTAIN_MESSAGE)
 
+    # A intenção durável fecha a janela cancelamento → marcador. Webhooks
+    # que chegarem neste intervalo arbitram pelo estado local do intent: antes da
+    # baixa, o pagamento online vence; depois da baixa, o balcão vence e estorna.
+    _begin_takeover(order, method=method, intent_ref=intent_ref, actor=actor, attempt_id=attempt_id)
+
     # 2. Matar a cobrança no provedor, e só então no Payman.
     remote_expires_at = ""
     if local_status in {"pending", ""}:
@@ -167,10 +179,14 @@ def take_over_pending_digital_charge(order, *, actor: str) -> Takeover:
             # porta da cobrança dupla.
             remote_expires_at = str(_payment(order).get("expires_at") or "")
             if not remote_expires_at:
+                _abandon_takeover(order, intent_ref=intent_ref, attempt_id=attempt_id)
                 raise TakeoverFailed(CANCEL_FAILED_MESSAGE)
         else:
             try:
-                result = cancel_remote(intent_ref, reason=SKIP_REASON)
+                # O adapter mata apenas no provedor. A baixa Payman acontece
+                # junto da promoção do marcador sob o lock do pedido, para o
+                # webhook e o balcão terem um único ponto de arbitragem local.
+                result = cancel_remote(intent_ref, reason=SKIP_REASON, persist_local=False)
                 cancelled = bool(getattr(result, "success", False))
             except Exception:
                 logger.warning("counter_takeover.cancel_failed order=%s intent=%s", order.ref, intent_ref, exc_info=True)
@@ -179,36 +195,119 @@ def take_over_pending_digital_charge(order, *, actor: str) -> Takeover:
                 # A recusa pode ser justamente o pagamento que acabou de entrar
                 # (sessão concluída, Pix CONCLUIDA): pergunta de novo.
                 if payment_service.settle_from_gateway(order) in {"paid", "authorized"}:
+                    _abandon_takeover(order, intent_ref=intent_ref, attempt_id=attempt_id)
                     raise PaidOnline()
+                _abandon_takeover(order, intent_ref=intent_ref, attempt_id=attempt_id)
                 raise TakeoverFailed(CANCEL_FAILED_MESSAGE)
-    _cancel_local_intent(intent_ref)
-
-    # 3 e 4. Sob o lock do pedido: calar avisos e gravar o que aconteceu.
+    # 3 e 4. Sob o lock do pedido: promover a intenção, calar avisos e gravar
+    # o que aconteceu. Ausência significa que um webhook online venceu a disputa.
+    online_won = False
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
         payment = _payment(locked)
-        record = {
+        intent = payment.get("counter_takeover_intent") or {}
+        if str(intent.get("cancelled_intent_ref") or "") != intent_ref:
+            raise PaidOnline()
+        if intent.get("state") == "online_paid":
+            payment.pop("counter_takeover_intent", None)
+            data = dict(locked.data or {})
+            data["payment"] = payment
+            locked.data = data
+            locked.save(update_fields=["data", "updated_at"])
+            online_won = True
+        else:
+            _cancel_local_intent(intent_ref)
+            record = {
+                "from_method": method,
+                "cancelled_intent_ref": intent_ref,
+                "at": timezone.now().isoformat(),
+                "actor": actor,
+            }
+            if remote_expires_at:
+                record["remote_expires_at"] = remote_expires_at
+            payment.pop("counter_takeover_intent", None)
+            payment["counter_takeover"] = record
+            data = dict(locked.data or {})
+            data["payment"] = payment
+            locked.data = data
+            locked.save(update_fields=["data", "updated_at"])
+            skipped = skip_pending_payment_notices(locked)
+            locked.emit_event(
+                event_type="payment.counter_takeover",
+                actor=actor,
+                payload={"from_method": method, "cancelled_intent_ref": intent_ref, "notices_skipped": skipped},
+            )
+    if online_won:
+        order.refresh_from_db()
+        raise PaidOnline()
+    order.refresh_from_db()
+    logger.info("counter_takeover order=%s method=%s intent=%s", order.ref, method, intent_ref)
+    return Takeover(taken_over=True, from_method=method, cancelled_intent_ref=intent_ref)
+
+
+def _begin_takeover(order, *, method: str, intent_ref: str, actor: str, attempt_id: str) -> None:
+    """Persiste a intenção antes do primeiro efeito remoto."""
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        payment = _payment(locked)
+        existing = payment.get("counter_takeover_intent") or {}
+        if existing:
+            if str(existing.get("cancelled_intent_ref") or "") != intent_ref:
+                raise TakeoverFailed("Outra cobrança já está sendo assumida no balcão.")
+            owner = str(existing.get("attempt_id") or "")
+            if owner and attempt_id and owner != attempt_id:
+                raise TakeoverFailed("Esta cobrança já está sendo assumida no balcão.")
+            return
+        payment["counter_takeover_intent"] = {
             "from_method": method,
             "cancelled_intent_ref": intent_ref,
-            "at": timezone.now().isoformat(),
+            "started_at": timezone.now().isoformat(),
             "actor": actor,
+            "attempt_id": attempt_id,
         }
-        if remote_expires_at:
-            record["remote_expires_at"] = remote_expires_at
-        payment["counter_takeover"] = record
         data = dict(locked.data or {})
         data["payment"] = payment
         locked.data = data
         locked.save(update_fields=["data", "updated_at"])
-        skipped = skip_pending_payment_notices(locked)
-        locked.emit_event(
-            event_type="payment.counter_takeover",
-            actor=actor,
-            payload={"from_method": method, "cancelled_intent_ref": intent_ref, "notices_skipped": skipped},
-        )
     order.refresh_from_db()
-    logger.info("counter_takeover order=%s method=%s intent=%s", order.ref, method, intent_ref)
-    return Takeover(taken_over=True, from_method=method, cancelled_intent_ref=intent_ref)
+
+
+def _abandon_takeover(order, *, intent_ref: str, attempt_id: str) -> None:
+    """Remove apenas a intenção desta tentativa quando o online venceu."""
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        payment = _payment(locked)
+        intent = payment.get("counter_takeover_intent") or {}
+        if str(intent.get("cancelled_intent_ref") or "") != intent_ref:
+            return
+        owner = str(intent.get("attempt_id") or "")
+        if owner and attempt_id and owner != attempt_id:
+            return
+        payment.pop("counter_takeover_intent", None)
+        data = dict(locked.data or {})
+        data["payment"] = payment
+        locked.data = data
+        locked.save(update_fields=["data", "updated_at"])
+    order.refresh_from_db()
+
+
+def arbitrate_pending_takeover_for_online_payment(order, intent_ref: str) -> bool:
+    """Webhook antes da baixa local vence e carimba a intenção do balcão."""
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        payment = _payment(locked)
+        intent = payment.get("counter_takeover_intent") or {}
+        if str(intent.get("cancelled_intent_ref") or "") != str(intent_ref):
+            return False
+        intent = dict(intent)
+        intent["state"] = "online_paid"
+        intent["online_paid_at"] = timezone.now().isoformat()
+        payment["counter_takeover_intent"] = intent
+        data = dict(locked.data or {})
+        data["payment"] = payment
+        locked.data = data
+        locked.save(update_fields=["data", "updated_at"])
+        return True
 
 
 def _local_status(intent_ref: str) -> str:
@@ -287,7 +386,7 @@ def refund_late_payment(order, *, booked_ref: str, adapter, method: str) -> bool
     label = "Pix" if method == "pix" else "cartão"
     if adapter is None or not hasattr(adapter, "refund"):
         payment_service.alert_refund_failed(order, booked_ref, refundable_q, "provedor sem estorno automático")
-        return False
+        raise LateRefundPending("Provedor sem estorno automático")
     try:
         result = adapter.refund(
             booked_ref,
@@ -303,7 +402,7 @@ def refund_late_payment(order, *, booked_ref: str, adapter, method: str) -> bool
     if not getattr(result, "success", False):
         detail = getattr(result, "message", "") or getattr(result, "error_code", "") or "recusado pelo provedor"
         payment_service.alert_refund_failed(order, booked_ref, refundable_q, detail)
-        return False
+        raise LateRefundPending(detail)
     amount = f"R$ {format_money(refundable_q)}" if refundable_q is not None else "o valor"
     create_operator_alert(
         type="payment_after_cancel",
@@ -338,10 +437,24 @@ def handle_late_stripe_payment(intent_ref: str, payment_intent_id: str) -> bool:
         intent = PaymentService.get(intent_ref)
     except PaymentError:
         return False
-    if intent.status != "cancelled" or not intent.order_ref:
+    if not intent.order_ref:
         return False
     order = Order.objects.filter(ref=intent.order_ref).first()
-    if order is None or not cancelled_by_takeover(order, intent_ref):
+    if order is None:
+        return False
+    if intent.status != "cancelled":
+        # O webhook chegou depois da intenção, mas antes da baixa local: o
+        # dinheiro online vence. O carimbo faz o cancelador parar antes
+        # de receber no balcão; o fluxo normal do webhook registra a captura.
+        if arbitrate_pending_takeover_for_online_payment(order, intent_ref):
+            return False
+        # Podemos ter esperado o lock enquanto o balcão promovia a intenção
+        # e cancelava o Payman. Decidir pelo snapshot anterior perderia o estorno.
+        intent.refresh_from_db()
+        order.refresh_from_db()
+        if intent.status != "cancelled" or not cancelled_by_takeover(order, intent_ref):
+            return False
+    if not cancelled_by_takeover(order, intent_ref):
         return False
     if not payment_intent_id:
         payment_intent_id = payment_stripe.gateway_payment_intent_id(intent_ref)

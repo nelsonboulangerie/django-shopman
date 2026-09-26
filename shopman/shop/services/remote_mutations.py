@@ -90,11 +90,12 @@ def run_idempotent_mutation(
     fingerprint: str | None = None,
     payload: Any = None,
     local_atomic: bool = False,
+    in_progress_ttl: timedelta | None = None,
 ) -> RemoteMutationResult:
     """Run ``execute`` once for ``scope``/``key`` and replay cached responses."""
 
     if fingerprint is not None:
-        if cache_response is not None or payload is not None or local_atomic:
+        if cache_response is not None or payload is not None or local_atomic or in_progress_ttl is not None:
             raise ValueError("Local mutations always retain their result")
         try:
             result = _run_local_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
@@ -111,7 +112,7 @@ def run_idempotent_mutation(
 
     # Opt-in only: callers with remote effects retain provider reconciliation semantics.
     with transaction.atomic() if local_atomic else nullcontext():
-        idem = _acquire(scope=scope, key=key)
+        idem = _acquire(scope=scope, key=key, in_progress_ttl=in_progress_ttl)
         digest = _payload_fingerprint(payload) if payload is not None else ""
         if digest and idem.request_fingerprint != digest:
             if idem.request_fingerprint or idem.status == "done":
@@ -150,8 +151,8 @@ def run_idempotent_mutation(
         )
 
 
-def _acquire(*, scope: str, key: str) -> IdempotencyKey:
-    expires_at = timezone.now() + timedelta(hours=24)
+def _acquire(*, scope: str, key: str, in_progress_ttl: timedelta | None = None) -> IdempotencyKey:
+    expires_at = timezone.now() + (in_progress_ttl or timedelta(hours=24))
     with transaction.atomic():
         idem, created = IdempotencyKey.objects.select_for_update().get_or_create(
             scope=scope,
@@ -162,8 +163,12 @@ def _acquire(*, scope: str, key: str) -> IdempotencyKey:
             return idem
         if idem.status == "done" and idem.response_body is not None:
             return idem
+        # Intenções locais rodam numa transação só e conservam a trava
+        # histórica pelo fingerprint. Orquestrações remotas passam TTL explícito:
+        # depois dele, um processo morto precisa poder retomar a MESMA intenção.
+        fingerprint_blocks_recovery = bool(idem.request_fingerprint) and in_progress_ttl is None
         if idem.status == "in_progress" and (
-            idem.request_fingerprint or idem.expires_at is None or idem.expires_at > timezone.now()
+            fingerprint_blocks_recovery or idem.expires_at is None or idem.expires_at > timezone.now()
         ):
             raise RemoteMutationInProgress(f"Mutation already in progress for {scope}:{key}")
         idem.status = "in_progress"

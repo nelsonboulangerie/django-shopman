@@ -113,6 +113,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/shop/tests/test_marketing_capabilities.py",
     "shopman/backstage/tests/test_gateway_smoke.py",
     "shopman/backstage/tests/test_pos_tab_revision_boundary.py",
+    # Counter takeover serializa claims, cancelamentos e replays por locks
+    # reais; SQLite não prova a arbitragem entre workers concorrentes.
+    "shopman/backstage/tests/test_pos_preorder_counter_takeover_postgresql.py",
     "shopman/backstage/tests/test_planning_idempotency_race.py",
     "shopman/backstage/tests/test_kds_lock_order_postgresql.py",
     # Dois relays da mesma estação não podem capturar/imprimir a mesma etiqueta.

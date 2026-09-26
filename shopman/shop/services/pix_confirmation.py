@@ -130,6 +130,17 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
         )
         return
 
+    # A confirmação chegou depois da intenção durável, mas antes da baixa
+    # local: o online vence sob o mesmo lock de Order usado pelo balcão. Se o
+    # balcão venceu enquanto esperávamos, releia o intent e caia no ramo morto,
+    # que registra e estorna em vez de perder o Pix na janela.
+    if db_intent.status not in _DEAD_CHARGE_STATUSES:
+        from shopman.shop.services import counter_takeover
+
+        if not counter_takeover.arbitrate_pending_takeover_for_online_payment(order, db_intent.ref):
+            db_intent.refresh_from_db()
+            order.refresh_from_db()
+
     if db_intent.status in _DEAD_CHARGE_STATUSES:
         _confirm_pix_on_dead_charge(
             order,

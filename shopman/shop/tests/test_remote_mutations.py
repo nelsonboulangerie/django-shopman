@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -74,6 +75,30 @@ def test_run_idempotent_mutation_can_skip_caching_precondition_failures():
     assert second.response_body == {"ok": False, "calls": 2}
     assert second.replayed is False
     assert calls == 2
+
+
+def test_expired_remote_claim_with_fingerprint_can_resume_after_process_death():
+    from django.utils import timezone
+    from shopman.orderman.models import IdempotencyKey
+
+    IdempotencyKey.objects.create(
+        scope="remote-expired",
+        key="crashed-attempt",
+        status="in_progress",
+        request_fingerprint=remote_mutations.fingerprint({"amount": 3600}),
+        expires_at=timezone.now() - timedelta(seconds=1),
+    )
+
+    result = remote_mutations.run_idempotent_mutation(
+        scope="remote-expired",
+        key="crashed-attempt",
+        payload={"amount": 3600},
+        in_progress_ttl=timedelta(minutes=15),
+        execute=lambda: ({"ok": True}, 200),
+    )
+
+    assert result.response_body == {"ok": True}
+    assert IdempotencyKey.objects.get(scope="remote-expired", key="crashed-attempt").status == "done"
 
 
 def test_idempotency_key_from_request_hashes_overlong_values():

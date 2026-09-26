@@ -848,10 +848,11 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
         # A cobrança JÁ morreu na Efí. Sem a baixa local, o Payman segue com um
         # intent de pé que ninguém mais consegue pagar — e o `success=True`
         # abaixo jurava que os dois lados estavam alinhados.
-        try:
-            PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
-        except PaymentError as exc:
-            _record_cancel_drift(intent_ref, exc, txid=txid)
+        if config.get("persist_local", True):
+            try:
+                PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
+            except PaymentError as exc:
+                _record_cancel_drift(intent_ref, exc, txid=txid)
 
         return PaymentResult(success=True)
     except Exception as e:

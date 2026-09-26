@@ -19,7 +19,7 @@ from django.test import override_settings
 from django.utils import timezone
 from shopman.cashman import services as cash
 from shopman.cashman.models import Entry, Terminal
-from shopman.orderman.models import Directive, Order, OrderItem
+from shopman.orderman.models import Directive, IdempotencyKey, Order, OrderItem
 from shopman.payman import PaymentService
 
 from shopman.backstage.models import OperatorAlert
@@ -183,6 +183,28 @@ def test_pix_pendente_e_cancelado_e_o_balcao_recebe_em_dinheiro(balcao):
     assert "notification_delivery" not in unrelated.payload
 
 
+def test_claim_e_intencao_ja_sao_duraveis_quando_o_cancelamento_remoto_comeca(balcao):
+    order, _ = _pix_order("PIX-CLAIM-ANTES-DA-REDE")
+
+    def observe_claim(intent_ref, **_config):
+        claim = IdempotencyKey.objects.get(
+            scope="pos.cash.preorder-hand-over.remote", key="takeover-claim-first",
+        )
+        assert claim.status == "in_progress"
+        observed = Order.objects.get(pk=order.pk)
+        marker = observed.data["payment"]["counter_takeover_intent"]
+        assert marker["cancelled_intent_ref"] == intent_ref
+        return PaymentResult(success=True)
+
+    with patch.object(payment_mock, "cancel", side_effect=observe_claim):
+        response = _hand_over(
+            balcao, order, tenders=[{"method": "cash", "amount_q": 3600}],
+            request_id="takeover-claim-first",
+        )
+
+    assert response.status_code == 200
+
+
 def test_depois_do_balcao_a_cobranca_nao_e_reenviada(balcao):
     order, _ = _pix_order("PIX-SEM-REENVIO")
     _hand_over(balcao, order, tenders=[{"method": "cash", "amount_q": 3600}], request_id="t-pix-reenvio")
@@ -234,6 +256,71 @@ def test_falha_ao_cancelar_no_provedor_nao_muda_nada(balcao):
     assert "counter_takeover" not in order.data["payment"]
     assert _cash_entries(order.ref) == []
     assert "notification_delivery" not in notice.payload
+
+
+def test_provedor_sem_cancelamento_nem_vencimento_nao_deixa_intencao_orfa(balcao):
+    order, intent = _pix_order("PIX-SEM-CANCELAMENTO")
+    payment = dict(order.data["payment"])
+    payment.pop("expires_at")
+    order.data["payment"] = payment
+    order.save(update_fields=["data"])
+
+    with patch.object(payment_svc, "_adapter_for_persisted_intent", return_value=SimpleNamespace()):
+        response = _hand_over(
+            balcao, order, tenders=[{"method": "cash", "amount_q": 3600}],
+            request_id="takeover-no-cancel",
+        )
+
+    assert response.status_code == 409
+    order.refresh_from_db()
+    intent.refresh_from_db()
+    assert intent.status == "pending"
+    assert "counter_takeover_intent" not in order.data["payment"]
+
+
+@pytest.mark.parametrize("request_id", ["", "x" * 129])
+def test_tentativa_ausente_ou_longa_nao_consulta_nem_cancela_provedor(balcao, request_id):
+    order, intent = _pix_order(f"PIX-CHAVE-{len(request_id)}")
+    body = {
+        "base_revision": operator_orders.operational_revision(order),
+        "client_request_id": request_id,
+        "tenders": [{"method": "cash", "amount_q": 3600}],
+    }
+
+    with (
+        patch.object(payment_svc, "settle_from_gateway") as settle,
+        patch.object(payment_mock, "cancel") as cancel,
+    ):
+        response = balcao.post(URL.format(ref=order.ref), body, content_type="application/json")
+
+    assert response.status_code == 422
+    settle.assert_not_called()
+    cancel.assert_not_called()
+    intent.refresh_from_db()
+    assert intent.status == "pending"
+
+
+def test_chave_reutilizada_com_outro_conteudo_nao_toca_no_provedor(balcao):
+    first, _ = _pix_order("PIX-CHAVE-PRIMEIRA")
+    assert _hand_over(
+        balcao, first, tenders=[{"method": "cash", "amount_q": 3600}], request_id="takeover-reused",
+    ).status_code == 200
+    second, intent = _pix_order("PIX-CHAVE-SEGUNDA")
+
+    with (
+        patch.object(payment_svc, "settle_from_gateway") as settle,
+        patch.object(payment_mock, "cancel") as cancel,
+    ):
+        response = _hand_over(
+            balcao, second, tenders=[{"method": "cash", "amount_q": 3600}], request_id="takeover-reused",
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_conflict"
+    settle.assert_not_called()
+    cancel.assert_not_called()
+    intent.refresh_from_db()
+    assert intent.status == "pending"
 
 
 def test_cliente_pagou_segundos_antes_o_balcao_nao_recebe_so_entrega(balcao, operator):
@@ -353,6 +440,50 @@ def test_pagamento_do_link_que_chega_depois_do_balcao_e_estornado_no_cartao(balc
     order.refresh_from_db()
     assert order.status == "completed"
     assert payment_svc.balance_due_q(order) == 0
+
+
+@override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS, SHOPMAN_STRIPE=STRIPE_SETTINGS)
+def test_estorno_recusado_deixa_webhook_retentar_com_a_mesma_chave(balcao, client):
+    order, intent = _link_order("LINK-ESTORNO-RETRY", session_id="cs_refund_retry")
+    stripe = MagicMock()
+    stripe.checkout.Session.retrieve.return_value = _open_session("cs_refund_retry")
+    with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+        assert _hand_over(
+            balcao, order, tenders=[{"method": "cash", "amount_q": 3600}], request_id="takeover-refund-retry",
+        ).status_code == 200
+
+    event = MagicMock()
+    event.id = "evt_refund_retry"
+    event.type = "payment_intent.succeeded"
+    event.data.object = SimpleNamespace(id="pi_refund_retry", metadata={"shopman_ref": intent.ref})
+    stripe = MagicMock()
+    stripe.Webhook.construct_event.return_value = event
+    stripe.PaymentIntent.retrieve.return_value = SimpleNamespace(status="succeeded", amount_received=3600)
+    stripe.Refund.create.side_effect = [TimeoutError("stripe timeout"), SimpleNamespace(id="re_retry", amount=3600)]
+
+    with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+        first = client.post(
+            "/api/webhooks/stripe/", data=json.dumps({"type": event.type}).encode(),
+            content_type="application/json", HTTP_STRIPE_SIGNATURE="valid-sig",
+        )
+        claim = IdempotencyKey.objects.get(scope="webhook:stripe")
+        assert (first.status_code, claim.status) == (500, "failed")
+
+        second = client.post(
+            "/api/webhooks/stripe/", data=json.dumps({"type": event.type}).encode(),
+            content_type="application/json", HTTP_STRIPE_SIGNATURE="valid-sig",
+        )
+
+    assert second.status_code == 200
+    claim.refresh_from_db()
+    assert claim.status == "done"
+    refund_calls = stripe.Refund.create.call_args_list
+    assert len(refund_calls) == 2
+    keys = [call.kwargs["idempotency_key"] for call in refund_calls]
+    assert keys == [keys[0], keys[0]]
+    booked = PaymentService.get_by_order(order.ref).get(gateway_data__booked_by="counter_takeover")
+    assert booked.status == "refunded"
+    assert PaymentService.refunded_total(booked.ref) == 3600
 
 
 @override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS, SHOPMAN_STRIPE=STRIPE_SETTINGS)
