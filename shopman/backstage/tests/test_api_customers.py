@@ -178,6 +178,25 @@ def test_list_paginates(client, manager, shop):
     assert len(second["items"]) == 5 and second["has_next"] is False
 
 
+def test_regular_list_limits_duplicate_scan_to_the_visible_page(client, manager, people, monkeypatch):
+    from shopman.backstage.projections import customers
+
+    calls = []
+    original = customers._duplicate_sets
+
+    def tracked(**kwargs):
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(customers, "_duplicate_sets", tracked)
+    client.force_login(manager)
+    assert client.get(LIST_URL).status_code == 200
+
+    assert len(calls) == 1
+    assert calls[0]["names"] == {"maria souza", "maria s.", "joão lima"}
+    assert calls[0]["documents"] == {"11122233344"}
+
+
 # ── Ficha e candidatos ────────────────────────────────────────────────
 
 
@@ -218,6 +237,62 @@ def test_channel_lookup_does_not_hide_database_failures(monkeypatch):
 
     with pytest.raises(RuntimeError, match="database unavailable"):
         customers._channel_names({"ifood"})
+
+
+def test_order_evidence_does_not_hide_database_failures(monkeypatch):
+    from shopman.backstage.projections import customers
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("orders unavailable")
+
+    monkeypatch.setattr(Order.objects, "filter", unavailable)
+
+    with pytest.raises(RuntimeError, match="orders unavailable"):
+        customers._order_stats(["CLI-MARIA"])
+    with pytest.raises(RuntimeError, match="orders unavailable"):
+        customers._ifood_customer_ids("CLI-MARIA")
+
+
+def test_ifood_sibling_evidence_does_not_hide_database_failures(monkeypatch):
+    from shopman.backstage.projections import customers
+
+    monkeypatch.setattr(customers, "_ifood_customer_ids", lambda ref: {IFOOD_CUSTOMER_ID})
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("orders unavailable")
+
+    monkeypatch.setattr(Order.objects, "filter", unavailable)
+
+    with pytest.raises(RuntimeError, match="orders unavailable"):
+        customers._refs_sharing_ifood_customer("CLI-MARIA")
+
+
+def test_history_does_not_hide_service_failures(people, monkeypatch):
+    from shopman.orderman.services import CustomerOrderHistoryService
+
+    from shopman.backstage.projections import customers
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("history unavailable")
+
+    monkeypatch.setattr(CustomerOrderHistoryService, "get_customer_stats", unavailable)
+
+    with pytest.raises(RuntimeError, match="history unavailable"):
+        customers.build_customer_detail(people["balcao"].ref)
+
+
+def test_merged_destination_does_not_hide_database_failures(people, monkeypatch):
+    from shopman.backstage.projections import customers
+
+    Customer.objects.filter(pk=people["if_old"].pk).update(is_active=False)
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("audit unavailable")
+
+    monkeypatch.setattr(MergeAudit.objects, "filter", unavailable)
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        customers._merged_into(people["if_old"])
 
 
 # ── Prévia ────────────────────────────────────────────────────────────

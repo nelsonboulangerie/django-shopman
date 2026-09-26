@@ -20,7 +20,6 @@ Três regras moldam o formato:
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from datetime import timedelta
@@ -31,8 +30,6 @@ from django.utils import timezone
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.types import Action
-
-logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 30
 
@@ -318,40 +315,42 @@ def _order_stats(refs: list[str]) -> dict[str, tuple[int, object]]:
     """
     if not refs:
         return {}
-    try:
-        from django.db.models import Max
-        from shopman.orderman.models import Order
+    from django.db.models import Max
+    from shopman.orderman.models import Order
 
-        rows = (
-            Order.objects.filter(data__customer_ref__in=refs)
-            .values("data__customer_ref")
-            .annotate(n=Count("id"), last=Max("created_at"))
-        )
-        return {row["data__customer_ref"]: (int(row["n"]), row["last"]) for row in rows}
-    except Exception:
-        logger.debug("customers.order_stats_failed", exc_info=True)
-        return {}
+    rows = (
+        Order.objects.filter(data__customer_ref__in=refs)
+        .values("data__customer_ref")
+        .annotate(n=Count("id"), last=Max("created_at"))
+    )
+    return {row["data__customer_ref"]: (int(row["n"]), row["last"]) for row in rows}
 
 
-def _duplicate_sets() -> tuple[set[str], set[str]]:
+def _duplicate_sets(
+    *,
+    names: set[str] | None = None,
+    documents: set[str] | None = None,
+) -> tuple[set[str], set[str]]:
     """Nomes completos e documentos que aparecem em MAIS de um cadastro ativo."""
     Customer = _customer_model()
     active = Customer.objects.filter(is_active=True)
-    names = set(
-        active.annotate(key=_full_name_expr())
-        .values("key")
-        .annotate(n=Count("id"))
-        .filter(n__gt=1)
-        .values_list("key", flat=True)
+    name_rows = active.annotate(key=_full_name_expr()).exclude(key="")
+    if names is not None:
+        name_rows = name_rows.filter(key__in=names)
+    duplicate_names = set(
+        name_rows.values("key").annotate(n=Count("id")).filter(n__gt=1).values_list("key", flat=True)
     )
-    documents = set(
-        active.exclude(document="")
-        .values("document")
+
+    document_rows = active.exclude(document="")
+    if documents is not None:
+        document_rows = document_rows.filter(document__in=documents)
+    duplicate_documents = set(
+        document_rows.values("document")
         .annotate(n=Count("id"))
         .filter(n__gt=1)
         .values_list("document", flat=True)
     )
-    return names, documents
+    return duplicate_names, duplicate_documents
 
 
 def _duplicate_hint(customer, names: set[str], documents: set[str]) -> str:
@@ -385,13 +384,15 @@ def build_customer_list(query: str = "", filter_ref: str = "all", page: int = 1)
     page = max(int(page or 1), 1)
 
     qs = Customer.objects.filter(is_active=True).annotate(full_name=_full_name_expr())
-    names, documents = _duplicate_sets()
+    names: set[str] = set()
+    documents: set[str] = set()
 
     if filter_ref == "no_phone":
         qs = qs.filter(phone="")
     elif filter_ref == "ifood":
         qs = qs.filter(Q(source_system="ifood") | Q(ref__startswith="IF-"))
     elif filter_ref == "possible_duplicates":
+        names, documents = _duplicate_sets()
         qs = qs.filter(Q(full_name__in=names) | Q(document__in=documents))
     if query:
         qs = qs.filter(_search_q(query))
@@ -402,6 +403,11 @@ def build_customer_list(query: str = "", filter_ref: str = "all", page: int = 1)
     start = (page - 1) * PAGE_SIZE
     customers = list(qs.order_by(*ordering)[start:start + PAGE_SIZE])
     stats = _order_stats([customer.ref for customer in customers])
+    if filter_ref != "possible_duplicates" and customers:
+        names, documents = _duplicate_sets(
+            names={key for customer in customers if (key := _name_key(customer))},
+            documents={customer.document for customer in customers if customer.document},
+        )
 
     items = []
     for customer in customers:
@@ -442,17 +448,13 @@ def build_customer_list(query: str = "", filter_ref: str = "all", page: int = 1)
 
 
 def _ifood_customer_ids(customer_ref: str) -> set[str]:
-    try:
-        from shopman.orderman.models import Order
+    from shopman.orderman.models import Order
 
-        values = (
-            Order.objects.filter(data__customer_ref=customer_ref)
-            .values_list("data__customer__ifood_customer_id", flat=True)[:200]
-        )
-        return {str(value) for value in values if value}
-    except Exception:
-        logger.debug("customers.ifood_ids_failed ref=%s", customer_ref, exc_info=True)
-        return set()
+    values = (
+        Order.objects.filter(data__customer_ref=customer_ref)
+        .values_list("data__customer__ifood_customer_id", flat=True)[:200]
+    )
+    return {str(value) for value in values if value}
 
 
 def _refs_sharing_ifood_customer(customer_ref: str) -> set[str]:
@@ -466,18 +468,14 @@ def _refs_sharing_ifood_customer(customer_ref: str) -> set[str]:
     ids = _ifood_customer_ids(customer_ref)
     if not ids:
         return set()
-    try:
-        from shopman.orderman.models import Order
+    from shopman.orderman.models import Order
 
-        refs = (
-            Order.objects.filter(data__customer__ifood_customer_id__in=ids)
-            .exclude(data__customer_ref=customer_ref)
-            .values_list("data__customer_ref", flat=True)[:50]
-        )
-        return {str(ref) for ref in refs if ref}
-    except Exception:
-        logger.debug("customers.ifood_siblings_failed ref=%s", customer_ref, exc_info=True)
-        return set()
+    refs = (
+        Order.objects.filter(data__customer__ifood_customer_id__in=ids)
+        .exclude(data__customer_ref=customer_ref)
+        .values_list("data__customer_ref", flat=True)[:50]
+    )
+    return {str(ref) for ref in refs if ref}
 
 
 def build_customer_candidates(customer) -> tuple[CustomerCandidateProjection, ...]:
@@ -526,18 +524,14 @@ def build_customer_candidates(customer) -> tuple[CustomerCandidateProjection, ..
 
 
 def _merged_into(customer) -> str:
-    try:
-        from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
+    from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
 
-        audit = (
-            MergeAudit.objects.filter(source_ref=customer.ref, status=MergeStatus.COMPLETED)
-            .order_by("-merged_at")
-            .first()
-        )
-        return audit.target_ref if audit else ""
-    except Exception:
-        logger.debug("customers.merged_into_failed ref=%s", customer.ref, exc_info=True)
-        return ""
+    audit = (
+        MergeAudit.objects.filter(source_ref=customer.ref, status=MergeStatus.COMPLETED)
+        .order_by("-merged_at")
+        .first()
+    )
+    return audit.target_ref if audit else ""
 
 
 def _channel_names(refs: set[str]) -> dict[str, str]:
@@ -561,16 +555,11 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
     if customer is None:
         return None
 
-    stats_count, stats_spent, stats_last = 0, 0, None
-    recent: list = []
-    try:
-        from shopman.orderman.services import CustomerOrderHistoryService
+    from shopman.orderman.services import CustomerOrderHistoryService
 
-        stats = CustomerOrderHistoryService.get_customer_stats(customer.ref)
-        stats_count, stats_spent, stats_last = stats.total_orders, stats.total_spent_q, stats.last_order_at
-        recent = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=10)
-    except Exception:
-        logger.debug("customers.history_failed ref=%s", ref, exc_info=True)
+    stats = CustomerOrderHistoryService.get_customer_stats(customer.ref)
+    stats_count, stats_spent, stats_last = stats.total_orders, stats.total_spent_q, stats.last_order_at
+    recent = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=10)
 
     channels = _channel_names({record.channel_ref for record in recent})
     recent_orders = tuple(
