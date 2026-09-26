@@ -108,6 +108,77 @@ def test_server_marked_max_one_sandbox_probe_can_collect_future_evidence(
     )
 
 
+@pytest.mark.django_db
+@override_settings(DEBUG=False)
+def test_transactional_probe_uses_sealed_flow_and_clears_every_declared_field(
+    monkeypatch,
+):
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.update_or_create(
+        event="order_rescheduled",
+        defaults={
+            "subject": "x",
+            "body": "y",
+            # Deliberately different: a sandbox receipt must send its sealed flow,
+            # not whatever a second DB read happens to observe.
+            "whatsapp_flow_ns": "content_changed_after_receipt",
+        },
+    )
+    calls = []
+    monkeypatch.setattr(
+        notification_manychat,
+        "_get_config",
+        lambda: {"api_token": "synthetic-token", "flow_map": {}},
+    )
+    monkeypatch.setattr(
+        notification_manychat,
+        "_resolve_subscriber",
+        lambda *args, **kwargs: "synthetic-subscriber",
+    )
+    monkeypatch.setattr(
+        notification_manychat,
+        "_api_call",
+        lambda endpoint, payload, config: calls.append((endpoint, payload))
+        or {"success": True},
+    )
+    context = manychat_marketing_safety.sandbox_probe_context(
+        {
+            "customer_name": "Cliente teste",
+            "order_ref": "TESTE-20260926-A47",
+            "tracking_url": "https://shopman.invalid/teste/pedido",
+        },
+        declared_fields=("customer_name_greeting", "order_ref_short", "status_note", "tracking_url"),
+        flow_ns="content_sealed_in_receipt",
+    )
+
+    assert notification_manychat.send(
+        "synthetic-recipient",
+        "order_rescheduled",
+        context,
+    ) is True
+
+    fields = {
+        payload["field_name"]: payload["field_value"]
+        for endpoint, payload in calls
+        if endpoint == "/subscriber/setCustomFieldByName"
+    }
+    assert fields == {
+        "customer_name_greeting": ", Cliente teste",
+        "order_ref_short": "A47",
+        "status_note": "",
+        "tracking_url": "https://shopman.invalid/teste/pedido",
+    }
+    assert calls[-1] == (
+        "/sending/sendFlow",
+        {
+            "subscriber_id": "synthetic-subscriber",
+            "flow_ns": "content_sealed_in_receipt",
+            "flow_token": calls[-1][1]["flow_token"],
+        },
+    )
+
+
 def test_notification_boundary_never_fabricates_receipt_or_logs_recipient(
     monkeypatch, caplog
 ):

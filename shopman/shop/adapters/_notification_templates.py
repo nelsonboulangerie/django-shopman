@@ -109,6 +109,11 @@ def derive_context(context: dict | None) -> dict:
         from shopman.utils.monetary import format_money
 
         ctx["order_total_display"] = f"R$ {format_money(int(total_q))}"
+    # O contrato Meta padronizado chama o campo de `total`; flows mais antigos
+    # já foram criados com `order_total_display`. Ambos recebem o mesmo valor
+    # formatado durante a transição, sem duplicar cálculo monetário.
+    if ctx.get("order_total_display") and not ctx.get("total"):
+        ctx["total"] = ctx["order_total_display"]
 
     # Prazo do pagamento ("hoje às 18h", "amanhã às 9h"), lido do `expires_at` que
     # `payment.initiate()` grava em `order.data["payment"]`. Duas chaves de
@@ -204,4 +209,3 @@ def _with_fiscal_note(rendered: str, context: dict) -> str:
     if not url or not suffix or url in rendered:
         return rendered
     return f"{rendered.rstrip()}{suffix}"
-

@@ -122,6 +122,71 @@ MARKETING_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "stock_arrived": _ALERT_FLOW_FIELDS,
 }
 
+_PURCHASE_REQUEST_FLOW_FIELDS = (
+    "material_name",
+    "purchase_qty_display",
+    "purchase_ref",
+    "shop_name",
+    "supplier_greeting",
+)
+
+# Contrato dos flows Meta/ManyChat aprovados. Não derive isto do texto livre do
+# NotificationTemplate: botões têm variáveis próprias (`order_ref`) e alguns
+# flows usam o valor cru (`payment_deadline`) em vez do sufixo textual usado por
+# SMS/e-mail. Os aliases `customer_name_greeting`/`order_total_display` mantêm
+# compatibilidade com flows já criados antes da padronização documentada.
+_CUSTOMER = ("customer_name", "customer_name_greeting")
+_ORDER = ("order_ref_short",)
+_ORDER_BUTTON = ("order_ref", "order_ref_short")
+TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
+    "order_received": (*_CUSTOMER, *_ORDER_BUTTON),
+    "order_received_outside_hours": (*_CUSTOMER, *_ORDER_BUTTON),
+    "order_accepted": (*_ORDER_BUTTON, "total", "order_total_display"),
+    "order_rejected": (*_CUSTOMER, *_ORDER_BUTTON),
+    "order_preparing": _ORDER_BUTTON,
+    "order_ready_pickup": _ORDER_BUTTON,
+    "order_ready_delivery": _ORDER_BUTTON,
+    "order_dispatched": _ORDER_BUTTON,
+    "order_delivered": (*_CUSTOMER, *_ORDER),
+    "order_cancelled": (*_CUSTOMER, *_ORDER),
+    "preorder_reminder": (*_CUSTOMER, *_ORDER),
+    "order_rescheduled": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    "fiscal_note_ready": _ORDER_BUTTON,
+    "payment_requested": (*_CUSTOMER, *_ORDER_BUTTON),
+    "payment_link_sent": (
+        *_CUSTOMER,
+        "order_ref",
+        "order_ref_short",
+        "total",
+        "order_total_display",
+        "payment_deadline",
+        "checkout_url",
+    ),
+    "payment_confirmed": (*_CUSTOMER, *_ORDER),
+    "payment_reminder": (*_CUSTOMER, *_ORDER_BUTTON),
+    "payment_expired": (*_CUSTOMER, *_ORDER),
+    "payment_failed": (*_CUSTOMER, *_ORDER_BUTTON),
+    "payment_refunded": (*_CUSTOMER, *_ORDER, "total", "order_total_display"),
+    "waitlist_available": (*_CUSTOMER, *_ORDER_BUTTON),
+    "waitlist_released": (*_CUSTOMER, *_ORDER_BUTTON),
+    "loyalty_earned": (*_CUSTOMER, *_ORDER, "account_url"),
+    "purchase_request": _PURCHASE_REQUEST_FLOW_FIELDS,
+}
+
+
+def flow_fields_for_event(event: str) -> tuple[str, ...] | None:
+    """Canonical persistent-field contract for a configured ManyChat flow.
+
+    Every declared field is written on every send, including an empty string.
+    That makes sequential messages safe: optional data from order A cannot leak
+    into order B through the subscriber's persistent ManyChat profile.
+    """
+
+    explicit = MARKETING_FLOW_FIELDS.get(event)
+    if explicit is not None:
+        return explicit
+    return TRANSACTIONAL_FLOW_FIELDS.get(event)
+
 #: Backends de cache que TODOS os processos (web, workers) enxergam igual. Lista de
 #: permissão, não de proibição: backend desconhecido não prova compartilhamento.
 _SHARED_CACHE_BACKENDS = frozenset({
@@ -134,6 +199,8 @@ _SHARED_CACHE_BACKENDS = frozenset({
 
 _SANDBOX_MARKER_KEY = "__shopman_marketing_sandbox_probe__"
 _SANDBOX_MARKER = object()
+_SANDBOX_DECLARED_FIELDS_KEY = "__shopman_sandbox_declared_fields__"
+_SANDBOX_FLOW_NS_KEY = "__shopman_sandbox_flow_ns__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,13 +376,45 @@ def require_safe_delivery() -> None:
         )
 
 
-def sandbox_probe_context(context: dict) -> dict:
-    """Mark one server-authorized max-1 sandbox probe; marker never leaves process."""
+def sandbox_probe_context(
+    context: dict,
+    *,
+    declared_fields: tuple[str, ...] = (),
+    flow_ns: str | None = None,
+) -> dict:
+    """Mark one server-authorized max-1 probe and seal its provider contract.
 
-    return dict(context) | {_SANDBOX_MARKER_KEY: _SANDBOX_MARKER}
+    The two metadata values are consumed inside the adapter before any payload is
+    built.  A tuple is intentional: even if a caller forgot to consume it, the
+    shareable-context filter refuses non-scalars.
+    """
+
+    return dict(context) | {
+        _SANDBOX_MARKER_KEY: _SANDBOX_MARKER,
+        _SANDBOX_DECLARED_FIELDS_KEY: tuple(declared_fields),
+        _SANDBOX_FLOW_NS_KEY: (
+            None if flow_ns is None else str(flow_ns or "").strip()
+        ),
+    }
 
 
 def consume_sandbox_probe(context: dict) -> bool:
     """Remove and recognize the non-serializable in-process sandbox sentinel."""
 
     return context.pop(_SANDBOX_MARKER_KEY, None) is _SANDBOX_MARKER
+
+
+def consume_sandbox_probe_contract(
+    context: dict,
+) -> tuple[tuple[str, ...], str, bool]:
+    """Remove and return the field/flow contract attached to an authorized probe."""
+
+    raw_fields = context.pop(_SANDBOX_DECLARED_FIELDS_KEY, ())
+    has_flow_override = _SANDBOX_FLOW_NS_KEY in context
+    raw_flow = context.pop(_SANDBOX_FLOW_NS_KEY, None)
+    fields = tuple(
+        str(name).strip()
+        for name in raw_fields
+        if str(name or "").strip()
+    ) if isinstance(raw_fields, (tuple, list)) else ()
+    return fields, str(raw_flow or "").strip(), has_flow_override and raw_flow is not None

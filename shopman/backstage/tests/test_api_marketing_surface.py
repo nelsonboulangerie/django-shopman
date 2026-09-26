@@ -2268,11 +2268,13 @@ class TestWhatsAppTestSend:
         assert body["sandbox"] is True
         assert body["max_targets"] == 1
         assert body["target_ref"] == "owner-sandbox"
+        assert body["event"] == "announcement_published"
         assert body["fields"]["customer_name"] == "Cliente teste"
         assert body["fields"]["product_name"] == "Baguete"
         assert body["fields"]["product_sku"] == "BAGUETE-TEST"
         assert len(adapter.calls) == 1
         assert adapter.calls[0]["recipient"] == recipient
+        assert adapter.calls[0]["template"] == "announcement_published"
         assert recipient not in json.dumps(body)
         receipt = MarketingTestReceipt.objects.get(ref=body["receipt_ref"])
         assert receipt.sandbox is True
@@ -2282,6 +2284,121 @@ class TestWhatsAppTestSend:
         assert "recipient" not in stored_fields
         assert "body" not in stored_fields
         assert "idempotency_key" not in stored_fields
+
+    def test_transactional_test_sends_the_selected_configured_flow_event(
+        self, client, gestor, test_lane
+    ):
+        from shopman.shop.models import NotificationTemplate
+
+        adapter, recipient = test_lane
+        NotificationTemplate.objects.update_or_create(
+            event="order_rescheduled",
+            defaults={
+                "subject": "Nova data",
+                "body": "Pedido {order_ref_short}",
+                "whatsapp_flow_ns": "content_order_rescheduled",
+                "is_active": True,
+            },
+        )
+        client.force_login(gestor)
+
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "event": "order_rescheduled",
+            },
+            key="test-send-transactional-0001",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["event"] == "order_rescheduled"
+        assert body["fields"]["order_ref_short"] == "A47"
+        assert body["fields"]["order_ref"] == "TESTE-20260926-A47"
+        assert body["fields"]["customer_name"] == "Cliente teste"
+        assert body["fields"]["status_note"]
+        assert len(adapter.calls) == 1
+        assert adapter.calls[0]["recipient"] == recipient
+        assert adapter.calls[0]["template"] == "order_rescheduled"
+
+    def test_transactional_test_never_falls_back_to_free_text(
+        self, client, gestor, test_lane
+    ):
+        from shopman.shop.models import NotificationTemplate
+
+        adapter, _recipient = test_lane
+        NotificationTemplate.objects.update_or_create(
+            event="order_rescheduled",
+            defaults={
+                "subject": "Nova data",
+                "body": "Pedido {order_ref_short}",
+                "whatsapp_flow_ns": "",
+                "is_active": True,
+            },
+        )
+        client.force_login(gestor)
+
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "event": "order_rescheduled",
+            },
+            key="test-send-transactional-0002",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_test_send"
+        assert "modelo aprovado" in response.json()["detail"]
+        assert adapter.calls == []
+
+    @pytest.mark.parametrize("event", ("announcement_published", "order_rescheduled"))
+    def test_binding_change_after_receipt_is_denied_before_provider_effect(
+        self, client, gestor, test_lane, monkeypatch, event
+    ):
+        from shopman.shop.models import MarketingTestReceipt, NotificationTemplate
+        from shopman.shop.services import campaign
+
+        adapter, _recipient = test_lane
+        template, _created = NotificationTemplate.objects.update_or_create(
+            event=event,
+            defaults={
+                "subject": "Nova data",
+                "body": "Pedido {order_ref_short}",
+                "whatsapp_flow_ns": "content_flow_a",
+                "is_active": True,
+                "version": 7,
+            },
+        )
+        reserve = campaign._reserve_test_receipt
+
+        def reserve_then_change(**kwargs):
+            result = reserve(**kwargs)
+            NotificationTemplate.objects.filter(pk=template.pk).update(
+                whatsapp_flow_ns="content_flow_b",
+                version=8,
+            )
+            return result
+
+        monkeypatch.setattr(campaign, "_reserve_test_receipt", reserve_then_change)
+        client.force_login(gestor)
+
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "event": event,
+            },
+            key=f"test-send-binding-race-{event}",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "template_binding_changed"
+        receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
+        assert receipt.state == MarketingTestReceipt.State.DENIED
+        assert receipt.failure_code == "template_binding_changed"
+        assert adapter.calls == []
 
     def test_target_options_expose_safe_refs_never_recipient(
         self, client, gestor, test_lane, monkeypatch

@@ -172,6 +172,15 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     from shopman.shop.services import manychat_marketing_safety
 
     sandbox_probe = manychat_marketing_safety.consume_sandbox_probe(ctx)
+    sandbox_declared_fields, sandbox_flow_ns, sandbox_flow_override = (
+        manychat_marketing_safety.consume_sandbox_probe_contract(ctx)
+    )
+    if not sandbox_probe:
+        # Metadata without the in-process sentinel is untrusted and has already
+        # been discarded; callers cannot choose an arbitrary provider flow.
+        sandbox_declared_fields = ()
+        sandbox_flow_ns = ""
+        sandbox_flow_override = False
     if template in manychat_marketing_safety.MARKETING_FLOW_EVENTS and not sandbox_probe:
         # Última porta antes do provedor. O modo (blocked/canary/open) decide antes
         # de resolver o assinante: recusa aqui é zero chamada e zero PII saindo.
@@ -200,7 +209,14 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     # Flow configurado no Admin (NotificationTemplate.whatsapp_flow_ns) tem precedência;
     # cai no settings flow_map como fallback de bootstrap.
-    flow_ns = _load_db_flow_ns(template) or mc_config.get("flow_map", {}).get(template)
+    flow_ns = (
+        sandbox_flow_ns
+        if sandbox_flow_override
+        else (
+            _load_db_flow_ns(template)
+            or mc_config.get("flow_map", {}).get(template)
+        )
+    )
 
     if flow_ns and _flow_lacks_name(template, ctx):
         # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
@@ -223,7 +239,22 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         # template aprovado que diga "O {{product_name}} que você pediu chegou" sai com o
         # nome do produto em branco — e é exatamente o que acontecia, em silêncio, nos
         # dois caminhos que usam flow (alerta de estoque e anúncio de campanha).
-        _push_custom_fields(subscriber_id, ctx, mc_config, template=template)
+        fields_ready = _push_custom_fields(
+            subscriber_id,
+            ctx,
+            mc_config,
+            template=template,
+            declared_fields=sandbox_declared_fields or None,
+        )
+        if not fields_ready:
+            # Flow lê estado persistente de forma assíncrona. Dispará-lo depois
+            # de uma escrita/limpeza parcial pode reutilizar dado da mensagem
+            # anterior; falhar fechado é a única saída honesta.
+            logger.warning(
+                "ManyChat flow não disparado: contrato de campos incompleto template=%s",
+                template,
+            )
+            return False
         payload = {
             "subscriber_id": subscriber_id,
             "flow_ns": flow_ns,
@@ -386,34 +417,44 @@ def _shareable_context(ctx: dict) -> dict:
 
 
 def _declared_marketing_fields(template: str, ctx: dict) -> dict[str, str] | None:
-    """O conjunto completo de um evento de Marketing, com vazio para o que faltar.
+    """O conjunto completo de um flow conhecido, com vazio para o que faltar.
 
-    ``None`` para os demais eventos (pedido etc.), que seguem gravando só o que têm. Um
-    link com token pessoal que não tem gêmeo público sai VAZIO aqui, e não omitido:
-    omitir deixaria no perfil o link da mensagem anterior.
+    ``None`` só para eventos sem contrato canônico. Um link com token pessoal que não
+    tem gêmeo público sai VAZIO aqui, e não omitido: omitir deixaria no perfil o link
+    da mensagem anterior.
     """
-    from shopman.shop.services.manychat_marketing_safety import MARKETING_FLOW_FIELDS
+    from shopman.shop.services.manychat_marketing_safety import flow_fields_for_event
 
-    declared = MARKETING_FLOW_FIELDS.get(template)
+    declared = flow_fields_for_event(template)
     if declared is None:
         return None
     shareable = _shareable_context(ctx)
     return {name: shareable.get(name, "") for name in declared}
 
 
-def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict, *, template: str = "") -> int:
+def _push_custom_fields(
+    subscriber_id: str,
+    ctx: dict,
+    config: dict,
+    *,
+    template: str = "",
+    declared_fields: tuple[str, ...] | None = None,
+) -> bool:
     """Gravar os valores do contexto como campos personalizados do assinante.
 
-    É o que faz a variável do template aprovado resolver. Falha de um campo **não**
-    interrompe o envio: um alerta de fornada é tempo-sensível, e mensagem com um pedaço
-    faltando ainda avisa o cliente — mensagem nenhuma não avisa. Mas cada falha vai para
-    o log, porque campo que não existe no ManyChat é configuração pendente, não ruído.
+    É o que faz a variável do template aprovado resolver. Falha de qualquer campo
+    interrompe o flow: o perfil é persistente e uma escrita parcial pode deixar o valor
+    da mensagem anterior. Cada falha vai para o log porque campo inexistente no ManyChat
+    é configuração pendente, não ruído.
 
     O campo tem de existir no ManyChat com o MESMO nome. Nomes em inglês, como o resto
     do vocabulário de integração.
     """
-    pushed = 0
-    declared = _declared_marketing_fields(template, ctx)
+    if declared_fields is not None:
+        shareable = _shareable_context(ctx)
+        declared = {name: shareable.get(name, "") for name in declared_fields}
+    else:
+        declared = _declared_marketing_fields(template, ctx)
     fields = declared if declared is not None else _shareable_context(ctx)
     for name, text in fields.items():
         result = _api_call(
@@ -422,14 +463,14 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict, *, template
             config,
         )
         if result.get("success"):
-            pushed += 1
-        else:
-            logger.warning(
-                "ManyChat custom field não gravado: %s. O template vai renderizar "
-                "sem ele — crie o campo com este nome no ManyChat.",
-                name,
-            )
-    return pushed
+            continue
+        logger.warning(
+            "ManyChat custom field não gravado: %s. O flow não será disparado — "
+            "crie o campo com este nome no ManyChat.",
+            name,
+        )
+        return False
+    return True
 
 
 def is_available(recipient: str | None = None, **config) -> bool:

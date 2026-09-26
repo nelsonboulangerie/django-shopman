@@ -506,13 +506,12 @@ nome**, senão a variável sai em branco e nada falha.
 
 ⚠️ **Crie todos como tipo Texto**, inclusive `total`. O adapter grava por
 `setCustomFieldByName` com o valor já formatado (`R$ 38,00`, `5 sc`) — campo criado como
-Número recusa a gravação, e a recusa só aparece no log.
+Número recusa a gravação, bloqueia o disparo do flow e aparece no log.
 
-⚠️ **Valor vazio não é gravado.** `_shareable_context` descarta chave vazia, então o campo
-guarda o que sobrou do envio ANTERIOR àquele assinante em vez de limpar. Na prática só
-morde onde o dado é opcional: `customer_name` (o checkout da loja o exige, mas pedido
-anotado no PDV e ingestão do iFood não) e `payment_deadline`. Onde o dado é obrigatório
-(`order_ref`, `order_ref_short`, `total`) não há caso.
+⚠️ **Valor vazio limpa o campo declarado.** O contrato é explícito por evento e o adapter
+grava todas as chaves daquele flow, inclusive `""`, antes de dispará-lo. Assim um dado
+opcional do envio anterior nunca reaparece. Se qualquer gravação ou limpeza falhar, o
+`sendFlow` não acontece; corrija/crie o campo no ManyChat e repita o teste controlado.
 
 ### Critério de aceite
 
