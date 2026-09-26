@@ -75,17 +75,33 @@ def _is_checkout_next(path: str) -> bool:
     return bool(re.search(r"/(?:checkout|finalizar)(?:/|$)", path))
 
 
+_DEFAULT_MESSAGE = "Olá! Quero entrar no site da {shop} (ref. {code})"
+
+
+def _shop_name() -> str:
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.objects.first()
+        return str(getattr(shop, "name", "") or "").strip() or "loja"
+    except Exception:  # silêncio-deliberado: sem nome, a frase diz "loja" e o login segue
+        logger.debug("wa_access.shop_name_degraded", exc_info=True)
+        return "loja"
+
+
 def _access_message_text(code: str) -> str:
     """Mensagem pré-preenchida do botão do site.
 
-    ``#menu`` é o gatilho público no ManyChat. O ``NB-XxXx`` é payload técnico para
-    recuperar contexto, não um segundo gatilho operacional.
+    Uma frase que a pessoa mandaria por conta própria ("Olá! Quero entrar no site da
+    …"), com o ``NB-XxXx`` no fim como referência. O ManyChat dispara o flow pela
+    palavra-chave "quero entrar no site" (``#menu`` segue valendo para quem digita).
+    O ``NB-XxXx`` é payload técnico para recuperar contexto, não gatilho.
     """
-    template = str(_config().get("access_message_template") or "#menu {code}")
+    template = str(_config().get("access_message_template") or _DEFAULT_MESSAGE)
     try:
-        return template.format(code=code)
+        return template.format(code=code, shop=_shop_name())
     except (KeyError, IndexError, ValueError):
-        return f"#menu {code}"
+        return _DEFAULT_MESSAGE.format(code=code, shop=_shop_name())
 
 
 def _access_deep_link(code: str) -> str:

@@ -68,13 +68,15 @@ def test_start_returns_code_and_deep_link(client: Client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["code"].startswith("NB-")
-    assert body["message"] == f"#menu {body['code']}"
+    # Frase humana, com a palavra-chave do flow ("quero entrar no site") e o código.
+    assert body["message"].startswith("Olá! Quero entrar no site da ")
+    assert body["message"].endswith(f"(ref. {body['code']})")
     assert body["wa_number"] == "554333231997"
     assert body["has_context"] is False
     assert body["has_cart_context"] is False
     assert "wa.me/554333231997" in body["deep_link"]
-    assert "%23menu%20" in body["deep_link"]
-    # A mensagem inteira vai pré-preenchida; #menu roteia o flow e NB carrega contexto.
+    assert "Quero%20entrar%20no%20site" in body["deep_link"]
+    # A mensagem inteira vai pré-preenchida; a frase roteia o flow e NB carrega contexto.
     assert body["code"] in body["deep_link"]
 
 
@@ -155,3 +157,15 @@ def test_full_whatsapp_handoff_preserves_cart_in_new_browser(client: Client):
     cart = in_app_browser.get("/api/v1/storefront/cart/").json()["cart"]
     assert cart["items_count"] == 1
     assert cart["items"][0]["sku"] == sku
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
+def test_a_frase_humana_ainda_carrega_o_codigo(client: Client):
+    """A frase nova não pode esconder o NB- do backend: o create o extrai do texto."""
+    from shopman.doorman.services.link_state import contains_code, extract_code
+
+    body = _post_json(client, "/api/v1/auth/whatsapp/start/", {}).json()
+    assert contains_code(body["message"])
+    assert extract_code(body["message"]) == body["code"]
+    assert "quero entrar no site" in body["message"].lower()  # a palavra-chave do flow
+

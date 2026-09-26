@@ -733,8 +733,15 @@ SHOPMAN_WHATSAPP = {
 # cai para Shop.phone. Ver docs/guides/whatsapp-access-link.md.
 SHOPMAN_WA_VERIFY = {
     "number": os.environ.get("SHOPMAN_WHATSAPP_VERIFY_NUMBER", "").strip(),
-    # Mensagem pré-preenchida do botão do site ({code} = o NB-XxXx que o ManyChat casa).
-    "access_message_template": os.environ.get("SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE", "#menu {code}"),
+    # Mensagem pré-preenchida do botão do site. {shop} = nome da loja; {code} = o NB-XxXx
+    # que carrega o contexto. Frase humana: para quem nunca falou com a loja, "#menu
+    # NB-XxXx" parecia senha. ⚠️ O ManyChat dispara o flow por PALAVRA-CHAVE: o fluxo
+    # "Fluxo Login Cardápio" aceita "#menu" OU "quero entrar no site" (26/09/2026).
+    # Mudou a frase? Mude a palavra-chave lá antes, senão ninguém entra.
+    "access_message_template": os.environ.get(
+        "SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE",
+        "Olá! Quero entrar no site da {shop} (ref. {code})",
+    ),
 }
 
 # ── iFood (Marketplace F16) ────────────────────────────────────────
