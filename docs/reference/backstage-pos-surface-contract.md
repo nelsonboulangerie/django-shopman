@@ -42,6 +42,8 @@ surface depends on it.
 | Customer lookup | GET | `/api/v1/backstage/pos/customer/lookup/?phone={phone}` | `build_pos_customer_lookup` |
 | Preorders (search · day · week) | GET | `/api/v1/backstage/pos/preorders/?date_from=&date_to=&q=` | `projections.preorders.build_preorder_list` |
 | Preorder detail | GET | `/api/v1/backstage/pos/preorders/{ref}/` | `projections.preorders.build_preorder_detail` |
+| Preorder hand-over (receive balance + deliver) | POST | `/api/v1/backstage/pos/preorders/{ref}/hand-over/` | `operator_orders.hand_over_at_counter` (settle in this station's open shift + advance to completed, one transaction; idempotent by `client_request_id`) |
+| Preorder cancel | POST | `/api/v1/backstage/orders/{ref}/cancel/` (the Gestor route) | `operator_orders.cancel_order` + `operator_cancel_policy` + manager PIN |
 | Preorders realtime (SSE) | GET | BFF `/sse/orders` → `/events/orders/` (`backstage-orders-main`) | push-only; the Encomendas screens refetch the list on each event (ADR-016) |
 | Reverse geocode | POST | `/api/v1/geocode/reverse` | storefront geocode API |
 

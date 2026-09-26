@@ -2,10 +2,15 @@
 // ENCOMENDAS · DETALHE — uma encomenda, com o que o balcão precisa para entregar:
 // quem, como recebe, quando, o que leva, quanto é e quanto falta.
 //
-// Nesta etapa (WP-E2) o detalhe só LÊ, e imprime a Via Pedido. Receber e
-// entregar, reagendar, editar e cancelar chegam nos próximos WPs
-// (ENCOMENDAS-PDV-PLAN, E3–E6) — e até lá não há botão para eles: botão que não
-// faz nada ensina o balcão a desconfiar dos que fazem.
+// Os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4): **Receber e entregar** (ou só
+// **Entregar**, quando já está paga) e **Cancelar**, cada um só quando o servidor
+// diz que pode (`hand_over`, `cancel`). Quando não pode entregar, a tela diz por
+// quê em vez de mostrar botão apagado. Reagendar e editar ainda não existem no
+// PDV — e não há botão para eles: botão que não faz nada ensina o balcão a
+// desconfiar dos que fazem.
+import type { ManagerApproval } from "~/composables/usePosCashSession";
+import type { HandOverBody } from "~/presentation/preorderActions";
+import { handOverCta } from "~/presentation/preorderActions";
 import { fulfillmentIcon } from "~/presentation/orderTickets";
 import { customerLine, moneyLine, situationTone } from "~/presentation/preorders";
 
@@ -24,6 +29,31 @@ const tickets = usePosOrderTickets(pos, { loadBatch: false });
 
 async function printTicket() {
   if (await tickets.printOne(ref_.value)) await refresh();
+}
+
+// ── Os gestos ──
+const { operator: activeOperator } = useOperatorLock("cashman.operate_pos");
+const actions = usePosPreorderActions({ detail, pos, refresh });
+const handOverOpen = ref(false);
+const cancelOpen = ref(false);
+const cancelReason = ref("");
+
+async function confirmHandOver(body: HandOverBody) {
+  if (await actions.handOver(body)) handOverOpen.value = false;
+}
+
+async function confirmCancel(reason: string, managerApproval: ManagerApproval | null = null) {
+  cancelReason.value = reason;
+  if (await actions.cancel(reason, managerApproval)) cancelOpen.value = false;
+}
+
+// O PIN do gerente sobe por cima do diálogo de cancelar; assinado, o mesmo
+// gesto é repetido com a assinatura e o motivo que já estava digitado.
+function signWithPin(username: string, pin: string) {
+  void confirmCancel(cancelReason.value, { username, pin });
+}
+function signWithBadge(badge: string) {
+  void confirmCancel(cancelReason.value, { badge });
 }
 
 const TONE_CLASS: Record<string, string> = {
@@ -88,6 +118,40 @@ function goBack() {
         <p class="text-sm text-muted-foreground">{{ detail.payment_method_label }}</p>
       </section>
 
+      <!-- OS GESTOS: entregar é o óbvio; cancelar fica ao lado, menor. -->
+      <section class="grid gap-2" data-preorder-actions>
+        <UiButton
+          v-if="detail.hand_over.allowed"
+          size="lg"
+          class="w-full"
+          :disabled="actions.busy.value"
+          data-preorder-hand-over
+          @click="handOverOpen = true"
+        >
+          <Icon :name="detail.hand_over.needs_payment ? 'lucide:hand-coins' : 'lucide:package-check'" class="size-5" />
+          {{ handOverCta(detail.hand_over) }}
+        </UiButton>
+        <p
+          v-else-if="card.situation !== 'delivered'"
+          class="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+          data-preorder-hand-over-blocked
+        >
+          <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
+          <span>{{ detail.hand_over.block_reason }}</span>
+        </p>
+        <UiButton
+          v-if="detail.cancel.allowed"
+          variant="outline"
+          class="w-full text-destructive"
+          :disabled="actions.busy.value"
+          data-preorder-cancel
+          @click="cancelOpen = true"
+        >
+          <Icon name="lucide:x" class="size-4" />
+          Cancelar encomenda
+        </UiButton>
+      </section>
+
       <!-- COMO e QUANDO recebe. -->
       <section class="grid gap-2 rounded-md border border-border bg-card p-4">
         <h2 class="flex items-center gap-2 text-sm font-semibold">
@@ -148,6 +212,32 @@ function goBack() {
           {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
         </p>
       </section>
+
+      <PosPreorderHandOverDialog
+        v-model:open="handOverOpen"
+        :hand-over="detail.hand_over"
+        :customer-name="customerLine(card)"
+        :busy="actions.busy.value"
+        @confirm="confirmHandOver"
+      />
+      <PosPreorderCancelDialog
+        v-model:open="cancelOpen"
+        :customer-name="customerLine(card)"
+        :requires-approval="detail.cancel.requires_approval"
+        :busy="actions.busy.value"
+        @confirm="(reason: string) => confirmCancel(reason)"
+      />
+      <OperatorManagerAuth
+        :open="!!actions.managerChallenge.value"
+        action="cancel_sale"
+        :operator-name="activeOperator?.name || ''"
+        :managers="detail.managers"
+        :busy="actions.busy.value"
+        :error="actions.managerChallenge.value?.code === 'manager_approval_invalid' ? actions.managerChallenge.value.message : ''"
+        @update:open="(isOpen: boolean) => { if (!isOpen) actions.dismissManagerChallenge(); }"
+        @authorize="signWithPin"
+        @authorize-badge="signWithBadge"
+      />
     </template>
   </PosPreordersShell>
 </template>

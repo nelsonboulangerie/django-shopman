@@ -981,6 +981,119 @@ def cancel_order(
         return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)
 
 
+_COUNTER_METHODS = frozenset({"cash", "credit", "debit"})
+
+
+def collects_at_handoff(order: Order) -> bool:
+    """O dinheiro deste pedido é recebido na mão, no hand-off (porta ou balcão)?
+
+    - A marca canônica ``collection == "on_delivery"`` (PDV, loja online com
+      entrega em dinheiro, iFood com entrega da loja).
+    - A RETIRADA sem marca, em dinheiro/cartão ou sem forma dita e sem intent no
+      Payman: é a encomenda da loja online "pago na retirada" (o checkout só
+      carimba ``on_delivery`` na entrega) e o pedido que nunca disse a forma. Não
+      há cobrança online viva para concorrer com o balcão.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    method = str(payment.get("method") or "").strip().lower()
+    collection = str(payment.get("collection") or "").strip().lower()
+    if collection == "on_delivery":
+        return method in {"cash", "credit", "debit", "mixed"}
+    if collection or get_fulfillment_type(order) != "pickup":
+        return False
+    return (method in _COUNTER_METHODS or not method) and not payment_service.order_intent_refs(order)
+
+
+def _counter_tender(raw) -> dict:
+    """Uma forma escolhida no balcão, validada: dinheiro, débito ou crédito."""
+    if not isinstance(raw, dict):
+        raise ValueError("Forma de pagamento inválida.")
+    method = str(raw.get("method") or "").strip().lower()
+    if method not in _COUNTER_METHODS:
+        raise ValueError("No balcão, receba em dinheiro ou no cartão (débito ou crédito).")
+    try:
+        amount = int(raw.get("amount_q") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    return {"method": method, "amount_q": amount, "collection": "on_delivery", "status": "pending"}
+
+
+def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int | None = None) -> str:
+    """Por que esta encomenda não pode ser entregue no balcão agora — ou ``""``.
+
+    A régua única de "Receber e entregar" / "Entregar" no PDV: a projeção lê esta
+    frase para decidir o botão, e :func:`hand_over_at_counter` levanta com ela.
+    ``balance_q`` evita reler o Payman quando quem chama já tem o saldo.
+    """
+    if get_fulfillment_type(order) != "pickup":
+        return "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos."
+    if order.status in {Order.Status.COMPLETED, Order.Status.DELIVERED}:
+        return "Esta encomenda já foi entregue."
+    if order.status != Order.Status.READY:
+        return (
+            f"Esta encomenda ainda não está pronta ({order.get_status_display()}). "
+            "Ela pode ser entregue aqui quando for marcada como pronta."
+        )
+    due = balance_q if balance_q is not None else payment_service.balance_due_q(order, payment_reads=payment_reads)
+    if due is None:
+        return "Não deu para ler o que já foi pago. Confira o pagamento antes de entregar."
+    if due > 0:
+        if order.channel_ref == "ifood":
+            return "Pedido do iFood com pagamento pendente: receber no balcão ainda não é possível por aqui."
+        if not collects_at_handoff(order):
+            return (
+                "Esta encomenda espera o pagamento online (Pix ou link). "
+                "Receber no balcão ainda não é possível por aqui."
+            )
+        return ""
+    bloqueio = advance_block(order, payment_reads=payment_reads)
+    if bloqueio not in {AdvanceBlock.NONE, AdvanceBlock.DEVICE_UNAVAILABLE}:
+        return advance_block_message(bloqueio)
+    return ""
+
+
+@transaction.atomic
+def hand_over_at_counter(
+    order: Order,
+    *,
+    cash_shift,
+    actor: str,
+    tenders: list[dict] | None = None,
+    cash_tendered_q: int | None = None,
+    expected_revision: str | None = None,
+) -> int:
+    """Receber o saldo (se houver) e entregar a encomenda no balcão — num gesto.
+
+    Uma transação: o recebimento pelo acerto canônico (:func:`settle_delivery_cash`,
+    no turno do terminal, livro ``cod_settled`` para o dinheiro) e a entrega pelo
+    avanço canônico (:func:`advance_order` → ``COMPLETED``), com o
+    ``payment_gate`` valendo. Se a entrega falhar, o recebimento volta junto.
+    Encomenda já paga só é entregue, e dispensa caixa aberto. Devolve o que foi
+    recebido (``0`` quando já estava pago).
+    """
+    if cash_shift is not None:
+        cash_shift = type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and operational_revision(order) != expected_revision:
+        raise OrderStateConflict("A encomenda mudou. Confira o estado atualizado antes de entregar.")
+    due = payment_service.balance_due_q(order)
+    blocked = counter_hand_over_block(order, balance_q=due)
+    if blocked:
+        raise ValueError(blocked)
+    received = 0
+    if due:
+        received = settle_delivery_cash(
+            order, cash_shift=cash_shift, actor=actor, amount_q=due,
+            tenders=tenders, cash_tendered_q=cash_tendered_q,
+        )
+    elif tenders:
+        raise ValueError("Esta encomenda já está paga: não há o que receber.")
+    advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
+    logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
+    return received
+
+
 def cash_settlement_revision(order: Order, cash_shift) -> str:
     """The observed custody and order, without unrelated notes/assignment."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
@@ -1002,8 +1115,20 @@ def settle_delivery_cash(
     change_back_q: int | None = None,
     equipment_back: bool = False,
     expected_revision: str | None = None,
+    tenders: list[dict] | None = None,
+    cash_tendered_q: int | None = None,
 ) -> int:
     """O pagamento no hand-off chega ao balcão: acerto no turno de quem RECEBEU.
+
+    O valor é o que FALTA RECEBER (:func:`payment.balance_due_q`): total efetivo
+    menos o que já entrou por qualquer forma e o que foi para a conta da casa.
+    As formas já recebidas ficam como estão; só as pendentes são liquidadas.
+
+    ``tenders`` (opcional) é a forma escolhida NO BALCÃO — o cliente combinou
+    dinheiro e paga no cartão, ou a encomenda nem dizia a forma. Substitui as
+    formas pendentes: só dinheiro, débito ou crédito, somando o que falta.
+    ``cash_tendered_q`` é a nota que veio na mão: acima da parte em dinheiro, a
+    diferença é o troco (``tendered_q``/``change_q``, como na venda do PDV).
 
     Três registros, na mesma transação, cada um na sua casa:
     - o pedido diz que foi acertado (``cod_settled_at/by``, tender recebido);
@@ -1060,7 +1185,7 @@ def settle_delivery_cash(
 
     data = dict(order.data or {})
     payment = dict(data.get("payment") or {})
-    if payment.get("collection") != "on_delivery" or payment.get("method") not in {"cash", "credit", "debit", "mixed"}:
+    if not collects_at_handoff(order):
         raise ValueError(
             "Pedido não está marcado para pagamento na retirada."
             if fulfillment_type == "pickup"
@@ -1073,11 +1198,18 @@ def settle_delivery_cash(
             else "Pagamento da entrega já foi acertado."
         )
 
-    amount = int(amount_q if amount_q is not None else order.total_q or 0)
+    due = payment_service.balance_due_q(order)
+    if due is None:
+        raise ValueError("Não deu para ler o que já foi pago. Confira o pagamento antes de registrar o recebimento.")
+    if due <= 0:
+        raise ValueError("Nada a receber: o pedido já está pago.")
+    amount = int(amount_q if amount_q is not None else due)
     if amount <= 0:
         raise ValueError("Valor de acerto inválido.")
-    if amount != int(order.total_q or 0):
-        raise ValueError("Valor de acerto deve bater com o total do pedido.")
+    if amount != due:
+        from shopman.utils.monetary import format_money
+
+        raise ValueError(f"O valor recebido deve ser o que falta receber: R$ {format_money(due)}.")
 
     change = courier_change(order)
     change_back: int | None = None
@@ -1094,17 +1226,28 @@ def settle_delivery_cash(
 
     receiver = _user_for_actor(actor) or cash_shift.opened_by
 
-    tenders = [dict(t) for t in payment.get("tenders") or []]
-    if not tenders:
-        tenders = [{"method": payment.get("method"), "amount_q": amount, "collection": "on_delivery", "status": "pending"}]
-    if any(
+    chosen_at_counter = tenders is not None
+    # O que já entrou (ou foi para a conta da casa) fica como está; só o
+    # pendente é liquidado aqui.
+    existing = [dict(t) for t in payment.get("tenders") or [] if isinstance(t, dict)]
+    kept = [t for t in existing if t.get("status") == "received" or t.get("method") == "account"]
+    if chosen_at_counter:
+        tenders = [_counter_tender(t) for t in tenders]
+    else:
+        tenders = [t for t in existing if t not in kept]
+        if not tenders:
+            tenders = [{"method": payment.get("method"), "amount_q": amount, "collection": "on_delivery", "status": "pending"}]
+    if not tenders or any(
         t.get("method") not in {"cash", "credit", "debit"}
         or t.get("collection") != "on_delivery"
         or t.get("status") == "received"
         or int(t.get("amount_q") or 0) <= 0
         for t in tenders
     ) or sum(int(t.get("amount_q") or 0) for t in tenders) != amount:
-        raise ValueError("Revise as formas pendentes: elas devem cobrir exatamente o total do pedido.")
+        raise ValueError("Revise as formas pendentes: elas devem cobrir exatamente o que falta receber.")
+    cash_part = sum(int(t["amount_q"]) for t in tenders if t["method"] == "cash")
+    if cash_tendered_q is not None and cash_part and int(cash_tendered_q) < cash_part:
+        raise ValueError("O dinheiro recebido não cobre a parte em dinheiro.")
 
     with transaction.atomic():
         settled_entry = None
@@ -1129,12 +1272,20 @@ def settle_delivery_cash(
             if method == "cash":
                 cash_amount += part
                 cash_intent_ref = intent.ref
-        payment["tenders"] = tenders
+        final_tenders = [*kept, *tenders]
+        payment["tenders"] = final_tenders
         payment["cash_received_q"] = cash_amount
-        if len(tenders) == 1:
+        if cash_tendered_q is not None and cash_amount and int(cash_tendered_q) > cash_amount:
+            payment["tendered_q"] = int(cash_tendered_q)
+            payment["change_q"] = int(cash_tendered_q) - cash_amount
+        if len(final_tenders) == 1:
             payment["intent_ref"] = intent.ref
-        else:
+        elif not kept:
             payment.pop("intent_ref", None)
+        if chosen_at_counter:
+            # A forma que valeu é a do balcão (a nota fiscal lê daqui).
+            methods = {t["method"] for t in final_tenders if int(t.get("amount_q") or 0) > 0}
+            payment["method"] = methods.pop() if len(methods) == 1 else "mixed"
         payment["cod_settled_at"] = timezone_now_iso()
         payment["cod_settled_by"] = actor
         data["payment"] = payment

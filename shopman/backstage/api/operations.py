@@ -2377,10 +2377,76 @@ class POSPreorderDetailView(APIView):
 
         from shopman.backstage.projections import preorders
 
-        projection = preorders.build_preorder_detail(ref)
+        projection = preorders.build_preorder_detail(ref, user=request.user)
         if projection is None:
             return Response({"detail": "Encomenda não encontrada."}, status=404)
         return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="POS preorder hand-over: receive the balance (if any) and deliver at the counter",
+        responses={200: OpenApiResponse(description="Delivered."), 409: OpenApiResponse(description="Changed or blocked.")},
+    ),
+)
+class POSPreorderHandOverView(APIView):
+    """Receber o saldo e entregar a encomenda no balcão — um gesto, uma transação.
+
+    ``POST {base_revision, tenders?: [{method, amount_q}], cash_tendered_q?,
+    client_request_id, terminal_ref?}``. O dinheiro entra no turno ABERTO da
+    gaveta DESTA estação (``_terminal_do_pedido``); encomenda já paga só é
+    entregue. A régua e a transação moram em
+    ``operator_orders.hand_over_at_counter`` (acerto canônico + avanço canônico,
+    ``payment_gate`` valendo). Idempotente pela tentativa (``client_request_id``),
+    como toda mutação de caixa do PDV.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.cashman.exceptions import CashError
+        from shopman.orderman.exceptions import InvalidTransition
+
+        from shopman.shop.services import operator_orders
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        base = str(request.data.get("base_revision") or "").strip()
+        if not base:
+            return Response({"detail": "Esta tela está desatualizada. Atualize a encomenda e tente de novo.",
+                "error": {"code": "base_revision_required"}}, status=400)
+        raw_tenders = request.data.get("tenders")
+        if raw_tenders is not None and not isinstance(raw_tenders, list):
+            return Response({"detail": "Forma de pagamento inválida.", "field": "tenders"}, status=400)
+        raw_tendered = request.data.get("cash_tendered_q")
+        try:
+            cash_tendered_q = int(raw_tendered) if raw_tendered not in (None, "") else None
+        except (TypeError, ValueError):
+            return Response({"detail": "Valor recebido inválido.", "field": "cash_tendered_q"}, status=400)
+
+        def executar():
+            try:
+                terminal_ref = _terminal_do_pedido(request)
+                shift = pos_service.current_shift(terminal_ref, strict=True)
+                received_q = operator_orders.hand_over_at_counter(
+                    order, cash_shift=shift, actor=_actor(request),
+                    tenders=raw_tenders, cash_tendered_q=cash_tendered_q, expected_revision=base,
+                )
+            except operator_orders.OrderStateConflict as exc:
+                return Response({"detail": str(exc), "error": {"code": "preorder_changed"}}, status=409)
+            except CashError as exc:
+                return Response({"detail": exc.message}, status=400)
+            except (ValueError, InvalidTransition) as exc:
+                return Response({"detail": str(exc)}, status=400)
+            except Exception as exc:
+                return _falha_do_caixa(exc, "Não deu para entregar a encomenda.")
+            order.refresh_from_db()
+            return Response({"ok": True, "ref": order.ref, "received_q": received_q, "status": order.status})
+
+        return _cash_idempotent(request, acao="preorder-hand-over", executar=executar)
 
 
 @extend_schema_view(

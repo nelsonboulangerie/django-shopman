@@ -159,6 +159,36 @@ class PreorderListProjection:
 
 
 @dataclass(frozen=True)
+class PreorderHandOverProjection:
+    """Entregar no balcão: "Entregar" (pago) ou "Receber e entregar" (com saldo).
+
+    A régua é do orquestrador (``operator_orders.counter_hand_over_block``); a
+    tela só lê ``allowed`` e, quando não pode, a frase de ``block_reason``.
+    """
+
+    allowed: bool
+    # Há saldo: o gesto é receber (dinheiro com troco, ou cartão na maquininha)
+    # e entregar, num toque só.
+    needs_payment: bool
+    amount_q: int
+    amount_display: str
+    # A forma que o cliente combinou, quando é de balcão ("cash"/"debit"/
+    # "credit"); vazio quando não disse ou combinou outra coisa.
+    suggested_method: str
+    block_reason: str
+
+
+@dataclass(frozen=True)
+class PreorderCancelProjection:
+    """Cancelar pelo PDV: a mesma régua, política e permissão do Gestor."""
+
+    allowed: bool
+    # Pedido pago (ou pagamento incerto) exige o PIN de um gerente.
+    requires_approval: bool
+    block_reason: str
+
+
+@dataclass(frozen=True)
 class PreorderDetailProjection:
     card: PreorderCardProjection
     items: tuple[PreorderItemProjection, ...]
@@ -173,6 +203,14 @@ class PreorderDetailProjection:
     customer_relay_phone: str
     customer_relay_code: str
     ticket_printed: bool
+    # A base das mutações (entregar, cancelar): a revisão operacional do pedido
+    # e quem está identificado. O servidor recusa se qualquer um mudou.
+    revision: str
+    actor_id: int | None
+    hand_over: PreorderHandOverProjection
+    cancel: PreorderCancelProjection
+    # Quem pode assinar o cancelamento de pedido pago (a lista do PDV).
+    managers: tuple[dict, ...]
 
 
 # ── Leitura ───────────────────────────────────────────────────────────────
@@ -248,7 +286,7 @@ def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> P
     )
 
 
-def build_preorder_detail(ref: str) -> PreorderDetailProjection | None:
+def build_preorder_detail(ref: str, *, user=None) -> PreorderDetailProjection | None:
     """Uma encomenda, com o que o balcão precisa para entregar.
 
     ``None`` quando o pedido não existe OU não está no corte (venda de Balcão,
@@ -279,6 +317,8 @@ def build_preorder_detail(ref: str) -> PreorderDetailProjection | None:
         for item in order_composition.effective_items(order)
     )
     method = str(payment_data.get("method") or "")
+    from shopman.shop.services import operator_orders
+
     return PreorderDetailProjection(
         card=card,
         items=items,
@@ -294,6 +334,45 @@ def build_preorder_detail(ref: str) -> PreorderDetailProjection | None:
         customer_relay_phone=contact.get("customer_relay_phone", ""),
         customer_relay_code=contact.get("customer_relay_code", ""),
         ticket_printed=bool(data.get("ticket_printed_at")),
+        revision=operator_orders.operational_revision(order),
+        actor_id=getattr(user, "pk", None),
+        hand_over=_hand_over(order, card, method),
+        cancel=_cancel(order, user),
+        managers=tuple(order_queue._approver_options(user)) if user is not None else (),
+    )
+
+
+def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHandOverProjection:
+    from shopman.shop.services import operator_orders
+
+    reason = operator_orders.counter_hand_over_block(order, balance_q=card.balance_q)
+    amount = int(card.balance_q or 0)
+    return PreorderHandOverProjection(
+        allowed=not reason,
+        needs_payment=amount > 0,
+        amount_q=amount,
+        amount_display=_money(amount),
+        suggested_method=method if method in {"cash", "debit", "credit"} else "",
+        block_reason=reason,
+    )
+
+
+def _cancel(order, user) -> PreorderCancelProjection:
+    """A capacidade do Gestor (régua + política + permissão), e uma porta a menos.
+
+    O iFood fica no Gestor: cancelar ali exige um motivo da lista do iFood, lido
+    na hora, e o balcão não precisa de uma segunda tela para isso.
+    """
+    if order.channel_ref == "ifood":
+        return PreorderCancelProjection(
+            allowed=False, requires_approval=False,
+            block_reason="Pedido do iFood: cancele pelo Gestor de pedidos, que consulta os motivos do iFood.",
+        )
+    capability = order_queue._cancel_capability(order, user)
+    return PreorderCancelProjection(
+        allowed=bool(capability["can_cancel"]),
+        requires_approval=bool(capability["cancel_requires_approval"]),
+        block_reason=str(capability["cancel_block_label"] or ""),
     )
 
 
@@ -326,7 +405,7 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
     )
     items = order_composition.effective_items(order)
     total_q = order_composition.effective_total_q(order)
-    balance_q = _balance_q(order, total_q, reads)
+    balance_q = _balance_q(order, reads)
     payment_state = _payment_state(order, balance_q, total_q)
     situation = _situation(order, payment_state)
     is_delivery = order_queue._is_delivery(order)
@@ -358,44 +437,17 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
     )
 
 
-def _balance_q(order, total_q: int, reads) -> int | None:
-    """O que falta receber: total efetivo menos o que entrou, nunca negativo.
+def _balance_q(order, reads) -> int | None:
+    """O que falta receber — a régua do orquestrador (:func:`payment.balance_due_q`).
 
-    - **iFood**: a prova é o payload do iFood (``payments``), não o Payman — a
-      casa não cobra o pedido do marketplace. Pré-pago é saldo zero; pendente é
-      o ``pending_q`` que ainda se cobra na porta; sem evidência, ``None``.
-    - **Demais canais**: soma de TODOS os intents do pedido (venda mista tem um
-      por método) pelo Payman. Tender "na conta da casa" já é obrigação
-      reconhecida do cliente — cobrá-lo de novo no balcão seria cobrar duas
-      vezes —, então ele abate o saldo como se tivesse entrado.
+    A mesma que o balcão usa para receber: total efetivo menos TODOS os intents do
+    pedido (venda mista tem um por método) e menos o que foi para a conta da casa
+    (já é obrigação reconhecida do cliente; cobrá-la no balcão seria cobrar duas
+    vezes). No iFood, a prova é o payload do iFood, não o Payman.
     """
     from shopman.shop.services import payment as payment_svc
 
-    data = order.data or {}
-    if order.channel_ref == "ifood":
-        from shopman.shop.services.ifood_ingest import payment_status_from_payload
-
-        payments = (data.get("ifood") or {}).get("payments") or {}
-        status = payment_status_from_payload(payments, int(order.total_q or 0))
-        if status == "paid":
-            return 0
-        if status == "pending":
-            pending_q = int(payments.get("pending_q") or 0)
-            return max(0, min(total_q, pending_q) if pending_q > 0 else total_q)
-        return None
-
-    captured = payment_svc.captured_balance_from_reads(order, reads)
-    if captured is None:
-        return None
-    return max(0, total_q - captured - _on_account_q(order, total_q))
-
-
-def _on_account_q(order, total_q: int) -> int:
-    payment_data = (order.data or {}).get("payment") or {}
-    tenders = [t for t in payment_data.get("tenders") or [] if isinstance(t, dict)]
-    if tenders:
-        return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") == "account")
-    return total_q if payment_data.get("method") == "account" else 0
+    return payment_svc.balance_due_q(order, payment_reads=reads)
 
 
 def _payment_state(order, balance_q: int | None, total_q: int) -> str:
@@ -404,7 +456,9 @@ def _payment_state(order, balance_q: int | None, total_q: int) -> str:
         return "check"
     if balance_q > 0:
         return "to_receive"
-    if total_q > 0 and _on_account_q(order, total_q) > 0:
+    from shopman.shop.services import payment as payment_svc
+
+    if total_q > 0 and payment_svc.on_account_q(order) > 0:
         return "on_account"
     return "paid"
 
