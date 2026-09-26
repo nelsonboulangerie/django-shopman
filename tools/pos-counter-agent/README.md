@@ -191,7 +191,8 @@ Cada impressora extra tem:
   continua imprimindo;
 - **journal próprio**, ao lado do principal:
   `print-relay-<ref>.sqlite3` (a mesma garantia de nunca imprimir duas vezes);
-- **linha própria no `/health`**, em `extra_printers`.
+- **linha própria no `/health`**, em `extra_printers`;
+- **validação própria**: item errado é ignorado e relatado, nunca derruba o balcão.
 
 ### 1. Adicionar a impressora de rede no sistema
 
@@ -273,8 +274,16 @@ Os campos são os mesmos do relay da config principal, dentro de cada item:
 | `agent_id` | não | só diagnóstico; se faltar, vira `<agent_id do balcão>-<ref>`. |
 | `relay_poll_seconds` | não | se faltar, herda o do balcão (0,25 a 60). |
 
-Config inválida faz o agente recusar subir com a mensagem do problema — rode
-`--doctor` depois de editar para conferir antes de reiniciar.
+**Um erro num item de `extra_printers` não derruba o balcão.** Cada item é
+conferido sozinho: o que estiver errado (campo faltando, credencial curta, `ref`
+ou estação repetidos — ou `extra_printers` que nem é lista) é **ignorado**, com
+uma linha de erro no log dizendo qual `ref`/índice e por quê; os itens certos
+sobem normalmente, e a impressora do balcão segue como sempre. Já um erro na
+config **principal** continua impedindo o agente de subir, como hoje — e um erro
+de **sintaxe** no JSON (vírgula ou aspas faltando) é do arquivo inteiro, então
+também impede. Mesmo
+assim, rode `--doctor` depois de editar e antes de reiniciar: ele aponta o item
+ignorado como erro, para a cozinha não ficar muda sem ninguém saber.
 
 Reinstalar o agente depois (`--install`) **preserva** `extra_printers`.
 
@@ -308,6 +317,10 @@ Os campos de sempre continuam falando da impressora do balcão. A lista nova:
   }
 ]
 ```
+
+Um item recusado na leitura aparece na mesma lista como
+`{"index": 0, "ref": "cozinha-lanches", "state": "invalid_config", "detail": "…", "ok": false}`
+(`ref` só quando o item tinha um; `index` nulo quando `extra_printers` nem é lista).
 
 `state` é `starting` logo após subir, `ok` quando o último ciclo com o servidor
 deu certo e `error` com o motivo em `detail` (ex. `servidor respondeu HTTP 401`

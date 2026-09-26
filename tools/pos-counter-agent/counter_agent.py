@@ -428,33 +428,64 @@ class ExtraPrinter:
         )
 
 
-def _parse_extra_printers(raw_list, *, main: dict) -> tuple[ExtraPrinter, ...]:
+def _invalid_extra(detail: str, *, index: int | None, item=None) -> dict:
+    """Registro de uma impressora extra recusada (vai para o log, o /health e o --doctor)."""
+    entry: dict = {"index": index, "state": "invalid_config", "detail": " ".join(str(detail).split())[:240]}
+    ref = item.get("ref") if isinstance(item, dict) else None
+    if isinstance(ref, str) and ref.strip():
+        entry["ref"] = ref.strip()[:60]
+    return entry
+
+
+def _parse_extra_printers(raw_list, *, main: dict) -> tuple[tuple[ExtraPrinter, ...], tuple[dict, ...]]:
+    """Separa as impressoras extras válidas das recusadas — sem nunca derrubar o agente.
+
+    A config principal é validada com a rigidez de sempre e, se estiver errada,
+    o agente não sobe (como hoje). Já um item de ``extra_printers`` errado é
+    só ignorado: parear a impressora da cozinha não pode calar a do balcão.
+    Cada item é julgado sozinho; o inválido sai daqui com o motivo.
+    """
     if raw_list is None or raw_list == []:
-        return ()
+        return (), ()
     if not isinstance(raw_list, list):
-        raise SystemExit("'extra_printers' deve ser uma lista de impressoras.")
+        return (), (_invalid_extra("'extra_printers' deve ser uma lista de impressoras.", index=None),)
     printers: list[ExtraPrinter] = []
+    invalid: list[dict] = []
     refs: set[str] = set()
     stations = {main["station_ref"]} if main.get("station_ref") else set()
     for index, item in enumerate(raw_list):
-        printer = ExtraPrinter.from_dict(item, index=index, defaults=main)
+        try:
+            printer = ExtraPrinter.from_dict(item, index=index, defaults=main)
+        except SystemExit as exc:
+            invalid.append(_invalid_extra(str(exc), index=index, item=item))
+            continue
         # Comparado sem caixa: o ``ref`` vira nome de arquivo, e o Windows e o
-        # macOS não distinguem ``Cozinha`` de ``cozinha``.
+        # macOS não distinguem ``Cozinha`` de ``cozinha``. A primeira fica.
         if printer.ref.lower() in refs:
-            raise SystemExit(
-                f"extra_printers: 'ref' {printer.ref!r} repetido; cada impressora precisa de um nome só dela."
+            invalid.append(
+                _invalid_extra(
+                    f"extra_printers: 'ref' {printer.ref!r} repetido; cada impressora precisa de um nome só dela.",
+                    index=index,
+                    item=item,
+                )
             )
+            continue
         # Duas threads pedindo trabalho pelo MESMO terminal disputariam a fila
         # dele, e nenhuma das duas saberia que a outra existe.
         if printer.station_ref in stations:
-            raise SystemExit(
-                f"extra_printers[{printer.ref!r}]: a estação {printer.station_ref!r} já é atendida por "
-                "outra impressora desta config."
+            invalid.append(
+                _invalid_extra(
+                    f"extra_printers[{printer.ref!r}]: a estação {printer.station_ref!r} já é atendida por "
+                    "outra impressora desta config.",
+                    index=index,
+                    item=item,
+                )
             )
+            continue
         refs.add(printer.ref.lower())
         stations.add(printer.station_ref)
         printers.append(printer)
-    return tuple(printers)
+    return tuple(printers), tuple(invalid)
 
 
 def journal_path_for(printer_ref: str) -> Path:
@@ -498,6 +529,9 @@ class AgentConfig:
     #: Impressoras a mais, atendidas só pelo relay (ver ``ExtraPrinter``).
     #: Vazio em toda config anterior a elas: nada muda para quem não as usa.
     extra_printers: tuple[ExtraPrinter, ...] = ()
+    #: Itens de ``extra_printers`` recusados na leitura, com o motivo. Não
+    #: impedem o agente de subir: aparecem no log, no /health e no --doctor.
+    invalid_extra_printers: tuple[dict, ...] = ()
 
     @classmethod
     def load(cls, path: Path) -> AgentConfig:
@@ -551,7 +585,7 @@ class AgentConfig:
         relay_token = str(raw.get("relay_token") or "").strip()
         _check_relay_fields(server_url, station_ref, agent_id, relay_token)
         relay_poll_seconds = _poll_seconds(raw.get("relay_poll_seconds"))
-        extra_printers = _parse_extra_printers(
+        extra_printers, invalid_extra_printers = _parse_extra_printers(
             raw.get("extra_printers"),
             main={
                 "server_url": server_url,
@@ -573,6 +607,7 @@ class AgentConfig:
             relay_poll_seconds=relay_poll_seconds,
             drawer_status=raw.get("drawer_status") or None,
             extra_printers=extra_printers,
+            invalid_extra_printers=invalid_extra_printers,
         )
 
     @property
@@ -1746,6 +1781,10 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
                     "relay": relay,
                 }
             )
+        # As recusadas na leitura também aparecem: sem esta linha, uma cozinha
+        # que nunca imprime pareceria só "sem trabalho".
+        for invalida in self.config.invalid_extra_printers:
+            linhas.append({**invalida, "ok": False})
         return linhas
 
     def _estado_da_gaveta(self) -> dict:
@@ -1892,6 +1931,12 @@ def serve(config: AgentConfig) -> None:
             config.server_url,
             config.station_ref,
             config.agent_id,
+        )
+    for invalida in config.invalid_extra_printers:
+        logger.error(
+            "impressora extra IGNORADA (%s): %s — a do balcão segue normal",
+            f"ref={invalida['ref']}" if invalida.get("ref") else f"índice={invalida.get('index')}",
+            invalida["detail"],
         )
     # Cada impressora extra ganha a sua thread, o seu diário e o seu backoff.
     # Elas sobem DEPOIS da do balcão e não participam de nada dela.
@@ -2454,6 +2499,12 @@ def doctor() -> int:
         else:
             print("     journal ............... ainda sem trabalhos")
         tudo_certo = tudo_certo and ok_extra
+    for invalida in config.invalid_extra_printers:
+        nome = invalida.get("ref") or f"item {invalida.get('index')}"
+        print(f"  impressora extra ......... {nome}: IGNORADA ✗")
+        print(f"     ✗ {invalida['detail']}")
+        print("       a impressora do balcão não é afetada; corrija o item e reinicie.")
+        tudo_certo = False
 
     saude = _wait_until_listening({"port": config.port}, seconds=3)
     if saude is None:

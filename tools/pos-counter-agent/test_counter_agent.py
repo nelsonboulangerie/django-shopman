@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import sys
 import threading
 import urllib.error
@@ -2212,45 +2213,156 @@ def test_extra_funciona_mesmo_com_o_balcao_em_modo_local():
         ),
     ],
 )
-def test_extra_e_validada_com_a_mesma_rigidez(extra, match):
-    with pytest.raises(SystemExit, match=match):
-        _config_com_extra(extra)
+def test_extra_e_validada_com_a_mesma_rigidez_mas_so_ela_cai(extra, match):
+    """Item errado é recusado com o motivo — e o balcão sobe do mesmo jeito."""
+    config = _config_com_extra(extra)
+
+    assert config.extra_printers == ()
+    (invalida,) = config.invalid_extra_printers
+    assert invalida["state"] == "invalid_config" and invalida["index"] == 0
+    assert re.search(match, invalida["detail"])
+    assert KITCHEN_TOKEN not in invalida["detail"]
+    # A principal segue inteira.
+    assert config.queue == "TM-T20" and config.relay_token == RELAY_TOKEN and config.relay_enabled
 
 
-def test_extra_sem_servidor_em_lugar_nenhum_e_recusada():
-    with pytest.raises(SystemExit, match="sem 'server_url'"):
-        AgentConfig.from_dict(
-            {
-                "queue": "q",
-                "token": TOKEN,
-                "extra_printers": [{"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN}],
-            }
-        )
+def test_extra_invalida_e_identificada_pelo_ref_quando_tem_um():
+    config = _config_com_extra({"ref": "cozinha-lanches", "queue": "C"})
+    (invalida,) = config.invalid_extra_printers
+    assert invalida["ref"] == "cozinha-lanches" and invalida["index"] == 0
 
 
-def test_extra_printers_precisa_ser_lista():
-    with pytest.raises(SystemExit, match="deve ser uma lista"):
-        AgentConfig.from_dict({"queue": "q", "token": TOKEN, "extra_printers": {"ref": "cozinha"}})
+def test_config_PRINCIPAL_invalida_continua_derrubando_como_sempre():
+    with pytest.raises(SystemExit, match="HTTPS"):
+        _config_com_extra(server_url="http://gestor.example")
 
 
-def test_ref_repetido_e_recusado_sem_distinguir_caixa():
-    with pytest.raises(SystemExit, match="repetido"):
-        _config_com_extra(
-            extra_printers=[
-                {"ref": "cozinha", "queue": "A", "station_ref": "t-1", "relay_token": KITCHEN_TOKEN},
-                {"ref": "Cozinha", "queue": "B", "station_ref": "t-2", "relay_token": KITCHEN_TOKEN},
-            ]
-        )
+def test_extra_sem_servidor_em_lugar_nenhum_e_ignorada():
+    config = AgentConfig.from_dict(
+        {
+            "queue": "q",
+            "token": TOKEN,
+            "extra_printers": [{"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN}],
+        }
+    )
+    assert config.extra_printers == ()
+    assert "sem 'server_url'" in config.invalid_extra_printers[0]["detail"]
 
 
-def test_duas_extras_na_mesma_estacao_sao_recusadas():
-    with pytest.raises(SystemExit, match="já é atendida"):
-        _config_com_extra(
-            extra_printers=[
-                {"ref": "a", "queue": "A", "station_ref": "cozinha-lanches", "relay_token": KITCHEN_TOKEN},
-                {"ref": "b", "queue": "B", "station_ref": "cozinha-lanches", "relay_token": KITCHEN_TOKEN},
-            ]
-        )
+def test_extra_printers_que_nao_e_lista_e_ignorada_inteira():
+    config = AgentConfig.from_dict({"queue": "q", "token": TOKEN, "extra_printers": {"ref": "cozinha"}})
+    assert config.extra_printers == ()
+    (invalida,) = config.invalid_extra_printers
+    assert invalida["index"] is None and "deve ser uma lista" in invalida["detail"]
+
+
+def test_ref_repetido_ignora_a_segunda_sem_distinguir_caixa():
+    config = _config_com_extra(
+        extra_printers=[
+            {"ref": "cozinha", "queue": "A", "station_ref": "t-1", "relay_token": KITCHEN_TOKEN},
+            {"ref": "Cozinha", "queue": "B", "station_ref": "t-2", "relay_token": KITCHEN_TOKEN},
+        ]
+    )
+    assert [p.queue for p in config.extra_printers] == ["A"]
+    (invalida,) = config.invalid_extra_printers
+    assert invalida["index"] == 1 and "repetido" in invalida["detail"]
+
+
+def test_duas_extras_na_mesma_estacao_so_a_primeira_sobe():
+    config = _config_com_extra(
+        extra_printers=[
+            {"ref": "a", "queue": "A", "station_ref": "cozinha-lanches", "relay_token": KITCHEN_TOKEN},
+            {"ref": "b", "queue": "B", "station_ref": "cozinha-lanches", "relay_token": KITCHEN_TOKEN},
+        ]
+    )
+    assert [p.ref for p in config.extra_printers] == ["a"]
+    assert config.invalid_extra_printers[0]["ref"] == "b"
+    assert "já é atendida" in config.invalid_extra_printers[0]["detail"]
+
+
+def test_duas_extras_uma_invalida_a_valida_sobe_no_serve(monkeypatch, caplog):
+    config = _config_com_extra(
+        port=0,
+        extra_printers=[
+            {"ref": "cozinha-quente", "queue": "Quente", "relay_token": "curto"},
+            {"ref": "cozinha-lanches", "queue": "Lanches", "relay_token": KITCHEN_TOKEN},
+        ],
+    )
+    started = []
+    monkeypatch.setattr(counter_agent, "_relay_thread_main", lambda cfg, stop: started.append("balcao"))
+    monkeypatch.setattr(
+        counter_agent,
+        "_extra_relay_thread_main",
+        lambda printer, stop, status: started.append(printer.ref),
+    )
+
+    class FakeServer:
+        def __init__(self, address, handler):
+            pass
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(counter_agent, "ThreadingHTTPServer", FakeServer)
+    with caplog.at_level("ERROR", logger="counter-agent"):
+        counter_agent.serve(config)
+
+    assert sorted(started) == ["balcao", "cozinha-lanches"]
+    erro = " ".join(r.getMessage() for r in caplog.records if r.levelname == "ERROR")
+    assert "IGNORADA" in erro and "ref=cozinha-quente" in erro and "mínimo 16" in erro
+
+
+def test_extra_invalida_nao_impede_o_balcao_e_aparece_no_health(monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        counter_agent,
+        "send_raw",
+        lambda payload, *, queue, title="cash-drawer": sent.append(queue) or "TM-T20-1",
+    )
+    config = AgentConfig.from_dict(
+        {
+            "queue": "TM-T20",
+            "token": TOKEN,
+            "port": 0,
+            "allowed_origins": [ORIGIN],
+            "extra_printers": [{"ref": "cozinha-lanches", "queue": "Cozinha"}],
+        }
+    )
+    httpd, base = _agente_com_config(monkeypatch, config)
+    try:
+        status, body, _ = _post(base, "/kick", {"token": TOKEN, "reason": "venda"})
+        health = _get(base, "/health")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    assert status == 200 and body["ok"] is True and sent == ["TM-T20"]
+    assert health["ok"] is True and health["queue"] == "TM-T20"
+    (invalida,) = health["extra_printers"]
+    assert invalida["ref"] == "cozinha-lanches" and invalida["state"] == "invalid_config"
+    assert invalida["ok"] is False and "relay_token" in invalida["detail"]
+
+
+def test_doctor_acusa_a_extra_invalida_como_erro(monkeypatch, capsys, tmp_path):
+    config_path = tmp_path / "agent.json"
+    counter_agent.write_config(config_path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
+    raw = json.loads(config_path.read_text())
+    raw["extra_printers"] = [{"ref": "cozinha-lanches", "queue": "Cozinha"}]
+    config_path.write_text(json.dumps(raw))
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", config_path)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    monkeypatch.setattr(counter_agent, "_servico_ativo", lambda name: False)
+
+    assert counter_agent.doctor() == 1
+
+    output = capsys.readouterr().out
+    assert "cozinha-lanches: IGNORADA ✗" in output
+    assert "sem 'relay_token'" in output
+    assert "balcão não é afetada" in output
 
 
 def test_cada_extra_tem_diario_proprio_ao_lado_do_da_principal():
