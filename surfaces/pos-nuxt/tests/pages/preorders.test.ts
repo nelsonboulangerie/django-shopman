@@ -94,7 +94,7 @@ beforeEach(() => {
     revision: "rev-1", actor_id: 7,
     hand_over: {
       allowed: true, needs_payment: true, amount_q: 3600, amount_display: "R$ 36,00",
-      suggested_method: "cash", block_reason: "",
+      suggested_method: "cash", block_reason: "", digital_charge_notice: "",
     },
     cancel: { allowed: true, requires_approval: false, block_reason: "" },
     reschedule: { allowed: true, block_reason: "", date: "2026-09-26", slot: "slot-09", skus: ["PAO"] },
@@ -224,6 +224,43 @@ describe("Detalhe — receber e entregar", () => {
     body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
     await settle();
     expect(call.mock.calls[0]![1].body.tenders).toBeUndefined();
+    expect(kick).not.toHaveBeenCalled();
+  });
+
+  it("Pix pendente: o diálogo diz que a cobrança do cliente será cancelada antes de receber", async () => {
+    detail.hand_over = { ...detail.hand_over, suggested_method: "", digital_charge_notice: "O Pix enviado ao cliente será cancelado." };
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Receber R$ 36,00 e entregar");
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+    expect(body().querySelector("[data-preorder-digital-charge-notice]")!.textContent).toContain(
+      "O Pix enviado ao cliente será cancelado.",
+    );
+    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await settle();
+    expect(call.mock.calls[0]![1].body.tenders).toEqual([{ method: "cash", amount_q: 3600 }]);
+  });
+
+  it("o cliente acabou de pagar online: aviso na página e só Entregar", async () => {
+    detail.hand_over = { ...detail.hand_over, digital_charge_notice: "O link de pagamento enviado ao cliente será cancelado." };
+    call.mockRejectedValueOnce({
+      status: 409,
+      data: {
+        detail: "O cliente acabou de pagar online. Não receba no balcão: só entregue a encomenda.",
+        error: { code: "preorder_paid_online" },
+      },
+    });
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+    // O servidor registrou o pagamento: a leitura seguinte diz que não há saldo.
+    detail.hand_over = { ...detail.hand_over, needs_payment: false, amount_q: 0, amount_display: "R$ 0,00", digital_charge_notice: "" };
+    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await settle();
+
+    expect(body().querySelector("[data-preorder-hand-over-dialog]")).toBeNull();
+    expect(wrapper.find("[data-preorder-paid-online]").text()).toContain("acabou de pagar online");
+    expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Entregar");
     expect(kick).not.toHaveBeenCalled();
   });
 

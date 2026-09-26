@@ -383,6 +383,22 @@ def _confirm_pix_on_dead_charge(
         dispatch(order, "on_paid")
         return
 
+    from shopman.shop.services import counter_takeover
+
+    if counter_takeover.cancelled_by_takeover(order, db_intent.ref):
+        # O balcão recebeu e cancelou esta cobrança; o Pix chegou depois (pago no
+        # último segundo, ou webhook atrasado). Não é caso para gente decidir: o
+        # cliente pagou duas vezes, e o Pix volta para o Pix dele.
+        from shopman.shop.services import payment as payment_service
+
+        counter_takeover.refund_late_payment(
+            order,
+            booked_ref=booked_ref,
+            adapter=payment_service._adapter_for_persisted_intent(booked_ref, method="pix"),
+            method="pix",
+        )
+        return
+
     if already_booked:
         logger.info(
             "pix_confirmation: Pix em cobrança encerrada já registrado order=%s intent=%s",
