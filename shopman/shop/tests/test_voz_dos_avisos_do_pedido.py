@@ -78,7 +78,7 @@ def test_status_note_do_cancelamento_diz_o_motivo_ou_aponta_o_pedido():
 
 def test_status_note_so_existe_onde_o_texto_a_usa():
     users = {e for e, c in notification_copy.CUSTOMER_COPY.items() if "{status_note}" in c["body"]}
-    assert users == {"order_preparing", "order_cancelled", "order_rejected"}
+    assert users == {"order_preparing", "order_cancelled", "order_rejected", "order_rescheduled"}
 
 
 # ── 2. Fonte única ────────────────────────────────────────────────────────────

@@ -77,4 +77,12 @@ def date_refusal(day: date, *, today: date | None = None) -> str | None:
     if is_closed:
         suffix = f": {label}" if label else ""
         return f"Fechado{suffix} — escolha outra data."
+    # O dia da semana sem expediente também é dia fechado. Os seletores já
+    # escondiam (``business_calendar.available_dates``), mas quem chega aqui é o
+    # payload — "Outra data", fila offline, relógio de tablet — e ele não passa
+    # por seletor. Uma regra, as três portas (loja, PDV, reagendar).
+    from shopman.shop.services import business_calendar
+
+    if not business_calendar.is_open_on(day):
+        return f"A casa não abre em {day.strftime('%d/%m/%Y')} — escolha outra data."
     return None

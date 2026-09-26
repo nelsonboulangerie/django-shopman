@@ -1019,7 +1019,42 @@ def _status_note(order, template: str, reason) -> str:
         return "Avisamos assim que estiver pronto"
     if template in {"order_cancelled", "order_rejected"}:
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
+    if template == "order_rescheduled":
+        return _commitment_phrase(order) or "a nova data que está no pedido"
     return ""
+
+
+def _commitment_phrase(order) -> str:
+    """A data combinada por extenso, SEM ponto final: "sábado, 04/10, a partir das 9h".
+
+    "hoje"/"amanhã" quando cabe — é como se fala. A janela sai do mesmo
+    ``fulfillment_window.window_label`` que a tela e o papel usam, com a primeira
+    letra minúscula porque entra no meio da frase.
+    """
+    from datetime import date as _date
+    from datetime import timedelta as _timedelta
+
+    from django.utils import formats
+
+    from shopman.shop.services import fulfillment_window
+
+    data = order.data or {}
+    raw = str(data.get("delivery_date") or "").strip()
+    try:
+        day = _date.fromisoformat(raw)
+    except ValueError:
+        return ""
+    today = timezone.localdate()
+    if day == today:
+        phrase = "hoje"
+    elif day == today + _timedelta(days=1):
+        phrase = "amanhã"
+    else:
+        phrase = f"{formats.date_format(day, 'l')}, {formats.date_format(day, 'd/m')}"
+    window = fulfillment_window.window_label(data.get("delivery_time_slot"))
+    if window:
+        phrase = f"{phrase}, {window[:1].lower()}{window[1:]}"
+    return phrase
 
 
 def _eta_clock(order) -> str:

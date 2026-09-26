@@ -291,6 +291,12 @@ com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_fl
 - Corpo: `Olá, {{1}}! Lembrando que o seu pedido {{2}} está agendado para amanhã. Já estamos preparando tudo.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
+### `pedido_nova_data` — evento `order_rescheduled`
+A data combinada mudou (`services/reschedule`); quase sempre a pedido do cliente, por isso o tom de confirmação.
+- Corpo: `Olá, {{1}}! Tudo certo: o seu pedido {{2}} agora está marcado para {{3}}. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`sábado, 04/10, a partir das 9h` (campo `status_note`, nunca vazio)
+- Botão URL: `Acompanhar pedido`
+
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
@@ -438,6 +444,7 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 | `order_cancelled` | `pedido_cancelado` | Utility |
 | `fiscal_note_ready` | `nota_fiscal_disponivel` | Utility |
 | `preorder_reminder` | `pedido_agendado_lembrete` | Utility |
+| `order_rescheduled` | `pedido_nova_data` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |

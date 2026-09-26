@@ -367,6 +367,40 @@ def test_data_no_PASSADO_e_recusada(balcao):
     assert Order.objects.count() == 0
 
 
+def test_dia_de_FERIADO_e_recusado_no_balcao(balcao):
+    """A loja online sempre recusou encomenda para dia fechado; o balcão aceitava.
+
+    O seletor do PDV já só oferece os dias em que a casa abre, mas o payload não
+    passa por seletor — "Outra data", fila offline, relógio de tablet.
+    """
+    operator, shift = balcao
+    shop = Shop.objects.get()
+    dia = (timezone.localdate() + timezone.timedelta(days=3)).isoformat()
+    shop.defaults = {**(shop.defaults or {}), "closed_dates": [{"date": dia, "label": "Feriado"}]}
+    shop.save(update_fields=["defaults"])
+
+    with pytest.raises(ValueError) as erro:
+        _close(operator, _payload(shift, client_request_id="fechado-1", delivery_date=dia))
+
+    assert str(erro.value) == "Fechado: Feriado — escolha outra data."
+    assert Order.objects.count() == 0
+
+
+def test_dia_da_semana_SEM_EXPEDIENTE_e_recusado_no_balcao(balcao):
+    operator, shift = balcao
+    dia = timezone.localdate() + timezone.timedelta(days=3)
+    nome = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")[dia.weekday()]
+    shop = Shop.objects.get()
+    shop.opening_hours = {k: v for k, v in ABERTO_TODO_DIA.items() if k != nome}
+    shop.save(update_fields=["opening_hours"])
+
+    with pytest.raises(ValueError) as erro:
+        _close(operator, _payload(shift, client_request_id="fechado-2", delivery_date=dia.isoformat()))
+
+    assert str(erro.value) == f"A casa não abre em {dia.strftime('%d/%m/%Y')} — escolha outra data."
+    assert Order.objects.count() == 0
+
+
 def test_data_ilegivel_e_recusada_MESMO_SEM_horario(balcao):
     """Antes, data podre sem horário passava e era gravada crua no pedido.
 

@@ -186,6 +186,12 @@ def test_futura_para_futura_move_despertador_lembrete_estoque_e_historico(vitrin
     event = order.events.get(type="order_rescheduled")
     assert event.payload["to_date"] == _day(6).isoformat()
 
+    # O cliente é avisado da data nova (uma vez só, no canal de avisos).
+    aviso = Directive.objects.get(
+        topic="notification.send", payload__order_ref=order.ref, payload__template="order_rescheduled",
+    )
+    assert aviso.status == "queued"
+
 
 def test_reagendar_troca_o_vinculo_de_producao(vitrine, django_capture_on_commit_callbacks):
     from shopman.craftsman import craft
