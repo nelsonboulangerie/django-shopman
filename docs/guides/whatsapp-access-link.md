@@ -50,8 +50,9 @@ O `create` autentica com a `DOORMAN_ACCESS_LINK_API_KEY` (header `Authorization:
 ```env
 # WhatsApp da loja (E.164 só dígitos). Vazio = usa Shop.phone
 SHOPMAN_WHATSAPP_VERIFY_NUMBER=554333231997
-# Mensagem pré-preenchida do botão (opcional; {code} é o NB-XxXx). Default abaixo.
-SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE=#menu {code}
+# Mensagem pré-preenchida do botão (opcional; {shop} = nome da loja, {code} = NB-XxXx).
+# ⚠️ Tem de conter uma palavra-chave do flow no ManyChat. Default abaixo.
+SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE=Olá! Quero entrar no site da {shop} (ref. {code})
 
 # Chave server-to-server do create. OBRIGATÓRIA fora de DEBUG.
 DOORMAN_ACCESS_LINK_API_KEY=<segredo forte>
@@ -72,18 +73,19 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
 
 ## Configuração do Flow no ManyChat (a parte "F3")
 
-1. **Trigger** — um *Keyword* de WhatsApp apontando para a automação
-   `Shopman - Gerar link de acesso`:
-   - `#menu` — use "contains" (ou "starts with", se disponível) para cobrir a
-     entrada orgânica (`#menu`) e o deep link/fallback manual do site (`#menu NB-XxXx`).
+1. **Trigger** — um *Keyword* de WhatsApp, "A mensagem contém", apontando para a
+   automação (no alpha: `Fluxo Login Cardápio`), com DUAS palavras:
+   - `#menu` — a entrada orgânica de quem digita no WhatsApp;
+   - `quero entrar no site` — a mensagem pronta do botão do site ("Olá! Quero entrar
+     no site da Nelson Boulangerie (ref. NB-XxXx)"). Configurada em 26/09/2026.
 
    O trigger **não é a fronteira de segurança** — o Django é o portão (código no
    cache, single-use, TTL, rate-limit; a identidade é o número da Meta). Não crie um
    trigger "com sacola" e outro "sem sacola": o ManyChat não decide isso. Ele só manda
    a mensagem recebida; o backend responde `has_context`, e a automação condiciona a
    copy depois. Também não use `NB-` como gatilho: `NB-*` é payload técnico de contexto,
-   não intenção do cliente. O fallback manual da loja deve copiar a mensagem completa
-   `#menu NB-XxXx`, nunca só o código.
+   não intenção do cliente. O fallback manual da loja copia a mensagem completa, nunca
+   só o código.
 2. **External Request** (Dev Tools, plano Pro):
    - Method: `POST`
    - URL: `https://api.<seu-domínio>/api/auth/access/create/`
