@@ -104,6 +104,7 @@ confirmação, nunca automático.
 - `/history`
 - `/platforms`
 - `/templates`
+- `/v2`
 <!-- marketing-ui-routes:end -->
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`
