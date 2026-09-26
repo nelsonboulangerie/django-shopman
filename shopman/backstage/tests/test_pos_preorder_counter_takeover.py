@@ -258,6 +258,26 @@ def test_falha_ao_cancelar_no_provedor_nao_muda_nada(balcao):
     assert "notification_delivery" not in notice.payload
 
 
+def test_provedor_sem_cancelamento_nem_vencimento_nao_deixa_intencao_orfa(balcao):
+    order, intent = _pix_order("PIX-SEM-CANCELAMENTO")
+    payment = dict(order.data["payment"])
+    payment.pop("expires_at")
+    order.data["payment"] = payment
+    order.save(update_fields=["data"])
+
+    with patch.object(payment_svc, "_adapter_for_persisted_intent", return_value=SimpleNamespace()):
+        response = _hand_over(
+            balcao, order, tenders=[{"method": "cash", "amount_q": 3600}],
+            request_id="takeover-no-cancel",
+        )
+
+    assert response.status_code == 409
+    order.refresh_from_db()
+    intent.refresh_from_db()
+    assert intent.status == "pending"
+    assert "counter_takeover_intent" not in order.data["payment"]
+
+
 @pytest.mark.parametrize("request_id", ["", "x" * 129])
 def test_tentativa_ausente_ou_longa_nao_consulta_nem_cancela_provedor(balcao, request_id):
     order, intent = _pix_order(f"PIX-CHAVE-{len(request_id)}")

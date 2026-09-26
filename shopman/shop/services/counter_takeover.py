@@ -179,6 +179,7 @@ def take_over_pending_digital_charge(order, *, actor: str, attempt_id: str = "")
             # porta da cobrança dupla.
             remote_expires_at = str(_payment(order).get("expires_at") or "")
             if not remote_expires_at:
+                _abandon_takeover(order, intent_ref=intent_ref, attempt_id=attempt_id)
                 raise TakeoverFailed(CANCEL_FAILED_MESSAGE)
         else:
             try:

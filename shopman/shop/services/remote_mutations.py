@@ -163,8 +163,12 @@ def _acquire(*, scope: str, key: str, in_progress_ttl: timedelta | None = None) 
             return idem
         if idem.status == "done" and idem.response_body is not None:
             return idem
+        # Intenções locais rodam numa transação só e conservam a trava
+        # histórica pelo fingerprint. Orquestrações remotas passam TTL explícito:
+        # depois dele, um processo morto precisa poder retomar a MESMA intenção.
+        fingerprint_blocks_recovery = bool(idem.request_fingerprint) and in_progress_ttl is None
         if idem.status == "in_progress" and (
-            idem.request_fingerprint or idem.expires_at is None or idem.expires_at > timezone.now()
+            fingerprint_blocks_recovery or idem.expires_at is None or idem.expires_at > timezone.now()
         ):
             raise RemoteMutationInProgress(f"Mutation already in progress for {scope}:{key}")
         idem.status = "in_progress"
