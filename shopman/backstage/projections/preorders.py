@@ -189,6 +189,19 @@ class PreorderCancelProjection:
 
 
 @dataclass(frozen=True)
+class PreorderRescheduleProjection:
+    """Reagendar pelo PDV: a régua do orquestrador (``reschedule.state_refusal``)."""
+
+    allowed: bool
+    block_reason: str
+    # O combinado de hoje, para o diálogo partir dele.
+    date: str
+    slot: str
+    # Os itens: a janela oferecível depende deles (``/pos/schedule/?skus=``).
+    skus: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PreorderDetailProjection:
     card: PreorderCardProjection
     items: tuple[PreorderItemProjection, ...]
@@ -209,6 +222,7 @@ class PreorderDetailProjection:
     actor_id: int | None
     hand_over: PreorderHandOverProjection
     cancel: PreorderCancelProjection
+    reschedule: PreorderRescheduleProjection
     # Quem pode assinar o cancelamento de pedido pago (a lista do PDV).
     managers: tuple[dict, ...]
 
@@ -338,6 +352,7 @@ def build_preorder_detail(ref: str, *, user=None) -> PreorderDetailProjection | 
         actor_id=getattr(user, "pk", None),
         hand_over=_hand_over(order, card, method),
         cancel=_cancel(order, user),
+        reschedule=_reschedule(order, card),
         managers=tuple(order_queue._approver_options(user)) if user is not None else (),
     )
 
@@ -354,6 +369,20 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
         amount_display=_money(amount),
         suggested_method=method if method in {"cash", "debit", "credit"} else "",
         block_reason=reason,
+    )
+
+
+def _reschedule(order, card: PreorderCardProjection) -> PreorderRescheduleProjection:
+    from shopman.shop.services import order_composition, reschedule
+
+    data = order.data or {}
+    reason = reschedule.state_refusal(order)
+    return PreorderRescheduleProjection(
+        allowed=not reason,
+        block_reason=reason,
+        date=str(data.get("delivery_date") or card.commitment_date),
+        slot=str(data.get("delivery_time_slot") or ""),
+        skus=tuple(dict.fromkeys(item.sku for item in order_composition.effective_items(order) if item.sku)),
     )
 
 

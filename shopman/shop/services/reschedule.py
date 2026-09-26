@@ -176,6 +176,20 @@ def _parse_day(value) -> date_type:
         raise RescheduleRefused("Data inválida. Escolha uma data da lista.", code="invalid_date", field="date") from None
 
 
+def state_refusal(order) -> str:
+    """Por que a data deste pedido não muda mais — ou ``""``.
+
+    A mesma régua de :func:`reschedule` (estado e marketplace), para a tela
+    decidir se oferece o gesto. Validação da data escolhida e "já em preparo"
+    continuam no serviço: dependem da data nova.
+    """
+    try:
+        _refuse_by_state(order)
+    except RescheduleRefused as exc:
+        return exc.message
+    return ""
+
+
 def _refuse_by_state(order) -> None:
     from shopman.shop.services import ifood_schedule
 

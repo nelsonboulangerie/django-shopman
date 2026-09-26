@@ -101,6 +101,7 @@ export interface PreorderDetailResponse {
   actor_id: number | null;
   hand_over: PreorderHandOver;
   cancel: PreorderCancel;
+  reschedule: PreorderReschedule;
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
 }
@@ -124,6 +125,23 @@ export interface PreorderCancel {
   allowed: boolean;
   requires_approval: boolean;
   block_reason: string;
+}
+
+/** Reagendar pelo PDV — a régua do orquestrador (`reschedule.state_refusal`). */
+export interface PreorderReschedule {
+  allowed: boolean;
+  block_reason: string;
+  /** O combinado de hoje. */
+  date: string;
+  slot: string;
+  /** Os itens: a janela oferecível depende deles. */
+  skus: string[];
+}
+
+export interface PreorderRescheduleResponse {
+  ok: boolean;
+  changed: boolean;
+  activated_now: boolean;
 }
 
 export interface PreorderHandOverResponse {

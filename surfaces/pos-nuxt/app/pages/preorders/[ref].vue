@@ -3,11 +3,11 @@
 // quem, como recebe, quando, o que leva, quanto é e quanto falta.
 //
 // Os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4): **Receber e entregar** (ou só
-// **Entregar**, quando já está paga) e **Cancelar**, cada um só quando o servidor
-// diz que pode (`hand_over`, `cancel`). Quando não pode entregar, a tela diz por
-// quê em vez de mostrar botão apagado. Reagendar e editar ainda não existem no
-// PDV — e não há botão para eles: botão que não faz nada ensina o balcão a
-// desconfiar dos que fazem.
+// **Entregar**, quando já está paga), **Reagendar** e **Cancelar**, cada um só
+// quando o servidor diz que pode (`hand_over`, `reschedule`, `cancel`). Quando não
+// pode entregar, a tela diz por quê em vez de mostrar botão apagado. Editar ainda
+// não existe no PDV (depende do contador) — e não há botão para ele: botão que não
+// faz nada ensina o balcão a desconfiar dos que fazem.
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { HandOverBody } from "~/presentation/preorderActions";
 import { handOverCta } from "~/presentation/preorderActions";
@@ -36,6 +36,11 @@ const { operator: activeOperator } = useOperatorLock("cashman.operate_pos");
 const actions = usePosPreorderActions({ detail, pos, refresh });
 const handOverOpen = ref(false);
 const cancelOpen = ref(false);
+const rescheduleOpen = ref(false);
+
+async function confirmReschedule(choice: { date: string; slot: string; reason: string }) {
+  if (await actions.reschedule(choice)) rescheduleOpen.value = false;
+}
 const cancelReason = ref("");
 
 async function confirmHandOver(body: HandOverBody) {
@@ -140,6 +145,17 @@ function goBack() {
           <span>{{ detail.hand_over.block_reason }}</span>
         </p>
         <UiButton
+          v-if="detail.reschedule.allowed"
+          variant="outline"
+          class="w-full"
+          :disabled="actions.busy.value"
+          data-preorder-reschedule
+          @click="rescheduleOpen = true"
+        >
+          <Icon name="lucide:calendar-clock" class="size-4" />
+          Reagendar
+        </UiButton>
+        <UiButton
           v-if="detail.cancel.allowed"
           variant="outline"
           class="w-full text-destructive"
@@ -219,6 +235,15 @@ function goBack() {
         :customer-name="customerLine(card)"
         :busy="actions.busy.value"
         @confirm="confirmHandOver"
+      />
+      <PosPreorderRescheduleDialog
+        v-model:open="rescheduleOpen"
+        :customer-name="customerLine(card)"
+        :current-date="detail.reschedule.date"
+        :current-slot="detail.reschedule.slot"
+        :skus="detail.reschedule.skus"
+        :busy="actions.busy.value"
+        @confirm="confirmReschedule"
       />
       <PosPreorderCancelDialog
         v-model:open="cancelOpen"

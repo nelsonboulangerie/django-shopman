@@ -2442,6 +2442,7 @@ class POSPreorderHandOverView(APIView):
             except (ValueError, InvalidTransition) as exc:
                 return Response({"detail": str(exc)}, status=400)
             except Exception as exc:
+                logger.warning("pos_preorder_hand_over_failed order=%s", order.ref, exc_info=True)
                 return _falha_do_caixa(exc, "Não deu para entregar a encomenda.")
             order.refresh_from_db()
             return Response({"ok": True, "ref": order.ref, "received_q": received_q, "status": order.status})

@@ -53,6 +53,12 @@ let detail: PreorderDetailResponse;
 
 registerEndpoint("/api/v1/backstage/pos/preorders/", () => week);
 registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/", () => detail);
+registerEndpoint("/api/v1/backstage/pos/schedule/", () => ({
+  ok: true, today: "2026-09-26", date: "2026-09-26", max_preorder_days: 30,
+  available_dates: ["2026-09-26", "2026-09-27", "2026-09-28"],
+  windows: [{ ref: "slot-09", label: "A partir das 9h" }], earliest_window_ref: "slot-09",
+  ready_at: "", bottleneck_name: "", grid: "canonical", is_today: true, readiness_unavailable: false,
+}));
 
 const mounted: VueWrapper[] = [];
 async function mount(page: unknown) {
@@ -91,6 +97,7 @@ beforeEach(() => {
       suggested_method: "cash", block_reason: "",
     },
     cancel: { allowed: true, requires_approval: false, block_reason: "" },
+    reschedule: { allowed: true, block_reason: "", date: "2026-09-26", slot: "slot-09", skus: ["PAO"] },
     managers: [{ username: "gerente", name: "Gerente" }],
   };
   printOne.mockClear();
@@ -150,10 +157,10 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     expect(printOne).toHaveBeenCalledWith("NB-7");
   });
 
-  it("⚠️ nenhum botão morto: reagendar e editar ainda não existem no PDV", async () => {
+  it("⚠️ nenhum botão morto: editar ainda não existe no PDV", async () => {
     const wrapper = await mount(DetailPage);
     const buttons = wrapper.findAll("button").map((b) => b.text());
-    for (const word of ["Reagendar", "Editar"]) {
+    for (const word of ["Editar"]) {
       expect(buttons.some((label) => label.includes(word))).toBe(false);
     }
   });
@@ -376,5 +383,36 @@ describe("Semana — o a receber de cada dia", () => {
     const column = wrapper.find("[data-week-grid]").findAll("[data-week-day]")[0]!;
     expect(column.findAll("[data-preorder]").map((c) => c.attributes("data-preorder"))).toEqual(["NB-8"]);
     expect(column.find("[data-week-day-total]").text()).toBe("2 encomendas · R$ 60,00");
+  });
+});
+
+describe("Detalhe — reagendar", () => {
+  it("escolher outro dia chama a rota do Gestor com a data, a revisão e quem está identificado", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-reschedule]").trigger("click");
+    await settle();
+    await settle();
+    body().querySelector<HTMLButtonElement>('[data-reschedule-date="2026-09-28"]')!.click();
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-preorder-reschedule-confirm]")!.click();
+    await settle();
+
+    const [path, options] = call.mock.calls[0]!;
+    expect(path).toBe("/api/v1/backstage/orders/NB-7/reschedule/");
+    expect(options.body).toMatchObject({ date: "2026-09-28", slot: "", base_revision: "rev-1", expected_actor_id: 7 });
+    expect(options.body.idempotency_key).toBeTruthy();
+  });
+
+  it("sem mudar nada, não dá para confirmar", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-reschedule]").trigger("click");
+    await settle();
+    expect(body().querySelector<HTMLButtonElement>("[data-preorder-reschedule-confirm]")!.disabled).toBe(true);
+  });
+
+  it("quando o servidor diz que não reagenda, não há botão", async () => {
+    detail.reschedule = { ...detail.reschedule, allowed: false, block_reason: "Este pedido já está pronto: a data não muda mais." };
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-reschedule]").exists()).toBe(false);
   });
 });

@@ -2,8 +2,8 @@ import type { ComputedRef, Ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import { handOverDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
-import type { PreorderDetailResponse, PreorderHandOverResponse } from "~/types/preorders";
+import { handOverDoneMessage, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
+import type { PreorderDetailResponse, PreorderHandOverResponse, PreorderRescheduleResponse } from "~/types/preorders";
 import type { POSProjection } from "~/types/pos";
 
 export interface ManagerChallenge {
@@ -105,9 +105,37 @@ export function usePosPreorderActions(options: {
     }
   }
 
+  /**
+   * Reagendar: a MESMA rota do Gestor (`/orders/<ref>/reschedule/`, PR #1168). O
+   * orquestrador valida a data e move despertador, lembrete, estoque e produção
+   * juntos — ou recusa com o motivo, e nada muda.
+   */
+  async function reschedule(choice: { date: string; slot: string; reason: string }): Promise<boolean> {
+    const detail = options.detail.value;
+    if (!detail || busy.value) return false;
+    busy.value = true;
+    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.card.ref)}/reschedule/`;
+    const payload = { ...choice, base_revision: detail.revision, expected_actor_id: detail.actor_id };
+    try {
+      const response = await action.call<PreorderRescheduleResponse>(path, {
+        body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) },
+      });
+      lastAttempt = null;
+      toast.success(rescheduleDoneMessage(Boolean(response?.changed), Boolean(response?.activated_now)));
+      await options.refresh();
+      return true;
+    } catch (error) {
+      toast.error(`${httpErrorMessage(error, "Não deu para trocar a data.")} Escolha outra data ou confira a encomenda.`);
+      await options.refresh();
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   function dismissManagerChallenge() {
     managerChallenge.value = null;
   }
 
-  return { busy, managerChallenge, handOver, cancel, dismissManagerChallenge };
+  return { busy, managerChallenge, handOver, cancel, reschedule, dismissManagerChallenge };
 }

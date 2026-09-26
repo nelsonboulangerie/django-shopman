@@ -12,6 +12,9 @@ import {
   handOverDoneMessage,
   initialMethod,
   receiveConfirmLabel,
+  rescheduleChanged,
+  rescheduleConfirmLabel,
+  rescheduleDoneMessage,
 } from "../app/presentation/preorderActions";
 
 const nbsp = (text: string) => text.replace(/\s/g, " ");
@@ -80,5 +83,26 @@ describe("receber e entregar — as frases e o corpo", () => {
   it("o aviso de feito diz o que entrou", () => {
     expect(nbsp(handOverDoneMessage(3600))).toBe("Recebido R$ 36,00. Encomenda entregue.");
     expect(handOverDoneMessage(0)).toBe("Encomenda entregue.");
+  });
+});
+
+describe("reagendar — as frases", () => {
+  it("só muda quando a data ou a janela mudou", () => {
+    const current = { date: "2026-09-26", slot: "slot-09" };
+    expect(rescheduleChanged(current, { date: "2026-09-26", slot: "slot-09" })).toBe(false);
+    expect(rescheduleChanged(current, { date: "2026-09-27", slot: "" })).toBe(true);
+    expect(rescheduleChanged(current, { date: "2026-09-26", slot: "slot-12" })).toBe(true);
+    expect(rescheduleChanged(current, { date: "", slot: "" })).toBe(false);
+  });
+
+  it("o botão diz para onde vai; sem escolha, pede a data", () => {
+    expect(rescheduleConfirmLabel("sáb, 27/09")).toBe("Mudar para sáb, 27/09");
+    expect(rescheduleConfirmLabel("")).toBe("Escolha a nova data");
+  });
+
+  it("o aviso de feito diz se a encomenda já entrou no preparo de hoje", () => {
+    expect(rescheduleDoneMessage(true, false)).toBe("Data trocada.");
+    expect(rescheduleDoneMessage(true, true)).toContain("já entrou no preparo de hoje");
+    expect(rescheduleDoneMessage(false, false)).toContain("Nada mudou");
   });
 });

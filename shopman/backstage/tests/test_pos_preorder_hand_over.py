@@ -319,3 +319,25 @@ def test_a_rota_exige_manage_orders(client, shift):
     response = client.post("/api/v1/backstage/pos/preorders/ROTA-PERM/hand-over/", {}, content_type="application/json")
 
     assert response.status_code == 403
+
+
+# ── Reagendar: o detalhe diz se pode, e parte do combinado ────────────────
+
+
+def test_o_detalhe_oferece_reagendar_a_encomenda_aceita_com_o_combinado(operator):
+    _order("REAG-1", status="accepted", delivery_time_slot="slot-09")
+
+    reschedule = preorders.build_preorder_detail("REAG-1", user=operator).reschedule
+
+    assert reschedule.allowed is True
+    assert (reschedule.date, reschedule.slot) == (timezone.localdate().isoformat(), "slot-09")
+    assert reschedule.skus == ("PAO",)
+
+
+def test_pronta_nao_reagenda_e_diz_por_que(operator):
+    _order("REAG-PRONTA", status="ready")
+
+    reschedule = preorders.build_preorder_detail("REAG-PRONTA", user=operator).reschedule
+
+    assert reschedule.allowed is False
+    assert "já está pronto" in reschedule.block_reason

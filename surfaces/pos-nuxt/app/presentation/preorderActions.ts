@@ -87,3 +87,26 @@ export function handOverBody(handOver: Pick<PreorderHandOver, "needs_payment" | 
 export function handOverDoneMessage(receivedQ: number): string {
   return receivedQ > 0 ? `Recebido ${formatBRL(receivedQ)}. Encomenda entregue.` : "Encomenda entregue.";
 }
+
+// ── Reagendar ───────────────────────────────────────────────────────────────
+//
+// A troca de data é do orquestrador (`shop/services/reschedule.py`): valida,
+// move o despertador, o lembrete, as reservas e a produção, ou recusa com o
+// motivo. A tela oferece as datas e janelas que o servidor diz combináveis
+// (`/pos/schedule/`, as mesmas da venda) e manda a escolha.
+
+/** Mudou alguma coisa? A mesma data e a mesma janela não viram requisição. */
+export function rescheduleChanged(current: { date: string; slot: string }, draft: { date: string; slot: string }): boolean {
+  return Boolean(draft.date) && (draft.date !== current.date || draft.slot !== current.slot);
+}
+
+/** O botão de confirmar: para onde vai. "Mudar para sáb, 27/09, a partir das 9h". */
+export function rescheduleConfirmLabel(target: string): string {
+  return target ? `Mudar para ${target}` : "Escolha a nova data";
+}
+
+/** O que o balcão lê quando a troca deu certo. */
+export function rescheduleDoneMessage(changed: boolean, activatedNow: boolean): string {
+  if (!changed) return "A data e o horário já eram esses. Nada mudou.";
+  return activatedNow ? "Data trocada para hoje: a encomenda já entrou no preparo de hoje." : "Data trocada.";
+}
