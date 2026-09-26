@@ -1206,13 +1206,13 @@ def read_payments_for(orders):
     Lê o intent do pedido E os intents de cada tender: venda mista do terminal
     liquida um intent por método e só grava ``payment.intent_ref`` quando há um
     método só (``settle_terminal_tenders``). Quem soma o que entrou precisa dos
-    dois (:func:`captured_balance_from_reads`).
+    dois (:func:`captured_balance_q` com ``payment_reads``).
     """
     from shopman.payman import PaymentService
 
     refs: set[str] = set()
     for order in orders:
-        refs.update(_order_intent_refs(order))
+        refs.update(order_intent_refs(order))
     try:
         return PaymentService.read_many(ref for ref in refs if ref)
     except Exception:
@@ -1220,7 +1220,7 @@ def read_payments_for(orders):
         return {}  # Every referenced intent becomes unknown, never embedded paid.
 
 
-def _order_intent_refs(order) -> list[str]:
+def order_intent_refs(order) -> list[str]:
     """Os intents do pedido, sem repetição: o do pedido e os de cada tender."""
     payment_data = (order.data or {}).get("payment") or {}
     refs: list[str] = []
@@ -1231,24 +1231,6 @@ def _order_intent_refs(order) -> list[str]:
         if ref and ref not in refs:
             refs.append(ref)
     return refs
-
-
-def captured_balance_from_reads(order, payment_reads) -> int | None:
-    """O que entrou e continua na casa, somando TODOS os intents do pedido.
-
-    Irmã de :func:`captured_balance_q`, para leitura em lote: capturado menos
-    devolvido e contestado, em cada intent do pedido e dos tenders. ``None``
-    quando algum intent não pôde ser lido — "não sei" nunca vira "zero", porque
-    zero pago numa encomenda paga faria o balcão cobrar de novo. Pedido sem
-    intent nenhum devolve 0: nada foi recebido pelo Payman.
-    """
-    total = 0
-    for ref in _order_intent_refs(order):
-        observed = payment_reads.get(ref) if payment_reads is not None else None
-        if observed is None:
-            return None
-        total += int(observed.captured_q) - int(observed.refunded_q) - int(observed.chargeback_q)
-    return total
 
 
 def get_payment_status(order, *, payment_reads=None) -> str | None:
@@ -1298,35 +1280,111 @@ def lock_order_payment(order) -> None:
     list(PaymentIntent.objects.select_for_update().filter(Q(order_ref=order.ref) | Q(ref=intent_ref)).order_by("pk"))
 
 
-def captured_balance_q(order) -> int | None:
-    """Return captured funds minus refunds and chargebacks, if readable."""
+def captured_balance_q(order, *, payment_reads=None) -> int | None:
+    """O que entrou e continua na casa, somando TODOS os intents do pedido.
+
+    Capturado menos devolvido e contestado, em cada intent do pedido E de cada
+    tender: a venda mista do terminal liquida um intent por método e só grava
+    ``payment.intent_ref`` quando há um método só, então ler apenas aquele
+    intent dizia "zero pago" para uma venda mista paga.
+
+    - ``payment_reads`` (de :func:`read_payments_for`) serve a leitura em lote,
+      sem consulta por pedido; sem ele, cada intent é lido no Payman.
+    - ``None`` quando algum intent não pôde ser lido — "não sei" nunca vira
+      "zero", porque zero pago num pedido pago faria o balcão cobrar de novo.
+    - Pedido sem intent nenhum devolve ``0``: nada foi recebido pelo Payman.
+    """
+    total = 0
+    for ref in order_intent_refs(order):
+        if payment_reads is not None:
+            observed = payment_reads.get(ref)
+            balance_q = (
+                int(observed.captured_q) - int(observed.refunded_q) - int(observed.chargeback_q)
+                if observed is not None else None
+            )
+        else:
+            balance_q = _payman_captured_balance_q(ref)
+        if balance_q is None:
+            return None
+        total += balance_q
+    return total
+
+
+def on_account_q(order) -> int:
+    """Quanto do pedido foi para a CONTA DA CASA (tender ``account``).
+
+    É obrigação do cliente já reconhecida: não é dinheiro recebido, e também não
+    é saldo a cobrar no balcão — cobrá-lo de novo seria cobrar duas vezes.
+    """
+    from shopman.shop.services import order_composition
+
     payment_data = (order.data or {}).get("payment") or {}
-    intent_ref = payment_data.get("intent_ref")
-    if not intent_ref:
+    tenders = [t for t in payment_data.get("tenders") or [] if isinstance(t, dict)]
+    if tenders:
+        return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") == "account")
+    return order_composition.effective_total_q(order) if payment_data.get("method") == "account" else 0
+
+
+def balance_due_q(order, *, payment_reads=None) -> int | None:
+    """O que falta receber: total EFETIVO menos o que entrou e o que foi para a conta.
+
+    O total é o de :func:`order_composition.effective_total_q` (o pedido ajustado
+    vale pelo total novo, não pelo selado). Nunca negativo — pagamento a mais não
+    vira saldo. ``None`` quando o Payman não respondeu por algum intent.
+
+    **iFood** é a exceção: a prova é o payload do iFood (``payments``), não o
+    Payman — a casa não cobra o pedido do marketplace. Pré-pago é saldo zero;
+    pendente é o ``pending_q`` que ainda se cobra na porta; sem evidência, ``None``.
+    """
+    from shopman.shop.services import order_composition
+
+    if order.channel_ref == "ifood":
+        return _ifood_balance_due_q(order, order_composition.effective_total_q(order))
+
+    captured = captured_balance_q(order, payment_reads=payment_reads)
+    if captured is None:
         return None
-    return _payman_captured_balance_q(intent_ref)
+    return max(0, order_composition.effective_total_q(order) - captured - on_account_q(order))
+
+
+def _ifood_balance_due_q(order, total_q: int) -> int | None:
+    from shopman.shop.services.ifood_ingest import payment_status_from_payload
+
+    payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
+    status = payment_status_from_payload(payments, int(order.total_q or 0))
+    if status == "paid":
+        return 0
+    if status == "pending":
+        pending_q = int(payments.get("pending_q") or 0)
+        return max(0, min(total_q, pending_q) if pending_q > 0 else total_q)
+    return None
 
 
 def has_sufficient_captured_payment(order, *, payment_reads=None) -> bool:
-    """True when Payman shows captured funds still covering the order total."""
+    """O Payman mostra dinheiro capturado cobrindo o total EFETIVO do pedido?
+
+    Soma todos os intents do pedido (:func:`captured_balance_q`) e compara com
+    :func:`order_composition.effective_total_q` — o pedido ajustado (iFood
+    alterado depois de confirmado) vale pelo total novo, não pelo selado. Quando
+    o pedido tem ``payment.intent_ref``, o estado daquele intent ainda precisa
+    ser de dinheiro capturado (ou devolvido em parte).
+    """
+    from shopman.shop.services import order_composition
+
     payment_data = (order.data or {}).get("payment") or {}
-    status = (get_payment_status(order, payment_reads=payment_reads) or "").lower()
-    if status not in _PAID_STATUSES | {"refunded"}:
-        return False
+    if not order_intent_refs(order):
+        # Pedido importado/antigo, sem intent no Payman: vale o estado gravado.
+        return (_embedded_payment_status(payment_data) or "") in _PAID_STATUSES
 
-    intent_ref = payment_data.get("intent_ref")
-    if not intent_ref:
-        # Compatibility for imported/legacy orders without Payman intent.
-        return status in _PAID_STATUSES
+    if payment_data.get("intent_ref"):
+        status = (get_payment_status(order, payment_reads=payment_reads) or "").lower()
+        if status not in _PAID_STATUSES | {"refunded"}:
+            return False
 
-    if payment_reads is None:
-        balance_q = _payman_captured_balance_q(intent_ref)
-    else:
-        observed = payment_reads.get(intent_ref)
-        balance_q = observed.captured_q - observed.refunded_q - observed.chargeback_q if observed is not None else None
+    balance_q = captured_balance_q(order, payment_reads=payment_reads)
     if balance_q is None:
         return False
-    return balance_q >= int(getattr(order, "total_q", 0) or 0)
+    return balance_q >= order_composition.effective_total_q(order)
 
 
 def can_cancel(order) -> bool:

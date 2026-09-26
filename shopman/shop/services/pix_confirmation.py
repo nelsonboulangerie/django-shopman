@@ -230,8 +230,11 @@ def _confirm_pix_on_live_charge(
         )
         return
 
+    from shopman.shop.services import order_composition
+
     captured_q = _captured_balance_q(order, db_intent)
-    if captured_q is None or captured_q < int(getattr(order, "total_q", 0) or 0):
+    # O total EFETIVO: o pedido ajustado depois do QR vale pelo total novo.
+    if captured_q is None or captured_q < order_composition.effective_total_q(order):
         # Capturamos, mas o livro não cobre o pedido (cobrança menor que o
         # total, pedido alterado depois do QR). A prova de suficiência é
         # SEMPRE o Payman, nunca o valor que o webhook declarou.
