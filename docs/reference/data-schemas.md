@@ -197,6 +197,7 @@ for key in (
 | `cancellation_reason` | `string` | PixTimeoutHandler, PaymentTimeoutHandler, ConfirmationTimeoutHandler, OrderCancelView, GestorOrderRejectView | hooks._on_cancelled | Motivo (auditoria): `"pix_timeout"`, `"card_timeout"`, `"confirmation_timeout"`, `"customer_requested"`, texto livre. **Pode conter código de máquina — nunca exibir ao cliente.** |
 | `cancellation_note` | `string` | `operator_orders.cancel_order` (via OrderCancelView `customer_note`) | `lifecycle._on_cancelled` | Justificativa **voltada ao cliente**, escrita/escolhida pelo operador (preset). Só existe em cancelamento por operador com motivo informado; entra na notificação `order_cancelled` como `{status_note}` ("Motivo: …."; sem motivo, "Os detalhes estão no pedido."). Ausente ⇒ mensagem genérica. Distinta de `cancellation_reason` (que carrega códigos de máquina) |
 | `rejected_by` | `string` | GestorOrderRejectView | — | Username do operador que rejeitou |
+| `reschedule_history` | `list[dict]` | `shop.services.reschedule.reschedule` (API `POST orders/<ref>/reschedule/`), sob lock do pedido | trilha/auditoria; histórico do pedido (evento `order_rescheduled`) | Cada troca da data/janela combinada, na ordem: `{from_date, from_slot, to_date, to_slot, actor, at, reason}` — datas ISO (`from_date` pode ser `""` quando não havia data), janelas no formato de `delivery_time_slot` (`""` = a combinar), `at` ISO datetime, `reason` texto do operador (pode ser `""`). Append-only; o reagendamento também reescreve `delivery_date`, `delivery_time_slot` e `is_preorder` (recalculado contra hoje). Reenviar a MESMA data/janela não acrescenta linha (idempotente) |
 | `kitchen_note` | `string` | OrderNotesView (`operator_orders.save_kitchen_note`) | OperatorOrderProjection (`kitchen_note`), KDS ticket (`kitchen_note`) | Nota da cozinha escrita pelo operador no gestor (tags pré-configuradas `Shop.kitchen_note_tags` anexadas + texto livre). **Exibida no ticket do KDS** para a produção. Distinta da `order_notes` (nota do cliente, do checkout) e dos `operator_comment` do histórico |
 | `assignment` | `dict` | OrderAssignView (operator_orders.assign_order) | OrderCardProjection (`assigned_operator`) | Operador que assumiu o pedido ("estou atendendo"): `{operator_id, operator_name, at}`. Removido por OrderUnassignView |
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
@@ -559,7 +560,11 @@ Dedupe: `preorder.activate:{order_ref}`.
 |-------|------|-------------|----------|
 | `order_ref` | `string` | lifecycle._schedule_preorder_activation | PreorderActivateHandler |
 | `channel_ref` | `string` | lifecycle._schedule_preorder_activation | PreorderActivateHandler |
-| `delivery_date` | `string` (ISO) | lifecycle._schedule_preorder_activation | auditoria |
+| `delivery_date` | `string` (ISO) | lifecycle._schedule_preorder_activation, `services.reschedule` (ao mover), PreorderActivateHandler (ao re-enfileirar) | auditoria |
+
+Reagendar (`services.reschedule`) **move** a directive viva (edita `available_at` e
+`delivery_date`), nunca cria uma segunda. Se o despertador toca antes da data, o
+`PreorderActivateHandler` re-enfileira a própria directive para a madrugada certa.
 
 #### `pix.generate`
 
@@ -663,7 +668,7 @@ Write-back: `intent_ref` (string)
 | `amount_q` | `int` | PixGenerateHandler (reminder) | NotificationSendHandler (informativo) |
 | `copy_paste` | `string` | PixGenerateHandler (reminder) | Template (não handler) |
 | `tracking` | `dict` | FulfillmentUpdateHandler | Template (não handler) |
-| `context` | `dict` | CommitService (preorder reminder) | Template (não handler) |
+| `context` | `dict` | CommitService (preorder reminder), `services.reschedule.schedule_preorder_reminder` (lembrete recriado com a data nova) | Template (não handler) |
 
 `notification_delivery` é a evidência na própria Directive: `status` (`started`,
 `unknown`, `accepted`, `skipped`, `failed`), `recorded_at` ISO, e opcionais
@@ -675,6 +680,9 @@ não autorizam fallback nem replay externo; um aceite posterior é monotônico.
 se torna segura por idade. Worker antigo não entende o fence: rollout requer
 drenagem/parada dos consumidores antigos e rollback não pode reativá-los sobre
 essas Directives sem reconciliação autorizada (G03/G07).
+`skipped` com `reason: "rescheduled"` é o lembrete de véspera (`preorder_reminder`)
+que um reagendamento substituiu: a directive fecha `done` sem envio e outra nasce com a
+data nova (`services.reschedule`).
 
 Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_cancelled_by_customer"`,
 `"order_rejected"`, `"order_processing"`, `"order_ready"`, `"order_dispatched"`, `"order_delivered"`,

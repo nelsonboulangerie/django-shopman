@@ -911,6 +911,32 @@ def _physical_work_deferred(order) -> bool:
     return target is not None and target > timezone.localdate()
 
 
+def preorder_activation_at(order):
+    """Quando o despertador da encomenda deve tocar: ``(available_at, data)``.
+
+    Madrugada (00:05) da data combinada; iFood agendado toca no início do preparo
+    que o próprio iFood informa. ``(None, None)`` quando não há data (ou o
+    agendamento do iFood é ilegível — quem agenda decide o que fazer com isso).
+    Uma régua só para quem cria (``_schedule_preorder_activation``), quem move
+    (``services.reschedule``) e quem re-enfileira o toque cedo demais
+    (``PreorderActivateHandler``).
+    """
+    from datetime import datetime
+    from datetime import time as time_type
+
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if ifood_schedule.is_scheduled(order):
+        available_at = ifood_schedule.preparation_start(order)
+        if available_at is None:
+            return None, None
+        return available_at, timezone.localtime(available_at).date()
+    target = get_commitment_date(order)
+    if target is None:
+        return None, None
+    return timezone.make_aware(datetime.combine(target, time_type(0, 5))), target
+
+
 def _schedule_preorder_activation(order) -> None:
     """Agenda o despertador da encomenda: directive na meia-noite da data.
 
@@ -918,15 +944,11 @@ def _schedule_preorder_activation(order) -> None:
     O worker de directives (``process_directives``) entrega na manhã da data;
     o handler dispara KDS + baixa pelo caminho normal.
     """
-    from datetime import datetime
-    from datetime import time as time_type
-
     from shopman.shop.directives import PREORDER_ACTIVATE, create_deduped
-    from shopman.shop.services.order_helpers import get_commitment_date
 
-    if ifood_schedule.is_scheduled(order):
-        available_at = ifood_schedule.preparation_start(order)
-        if available_at is None:
+    available_at, target = preorder_activation_at(order)
+    if available_at is None:
+        if ifood_schedule.is_scheduled(order):
             from shopman.shop.services.observability import create_operator_alert
 
             create_operator_alert(
@@ -934,13 +956,7 @@ def _schedule_preorder_activation(order) -> None:
                 message=ifood_schedule.block_reason(order), order_ref=order.ref,
                 dedupe_key=f"ifood_schedule_invalid:{order.ref}",
             )
-            return
-        target = timezone.localtime(available_at).date()
-    else:
-        target = get_commitment_date(order)
-        if target is None:
-            return
-        available_at = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
+        return
     create_deduped(
         PREORDER_ACTIVATE,
         payload={
@@ -968,8 +984,12 @@ def activate_preorder(order) -> None:
         )
         return
     if _physical_work_deferred(order):
-        # Despertador tocou cedo demais (fuso/reagendamento) — reagendar é
-        # responsabilidade do handler; aqui só recusamos disparar antes do dia.
+        # Antes do dia nada dispara. Quem garante que o despertador toque de novo
+        # na data certa é o ``PreorderActivateHandler``: ele confere a data antes
+        # de chamar esta função e re-enfileira a PRÓPRIA directive (uma só, o
+        # dedupe do Core recusaria uma segunda enquanto esta está viva). Chegar
+        # aqui cedo por outro caminho (``holds_materialized``) não perde nada: o
+        # despertador daquele pedido continua na fila.
         logger.warning("lifecycle.activate_preorder: too early order=%s", order.ref)
         return
 

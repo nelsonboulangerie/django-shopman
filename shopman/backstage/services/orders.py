@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.db import transaction
 from shopman.orderman.exceptions import InvalidTransition
 
-from shopman.backstage.services.exceptions import OrderConflict, OrderError
+from shopman.backstage.services.exceptions import OrderConflict, OrderError, RescheduleError
 from shopman.shop.services import operator_orders
 from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -382,6 +382,22 @@ def add_comment(order, *, note: str, actor: str, expected_revision=None):
         raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Comentário inválido") from exc
+
+
+def reschedule_order(order, *, date, slot, reason: str, actor: str, expected_revision=None):
+    """Troca a data/janela combinada (``shop.services.reschedule``) sob a revisão lida."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import reschedule as reschedule_service
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and operator_orders.operational_revision(locked, field="schedule") != expected_revision:
+            raise OrderConflict("A data do pedido mudou. Atualize o pedido antes de reagendar.")
+        try:
+            return reschedule_service.reschedule(locked, date=date, slot=slot, actor=actor, reason=reason)
+        except reschedule_service.RescheduleRefused as exc:
+            raise RescheduleError(exc.message, code=exc.code, field=exc.field) from exc
 
 
 def recent_history(*, limit: int = 20):

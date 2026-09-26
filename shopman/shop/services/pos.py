@@ -1194,13 +1194,9 @@ def _require_customer_if_scheduled(payload: dict) -> None:
 
 def _max_preorder_days() -> int:
     """Até quantos dias à frente a casa aceita encomenda (Admin, default 30)."""
-    try:
-        from shopman.shop.projections import checkout_context
+    from shopman.shop.services.preorder_dates import max_preorder_days
 
-        return max(0, int(checkout_context.preorder_config()[0]))
-    except Exception:
-        logger.warning("pos: could not read max_preorder_days; using 30", exc_info=True)
-        return 30
+    return max_preorder_days()
 
 
 def _payload_skus(payload: dict) -> list[str]:

@@ -1716,7 +1716,16 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
             except notification_service.NotificationResendRefused as exc:
                 return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
             except OrderError as exc:
-                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 400
+                body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+                # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
+                # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
+                field = getattr(exc, "field", "")
+                if field:
+                    body.update({"field": field, "errors": {field: [str(exc)]}})
+                code = getattr(exc, "code", "")
+                if code:
+                    body["code"] = code
+                return body, 400
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
 
         try:
@@ -2170,6 +2179,44 @@ class OrderRequeueFiscalView(_OrderActionBase):
             return {"effect_status": "queued", "directive_id": directive.pk}
 
         return self._context_response(request, order, "requeue-fiscal", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reschedule the agreed date/window of an order (moves alarm, reminder, stock and production)",
+        responses={
+            200: OpenApiResponse(description="Order rescheduled (or already on that date/window)."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors} — date/slot rule, no stock, already in preparation."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class OrderRescheduleView(_OrderActionBase):
+    """Trocar a data combinada da encomenda — ``shop.services.reschedule``."""
+
+    intention_operation = "reschedule"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        day = str(request.data.get("date") or "").strip()
+        slot = str(request.data.get("slot") or "").strip()
+        reason = str(request.data.get("reason") or "").strip()
+        if not day:
+            return Response({"detail": "Escolha a nova data.", "field": "date", "errors": {"date": ["Escolha a nova data."]}}, status=400)
+        if len(reason) > 500:
+            return Response({"detail": "Motivo longo demais (máximo 500 caracteres).", "field": "reason",
+                "errors": {"reason": ["Motivo longo demais (máximo 500 caracteres)."]}}, status=400)
+
+        def execute(base):
+            result = orders_service.reschedule_order(order, date=day, slot=slot, reason=reason,
+                actor=_actor(request), expected_revision=base)
+            return {"changed": result.changed, "from_date": result.from_date, "from_slot": result.from_slot,
+                "to_date": result.to_date, "to_slot": result.to_slot, "activated_now": result.activated_now}
+
+        return self._context_response(request, order, "reschedule", {"date": day, "slot": slot, "reason": reason}, execute)
 
 
 def _resend_payment_link_response(order) -> Response:

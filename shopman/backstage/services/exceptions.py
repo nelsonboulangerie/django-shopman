@@ -56,6 +56,19 @@ class OrderConflict(OrderError):
     """
 
 
+class RescheduleError(OrderError):
+    """Reagendamento recusado (``shop.services.reschedule.RescheduleRefused``).
+
+    Carrega ``code`` e ``field`` (``date``/``slot``) para a resposta sair no
+    dialeto ``{detail, field, errors}`` e a tela apontar a entrada certa.
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+
 class POSError(BackstageServiceError):
     """Raised when a POS mutation cannot be applied."""
 
