@@ -950,10 +950,13 @@ class TestMergeUndo:
 
     def test_undo_rejects_already_reverted(self, source, target, evidence):
         result = MergeService.merge(source, target, evidence, actor="test")
-        MergeService.undo(result.audit_id, actor="test")
+        MergeService.undo(result.audit_id, actor="first-winner")
 
         with pytest.raises(CustomerError, match="already reverted"):
-            MergeService.undo(result.audit_id, actor="test")
+            MergeService.undo(result.audit_id, actor="late-retry")
+
+        audit = MergeAudit.objects.get(pk=result.audit_id)
+        assert audit.reverted_by == "first-winner"
 
     def test_undo_rejects_expired_window(self, source, target, evidence):
         result = MergeService.merge(source, target, evidence, actor="test")
@@ -1403,8 +1406,8 @@ class TestMergePreview:
 
         MergeService.preview(source, target, evidence)
 
-        source.refresh_from_db()
-        target.refresh_from_db()
+        # O contrato inclui os objetos entregues pelo chamador, não só o banco:
+        # uma prévia seguida de renderização usa estas mesmas instâncias.
         assert source.is_active is True
         assert source.document == "11122233344"
         assert target.document == ""

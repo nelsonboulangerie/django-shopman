@@ -198,6 +198,12 @@ class MergeService:
                     )
                 )
         except _PreviewRollback as done:
+            # O rollback restaura o banco, não os objetos Python que o chamador
+            # ainda segura. Hoje ``_apply`` relê as linhas bloqueadas, mas este
+            # refresh torna o contrato explícito e impede uma refatoração futura
+            # de devolver source/target contaminados pela simulação.
+            source_customer.refresh_from_db()
+            target_customer.refresh_from_db()
             return done.preview
 
     @classmethod
@@ -328,21 +334,25 @@ class MergeService:
         """
         from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
 
-        try:
-            audit = MergeAudit.objects.get(pk=audit_id)
-        except MergeAudit.DoesNotExist as e:
-            raise CustomerError("UNDO_FAILED", message="Merge audit record not found.") from e
-
-        if audit.status != MergeStatus.COMPLETED:
-            raise CustomerError("UNDO_FAILED", message="Merge already reverted.")
-
-        if not audit.can_undo:
-            raise CustomerError(
-                "UNDO_FAILED",
-                message=f"Undo window expired at {audit.undo_deadline}.",
-            )
-
         with transaction.atomic():
+            # A auditoria é a chave idempotente do undo. Trave e revalide a
+            # própria decisão antes dos participantes: duas requisições para o
+            # mesmo audit serializam aqui, e a segunda observa REVERTED em vez
+            # de repetir movimentos e sobrescrever quem venceu.
+            try:
+                audit = MergeAudit.objects.select_for_update().get(pk=audit_id)
+            except MergeAudit.DoesNotExist as e:
+                raise CustomerError("UNDO_FAILED", message="Merge audit record not found.") from e
+
+            if audit.status != MergeStatus.COMPLETED:
+                raise CustomerError("UNDO_FAILED", message="Merge already reverted.")
+
+            if not audit.can_undo:
+                raise CustomerError(
+                    "UNDO_FAILED",
+                    message=f"Undo window expired at {audit.undo_deadline}.",
+                )
+
             # MergeAudit's historical UUID fields store the integer Customer PK
             # encoded as a UUID.  Convert explicitly before building the lock
             # map; comparing the UUID object to integer dict keys always misses.
