@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Prévia navegável do composer Marketing V2." />
+    <title>Marketing V2 — Prévia navegável</title>
+    <link rel="stylesheet" href="styles.css?v=5" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegação principal">
+        <div class="brand">
+          <span class="brand-mark">N</span>
+          <span><strong>Nelson</strong><small>Marketing</small></span>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item" data-page="today"><span>Hoje</span><span class="nav-count">3</span></button>
+          <button class="nav-item active" data-page="campaigns"><span>Campanhas</span></button>
+          <button class="nav-item" data-page="offers"><span>Ofertas</span><span class="nav-count">2</span></button>
+          <button class="nav-item" data-page="platforms"><span>Plataformas</span></button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <span class="status-dot"></span>
+          <span>4 conexões operacionais</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="pageEyebrow">Campanhas</p>
+            <h1 id="pageTitle">Nova campanha</h1>
+          </div>
+          <div class="topbar-actions">
+            <span class="save-state"><strong>Prévia</strong> · nenhum disparo será realizado</span>
+            <a class="ghost-button" href="/">Voltar ao app atual</a>
+          </div>
+        </header>
+
+        <section class="page-view" id="page-campaigns">
+          <ol class="steps" aria-label="Etapas da campanha">
+            <li><button class="step done" data-step="1"><span>1</span>Objetivo</button></li>
+            <li><button class="step done" data-step="2"><span>2</span>Destinos</button></li>
+            <li><button class="step active" data-step="3"><span>3</span>Conteúdo</button></li>
+            <li><button class="step" data-step="4"><span>4</span>Público e momento</button></li>
+            <li><button class="step" data-step="5"><span>5</span>Revisar</button></li>
+          </ol>
+
+          <div class="step-panel" data-step-panel="1" hidden>
+            <div class="simple-card narrow-card">
+              <p class="section-kicker">1 · Objetivo</p>
+              <h2>O que queremos que aconteça?</h2>
+              <div class="objective-grid">
+                <button class="choice-card selected"><strong>Lançar oferta</strong><span>Promoção, cupom e divulgação coordenada.</span></button>
+                <button class="choice-card"><strong>Divulgar novidade</strong><span>Publicações orgânicas, sem oferta.</span></button>
+                <button class="choice-card"><strong>Enviar mensagem</strong><span>WhatsApp com público e opt-in.</span></button>
+                <button class="choice-card"><strong>Repetir campanha</strong><span>Duplica e revalida uma campanha anterior.</span></button>
+              </div>
+              <label class="field-label" for="campaignName">Nome interno</label>
+              <input id="campaignName" value="Primavera · Hibisco" />
+              <label class="field-label" for="offerSelect">Oferta</label>
+              <select id="offerSelect"><option>Hibisco Primavera · 15% OFF</option><option>Frete grátis Centro</option></select>
+            </div>
+          </div>
+
+          <div class="step-panel" data-step-panel="2" hidden>
+            <div class="simple-card">
+              <div class="section-heading">
+                <div><p class="section-kicker">2 · Destinos</p><h2>Onde isso vai aparecer?</h2></div>
+                <button class="secondary-button" type="button">Replicar onde fizer sentido</button>
+              </div>
+              <div class="destination-grid">
+                <label class="destination-check selected"><input type="checkbox" data-destination="instagram-feed" checked /><span class="platform-icon instagram">IG</span><span><strong>@nelson · Feed</strong><small>Retrato 4:5 · imagem</small></span><em>Pronto</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="instagram-story" checked /><span class="platform-icon instagram">IG</span><span><strong>@nelson · Story</strong><small>Vertical 9:16 · imagem</small></span><em>Pronto</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="facebook-feed" checked /><span class="platform-icon facebook">f</span><span><strong>Página Centro · Feed</strong><small>Imagem + link</small></span><em>Pronto</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="google" checked /><span class="platform-icon google">G</span><span><strong>Loja Jardins · Google</strong><small>Atualização, Evento ou Oferta</small></span><em>Pronto</em></label>
+                <label class="destination-check"><input type="checkbox" data-destination="whatsapp" /><span class="platform-icon whatsapp">W</span><span><strong>Conta Principal · WhatsApp</strong><small>Template aprovado</small></span><em>842 aptos</em></label>
+                <label class="destination-check limited" aria-disabled="true"><input type="checkbox" data-destination="tiktok" disabled /><span class="platform-icon tiktok">T</span><span><strong>@nelson · TikTok</strong><small>Fora do fluxo operacional desta versão</small></span><em>Relay futuro</em></label>
+              </div>
+              <p class="inline-note"><strong>Sem opções-fantasma:</strong> só os destinos selecionados aparecem em Conteúdo. O TikTok permanece visível no roadmap, mas não pode ser incluído enquanto a conexão aprovada não existir.</p>
+            </div>
+          </div>
+
+          <div class="step-panel active" data-step-panel="3">
+            <div class="composer-grid">
+              <section class="editor-card">
+                <div class="section-heading compact">
+                  <div><p class="section-kicker">3 · Conteúdo</p><h2>Uma ideia, versões honestas</h2></div>
+                  <span class="valid-pill">Tudo pronto</span>
+                </div>
+
+                <div class="base-message">
+                  <span>Mensagem-base</span>
+                  <textarea id="baseMessage" rows="3">A primavera chegou à Nelson. Nesta semana, o Hibisco ganha 15% de desconto.</textarea>
+                  <small>Serve de ponto de partida. Cada destino mantém sua própria versão.</small>
+                </div>
+
+                <div class="composition-tabs" role="tablist" aria-label="Composições por destino">
+                  <button class="composition-tab" data-destination="instagram-feed">Instagram · Feed</button>
+                  <button class="composition-tab" data-destination="instagram-story">Instagram · Story</button>
+                  <button class="composition-tab" data-destination="facebook-feed">Facebook · Feed</button>
+                  <button class="composition-tab active" data-destination="google">Google · Jardins</button>
+                  <button class="composition-tab" data-destination="whatsapp" hidden>WhatsApp</button>
+                </div>
+
+                <div class="composition-editor" id="genericEditor" hidden>
+                  <div class="destination-scope">
+                    <strong id="editorScope">Configuração deste destino</strong>
+                    <span id="editorScopeNote">As opções abaixo não são impostas às outras plataformas.</span>
+                  </div>
+                  <label class="field-label" id="destinationTextLabel" for="destinationText">Texto deste destino</label>
+                  <textarea id="destinationText" rows="4">A primavera chegou à Nelson. Nesta semana, o Hibisco ganha 15% de desconto.</textarea>
+                  <div class="field-row">
+                    <label><span id="destinationFormatLabel">Mídia</span><select id="destinationFormat"></select></label>
+                    <label id="destinationSecondaryField"><span id="destinationSecondaryLabel">Ajuste vertical da imagem</span><input id="destinationSecondaryInput" type="range" min="0" max="100" value="50" /></label>
+                  </div>
+                  <p class="inline-note" id="destinationRule"></p>
+                </div>
+
+                <div class="composition-editor" id="googleEditor">
+                  <div class="destination-scope">
+                    <strong>Só para Google · Loja Jardins</strong>
+                    <span>O formato e os campos abaixo pertencem à API do Perfil da Empresa no Google.</span>
+                  </div>
+                  <fieldset class="segmented-field">
+                    <legend>Formato no Google</legend>
+                    <div class="segmented">
+                      <button type="button" data-google-type="standard">Atualização</button>
+                      <button type="button" data-google-type="event">Evento</button>
+                      <button type="button" class="active" data-google-type="offer">Oferta</button>
+                    </div>
+                  </fieldset>
+
+                  <label class="field-label" for="googleSummary">Resumo</label>
+                  <textarea id="googleSummary" rows="3">A primavera chegou à Nelson. Aproveite 15% de desconto no Hibisco nesta semana.</textarea>
+                  <div class="counter"><span>Texto exibido no perfil e na Busca</span><strong>94 / 1.500</strong></div>
+
+                  <div id="googleStandardFields" hidden>
+                    <div class="field-row">
+                      <label><span>Botão</span><select id="googleCta"><option>Saiba mais</option><option>Reservar</option><option>Fazer pedido</option><option>Comprar</option><option>Inscrever-se</option><option>Ligar</option><option>Nenhum</option></select></label>
+                      <label><span>URL do botão</span><input value="https://nelson.example/hibisco" /></label>
+                    </div>
+                  </div>
+
+                  <div id="googleEventFields" hidden>
+                    <label class="field-label">Título do evento</label>
+                    <input value="Semana do Hibisco" />
+                    <div class="field-row thirds">
+                      <label><span>Começa</span><input type="datetime-local" value="2026-09-28T08:00" /></label>
+                      <label><span>Termina</span><input type="datetime-local" value="2026-10-04T18:00" /></label>
+                      <label><span>Botão</span><select><option>Fazer pedido</option><option>Reservar</option><option>Comprar</option><option>Saiba mais</option><option>Inscrever-se</option><option>Ligar</option><option>Nenhum</option></select></label>
+                    </div>
+                  </div>
+
+                  <div id="googleOfferFields">
+                    <div class="field-row">
+                      <label><span>Título da oferta</span><input value="15% OFF no Hibisco" /></label>
+                      <label><span>Código do cupom</span><input id="couponCode" value="PRIMAVERA15" /></label>
+                    </div>
+                    <div class="field-row">
+                      <label><span>URL de resgate</span><input value="https://nelson.example/resgatar/primavera15" /></label>
+                      <label><span>Termos</span><input value="Válido enquanto durarem os estoques." /></label>
+                    </div>
+                    <p class="inline-note"><strong>Sem botão genérico:</strong> em Oferta, o Google usa cupom, resgate e termos próprios.</p>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="preview-card">
+                <div class="preview-heading">
+                  <div><p class="section-kicker">Prévia do destino</p><h2 id="previewTitle">Google · Loja Jardins</h2></div>
+                  <button class="icon-button" id="safeAreaToggle" type="button" aria-pressed="true" title="Alternar área segura">▦</button>
+                </div>
+                <div class="ratio-strip">
+                  <span id="ratioName">Google Post · 4:3 editorial</span>
+                  <span id="ratioPixels">1200 × 900</span>
+                </div>
+
+                <div class="device-stage">
+                  <article class="social-preview google-preview" id="socialPreview">
+                    <header class="social-header"><span class="avatar">N</span><span><strong>Nelson · Jardins</strong><small>Agora · Público</small></span><span class="more">•••</span></header>
+                    <div class="media-frame ratio-google" id="mediaFrame">
+                      <img id="previewImage" src="/canary/hibisco-primavera-20260911.jpg" alt="Hibisco usado para demonstrar o corte da mídia" />
+                      <div class="safe-area visible" id="safeArea"><span>área segura editorial</span></div>
+                      <span class="offer-badge" id="offerBadge">15% OFF</span>
+                    </div>
+                    <div class="social-copy">
+                      <strong id="socialHeadline">15% OFF no Hibisco</strong>
+                      <p id="socialBody">A primavera chegou à Nelson. Aproveite 15% de desconto no Hibisco nesta semana.</p>
+                      <div class="coupon-line" id="couponLine"><span>Cupom</span><strong>PRIMAVERA15</strong></div>
+                      <button class="preview-cta" id="previewCta" type="button">Ver oferta</button>
+                    </div>
+                  </article>
+                </div>
+
+                <div class="preview-truth">
+                  <span class="truth-icon">i</span>
+                  <p id="previewNote"><strong>Proporção controlada, renderização variável.</strong> O arquivo e o corte editorial respeitam 4:3; o Google pode adaptar o card conforme a superfície onde ele aparecer.</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <div class="step-panel" data-step-panel="4" hidden>
+            <div class="simple-card narrow-card">
+              <p class="section-kicker">4 · Público e momento</p>
+              <h2>Quando cada consequência acontece?</h2>
+              <div class="schedule-list">
+                <div><span class="platform-icon instagram">IG</span><span><strong>Instagram e Facebook</strong><small>Público das contas</small></span><select><option>Segunda, 08:00</option><option>Agora</option></select></div>
+                <div><span class="platform-icon google">G</span><span><strong>Google · Jardins</strong><small>Perfil público da location</small></span><select><option>Segunda, 08:00</option><option>Agora</option></select></div>
+                <div><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp</strong><small>842 contatos com opt-in</small></span><select><option>Não selecionado</option><option>Clientes recorrentes</option></select></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-panel" data-step-panel="5" hidden>
+            <div class="simple-card">
+              <p class="section-kicker">5 · Revisar</p>
+              <h2 id="reviewHeading">Quatro publicações, sem surpresas</h2>
+              <div class="review-list">
+                <div data-review-destination="instagram-feed"><span class="platform-icon instagram">IG</span><span><strong>Instagram @nelson · Feed</strong><small>Imagem 4:5 + legenda · segunda, 08:00</small></span><em>Pronto</em></div>
+                <div data-review-destination="instagram-story"><span class="platform-icon instagram">IG</span><span><strong>Instagram @nelson · Story</strong><small>Imagem 9:16 · segunda, 08:00</small></span><em>Pronto</em></div>
+                <div data-review-destination="facebook-feed"><span class="platform-icon facebook">f</span><span><strong>Facebook Página Centro · Feed</strong><small>Imagem + link · segunda, 08:00</small></span><em>Pronto</em></div>
+                <div data-review-destination="google"><span class="platform-icon google">G</span><span><strong>Google Loja Jardins · Oferta</strong><small>Cupom PRIMAVERA15 · 28/09 a 04/10</small></span><em>Pronto</em></div>
+                <div data-review-destination="whatsapp" hidden><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp Conta Principal</strong><small>Template oferta_v3 · 842 contatos aptos</small></span><em>Pronto</em></div>
+              </div>
+              <div class="review-total"><span>Veiculações independentes</span><strong id="reviewTotal">Agendar 4 publicações</strong></div>
+            </div>
+          </div>
+
+          <footer class="wizard-footer">
+            <button class="secondary-button" id="backButton" type="button">Voltar</button>
+            <span id="stepHint">Os limites e campos pertencem a cada destino.</span>
+            <button class="primary-button" id="nextButton" type="button">Continuar para público</button>
+          </footer>
+        </section>
+
+        <section class="page-view" id="page-today" hidden>
+          <div class="dashboard-grid">
+            <article class="metric-card"><span>Hoje</span><strong>4</strong><small>publicações agendadas</small></article>
+            <article class="metric-card"><span>Atenção</span><strong>1</strong><small>conexão para renovar</small></article>
+            <article class="metric-card"><span>Ofertas vivas</span><strong>2</strong><small>uma termina amanhã</small></article>
+          </div>
+          <div class="simple-card"><p class="section-kicker">Próximas ações</p><h2>O que pede sua atenção</h2><div class="activity-row"><span class="time-block">08:00<small>SEG</small></span><span><strong>Primavera · Hibisco</strong><small>4 destinos prontos</small></span><button class="secondary-button">Revisar</button></div><div class="activity-row"><span class="time-block warning">!</span><span><strong>Renovar conexão do WhatsApp</strong><small>Expira em 6 dias</small></span><button class="secondary-button">Resolver</button></div></div>
+        </section>
+
+        <section class="page-view" id="page-offers" hidden>
+          <div class="page-action-row"><p>Promoções e cupons que podem alimentar campanhas.</p><button class="primary-button">Nova oferta</button></div>
+          <div class="offer-list"><article><span class="offer-swatch coral">15%</span><span><strong>Hibisco Primavera</strong><small>PRIMAVERA15 · 28/09 a 04/10</small></span><em class="status-live">Agendada</em><button>•••</button></article><article><span class="offer-swatch ink">0</span><span><strong>Frete grátis Centro</strong><small>Sem cupom · pedido mínimo R$ 60</small></span><em class="status-live live">Ativa</em><button>•••</button></article></div>
+        </section>
+
+        <section class="page-view" id="page-platforms" hidden>
+          <div class="page-action-row platform-action-row">
+            <div>
+              <p class="section-kicker">Configuração</p>
+              <h2>Contas que o Marketing pode usar</h2>
+              <p>Conecte o provedor uma vez e escolha exatamente quais contas, Pages ou lojas ficam disponíveis.</p>
+            </div>
+            <button class="primary-button" id="addConnectionButton" type="button">Adicionar conexão</button>
+          </div>
+
+          <div class="connection-overview" aria-label="Resumo das conexões">
+            <article><strong>3</strong><span>provedores conectados</span></article>
+            <article><strong>4</strong><span>destinos disponíveis</span></article>
+            <article class="attention"><strong>1</strong><span>pede atenção</span></article>
+          </div>
+
+          <section class="platform-section" aria-labelledby="activeConnectionsTitle">
+            <div class="section-heading platform-section-heading">
+              <div><p class="section-kicker">Em uso</p><h2 id="activeConnectionsTitle">Suas conexões</h2></div>
+              <button class="text-button" id="verifyConnectionsButton" type="button">Verificar todas</button>
+            </div>
+            <div class="connection-list">
+              <article>
+                <div class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></div>
+                <span><strong>Meta · Nelson Boulangerie</strong><small>@nelson no Instagram · Página Centro no Facebook</small><span class="capability-line">Feed e Story ativos · Reel e carrossel planejados</span></span>
+                <em>Operacional</em>
+                <button class="secondary-button compact-button" type="button" data-manage-connector="meta">Gerenciar</button>
+              </article>
+              <article>
+                <span class="platform-icon google">G</span>
+                <span><strong>Google · Loja Jardins</strong><small>Perfil da Empresa · location verificada</small><span class="capability-line">Atualização, Evento e Oferta</span></span>
+                <em>Operacional</em>
+                <button class="secondary-button compact-button" type="button" data-manage-connector="google">Gerenciar</button>
+              </article>
+              <article>
+                <span class="platform-icon whatsapp">W</span>
+                <span><strong>WhatsApp · Conta Principal</strong><small>Via ManyChat · fluxo oferta_v3 aprovado</small><span class="capability-line">Conexão expira em 6 dias</span></span>
+                <em class="warn">Atenção</em>
+                <button class="secondary-button compact-button" type="button" data-manage-connector="whatsapp">Resolver</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="platform-section" aria-labelledby="connectorCatalogTitle">
+            <div class="section-heading platform-section-heading">
+              <div><p class="section-kicker">Catálogo</p><h2 id="connectorCatalogTitle">O que é possível conectar</h2></div>
+              <span class="catalog-legend">Disponibilidade do conector Shopman</span>
+            </div>
+            <p class="connector-family-note"><strong>Mesma família Meta, conexões diferentes.</strong> Instagram e Facebook podem compartilhar a autorização de Pages; WhatsApp usa uma WABA e um número comercial próprios.</p>
+            <div class="connector-catalog">
+              <article>
+                <div class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></div>
+                <span class="connector-state ready">Disponível agora</span>
+                <h3>Instagram e Facebook</h3>
+                <p>Uma autorização Meta descobre contas profissionais e Pages. Você escolhe cada destino separadamente.</p>
+                <ul><li>Feed e Story</li><li>Múltiplas contas e Pages</li><li>Permissões verificadas</li></ul>
+                <button class="secondary-button connector-button" type="button" data-add-connector="meta">Adicionar conta Meta</button>
+              </article>
+              <article>
+                <span class="platform-icon google">G</span>
+                <span class="connector-state ready">Disponível agora</span>
+                <h3>Google Business Profile</h3>
+                <p>Conecte uma conta Google e escolha as lojas que podem receber publicações.</p>
+                <ul><li>Atualização, Evento e Oferta</li><li>Múltiplas locations</li><li>CTA e cupom próprios</li></ul>
+                <button class="secondary-button connector-button" type="button" data-add-connector="google">Adicionar conta Google</button>
+              </article>
+              <article>
+                <span class="platform-icon whatsapp">W</span>
+                <span class="connector-state ready">Disponível agora</span>
+                <h3>WhatsApp via ManyChat</h3>
+                <p>Valide o token da conta e escolha um fluxo ativo e aprovado para campanhas.</p>
+                <ul><li>Fluxos verificados</li><li>Contatos com consentimento</li><li>Ensaio antes da liberação</li></ul>
+                <button class="secondary-button connector-button" type="button" data-add-connector="whatsapp">Adicionar ManyChat</button>
+              </article>
+              <article class="connector-unavailable">
+                <div class="provider-icons"><span class="platform-icon whatsapp">W</span><span class="platform-icon meta">M</span></div>
+                <span class="connector-state planned">Placeholder</span>
+                <h3>WhatsApp via Meta</h3>
+                <p>Conexão direta com a WhatsApp Business Platform, usando onboarding próprio da Meta.</p>
+                <ul><li>WABA e número comercial</li><li>Templates e webhooks próprios</li><li>App Review e acesso avançado</li></ul>
+                <button class="secondary-button connector-button" type="button" disabled>Planejado</button>
+              </article>
+              <article class="connector-unavailable">
+                <span class="platform-icon tiktok">T</span>
+                <span class="connector-state planned">Em preparação</span>
+                <h3>TikTok</h3>
+                <p>Entrará pelo Relay com upload de rascunho para o operador concluir no TikTok.</p>
+                <ul><li>Produto público primeiro</li><li>Review do TikTok obrigatório</li><li>Sem promessa de Direct Post</li></ul>
+                <button class="secondary-button connector-button" type="button" disabled>Ainda não disponível</button>
+              </article>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="connection-dialog" id="connectionWizard" aria-labelledby="connectionWizardTitle">
+      <form class="connection-modal" method="dialog">
+        <header class="connection-modal-header">
+          <div><p class="section-kicker" id="connectionWizardEyebrow">Nova conexão</p><h2 id="connectionWizardTitle">Adicionar plataforma</h2></div>
+          <button class="icon-button" id="closeConnectionWizard" type="button" aria-label="Fechar">×</button>
+        </header>
+
+        <ol class="connection-steps" aria-label="Etapas da conexão">
+          <li class="active" data-connection-step-indicator="1"><span>1</span>Escolher</li>
+          <li data-connection-step-indicator="2"><span>2</span>Autorizar</li>
+          <li data-connection-step-indicator="3"><span>3</span>Contas e teste</li>
+        </ol>
+
+        <div class="connection-modal-body">
+          <section data-connection-step-panel="1">
+            <h3>Qual provedor você quer conectar?</h3>
+            <p class="helper-copy">Mostramos somente integrações que o Shopman consegue configurar com segurança.</p>
+            <div class="connector-picker" role="radiogroup" aria-label="Provedor">
+              <button type="button" role="radio" aria-checked="false" data-connector-choice="meta"><span class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></span><span><strong>Instagram e Facebook</strong><small>Autorização Meta</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" data-connector-choice="google"><span class="platform-icon google">G</span><span><strong>Google Business Profile</strong><small>Conta Google + lojas</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" data-connector-choice="whatsapp"><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp via ManyChat</strong><small>Token + fluxo aprovado</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" disabled><span class="provider-icons"><span class="platform-icon whatsapp">W</span><span class="platform-icon meta">M</span></span><span><strong>WhatsApp via Meta</strong><small>WABA + telefone · conexão própria</small></span><em>Planejado</em></button>
+              <button type="button" role="radio" aria-checked="false" disabled><span class="platform-icon tiktok">T</span><span><strong>TikTok</strong><small>Relay + aprovação futura</small></span><em>Em preparação</em></button>
+            </div>
+          </section>
+
+          <section data-connection-step-panel="2" hidden>
+            <div class="authorization-heading"><span id="authorizationIcon" class="platform-icon google">G</span><div><h3 id="authorizationTitle">Autorizar provedor</h3><p id="authorizationDescription"></p></div></div>
+            <div id="authorizationFields"></div>
+            <div class="permission-box"><strong>O Shopman solicitará somente o necessário</strong><ul id="authorizationPermissions"></ul></div>
+            <p class="local-preview-note"><strong>Ambiente de demonstração:</strong> nenhuma credencial ou autorização externa será enviada.</p>
+          </section>
+
+          <section data-connection-step-panel="3" hidden>
+            <h3 id="resourceTitle">Escolha o que ficará disponível</h3>
+            <p class="helper-copy" id="resourceDescription"></p>
+            <div class="resource-picker" id="resourcePicker"></div>
+            <div class="verification-box"><span class="verification-mark">✓</span><span><strong>Verificação pronta</strong><small id="verificationSummary">Permissões e recursos serão conferidos antes de salvar.</small></span></div>
+          </section>
+        </div>
+
+        <footer class="connection-modal-footer">
+          <button class="secondary-button" id="connectionBackButton" type="button">Voltar</button>
+          <span id="connectionStepHint">Você poderá adicionar outras contas depois.</span>
+          <button class="primary-button" id="connectionNextButton" type="button" disabled>Continuar</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js?v=4"></script>
+  </body>
+</html>

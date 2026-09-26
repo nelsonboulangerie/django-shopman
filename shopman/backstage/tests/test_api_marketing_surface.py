@@ -1078,6 +1078,23 @@ class TestOptions:
             item["ref"] for item in capabilities["instagram"]["formats"]
         ] == ["story", "feed"]
         assert capabilities["instagram"]["formats"][0]["media_required"] is True
+        assert options["provider_capability_schema_version"] == 2
+        provider_capabilities = {
+            item["platform"]: item for item in options["provider_capabilities"]
+        }
+        assert provider_capabilities["instagram"]["connector_state"] == "active"
+        instagram_formats = {
+            item["ref"]: item
+            for item in provider_capabilities["instagram"]["formats"]
+        }
+        assert instagram_formats["carousel"]["implementation_state"] == "planned"
+        assert instagram_formats["carousel"]["media"]["max_items"] == 10
+        assert provider_capabilities["tiktok"]["connector_state"] == "dormant"
+        tiktok_formats = {
+            item["ref"]: item
+            for item in provider_capabilities["tiktok"]["formats"]
+        }
+        assert tiktok_formats["video_draft"]["delivery_kind"] == "creator_handoff"
         assert template.pk in {t["pk"] for t in options["templates"]}
         projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
         assert projected_template["requires_product"] is True
