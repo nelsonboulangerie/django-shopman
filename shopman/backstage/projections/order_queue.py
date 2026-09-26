@@ -737,7 +737,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         ref=order.ref,
         status=order.status,
         actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
-        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment", "schedule")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
@@ -2233,6 +2233,7 @@ _EVENT_LABELS = {
     "created": "Pedido criado",
     "payment_collected": "Pagamento recebido",
     "equipment_returned": "Maquininha devolvida",
+    "order_rescheduled": "Data combinada alterada",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
@@ -2269,6 +2270,15 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
     return tuple(result)
 
 
+def _short_date(raw) -> str:
+    from datetime import date as _date
+
+    try:
+        return _date.fromisoformat(str(raw or "")).strftime("%d/%m")
+    except ValueError:
+        return "sem data"
+
+
 def _event_detail(payload: dict) -> str:
     if not payload:
         return ""
@@ -2278,6 +2288,10 @@ def _event_detail(payload: dict) -> str:
         old_label = order_status_label(old_status, old_status or "-")
         new_label = order_status_label(new_status, new_status or "-")
         return f"{old_label} -> {new_label}"
+    if payload.get("to_date"):
+        # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
+        moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
+        return f"{moved} — {payload['reason']}" if payload.get("reason") else moved
     for key in ("reason", "note", "error"):
         value = payload.get(key)
         if value:

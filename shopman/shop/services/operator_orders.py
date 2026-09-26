@@ -1362,6 +1362,9 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     elif field == "equipment":
         dispatch = data.get("dispatch") or {}
         state = {key: dispatch.get(key) for key in ("equipment", "equipment_out_at", "equipment_out_by", "equipment_back_at", "equipment_back_by")}
+    elif field == "schedule":
+        # Reagendar: o que a tela leu da data combinada e do estado do pedido.
+        state = {"status": order.status, **{key: data.get(key) for key in ("delivery_date", "delivery_time_slot")}}
     elif field == "comment":
         # Append-only comments commute; unrelated comments/notes need no overwrite.
         state = {"channel_ref": order.channel_ref}
