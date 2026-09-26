@@ -33,10 +33,11 @@ const SURFACES = resolve(here, "../..");
 /** Cabeçalhos ricos ainda não convertidos. Cada linha é uma dívida com endereço. */
 const CABECALHOS_PROPRIOS_CONHECIDOS = [
   // O PDV monta o cabeçalho por página porque cada uma carrega um contexto diferente
-  // (comanda aberta, caixa, fichas) — e o `PosTabHeader` é editável.
+  // (comanda aberta, caixa) — e o `PosTabHeader` é editável. As Encomendas já
+  // nasceram no `OperatorAppBar` (`PosPreordersShell`), e a antiga tela de fichas
+  // saiu da lista com elas.
   "pos-nuxt/app/pages/index.vue",
   "pos-nuxt/app/pages/session/index.vue",
-  "pos-nuxt/app/pages/tickets.vue",
   // A Cozinha carrega relógio ao vivo e seletor de dia operacional no cabeçalho.
   "kds-nuxt/app/pages/[ref].vue",
   "kds-nuxt/app/pages/index.vue",

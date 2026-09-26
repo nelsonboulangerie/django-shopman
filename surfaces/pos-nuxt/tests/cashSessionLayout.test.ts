@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { attentionCount, attentionTiles, endOfDayTiles, openShiftTile, sessionActionTiles } from "~/presentation/cash";
+import {
+  attentionCount,
+  attentionTiles,
+  endOfDayTiles,
+  openShiftTile,
+  preorderTiles,
+  sessionActionTiles,
+} from "~/presentation/cash";
 
 // A antesala do turno aberto se organiza em três perguntas: quantas coisas
 // pedem uma pessoa agora, quais ações viram tile, e o que só aparece para quem
@@ -147,3 +154,43 @@ describe("attentionTiles — um card por natureza, cada um com o seu número", (
     expect(tiles[1]!.label).toBe("Pedidos de troco");
   });
 });
+
+// A seção Encomendas (ENCOMENDAS-PDV-PLAN, WP-E2): quatro portas com os nomes
+// que o balcão fala, e o gate por sondagem — sem permissão, a seção não existe.
+describe("preorderTiles — a seção Encomendas da antesala", () => {
+  it("sem resposta da sondagem (403, ou ainda carregando) a seção não existe", () => {
+    expect(preorderTiles(null)).toEqual([]);
+  });
+
+  it("quatro cards, na ordem do balcão: buscar, hoje, semana, Via Pedido", () => {
+    const tiles = preorderTiles({ todayCount: 3, weekCount: 9 });
+    expect(tiles.map((t) => t.key)).toEqual([
+      "preorders:search", "preorders:today", "preorders:week", "preorders:panel",
+    ]);
+    expect(tiles.map((t) => t.label)).toEqual([
+      "Cliente veio buscar", "Hoje", "Semana", "Via Pedido – painel",
+    ]);
+  });
+
+  it("Hoje e Semana carregam a contagem no selo", () => {
+    const tiles = preorderTiles({ todayCount: 3, weekCount: 9 });
+    expect(tiles.find((t) => t.key === "preorders:today")!.badge).toBe("3");
+    expect(tiles.find((t) => t.key === "preorders:week")!.badge).toBe("9");
+  });
+
+  it("⚠️ zero não é selo: sem encomenda o selo some e a descrição diz por extenso", () => {
+    const tiles = preorderTiles({ todayCount: 0, weekCount: 0 });
+    const today = tiles.find((t) => t.key === "preorders:today")!;
+    const week = tiles.find((t) => t.key === "preorders:week")!;
+    expect(today.badge).toBeUndefined();
+    expect(week.badge).toBeUndefined();
+    expect(today.description).toBe("Nenhuma encomenda para hoje");
+    expect(week.description).toBe("Nenhuma encomenda nos próximos 7 dias");
+  });
+
+  it("a palavra 'ficha' não volta para a tela", () => {
+    const text = preorderTiles({ todayCount: 1, weekCount: 1 }).map((t) => `${t.label} ${t.description}`).join(" ");
+    expect(text.toLowerCase()).not.toContain("ficha");
+  });
+});
+

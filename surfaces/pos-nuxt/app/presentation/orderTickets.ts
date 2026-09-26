@@ -1,5 +1,7 @@
-// FICHAS DE PEDIDO (o dono achou "filipeta" um nome horrível) — o pedido remoto
-// virando papel para o painel de parede.
+// VIA PEDIDO – PAINEL — o pedido remoto virando papel para o painel de parede.
+// O papel é a Via Pedido (`backstage/services/order_documents.py`); o dono achou
+// "filipeta" um nome horrível, e "ficha" saiu da tela com a seção Encomendas
+// (ENCOMENDAS-PDV-PLAN, WP-E2): na tela o papel se chama "via".
 //
 // O dono pediu assim: "poder imprimir uma filipeta, tipo um comprovante de
 // pedido remoto, antes do pagamento... para todos os pedidos da semana, por
@@ -33,7 +35,7 @@ export interface TicketRange {
  *
  * "A semana" é o padrão porque foi o exemplo do dono, e ela começa HOJE, não na
  * segunda: o painel serve para enxergar o que vem pela frente, e um lote que
- * começa três dias atrás imprime ficha de pedido já entregue.
+ * começa três dias atrás imprime via de pedido já entregue.
  */
 export type TicketPreset = "today" | "tomorrow" | "week" | "fortnight";
 
@@ -55,7 +57,7 @@ const PRESET_SPAN: Record<TicketPreset, { start: number; end: number }> = {
  * Acima disto a tela avisa antes do gesto.
  *
  * Não é o teto do lote (esse é do servidor) — é o ponto em que o operador
- * merece saber quanto papel vai andar. Cada ficha come uns 12 cm de bobina;
+ * merece saber quanto papel vai andar. Cada via come uns 12 cm de bobina;
  * 25 delas já são três metros no chão do balcão.
  */
 export const BATCH_WARN_AT = 25;
@@ -102,15 +104,15 @@ export function rangeLabel(range: TicketRange, today: string): string {
   return `${from} até ${dateLabel(range.date_to, today)}`;
 }
 
-/** "34 fichas" / "1 ficha" / "nenhuma ficha". */
+/** "34 vias" / "1 via" / "nenhuma via". */
 export function ticketCountLabel(count: number): string {
-  if (count <= 0) return "nenhuma ficha";
-  return count === 1 ? "1 ficha" : `${count} fichas`;
+  if (count <= 0) return "nenhuma via";
+  return count === 1 ? "1 via" : `${count} vias`;
 }
 
 /** O texto do CTA. O número entra no botão porque é o que ninguém quer errar. */
 export function printCtaLabel(count: number): string {
-  return count === 1 ? "Imprimir 1 ficha" : `Imprimir ${count} fichas`;
+  return count === 1 ? "Imprimir 1 via" : `Imprimir ${count} vias`;
 }
 
 export interface BatchNotice {
