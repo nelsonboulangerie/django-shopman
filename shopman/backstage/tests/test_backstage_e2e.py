@@ -168,9 +168,8 @@ def test_e2e_late_started_detection_creates_alert(setup):
 @pytest.mark.django_db
 def test_e2e_stock_receive_appears_on_closing_surface(client, setup):
     """A receive on a saleable position must show up in the fechamento surface."""
-    from shopman.offerman.models import Product
-
     from shopman.craftsman.models import Recipe
+    from shopman.offerman.models import Product
 
     Product.objects.create(sku="POS-LIFE", name="Pão", is_published=True, is_sellable=True, base_price_q=500)
     # Só o produzido na casa entra na contagem do fechamento.
