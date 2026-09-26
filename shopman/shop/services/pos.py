@@ -1005,6 +1005,14 @@ def _validate_schedule(payload: dict) -> None:
             raise ValueError(
                 f"A casa aceita encomenda até {teto.strftime('%d/%m/%Y')}. Escolha uma data mais próxima."
             )
+        # Dia fechado (feriado, férias ou dia da semana sem expediente): a loja
+        # online sempre recusou, e o balcão aceitava — encomenda prometida para
+        # um dia em que ninguém abre a porta. A regra é a mesma das outras portas.
+        from shopman.shop.services import preorder_dates
+
+        refusal = preorder_dates.date_refusal(day, today=hoje)
+        if refusal:
+            raise ValueError(refusal)
     else:
         day = hoje
 

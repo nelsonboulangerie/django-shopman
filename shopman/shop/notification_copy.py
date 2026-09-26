@@ -116,6 +116,17 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
+    # A data combinada mudou (``services/reschedule``). Quase sempre foi o próprio
+    # cliente que pediu: o tom é de confirmação ("Tudo certo"), não de notícia.
+    # ``{status_note}`` é a data nova por extenso ("sábado, 04/10, a partir das 9h").
+    "order_rescheduled": {
+        "subject": "Pedido {order_ref_short}: nova data",
+        "body": (
+            "Oi{customer_name_greeting}! Tudo certo: seu pedido *{order_ref_short}* agora está marcado para "
+            "{status_note}. Qualquer dúvida, estamos à disposição. 💛\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
     "fiscal_note_ready": {
         "subject": "Nota fiscal do pedido {order_ref_short}",
         "body": "A nota fiscal do pedido *{order_ref_short}* está disponível: {danfe_url}{fiscal_test_note}",
