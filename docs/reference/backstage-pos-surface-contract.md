@@ -40,6 +40,8 @@ surface depends on it.
 | Close cash shift | POST | `/api/v1/backstage/pos/cash/close/` | `close_cash_shift` |
 | Cash movement | POST | `/api/v1/backstage/pos/cash/movement/` | `register_cash_movement` |
 | Customer lookup | GET | `/api/v1/backstage/pos/customer/lookup/?phone={phone}` | `build_pos_customer_lookup` |
+| Preorders (search · day · week) | GET | `/api/v1/backstage/pos/preorders/?date_from=&date_to=&q=` | `projections.preorders.build_preorder_list` |
+| Preorder detail | GET | `/api/v1/backstage/pos/preorders/{ref}/` | `projections.preorders.build_preorder_detail` |
 | Reverse geocode | POST | `/api/v1/geocode/reverse` | storefront geocode API |
 
 Surfaces must use action hrefs from `pos.actions[]` when present. Fallback paths
@@ -323,6 +325,7 @@ backend validation.
 | Open/close shift and movement | `cashman.operate_pos` |
 | Tab lifecycle and sale review/close | `cashman.operate_pos` |
 | Recent sale correction | `cashman.operate_pos` |
+| Preorders (Encomendas) | `cashman.operate_pos` + `shop.manage_orders` |
 | Manager approval | approving user must have `cashman.adjust_shift` |
 | Cash shift audit/admin | `cashman.audit_shift` / admin permissions |
 

@@ -1363,6 +1363,22 @@ def _channel_configs_for(orders):
     return configs
 
 
+def items_summary(items) -> str:
+    """"2x Croissant, 1x Baguete, 3x Pão de queijo..." — o resumo de uma linha.
+
+    Uma régua só para toda tela que resume a sacola num card (Gestor, Encomendas
+    do PDV): três itens e reticências. ``items`` são os itens EFETIVOS
+    (``order_composition``), nunca as linhas cruas de um pedido ajustado.
+    """
+    head = list(items[:4])
+    summary = ", ".join(
+        f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in head[:3]
+    )
+    if len(head) > 3:
+        summary += "..."
+    return summary
+
+
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
@@ -1385,13 +1401,7 @@ def _build_card(
     queue_items = getattr(order, "_queue_items", None)
     if queue_items is None:
         queue_items = order_composition.effective_items(order)
-    items_qs = queue_items[:4]
-    items_summary = ", ".join(
-        f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in items_qs[:3]
-    )
-    if len(items_qs) > 3:
-        items_summary += "..."
-
+    summary = items_summary(queue_items)
     items_count = len(queue_items)
 
     is_delivery = _is_delivery(order)
@@ -1451,7 +1461,7 @@ def _build_card(
         server_now_iso=now.isoformat(),
         elapsed_seconds=int(elapsed),
         timer_class=timer_class,
-        items_summary=items_summary,
+        items_summary=summary,
         items_count=items_count,
         total_display=_money(order_composition.effective_total_q(order)),
         fulfillment_icon=fulfillment_icon,

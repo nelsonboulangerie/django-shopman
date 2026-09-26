@@ -1201,15 +1201,54 @@ def _alert_stale_intent_cancel_failed(order, *, intent_ref: str, gateway: str, e
 
 
 def read_payments_for(orders):
-    """Batch observation for projections only; no model attributes or shared cache."""
+    """Batch observation for projections only; no model attributes or shared cache.
+
+    Lê o intent do pedido E os intents de cada tender: venda mista do terminal
+    liquida um intent por método e só grava ``payment.intent_ref`` quando há um
+    método só (``settle_terminal_tenders``). Quem soma o que entrou precisa dos
+    dois (:func:`captured_balance_from_reads`).
+    """
     from shopman.payman import PaymentService
 
-    refs = {(order.data.get("payment") or {}).get("intent_ref") for order in orders}
+    refs: set[str] = set()
+    for order in orders:
+        refs.update(_order_intent_refs(order))
     try:
         return PaymentService.read_many(ref for ref in refs if ref)
     except Exception:
         logger.warning("payment.batch_read_failed", exc_info=True)
         return {}  # Every referenced intent becomes unknown, never embedded paid.
+
+
+def _order_intent_refs(order) -> list[str]:
+    """Os intents do pedido, sem repetição: o do pedido e os de cada tender."""
+    payment_data = (order.data or {}).get("payment") or {}
+    refs: list[str] = []
+    for ref in [payment_data.get("intent_ref"), *(
+        tender.get("intent_ref") for tender in payment_data.get("tenders") or [] if isinstance(tender, dict)
+    )]:
+        ref = str(ref or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def captured_balance_from_reads(order, payment_reads) -> int | None:
+    """O que entrou e continua na casa, somando TODOS os intents do pedido.
+
+    Irmã de :func:`captured_balance_q`, para leitura em lote: capturado menos
+    devolvido e contestado, em cada intent do pedido e dos tenders. ``None``
+    quando algum intent não pôde ser lido — "não sei" nunca vira "zero", porque
+    zero pago numa encomenda paga faria o balcão cobrar de novo. Pedido sem
+    intent nenhum devolve 0: nada foi recebido pelo Payman.
+    """
+    total = 0
+    for ref in _order_intent_refs(order):
+        observed = payment_reads.get(ref) if payment_reads is not None else None
+        if observed is None:
+            return None
+        total += int(observed.captured_q) - int(observed.refunded_q) - int(observed.chargeback_q)
+    return total
 
 
 def get_payment_status(order, *, payment_reads=None) -> str | None:
