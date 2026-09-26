@@ -62,6 +62,15 @@ function confirm() {
         </UiDialogDescription>
       </UiDialogHeader>
 
+      <p
+        v-if="handOver.needs_payment && handOver.digital_charge_notice"
+        class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+        data-preorder-digital-charge-notice
+      >
+        <Icon name="lucide:link-2-off" class="mt-0.5 size-4 shrink-0" />
+        <span>{{ handOver.digital_charge_notice }}</span>
+      </p>
+
       <form class="grid gap-4" @submit.prevent="confirm">
         <template v-if="handOver.needs_payment">
           <fieldset class="grid gap-2">

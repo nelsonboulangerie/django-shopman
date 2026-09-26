@@ -176,6 +176,9 @@ class PreorderHandOverProjection:
     # "credit"); vazio quando não disse ou combinou outra coisa.
     suggested_method: str
     block_reason: str
+    # Pix ou link pendente que o balcão vai cancelar ao receber: a linha que a
+    # tela mostra antes de confirmar. Vazio quando não há cobrança digital viva.
+    digital_charge_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -358,10 +361,11 @@ def build_preorder_detail(ref: str, *, user=None) -> PreorderDetailProjection | 
 
 
 def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHandOverProjection:
-    from shopman.shop.services import operator_orders
+    from shopman.shop.services import counter_takeover, operator_orders
 
     reason = operator_orders.counter_hand_over_block(order, balance_q=card.balance_q)
     amount = int(card.balance_q or 0)
+    digital = counter_takeover.pending_digital_method(order) if amount > 0 and not reason else ""
     return PreorderHandOverProjection(
         allowed=not reason,
         needs_payment=amount > 0,
@@ -369,6 +373,7 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
         amount_display=_money(amount),
         suggested_method=method if method in {"cash", "debit", "credit"} else "",
         block_reason=reason,
+        digital_charge_notice=counter_takeover.notice_for(digital) if digital else "",
     )
 
 

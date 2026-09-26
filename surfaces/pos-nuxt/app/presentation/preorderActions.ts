@@ -83,6 +83,18 @@ export function handOverBody(handOver: Pick<PreorderHandOver, "needs_payment" | 
   };
 }
 
+/**
+ * O cliente pagou online (Pix ou link) segundos antes de o balcão receber: o
+ * servidor recusa com `preorder_paid_online` e registra o pagamento. A tela avisa
+ * e oferece só "Entregar". Qualquer outro erro não é este aviso.
+ */
+export const PAID_ONLINE_CODE = "preorder_paid_online";
+
+export function paidOnlineNotice(code: string | null | undefined): string {
+  if (code !== PAID_ONLINE_CODE) return "";
+  return "O cliente acabou de pagar online. Não receba no balcão: só entregue a encomenda.";
+}
+
 /** O que o balcão lê quando a entrega deu certo. */
 export function handOverDoneMessage(receivedQ: number): string {
   return receivedQ > 0 ? `Recebido ${formatBRL(receivedQ)}. Encomenda entregue.` : "Encomenda entregue.";

@@ -139,6 +139,7 @@ class NotificationSendHandler:
                         "payment_link_already_paid",
                         "payment_link_order_cancelled",
                         "payment_link_expired",
+                        notification_svc.PAYMENT_TAKEN_OVER_AT_COUNTER,
                     }:
                         self._record_skip(fresh, "payment_not_pending")
                         return

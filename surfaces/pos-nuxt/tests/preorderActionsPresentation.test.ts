@@ -11,6 +11,7 @@ import {
   handOverCta,
   handOverDoneMessage,
   initialMethod,
+  paidOnlineNotice,
   receiveConfirmLabel,
   rescheduleChanged,
   rescheduleConfirmLabel,
@@ -18,6 +19,16 @@ import {
 } from "../app/presentation/preorderActions";
 
 const nbsp = (text: string) => text.replace(/\s/g, " ");
+
+describe("receber e entregar — o cliente que acabou de pagar online", () => {
+  it("só o código do servidor vira aviso, e o aviso diz para não cobrar", () => {
+    expect(paidOnlineNotice("preorder_paid_online")).toBe(
+      "O cliente acabou de pagar online. Não receba no balcão: só entregue a encomenda.",
+    );
+    expect(paidOnlineNotice("digital_charge_not_cancelled")).toBe("");
+    expect(paidOnlineNotice("")).toBe("");
+  });
+});
 
 describe("receber e entregar — a forma e o troco", () => {
   it("as formas do balcão: dinheiro, débito e crédito", () => {

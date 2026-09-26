@@ -44,7 +44,9 @@ async function confirmReschedule(choice: { date: string; slot: string; reason: s
 const cancelReason = ref("");
 
 async function confirmHandOver(body: HandOverBody) {
-  if (await actions.handOver(body)) handOverOpen.value = false;
+  const done = await actions.handOver(body);
+  // Entregou, ou o cliente acabou de pagar online (o aviso fica na página).
+  if (done || actions.paidOnline.value) handOverOpen.value = false;
 }
 
 async function confirmCancel(reason: string, managerApproval: ManagerApproval | null = null) {
@@ -125,6 +127,15 @@ function goBack() {
 
       <!-- OS GESTOS: entregar é o óbvio; cancelar fica ao lado, menor. -->
       <section class="grid gap-2" data-preorder-actions>
+        <p
+          v-if="actions.paidOnline.value && detail.hand_over.allowed && !detail.hand_over.needs_payment"
+          class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+          role="status"
+          data-preorder-paid-online
+        >
+          <Icon name="lucide:badge-check" class="mt-0.5 size-4 shrink-0" />
+          <span>{{ actions.paidOnline.value }}</span>
+        </p>
         <UiButton
           v-if="detail.hand_over.allowed"
           size="lg"

@@ -116,6 +116,11 @@ export interface PreorderHandOver {
   /** A forma que o cliente combinou, quando é de balcão; "" quando não disse. */
   suggested_method: "" | CounterMethod;
   block_reason: string;
+  /**
+   * Pix ou link pendente que o balcão cancela ao receber: a linha que o diálogo
+   * mostra antes de confirmar. "" quando não há cobrança digital viva.
+   */
+  digital_charge_notice: string;
 }
 
 export type CounterMethod = "cash" | "debit" | "credit";
