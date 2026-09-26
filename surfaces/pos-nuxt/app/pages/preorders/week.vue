@@ -6,16 +6,28 @@
 //
 // A semana começa HOJE e anda de sete em sete: a pergunta é o que vem pela
 // frente, e uma semana de segunda a domingo gastaria colunas com o que passou.
+//
+// O dinheiro: filtro de um toque (Todas · A receber · Pagas), o "A receber" da
+// semana no topo e o de cada dia na coluna, ao lado do total do dia. O filtro
+// esconde encomendas, nunca muda a conta do dia — a coluna diz o dia inteiro.
 import { isoDate } from "~/presentation/orderTickets";
 import {
   PREORDERS_SCOPE_NOTE,
   dayColumnTitle,
+  dayToReceiveLine,
+  filterDaysByPayment,
+  filterEmptyMessage,
+  flattenDays,
   groupByWindow,
   listSummary,
+  parsePaymentFilter,
+  paymentCounts,
   preorderCountLabel,
   rangeTitle,
+  toReceiveLine,
   weekRange,
 } from "~/presentation/preorders";
+import type { PaymentFilter } from "~/presentation/preorders";
 
 useHead({ title: "Encomendas da semana" });
 
@@ -26,8 +38,15 @@ const offset = ref(0);
 const range = computed(() => weekRange(today, offset.value));
 const preorders = usePosPreorders({ key: "pos-preorders-week", range });
 
-const days = computed(() => preorders.days.value);
+const filter = ref<PaymentFilter>(parsePaymentFilter(useRoute().query.pay));
+
+const counts = computed(() => paymentCounts(flattenDays(preorders.days.value)));
+const days = computed(() => filterDaysByPayment(preorders.days.value, filter.value));
+const shownCount = computed(() => flattenDays(days.value).length);
 const summary = computed(() => listSummary(preorders.count.value, preorders.totalDisplay.value));
+const toReceive = computed(() => (preorders.list.value
+  ? toReceiveLine(preorders.list.value.to_receive_q, preorders.list.value.to_receive_display)
+  : ""));
 </script>
 
 <template>
@@ -68,6 +87,14 @@ const summary = computed(() => listSummary(preorders.count.value, preorders.tota
     </p>
 
     <template v-else>
+      <template v-if="preorders.count.value">
+        <p class="text-base font-semibold tabular-nums" data-preorders-to-receive>{{ toReceive }}</p>
+        <PosPreorderPaymentFilter v-model="filter" :counts="counts" />
+        <p v-if="!shownCount" class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground" data-preorders-filter-empty>
+          {{ filterEmptyMessage(filter) }}
+        </p>
+      </template>
+
       <!-- GRADE (tela larga): sete colunas, a conta do dia no topo. -->
       <div class="hidden gap-2 md:grid md:grid-cols-7" data-week-grid>
         <section
@@ -82,6 +109,9 @@ const summary = computed(() => listSummary(preorders.count.value, preorders.tota
             <p class="text-xs tabular-nums text-muted-foreground" data-week-day-total>
               <template v-if="day.orders_count">{{ preorderCountLabel(day.orders_count) }} · {{ day.total_display }}</template>
               <template v-else>Nenhuma encomenda</template>
+            </p>
+            <p v-if="dayToReceiveLine(day)" class="text-xs font-semibold tabular-nums text-foreground" data-week-day-to-receive>
+              {{ dayToReceiveLine(day) }}
             </p>
           </header>
           <template v-for="group in groupByWindow(day.orders)" :key="group.key">
@@ -99,6 +129,7 @@ const summary = computed(() => listSummary(preorders.count.value, preorders.tota
             <span class="text-xs font-normal tabular-nums text-muted-foreground">
               <template v-if="day.orders_count">{{ preorderCountLabel(day.orders_count) }} · {{ day.total_display }}</template>
               <template v-else>Nenhuma encomenda</template>
+              <template v-if="dayToReceiveLine(day)"> · <span class="font-semibold text-foreground">{{ dayToReceiveLine(day) }}</span></template>
             </span>
           </h2>
           <template v-for="group in groupByWindow(day.orders)" :key="group.key">

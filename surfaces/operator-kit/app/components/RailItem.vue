@@ -19,6 +19,13 @@ const props = defineProps<{
   busy?: boolean;
   /** Cue de atenção — anel no ícone mesmo no compacto (ex.: abrir caixa). */
   attention?: boolean;
+  /**
+   * Selo com uma contagem curta (ex.: encomendas de hoje por entregar). Some quando
+   * vazio — zero não é selo. No compacto vira pastilha no canto do ícone; no
+   * estendido, pílula no fim da linha. O número é visual: quem monta o item diz o
+   * que ele conta no `ariaLabel`, porque "3" solto não é frase para leitor de tela.
+   */
+  badge?: string;
 }>();
 
 const emit = defineEmits<{ activate: [] }>();
@@ -57,7 +64,21 @@ function onClick() {
     >
       <Icon :name="iconName" class="size-5" />
     </span>
-    <Icon v-else :name="iconName" class="size-5 shrink-0" :class="busy ? 'animate-spin' : ''" />
-    <span v-if="showLabels" class="truncate text-sm">{{ label }}</span>
+    <span v-else class="relative grid shrink-0 place-items-center">
+      <Icon :name="iconName" class="size-5 shrink-0" :class="busy ? 'animate-spin' : ''" />
+      <span
+        v-if="badge && !showLabels"
+        aria-hidden="true"
+        class="absolute -top-2 -right-2.5 min-w-4 rounded-full bg-rail-foreground px-1 text-center text-[0.625rem] leading-4 font-semibold tabular-nums text-rail"
+        data-rail-badge
+      >{{ badge }}</span>
+    </span>
+    <span v-if="showLabels" class="min-w-0 flex-1 truncate text-left text-sm">{{ label }}</span>
+    <span
+      v-if="badge && showLabels"
+      aria-hidden="true"
+      class="shrink-0 rounded-full bg-rail-foreground px-1.5 text-xs leading-5 font-semibold tabular-nums text-rail"
+      data-rail-badge
+    >{{ badge }}</span>
   </component>
 </template>

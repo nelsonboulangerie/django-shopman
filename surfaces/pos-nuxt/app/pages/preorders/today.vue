@@ -2,13 +2,24 @@
 // ENCOMENDAS · HOJE — "o que sai hoje?". O dia por janela, cada encomenda com a
 // situação e o que falta receber. A ordem é a do painel (servidor): janela, e o
 // que não combinou horário no fim do dia.
+//
+// O dinheiro tem filtro de um toque (Todas · A receber · Pagas) e o total "A
+// receber" do dia no topo: controlar o que falta receber é a prioridade do
+// balcão (decisão do dono, 26/09). O filtro chega pela URL quando a casa das
+// Encomendas manda para cá (`?pay=to_receive`).
 import { isoDate } from "~/presentation/orderTickets";
 import {
   PREORDERS_SCOPE_NOTE,
+  filterByPayment,
+  filterEmptyMessage,
   groupByWindow,
   listSummary,
+  parsePaymentFilter,
+  paymentCounts,
+  toReceiveLine,
   todayRange,
 } from "~/presentation/preorders";
+import type { PaymentFilter } from "~/presentation/preorders";
 
 useHead({ title: "Encomendas de hoje" });
 
@@ -16,10 +27,15 @@ const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal()
 
 const range = ref(todayRange(isoDate(new Date())));
 const preorders = usePosPreorders({ key: "pos-preorders-today", range });
+const filter = ref<PaymentFilter>(parsePaymentFilter(useRoute().query.pay));
 
-const orders = computed(() => preorders.days.value[0]?.orders ?? []);
-const groups = computed(() => groupByWindow(orders.value));
+const day = computed(() => preorders.days.value[0] ?? null);
+const orders = computed(() => day.value?.orders ?? []);
+const counts = computed(() => paymentCounts(orders.value));
+const shown = computed(() => filterByPayment(orders.value, filter.value));
+const groups = computed(() => groupByWindow(shown.value));
 const summary = computed(() => listSummary(preorders.count.value, preorders.totalDisplay.value));
+const toReceive = computed(() => (day.value ? toReceiveLine(day.value.to_receive_q, day.value.to_receive_display) : ""));
 </script>
 
 <template>
@@ -54,13 +70,22 @@ const summary = computed(() => listSummary(preorders.count.value, preorders.tota
       <UiButton variant="outline" size="sm" to="/preorders/week">Ver a semana</UiButton>
     </section>
 
-    <section v-for="group in groups" v-else :key="group.key" class="grid gap-2" data-preorders-window>
-      <h2 class="text-sm font-semibold text-muted-foreground">{{ group.label }}</h2>
-      <ul class="grid gap-2">
-        <li v-for="card in group.orders" :key="card.ref">
-          <PosPreorderRow :card="card" />
-        </li>
-      </ul>
-    </section>
+    <template v-else>
+      <p class="text-base font-semibold tabular-nums" data-preorders-to-receive>{{ toReceive }}</p>
+      <PosPreorderPaymentFilter v-model="filter" :counts="counts" />
+
+      <p v-if="!shown.length" class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground" data-preorders-filter-empty>
+        {{ filterEmptyMessage(filter) }}
+      </p>
+
+      <section v-for="group in groups" :key="group.key" class="grid gap-2" data-preorders-window>
+        <h2 class="text-sm font-semibold text-muted-foreground">{{ group.label }}</h2>
+        <ul class="grid gap-2">
+          <li v-for="card in group.orders" :key="card.ref">
+            <PosPreorderRow :card="card" />
+          </li>
+        </ul>
+      </section>
+    </template>
   </PosPreordersShell>
 </template>

@@ -67,6 +67,19 @@ SITUATION_LABELS = {
 
 _DELIVERED_STATUSES = frozenset({"delivered", "completed"})
 
+#: O estado do DINHEIRO, separado da situação (que é da mercadoria primeiro): uma
+#: encomenda "Pronto" ainda pode ter saldo, e é o saldo que os filtros do balcão
+#: (Todas · A receber · Pagas) leem.
+#:
+#:   to_receive → saldo > 0: o balcão cobra na retirada.
+#:   paid       → nada a receber (inclui pré-pago do iFood e total zero).
+#:   on_account → saldo zero porque parte (ou tudo) foi para a conta da casa. É
+#:                obrigação do cliente reconhecida, NUNCA "a receber" no balcão —
+#:                cobrar de novo seria cobrar duas vezes —, e também não é "paga".
+#:   check      → o Payman não respondeu: "não sei" nunca entra calado em "a
+#:                receber" nem em "pagas"; a tela dá a ele um aviso próprio.
+PAYMENT_STATES = ("to_receive", "paid", "on_account", "check")
+
 
 # ── Projeções ─────────────────────────────────────────────────────────────
 
@@ -98,6 +111,8 @@ class PreorderCardProjection:
     status: str
     situation: str
     situation_label: str
+    # O dinheiro, à parte da mercadoria — ver :data:`PAYMENT_STATES`.
+    payment_state: str
     total_q: int
     total_display: str
     # ``None`` = o Payman não respondeu por algum intent do pedido. "Não sei"
@@ -120,6 +135,10 @@ class PreorderDayProjection:
     orders_count: int
     total_q: int
     total_display: str
+    # A soma dos saldos das encomendas "a receber" do dia (conta da casa e
+    # pagamento a conferir ficam de fora — ver :data:`PAYMENT_STATES`).
+    to_receive_q: int
+    to_receive_display: str
     orders: tuple[PreorderCardProjection, ...]
 
 
@@ -132,6 +151,8 @@ class PreorderListProjection:
     count: int
     total_q: int
     total_display: str
+    to_receive_q: int
+    to_receive_display: str
     # TODOS os dias do intervalo, inclusive os vazios: a grade semanal tem sete
     # colunas mesmo quando terça não tem nada, e a coluna vazia é informação.
     days: tuple[PreorderDayProjection, ...]
@@ -193,6 +214,7 @@ def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> P
     while cursor <= date_to:
         day_cards = by_day.get(cursor, [])
         day_total = sum(card.total_q for card in day_cards)
+        day_to_receive = _to_receive_q(day_cards)
         days.append(
             PreorderDayProjection(
                 date=cursor.isoformat(),
@@ -203,12 +225,15 @@ def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> P
                 orders_count=len(day_cards),
                 total_q=day_total,
                 total_display=_money(day_total),
+                to_receive_q=day_to_receive,
+                to_receive_display=_money(day_to_receive),
                 orders=tuple(day_cards),
             )
         )
         cursor += timedelta(days=1)
 
     total = sum(card.total_q for card in cards)
+    to_receive = _to_receive_q(cards)
     return PreorderListProjection(
         date_from=date_from.isoformat(),
         date_to=date_to.isoformat(),
@@ -217,6 +242,8 @@ def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> P
         count=len(cards),
         total_q=total,
         total_display=_money(total),
+        to_receive_q=to_receive,
+        to_receive_display=_money(to_receive),
         days=tuple(days),
     )
 
@@ -300,7 +327,8 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
     items = order_composition.effective_items(order)
     total_q = order_composition.effective_total_q(order)
     balance_q = _balance_q(order, total_q, reads)
-    situation = _situation(order, balance_q, total_q)
+    payment_state = _payment_state(order, balance_q, total_q)
+    situation = _situation(order, payment_state)
     is_delivery = order_queue._is_delivery(order)
     commitment = order_ticket.commitment_of(order)
     slot = data.get("delivery_time_slot")
@@ -320,6 +348,7 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
         status=order.status,
         situation=situation,
         situation_label=SITUATION_LABELS[situation],
+        payment_state=payment_state,
         total_q=total_q,
         total_display=_money(total_q),
         balance_q=balance_q,
@@ -369,7 +398,26 @@ def _on_account_q(order, total_q: int) -> int:
     return total_q if payment_data.get("method") == "account" else 0
 
 
-def _situation(order, balance_q: int | None, total_q: int) -> str:
+def _payment_state(order, balance_q: int | None, total_q: int) -> str:
+    """O estado do dinheiro, independente da mercadoria (:data:`PAYMENT_STATES`)."""
+    if balance_q is None:
+        return "check"
+    if balance_q > 0:
+        return "to_receive"
+    if total_q > 0 and _on_account_q(order, total_q) > 0:
+        return "on_account"
+    return "paid"
+
+
+_SITUATION_BY_PAYMENT_STATE = {
+    "check": "check_payment",
+    "to_receive": "to_pay",
+    "on_account": "on_account",
+    "paid": "paid",
+}
+
+
+def _situation(order, payment_state: str) -> str:
     """A situação que o balcão lê — a mercadoria primeiro, depois o dinheiro."""
     if order.status in _DELIVERED_STATUSES:
         return "delivered"
@@ -377,13 +425,12 @@ def _situation(order, balance_q: int | None, total_q: int) -> str:
         return "out_for_delivery"
     if order.status == "ready":
         return "ready"
-    if balance_q is None:
-        return "check_payment"
-    if balance_q > 0:
-        return "to_pay"
-    if total_q > 0 and _on_account_q(order, total_q) > 0:
-        return "on_account"
-    return "paid"
+    return _SITUATION_BY_PAYMENT_STATE[payment_state]
+
+
+def _to_receive_q(cards) -> int:
+    """O que falta receber no balcão: só o saldo das encomendas "a receber"."""
+    return sum(int(card.balance_q or 0) for card in cards if card.payment_state == "to_receive")
 
 
 def _matches(order, needle: str) -> bool:

@@ -32,15 +32,12 @@ import {
   movementLabel,
   movementReasons,
   openShiftTile,
-  preorderTiles,
   sessionActionTiles,
   sessionScreenState,
 } from "~/presentation/cash";
-import { PREORDERS_SCOPE_NOTE, todayCount } from "~/presentation/preorders";
 import type { SessionTile } from "~/presentation/cash";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
-import type { PreorderListResponse } from "~/types/preorders";
 
 useHead({ title: "Sessão de caixa" });
 
@@ -79,17 +76,6 @@ const { data: dayClosingData } = useFetch<DayClosingResponse>(
   { key: "day-closing-entry", credentials: "include", lazy: true, server: false },
 );
 const dayClosing = computed(() => dayClosingData.value?.closing ?? null);
-
-// Entrada das ENCOMENDAS: a mesma sondagem leve. A rota exige
-// `shop.manage_orders` (e o balcão); 401/403 = a seção não aparece. A resposta
-// padrão já é a semana que começa hoje — os dois selos saem dela.
-const { data: preordersData } = useFetch<PreorderListResponse>(
-  "/api/v1/backstage/pos/preorders/",
-  { key: "preorders-entry", credentials: "include", lazy: true, server: false },
-);
-const preordersSection = computed(() => preorderTiles(preordersData.value
-  ? { todayCount: todayCount(preordersData.value.days), weekCount: preordersData.value.count }
-  : null));
 
 const screen = computed(() => {
   if (!pos.value) return "closed";
@@ -183,10 +169,6 @@ function selectTile(tile: SessionTile) {
   else if (key === "close_shift") closingDialogOpen.value = true;
   else if (key === "day_closing") void goToDayClosing();
   else if (key === "cash_report") void goToCashReport();
-  else if (key === "preorders:search") void navigateTo("/preorders");
-  else if (key === "preorders:today") void navigateTo("/preorders/today");
-  else if (key === "preorders:week") void navigateTo("/preorders/week");
-  else if (key === "preorders:panel") void navigateTo("/preorders/panel");
 }
 
 // A lista de pendência que zerou fecha o próprio diálogo: resolvida a última
@@ -559,10 +541,11 @@ async function confirmClose() {
       </header>
 
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">
-        <!-- TUDO É CARD: cinco seções, cada uma uma grade de cards que abrem.
-             A ordem é a do balcão — o gesto óbvio, o que pede gente, as
-             encomendas, a gaveta, o fim do expediente — e o fim de dia EM CURSO (acabou de fechar o
-             caixa, dia por fechar) sobe para o topo: `order-first`. -->
+        <!-- TUDO É CARD: quatro seções, cada uma uma grade de cards que abrem.
+             A ordem é a do balcão — o gesto óbvio, o que pede gente, a gaveta,
+             o fim do expediente — e o fim de dia EM CURSO (acabou de fechar o
+             caixa, dia por fechar) sobe para o topo: `order-first`. As
+             Encomendas não moram aqui: a porta delas é a barra lateral. -->
         <div class="mx-auto grid w-full max-w-2xl gap-6 p-4 md:py-8">
           <p
             v-if="screen === 'closed' && justClosedShift"
@@ -602,26 +585,6 @@ async function confirmClose() {
             </div>
             <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <li v-for="tile in needsYouTiles" :key="tile.key">
-                <PosSessionTile :tile="tile" @select="selectTile" />
-              </li>
-            </ul>
-          </section>
-
-          <!-- ENCOMENDAS: com ou sem caixa aberto — quem vem buscar não espera o
-               turno. Só para quem pode ler pedidos (a sondagem decide). O corte
-               da seção diverge do "Agendados" do Gestor, e por isso a tela o diz. -->
-          <section
-            v-if="preordersSection.length"
-            class="grid gap-3"
-            data-preorders-section
-            aria-labelledby="preorders-title"
-          >
-            <div class="grid gap-0.5">
-              <h2 id="preorders-title" class="text-base font-semibold">Encomendas</h2>
-              <p class="text-sm text-muted-foreground">{{ PREORDERS_SCOPE_NOTE }}</p>
-            </div>
-            <ul class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <li v-for="tile in preordersSection" :key="tile.key">
                 <PosSessionTile :tile="tile" @select="selectTile" />
               </li>
             </ul>

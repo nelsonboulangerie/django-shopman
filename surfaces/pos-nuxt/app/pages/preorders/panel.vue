@@ -2,8 +2,8 @@
 // VIA PEDIDO – PAINEL — o pedido remoto virando papel para o painel de parede.
 //
 // Era a tela "Fichas de pedido" do rail (`/tickets`, que agora responde 301 para
-// cá — bookmark de kiosk). Virou o quarto card da seção Encomendas
-// (ENCOMENDAS-PDV-PLAN, WP-E2), e o papel ganhou o nome do dono: Via Pedido
+// cá — bookmark de kiosk). Virou um card da casa das Encomendas (`/preorders`,
+// a porta da barra lateral — ENCOMENDAS-PDV-PLAN), e o papel ganhou o nome do dono: Via Pedido
 // (`backstage/services/order_documents.py`).
 //
 // Por que esta tela mora no PDV e não no Gestor: a via é PAPEL, e o papel só

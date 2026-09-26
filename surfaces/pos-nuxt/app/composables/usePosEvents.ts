@@ -2,6 +2,29 @@ import { toValue } from "vue";
 
 import { shouldConnectSse, shouldPollTick, type PosRealtimeState } from "~/presentation/events";
 
+export interface PosEventChannel {
+  /** Rota SSE same-origin do BFF (`server/routes/sse/*`). */
+  path: string;
+  /** O evento nomeado que o django-eventstream empurra naquele canal. */
+  event: string;
+}
+
+/** Os canais que o balcão assina, e o evento nomeado de cada um. Dois streams
+ *  porque são duas PERMISSÕES e dois assuntos — não porque a tela precise
+ *  distinguir: os dois desembocam no mesmo refetch. */
+export const POS_TERMINAL_CHANNELS: readonly PosEventChannel[] = [
+  { path: "/sse/cash", event: "backstage-cash-update" },
+  // A cozinha mexeu numa comanda deste balcão: o selo "Na cozinha" da linha
+  // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
+  { path: "/sse/tabs", event: "backstage-tabs-update" },
+];
+
+/** O canal dos PEDIDOS (o mesmo do Gestor, `shop.manage_orders`): as Encomendas
+ *  refazem a leitura quando um pedido nasce, muda de status ou é pago. */
+export const POS_ORDER_CHANNELS: readonly PosEventChannel[] = [
+  { path: "/sse/orders", event: "backstage-orders-update" },
+];
+
 /**
  * Tempo real entre estações do PDV: SSE push + poll de fallback + wake.
  *
@@ -13,12 +36,18 @@ import { shouldConnectSse, shouldPollTick, type PosRealtimeState } from "~/prese
  * pendências, turno e comandas já vivem (ADR-016: o push é sinal, o fetch é a
  * verdade).
  *
+ * `channels` troca os streams (padrão: cash + tabs). As Encomendas assinam o
+ * canal dos pedidos (`POS_ORDER_CHANNELS`) com a mesma mecânica.
+ *
  * Fallback: poll calmo (60s) só enquanto o SSE não está vivo — se o stream
  * conecta, o tick não refaz nada. Tablet que dormiu/voltou à aba refaz na hora
  * e tenta reconectar o stream (um 403 na conexão fecha o EventSource de vez;
  * sem esta retomada, a estação ficaria no poll para sempre).
  */
-export function usePosEvents(onPush: () => void, opts?: { pollMs?: number; enabled?: () => boolean }) {
+export function usePosEvents(
+  onPush: () => void,
+  opts?: { pollMs?: number; enabled?: () => boolean; channels?: readonly PosEventChannel[] },
+) {
   /** O stream so conecta com a estacao identificada: no gate os canais sao
    *  negados e o EventSource entraria no ciclo de reconexao com 400. */
   const isEnabled = () => shouldConnectSse(opts?.enabled ? toValue(opts.enabled()) : undefined);
@@ -27,20 +56,12 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number; enabl
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let sources: EventSource[] = [];
 
-  /** Os canais que o balcão assina, e o evento nomeado de cada um. Dois streams
-   *  porque são duas PERMISSÕES e dois assuntos — não porque a tela precise
-   *  distinguir: os dois desembocam no mesmo refetch. */
-  const CHANNELS: Array<{ path: string; event: string }> = [
-    { path: "/sse/cash", event: "backstage-cash-update" },
-    // A cozinha mexeu numa comanda deste balcão: o selo "Na cozinha" da linha
-    // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
-    { path: "/sse/tabs", event: "backstage-tabs-update" },
-  ];
+  const channels = opts?.channels ?? POS_TERMINAL_CHANNELS;
 
   function connectSse() {
     if (!isEnabled() || sources.length) return;
     realtime.value = "connecting";
-    for (const channel of CHANNELS) {
+    for (const channel of channels) {
       try {
         const source = new EventSource(ssePath(channel.path, config.app.baseURL), { withCredentials: true });
         // django-eventstream empurra eventos nomeados; qualquer um = refetch.

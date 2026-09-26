@@ -216,6 +216,47 @@ def test_a_mercadoria_vence_o_dinheiro_na_situacao(status, situation):
     assert card.balance_q == 3600  # o saldo continua no card, com campo próprio
 
 
+# ── O dinheiro à parte: estado de pagamento e "a receber" ────────────────
+
+
+def test_estado_de_pagamento_nao_depende_da_mercadoria():
+    """"Pronto" com saldo continua A RECEBER: é o saldo que os filtros leem."""
+    today = timezone.localdate().isoformat()
+    _order("PRONTO-DEVE", status="ready", delivery_date=today)
+    paid = _order("PRONTO-PAGO", status="ready", delivery_date=today)
+    _pay(paid, 3600)
+    _order("CONTA-2", delivery_date=today, payment={"method": "account"})
+    _order("CONFERIR", delivery_date=today, payment={"method": "pix", "intent_ref": "PI-NAO-EXISTE"})
+
+    projection = _list()
+
+    states = {ref: _card(projection, ref).payment_state for ref in ("PRONTO-DEVE", "PRONTO-PAGO", "CONTA-2", "CONFERIR")}
+    assert states == {
+        "PRONTO-DEVE": "to_receive",
+        "PRONTO-PAGO": "paid",
+        "CONTA-2": "on_account",
+        "CONFERIR": "check",
+    }
+
+
+def test_a_receber_soma_so_o_saldo_das_encomendas_a_receber():
+    """Conta da casa e pagamento a conferir nunca entram calados no "a receber"."""
+    today = timezone.localdate().isoformat()
+    _order("DEVE-1", delivery_date=today)  # 3600 a receber
+    parcial = _order("DEVE-PARCIAL", delivery_date=today)
+    _pay(parcial, 1000)  # 2600 a receber
+    _order("CONTA-3", delivery_date=today, payment={"method": "account"})
+    _order("CONFERIR-2", delivery_date=today, payment={"method": "pix", "intent_ref": "PI-NAO-EXISTE"})
+
+    projection = _list()
+
+    today_day = next(day for day in projection.days if day.is_today)
+    assert today_day.to_receive_q == 6200
+    assert today_day.to_receive_display == "R$ 62,00"
+    assert projection.to_receive_q == 6200
+    assert today_day.total_q == 4 * 3600  # o total do dia continua sendo o total
+
+
 # ── Busca ─────────────────────────────────────────────────────────────────
 
 
@@ -277,6 +318,8 @@ def test_a_rota_lista_com_os_params_canonicos(caixa):
     assert body["count"] == 1
     assert body["days"][0]["orders"][0]["ref"] == "ROTA-1"
     assert body["days"][0]["orders"][0]["situation_label"] == "A pagar"
+    assert body["days"][0]["orders"][0]["payment_state"] == "to_receive"
+    assert body["to_receive_display"] == "R$ 36,00"
 
 
 def test_sem_manage_orders_a_rota_recusa(client):

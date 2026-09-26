@@ -5,8 +5,8 @@
 // cabeçalho — o guardrail do cabeçalho (`guardrails.appBar.test.ts`) não deixa
 // cabeçalho novo nascer à mão.
 //
-// No rail, as Encomendas acendem "Sessão de caixa": a seção mora na antesala, e
-// é para lá que o item leva de volta.
+// No rail, as Encomendas acendem o próprio item: a porta da seção é a barra
+// lateral (decisão do dono, 26/09), e o nome no começo da barra leva à casa.
 import { toast } from "vue-sonner";
 
 import { PREORDER_SECTIONS } from "~/presentation/preorders";
@@ -41,7 +41,7 @@ function openCustomerDisplay() {
       :has-open-cash-session="pos.has_open_cash_session"
       :operator-name="activeOperator?.name || ''"
       :pending="pending"
-      view="session"
+      view="preorders"
       @board="navigateTo('/')"
       @cash="navigateTo('/session')"
       @display="openCustomerDisplay"
@@ -53,9 +53,9 @@ function openCustomerDisplay() {
       <OperatorAppBar :sections="PREORDER_SECTIONS" :current="current" label="Seções de Encomendas">
         <template #start>
           <NuxtLink
-            to="/session"
+            to="/preorders"
             class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 text-base font-semibold hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            aria-label="Encomendas — voltar para a sessão de caixa"
+            aria-label="Encomendas — voltar para o início da seção"
           >
             <Icon name="lucide:package" class="size-5 text-muted-foreground" />
             <span class="hidden sm:inline">Encomendas</span>

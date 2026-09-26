@@ -11,6 +11,13 @@ export type PreorderSituation =
   | "out_for_delivery"
   | "delivered";
 
+/**
+ * O DINHEIRO, à parte da mercadoria (a situação diz "Pronto" mesmo com saldo).
+ * É o que os filtros Todas · A receber · Pagas leem. `on_account` nunca é "a
+ * receber" nem "paga"; `check` (o Payman não respondeu) tem aviso próprio.
+ */
+export type PreorderPaymentState = "to_receive" | "paid" | "on_account" | "check";
+
 export interface PreorderCard {
   ref: string;
   /** Número do iFood, só quando o ref não o carrega (mesma régua do Gestor). */
@@ -28,6 +35,7 @@ export interface PreorderCard {
   status: string;
   situation: PreorderSituation;
   situation_label: string;
+  payment_state: PreorderPaymentState;
   total_q: number;
   total_display: string;
   /** `null` = o Payman não respondeu; a situação diz "Conferir pagamento". */
@@ -46,6 +54,9 @@ export interface PreorderDay {
   orders_count: number;
   total_q: number;
   total_display: string;
+  /** Soma dos saldos "a receber" do dia (sem conta da casa, sem "a conferir"). */
+  to_receive_q: number;
+  to_receive_display: string;
   orders: PreorderCard[];
 }
 
@@ -58,6 +69,8 @@ export interface PreorderListResponse {
   count: number;
   total_q: number;
   total_display: string;
+  to_receive_q: number;
+  to_receive_display: string;
   days: PreorderDay[];
 }
 

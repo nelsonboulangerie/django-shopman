@@ -259,7 +259,6 @@ export function sessionScreenState(
 //
 //   Caixa             — abrir (fechado) ou continuar vendendo (aberto)
 //   Precisa de você   — só existe com pendência; um card por natureza
-//   Encomendas        — com ou sem caixa: buscar, hoje, semana, Via Pedido
 //   Gaveta            — pedir troco, entrada/saída, abrir sem venda
 //   Fim do expediente — fechar caixa → fechamento do dia → relatório
 //
@@ -495,57 +494,4 @@ export function endOfDayTiles(input: {
     });
   }
   return tiles;
-}
-
-/**
- * Os cards da seção "Encomendas" (ENCOMENDAS-PDV-PLAN, WP-E2) — visível com ou
- * sem caixa aberto, porque quem vem buscar não espera o turno abrir.
- *
- * `summary` nulo = a sondagem de `/pos/preorders/` foi recusada (sem
- * `shop.manage_orders`) ou ainda não voltou: a seção não existe. É o mesmo
- * gate por sondagem do fechamento do dia — a tela não oferece porta que vai
- * bater na cara.
- *
- * ⚠️ Zero não vira selo: "0" num canto é código secreto. Sem encomenda, o selo
- * some e a descrição diz, por extenso, que não há nada.
- */
-export function preorderTiles(summary: { todayCount: number; weekCount: number } | null): SessionTile[] {
-  if (!summary) return [];
-  const { todayCount, weekCount } = summary;
-  return [
-    {
-      key: "preorders:search",
-      icon: "lucide:search",
-      label: "Cliente veio buscar",
-      description: "Achar a encomenda pelo nome, telefone ou número do pedido",
-      disabled: false,
-      tone: "default",
-    },
-    {
-      key: "preorders:today",
-      icon: "lucide:calendar-check",
-      label: "Hoje",
-      description: todayCount > 0 ? "O que sai hoje, por horário, com o que falta receber" : "Nenhuma encomenda para hoje",
-      disabled: false,
-      tone: "default",
-      badge: todayCount > 0 ? String(todayCount) : undefined,
-    },
-    {
-      key: "preorders:week",
-      icon: "lucide:calendar-days",
-      label: "Semana",
-      description: weekCount > 0 ? "Hoje e os próximos 6 dias, com o total de cada dia" : "Nenhuma encomenda nos próximos 7 dias",
-      disabled: false,
-      tone: "default",
-      badge: weekCount > 0 ? String(weekCount) : undefined,
-    },
-    {
-      key: "preorders:panel",
-      icon: "lucide:printer",
-      label: "Via Pedido – painel",
-      description: "Imprimir as encomendas de um período para o painel de parede",
-      disabled: false,
-      tone: "default",
-    },
-  ];
 }
