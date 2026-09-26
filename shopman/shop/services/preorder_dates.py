@@ -44,7 +44,8 @@ def closed_date(day: date, closed_dates: list) -> tuple[bool, str | None]:
 
     Entradas aceitas: ``{"date": "YYYY-MM-DD", "label": ...}`` ou
     ``{"from": ..., "to": ..., "label": ...}`` (intervalo inclusivo). Entrada
-    ilegível é ignorada — uma linha mal digitada no Admin não fecha a loja.
+    ilegível é ignorada — uma linha mal digitada no Admin não fecha a loja —, mas
+    grita no log, para alguém corrigir o fechamento que não está valendo.
     """
     for entry in closed_dates or []:
         label = entry.get("label", "")
@@ -53,13 +54,13 @@ def closed_date(day: date, closed_dates: list) -> tuple[bool, str | None]:
                 if day == date.fromisoformat(entry["date"]):
                     return True, label
             except ValueError:
-                pass
+                logger.warning("preorder_dates: closed_dates ilegível ignorado entry=%r", entry)
         elif "from" in entry and "to" in entry:
             try:
                 if date.fromisoformat(entry["from"]) <= day <= date.fromisoformat(entry["to"]):
                     return True, label
             except ValueError:
-                pass
+                logger.warning("preorder_dates: closed_dates ilegível ignorado entry=%r", entry)
     return False, None
 
 
