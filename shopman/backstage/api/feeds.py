@@ -3,7 +3,7 @@ Backstage Feed API — Feeds (menuboard/Google/Meta) no Gestor.
 
 Read = board dos canais (venda e exibição) + coleções disponíveis; write = o toggle
 "Ativo" de qualquer canal (com período, motivo e gerente) e, nos feeds, as coleções
-e a rotação. Gate: ``shop.manage_catalog``.
+e a rotação/modo automático. Gate: ``shop.manage_catalog``.
 """
 
 from __future__ import annotations
@@ -177,6 +177,20 @@ class FeedRotationView(_FeedBase):
             return Response({"detail": "ref é obrigatório."}, status=400)
         return self.mutate(request, ref, {"rotate_seconds": rotate_seconds, "items_per_page": items_per_page},
             lambda base: feed_service.set_rotation(ref, rotate_seconds=rotate_seconds, items_per_page=items_per_page, expected_revision=base))
+
+
+class FeedAutomaticView(_FeedBase):
+    operation = "automatic"
+
+    def post(self, request):
+        ref = str(request.data.get("ref") or "").strip()
+        enabled = request.data.get("enabled")
+        idle_message = request.data.get("idle_message")
+        if not ref or not isinstance(enabled, bool) or not isinstance(idle_message, str):
+            return Response({"detail": "Informe o menuboard, o modo automático e a mensagem de descanso."}, status=400)
+        return self.mutate(request, ref, {"enabled": enabled, "idle_message": idle_message},
+            lambda base: feed_service.set_automatic(ref, enabled=enabled, idle_message=idle_message,
+                                                    expected_revision=base))
 
 
 class ChannelAttentionView(APIView):

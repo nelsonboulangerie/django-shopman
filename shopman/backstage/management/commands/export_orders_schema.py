@@ -52,6 +52,7 @@ from shopman.backstage.projections.feeds import (
     FeedCollectionRef,
     FeedProjection,
     ManagerOptionProjection,
+    MenuboardAutomaticProjection,
 )
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
 from shopman.backstage.projections.order_queue import (
@@ -87,6 +88,7 @@ CONTRACT_DATACLASSES = (
     ChannelPeriodOption,
     ChannelSwitchProjection,
     ManagerOptionProjection,
+    MenuboardAutomaticProjection,
     FeedProjection,
     CatalogChannelProjection,
     CollectionOptionProjection,

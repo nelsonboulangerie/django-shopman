@@ -6,6 +6,7 @@ import Feeds from "../../app/pages/feeds.vue";
 const board = ref<any>(null);
 const error = ref<any>(null);
 const setCollections = vi.fn();
+const setAutomatic = vi.fn();
 for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key, value);
 vi.stubGlobal("useHead", vi.fn());
 vi.stubGlobal("useRoute", () => ({ query: {} }));
@@ -13,12 +14,13 @@ vi.stubGlobal("useNextFocus", vi.fn());
 let leave: () => boolean;
 vi.stubGlobal("onBeforeRouteLeave", (guard: () => boolean) => { leave = guard; });
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
-vi.stubGlobal("useFeedBoard", () => ({ board, error, errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections, switchChannel: vi.fn(), setRotation: vi.fn() }));
+vi.stubGlobal("useFeedBoard", () => ({ board, error, errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections, switchChannel: vi.fn(), setRotation: vi.fn(), setAutomatic }));
 const health = ref<Record<string, any>>({});
 vi.stubGlobal("useChannelHealth", () => ({ healthOf: (ref_: string) => health.value[ref_] ?? null, refresh: vi.fn() }));
 const popover = defineComponent({ props: ["open"], emits: ["update:open"], template: '<div :data-open="open"><button data-open-editor @click="$emit(\'update:open\', true)">Abrir editor</button><slot /></div>' });
-const render = () => mount(Feeds, { global: { stubs: { Icon: true, UiToolbar: { template: "<div><slot/><slot name=\"end\"/></div>" }, UiIconButton: true, UiPopover: popover, UiPopoverTrigger: { template: "<div><slot/></div>" }, UiPopoverContent: { template: "<div><slot/></div>" }, ChannelHealthChecklist: { props: ["health"], emits: ["choose-collections"], template: '<div v-if="health" :data-checklist="health.ref"><button data-choose @click="$emit(\'choose-collections\')">escolher</button>{{ health.summary }}</div>' } } } });
-beforeEach(() => { health.value = {}; board.value = null; error.value = null; setCollections.mockReset(); });
+const uiSwitch = defineComponent({ props: ["modelValue"], emits: ["update:modelValue"], template: '<button type="button" @click="$emit(\'update:modelValue\', !modelValue)" />' });
+const render = () => mount(Feeds, { global: { stubs: { Icon: true, UiToolbar: { template: "<div><slot/><slot name=\"end\"/></div>" }, UiIconButton: true, UiSwitch: uiSwitch, UiPopover: popover, UiPopoverTrigger: { template: "<div><slot/></div>" }, UiPopoverContent: { template: "<div><slot/></div>" }, ChannelHealthChecklist: { props: ["health"], emits: ["choose-collections"], template: '<div v-if="health" :data-checklist="health.ref"><button data-choose @click="$emit(\'choose-collections\')">escolher</button>{{ health.summary }}</div>' } } } });
+beforeEach(() => { health.value = {}; board.value = null; error.value = null; setCollections.mockReset(); setAutomatic.mockReset(); });
 
 it("a failed first GET never says no feeds exist", () => {
   error.value = { status: 503 };
@@ -75,6 +77,20 @@ it("GET indisponível conserva o editor e a seleção da última leitura", async
   expect((wrapper.get("input[type=checkbox]").element as HTMLInputElement).checked).toBe(true);
   expect(wrapper.get("[data-open]").attributes("data-open")).toBe("true");
   expect(setCollections).not.toHaveBeenCalled();
+});
+
+it("menuboard tem toggle automático visível e o gesto preserva a mensagem", async () => {
+  board.value = { feeds: [{
+    ref: "tv", name: "TV", collections: [], capability: "display", kind: "menuboard", is_active: true,
+    rotate_seconds: 0, items_per_page: 0,
+    automatic: { enabled: false, is_sleeping: false, idle_message: "Voltamos às 9h", state_line: "Automático desligado: conteúdo contínuo.", lead_minutes: 15, lag_minutes: 15 },
+    actions: [{ ref: "automatic", enabled: true, reason: "", payload_schema: { base_revision: "auto-base" } }],
+  }], all_collections: [], catalog_channels: [] };
+  setAutomatic.mockResolvedValue(true);
+  const wrapper = render();
+  expect(wrapper.get("[data-automatic-row]").text()).toContain("conteúdo contínuo");
+  await wrapper.get("[data-automatic-switch]").trigger("click");
+  expect(setAutomatic).toHaveBeenCalledWith("tv", true, "Voltamos às 9h", "auto-base");
 });
 
 it("todo card tem o mesmo toggle, e o toggle abre o modal em vez de mudar direto", async () => {

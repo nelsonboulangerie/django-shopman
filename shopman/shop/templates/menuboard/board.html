@@ -47,6 +47,13 @@
     /* Canal desligado no Gestor: tela preta, uma frase, nada de produto. Cobre a
        tela inteira (inclusive o fundo do quadro) — é a TV "apagada" com recado. */
     .off-screen { position: fixed; inset: 0; background: #000; color: var(--chalk); display: grid; place-items: center; padding: 2rem; text-align: center; font-size: clamp(1.6rem, 4vw, 3rem); letter-spacing: 0.02em; z-index: 10; }
+    .sleep-screen { position: fixed; inset: 0; overflow: hidden; background: #050806; color: var(--chalk); display: flex; align-items: center; z-index: 9; }
+    .sleep-message { width: max-content; max-width: none; white-space: nowrap; font-size: clamp(2rem, 6vw, 5rem); letter-spacing: 0.04em; animation: menuboard-marquee 28s linear infinite; }
+    @keyframes menuboard-marquee { from { transform: translateX(100vw); } to { transform: translateX(-100%); } }
+    @media (prefers-reduced-motion: reduce) {
+      .sleep-screen { justify-content: center; padding: 3rem; text-align: center; }
+      .sleep-message { width: auto; max-width: 56rem; white-space: normal; animation: none; }
+    }
   </style>
 </head>
 <body>
@@ -67,6 +74,8 @@
   <div id="menuboard-server">
     {% if not board.is_active %}
     <div class="off-screen" data-menuboard-off><p>{{ board.off_message }}</p></div>
+    {% elif board.is_sleeping %}
+    <div class="sleep-screen" data-menuboard-sleep><p class="sleep-message">{{ board.sleep_message }}</p></div>
     {% else %}
     <header>
       <h1>{{ board.title }}</h1>
@@ -101,11 +110,14 @@
   <div class="board" id="menuboard-root" data-ref="{{ ref }}"
        x-data="menuboard()" x-init="init()" x-cloak>
     <div class="off-screen" x-show="board.is_active === false" data-menuboard-off><p x-text="board.off_message"></p></div>
-    <header>
+    <div class="sleep-screen" x-show="board.is_active !== false && board.is_sleeping === true" data-menuboard-sleep>
+      <p class="sleep-message" x-text="board.sleep_message"></p>
+    </div>
+    <header x-show="board.is_active !== false && board.is_sleeping !== true">
       <h1 x-text="board.title"></h1>
       <div class="subtitle" x-text="board.subtitle"></div>
     </header>
-    <div class="cols">
+    <div class="cols" x-show="board.is_active !== false && board.is_sleeping !== true">
       <template x-for="group in currentGroups" :key="group.title">
         <section>
           <div class="section-title" x-text="group.title"></div>
@@ -123,13 +135,13 @@
         </section>
       </template>
     </div>
-    <div class="empty" x-show="totalItems === 0 && board.is_active !== false">Sem itens no momento.</div>
-    <div class="page-dots" x-show="pages.length > 1" aria-hidden="true">
+    <div class="empty" x-show="totalItems === 0 && board.is_active !== false && board.is_sleeping !== true">Sem itens no momento.</div>
+    <div class="page-dots" x-show="pages.length > 1 && board.is_sleeping !== true" aria-hidden="true">
       <template x-for="(p, i) in pages" :key="i">
         <span class="dot" :class="{ on: i === page }"></span>
       </template>
     </div>
-    <footer>
+    <footer x-show="board.is_active !== false && board.is_sleeping !== true">
       <span class="live-dot" :class="{ stale: !live }"></span>
       <span x-text="live ? 'ao vivo' : 'reconectando…'"></span>
     </footer>

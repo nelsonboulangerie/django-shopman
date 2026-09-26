@@ -56,12 +56,15 @@ class FeedConflict(CatalogError):
 
 
 def revision(channel, field: str) -> str:
+    from shopman.shop.services.menuboard_schedule import automatic_settings
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     display = _display(channel)
+    automatic_enabled, idle_message = automatic_settings(channel)
     values = {
         "collections": display.get("collections") or [],
         "rotation": [display.get("rotate_seconds", 0), display.get("items_per_page", 0)],
+        "automatic": [automatic_enabled, idle_message],
     }
     return mutation_fingerprint({"version": 1, "ref": channel.ref, "policy": channel.commerce_policy,
         "format": display.get("format") or "", "field": field, "value": values[field]})
@@ -133,6 +136,30 @@ def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int, expected
     ):
         display["rotate_seconds"] = rotate_seconds
         display["items_per_page"] = items_per_page
+        _save_display(sc, display)
+        _notify(ref)
+
+
+@transaction.atomic
+def set_automatic(ref: str, *, enabled: bool, idle_message: str, expected_revision=None) -> None:
+    """Liga/desliga a janela automática e configura o texto do descanso."""
+    from shopman.shop.services.menuboard_schedule import MAX_IDLE_MESSAGE_LENGTH, normalize_idle_message
+
+    if not isinstance(enabled, bool):
+        raise CatalogError("enabled deve ser verdadeiro ou falso.")
+    message = normalize_idle_message(idle_message)
+    if len(message) > MAX_IDLE_MESSAGE_LENGTH:
+        raise CatalogError(f"A mensagem de descanso deve ter até {MAX_IDLE_MESSAGE_LENGTH} caracteres.")
+
+    sc = _display_channel(ref)
+    _check_revision(sc, "automatic", expected_revision)
+    display = _display(sc)
+    if display.get("format"):
+        raise CatalogError(f"'{ref}' é um feed de plataforma — modo automático existe apenas no menuboard.")
+
+    value = {"enabled": enabled, "idle_message": message}
+    if display.get("automatic") != value:
+        display["automatic"] = value
         _save_display(sc, display)
         _notify(ref)
 

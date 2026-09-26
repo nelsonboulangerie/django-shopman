@@ -52,6 +52,7 @@ BOARD_URL = "/api/v1/backstage/feeds/"
 SWITCH_URL = "/api/v1/backstage/feeds/switch/"
 COLLS_URL = "/api/v1/backstage/feeds/collections/"
 ROTATION_URL = "/api/v1/backstage/feeds/rotation/"
+AUTOMATIC_URL = "/api/v1/backstage/feeds/automatic/"
 
 
 def _post(client, url, *, data, content_type):
@@ -74,6 +75,10 @@ def test_board_shape(client, operator, board):
     assert [c["ref"] for c in by_ref["tv"]["collections"]] == ["paes"]
     assert by_ref["google"]["output_path"] == "/feed/google.xml"
     assert by_ref["google"]["is_active"] is False
+    assert by_ref["tv"]["automatic"]["enabled"] is False
+    assert by_ref["tv"]["automatic"]["lead_minutes"] == 15
+    assert by_ref["google"]["automatic"] is None
+    assert next(a for a in by_ref["tv"]["actions"] if a["ref"] == "automatic")["enabled"] is True
     assert {c["ref"] for c in data["all_collections"]} == {"paes", "doces"}
 
 
@@ -258,6 +263,47 @@ def test_set_rotation_rejects_platform_feed(client, operator, board):
     client.force_login(operator)
     resp = _rotate(client, {"ref": "google", "rotate_seconds": 10, "items_per_page": 12})
     assert resp.status_code == 400
+
+
+# ── Janela automática e descanso da TV ─────────────────────────────────────────
+
+
+def _automatic(client, body):
+    return _post(client, AUTOMATIC_URL, data=body, content_type="application/json")
+
+
+def test_set_automatic_writes_mode_and_normalized_message(client, operator, board):
+    client.force_login(operator)
+    resp = _automatic(client, {
+        "ref": "tv", "enabled": True,
+        "idle_message": "  Atendimento de seg. a sáb.   ·  Minha padaria favorita  ",
+    })
+    assert resp.status_code == 200, resp.content
+    assert Channel.objects.get(ref="tv").config["display"]["automatic"] == {
+        "enabled": True, "idle_message": "Atendimento de seg. a sáb. · Minha padaria favorita",
+    }
+
+
+def test_set_automatic_is_projected_back_to_the_manager(client, operator, board):
+    client.force_login(operator)
+    _automatic(client, {"ref": "tv", "enabled": True, "idle_message": "Voltamos às 9h"})
+    tv = next(feed for feed in client.get(BOARD_URL).json()["board"]["feeds"] if feed["ref"] == "tv")
+    assert tv["automatic"]["enabled"] is True
+    assert tv["automatic"]["idle_message"] == "Voltamos às 9h"
+
+
+def test_set_automatic_rejects_platform_feed(client, operator, board):
+    client.force_login(operator)
+    resp = _automatic(client, {"ref": "google", "enabled": True, "idle_message": "Olá"})
+    assert resp.status_code == 400
+    assert "apenas no menuboard" in resp.json()["detail"]
+
+
+def test_set_automatic_rejects_long_message(client, operator, board):
+    client.force_login(operator)
+    resp = _automatic(client, {"ref": "tv", "enabled": True, "idle_message": "x" * 241})
+    assert resp.status_code == 400
+    assert "240" in resp.json()["detail"]
 
 
 def test_set_rotation_requires_manage_catalog(client, plain_staff, board):

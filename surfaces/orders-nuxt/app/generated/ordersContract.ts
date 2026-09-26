@@ -185,7 +185,17 @@ export interface ManagerOptionProjection {
   name: string;
 }
 
-/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = (), switch: 'ChannelSwitchProjection | None' = None) */
+/** MenuboardAutomaticProjection(enabled: 'bool', is_sleeping: 'bool', idle_message: 'str', state_line: 'str', lead_minutes: 'int', lag_minutes: 'int') */
+export interface MenuboardAutomaticProjection {
+  enabled: boolean;
+  is_sleeping: boolean;
+  idle_message: string;
+  state_line: string;
+  lead_minutes: number;
+  lag_minutes: number;
+}
+
+/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', automatic: 'MenuboardAutomaticProjection | None', actions: 'tuple[Action, ...]' = (), switch: 'ChannelSwitchProjection | None' = None) */
 export interface FeedProjection {
   ref: string;
   name: string;
@@ -198,6 +208,7 @@ export interface FeedProjection {
   collections: FeedCollectionRef[];
   rotate_seconds: number;
   items_per_page: number;
+  automatic: MenuboardAutomaticProjection | null;
   actions: Action[];
   switch: ChannelSwitchProjection | null;
 }

@@ -8,7 +8,7 @@
 import type { ChannelSwitchProjection, CollectionOptionProjection, FeedProjection } from "~/types/feeds";
 import { IFOOD_CHANNEL_REF } from "~/presentation/ifoodStore";
 
-const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, switchChannel, setCollections, setRotation } = useFeedBoard();
+const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, switchChannel, setCollections, setRotation, setAutomatic } = useFeedBoard();
 const catalogChannels = computed(() => board.value?.catalog_channels ?? []);
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
@@ -102,11 +102,39 @@ async function applyRotation(sc: FeedProjection) {
   const ok = await setRotation(sc.ref, Number(draftSeconds.value) || 0, Number(draftItems.value) || 0, rotationDrafts.value[sc.ref]?.base);
   if (ok) { Reflect.deleteProperty(rotationDrafts.value, sc.ref); if (rotationRef.value === sc.ref) rotationRef.value = null; }
 }
+
+const automaticRef = ref<string | null>(null);
+const automaticDrafts = ref<Record<string, { message: string; base: string }>>({});
+const automaticMessage = computed({
+  get: () => automaticRef.value ? automaticDrafts.value[automaticRef.value]?.message ?? "" : "",
+  set: (value: string) => { if (automaticRef.value && automaticDrafts.value[automaticRef.value]) automaticDrafts.value[automaticRef.value]!.message = value; },
+});
+function openAutomatic(sc: FeedProjection) {
+  if (!sc.automatic) return;
+  automaticDrafts.value[sc.ref] ??= { message: sc.automatic.idle_message, base: baseFor(sc, "automatic") };
+  automaticRef.value = sc.ref;
+}
+const automaticConflict = (sc: FeedProjection) => !!automaticDrafts.value[sc.ref] && automaticDrafts.value[sc.ref]!.base !== baseFor(sc, "automatic");
+function resolveAutomatic(sc: FeedProjection, keep: boolean) {
+  if (!sc.automatic) return;
+  automaticDrafts.value[sc.ref] = { message: keep ? automaticMessage.value : sc.automatic.idle_message, base: baseFor(sc, "automatic") };
+}
+async function applyAutomaticMessage(sc: FeedProjection) {
+  if (!sc.automatic || automaticConflict(sc)) return;
+  const ok = await setAutomatic(sc.ref, sc.automatic.enabled, automaticMessage.value, automaticDrafts.value[sc.ref]?.base);
+  if (ok) { Reflect.deleteProperty(automaticDrafts.value, sc.ref); if (automaticRef.value === sc.ref) automaticRef.value = null; }
+}
+async function applyAutomaticToggle(sc: FeedProjection, enabled: boolean) {
+  if (!sc.automatic) return;
+  await setAutomatic(sc.ref, enabled, sc.automatic.idle_message, baseFor(sc, "automatic"));
+}
 const hasDraft = computed(() => feeds.value.some((sc) => {
   const collections = collectionDrafts.value[sc.ref];
   const rotation = rotationDrafts.value[sc.ref];
+  const automatic = automaticDrafts.value[sc.ref];
   return (collections && JSON.stringify([...collections.values].sort()) !== JSON.stringify(sc.collections.map((c) => c.ref).sort())) ||
-    (rotation && (rotation.seconds !== sc.rotate_seconds || rotation.items !== sc.items_per_page));
+    (rotation && (rotation.seconds !== sc.rotate_seconds || rotation.items !== sc.items_per_page)) ||
+    (automatic && automatic.message !== sc.automatic?.idle_message);
 }));
 onBeforeRouteLeave(() => !hasDraft.value || window.confirm("Há alterações de feed não salvas. Sair e descartá-las?"));
 
@@ -182,6 +210,22 @@ useHead({ title: "Canais" });
           </div>
           <ChannelSwitchState v-if="sc.switch" :sw="sc.switch" />
 
+          <div v-if="sc.automatic" class="flex items-center gap-3 rounded-md border border-border bg-muted/20 p-3" data-automatic-row>
+            <Icon :name="sc.automatic.is_sleeping ? 'lucide:moon-star' : 'lucide:sunrise'" class="size-4 shrink-0 text-muted-foreground" />
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium">Automático</p>
+              <p class="text-xs text-muted-foreground">{{ sc.automatic.state_line }}</p>
+            </div>
+            <UiSwitch
+              :model-value="sc.automatic.enabled"
+              :disabled="isBusy(sc.ref) || !actionFor(sc, 'automatic')?.enabled"
+              :aria-label="`${sc.name}: modo automático ${sc.automatic.enabled ? 'ligado; desligar' : 'desligado; ligar'}`"
+              :title="actionFor(sc, 'automatic')?.reason || 'Usar o horário da loja, com 15 min antes e depois'"
+              data-automatic-switch
+              @update:model-value="(enabled: boolean) => applyAutomaticToggle(sc, enabled)"
+            />
+          </div>
+
           <!-- corpo: coleções exibidas -->
           <div class="flex min-h-8 flex-wrap items-center gap-1.5" data-card-body>
             <span
@@ -198,7 +242,7 @@ useHead({ title: "Canais" });
           <ChannelHealthChecklist :health="healthOf(sc.ref)" @choose-collections="openEdit(sc)" />
 
           <!-- rodapé: ações -->
-          <div class="mt-auto flex items-center gap-1.5 border-t border-border pt-3" data-card-footer>
+          <div class="mt-auto flex flex-wrap items-center gap-1.5 border-t border-border pt-3" data-card-footer>
             <UiPopover :open="editRef === sc.ref" @update:open="(v) => { if (!v) editRef = null; else openEdit(sc); }">
               <UiPopoverTrigger as-child>
                 <button type="button" :disabled="!actionFor(sc, 'collections')?.enabled" :title="actionFor(sc, 'collections')?.reason" class="min-h-control min-w-control inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent">
@@ -272,6 +316,42 @@ useHead({ title: "Canais" });
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete rotationDrafts[sc.ref]; rotationRef = null">Descartar</button>
                   <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Salvar rotação</button>
+                </div>
+              </UiPopoverContent>
+            </UiPopover>
+
+            <UiPopover
+              v-if="sc.automatic"
+              :open="automaticRef === sc.ref" @update:open="(v) => { if (!v) automaticRef = null; else openAutomatic(sc); }"
+            >
+              <UiPopoverTrigger as-child>
+                <button
+                  type="button" :disabled="!actionFor(sc, 'automatic')?.enabled"
+                  class="min-h-control min-w-control inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent"
+                  :title="actionFor(sc, 'automatic')?.reason || 'Configurar a mensagem do descanso de tela'"
+                >
+                  <Icon name="lucide:message-square-text" class="size-3.5" /> Descanso
+                </button>
+              </UiPopoverTrigger>
+              <UiPopoverContent align="start" :side-offset="6" class="w-72 p-3">
+                <p class="mb-1 text-xs font-medium text-muted-foreground">Mensagem do descanso</p>
+                <p class="mb-2 text-xs text-muted-foreground/70">
+                  No automático, a TV exibe o cardápio 15 min antes da abertura e descansa 15 min depois do fechamento.
+                </p>
+                <div v-if="automaticConflict(sc)" role="alert" class="mb-2 text-xs">
+                  <p>A configuração mudou no servidor. Seu texto foi preservado.</p>
+                  <button type="button" class="min-h-11 underline" @click="resolveAutomatic(sc, true)">Manter meu texto</button>
+                  <button type="button" class="min-h-11 underline" @click="resolveAutomatic(sc, false)">Usar valor atual</button>
+                </div>
+                <textarea
+                  v-model="automaticMessage" rows="4" maxlength="240"
+                  class="w-full rounded-md border border-border bg-background p-2 text-sm"
+                  placeholder="Atendimento de seg. a sáb., das 9h às 18h · Nelson Boulangerie: minha padaria favorita"
+                ></textarea>
+                <p class="mt-1 text-right text-xs tabular-nums text-muted-foreground">{{ automaticMessage.length }}/240</p>
+                <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
+                  <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete automaticDrafts[sc.ref]; automaticRef = null">Descartar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || automaticConflict(sc) || !automaticMessage.trim() || !actionFor(sc, 'automatic')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyAutomaticMessage(sc)">Salvar mensagem</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>
