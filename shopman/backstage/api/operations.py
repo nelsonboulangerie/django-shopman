@@ -39,6 +39,7 @@ import hashlib
 import json
 import logging
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import login, logout
@@ -2427,34 +2428,6 @@ class POSPreorderHandOverView(APIView):
         except (TypeError, ValueError):
             return Response({"detail": "Valor recebido inválido.", "field": "cash_tendered_q"}, status=400)
 
-        # Pix ou link pendente: a cobrança do cliente morre ANTES do acerto, fora
-        # da transação dele (cancelamento no provedor não volta com rollback). Se
-        # o cliente acabou de pagar, o balcão não recebe: só entrega.
-        from shopman.shop.services import counter_takeover
-
-        if counter_takeover.pending_digital_method(order):
-            try:
-                shift = pos_service.current_shift(_terminal_do_pedido(request), strict=True)
-                revised = operator_orders.take_over_before_hand_over(
-                    order, cash_shift=shift, actor=_actor(request), tenders=raw_tenders, expected_revision=base,
-                )
-            except counter_takeover.PaidOnline as exc:
-                return Response({"detail": str(exc), "error": {"code": "preorder_paid_online"}}, status=409)
-            except counter_takeover.TakeoverFailed as exc:
-                return Response({"detail": str(exc), "error": {"code": "digital_charge_not_cancelled"}}, status=409)
-            except operator_orders.OrderStateConflict as exc:
-                return Response({"detail": str(exc), "error": {"code": "preorder_changed"}}, status=409)
-            except CashError as exc:
-                return Response({"detail": exc.message}, status=400)
-            except ValueError as exc:
-                return Response({"detail": str(exc)}, status=400)
-            except Exception:
-                logger.warning("pos_preorder_counter_takeover_failed order=%s", order.ref, exc_info=True)
-                return Response({"detail": counter_takeover.CANCEL_FAILED_MESSAGE,
-                    "error": {"code": "digital_charge_not_cancelled"}}, status=409)
-            if revised is not None:
-                base = revised
-
         def executar():
             try:
                 terminal_ref = _terminal_do_pedido(request)
@@ -2475,7 +2448,43 @@ class POSPreorderHandOverView(APIView):
             order.refresh_from_db()
             return Response({"ok": True, "ref": order.ref, "received_q": received_q, "status": order.status})
 
-        return _cash_idempotent(request, acao="preorder-hand-over", executar=executar)
+        def executar_com_takeover():
+            # O claim remoto durável abaixo nasce ANTES desta primeira chamada ao
+            # provedor. O acerto local conserva seu claim transacional próprio:
+            # se o processo cair entre o acerto e o recibo externo, o retry
+            # recupera exatamente a resposta já commitada, sem cobrar de novo.
+            nonlocal base
+            from shopman.shop.services import counter_takeover
+
+            if counter_takeover.pending_digital_method(order):
+                try:
+                    shift = pos_service.current_shift(_terminal_do_pedido(request), strict=True)
+                    revised = operator_orders.take_over_before_hand_over(
+                        order, cash_shift=shift, actor=_actor(request), tenders=raw_tenders,
+                        expected_revision=base,
+                        takeover_attempt_id=str(request.data.get("client_request_id") or "").strip(),
+                    )
+                except counter_takeover.PaidOnline as exc:
+                    return Response({"detail": str(exc), "error": {"code": "preorder_paid_online"}}, status=409)
+                except counter_takeover.TakeoverFailed as exc:
+                    return Response({"detail": str(exc), "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+                except operator_orders.OrderStateConflict as exc:
+                    return Response({"detail": str(exc), "error": {"code": "preorder_changed"}}, status=409)
+                except CashError as exc:
+                    return Response({"detail": exc.message}, status=400)
+                except ValueError as exc:
+                    return Response({"detail": str(exc)}, status=400)
+                except Exception:
+                    logger.warning("pos_preorder_counter_takeover_failed order=%s", order.ref, exc_info=True)
+                    return Response({"detail": counter_takeover.CANCEL_FAILED_MESSAGE,
+                        "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+                if revised is not None:
+                    base = revised
+            return _cash_idempotent(request, acao="preorder-hand-over", executar=executar)
+
+        return _cash_remote_idempotent(
+            request, acao="preorder-hand-over", executar=executar_com_takeover,
+        )
 
 
 @extend_schema_view(
@@ -3815,6 +3824,57 @@ def _cash_idempotent(request, *, acao: str, executar):
             },
             status=409,
         )
+
+    corpo = resultado.response_body or {}
+    return Response(corpo.get("data"), status=int(corpo.get("status") or 200))
+
+
+def _cash_remote_idempotent(request, *, acao: str, executar):
+    """Reserva uma tentativa antes de I/O e mantém rede fora de transação longa.
+
+    A mutação local chamada por ``executar`` ainda usa ``_cash_idempotent``;
+    este recibo externo é o orquestrador recuperável do trecho com provedor.
+    """
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
+        RemoteMutationInProgress,
+        run_idempotent_mutation,
+    )
+
+    terminal_ref = _terminal_do_pedido(request)
+    chave = str(request.data.get("client_request_id") or "").strip()
+    if not chave or len(chave) > 128:
+        return Response({"detail": "Identifique a tentativa antes de registrar.",
+            "error": {"code": "client_request_id_required"}}, status=422)
+    payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
+    intention = {"actor": request.user.pk, "terminal": terminal_ref, "path": request.path, "payload": payload}
+
+    class CashMutationRejected(Exception):
+        def __init__(self, response):
+            self.response = response
+
+    def _executar_para_o_claim():
+        resposta = executar()
+        if resposta.status_code >= 300:
+            raise CashMutationRejected(resposta)
+        return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
+
+    try:
+        resultado = run_idempotent_mutation(
+            scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}.remote",
+            key=chave,
+            payload=intention,
+            in_progress_ttl=timedelta(minutes=15),
+            execute=_executar_para_o_claim,
+        )
+    except CashMutationRejected as exc:
+        return exc.response
+    except RemoteMutationConflict:
+        return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
+            "error": {"code": "idempotency_conflict"}}, status=409)
+    except RemoteMutationInProgress:
+        return Response({"detail": "Este lançamento já está sendo registrado. Aguarde um instante.",
+            "error": {"code": "cash_mutation_in_progress"}}, status=409)
 
     corpo = resultado.response_body or {}
     return Response(corpo.get("data"), status=int(corpo.get("status") or 200))

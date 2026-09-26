@@ -588,10 +588,11 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
         # A cobrança JÁ morreu no Stripe. Sem a baixa local, o Payman segue com
         # um intent de pé para um pedido que ninguém mais pode pagar, e o
         # `success=True` abaixo jurava que os dois lados estavam alinhados.
-        try:
-            PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
-        except PaymentError as exc:
-            _record_ledger_drift("cancel", intent_ref, exc)
+        if config.get("persist_local", True):
+            try:
+                PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
+            except PaymentError as exc:
+                _record_ledger_drift("cancel", intent_ref, exc)
 
         return PaymentResult(success=True)
     except Exception as e:

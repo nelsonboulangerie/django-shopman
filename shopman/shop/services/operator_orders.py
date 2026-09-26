@@ -1118,6 +1118,7 @@ def take_over_before_hand_over(
     actor: str,
     tenders: list[dict] | None,
     expected_revision: str | None = None,
+    takeover_attempt_id: str = "",
 ) -> str | None:
     """Antes de receber no balcão, matar a cobrança digital pendente (Pix/link).
 
@@ -1152,7 +1153,9 @@ def take_over_before_hand_over(
         from shopman.utils.monetary import format_money
 
         raise ValueError(f"As formas devem cobrir exatamente o que falta receber: R$ {format_money(due)}.")
-    counter_takeover.take_over_pending_digital_charge(order, actor=actor)
+    counter_takeover.take_over_pending_digital_charge(
+        order, actor=actor, attempt_id=takeover_attempt_id,
+    )
     order.refresh_from_db()
     return operational_revision(order)
 
