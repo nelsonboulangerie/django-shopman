@@ -588,6 +588,9 @@ export interface POSCartItem {
    *  KDS e chega por push (canal SSE `tabs`) — o selo da linha segue o ticket em
    *  vez de congelar no estado do minuto do disparo. */
   kitchen_status?: string;
+  /** Os tickets da cozinha que levam esta linha — o card que o toque no selo
+   *  abre (estação, itens, disparo, estado, e o "Pronto" da estação sem tela). */
+  kitchen_tickets?: POSKitchenTicket[];
   /** Desconto MANUAL desta linha. `value` é percentual em `percent` e REAIS em
    *  `fixed` — a mesma convenção do desconto do pedido. O R$ é POR UNIDADE:
    *  é assim que ele compete com o automático no "maior desconto ganha", que é
@@ -604,6 +607,34 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
+}
+
+/** Um ticket da cozinha, como o PDV o mostra (``projections/pos._kitchen_tickets_by_line``). */
+export interface POSKitchenTicket {
+  pk: number;
+  station_name: string;
+  /** A estação recebe o pedido impresso (não tem tela). */
+  prints: boolean;
+  status: "pending" | "in_progress" | "done" | string;
+  status_label: string;
+  fired_at_display: string;
+  paper_label: string;
+  paper_failed: boolean;
+  items: { name: string; qty: number; notes: string }[];
+  /** O balcão pode dar o "Pronto" desta estação (sem tela, ticket aberto). */
+  can_mark_ready: boolean;
+}
+
+/** O aviso do "Pronto" dado pelo balcão ou pelo leitor (``KDSPrintedTicketReceiptProjection``). */
+export interface POSKitchenTicketReceipt {
+  ticket_pk: number;
+  station_name: string;
+  order_ref: string;
+  order_code: string;
+  customer_name: string;
+  status: string;
+  completed_now: boolean;
+  message: string;
 }
 
 export interface POSPaymentTenderDraft {

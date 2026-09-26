@@ -314,6 +314,25 @@ def test_pronto_do_pdv_recusa_ticket_de_estacao_de_tela_e_ticket_cancelado(clien
     assert "cancelado" in cancel.json()["detail"]
 
 
+def test_a_linha_da_comanda_traz_o_card_do_ticket_para_o_pdv(lanches, cafes):
+    from shopman.backstage.projections.pos import _kitchen_tickets_by_line
+
+    order = _order("WEB-20260926-1252")
+    _ticket(order, lanches, line="L1")
+    _ticket(order, cafes, status="in_progress", line="L2")
+    _ticket(order, lanches, status="cancelled", line="L3")
+
+    by_line = _kitchen_tickets_by_line(order.session_key)
+
+    assert set(by_line) == {"L1", "L2"}  # o cancelado não vira card
+    lanche = by_line["L1"][0]
+    assert (lanche["station_name"], lanche["prints"], lanche["can_mark_ready"]) == ("Lanches", True, True)
+    assert lanche["status_label"] == "Na fila"
+    assert lanche["items"] == [{"name": "Item", "qty": 1, "notes": ""}]
+    cafe = by_line["L2"][0]
+    assert (cafe["prints"], cafe["can_mark_ready"], cafe["status_label"]) == (False, False, "Em preparo")
+
+
 # ── O QR da Via Cozinha e o leitor de código ───────────────────────────────
 
 
