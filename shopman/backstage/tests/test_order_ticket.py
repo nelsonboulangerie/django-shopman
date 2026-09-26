@@ -82,10 +82,66 @@ def test_a_filipeta_diz_que_nao_e_nota_nem_comprovante_de_pagamento(shop):
     indistinguível de um recibo — e quem o guarda tem toda a razão em achar que
     já pagou.
     """
-    papel = _texto(order_ticket(_order("ORD-T1")))
+    papel = order_ticket(_order("ORD-T1"))
 
-    assert "não é documento fiscal" in papel
-    assert "não comprova pagamento" in papel
+    # Em DESTAQUE (corpo duplo), por exigência legal: a ficha viaja com a
+    # sacola, e documento não fiscal entregue ao consumidor final tem de dizer
+    # "NÃO É DOCUMENTO FISCAL" destacado (Ajuste SINIEF 32/24).
+    assert "\x1d!\x11 NÃO É DOCUMENTO FISCAL" in _texto(papel)
+    assert "não comprova pagamento" in _texto(papel)
+
+
+# ── A ficha VIAJA com a sacola: o filtro de identificação vale para ela ──
+
+
+def _pedido_de_marketplace(ref: str, *, delivered_by: str | None = "IFOOD") -> Order:
+    """Entrega do iFood, com tudo o que o cliente deu — e que não pode sair."""
+    ifood = {"display_id": "7K2Q"}
+    if delivered_by:
+        ifood["delivered_by"] = delivered_by
+    return _order(
+        ref,
+        customer={"name": "Ana Souza", "phone": "+5543999990000", "phone_localizer": "12345678"},
+        fulfillment_type="delivery",
+        delivery_address="Rua das Flores, 100",
+        order_notes="Deixar na portaria",
+        ifood=ifood,
+    )
+
+
+@pytest.mark.parametrize("delivered_by", ["IFOOD", None])
+def test_ficha_de_entrega_de_terceiro_sai_sem_identificar_o_cliente(shop, delivered_by):
+    """⚠️ Grampeada na sacola do iFood, a ficha entregava ao parceiro nome,
+    telefone, endereço e observação do cliente — o que a via do entregador
+    existe para proteger. Responsável não informado desce junto: na dúvida, a
+    casa não repete dado pessoal."""
+    papel = _texto(order_ticket(_pedido_de_marketplace(f"ORD-MKT-{delivered_by}", delivered_by=delivered_by)))
+
+    for dado in ("Ana Souza", "+5543999990000", "Rua das Flores", "Deixar na portaria"):
+        assert dado not in papel
+    assert "Endereço, telefone e nome do cliente" in papel
+    # A ausência é DITA, e o número do iFood ocupa a posição do nome.
+    linhas = _linhas(order_ticket(_pedido_de_marketplace("ORD-MKT-X")))
+    posicao_do_nome = linhas.index(next(linha for linha in linhas if linha.strip() == "ENTREGA")) + 1
+    assert linhas[posicao_do_nome].strip() == "iFood #7K2Q"
+
+
+def test_o_localizador_do_rele_de_voz_sobrevive_ao_filtro(shop):
+    """Ele não identifica ninguém: é um código de relé, e sem ele ninguém
+    completa a ligação."""
+    papel = _texto(order_ticket(_pedido_de_marketplace("ORD-MKT-LOC")))
+
+    assert "Localizador iFood: 12345678" in papel
+
+
+def test_entrega_da_casa_continua_com_endereco_e_nome(shop):
+    """Contraprova: a transportadora da casa não tem app, e o endereço só
+    existe para ela no papel."""
+    papel = _texto(order_ticket(_pedido_de_marketplace("ORD-MERCHANT", delivered_by="MERCHANT")))
+
+    assert "Ana Souza" in papel
+    assert "Rua das Flores, 100" in papel
+    assert "Deixar na portaria" in papel
 
 
 def test_pedido_em_ABERTO_grita_que_o_pagamento_esta_pendente(shop):
