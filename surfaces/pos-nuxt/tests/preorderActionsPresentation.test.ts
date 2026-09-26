@@ -21,13 +21,12 @@ import {
 const nbsp = (text: string) => text.replace(/\s/g, " ");
 
 describe("receber e entregar — o cliente que acabou de pagar online", () => {
-  it("só o código do servidor vira aviso, com a frase dele", () => {
-    expect(paidOnlineNotice("preorder_paid_online", "O cliente acabou de pagar pelo link.")).toBe(
-      "O cliente acabou de pagar pelo link.",
+  it("só o código do servidor vira aviso, e o aviso diz para não cobrar", () => {
+    expect(paidOnlineNotice("preorder_paid_online")).toBe(
+      "O cliente acabou de pagar online. Não receba no balcão: só entregue a encomenda.",
     );
-    expect(paidOnlineNotice("preorder_paid_online", "")).toContain("só entregue a encomenda");
-    expect(paidOnlineNotice("digital_charge_not_cancelled", "Não consegui cancelar o link do cliente.")).toBe("");
-    expect(paidOnlineNotice("", "qualquer")).toBe("");
+    expect(paidOnlineNotice("digital_charge_not_cancelled")).toBe("");
+    expect(paidOnlineNotice("")).toBe("");
   });
 });
 

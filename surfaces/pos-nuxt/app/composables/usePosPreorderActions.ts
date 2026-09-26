@@ -70,7 +70,7 @@ export function usePosPreorderActions(options: {
       await options.refresh();
       return true;
     } catch (error) {
-      const notice = paidOnlineNotice(httpErrorCode(error), httpErrorMessage(error, ""));
+      const notice = paidOnlineNotice(httpErrorCode(error));
       if (notice) {
         lastAttempt = null;
         paidOnline.value = notice;
