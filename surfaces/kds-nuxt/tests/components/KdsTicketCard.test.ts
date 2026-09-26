@@ -281,8 +281,8 @@ describe("KdsTicketCard — o canon do kit", () => {
   });
 });
 
-describe("KdsTicketCard — a anatomia da expedição", () => {
-  it("a linha de chamada diz Entrega ou Retirada, como na expedição", () => {
+describe("KdsTicketCard — a anatomia da Saída", () => {
+  it("a linha de chamada diz Entrega ou Retirada, como na Saída", () => {
     const entrega = mountCard({ ticket: ticket({ fulfillment_icon: "local_shipping" }) });
     const retirada = mountCard({ ticket: ticket({ fulfillment_icon: "storefront" }) });
     expect(entrega.text()).toContain("Entrega");

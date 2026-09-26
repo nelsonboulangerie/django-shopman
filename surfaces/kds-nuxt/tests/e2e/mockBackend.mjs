@@ -6,7 +6,7 @@
 // como o menuboard do Produção). Login/lock/ações reais rodam contra o Django (reviewer local).
 //
 // PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
-// estações `bancada` (preparo) e `expedicao` servem os quadros de previewFixtures.mjs,
+// estações `bancada` (preparo) e `saida` servem os quadros de previewFixtures.mjs,
 // com iniciar/finalizar/expedir mudando o quadro. Serve para VER os cards sem Django.
 import { createServer } from "node:http";
 import { createPreviewState } from "./previewFixtures.mjs";

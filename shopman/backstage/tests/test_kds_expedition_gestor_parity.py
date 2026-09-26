@@ -1,10 +1,10 @@
-"""A expedição do KDS é outra porta de saída — e a saída tem uma implementação só.
+"""A Saída do KDS é outra porta de saída — e a saída tem uma implementação só.
 
 Três contratos, todos achados na auditoria de 21/09/2026:
 
-1. "Despachar" pela Expedição passa pelo MESMO ``operator_orders.advance_order``
+1. "Despachar" pela Saída passa pelo MESMO ``operator_orders.advance_order``
    do Gestor: fulfillment de entrega avança, a auto-conclusão fica agendada e,
-   quando o pedido pede troco (que só o Gestor sabe perguntar), a expedição
+   quando o pedido pede troco (que só o Gestor sabe perguntar), a Saída
    recusa com "abra no Gestor" — e o card diz isso antes do toque. Antes ela
    fazia a transição sozinha: entrega sem auto-conclusão e troco saindo da
    gaveta sem a linha ``courier_out`` que o acerto exige.
@@ -39,7 +39,7 @@ GESTOR_CHANGE = "Abra este pedido no Gestor e informe o troco que o entregador l
 def expedition(db):
     Shop.objects.create(name="Loja")
     Channel.objects.create(ref="web", name="Loja online", config={})
-    return KDSInstance.objects.create(ref="exp-parity", name="Expedição", type="expedition")
+    return KDSInstance.objects.create(ref="exp-parity", name="Saída", type="expedition")
 
 
 def _cod_order(ref: str, *, change_for_q: int | None = None) -> Order:
@@ -62,7 +62,7 @@ def _card(board, ref):
     return next(card for card in board.tickets if card.order_ref == ref)
 
 
-# ── 1. Despachar pela expedição = despachar pelo Gestor ─────────────────────
+# ── 1. Despachar pela Saída = despachar pelo Gestor ─────────────────────
 
 
 def test_dispatch_with_change_is_refused_and_the_card_says_so_before_the_tap(expedition):
@@ -89,7 +89,7 @@ def test_dispatch_without_change_goes_through_the_gestor_service(expedition):
     assert status == Order.Status.DISPATCHED
     order.refresh_from_db()
     assert order.status == Order.Status.DISPATCHED
-    # O que o Gestor faz no despacho e a expedição pulava:
+    # O que o Gestor faz no despacho e a Saída pulava:
     assert order.fulfillments.get().status == "dispatched"
     assert Directive.objects.filter(
         topic=DELIVERY_AUTO_COMPLETE, payload__order_ref="EXP-SEMTROCO", status=Directive.Status.QUEUED

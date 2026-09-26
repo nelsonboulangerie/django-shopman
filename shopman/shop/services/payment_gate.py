@@ -1,9 +1,9 @@
 """A régua única do dinheiro: este pedido pode receber trabalho e sair da casa?
 
 Duas superfícies fazem a MESMA pergunta — o Gestor (``operator_orders.advance_block``)
-e a expedição do KDS (``kds.expedition_action``) — e as duas perguntam aqui. Antes
+e a Saída do KDS (``kds.expedition_action``) — e as duas perguntam aqui. Antes
 havia duas réguas: a do Gestor só olhava ``ACCEPTED`` e não conhecia o ``link``; a da
-expedição não existia — o painel por onde a mercadoria fisicamente sai chamava
+Saída do KDS não existia — o painel por onde a mercadoria fisicamente sai chamava
 ``transition_status`` sem consultar pagamento nenhum.
 
 A distinção que este módulo carrega, e que é a razão de ele existir:

@@ -142,7 +142,7 @@ const gridStyle = computed(() => {
 });
 
 // Busca: filtra os cards por código, cliente ou item (útil pra consulta e na
-// expedição; no preparo você faz o próximo). Contadores/all-day seguem o total da
+// Saída; no preparo você faz o próximo). Contadores/all-day seguem o total da
 // estação — a busca só filtra a grade.
 const query = ref("");
 function matchesQuery(
@@ -217,7 +217,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <p
           class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
         >
-          {{ view?.isExpedition ? "Expedição" : "Preparo" }}
+          {{ view?.isExpedition ? "Saída" : "Preparo" }}
         </p>
         <h1 class="truncate text-lg font-bold leading-tight">
           {{ view?.instanceName || stationRef }}

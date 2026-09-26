@@ -41,7 +41,7 @@ class PaymentTimeoutHandler:
         #
         # - com o gate fechado, um pedido de link/pix sem captura não CHEGA mais a
         #   PREPARING/READY por ação de operador — as duas portas (Gestor e
-        #   expedição do KDS) consultam a mesma régua antes de avançar;
+        #   Saída do KDS) consultam a mesma régua antes de avançar;
         # - alargar a janela cancelaria automaticamente um pedido que a cozinha já
         #   fez. Cancelar em READY não traz a farinha de volta: troca um problema
         #   de dinheiro por um de desperdício, sem recuperar o dinheiro;

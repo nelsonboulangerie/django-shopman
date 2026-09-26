@@ -193,7 +193,7 @@ export const EXPEDITION_CARDS = [
 export const PREVIEW_INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: PREP_TICKETS.length },
-    { ref: "expedicao", name: "Expedição", type: "expedition", type_display: "Expedição", active_count: EXPEDITION_CARDS.length },
+    { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: EXPEDITION_CARDS.length },
   ],
 };
 
@@ -230,7 +230,7 @@ export function createPreviewState() {
   return {
     index: () => PREVIEW_INDEX,
     board(ref) {
-      if (ref === "expedicao") return boardFor("expedicao", exp, true, "Expedição");
+      if (ref === "saida") return boardFor("saida", exp, true, "Saída");
       return boardFor(ref, prep, false, "Bancada");
     },
     /** Aplica um POST de escrita; devolve true se reconheceu a rota. */

@@ -41,7 +41,7 @@ class KDSInstanceNotFound(KDSError):
 
 
 class KDSOrderNotFound(KDSError):
-    """Pedido inexistente numa ação de expedição. A camada HTTP mapeia para 404."""
+    """Pedido inexistente numa ação da Saída do KDS. A camada HTTP mapeia para 404."""
 
 
 class OrderError(BackstageServiceError):

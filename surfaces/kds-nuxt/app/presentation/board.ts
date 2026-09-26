@@ -166,7 +166,7 @@ export function ticketAction(
 }
 
 // ── A moldura comum dos cards ───────────────────────────────────────────────
-// Estação e expedição são o MESMO card com funções diferentes: a mesma margem
+// Estação e Saída são o MESMO card com funções diferentes: a mesma margem
 // em volta, o mesmo ritmo entre os blocos, o mesmo código herói e o mesmo botão
 // na base. Uma escala só, para as duas telas não derivarem de novo.
 
@@ -196,7 +196,7 @@ export function cardScale(density: KDSDensity): KDSCardScale {
   return CARD_SCALE[density];
 }
 
-/** "Entrega" ou "Retirada" — a mesma palavra que a expedição recebe pronta da
+/** "Entrega" ou "Retirada" — a mesma palavra que a Saída recebe pronta da
  *  projection (`fulfillment_label`), derivada aqui do ícone que o ticket traz. */
 export function fulfillmentLabel(fulfillmentIcon: string): string {
   return fulfillmentIcon === "local_shipping" ? "Entrega" : "Retirada";
@@ -268,7 +268,7 @@ export interface KDSBoardView {
 }
 
 /** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é
- *  trabalho de verdade. Agendado é prévia e não se pega; expedição não tem
+ *  trabalho de verdade. Agendado é prévia e não se pega; a Saída não tem
  *  "próximo" (a ordem ali é a da projection). */
 export function nextTicketPk(
   cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],

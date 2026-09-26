@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// A identidade do card, igual nas estações e na expedição: uma linha de chamada
+// A identidade do card, igual nas estações e na Saída: uma linha de chamada
 // discreta (canal + entrega/retirada), o CÓDIGO herói na sua própria linha, e o
 // contexto (cliente, adicional, comanda antiga) embaixo dele. À direita, UM
-// elemento — o relógio no preparo, o selo de despacho na expedição.
+// elemento — o relógio no preparo, o selo de despacho na Saída.
 import { lucideIcon } from "~/presentation/board";
 
 defineProps<{

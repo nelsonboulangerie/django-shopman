@@ -1,6 +1,6 @@
 """KDSBoardProjection — read models for the Kitchen Display System (Fase 4).
 
-Translates KDS instances, tickets, and expedition orders into immutable
+Translates KDS instances, tickets, and the Saída (``expedition``) orders into immutable
 projections. Replaces the inline ``_enrich_ticket`` / ``_enrich_expedition_order``
 logic from ``shopman.backstage.views.kds``.
 
@@ -76,8 +76,8 @@ class KDSTicketProjection:
     # Encomenda futura projetada sem KDSTicket: visível para planejamento, mas
     # deliberadamente sem check/finalização nem som até chegar a data.
     is_scheduled: bool = False
-    # Discriminante explícito da união ticket|expedição no front (nunca inferir por
-    # presença de campo: foi o que quebrou a Expedição quando `items` passou a existir
+    # Discriminante explícito da união ticket|Saída no front (nunca inferir por
+    # presença de campo: foi o que quebrou a Saída quando `items` passou a existir
     # nos dois). Ticket de preparo é sempre False.
     is_expedition: bool = False
     status_label: str = ""
@@ -97,7 +97,7 @@ class KDSTicketProjection:
 
 @dataclass(frozen=True)
 class KDSExpeditionCardProjection:
-    """An order card in the expedition (dispatch) board."""
+    """An order card in the Saída board (``expedition``: hand over / dispatch)."""
 
     pk: int
     order_ref: str
@@ -113,8 +113,8 @@ class KDSExpeditionCardProjection:
     # Datas futuras são uma prévia operacional: nenhum card pode despachar ou
     # concluir antes do compromisso chegar, inclusive cards já materializados.
     is_scheduled: bool = False
-    # Discriminante explícito da união ticket|expedição (ver KDSTicketProjection).
-    # Card de expedição é sempre True.
+    # Discriminante explícito da união ticket|Saída (ver KDSTicketProjection).
+    # Card da Saída é sempre True.
     is_expedition: bool = True
     # A gêmea na tela do gate de pagamento (``payment_gate``): quando o servidor
     # vai recusar a saída da mercadoria, o card diz isso ANTES do toque, com o
@@ -123,7 +123,7 @@ class KDSExpeditionCardProjection:
     # "" quando a ação está liberada.
     advance_block_label: str = ""
     advance_block_reason: str = ""
-    # O pedido de teste chega à Expedição como qualquer outro (o card é do
+    # O pedido de teste chega à Saída como qualquer outro (o card é do
     # PEDIDO, não do ticket) — e é aqui que alguém entregaria a sacola.
     test_order_label: str = ""
 
@@ -781,11 +781,11 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         or ""
     )
     is_delivery = get_fulfillment_type(order) == "delivery"
-    # Pedido + ajustes: a conferência da expedição é sobre a sacola que sai
+    # Pedido + ajustes: a conferência da Saída é sobre a sacola que sai
     # hoje, não sobre a lista com que o pedido nasceu.
     items = tuple(order_composition.effective_items(order))
     units_count = sum((Decimal(str(item.qty)) for item in items), Decimal("0"))
-    # Itens para conferência na expedição (despacho/entrega): qty × nome, sem check/SLA.
+    # Itens para conferência na Saída (despacho/entrega): qty × nome, sem check/SLA.
     item_projections = tuple(
         KDSItemProjection(
             sku=getattr(item, "sku", "") or "",

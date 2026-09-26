@@ -43,7 +43,7 @@ EXPEDITION_TRANSITIONS = {
 
 
 class ExpeditionOrderNotFound(ValueError):
-    """Pedido inexistente numa ação de expedição.
+    """Pedido inexistente numa ação da Saída do KDS.
 
     Mapeia por TIPO para 404 na camada HTTP (padrão ``PosRecentSaleNotFound``),
     nunca por comparação de string de mensagem.
@@ -890,7 +890,7 @@ def _lock_ticket_after_source(ticket):
 
 
 def expedition_block_reason(order, *, action: str) -> str:
-    """Por que a expedição NÃO pode aplicar esta ação agora, na voz do operador.
+    """Por que a Saída do KDS NÃO pode aplicar esta ação agora, na voz do operador.
 
     "" quando pode. A pergunta sobre dinheiro é feita ao ``payment_gate`` — a
     MESMA régua do Gestor (``operator_orders.advance_block``) — e a frase vem do
@@ -929,14 +929,14 @@ def expedition_block_reason(order, *, action: str) -> str:
 def expedition_action(order, *, action: str, actor: str) -> str:
     """Apply an expedition action and return the new order status.
 
-    A expedição é outra porta por onde a mercadoria sai, e a saída tem UMA
+    A Saída do KDS é outra porta por onde a mercadoria sai, e a saída tem UMA
     implementação: ``operator_orders.advance_order``, a mesma do Gestor. É lá
     que moram o gate de pagamento, a custódia da maquininha, o fulfillment de
     entrega, o troco da gaveta (``courier_out``), o aviso fiscal e a
-    auto-conclusão da entrega. Quando a expedição fazia a transição por conta
+    auto-conclusão da entrega. Quando a Saída fazia a transição por conta
     própria, a entrega despachada daqui ficava sem auto-conclusão, com o
     fulfillment parado e — com troco — sem a linha do livro que o acerto exige.
-    O que a expedição não sabe perguntar (quanto de troco, qual maquininha)
+    O que a Saída não sabe perguntar (quanto de troco, qual maquininha)
     ela recusa com "abra no Gestor" (``expedition_block_reason``).
     """
     _ensure_source_due(order)
@@ -970,7 +970,7 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
 
     Guard + transição na MESMA transação com lock (padrão ``operator_orders``):
     ``can_transition_to`` decide na linha travada, nunca na instância em
-    memória — a expedição corre em paralelo com outras estações e com o
+    memória — a Saída corre em paralelo com outras estações e com o
     gestor. Replay (duas estações agindo no mesmo pedido) é decidido sob o
     mesmo lock: pedido já no status alvo = sucesso no-op, nunca "Ação inválida".
     """

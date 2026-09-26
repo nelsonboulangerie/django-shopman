@@ -118,7 +118,7 @@ _OFFLINE_PAYMENT_METHODS = {
 }
 # `link` é o pedido remoto anotado no PDV: passa por gateway e o dinheiro chega
 # quando o cliente paga — antecipado e digital como o Pix e o cartão da loja.
-# A lista mora no `payment_gate`, a régua única que o Gestor e a expedição do KDS
+# A lista mora no `payment_gate`, a régua única que o Gestor e a Saída do KDS
 # também consultam: dois conjuntos de métodos digitais seriam duas regras.
 _UPFRONT_DIGITAL_PAYMENT_METHODS = payment_gate.UPFRONT_DIGITAL_PAYMENT_METHODS
 _ACCEPTED_PAYMENT_STATUSES = {"captured", "paid"}

@@ -257,7 +257,7 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
 
     O gate de pagamento vale em TODA transição que entrega trabalho ou
     mercadoria, não só em ``ACCEPTED``: quem decide é ``payment_gate``, a mesma
-    régua que a expedição do KDS consulta. Antes o pix/link não capturado era
+    régua que a Saída do KDS consulta. Antes o pix/link não capturado era
     barrado no primeiro degrau e depois avançava à mão até ``DISPATCHED``.
     """
     if ifood_cancellation.is_pending(order):

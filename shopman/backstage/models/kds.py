@@ -6,12 +6,21 @@ from django.db import models
 
 
 class KDSInstance(models.Model):
-    """Estação KDS: Prep (preparo), Picking (separação) ou Expedition (despacho)."""
+    """Estação KDS: Prep (preparo), Picking (separação) ou Saída (``expedition``).
+
+    A estação por onde o pedido pronto sai (entregar no balcão, despachar a
+    entrega) se chama **Saída** na tela desde 26/09/2026 (decisão do dono):
+    "Expedição" é o fechamento de lote da Produção, e as duas palavras iguais
+    mandavam gente para o app errado. O valor gravado continua ``expedition``:
+    é o identificador em inglês da função (a expedição do pedido), e trocá-lo
+    migraria um valor de banco, o contrato gerado do kds-nuxt e o canal de SSE
+    sem mudar uma letra do que o operador lê.
+    """
 
     TYPE_CHOICES = [
         ("prep", "Preparo"),
         ("picking", "Separação"),
-        ("expedition", "Expedição"),
+        ("expedition", "Saída"),
     ]
 
     ref = models.SlugField("ref", max_length=50, unique=True)

@@ -41,7 +41,7 @@ def mark_ticket_done(*, ticket_pk: int, actor: str):
     _ensure_ticket_due(ticket)
     if ticket.status == "done":
         # Replay (duas estações bumpando o mesmo ticket) = sucesso no-op,
-        # mesma semântica do replay da expedição.
+        # mesma semântica do replay da Saída.
         return ticket
     try:
         completed = kds_core.complete_ticket(ticket, actor=actor)

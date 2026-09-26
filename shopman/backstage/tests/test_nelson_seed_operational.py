@@ -447,7 +447,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         resolved_by="system:production-outcome-recorded",
     ).exists()
     assert OperatorAlert.objects.filter(type="production_stock_short", acknowledged=False).exists()
-    assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"cafes", "lanches", "encomendas", "expedicao"}
+    assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"cafes", "lanches", "encomendas", "saida"}
     assert set(OperationChecklistTemplate.objects.values_list("ref", flat=True)) >= {
         "nelson-opening",
         "nelson-routine",

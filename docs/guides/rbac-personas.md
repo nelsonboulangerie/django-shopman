@@ -19,7 +19,7 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 | Permission | Modelo | Concede acesso a | Surface |
 |------------|--------|-----------------|---------|
 | `shop.manage_orders` | `Shop` | Confirmar, rejeitar, avançar, cancelar pedidos; adicionar notas internas | Gestor (orders-nuxt, `gestor.`) via `api/v1/backstage/orders/*` |
-| `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações de expedição | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
+| `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações da Saída | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
 | `cashman.operate_pos` | `cashman.Shift` | Abrir/fechar caixa, sangria, lookup de cliente, fechar venda | PDV (pos-nuxt, `pos.`) — antesala `/session` + venda |
 | `cashman.audit_shift` | `cashman.Shift` | **Ver a apuração**: esperado, contado e diferença dos turnos; faturamento do dia; conferir comprovante | Admin (Turnos de caixa) **e** PDV `/session/report` |
 | `cashman.adjust_shift` | `cashman.Shift` | Segunda assinatura das exceções do caixa: sangria, troco atendido, correção da contagem, desconto acima do teto (PIN de gerente) | PDV (diálogo de gerente) |

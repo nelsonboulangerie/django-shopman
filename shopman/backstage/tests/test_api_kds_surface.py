@@ -34,7 +34,7 @@ def kds_operator(db):
 @pytest.fixture
 def kds_setup(db):
     prep = KDSInstance.objects.create(ref="prep-api", name="Preparo API", type="prep", target_time_minutes=10)
-    expedition = KDSInstance.objects.create(ref="exp-api", name="Expedição API", type="expedition")
+    expedition = KDSInstance.objects.create(ref="exp-api", name="Saída API", type="expedition")
     order = Order.objects.create(
         ref="KDS-API-1",
         channel_ref="web",
