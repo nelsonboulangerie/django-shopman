@@ -15,16 +15,20 @@ function source(path: string): string {
 describe('useWhatsAppConfirm', () => {
   let fetched: { url: string, body: unknown } | null = null
   let navigated: string | null = null
+  let armed = false
 
   beforeEach(async () => {
     fetched = null
     navigated = null
+    armed = false
     Object.assign(globalThis, {
       ref,
       computed,
       useShopmanApiPath: () => (p: string) => p,
       useShopmanCsrfHeaders: () => async () => ({}),
       useCartState: () => ({ settleCart: vi.fn(async () => ({ items_count: 0, is_empty: true })) }),
+      useShopSession: () => ({ setFromAuthSession: vi.fn() }),
+      useWhatsappReturn: () => ({ arm: () => { armed = true } }),
       $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
         fetched = { url, body: opts?.body }
         return { deep_link: 'https://wa.me/5543999?text=Meu%20c%C3%B3digo' }
@@ -53,6 +57,15 @@ describe('useWhatsAppConfirm', () => {
     await useWhatsAppConfirm().confirm('/finalizar')
 
     expect(fetched?.body).toEqual({ next: '/finalizar' })
+  })
+
+  it('a página passa a esperar a mensagem antes de sair para o WhatsApp', async () => {
+    const { useWhatsAppConfirm } = await import('../app/composables/useWhatsAppConfirm')
+
+    await useWhatsAppConfirm().confirm('/finalizar')
+
+    expect(armed).toBe(true)
+    expect(navigated).toContain('wa.me')
   })
 
   it('abre o WhatsApp com a mensagem pronta', async () => {
@@ -113,6 +126,8 @@ describe('useWhatsappVerify', () => {
       useShopmanApiPath: () => (p: string) => p,
       useShopmanCsrfHeaders: () => async () => ({}),
       useCartState: () => ({ settleCart: vi.fn(async () => ({ items_count: 0, is_empty: true })) }),
+      useShopSession: () => ({ setFromAuthSession: vi.fn() }),
+      useWhatsappReturn: () => ({ arm: () => { armed = true } }),
       $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
         fetched = { url, body: opts?.body }
         return {

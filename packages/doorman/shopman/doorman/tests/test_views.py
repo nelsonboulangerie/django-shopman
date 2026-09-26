@@ -407,8 +407,10 @@ class TestAccessLinkCreateViewEdges:
             "handoff_expired",
             "has_cart_context",
             "has_context",
+            "released",
             "token",
         ]
+        assert data["released"] is False
         assert data["has_context"] is False
         assert data["has_cart_context"] is False
         assert data["access_flow"] == "menu"

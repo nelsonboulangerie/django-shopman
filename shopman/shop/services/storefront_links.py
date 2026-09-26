@@ -99,6 +99,11 @@ def path_stock_alert_management() -> str:
     return "/gerenciar-aviso"
 
 
+def path_login_revoke() -> str:
+    """O "Não foi você?" da mensagem de login pelo WhatsApp."""
+    return "/encerrar-acesso"
+
+
 def storefront_url(path: str) -> str:
     """URL absoluta da loja para um caminho (base + caminho).
 
@@ -139,3 +144,8 @@ def account_url() -> str:
 def stock_alert_management_url(capability: str) -> str:
     """Capability in the fragment never reaches HTTP logs or referrer headers."""
     return f"{storefront_url(path_stock_alert_management())}#{capability}"
+
+
+def login_revoke_url(ref: str) -> str:
+    """A referência vai no fragmento, como a do aviso: nunca chega a log de HTTP."""
+    return f"{storefront_url(path_login_revoke())}#{ref}"

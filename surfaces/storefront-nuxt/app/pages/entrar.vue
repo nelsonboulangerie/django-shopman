@@ -2,6 +2,7 @@
 import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
+import type { WhatsappClaimResponse } from '~/composables/useWhatsappReturn'
 
 interface RequestCodeResponse {
   ok: true
@@ -27,18 +28,19 @@ const session = useShopSession()
 const phone = ref('')
 const phoneRegion = ref<AuthPhoneRegion>('BR')
 const requestedPhone = ref('')
-// Login por WhatsApp (fluxo access-link): o start leve vive no PAI para pré-aquecer o
-// deep link e o botão abrir o app num toque. Sem polling/SSE/resume — o login acontece
-// pelo access link que o ManyChat devolve; a aba original só instrui. Ver useWhatsappVerify.
+// Login por WhatsApp: o start leve vive no PAI para pré-aquecer o deep link e o botão
+// abrir o app num toque. A mensagem enviada libera ESTE navegador no servidor, e a aba
+// entra sozinha quando a pessoa volta (useWhatsappReturn) — o link que a mensagem traz
+// é reserva. Ver useWhatsappVerify e WhatsAppVerifyClaimView.
 const {
   code: waCode,
   message: waMessage,
   deepLink: waDeepLink,
   waNumber: waNumber,
-  hasCartContext: waCartTravels,
   status: waStatus,
   start: waStart
 } = useWhatsappVerify()
+const { waiting: waWaiting, arm: waArm } = useWhatsappReturn(onWhatsappReturn)
 const codeDigits = ref<number[]>([])
 // Nasce VAZIO de propósito. Assumir 'WhatsApp' antes de o servidor dizer por
 // onde mandou já escrevia o canal errado na tela; quando o rótulo não vem, a
@@ -46,7 +48,9 @@ const codeDigits = ref<number[]>([])
 const deliveryLabel = ref('')
 const pending = ref(false)
 const error = ref<AuthErrorView | null>(null)
-const trustedDevice = ref(false)
+// Ligado por padrão: a segunda visita não pede nada. A frase ao lado diz para usar só
+// num dispositivo seu, e o switch continua ali para quem está num aparelho emprestado.
+const trustedDevice = ref(true)
 const devConsoleHint = ref(false)
 const debugOtpCode = ref('')
 const debugOtpExpiresAt = ref('')
@@ -88,8 +92,8 @@ if (import.meta.client && welcomeRequested.value && session.isAuthenticated.valu
   enterWelcomeGateFromSession()
 }
 // Zero-telefone: por padrão não pedimos número. A identidade é quem ENVIA a mensagem
-// no WhatsApp. O campo só aparece quando o cliente quer usar OUTRO número (via SMS,
-// o único caminho que mira um número digitado). O deep link é pré-aquecido no mount.
+// no WhatsApp. O campo só aparece quando o cliente prefere o SMS (o único caminho que
+// mira um número digitado). O deep link é pré-aquecido no mount.
 const revealPhone = ref(false)
 const step = computed(() => authStep({
   requestedPhone: requestedPhone.value,
@@ -141,28 +145,25 @@ const stepDescription = computed(() => {
   if (step.value === 'code') return copyMessage(authCopy.value?.code_help, 'Você pode colar o código. Ao completar, a confirmação é automática.')
   return copyMessage(authCopy.value?.name_subtitle, 'Pode ser só o primeiro nome ou um apelido.')
 })
-// Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
-// o WhatsappVerifyPanel (configuráveis no Admin). O login em si é pelo access link.
-// O lampejo diz o que vai acontecer. Com sacola VIAJANDO no código (confirmado
-// pelo servidor em `has_cart_context`, não deduzido da tela), o que vai acontecer
-// inclui a sacola chegar junto — e é isso que tira o medo de tocar no botão.
-const waGlimpse = computed(() => {
-  if (waCartTravels.value) {
-    return copyMessage(authCopy.value?.wa_glimpse_with_cart, 'Envie a mensagem pronta: você entra e sua sacola vai junto.')
-  }
-  return copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.')
-})
-const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'É prático e seguro, e não exige senha.'))
-const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Ou envie você mesmo'))
+// O porquê, os passos e a espera alimentam o WhatsappVerifyPanel (configuráveis no
+// Admin). Respondem às duas queixas de quem chega pelo site: "pra que eu tenho que
+// fazer isso?" e "o que eu tenho que fazer?".
+const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'É por lá que avisamos cada passo do seu pedido e tiramos suas dúvidas. Sem senha.'))
+const waSteps = computed(() => copyMessage(
+  authCopy.value?.wa_steps,
+  'Toque no botão abaixo\nEnvie a mensagem que já vai pronta\nVolte para cá: você já estará dentro'
+).split('\n').map(step => step.trim()).filter(Boolean))
+const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Enviou a mensagem?'))
+const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Assim que ela chegar, você entra por aqui, sem fazer mais nada.'))
+const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'O WhatsApp não abriu?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
   hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
 ))
-// "O código não chegou?" só cabe no passo de código (SMS). No WhatsApp/telefone não
-// há código enviado ao cliente — ele é quem manda o token —, então o convite à ajuda
-// é genérico.
-const supportHeading = computed(() => step.value === 'code' ? 'O código não chegou?' : 'Precisa de ajuda para entrar?')
+// A ajuda só aparece esperando algo: o código do SMS ou a volta do WhatsApp. Cada
+// espera tem a sua pergunta — no WhatsApp quem envia é a pessoa, não a loja.
+const supportHeading = computed(() => step.value === 'code' ? 'O código não chegou?' : 'Enviou e nada aconteceu?')
 const phonePlaceholder = computed(() => phoneRegion.value === 'INTL' ? '+1 202 555 1234' : '(43) 98123-4567')
 const phoneAutocomplete = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'tel-national')
 const phoneInputMode = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'numeric')
@@ -296,6 +297,27 @@ async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
   moment.value = kind
   await new Promise(resolve => setTimeout(resolve, 1400))
   await navigateTo(nextUrl.value)
+}
+
+// A pessoa tocou no botão: esta aba passa a esperar a mensagem, e o próximo toque
+// precisa de um código novo (o do `href` foi gasto).
+function onWhatsappOpened () {
+  waArm()
+  void waStart(nextUrl.value)
+}
+
+// A mensagem chegou e esta aba entrou (o servidor já trocou o link por sessão e
+// lembrou o dispositivo). Mesmo fim do código por SMS: nome, se faltar; senão, festa.
+async function onWhatsappReturn (response: WhatsappClaimResponse) {
+  session.setFromAuthSession(response)
+  error.value = null
+  verified.value = true
+  trustSaved.value = !!response.device_trusted
+  if (response.requires_welcome) {
+    enterWelcomeGate(response as AuthSessionResponse)
+    return
+  }
+  await celebrateAndGo('confirmed')
 }
 
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
@@ -499,60 +521,41 @@ useSeoMeta({
         </UiAlert>
 
         <div v-if="step === 'phone'" class="shop-stack-block">
-          <!-- Zero-telefone, uma tela: a identidade é quem ENVIA a mensagem no WhatsApp.
-               Bloco 1 abre o app com a mensagem pronta; "OU"; bloco 2 é o envio manual. -->
+          <!-- Um caminho na frente: o porquê, três passos e um botão. Depois do toque,
+               a mesma área vira a espera, e o plano B (envio manual) mora lá. -->
           <WhatsappVerifyPanel
             :deep-link="waDeepLink"
             :code="waCode"
             :message="waMessage"
             :wa-number="waNumber"
             :status="waStatus"
-            :glimpse="waGlimpse"
-            :no-password-note="waNoPasswordNote"
+            :waiting="waWaiting"
+            :why="waWhy"
+            :steps="waSteps"
+            :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Abrir o WhatsApp')"
+            :waiting-title="waWaitingTitle"
+            :waiting-message="waWaitingMessage"
             :manual-title="waManualTitle"
             :manual-intro="waManualIntro"
-            :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Entrar pelo WhatsApp')"
             @regenerate="() => waStart(nextUrl)"
-            @used="() => waStart(nextUrl)"
+            @used="onWhatsappOpened"
           />
 
-          <!-- A ALTERNATIVA DE VERDADE, e é aqui que o "ou" pertence. O caminho
-               por SMS é o único que mira um número DIGITADO (pelo WhatsApp a
-               conta é sempre a de quem envia a mensagem) — ele é irmão do
-               principal, e o envio manual não é: aquele é o mesmo caminho,
-               feito à mão, e por isso mora dentro do cartão do WhatsApp.
+          <!-- O SMS é a alternativa aceitável, não a porta da frente: um link discreto
+               que nomeia o que entrega. Abre o mesmo formulário de sempre. -->
+          <UiButton
+            v-if="!revealPhone"
+            type="button"
+            variant="link"
+            size="sm"
+            class="mx-auto h-auto px-0 text-muted-foreground hover:text-foreground"
+            icon="lucide:smartphone"
+            data-login-sms-door
+            @click="revealPhone = true"
+          >
+            Prefere receber um código por SMS?
+          </UiButton>
 
-               Dizia "Não consigo usar WhatsApp": pedia que a pessoa declarasse
-               uma INCAPACIDADE para receber uma opção, e não dizia SMS em
-               lugar nenhum — a palavra só aparecia depois do clique. Agora
-               nomeia o que entrega. `size="lg"` igual ao principal diz que é
-               um caminho de verdade, não um sussurro.
-
-               DOURADO (dono, 23/09). Era contorno, para deixar um único sólido
-               na tela; o dono o quis dourado. As cores separam os dois papéis
-               sem disputa: vinho é a ação da casa (WhatsApp), latão é a
-               alternativa. Branco sobre `--shop-brass` (#8B6B2E) dá 4,95:1 (AA);
-               o texto escuro da marca daria 2,76:1, por isso branco. -->
-          <template v-if="!revealPhone">
-            <div class="flex items-center gap-3" aria-hidden="true" data-login-or>
-              <span class="h-px flex-1 bg-border" />
-              <span class="shop-meta uppercase tracking-widest">ou</span>
-              <span class="h-px flex-1 bg-border" />
-            </div>
-            <UiButton
-              type="button"
-              size="lg"
-              class="w-full justify-center border-transparent bg-brass text-brass-foreground hover:bg-brass/90"
-              icon="lucide:smartphone"
-              data-login-sms-door
-              @click="revealPhone = true"
-            >
-              Receber código por SMS
-            </UiButton>
-          </template>
-
-          <!-- O cartão que a porta do SMS abre é Faubourg, como o envio manual:
-               os dois são "o outro jeito", e o cartão claro é só o do WhatsApp. -->
           <form v-else class="shop-surface-faubourg shop-stack-block rounded-lg border p-4" data-login-sms-form @submit.prevent="requestCode('sms', $event)">
             <UiField>
               <div class="flex items-center justify-between gap-3">
@@ -590,12 +593,6 @@ useSeoMeta({
 
             <div class="grid gap-3">
               <UiButton type="submit" size="lg" :loading="pending" icon="lucide:smartphone" class="w-full justify-center">
-                <!-- O fallback local dizia "Receber código por SMS" e o default do
-                     servidor diz "Receber por SMS": dois textos para o mesmo botão,
-                     e quem via cada um dependia de a home ter carregado. Agora o
-                     fallback é igual ao servidor — e, de quebra, deixa de repetir
-                     o rótulo da PORTA do SMS, que é quem promete o canal. Aqui a
-                     pergunta já é outra: enviar para ESTE número. -->
                 {{ copyTitle(authCopy?.phone_cta_sms, 'Receber por SMS') }}
               </UiButton>
               <UiButton
@@ -757,7 +754,9 @@ useSeoMeta({
              cartão, sem fundo — é a saída de emergência, não um caminho de entrada,
              e por isso não compete em cor com os dois cartões de cima. É bloco de
              chamada: título, frase e botão centrados. -->
-        <div v-if="supportUrl" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
+        <!-- Ajuda só onde alguém pode estar travado: esperando a mensagem ou o código.
+             Na primeira tela ela era mais uma coisa a entender antes do botão. -->
+        <div v-if="supportUrl && (step === 'code' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
           <p class="shop-item-title font-semibold">{{ supportHeading }}</p>
           <p class="mt-1 shop-muted">Fale com a loja e resolvemos juntos.</p>
           <UiButton
@@ -772,10 +771,6 @@ useSeoMeta({
           </UiButton>
         </div>
 
-        <!-- Tem mais abaixo. Medido em 375x667: a porta do SMS nasce em 597
-             numa tela cuja navegação começa em 602 — quem não rolar não a vê,
-             e ela é a alternativa de verdade. Rolar um dedo resolve; não saber
-             que há o que rolar, não. -->
         <MoreBelow />
         </template>
       </div>

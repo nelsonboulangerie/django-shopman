@@ -1099,7 +1099,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Até logo.")},
     },
     "LOGIN_PHONE_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Vamos entrar?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Entre com seu WhatsApp")},
     },
     "LOGIN_PHONE_SUBTITLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sem senha, rápido e seguro.")},
@@ -1108,25 +1108,36 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "LOGIN_WA_CART_KEPT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola está guardada.")},
     },
-    # Lampejo do fluxo: o que vai acontecer ao tocar (você envia, recebe um link, entra).
-    "LOGIN_WA_GLIMPSE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Envie a mensagem pronta e receba um link para entrar.")},
-    },
-    # Mesmo lampejo, quando a sacola VIAJA no código NB. Quem está no meio de um
-    # pedido não teme entrar por não saber entrar: teme perder o que montou. Só
-    # aparece com o servidor confirmando que a sacola foi guardada no código
-    # (``has_cart_context``) — prometer sacola sem ela ter viajado seria pior
-    # do que não prometer nada.
-    "LOGIN_WA_GLIMPSE_WITH_CART": {
+    # O PORQUÊ, antes do pedido. A queixa dos testadores era "pra que eu tenho que
+    # fazer isso?": o WhatsApp parecia burocracia de login. É por lá que a casa avisa
+    # do pedido e tira dúvidas — e é a mensagem da pessoa que abre essa conversa.
+    "LOGIN_WA_WHY": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Envie a mensagem pronta: você entra e sua sacola vai junto.",
+            message="É por lá que avisamos cada passo do seu pedido e tiramos suas dúvidas. Sem senha.",
         )},
     },
-    # Envio manual (rodapé do cartão do WhatsApp): título + instrução. ``{phone}``
-    # vira o número do WhatsApp da casa, em destaque; sem o marcador, a tela
-    # anexa o número ao fim da frase.
+    # O QUE FAZER, em três passos (um por linha). A outra queixa: "o que eu tenho que
+    # fazer?". O terceiro passo é a promessa que a tela cumpre: a aba entra sozinha.
+    "LOGIN_WA_STEPS": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message=(
+                "Toque no botão abaixo\n"
+                "Envie a mensagem que já vai pronta\n"
+                "Volte para cá: você já estará dentro"
+            ),
+        )},
+    },
+    # Depois do toque: a tela espera a mensagem chegar e entra sem mais nada.
+    "LOGIN_WA_WAITING": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            title="Enviou a mensagem?",
+            message="Assim que ela chegar, você entra por aqui, sem fazer mais nada.",
+        )},
+    },
+    # Envio manual (plano B da espera): título + instrução. ``{phone}`` vira o número
+    # do WhatsApp da casa, em destaque; sem o marcador, a tela anexa o número ao fim.
     "LOGIN_WA_MANUAL_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ou envie você mesmo")},
+        WILDCARD: {WILDCARD: CopyEntry(title="O WhatsApp não abriu?")},
     },
     "LOGIN_WA_MANUAL_INTRO": {
         WILDCARD: {WILDCARD: CopyEntry(message="Mande a mensagem abaixo para {phone} no WhatsApp.")},
@@ -1137,7 +1148,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Você entrou! Sua sacola não veio desta vez porque o link expirou. É só montar de novo.")},
     },
     "LOGIN_PHONE_CTA_WA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Entrar pelo WhatsApp")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Abrir o WhatsApp")},
     },
 
     # ── Concierge de WhatsApp ──────────────────────────────────────────
@@ -1189,9 +1200,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "LOGIN_TRUSTED_OTHER_PHONE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Ou confirme outro telefone abaixo.")},
-    },
-    "LOGIN_NO_PASSWORD_NOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="É prático e seguro, e não exige senha.")},
     },
     "LOGIN_TERMS_NOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.")},

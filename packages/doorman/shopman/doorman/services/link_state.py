@@ -87,3 +87,73 @@ def pop_state(code: str) -> dict | None:
         return None
     cache.delete(key)  # uso único
     return data if isinstance(data, dict) else None
+
+
+# ── A aba de origem entra sozinha ────────────────────────────────────────────
+#
+# O código viaja do site para o WhatsApp dentro da mensagem que a pessoa envia. Quem
+# ENVIA é a identidade; quem GEROU o código é o navegador onde ela estava. Quando o
+# código chega, a criação do link libera aquele navegador — e só ele: a liberação fica
+# guardada sob a impressão digital da sessão de origem, nunca sob o código. Assim o
+# código não é credencial (vazado, não abre nada em outro navegador) e a aba não
+# precisa guardar nada: basta perguntar "tem liberação para mim?".
+
+_RELEASE_KEY = "doorman:link_release:{}"
+_REVOKE_KEY = "doorman:link_revoke:{}"
+
+
+def origin_fingerprint(session_key: str) -> str:
+    """Impressão digital de uma sessão web. A chave em si nunca vai para o cache."""
+    import hashlib
+
+    key = (session_key or "").strip()
+    if not key:
+        return ""
+    return hashlib.sha256(f"doorman-origin:{key}".encode()).hexdigest()
+
+
+def release_to_origin(origin: str, *, token: str, revoke_ref: str) -> None:
+    """Libera a sessão de origem para trocar ``token`` por uma sessão logada."""
+    if not origin or not token:
+        return
+    ttl = get_doorman_settings().LINK_STATE_TTL_SECONDS
+    cache.set(_RELEASE_KEY.format(origin), {"token": token, "revoke_ref": revoke_ref}, timeout=ttl)
+
+
+def pop_release(origin: str) -> dict | None:
+    """Consome (uso único) a liberação pendente desta sessão de origem."""
+    if not origin:
+        return None
+    key = _RELEASE_KEY.format(origin)
+    data = cache.get(key)
+    if data is None:
+        return None
+    cache.delete(key)
+    return data if isinstance(data, dict) else None
+
+
+def new_revoke_ref() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def store_revocation(ref: str, data: dict) -> None:
+    """Guarda o que é preciso para desfazer uma liberação (``origin`` antes da troca;
+    ``session_key``/``device_id`` depois dela)."""
+    if not ref:
+        return
+    ttl = get_doorman_settings().LINK_REVOKE_TTL_SECONDS
+    cache.set(_REVOKE_KEY.format(ref), dict(data), timeout=ttl)
+
+
+def get_revocation(ref: str) -> dict | None:
+    if not ref:
+        return None
+    data = cache.get(_REVOKE_KEY.format(ref))
+    return data if isinstance(data, dict) else None
+
+
+def pop_revocation(ref: str) -> dict | None:
+    data = get_revocation(ref)
+    if data is not None:
+        cache.delete(_REVOKE_KEY.format(ref))
+    return data

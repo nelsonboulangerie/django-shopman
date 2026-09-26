@@ -265,95 +265,101 @@ class AccessLinkExchangeView(APIView):
         if not token:
             return Response({"detail": "Link inválido."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not HAS_AUTH:
-            return Response({"ok": True, "redirect": storefront_links.path_home(), **_session_payload(None)})
+        return exchange_access_token(request, token)
 
-        metadata = access_service.token_metadata(token)
-        # Antes do resgate: depois dele o token está gasto e a origem já não se lê.
-        source = access_service.token_source(token)
-        result = access_service.exchange_token(token, request)
-        if not result.success:
-            # ⚠️ Token gasto NÃO significa porta fechada. É o segundo toque na mesma
-            # mensagem — e o uso único é justamente o que o torna comum: a pessoa clica,
-            # compra, volta na conversa e clica outra vez. Se ela JÁ tem sessão, dizer
-            # "este link expirou" é uma parede falsa, a informação mais desanimadora
-            # possível para quem já está dentro.
-            #
-            # Quem sabe as duas coisas (token inválido E sessão existente) é o servidor. A
-            # página não tem como responder isso numa carga nova: o estado do cliente
-            # nasce vazio, e só o cookie sabe.
-            already = get_authenticated_customer(request)
-            if already is not None:
-                logger.info("access_link_exchange_spent_but_session_alive")
-                redirect_metadata = _access_link_metadata_for_customer(metadata, already)
-                return Response({
-                    "ok": True,
-                    "already_authenticated": True,
-                    "redirect": _access_link_redirect(redirect_metadata),
-                    "identity_strength": identity_strength(request),
-                    **_session_payload(already),
-                })
-            logger.warning("access_link_exchange_failed error=%s", getattr(result, "error", "?"))
-            return Response(
-                {"detail": "Este link expirou ou já foi usado."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
-        if hasattr(request, "session"):
-            request.session["origin_channel"] = access_service.resolve_origin(result)
-            _record_identity_strength(request, metadata, customer=result.customer)
+def exchange_access_token(request, token: str) -> Response:
+    """Troca um access link por sessão. Um caminho só para o link da mensagem e para
+    a aba de origem que entra sozinha (``WhatsAppVerifyClaimView``)."""
+    if not HAS_AUTH:
+        return Response({"ok": True, "redirect": storefront_links.path_home(), **_session_payload(None)})
 
-        # Access link vindo do site: o código NB carregou a sacola anônima na metadata.
-        cart_ref = str(metadata.get("cart_session_key") or "") if isinstance(metadata, dict) else ""
-        if cart_ref and hasattr(request, "session"):
-            _adopt_carried_cart(request, cart_ref)
+    metadata = access_service.token_metadata(token)
+    # Antes do resgate: depois dele o token está gasto e a origem já não se lê.
+    source = access_service.token_source(token)
+    result = access_service.exchange_token(token, request)
+    if not result.success:
+        # ⚠️ Token gasto NÃO significa porta fechada. É o segundo toque na mesma
+        # mensagem — e o uso único é justamente o que o torna comum: a pessoa clica,
+        # compra, volta na conversa e clica outra vez. Se ela JÁ tem sessão, dizer
+        # "este link expirou" é uma parede falsa, a informação mais desanimadora
+        # possível para quem já está dentro.
+        #
+        # Quem sabe as duas coisas (token inválido E sessão existente) é o servidor. A
+        # página não tem como responder isso numa carga nova: o estado do cliente
+        # nasce vazio, e só o cookie sabe.
+        already = get_authenticated_customer(request)
+        if already is not None:
+            logger.info("access_link_exchange_spent_but_session_alive")
+            redirect_metadata = _access_link_metadata_for_customer(metadata, already)
+            return Response({
+                "ok": True,
+                "already_authenticated": True,
+                "redirect": _access_link_redirect(redirect_metadata),
+                "identity_strength": identity_strength(request),
+                **_session_payload(already),
+            })
+        logger.warning("access_link_exchange_failed error=%s", getattr(result, "error", "?"))
+        return Response(
+            {"detail": "Este link expirou ou já foi usado."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-        redirect_metadata = _access_link_metadata_for_customer(metadata, result.customer)
-        order_ref = str(metadata.get("order_ref") or "") if isinstance(metadata, dict) else ""
-        if order_ref and isinstance(redirect_metadata, dict) and redirect_metadata.get("order_ref") == order_ref:
-            from shopman.storefront.services import orders as order_service
+    if hasattr(request, "session"):
+        request.session["origin_channel"] = access_service.resolve_origin(result)
+        _record_identity_strength(request, metadata, customer=result.customer)
 
-            order_service.grant_order_access(request, order_ref)
+    # Access link vindo do site: o código NB carregou a sacola anônima na metadata.
+    cart_ref = str(metadata.get("cart_session_key") or "") if isinstance(metadata, dict) else ""
+    if cart_ref and hasattr(request, "session"):
+        _adopt_carried_cart(request, cart_ref)
 
-        customer = None
+    redirect_metadata = _access_link_metadata_for_customer(metadata, result.customer)
+    order_ref = str(metadata.get("order_ref") or "") if isinstance(metadata, dict) else ""
+    if order_ref and isinstance(redirect_metadata, dict) and redirect_metadata.get("order_ref") == order_ref:
+        from shopman.storefront.services import orders as order_service
+
+        order_service.grant_order_access(request, order_ref)
+
+    customer = None
+    try:
+        if result.customer:
+            customer = auth_service.customer_by_uuid(result.customer.uuid)
+    except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
+        logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
+    _declare_adult(request, customer)
+
+    payload = {
+        "ok": True,
+        "redirect": _access_link_redirect(redirect_metadata),
+        "identity_strength": identity_strength(request),
+        **_session_payload(customer),
+    }
+    response = Response(payload)
+
+    # ⚠️ Link nascido de uma MENSAGEM que a pessoa enviou (`source=manychat`) prova posse
+    # do número — a mesma prova do OTP, que já confia no aparelho. Então este caminho
+    # também confia: é o que faz a confirmação valer para sempre naquele celular, em vez
+    # de virar pedágio semanal. Link que NÓS empurramos (`internal`, campanha) não
+    # confia: mensagem se encaminha.
+    if source == "manychat" and result.customer is not None:
+        request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
         try:
-            if result.customer:
-                customer = auth_service.customer_by_uuid(result.customer.uuid)
-        except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
-            logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
-        _declare_adult(request, customer)
+            auth_service.trust_device(
+                response=response, customer_id=result.customer.uuid, request=request,
+            )
+            payload["device_trusted"] = True
+        except Exception:
+            logger.warning("access_link_trust_failed", exc_info=True)
+    # Handoff do site que expirou: entrou logado, mas a sacola não veio. Avisamos com
+    # gentileza (copy configurável), sem bloquear a entrada. Ver ACCESS-LINK-UNIFICATION.
+    if isinstance(metadata, dict) and metadata.get("handoff_expired"):
+        from shopman.shop.omotenashi import resolve_copy
 
-        payload = {
-            "ok": True,
-            "redirect": _access_link_redirect(redirect_metadata),
-            "identity_strength": identity_strength(request),
-            **_session_payload(customer),
-        }
-        response = Response(payload)
-
-        # ⚠️ Link nascido de uma MENSAGEM que a pessoa enviou (`source=manychat`) prova posse
-        # do número — a mesma prova do OTP, que já confia no aparelho. Então este caminho
-        # também confia: é o que faz a confirmação valer para sempre naquele celular, em vez
-        # de virar pedágio semanal. Link que NÓS empurramos (`internal`, campanha) não
-        # confia: mensagem se encaminha.
-        if source == "manychat" and result.customer is not None:
-            request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
-            try:
-                auth_service.trust_device(
-                    response=response, customer_id=result.customer.uuid, request=request,
-                )
-                payload["device_trusted"] = True
-            except Exception:
-                logger.warning("access_link_trust_failed", exc_info=True)
-        # Handoff do site que expirou: entrou logado, mas a sacola não veio. Avisamos com
-        # gentileza (copy configurável), sem bloquear a entrada. Ver ACCESS-LINK-UNIFICATION.
-        if isinstance(metadata, dict) and metadata.get("handoff_expired"):
-            from shopman.shop.omotenashi import resolve_copy
-
-            payload["handoff_expired"] = True
-            payload["notice"] = resolve_copy("LOGIN_HANDOFF_EXPIRED", moment="*").message
-        response.data = payload
-        return response
+        payload["handoff_expired"] = True
+        payload["notice"] = resolve_copy("LOGIN_HANDOFF_EXPIRED", moment="*").message
+    response.data = payload
+    return response
 
 
 def _adopt_carried_cart(request, cart_ref: str) -> None:

@@ -5,8 +5,12 @@ contexto ({cart_session_key, next}) sob um código ``NB-XxXx`` de uso único no 
 devolvemos um deep link ``wa.me`` já preenchido. O cliente envia a mensagem; o ManyChat
 casa a intenção ``#menu`` e cria o access link (``AccessLinkCreateView``), que loga a
 sessão e adota a sacola quando a mensagem também traz um código ``NB-*``. A identidade é
-o número que ENVIA a mensagem (zero-telefone) — sem handshake, sem bind de sessão, sem
-polling/SSE. Ver ACCESS-LINK-UNIFICATION-PLAN.md.
+o número que ENVIA a mensagem (zero-telefone).
+
+O código também lembra QUAL navegador apertou o botão (impressão digital da sessão). Quando
+a mensagem chega, aquele navegador é liberado e entra sozinho assim que a pessoa volta
+para ele — o link da mensagem vira reserva. É isso que responde à queixa de "ir para o
+WhatsApp e depois sair de novo por um link": o caminho principal termina onde começou.
 """
 
 from __future__ import annotations
@@ -92,7 +96,9 @@ def _access_deep_link(code: str) -> str:
     return f"https://wa.me/?text={query}"
 
 
-def start_access_link(*, cart_session_key: str = "", next_path: str = "") -> dict:
+def start_access_link(
+    *, cart_session_key: str = "", next_path: str = "", origin: str = "", origin_label: str = "",
+) -> dict:
     """Guarda o contexto do site ({cart_session_key, next}) sob um código NB-XxXx
     (uso único, no cache) e devolve o deep link com o código pré-preenchido.
 
@@ -103,6 +109,12 @@ def start_access_link(*, cart_session_key: str = "", next_path: str = "") -> dic
     from shopman.doorman.services.link_state import store_state
 
     state: dict = {}
+    # A sessão que apertou o botão: quando a mensagem chegar, é ELA que entra
+    # (``AccessLinkCreateView._release_origin``). Impressão digital, nunca a chave.
+    if origin:
+        state["origin"] = origin
+        if origin_label:
+            state["origin_label"] = origin_label
     if cart_session_key:
         state["cart_session_key"] = str(cart_session_key)
     safe_next = _safe_next(next_path)

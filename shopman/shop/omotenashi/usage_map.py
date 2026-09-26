@@ -338,9 +338,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "LOGIN_NAME_SUBTITLE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "LOGIN_NO_PASSWORD_NOTE": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
     "LOGIN_PHONE_CTA_SMS": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
@@ -368,16 +365,19 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "LOGIN_WA_CART_KEPT": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "LOGIN_WA_GLIMPSE": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "LOGIN_WA_GLIMPSE_WITH_CART": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
     "LOGIN_WA_MANUAL_INTRO": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGIN_WA_MANUAL_TITLE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_STEPS": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_WAITING": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_WHY": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGOUT_FAREWELL": (

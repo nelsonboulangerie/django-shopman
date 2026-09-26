@@ -541,8 +541,9 @@ export interface AuthCopyProjection {
   phone_heading: CopyEntryProjection
   phone_subtitle: CopyEntryProjection
   wa_cart_kept: CopyEntryProjection
-  wa_glimpse: CopyEntryProjection
-  wa_glimpse_with_cart: CopyEntryProjection
+  wa_why: CopyEntryProjection
+  wa_steps: CopyEntryProjection
+  wa_waiting: CopyEntryProjection
   wa_manual_title: CopyEntryProjection
   wa_manual_intro: CopyEntryProjection
   phone_cta_wa: CopyEntryProjection
@@ -551,7 +552,6 @@ export interface AuthCopyProjection {
   trusted_device_message: CopyEntryProjection
   trusted_device_cta: CopyEntryProjection
   trusted_other_phone: CopyEntryProjection
-  no_password_note: CopyEntryProjection
   terms_note: CopyEntryProjection
   code_heading: CopyEntryProjection
   code_help: CopyEntryProjection

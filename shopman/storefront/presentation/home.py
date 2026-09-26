@@ -128,8 +128,9 @@ class AuthCopyProjection:
     phone_heading: CopyEntryProjection
     phone_subtitle: CopyEntryProjection
     wa_cart_kept: CopyEntryProjection
-    wa_glimpse: CopyEntryProjection
-    wa_glimpse_with_cart: CopyEntryProjection
+    wa_why: CopyEntryProjection
+    wa_steps: CopyEntryProjection
+    wa_waiting: CopyEntryProjection
     wa_manual_title: CopyEntryProjection
     wa_manual_intro: CopyEntryProjection
     phone_cta_wa: CopyEntryProjection
@@ -138,7 +139,6 @@ class AuthCopyProjection:
     trusted_device_message: CopyEntryProjection
     trusted_device_cta: CopyEntryProjection
     trusted_other_phone: CopyEntryProjection
-    no_password_note: CopyEntryProjection
     terms_note: CopyEntryProjection
     code_heading: CopyEntryProjection
     code_help: CopyEntryProjection
@@ -583,8 +583,9 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         phone_heading=_copy_entry("LOGIN_PHONE_HEADING", omotenashi=omotenashi),
         phone_subtitle=_copy_entry("LOGIN_PHONE_SUBTITLE", omotenashi=omotenashi),
         wa_cart_kept=_copy_entry("LOGIN_WA_CART_KEPT", omotenashi=omotenashi),
-        wa_glimpse=_copy_entry("LOGIN_WA_GLIMPSE", omotenashi=omotenashi),
-        wa_glimpse_with_cart=_copy_entry("LOGIN_WA_GLIMPSE_WITH_CART", omotenashi=omotenashi),
+        wa_why=_copy_entry("LOGIN_WA_WHY", omotenashi=omotenashi),
+        wa_steps=_copy_entry("LOGIN_WA_STEPS", omotenashi=omotenashi),
+        wa_waiting=_copy_entry("LOGIN_WA_WAITING", omotenashi=omotenashi),
         wa_manual_title=_copy_entry("LOGIN_WA_MANUAL_TITLE", omotenashi=omotenashi),
         wa_manual_intro=_copy_entry("LOGIN_WA_MANUAL_INTRO", omotenashi=omotenashi),
         phone_cta_wa=_copy_entry("LOGIN_PHONE_CTA_WA", omotenashi=omotenashi),
@@ -593,7 +594,6 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         trusted_device_message=_copy_entry("LOGIN_TRUSTED_DEVICE_MESSAGE", omotenashi=omotenashi),
         trusted_device_cta=_copy_entry("LOGIN_TRUSTED_DEVICE_CTA", omotenashi=omotenashi),
         trusted_other_phone=_copy_entry("LOGIN_TRUSTED_OTHER_PHONE", omotenashi=omotenashi),
-        no_password_note=_copy_entry("LOGIN_NO_PASSWORD_NOTE", omotenashi=omotenashi),
         terms_note=_copy_entry("LOGIN_TERMS_NOTE", omotenashi=omotenashi),
         code_heading=_copy_entry("LOGIN_CODE_HEADING", omotenashi=omotenashi),
         code_help=_copy_entry("LOGIN_CODE_HELP", omotenashi=omotenashi),
