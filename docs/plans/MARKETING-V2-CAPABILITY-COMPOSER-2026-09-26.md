@@ -578,6 +578,14 @@ Entrega:
 - estado de implementação/readiness distinto;
 - nenhuma nova publicação externa.
 
+Fundação implementada nesta branch:
+
+- inventário tipado e versionado em `marketing_provider_capabilities.py`;
+- projeção aditiva `provider_capabilities` nas opções do composer;
+- catálogo teórico separado da allow-list executável existente;
+- TikTok documentado como `dormant`/`gated`, sem tornar-se destino válido;
+- testes de formatos, mídia, CTA e não ampliação acidental dos efeitos externos.
+
 ### WP-02 — Conexões múltiplas
 
 Área:

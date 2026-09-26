@@ -37,6 +37,10 @@ from shopman.shop.models import (
 )
 from shopman.shop.services import marketing_time
 from shopman.shop.services.marketing_capabilities import DESTINATIONS, platform_choices
+from shopman.shop.services.marketing_provider_capabilities import (
+    PROVIDER_CAPABILITIES,
+    PROVIDER_CAPABILITY_SCHEMA_VERSION,
+)
 
 #: Plataformas que uma regra pode alvejar, na ordem em que aparecem no formulário.
 PLATFORM_CHOICES: tuple[tuple[str, str], ...] = platform_choices()
@@ -267,6 +271,49 @@ class MarketingPlatformCapabilityProjection:
 
 
 @dataclass(frozen=True)
+class ProviderFieldCapabilityProjection:
+    ref: str
+    label: str
+    kind: str
+    required: bool
+    max_length: int | None
+    choices: tuple[str, ...]
+    availability_note: str
+
+
+@dataclass(frozen=True)
+class ProviderMediaCapabilityProjection:
+    min_items: int
+    max_items: int | None
+    kinds: tuple[str, ...]
+    image_formats: tuple[str, ...]
+    video_formats: tuple[str, ...]
+    notes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProviderFormatCapabilityProjection:
+    ref: str
+    label: str
+    delivery_kind: str
+    implementation_state: str
+    implemented_variants: tuple[str, ...]
+    fields: tuple[ProviderFieldCapabilityProjection, ...]
+    media: ProviderMediaCapabilityProjection
+    cta_model: str
+    notes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProviderCapabilityProjection:
+    platform: str
+    label: str
+    connector_state: str
+    formats: tuple[ProviderFormatCapabilityProjection, ...]
+    notes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CampaignOptionsProjection:
     """O que o formulário de regra precisa saber sem hardcodar o domínio.
 
@@ -278,6 +325,10 @@ class CampaignOptionsProjection:
     triggers: tuple[ChoiceProjection, ...]
     platforms: tuple[ChoiceProjection, ...]
     delivery_capabilities: tuple[MarketingPlatformCapabilityProjection, ...]
+    #: Inventário da API, inclusive opções ainda não executáveis. Diferente da
+    #: allow-list acima, isto informa e explica; nunca autoriza um efeito.
+    provider_capability_schema_version: int
+    provider_capabilities: tuple[ProviderCapabilityProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
     #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
@@ -823,6 +874,48 @@ def build_options() -> CampaignOptionsProjection:
                 default_format=destination.default_format,
             )
             for destination in DESTINATIONS
+        ),
+        provider_capability_schema_version=PROVIDER_CAPABILITY_SCHEMA_VERSION,
+        provider_capabilities=tuple(
+            ProviderCapabilityProjection(
+                platform=provider.platform,
+                label=provider.label,
+                connector_state=provider.connector_state,
+                formats=tuple(
+                    ProviderFormatCapabilityProjection(
+                        ref=format_capability.ref,
+                        label=format_capability.label,
+                        delivery_kind=format_capability.delivery_kind,
+                        implementation_state=format_capability.implementation_state,
+                        implemented_variants=format_capability.implemented_variants,
+                        fields=tuple(
+                            ProviderFieldCapabilityProjection(
+                                ref=field.ref,
+                                label=field.label,
+                                kind=field.kind,
+                                required=field.required,
+                                max_length=field.max_length,
+                                choices=field.choices,
+                                availability_note=field.availability_note,
+                            )
+                            for field in format_capability.fields
+                        ),
+                        media=ProviderMediaCapabilityProjection(
+                            min_items=format_capability.media.min_items,
+                            max_items=format_capability.media.max_items,
+                            kinds=format_capability.media.kinds,
+                            image_formats=format_capability.media.image_formats,
+                            video_formats=format_capability.media.video_formats,
+                            notes=format_capability.media.notes,
+                        ),
+                        cta_model=format_capability.cta_model,
+                        notes=format_capability.notes,
+                    )
+                    for format_capability in provider.formats
+                ),
+                notes=provider.notes,
+            )
+            for provider in PROVIDER_CAPABILITIES
         ),
         templates=build_templates(),
         variables=available_variables(),
