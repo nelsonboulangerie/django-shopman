@@ -8,7 +8,7 @@ test.describe('personas', () => {
     await page.goto('/finalizar', { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2500)
     expect(page.url()).toContain('/entrar?next=/finalizar')
-    await expect(page.locator('h1')).toHaveText(/Vamos entrar|Entrar/)
+    await expect(page.locator('h1')).toHaveText(/Entre com seu WhatsApp/)
     expect(errors).toEqual([])
   })
 

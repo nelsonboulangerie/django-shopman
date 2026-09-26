@@ -204,6 +204,17 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
         "subject": "Seu acesso à loja",
         "body": "Oi{customer_name_greeting}! Use o link para entrar na loja: {access_url}\n{cart_note}Válido por 5 min.",
     },
+    # Login que começou no SITE: a mensagem da pessoa já fez a aba de lá entrar. O link
+    # é reserva (se ela não achar o caminho de volta), e o "Não foi você?" é a defesa
+    # contra quem pede a alguém que envie a mensagem com o código dele.
+    "access_link_site": {
+        "subject": "Você entrou na loja",
+        "body": (
+            "Pronto{customer_name_greeting}! Pode voltar ao site: você já entrou{origin_note}. 💛\n"
+            "Se o site não abrir sozinho, toque aqui: {access_url}\n"
+            "Não foi você? Encerre este acesso: {revoke_url}"
+        ),
+    },
     # Dois usos: o "Me avise" (sem reserva, CTA "Garanta o seu:") e a reserva que a
     # loja separou (`handlers/_stock_receivers`: "Sua reserva está garantida.", prazo
     # para confirmar, CTA "Finalize seu pedido:"). As notas começam com espaço e

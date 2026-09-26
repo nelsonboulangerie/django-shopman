@@ -608,9 +608,13 @@ describe('surface UX guardrails', () => {
     expect(login).not.toContain('isCheckoutReturnWithCart')
     expect(login).toContain('if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept')
     expect(login).toContain("hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'")
-    // O lampejo promete a sacola só quando o SERVIDOR confirma que ela viajou.
-    expect(login).toContain('waCartTravels')
-    expect(login).toContain('wa_glimpse_with_cart')
+    // As duas queixas de quem chega pelo site, respondidas na tela: o porquê
+    // ("pra que eu tenho que fazer isso?") e os passos ("o que eu tenho que fazer?").
+    expect(login).toContain('authCopy.value?.wa_why')
+    expect(login).toContain('authCopy.value?.wa_steps')
+    // A volta: a aba que apertou o botão entra sozinha quando a mensagem chega.
+    expect(login).toContain('useWhatsappReturn(onWhatsappReturn)')
+    expect(login).toContain(':waiting="waWaiting"')
     expect(login).toContain('const stepTitle')
     expect(login).toContain('const stepDescription')
     // Campo claro sobre o cartão Faubourg do SMS (o canvas creme sumiria nele).
@@ -624,7 +628,7 @@ describe('surface UX guardrails', () => {
     expect(authPhone).toContain('phone_region')
     expect(authPhone).toContain('phone_normalized')
     expect(authPhone).toContain('target')
-    // WhatsApp = login por access link (deep link pré-aquecido no pai, sem polling/SSE);
+    // WhatsApp = a mensagem libera esta aba (e traz um access link de reserva);
     // SMS = fallback OTP push. O CTA é o próprio deep link (<a href>) no painel
     // apresentacional; o pai pré-aquece via waStart no mount (uma tela só).
     expect(login).toContain('useWhatsappVerify()')
@@ -634,28 +638,24 @@ describe('surface UX guardrails', () => {
     expect(read('app/composables/useWhatsAppConfirm.ts')).toContain('settleCart')
     expect(login).toContain("requestCode('sms', $event)")
     expect(login).toContain('class="w-full justify-center"')
-    // A PORTA DO SMS NOMEIA O QUE ENTREGA. Dizia "Não consigo usar WhatsApp":
-    // pedia que a pessoa declarasse uma incapacidade para receber uma opção, e
-    // não dizia SMS em lugar nenhum — a palavra só aparecia depois do clique.
-    // E era o elemento mais fraco da tela (ghost, 32px, cinza) sendo a única
-    // alternativa real, enquanto o envio manual ostentava dois botões sólidos.
-    expect(login).toContain('Receber código por SMS')
+    // A PORTA DO SMS NOMEIA O QUE ENTREGA, e é a alternativa aceitável — não a
+    // porta da frente. Link discreto, depois do único botão da tela.
+    expect(login).toContain('Prefere receber um código por SMS?')
     expect(login).toContain('data-login-sms-door')
     // Sem `not.toContain` do rótulo antigo de propósito: ele aparece no
     // comentário que explica a troca, e uma asserção que obriga a escrever ao
     // redor dela não está medindo o código. Quem garante que a porta é uma só
     // são os testes de página, que clicam pelo rótulo.
-    // O cartão do WhatsApp é CLARO e o envio manual é um cartão Faubourg dentro
-    // dele — ícone para copiar, link para abrir. A porta do SMS é DOURADA (dono,
-    // 23/09: antes era contorno) e o cartão que ela abre também é Faubourg. A
-    // ajuda é cartão transparente: contorno sem fundo.
+    // O cartão do WhatsApp é CLARO; o envio manual é um cartão Faubourg dentro
+    // dele, só na espera — ícone para copiar, link para abrir. O cartão que a
+    // porta do SMS abre também é Faubourg. A ajuda é cartão transparente, e só
+    // aparece esperando algo (código ou mensagem).
     const waPanel = read('app/components/WhatsappVerifyPanel.vue')
     expect(waPanel).toContain('class="rounded-lg border bg-card p-4 shop-stack-block"')
     expect(waPanel).not.toContain('bg-bottomnav')
     expect(waPanel).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-whatsapp-manual/)
-    expect(login).toMatch(/bg-brass text-brass-foreground[^"]*"\s+icon="lucide:smartphone"\s+data-login-sms-door/)
     expect(login).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-sms-form/)
-    expect(login).toContain('class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
+    expect(login).toContain('v-if="supportUrl && (step === \'code\' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
     // AA do texto secundário sobre o Faubourg não pode depender do tema: a
     // superfície remapeia o muted a partir do próprio texto.
     expect(read('app/assets/css/tailwind.css')).toContain('--muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));')

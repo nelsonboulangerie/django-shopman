@@ -151,7 +151,7 @@ const deliveryUncovered = ref(false)
 // número e não as mãos (chegou por link de campanha). É a única rota que converteria o saldo
 // de alguém em pão entregue em outro lugar. Endereço salvo e balcão nunca passam por aqui.
 const identityConfirmOffer = ref(false)
-const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm()
+const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm(() => refresh())
 const quotingZone = ref(false)
 const draftSyncing = ref(false)
 const changePhoneOpen = ref(false)

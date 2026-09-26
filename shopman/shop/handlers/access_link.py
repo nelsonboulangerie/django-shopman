@@ -22,6 +22,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 EVENT = "access_link"
+EVENT_SITE = "access_link_site"
 
 
 def connect() -> None:
@@ -57,6 +58,21 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
 
     from shopman.shop.notifications import notify
 
+    event = EVENT
+    context_extra: dict = {}
+    revoke_ref = str(metadata.get("revoke_ref") or "")
+    if metadata.get("released") and revoke_ref:
+        # O login começou no site e a aba de lá já está liberada: a mensagem manda
+        # voltar, e não tocar no link. Ver `AccessLinkCreateView._release_origin`.
+        from shopman.shop.services import storefront_links
+
+        event = EVENT_SITE
+        label = str(metadata.get("origin_label") or "").strip()
+        context_extra = {
+            "revoke_url": storefront_links.login_revoke_url(revoke_ref),
+            "origin_note": f" ({label})" if label else "",
+        }
+
     context = {
         "access_url": url,
         "customer_name": getattr(customer, "name", "") or "",
@@ -67,10 +83,11 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
         "cart_note": (
             "Seus itens continuam na sacola. " if metadata.get("cart_session_key") else ""
         ),
+        **context_extra,
     }
 
     try:
-        result = notify(event=EVENT, recipient=recipient, context=context, backend="manychat")
+        result = notify(event=event, recipient=recipient, context=context, backend="manychat")
     except Exception:
         logger.exception("access_link.delivery_failed recipient=%s", recipient[:6])
         return

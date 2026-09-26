@@ -69,7 +69,7 @@ describe('login — a declaração de maioridade em toda porta de entrada', () =
     mounted.push(page)
     await flushPromises()
 
-    const other = page.findAll('button').find((b: any) => b.text().includes('Receber código por SMS'))!
+    const other = page.findAll('button').find((b: any) => b.text().includes('Prefere receber um código por SMS?'))!
     await other.trigger('click')
     await flushPromises()
     await page.find('#login-phone').setValue('43999998888')

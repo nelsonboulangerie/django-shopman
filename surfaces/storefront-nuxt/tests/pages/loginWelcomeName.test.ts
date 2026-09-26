@@ -173,7 +173,7 @@ describe('login — o passo do nome', () => {
     // Na chegada ao passo do telefone, com o bloco à vista, nada se move.
     expect(scrolled).not.toHaveBeenCalled()
 
-    await page.findAll('button').find((b: any) => b.text().includes('Receber código por SMS'))!.trigger('click')
+    await page.findAll('button').find((b: any) => b.text().includes('Prefere receber um código por SMS?'))!.trigger('click')
     await flushPromises()
     await page.find('#login-phone').setValue('43999998888')
     await page.find('form').trigger('submit')
@@ -193,7 +193,7 @@ describe('login — o passo do nome', () => {
     mounted.push(page)
     await flushPromises()
 
-    await page.findAll('button').find((b: any) => b.text().includes('Receber código por SMS'))!.trigger('click')
+    await page.findAll('button').find((b: any) => b.text().includes('Prefere receber um código por SMS?'))!.trigger('click')
     await flushPromises()
     await page.find('#login-phone').setValue('43999998888')
     await page.find('form').trigger('submit')
@@ -203,7 +203,7 @@ describe('login — o passo do nome', () => {
     await page.findAll('button').find((b: any) => b.text().includes('Trocar telefone'))!.trigger('click')
     await flushPromises()
 
-    const active = await expectStepRevealed('phone', 'Vamos entrar?')
+    const active = await expectStepRevealed('phone', 'Entre com seu WhatsApp')
     expect(active.id).toBe('login-phone')
   })
 })

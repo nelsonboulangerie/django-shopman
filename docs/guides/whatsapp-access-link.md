@@ -21,7 +21,7 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 ```
 1. Site → POST /api/v1/auth/whatsapp/start/         → { code: "NB-XxXx", deep_link, wa_number }
    (guarda {cart_session_key, next} sob o código, no cache, uso único, TTL 30min)
-2. Cliente toca "Entrar pelo WhatsApp" → wa.me abre `#menu NB-XxXx` → envia
+2. Cliente toca "Abrir o WhatsApp" → wa.me abre `#menu NB-XxXx` → envia
 3. ManyChat (Flow) → POST /api/auth/access/create/  (S2S, API key)
    body: { customer_id/subscriber, access_code: "<a mensagem inteira>", next: "/menu" }
    → o create extrai o NB-XxXx, resolve o contexto e dobra na metadata do token
@@ -31,8 +31,38 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
    → loga a sessão + adota a sacola (cart_session_key) + redireciona (metadata.next)
 ```
 
-Sem handshake, sem polling, sem SSE, sem bind de sessão. O contexto viaja junto
-(sacola + destino); a aba original fica anônima (troca aceita — ver o plano).
+### A aba de origem entra sozinha (26/09/2026)
+
+A queixa dos testadores que chegavam pelo site era a volta: "vai pro WhatsApp, envia uma
+tal mensagem, depois sai do WhatsApp de novo por um link". O link abria no navegador
+embutido do WhatsApp, e a aba onde a pessoa estava continuava em "Vamos entrar?". O
+padrão dos benchmarks (OTPless, RFC 8628, o QR do WhatsApp Web) é outro: **o login
+termina onde começou.**
+
+```
+1. /start guarda também a IMPRESSÃO DIGITAL da sessão que apertou o botão (sha256 da
+   chave de sessão, nunca a chave) e o rótulo do dispositivo ("Safari / iPhone").
+2. O create, ao consumir o NB-XxXx, cria um SEGUNDO access link (sem entrega) e o
+   deixa esperando sob aquela impressão digital (`link_state.release_to_origin`).
+   Só então cria o link da mensagem — a mensagem diz "você já entrou", e isso já é
+   verdade quando ela sai.
+3. A aba pergunta `POST /api/v1/auth/whatsapp/claim/` quando volta a ficar visível
+   (e a cada 3 s enquanto está na tela). Achou a liberação → troca o token pelo MESMO
+   caminho do link (`exchange_access_token`) e entra, lembrando o dispositivo.
+4. A mensagem (`access_link_site`) manda voltar ao site, traz o link como reserva e
+   um "Não foi você? Encerre este acesso" → `/encerrar-acesso#<ref>` →
+   `POST /api/v1/auth/whatsapp/revoke/`: cancela a liberação pendente ou derruba a
+   sessão e o dispositivo que ela abriu. A referência vale 24 h.
+```
+
+O código **não é credencial**: vazado, ele não abre nada em outro navegador, porque a
+liberação mora sob a sessão de origem. O risco que sobra é o golpe da "mensagem
+encomendada" (alguém convence a vítima a enviar a mensagem com o código DELE); a defesa
+escolhida pelo dono é avisar e deixar derrubar, sem toque extra para quem é honesto.
+
+`#menu` digitado direto no WhatsApp não tem aba de origem e segue exatamente como antes.
+O checkout e a tela de Segurança (`useWhatsAppConfirm`) usam a mesma volta: a página
+onde a pessoa tocou se confirma sozinha.
 
 ## Endpoints
 
@@ -41,6 +71,8 @@ Sem handshake, sem polling, sem SSE, sem bind de sessão. O contexto viaja junto
 | POST | `/api/v1/auth/whatsapp/start/` | pública (rate-limit 10/min) | Site: gera o código NB + deep link. Body opcional `{"next": "/checkout"}`; a sacola vem da sessão. |
 | POST | `/api/auth/access/create/` | **API key S2S** | ManyChat: gera o access link. Aceita `access_code` (a mensagem inteira; o código é extraído). |
 | POST | `/api/v1/auth/access/` | pública | Exchange do token → sessão logada + adoção de sacola + redirect. |
+| POST | `/api/v1/auth/whatsapp/claim/` | pública (CSRF, 40/min) | A aba de origem entra se a mensagem já chegou (`status: done`) ou segue esperando (`pending`). |
+| POST | `/api/v1/auth/whatsapp/revoke/` | pública (CSRF, 10/min) | "Não foi você?": `{ref}` desfaz a entrada liberada pela mensagem. |
 
 O `create` autentica com a `DOORMAN_ACCESS_LINK_API_KEY` (header `Authorization: Bearer
 <chave>` ou `X-Api-Key`). Fail-closed: sem chave, rejeita fora de DEBUG.
@@ -67,8 +99,9 @@ COMTELE_API_KEY=<api key Comtele>
 COMTELE_ROUTE=<id da rota transacional>
 ```
 
-O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
-(`DOORMAN.LINK_STATE_CODE_PREFIX` / `LINK_STATE_TTL_SECONDS`).
+O prefixo do código (`NB-`) e o TTL (10 min) são do doorman
+(`DOORMAN.LINK_STATE_CODE_PREFIX` / `LINK_STATE_TTL_SECONDS`). O "Não foi você?" vale
+24 h (`LINK_REVOKE_TTL_SECONDS`).
 
 ## Configuração do Flow no ManyChat (a parte "F3")
 
@@ -182,14 +215,16 @@ Omotenashi: nunca sumir com a sacola em silêncio. Se o código veio mas **não 
 orgânico, que não tem `access_code`). No exchange, a resposta traz `handoff_expired: true`
 + `notice`, e a loja mostra um toast gentil: *"Você entrou! Sua sacola não veio desta vez
 porque o link expirou. É só montar de novo."* (copy configurável, chave
-`LOGIN_HANDOFF_EXPIRED`). O login em si nunca falha por isso; o TTL de 30 min reduz a
-frequência.
+`LOGIN_HANDOFF_EXPIRED`). O login em si nunca falha por isso. Com a aba de origem
+entrando sozinha, a sacola nem sai do lugar: o transporte só importa para quem usa o
+link de reserva.
 
 ## Fallback SMS (Comtele)
 
 Primário da `DELIVERY_CHAIN` em produção (`["sms", "email"]`). Para ativar em
 staging/alpha, configure `COMTELE_API_KEY` e `COMTELE_ROUTE` — o `ComteleSMSSender` sai
-do estado inerte. Na tela, `Não consigo usar WhatsApp` revela o campo e usa o fluxo clássico:
+do estado inerte. Na tela, o link discreto `Prefere receber um código por SMS?` revela o
+campo e usa o fluxo clássico:
 
 ```
 POST /api/v1/auth/request-code/  { "phone": "+55...", "delivery_method": "sms" }
@@ -209,19 +244,27 @@ POST /api/v1/auth/verify-code/   { "phone": "+55...", "code": "123456" }
   rate-limit por IP (10/min).
 - Token do access link: single-use, TTL 5 min, hash HMAC, exchange transacional
   (`select_for_update`). Ver `packages/doorman/.../services/access_link.py`.
+- Liberação da aba de origem: sob `sha256("doorman-origin:" + session_key)`, uso único,
+  TTL do código. `claim` sem sessão ou de outra sessão responde `pending` e não revela
+  nada. `revoke` apaga a sessão (`SESSION_ENGINE`) e desativa o `TrustedDevice`.
 
 ## Frontend (storefront-nuxt)
 
 Uma tela só (`app/pages/entrar.vue`), WhatsApp como caminho primário:
 
-- **`app/components/WhatsappVerifyPanel.vue`** — Bloco 1: lampejo do que vai acontecer +
-  botão deep link (`wa.me`, `<a href>` pré-aquecido). Divisor "ou". Bloco 2: envio manual
-  (código + copiar + abrir chat cru). `Não consigo usar WhatsApp` (SMS) abaixo. Copy vem por
-  props, configurável no Admin (`LOGIN_WA_*`).
+- **`app/components/WhatsappVerifyPanel.vue`** — antes do toque: o porquê
+  (`LOGIN_WA_WHY`), três passos (`LOGIN_WA_STEPS`) e um botão (deep link `wa.me`
+  pré-aquecido). Depois do toque: a espera (`LOGIN_WA_WAITING`) e, só aí, o plano B —
+  envio manual (mensagem + copiar + abrir de novo). O SMS é um link discreto abaixo.
 - **`app/composables/useWhatsappVerify.ts`** — `start(next)` leve: devolve
-  `{code, deepLink, waNumber, status}`. Sem polling/SSE/resume.
-- **`app/pages/a.vue`** — landing do access link: troca o token via BFF `/api/auth/access/`,
-  adota a sacola, redireciona. Mostra o toast de `handoff_expired` quando aplicável.
+  `{code, deepLink, waNumber, status}`.
+- **`app/composables/useWhatsappReturn.ts`** — a volta: `arm()` no toque; pergunta ao
+  `claim` quando a aba fica visível e a cada 3 s na tela, por até 10 min. A espera mora
+  no `sessionStorage` (o Safari descarta abas em segundo plano).
+- **`app/pages/encerrar-acesso.vue`** — o "Não foi você?". Um toque para encerrar, nunca
+  ao abrir (a prévia do link não pode derrubar ninguém).
+- **`app/pages/a.vue`** — landing do access link (a reserva): troca o token via BFF
+  `/api/auth/access/`, adota a sacola, redireciona.
 
 ## Testar localmente com Cloudflare Tunnel
 
@@ -245,9 +288,10 @@ no modo dev.
 4. **ManyChat** — no External Request, aponte para `https://<tunnel-django>/api/auth/access/create/`
    com `access_code: {{Last Text Input}}` (selecionado pela UI do ManyChat) e
    `next: "/menu"`.
-5. **Fluxo de teste**: no celular, adicione um item em estoque → checkout → "Entrar pelo
-   WhatsApp" → o WhatsApp abre com `#menu NB-XXXX` → envie → o Flow chama
-   o `create` → toque no botão que ele devolve → você volta logado, com a sacola, no checkout.
+5. **Fluxo de teste**: no celular, adicione um item em estoque → checkout → "Abrir o
+   WhatsApp" → o WhatsApp abre com `#menu NB-XXXX` → envie → o Flow chama o `create` →
+   volte ao navegador ("◀ Safari" no iPhone, voltar no Android): a aba já entrou, com a
+   sacola, no checkout. O link da mensagem é a reserva.
 
 > Quick tunnels trocam de URL a cada `make run` (reaponte o ManyChat **e**
 > `DOORMAN_ACCESS_LINK_ENTRY_URL`). Para URL fixa, use um named tunnel do Cloudflare.
@@ -259,7 +303,8 @@ make test-framework   # backend: start leve, create (code/handoff), exchange (sa
 cd surfaces/storefront-nuxt && npm run test:unit   # front: transforms + guardrails de surface
 ```
 
-Backend: `shopman/storefront/tests/test_whatsapp_verify.py` (start leve),
+Backend: `shopman/shop/tests/test_login_site_aba_de_origem.py` (a aba de origem entra,
+outro navegador não, "Não foi você?" antes e depois), `shopman/storefront/tests/test_whatsapp_verify.py` (start leve),
 `packages/doorman/.../tests/test_security.py` (create: dobra sacola/next, extrai da
 mensagem, degrada, marca handoff), `shopman/storefront/tests/web/test_auth_access_api.py`
 (exchange: adoção de sacola, handoff notice).

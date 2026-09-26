@@ -186,3 +186,10 @@ class DeviceTrustService:
     def cleanup(cls, days: int = 7) -> int:
         """Delete expired device trust records older than N days."""
         return TrustedDevice.cleanup_expired(days)
+
+
+def describe_user_agent(user_agent: str) -> str:
+    """"Safari / iPhone": o mesmo rótulo que a lista de dispositivos mostra."""
+    from ..models.device_trust import _derive_label
+
+    return _derive_label(user_agent or "")

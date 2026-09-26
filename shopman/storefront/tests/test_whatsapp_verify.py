@@ -86,7 +86,11 @@ def test_start_stores_cart_and_next_under_code(client: Client):
     body = resp.json()
     assert body["has_context"] is True
     assert body["has_cart_context"] is True
-    assert pop_state(body["code"]) == {"cart_session_key": cart_key, "next": "/checkout"}
+    state = pop_state(body["code"])
+    # A sessão que apertou o botão também fica no estado: é ela que entra quando a
+    # mensagem chega (impressão digital, nunca a chave).
+    assert len(state.pop("origin")) == 64
+    assert state == {"cart_session_key": cart_key, "next": "/checkout"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -96,8 +100,8 @@ def test_start_without_context_still_issues_code(client: Client):
     assert body["code"].startswith("NB-")
     assert body["has_context"] is False
     assert body["has_cart_context"] is False
-    # Estado vazio → o create degrada para o link genérico (sem sacola/destino).
-    assert pop_state(body["code"]) == {}
+    # Sem sacola/destino → o create degrada para o link genérico. Só a origem fica.
+    assert set(pop_state(body["code"])) == {"origin"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -105,7 +109,7 @@ def test_start_does_not_send_empty_checkout_context(client: Client):
     resp = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"})
     body = resp.json()
     assert body["has_context"] is False
-    assert pop_state(body["code"]) == {}
+    assert set(pop_state(body["code"])) == {"origin"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
