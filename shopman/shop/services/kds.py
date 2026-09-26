@@ -591,6 +591,39 @@ def cancel_tickets_for_session(session_key: str) -> int:
         return kds_adapter.cancel_open_tickets_for_session(session_key)
 
 
+def close_open_tickets(order, *, actor: str) -> int:
+    """O pedido saiu da cozinha por fora do KDS: os tickets abertos fecham junto.
+
+    O "Marcar pronto" do Gestor (``operator_orders.advance_order``) leva o
+    pedido a READY sem passar pelos cards. Os tickets que ficavam abertos
+    penduravam o pedido na grade das estações — e, na Saída, como "em
+    preparo" — muito depois de a sacola ter saído. Quem avançou o pedido
+    afirmou que a cozinha terminou; os tickets abertos são concluídos com esse
+    ator e ``via = order_advanced``, para a trilha dizer que a baixa não veio
+    da estação.
+
+    Chamado com o pedido já travado (``advance_order``); a ordem de lock é a
+    de sempre, origem → ticket. Idempotente: sem ticket aberto, devolve 0.
+    """
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    with transaction.atomic():
+        _lock_source_for_session(order.session_key)
+        count = kds_adapter.complete_open_tickets_for_session(
+            order.session_key,
+            actor=actor,
+            via="order_advanced",
+        )
+    if count:
+        logger.info(
+            "kds.close_open_tickets: %d ticket(s) concluído(s) com o pedido order=%s status=%s actor=%s",
+            count, order.ref, order.status, actor,
+        )
+    return count
+
+
 def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
     """
     Check if all KDS tickets are done and transition order to READY.
@@ -767,7 +800,7 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     return True
 
 
-def complete_ticket(ticket, *, actor: str) -> bool:
+def complete_ticket(ticket, *, actor: str, via: str = "station") -> bool:
     """Mark a KDS ticket done; advance the order as a best-effort side effect.
 
     Retorna True quando o BUMP aconteceu (ticket salvo como done) — nunca
@@ -780,15 +813,19 @@ def complete_ticket(ticket, *, actor: str) -> bool:
     lifecycle (pedido não confirmado, pagamento não capturado) levanta
     ``TicketCompletionBlocked`` com a razão real — são estados distintos e a
     superfície precisa da mensagem certa para cada um.
+
+    ``via`` diz por qual porta a baixa veio (``KDSTicket.COMPLETED_VIA_*``): a
+    tela da própria estação, ou — na estação sem tela — a Saída, o PDV ou o
+    leitor de código. Fica gravado no ticket com o ``actor``.
     """
     from django.db import transaction
 
     with transaction.atomic():
         source, ticket = _lock_source_then_ticket(ticket)
-        return _complete_ticket_locked(ticket, source=source, actor=actor)
+        return _complete_ticket_locked(ticket, source=source, actor=actor, via=via)
 
 
-def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
+def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station") -> bool:
     _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
@@ -813,9 +850,11 @@ def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
             raise TicketCompletionBlocked(blocked)
     ticket.status = "done"
     ticket.completed_at = timezone.now()
-    ticket.save(update_fields=["status", "completed_at"])
+    ticket.completed_by = str(actor or "")[:150]
+    ticket.completed_via = via
+    ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
 
-    logger.info("kds_done ticket=%d session=%s", ticket.pk, ticket.session_key)
+    logger.info("kds_done ticket=%d session=%s via=%s", ticket.pk, ticket.session_key, via)
     if order is not None:
         on_all_tickets_done(order, actor=actor)
     return True
@@ -848,7 +887,9 @@ def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
         raise TicketRecallBlocked(blocked)
     ticket.status = "in_progress"
     ticket.completed_at = None
-    ticket.save(update_fields=["status", "completed_at"])
+    ticket.completed_by = ""
+    ticket.completed_via = ""
+    ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
 
     order = source if isinstance(source, Order) else None
     if (

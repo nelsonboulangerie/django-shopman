@@ -87,6 +87,24 @@ class KDSTicket(models.Model):
         ("cancelled", "Cancelado"),
     ]
 
+    # Por onde o ticket foi concluído. A estação de tela conclui o próprio
+    # ticket; a estação SEM tela (``KDSInstance.print_terminal``) recebe o
+    # papel e quem dá baixa é outra porta (decisão do dono, 26/09/2026): a
+    # Saída, o PDV ou o leitor de código da bancada. E o pedido que o Gestor
+    # marca pronto por fora do KDS fecha os tickets que ficaram abertos.
+    COMPLETED_VIA_STATION = "station"
+    COMPLETED_VIA_EXIT = "exit"
+    COMPLETED_VIA_POS = "pos"
+    COMPLETED_VIA_SCANNER = "scanner"
+    COMPLETED_VIA_ORDER_ADVANCED = "order_advanced"
+    COMPLETED_VIA_CHOICES = [
+        (COMPLETED_VIA_STATION, "Tela da estação"),
+        (COMPLETED_VIA_EXIT, "Saída"),
+        (COMPLETED_VIA_POS, "PDV"),
+        (COMPLETED_VIA_SCANNER, "Leitor de código"),
+        (COMPLETED_VIA_ORDER_ADVANCED, "Pedido avançado fora do KDS"),
+    ]
+
     session_key = models.CharField(
         "chave da venda", max_length=64, db_index=True,
         help_text="Resolve para a Session aberta (comanda) ou o Order selado.",
@@ -106,6 +124,14 @@ class KDSTicket(models.Model):
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
     completed_at = models.DateTimeField("concluído em", null=True, blank=True)
+    completed_by = models.CharField(
+        "concluído por", max_length=150, blank=True, default="",
+        help_text="Quem deu a baixa (usuário do operador, ou o ator do sistema).",
+    )
+    completed_via = models.CharField(
+        "concluído pela", max_length=20, blank=True, default="",
+        choices=COMPLETED_VIA_CHOICES,
+    )
     cancelled_at = models.DateTimeField("cancelado em", null=True, blank=True)
     acknowledged_at = models.DateTimeField(
         "ciente em", null=True, blank=True,
