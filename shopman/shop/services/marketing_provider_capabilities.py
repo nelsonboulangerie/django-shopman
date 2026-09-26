@@ -17,12 +17,11 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
 
-from shopman.shop.services.marketing_capabilities import DeliveryKind
-
-PROVIDER_CAPABILITY_SCHEMA_VERSION = 1
+PROVIDER_CAPABILITY_SCHEMA_VERSION = 2
 
 ConnectorState = Literal["active", "dormant"]
 ImplementationState = Literal["ready", "partial", "planned", "gated"]
+ProviderDeliveryKind = Literal["publication", "direct_message", "creator_handoff"]
 FieldKind = Literal["text", "url", "boolean", "choice", "datetime", "template_variable"]
 CtaModel = Literal["none", "link", "provider_choice", "template_defined"]
 
@@ -52,7 +51,7 @@ class ProviderMediaCapability:
 class ProviderFormatCapability:
     ref: str
     label: str
-    delivery_kind: DeliveryKind
+    delivery_kind: ProviderDeliveryKind
     implementation_state: ImplementationState
     implemented_variants: tuple[str, ...]
     fields: tuple[ProviderFieldCapability, ...]
@@ -414,8 +413,49 @@ _PROVIDER_CAPABILITIES = (
         connector_state="dormant",
         formats=(
             ProviderFormatCapability(
+                ref="photo_draft",
+                label="Rascunho de fotos",
+                delivery_kind="creator_handoff",
+                implementation_state="planned",
+                implemented_variants=(),
+                fields=(
+                    _field("title", "Título inicial", "text", max_length=90),
+                    _field("description", "Descrição inicial", "text", max_length=4000),
+                ),
+                media=ProviderMediaCapability(
+                    min_items=1,
+                    max_items=35,
+                    kinds=("image",),
+                    image_formats=("jpeg", "webp"),
+                    notes=("O operador conclui a edição e a publicação dentro do TikTok.",),
+                ),
+                notes=(
+                    "Usa post_mode MEDIA_UPLOAD e o escopo video.upload.",
+                    "O TikTok envia uma notificação ao creator para concluir o rascunho.",
+                ),
+            ),
+            ProviderFormatCapability(
+                ref="video_draft",
+                label="Rascunho de vídeo",
+                delivery_kind="creator_handoff",
+                implementation_state="planned",
+                implemented_variants=(),
+                fields=(),
+                media=ProviderMediaCapability(
+                    min_items=1,
+                    max_items=1,
+                    kinds=("video",),
+                    video_formats=("mp4", "mov", "webm"),
+                    notes=("O operador conclui legenda, música, privacidade e publicação no TikTok.",),
+                ),
+                notes=(
+                    "Usa /v2/post/publish/inbox/video/init/ e o escopo video.upload.",
+                    "É o caminho compatível com um produto operacional de uso privado.",
+                ),
+            ),
+            ProviderFormatCapability(
                 ref="photo",
-                label="Fotos",
+                label="Publicação direta de fotos",
                 delivery_kind="publication",
                 implementation_state="gated",
                 implemented_variants=(),
@@ -440,7 +480,7 @@ _PROVIDER_CAPABILITIES = (
             ),
             ProviderFormatCapability(
                 ref="video",
-                label="Vídeo",
+                label="Publicação direta de vídeo",
                 delivery_kind="publication",
                 implementation_state="gated",
                 implemented_variants=(),
@@ -463,11 +503,13 @@ _PROVIDER_CAPABILITIES = (
                 notes=(
                     "Privacidade deve vir de creator_info/query, nunca de choices fixas do frontend.",
                     "Clientes não auditados não podem publicar conteúdo público.",
+                    "A auditoria não aceita utilitário privado limitado às contas da própria equipe.",
                 ),
             ),
         ),
         notes=(
-            "Connector dormente: não mostrar como destino selecionável.",
+            "Connector dormente: oferecer primeiro o handoff de rascunho, não Direct Post.",
+            "Direct Post público exige auditoria e produto destinado a uma audiência ampla.",
             "O endpoint de direct post limita cada token de usuário a seis requisições por minuto.",
         ),
     ),

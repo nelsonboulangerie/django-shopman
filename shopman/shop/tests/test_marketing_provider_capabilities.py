@@ -91,10 +91,17 @@ def test_google_offer_and_whatsapp_template_keep_their_real_options():
 def test_tiktok_remains_dormant_but_documents_dynamic_privacy_and_photo_limit():
     tiktok = marketing_provider_capabilities.provider_capability("tiktok")
     photo = tiktok.format("photo")
+    photo_draft = tiktok.format("photo_draft")
+    video_draft = tiktok.format("video_draft")
 
     assert tiktok.connector_state == "dormant"
     assert photo.implementation_state == "gated"
     assert photo.media.max_items == 35
+    assert photo_draft.delivery_kind == "creator_handoff"
+    assert photo_draft.implementation_state == "planned"
+    assert photo_draft.media.max_items == 35
+    assert video_draft.delivery_kind == "creator_handoff"
+    assert video_draft.implementation_state == "planned"
     privacy = next(field for field in photo.fields if field.ref == "privacy_level")
     assert privacy.required is True
     assert privacy.choices == ()

@@ -224,10 +224,32 @@ O app executa um único `flow_ns` global por contato. Faltam:
 
 ### 3.5 TikTok Content Posting API — candidato, não conexão ativa
 
-O repositório contém adapter de foto, mas ele está dormente. TikTok só deve aparecer quando conexão, escopos, auditoria e feature flag estiverem ativos.
+O repositório contém adapter de foto, mas ele está dormente. A revisão de 2026-09-26 identificou duas integrações com consequências muito diferentes.
 
-Capacidades relevantes para uma futura ativação:
+#### Caminho recomendado para o Shopman: Upload API
 
+O Marketing envia a mídia como rascunho e o TikTok notifica o creator. O operador abre o TikTok, conclui edição, música, privacidade e publica. Esse fluxo usa:
+
+- Login Kit/OAuth com refresh token mantido somente no servidor;
+- escopo aprovado e autorizado `video.upload`;
+- `/v2/post/publish/inbox/video/init/` para vídeo;
+- `/v2/post/publish/content/init/` com `post_mode=MEDIA_UPLOAD` para fotos;
+- `PULL_FROM_URL` para mídia já armazenada pelo Shopman em domínio/prefixo verificado;
+- status/webhook e uma consequência explícita `creator_handoff`, não `publication`.
+
+Esse caminho não promete publicação automática. Seu estado bem-sucedido é “rascunho entregue ao TikTok; aguardando conclusão pelo operador”.
+
+#### Por que Direct Post não é o caminho inicial
+
+Publicação direta pública requer `video.publish`, creator info em tempo real, consentimento explícito, UI mandatória e auditoria. Mais importante: as guidelines declaram como não aceitável um utilitário privado limitado às contas que a própria equipe administra. Isso corresponde ao uso atual do Shopman.
+
+Sem auditoria, Direct Post fica limitado a creators privados, visibilidade `SELF_ONLY` e até cinco usuários em 24 horas. Portanto ele serve para sandbox/prova técnica, não para a operação pública da loja.
+
+Direct Post só deve ser reconsiderado se o produto passar a atender uma audiência ampla de creators/negócios e a auditoria do TikTok aceitar esse caso de uso.
+
+Capacidades documentadas da plataforma:
+
+- upload de vídeo e fotos como rascunho para conclusão no TikTok;
 - publicação direta de fotos, com até 35 URLs;
 - capa selecionável;
 - título de foto até 90 unidades UTF-16;
@@ -239,7 +261,7 @@ Capacidades relevantes para uma futura ativação:
 - limite documentado de 6 requisições por minuto por token de usuário no endpoint de direct post;
 - auditoria necessária para publicação pública.
 
-O frontend nunca deve codificar opções de privacidade: deve usar exatamente as opções devolvidas para o creator conectado.
+No Direct Post, o frontend nunca deve codificar opções de privacidade: deve usar exatamente as opções devolvidas para o creator conectado. No Upload API, o composer deve explicar que privacidade e publicação final serão escolhidas dentro do TikTok.
 
 ## 4. Modelo de capacidade em quatro camadas
 
@@ -583,7 +605,7 @@ Fundação implementada nesta branch:
 - inventário tipado e versionado em `marketing_provider_capabilities.py`;
 - projeção aditiva `provider_capabilities` nas opções do composer;
 - catálogo teórico separado da allow-list executável existente;
-- TikTok documentado como `dormant`/`gated`, sem tornar-se destino válido;
+- TikTok documentado com handoff de rascunho `planned` e Direct Post `gated`, sem tornar-se destino executável;
 - testes de formatos, mídia, CTA e não ampliação acidental dos efeitos externos.
 
 ### WP-02 — Conexões múltiplas
@@ -775,3 +797,6 @@ Por isso esta entrega evita manifests e lockfiles. Os próximos WPs devem repeti
 - ManyChat — API token and account parameters: <https://help.manychat.com/hc/en-us/articles/14959510331420-How-to-generate-a-token-for-the-Manychat-API-and-where-to-get-parameters>
 - TikTok — Photo post: <https://developers.tiktok.com/docs/en/content-posting-api-reference-photo-post>
 - TikTok — Direct post: <https://developers.tiktok.com/docs/en/content-posting-api-reference-direct-post>
+- TikTok — Upload draft: <https://developers.tiktok.com/docs/en/content-posting-api-get-started-upload-content>
+- TikTok — Content Sharing Guidelines: <https://developers.tiktok.com/doc/content-sharing-guidelines>
+- TikTok — Login Kit para Web: <https://developers.tiktok.com/docs/en/login-kit-web>
