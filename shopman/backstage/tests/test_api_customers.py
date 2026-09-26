@@ -207,6 +207,19 @@ def test_detail_404(client, manager, shop):
     assert client.get(f"{LIST_URL}NAO-EXISTE/").status_code == 404
 
 
+def test_channel_lookup_does_not_hide_database_failures(monkeypatch):
+    from shopman.backstage.projections import customers
+    from shopman.shop.models import Channel
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(Channel.objects, "filter", unavailable)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        customers._channel_names({"ifood"})
+
+
 # ── Prévia ────────────────────────────────────────────────────────────
 
 

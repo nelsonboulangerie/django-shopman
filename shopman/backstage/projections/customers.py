@@ -541,22 +541,18 @@ def _merged_into(customer) -> str:
 
 
 def _channel_names(refs: set[str]) -> dict[str, str]:
-    try:
-        from shopman.shop.models import Channel
+    from shopman.shop.models import Channel
 
-        return dict(Channel.objects.filter(ref__in=refs).values_list("ref", "name"))
-    except Exception:
-        return {}
+    # A ficha não pode transformar indisponibilidade do banco em canal sem
+    # nome: isso produziria uma resposta 200 plausível, porém incompleta.
+    return dict(Channel.objects.filter(ref__in=refs).values_list("ref", "name"))
 
 
 def _status_label(status: str) -> str:
-    try:
-        from shopman.orderman.models import Order
+    from shopman.orderman.models import Order
 
-        label = dict(Order.Status.choices).get(status, status)
-        return str(label).capitalize()
-    except Exception:
-        return status
+    label = dict(Order.Status.choices).get(status, status)
+    return str(label).capitalize()
 
 
 def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
