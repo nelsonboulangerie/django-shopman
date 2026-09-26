@@ -18,9 +18,15 @@
       {% component "unfold/components/title.html" %}
         Instalar o agente do balcão
       {% endcomponent %}
-      {% component "unfold/components/text.html" with class="text-base-500" %}
-        {{ agent_install.terminal_label }} · é um programinha que roda na máquina do balcão. Ele recebe o pedido do PDV e fala com a impressora, que é quem tem o cabo da gaveta e o papel: abre a gaveta e imprime o comprovante.
-      {% endcomponent %}
+      {% if agent_install.extra_printer %}
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          {{ agent_install.terminal_label }} · é a impressora da estação {{ agent_install.extra_printer_stations }} do KDS (Via Cozinha). Ela não tem agente próprio: entra como uma impressora a mais no agente que já roda no PC do balcão.
+        {% endcomponent %}
+      {% else %}
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          {{ agent_install.terminal_label }} · é um programinha que roda na máquina do balcão. Ele recebe o pedido do PDV e fala com a impressora, que é quem tem o cabo da gaveta e o papel: abre a gaveta e imprime o comprovante.
+        {% endcomponent %}
+      {% endif %}
     {% endcomponent %}
 
     {% if agent_install.blocker %}
@@ -67,17 +73,27 @@
       {% if agent_install.relay_install_command %}
         {% component "unfold/components/card.html" %}
           {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
-            {% component "unfold/components/title.html" with class="text-lg" %}
-              Comando completo pronto
-            {% endcomponent %}
-            {% component "unfold/components/text.html" %}
-              Copie e execute este comando agora no PC do caixa. Ele mantém o PDV e acrescenta a impressão enviada por tablets. A credencial aparece somente nesta tela e não será recuperável depois de sair ou atualizar.
-            {% endcomponent %}
-            {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_install_command %}
-            {% component "unfold/components/text.html" %}
-              O instalador pedirá a credencial sem exibi-la no terminal. Quando aparecer a pergunta, volte aqui, copie o segredo abaixo e cole no PC do caixa.
-            {% endcomponent %}
-            {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_secret_once copy_label="Copiar segredo" %}
+            {% if agent_install.extra_printer %}
+              {% component "unfold/components/title.html" with class="text-lg" %}
+                Trecho pronto para o agent.json do balcão
+              {% endcomponent %}
+              {% component "unfold/components/text.html" %}
+                Copie agora e acrescente no agent.json do PC do balcão (passo 3 abaixo). O segredo já está dentro do trecho, aparece somente nesta tela e não será recuperável depois de sair ou atualizar. Não rode o instalador no balcão: ele trocaria a credencial do PDV.
+              {% endcomponent %}
+              {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_install_command copy_label="Copiar trecho" %}
+            {% else %}
+              {% component "unfold/components/title.html" with class="text-lg" %}
+                Comando completo pronto
+              {% endcomponent %}
+              {% component "unfold/components/text.html" %}
+                Copie e execute este comando agora no PC do caixa. Ele mantém o PDV e acrescenta a impressão enviada por tablets. A credencial aparece somente nesta tela e não será recuperável depois de sair ou atualizar.
+              {% endcomponent %}
+              {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_install_command %}
+              {% component "unfold/components/text.html" %}
+                O instalador pedirá a credencial sem exibi-la no terminal. Quando aparecer a pergunta, volte aqui, copie o segredo abaixo e cole no PC do caixa.
+              {% endcomponent %}
+              {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_secret_once copy_label="Copiar segredo" %}
+            {% endif %}
             {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
               Quando o comando terminar, atualize esta página: o estado deve mudar para “Relay conectado”.
             {% endcomponent %}
@@ -147,9 +163,15 @@
           {% component "unfold/components/title.html" with class="text-lg" %}
             1. Baixe o agente
           {% endcomponent %}
-          {% component "unfold/components/text.html" with class="text-base-500" %}
-            O mesmo arquivo serve nos três sistemas e em qualquer balcão. O que é deste terminal vai no comando do passo 2.
-          {% endcomponent %}
+          {% if agent_install.extra_printer %}
+            {% component "unfold/components/text.html" with class="text-base-500" %}
+              Esta impressora usa o agente que já roda no PC do balcão. Só atualize o agente de lá se ele ainda não atende impressoras extras (versão 1.3.0 ou mais nova): baixe, rode o instalador DO TERMINAL DO BALCÃO e ele preserva o que já está configurado.
+            {% endcomponent %}
+          {% else %}
+            {% component "unfold/components/text.html" with class="text-base-500" %}
+              O mesmo arquivo serve nos três sistemas e em qualquer balcão. O que é deste terminal vai no comando do passo 2.
+            {% endcomponent %}
+          {% endif %}
           {% component "unfold/components/flex.html" with class="flex-wrap gap-3 items-center" %}
             {% component "unfold/components/button.html" with href=agent_install.download_url variant="primary" icon="download" %}
               Baixar counter_agent.py
@@ -211,6 +233,7 @@
         {% endcomponent %}
       {% endfor %}
 
+      {% if not agent_install.extra_printer %}
       {% component "unfold/components/card.html" %}
         {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
@@ -224,6 +247,7 @@
           {% endcomponent %}
         {% endcomponent %}
       {% endcomponent %}
+      {% endif %}
     {% endif %}
   {% endcomponent %}
 {% endcomponent %}
