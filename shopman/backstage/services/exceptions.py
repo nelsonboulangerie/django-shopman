@@ -145,3 +145,15 @@ class RecipeVersionNotFound(BackstageServiceError):
 
 class CatalogConflict(CatalogError):
     """Catalog snapshot changed after preview; no cells were applied."""
+
+
+class CustomerMergeError(BackstageServiceError):
+    """A unificação (ou o desfazer) pedida pelo Gestor não pode acontecer.
+
+    A mensagem é a frase que o gestor lê: diz o que houve e o que ainda dá
+    para fazer. A camada HTTP a devolve como ``detail`` (422).
+    """
+
+
+class CustomerNotFound(CustomerMergeError):
+    """Cadastro inexistente. A camada HTTP mapeia para 404."""

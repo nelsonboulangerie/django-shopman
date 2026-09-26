@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -522,4 +522,144 @@ export interface TwoZoneQueueProjection {
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
   ifood_negotiation_orders: OrderCardProjection[];
+}
+
+/** CustomerFilterOption(ref: 'str', label: 'str', active: 'bool') */
+export interface CustomerFilterOption {
+  ref: string;
+  label: string;
+  active: boolean;
+}
+
+/** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
+export interface CustomerRowProjection {
+  ref: string;
+  name: string;
+  phone_display: string;
+  email: string;
+  document_display: string;
+  source_label: string;
+  is_ifood: boolean;
+  orders_label: string;
+  last_order_display: string;
+  duplicate_hint: string;
+}
+
+/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+export interface CustomerListProjection {
+  query: string;
+  filter: string;
+  filters: CustomerFilterOption[];
+  items: CustomerRowProjection[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  total_label: string;
+}
+
+/** CustomerIdentifierProjection(type_label: 'str', value: 'str') */
+export interface CustomerIdentifierProjection {
+  type_label: string;
+  value: string;
+}
+
+/** CustomerOrderRowProjection(ref: 'str', channel_label: 'str', status_label: 'str', ordered_at_display: 'str', total_display: 'str') */
+export interface CustomerOrderRowProjection {
+  ref: string;
+  channel_label: string;
+  status_label: string;
+  ordered_at_display: string;
+  total_display: string;
+}
+
+/** CustomerCandidateProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str', reason_label: 'str') */
+export interface CustomerCandidateProjection {
+  ref: string;
+  name: string;
+  phone_display: string;
+  document_display: string;
+  source_label: string;
+  orders_label: string;
+  reason_label: string;
+}
+
+/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', addresses: 'tuple[str, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]') */
+export interface CustomerDetailProjection {
+  ref: string;
+  name: string;
+  is_active: boolean;
+  merged_into_ref: string;
+  phone_display: string;
+  email: string;
+  document_display: string;
+  birthday_display: string;
+  source_label: string;
+  is_ifood: boolean;
+  created_display: string;
+  notes: string;
+  orders_label: string;
+  total_spent_display: string;
+  last_order_display: string;
+  identifiers: CustomerIdentifierProjection[];
+  addresses: string[];
+  recent_orders: CustomerOrderRowProjection[];
+  candidates: CustomerCandidateProjection[];
+  actions: Action[];
+}
+
+/** MergeSideProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str') */
+export interface MergeSideProjection {
+  ref: string;
+  name: string;
+  phone_display: string;
+  document_display: string;
+  source_label: string;
+  orders_label: string;
+}
+
+/** MergeMoveProjection(ref: 'str', count: 'int', label: 'str') */
+export interface MergeMoveProjection {
+  ref: string;
+  count: number;
+  label: string;
+}
+
+/** MergeFillProjection(field_label: 'str', value: 'str') */
+export interface MergeFillProjection {
+  field_label: string;
+  value: string;
+}
+
+/** MergePreviewProjection(source: 'MergeSideProjection', target: 'MergeSideProjection', moves: 'tuple[MergeMoveProjection, ...]', fills: 'tuple[MergeFillProjection, ...]', loyalty_label: 'str', summary: 'str', undo_notice: 'str', actions: 'tuple[Action, ...]') */
+export interface MergePreviewProjection {
+  source: MergeSideProjection;
+  target: MergeSideProjection;
+  moves: MergeMoveProjection[];
+  fills: MergeFillProjection[];
+  loyalty_label: string;
+  summary: string;
+  undo_notice: string;
+  actions: Action[];
+}
+
+/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', can_undo: 'bool', undo_label: 'str') */
+export interface MergeAuditRowProjection {
+  id: string;
+  source_ref: string;
+  target_ref: string;
+  target_name: string;
+  actor: string;
+  merged_at_display: string;
+  status: string;
+  status_label: string;
+  moved_label: string;
+  can_undo: boolean;
+  undo_label: string;
+}
+
+/** MergeAuditListProjection(items: 'tuple[MergeAuditRowProjection, ...]', undo_window_hours: 'int') */
+export interface MergeAuditListProjection {
+  items: MergeAuditRowProjection[];
+  undo_window_hours: number;
 }
