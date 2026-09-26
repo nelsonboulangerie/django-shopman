@@ -203,7 +203,7 @@ describe('login — o passo do nome', () => {
     await page.findAll('button').find((b: any) => b.text().includes('Trocar telefone'))!.trigger('click')
     await flushPromises()
 
-    const active = await expectStepRevealed('phone', 'Vamos entrar?')
+    const active = await expectStepRevealed('phone', 'Entre com seu WhatsApp')
     expect(active.id).toBe('login-phone')
   })
 })

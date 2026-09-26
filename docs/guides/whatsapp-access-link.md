@@ -21,7 +21,7 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 ```
 1. Site → POST /api/v1/auth/whatsapp/start/         → { code: "NB-XxXx", deep_link, wa_number }
    (guarda {cart_session_key, next} sob o código, no cache, uso único, TTL 30min)
-2. Cliente toca "Entrar pelo WhatsApp" → wa.me abre `#menu NB-XxXx` → envia
+2. Cliente toca "Abrir o WhatsApp" → wa.me abre `#menu NB-XxXx` → envia
 3. ManyChat (Flow) → POST /api/auth/access/create/  (S2S, API key)
    body: { customer_id/subscriber, access_code: "<a mensagem inteira>", next: "/menu" }
    → o create extrai o NB-XxXx, resolve o contexto e dobra na metadata do token

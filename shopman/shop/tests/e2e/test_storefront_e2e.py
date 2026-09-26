@@ -401,8 +401,8 @@ def _authenticate_via_debug_otp(page) -> None:
     que um cliente real percorre — só a leitura do SMS é substituída pelo
     código exposto na própria tela.
     """
-    expect(page.get_by_role("button", name="Receber código por SMS")).to_be_visible()
-    page.get_by_role("button", name="Receber código por SMS").click()
+    expect(page.get_by_role("button", name="Prefere receber um código por SMS?")).to_be_visible()
+    page.get_by_role("button", name="Prefere receber um código por SMS?").click()
     page.locator("#login-phone").fill(LIVE_ORDER_PHONE)
     page.locator("form:has(#login-phone) button[type='submit']").click()
 

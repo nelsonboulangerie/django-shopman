@@ -130,7 +130,7 @@ const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
-  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Vamos entrar?')
+  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre com seu WhatsApp')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
   return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
 })
