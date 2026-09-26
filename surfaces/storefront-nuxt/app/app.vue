@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import type { HomeResponse } from '~/types/shopman'
 import { absoluteImage, siteVerificationMeta } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
-const apiPath = useShopmanApiPath()
 const session = useShopSession()
 const { setFromServer, refreshCart } = useCartState()
 const { watchConnectivity } = useConnectivity()
-const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 const route = useRoute()
 const requestUrl = useRequestURL()
 const AUTH_SHELL_ROUTES = new Set(['/entrar', '/a'])
@@ -25,13 +22,7 @@ watchConnectivity(() => { void refreshCart().catch(() => null) })
 // Disparada ANTES da home do shell, para as duas buscas correrem juntas.
 const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 
-const { data: shellHome, refresh: refreshShellHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
-  credentials: 'include',
-  headers: requestHeaders,
-  key: 'shopman-shell-home',
-  immediate: true,
-  server: true
-})
+const { data: shellHome, refresh: refreshShellHome } = await useStorefrontHome()
 
 await siteSeoReady
 
@@ -132,6 +123,7 @@ useSeoMeta({
 
 <template>
   <div class="shop-shell flex min-h-dvh flex-col">
+    <NavigationFeedback />
     <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
          dele, em fluxo normal, para não depender do position:fixed que deriva no
          WebKit/iOS 26. No navegador comum o wrapper continua transparente ao layout. -->
