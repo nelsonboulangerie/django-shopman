@@ -42,6 +42,12 @@ def setup_stock(db):
     return shop
 
 
+@pytest.fixture
+def house_recipe(setup_stock):
+    """RECON-SKU com ficha ativa: produzido na casa, entra na contagem."""
+    return Recipe.objects.create(ref="recon-casa", name="Recon", output_sku="RECON-SKU", batch_size=Decimal("10"))
+
+
 @pytest.mark.django_db
 def test_build_day_closing_exposes_empty_production_summary(setup_stock):
     closing = build_day_closing()
@@ -217,7 +223,7 @@ def test_day_closing_summarizes_payment_methods_and_cod_pending(client, setup_st
 
 
 @pytest.mark.django_db
-def test_reconciliation_error_when_sold_exceeds_available(client, setup_stock, closing_user):
+def test_reconciliation_error_when_sold_exceeds_available(client, house_recipe, closing_user):
     order = Order.objects.create(ref="RECON-ORD", channel_ref="web", status="completed", total_q=3000)
     OrderItem.objects.create(order=order, line_id="1", sku="RECON-SKU", name="Recon", qty=5, unit_price_q=100, line_total_q=500)
     client.force_login(closing_user)
@@ -241,6 +247,18 @@ def test_reconciliation_error_when_sold_exceeds_available(client, setup_stock, c
     assert typed.sold_qty == 5
     assert typed.deficit_qty == 3
     assert typed.available_qty == 2
+
+
+@pytest.mark.django_db
+def test_resale_sold_out_is_not_a_reconciliation_error(setup_stock):
+    """Revenda não se conta no fechamento, então não se confronta: sem ficha,
+    o vendido não tem "disponível" para comparar e viraria déficit inventado."""
+    from shopman.backstage.services.closing import _reconciliation_errors
+
+    order = Order.objects.create(ref="RECON-REV", channel_ref="web", status="completed", total_q=500)
+    OrderItem.objects.create(order=order, line_id="1", sku="RECON-SKU", name="Recon", qty=5, unit_price_q=100, line_total_q=500)
+
+    assert _reconciliation_errors(closing_date=timezone.localdate(), items=[]) == []
 
 
 def test_reconciliation_error_from_dict():
@@ -279,7 +297,7 @@ def test_future_preorder_does_not_create_false_deficit(client, setup_stock, clos
 
 
 @pytest.mark.django_db
-def test_preorder_counts_in_reconciliation_of_the_delivery_day(setup_stock):
+def test_preorder_counts_in_reconciliation_of_the_delivery_day(house_recipe):
     """Contraprova: no fechamento DA DATA combinada a encomenda conta como
     vendida — ali o estoque saiu de verdade."""
     from datetime import timedelta
@@ -382,7 +400,7 @@ def test_fechar_o_dia_com_todo_caixa_fechado_nao_alerta(client, setup_stock, clo
 
 
 @pytest.mark.django_db
-def test_quantidade_ilegivel_no_fechamento_devolve_400(client, setup_stock, closing_user):
+def test_quantidade_ilegivel_no_fechamento_devolve_400(client, house_recipe, closing_user):
     """⚠️ `1O` (letra O) virava 0, em silêncio, e nascia uma venda fantasma.
 
     O parser devolvia zero, o fluxo tomava o caminho "nada sobrou", nenhum write-off

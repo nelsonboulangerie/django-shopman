@@ -168,16 +168,19 @@ def test_e2e_late_started_detection_creates_alert(setup):
 @pytest.mark.django_db
 def test_e2e_stock_receive_appears_on_closing_surface(client, setup):
     """A receive on a saleable position must show up in the fechamento surface."""
+    from shopman.craftsman.models import Recipe
     from shopman.offerman.models import Product
 
     Product.objects.create(sku="POS-LIFE", name="Pão", is_published=True, is_sellable=True, base_price_q=500)
+    # Só o produzido na casa entra na contagem do fechamento.
+    Recipe.objects.create(ref="pos-life", name="Pão", output_sku="POS-LIFE", batch_size=10)
     StockMovements.receive(quantity=20, sku="POS-LIFE", position=Position.objects.get(ref="loja"), reason="seed")
 
     client.force_login(setup)
     closing = client.get("/api/v1/backstage/closing/")
     assert closing.status_code == 200
     skus = [item["sku"] for item in closing.json()["closing"]["items"]]
-    assert "POS-LIFE" in skus, "closing surface must list SKU with saleable stock"
+    assert "POS-LIFE" in skus, "closing surface must list produced SKU with saleable stock"
 
 
 # ── Cenário 6 — production management KPIs end-to-end ───────────────
