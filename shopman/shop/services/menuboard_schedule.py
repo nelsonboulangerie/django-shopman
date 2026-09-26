@@ -77,12 +77,9 @@ def resolve_menuboard_automatic_state(
 
     shop = getattr(channel, "shop", None)
     if shop is None:
-        try:
-            from shopman.shop.models import Shop
+        from shopman.shop.models import Shop
 
-            shop = Shop.load()
-        except Exception:
-            shop = None
+        shop = Shop.load()
 
     if not business_calendar.has_regular_hours(shop=shop):
         return MenuboardAutomaticState(
