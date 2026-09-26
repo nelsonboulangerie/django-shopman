@@ -121,6 +121,58 @@ def on_print_behavior(instance) -> str:
     return ON_PRINT_KEEP
 
 
+# ── O código do papel: o leitor da bancada dá o pronto ────────────────
+#
+# A Via Cozinha imprime um QR com o código do ticket; o leitor de código no PC
+# do PDV (modo teclado, HID) "digita" esse código e o balcão conclui o ticket
+# (decisão do dono, 26/09/2026). O código não pode ser o pk puro: qualquer um
+# que digitasse "KT-1235" concluiria o lanche do vizinho. Vai o pk E uma
+# assinatura (HMAC com a SECRET_KEY) — adivinhar a assinatura de um ticket
+# alheio é inviável.
+#
+# O alfabeto é o que um leitor em modo teclado entrega igual em qualquer
+# leiaute (US ou ABNT2): letras, dígitos e o hífen. Nada de barra, dois
+# pontos ou acento, que mudam de tecla entre leiautes.
+
+TICKET_CODE_PREFIX = "KT-"
+_TICKET_CODE_SIG_LEN = 10
+_TICKET_CODE_SALT = "shopman.backstage.kitchen_ticket_code"
+
+
+def _ticket_code_signature(ticket_pk: int) -> str:
+    import base64
+
+    from django.utils.crypto import salted_hmac
+
+    digest = salted_hmac(_TICKET_CODE_SALT, f"kds-ticket:{int(ticket_pk)}", algorithm="sha256").digest()
+    return base64.b32encode(digest).decode("ascii")[:_TICKET_CODE_SIG_LEN]
+
+
+def ticket_code(ticket_pk: int) -> str:
+    """O código impresso no QR da Via Cozinha: ``KT-<pk>-<assinatura>``."""
+    return f"{TICKET_CODE_PREFIX}{int(ticket_pk)}-{_ticket_code_signature(ticket_pk)}"
+
+
+def ticket_pk_from_code(code: str) -> int | None:
+    """O ticket de um código lido; ``None`` para código que não é desta casa.
+
+    Aceita minúsculas (leitor com Caps Lock trocado) e espaço nas pontas. A
+    assinatura é comparada em tempo constante.
+    """
+    import re
+
+    from django.utils.crypto import constant_time_compare
+
+    pattern = r"KT-(\d{1,12})-([A-Z2-7]{" + str(_TICKET_CODE_SIG_LEN) + "})"
+    match = re.fullmatch(pattern, str(code or "").strip().upper())
+    if match is None:
+        return None
+    pk = int(match.group(1))
+    if not constant_time_compare(match.group(2), _ticket_code_signature(pk)):
+        return None
+    return pk
+
+
 # ── O que a Saída lê do papel ─────────────────────────────────────────
 
 

@@ -211,3 +211,27 @@ def mark_printed_station_done_for_order(*, order_id: int, station_ref: str, acto
         if _complete_printed(ticket, actor=actor, via=KDSTicket.COMPLETED_VIA_EXIT):
             done += 1
     return done
+
+
+def mark_scanned_ticket_done(*, code: str, actor: str):
+    """O leitor de código da bancada leu o QR da Via Cozinha: o ticket fica pronto.
+
+    O código assinado é a credencial do gesto (``ticket_pk_from_code``): quem o
+    tem está com o papel na mão. Por isso não se exige aqui que a estação
+    continue sem tela — se o gestor trocou a impressora por um tablet depois
+    do papel sair, o papel ainda vale. Devolve ``(ticket, completed_now)``.
+    """
+    from shopman.backstage.models import KDSTicket
+    from shopman.backstage.services.kitchen_ticket_print import ticket_pk_from_code
+
+    ticket_pk = ticket_pk_from_code(code)
+    ticket = (
+        KDSTicket.objects.select_related("kds_instance").filter(pk=ticket_pk).first()
+        if ticket_pk is not None
+        else None
+    )
+    if ticket is None:
+        raise KDSTicketNotFound("Código não reconhecido: não é de uma Via Cozinha desta loja.")
+    completed = _complete_printed(ticket, actor=actor, via=KDSTicket.COMPLETED_VIA_SCANNER)
+    ticket.refresh_from_db()
+    return ticket, completed

@@ -52,6 +52,7 @@ from .kds import (
     KDSExpeditionActionView,
     KDSIndexView,
     KDSPrintedTicketDoneView,
+    KDSPrintedTicketScanView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
     KDSTicketRecallView,
@@ -277,6 +278,11 @@ urlpatterns = [
         "kds/expedition/<int:order_pk>/printed-stations/<slug:station_ref>/done/",
         KDSExitPrintedStationDoneView.as_view(),
         name="api-backstage-kds-exit-printed-station-done",
+    ),
+    path(
+        "kds/printed-tickets/scan/",
+        KDSPrintedTicketScanView.as_view(),
+        name="api-backstage-kds-printed-ticket-scan",
     ),
     path(
         "kds/printed-tickets/<int:ticket_pk>/done/",

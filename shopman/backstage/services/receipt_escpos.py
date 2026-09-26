@@ -1065,6 +1065,8 @@ def kitchen_ticket(ticket, *, reprint: bool = False) -> bytes:
       adivinhação que parou de fazer alguma coisa.
     - **"REIMPRESSÃO"**, nunca "2a VIA": decisão do dono — "via" nomeia a
       audiência do papel, e "segunda via da Via Cozinha" é ambíguo.
+    - **O QR do pronto** no pé do papel vivo: o leitor de código do PDV o lê e
+      conclui o ticket (``kitchen_ticket_print.ticket_code``, assinado).
     """
     from shopman.backstage.projections.kds import build_kitchen_paper
 
@@ -1129,6 +1131,17 @@ def kitchen_ticket(ticket, *, reprint: bool = False) -> bytes:
             for pedaco in _wrap(card.customer_note, COLUMNS):
                 out += _bold(pedaco)
         out += _rule()
+
+    if not card.is_cancelled:
+        # O leitor de código no PC do PDV lê este QR e dá o pronto do ticket
+        # (decisão do dono, 26/09/2026): a estação sem tela não tem botão, e
+        # imprimir não conclui nada. O papel CANCELADO não leva QR — não há o
+        # que concluir nele.
+        from shopman.backstage.services.kitchen_ticket_print import ticket_code
+
+        out += _line("")
+        out += _qr(ticket_code(ticket.pk), module=5)
+        out += _centered("Pronto? Leia o código no PDV.")
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial — o próximo papel começa limpo

@@ -312,3 +312,86 @@ def test_pronto_do_pdv_recusa_ticket_de_estacao_de_tela_e_ticket_cancelado(clien
     cancel = _pos_done(client, cancelado)
     assert cancel.status_code == 400
     assert "cancelado" in cancel.json()["detail"]
+
+
+# ── O QR da Via Cozinha e o leitor de código ───────────────────────────────
+
+
+def _scan(client, code: str):
+    return client.post(
+        reverse("api-backstage-kds-printed-ticket-scan"), {"code": code}, content_type="application/json"
+    )
+
+
+def test_o_codigo_do_ticket_e_assinado_e_nao_se_adivinha():
+    code = kitchen_ticket_print.ticket_code(1234)
+    assert code.startswith("KT-1234-")
+    assert kitchen_ticket_print.ticket_pk_from_code(code) == 1234
+    assert kitchen_ticket_print.ticket_pk_from_code(code.lower()) == 1234  # Caps Lock trocado
+    assert kitchen_ticket_print.ticket_pk_from_code(f"  {code}\n") == 1234
+    # O pk do vizinho com a assinatura deste não passa.
+    assert kitchen_ticket_print.ticket_pk_from_code(code.replace("KT-1234-", "KT-1235-")) is None
+    assert kitchen_ticket_print.ticket_pk_from_code("KT-1234") is None
+    assert kitchen_ticket_print.ticket_pk_from_code("7891234567895") is None  # código de barras de produto
+
+
+def test_o_papel_vivo_leva_o_qr_e_o_cancelado_nao(lanches):
+    from shopman.backstage.services.receipt_escpos import ENCODING, kitchen_ticket
+
+    order = _order("WEB-20260926-1260")
+    vivo = _ticket(order, lanches)
+    cancelado = _ticket(order, lanches, status="cancelled", line="L2")
+
+    papel_vivo = kitchen_ticket(vivo).decode(ENCODING, "replace")
+    papel_cancelado = kitchen_ticket(cancelado).decode(ENCODING, "replace")
+
+    assert kitchen_ticket_print.ticket_code(vivo.pk) in papel_vivo
+    assert "Leia o código no PDV" in papel_vivo
+    assert "KT-" not in papel_cancelado
+
+
+def test_o_leitor_conclui_o_ticket_e_devolve_o_aviso(client, lanches):
+    Channel.objects.get_or_create(ref="web", defaults={"name": "Loja"})
+    order = _order("WEB-20260926-1261", name="Ana")
+    ticket = _ticket(order, lanches)
+    client.force_login(_operator("caixa-leitor", ("cashman", "operate_pos")))
+
+    response = _scan(client, kitchen_ticket_print.ticket_code(ticket.pk))
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["ticket"]["message"] == "Lanches pronto · Ana · #1261"
+    ticket.refresh_from_db()
+    assert (ticket.status, ticket.completed_by, ticket.completed_via) == ("done", "caixa-leitor", "scanner")
+
+    again = _scan(client, kitchen_ticket_print.ticket_code(ticket.pk))
+    assert again.status_code == 200
+    assert again.json()["ticket"]["completed_now"] is False
+    assert again.json()["ticket"]["message"] == "Lanches já estava pronto · Ana · #1261"
+
+
+def test_codigo_estranho_e_404_com_o_que_houve(client, lanches):
+    client.force_login(_operator("caixa-leitor2", ("cashman", "operate_pos")))
+
+    response = _scan(client, "KT-99-AAAAAAAAAA")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Código não reconhecido: não é de uma Via Cozinha desta loja."
+
+
+def test_leitor_em_ticket_cancelado_diz_para_nao_preparar(client, lanches):
+    order = _order("WEB-20260926-1262")
+    cancelado = _ticket(order, lanches, status="cancelled")
+    client.force_login(_operator("caixa-leitor3", ("cashman", "operate_pos")))
+
+    response = _scan(client, kitchen_ticket_print.ticket_code(cancelado.pk))
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Este pedido foi cancelado em Lanches: não prepare."
+
+
+def test_leitor_exige_operador_do_pdv_ou_do_kds(client, lanches):
+    order = _order("WEB-20260926-1263")
+    ticket = _ticket(order, lanches)
+    client.force_login(_operator("so-staff-2"))
+
+    assert _scan(client, kitchen_ticket_print.ticket_code(ticket.pk)).status_code == 403

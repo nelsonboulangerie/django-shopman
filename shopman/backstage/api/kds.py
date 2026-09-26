@@ -8,6 +8,7 @@ POST /api/v1/backstage/kds/expedition/<pk>/action/ → dispatch/complete
 POST /api/v1/backstage/kds/expedition/<pk>/printed-stations/<ref>/done/
                                                    → "Pronto" da Saída pela estação sem tela
 POST /api/v1/backstage/kds/printed-tickets/<pk>/done/ → "Pronto" do PDV no card do ticket
+POST /api/v1/backstage/kds/printed-tickets/scan/  → "Pronto" pelo leitor de código (QR do papel)
 GET  /api/v1/backstage/kds/pickup/               → customer pickup board
 """
 
@@ -287,6 +288,35 @@ class KDSPrintedTicketDoneView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except KDSError as exc:
             logger.debug("kds_printed_ticket_done_failed ticket_pk=%s", ticket_pk, exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao marcar como pronto."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ticket": projection_data(build_printed_ticket_receipt(ticket, completed_now=completed))})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Leitor de código: pronto no ticket do QR da Via Cozinha",
+        responses={
+            200: OpenApiResponse(description="O ticket, como o aviso do balcão o diz."),
+            400: OpenApiResponse(description="Ticket cancelado ou pedido travado."),
+            404: OpenApiResponse(description="Código que não é de uma Via Cozinha desta loja."),
+        },
+    ),
+)
+class KDSPrintedTicketScanView(APIView):
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = PRINTED_STATION_PERMISSIONS
+
+    def post(self, request):
+        code = str(request.data.get("code") or "").strip()
+        if not code:
+            return Response({"detail": "Leia o código da Via Cozinha."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ticket, completed = kds_service.mark_scanned_ticket_done(code=code, actor=_actor(request))
+        except KDSTicketNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            logger.debug("kds_printed_ticket_scan_failed", exc_info=True)
             return Response({"detail": str(exc) or "Falha ao marcar como pronto."}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"ticket": projection_data(build_printed_ticket_receipt(ticket, completed_now=completed))})
 
