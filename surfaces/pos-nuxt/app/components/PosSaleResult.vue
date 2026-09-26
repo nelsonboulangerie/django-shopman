@@ -256,7 +256,7 @@ function onNewSale() {
           {{ danfe.label }}
         </UiButton>
         <p
-          v-else-if="danfe?.kind === 'awaiting_payment'"
+          v-else-if="danfe?.kind === 'awaiting_payment' || danfe?.kind === 'awaiting_handoff'"
           class="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"
           data-danfe-awaiting
         >

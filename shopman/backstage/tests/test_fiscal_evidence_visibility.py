@@ -59,11 +59,15 @@ def _backend_present():
 @pytest.mark.parametrize(
     "payment,extra,expected",
     [
-        # Pix sem captura: a nota nasce na CAPTURA, não na conclusão — a pill
-        # dizia "Fiscal na conclusão" e mentia.
-        ({"method": "pix"}, {}, ("awaiting_payment", "NFC-e sai quando o pagamento confirmar", "awaiting_payment")),
-        # COD aceito: a nota sai na conclusão; até lá está na fila.
-        ({"method": "cash", "collection": "on_delivery"}, {"fulfillment_type": "delivery"}, ("pending", "NFC-e em emissão", "queued")),
+        # Pix de balcão sem captura: a nota nasce na CAPTURA, não na conclusão
+        # — a pill dizia "Fiscal na conclusão" e mentia.
+        ({"method": "pix"}, {"origin_channel": "pos"}, ("awaiting_payment", "NFC-e sai quando o pagamento confirmar", "awaiting_payment")),
+        # Encomenda (retirada/entrega pela frente): a nota nasce na SAÍDA da
+        # mercadoria (decisão de 26/09/2026), paga ou não.
+        ({"method": "pix"}, {}, ("awaiting_pickup", "NFC-e sai na retirada", "awaiting_pickup")),
+        ({"method": "cash", "collection": "on_delivery"}, {"fulfillment_type": "delivery"}, ("awaiting_delivery", "NFC-e sai na entrega", "awaiting_delivery")),
+        # Venda de balcão em dinheiro: a nota sai no fechamento; até lá, na fila.
+        ({"method": "cash"}, {"origin_channel": "pos"}, ("pending", "NFC-e em emissão", "queued")),
         ({"method": "cash"}, {"nfce_access_key": "chave"}, ("authorized", "NFC-e autorizada", "authorized")),
         ({"method": "cash"}, {"nfce_access_key": "chave", "nfce_cancelled": True}, ("cancelled", "NFC-e cancelada", "authorized")),
     ],

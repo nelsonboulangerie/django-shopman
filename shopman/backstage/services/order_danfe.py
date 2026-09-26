@@ -16,9 +16,12 @@ por HTTPS. Onde o Gestor está aberto deixou de importar.
 
 O disparo mora no servidor e tem duas portas, porque a ordem dos fatos varia:
 
-- **a nota autoriza** (o caso normal: na entrega a NFC-e nasce no despacho) →
-  o handler fiscal anuncia ``shop.signals.nfce_authorized``;
-- **o pedido é despachado** com a nota já autorizada → ``order_changed``.
+- **o pedido é despachado** com a nota já autorizada → ``order_changed``. É o
+  caso normal desde 26/09/2026: a NFC-e da entrega nasce com a sacola pronta
+  (``lifecycle._on_ready`` → ``fiscal.emit_for_delivery_handoff``), autoriza
+  enquanto o entregador não sai, e a DANFE imprime no despacho;
+- **a nota autoriza** depois do despacho (a sacola pulou o ``READY``, ou a
+  SEFAZ demorou) → o handler fiscal anuncia ``shop.signals.nfce_authorized``.
 
 As duas chamam :func:`enqueue_auto_print`, que decide sob lock do pedido e
 grava o carimbo junto com o trabalho: quem chega depois encontra o carimbo e

@@ -179,8 +179,11 @@ def test_partial_capture_does_not_release_counter(close_counter):
     assert_waiting_for_payment(order)
 
 
-def test_future_pickup_emits_after_capture_without_accepting_or_early_handoff(close_counter):
+def test_future_pickup_captures_without_note_and_emits_on_pickup(close_counter):
+    """Encomenda paga antes: Via Recibo no pagamento, NFC-e na retirada (26/09/2026)."""
     from django.utils import timezone
+
+    from shopman.shop.services import fiscal as fiscal_service
 
     tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
     order, _ = close_counter("pix", delivery_date=tomorrow, customer_name="Ana", customer_phone="43999990000")
@@ -191,4 +194,14 @@ def test_future_pickup_emits_after_capture_without_accepting_or_early_handoff(cl
     assert order.status == Order.Status.NEW
     assert Quant.objects.get(sku="BREAD")._quantity == Decimal("10")
     assert not KDSTicket.objects.filter(session_key=order.session_key).exists()
+    # Pago e sem nota: a nota espera a saída da mercadoria.
+    assert not fiscal_rows(order).exists()
+    assert fiscal_service.fiscal_state(order) == fiscal_service.FISCAL_STATE_AWAITING_PICKUP
+
+    for status in (Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY, Order.Status.COMPLETED):
+        order.refresh_from_db()
+        if order.status != status and order.can_transition_to(status):
+            order.transition_status(status, actor="test")
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
     assert fiscal_rows(order).get().payload["customer"]["tax_id"] == "52998224725"

@@ -129,7 +129,7 @@ Duas exceções legítimas, e só duas:
 
 | Palavra | O que faz |
 |---|---|
-| **validar** | cobra, chuta a gaveta, manda à cozinha e emite a NFC-e. ⛔ Fica assim por decisão do dono (precedente Odoo) — e nenhuma frase da tela pode chamar isso de *finalizar* |
+| **validar** | cobra, chuta a gaveta, manda à cozinha e emite a NFC-e (na encomenda paga antes, só o recibo: a nota sai na retirada ou na entrega). ⛔ Fica assim por decisão do dono (precedente Odoo) — e nenhuma frase da tela pode chamar isso de *finalizar* |
 | **enviar à cozinha** | manda os itens para o KDS |
 | **transferir · dividir · juntar** | os três atos da comanda |
 | **liberar** | devolve a comanda ao balcão |

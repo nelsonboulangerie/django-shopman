@@ -333,6 +333,8 @@ function fiscalChipClass(status: string): string {
   if (status === "failed") return "bg-destructive/10 text-destructive border-destructive/30";
   if (status === "cancelled") return "bg-muted text-muted-foreground border-border";
   if (status === "not_requested") return "bg-muted text-muted-foreground border-border";
+  // Encomenda: a nota está marcada para a saída — não há nada a fazer agora.
+  if (status === "awaiting_pickup" || status === "awaiting_delivery") return "bg-muted text-muted-foreground border-border";
   return "bg-warning/10 text-warning-foreground border-warning/30";
 }
 </script>

@@ -123,7 +123,7 @@ def test_retirada_nota_antes_do_pronto_vai_no_pronto_e_nao_no_avulso():
     assert _fallbacks(order) == 0
 
 
-# ── Entrega que cobra na porta: a nota nasce no despacho ─────────────────
+# ── Entrega: a nota que autoriza depois da mensagem de "saiu" ────────────
 
 
 def test_entrega_nota_depois_do_saiu_vai_no_entregue():

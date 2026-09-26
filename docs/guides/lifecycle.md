@@ -112,12 +112,20 @@ O comportamento de cada canal é 100% configurado via `ChannelConfig` — sem cl
 | `on_commit` | Order criada | `customer.ensure()`, `stock.hold()`, `loyalty.redeem()`, `handle_confirmation()` |
 | (guard) | Antes de CONFIRMED | `ensure_confirmable()` — exige `availability_decision.approved == True` em `order.data`. Sem decisão positiva, `InvalidTransition("availability_not_approved")`. Exceção: canais com `payment.timing == "external"` (marketplace). Ver §Availability Approval abaixo |
 | `on_confirmed` | Status → CONFIRMED | `payment.initiate()` (se post_commit), `stock.fulfill()` (se counter), `notification.send` |
-| `on_paid` | Webhook de pagamento | `stock.fulfill()`, `notification.send("payment_confirmed")` |
+| `on_paid` | Webhook de pagamento | `fiscal.emit_on_payment()` (PDV: balcão emite; encomenda espera a saída), `stock.fulfill()`, `notification.send("payment_confirmed")` |
 | `on_preparing` | Status → PREPARING | `kds.dispatch()`, `notification.send` |
-| `on_ready` | Status → READY | `fulfillment.create()` (se post_commit), `notification.send` |
-| `on_dispatched` | Status → DISPATCHED | `fiscal.emit` (só cobrar na entrega: a NFC-e sai com a sacola) · `notification.send` |
+| `on_ready` | Status → READY | `fiscal.emit_for_delivery_handoff()` (entrega da casa: a nota nasce com a sacola pronta), `fulfillment.create()` (se post_commit), `notification.send` |
+| `on_dispatched` | Status → DISPATCHED | `fiscal.emit` (cobrar na entrega, iFood incluso) · `fiscal.emit_for_delivery_handoff()` (rede da entrega da casa) · `notification.send` |
 | `on_delivered` | Status → DELIVERED | `notification.send` |
-| `on_completed` | Status → COMPLETED | `loyalty.earn()`, `fiscal.emit()` |
+| `on_completed` | Status → COMPLETED | `loyalty.earn()`, `fiscal.emit()` (na retirada, é aqui que a nota da encomenda nasce; para o resto, rede idempotente) |
+
+**Quando a NFC-e nasce** (decisão do dono, 26/09/2026 — "Via Recibo primeiro,
+Nota depois"): a nota acompanha a SAÍDA da mercadoria. Venda de balcão (leva
+agora) emite no fechamento/captura; encomenda paga antes recebe no pagamento só
+a Via Recibo, e a nota sai na retirada (`COMPLETED`) ou com a sacola da entrega
+(`READY`, despacho como rede). Uma regra, um dono:
+`fiscal.emission_waits_for_handoff`. O iFood mantém a regra própria. 2027
+(IBS/CBS sobre pagamento antecipado) pede revisão — ver o TODO na função.
 | `on_cancelled` | Status → CANCELLED | `kds.cancel_tickets()`, `stock.release()`, `payment.cancel()` para intent não capturada, `payment.refund()` para saldo capturado, `fiscal.cancel()`, `notification.send` |
 | `on_returned` | Status → RETURNED | `stock.revert()`, `payment.refund()`, `fiscal.cancel()`, `notification.send` |
 

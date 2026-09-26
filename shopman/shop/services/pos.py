@@ -443,8 +443,11 @@ def _resume_committed_sale(order_ref: str) -> PosSaleResult:
         from shopman.shop.services import fiscal as fiscal_service
         from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
 
+        # Venda de balcão emite no fechamento; encomenda (retirada/entrega pela
+        # frente) sai daqui só com a Via Recibo, e a nota nasce na saída da
+        # mercadoria (``fiscal.emit_on_payment``, decisão de 26/09/2026).
         if not requires_captured_payment(order) or payment_is_captured(order):
-            fiscal_service.emit(order)
+            fiscal_service.emit_on_payment(order)
     except Exception as exc:
         logger.warning("pos_close_fiscal_emit_failed order=%s", order_ref, exc_info=True)
         _alert_fiscal_emit_failed(order_ref, exc)

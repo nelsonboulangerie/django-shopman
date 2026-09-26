@@ -60,6 +60,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
       <span>{{ payment.label }}</span><span class="tabular-nums">{{ payment.amountDisplay }}</span>
     </div>
     <hr class="my-2 border-t border-dashed border-black/40" />
+    <p v-if="receipt.fiscalHandoffLine" class="text-center text-[11px]" data-fiscal-handoff>{{ receipt.fiscalHandoffLine }}</p>
     <p class="text-center text-[11px]">Obrigado pela preferência!</p>
   </div>
 </template>
