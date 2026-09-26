@@ -44,4 +44,49 @@ describe('WhatsappVerifyPanel — envio manual', () => {
     expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Enviou a mensagem?')
     expect(wrapper.find('[data-login-whatsapp-reopen]').exists()).toBe(true)
   })
+
+  it('na demora explica que não é para reenviar e permite conferir agora', async () => {
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, {
+      props: { ...base, returnState: 'slow' }
+    })
+
+    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Está demorando mais que o normal')
+    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Não precisa enviar outra mensagem')
+    await wrapper.find('[data-login-whatsapp-check]').trigger('click')
+    expect(wrapper.emitted('check')).toHaveLength(1)
+  })
+
+  it('quando não consegue consultar preserva a mensagem e orienta sobre a rede', async () => {
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, {
+      props: { ...base, returnState: 'offline-or-error' }
+    })
+
+    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Não consegui conferir agora')
+    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Sua mensagem e sua sacola continuam guardadas')
+    expect(wrapper.find('[data-login-whatsapp-manual]').text()).toContain('NB-HAKZKG')
+  })
+
+  it('quando expira oferece nova mensagem e SMS sem beco sem saída', async () => {
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, {
+      props: { ...base, waiting: false, returnState: 'expired' }
+    })
+
+    const panel = wrapper.find('[data-login-whatsapp-expired]')
+    expect(panel.text()).toContain('Essa tentativa expirou')
+    expect(panel.text()).toContain('Gerar nova mensagem')
+    expect(panel.text()).toContain('Receber código por SMS')
+  })
+
+  it('sem WhatsApp configurado promove SMS e mantém ajuda nomeada', async () => {
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, {
+      props: { ...base, waiting: false, status: 'unavailable' }
+    })
+
+    const panel = wrapper.find('[data-login-whatsapp-unavailable]')
+    expect(panel.text()).toContain('O WhatsApp da loja não está disponível agora')
+    expect(panel.text()).toContain('Receber código por SMS')
+    expect(panel.text()).toContain('Preciso de ajuda')
+    await panel.find('button').trigger('click')
+    expect(wrapper.emitted('useSms')).toHaveLength(1)
+  })
 })

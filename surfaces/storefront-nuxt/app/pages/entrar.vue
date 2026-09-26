@@ -38,9 +38,17 @@ const {
   deepLink: waDeepLink,
   waNumber: waNumber,
   status: waStatus,
-  start: waStart
+  start: waStart,
+  clear: waClear
 } = useWhatsappVerify()
-const { waiting: waWaiting, arm: waArm } = useWhatsappReturn(onWhatsappReturn)
+const {
+  state: waReturnState,
+  waiting: waWaiting,
+  checking: waChecking,
+  arm: waArm,
+  stop: waStop,
+  checkNow: waCheckNow
+} = useWhatsappReturn(onWhatsappReturn)
 const codeDigits = ref<number[]>([])
 // Nasce VAZIO de propósito. Assumir 'WhatsApp' antes de o servidor dizer por
 // onde mandou já escrevia o canal errado na tela; quando o rótulo não vem, a
@@ -72,16 +80,9 @@ const trustSaved = ref(false)
 const nowMs = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
-const { data: loginHome } = useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
-  credentials: 'include',
-  key: 'storefront-login-home',
-  lazy: true,
-  server: false
-})
-
-watch(() => loginHome.value, value => {
-  session.setFromHome(value?.home, { preserveAuthenticated: true })
-}, { immediate: true })
+// O shell já busca e aplica esta projeção antes de montar a página. Reusar a mesma
+// chave evita uma segunda home só para copy/config/sacola do login.
+const { data: loginHome } = useNuxtData<HomeResponse>('shopman-shell-home')
 
 const nextUrl = computed(() => safeInternalPath(route.query.next))
 // Chegada pelo access link com boas-vindas pendentes (`/entrar?welcome=1`, vindo
@@ -195,7 +196,7 @@ onMounted(async () => {
   nowMs.value = Date.now()
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
-  if (import.meta.client) void waStart(nextUrl.value)
+  if (import.meta.client && waReturnState.value === 'idle') void waStart(nextUrl.value)
   // Passo do nome aberto já no setup (access link): não houve troca de passo, e
   // na montagem o mecanismo só se move se o bloco estiver fora da vista. Mas
   // quem chega aqui ENTROU num passo cuja próxima ação é digitar o nome — o
@@ -299,16 +300,27 @@ async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
   await navigateTo(nextUrl.value)
 }
 
-// A pessoa tocou no botão: esta aba passa a esperar a mensagem, e o próximo toque
-// precisa de um código novo (o do `href` foi gasto).
+// A pessoa tocou no botão: esta aba passa a esperar a MESMA mensagem. Não trocamos
+// o NB em andamento; "Abrir de novo" continua levando ao contexto que ela iniciou.
 function onWhatsappOpened () {
   waArm()
-  void waStart(nextUrl.value)
+}
+
+async function restartWhatsapp () {
+  waStop()
+  await waStart(nextUrl.value)
+}
+
+async function revealSms () {
+  revealPhone.value = true
+  await nextTick()
+  reveal('phone')
 }
 
 // A mensagem chegou e esta aba entrou (o servidor já trocou o link por sessão e
 // lembrou o dispositivo). Mesmo fim do código por SMS: nome, se faltar; senão, festa.
 async function onWhatsappReturn (response: WhatsappClaimResponse) {
+  waClear()
   session.setFromAuthSession(response)
   error.value = null
   verified.value = true
@@ -530,6 +542,8 @@ useSeoMeta({
             :wa-number="waNumber"
             :status="waStatus"
             :waiting="waWaiting"
+            :return-state="waReturnState"
+            :checking="waChecking"
             :why="waWhy"
             :steps="waSteps"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Abrir o WhatsApp')"
@@ -537,8 +551,10 @@ useSeoMeta({
             :waiting-message="waWaitingMessage"
             :manual-title="waManualTitle"
             :manual-intro="waManualIntro"
-            @regenerate="() => waStart(nextUrl)"
+            @regenerate="restartWhatsapp"
             @used="onWhatsappOpened"
+            @check="waCheckNow"
+            @use-sms="revealSms"
           />
 
           <!-- O SMS é a alternativa aceitável, não a porta da frente: um link discreto
@@ -551,7 +567,7 @@ useSeoMeta({
             class="mx-auto h-auto px-0 text-muted-foreground hover:text-foreground"
             icon="lucide:smartphone"
             data-login-sms-door
-            @click="revealPhone = true"
+            @click="revealSms"
           >
             Prefere receber um código por SMS?
           </UiButton>

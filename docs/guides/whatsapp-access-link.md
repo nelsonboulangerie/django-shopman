@@ -20,15 +20,18 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 
 ```
 1. Site → POST /api/v1/auth/whatsapp/start/         → { code: "NB-XxXx", deep_link, wa_number }
-   (guarda {cart_session_key, next} sob o código, no cache, uso único, TTL 30min)
+   (guarda {cart_session_key, next} sob o código, no cache, uso único, TTL 10 min)
 2. Cliente toca "Abrir o WhatsApp" → wa.me abre `#menu NB-XxXx` → envia
 3. ManyChat (Flow) → POST /api/auth/access/create/  (S2S, API key)
    body: { customer_id/subscriber, access_code: "<a mensagem inteira>", next: "/menu" }
    → o create extrai o NB-XxXx, resolve o contexto e dobra na metadata do token
    → responde { access_url: ".../a?t=<token>", has_context: true|false, access_flow, token, expires_at }
-4. ManyChat responde ao cliente com um botão apontando para access_url
-5. Cliente toca → /a?t=<token> → POST /api/v1/auth/access/  (exchange)
-   → loga a sessão + adota a sacola (cart_session_key) + redireciona (metadata.next)
+4. O create libera a aba de origem e devolve `access_url` ao ManyChat.
+5. Cliente volta ao site → `POST /api/v1/auth/whatsapp/claim/`
+   → loga a sessão + mantém a sacola e o destino naquele navegador.
+6. ManyChat também entrega um botão apontando para `access_url`, como reserva. Se o
+   cliente tocar: `/a?t=<token>` → `POST /api/v1/auth/access/` (exchange) → loga a
+   sessão + adota a sacola (`cart_session_key`) + redireciona (`metadata.next`).
 ```
 
 ### A aba de origem entra sozinha (26/09/2026)
@@ -47,7 +50,8 @@ termina onde começou.**
    Só então cria o link da mensagem — a mensagem diz "você já entrou", e isso já é
    verdade quando ela sai.
 3. A aba pergunta `POST /api/v1/auth/whatsapp/claim/` quando volta a ficar visível
-   (e a cada 3 s enquanto está na tela). Achou a liberação → troca o token pelo MESMO
+   e, enquanto está na tela, com backoff de 4 s, 7 s e 15 s. Achou a liberação → troca
+   o token pelo MESMO
    caminho do link (`exchange_access_token`) e entra, lembrando o dispositivo.
 4. A mensagem (`access_link_site`) manda voltar ao site, traz o link como reserva e
    um "Não foi você? Encerre este acesso" → `/encerrar-acesso#<ref>` →
@@ -80,7 +84,8 @@ O `create` autentica com a `DOORMAN_ACCESS_LINK_API_KEY` (header `Authorization:
 ## Variáveis de ambiente
 
 ```env
-# WhatsApp da loja (E.164 só dígitos). Vazio = usa Shop.phone
+# WhatsApp da loja (E.164 só dígitos). Vazio = usa Shop.phone; sem nenhum dos
+# dois, /start responde 503 whatsapp_unavailable e a tela promove SMS/ajuda.
 SHOPMAN_WHATSAPP_VERIFY_NUMBER=554333231997
 # Mensagem pré-preenchida do botão (opcional; {shop} = nome da loja, {code} = NB-XxXx).
 # ⚠️ Tem de conter uma palavra-chave do flow no ManyChat. Default abaixo.
@@ -207,8 +212,9 @@ O prefixo do código (`NB-`) e o TTL (10 min) são do doorman
    (cardápio/checkout/conta) já com a sacola quando havia contexto. Se o código do site
    expirou, o link ainda entra, mas a loja avisa que a sacola não veio desta vez.
 
-> Quando `access_url` volta preenchido, o login está pronto. O botão é o único passo
-> do lado do cliente; sem SSE/polling.
+> Quando `access_url` volta preenchido, a mensagem já liberou a aba de origem e o link
+> recebido no WhatsApp fica como reserva. Não há SSE; a aba consulta o `claim` com
+> backoff e também permite a conferência manual.
 
 ## Degradação da sacola (handoff_expired)
 
@@ -259,10 +265,13 @@ Uma tela só (`app/pages/entrar.vue`), WhatsApp como caminho primário:
   pré-aquecido). Depois do toque: a espera (`LOGIN_WA_WAITING`) e, só aí, o plano B —
   envio manual (mensagem + copiar + abrir de novo). O SMS é um link discreto abaixo.
 - **`app/composables/useWhatsappVerify.ts`** — `start(next)` leve: devolve
-  `{code, deepLink, waNumber, status}`.
+  `{code, deepLink, waNumber, status}` e preserva a mensagem preparada durante a
+  espera, para que uma recarga não troque o código nem apague o plano B manual.
 - **`app/composables/useWhatsappReturn.ts`** — a volta: `arm()` no toque; pergunta ao
-  `claim` quando a aba fica visível e a cada 3 s na tela, por até 10 min. A espera mora
-  no `sessionStorage` (o Safari descarta abas em segundo plano).
+  `claim` quando a aba fica visível e, na tela, com backoff de 4/7/15 s, por até 10 min.
+  Expõe espera, demora, falha de rede/consulta e expiração, além de uma conferência
+  manual. Início e prazo moram no `sessionStorage` (o Safari descarta abas em segundo
+  plano), portanto a recarga não apaga o contexto nem recomeça o relógio.
 - **`app/pages/encerrar-acesso.vue`** — o "Não foi você?". Um toque para encerrar, nunca
   ao abrir (a prévia do link não pode derrubar ninguém).
 - **`app/pages/a.vue`** — landing do access link (a reserva): troca o token via BFF

@@ -594,9 +594,9 @@ describe('surface UX guardrails', () => {
     const authPhone = read('app/utils/authPhone.ts')
     const authPresentation = read('app/presentation/auth.ts')
 
-    expect(login).toContain("apiPath('/api/v1/storefront/home/')")
-    expect(login).toContain('lazy: true')
-    expect(login).toContain('server: false')
+    // A home canônica já foi aguardada pelo shell; /entrar não duplica a busca.
+    expect(login).toContain("useNuxtData<HomeResponse>('shopman-shell-home')")
+    expect(login).not.toContain("key: 'storefront-login-home'")
     expect(login).toContain('home.auth_copy')
     expect(login).toContain('home.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
@@ -615,6 +615,11 @@ describe('surface UX guardrails', () => {
     // A volta: a aba que apertou o botão entra sozinha quando a mensagem chega.
     expect(login).toContain('useWhatsappReturn(onWhatsappReturn)')
     expect(login).toContain(':waiting="waWaiting"')
+    expect(login).toContain(':return-state="waReturnState"')
+    expect(login).toContain('@check="waCheckNow"')
+    expect(login).toContain('@use-sms="revealSms"')
+    expect(login).toMatch(/function onWhatsappOpened \(\) \{\s*waArm\(\)\s*\}/)
+    expect(read('app/composables/useWhatsappVerify.ts')).toContain("START_STORAGE_KEY = 'shopman:wa-verify-start'")
     expect(login).toContain('const stepTitle')
     expect(login).toContain('const stepDescription')
     // Campo claro sobre o cartão Faubourg do SMS (o canvas creme sumiria nele).

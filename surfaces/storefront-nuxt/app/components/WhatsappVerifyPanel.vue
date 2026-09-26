@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { phoneDisplay } from '~/utils/authPhone'
 import type { WhatsappStartStatus } from '~/composables/useWhatsappVerify'
+import type { WhatsappReturnState } from '~/composables/useWhatsappReturn'
 
 // Painel APRESENTACIONAL do login pelo WhatsApp. Duas fases, e cada uma responde a
 // uma queixa dos testadores:
@@ -21,6 +22,9 @@ const props = withDefaults(defineProps<{
   waNumber?: string
   status?: WhatsappStartStatus
   waiting?: boolean
+  returnState?: WhatsappReturnState
+  checking?: boolean
+  helpHref?: string
   why?: string
   steps?: string[]
   ctaLabel?: string
@@ -35,6 +39,9 @@ const props = withDefaults(defineProps<{
   waNumber: '',
   status: 'idle',
   waiting: false,
+  returnState: 'idle',
+  checking: false,
+  helpHref: '/faq',
   why: '',
   steps: () => [],
   ctaLabel: 'Abrir o WhatsApp',
@@ -44,14 +51,32 @@ const props = withDefaults(defineProps<{
   manualIntro: 'Mande a mensagem abaixo para {phone} no WhatsApp.'
 })
 
-// `used`: o código do deep link é de USO ÚNICO. Quem toca o botão gasta o que está no
-// `href`, então a tela precisa saber — para esperar a mensagem e preparar o próximo.
-const emit = defineEmits<{ regenerate: [], used: [] }>()
+// `used`: a tela começa a esperar quando a pessoa sai para o WhatsApp. Mantém o mesmo
+// código/mensagem: ele só é consumido quando o backend recebe a mensagem, não no toque.
+const emit = defineEmits<{ regenerate: [], used: [], check: [], useSms: [] }>()
 
 const codeCopied = ref(false)
 const isStarting = computed(() => props.status === 'idle' || props.status === 'loading')
 const canOpenWhatsApp = computed(() => !!props.deepLink)
 const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Gerando link')
+const isWaiting = computed(() => props.waiting || ['waiting', 'slow', 'offline-or-error'].includes(props.returnState))
+const waitingView = computed(() => {
+  if (props.returnState === 'slow') {
+    return {
+      icon: 'lucide:clock-3',
+      title: 'Está demorando mais que o normal',
+      message: 'Não precisa enviar outra mensagem. Vamos continuar conferindo por aqui.'
+    }
+  }
+  if (props.returnState === 'offline-or-error') {
+    return {
+      icon: 'lucide:wifi-off',
+      title: 'Não consegui conferir agora',
+      message: 'Confira sua internet. Sua mensagem e sua sacola continuam guardadas.'
+    }
+  }
+  return { icon: 'lucide:loader-circle', title: props.waitingTitle, message: props.waitingMessage }
+})
 const manualMessage = computed(() => props.message || (props.code ? `#menu ${props.code}` : ''))
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
@@ -81,7 +106,20 @@ async function copyMessage () {
 
 <template>
   <section class="shop-stack-block" data-login-whatsapp aria-live="polite">
-    <template v-if="status === 'error'">
+    <div v-if="status === 'unavailable'" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-unavailable>
+      <UiAlert variant="warning" icon="lucide:message-circle-off">
+        <UiAlertTitle>O WhatsApp da loja não está disponível agora</UiAlertTitle>
+        <UiAlertDescription>Você ainda pode entrar por SMS. Se precisar, a gente mostra como falar com a loja.</UiAlertDescription>
+      </UiAlert>
+      <UiButton type="button" size="lg" icon="lucide:smartphone" class="w-full justify-center" @click="emit('useSms')">
+        Receber código por SMS
+      </UiButton>
+      <UiButton :to="helpHref" variant="link" size="sm" icon="lucide:circle-help" class="mx-auto">
+        Preciso de ajuda
+      </UiButton>
+    </div>
+
+    <template v-else-if="status === 'error'">
       <div class="rounded-lg border bg-card p-4 shop-stack-block">
         <UiAlert variant="destructive">
           <UiAlertTitle>Não consegui gerar seu link agora</UiAlertTitle>
@@ -93,9 +131,22 @@ async function copyMessage () {
       </div>
     </template>
 
+    <div v-else-if="returnState === 'expired'" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-expired>
+      <UiAlert variant="warning" icon="lucide:clock-alert">
+        <UiAlertTitle>Essa tentativa expirou</UiAlertTitle>
+        <UiAlertDescription>Por segurança, a mensagem vale por 10 minutos. Gere uma nova ou entre por SMS.</UiAlertDescription>
+      </UiAlert>
+      <UiButton type="button" size="lg" icon="lucide:rotate-cw" class="w-full justify-center" @click="emit('regenerate')">
+        Gerar nova mensagem
+      </UiButton>
+      <UiButton type="button" variant="link" size="sm" icon="lucide:smartphone" class="mx-auto" @click="emit('useSms')">
+        Receber código por SMS
+      </UiButton>
+    </div>
+
     <!-- Fase 1: o porquê, os passos, um botão. -->
     <div
-      v-else-if="!waiting"
+      v-else-if="!isWaiting"
       class="rounded-lg border bg-card p-4 shop-stack-block"
       data-login-whatsapp-open
       :aria-busy="isStarting && !canOpenWhatsApp"
@@ -128,12 +179,30 @@ async function copyMessage () {
     <!-- Fase 2: esperando a mensagem. O plano B aparece só aqui. -->
     <div v-else class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-waiting>
       <div class="flex items-start gap-3">
-        <Icon name="lucide:loader-circle" :size="22" class="mt-0.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+        <Icon
+          :name="waitingView.icon"
+          :size="22"
+          :class="['mt-0.5 shrink-0 text-muted-foreground', returnState === 'waiting' ? 'animate-spin' : '']"
+          aria-hidden="true"
+        />
         <div class="min-w-0">
-          <p class="shop-item-title font-semibold">{{ waitingTitle }}</p>
-          <p class="mt-1 shop-muted">{{ waitingMessage }}</p>
+          <p class="shop-item-title font-semibold">{{ waitingView.title }}</p>
+          <p class="mt-1 shop-muted">{{ waitingView.message }}</p>
         </div>
       </div>
+
+      <UiButton
+        type="button"
+        variant="outline"
+        size="lg"
+        icon="lucide:refresh-cw"
+        class="w-full justify-center"
+        :loading="checking"
+        data-login-whatsapp-check
+        @click="emit('check')"
+      >
+        Já enviei. Conferir agora
+      </UiButton>
 
       <div v-if="manualMessage" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
         <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>

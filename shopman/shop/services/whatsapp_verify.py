@@ -24,6 +24,10 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+class WhatsAppVerifyUnavailable(RuntimeError):
+    """A loja não tem um destinatário configurado para o login por WhatsApp."""
+
+
 def _config() -> dict:
     return getattr(settings, "SHOPMAN_WA_VERIFY", {}) or {}
 
@@ -36,9 +40,8 @@ def _wa_number() -> str:
     caso da Nelson. A env existe para quando o WhatsApp do bot é diferente do telefone
     de contato publicado.
 
-    O que é defeito de verdade é não ter número NENHUM: o deep link sai sem
-    destinatário (``wa.me/?text=``), o WhatsApp abre o seletor de contatos, e o login
-    por WhatsApp fica inoperante — sem nada quebrar na tela. Esse caso grita.
+    O que é defeito de verdade é não ter número NENHUM: ``start_access_link`` falha
+    antes de criar o código, e a API devolve uma recuperação estruturada por SMS/ajuda.
     """
     num = re.sub(r"\D", "", str(_config().get("number") or ""))
     if num:
@@ -56,8 +59,8 @@ def _wa_number() -> str:
         logger.debug("wa_verify: fallback para Shop.phone degradado", exc_info=True)
     logger.error(
         "wa_access.no_number — login por WhatsApp sem destinatário: nem "
-        "SHOPMAN_WHATSAPP_VERIFY_NUMBER nem Shop.phone. O botão abre o seletor de "
-        "contatos e a mensagem nunca chega ao ManyChat."
+        "SHOPMAN_WHATSAPP_VERIFY_NUMBER nem Shop.phone. O start será recusado e a "
+        "superfície deverá oferecer SMS/ajuda."
     )
     return ""
 
@@ -104,12 +107,9 @@ def _access_message_text(code: str) -> str:
         return _DEFAULT_MESSAGE.format(code=code, shop=_shop_name())
 
 
-def _access_deep_link(code: str) -> str:
-    number = _wa_number()
+def _access_deep_link(code: str, number: str) -> str:
     query = urllib.parse.quote(_access_message_text(code))
-    if number:
-        return f"https://wa.me/{number}?text={query}"
-    return f"https://wa.me/?text={query}"
+    return f"https://wa.me/{number}?text={query}"
 
 
 def start_access_link(
@@ -118,11 +118,19 @@ def start_access_link(
     """Guarda o contexto do site ({cart_session_key, next}) sob um código NB-XxXx
     (uso único, no cache) e devolve o deep link com o código pré-preenchido.
 
-    Sem token de handshake, sem bind de sessão, sem polling/SSE: a identidade é o
-    número que envia a mensagem no WhatsApp; o código só carrega contexto (destino
-    + sacola), consumido na criação do access link (``AccessLinkCreateView``).
+    A identidade é o número que envia a mensagem no WhatsApp; o código só carrega
+    contexto (destino + sacola), consumido na criação do access link
+    (``AccessLinkCreateView``). A aba de origem consulta a liberação pelo ``claim``.
     """
     from shopman.doorman.services.link_state import store_state
+
+    # Falhar antes de criar o NB evita um estado órfão e, principalmente, evita
+    # devolver ``wa.me/?text=...``: esse link abre o seletor de contatos e faz a
+    # pessoa acreditar que escolheu o destinatário errado. A superfície recebe um
+    # erro recuperável e promove SMS/ajuda.
+    number = _wa_number()
+    if not number:
+        raise WhatsAppVerifyUnavailable("WhatsApp da loja sem número configurado")
 
     state: dict = {}
     # A sessão que apertou o botão: quando a mensagem chegar, é ELA que entra
@@ -147,8 +155,8 @@ def start_access_link(
     return {
         "code": code,
         "message": _access_message_text(code),
-        "deep_link": _access_deep_link(code),
-        "wa_number": _wa_number(),
+        "deep_link": _access_deep_link(code, number),
+        "wa_number": number,
         "has_context": has_cart_context,
         "has_cart_context": has_cart_context,
     }
