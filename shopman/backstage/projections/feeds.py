@@ -91,6 +91,16 @@ class ManagerOptionProjection:
 
 
 @dataclass(frozen=True)
+class MenuboardAutomaticProjection:
+    enabled: bool
+    is_sleeping: bool
+    idle_messages: tuple[str, ...]
+    state_line: str
+    lead_minutes: int
+    lag_minutes: int
+
+
+@dataclass(frozen=True)
 class FeedProjection:
     ref: str
     name: str
@@ -103,6 +113,7 @@ class FeedProjection:
     collections: tuple[FeedCollectionRef, ...]  # coleções que ele exibe (em ordem global)
     rotate_seconds: int  # menuboard: cadência da troca de páginas (0 = sem rotação)
     items_per_page: int  # menuboard: teto de itens por tela (0 = tudo numa página)
+    automatic: MenuboardAutomaticProjection | None
     actions: tuple[Action, ...] = ()
     switch: ChannelSwitchProjection | None = None
 
@@ -228,6 +239,25 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
         display = (sc.config or {}).get("display") or {}
         fmt = display.get("format") or ""
         meta = _FORMAT_META.get(fmt, {"kind": fmt, "label": fmt, "icon": "monitor", "capability": "display"})
+        channel_active = effective_active(sc, now=now)
+        automatic = None
+        if not fmt:
+            from shopman.shop.services.menuboard_schedule import (
+                AUTOMATIC_LAG_MINUTES,
+                AUTOMATIC_LEAD_MINUTES,
+                resolve_menuboard_automatic_state,
+            )
+
+            automatic_state = resolve_menuboard_automatic_state(sc, now=now)
+            automatic = MenuboardAutomaticProjection(
+                enabled=automatic_state.enabled,
+                is_sleeping=automatic_state.is_sleeping,
+                idle_messages=automatic_state.idle_messages,
+                state_line=("Automático ligado; aguarda o canal Ativo."
+                            if automatic_state.enabled and not channel_active else automatic_state.state_line),
+                lead_minutes=AUTOMATIC_LEAD_MINUTES,
+                lag_minutes=AUTOMATIC_LAG_MINUTES,
+            )
         # resolve + ordena as coleções do canal pela ordem global (sort_order)
         refs = list(display.get("collections") or [])
         resolved = [
@@ -242,12 +272,15 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
         feeds.append(
             FeedProjection(
                 actions=tuple(Action(
-                    ref=field, kind="mutation", label=label, enabled=authorized and (field != "rotation" or not fmt),
+                    ref=field, kind="mutation", label=label,
+                    enabled=authorized and (field not in {"rotation", "automatic"} or not fmt),
                     reason=("Identifique uma pessoa com permissão para editar o catálogo." if not authorized else
-                            "Feed de plataforma não tem páginas para rotacionar." if field == "rotation" and fmt else ""),
+                            "Feed de plataforma não tem páginas para rotacionar." if field == "rotation" and fmt else
+                            "Modo automático existe apenas no menuboard." if field == "automatic" and fmt else ""),
                     method="POST", idempotency="required",
                     payload_schema={"base_revision": feed_service.revision(sc, field), "expected_actor_id": getattr(user, "pk", None)},
-                ) for field, label in (("collections", "Salvar coleções"), ("rotation", "Salvar rotação"))),
+                ) for field, label in (("collections", "Salvar coleções"), ("rotation", "Salvar rotação"),
+                                        ("automatic", "Salvar modo automático"))),
                 switch=_build_switch(sc, user=user, authorized=authorized, is_manager=is_manager,
                                      state=state, now=now, display_format=fmt),
                 ref=sc.ref,
@@ -256,11 +289,12 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
                 kind_label=meta["label"],
                 kind_icon=meta["icon"],
                 capability=meta["capability"],
-                is_active=effective_active(sc, now=now),
+                is_active=channel_active,
                 output_path=_output_path(sc.ref, fmt),
                 collections=tuple(resolved),
                 rotate_seconds=_nonneg_int(display.get("rotate_seconds")),
                 items_per_page=_nonneg_int(display.get("items_per_page")),
+                automatic=automatic,
             )
         )
 

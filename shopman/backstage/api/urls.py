@@ -38,6 +38,7 @@ from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewVie
 from .channel_health import ChannelHealthView
 from .feeds import (
     ChannelAttentionView,
+    FeedAutomaticView,
     FeedBoardView,
     FeedCollectionsView,
     FeedRotationView,
@@ -524,6 +525,7 @@ urlpatterns = [
     path("channels/attention/", ChannelAttentionView.as_view(), name="api-backstage-channels-attention"),
     path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
     path("feeds/rotation/", FeedRotationView.as_view(), name="api-backstage-feeds-rotation"),
+    path("feeds/automatic/", FeedAutomaticView.as_view(), name="api-backstage-feeds-automatic"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
     path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
     # Order tickets (filipeta do pedido remoto) — o lote da semana para o painel.

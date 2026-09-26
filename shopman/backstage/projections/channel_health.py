@@ -285,22 +285,50 @@ def _active_item(channel, *, paused_label: str, now: datetime) -> ChannelHealthI
     return ChannelHealthItem(key="active", state=TODO, label=paused_label, hint="Ligue no botão Ativo do card.")
 
 
+def _display_player_item(players, *, now: datetime) -> ChannelHealthItem | None:
+    """Pulso do controlador CEC, separado dos navegadores que pintam as TVs."""
+    if not players:
+        return None
+    last_seen = max((device.last_used_at for device in players if device.last_used_at), default=None)
+    if last_seen is None:
+        return ChannelHealthItem(
+            key="player", state=TODO, label="Player do Raspberry Pi ainda não conectou",
+            hint="Confira o serviço do player e a rede do Raspberry Pi. " + _ASK_SUPPORT,
+        )
+    if now - last_seen > DISPLAY_SEEN_STALE_AFTER:
+        return ChannelHealthItem(
+            key="player", state=TODO, label=f"Player do Raspberry Pi sem contato desde {_hhmm(last_seen, now)}",
+            hint="As TVs podem não acordar no próximo horário. " + _ASK_SUPPORT,
+        )
+    return ChannelHealthItem(
+        key="player", state=OK, label=f"Player do Raspberry Pi conectado às {_hhmm(last_seen, now)}",
+    )
+
+
 def _display_devices(channel, *, now: datetime) -> list[ChannelHealthItem]:
     """TVs autorizadas, a última busca do quadro e o vencimento da autorização."""
     from shopman.doorman.conf import doorman_settings
     from shopman.doorman.models import TrustedDevice
 
+    from shopman.shop.menuboard_access import is_menuboard_player_device
+
     # Menuboard público (escotilha explícita) ou sem confiança de dispositivo: a TV
     # não precisa de autorização, e a busca dela não deixa rastro — nada a medir.
     if getattr(settings, "SHOPMAN_MENUBOARD_PUBLIC", False) or not doorman_settings.DEVICE_TRUST_ENABLED:
         return []
-    devices = [d for d in TrustedDevice.active_for(_DISPLAY_SUBJECT, channel.ref) if d.expires_at > now]
+    trusted = [d for d in TrustedDevice.active_for(_DISPLAY_SUBJECT, channel.ref) if d.expires_at > now]
+    players = [device for device in trusted if is_menuboard_player_device(device)]
+    devices = [device for device in trusted if not is_menuboard_player_device(device)]
+    player_item = _display_player_item(players, now=now)
     if not devices:
-        return [ChannelHealthItem(
+        items = [ChannelHealthItem(
             key="paired", state=TODO, label="Nenhuma TV autorizada a mostrar este quadro",
             hint="Abra o endereço na TV e entre uma vez com um operador.",
             action_label="Parear uma TV", action_target="pair",
         )]
+        if player_item:
+            items.append(player_item)
+        return items
     items = [ChannelHealthItem(
         key="paired", state=OK,
         label=f"{len(devices)} {_plural(len(devices), 'TV autorizada', 'TVs autorizadas')}",
@@ -332,6 +360,8 @@ def _display_devices(channel, *, now: datetime) -> list[ChannelHealthItem]:
             hint="Vencida, a TV para de mostrar o quadro. Renove abrindo o endereço na TV com um operador.",
             action_label="Renovar", action_target="pair",
         ))
+    if player_item:
+        items.append(player_item)
     return items
 
 

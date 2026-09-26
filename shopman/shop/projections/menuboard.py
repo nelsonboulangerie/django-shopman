@@ -62,6 +62,9 @@ class MenuboardProjection:
     # leitura dá certo), e o cardápio velho seguiria à vista de quem entra.
     is_active: bool = True
     off_message: str = ""
+    # Canal ativo + automático fora da janela: a TV segue ligada, mas descansa.
+    is_sleeping: bool = False
+    sleep_messages: tuple[str, ...] = field(default_factory=tuple)
 
 
 #: A frase da tela preta. Fala com quem está na loja olhando a TV: o que fazer
@@ -138,7 +141,7 @@ def _paginate(groups: tuple[MenuboardGroup, ...], items_per_page: int) -> tuple[
     return tuple(pages)
 
 
-def build_menuboard(ref: str) -> MenuboardProjection:
+def build_menuboard(ref: str, *, now=None) -> MenuboardProjection:
     """Monta o quadro: uma seção por coleção do canal, na ordem das coleções."""
     from shopman.offerman.models import Collection
 
@@ -146,7 +149,7 @@ def build_menuboard(ref: str) -> MenuboardProjection:
     from shopman.shop.services.display_prices import resolve_prices
 
     channel = resolve_menuboard(ref)
-    if not effective_active(channel):
+    if not effective_active(channel, now=now):
         return MenuboardProjection(
             ref=ref,
             title="",
@@ -154,6 +157,18 @@ def build_menuboard(ref: str) -> MenuboardProjection:
             pages=(MenuboardPage(),),
             is_active=False,
             off_message=OFF_MESSAGE,
+        )
+    from shopman.shop.services.menuboard_schedule import resolve_menuboard_automatic_state
+
+    automatic = resolve_menuboard_automatic_state(channel, now=now)
+    if automatic.is_sleeping:
+        return MenuboardProjection(
+            ref=ref,
+            title="",
+            subtitle="",
+            pages=(MenuboardPage(),),
+            is_sleeping=True,
+            sleep_messages=automatic.idle_messages,
         )
     display = _display(channel)
     collection_refs = list(display.get("collections") or [])

@@ -11,7 +11,7 @@ describe("useFeedBoard", () => {
     env.reset();
     env.fetchData.value = { board: { catalog_channels: [], feeds: ["menu-1", "m"].map((ref) => ({ ref,
       switch: { enabled: true, disabled_reason: "", base_revision: "switch-base", expected_actor_id: 1 },
-      actions: ["collections", "rotation"].map((ref) => ({ ref, enabled: true, reason: "", payload_schema: { base_revision: "fixture-base", expected_actor_id: 1 } })) })) } };
+      actions: ["collections", "rotation", "automatic"].map((ref) => ({ ref, enabled: true, reason: "", payload_schema: { base_revision: "fixture-base", expected_actor_id: 1 } })) })) } };
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
   });
 
@@ -36,6 +36,11 @@ describe("useFeedBoard", () => {
     [url, opts] = env.fetchMock.mock.calls[2]!;
     expect(String(url)).toBe("/api/v1/backstage/feeds/rotation/");
     expect(opts.body).toMatchObject({ ref: "menu-1", rotate_seconds: 15, items_per_page: 12 });
+
+    await s.setAutomatic("menu-1", true, ["Atendimento até 18h", "Minha padaria favorita"]);
+    [url, opts] = env.fetchMock.mock.calls[3]!;
+    expect(String(url)).toBe("/api/v1/backstage/feeds/automatic/");
+    expect(opts.body).toMatchObject({ ref: "menu-1", enabled: true, idle_messages: ["Atendimento até 18h", "Minha padaria favorita"] });
   });
 
   it("guarda de reentrância por-ref", async () => {

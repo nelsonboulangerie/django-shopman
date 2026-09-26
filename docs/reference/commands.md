@@ -21,6 +21,7 @@
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
 | [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
 | [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
+| [`issue_menuboard_player_credential`](#issue_menuboard_player_credential) | shop | Operação | Emite credenciais escopadas e o JSON do player Raspberry Pi dos menuboards |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
@@ -72,6 +73,25 @@
 ---
 
 ## Detalhes
+
+### issue_menuboard_player_credential
+
+Emite uma credencial independente por menuboard e imprime a configuração pronta
+do player Raspberry Pi. Os segredos aparecem **uma única vez**; no banco ficam
+somente os digests HMAC. A ordem das refs define HDMI/CEC e posição horizontal.
+
+```bash
+python manage.py issue_menuboard_player_credential tv-cafe tv-salao \
+  --server-url https://gestor.example \
+  --label 'Raspberry Pi 4 · Menuboards'
+```
+
+Por padrão, o marquee permanece 30 minutos antes do standby e as credenciais
+expiram em 365 dias. Ajustes disponíveis: `--standby-delay-minutes`,
+`--ttl-days`, `--width` e `--height`. O Bearer emitido abre apenas
+`/menuboard/<ref>/control/`; página, dados, preços e SSE continuam dependendo da
+autorização própria do perfil do Chromium. Instalação completa em
+[`tools/menuboard-player/README.md`](../../tools/menuboard-player/README.md).
 
 ### Gate PWA das surfaces opt-in
 

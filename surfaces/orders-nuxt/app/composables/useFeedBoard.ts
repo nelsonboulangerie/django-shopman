@@ -4,7 +4,7 @@ import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // Aba Canais — lê o board, liga/desliga qualquer canal (toggle "Ativo", com período,
-// motivo e gerente) e, nos feeds, escolhe coleções e rotação.
+// motivo e gerente) e, nos feeds, escolhe coleções, rotação e modo automático.
 import type { ChannelSwitchProjection, FeedBoardProjection, FeedBoardResponse } from "~/types/feeds";
 
 /** O que o modal do toggle manda: o estado pedido, o período e o motivo. */
@@ -133,6 +133,12 @@ export function useFeedBoard() {
       { ref: ref_, rotate_seconds: rotateSeconds, items_per_page: itemsPerPage, ...(baseRevision ? { base_revision: baseRevision } : {}) },
       "/api/v1/backstage/feeds/rotation/",
     );
+  const setAutomatic = (ref_: string, enabled: boolean, idleMessages: string[], baseRevision?: string) =>
+    run(
+      ref_,
+      { ref: ref_, enabled, idle_messages: idleMessages, ...(baseRevision ? { base_revision: baseRevision } : {}) },
+      "/api/v1/backstage/feeds/automatic/",
+    );
 
-  return { readMetadata, realtime, board, pending, error, refresh, isBusy, errorMsg, switchChannel, setCollections, setRotation };
+  return { readMetadata, realtime, board, pending, error, refresh, isBusy, errorMsg, switchChannel, setCollections, setRotation, setAutomatic };
 }

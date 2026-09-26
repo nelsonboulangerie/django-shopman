@@ -167,6 +167,40 @@ def test_tv_ready_when_a_paired_tv_fetched_the_board_recently(paes):
     assert _item(health, "seen").label.startswith("A TV buscou o quadro às")
 
 
+def test_player_do_pi_aparece_separado_e_nao_conta_como_tv_pareada(paes):
+    from shopman.shop.menuboard_access import PLAYER_USER_AGENT_PREFIX
+
+    display_channel("tv", "TV", collections=["paes"])
+    player, _ = TrustedDevice.create_for(
+        subject_type="display", subject_id="tv", user_agent=f"{PLAYER_USER_AGENT_PREFIX}1.0",
+    )
+    player.touch()
+
+    health = _health("tv")
+
+    assert _item(health, "paired").state == "todo"
+    assert _item(health, "player").state == "ok"
+    assert _item(health, "player").label.startswith("Player do Raspberry Pi conectado")
+
+
+def test_player_do_pi_sem_contato_vira_pendencia(paes):
+    from shopman.shop.menuboard_access import PLAYER_USER_AGENT_PREFIX
+
+    display_channel("tv", "TV", collections=["paes"])
+    browser, _ = TrustedDevice.create_for(subject_type="display", subject_id="tv")
+    browser.touch()
+    player, _ = TrustedDevice.create_for(
+        subject_type="display", subject_id="tv", user_agent=f"{PLAYER_USER_AGENT_PREFIX}1.0",
+    )
+    now = timezone.now()
+    TrustedDevice.objects.filter(pk=player.pk).update(last_used_at=now - timedelta(minutes=20))
+
+    item = _item(_health("tv", now=now), "player")
+
+    assert item.state == "todo"
+    assert item.label.startswith("Player do Raspberry Pi sem contato desde")
+
+
 def test_tv_that_stopped_fetching_and_expiring_authorization_are_flagged(paes):
     display_channel("tv", "TV", collections=["paes"])
     now = timezone.now()

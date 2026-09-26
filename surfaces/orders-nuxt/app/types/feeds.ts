@@ -10,6 +10,7 @@ export type {
   FeedCollectionRef,
   FeedProjection,
   ManagerOptionProjection,
+  MenuboardAutomaticProjection,
 } from "../generated/ordersContract";
 
 export interface FeedBoardResponse extends ReadMetadata {
