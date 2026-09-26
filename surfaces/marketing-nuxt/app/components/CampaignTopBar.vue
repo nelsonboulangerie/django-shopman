@@ -26,12 +26,6 @@ const sections: OperatorSection[] = [
     to: "/campaigns",
     match: ["/templates"],
   },
-  {
-    key: "v2-preview",
-    label: "Prévia V2",
-    icon: "lucide:sparkles",
-    to: "/v2",
-  },
   // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
   // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
   { key: "platforms", label: "Plataformas", icon: "lucide:share-2", to: "/platforms" },
