@@ -12,9 +12,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@nuxt/test-utils": "^4.1.0",
-    "@vue/test-utils": "^2.5.0",
+    "@vue/test-utils": "^2.5.1",
     "@vueuse/core": "^14.4.0",
-    "eslint": "^10.10.0",
+    "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.11.0",
     "globals": "^17.12.0",
@@ -24,11 +24,11 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
     "vitest": "^4.1.11",
-    "vue": "^3.5.42",
+    "vue": "^3.5.43",
     "vue-eslint-parser": "^10.4.1"
   },
   "dependencies": {
-    "@iconify-json/lucide": "1.2.133",
+    "@iconify-json/lucide": "1.2.134",
     "@iconify-json/tabler": "1.2.38",
     "@nuxt/kit": "3.21.8",
     "@vite-pwa/nuxt": "1.1.1",
