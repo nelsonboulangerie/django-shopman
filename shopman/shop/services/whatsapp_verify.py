@@ -52,7 +52,7 @@ def _wa_number() -> str:
             if fallback:
                 logger.info("wa_access.number_from_shop_phone")
                 return fallback
-    except Exception:
+    except Exception:  # silêncio-deliberado: sem Shop legível cai no logger.error logo abaixo, que grita
         logger.debug("wa_verify: fallback para Shop.phone degradado", exc_info=True)
     logger.error(
         "wa_access.no_number — login por WhatsApp sem destinatário: nem "
