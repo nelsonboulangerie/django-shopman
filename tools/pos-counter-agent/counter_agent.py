@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 
 def build_id() -> str:
@@ -307,6 +307,166 @@ def _pulse_units(value_ms: int, label: str) -> int:
 # ── Config ────────────────────────────────────────────────────────────────
 
 
+def _check_relay_fields(
+    server_url: str,
+    station_ref: str,
+    agent_id: str,
+    relay_token: str,
+    *,
+    where: str = "",
+) -> None:
+    """A mesma régua para o relay da impressora do balcão e das extras.
+
+    ``where`` só prefixa a mensagem (``extra_printers['cozinha']: ``); para a
+    config principal ele fica vazio e as mensagens saem idênticas às de sempre.
+    """
+    relay_values = (server_url, station_ref, agent_id, relay_token)
+    if any(relay_values) and not all(relay_values):
+        raise SystemExit(f"{where}relay incompleto: informe server_url, station_ref, agent_id e relay_token.")
+    if server_url:
+        parsed = urllib.parse.urlparse(server_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise SystemExit(f"{where}'server_url' do relay deve ser uma URL HTTPS sem credenciais.")
+        if len(relay_token) < 16:
+            raise SystemExit(f"{where}'relay_token' deve ter no mínimo 16 caracteres.")
+        if len(station_ref) > 80 or len(agent_id) > 120:
+            raise SystemExit(f"{where}station_ref/agent_id longos demais.")
+        if any(c not in _IDENTITY_CHARS for c in station_ref + agent_id):
+            raise SystemExit(f"{where}station_ref/agent_id contêm caracteres inválidos.")
+
+
+def _poll_seconds(raw_value, *, where: str = "") -> float:
+    try:
+        seconds = float(raw_value or 2.0)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"{where}'relay_poll_seconds' deve ser numérico.") from exc
+    if not 0.25 <= seconds <= 60:
+        raise SystemExit(f"{where}'relay_poll_seconds' deve estar entre 0.25 e 60 segundos.")
+    return seconds
+
+
+#: O ``ref`` vira nome de arquivo (``print-relay-<ref>.sqlite3``): sem ``:``,
+#: ``.`` nem barra, que o Windows ou o sistema de arquivos leriam como outra
+#: coisa.
+_EXTRA_REF_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+
+
+@dataclass(frozen=True)
+class ExtraPrinter:
+    """Uma impressora a mais que este agente atende SÓ pelo relay.
+
+    Existe para a mesma máquina servir, além da impressora do balcão, outra
+    impressora da rede — a Via Cozinha de um posto do KDS, por exemplo. O
+    servidor enxerga cada uma como um Terminal com credencial própria
+    (``PrintAgentCredential`` é por terminal), então cada extra carrega a SUA
+    credencial e fala com o servidor pelos mesmos nomes de campo da config
+    principal. Gaveta, ``/kick`` e ``/print`` continuam sendo só da impressora
+    do balcão: a extra não tem rota local nenhuma.
+
+    Os atributos espelham os que o ``RelayWorker`` lê da ``AgentConfig``, e por
+    isso o mesmo worker atende as duas sem saber qual é qual.
+    """
+
+    ref: str
+    queue: str
+    server_url: str
+    station_ref: str
+    agent_id: str
+    relay_token: str
+    relay_poll_seconds: float = 2.0
+
+    @property
+    def relay_enabled(self) -> bool:
+        return True
+
+    @classmethod
+    def from_dict(cls, raw, *, index: int, defaults: dict) -> ExtraPrinter:
+        if not isinstance(raw, dict):
+            raise SystemExit(f"extra_printers[{index}] deve ser um objeto.")
+        ref = str(raw.get("ref") or "").strip()
+        if not ref:
+            raise SystemExit(f"extra_printers[{index}] sem 'ref': o nome desta impressora no agente.")
+        if len(ref) > 60 or any(c not in _EXTRA_REF_CHARS for c in ref):
+            raise SystemExit(f"extra_printers[{index}]: 'ref' {ref!r} inválido (até 60 letras, números, '-' ou '_').")
+        where = f"extra_printers[{ref!r}]: "
+        queue = str(raw.get("queue") or "").strip()
+        if not queue:
+            raise SystemExit(f"{where}sem 'queue': o nome da fila da impressora no sistema.")
+        # O endereço do servidor é, na prática, o mesmo da impressora do balcão,
+        # e o ``agent_id`` é só diagnóstico: herdar os dois poupa o gestor de
+        # inventar valor. A credencial e a estação NUNCA são herdadas — são
+        # justamente o que distingue esta impressora da principal.
+        server_url = str(raw.get("server_url") or defaults.get("server_url") or "").strip().rstrip("/")
+        station_ref = str(raw.get("station_ref") or ref).strip()
+        base_agent = str(defaults.get("agent_id") or "counter-agent").strip()
+        agent_id = str(raw.get("agent_id") or f"{base_agent}-{ref}").strip()
+        relay_token = str(raw.get("relay_token") or "").strip()
+        if not relay_token:
+            raise SystemExit(f"{where}sem 'relay_token': a credencial do relay do terminal desta impressora.")
+        if not server_url:
+            raise SystemExit(f"{where}sem 'server_url' (nem na config principal para herdar).")
+        _check_relay_fields(server_url, station_ref, agent_id, relay_token, where=where)
+        poll = _poll_seconds(
+            raw.get("relay_poll_seconds") or defaults.get("relay_poll_seconds"),
+            where=where,
+        )
+        return cls(
+            ref=ref,
+            queue=queue,
+            server_url=server_url,
+            station_ref=station_ref,
+            agent_id=agent_id,
+            relay_token=relay_token,
+            relay_poll_seconds=poll,
+        )
+
+
+def _parse_extra_printers(raw_list, *, main: dict) -> tuple[ExtraPrinter, ...]:
+    if raw_list is None or raw_list == []:
+        return ()
+    if not isinstance(raw_list, list):
+        raise SystemExit("'extra_printers' deve ser uma lista de impressoras.")
+    printers: list[ExtraPrinter] = []
+    refs: set[str] = set()
+    stations = {main["station_ref"]} if main.get("station_ref") else set()
+    for index, item in enumerate(raw_list):
+        printer = ExtraPrinter.from_dict(item, index=index, defaults=main)
+        # Comparado sem caixa: o ``ref`` vira nome de arquivo, e o Windows e o
+        # macOS não distinguem ``Cozinha`` de ``cozinha``.
+        if printer.ref.lower() in refs:
+            raise SystemExit(
+                f"extra_printers: 'ref' {printer.ref!r} repetido; cada impressora precisa de um nome só dela."
+            )
+        # Duas threads pedindo trabalho pelo MESMO terminal disputariam a fila
+        # dele, e nenhuma das duas saberia que a outra existe.
+        if printer.station_ref in stations:
+            raise SystemExit(
+                f"extra_printers[{printer.ref!r}]: a estação {printer.station_ref!r} já é atendida por "
+                "outra impressora desta config."
+            )
+        refs.add(printer.ref.lower())
+        stations.add(printer.station_ref)
+        printers.append(printer)
+    return tuple(printers)
+
+
+def journal_path_for(printer_ref: str) -> Path:
+    """Diário anti-duplicação de uma impressora extra.
+
+    A do balcão segue em ``JOURNAL_PATH`` (``print-relay.sqlite3``) para não
+    perder o histórico de quem já está instalado; cada extra tem o seu arquivo,
+    e assim um trabalho da cozinha nunca se confunde com um do balcão.
+    """
+    return JOURNAL_PATH.with_name(f"print-relay-{printer_ref}.sqlite3")
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     """Fatos da MÁQUINA do balcão — e só eles.
@@ -335,6 +495,9 @@ class AgentConfig:
     #: constante faria o alerta gritar o dia todo com a gaveta fechada e ficar
     #: mudo quando ela ficasse aberta de verdade: pior que não ter alerta.
     drawer_status: dict | None = None
+    #: Impressoras a mais, atendidas só pelo relay (ver ``ExtraPrinter``).
+    #: Vazio em toda config anterior a elas: nada muda para quem não as usa.
+    extra_printers: tuple[ExtraPrinter, ...] = ()
 
     @classmethod
     def load(cls, path: Path) -> AgentConfig:
@@ -386,32 +549,17 @@ class AgentConfig:
         station_ref = str(raw.get("station_ref") or "").strip()
         agent_id = str(raw.get("agent_id") or "").strip()
         relay_token = str(raw.get("relay_token") or "").strip()
-        relay_values = (server_url, station_ref, agent_id, relay_token)
-        if any(relay_values) and not all(relay_values):
-            raise SystemExit("relay incompleto: informe server_url, station_ref, agent_id e relay_token.")
-        if server_url:
-            parsed = urllib.parse.urlparse(server_url)
-            if (
-                parsed.scheme != "https"
-                or not parsed.netloc
-                or parsed.username
-                or parsed.password
-                or parsed.query
-                or parsed.fragment
-            ):
-                raise SystemExit("'server_url' do relay deve ser uma URL HTTPS sem credenciais.")
-            if len(relay_token) < 16:
-                raise SystemExit("'relay_token' deve ter no mínimo 16 caracteres.")
-            if len(station_ref) > 80 or len(agent_id) > 120:
-                raise SystemExit("station_ref/agent_id longos demais.")
-            if any(c not in _IDENTITY_CHARS for c in station_ref + agent_id):
-                raise SystemExit("station_ref/agent_id contêm caracteres inválidos.")
-        try:
-            relay_poll_seconds = float(raw.get("relay_poll_seconds") or 2.0)
-        except (TypeError, ValueError) as exc:
-            raise SystemExit("'relay_poll_seconds' deve ser numérico.") from exc
-        if not 0.25 <= relay_poll_seconds <= 60:
-            raise SystemExit("'relay_poll_seconds' deve estar entre 0.25 e 60 segundos.")
+        _check_relay_fields(server_url, station_ref, agent_id, relay_token)
+        relay_poll_seconds = _poll_seconds(raw.get("relay_poll_seconds"))
+        extra_printers = _parse_extra_printers(
+            raw.get("extra_printers"),
+            main={
+                "server_url": server_url,
+                "station_ref": station_ref,
+                "agent_id": agent_id,
+                "relay_poll_seconds": relay_poll_seconds,
+            },
+        )
         return cls(
             queue=queue,
             token=token,
@@ -424,6 +572,7 @@ class AgentConfig:
             relay_token=relay_token,
             relay_poll_seconds=relay_poll_seconds,
             drawer_status=raw.get("drawer_status") or None,
+            extra_printers=extra_printers,
         )
 
     @property
@@ -1341,17 +1490,25 @@ class RelayWorker:
         self._ack_entry(final)
         return True
 
-    def run(self, stop: threading.Event) -> None:
+    def run(self, stop: threading.Event, *, status: RelayStatus | None = None) -> None:
+        # ``status`` só existe para as impressoras extras (vai para o /health);
+        # a do balcão roda sem ele, exatamente como sempre rodou.
         backoff = 1.0
         while not stop.is_set():
             try:
                 processed = self.poll_once()
             except (RelayError, OSError, sqlite3.Error, ValueError) as exc:
-                logger.warning("relay indisponível: %s", exc)
+                if status is None:
+                    logger.warning("relay indisponível: %s", exc)
+                else:
+                    logger.warning("relay [%s] indisponível: %s", status.ref, exc)
+                    status.failed(str(exc), queue_health=self.health)
                 stop.wait(backoff)
                 backoff = min(backoff * 2, 60.0)
                 continue
             backoff = 1.0
+            if status is not None:
+                status.succeeded(queue_health=self.health)
             stop.wait(0.25 if processed else self.config.relay_poll_seconds)
 
 
@@ -1376,12 +1533,95 @@ def _relay_thread_main(
         return
 
 
+class RelayStatus:
+    """O que a thread de UMA impressora extra sabe dela mesma, para o /health.
+
+    O /health lê daqui em vez de sondar a fila na hora: assim uma impressora
+    extra lenta ou desligada nunca atrasa a resposta que o PDV espera da
+    impressora do balcão.
+    """
+
+    def __init__(self, ref: str) -> None:
+        self.ref = ref
+        self._lock = threading.Lock()
+        self._state = "starting"
+        self._detail = ""
+        self._queue_health = "unknown"
+        self._last_ok: float | None = None
+
+    def succeeded(self, *, queue_health: str) -> None:
+        with self._lock:
+            self._state = "ok"
+            self._detail = ""
+            self._queue_health = queue_health
+            self._last_ok = time.monotonic()
+
+    def failed(self, detail: str, *, queue_health: str = "") -> None:
+        with self._lock:
+            self._state = "error"
+            self._detail = " ".join(str(detail).split())[:240]
+            if queue_health:
+                self._queue_health = queue_health
+
+    def stopped(self) -> None:
+        with self._lock:
+            self._state = "stopped"
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            last_ok = None if self._last_ok is None else round(time.monotonic() - self._last_ok, 1)
+            return {
+                "state": self._state,
+                "detail": self._detail,
+                "queue_health": self._queue_health,
+                "seconds_since_ok": last_ok,
+            }
+
+
+def _extra_relay_thread_main(
+    printer: ExtraPrinter,
+    stop: threading.Event,
+    status: RelayStatus,
+    *,
+    journal_path: Path | None = None,
+    post=None,
+    spool=None,
+) -> None:
+    """Relay de UMA impressora extra, com o próprio diário e o próprio backoff.
+
+    Tudo o que acontece aqui fica aqui: exceção de qualquer tipo é registrada,
+    espera e recomeça — nunca sobe para a thread da impressora do balcão nem
+    para a porta local. Uma cozinha sem papel não pode calar o recibo.
+    """
+    path = journal_path_for(printer.ref) if journal_path is None else journal_path
+    options = {}
+    if post is not None:
+        options["post"] = post
+    if spool is not None:
+        options["spool"] = spool
+    backoff = 1.0
+    while not stop.is_set():
+        try:
+            journal = RelayJournal(path)
+            RelayWorker(printer, journal=journal, **options).run(stop, status=status)
+        except Exception as exc:  # noqa: BLE001 — isolamento de falha é o ponto
+            logger.exception("relay [%s] parou por erro inesperado; recomeçando", printer.ref)
+            status.failed(f"erro inesperado: {type(exc).__name__}: {exc}")
+            stop.wait(backoff)
+            backoff = min(backoff * 2, 60.0)
+            continue
+        break
+    status.stopped()
+
+
 # ── HTTP ──────────────────────────────────────────────────────────────────
 
 
 class CounterAgentHandler(BaseHTTPRequestHandler):
     server_version = f"nelson-counter-agent/{VERSION}"
     config: AgentConfig  # injetado pelo serve()
+    #: Estado vivo das impressoras extras, por ``ref`` (injetado pelo serve()).
+    extra_status: dict[str, RelayStatus] = {}
 
     protocol_version = "HTTP/1.1"
 
@@ -1481,8 +1721,32 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
                     "query": int((self.config.drawer_status or {}).get("query") or 0),
                 },
                 "relay": {"enabled": self.config.relay_enabled},
+                # Chave nova e aditiva: os campos acima continuam falando só da
+                # impressora do balcão, como sempre falaram.
+                "extra_printers": self._extra_printers_health(),
             },
         )
+
+    def _extra_printers_health(self) -> list[dict]:
+        """Uma linha por impressora extra, lida do estado da thread dela.
+
+        Não sonda a fila aqui: a thread já sonda a cada 30 s, e sondar de novo
+        faria uma impressora de rede lenta atrasar o /health do balcão.
+        """
+        linhas = []
+        for printer in self.config.extra_printers:
+            status = self.extra_status.get(printer.ref)
+            relay = status.snapshot() if status is not None else {"state": "not_started"}
+            linhas.append(
+                {
+                    "ref": printer.ref,
+                    "queue": printer.queue,
+                    "station_ref": printer.station_ref,
+                    "ok": relay.get("state") == "ok" and relay.get("queue_health") == "ready",
+                    "relay": relay,
+                }
+            )
+        return linhas
 
     def _estado_da_gaveta(self) -> dict:
         """A gaveta esta aberta agora? `known: false` quando nao da para saber.
@@ -1599,7 +1863,12 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
 
 
 def serve(config: AgentConfig) -> None:
-    handler = type("BoundCounterAgentHandler", (CounterAgentHandler,), {"config": config})
+    extra_status = {printer.ref: RelayStatus(printer.ref) for printer in config.extra_printers}
+    handler = type(
+        "BoundCounterAgentHandler",
+        (CounterAgentHandler,),
+        {"config": config, "extra_status": extra_status},
+    )
     server_class = ThreadingHTTPServer
     if config.host == "::1":
         server_class = type(
@@ -1624,6 +1893,24 @@ def serve(config: AgentConfig) -> None:
             config.station_ref,
             config.agent_id,
         )
+    # Cada impressora extra ganha a sua thread, o seu diário e o seu backoff.
+    # Elas sobem DEPOIS da do balcão e não participam de nada dela.
+    extra_threads: list[threading.Thread] = []
+    for printer in config.extra_printers:
+        thread = threading.Thread(
+            target=_extra_relay_thread_main,
+            args=(printer, relay_stop, extra_status[printer.ref]),
+            name=f"print-relay-{printer.ref}",
+            daemon=True,
+        )
+        thread.start()
+        extra_threads.append(thread)
+        logger.info(
+            "relay da impressora extra %s ativo (fila=%s estação=%s)",
+            printer.ref,
+            printer.queue,
+            printer.station_ref,
+        )
     logger.info(
         "agente do balcão ouvindo em http://%s:%s (fila=%s, origens=%s)",
         config.host,
@@ -1639,6 +1926,8 @@ def serve(config: AgentConfig) -> None:
         relay_stop.set()
         if relay_thread is not None:
             relay_thread.join(timeout=2)
+        for thread in extra_threads:
+            thread.join(timeout=2)
         httpd.server_close()
 
 
@@ -2149,6 +2438,22 @@ def doctor() -> int:
             print("  journal do relay ......... ainda sem trabalhos")
     else:
         print("  relay .................... desativado (modo local)")
+    for printer in config.extra_printers:
+        fila_extra = probe_queue(printer.queue)
+        ok_extra = bool(fila_extra.get("ok"))
+        print(
+            f"  impressora extra ......... {printer.ref} → {printer.queue}: "
+            + ("aceitando ✓" if ok_extra else f"{fila_extra.get('reason') or 'não aceita trabalho'} ✗")
+        )
+        print(f"     estação/agente ........ {printer.station_ref} / {printer.agent_id} (credencial não exibida)")
+        caminho = journal_path_for(printer.ref)
+        if caminho.exists():
+            diario = RelayJournal(caminho)
+            resumo = ", ".join(f"{state}={amount}" for state, amount in sorted(diario.counts().items())) or "vazio"
+            print(f"     journal ............... {resumo}")
+        else:
+            print("     journal ............... ainda sem trabalhos")
+        tudo_certo = tudo_certo and ok_extra
 
     saude = _wait_until_listening({"port": config.port}, seconds=3)
     if saude is None:

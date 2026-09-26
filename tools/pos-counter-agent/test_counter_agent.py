@@ -2055,3 +2055,462 @@ def test_doctor_mostra_relay_sem_exibir_a_credencial(monkeypatch, capsys, tmp_pa
     output = capsys.readouterr().out
     assert "relay" in output and "preparo-01 / agente-01" in output
     assert RELAY_TOKEN not in output
+
+
+# ── Impressoras extras (ex.: Via Cozinha do posto Lanches) ────────────────
+#
+# O mesmo agente passa a atender, além da impressora do balcão, outras
+# impressoras da rede — cada uma pelo relay do SEU terminal, com a SUA
+# credencial e o SEU diário. A regra que estes testes travam: quem não usa
+# `extra_printers` não percebe diferença nenhuma, e uma extra quebrada nunca
+# cala a do balcão.
+
+KITCHEN_TOKEN = "credencial-da-cozinha-com-tamanho-suficiente"
+
+
+def _config_com_extra(extra=None, **overrides):
+    raw = {
+        "queue": "TM-T20",
+        "token": TOKEN,
+        "server_url": "https://gestor.example",
+        "station_ref": "preparo-01",
+        "agent_id": "agente-01",
+        "relay_token": RELAY_TOKEN,
+        "extra_printers": [
+            extra
+            if extra is not None
+            else {"ref": "cozinha-lanches", "queue": "TM-T20X-Cozinha", "relay_token": KITCHEN_TOKEN}
+        ],
+    }
+    raw.update(overrides)
+    return AgentConfig.from_dict(raw)
+
+
+def test_config_ATUAL_carrega_identica_sem_extra_printers():
+    """Regressão explícita: o `agent.json` de quem já está instalado não muda de sentido."""
+    raw = {
+        "queue": "TM-T20",
+        "token": TOKEN,
+        "port": 47811,
+        "host": "127.0.0.1",
+        "allowed_origins": [ORIGIN],
+        "server_url": "https://gestor.example",
+        "station_ref": "preparo-01",
+        "agent_id": "agente-01",
+        "relay_token": RELAY_TOKEN,
+        "relay_poll_seconds": 3,
+        "drawer_status": {"query": 1, "mask": 4, "closed_value": 4},
+    }
+    config = AgentConfig.from_dict(raw)
+
+    assert config == AgentConfig(
+        queue="TM-T20",
+        token=TOKEN,
+        port=47811,
+        host="127.0.0.1",
+        allowed_origins=(ORIGIN,),
+        server_url="https://gestor.example",
+        station_ref="preparo-01",
+        agent_id="agente-01",
+        relay_token=RELAY_TOKEN,
+        relay_poll_seconds=3.0,
+        drawer_status={"query": 1, "mask": 4, "closed_value": 4},
+    )
+    assert config.extra_printers == ()
+    assert config.relay_enabled is True
+    # A do balcão continua no MESMO diário de sempre: histórico preservado.
+    assert counter_agent.JOURNAL_PATH.name == "print-relay.sqlite3"
+
+
+def test_config_atual_sem_relay_segue_em_modo_local():
+    config = AgentConfig.from_dict({"queue": "TM-T20", "token": TOKEN})
+    assert config.relay_enabled is False
+    assert config.extra_printers == ()
+
+
+@pytest.mark.parametrize("vazio", [None, []])
+def test_extra_printers_vazio_e_o_mesmo_que_ausente(vazio):
+    assert AgentConfig.from_dict({"queue": "q", "token": TOKEN, "extra_printers": vazio}).extra_printers == ()
+
+
+def test_extra_herda_servidor_e_intervalo_mas_NUNCA_a_credencial():
+    config = _config_com_extra(relay_poll_seconds=5)
+
+    (extra,) = config.extra_printers
+    assert extra.ref == "cozinha-lanches"
+    assert extra.queue == "TM-T20X-Cozinha"
+    assert extra.server_url == "https://gestor.example"
+    assert extra.station_ref == "cozinha-lanches"
+    assert extra.agent_id == "agente-01-cozinha-lanches"
+    assert extra.relay_token == KITCHEN_TOKEN
+    assert extra.relay_poll_seconds == 5.0
+    assert extra.relay_enabled is True
+    # A do balcão não muda nada por ter uma vizinha.
+    assert config.queue == "TM-T20" and config.relay_token == RELAY_TOKEN and config.station_ref == "preparo-01"
+
+
+def test_extra_aceita_os_mesmos_campos_da_config_principal():
+    config = _config_com_extra(
+        {
+            "ref": "cozinha",
+            "queue": "Cozinha",
+            "server_url": "https://outro.example/",
+            "station_ref": "cozinha-lanches",
+            "agent_id": "pc-balcao-cozinha",
+            "relay_token": KITCHEN_TOKEN,
+            "relay_poll_seconds": 1,
+        }
+    )
+    (extra,) = config.extra_printers
+    assert (extra.server_url, extra.station_ref, extra.agent_id, extra.relay_poll_seconds) == (
+        "https://outro.example",
+        "cozinha-lanches",
+        "pc-balcao-cozinha",
+        1.0,
+    )
+
+
+def test_extra_funciona_mesmo_com_o_balcao_em_modo_local():
+    config = AgentConfig.from_dict(
+        {
+            "queue": "TM-T20",
+            "token": TOKEN,
+            "extra_printers": [
+                {
+                    "ref": "cozinha-lanches",
+                    "queue": "Cozinha",
+                    "server_url": "https://gestor.example",
+                    "relay_token": KITCHEN_TOKEN,
+                }
+            ],
+        }
+    )
+    assert config.relay_enabled is False
+    assert config.extra_printers[0].agent_id == "counter-agent-cozinha-lanches"
+
+
+@pytest.mark.parametrize(
+    ("extra", "match"),
+    [
+        ("cozinha", r"extra_printers\[0\] deve ser um objeto"),
+        ({"queue": "Cozinha", "relay_token": KITCHEN_TOKEN}, r"extra_printers\[0\] sem 'ref'"),
+        ({"ref": "cozinha/lanches", "queue": "C", "relay_token": KITCHEN_TOKEN}, "'ref' .* inválido"),
+        ({"ref": "cozinha:1", "queue": "C", "relay_token": KITCHEN_TOKEN}, "'ref' .* inválido"),
+        ({"ref": "cozinha", "relay_token": KITCHEN_TOKEN}, r"extra_printers\['cozinha'\]: sem 'queue'"),
+        ({"ref": "cozinha", "queue": "C"}, "sem 'relay_token'"),
+        ({"ref": "cozinha", "queue": "C", "relay_token": "curto"}, "mínimo 16"),
+        (
+            {"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN, "server_url": "http://gestor.example"},
+            "HTTPS",
+        ),
+        ({"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN, "station_ref": "coz inha"}, "inválidos"),
+        ({"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN, "relay_poll_seconds": 99}, "entre 0.25"),
+        # A mesma estação da impressora do balcão: duas threads disputariam a fila.
+        (
+            {"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN, "station_ref": "preparo-01"},
+            "já é atendida",
+        ),
+    ],
+)
+def test_extra_e_validada_com_a_mesma_rigidez(extra, match):
+    with pytest.raises(SystemExit, match=match):
+        _config_com_extra(extra)
+
+
+def test_extra_sem_servidor_em_lugar_nenhum_e_recusada():
+    with pytest.raises(SystemExit, match="sem 'server_url'"):
+        AgentConfig.from_dict(
+            {
+                "queue": "q",
+                "token": TOKEN,
+                "extra_printers": [{"ref": "cozinha", "queue": "C", "relay_token": KITCHEN_TOKEN}],
+            }
+        )
+
+
+def test_extra_printers_precisa_ser_lista():
+    with pytest.raises(SystemExit, match="deve ser uma lista"):
+        AgentConfig.from_dict({"queue": "q", "token": TOKEN, "extra_printers": {"ref": "cozinha"}})
+
+
+def test_ref_repetido_e_recusado_sem_distinguir_caixa():
+    with pytest.raises(SystemExit, match="repetido"):
+        _config_com_extra(
+            extra_printers=[
+                {"ref": "cozinha", "queue": "A", "station_ref": "t-1", "relay_token": KITCHEN_TOKEN},
+                {"ref": "Cozinha", "queue": "B", "station_ref": "t-2", "relay_token": KITCHEN_TOKEN},
+            ]
+        )
+
+
+def test_duas_extras_na_mesma_estacao_sao_recusadas():
+    with pytest.raises(SystemExit, match="já é atendida"):
+        _config_com_extra(
+            extra_printers=[
+                {"ref": "a", "queue": "A", "station_ref": "cozinha-lanches", "relay_token": KITCHEN_TOKEN},
+                {"ref": "b", "queue": "B", "station_ref": "cozinha-lanches", "relay_token": KITCHEN_TOKEN},
+            ]
+        )
+
+
+def test_cada_extra_tem_diario_proprio_ao_lado_do_da_principal():
+    caminho = counter_agent.journal_path_for("cozinha-lanches")
+    assert caminho.name == "print-relay-cozinha-lanches.sqlite3"
+    assert caminho.parent == counter_agent.JOURNAL_PATH.parent
+    assert caminho != counter_agent.JOURNAL_PATH
+
+
+def test_reinstalar_preserva_as_extra_printers(tmp_path):
+    """O `--install` reescreve a config por cima; a cozinha não pode sumir junto."""
+    path = tmp_path / "agent.json"
+    counter_agent.write_config(path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
+    raw = json.loads(path.read_text())
+    raw["extra_printers"] = [
+        {
+            "ref": "cozinha-lanches",
+            "queue": "Cozinha",
+            "server_url": "https://gestor.example",
+            "relay_token": KITCHEN_TOKEN,
+        }
+    ]
+    path.write_text(json.dumps(raw))
+
+    counter_agent.write_config(path, queue="TM-T20", origin="https://kds.boulangerie.com.br", token=TOKEN)
+
+    assert json.loads(path.read_text())["extra_printers"] == raw["extra_printers"]
+
+
+def test_transporte_da_extra_autentica_com_a_credencial_DELA(monkeypatch):
+    captured = {}
+
+    class Response:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    class Opener:
+        def open(self, request, timeout):
+            captured["request"] = request
+            return Response()
+
+    monkeypatch.setattr(counter_agent.urllib.request, "build_opener", lambda *handlers: Opener())
+    (extra,) = _config_com_extra().extra_printers
+
+    counter_agent._relay_http_post(extra, counter_agent.RELAY_CLAIM_PATH, {})
+
+    assert captured["request"].get_header("Authorization") == f"Bearer {KITCHEN_TOKEN}"
+    assert captured["request"].full_url == "https://gestor.example/api/v1/backstage/print-agent/jobs/claim/"
+
+
+def test_relay_da_extra_usa_credencial_fila_e_diario_DELA(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    (extra,) = _config_com_extra().extra_printers
+    stop = threading.Event()
+    calls = []
+    spooled = []
+    claimed = _claimed_job(b"\x1b@VIA COZINHA\n", job_ref="job-cozinha")
+
+    def post(config, path, body):
+        calls.append((config.relay_token, config.station_ref, path, body))
+        if path == counter_agent.RELAY_CLAIM_PATH:
+            return 200, claimed
+        stop.set()
+        return 204, None
+
+    def spool(payload, *, queue, title):
+        spooled.append((payload, queue))
+        return "cozinha-7"
+
+    status = counter_agent.RelayStatus(extra.ref)
+    diario = tmp_path / "print-relay-cozinha-lanches.sqlite3"
+    counter_agent._extra_relay_thread_main(extra, stop, status, journal_path=diario, post=post, spool=spool)
+
+    assert spooled == [(b"\x1b@VIA COZINHA\n", "TM-T20X-Cozinha")]
+    assert {call[0] for call in calls} == {KITCHEN_TOKEN}
+    assert {call[1] for call in calls} == {"cozinha-lanches"}
+    assert calls[0][3]["queue"] == "TM-T20X-Cozinha"
+    entry = counter_agent.RelayJournal(diario).get("job-cozinha")
+    assert entry is not None and entry.state == "submitted_to_spooler"
+    assert counter_agent.RelayJournal(diario).pending_acknowledgements() == []
+    assert status.snapshot()["state"] == "stopped"
+
+
+def test_extra_sem_papel_nao_para_a_impressora_do_balcao(monkeypatch, tmp_path):
+    """A cozinha falha (sem papel, e depois com erro inesperado); o balcão imprime."""
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": queue == "TM-T20"})
+    config = _config_com_extra()
+    (extra,) = config.extra_printers
+    stop = threading.Event()
+    balcao_impresso = threading.Event()
+    extra_calls = []
+
+    def extra_post(cfg, path, body):
+        assert cfg.relay_token == KITCHEN_TOKEN
+        extra_calls.append(path)
+        if len(extra_calls) == 1:
+            return 200, _claimed_job(job_ref="job-cozinha")
+        if path == counter_agent.RELAY_CLAIM_PATH:
+            raise TypeError("defeito que nenhum except específico conhece")
+        return 204, None
+
+    def extra_spool(payload, *, queue, title):
+        raise counter_agent.SpoolerError("impressora sem papel")
+
+    main_spooled = []
+
+    def main_post(cfg, path, body):
+        assert cfg.relay_token == RELAY_TOKEN
+        if path == counter_agent.RELAY_CLAIM_PATH:
+            return (200, _claimed_job(job_ref="job-balcao")) if not main_spooled else (204, None)
+        balcao_impresso.set()
+        return 204, None
+
+    def main_spool(payload, *, queue, title):
+        main_spooled.append(queue)
+        return "balcao-1"
+
+    status = counter_agent.RelayStatus(extra.ref)
+    extra_thread = threading.Thread(
+        target=counter_agent._extra_relay_thread_main,
+        args=(extra, stop, status),
+        kwargs={"journal_path": tmp_path / "cozinha.sqlite3", "post": extra_post, "spool": extra_spool},
+        daemon=True,
+    )
+    main_worker = counter_agent.RelayWorker(
+        config, journal=counter_agent.RelayJournal(tmp_path / "balcao.sqlite3"), post=main_post, spool=main_spool
+    )
+    main_thread = threading.Thread(target=main_worker.run, args=(stop,), daemon=True)
+    extra_thread.start()
+    main_thread.start()
+    try:
+        assert balcao_impresso.wait(5), "a impressora do balcão deixou de imprimir"
+        # A extra seguiu viva: registrou o erro e continua tentando.
+        for _ in range(100):
+            if "TypeError" in status.snapshot()["detail"]:
+                break
+            threading.Event().wait(0.05)
+        snapshot = status.snapshot()
+        assert snapshot["state"] == "error" and "TypeError" in snapshot["detail"]
+        assert extra_thread.is_alive()
+    finally:
+        stop.set()
+        extra_thread.join(timeout=5)
+        main_thread.join(timeout=5)
+
+    assert main_spooled == ["TM-T20"]
+    cozinha = counter_agent.RelayJournal(tmp_path / "cozinha.sqlite3").get("job-cozinha")
+    assert cozinha is not None and cozinha.state == "failed" and "sem papel" in cozinha.detail
+    # Cada uma no seu diário: nenhum trabalho vaza para o da outra.
+    assert counter_agent.RelayJournal(tmp_path / "balcao.sqlite3").get("job-cozinha") is None
+    assert counter_agent.RelayJournal(tmp_path / "cozinha.sqlite3").get("job-balcao") is None
+
+
+def test_serve_sobe_uma_thread_por_extra_alem_da_do_balcao(monkeypatch):
+    config = _config_com_extra(port=0)
+    started = []
+
+    monkeypatch.setattr(counter_agent, "_relay_thread_main", lambda cfg, stop: started.append(("balcao", cfg)))
+    monkeypatch.setattr(
+        counter_agent,
+        "_extra_relay_thread_main",
+        lambda printer, stop, status: started.append(("extra", printer, status)),
+    )
+    bound = {}
+
+    class FakeServer:
+        def __init__(self, address, handler):
+            bound["handler"] = handler
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(counter_agent, "ThreadingHTTPServer", FakeServer)
+    counter_agent.serve(config)
+
+    assert ("balcao", config) in started
+    (extra_start,) = [s for s in started if s[0] == "extra"]
+    assert extra_start[1].ref == "cozinha-lanches"
+    assert bound["handler"].config is config
+    assert bound["handler"].extra_status["cozinha-lanches"] is extra_start[2]
+
+
+def _agente_com_config(monkeypatch, config, extra_status=None):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True, "accepting": True, "reason": ""})
+    handler = type("Bound", (CounterAgentHandler,), {"config": config, "extra_status": extra_status or {}})
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
+
+
+def test_health_da_config_atual_mantem_os_campos_e_lista_extras_vazia(monkeypatch):
+    httpd, base = _agente_com_config(monkeypatch, _relay_config())
+    try:
+        body = _get(base, "/health")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    for campo in ("ok", "accepting", "reason", "queue", "version", "build", "token_hint", "drawer_lock", "relay"):
+        assert campo in body
+    assert body["queue"] == "TM-T20"
+    assert body["relay"] == {"enabled": True}
+    assert body["extra_printers"] == []
+
+
+def test_health_relata_cada_extra_pelo_ref_sem_mexer_na_do_balcao(monkeypatch):
+    config = _config_com_extra(
+        extra_printers=[
+            {"ref": "cozinha-lanches", "queue": "Cozinha", "relay_token": KITCHEN_TOKEN},
+            {"ref": "cozinha-quente", "queue": "Quente", "relay_token": KITCHEN_TOKEN},
+        ]
+    )
+    boa = counter_agent.RelayStatus("cozinha-lanches")
+    boa.succeeded(queue_health="ready")
+    ruim = counter_agent.RelayStatus("cozinha-quente")
+    ruim.failed("servidor respondeu HTTP 401", queue_health="unavailable")
+    httpd, base = _agente_com_config(monkeypatch, config, {"cozinha-lanches": boa, "cozinha-quente": ruim})
+    try:
+        body = _get(base, "/health")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    assert body["ok"] is True and body["queue"] == "TM-T20"
+    lanches, quente = body["extra_printers"]
+    assert lanches["ref"] == "cozinha-lanches" and lanches["queue"] == "Cozinha" and lanches["ok"] is True
+    assert lanches["relay"]["state"] == "ok" and lanches["relay"]["queue_health"] == "ready"
+    assert quente["ok"] is False
+    assert quente["relay"]["state"] == "error" and "401" in quente["relay"]["detail"]
+    assert KITCHEN_TOKEN not in json.dumps(body)
+
+
+def test_doctor_lista_a_extra_sem_exibir_a_credencial(monkeypatch, capsys, tmp_path):
+    config_path = tmp_path / "agent.json"
+    counter_agent.write_config(config_path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
+    raw = json.loads(config_path.read_text())
+    raw["extra_printers"] = [
+        {
+            "ref": "cozinha-lanches",
+            "queue": "Cozinha",
+            "server_url": "https://gestor.example",
+            "relay_token": KITCHEN_TOKEN,
+        }
+    ]
+    config_path.write_text(json.dumps(raw))
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", config_path)
+    monkeypatch.setattr(counter_agent, "JOURNAL_PATH", tmp_path / "print-relay.sqlite3")
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": queue == "TM-T20", "reason": "offline"})
+    monkeypatch.setattr(counter_agent, "_servico_ativo", lambda name: False)
+
+    counter_agent.doctor()
+
+    output = capsys.readouterr().out
+    assert "cozinha-lanches → Cozinha: offline" in output
+    assert KITCHEN_TOKEN not in output
