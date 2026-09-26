@@ -172,7 +172,7 @@ class OperatorAlert(models.Model):
         # A Via Cozinha do posto sem tela não saiu (agente sem par, terminal
         # desativado, recusa, impressora que não buscou). O posto não tem tela
         # para descobrir sozinho: sem papel, o lanche não é feito.
-        ("kitchen_print_failed", "Via Cozinha não impressa no posto"),
+        ("kitchen_print_failed", "Via Cozinha não impressa na estação"),
         # O desconto de pontos já entrou no total e a baixa no saldo não passou:
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),

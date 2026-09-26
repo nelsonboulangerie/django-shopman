@@ -252,7 +252,7 @@ def _enqueue_safely(ticket_pk: int, *, created: bool) -> None:
         # O pedido e o disparo já aconteceram e não se desfazem por causa do
         # papel. O alerta é o aviso; o log guarda o porquê.
         logger.exception("kitchen_ticket_print.enqueue_failed", extra={"ticket_pk": ticket_pk})
-        _alert_not_printed(ticket_pk, "O papel não pôde ser composto. Confira o posto no gestor.")
+        _alert_not_printed(ticket_pk, "O papel não pôde ser composto. Confira a estação no gestor.")
 
 
 # ── O trabalho ────────────────────────────────────────────────────────
@@ -300,12 +300,12 @@ def enqueue(ticket_pk: int, *, created: bool = True):
 
         label = _terminal_label(terminal)
         if not terminal.is_active:
-            problem = f"A impressora do posto {station.name} ({label}) está com o terminal desativado."
+            problem = f"A impressora da estação {station.name} ({label}) está com o terminal desativado."
         else:
             health = _destination_health(terminal)
             if not health.available:
                 problem = (
-                    f"A impressora do posto {station.name} ({label}) não tem o agente de impressão "
+                    f"A impressora da estação {station.name} ({label}) não tem o agente de impressão "
                     "pareado. No gestor, em Terminais do PDV, emita a credencial do agente."
                 )
         if not problem:
@@ -453,7 +453,7 @@ def sweep_stale_jobs(*, now=None) -> int:
         if job.status in {PrintJob.Status.QUEUED, PrintJob.Status.EXPIRED}:
             _alert_not_printed(
                 ticket_pk,
-                "A impressora do posto não buscou o papel. Confira se o computador do agente está ligado.",
+                "A impressora da estação não buscou o papel. Confira se o computador do agente está ligado.",
             )
             alerted += 1
         elif job.status == PrintJob.Status.UNCERTAIN:
@@ -486,7 +486,7 @@ def _alert_not_printed(ticket_pk: int, problem: str) -> None:
         order_ref=order_ref,
         dedupe_key=marker,
         message=(
-            f"{marker} {what} {subject} não saiu na impressora do posto {ticket.kds_instance.name}. "
+            f"{marker} {what} {subject} não saiu na impressora da estação {ticket.kds_instance.name}. "
             f"{problem} Avise a bancada."
         ).replace("  ", " "),
     )

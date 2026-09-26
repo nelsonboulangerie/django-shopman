@@ -50,10 +50,10 @@ class KDSInstance(models.Model):
         null=True,
         blank=True,
         related_name="kds_print_stations",
-        verbose_name="impressora do posto",
+        verbose_name="impressora da estação",
         help_text=(
-            "Posto sem tela: os pedidos deste posto saem impressos nesta impressora. "
-            "Deixe vazio quando o posto acompanha os pedidos pela tela do KDS."
+            "Estação sem tela: os pedidos desta estação saem impressos nesta impressora. "
+            "Deixe vazio quando a estação acompanha os pedidos pela tela do KDS."
         ),
     )
     config = models.JSONField(

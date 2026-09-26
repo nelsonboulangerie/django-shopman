@@ -34,7 +34,7 @@ class KDSInstanceAdmin(ModelAdmin):
             "fields": ("collections",),
             "description": "Categorias de produto que esta estação processa. Vazio = processa todas as categorias.",
         }),
-        ("Impressora do posto", {
+        ("Impressora da estação", {
             "fields": ("print_terminal", "print_destination_display"),
             "description": (
                 "Para a estação que não tem tela: cada pedido que cai aqui sai impresso na impressora "
@@ -66,7 +66,7 @@ class KDSInstanceAdmin(ModelAdmin):
         """
         terminal = getattr(obj, "print_terminal", None) if obj is not None else None
         if terminal is None:
-            return unfold_badge("sem impressora — o posto usa a tela", "base")
+            return unfold_badge("sem impressora — a estação usa a tela", "base")
         if not terminal.is_active:
             return format_html(
                 "{} {}",

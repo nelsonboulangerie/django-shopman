@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='kdsinstance',
             name='print_terminal',
-            field=models.ForeignKey(blank=True, help_text='Posto sem tela: os pedidos deste posto saem impressos nesta impressora. Deixe vazio quando o posto acompanha os pedidos pela tela do KDS.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='kds_print_stations', to='cashman.terminal', verbose_name='impressora do posto'),
+            field=models.ForeignKey(blank=True, help_text='Estação sem tela: os pedidos desta estação saem impressos nesta impressora. Deixe vazio quando a estação acompanha os pedidos pela tela do KDS.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='kds_print_stations', to='cashman.terminal', verbose_name='impressora da estação'),
         ),
         migrations.AlterField(
             model_name='kdsinstance',
