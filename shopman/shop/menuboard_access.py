@@ -39,6 +39,7 @@ from django.conf import settings
 from django.http import HttpResponseForbidden
 
 DISPLAY_SUBJECT = "display"
+PLAYER_USER_AGENT_PREFIX = "Shopman Menuboard Player/"
 
 
 def _is_public() -> bool:
@@ -64,6 +65,40 @@ def menuboard_access_denied(request, ref: str):
         "Menuboard é superfície interna. Abra uma vez com sessão de operador nesta "
         "tela para autorizá-la — o dispositivo fica confiável e não pede mais nada."
     )
+
+
+def is_menuboard_player_device(device) -> bool:
+    """Distingue o controlador do Pi do navegador que pinta a TV."""
+    return str(getattr(device, "user_agent", "") or "").startswith(PLAYER_USER_AGENT_PREFIX)
+
+
+def menuboard_control_access_denied(request, ref: str):
+    """Autoriza a intenção de hardware por cookie/staff ou Bearer escopado.
+
+    O Bearer existe somente no endpoint de controle: ele não abre página, dados
+    nem SSE do cardápio. Assim, vazar a configuração local do Pi não publica
+    produto ou preço; a credencial só lê se aquela saída deve ficar acordada.
+    """
+    denied = menuboard_access_denied(request, ref)
+    if denied is None:
+        return None
+
+    authorization = str(request.META.get("HTTP_AUTHORIZATION") or "")
+    scheme, separator, raw_token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not separator or not raw_token.strip():
+        return denied
+
+    from shopman.doorman.models import TrustedDevice
+
+    device = TrustedDevice.verify_token(raw_token.strip())
+    if (
+        device is not None
+        and device.subject_type == DISPLAY_SUBJECT
+        and device.subject_id == str(ref)
+        and is_menuboard_player_device(device)
+    ):
+        return None
+    return denied
 
 
 def ensure_display_trust(request, response, ref: str):

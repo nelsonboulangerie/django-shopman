@@ -1,0 +1,15 @@
+[Unit]
+Description=Nelson menuboard player (2 TVs via HDMI-CEC)
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+ExecStart=/usr/bin/python3 %h/.local/share/nelson-menuboard-player/player.py --config %h/.config/nelson-menuboard-player/player.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
