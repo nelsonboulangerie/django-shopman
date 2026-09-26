@@ -191,6 +191,30 @@ class HasBackstagePermission(BasePermission):
         return True
 
 
+class HasAnyBackstagePermission(BasePermission):
+    """Como ``HasBackstagePermission``, mas basta UMA das permissões declaradas.
+
+    A view declara ``any_permission = ("backstage.operate_kds",
+    "cashman.operate_pos")``. Existe para o gesto que duas telas legítimas
+    fazem com a mesma régua de servidor — o "Pronto" da estação sem tela, que
+    a Saída (KDS) e o PDV dão. O critério de QUAL ticket pode ser concluído
+    mora no serviço, não aqui: aqui se decide só quem está operando.
+    """
+
+    message = _MSG_FORBIDDEN
+
+    def has_permission(self, request, view) -> bool:
+        operador = _operador(request)
+        if operador is None:
+            if is_trusted_station(request):
+                _recusa_travada()
+            return False
+        perms = _required_codes(getattr(view, "any_permission", None))
+        if perms and not any(operador.has_perm(code) for code in perms):
+            _recusa_sem_permissao()
+        return True
+
+
 class HasProductionCapability(BasePermission):
     """Authorize one explicit production capability against the active actor.
 

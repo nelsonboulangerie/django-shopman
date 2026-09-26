@@ -26,14 +26,14 @@ de novo ticket e o SSE ao vivo exigem a stack completa + gateway (SSE é same-or
 ## Prévia dos cards (sem Django)
 
 O mesmo mock tem um modo de prévia (`KDS_MOCK_FIXTURE=preview`): toda requisição entra
-autenticada e as estações `bancada` (preparo) e `expedicao` servem os pedidos de
+autenticada e as estações `bancada` (preparo) e `saida` servem os pedidos de
 `previewFixtures.mjs` — curto, longo com observação e nota de cozinha, atrasado,
 iFood, adicional, comanda antiga e o pedido de teste do iFood. Iniciar, finalizar e
 despachar mudam o quadro; reiniciar volta ao começo.
 
 ```bash
 npm run preview:cards          # mock :8799 + nuxt dev :3013
-# http://127.0.0.1:3013/bancada  ·  http://127.0.0.1:3013/expedicao
+# http://127.0.0.1:3013/bancada  ·  http://127.0.0.1:3013/saida
 node tests/preview/capture.mjs http://127.0.0.1:3013 /tmp/kds-preview after
 ```
 

@@ -24,6 +24,7 @@ manutenção num loop (default: a cada 5 minutos):
   check_ifood_store         — iFood fechado com a casa aberta (ou o contrário) vira alerta
   check_card_machines_out   — maquininha na rua além do limite vira alerta
   sweep_danfe_print_jobs    — DANFE da entrega que a impressora não buscou vira alerta
+  sweep_kitchen_print_jobs  — Via Cozinha que a impressora do posto não buscou vira alerta
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
@@ -193,6 +194,9 @@ MAINTENANCE_COMMANDS = (
     # A DANFE da entrega que a impressora do despacho não buscou: o card já
     # diz na hora; aqui vira alerta para quem não está olhando o card.
     "sweep_danfe_print_jobs",
+    # A Via Cozinha do posto sem tela: sem papel o lanche não é feito, e o
+    # posto não tem tela para descobrir. O alerta vai para quem tem.
+    "sweep_kitchen_print_jobs",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.

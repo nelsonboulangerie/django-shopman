@@ -21,7 +21,7 @@ from shopman.shop.models import Shop
 def kds_setup(db):
     Shop.objects.create(name="Loja")
     prep = KDSInstance.objects.create(ref="prep-proj", name="Preparo", type="prep", target_time_minutes=10)
-    expedition = KDSInstance.objects.create(ref="exp-proj", name="Expedição", type="expedition")
+    expedition = KDSInstance.objects.create(ref="exp-proj", name="Saída", type="expedition")
     order = Order.objects.create(ref="KDS-PROJ-1", channel_ref="web", session_key="sk-kds-proj-1", status="accepted", total_q=1500, data={"customer": {"name": "Ana"}})
     OrderItem.objects.create(order=order, line_id="1", sku="SKU", name="Produto", qty=1, unit_price_q=1500, line_total_q=1500)
     ticket = KDSTicket.objects.create(

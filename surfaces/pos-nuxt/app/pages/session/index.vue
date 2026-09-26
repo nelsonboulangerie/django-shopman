@@ -236,10 +236,6 @@ async function goToCashReport() {
   await navigateTo("/session/report");
 }
 
-async function goToOrderTickets() {
-  await navigateTo("/tickets");
-}
-
 async function goToDayClosing() {
   await navigateTo("/session/closing");
 }
@@ -529,7 +525,6 @@ async function confirmClose() {
       view="session"
       @board="goToSaleBoard"
       @cash="() => {}"
-      @tickets="goToOrderTickets"
       @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
@@ -549,7 +544,8 @@ async function confirmClose() {
         <!-- TUDO É CARD: quatro seções, cada uma uma grade de cards que abrem.
              A ordem é a do balcão — o gesto óbvio, o que pede gente, a gaveta,
              o fim do expediente — e o fim de dia EM CURSO (acabou de fechar o
-             caixa, dia por fechar) sobe para o topo: `order-first`. -->
+             caixa, dia por fechar) sobe para o topo: `order-first`. As
+             Encomendas não moram aqui: a porta delas é a barra lateral. -->
         <div class="mx-auto grid w-full max-w-2xl gap-6 p-4 md:py-8">
           <p
             v-if="screen === 'closed' && justClosedShift"

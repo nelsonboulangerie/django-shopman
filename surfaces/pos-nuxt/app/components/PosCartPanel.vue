@@ -206,6 +206,15 @@ function compactDiscount(item: POSCartItem) {
 const MAX_QTY = 999;
 const selectedLineId = ref("");
 const expandedLineId = ref("");
+
+// O card da cozinha da linha: estação, itens, disparo, estado — e o "Pronto" da
+// estação sem tela. Guarda o line_id (não a linha): o push da cozinha troca o
+// array de itens, e o diálogo aberto acompanha o estado novo.
+const kitchenLineId = ref("");
+const kitchenLine = computed(() => props.items.find((item) => item.line_id === kitchenLineId.value) ?? null);
+function hasKitchenCard(item: POSCartItem): boolean {
+  return Boolean(item.fired && item.kitchen_tickets?.length);
+}
 const detailsPrefix = useId();
 function detailsId(lineId: string) {
   return `${detailsPrefix}-${encodeURIComponent(lineId)}`;
@@ -856,6 +865,17 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >
           </button>
           <button
+            v-if="hasKitchenCard(item)"
+            type="button"
+            class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
+            :aria-label="`Ver ${item.name} na cozinha`"
+            title="Ver na cozinha"
+            data-testid="kitchen-card-open"
+            @click.stop="kitchenLineId = item.line_id"
+          >
+            <Icon name="lucide:chef-hat" class="size-4" />
+          </button>
+          <button
             class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground"
             :aria-label="`Detalhes de ${item.name}`"
             :aria-expanded="expandedLineId === item.line_id"
@@ -1282,4 +1302,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>
+
+  <PosKitchenTicketDialog
+    :open="kitchenLine != null"
+    :line-name="kitchenLine?.name ?? ''"
+    :tickets="kitchenLine?.kitchen_tickets ?? []"
+    @update:open="(value) => { if (!value) kitchenLineId = ''; }"
+  />
 </template>

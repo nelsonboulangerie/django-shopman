@@ -2,7 +2,7 @@
 // Card de preparo. TRÊS zonas, na ordem em que a cozinha pergunta — QUE PEDIDO ·
 // QUANTO TEMPO · QUE TAREFA — e um só ato por vez:
 //
-// - IDENTIDADE (topo) = a mesma da expedição (KdsCardIdentity): linha de chamada
+// - IDENTIDADE (topo) = a mesma da Saída (KdsCardIdentity): linha de chamada
 //   com o canal e "Entrega"/"Retirada", o código grande na sua própria linha, o
 //   cliente embaixo dele, e à direita só o relógio. A barra de SLA fecha o bloco.
 // - TAREFA (meio) = só os itens. Nada é truncado nem escondido: nome e observação
@@ -13,7 +13,7 @@
 //
 // A moldura é a comum dos cards do KDS (`cardScale`): margem em volta de tudo,
 // ritmo vertical único, e o botão DENTRO da moldura, arredondado — não uma laje
-// colada na borda. Era a diferença que fazia a expedição parecer mais limpa.
+// colada na borda. Era a diferença que fazia o card da Saída parecer mais limpo.
 //
 // A área grande (identidade + itens) faz o que é SEGURO: abre o detalhe. O ato que
 // sai da cozinha exige o botão rotulado. Antes era o contrário — o cabeçalho
@@ -139,7 +139,7 @@ const actionAria = computed(() => {
 });
 
 // Tom do botão por ato. Iniciar e finalizar têm a MESMA cor (o neutro invertido —
-// o mesmo do "Despachar" da expedição): iniciar é contornado, finalizar é o único
+// o mesmo do "Despachar" da Saída): iniciar é contornado, finalizar é o único
 // sólido. Bloqueado é contornado em vermelho, porque não se convida ninguém a
 // apertá-lo.
 const actionTone = computed<KdsCardButtonTone>(() => {
@@ -287,7 +287,7 @@ const d = computed(() => ({
         </div>
 
         <!-- time-to-SLA: fecha o bloco de identidade. Trilha dentro da margem, no
-             lugar do fio que separa identidade e itens na expedição. -->
+             lugar do fio que separa identidade e itens na Saída. -->
         <div
           v-if="!ticket.is_scheduled"
           class="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"

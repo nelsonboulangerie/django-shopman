@@ -1,7 +1,7 @@
 // Prévia local dos cards do KDS, sem Django: sobe o mock com os quadros de
 // previewFixtures.mjs (`KDS_MOCK_FIXTURE=preview`, :8799) e o `nuxt dev` apontado
 // para ele (:3013). Abrir http://127.0.0.1:3013/bancada (preparo) ou
-// http://127.0.0.1:3013/expedicao. Os botões funcionam: iniciar, finalizar (com a
+// http://127.0.0.1:3013/saida. Os botões funcionam: iniciar, finalizar (com a
 // janela de Desfazer) e despachar mudam o quadro; reiniciar volta ao começo.
 //
 //   npm run preview:cards

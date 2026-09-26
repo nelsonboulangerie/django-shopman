@@ -58,6 +58,12 @@ def _enrich_system_context(template: str, raw_context: object) -> dict:
     return context
 
 
+#: Pedido nestes estados não espera mais a data combinada: cancelado e devolvido
+#: morreram; despachado, entregue e concluído já saíram. O lembrete de véspera
+#: não tem mais nada a lembrar.
+PREORDER_REMINDER_DEAD_STATUSES = frozenset({"cancelled", "returned", "dispatched", "delivered", "completed"})
+
+
 class NotificationSendHandler:
     """Processa directives de notificação. Topic: notification.send"""
 
@@ -112,6 +118,13 @@ class NotificationSendHandler:
                     if payment_status in ("paid", "captured", "succeeded") or order.status not in ("new", "created"):
                         self._record_skip(fresh, "payment_not_pending")
                         return
+
+                # O lembrete de véspera espera dias na fila, e a encomenda pode
+                # ter morrido (ou já saído) nesse meio-tempo: "sua encomenda é
+                # amanhã" para quem cancelou é mentira dita na voz da casa.
+                if template == "preorder_reminder" and order.status in PREORDER_REMINDER_DEAD_STATUSES:
+                    self._record_skip(fresh, "preorder_not_awaiting")
+                    return
 
                 # O PIX pode ser confirmado enquanto esta Directive espera um
                 # worker. A guarda do enqueue não basta: a última leitura antes

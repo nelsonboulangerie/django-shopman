@@ -321,7 +321,7 @@ async function confirmSubmit() {
             </span>
           </div>
           <p class="text-sm text-muted-foreground">
-            Vendidas hoje, saem do estoque na data combinada. Entram no caixa de hoje e na reconciliação do dia da entrega.
+            Todas as encomendas confirmadas ou a confirmar com data depois de hoje, qualquer que seja o dia em que foram feitas. Saem do estoque na data combinada.
           </p>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">

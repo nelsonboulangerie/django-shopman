@@ -1716,7 +1716,16 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
             except notification_service.NotificationResendRefused as exc:
                 return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
             except OrderError as exc:
-                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 400
+                body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+                # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
+                # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
+                field = getattr(exc, "field", "")
+                if field:
+                    body.update({"field": field, "errors": {field: [str(exc)]}})
+                code = getattr(exc, "code", "")
+                if code:
+                    body["code"] = code
+                return body, 400
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
 
         try:
@@ -2172,6 +2181,44 @@ class OrderRequeueFiscalView(_OrderActionBase):
         return self._context_response(request, order, "requeue-fiscal", {}, execute)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reschedule the agreed date/window of an order (moves alarm, reminder, stock and production)",
+        responses={
+            200: OpenApiResponse(description="Order rescheduled (or already on that date/window)."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors} — date/slot rule, no stock, already in preparation."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class OrderRescheduleView(_OrderActionBase):
+    """Trocar a data combinada da encomenda — ``shop.services.reschedule``."""
+
+    intention_operation = "reschedule"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        day = str(request.data.get("date") or "").strip()
+        slot = str(request.data.get("slot") or "").strip()
+        reason = str(request.data.get("reason") or "").strip()
+        if not day:
+            return Response({"detail": "Escolha a nova data.", "field": "date", "errors": {"date": ["Escolha a nova data."]}}, status=400)
+        if len(reason) > 500:
+            return Response({"detail": "Motivo longo demais (máximo 500 caracteres).", "field": "reason",
+                "errors": {"reason": ["Motivo longo demais (máximo 500 caracteres)."]}}, status=400)
+
+        def execute(base):
+            result = orders_service.reschedule_order(order, date=day, slot=slot, reason=reason,
+                actor=_actor(request), expected_revision=base)
+            return {"changed": result.changed, "from_date": result.from_date, "from_slot": result.from_slot,
+                "to_date": result.to_date, "to_slot": result.to_slot, "activated_now": result.activated_now}
+
+        return self._context_response(request, order, "reschedule", {"date": day, "slot": slot, "reason": reason}, execute)
+
+
 def _resend_payment_link_response(order) -> Response:
     """Reenvia o aviso do link e responde no dialeto da casa.
 
@@ -2272,6 +2319,68 @@ class POSRecentSalesView(APIView):
         from shopman.backstage.projections.pos import build_pos_recent_sales
 
         return Response({"ok": True, **build_pos_recent_sales()})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="POS preorders: every order with pickup/delivery by committed date",
+        responses={200: OpenApiResponse(description="Preorders grouped by committed date.")},
+    ),
+)
+class POSPreorderListView(APIView):
+    """A seção Encomendas do PDV: busca, o dia e a grade semanal numa rota só.
+
+    ``GET ?date_from=&date_to=&q=`` — a janela na régua canônica da casa
+    (``order_ticket.parse_period``: padrão hoje + 6, ilegível cai no padrão,
+    invertido é trocado) com o teto de ``preorders.MAX_SPAN_DAYS``. O corte e o
+    saldo moram em ``projections.preorders``.
+
+    Duas permissões: a do balcão (é tela do PDV) e a do pedido (o documento é
+    do pedido, como na Via Pedido — o grupo Caixa tem as duas).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        date_from, date_to = preorders.parse_range(request.GET.get("date_from"), request.GET.get("date_to"))
+        projection = preorders.build_preorder_list(
+            date_from=date_from, date_to=date_to, query=str(request.GET.get("q") or ""),
+        )
+        return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="POS preorder detail (read-only)",
+        responses={200: OpenApiResponse(description="One preorder."), 404: OpenApiResponse(description="Not a preorder.")},
+    ),
+)
+class POSPreorderDetailView(APIView):
+    """Uma encomenda: cliente, recebimento, itens, total, saldo e situação.
+
+    404 para pedido que não existe E para pedido fora do corte (venda de
+    Balcão, cancelado, devolvido): o detalhe da seção não lê qualquer pedido.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request, ref: str):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        projection = preorders.build_preorder_detail(ref)
+        if projection is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return Response({"ok": True, **asdict(projection)})
 
 
 @extend_schema_view(

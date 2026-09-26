@@ -53,11 +53,6 @@ async function goToCashSession() {
   await navigateTo("/session");
 }
 
-// Fichas de pedido: o lote da semana para o painel físico da padaria.
-async function goToOrderTickets() {
-  await navigateTo("/tickets");
-}
-
 // Tela do cliente: segunda janela desta máquina, para arrastar ao monitor virado ao
 // cliente. A abertura (e a sonda de versão que vai junto) mora no composable.
 const customerDisplayWindow = useCustomerDisplayWindow();
@@ -859,7 +854,6 @@ onBeforeUnmount(() => {
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
       @board="goToTabs"
       @cash="goToCashSession"
-      @tickets="goToOrderTickets"
       @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"

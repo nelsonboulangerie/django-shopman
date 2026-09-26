@@ -430,6 +430,21 @@ def test_pedido_cancelado_nao_vai_para_a_parede(shop):
     assert tickets.orders_for_period(hoje, hoje) == []
 
 
+def test_venda_de_BALCAO_nao_vai_para_a_parede(shop):
+    """⚠️ A venda de balcão não tem ``delivery_date`` e entrava pelo ramo "feito
+    hoje": o lote do dia imprimia um papel por café vendido. A mercadoria já saiu
+    na mão do cliente — não é compromisso de ninguém. Mesma régua do Gestor."""
+    hoje = timezone.localdate()
+    _order("ORD-B-BALCAO", origin_channel="pos", pos={"sales_mode": "counter"})
+    _order("ORD-B-ENCOMENDA-PDV", origin_channel="pos", pos={"sales_mode": "order"}, delivery_date=hoje.isoformat())
+    _order("ORD-B-LOJA", delivery_date=hoje.isoformat())
+
+    refs = [o.ref for o in tickets.orders_for_period(hoje, hoje)]
+
+    assert "ORD-B-BALCAO" not in refs
+    assert set(refs) == {"ORD-B-ENCOMENDA-PDV", "ORD-B-LOJA"}
+
+
 def test_periodo_vazio_devolve_lista_vazia(shop):
     futuro = timezone.localdate() + timedelta(days=400)
 

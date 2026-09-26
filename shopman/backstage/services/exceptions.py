@@ -41,7 +41,7 @@ class KDSInstanceNotFound(KDSError):
 
 
 class KDSOrderNotFound(KDSError):
-    """Pedido inexistente numa ação de expedição. A camada HTTP mapeia para 404."""
+    """Pedido inexistente numa ação da Saída do KDS. A camada HTTP mapeia para 404."""
 
 
 class OrderError(BackstageServiceError):
@@ -54,6 +54,19 @@ class OrderConflict(OrderError):
     Ex.: recusar um pedido que a auto-confirmação acabou de confirmar. A camada
     HTTP mapeia para 409 (conflito de estado), não 400 (request inválido).
     """
+
+
+class RescheduleError(OrderError):
+    """Reagendamento recusado (``shop.services.reschedule.RescheduleRefused``).
+
+    Carrega ``code`` e ``field`` (``date``/``slot``) para a resposta sair no
+    dialeto ``{detail, field, errors}`` e a tela apontar a entrada certa.
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
 
 
 class POSError(BackstageServiceError):

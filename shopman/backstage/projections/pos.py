@@ -635,6 +635,63 @@ def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
     return out
 
 
+def _kitchen_tickets_by_line(session_key: str) -> dict[str, list[dict]]:
+    """Os tickets da cozinha de cada LINHA desta comanda, como o card do PDV os mostra.
+
+    Tocar numa linha que foi para a cozinha abre o card do ticket: estação,
+    itens, hora do disparo, estado — e, quando a estação não tem tela (recebe
+    a Via Cozinha impressa), o "Pronto" do balcão (decisão do dono,
+    26/09/2026). O ticket cancelado fica de fora: o selo da linha já diz
+    "Cancelado na cozinha", e não há o que concluir nele.
+    """
+    if not session_key:
+        return {}
+    from shopman.backstage.models import KDSTicket
+    from shopman.backstage.services import kitchen_ticket_print
+
+    tickets = list(
+        KDSTicket.objects.filter(session_key=session_key)
+        .exclude(status="cancelled")
+        .select_related("kds_instance")
+        .order_by("created_at", "pk")
+    )
+    if not tickets:
+        return {}
+    papers = kitchen_ticket_print.paper_states(
+        [ticket.pk for ticket in tickets if ticket.kds_instance.print_terminal_id and ticket.status != "done"]
+    )
+    labels = {"pending": "Na fila", "in_progress": "Em preparo", "done": "Pronto"}
+    out: dict[str, list[dict]] = {}
+    for ticket in tickets:
+        prints = bool(ticket.kds_instance.print_terminal_id)
+        is_open = ticket.status in ("pending", "in_progress")
+        paper = papers.get(ticket.pk)
+        payload = {
+            "pk": ticket.pk,
+            "station_name": str(ticket.kds_instance.name),
+            "prints": prints,
+            "status": ticket.status,
+            "status_label": labels.get(ticket.status, ticket.status),
+            "fired_at_display": timezone.localtime(ticket.created_at).strftime("%H:%M"),
+            "paper_label": paper.label if paper else "",
+            "paper_failed": bool(paper and paper.failed),
+            "items": [
+                {
+                    "name": str((entry or {}).get("name") or (entry or {}).get("sku") or ""),
+                    "qty": weighed_sale.qty_number((entry or {}).get("qty", 1)),
+                    "notes": str((entry or {}).get("notes") or ""),
+                }
+                for entry in ticket.items or []
+            ],
+            "can_mark_ready": prints and is_open,
+        }
+        for entry in ticket.items or []:
+            line_id = str((entry or {}).get("line_id") or "")
+            if line_id:
+                out.setdefault(line_id, []).append(payload)
+    return out
+
+
 def _delivery_today():
     """Hoje pelo relógio da LOJA. Um tablet com fuso errado agenda para ontem."""
     from django.utils import timezone
@@ -2619,6 +2676,7 @@ def build_open_tab(session: Session) -> dict:
     fired_lines = set(data.get("fired_lines") or [])
     fired_qty = {str(k): weighed_sale.qty_number(v) for k, v in (data.get("fired_qty") or {}).items()}
     kitchen_by_line = _kitchen_status_by_line(session.session_key)
+    tickets_by_line = _kitchen_tickets_by_line(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
         {
@@ -2640,6 +2698,8 @@ def build_open_tab(session: Session) -> dict:
             # sobra que o balcão precisa ver antes de fechar a venda.
             "fired_qty": fired_qty.get(item.get("line_id", ""), 0),
             "kitchen_status": kitchen_by_line.get(item.get("line_id", ""), ""),
+            # Os tickets desta linha, para o card da cozinha que o toque abre.
+            "kitchen_tickets": tickets_by_line.get(item.get("line_id", ""), []),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),

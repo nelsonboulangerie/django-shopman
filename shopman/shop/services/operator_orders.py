@@ -257,7 +257,7 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
 
     O gate de pagamento vale em TODA transição que entrega trabalho ou
     mercadoria, não só em ``ACCEPTED``: quem decide é ``payment_gate``, a mesma
-    régua que a expedição do KDS consulta. Antes o pix/link não capturado era
+    régua que a Saída do KDS consulta. Antes o pix/link não capturado era
     barrado no primeiro degrau e depois avançava à mão até ``DISPATCHED``.
     """
     if ifood_cancellation.is_pending(order):
@@ -313,6 +313,15 @@ def advance_block_message(bloqueio: AdvanceBlock) -> str:
 def advance_block_reason(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> str:
     """A frase que o operador lê, ou '' se ``advance_order`` rodaria agora."""
     return advance_block_message(advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+
+
+#: Depois destes estados a cozinha não responde mais pelo pedido.
+_KITCHEN_FINISHED_STATUSES = frozenset({
+    Order.Status.READY,
+    Order.Status.DISPATCHED,
+    Order.Status.DELIVERED,
+    Order.Status.COMPLETED,
+})
 
 
 @transaction.atomic
@@ -412,6 +421,14 @@ def advance_order(
         # a transição não acontecer, o aviso dela também não fica.
         fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
         order.transition_status(next_status, actor=actor)
+        if next_status in _KITCHEN_FINISHED_STATUSES:
+            # "Marcar pronto" por fora do KDS: quem avançou afirmou que a cozinha
+            # terminou. Ticket que ficasse aberto penduraria o pedido na grade
+            # das estações e na Saída depois de a sacola ter saído. Na mesma
+            # transação: se a transição não acontece, os tickets também não.
+            from shopman.shop.services import kds as kds_service
+
+            kds_service.close_open_tickets(order, actor=actor)
         if change_out > 0:
             from shopman.cashman import services as cash_ledger
 
@@ -1362,6 +1379,9 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     elif field == "equipment":
         dispatch = data.get("dispatch") or {}
         state = {key: dispatch.get(key) for key in ("equipment", "equipment_out_at", "equipment_out_by", "equipment_back_at", "equipment_back_by")}
+    elif field == "schedule":
+        # Reagendar: o que a tela leu da data combinada e do estado do pedido.
+        state = {"status": order.status, **{key: data.get(key) for key in ("delivery_date", "delivery_time_slot")}}
     elif field == "comment":
         # Append-only comments commute; unrelated comments/notes need no overwrite.
         state = {"channel_ref": order.channel_ref}

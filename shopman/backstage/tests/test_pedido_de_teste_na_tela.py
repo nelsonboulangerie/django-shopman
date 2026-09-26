@@ -3,7 +3,7 @@
 Até 19/09/2026 a única pista que o operador tinha era o nome do item vir
 "NÃO ENTREGAR" — defesa humana em horário de movimento. Estas travas exigem o
 crachá e a frase nas três superfícies por onde o pedido passa: o card e o
-detalhe do Gestor, e o card de Expedição do KDS.
+detalhe do Gestor, e o card da Saída do KDS.
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ def test_pedido_de_verdade_nao_ganha_cracha_nenhum():
 
 
 @pytest.mark.django_db
-def test_card_de_expedicao_marca_o_pedido_de_teste():
-    """A Expedição é o card do PEDIDO, não do ticket: o pedido de teste chega
+def test_card_da_saida_marca_o_pedido_de_teste():
+    """A Saída é o card do PEDIDO, não do ticket: o pedido de teste chega
     aqui mesmo sem ter passado pela cozinha, e é aqui que a sacola sairia."""
     order = _order(is_test=True)
     OrderItem.objects.create(
@@ -66,7 +66,7 @@ def test_card_de_expedicao_marca_o_pedido_de_teste():
 
 
 @pytest.mark.django_db
-def test_card_de_expedicao_de_pedido_real_fica_limpo():
+def test_card_da_saida_de_pedido_real_fica_limpo():
     order = _order(is_test=False)
     OrderItem.objects.create(
         order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=1500, line_total_q=1500

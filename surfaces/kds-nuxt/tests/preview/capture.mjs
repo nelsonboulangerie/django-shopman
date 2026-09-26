@@ -27,7 +27,7 @@ async function board(ref, width, density) {
     try {
       localStorage.setItem("kds.density", d);
       localStorage.setItem("kds_sound_bancada", "off");
-      localStorage.setItem("kds_sound_expedicao", "off");
+      localStorage.setItem("kds_sound_saida", "off");
     } catch {
       /* prévia sem storage segue com o padrão */
     }
@@ -68,9 +68,9 @@ for (const [density, width] of [
   }
   await prep.context.close();
 
-  const exp = await board("expedicao", width, density);
-  await shoot(exp.page, `expedicao-${density}`);
-  if (density === "cozy") await shoot(exp.page, "expedicao-card", exp.page.locator("section article").first());
+  const exp = await board("saida", width, density);
+  await shoot(exp.page, `saida-${density}`);
+  if (density === "cozy") await shoot(exp.page, "saida-card", exp.page.locator("section article").first());
   await exp.context.close();
 }
 

@@ -56,6 +56,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **RevPASH · RFM** | traduzir no texto de tela; identificador, campo e comentário continuam em inglês | 22/09 | — |
 | **Validar** | fica no PDV, com precedente explícito (o Odoo usa assim) | 18/09 | — |
 | **Finalizar** | o último passo da Expedição — e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
+| **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). **Expedição** fica só na **Produção**, onde é o fechamento de lote: a mesma palavra nos dois apps mandava gente para a tela errada. O `type` gravado continua `expedition` (identificador), e a estação do seed passou de `expedicao` para `saida` por migração (`backstage.0076`), com redirect do endereço antigo no kds-nuxt | 26/09 | — |
 | **dividir · transferir · juntar** | os três atos da comanda. *Mesclar* fora, por técnico demais | 18/09 | `presentation/moveLines.ts` |
 | **item = unidade** | nunca linha, em nenhuma superfície | deliberado antes, reafirmado 18/09 | — |
 | **Screen** (código) · **tela** (categoria) | a coisa. `display` é **papel** (`Channel.CommercePolicy.DISPLAY`, `SubjectType.DISPLAY`); `painel` é dashboard; `board` sai do vocabulário de tela | 24/09 | [`WP-TELAS-DE-PAREDE.md`](../plans/WP-TELAS-DE-PAREDE.md) |
@@ -171,7 +172,7 @@ ser kg.
 
 | Camada | Palavras |
 |---|---|
-| objeto | **pedido** · **item** · **estação** · **comanda** |
+| objeto | **pedido** · **item** · **estação** · **comanda** · **Saída** (a estação por onde o pedido sai) |
 | atos | **avançar** · **pronto** · **visto** · **recebi o cancelamento** |
 | grandezas | **item = unidade** · **pedido** — ⛔ "volumes" não é grandeza de nada |
 

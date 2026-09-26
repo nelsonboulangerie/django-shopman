@@ -737,7 +737,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         ref=order.ref,
         status=order.status,
         actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
-        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment", "schedule")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
@@ -1363,6 +1363,22 @@ def _channel_configs_for(orders):
     return configs
 
 
+def items_summary(items) -> str:
+    """"2x Croissant, 1x Baguete, 3x Pão de queijo..." — o resumo de uma linha.
+
+    Uma régua só para toda tela que resume a sacola num card (Gestor, Encomendas
+    do PDV): três itens e reticências. ``items`` são os itens EFETIVOS
+    (``order_composition``), nunca as linhas cruas de um pedido ajustado.
+    """
+    head = list(items[:4])
+    summary = ", ".join(
+        f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in head[:3]
+    )
+    if len(head) > 3:
+        summary += "..."
+    return summary
+
+
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
@@ -1385,13 +1401,7 @@ def _build_card(
     queue_items = getattr(order, "_queue_items", None)
     if queue_items is None:
         queue_items = order_composition.effective_items(order)
-    items_qs = queue_items[:4]
-    items_summary = ", ".join(
-        f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in items_qs[:3]
-    )
-    if len(items_qs) > 3:
-        items_summary += "..."
-
+    summary = items_summary(queue_items)
     items_count = len(queue_items)
 
     is_delivery = _is_delivery(order)
@@ -1451,7 +1461,7 @@ def _build_card(
         server_now_iso=now.isoformat(),
         elapsed_seconds=int(elapsed),
         timer_class=timer_class,
-        items_summary=items_summary,
+        items_summary=summary,
         items_count=items_count,
         total_display=_money(order_composition.effective_total_q(order)),
         fulfillment_icon=fulfillment_icon,
@@ -2236,6 +2246,7 @@ _EVENT_LABELS = {
     "created": "Pedido criado",
     "payment_collected": "Pagamento recebido",
     "equipment_returned": "Maquininha devolvida",
+    "order_rescheduled": "Data combinada alterada",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
@@ -2272,6 +2283,15 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
     return tuple(result)
 
 
+def _short_date(raw) -> str:
+    from datetime import date as _date
+
+    try:
+        return _date.fromisoformat(str(raw or "")).strftime("%d/%m")
+    except ValueError:
+        return "sem data"
+
+
 def _event_detail(payload: dict) -> str:
     if not payload:
         return ""
@@ -2281,6 +2301,10 @@ def _event_detail(payload: dict) -> str:
         old_label = order_status_label(old_status, old_status or "-")
         new_label = order_status_label(new_status, new_status or "-")
         return f"{old_label} -> {new_label}"
+    if payload.get("to_date"):
+        # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
+        moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
+        return f"{moved} — {payload['reason']}" if payload.get("reason") else moved
     for key in ("reason", "note", "error"):
         value = payload.get(key)
         if value:

@@ -121,9 +121,17 @@ def orders_for_period(date_from: date, date_to: date) -> list:
     (``data__delivery_date``). O SQL é o filtro grosso — quem decide de verdade
     é :func:`commitment_of` em Python, porque a data combinada é uma leitura
     (chave ausente ⇒ vale a data da venda) e não uma coluna.
+
+    ⚠️ **Venda de Balcão fica de fora** — a mesma régua do Gestor
+    (``order_queue.build_two_zone_queue``). Ela não tem ``delivery_date`` e por
+    isso entrava pelo ramo "feito na janela": o lote de hoje imprimia um papel
+    para cada café vendido no balcão, compromisso que a casa não tem com
+    ninguém, porque a mercadoria já saiu na mão do cliente.
     """
     from django.db.models import Q
     from shopman.orderman.models import Order
+
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
     # ⚠️ UM filtro com dois ``Q``, não a união de dois querysets: `|` entre
     # querysets pede `.distinct()`, e `.distinct()` num model com ordenação
@@ -141,7 +149,10 @@ def orders_for_period(date_from: date, date_to: date) -> list:
         .prefetch_related("items")
     )
 
-    dentro = [o for o in candidatos if date_from <= commitment_of(o) <= date_to]
+    dentro = [
+        o for o in candidatos
+        if date_from <= commitment_of(o) <= date_to and not is_pos_counter_order(o)
+    ]
     return sorted(dentro, key=_window_sort_key)
 
 

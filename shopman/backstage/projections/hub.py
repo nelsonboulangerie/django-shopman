@@ -94,7 +94,7 @@ class _AppSpec:
 # símbolo próximo que existe no Lucide).
 _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("pos", "PDV", "Vender no balcão", "shopping-basket", "launch", can_operate_pos),
-    _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
+    _AppSpec("kds", "Cozinha", "Preparo e saída", "chef-hat", "launch", can_operate_kds),
     _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_manage_orders),
     # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
     # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`

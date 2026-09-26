@@ -36,7 +36,7 @@ export interface KDSTicketProjection {
   test_order_label: string;
 }
 
-/** An order card in the expedition (dispatch) board. */
+/** An order card in the Saída board (``expedition``: hand over / dispatch). */
 export interface KDSExpeditionCardProjection {
   pk: number;
   order_ref: string;
@@ -53,6 +53,35 @@ export interface KDSExpeditionCardProjection {
   is_expedition: boolean;
   advance_block_label: string;
   advance_block_reason: string;
+  test_order_label: string;
+}
+
+/** Uma estação do pedido, vista da Saída: em que pé ela está com ele. */
+export interface KDSExitStationChipProjection {
+  station_ref: string;
+  station_name: string;
+  prints: boolean;
+  state: string;
+  state_label: string;
+  paper_label: string;
+  paper_failed: boolean;
+  cancelled_items: number;
+  can_mark_ready: boolean;
+}
+
+/** Um pedido que ainda espera alguma estação — a coluna "Em preparo" da Saída. */
+export interface KDSExitPreparingCardProjection {
+  pk: number;
+  order_ref: string;
+  channel_icon: string;
+  customer_name: string;
+  fulfillment_icon: string;
+  fulfillment_label: string;
+  is_delivery: boolean;
+  fired_at_display: string;
+  elapsed_seconds: number;
+  stations: KDSExitStationChipProjection[];
+  is_scheduled: boolean;
   test_order_label: string;
 }
 
@@ -79,6 +108,7 @@ export interface KDSBoardProjection {
   available_dates: string[];
   cancelled_tickets: KDSTicketProjection[];
   recent_done: KDSTicketProjection[];
+  preparing: KDSExitPreparingCardProjection[];
 }
 
 /** Privacy-safe order status for a customer-facing ready board. */
