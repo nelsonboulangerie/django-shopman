@@ -7,7 +7,7 @@
 // inteira. O que fica é o que responde "quanto temos para sábado": quem, que
 // horas, a situação e o dinheiro.
 import { fulfillmentIcon } from "~/presentation/orderTickets";
-import { customerLine, moneyLine, situationTone } from "~/presentation/preorders";
+import { balanceStandsOut, customerLine, moneyLine, situationTone } from "~/presentation/preorders";
 import type { PreorderCard } from "~/types/preorders";
 
 const props = withDefaults(defineProps<{
@@ -25,6 +25,11 @@ const TONE_CLASS: Record<string, string> = {
 };
 
 const toneClass = computed(() => TONE_CLASS[situationTone(props.card.situation)]);
+// O saldo a cobrar é o número que decide o gesto do balcão: ganha peso e cor de
+// texto cheia. Pago, na conta da casa ou a conferir seguem discretos.
+const moneyClass = computed(() => (balanceStandsOut(props.card)
+  ? "text-sm font-semibold text-foreground"
+  : "text-xs text-muted-foreground"));
 const detailLine = computed(() => {
   const parts = [props.card.ref];
   if (!props.compact) parts.push(props.card.channel_label);
@@ -57,7 +62,11 @@ const detailLine = computed(() => {
       <span class="rounded-md border px-1.5 py-0.5 text-xs font-medium" :class="toneClass" data-preorder-situation>
         {{ card.situation_label }}
       </span>
-      <span class="text-xs tabular-nums text-muted-foreground" data-preorder-money>{{ moneyLine(card) }}</span>
+      <span
+        class="tabular-nums"
+        :class="moneyClass"
+        :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'"
+      >{{ moneyLine(card) }}</span>
     </div>
   </NuxtLink>
 </template>

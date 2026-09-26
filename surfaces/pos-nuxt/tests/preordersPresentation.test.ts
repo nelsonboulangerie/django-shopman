@@ -5,7 +5,23 @@ import { describe, expect, it } from "vitest";
 import {
   NO_WINDOW_LABEL,
   PREORDER_SECTIONS,
+  PREORDER_TILE_ROUTES,
+  balanceStandsOut,
   canSearch,
+  checkPaymentNotice,
+  dayToReceiveLine,
+  filterByPayment,
+  filterEmptyMessage,
+  filterDaysByPayment,
+  homeSummary,
+  parsePaymentFilter,
+  paymentCounts,
+  paymentFilterChips,
+  preorderHomeTiles,
+  railAriaLabel,
+  railBadge,
+  toReceiveLine,
+  todayPendingCount,
   customerLine,
   dayColumnTitle,
   flattenDays,
@@ -17,11 +33,10 @@ import {
   searchEmptyMessage,
   searchRange,
   situationTone,
-  todayCount,
   todayRange,
   weekRange,
 } from "../app/presentation/preorders";
-import type { PreorderCard, PreorderDay } from "../app/types/preorders";
+import type { PreorderCard, PreorderDay, PreorderListResponse } from "../app/types/preorders";
 
 const HOJE = "2026-09-26"; // sábado
 
@@ -41,6 +56,7 @@ function card(partial: Partial<PreorderCard> = {}): PreorderCard {
     status: "accepted",
     situation: "to_pay",
     situation_label: "A pagar",
+    payment_state: "to_receive",
     total_q: 3600,
     total_display: "R$ 36,00",
     balance_q: 3600,
@@ -59,6 +75,8 @@ function day(partial: Partial<PreorderDay> = {}): PreorderDay {
     day_display: "26/09",
     is_today: true,
     orders_count: 0,
+    to_receive_q: 0,
+    to_receive_display: "R$ 0,00",
     total_q: 0,
     total_display: "R$ 0,00",
     orders: [],
@@ -106,11 +124,6 @@ describe("contagens — zero é frase, nunca '0'", () => {
   it("o resumo some quando não há nada", () => {
     expect(listSummary(0, "R$ 0,00")).toBe("");
     expect(listSummary(3, "R$ 120,00")).toBe("3 encomendas · R$ 120,00");
-  });
-
-  it("a contagem de hoje sai do dia marcado como hoje", () => {
-    expect(todayCount([day({ orders_count: 2 }), day({ is_today: false, orders_count: 5 })])).toBe(2);
-    expect(todayCount([])).toBe(0);
   });
 
   it("a coluna de hoje diz que é hoje", () => {
@@ -194,5 +207,136 @@ describe("frases", () => {
       ["Semana", "/preorders/week"],
       ["Via Pedido – painel", "/preorders/panel"],
     ]);
+  });
+});
+
+// O que falta receber × o que já está pago — prioridade do dono (26/09).
+describe("filtros de dinheiro — Todas · A receber · Pagas", () => {
+  const cards = [
+    card({ ref: "A", payment_state: "to_receive" }),
+    card({ ref: "B", payment_state: "to_receive", situation: "ready", situation_label: "Pronto" }),
+    card({ ref: "C", payment_state: "paid", balance_q: 0 }),
+    card({ ref: "D", payment_state: "on_account", balance_q: 0 }),
+    card({ ref: "E", payment_state: "check", balance_q: null }),
+  ];
+
+  it("contagem em cada filtro, pelo DINHEIRO e não pela situação ('Pronto' com saldo é a receber)", () => {
+    expect(paymentCounts(cards)).toEqual({ all: 5, to_receive: 2, paid: 1, on_account: 1, check: 1 });
+    expect(filterByPayment(cards, "to_receive").map((c) => c.ref)).toEqual(["A", "B"]);
+    expect(filterByPayment(cards, "all").map((c) => c.ref)).toEqual(["A", "B", "C", "D", "E"]);
+  });
+
+  it("conta da casa NUNCA é paga nem a receber; ganha chip próprio só quando existe", () => {
+    expect(filterByPayment(cards, "paid").map((c) => c.ref)).toEqual(["C"]);
+    expect(paymentFilterChips(paymentCounts(cards)).map((c) => [c.label, c.count])).toEqual([
+      ["Todas", 5], ["A receber", 2], ["Pagas", 1], ["Na conta da casa", 1],
+    ]);
+    const semConta = paymentFilterChips(paymentCounts(cards.filter((c) => c.payment_state !== "on_account")));
+    expect(semConta.map((c) => c.label)).toEqual(["Todas", "A receber", "Pagas"]);
+  });
+
+  it("pagamento a conferir não é chip — é aviso próprio, que some quando não há", () => {
+    expect(paymentFilterChips(paymentCounts(cards)).some((c) => c.key === "check")).toBe(false);
+    expect(checkPaymentNotice(0)).toBe("");
+    expect(checkPaymentNotice(1)).toContain("1 encomenda está com o pagamento a conferir");
+    expect(checkPaymentNotice(2)).toContain("não entram em A receber nem em Pagas");
+  });
+
+  it("o filtro filtra os dias, e a conta de cada dia continua a do dia inteiro", () => {
+    const days = [day({ orders: cards, orders_count: 5, total_q: 18000, total_display: "R$ 180,00" })];
+    const filtered = filterDaysByPayment(days, "paid");
+    expect(filtered[0]!.orders.map((c) => c.ref)).toEqual(["C"]);
+    expect(filtered[0]!.total_display).toBe("R$ 180,00");
+  });
+
+  it("o filtro que esvazia a lista diz o que não há", () => {
+    expect(filterEmptyMessage("to_receive")).toBe("Nenhuma encomenda a receber neste período.");
+    expect(filterEmptyMessage("paid")).toBe("Nenhuma encomenda paga neste período.");
+    expect(filterEmptyMessage("all")).toBe("");
+  });
+
+  it("o filtro da URL: valor conhecido vale, o resto é Todas", () => {
+    expect(parsePaymentFilter("to_receive")).toBe("to_receive");
+    expect(parsePaymentFilter(["paid"])).toBe("paid");
+    expect(parsePaymentFilter("qualquer")).toBe("all");
+    expect(parsePaymentFilter(undefined)).toBe("all");
+  });
+
+  it("A receber: valor por extenso, e zero é frase", () => {
+    expect(toReceiveLine(6200, "R$ 62,00")).toBe("A receber: R$ 62,00");
+    expect(toReceiveLine(0, "R$ 0,00")).toBe("Nada a receber");
+    expect(dayToReceiveLine(day({ to_receive_q: 1200, to_receive_display: "R$ 12,00" }))).toBe("A receber R$ 12,00");
+    expect(dayToReceiveLine(day())).toBe("");
+  });
+
+  it("o saldo ganha destaque só quando é para cobrar", () => {
+    expect(balanceStandsOut(card())).toBe(true);
+    expect(balanceStandsOut(card({ payment_state: "paid", balance_q: 0 }))).toBe(false);
+    expect(balanceStandsOut(card({ payment_state: "check", balance_q: null }))).toBe(false);
+  });
+});
+
+describe("a casa das Encomendas e o selo da barra lateral", () => {
+  function list(orders: PreorderCard[], extra: Partial<PreorderListResponse> = {}): PreorderListResponse {
+    return {
+      ok: true, date_from: HOJE, date_to: "2026-10-02", today: HOJE, query: "",
+      count: orders.length + 3, total_q: 0, total_display: "R$ 0,00",
+      to_receive_q: 9900, to_receive_display: "R$ 99,00",
+      days: [
+        day({ orders, orders_count: orders.length, to_receive_q: 3600, to_receive_display: "R$ 36,00" }),
+        day({ is_today: false, date: "2026-09-27", orders: [card({ ref: "AMANHA", payment_state: "check", balance_q: null })] }),
+      ],
+      ...extra,
+    };
+  }
+
+  it("o selo conta as de HOJE ainda não entregues ('Saiu para entrega' conta)", () => {
+    const today = [
+      card({ ref: "1" }),
+      card({ ref: "2", situation: "out_for_delivery" }),
+      card({ ref: "3", situation: "delivered" }),
+    ];
+    expect(todayPendingCount(list(today).days)).toBe(2);
+    expect(railBadge(list(today))).toBe("2");
+    expect(railAriaLabel("2")).toBe("Encomendas — 2 para entregar hoje");
+  });
+
+  it("zero não é selo; sem resposta (403, carregando) também não", () => {
+    expect(railBadge(list([card({ situation: "delivered" })]))).toBeUndefined();
+    expect(railBadge(null)).toBeUndefined();
+    expect(railAriaLabel(undefined)).toBe("Encomendas");
+  });
+
+  it("o resumo da casa: pendentes de hoje, a semana, o a receber de hoje e da semana, e os a conferir", () => {
+    const summary = homeSummary(list([card({ ref: "1" }), card({ ref: "2", situation: "delivered" })]));
+    expect(summary).toEqual({
+      todayPending: 1,
+      weekCount: 5,
+      todayToReceiveQ: 3600,
+      todayToReceiveDisplay: "R$ 36,00",
+      weekToReceiveQ: 9900,
+      weekToReceiveDisplay: "R$ 99,00",
+      checkCount: 1,
+    });
+  });
+
+  it("os cards da casa: Hoje, Semana e Via Pedido – painel, cada um com a sua rota", () => {
+    const tiles = preorderHomeTiles(homeSummary(list([card({ ref: "1" })])));
+    expect(tiles.map((t) => t.label)).toEqual(["Hoje", "Semana", "Via Pedido – painel"]);
+    expect(tiles.map((t) => PREORDER_TILE_ROUTES[t.key])).toEqual(["/preorders/today", "/preorders/week", "/preorders/panel"]);
+    expect(tiles[0]!.badge).toBe("1");
+  });
+
+  it("⚠️ zero não é selo nos cards: a descrição diz por extenso", () => {
+    const tiles = preorderHomeTiles(homeSummary(list([], { count: 0 })));
+    expect(tiles[0]!.badge).toBeUndefined();
+    expect(tiles[0]!.description).toBe("Nenhuma encomenda para entregar hoje");
+    expect(tiles[1]!.badge).toBeUndefined();
+    expect(tiles[1]!.description).toBe("Nenhuma encomenda nos próximos 7 dias");
+  });
+
+  it("a palavra 'ficha' não volta para a tela", () => {
+    const text = preorderHomeTiles(homeSummary(list([card()]))).map((t) => `${t.label} ${t.description}`).join(" ");
+    expect(text.toLowerCase()).not.toContain("ficha");
   });
 });

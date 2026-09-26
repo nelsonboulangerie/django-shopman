@@ -42,6 +42,7 @@ surface depends on it.
 | Customer lookup | GET | `/api/v1/backstage/pos/customer/lookup/?phone={phone}` | `build_pos_customer_lookup` |
 | Preorders (search · day · week) | GET | `/api/v1/backstage/pos/preorders/?date_from=&date_to=&q=` | `projections.preorders.build_preorder_list` |
 | Preorder detail | GET | `/api/v1/backstage/pos/preorders/{ref}/` | `projections.preorders.build_preorder_detail` |
+| Preorders realtime (SSE) | GET | BFF `/sse/orders` → `/events/orders/` (`backstage-orders-main`) | push-only; the Encomendas screens refetch the list on each event (ADR-016) |
 | Reverse geocode | POST | `/api/v1/geocode/reverse` | storefront geocode API |
 
 Surfaces must use action hrefs from `pos.actions[]` when present. Fallback paths
