@@ -48,8 +48,10 @@ from .ifood_store import IFoodStoreView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
+    KDSExitPrintedStationDoneView,
     KDSExpeditionActionView,
     KDSIndexView,
+    KDSPrintedTicketDoneView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
     KDSTicketRecallView,
@@ -271,6 +273,16 @@ urlpatterns = [
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
     path("kds/tickets/<int:ticket_pk>/acknowledge/", KDSTicketAcknowledgeView.as_view(), name="api-backstage-kds-ticket-acknowledge"),
     path("kds/expedition/<int:order_pk>/action/", KDSExpeditionActionView.as_view(), name="api-backstage-kds-expedition"),
+    path(
+        "kds/expedition/<int:order_pk>/printed-stations/<slug:station_ref>/done/",
+        KDSExitPrintedStationDoneView.as_view(),
+        name="api-backstage-kds-exit-printed-station-done",
+    ),
+    path(
+        "kds/printed-tickets/<int:ticket_pk>/done/",
+        KDSPrintedTicketDoneView.as_view(),
+        name="api-backstage-kds-printed-ticket-done",
+    ),
     # Operations — read views
     path("pos/", POSView.as_view(), name="api-backstage-pos"),
     # Operador (PIN/crachá) — genérico, compartilhado por todas as surfaces (inclui POS)

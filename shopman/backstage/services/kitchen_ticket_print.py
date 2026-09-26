@@ -53,10 +53,13 @@ com o posto e o pedido no texto. Ele fecha sozinho quando o papel sai.
 
 ## O que NÃO acontece ao imprimir
 
-O status do ticket não muda. Quem dá baixa no ticket de um posto sem tela
-(sozinho, ao imprimir; ou a Expedição, ao juntar o pedido) é decisão do dono,
-ainda aberta. O ponto está reservado em ``KDSInstance.config["on_print"]``
-(:data:`ON_PRINT_CONFIG_KEY`) e hoje só existe :data:`ON_PRINT_KEEP`.
+O status do ticket não muda. Decisão do dono (26/09/2026): imprimir não dá
+baixa. Quem conclui o ticket da estação sem tela é a **Saída** (o "Pronto" do
+chip da estação no card do pedido), o **PDV** (o card do ticket, aberto pela
+linha que foi para a cozinha) ou o **leitor de código** da bancada, que lê o
+QR impresso no papel (:func:`ticket_code`). O ponto
+``KDSInstance.config["on_print"]`` (:data:`ON_PRINT_CONFIG_KEY`) continua com
+um único valor, :data:`ON_PRINT_KEEP`.
 """
 
 from __future__ import annotations
@@ -65,6 +68,7 @@ import hashlib
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
@@ -83,11 +87,9 @@ RELAY_GRACE = timedelta(minutes=2)
 #: O alerta do papel que não saiu (``OperatorAlert``, público pedidos).
 ALERT_TYPE = "kitchen_print_failed"
 
-#: ⚠️ Ponto reservado, sem comportamento: o que acontece com o ticket quando o
-#: papel sai. Pergunta aberta ao dono (26/09/2026): dar baixa sozinho ao
-#: imprimir, ou deixar a Expedição concluir. Até a resposta, o único valor é
-#: :data:`ON_PRINT_KEEP` — o ticket segue como está, e quem conclui é quem já
-#: concluía.
+#: O que acontece com o ticket quando o papel sai. Decidido pelo dono
+#: (26/09/2026): nada — imprimir não dá baixa; quem conclui é a Saída, o PDV ou
+#: o leitor de código. O único valor é :data:`ON_PRINT_KEEP`.
 ON_PRINT_CONFIG_KEY = "on_print"
 ON_PRINT_KEEP = "keep"
 
@@ -108,7 +110,7 @@ def series_ref_for(ticket_pk: int, *, moment: str) -> uuid.UUID:
 
 
 def on_print_behavior(instance) -> str:
-    """O que o posto faz com o ticket ao imprimir. Hoje, sempre :data:`ON_PRINT_KEEP`."""
+    """O que a estação faz com o ticket ao imprimir: sempre :data:`ON_PRINT_KEEP`."""
     config = instance.config if isinstance(instance.config, dict) else {}
     value = str(config.get(ON_PRINT_CONFIG_KEY) or ON_PRINT_KEEP)
     if value != ON_PRINT_KEEP:
@@ -117,6 +119,50 @@ def on_print_behavior(instance) -> str:
             extra={"kds_instance": instance.ref, "on_print": value},
         )
     return ON_PRINT_KEEP
+
+
+# ── O que a Saída lê do papel ─────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class PaperState:
+    """Em que pé está o papel de um ticket, na voz de quem está na Saída."""
+
+    #: "impresso às 10:42" · "na fila da impressora" · "não imprimiu"
+    label: str
+    #: O papel não saiu e não vai sair sozinho: a estação precisa ser avisada.
+    failed: bool = False
+
+
+def paper_states(ticket_pks) -> dict[int, PaperState]:
+    """O papel do pedido (momento ``fired``) de cada ticket, quando houve papel.
+
+    Ticket sem ``PrintJob`` fica de fora: a estação ganhou a impressora depois
+    do disparo, ou o pedido era de teste. A hora do "impresso" é a da resposta
+    do agente (``updated_at`` ao chegar num estado de papel) — a mais próxima
+    da hora em que a folha caiu na bancada.
+    """
+    from shopman.backstage.models import PrintJob
+
+    pks = [int(pk) for pk in ticket_pks]
+    if not pks:
+        return {}
+    by_series = {series_ref_for(pk, moment=MOMENT_FIRED): pk for pk in pks}
+    out: dict[int, PaperState] = {}
+    for job in PrintJob.objects.filter(series_ref__in=list(by_series), copy_number=1).only(
+        "series_ref", "status", "updated_at", "confirmed_at"
+    ):
+        pk = by_series.get(job.series_ref)
+        if pk is None:
+            continue
+        if job.status in _PAPER_STATES:
+            when = job.confirmed_at or job.updated_at
+            out[pk] = PaperState(label=f"impresso às {timezone.localtime(when).strftime('%H:%M')}")
+        elif job.status == PrintJob.Status.QUEUED:
+            out[pk] = PaperState(label="na fila da impressora")
+        elif job.status in {PrintJob.Status.FAILED, PrintJob.Status.EXPIRED}:
+            out[pk] = PaperState(label="não imprimiu", failed=True)
+    return out
 
 
 # ── O gatilho ─────────────────────────────────────────────────────────

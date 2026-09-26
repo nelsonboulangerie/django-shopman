@@ -190,6 +190,74 @@ export const EXPEDITION_CARDS = [
   }),
 ];
 
+function chip(over) {
+  return {
+    station_ref: "lanches",
+    station_name: "Lanches",
+    prints: true,
+    state: "pending",
+    state_label: "na fila",
+    paper_label: "impresso às 10:42",
+    paper_failed: false,
+    cancelled_items: 0,
+    can_mark_ready: true,
+    ...over,
+  };
+}
+
+function preparingCard(over) {
+  return {
+    pk: 300,
+    order_ref: "WEB-260921-0140",
+    channel_icon: "language",
+    customer_name: "Ana",
+    fulfillment_icon: "storefront",
+    fulfillment_label: "Retirada",
+    is_delivery: false,
+    fired_at_display: "10:40",
+    elapsed_seconds: 240,
+    stations: [],
+    is_scheduled: false,
+    test_order_label: "",
+    ...over,
+  };
+}
+
+/** A coluna "Em preparo" da Saída: um pedido esperando a estação sem tela
+ *  (Lanches, com o papel impresso) e a de tela (Cafés, em preparo); outro com o
+ *  papel que não saiu; um terceiro com a estação de tela já pronta. */
+export const EXIT_PREPARING = [
+  preparingCard({
+    pk: 301,
+    stations: [
+      chip(),
+      chip({ station_ref: "cafes", station_name: "Cafés", prints: false, state: "in_progress", state_label: "em preparo", paper_label: "", can_mark_ready: false }),
+    ],
+  }),
+  preparingCard({
+    pk: 302,
+    order_ref: "IFD-260921-4830",
+    channel_icon: "fastfood",
+    customer_name: "Carlos (iFood)",
+    fulfillment_icon: "local_shipping",
+    fulfillment_label: "Entrega",
+    is_delivery: true,
+    elapsed_seconds: 420,
+    stations: [chip({ paper_label: "não imprimiu", paper_failed: true, cancelled_items: 1 })],
+  }),
+  preparingCard({
+    pk: 303,
+    order_ref: "BAL-260921-0141",
+    channel_icon: "storefront",
+    customer_name: "Mesa 4",
+    elapsed_seconds: 95,
+    stations: [
+      chip({ paper_label: "na fila da impressora" }),
+      chip({ station_ref: "cafes", station_name: "Cafés", prints: false, state: "done", state_label: "pronto", paper_label: "", can_mark_ready: false }),
+    ],
+  }),
+];
+
 export const PREVIEW_INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: PREP_TICKETS.length },
@@ -197,7 +265,7 @@ export const PREVIEW_INDEX = {
   ],
 };
 
-function boardFor(ref, tickets, isExpedition, name) {
+function boardFor(ref, tickets, isExpedition, name, preparing = []) {
   return {
     board: {
       instance_ref: ref,
@@ -218,6 +286,7 @@ function boardFor(ref, tickets, isExpedition, name) {
       available_dates: [TODAY],
       cancelled_tickets: [],
       recent_done: [],
+      preparing,
     },
   };
 }
@@ -227,10 +296,11 @@ function boardFor(ref, tickets, isExpedition, name) {
 export function createPreviewState() {
   const prep = PREP_TICKETS.map((t) => ({ ...t }));
   const exp = EXPEDITION_CARDS.map((c) => ({ ...c }));
+  const preparing = EXIT_PREPARING.map((c) => ({ ...c, stations: c.stations.map((s) => ({ ...s })) }));
   return {
     index: () => PREVIEW_INDEX,
     board(ref) {
-      if (ref === "saida") return boardFor("saida", exp, true, "Saída");
+      if (ref === "saida") return boardFor("saida", exp, true, "Saída", preparing);
       return boardFor(ref, prep, false, "Bancada");
     },
     /** Aplica um POST de escrita; devolve true se reconheceu a rota. */
@@ -241,6 +311,25 @@ export function createPreviewState() {
         const i = prep.findIndex((t) => t.pk === pk);
         if (i >= 0 && m[2] === "start") prep[i] = { ...prep[i], status: "in_progress", status_label: "Em preparo" };
         if (i >= 0 && m[2] === "done") prep.splice(i, 1);
+        return true;
+      }
+      m = url.match(/\/kds\/expedition\/(\d+)\/printed-stations\/([\w-]+)\/done\/?/);
+      if (m) {
+        const card = preparing.find((c) => c.pk === Number(m[1]));
+        const station = card?.stations.find((s) => s.station_ref === m[2]);
+        if (station) Object.assign(station, { state: "done", state_label: "pronto", can_mark_ready: false });
+        if (card && card.stations.every((s) => s.state === "done")) {
+          preparing.splice(preparing.indexOf(card), 1);
+          exp.push({
+            ...EXPEDITION_CARDS[0],
+            pk: card.pk,
+            order_ref: card.order_ref,
+            customer_name: card.customer_name,
+            fulfillment_icon: card.fulfillment_icon,
+            fulfillment_label: card.fulfillment_label,
+            is_delivery: card.is_delivery,
+          });
+        }
         return true;
       }
       m = url.match(/\/kds\/expedition\/(\d+)\/action\/?/);

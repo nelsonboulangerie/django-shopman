@@ -5,6 +5,7 @@
 // the django proxy (CSRF handled there) and refresh. Status color is functional;
 // chrome neutral.
 import type {
+  KDSExitPreparingCardProjection,
   KDSExpeditionCardProjection,
   KDSTicketProjection,
 } from "~/types/kds";
@@ -36,9 +37,19 @@ const {
   finalize,
   undoFinish,
   expedite,
+  markStationReady,
+  busyStations,
   recall,
   acknowledge,
 } = useKdsBoard(stationRef.value, serviceDate);
+
+/** As estações deste pedido com o "Pronto" em voo (chave `pedido:estação`). */
+function busyFor(orderPk: number): Set<string> {
+  const prefix = `${orderPk}:`;
+  return new Set(
+    [...busyStations.value].filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length)),
+  );
+}
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {
@@ -163,6 +174,22 @@ const filteredCards = computed(() => {
   if (!q || !view.value) return view.value?.cards ?? [];
   return view.value.cards.filter((c) => matchesQuery(c, q));
 });
+// Saída: a coluna "Em preparo" filtra pelo mesmo critério (código, cliente,
+// estação).
+function matchesPreparing(card: KDSExitPreparingCardProjection, q: string): boolean {
+  return [card.order_ref, card.customer_name, ...card.stations.map((s) => s.station_name)]
+    .join(" ")
+    .toLowerCase()
+    .includes(q);
+}
+const filteredPreparing = computed(() => {
+  const q = query.value.trim().toLowerCase();
+  const all = view.value?.preparing ?? [];
+  return q ? all.filter((c) => matchesPreparing(c, q)) : all;
+});
+const exitEmpty = computed(() =>
+  Boolean(view.value?.isExpedition && !view.value.cards.length && !view.value.preparing.length),
+);
 function cycleDensity() {
   const i = DENSITIES.findIndex((d) => d.key === density.value);
   density.value = DENSITIES[(i + 1) % DENSITIES.length]!.key;
@@ -260,7 +287,17 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
 
       <!-- contadores: neutros e padronizados (cor reservada à urgência dos cards) -->
       <div
-        v-if="view"
+        v-if="view && view.isExpedition"
+        class="flex items-baseline gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-sm"
+      >
+        <span class="font-bold tabular-nums">{{ view.cards.length }}</span>
+        <span class="text-xs text-muted-foreground">prontos para sair</span>
+        <span class="text-muted-foreground/40">·</span>
+        <span class="font-bold tabular-nums">{{ view.preparing.length }}</span>
+        <span class="text-xs text-muted-foreground">em preparo</span>
+      </div>
+      <div
+        v-else-if="view"
         class="flex items-baseline gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-sm"
       >
         <span class="font-bold tabular-nums">{{ view.total }}</span>
@@ -458,9 +495,72 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           </article>
         </TransitionGroup>
 
+        <!-- Saída: duas colunas. À esquerda o que ainda espera alguma estação
+             (um chip por estação; a estação sem tela ganha "Pronto" aqui); à
+             direita o que está pronto para sair. Quando a última estação
+             conclui, o card muda de coluna sozinho (SSE) e toca o som. -->
+        <div
+          v-if="view.isExpedition && !exitEmpty"
+          class="grid gap-4 lg:grid-cols-2"
+          data-testid="exit-columns"
+        >
+          <section aria-labelledby="exit-preparing-title" class="min-w-0">
+            <h2
+              id="exit-preparing-title"
+              class="mb-2.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground"
+            >
+              <Icon name="lucide:flame" class="size-4" />
+              Em preparo
+              <span class="tabular-nums">· {{ filteredPreparing.length }}</span>
+            </h2>
+            <p
+              v-if="!filteredPreparing.length"
+              class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
+            >
+              {{ query.trim() ? `Nenhum pedido em preparo para “${query.trim()}”.` : "Nenhum pedido esperando estação." }}
+            </p>
+            <TransitionGroup v-else tag="div" name="kds-card" class="grid gap-3" :style="gridStyle">
+              <div v-for="card in filteredPreparing" :key="`p-${card.pk}`" class="flex">
+                <KdsExitPreparingCard
+                  :card="card"
+                  :density="density"
+                  :busy-stations="busyFor(card.pk)"
+                  @ready="(stationRef) => !readOnly && markStationReady(card.pk, stationRef)"
+                />
+              </div>
+            </TransitionGroup>
+          </section>
+          <section aria-labelledby="exit-ready-title" class="min-w-0">
+            <h2
+              id="exit-ready-title"
+              class="mb-2.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground"
+            >
+              <Icon name="lucide:package-check" class="size-4" />
+              Prontos para sair
+              <span class="tabular-nums">· {{ filteredCards.length }}</span>
+            </h2>
+            <p
+              v-if="!filteredCards.length"
+              class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
+            >
+              {{ query.trim() ? `Nenhum pedido pronto para “${query.trim()}”.` : "Nenhum pedido pronto agora." }}
+            </p>
+            <TransitionGroup v-else tag="div" name="kds-card" class="grid gap-3" :style="gridStyle">
+              <div v-for="card in filteredCards" :key="`r-${card.pk}`" class="flex">
+                <KdsExpeditionCard
+                  :card="asExpedition(card)"
+                  :density="density"
+                  :service-date="view.serviceDate"
+                  @action="(action) => !readOnly && expedite(card.pk, action)"
+                />
+              </div>
+            </TransitionGroup>
+          </section>
+        </div>
+
         <!-- empty — estação zerada: estado calmo/acolhedor (omotenashi) -->
         <div
-          v-if="!view.cards.length"
+          v-else-if="view.isExpedition ? exitEmpty : !view.cards.length"
           class="grid place-items-center gap-3 rounded-md border border-dashed py-20 text-center"
         >
           <div
@@ -491,7 +591,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
 
         <!-- busca sem resultado -->
         <div
-          v-else-if="!filteredCards.length"
+          v-else-if="!view.isExpedition && !filteredCards.length"
           class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center"
         >
           <Icon name="lucide:search-x" class="size-10 text-muted-foreground" />
@@ -510,9 +610,9 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <!-- grade uniforme, auto-ordenada por urgência. O 1º card de preparo é o
              "próximo" — pintado ton sur ton (sem posição/tamanho especial). A ordem
              é indicada aqui na seção, não dentro do card. -->
-        <template v-else>
+        <template v-else-if="!view.isExpedition">
           <p
-            v-if="!view.isExpedition && !query"
+            v-if="!query"
             class="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
           >
             <Icon
@@ -534,18 +634,10 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
             :style="gridStyle"
           >
             <div v-for="card in filteredCards" :key="card.pk" class="flex">
-              <KdsExpeditionCard
-                v-if="view.isExpedition"
-                :card="asExpedition(card)"
-                :density="density"
-                :service-date="view.serviceDate"
-                @action="(action) => !readOnly && expedite(card.pk, action)"
-              />
               <KdsTicketCard
-                v-else
                 :ticket="asTicket(card)"
                 :density="density"
-                :next="!query && !view.isExpedition && view.serviceDate === view.today && card.pk === view.nextPk"
+                :next="!query && view.serviceDate === view.today && card.pk === view.nextPk"
                 :blocked="view.blockedRefs.has(card.order_ref)"
                 :addition="view.additionPks.has(card.pk)"
                 :finishing="view.finishingPks.has(card.pk)"

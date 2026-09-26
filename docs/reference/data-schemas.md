@@ -1604,7 +1604,7 @@ via 1.
 |-------|------|-----------|
 | `purpose` | `kitchen_ticket` | Finalidade do papel. |
 | `kds_ticket` | `int` | PK do `KDSTicket` impresso. |
-| `kds_instance` | `str` | `ref` do posto. |
+| `kds_instance` | `str` | `ref` da estação. |
 | `session_key` | `str` | A venda do ticket (comanda ou pedido). |
 | `moment` | `fired\|cancelled` | `fired` = o papel do pedido; `cancelled` = o papel CANCELADO dos itens retirados. |
 | `items` | `list[dict]` | Os itens do ticket no instante do papel (`{sku, name, qty, notes, line_id}`). |
@@ -1616,7 +1616,7 @@ via 1.
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `on_print` | `str` | ⚠️ **Reservada, sem comportamento.** O que o posto sem tela faz com o ticket quando a Via Cozinha sai. Único valor hoje: `keep` (o ticket segue como está). Dar baixa sozinho ao imprimir ou deixar a Expedição concluir é decisão aberta do dono (26/09/2026). Lida por `kitchen_ticket_print.on_print_behavior`. |
+| `on_print` | `str` | O que a estação sem tela faz com o ticket quando a Via Cozinha sai. Único valor: `keep` (o ticket segue como está). **Decidido pelo dono (26/09/2026): imprimir não dá baixa** — quem conclui é a Saída ("Pronto" no chip da estação), o PDV (card do ticket) ou o leitor de código da bancada (QR do papel). Lida por `kitchen_ticket_print.on_print_behavior`. |
 
 As demais chaves citadas no `help_text` do campo (`text_size`, `dark_mode`,
 `refresh_interval`) não têm leitor no código hoje.

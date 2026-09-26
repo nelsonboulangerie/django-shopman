@@ -37,8 +37,9 @@ class KDSInstanceAdmin(ModelAdmin):
         ("Impressora do posto", {
             "fields": ("print_terminal", "print_destination_display"),
             "description": (
-                "Para o posto que não tem tela: cada pedido que cai aqui sai impresso na impressora "
-                "escolhida (Via Cozinha). O status do pedido no KDS não muda ao imprimir."
+                "Para a estação que não tem tela: cada pedido que cai aqui sai impresso na impressora "
+                "escolhida (Via Cozinha). Imprimir não conclui o pedido: quem dá o pronto é a Saída, "
+                "o PDV ou o leitor de código na bancada, que lê o QR do papel."
             ),
         }),
         ("Configuração", {"fields": ("target_time_minutes", "sound_enabled", "is_active", "config")}),
