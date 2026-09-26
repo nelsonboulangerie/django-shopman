@@ -69,4 +69,49 @@ describe("platform configuration command", () => {
     ).rejects.toBe(outage);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it("seals the notification event into both confirmation attempts", async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce({
+        data: {
+          code: "confirmation_required",
+          confirmation: {
+            token: "server-token",
+            step_up: "totp",
+            typed_phrase: "",
+          },
+        },
+      })
+      .mockResolvedValueOnce({ ok: true, step_up: {} })
+      .mockResolvedValueOnce({
+        ok: true,
+        replayed: false,
+        receipt: { ref: "receipt-2", resulting_version: 2 },
+      });
+
+    await configureFlowCommand(fetcher as unknown as typeof $fetch, {
+      flowNs: "content_rescheduled",
+      baseVersion: 1,
+      event: "order_rescheduled",
+      totp: "123456",
+      idempotencyKey: "event-command-key",
+    });
+
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        event: "order_rescheduled",
+        flow_ns: "content_rescheduled",
+        base_version: 1,
+      },
+    });
+    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({
+      body: {
+        event: "order_rescheduled",
+        flow_ns: "content_rescheduled",
+        base_version: 1,
+        confirmation_token: "server-token",
+      },
+    });
+  });
 });

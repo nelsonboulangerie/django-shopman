@@ -482,8 +482,17 @@ def test_falha_ao_enfileirar_nao_derruba_a_venda(counter):
 # 6. O ManyChat recebe os campos que o template aprovado lê
 # ══════════════════════════════════════════════════════════════════════
 
-#: Os nomes EXATOS que o Pablo cria no painel do ManyChat.
-MANYCHAT_FIELDS = {"order_ref", "customer_name_greeting", "order_total_display", "checkout_url", "payment_deadline"}
+#: Contrato aprovado + aliases dos flows criados antes da padronização.
+MANYCHAT_FIELDS = {
+    "order_ref",
+    "order_ref_short",
+    "customer_name",
+    "customer_name_greeting",
+    "total",
+    "order_total_display",
+    "checkout_url",
+    "payment_deadline",
+}
 
 
 @pytest.fixture
@@ -524,7 +533,9 @@ def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
     assert MANYCHAT_FIELDS <= set(fields), MANYCHAT_FIELDS - set(fields)
     assert fields["order_ref"] == "PDV-260925-A47"
     assert fields["order_ref_short"] == "A47"
+    assert fields["customer_name"] == "Joyce"
     assert fields["customer_name_greeting"] == ", Joyce"
+    assert fields["total"] == "R$ 38,00"
     assert fields["order_total_display"] == "R$ 38,00"
     assert fields["checkout_url"] == CHECKOUT_URL
     assert fields["payment_deadline"].startswith(("hoje às", "amanhã às"))
@@ -533,12 +544,12 @@ def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
-def test_sem_prazo_o_campo_nao_e_gravado(manychat_calls):
-    """Campo vazio não sobrescreve: o template do painel decide o que mostrar sem prazo."""
+def test_sem_prazo_o_campo_e_limpo(manychat_calls):
+    """Campo vazio limpa qualquer prazo persistente do envio anterior."""
     context = _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     notification_manychat.send("+5543999990001", "payment_link_sent", context)
 
     fields = _fields(manychat_calls)
-    assert "payment_deadline" not in fields
+    assert fields["payment_deadline"] == ""
     assert fields["checkout_url"] == CHECKOUT_URL

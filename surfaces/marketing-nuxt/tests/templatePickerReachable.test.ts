@@ -41,6 +41,8 @@ describe("a configuração de plataforma tem casa", () => {
     const composable = read("../app/composables/useWhatsAppTemplate.ts");
     expect(composable).toContain('"Idempotency-Key"');
     expect(composable).toContain("target_ref: targetRef");
+    expect(composable).toContain('event: options.event || "announcement_published"');
+    expect(read("../app/pages/platforms.vue")).toContain("event: testEvent.value");
     expect(composable).not.toContain("body: { recipient");
   });
 

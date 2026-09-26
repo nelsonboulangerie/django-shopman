@@ -761,7 +761,7 @@ class WhatsAppTestSendView(_CampaignBase):
                 headers={"Retry-After": "60"},
             )
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - {"target_ref", "sku", "body"})
+        unexpected = sorted(set(payload) - {"target_ref", "event", "sku", "body"})
         if unexpected:
             return Response(
                 {
@@ -776,11 +776,21 @@ class WhatsAppTestSendView(_CampaignBase):
                 str(payload.get("target_ref") or ""),
                 actor=request.user,
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                event=str(payload.get("event") or "announcement_published"),
                 sku=str(payload.get("sku") or ""),
                 body=str(payload.get("body") or ""),
             )
         except campaign_service.MarketingTestConflict as exc:
             return Response({"detail": str(exc), "code": "idempotency_conflict"}, status=409)
+        except campaign_service.MarketingTestBindingChanged as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "code": "template_binding_changed",
+                    "receipt_ref": exc.receipt_ref,
+                },
+                status=409,
+            )
         except campaign_service.MarketingTestThrottled as exc:
             return Response(
                 {"detail": str(exc), "code": "test_send_throttled"},
@@ -820,6 +830,7 @@ class WhatsAppTestSendView(_CampaignBase):
                 "ok": outcome.accepted,
                 "backend": outcome.backend,
                 "target_ref": outcome.target_ref,
+                "event": outcome.event,
                 "fields": outcome.fields,
                 "receipt_ref": outcome.receipt_ref,
                 "state": outcome.state,
@@ -1404,10 +1415,18 @@ class WhatsAppTemplateView(_CampaignBase):
     def get(self, request):
         from shopman.shop.models import NotificationTemplate
         from shopman.shop.services import delivery_readiness, manychat_flows
+        from shopman.shop.services.marketing_platform_configuration import (
+            TRANSACTIONAL_WHATSAPP_EVENTS,
+            WHATSAPP_EVENT_LABELS,
+        )
 
         template = NotificationTemplate.objects.filter(event=self.EVENT).first()
         current = (template.whatsapp_flow_ns or "") if template else ""
         catalog = manychat_flows.flow_catalog(force=request.query_params.get("refresh") == "1")
+        names = dict(catalog.flows)
+        rows = NotificationTemplate.objects.filter(
+            event__in=TRANSACTIONAL_WHATSAPP_EVENTS
+        ).in_bulk(field_name="event")
         readiness = delivery_readiness.readiness_for(("whatsapp",))[0]
         can_send_test = request.user.has_perm("shop.send_marketing_test")
 
@@ -1431,6 +1450,32 @@ class WhatsAppTemplateView(_CampaignBase):
                 "catalog_as_of": catalog.facts_as_of,
                 "catalog_fresh_until": catalog.fresh_until,
                 "catalog_hash": catalog.catalog_hash,
+                "notification_templates": [
+                    {
+                        "event": event,
+                        "label": WHATSAPP_EVENT_LABELS[event],
+                        "current": (
+                            (rows[event].whatsapp_flow_ns or "")
+                            if event in rows
+                            else ""
+                        ),
+                        "current_name": names.get(
+                            (rows[event].whatsapp_flow_ns or "")
+                            if event in rows
+                            else "",
+                            "",
+                        ),
+                        "current_active": bool(
+                            event in rows and rows[event].is_active
+                        ),
+                        "version": rows[event].version if event in rows else 1,
+                        "available": event in rows,
+                        "configured": bool(
+                            event in rows and rows[event].whatsapp_flow_ns
+                        ),
+                    }
+                    for event in TRANSACTIONAL_WHATSAPP_EVENTS
+                ],
                 "readiness_state": readiness.state,
                 "readiness_reason_code": readiness.reason_code,
                 "can_send_test": can_send_test,
@@ -1445,7 +1490,10 @@ class WhatsAppTemplateView(_CampaignBase):
         )
 
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - ({"flow_ns", "base_version"} | _AUTHORIZATION_FIELDS))
+        unexpected = sorted(
+            set(payload)
+            - ({"event", "flow_ns", "base_version"} | _AUTHORIZATION_FIELDS)
+        )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -1458,6 +1506,7 @@ class WhatsAppTemplateView(_CampaignBase):
                 base_version=base_version,
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                event=str(payload.get("event") or self.EVENT),
                 authorize=_command_authorizer(
                     request,
                     capability="shop.configure_marketing_platforms",

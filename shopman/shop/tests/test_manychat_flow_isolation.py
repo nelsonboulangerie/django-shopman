@@ -33,6 +33,9 @@ from shopman.shop.services.marketing_contracts import (
     ProviderOutcome,
     ProviderOutcomeKind,
 )
+from shopman.shop.services.marketing_platform_configuration import (
+    TRANSACTIONAL_WHATSAPP_EVENTS,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -275,13 +278,58 @@ def test_a_personal_link_without_public_twin_is_cleared_not_kept_from_before(pro
 
 
 @override_settings(DEBUG=False)
-def test_order_flows_keep_writing_only_what_they_have(provider, flows):
-    assert mc.send("+5543999990001", "order_accepted", {"order_ref": "PED-1"}) is True
+def test_order_flows_clear_optional_values_from_the_previous_order(provider, flows):
+    first = {
+        "order_ref": "PED-20260926-A47",
+        "order_total_display": "R$ 42,00",
+    }
+    assert mc.send("+5543999990001", "order_accepted", first) is True
+    assert _last_fields(provider)["total"] == "R$ 42,00"
+
+    # Simula o fim da janela de assentamento mantendo o mesmo perfil persistente.
+    cache.clear()
+    assert mc.send(
+        "+5543999990001",
+        "order_accepted",
+        {"order_ref": "PED-20260926-B52"},
+    ) is True
 
     fields = _last_fields(provider)
-    assert fields["order_ref"] == "PED-1"
-    assert "price" not in fields
-    assert all(value != "" for value in fields.values())
+    assert set(fields) == set(safety.flow_fields_for_event("order_accepted") or ())
+    assert fields["order_ref_short"] == "B52"
+    assert fields["order_ref"] == "PED-20260926-B52"
+    assert fields["total"] == ""
+    assert fields["order_total_display"] == ""
+
+
+@pytest.mark.parametrize("event", TRANSACTIONAL_WHATSAPP_EVENTS)
+@override_settings(DEBUG=False)
+def test_every_exposed_flow_writes_its_complete_production_contract(
+    event, provider, open_mode
+):
+    NotificationTemplate.objects.update_or_create(
+        event=event,
+        defaults={
+            "subject": "x",
+            "body": "y",
+            "whatsapp_flow_ns": f"content_{event}",
+            "is_active": True,
+        },
+    )
+    cache.clear()
+
+    assert mc.send(
+        "+5543999990001",
+        event,
+        {
+            "customer_name": "Cliente teste",
+            "order_ref": "PED-20260926-A47",
+            "product_name": "Produto teste",
+            "sku": "TESTE-SKU",
+        },
+    ) is True
+
+    assert set(_last_fields(provider)) == set(safety.flow_fields_for_event(event) or ())
 
 
 def test_the_durable_adapter_fills_every_sealed_campaign_variable_the_flow_declares():

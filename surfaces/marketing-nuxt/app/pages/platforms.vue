@@ -23,13 +23,18 @@ const waTemplate = useWhatsAppTemplate();
 const opened = ref<Platform | null>(null);
 const savingTemplate = ref(false);
 const pendingFlow = ref<string | null>(null);
+const pendingEvent = ref("");
+const selectedNotificationEvent = ref("");
 const platformCommandKey = ref("");
 const totp = ref("");
 const testTargetRef = ref("");
 const testSku = ref("");
+const testEvent = ref("announcement_published");
 
 onMounted(async () => {
   await waTemplate.load();
+  selectedNotificationEvent.value =
+    waTemplate.notificationTemplates.value[0]?.event || "";
   if (waTemplate.testTargets.value.length === 1) {
     testTargetRef.value = waTemplate.testTargets.value[0]?.ref || "";
   }
@@ -39,6 +44,22 @@ function onChooseTemplate(flowNs: string) {
   if (!waTemplate.commandAvailable.value || flowNs === waTemplate.current.value)
     return;
   pendingFlow.value = flowNs;
+  pendingEvent.value = "";
+  platformCommandKey.value = crypto.randomUUID();
+  totp.value = "";
+}
+
+function onChooseNotificationTemplate(flowNs: string) {
+  const binding = selectedNotification.value;
+  if (
+    !binding ||
+    !binding.available ||
+    !waTemplate.commandAvailable.value ||
+    flowNs === binding.current
+  )
+    return;
+  pendingFlow.value = flowNs;
+  pendingEvent.value = binding.event;
   platformCommandKey.value = crypto.randomUUID();
   totp.value = "";
 }
@@ -50,9 +71,12 @@ async function onConfirmTemplate() {
     pendingFlow.value,
     totp.value,
     platformCommandKey.value,
+    pendingEvent.value,
+    pendingBindingVersion.value,
   );
   if (changed) {
     pendingFlow.value = null;
+    pendingEvent.value = "";
     platformCommandKey.value = "";
     totp.value = "";
     await loadPlatforms();
@@ -80,6 +104,7 @@ async function onVerifyCatalog() {
 async function onSendTest() {
   if (!testTargetRef.value) return;
   await waTemplate.sendTest(testTargetRef.value, {
+    event: testEvent.value,
     sku: testSku.value.trim(),
   });
 }
@@ -182,6 +207,74 @@ const templateOptions = computed(() => [
     keywords: option.ns,
   })),
 ]);
+
+const notificationEventOptions = computed(() =>
+  waTemplate.notificationTemplates.value.map((binding) => ({
+    value: binding.event,
+    label: binding.label,
+  })),
+);
+
+const testEventOptions = computed(() => [
+  { value: "announcement_published", label: "Anúncio de novidade" },
+  ...notificationEventOptions.value,
+]);
+
+const selectedTestBinding = computed(() =>
+  testEvent.value === "announcement_published"
+    ? null
+    : waTemplate.notificationTemplates.value.find(
+        (binding) => binding.event === testEvent.value,
+      ),
+);
+
+const testEventReady = computed(
+  () =>
+    testEvent.value === "announcement_published" ||
+    Boolean(
+      selectedTestBinding.value?.available &&
+        selectedTestBinding.value.current_active &&
+        selectedTestBinding.value.configured,
+    ),
+);
+
+const selectedNotification = computed(() =>
+  waTemplate.notificationTemplates.value.find(
+    (binding) => binding.event === selectedNotificationEvent.value,
+  ),
+);
+
+const pendingBinding = computed(() =>
+  pendingEvent.value
+    ? waTemplate.notificationTemplates.value.find(
+        (binding) => binding.event === pendingEvent.value,
+      )
+    : null,
+);
+
+const pendingBindingVersion = computed(
+  () => pendingBinding.value?.version ?? waTemplate.version.value,
+);
+
+const pendingCurrentName = computed(() => {
+  const binding = pendingBinding.value;
+  if (binding) {
+    if (binding.current_name) return binding.current_name;
+    return binding.current
+      ? "Fluxo configurado, mas não ativo na lista atual"
+      : "Sem fluxo (janela de 24 horas)";
+  }
+  return (
+    waTemplate.currentName.value ||
+    (waTemplate.current.value
+      ? "Fluxo configurado, mas não ativo na lista atual"
+      : "Sem fluxo (janela de 24 horas)")
+  );
+});
+
+const pendingMessageLabel = computed(
+  () => pendingBinding.value?.label ?? "Anúncio de novidade",
+);
 
 const pendingFlowName = computed(() => {
   if (pendingFlow.value === "") return "Sem fluxo (janela de 24 horas)";
@@ -441,6 +534,59 @@ useHead({ title: "Plataformas" });
               </p>
             </section>
 
+            <section class="mt-5 border-t border-border pt-4">
+              <h2 class="text-sm font-semibold">Avisos automáticos</h2>
+              <p class="mt-0.5 text-xs text-muted-foreground">
+                Ligue cada aviso ao modelo aprovado correspondente. A escolha é
+                versionada, exige confirmação e não envia mensagem agora.
+              </p>
+
+              <div class="mt-3 space-y-3">
+                <UiSelect
+                  v-model="selectedNotificationEvent"
+                  :options="notificationEventOptions"
+                  label="Mensagem"
+                  placeholder="Escolha o aviso"
+                  search-placeholder="Buscar aviso"
+                  empty-text="Nenhum aviso encontrado"
+                />
+
+                <div
+                  v-if="selectedNotification && !selectedNotification.available"
+                  class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm"
+                  role="alert"
+                >
+                  <p class="font-semibold">Aviso ausente neste ambiente</p>
+                  <p class="mt-1 text-muted-foreground">
+                    Aplique as migrações antes de configurar este modelo. Nada
+                    será criado com texto genérico.
+                  </p>
+                </div>
+
+                <UiSelect
+                  v-else-if="selectedNotification"
+                  :model-value="selectedNotification.current"
+                  :options="templateOptions"
+                  label="Modelo aprovado para este aviso"
+                  placeholder="Sem modelo"
+                  search-placeholder="Buscar modelo aprovado"
+                  empty-text="Nenhum modelo com esse nome"
+                  :disabled="
+                    savingTemplate || !waTemplate.commandAvailable.value
+                  "
+                  @update:model-value="
+                    onChooseNotificationTemplate(String($event))
+                  "
+                />
+              </div>
+
+              <p class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                Faça um teste controlado de cada modelo no ManyChat antes de
+                ativá-lo. A lista confirma que o modelo existe; não consegue
+                provar que os campos e o botão correspondem a este aviso.
+              </p>
+            </section>
+
             <!-- A ref verificada evita redigitar/errar número e não leva PII ao browser. -->
             <section class="mt-5 border-t border-border pt-4">
               <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
@@ -476,6 +622,22 @@ useHead({ title: "Plataformas" });
               </div>
 
               <div v-else class="mt-3 space-y-2">
+                <UiSelect
+                  v-model="testEvent"
+                  :options="testEventOptions"
+                  label="Mensagem a testar"
+                  placeholder="Escolha a mensagem"
+                  search-placeholder="Buscar mensagem"
+                  empty-text="Nenhuma mensagem encontrada"
+                />
+                <p
+                  v-if="!testEventReady"
+                  class="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground"
+                  role="alert"
+                >
+                  Este aviso precisa estar ativo e ligado a um modelo aprovado
+                  antes do teste.
+                </p>
                 <div>
                   <label
                     for="test-target"
@@ -515,7 +677,11 @@ useHead({ title: "Plataformas" });
                 </div>
                 <UiButton
                   type="button"
-                  :disabled="!testTargetRef || waTemplate.testing.value"
+                  :disabled="
+                    !testTargetRef ||
+                    !testEventReady ||
+                    waTemplate.testing.value
+                  "
                   class="w-full"
                   @click="onSendTest"
                 >
@@ -569,6 +735,7 @@ useHead({ title: "Plataformas" });
         (value) => {
           if (!value && !savingTemplate) {
             pendingFlow = null;
+            pendingEvent = '';
             platformCommandKey = '';
             totp = '';
           }
@@ -587,7 +754,7 @@ useHead({ title: "Plataformas" });
             Confirmar configuração do WhatsApp
           </UiDialogTitle>
           <UiDialogDescription class="sr-only">
-            Esta escolha muda o alcance dos próximos anúncios e ficará
+            Esta escolha muda o alcance das próximas mensagens e ficará
             registrada na auditoria.
           </UiDialogDescription>
         </UiDialogHeader>
@@ -603,7 +770,7 @@ useHead({ title: "Plataformas" });
           <div>
             <p class="font-semibold">Nenhuma mensagem será enviada agora</p>
             <p class="mt-0.5 text-muted-foreground">
-              Só a configuração dos próximos anúncios será alterada.
+              Só a configuração das próximas mensagens será alterada.
             </p>
           </div>
         </div>
@@ -611,15 +778,14 @@ useHead({ title: "Plataformas" });
         <dl
           class="grid grid-cols-2 overflow-hidden rounded-md border border-border bg-muted/40 text-center text-sm"
         >
+          <div class="col-span-2 border-b border-border p-3">
+            <dt class="text-xs text-muted-foreground">Mensagem</dt>
+            <dd class="mt-1 font-semibold">{{ pendingMessageLabel }}</dd>
+          </div>
           <div class="border-r border-border p-3">
             <dt class="text-xs text-muted-foreground">Configuração atual</dt>
             <dd class="mt-1 font-medium">
-              {{
-                waTemplate.currentName.value ||
-                (waTemplate.current.value
-                  ? "Fluxo configurado, mas não ativo na lista atual"
-                  : "Sem fluxo (janela de 24 horas)")
-              }}
+              {{ pendingCurrentName }}
             </dd>
           </div>
           <div class="p-3">
@@ -629,7 +795,7 @@ useHead({ title: "Plataformas" });
           <div class="col-span-2 border-t border-border p-3">
             <dt class="text-xs text-muted-foreground">Versão revisada</dt>
             <dd class="mt-1 font-semibold tabular-nums">
-              {{ waTemplate.version.value }}
+              {{ pendingBindingVersion }}
             </dd>
           </div>
         </dl>
@@ -648,7 +814,7 @@ useHead({ title: "Plataformas" });
             variant="outline"
             class="w-full"
             :disabled="savingTemplate"
-            @click="pendingFlow = null"
+            @click="(pendingFlow = null), (pendingEvent = '')"
           >
             Voltar sem alterar
           </UiButton>

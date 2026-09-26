@@ -17,6 +17,7 @@ from shopman.shop.models import (
 from shopman.shop.services import manychat_flows
 from shopman.shop.services.marketing_commands import MarketingCommandConflict
 from shopman.shop.services.marketing_platform_configuration import (
+    TRANSACTIONAL_WHATSAPP_EVENTS,
     MarketingPlatformUnavailable,
     configure_whatsapp_flow,
     verified_whatsapp_flow_binding,
@@ -31,6 +32,17 @@ pytestmark = pytest.mark.django_db
 
 FLOW_A = "content20260909090000_000001"
 FLOW_B = "content20260909090000_000002"
+
+
+@pytest.mark.parametrize("event", TRANSACTIONAL_WHATSAPP_EVENTS)
+def test_every_exposed_event_has_a_complete_synthetic_test_contract(event):
+    from shopman.shop.services import campaign
+
+    _context, fields, declared = campaign._transactional_test_contract(event, sku="")
+
+    assert declared
+    assert set(fields) == set(declared)
+    assert all(fields.values()), f"{event} has empty synthetic fields: {fields}"
 
 
 def _actor():
@@ -176,7 +188,9 @@ def test_stale_catalog_cannot_authorize_even_a_known_old_ref(monkeypatch):
     with pytest.raises(MarketingPlatformUnavailable):
         _run(actor)
 
-    assert NotificationTemplate.objects.count() == 0
+    assert not NotificationTemplate.objects.filter(
+        event="announcement_published"
+    ).exists()
     assert MarketingCommandReceipt.objects.count() == 0
 
 

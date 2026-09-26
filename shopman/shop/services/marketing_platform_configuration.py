@@ -32,6 +32,38 @@ from shopman.shop.services.marketing_security import (
 
 EVENT = "announcement_published"
 RESOURCE_REF = "platform:whatsapp"
+WHATSAPP_EVENT_LABELS = {
+    "announcement_published": "Anúncio de novidade",
+    "order_received": "Pedido recebido",
+    "order_received_outside_hours": "Pedido recebido fora do horário",
+    "order_accepted": "Pedido confirmado",
+    "order_rejected": "Pedido não confirmado",
+    "order_preparing": "Pedido em preparo",
+    "order_ready_pickup": "Pedido pronto para retirada",
+    "order_ready_delivery": "Pedido pronto para entrega",
+    "order_dispatched": "Pedido saiu para entrega",
+    "order_delivered": "Pedido entregue",
+    "order_cancelled": "Pedido cancelado",
+    "preorder_reminder": "Lembrete da encomenda",
+    "order_rescheduled": "Nova data da encomenda",
+    "fiscal_note_ready": "Nota fiscal disponível",
+    "payment_requested": "Pagamento solicitado",
+    "payment_link_sent": "Link de pagamento enviado",
+    "payment_confirmed": "Pagamento confirmado",
+    "payment_reminder": "Lembrete de pagamento",
+    "payment_expired": "Prazo de pagamento encerrado",
+    "payment_failed": "Falha ao gerar pagamento",
+    "payment_refunded": "Reembolso processado",
+    "waitlist_available": "Vaga da fila disponível",
+    "waitlist_released": "Vaga da fila liberada",
+    "loyalty_earned": "Pontos de fidelidade",
+    "stock_arrived": "Produto disponível",
+    "purchase_request": "Pedido de compra ao fornecedor",
+    "production_ready": "Produto saiu do forno",
+}
+TRANSACTIONAL_WHATSAPP_EVENTS = tuple(
+    event for event in WHATSAPP_EVENT_LABELS if event != EVENT
+)
 _RETENTION = timedelta(days=365 * 5)
 _FLOW_REF_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
@@ -166,9 +198,17 @@ def configure_whatsapp_flow(
     idempotency_key: str,
     authorize: PlatformAuthorizer,
     request_id: str = "",
+    event: str = EVENT,
 ) -> PlatformCommandExecution:
     """Apply one exact flow choice; provider uncertainty always fails closed."""
 
+    safe_event = str(event or "").strip()
+    if safe_event not in WHATSAPP_EVENT_LABELS:
+        raise MarketingCommandRejected(
+            code="unsupported_notification_event",
+            detail="Este aviso não aceita configuração de template do WhatsApp.",
+            field_errors={"event": ("Escolha um aviso disponível na lista.",)},
+        )
     safe_flow = str(flow_ns or "").strip()
     if safe_flow and not _FLOW_REF_RE.fullmatch(safe_flow):
         raise MarketingCommandRejected(
@@ -188,10 +228,19 @@ def configure_whatsapp_flow(
             detail="O comando exige uma pessoa autenticada.",
         )
 
+    resource_ref = (
+        RESOURCE_REF
+        if safe_event == EVENT
+        else f"{RESOURCE_REF}:{safe_event}"
+    )
+    # Preserve the original announcement fingerprint so an in-flight retry
+    # created before transactional bindings existed still replays exactly.
     payload = {"flow_ref": safe_flow}
+    if safe_event != EVENT:
+        payload["event"] = safe_event
     key_hash, payload_hash = command_fingerprints(
         kind=MarketingCommandReceipt.Kind.CONFIGURE_PLATFORM,
-        resource_ref=RESOURCE_REF,
+        resource_ref=resource_ref,
         idempotency_key=idempotency_key,
         base_version=base_version,
         payload=payload,
@@ -247,7 +296,7 @@ def configure_whatsapp_flow(
             safety_state(for_update=True)
             template = (
                 NotificationTemplate.objects.select_for_update()
-                .filter(event=EVENT)
+                .filter(event=safe_event)
                 .first()
             )
             current_version = template.version if template is not None else 1
@@ -259,7 +308,7 @@ def configure_whatsapp_flow(
                 "idempotency_key_hash": key_hash,
                 "payload_hash": payload_hash,
                 "base_version": base_version,
-                "resource_ref": RESOURCE_REF,
+                "resource_ref": resource_ref,
                 "request_id": safe_request_id,
                 "retention_until": now + _RETENTION,
             }
@@ -300,11 +349,36 @@ def configure_whatsapp_flow(
                         current_version=current_version,
                     )
                     execution = PlatformCommandExecution(receipt=receipt, replayed=False)
+                elif template is None and safe_event != EVENT:
+                    receipt = MarketingCommandReceipt.objects.create(
+                        **common,
+                        state=MarketingCommandReceipt.State.REJECTED,
+                        resulting_version=current_version,
+                        outcome={
+                            "code": "notification_template_missing",
+                            "event": safe_event,
+                        },
+                        completed_at=now,
+                    )
+                    deferred_error = MarketingCommandRejected(
+                        code="notification_template_missing",
+                        detail=(
+                            "O aviso ainda não existe neste ambiente. Aplique as "
+                            "migrações antes de configurar o WhatsApp."
+                        ),
+                        receipt_ref=str(receipt.ref),
+                        current_version=current_version,
+                        field_errors={"event": ("Aviso ausente no banco.",)},
+                    )
+                    execution = PlatformCommandExecution(
+                        receipt=receipt,
+                        replayed=False,
+                    )
                 else:
                     receipt = MarketingCommandReceipt.objects.create(**common)
                     context = authorization_context(
                         action=ACTION_CONFIGURE_PLATFORM,
-                        resource_ref=RESOURCE_REF,
+                        resource_ref=resource_ref,
                         base_version=base_version,
                         artifact_hash=catalog.catalog_hash,
                         platforms=("whatsapp",),
@@ -316,7 +390,10 @@ def configure_whatsapp_flow(
                     )
                     authorize(context, receipt)
                     resulting_version = current_version + 1
-                    if template is None:
+                    if template is None and safe_event == EVENT:
+                        # Backward-compatible bootstrap for the one row this
+                        # command historically owned. Transactional rows are
+                        # deployment data and must never receive generic copy.
                         template = NotificationTemplate.objects.create(
                             event=EVENT,
                             subject="Novidade na padaria",
@@ -325,14 +402,13 @@ def configure_whatsapp_flow(
                             is_active=True,
                             version=resulting_version,
                         )
-                    else:
-                        template.whatsapp_flow_ns = safe_flow
-                        template.is_active = True
-                        template.version = resulting_version
-                        template.save(
-                            update_fields=["whatsapp_flow_ns", "is_active", "version"]
-                        )
-
+                    assert template is not None
+                    template.whatsapp_flow_ns = safe_flow
+                    template.is_active = True
+                    template.version = resulting_version
+                    template.save(
+                        update_fields=["whatsapp_flow_ns", "is_active", "version"]
+                    )
                     MarketingPlatformAuditEvent.objects.create(
                         event_type=(
                             MarketingPlatformAuditEvent.EventType.FLOW_CONFIGURED
@@ -357,6 +433,7 @@ def configure_whatsapp_flow(
                     receipt.resulting_version = resulting_version
                     receipt.outcome = {
                         "platform": "whatsapp",
+                        "event": safe_event,
                         "configured": bool(safe_flow),
                         "catalog_hash": catalog.catalog_hash,
                     }
@@ -369,7 +446,10 @@ def configure_whatsapp_flow(
                             "completed_at",
                         ]
                     )
-                    execution = PlatformCommandExecution(receipt=receipt, replayed=False)
+                    execution = PlatformCommandExecution(
+                        receipt=receipt,
+                        replayed=False,
+                    )
 
     if deferred_error is not None:
         raise deferred_error
