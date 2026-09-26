@@ -1,6 +1,7 @@
 <template>
   <component
     :is="elementType"
+    v-bind="forwarded"
     :class="
       buttonStyles({
         hasIcon: !!icon,
@@ -12,31 +13,36 @@
         skeuomorphic: props.skeuomorphic,
       })
     "
-    :disabled="disabled || loading"
-    v-bind="forwarded"
+    :disabled="isDisabled"
+    :aria-busy="loading || undefined"
+    :aria-disabled="isDisabled || undefined"
+    :tabindex="isDisabled && isLink ? -1 : undefined"
+    :data-acknowledged="acknowledged || undefined"
+    @click.capture="handleClick"
   >
     <slot name="iconLeft">
       <div
-        v-if="icon && iconPlacement == 'left'"
+        v-if="icon && !loading && iconPlacement == 'left'"
         class="flex shrink-0 items-center"
       >
         <Icon :name="icon" class="size-4" />
       </div>
     </slot>
     <slot name="loading">
-      <Icon v-if="loading" class="size-4 shrink-0" :name="loadingIcon" />
+      <Icon v-if="loading" class="size-4 shrink-0" :name="loadingIcon" aria-hidden="true" />
     </slot>
     <slot>
       <span v-if="text">{{ text }}</span>
     </slot>
     <slot name="iconRight">
       <div
-        v-if="icon && iconPlacement == 'right'"
+        v-if="icon && !loading && iconPlacement == 'right'"
         class="flex shrink-0 items-center"
       >
         <Icon :name="icon" class="size-4" />
       </div>
     </slot>
+    <span v-if="loading" class="sr-only">Aguarde.</span>
   </component>
 </template>
 
@@ -50,7 +56,7 @@
 
   /** Exported button styles that can be used by other components. */
   export const buttonStyles = tv({
-    base: "group focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    base: "group focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] active:translate-y-px data-[acknowledged=true]:ring-2 data-[acknowledged=true]:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs",
@@ -166,6 +172,35 @@
     return "button";
   });
 
+  const isLink = computed(() => elementType.value !== "button");
+  const isDisabled = computed(() => props.disabled || props.loading);
+  const acknowledged = ref(false);
+  let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function handleClick(event: MouseEvent) {
+    if (isDisabled.value) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    acknowledged.value = true;
+    if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+    acknowledgementTimer = setTimeout(() => {
+      acknowledged.value = false;
+      acknowledgementTimer = null;
+    }, 450);
+
+    const handlers = Array.isArray(props.onClick) ? props.onClick : [props.onClick];
+    for (const handler of handlers) {
+      if (typeof handler === "function") handler(event);
+    }
+  }
+
+  onBeforeUnmount(() => {
+    if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+  });
+
   const forwarded = useForwardProps(
     reactiveOmit(
       props,
@@ -179,6 +214,7 @@
       "loading",
       "disabled",
       "loadingIcon",
+      "onClick",
       "effect",
       "skeuomorphic"
     )

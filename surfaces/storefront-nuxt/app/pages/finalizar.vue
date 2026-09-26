@@ -1209,7 +1209,10 @@ onMounted(() => {
 onBeforeUnmount(() => { if (import.meta.client) window.removeEventListener('storage', onDraftRemoved) })
 
 async function submitCheckout () {
-  if (!checkout.value || !validate()) return
+  // O botão já fica ocupado, mas Enter/programmatic submit não dependem da UI.
+  // A idempotência do servidor é a última defesa; esta guarda evita o request
+  // concorrente antes dele sair do navegador.
+  if (submitting.value || !checkout.value || !validate()) return
   submitting.value = true
   confirmationUnknown.value = false
   serverError.value = ''

@@ -120,7 +120,10 @@ export default defineNuxtConfig({
       globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       // `documentos-legais/` é o arquivo permanente de Termos/Privacidade citado pelos pedidos:
       // abre por link, uma versão cresce a cada revisão e nenhuma precisa estar offline.
-      globIgnores: ['pwa/screenshots/**', 'documentos-legais/**'],
+      // Cada iPhone usa só o splash que casa com sua tela. Precachear as 40
+      // variantes fazia toda instalação/atualização baixar ~5 MB que nunca seriam
+      // vistos; elas continuam públicas e o <link media> escolhe a necessária.
+      globIgnores: ['pwa/screenshots/**', 'pwa/apple-splash-*.png', 'documentos-legais/**'],
       manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
       runtimeCaching: [
         {

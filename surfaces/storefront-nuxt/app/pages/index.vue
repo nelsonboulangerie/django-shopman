@@ -8,7 +8,7 @@ import {
   sitePageSeo,
   websiteJsonLd
 } from '~/presentation/seo'
-import type { HomeResponse, Action } from '~/types/shopman'
+import type { Action } from '~/types/shopman'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
@@ -19,9 +19,7 @@ const { performAction, pending: reorderPending } = useReorder()
 const { openSearch } = useSearchOverlay()
 
 const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
-const { data, pending, error, refresh } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
-  credentials: 'include'
-})
+const { data, pending, error, refresh } = await useStorefrontHome()
 await siteSeoReady
 
 watch(() => data.value, value => {
