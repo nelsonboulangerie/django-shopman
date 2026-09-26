@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Prévia navegável do composer Marketing V2." />
     <title>Marketing V2 — Prévia local</title>
-    <link rel="stylesheet" href="styles.css?v=3" />
+    <link rel="stylesheet" href="styles.css?v=4" />
   </head>
   <body>
     <div class="app-shell">
@@ -253,13 +253,141 @@
         </section>
 
         <section class="page-view" id="page-platforms" hidden>
-          <div class="page-action-row"><p>Contas concretas, permissões e capacidades observadas.</p><button class="primary-button">Conectar plataforma</button></div>
-          <div class="platform-grid"><article><span class="platform-icon instagram">IG</span><span><strong>Instagram · @nelson</strong><small>Feed e Story ativos · Reel e carrossel planejados</small></span><em>Operacional</em></article><article><span class="platform-icon facebook">f</span><span><strong>Facebook · Página Centro</strong><small>Feed ativo · Reel planejado</small></span><em>Operacional</em></article><article><span class="platform-icon google">G</span><span><strong>Google · Loja Jardins</strong><small>Atualização, Evento e Oferta</small></span><em>Operacional</em></article><article><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp · Conta Principal</strong><small>Template aprovado · conexão expira em 6 dias</small></span><em class="warn">Atenção</em></article><article class="dormant"><span class="platform-icon tiktok">T</span><span><strong>TikTok · não conectado</strong><small>Caminho proposto: enviar rascunho e concluir no TikTok</small></span><em>Disponível depois</em></article></div>
+          <div class="page-action-row platform-action-row">
+            <div>
+              <p class="section-kicker">Configuração</p>
+              <h2>Contas que o Marketing pode usar</h2>
+              <p>Conecte o provedor uma vez e escolha exatamente quais contas, Pages ou lojas ficam disponíveis.</p>
+            </div>
+            <button class="primary-button" id="addConnectionButton" type="button">Adicionar conexão</button>
+          </div>
+
+          <div class="connection-overview" aria-label="Resumo das conexões">
+            <article><strong>3</strong><span>provedores conectados</span></article>
+            <article><strong>4</strong><span>destinos disponíveis</span></article>
+            <article class="attention"><strong>1</strong><span>pede atenção</span></article>
+          </div>
+
+          <section class="platform-section" aria-labelledby="activeConnectionsTitle">
+            <div class="section-heading platform-section-heading">
+              <div><p class="section-kicker">Em uso</p><h2 id="activeConnectionsTitle">Suas conexões</h2></div>
+              <button class="text-button" id="verifyConnectionsButton" type="button">Verificar todas</button>
+            </div>
+            <div class="connection-list">
+              <article>
+                <div class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></div>
+                <span><strong>Meta · Nelson Boulangerie</strong><small>@nelson no Instagram · Página Centro no Facebook</small><span class="capability-line">Feed e Story ativos · Reel e carrossel planejados</span></span>
+                <em>Operacional</em>
+                <button class="secondary-button compact-button" type="button" data-manage-connector="meta">Gerenciar</button>
+              </article>
+              <article>
+                <span class="platform-icon google">G</span>
+                <span><strong>Google · Loja Jardins</strong><small>Perfil da Empresa · location verificada</small><span class="capability-line">Atualização, Evento e Oferta</span></span>
+                <em>Operacional</em>
+                <button class="secondary-button compact-button" type="button" data-manage-connector="google">Gerenciar</button>
+              </article>
+              <article>
+                <span class="platform-icon whatsapp">W</span>
+                <span><strong>WhatsApp · Conta Principal</strong><small>Via ManyChat · fluxo oferta_v3 aprovado</small><span class="capability-line">Conexão expira em 6 dias</span></span>
+                <em class="warn">Atenção</em>
+                <button class="secondary-button compact-button" type="button" data-manage-connector="whatsapp">Resolver</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="platform-section" aria-labelledby="connectorCatalogTitle">
+            <div class="section-heading platform-section-heading">
+              <div><p class="section-kicker">Catálogo</p><h2 id="connectorCatalogTitle">O que é possível conectar</h2></div>
+              <span class="catalog-legend">Disponibilidade do conector Shopman</span>
+            </div>
+            <div class="connector-catalog">
+              <article>
+                <div class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></div>
+                <span class="connector-state ready">Disponível agora</span>
+                <h3>Instagram e Facebook</h3>
+                <p>Uma autorização Meta descobre contas profissionais e Pages. Você escolhe cada destino separadamente.</p>
+                <ul><li>Feed e Story</li><li>Múltiplas contas e Pages</li><li>Permissões verificadas</li></ul>
+                <button class="secondary-button connector-button" type="button" data-add-connector="meta">Adicionar conta Meta</button>
+              </article>
+              <article>
+                <span class="platform-icon google">G</span>
+                <span class="connector-state ready">Disponível agora</span>
+                <h3>Google Business Profile</h3>
+                <p>Conecte uma conta Google e escolha as lojas que podem receber publicações.</p>
+                <ul><li>Atualização, Evento e Oferta</li><li>Múltiplas locations</li><li>CTA e cupom próprios</li></ul>
+                <button class="secondary-button connector-button" type="button" data-add-connector="google">Adicionar conta Google</button>
+              </article>
+              <article>
+                <span class="platform-icon whatsapp">W</span>
+                <span class="connector-state ready">Disponível agora</span>
+                <h3>WhatsApp via ManyChat</h3>
+                <p>Valide o token da conta e escolha um fluxo ativo e aprovado para campanhas.</p>
+                <ul><li>Fluxos verificados</li><li>Contatos com consentimento</li><li>Ensaio antes da liberação</li></ul>
+                <button class="secondary-button connector-button" type="button" data-add-connector="whatsapp">Adicionar ManyChat</button>
+              </article>
+              <article class="connector-unavailable">
+                <span class="platform-icon tiktok">T</span>
+                <span class="connector-state planned">Em preparação</span>
+                <h3>TikTok</h3>
+                <p>Entrará pelo Relay com upload de rascunho para o operador concluir no TikTok.</p>
+                <ul><li>Produto público primeiro</li><li>Review do TikTok obrigatório</li><li>Sem promessa de Direct Post</li></ul>
+                <button class="secondary-button connector-button" type="button" disabled>Ainda não disponível</button>
+              </article>
+            </div>
+          </section>
         </section>
       </main>
     </div>
 
+    <dialog class="connection-dialog" id="connectionWizard" aria-labelledby="connectionWizardTitle">
+      <form class="connection-modal" method="dialog">
+        <header class="connection-modal-header">
+          <div><p class="section-kicker" id="connectionWizardEyebrow">Nova conexão</p><h2 id="connectionWizardTitle">Adicionar plataforma</h2></div>
+          <button class="icon-button" id="closeConnectionWizard" type="button" aria-label="Fechar">×</button>
+        </header>
+
+        <ol class="connection-steps" aria-label="Etapas da conexão">
+          <li class="active" data-connection-step-indicator="1"><span>1</span>Escolher</li>
+          <li data-connection-step-indicator="2"><span>2</span>Autorizar</li>
+          <li data-connection-step-indicator="3"><span>3</span>Contas e teste</li>
+        </ol>
+
+        <div class="connection-modal-body">
+          <section data-connection-step-panel="1">
+            <h3>Qual provedor você quer conectar?</h3>
+            <p class="helper-copy">Mostramos somente integrações que o Shopman consegue configurar com segurança.</p>
+            <div class="connector-picker" role="radiogroup" aria-label="Provedor">
+              <button type="button" role="radio" aria-checked="false" data-connector-choice="meta"><span class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></span><span><strong>Instagram e Facebook</strong><small>Autorização Meta</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" data-connector-choice="google"><span class="platform-icon google">G</span><span><strong>Google Business Profile</strong><small>Conta Google + lojas</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" data-connector-choice="whatsapp"><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp via ManyChat</strong><small>Token + fluxo aprovado</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" disabled><span class="platform-icon tiktok">T</span><span><strong>TikTok</strong><small>Relay + aprovação futura</small></span><em>Em preparação</em></button>
+            </div>
+          </section>
+
+          <section data-connection-step-panel="2" hidden>
+            <div class="authorization-heading"><span id="authorizationIcon" class="platform-icon google">G</span><div><h3 id="authorizationTitle">Autorizar provedor</h3><p id="authorizationDescription"></p></div></div>
+            <div id="authorizationFields"></div>
+            <div class="permission-box"><strong>O Shopman solicitará somente o necessário</strong><ul id="authorizationPermissions"></ul></div>
+            <p class="local-preview-note"><strong>Prévia local:</strong> nenhuma credencial ou autorização externa será enviada.</p>
+          </section>
+
+          <section data-connection-step-panel="3" hidden>
+            <h3 id="resourceTitle">Escolha o que ficará disponível</h3>
+            <p class="helper-copy" id="resourceDescription"></p>
+            <div class="resource-picker" id="resourcePicker"></div>
+            <div class="verification-box"><span class="verification-mark">✓</span><span><strong>Verificação pronta</strong><small id="verificationSummary">Permissões e recursos serão conferidos antes de salvar.</small></span></div>
+          </section>
+        </div>
+
+        <footer class="connection-modal-footer">
+          <button class="secondary-button" id="connectionBackButton" type="button">Voltar</button>
+          <span id="connectionStepHint">Você poderá adicionar outras contas depois.</span>
+          <button class="primary-button" id="connectionNextButton" type="button" disabled>Continuar</button>
+        </footer>
+      </form>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
   </body>
 </html>

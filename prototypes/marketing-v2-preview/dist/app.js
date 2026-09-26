@@ -105,10 +105,74 @@ const destinationCompositions = {
   },
 };
 
-let currentPage = "campaigns";
+const connectorDefinitions = {
+  meta: {
+    name: "Meta",
+    title: "Autorizar Instagram e Facebook",
+    description: "A Meta devolve as contas profissionais e Pages que esta pessoa pode administrar.",
+    icon: '<span class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></span>',
+    permissions: [
+      "Ler as Pages e contas profissionais disponíveis",
+      "Publicar somente nas contas escolhidas",
+      "Consultar permissões e status da publicação",
+    ],
+    resourceTitle: "Quais contas Meta o Marketing poderá usar?",
+    resourceDescription: "Instagram e Facebook compartilham a autorização, mas continuam como destinos independentes.",
+    resources: [
+      { id: "ig-nelson", name: "Instagram · @nelson", detail: "Conta profissional · Feed e Story", status: "Pronta", checked: true },
+      { id: "fb-centro", name: "Facebook · Página Centro", detail: "Page · Feed", status: "Pronta", checked: true },
+      { id: "fb-jardins", name: "Facebook · Página Jardins", detail: "Page encontrada nesta conta", status: "Nova", checked: false },
+    ],
+    verification: "As contas escolhidas têm as permissões mínimas para publicação.",
+  },
+  google: {
+    name: "Google Business Profile",
+    title: "Autorizar Google Business Profile",
+    description: "A conta Google será usada para descobrir os perfis e lojas que ela administra.",
+    icon: '<span class="platform-icon google">G</span>',
+    permissions: [
+      "Listar as locations administradas pela conta",
+      "Criar e acompanhar publicações nas lojas escolhidas",
+      "Ler o estado necessário para validar cada publicação",
+    ],
+    resourceTitle: "Quais lojas o Marketing poderá usar?",
+    resourceDescription: "Cada location vira um destino separado e pode ter sua própria composição.",
+    resources: [
+      { id: "google-jardins", name: "Google · Loja Jardins", detail: "Location verificada · já conectada", status: "Pronta", checked: true },
+      { id: "google-centro", name: "Google · Loja Centro", detail: "Location encontrada nesta conta", status: "Nova", checked: true },
+      { id: "google-lago", name: "Google · Quiosque do Lago", detail: "Sem permissão para publicar", status: "Bloqueada", checked: false, disabled: true },
+    ],
+    verification: "Duas locations estão aptas; a location bloqueada não será adicionada.",
+  },
+  whatsapp: {
+    name: "WhatsApp via ManyChat",
+    title: "Validar conta ManyChat",
+    description: "O conector usa um token da API ManyChat e mantém o texto oficial dentro do fluxo aprovado.",
+    icon: '<span class="platform-icon whatsapp">W</span>',
+    permissions: [
+      "Consultar fluxos ativos da conta",
+      "Resolver somente contatos com consentimento",
+      "Executar ensaio antes da liberação geral",
+    ],
+    resourceTitle: "Qual configuração do WhatsApp ficará ativa?",
+    resourceDescription: "Escolha a conta e o fluxo que será revalidado antes de cada campanha.",
+    resources: [
+      { id: "whatsapp-main", name: "WhatsApp · Conta Principal", detail: "ManyChat · número comercial verificado", status: "Atenção", checked: true },
+    ],
+    verification: "O token será guardado no cofre; o fluxo escolhido será verificado ao salvar.",
+    needsToken: true,
+    needsTemplate: true,
+  },
+};
+
+const pageFromHash = window.location.hash.replace("#", "");
+let currentPage = Object.hasOwn(pages, pageFromHash) ? pageFromHash : "campaigns";
 let currentStep = 3;
 let currentDestination = "google";
 let currentGoogleType = "offer";
+let currentConnector = null;
+let connectionStep = 1;
+let connectionMode = "add";
 let toastTimer;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -129,6 +193,91 @@ function openPage(page) {
   $("#pageEyebrow").textContent = pages[page][0];
   $("#pageTitle").textContent = pages[page][1];
   $(".save-state").hidden = page !== "campaigns";
+  if (window.location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
+}
+
+function selectConnector(connectorRef) {
+  currentConnector = connectorRef;
+  $$('[data-connector-choice]').forEach((button) => {
+    const selected = button.dataset.connectorChoice === connectorRef;
+    button.setAttribute("aria-checked", String(selected));
+  });
+  $("#connectionNextButton").disabled = false;
+}
+
+function resourceMarkup(resource) {
+  return `
+    <label class="resource-option">
+      <input type="checkbox" value="${resource.id}" ${resource.checked ? "checked" : ""} ${resource.disabled ? "disabled" : ""} />
+      <span><strong>${resource.name}</strong><small>${resource.detail}</small></span>
+      <em>${resource.status}</em>
+    </label>`;
+}
+
+function renderAuthorization(connector) {
+  $("#authorizationIcon").outerHTML = `<span id="authorizationIcon">${connector.icon}</span>`;
+  $("#authorizationTitle").textContent = connector.title;
+  $("#authorizationDescription").textContent = connector.description;
+  $("#authorizationPermissions").innerHTML = connector.permissions.map((permission) => `<li>${permission}</li>`).join("");
+  $("#authorizationFields").innerHTML = connector.needsToken
+    ? `<label class="token-field"><span>Token da API ManyChat</span><input type="password" value="preview-token-not-real" aria-describedby="tokenHelp" /><small id="tokenHelp">Não use um token real nesta prévia local.</small></label>`
+    : "";
+}
+
+function renderResources(connector) {
+  $("#resourceTitle").textContent = connector.resourceTitle;
+  $("#resourceDescription").textContent = connector.resourceDescription;
+  const template = connector.needsTemplate
+    ? `<label class="template-choice"><span>Fluxo aprovado para campanhas</span><select><option>oferta_v3 · Oferta com cupom</option><option>novidade_v2 · Novidade da semana</option><option>Sem fluxo · somente janela de 24 horas</option></select></label>`
+    : "";
+  $("#resourcePicker").innerHTML = connector.resources.map(resourceMarkup).join("") + template;
+  $("#verificationSummary").textContent = connector.verification;
+}
+
+function updateConnectionWizard() {
+  $$('[data-connection-step-panel]').forEach((panel) => {
+    panel.hidden = Number(panel.dataset.connectionStepPanel) !== connectionStep;
+  });
+  $$('[data-connection-step-indicator]').forEach((indicator) => {
+    const step = Number(indicator.dataset.connectionStepIndicator);
+    indicator.classList.toggle("active", step === connectionStep);
+    indicator.classList.toggle("done", step < connectionStep);
+  });
+
+  $("#connectionBackButton").textContent = connectionStep === 1 ? "Cancelar" : "Voltar";
+  $("#connectionNextButton").disabled = connectionStep === 1 && !currentConnector;
+  $("#connectionNextButton").textContent = connectionStep === 1
+    ? "Continuar"
+    : connectionStep === 2
+      ? (currentConnector === "whatsapp" ? "Validar token" : "Simular autorização")
+      : (connectionMode === "manage" ? "Salvar configuração" : "Adicionar conexão");
+  $("#connectionStepHint").textContent = [
+    "Você poderá adicionar outras contas depois.",
+    "A autorização real acontecerá no provedor.",
+    "Nada é publicado durante a configuração.",
+  ][connectionStep - 1];
+
+  if (currentConnector && connectionStep === 2) renderAuthorization(connectorDefinitions[currentConnector]);
+  if (currentConnector && connectionStep === 3) renderResources(connectorDefinitions[currentConnector]);
+}
+
+function openConnectionWizard(connectorRef = null, mode = "add") {
+  currentConnector = connectorRef;
+  connectionMode = mode;
+  connectionStep = connectorRef && mode === "manage" ? 3 : connectorRef ? 2 : 1;
+  $("#connectionWizardEyebrow").textContent = mode === "manage" ? "Configuração existente" : "Nova conexão";
+  $("#connectionWizardTitle").textContent = mode === "manage"
+    ? `Gerenciar ${connectorDefinitions[connectorRef].name}`
+    : "Adicionar plataforma";
+  $$('[data-connector-choice]').forEach((button) => {
+    button.setAttribute("aria-checked", String(button.dataset.connectorChoice === connectorRef));
+  });
+  updateConnectionWizard();
+  $("#connectionWizard").showModal();
+}
+
+function closeConnectionWizard() {
+  $("#connectionWizard").close();
 }
 
 function openStep(step) {
@@ -312,7 +461,63 @@ $$('.destination-check input').forEach((input) => input.addEventListener("change
   refreshSelectedDestinations();
 }));
 
-$$('.preview-cta, .page-action-row .primary-button, .activity-row button').forEach((button) => {
+$("#addConnectionButton").addEventListener("click", () => openConnectionWizard());
+$$('[data-add-connector]').forEach((button) => {
+  button.addEventListener("click", () => openConnectionWizard(button.dataset.addConnector));
+});
+$$('[data-manage-connector]').forEach((button) => {
+  button.addEventListener("click", () => openConnectionWizard(button.dataset.manageConnector, "manage"));
+});
+$$('[data-connector-choice]').forEach((button) => {
+  button.addEventListener("click", () => selectConnector(button.dataset.connectorChoice));
+});
+
+$("#connectionNextButton").addEventListener("click", () => {
+  if (!currentConnector) return;
+  if (connectionStep < 3) {
+    connectionStep += 1;
+    updateConnectionWizard();
+    return;
+  }
+
+  const connector = connectorDefinitions[currentConnector];
+  const selectedCount = $$('#resourcePicker input[type="checkbox"]:checked').length;
+  closeConnectionWizard();
+  showToast(connectionMode === "manage"
+    ? `Prévia: configuração de ${connector.name} atualizada.`
+    : `Prévia: ${connector.name} conectado com ${selectedCount} ${selectedCount === 1 ? "destino" : "destinos"}.`);
+});
+
+$("#connectionBackButton").addEventListener("click", () => {
+  if (connectionStep === 1) {
+    closeConnectionWizard();
+    return;
+  }
+  connectionStep -= 1;
+  updateConnectionWizard();
+});
+$("#closeConnectionWizard").addEventListener("click", closeConnectionWizard);
+$("#connectionWizard").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closeConnectionWizard();
+});
+$("#connectionWizard").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeConnectionWizard();
+});
+$("#connectionWizard form").addEventListener("submit", (event) => event.preventDefault());
+
+$("#verifyConnectionsButton").addEventListener("click", (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Verificando…";
+  setTimeout(() => {
+    button.disabled = false;
+    button.textContent = "Verificar todas";
+    showToast("Prévia: permissões e capacidades das conexões foram verificadas.");
+  }, 650);
+});
+
+$$('.preview-cta, .page-action-row .primary-button:not(#addConnectionButton), .activity-row button').forEach((button) => {
   button.addEventListener("click", () => showToast("Interação demonstrativa — nenhum efeito externo foi executado."));
 });
 
