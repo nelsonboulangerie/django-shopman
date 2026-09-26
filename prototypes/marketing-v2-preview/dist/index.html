@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Prévia navegável do composer Marketing V2." />
     <title>Marketing V2 — Prévia local</title>
-    <link rel="stylesheet" href="styles.css?v=4" />
+    <link rel="stylesheet" href="styles.css?v=5" />
   </head>
   <body>
     <div class="app-shell">
@@ -300,6 +300,7 @@
               <div><p class="section-kicker">Catálogo</p><h2 id="connectorCatalogTitle">O que é possível conectar</h2></div>
               <span class="catalog-legend">Disponibilidade do conector Shopman</span>
             </div>
+            <p class="connector-family-note"><strong>Mesma família Meta, conexões diferentes.</strong> Instagram e Facebook podem compartilhar a autorização de Pages; WhatsApp usa uma WABA e um número comercial próprios.</p>
             <div class="connector-catalog">
               <article>
                 <div class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></div>
@@ -324,6 +325,14 @@
                 <p>Valide o token da conta e escolha um fluxo ativo e aprovado para campanhas.</p>
                 <ul><li>Fluxos verificados</li><li>Contatos com consentimento</li><li>Ensaio antes da liberação</li></ul>
                 <button class="secondary-button connector-button" type="button" data-add-connector="whatsapp">Adicionar ManyChat</button>
+              </article>
+              <article class="connector-unavailable">
+                <div class="provider-icons"><span class="platform-icon whatsapp">W</span><span class="platform-icon meta">M</span></div>
+                <span class="connector-state planned">Placeholder</span>
+                <h3>WhatsApp via Meta</h3>
+                <p>Conexão direta com a WhatsApp Business Platform, usando onboarding próprio da Meta.</p>
+                <ul><li>WABA e número comercial</li><li>Templates e webhooks próprios</li><li>App Review e acesso avançado</li></ul>
+                <button class="secondary-button connector-button" type="button" disabled>Planejado</button>
               </article>
               <article class="connector-unavailable">
                 <span class="platform-icon tiktok">T</span>
@@ -360,6 +369,7 @@
               <button type="button" role="radio" aria-checked="false" data-connector-choice="meta"><span class="provider-icons"><span class="platform-icon instagram">IG</span><span class="platform-icon facebook">f</span></span><span><strong>Instagram e Facebook</strong><small>Autorização Meta</small></span><em>Disponível</em></button>
               <button type="button" role="radio" aria-checked="false" data-connector-choice="google"><span class="platform-icon google">G</span><span><strong>Google Business Profile</strong><small>Conta Google + lojas</small></span><em>Disponível</em></button>
               <button type="button" role="radio" aria-checked="false" data-connector-choice="whatsapp"><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp via ManyChat</strong><small>Token + fluxo aprovado</small></span><em>Disponível</em></button>
+              <button type="button" role="radio" aria-checked="false" disabled><span class="provider-icons"><span class="platform-icon whatsapp">W</span><span class="platform-icon meta">M</span></span><span><strong>WhatsApp via Meta</strong><small>WABA + telefone · conexão própria</small></span><em>Planejado</em></button>
               <button type="button" role="radio" aria-checked="false" disabled><span class="platform-icon tiktok">T</span><span><strong>TikTok</strong><small>Relay + aprovação futura</small></span><em>Em preparação</em></button>
             </div>
           </section>

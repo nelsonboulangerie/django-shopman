@@ -256,6 +256,7 @@ textarea { resize: vertical; }
 .platform-icon.facebook { background: #1877f2; font: 900 1.2rem Arial, sans-serif; }
 .platform-icon.google { background: #fff; color: #4285f4; border: 1px solid #d7d4ca; font: 900 1rem Arial, sans-serif; }
 .platform-icon.whatsapp { background: #1fae62; }
+.platform-icon.meta { background: #5b55e7; font: 900 .82rem Arial, sans-serif; }
 .platform-icon.tiktok { background: #17171b; }
 
 .schedule-list, .review-list, .offer-list, .platform-grid { display: grid; gap: 9px; margin-top: 20px; }
@@ -303,6 +304,8 @@ textarea { resize: vertical; }
 .platform-section { margin-top: 25px; }
 .platform-section-heading { align-items: end; margin-bottom: 12px; }
 .catalog-legend { color: var(--muted); font-size: .78rem; }
+.connector-family-note { margin: -2px 0 12px; padding: 10px 12px; border-left: 3px solid #5b55e7; background: #f2f1ff; color: #4c4a66; font-size: .8rem; line-height: 1.45; }
+.connector-family-note strong { color: #35334f; }
 .text-button { border: 0; padding: 5px; background: transparent; color: var(--coral-dark); font-size: .82rem; font-weight: 800; cursor: pointer; }
 .connection-list { display: grid; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: white; }
 .connection-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 13px; padding: 15px 16px; }
@@ -315,7 +318,7 @@ textarea { resize: vertical; }
 .provider-icons { display: flex; align-items: center; min-width: 51px; }
 .provider-icons .platform-icon + .platform-icon { margin-left: -10px; box-shadow: 0 0 0 3px white; }
 .compact-button { padding: 7px 10px; font-size: .76rem; }
-.connector-catalog { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.connector-catalog { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 11px; }
 .connector-catalog article { position: relative; display: flex; flex-direction: column; min-height: 315px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: white; }
 .connector-catalog h3 { margin: 17px 0 7px; font: 600 1.05rem/1.25 Georgia, serif; }
 .connector-catalog p { min-height: 64px; margin-bottom: 10px; color: var(--muted); font-size: .79rem; line-height: 1.45; }
