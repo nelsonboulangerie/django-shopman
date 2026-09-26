@@ -1,6 +1,6 @@
 # Planos Ativos
 
-> Atualizado em 2026-07-11 (reorganização pós hardening pré-alpha, PRs #53–#69).
+> Atualizado em 2026-09-26.
 
 Este diretório deve conter apenas plano vivo, spec ativa ou backlog explícito.
 Planos concluídos ficam em [`completed/`](completed/). Material histórico incerto
@@ -25,6 +25,7 @@ fica em [`_quarantine/`](_quarantine/).
 
 | Plano | Estado |
 |-------|--------|
+| [`WP-RELEASE-01-versoes-de-apps-sem-quebra.md`](WP-RELEASE-01-versoes-de-apps-sem-quebra.md) | Estratégia executável para build imutável, promoção alpha → produção, convivência V1/V2, canário e rollback; Marketing V2 será o piloto. |
 | [`WP-MAXMIND-CHAVE-DO-DONO.md`](WP-MAXMIND-CHAVE-DO-DONO.md) | **Ação do dono, ~10 min.** Runbook autossuficiente para criar a conta MaxMind e colar a `MAXMIND_LICENSE_KEY` como segredo de **GitHub Actions** (não no painel da DO: a imagem é construída no Actions) — é o que liga a linha "Próximo a Londrina, PR · Brasil" na tela de Segurança da loja. Sem ela nada quebra: a tela fica com navegador e data. |
 | [`SUITE-UX-PLAN.md`](SUITE-UX-PLAN.md) | Medição das três varreduras de 22/09 (navegação e cabeçalhos · primitivas · fronteira e copy) e o redesenho da suíte em 9 WPs. Diagnóstico: nenhum app está mal desenhado, **o que não existe é o entre** — o token de 44px é respeitado 214× no Gestor e **zero** em cinco apps. WP-UX-1 (barra de seções canônica) entregue; WP-UX-3, 4 e 7 em PR; 5 decisões de vocabulário e produto esperando o dono na §4. |
 | [`WP-LOCK-01-estacao-travada-nao-e-sessao-encerrada.md`](WP-LOCK-01-estacao-travada-nao-e-sessao-encerrada.md) | Aprovado pelo dono como WP próprio (17/09), não iniciado. Travar o PDV é `logout()` e a sessão é uma para toda a zona: travar o balcão derruba o Gestor no mesmo navegador. #769/#775/#804 mitigaram sintomas; a causa segue. |
