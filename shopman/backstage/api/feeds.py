@@ -185,11 +185,11 @@ class FeedAutomaticView(_FeedBase):
     def post(self, request):
         ref = str(request.data.get("ref") or "").strip()
         enabled = request.data.get("enabled")
-        idle_message = request.data.get("idle_message")
-        if not ref or not isinstance(enabled, bool) or not isinstance(idle_message, str):
-            return Response({"detail": "Informe o menuboard, o modo automático e a mensagem de descanso."}, status=400)
-        return self.mutate(request, ref, {"enabled": enabled, "idle_message": idle_message},
-            lambda base: feed_service.set_automatic(ref, enabled=enabled, idle_message=idle_message,
+        idle_messages = request.data.get("idle_messages")
+        if not ref or not isinstance(enabled, bool) or not isinstance(idle_messages, list):
+            return Response({"detail": "Informe o menuboard, o modo automático e as mensagens de descanso."}, status=400)
+        return self.mutate(request, ref, {"enabled": enabled, "idle_messages": idle_messages},
+            lambda base: feed_service.set_automatic(ref, enabled=enabled, idle_messages=idle_messages,
                                                     expected_revision=base))
 
 

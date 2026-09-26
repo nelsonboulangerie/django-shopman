@@ -64,7 +64,7 @@ class MenuboardProjection:
     off_message: str = ""
     # Canal ativo + automático fora da janela: a TV segue ligada, mas descansa.
     is_sleeping: bool = False
-    sleep_message: str = ""
+    sleep_messages: tuple[str, ...] = field(default_factory=tuple)
 
 
 #: A frase da tela preta. Fala com quem está na loja olhando a TV: o que fazer
@@ -168,7 +168,7 @@ def build_menuboard(ref: str, *, now=None) -> MenuboardProjection:
             subtitle="",
             pages=(MenuboardPage(),),
             is_sleeping=True,
-            sleep_message=automatic.idle_message,
+            sleep_messages=automatic.idle_messages,
         )
     display = _display(channel)
     collection_refs = list(display.get("collections") or [])

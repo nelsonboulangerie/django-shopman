@@ -104,29 +104,36 @@ async function applyRotation(sc: FeedProjection) {
 }
 
 const automaticRef = ref<string | null>(null);
-const automaticDrafts = ref<Record<string, { message: string; base: string }>>({});
-const automaticMessage = computed({
-  get: () => automaticRef.value ? automaticDrafts.value[automaticRef.value]?.message ?? "" : "",
-  set: (value: string) => { if (automaticRef.value && automaticDrafts.value[automaticRef.value]) automaticDrafts.value[automaticRef.value]!.message = value; },
-});
+const automaticDrafts = ref<Record<string, { messages: [string, string]; base: string }>>({});
+const automaticMessages = computed<[string, string]>(() => automaticRef.value
+  ? automaticDrafts.value[automaticRef.value]?.messages ?? ["", ""]
+  : ["", ""]);
+const projectedAutomaticMessages = (sc: FeedProjection): [string, string] => [
+  sc.automatic?.idle_messages[0] ?? "",
+  sc.automatic?.idle_messages[1] ?? "",
+];
 function openAutomatic(sc: FeedProjection) {
   if (!sc.automatic) return;
-  automaticDrafts.value[sc.ref] ??= { message: sc.automatic.idle_message, base: baseFor(sc, "automatic") };
+  automaticDrafts.value[sc.ref] ??= { messages: projectedAutomaticMessages(sc), base: baseFor(sc, "automatic") };
   automaticRef.value = sc.ref;
 }
 const automaticConflict = (sc: FeedProjection) => !!automaticDrafts.value[sc.ref] && automaticDrafts.value[sc.ref]!.base !== baseFor(sc, "automatic");
 function resolveAutomatic(sc: FeedProjection, keep: boolean) {
   if (!sc.automatic) return;
-  automaticDrafts.value[sc.ref] = { message: keep ? automaticMessage.value : sc.automatic.idle_message, base: baseFor(sc, "automatic") };
+  automaticDrafts.value[sc.ref] = {
+    messages: keep ? [...automaticMessages.value] as [string, string] : projectedAutomaticMessages(sc),
+    base: baseFor(sc, "automatic"),
+  };
 }
 async function applyAutomaticMessage(sc: FeedProjection) {
   if (!sc.automatic || automaticConflict(sc)) return;
-  const ok = await setAutomatic(sc.ref, sc.automatic.enabled, automaticMessage.value, automaticDrafts.value[sc.ref]?.base);
+  const messages = automaticMessages.value.map((message) => message.trim()).filter(Boolean);
+  const ok = await setAutomatic(sc.ref, sc.automatic.enabled, messages, automaticDrafts.value[sc.ref]?.base);
   if (ok) { Reflect.deleteProperty(automaticDrafts.value, sc.ref); if (automaticRef.value === sc.ref) automaticRef.value = null; }
 }
 async function applyAutomaticToggle(sc: FeedProjection, enabled: boolean) {
   if (!sc.automatic) return;
-  await setAutomatic(sc.ref, enabled, sc.automatic.idle_message, baseFor(sc, "automatic"));
+  await setAutomatic(sc.ref, enabled, sc.automatic.idle_messages, baseFor(sc, "automatic"));
 }
 const hasDraft = computed(() => feeds.value.some((sc) => {
   const collections = collectionDrafts.value[sc.ref];
@@ -134,7 +141,7 @@ const hasDraft = computed(() => feeds.value.some((sc) => {
   const automatic = automaticDrafts.value[sc.ref];
   return (collections && JSON.stringify([...collections.values].sort()) !== JSON.stringify(sc.collections.map((c) => c.ref).sort())) ||
     (rotation && (rotation.seconds !== sc.rotate_seconds || rotation.items !== sc.items_per_page)) ||
-    (automatic && automatic.message !== sc.automatic?.idle_message);
+    (automatic && JSON.stringify(automatic.messages) !== JSON.stringify(projectedAutomaticMessages(sc)));
 }));
 onBeforeRouteLeave(() => !hasDraft.value || window.confirm("Há alterações de feed não salvas. Sair e descartá-las?"));
 
@@ -334,24 +341,36 @@ useHead({ title: "Canais" });
                 </button>
               </UiPopoverTrigger>
               <UiPopoverContent align="start" :side-offset="6" class="w-72 p-3">
-                <p class="mb-1 text-xs font-medium text-muted-foreground">Mensagem do descanso</p>
+                <p class="mb-1 text-xs font-medium text-muted-foreground">Mensagens do descanso</p>
                 <p class="mb-2 text-xs text-muted-foreground/70">
-                  No automático, a TV exibe o cardápio 15 min antes da abertura e descansa 15 min depois do fechamento.
+                  A TV alterna as frases, uma passagem completa por vez. A segunda é opcional.
                 </p>
                 <div v-if="automaticConflict(sc)" role="alert" class="mb-2 text-xs">
                   <p>A configuração mudou no servidor. Seu texto foi preservado.</p>
                   <button type="button" class="min-h-11 underline" @click="resolveAutomatic(sc, true)">Manter meu texto</button>
                   <button type="button" class="min-h-11 underline" @click="resolveAutomatic(sc, false)">Usar valor atual</button>
                 </div>
-                <textarea
-                  v-model="automaticMessage" rows="4" maxlength="240"
-                  class="w-full rounded-md border border-border bg-background p-2 text-sm"
-                  placeholder="Atendimento de seg. a sáb., das 9h às 18h · Nelson Boulangerie: minha padaria favorita"
-                ></textarea>
-                <p class="mt-1 text-right text-xs tabular-nums text-muted-foreground">{{ automaticMessage.length }}/240</p>
+                <label class="mb-2 block text-xs text-muted-foreground">
+                  Frase 1
+                  <textarea
+                    v-model="automaticMessages[0]" rows="3" maxlength="240"
+                    class="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm text-foreground"
+                    placeholder="Atendimento de seg. a sáb., das 9h às 18h"
+                  ></textarea>
+                  <span class="block text-right tabular-nums">{{ automaticMessages[0].length }}/240</span>
+                </label>
+                <label class="block text-xs text-muted-foreground">
+                  Frase 2 <span class="opacity-70">(opcional)</span>
+                  <textarea
+                    v-model="automaticMessages[1]" rows="3" maxlength="240"
+                    class="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm text-foreground"
+                    placeholder="Nelson Boulangerie: minha padaria favorita"
+                  ></textarea>
+                  <span class="block text-right tabular-nums">{{ automaticMessages[1].length }}/240</span>
+                </label>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete automaticDrafts[sc.ref]; automaticRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || automaticConflict(sc) || !automaticMessage.trim() || !actionFor(sc, 'automatic')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyAutomaticMessage(sc)">Salvar mensagem</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || automaticConflict(sc) || !automaticMessages[0].trim() || !actionFor(sc, 'automatic')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyAutomaticMessage(sc)">Salvar mensagens</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>

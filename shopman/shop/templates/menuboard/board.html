@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ ref }} · Menuboard</title>
   <style>
+    @font-face {
+      font-family: "Fraunces";
+      src: url("{% static 'shop/fonts/fraunces-latin.woff2' %}") format("woff2");
+      font-style: normal;
+      font-weight: 400 700;
+      font-display: swap;
+    }
     /* Quadro-negro "pintado à mão" — marca Nelson (moss-black + giz creme + dourado).
        Kiosk display: EventSource (API do browser) para tempo real; Alpine para o
        estado/render local (convenção do projeto). Fallback de poll a cada 30s. */
@@ -17,7 +24,7 @@
     body {
       background: radial-gradient(120% 120% at 50% 0%, var(--board-2), var(--board));
       color: var(--chalk);
-      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      font-family: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
       -webkit-font-smoothing: antialiased;
       padding: clamp(1.5rem, 4vw, 4rem); min-height: 100%;
     }
@@ -48,11 +55,19 @@
        tela inteira (inclusive o fundo do quadro) — é a TV "apagada" com recado. */
     .off-screen { position: fixed; inset: 0; background: #000; color: var(--chalk); display: grid; place-items: center; padding: 2rem; text-align: center; font-size: clamp(1.6rem, 4vw, 3rem); letter-spacing: 0.02em; z-index: 10; }
     .sleep-screen { position: fixed; inset: 0; overflow: hidden; background: #050806; color: var(--chalk); display: flex; align-items: center; z-index: 9; }
-    .sleep-message { width: max-content; max-width: none; white-space: nowrap; font-size: clamp(2rem, 6vw, 5rem); letter-spacing: 0.04em; animation: menuboard-marquee 28s linear infinite; }
+    .sleep-message { position: absolute; left: 0; width: max-content; max-width: none; white-space: nowrap; font-size: clamp(2rem, 6vw, 5rem); letter-spacing: 0.04em; animation: menuboard-marquee 28s linear infinite; }
+    .sleep-message-pair { opacity: 0; animation-name: menuboard-marquee-pair; animation-duration: 48s; }
+    .sleep-message-pair:nth-of-type(2) { animation-delay: -24s; }
     @keyframes menuboard-marquee { from { transform: translateX(100vw); } to { transform: translateX(-100%); } }
+    @keyframes menuboard-marquee-pair {
+      0% { opacity: 1; transform: translateX(100vw); }
+      45% { opacity: 1; transform: translateX(-100%); }
+      49.99% { opacity: 0; transform: translateX(-100%); }
+      50%, 100% { opacity: 0; transform: translateX(100vw); }
+    }
     @media (prefers-reduced-motion: reduce) {
-      .sleep-screen { justify-content: center; padding: 3rem; text-align: center; }
-      .sleep-message { width: auto; max-width: 56rem; white-space: normal; animation: none; }
+      .sleep-screen { justify-content: center; flex-direction: column; gap: 1.5rem; padding: 3rem; text-align: center; }
+      .sleep-message { position: static; width: auto; max-width: 56rem; white-space: normal; opacity: 1; transform: none; animation: none; }
     }
   </style>
 </head>
@@ -75,7 +90,11 @@
     {% if not board.is_active %}
     <div class="off-screen" data-menuboard-off><p>{{ board.off_message }}</p></div>
     {% elif board.is_sleeping %}
-    <div class="sleep-screen" data-menuboard-sleep><p class="sleep-message">{{ board.sleep_message }}</p></div>
+    <div class="sleep-screen" data-menuboard-sleep>
+      {% for message in board.sleep_messages %}
+      <p class="sleep-message{% if board.sleep_messages|length > 1 %} sleep-message-pair{% endif %}">{{ message }}</p>
+      {% endfor %}
+    </div>
     {% else %}
     <header>
       <h1>{{ board.title }}</h1>
@@ -111,7 +130,9 @@
        x-data="menuboard()" x-init="init()" x-cloak>
     <div class="off-screen" x-show="board.is_active === false" data-menuboard-off><p x-text="board.off_message"></p></div>
     <div class="sleep-screen" x-show="board.is_active !== false && board.is_sleeping === true" data-menuboard-sleep>
-      <p class="sleep-message" x-text="board.sleep_message"></p>
+      <template x-for="message in (board.sleep_messages || [])" :key="message">
+        <p class="sleep-message" :class="{ 'sleep-message-pair': board.sleep_messages.length > 1 }" x-text="message"></p>
+      </template>
     </div>
     <header x-show="board.is_active !== false && board.is_sleeping !== true">
       <h1 x-text="board.title"></h1>

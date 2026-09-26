@@ -133,10 +133,10 @@ export function useFeedBoard() {
       { ref: ref_, rotate_seconds: rotateSeconds, items_per_page: itemsPerPage, ...(baseRevision ? { base_revision: baseRevision } : {}) },
       "/api/v1/backstage/feeds/rotation/",
     );
-  const setAutomatic = (ref_: string, enabled: boolean, idleMessage: string, baseRevision?: string) =>
+  const setAutomatic = (ref_: string, enabled: boolean, idleMessages: string[], baseRevision?: string) =>
     run(
       ref_,
-      { ref: ref_, enabled, idle_message: idleMessage, ...(baseRevision ? { base_revision: baseRevision } : {}) },
+      { ref: ref_, enabled, idle_messages: idleMessages, ...(baseRevision ? { base_revision: baseRevision } : {}) },
       "/api/v1/backstage/feeds/automatic/",
     );
 

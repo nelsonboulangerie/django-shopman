@@ -33,7 +33,10 @@ def automatic_board(db):
     channel.shop = shop
     channel.config["display"]["automatic"] = {
         "enabled": True,
-        "idle_message": "Atendimento de seg. a sáb., das 9h às 18h · Minha padaria favorita",
+        "idle_messages": [
+            "Atendimento de seg. a sáb., das 9h às 18h",
+            "Minha padaria favorita",
+        ],
     }
     channel.save(update_fields=["shop", "config"])
     return channel
@@ -52,11 +55,14 @@ def test_automatic_window_has_fifteen_minutes_on_each_side(automatic_board, inst
     assert build_menuboard("tv", now=instant).is_sleeping is sleeping
 
 
-def test_sleep_uses_the_configured_message(automatic_board):
+def test_sleep_uses_the_configured_messages(automatic_board):
     board = build_menuboard("tv", now=_at(3))
     assert board.is_active is True
     assert board.is_sleeping is True
-    assert board.sleep_message == "Atendimento de seg. a sáb., das 9h às 18h · Minha padaria favorita"
+    assert board.sleep_messages == (
+        "Atendimento de seg. a sáb., das 9h às 18h",
+        "Minha padaria favorita",
+    )
 
 
 def test_automatic_off_keeps_an_active_board_showing_continuously(automatic_board):
@@ -109,11 +115,13 @@ def test_sleep_screen_is_server_rendered_without_javascript(client, settings, mo
             title="",
             subtitle="",
             is_sleeping=True,
-            sleep_message="Minha padaria favorita",
+            sleep_messages=("Minha padaria favorita", "Voltamos às 9h"),
         ),
     )
     html = client.get("/menuboard/tv/").content.decode()
     server_block = html.split('id="menuboard-server"')[1].split('id="menuboard-root"')[0]
     assert "data-menuboard-sleep" in server_block
     assert "Minha padaria favorita" in server_block
+    assert "Voltamos às 9h" in server_block
+    assert server_block.count("sleep-message-pair") == 2
     assert "x-show" not in server_block

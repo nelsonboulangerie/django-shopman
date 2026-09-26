@@ -83,14 +83,14 @@ it("menuboard tem toggle automático visível e o gesto preserva a mensagem", as
   board.value = { feeds: [{
     ref: "tv", name: "TV", collections: [], capability: "display", kind: "menuboard", is_active: true,
     rotate_seconds: 0, items_per_page: 0,
-    automatic: { enabled: false, is_sleeping: false, idle_message: "Voltamos às 9h", state_line: "Automático desligado: conteúdo contínuo.", lead_minutes: 15, lag_minutes: 15 },
+    automatic: { enabled: false, is_sleeping: false, idle_messages: ["Voltamos às 9h", "Minha padaria favorita"], state_line: "Automático desligado: conteúdo contínuo.", lead_minutes: 15, lag_minutes: 15 },
     actions: [{ ref: "automatic", enabled: true, reason: "", payload_schema: { base_revision: "auto-base" } }],
   }], all_collections: [], catalog_channels: [] };
   setAutomatic.mockResolvedValue(true);
   const wrapper = render();
   expect(wrapper.get("[data-automatic-row]").text()).toContain("conteúdo contínuo");
   await wrapper.get("[data-automatic-switch]").trigger("click");
-  expect(setAutomatic).toHaveBeenCalledWith("tv", true, "Voltamos às 9h", "auto-base");
+  expect(setAutomatic).toHaveBeenCalledWith("tv", true, ["Voltamos às 9h", "Minha padaria favorita"], "auto-base");
 });
 
 it("todo card tem o mesmo toggle, e o toggle abre o modal em vez de mudar direto", async () => {

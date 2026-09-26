@@ -23,25 +23,34 @@ DEFAULT_IDLE_MESSAGE = "Atendimento encerrado. Voltamos no próximo horário da 
 class MenuboardAutomaticState:
     enabled: bool
     is_sleeping: bool
-    idle_message: str
+    idle_messages: tuple[str, ...]
     state_line: str
     wakes_at: datetime | None = None
     sleeps_at: datetime | None = None
 
 
-def automatic_settings(channel) -> tuple[bool, str]:
+def automatic_settings(channel) -> tuple[bool, tuple[str, ...]]:
     """Config normalizada; dado legado ou torto nunca apaga a TV."""
     display = (getattr(channel, "config", None) or {}).get("display") or {}
     raw = display.get("automatic")
     raw = raw if isinstance(raw, dict) else {}
     enabled = raw.get("enabled") is True
-    message = normalize_idle_message(raw.get("idle_message"))
-    return enabled, message
+    values = raw.get("idle_messages")
+    if not isinstance(values, list):
+        values = [raw.get("idle_message")]
+    messages = normalize_idle_messages(values)
+    return enabled, messages
 
 
-def normalize_idle_message(value) -> str:
-    message = " ".join(str(value or "").split())
-    return message or DEFAULT_IDLE_MESSAGE
+def normalize_idle_messages(values) -> tuple[str, ...]:
+    """Aceita até duas frases; configuração legada de uma frase segue válida."""
+    raw_values = values if isinstance(values, (list, tuple)) else [values]
+    messages: list[str] = []
+    for value in raw_values[:2]:
+        message = " ".join(str(value or "").split())
+        if message and message not in messages:
+            messages.append(message)
+    return tuple(messages or [DEFAULT_IDLE_MESSAGE])
 
 
 def resolve_menuboard_automatic_state(
@@ -57,12 +66,12 @@ def resolve_menuboard_automatic_state(
     """
     from shopman.shop.services import business_calendar
 
-    enabled, message = automatic_settings(channel)
+    enabled, messages = automatic_settings(channel)
     if not enabled:
         return MenuboardAutomaticState(
             enabled=False,
             is_sleeping=False,
-            idle_message=message,
+            idle_messages=messages,
             state_line="Automático desligado: conteúdo contínuo.",
         )
 
@@ -79,7 +88,7 @@ def resolve_menuboard_automatic_state(
         return MenuboardAutomaticState(
             enabled=True,
             is_sleeping=False,
-            idle_message=message,
+            idle_messages=messages,
             state_line="Automático: horário da loja não configurado; conteúdo contínuo.",
         )
 
@@ -104,7 +113,7 @@ def resolve_menuboard_automatic_state(
             return MenuboardAutomaticState(
                 enabled=True,
                 is_sleeping=False,
-                idle_message=message,
+                idle_messages=messages,
                 state_line=f"Automático: conteúdo visível até {_hour(visible_end)}.",
                 wakes_at=visible_start,
                 sleeps_at=visible_end,
@@ -119,7 +128,7 @@ def resolve_menuboard_automatic_state(
     return MenuboardAutomaticState(
         enabled=True,
         is_sleeping=True,
-        idle_message=message,
+        idle_messages=messages,
         state_line=state_line,
         wakes_at=wakes_at,
         sleeps_at=visible_end,

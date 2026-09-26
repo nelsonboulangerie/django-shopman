@@ -37,10 +37,10 @@ describe("useFeedBoard", () => {
     expect(String(url)).toBe("/api/v1/backstage/feeds/rotation/");
     expect(opts.body).toMatchObject({ ref: "menu-1", rotate_seconds: 15, items_per_page: 12 });
 
-    await s.setAutomatic("menu-1", true, "Atendimento até 18h");
+    await s.setAutomatic("menu-1", true, ["Atendimento até 18h", "Minha padaria favorita"]);
     [url, opts] = env.fetchMock.mock.calls[3]!;
     expect(String(url)).toBe("/api/v1/backstage/feeds/automatic/");
-    expect(opts.body).toMatchObject({ ref: "menu-1", enabled: true, idle_message: "Atendimento até 18h" });
+    expect(opts.body).toMatchObject({ ref: "menu-1", enabled: true, idle_messages: ["Atendimento até 18h", "Minha padaria favorita"] });
   });
 
   it("guarda de reentrância por-ref", async () => {

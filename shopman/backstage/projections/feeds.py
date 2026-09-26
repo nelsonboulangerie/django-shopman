@@ -94,7 +94,7 @@ class ManagerOptionProjection:
 class MenuboardAutomaticProjection:
     enabled: bool
     is_sleeping: bool
-    idle_message: str
+    idle_messages: tuple[str, ...]
     state_line: str
     lead_minutes: int
     lag_minutes: int
@@ -252,7 +252,7 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
             automatic = MenuboardAutomaticProjection(
                 enabled=automatic_state.enabled,
                 is_sleeping=automatic_state.is_sleeping,
-                idle_message=automatic_state.idle_message,
+                idle_messages=automatic_state.idle_messages,
                 state_line=("Automático ligado; aguarda o canal Ativo."
                             if automatic_state.enabled and not channel_active else automatic_state.state_line),
                 lead_minutes=AUTOMATIC_LEAD_MINUTES,

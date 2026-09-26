@@ -185,11 +185,11 @@ export interface ManagerOptionProjection {
   name: string;
 }
 
-/** MenuboardAutomaticProjection(enabled: 'bool', is_sleeping: 'bool', idle_message: 'str', state_line: 'str', lead_minutes: 'int', lag_minutes: 'int') */
+/** MenuboardAutomaticProjection(enabled: 'bool', is_sleeping: 'bool', idle_messages: 'tuple[str, ...]', state_line: 'str', lead_minutes: 'int', lag_minutes: 'int') */
 export interface MenuboardAutomaticProjection {
   enabled: boolean;
   is_sleeping: boolean;
-  idle_message: string;
+  idle_messages: string[];
   state_line: string;
   lead_minutes: number;
   lag_minutes: number;

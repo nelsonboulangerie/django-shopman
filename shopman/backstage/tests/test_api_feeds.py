@@ -272,36 +272,43 @@ def _automatic(client, body):
     return _post(client, AUTOMATIC_URL, data=body, content_type="application/json")
 
 
-def test_set_automatic_writes_mode_and_normalized_message(client, operator, board):
+def test_set_automatic_writes_mode_and_normalized_messages(client, operator, board):
     client.force_login(operator)
     resp = _automatic(client, {
         "ref": "tv", "enabled": True,
-        "idle_message": "  Atendimento de seg. a sáb.   ·  Minha padaria favorita  ",
+        "idle_messages": [
+            "  Atendimento de seg. a sáb., das 9h às 18h  ",
+            "  Nelson Boulangerie:   minha padaria favorita  ",
+        ],
     })
     assert resp.status_code == 200, resp.content
     assert Channel.objects.get(ref="tv").config["display"]["automatic"] == {
-        "enabled": True, "idle_message": "Atendimento de seg. a sáb. · Minha padaria favorita",
+        "enabled": True,
+        "idle_messages": [
+            "Atendimento de seg. a sáb., das 9h às 18h",
+            "Nelson Boulangerie: minha padaria favorita",
+        ],
     }
 
 
 def test_set_automatic_is_projected_back_to_the_manager(client, operator, board):
     client.force_login(operator)
-    _automatic(client, {"ref": "tv", "enabled": True, "idle_message": "Voltamos às 9h"})
+    _automatic(client, {"ref": "tv", "enabled": True, "idle_messages": ["Voltamos às 9h", "Até logo"]})
     tv = next(feed for feed in client.get(BOARD_URL).json()["board"]["feeds"] if feed["ref"] == "tv")
     assert tv["automatic"]["enabled"] is True
-    assert tv["automatic"]["idle_message"] == "Voltamos às 9h"
+    assert tv["automatic"]["idle_messages"] == ["Voltamos às 9h", "Até logo"]
 
 
 def test_set_automatic_rejects_platform_feed(client, operator, board):
     client.force_login(operator)
-    resp = _automatic(client, {"ref": "google", "enabled": True, "idle_message": "Olá"})
+    resp = _automatic(client, {"ref": "google", "enabled": True, "idle_messages": ["Olá"]})
     assert resp.status_code == 400
     assert "apenas no menuboard" in resp.json()["detail"]
 
 
 def test_set_automatic_rejects_long_message(client, operator, board):
     client.force_login(operator)
-    resp = _automatic(client, {"ref": "tv", "enabled": True, "idle_message": "x" * 241})
+    resp = _automatic(client, {"ref": "tv", "enabled": True, "idle_messages": ["x" * 241]})
     assert resp.status_code == 400
     assert "240" in resp.json()["detail"]
 
