@@ -67,6 +67,9 @@ export default defineNuxtConfig({
     definePwaCapability({
       app: "marketing",
       display: "standalone",
+      // A prévia V2 é uma experiência navegável online, não parte do casco
+      // offline. Mantê-la fora evita congelar HTML de demonstração no PWA.
+      precacheIgnores: ["marketing-v2-preview/**"],
       wakeLock: false,
       kiosk: false,
       push: { surfaceRef: "marketing", categories: ["campaign"] },
