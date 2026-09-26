@@ -14,8 +14,8 @@ from enum import StrEnum
 from django.db import transaction
 from shopman.orderman.models import Order
 
+from shopman.shop.services import counter_takeover, ifood_cancellation, payment_gate
 from shopman.shop.services import fiscal as fiscal_service
-from shopman.shop.services import ifood_cancellation, payment_gate
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.order_helpers import get_fulfillment_type
@@ -993,8 +993,14 @@ def collects_at_handoff(order: Order) -> bool:
       Payman: é a encomenda da loja online "pago na retirada" (o checkout só
       carimba ``on_delivery`` na entrega) e o pedido que nunca disse a forma. Não
       há cobrança online viva para concorrer com o balcão.
+    - O pedido cuja cobrança digital o balcão assumiu (``payment.counter_takeover``,
+      :mod:`shopman.shop.services.counter_takeover`): a cobrança já morreu.
     """
     payment = (order.data or {}).get("payment") or {}
+    if payment.get("counter_takeover"):
+        # A cobrança digital foi cancelada pelo balcão (``counter_takeover``): o
+        # que falta se recebe na mão, na forma escolhida ali.
+        return True
     method = str(payment.get("method") or "").strip().lower()
     collection = str(payment.get("collection") or "").strip().lower()
     if collection == "on_delivery":
@@ -1040,6 +1046,10 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
     if due > 0:
         if order.channel_ref == "ifood":
             return "Pedido do iFood com pagamento pendente: receber no balcão ainda não é possível por aqui."
+        if counter_takeover.pending_digital_method(order):
+            # Pix ou link pendente: o balcão recebe, e a cobrança do cliente é
+            # cancelada antes (:func:`take_over_before_hand_over`).
+            return ""
         if not collects_at_handoff(order):
             return (
                 "Esta encomenda espera o pagamento online (Pix ou link). "
@@ -1081,6 +1091,10 @@ def hand_over_at_counter(
     blocked = counter_hand_over_block(order, balance_q=due)
     if blocked:
         raise ValueError(blocked)
+    if due and counter_takeover.pending_digital_method(order):
+        # Receber com a cobrança do cliente ainda viva abriria a cobrança dupla:
+        # quem cancela antes é :func:`take_over_before_hand_over`.
+        raise ValueError("O Pix ou o link do cliente ainda está ativo. Atualize a encomenda e tente de novo.")
     received = 0
     if due:
         received = settle_delivery_cash(
@@ -1092,6 +1106,55 @@ def hand_over_at_counter(
     advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
     logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
     return received
+
+
+CHOOSE_COUNTER_TENDER_MESSAGE = "Escolha como o cliente pagou no balcão: dinheiro, débito ou crédito."
+
+
+def take_over_before_hand_over(
+    order: Order,
+    *,
+    cash_shift,
+    actor: str,
+    tenders: list[dict] | None,
+    expected_revision: str | None = None,
+) -> str | None:
+    """Antes de receber no balcão, matar a cobrança digital pendente (Pix/link).
+
+    Roda FORA da transação do acerto, porque o cancelamento no provedor não volta
+    com ``rollback``. Por isso confere ANTES tudo o que o acerto vai exigir
+    (encomenda pronta, caixa aberto, formas cobrindo o que falta): uma cobrança
+    do cliente só é cancelada quando o balcão tem como receber.
+
+    Devolve a revisão operacional nova quando assumiu a cobrança (o acerto segue
+    com ela) e ``None`` quando não havia cobrança digital a assumir. Levanta
+    ``counter_takeover.PaidOnline`` (o cliente acabou de pagar: só entregar),
+    ``counter_takeover.TakeoverFailed`` (nada mudou), ``OrderStateConflict`` e
+    ``ValueError`` (a régua do balcão).
+    """
+    order.refresh_from_db()
+    if not counter_takeover.pending_digital_method(order):
+        return None
+    if expected_revision is not None and operational_revision(order) != expected_revision:
+        raise OrderStateConflict("A encomenda mudou. Confira o estado atualizado antes de entregar.")
+    due = payment_service.balance_due_q(order)
+    blocked = counter_hand_over_block(order, balance_q=due)
+    if blocked:
+        raise ValueError(blocked)
+    if not due:
+        return None
+    if cash_shift is None or not getattr(cash_shift, "is_open", False):
+        raise ValueError("Abra um turno de caixa para registrar o acerto.")
+    if not tenders:
+        raise ValueError(CHOOSE_COUNTER_TENDER_MESSAGE)
+    chosen = [_counter_tender(t) for t in tenders]
+    if any(t["amount_q"] <= 0 for t in chosen) or sum(t["amount_q"] for t in chosen) != due:
+        from shopman.utils.monetary import format_money
+
+        raise ValueError(f"As formas devem cobrir exatamente o que falta receber: R$ {format_money(due)}.")
+    counter_takeover.take_over_pending_digital_charge(order, actor=actor)
+    order.refresh_from_db()
+    return operational_revision(order)
 
 
 def cash_settlement_revision(order: Order, cash_shift) -> str:
@@ -1191,6 +1254,9 @@ def settle_delivery_cash(
             if fulfillment_type == "pickup"
             else "Pedido não está marcado para recebimento na entrega."
         )
+    if payment.get("counter_takeover") and tenders is None:
+        # A forma do pedido é o Pix/link cancelado: quem diz como entrou é o balcão.
+        raise ValueError(CHOOSE_COUNTER_TENDER_MESSAGE)
     if payment.get("cod_settled_at"):
         raise ValueError(
             "Pagamento da retirada já foi registrado."

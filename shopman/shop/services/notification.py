@@ -268,6 +268,17 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
     return created
 
 
+#: O balcão recebeu e cancelou a cobrança digital (``payment.counter_takeover``).
+PAYMENT_TAKEN_OVER_AT_COUNTER = "payment_taken_over_at_counter"
+
+
+def _taken_over_at_counter_refusal() -> NotificationResendRefused:
+    return NotificationResendRefused(
+        PAYMENT_TAKEN_OVER_AT_COUNTER,
+        "O cliente pagou no balcão: a cobrança online foi cancelada.",
+    )
+
+
 def payment_link_resend_refusal(order, *, check_delivery: bool = True) -> NotificationResendRefused | None:
     """Por que este pedido NÃO aceita reenvio do link — ou ``None`` se aceita.
 
@@ -283,6 +294,8 @@ def payment_link_resend_refusal(order, *, check_delivery: bool = True) -> Notifi
     venda.
     """
     payment = (order.data or {}).get("payment") or {}
+    if payment.get("counter_takeover"):
+        return _taken_over_at_counter_refusal()
     if str(payment.get("method") or "").strip().lower() != "link" or not payment.get("checkout_url"):
         return NotificationResendRefused("payment_link_unavailable", "Este pedido não tem link de pagamento.")
     if order.status == "cancelled":
@@ -358,6 +371,8 @@ def payment_notice_template(order) -> str:
 
 def payment_notice_refusal(order) -> NotificationResendRefused | None:
     """Guarda comum do gesto de enviar/re-enviar uma cobrança do PDV."""
+    if ((order.data or {}).get("payment") or {}).get("counter_takeover"):
+        return _taken_over_at_counter_refusal()
     template = payment_notice_template(order)
     if not template:
         return NotificationResendRefused("payment_notice_unavailable", "Este pedido não tem cobrança que possa ser enviada.")

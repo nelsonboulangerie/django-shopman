@@ -207,13 +207,14 @@ def test_so_entrega_o_que_esta_pronto(shift, status, phrase):
 
 
 def test_pix_pendente_nao_recebe_no_balcao_sem_matar_a_cobranca_viva(shift):
+    """O balcão pode receber (a régua libera), mas só depois de cancelar a cobrança."""
     order = _order("PIX-PENDENTE")
     intent = PaymentService.create_intent(order.ref, 3600, "pix")
     order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
     order.save(update_fields=["data"])
 
-    assert "pagamento online" in operator_orders.counter_hand_over_block(order)
-    with pytest.raises(ValueError, match="pagamento online"):
+    assert operator_orders.counter_hand_over_block(order) == ""
+    with pytest.raises(ValueError, match="ainda está ativo"):
         operator_orders.hand_over_at_counter(order, cash_shift=shift, actor="pos:marina",
                                              tenders=[{"method": "cash", "amount_q": 3600}])
 

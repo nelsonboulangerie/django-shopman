@@ -2,7 +2,7 @@ import type { ComputedRef, Ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import { handOverDoneMessage, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
+import { handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
 import type { PreorderDetailResponse, PreorderHandOverResponse, PreorderRescheduleResponse } from "~/types/preorders";
 import type { POSProjection } from "~/types/pos";
 
@@ -18,6 +18,9 @@ export interface ManagerChallenge {
  *   que faz o acerto no turno DESTA estação e conclui, numa transação. Mesma
  *   idempotência das mutações de caixa: uma chave por gesto (`client_request_id`),
  *   reaproveitada quando o mesmo gesto é repetido depois de uma falha de rede.
+ *   Pix ou link pendente: o servidor cancela a cobrança do cliente antes de
+ *   receber; se o cliente acabou de pagar, recusa com `preorder_paid_online` e a
+ *   tela avisa (`paidOnline`) e oferece só "Entregar".
  * - **Cancelar**: a MESMA rota do Gestor (`/orders/<ref>/cancel/`) — régua,
  *   política, permissão e PIN de gerente num lugar só. Pedido pago volta com
  *   `manager_approval_required`; a página abre o `OperatorManagerAuth` e repete o
@@ -34,6 +37,9 @@ export function usePosPreorderActions(options: {
   const drawer = useCounterAgent(options.pos);
   const busy = ref(false);
   const managerChallenge = ref<ManagerChallenge | null>(null);
+  // O cliente pagou online antes de o balcão receber: o aviso fica na tela até a
+  // entrega (o toast some, e o operador precisa saber que NÃO deve cobrar).
+  const paidOnline = ref("");
 
   let lastAttempt: { signature: string; key: string } | null = null;
   function gestureKey(signature: string): string {
@@ -59,10 +65,19 @@ export function usePosPreorderActions(options: {
       });
       lastAttempt = null;
       if (body.tenders?.some((tender) => tender.method === "cash")) void drawer.kick("preorder_cash");
+      paidOnline.value = "";
       toast.success(handOverDoneMessage(response?.received_q ?? 0));
       await options.refresh();
       return true;
     } catch (error) {
+      const notice = paidOnlineNotice(httpErrorCode(error), httpErrorMessage(error, ""));
+      if (notice) {
+        lastAttempt = null;
+        paidOnline.value = notice;
+        toast.warning(notice);
+        await options.refresh();
+        return false;
+      }
       toast.error(`${httpErrorMessage(error, "Não deu para entregar a encomenda.")} Confira a encomenda e tente de novo.`);
       await options.refresh();
       return false;
@@ -137,5 +152,5 @@ export function usePosPreorderActions(options: {
     managerChallenge.value = null;
   }
 
-  return { busy, managerChallenge, handOver, cancel, reschedule, dismissManagerChallenge };
+  return { busy, managerChallenge, paidOnline, handOver, cancel, reschedule, dismissManagerChallenge };
 }

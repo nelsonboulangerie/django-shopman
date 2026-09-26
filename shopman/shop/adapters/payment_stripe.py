@@ -1134,6 +1134,22 @@ def _alert_dispute_lost(
     )
 
 
+#: O evento foi o pagamento tardio de uma cobrança que o balcão assumiu: já foi
+#: tratado (anulado ou estornado) e não dispara os ganchos de pedido pago.
+COUNTER_TAKEOVER_LATE_EVENT = "counter_takeover.late_payment"
+
+
+def _late_after_counter_takeover(intent_ref: str, payment_intent_id) -> bool:
+    """A cobrança foi cancelada porque o balcão recebeu? Então o dinheiro volta.
+
+    Sem este desvio, o ``authorize`` num intent cancelado viraria só um alerta de
+    divergência, e o cliente ficaria pago duas vezes até alguém conciliar.
+    """
+    from shopman.shop.services import counter_takeover
+
+    return counter_takeover.handle_late_stripe_payment(intent_ref, _stripe_object_id(payment_intent_id))
+
+
 def handle_webhook_event(event) -> dict:
     """Process a verified Stripe webhook event."""
     from shopman.payman import PaymentError, PaymentService
@@ -1145,6 +1161,8 @@ def handle_webhook_event(event) -> dict:
         session_metadata = getattr(session, "metadata", None) or {}
         shopman_ref = _metadata_value(session_metadata, "shopman_ref")
         payment_intent_id = getattr(session, "payment_intent", None)
+        if shopman_ref and _late_after_counter_takeover(shopman_ref, payment_intent_id):
+            return {"event_type": COUNTER_TAKEOVER_LATE_EVENT, "intent_ref": shopman_ref}
         if shopman_ref:
             intent_ref = shopman_ref
             # Promote gateway_id from session id to payment_intent id so
@@ -1175,6 +1193,8 @@ def handle_webhook_event(event) -> dict:
             getattr(stripe_intent, "metadata", None),
             "shopman_ref",
         )
+        if shopman_ref and _late_after_counter_takeover(shopman_ref, stripe_intent.id):
+            return {"event_type": COUNTER_TAKEOVER_LATE_EVENT, "intent_ref": shopman_ref}
         if shopman_ref:
             intent_ref = shopman_ref
             drifted = False

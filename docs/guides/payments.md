@@ -277,6 +277,32 @@ máquina de timeout cancela, e o caminho é refazer a venda. As recusas (`paymen
 `payment_link_already_paid`, `payment_link_send_pending`, `payment_link_resend_too_soon`…) estão em
 [errors.md](../reference/errors.md).
 
+### Pix ou link pendente recebido no balcão
+
+Decisão do dono (26/09/2026): a encomenda que espera um Pix ou um link pode ser recebida no
+balcão (dinheiro com troco, débito ou crédito) no mesmo "Receber e entregar" do PDV. O risco é a
+cobrança dupla, e a ordem em `shop/services/counter_takeover.py` existe para fechá-lo:
+
+1. **Perguntar ao provedor** (`payment.settle_from_gateway`). Pagou? O pagamento é registrado e a
+   rota recusa com `preorder_paid_online`: o PDV avisa e oferece só **Entregar**.
+2. **Cancelar no provedor** (`adapter.cancel`: expira a Checkout Session ou anula o PaymentIntent
+   no Stripe; remove a cobrança na Efí) e depois no Payman. Falhou? `digital_charge_not_cancelled`
+   e nada muda.
+3. **Pular os avisos de cobrança** da fila (`payment_requested`, `payment_link_sent`, lembretes),
+   com o motivo `payment_taken_over_at_counter`. Reenviar a cobrança passa a ser recusado com o
+   mesmo código.
+4. Gravar `payment.counter_takeover` ([data-schemas](../reference/data-schemas.md)) e receber pelo
+   acerto canônico (`settle_delivery_cash`, livro `cod_settled` para o dinheiro). A NFC-e lê os
+   `tenders` do balcão: o tPag é o do dinheiro/cartão, nunca o do Pix cancelado.
+
+Os passos 1 e 2 rodam FORA da transação do acerto (cancelamento no provedor não volta com
+rollback), e só depois de conferido o que o acerto exige (pronta, caixa aberto, formas cobrindo o
+que falta). **A corrida tardia** — o provedor confirmar depois do balcão — não pede gente: o Pix
+entra num intent próprio pela `pix_confirmation` e o Stripe pelo desvio do webhook
+(`payment_stripe._late_after_counter_takeover`); os dois são estornados no MESMO meio
+(`counter_takeover.refund_late_payment`) com alerta `payment_after_cancel`. Autorização de cartão
+sem captura é anulada. iFood fica de fora.
+
 ## Backends Disponíveis
 
 ### MockPaymentBackend

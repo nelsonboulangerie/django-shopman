@@ -2427,6 +2427,34 @@ class POSPreorderHandOverView(APIView):
         except (TypeError, ValueError):
             return Response({"detail": "Valor recebido inválido.", "field": "cash_tendered_q"}, status=400)
 
+        # Pix ou link pendente: a cobrança do cliente morre ANTES do acerto, fora
+        # da transação dele (cancelamento no provedor não volta com rollback). Se
+        # o cliente acabou de pagar, o balcão não recebe: só entrega.
+        from shopman.shop.services import counter_takeover
+
+        if counter_takeover.pending_digital_method(order):
+            try:
+                shift = pos_service.current_shift(_terminal_do_pedido(request), strict=True)
+                revised = operator_orders.take_over_before_hand_over(
+                    order, cash_shift=shift, actor=_actor(request), tenders=raw_tenders, expected_revision=base,
+                )
+            except counter_takeover.PaidOnline as exc:
+                return Response({"detail": str(exc), "error": {"code": "preorder_paid_online"}}, status=409)
+            except counter_takeover.TakeoverFailed as exc:
+                return Response({"detail": str(exc), "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+            except operator_orders.OrderStateConflict as exc:
+                return Response({"detail": str(exc), "error": {"code": "preorder_changed"}}, status=409)
+            except CashError as exc:
+                return Response({"detail": exc.message}, status=400)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+            except Exception:
+                logger.warning("pos_preorder_counter_takeover_failed order=%s", order.ref, exc_info=True)
+                return Response({"detail": counter_takeover.CANCEL_FAILED_MESSAGE,
+                    "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+            if revised is not None:
+                base = revised
+
         def executar():
             try:
                 terminal_ref = _terminal_do_pedido(request)

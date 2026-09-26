@@ -47,7 +47,7 @@ Pedido**.
 |---|---|---|---|
 | Listar/buscar | parcial | `backstage/projections/order_queue.build_two_zone_queue` (grupo *Agendados*, cards ricos, itens efetivos sem N+1) · `order_ticket.orders_for_period` | projeção do PDV com busca, hoje+futuro e **saldo** (`payment.captured_balance_q` × `order_composition.effective_total_q`) |
 | Receber na retirada (dinheiro/cartão) | sim | `operator_orders.settle_delivery_cash` · `backstage/services/orders.py` | endpoint do PDV com o turno do terminal; ⚠️ o serviço compara com `order.total_q` (selado) — trocar por `effective_total_q` |
-| Receber Pix/link pendente no balcão | não | — | converter a cobrança pendente em pagamento do terminal (Payman `settle`), sem fluxo paralelo |
+| Receber Pix/link pendente no balcão | sim (26/09) | `shop/services/counter_takeover.py` + `operator_orders.take_over_before_hand_over` | — (pergunta ao provedor, cancela a cobrança, cala os avisos, e só então o acerto canônico; pagamento tardio é estornado no mesmo meio) |
 | Entregar | sim | `advance_order` READY→COMPLETED + `payment_gate` | expor |
 | Cancelar fora da janela de 5 min | sim | `operator_orders.cancel_order` + `operator_cancel_policy` + PIN | expor; Caixa não cancela pronto/concluído (é do Gerente) |
 | Devolver dinheiro | sim | `payment.pending_cash_refunds` · `refund_cash` | já está na antesala (*Precisa de você*) |
@@ -86,6 +86,11 @@ Uma frente = um branch = uma PR. A ordem é de dependência.
   total **efetivo** (pré-requisito de E6; corrige desde já pedido do iFood ajustado).
 - Pix/link pendente recebido no balcão: converter a cobrança em pagamento do terminal pelo
   Payman — **sem** segunda cobrança viva (cancelar o link/intent pendente antes).
+  ✅ Feito (decisão do dono, 26/09): `counter_takeover.take_over_pending_digital_charge`
+  pergunta ao provedor (cliente que acabou de pagar → só entregar), cancela no provedor e
+  no Payman, pula os avisos de cobrança da fila e grava `payment.counter_takeover`; o
+  acerto canônico recebe na forma escolhida no balcão. O pagamento digital que chegar
+  depois é estornado no MESMO meio, com alerta. iFood fica de fora.
 
 ### WP-E4 — Cancelar pelo PDV  *(depende de E2)*
 - Expor `operator_orders.cancel_order` com a política e o PIN que já existem; devolução em
