@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Prévia navegável do composer Marketing V2." />
     <title>Marketing V2 — Prévia local</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=3" />
   </head>
   <body>
     <div class="app-shell">
@@ -73,13 +73,14 @@
                 <button class="secondary-button" type="button">Replicar onde fizer sentido</button>
               </div>
               <div class="destination-grid">
-                <label class="destination-check selected"><input type="checkbox" checked /><span class="platform-icon instagram">IG</span><span><strong>@nelson · Feed</strong><small>Retrato 4:5 · imagem</small></span><em>Pronto</em></label>
-                <label class="destination-check selected"><input type="checkbox" checked /><span class="platform-icon instagram">IG</span><span><strong>@nelson · Story</strong><small>Vertical 9:16 · imagem</small></span><em>Pronto</em></label>
-                <label class="destination-check selected"><input type="checkbox" checked /><span class="platform-icon facebook">f</span><span><strong>Página Centro · Feed</strong><small>Imagem + link</small></span><em>Pronto</em></label>
-                <label class="destination-check selected"><input type="checkbox" checked /><span class="platform-icon google">G</span><span><strong>Loja Jardins · Google</strong><small>Atualização, Evento ou Oferta</small></span><em>Pronto</em></label>
-                <label class="destination-check"><input type="checkbox" /><span class="platform-icon whatsapp">W</span><span><strong>Conta Principal · WhatsApp</strong><small>Template aprovado</small></span><em>842 aptos</em></label>
-                <label class="destination-check limited"><input type="checkbox" /><span class="platform-icon tiktok">T</span><span><strong>@nelson · TikTok</strong><small>Exportar rascunho para concluir no TikTok</small></span><em>Requer conexão</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="instagram-feed" checked /><span class="platform-icon instagram">IG</span><span><strong>@nelson · Feed</strong><small>Retrato 4:5 · imagem</small></span><em>Pronto</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="instagram-story" checked /><span class="platform-icon instagram">IG</span><span><strong>@nelson · Story</strong><small>Vertical 9:16 · imagem</small></span><em>Pronto</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="facebook-feed" checked /><span class="platform-icon facebook">f</span><span><strong>Página Centro · Feed</strong><small>Imagem + link</small></span><em>Pronto</em></label>
+                <label class="destination-check selected"><input type="checkbox" data-destination="google" checked /><span class="platform-icon google">G</span><span><strong>Loja Jardins · Google</strong><small>Atualização, Evento ou Oferta</small></span><em>Pronto</em></label>
+                <label class="destination-check"><input type="checkbox" data-destination="whatsapp" /><span class="platform-icon whatsapp">W</span><span><strong>Conta Principal · WhatsApp</strong><small>Template aprovado</small></span><em>842 aptos</em></label>
+                <label class="destination-check limited" aria-disabled="true"><input type="checkbox" data-destination="tiktok" disabled /><span class="platform-icon tiktok">T</span><span><strong>@nelson · TikTok</strong><small>Fora do fluxo operacional desta versão</small></span><em>Relay futuro</em></label>
               </div>
+              <p class="inline-note"><strong>Sem opções-fantasma:</strong> só os destinos selecionados aparecem em Conteúdo. O TikTok permanece visível no roadmap, mas não pode ser incluído enquanto a conexão aprovada não existir.</p>
             </div>
           </div>
 
@@ -97,27 +98,35 @@
                   <small>Serve de ponto de partida. Cada destino mantém sua própria versão.</small>
                 </div>
 
-                <div class="placement-tabs" role="tablist" aria-label="Destinos de publicação">
-                  <button class="placement-tab" data-placement="instagram-feed">Instagram · Feed</button>
-                  <button class="placement-tab" data-placement="instagram-story">Instagram · Story</button>
-                  <button class="placement-tab" data-placement="facebook-feed">Facebook · Feed</button>
-                  <button class="placement-tab active" data-placement="google">Google · Jardins</button>
-                  <button class="placement-tab" data-placement="whatsapp">WhatsApp</button>
-                  <button class="placement-tab" data-placement="tiktok">TikTok</button>
+                <div class="composition-tabs" role="tablist" aria-label="Composições por destino">
+                  <button class="composition-tab" data-destination="instagram-feed">Instagram · Feed</button>
+                  <button class="composition-tab" data-destination="instagram-story">Instagram · Story</button>
+                  <button class="composition-tab" data-destination="facebook-feed">Facebook · Feed</button>
+                  <button class="composition-tab active" data-destination="google">Google · Jardins</button>
+                  <button class="composition-tab" data-destination="whatsapp" hidden>WhatsApp</button>
                 </div>
 
-                <div class="placement-editor" id="genericEditor" hidden>
-                  <label class="field-label" for="placementText">Texto deste destino</label>
-                  <textarea id="placementText" rows="4">A primavera chegou à Nelson. Nesta semana, o Hibisco ganha 15% de desconto.</textarea>
-                  <div class="field-row">
-                    <label><span>Formato</span><select id="genericFormat"></select></label>
-                    <label><span>Ajuste vertical da imagem</span><input id="cropRange" type="range" min="0" max="100" value="50" /></label>
+                <div class="composition-editor" id="genericEditor" hidden>
+                  <div class="destination-scope">
+                    <strong id="editorScope">Configuração deste destino</strong>
+                    <span id="editorScopeNote">As opções abaixo não são impostas às outras plataformas.</span>
                   </div>
+                  <label class="field-label" id="destinationTextLabel" for="destinationText">Texto deste destino</label>
+                  <textarea id="destinationText" rows="4">A primavera chegou à Nelson. Nesta semana, o Hibisco ganha 15% de desconto.</textarea>
+                  <div class="field-row">
+                    <label><span id="destinationFormatLabel">Mídia</span><select id="destinationFormat"></select></label>
+                    <label id="destinationSecondaryField"><span id="destinationSecondaryLabel">Ajuste vertical da imagem</span><input id="destinationSecondaryInput" type="range" min="0" max="100" value="50" /></label>
+                  </div>
+                  <p class="inline-note" id="destinationRule"></p>
                 </div>
 
-                <div class="placement-editor" id="googleEditor">
+                <div class="composition-editor" id="googleEditor">
+                  <div class="destination-scope">
+                    <strong>Só para Google · Loja Jardins</strong>
+                    <span>O formato e os campos abaixo pertencem à API do Perfil da Empresa no Google.</span>
+                  </div>
                   <fieldset class="segmented-field">
-                    <legend>Tipo de publicação</legend>
+                    <legend>Formato no Google</legend>
                     <div class="segmented">
                       <button type="button" data-google-type="standard">Atualização</button>
                       <button type="button" data-google-type="event">Evento</button>
@@ -210,14 +219,15 @@
           <div class="step-panel" data-step-panel="5" hidden>
             <div class="simple-card">
               <p class="section-kicker">5 · Revisar</p>
-              <h2>Quatro publicações, sem surpresas</h2>
+              <h2 id="reviewHeading">Quatro publicações, sem surpresas</h2>
               <div class="review-list">
-                <div><span class="platform-icon instagram">IG</span><span><strong>Instagram @nelson · Feed</strong><small>Imagem 4:5 + legenda · segunda, 08:00</small></span><em>Pronto</em></div>
-                <div><span class="platform-icon instagram">IG</span><span><strong>Instagram @nelson · Story</strong><small>Imagem 9:16 · segunda, 08:00</small></span><em>Pronto</em></div>
-                <div><span class="platform-icon facebook">f</span><span><strong>Facebook Página Centro · Feed</strong><small>Imagem + link · segunda, 08:00</small></span><em>Pronto</em></div>
-                <div><span class="platform-icon google">G</span><span><strong>Google Loja Jardins · Oferta</strong><small>Cupom PRIMAVERA15 · 28/09 a 04/10</small></span><em>Pronto</em></div>
+                <div data-review-destination="instagram-feed"><span class="platform-icon instagram">IG</span><span><strong>Instagram @nelson · Feed</strong><small>Imagem 4:5 + legenda · segunda, 08:00</small></span><em>Pronto</em></div>
+                <div data-review-destination="instagram-story"><span class="platform-icon instagram">IG</span><span><strong>Instagram @nelson · Story</strong><small>Imagem 9:16 · segunda, 08:00</small></span><em>Pronto</em></div>
+                <div data-review-destination="facebook-feed"><span class="platform-icon facebook">f</span><span><strong>Facebook Página Centro · Feed</strong><small>Imagem + link · segunda, 08:00</small></span><em>Pronto</em></div>
+                <div data-review-destination="google"><span class="platform-icon google">G</span><span><strong>Google Loja Jardins · Oferta</strong><small>Cupom PRIMAVERA15 · 28/09 a 04/10</small></span><em>Pronto</em></div>
+                <div data-review-destination="whatsapp" hidden><span class="platform-icon whatsapp">W</span><span><strong>WhatsApp Conta Principal</strong><small>Template oferta_v3 · 842 contatos aptos</small></span><em>Pronto</em></div>
               </div>
-              <div class="review-total"><span>Consequências independentes</span><strong>Agendar 4 publicações</strong></div>
+              <div class="review-total"><span>Veiculações independentes</span><strong id="reviewTotal">Agendar 4 publicações</strong></div>
             </div>
           </div>
 
@@ -250,6 +260,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>

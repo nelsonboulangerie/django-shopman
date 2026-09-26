@@ -5,13 +5,21 @@ const pages = {
   platforms: ["Configuração", "Plataformas"],
 };
 
-const placements = {
+const destinationCompositions = {
   "instagram-feed": {
     title: "Instagram · @nelson · Feed",
     ratioName: "Feed retrato · 4:5",
     pixels: "1080 × 1350",
     ratioClass: "ratio-feed",
     formats: ["Imagem", "Vídeo"],
+    editorScope: "Só para Instagram · Feed",
+    editorScopeNote: "O Feed recebe uma composição própria; opções de Story, Google ou WhatsApp não aparecem aqui.",
+    textLabel: "Legenda do Feed",
+    formatLabel: "Tipo de mídia no Feed",
+    secondaryLabel: "Ajuste vertical da imagem",
+    secondaryType: "range",
+    secondaryValue: "50",
+    rule: "Publicação orgânica: a legenda pode orientar a ação, mas a API não oferece um botão CTA genérico neste formato.",
     headline: "",
     body: "A primavera chegou à Nelson. Nesta semana, o Hibisco ganha 15% de desconto. #primavera",
     cta: "",
@@ -25,6 +33,14 @@ const placements = {
     pixels: "1080 × 1920",
     ratioClass: "ratio-story",
     formats: ["Imagem", "Vídeo"],
+    editorScope: "Só para Instagram · Story",
+    editorScopeNote: "A composição vertical e a área segura existem somente para este Story.",
+    textLabel: "Texto da composição do Story",
+    formatLabel: "Conteúdo do Story",
+    secondaryLabel: "Ajuste vertical da imagem",
+    secondaryType: "range",
+    secondaryValue: "50",
+    rule: "A prévia protege a área editorial; controles, stickers e recursos disponíveis na conta continuam sendo responsabilidade do Instagram.",
     headline: "Primavera na Nelson",
     body: "15% OFF no Hibisco nesta semana.",
     cta: "",
@@ -38,6 +54,14 @@ const placements = {
     pixels: "1080 × 1350",
     ratioClass: "ratio-facebook",
     formats: ["Imagem + link", "Texto", "Vídeo"],
+    editorScope: "Só para Facebook · Página Centro",
+    editorScopeNote: "A composição e o link pertencem a este post do Facebook.",
+    textLabel: "Texto do post",
+    formatLabel: "Composição do post",
+    secondaryLabel: "Link do post",
+    secondaryType: "url",
+    secondaryValue: "https://nelson.example/hibisco",
+    rule: "O link integra o conteúdo do post. Ele não é apresentado como se fosse um CTA arbitrário da API orgânica.",
     headline: "Hibisco Primavera",
     body: "A primavera chegou à Nelson. Aproveite 15% de desconto nesta semana.",
     cta: "Abrir link",
@@ -56,7 +80,7 @@ const placements = {
     cta: "Ver oferta",
     badge: "15% OFF",
     coupon: "PRIMAVERA15",
-    note: "Proporção controlada, renderização variável. O arquivo e o corte editorial respeitam 4:3; o Google pode adaptar o card conforme a superfície onde ele aparecer.",
+    note: "O arquivo e o corte editorial respeitam 4:3; o Google pode adaptar o card conforme a superfície onde ele aparecer.",
   },
   whatsapp: {
     title: "WhatsApp · Conta Principal",
@@ -64,6 +88,14 @@ const placements = {
     pixels: "1125 × 600",
     ratioClass: "ratio-whatsapp",
     formats: ["Template oferta_v3"],
+    editorScope: "Só para WhatsApp · Conta Principal",
+    editorScopeNote: "O template foi aprovado previamente e determina texto, variáveis e botões permitidos.",
+    textLabel: "Texto resultante do template",
+    formatLabel: "Template aprovado",
+    secondaryLabel: "Variável {{cupom}}",
+    secondaryType: "text",
+    secondaryValue: "PRIMAVERA15",
+    rule: "Não há tipo de publicação genérico: o operador apenas escolhe um template aprovado e preenche as variáveis autorizadas.",
     headline: "Oferta da semana",
     body: "Olá, {{primeiro_nome}}! O Hibisco está com 15% de desconto.",
     cta: "Comprar agora",
@@ -71,24 +103,12 @@ const placements = {
     coupon: "PRIMAVERA15",
     note: "A proporção acompanha o cabeçalho de mídia do template. Texto, variáveis e botão são definidos pelo template aprovado; o operador apenas preenche o que ele permite.",
   },
-  tiktok: {
-    title: "TikTok · @nelson · Rascunho",
-    ratioName: "Vídeo vertical · 9:16",
-    pixels: "1080 × 1920",
-    ratioClass: "ratio-tiktok",
-    formats: ["Vídeo", "Fotos"],
-    headline: "",
-    body: "A primavera chegou à Nelson 🌺 #hibisco #primavera",
-    cta: "Concluir no TikTok",
-    badge: "Rascunho",
-    coupon: "",
-    note: "O Shopman enviaria um rascunho pelo Upload API. O operador recebe uma notificação e conclui edição, música, privacidade e publicação dentro do TikTok.",
-  },
 };
 
 let currentPage = "campaigns";
 let currentStep = 3;
-let currentPlacement = "google";
+let currentDestination = "google";
+let currentGoogleType = "offer";
 let toastTimer;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -124,8 +144,9 @@ function openStep(step) {
     button.classList.toggle("done", number < currentStep);
   });
   $("#backButton").disabled = currentStep === 1;
+  const selectedCount = getSelectedDestinations().length;
   $("#nextButton").textContent = currentStep === 5
-    ? "Agendar 4 publicações"
+    ? `Agendar ${selectedCount} ${selectedCount === 1 ? "publicação" : "publicações"}`
     : ["Escolher destinos", "Criar conteúdo", "Continuar para público", "Revisar campanha"][currentStep - 1];
   const hints = [
     "A oferta comercial existe uma vez e alimenta os destinos.",
@@ -137,36 +158,74 @@ function openStep(step) {
   $("#stepHint").textContent = hints[currentStep - 1];
 }
 
-function updatePreview(placementRef) {
-  currentPlacement = placementRef;
-  const placement = placements[placementRef];
-  $$(".placement-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.placement === placementRef));
-  $("#previewTitle").textContent = placement.title;
-  $("#ratioName").textContent = placement.ratioName;
-  $("#ratioPixels").textContent = placement.pixels;
-  $("#socialHeadline").textContent = placement.headline;
-  $("#socialHeadline").hidden = !placement.headline;
-  $("#socialBody").textContent = placement.body;
-  $("#previewCta").textContent = placement.cta;
-  $("#previewCta").hidden = !placement.cta;
-  $("#offerBadge").textContent = placement.badge;
-  $("#offerBadge").hidden = !placement.badge;
-  $("#couponLine").hidden = !placement.coupon;
-  if (placement.coupon) $("#couponLine strong").textContent = placement.coupon;
-  $("#previewNote").innerHTML = `<strong>${placementRef === "google" ? "Proporção controlada, renderização variável." : "Prévia por destino."}</strong> ${placement.note}`;
-  $("#mediaFrame").className = `media-frame ${placement.ratioClass}`;
-  $("#socialPreview").className = `social-preview ${placementRef === "google" ? "google-preview" : ""}`;
+function getSelectedDestinations() {
+  return $$('.destination-check input[data-destination]:checked:not(:disabled)').map((input) => input.dataset.destination);
+}
 
-  const isGoogle = placementRef === "google";
+function configureDestinationEditor(destination) {
+  $("#editorScope").textContent = destination.editorScope;
+  $("#editorScopeNote").textContent = destination.editorScopeNote;
+  $("#destinationTextLabel").textContent = destination.textLabel;
+  $("#destinationText").value = destination.body;
+  $("#destinationFormatLabel").textContent = destination.formatLabel;
+  $("#destinationFormat").innerHTML = destination.formats.map((format) => `<option>${format}</option>`).join("");
+  $("#destinationSecondaryLabel").textContent = destination.secondaryLabel;
+  const input = $("#destinationSecondaryInput");
+  input.type = destination.secondaryType;
+  input.value = destination.secondaryValue;
+  if (destination.secondaryType === "range") {
+    input.min = "0";
+    input.max = "100";
+  } else {
+    input.removeAttribute("min");
+    input.removeAttribute("max");
+  }
+  $("#destinationRule").textContent = destination.rule;
+}
+
+function updatePreview(destinationRef) {
+  currentDestination = destinationRef;
+  const destination = destinationCompositions[destinationRef];
+  $$(".composition-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.destination === destinationRef));
+  $("#previewTitle").textContent = destination.title;
+  $("#ratioName").textContent = destination.ratioName;
+  $("#ratioPixels").textContent = destination.pixels;
+  $("#socialHeadline").textContent = destination.headline;
+  $("#socialHeadline").hidden = !destination.headline;
+  $("#socialBody").textContent = destination.body;
+  $("#previewCta").textContent = destination.cta;
+  $("#previewCta").hidden = !destination.cta;
+  $("#offerBadge").textContent = destination.badge;
+  $("#offerBadge").hidden = !destination.badge;
+  $("#couponLine").hidden = !destination.coupon;
+  if (destination.coupon) $("#couponLine strong").textContent = destination.coupon;
+  $("#previewNote").innerHTML = `<strong>${destinationRef === "google" ? "Proporção controlada, renderização variável." : "Prévia por destino."}</strong> ${destination.note}`;
+  $("#mediaFrame").className = `media-frame ${destination.ratioClass}`;
+  $("#socialPreview").className = `social-preview ${destinationRef === "google" ? "google-preview" : ""}`;
+
+  const isGoogle = destinationRef === "google";
   $("#googleEditor").hidden = !isGoogle;
   $("#genericEditor").hidden = isGoogle;
-  if (!isGoogle) {
-    $("#placementText").value = placement.body;
-    $("#genericFormat").innerHTML = placement.formats.map((format) => `<option>${format}</option>`).join("");
-  }
+  if (isGoogle) updateGoogleType(currentGoogleType);
+  else configureDestinationEditor(destination);
+}
+
+function refreshSelectedDestinations() {
+  const selected = getSelectedDestinations();
+  $$(".composition-tab").forEach((tab) => { tab.hidden = !selected.includes(tab.dataset.destination); });
+  $$('[data-review-destination]').forEach((row) => { row.hidden = !selected.includes(row.dataset.reviewDestination); });
+
+  if (!selected.includes(currentDestination) && selected.length) updatePreview(selected[0]);
+
+  const count = selected.length;
+  const label = count === 1 ? "publicação" : "publicações";
+  $("#reviewHeading").textContent = `${count === 4 ? "Quatro" : count} ${label}, sem surpresas`;
+  $("#reviewTotal").textContent = `Agendar ${count} ${label}`;
+  if (currentStep === 5) $("#nextButton").textContent = `Agendar ${count} ${label}`;
 }
 
 function updateGoogleType(type) {
+  currentGoogleType = type;
   $$('[data-google-type]').forEach((button) => button.classList.toggle("active", button.dataset.googleType === type));
   $("#googleStandardFields").hidden = type !== "standard";
   $("#googleEventFields").hidden = type !== "event";
@@ -196,13 +255,14 @@ function updateGoogleType(type) {
 
   $("#socialHeadline").textContent = content.headline;
   $("#previewCta").textContent = content.cta;
+  $("#previewCta").hidden = false;
   $("#offerBadge").textContent = content.badge;
   $("#previewNote").innerHTML = `<strong>Comportamento real do Google.</strong> ${content.note}`;
 }
 
 $$('.nav-item').forEach((button) => button.addEventListener("click", () => openPage(button.dataset.page)));
 $$('.step').forEach((button) => button.addEventListener("click", () => openStep(Number(button.dataset.step))));
-$$('.placement-tab').forEach((button) => button.addEventListener("click", () => updatePreview(button.dataset.placement)));
+$$('.composition-tab').forEach((button) => button.addEventListener("click", () => updatePreview(button.dataset.destination)));
 $$('[data-google-type]').forEach((button) => button.addEventListener("click", () => updateGoogleType(button.dataset.googleType)));
 
 $("#nextButton").addEventListener("click", () => {
@@ -220,11 +280,11 @@ $("#safeAreaToggle").addEventListener("click", (event) => {
   $("#safeArea").classList.toggle("visible", !pressed);
 });
 
-$("#cropRange").addEventListener("input", (event) => {
-  $("#previewImage").style.objectPosition = `50% ${event.target.value}%`;
+$("#destinationSecondaryInput").addEventListener("input", (event) => {
+  if (event.target.type === "range") $("#previewImage").style.objectPosition = `50% ${event.target.value}%`;
 });
 
-$("#placementText").addEventListener("input", (event) => {
+$("#destinationText").addEventListener("input", (event) => {
   $("#socialBody").textContent = event.target.value;
 });
 
@@ -249,6 +309,7 @@ $$('.choice-card').forEach((button) => button.addEventListener("click", () => {
 
 $$('.destination-check input').forEach((input) => input.addEventListener("change", () => {
   input.closest(".destination-check").classList.toggle("selected", input.checked);
+  refreshSelectedDestinations();
 }));
 
 $$('.preview-cta, .page-action-row .primary-button, .activity-row button').forEach((button) => {
@@ -257,5 +318,5 @@ $$('.preview-cta, .page-action-row .primary-button, .activity-row button').forEa
 
 openPage(currentPage);
 openStep(currentStep);
-updatePreview(currentPlacement);
-updateGoogleType("offer");
+refreshSelectedDestinations();
+updatePreview(currentDestination);

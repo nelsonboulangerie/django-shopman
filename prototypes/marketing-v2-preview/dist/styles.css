@@ -18,6 +18,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -163,8 +164,8 @@ textarea, input, select {
 }
 textarea { resize: vertical; }
 
-.placement-tabs { display: flex; gap: 7px; overflow-x: auto; margin: 18px 0; padding-bottom: 3px; scrollbar-width: thin; }
-.placement-tab {
+.composition-tabs { display: flex; gap: 7px; overflow-x: auto; margin: 18px 0; padding-bottom: 3px; scrollbar-width: thin; }
+.composition-tab {
   flex: 0 0 auto;
   border: 1px solid var(--line);
   border-radius: 99px;
@@ -174,8 +175,11 @@ textarea { resize: vertical; }
   font-size: .76rem;
   cursor: pointer;
 }
-.placement-tab.active { border-color: var(--ink); background: var(--ink); color: #fff; }
-.placement-editor { display: grid; gap: 12px; }
+.composition-tab.active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.composition-editor { display: grid; gap: 12px; }
+.destination-scope { display: grid; gap: 3px; padding: 10px 12px; border-radius: 9px; background: #f1f4f7; color: #39434e; }
+.destination-scope strong { font-size: .78rem; }
+.destination-scope span { color: #66717c; font-size: .72rem; line-height: 1.4; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-row.thirds { grid-template-columns: 1fr 1fr 1fr; }
 .counter { display: flex; justify-content: space-between; color: var(--muted); font-size: .73rem; }
@@ -246,6 +250,7 @@ textarea { resize: vertical; }
 .destination-check em { color: var(--green); font-size: .68rem; font-style: normal; font-weight: 800; }
 .destination-check.selected { border-color: #aba79d; background: #fbfaf7; }
 .destination-check.limited em { color: var(--amber); }
+.destination-check[aria-disabled="true"] { cursor: not-allowed; opacity: .68; background: #f1efe9; }
 .platform-icon { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 10px; color: white; font-size: .7rem; font-weight: 900; }
 .platform-icon.instagram { background: linear-gradient(135deg, #7b3fe4, #ef435e, #ef9c32); }
 .platform-icon.facebook { background: #1877f2; font: 900 1.2rem Arial, sans-serif; }

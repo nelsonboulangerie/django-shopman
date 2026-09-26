@@ -28,9 +28,31 @@ Depois escolhe destinos concretos, por exemplo:
 - Google `Loja Jardins` / Oferta;
 - WhatsApp `Conta Principal` / Template aprovado.
 
-Cada destino é um **placement** independente. Ele tem campos, mídia, preview, validação, agendamento, idempotência e resultado próprios. O Marketing coordena placements; não reduz todos a um payload comum.
+Cada **destino** é a combinação concreta de conta + plataforma + formato. Ele tem uma **composição** adaptada, com campos, mídia, preview e validação próprios. Quando executado, produz uma **veiculação** independente, com agendamento, idempotência e resultado próprios. O Marketing coordena o **conjunto** dessas consequências; não reduz todas a um payload comum.
 
 Isso preserva as vantagens de uma operação multiplataforma — uma intenção, uma oferta e uma revisão — sem nivelar a experiência pela plataforma mais limitada.
+
+### 1.1 Vocabulário e regra anti-Frankenstein
+
+| Termo | Significado no produto |
+|---|---|
+| Campanha | intenção comercial comum do operador |
+| Conjunto | todos os destinos coordenados pela campanha |
+| Destino | conta + plataforma + formato, por exemplo `Google · Loja Jardins · Oferta` |
+| Composição | texto, mídia e opções adaptados para um destino |
+| Veiculação | execução externa e seu resultado auditável |
+
+`Placement` não deve aparecer na interface e deixa de ser o nome do agregado de domínio. O nome técnico proposto é `CampaignDestination`; renderização e mídia vivem na composição, e o efeito externo vive na veiculação.
+
+A interface generaliza apenas a intenção que é realmente comum: objetivo, oferta, mensagem-base, ativos e janela desejada. Formato, CTA, template, privacidade, período de evento, botões, disclosures e regras de mídia aparecem somente dentro do destino que os suporta. Nenhuma opção comum pode depender de o adapter “dar um jeito” de traduzi-la silenciosamente.
+
+Consequentemente:
+
+- Google mostra **Formato no Google** (`Atualização`, `Evento`, `Oferta`) somente na composição Google;
+- Instagram mostra mídia e opções do formato selecionado, sem simular CTA orgânico;
+- Facebook mostra composição do post e link quando aplicável;
+- WhatsApp mostra template aprovado, variáveis e botões definidos pelo template;
+- TikTok não aparece como destino selecionável enquanto o conector aprovado não estiver operacional.
 
 ## 2. O que já existe e o que precisa mudar
 
@@ -272,7 +294,7 @@ O novo catálogo precisa responder quatro perguntas distintas.
 | Provider | O que a API permite em tese? | Instagram permite carrossel de até 10 itens |
 | Connector | O que nosso adapter implementa? | carrossel ainda está em desenvolvimento |
 | Connection | O que esta conta/location permite agora? | Story indisponível para esta conta; quota restante 7 |
-| Placement | Este conteúdo concreto é válido? | terceiro vídeo excede duração; CTA incompatível |
+| Destino | Esta composição concreta é válida? | terceiro vídeo excede duração; CTA incompatível |
 
 ### 4.1 Regra de exposição
 
@@ -301,7 +323,7 @@ O backend deve publicar um catálogo versionado semelhante a:
           "connection_id": "...",
           "label": "@nelson",
           "account_capabilities_checked_at": "...",
-          "placements": [
+          "destinations": [
             {
               "delivery_kind": "public_post",
               "format": "carousel",
@@ -365,9 +387,9 @@ As configurações escalares atuais devem migrar para registros. Durante a trans
 
 Não é uma promessa de payload idêntico.
 
-### 5.3 CampaignPlacement
+### 5.3 CampaignDestination
 
-É uma consequência selecionada:
+É um destino selecionado e sua composição:
 
 - identidade `{connection, platform, delivery_kind, format}`;
 - campos específicos;
@@ -376,7 +398,7 @@ Não é uma promessa de payload idêntico.
 - horário efetivo;
 - versão do capability snapshot usado;
 - preview e validation snapshot;
-- lifecycle independente.
+- referência para a veiculação e seu lifecycle independente.
 
 ### 5.4 CampaignBundle e dispatch
 
@@ -392,7 +414,7 @@ Estados do bundle:
 - completed_with_failures;
 - cancelled_before_effects.
 
-Estados por placement:
+Estados por veiculação:
 
 - draft;
 - invalid;
@@ -417,7 +439,7 @@ Se Facebook publicar e Instagram falhar, Facebook não é “despublicado” com
 3. **Ofertas** — promoções, cupons, vigência e uso.
 4. **Plataformas** — conexões, contas/Pages/locations, permissões, quotas e diagnóstico.
 
-Templates deixam de ser uma página principal. Eles aparecem onde são escolhidos: no placement de WhatsApp ou como presets de composição. Histórico vira visão da campanha/bundle, não um silo separado.
+Templates deixam de ser uma página principal. Eles aparecem onde são escolhidos: no destino de WhatsApp ou como presets de composição. Histórico vira visão da campanha/conjunto, não um silo separado.
 
 ### 6.2 Entrada por objetivo
 
@@ -426,7 +448,7 @@ O primeiro clique não deve perguntar “qual API?”. Deve oferecer:
 - **Divulgar novidade** — publicação pública;
 - **Lançar oferta** — promoção/cupom + publicações/mensagem;
 - **Enviar mensagem** — WhatsApp e audiência;
-- **Repetir campanha** — duplica intenção e placements, revalida tudo;
+- **Repetir campanha** — duplica intenção e destinos, revalida tudo;
 - **Começar em branco**.
 
 ### 6.3 Wizard em cinco passos curtos
@@ -454,11 +476,11 @@ Google · Loja Jardins
   [x] Oferta
 ```
 
-Cada card mostra readiness, quota e impedimento. Um preset “Replicar onde fizer sentido” seleciona apenas placements compatíveis com os assets atuais; nunca inventa transformação destrutiva.
+Cada card mostra readiness, quota e impedimento. Um preset “Replicar onde fizer sentido” seleciona apenas destinos compatíveis com os assets atuais; nunca inventa transformação destrutiva.
 
 #### Passo 3 — Conteúdo
 
-O operador escreve um brief/mensagem-base uma vez. O sistema preenche versões iniciais por placement, respeitando limites e convenções. Em seguida mostra abas por consequência:
+O operador escreve um brief/mensagem-base uma vez. O sistema preenche versões iniciais por destino, respeitando limites e convenções. Em seguida mostra abas por composição:
 
 - texto e campos próprios;
 - mídia/crop próprios;
@@ -494,7 +516,7 @@ O botão principal diz exatamente o que fará: “Agendar 4 publicações e 842 
 
 - caminho feliz com defaults seguros e sem campos irrelevantes;
 - detalhes progressivos, nunca um formulário universal gigante;
-- erro ao lado do placement e antes do disparo;
+- erro ao lado do destino e antes do disparo;
 - autosave de draft;
 - teclado e mobile utilizáveis;
 - ausência de códigos internos na linguagem do operador;
@@ -504,7 +526,7 @@ O botão principal diz exatamente o que fará: “Agendar 4 publicações e 842 
 
 ## 7. Semântica de CTA
 
-Pode existir um **objetivo semântico** comum — comprar, reservar, saber mais, responder — para ajudar a composição. A tradução final é explícita por placement:
+Pode existir um **objetivo semântico** comum — comprar, reservar, saber mais, responder — para ajudar a composição. A tradução final é explícita por destino:
 
 | Objetivo | Instagram orgânico | Facebook orgânico | Google Business | WhatsApp template |
 |---|---|---|---|---|
@@ -539,7 +561,7 @@ O gerenciamento maduro precisa de:
 - lotes de códigos, quando necessário;
 - origem da campanha e métricas de uso;
 - URL de resgate/claim segura;
-- preview da condição comercial em todos os placements;
+- preview da condição comercial em todos os destinos;
 - trilha de auditoria para mudança após uma campanha ser selada.
 
 `uses_count` isolado não é suficiente para concorrência, uso por cliente e estorno.
@@ -554,9 +576,9 @@ Para Google Offer, o adapter deve passar a suportar `couponCode`, `redeemOnlineU
 
 ### 9.1 Fronteiras
 
-- Marketing API: CRUD de plano, placements, previews e validação.
+- Marketing API: CRUD de plano, destinos, composições, previews e validação.
 - Capability service: provider + connector + connection snapshots.
-- Media pipeline: ingestão, inspeção, transforms não destrutivos e derivados por placement.
+- Media pipeline: ingestão, inspeção, transforms não destrutivos e derivados por composição.
 - Artifact sealer: payload imutável por lane.
 - Outbox/dispatcher: efeito externo idempotente.
 - Reconciler: resolve estados desconhecidos e importa estado remoto relevante.
@@ -569,7 +591,7 @@ O operador escolhe uma janela comum, mas o sistema decide por adapter:
 - usar agendamento nativo quando ele é confiável, cancelável e observável;
 - ou reter no outbox local e publicar na hora.
 
-A decisão fica gravada no placement. Nunca se mistura agendamento nativo e local sem mostrar qual sistema é a fonte de verdade.
+A decisão fica gravada no destino. Nunca se mistura agendamento nativo e local sem mostrar qual sistema é a fonte de verdade.
 
 ### 9.3 Versionamento
 
@@ -591,7 +613,7 @@ Cada pacote deve caber em PR pequeno, manter os efeitos atuais estáveis e passa
 Área:
 
 - `shopman/shop/services/marketing_capabilities.py`;
-- nova representação tipada de provider/connector/connection/placement;
+- nova representação tipada de provider/connector/connection/destination;
 - projeção e contratos de teste.
 
 Entrega:
@@ -622,13 +644,13 @@ Entrega:
 - seleção por conta concreta;
 - health, permissões e última atualização de capabilities.
 
-### WP-03 — Plano, placements e bundle
+### WP-03 — Plano, destinos e conjunto
 
 Área:
 
 - modelos/migrations;
 - API de draft e autosave;
-- idempotency namespace por placement;
+- idempotency namespace por veiculação;
 - projeção agregada.
 
 Entrega:
@@ -642,7 +664,7 @@ Entrega:
 
 - slots tipados;
 - inspeção de formato/duração/dimensões;
-- crops/derivados por placement;
+- crops/derivados por composição;
 - upload e lifecycle de container;
 - preview usando o mesmo artefato que será selado.
 
@@ -693,7 +715,7 @@ Entrega:
 
 - `surfaces/marketing-nuxt` sem alterar package manifests salvo necessidade aprovada;
 - wizard de cinco passos;
-- previews por placement;
+- previews por destino;
 - revisão exata e acompanhamento do bundle.
 
 O rollout pode coexistir com o composer atual sob flag até a paridade de fluxos existentes.
@@ -723,7 +745,7 @@ Somente após telemetria e paridade:
 
 - contract/golden tests do catálogo;
 - testes de compatibilidade de artifact antigo;
-- testes de idempotência por placement;
+- testes de idempotência por veiculação;
 - testes de partial success e reconciliação;
 - testes de timezone e agendamento;
 - testes concorrentes de cupom;
@@ -759,7 +781,7 @@ Qualquer mudança em ModelAdmin/template do backstage deve passar:
 - tempo mediano até uma campanha pronta;
 - número de correções depois da tela de revisão;
 - taxa de abandono por passo;
-- placements escolhidos por campanha;
+- destinos escolhidos por campanha;
 - falhas detectadas antes do dispatch;
 - partial failures e unknown outcomes por provider;
 - tempo até recuperação/retry;
