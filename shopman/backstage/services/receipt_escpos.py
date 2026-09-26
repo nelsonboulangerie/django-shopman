@@ -968,3 +968,113 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])
     return bytes(out)
+
+
+def _tall(text: str) -> bytes:
+    """Uma linha em altura dupla, largura normal — as 48 colunas continuam.
+
+    Irmã de :func:`_double`: o item da cozinha precisa ser lido de longe, mas
+    em corpo duplo o nome do lanche caberia em 24 colunas e quebraria em três
+    linhas. Só a altura dobra (`GS ! 0x01`), e volta a `0x00` na mesma função.
+    """
+    return bytes([GS, ord("!"), 0x01]) + _line(text[:COLUMNS]) + bytes([GS, ord("!"), 0x00])
+
+
+def _bold(text: str) -> bytes:
+    """Uma linha em negrito (`ESC E 1`), desligado na mesma função."""
+    return bytes([ESC, ord("E"), 1]) + _line(text[:COLUMNS]) + bytes([ESC, ord("E"), 0])
+
+
+def kitchen_ticket(ticket, *, reprint: bool = False) -> bytes:
+    """A VIA COZINHA — o card do KDS, impresso no posto que não tem tela.
+
+    Decisão do dono (26/09/2026): o posto de Lanches tem só uma impressora
+    térmica de rede, e os itens dele saem impressos. O papel é o card da tela,
+    e por isso nasce da mesma projeção (``projections.kds.build_kitchen_paper``,
+    que reaproveita o ``_build_ticket`` do board): o pedido tem o mesmo nome no
+    papel e na tela.
+
+    - **O posto no topo.** Com uma impressora por posto, é o que diz a quem
+      pertence o papel que caiu na bancada errada.
+    - **O pedido em corpo duplo**, e o nome de chamada logo abaixo: é por eles
+      que a cozinha chama quem espera.
+    - **Quantidade na FRENTE**, em altura dupla: "2 x" antes do nome, e o nome
+      longo quebra sem empurrar o número para a linha de baixo. A observação de
+      cada item vem colada nele, em negrito — é ela que muda o preparo.
+    - **Nenhum preço.** Valor na cozinha não decide nada e atravanca a leitura
+      (a Via Cozinha não é sujeita ao filtro de valores porque nunca os teve —
+      ``order_documents.py``).
+    - **CANCELADO grita.** O ticket cancelado (itens retirados do pedido, ou o
+      pedido inteiro cancelado) sai como papel próprio, emoldurado, com os itens
+      que NÃO devem ser feitos. A cozinha que só tem papel não descobre por
+      adivinhação que parou de fazer alguma coisa.
+    - **"REIMPRESSÃO"**, nunca "2a VIA": decisão do dono — "via" nomeia a
+      audiência do papel, e "segunda via da Via Cozinha" é ambíguo.
+    """
+    from shopman.backstage.projections.kds import build_kitchen_paper
+
+    paper = build_kitchen_paper(ticket)
+    card = paper.card
+
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _centered(paper.station_name.upper())
+    out += _centered("Via Cozinha")
+    if reprint:
+        out += _centered("*** REIMPRESSÃO ***")
+    if card.test_order_label:
+        out += _centered(f"*** {card.test_order_label.upper()} ***")
+    if card.is_cancelled:
+        # Moldura de branco e régua em volta, como o valor da sangria: o olho
+        # acha antes de procurar. Um CANCELADO discreto é lido como mais um
+        # pedido, e o lanche sai.
+        out += _rule()
+        out += _line("")
+        out += _double("CANCELADO")
+        out += _centered("NÃO PREPARE os itens abaixo")
+        if card.cancelled_at_display:
+            out += _centered(f"cancelado às {card.cancelled_at_display}")
+        out += _line("")
+    out += _rule()
+
+    # ── Quem é o pedido ───────────────────────────────────────────────
+    out += _line("")
+    out += _double(card.order_ref or "-")
+    if card.customer_name:
+        out += _double(_headline_name(card.customer_name, COLUMNS // 2))
+    out += _line("")
+    if card.previous_tab_ref:
+        out += _centered(f"comanda {card.previous_tab_ref}")
+    canal = " · ".join(part for part in (paper.channel_label, paper.fulfillment_label) if part)
+    out += _pair(canal[: COLUMNS - 14], f"disparo {paper.fired_at_display}")
+    out += _rule()
+
+    # ── Os itens ──────────────────────────────────────────────────────
+    for item in card.items:
+        pedacos = _wrap(f"{item.qty} x {item.name}", COLUMNS)
+        out += _tall(pedacos[0])
+        for pedaco in pedacos[1:]:
+            out += _tall(f"    {pedaco}")
+        if item.notes:
+            for pedaco in _wrap(f">> {item.notes}", COLUMNS - 4):
+                out += _bold(f"    {pedaco}")
+    out += _rule()
+
+    # As duas notas são de DONOS diferentes (data-schemas), e saem com nome,
+    # como na ficha do pedido: fundi-las apagaria quem pediu o quê.
+    if card.kitchen_note or card.customer_note:
+        if card.kitchen_note:
+            out += _line("Nota da cozinha:")
+            for pedaco in _wrap(card.kitchen_note, COLUMNS):
+                out += _bold(pedaco)
+        if card.customer_note:
+            out += _line("Observação do cliente:")
+            for pedaco in _wrap(card.customer_note, COLUMNS):
+                out += _bold(pedaco)
+        out += _rule()
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial — o próximo papel começa limpo
+    return bytes(out)

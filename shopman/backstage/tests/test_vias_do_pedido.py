@@ -182,26 +182,28 @@ def test_cada_via_carrega_a_propria_permissao():
     assert vias.BY_KEY[vias.KITCHEN].permission == "backstage.operate_kds"
 
 
-def test_as_quatro_chaves_de_carimbo_continuam_quatro():
+def test_as_tres_chaves_de_carimbo_do_pedido_continuam_tres():
     """⚠️ A Via Pedido é um papel só e tem DUAS chaves, porque são duas
     fases: "a ficha já ter ido para o painel não faz da primeira via do
     entregador uma segunda". Unificar faria a primeira via que sai pela porta
-    nascer marcada como reimpressão de um papel que ninguém segurou."""
+    nascer marcada como reimpressão de um papel que ninguém segurou.
+
+    A Via Cozinha não tem chave em ``Order.data``: o papel é por TICKET, e o
+    "já saiu" mora na série do ``PrintJob`` de cada ticket."""
     encomenda = vias.BY_KEY[vias.ORDER]
     assert encomenda.print_stamp_key == "ticket_printed_at"
     assert encomenda.filtered_print_stamp_keys == {
         vias.FILTER_CUSTOMER_IDENTITY: "courier_ticket_printed_at",
     }
     assert vias.BY_KEY[vias.RECEIPT].print_stamp_key == "receipt_printed_at"
-    assert vias.BY_KEY[vias.KITCHEN].print_stamp_key == "kitchen_ticket_printed_at"
+    assert vias.BY_KEY[vias.KITCHEN].print_stamp_key == ""
 
-    todas = {d.print_stamp_key for d in vias.DOCUMENTS}
+    todas = {d.print_stamp_key for d in vias.DOCUMENTS if d.print_stamp_key}
     todas |= {k for d in vias.DOCUMENTS for k in d.filtered_print_stamp_keys.values()}
     assert todas == {
         "ticket_printed_at",
         "courier_ticket_printed_at",
         "receipt_printed_at",
-        "kitchen_ticket_printed_at",
     }
 
 
@@ -223,14 +225,13 @@ def test_so_o_recibo_tem_superficie_alternativa():
     assert com_alternativa == [vias.RECEIPT]
 
 
-def test_a_via_da_cozinha_esta_registrada_mas_ainda_nao_tem_papel():
-    """O catálogo é a decisão; o papel é a migração, que vem depois."""
+def test_a_via_da_cozinha_sai_sozinha_e_nenhuma_tela_a_oferece():
+    """A Via Cozinha sai pelo relay, um papel por ticket, no posto sem tela
+    (``kitchen_ticket_print``). Sem rota, nenhuma tela oferece botão para ela."""
     cozinha_via = vias.BY_KEY[vias.KITCHEN]
     assert cozinha_via.has_paper is False
     assert cozinha_via.route_name == ""
-    # A chave do carimbo já está reservada para a migração não escolher um nome
-    # sob pressão — e para ninguém escolher outro.
-    assert cozinha_via.print_stamp_key == "kitchen_ticket_printed_at"
+    assert cozinha_via.print_stamp_key == ""
 
 
 # ── 2. Os filtros são uma FAMÍLIA, não dois casos especiais ───────────────

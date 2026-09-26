@@ -356,6 +356,56 @@ def build_kds_ticket(ticket_pk: int) -> KDSTicketProjection:
     return _build_ticket(ticket, ticket.kds_instance)
 
 
+@dataclass(frozen=True)
+class KitchenPaperProjection:
+    """O card do KDS, para o posto que não tem tela: a Via Cozinha impressa.
+
+    Nasce do MESMO ``_build_ticket`` que monta o card da tela — referência do
+    pedido, comanda anterior, nome de chamada, itens, observações e as duas
+    notas —, para o papel nunca chamar o pedido por um nome e a tela por outro.
+    O que só o papel precisa (nome do posto, canal por extenso, recebimento)
+    vem ao lado. Nenhum valor: preço na cozinha não decide nada.
+    """
+
+    station_name: str
+    card: KDSTicketProjection
+    channel_label: str
+    #: "ENTREGA" · "RETIRADA" · "" — o mesmo corte do ícone do card
+    #: (``fulfillment_icon``), com a retirada dita só quando o pedido a declara.
+    fulfillment_label: str
+    fired_at_display: str
+
+
+def build_kitchen_paper(ticket) -> KitchenPaperProjection:
+    """O que a Via Cozinha deste ticket imprime (``receipt_escpos.kitchen_ticket``)."""
+    from shopman.shop.models import Channel
+
+    instance = ticket.kds_instance
+    source = _resolve_ticket_source(ticket)
+    card = _build_ticket(ticket, instance, source=source)
+    source_data = (getattr(source, "data", None) or {}) if source is not None else {}
+    channel_ref = str(getattr(source, "channel_ref", "") or "")
+    channel_label = ""
+    if channel_ref:
+        channel_label = (
+            Channel.objects.filter(ref=channel_ref).values_list("name", flat=True).first() or channel_ref
+        )
+    fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
+    if fulfillment_type == "delivery":
+        fulfillment_label = "ENTREGA"
+    elif fulfillment_type == "pickup":
+        fulfillment_label = "RETIRADA"
+    else:
+        fulfillment_label = ""
+    return KitchenPaperProjection(
+        station_name=str(instance.name),
+        card=card,
+        channel_label=str(channel_label),
+        fulfillment_label=fulfillment_label,
+        fired_at_display=_format_time(ticket.created_at),
+    )
+
+
 def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection:
     """Build a public pickup board without customer names, phones, totals, or addresses.
 

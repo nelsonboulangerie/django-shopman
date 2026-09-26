@@ -91,6 +91,22 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # A Via Cozinha: o posto do KDS sem tela recebe cada ticket impresso na
+        # impressora escolhida no posto, pelo relay. Receiver próprio, fora dos
+        # emissores de SSE: imprimir e avisar a tela são efeitos independentes.
+        # Ver services/kitchen_ticket_print.py.
+        from django.db.models.signals import post_save
+
+        from shopman.backstage.models import KDSTicket
+        from shopman.backstage.services.kitchen_ticket_print import on_ticket_saved
+
+        post_save.connect(
+            on_ticket_saved,
+            sender=KDSTicket,
+            dispatch_uid="backstage.kitchen_ticket_print.on_ticket_saved",
+            weak=False,
+        )
+
         # Trilha de acesso: quem entrou, por qual porta, de onde. O sucesso vem
         # do signal do PRÓPRIO Django — os quatro caminhos de operador (senha do
         # Admin, senha do app, PIN, crachá) terminam todos em `login()`, então

@@ -29,9 +29,27 @@ class KDSInstance(models.Model):
     )
     sound_enabled = models.BooleanField("som ativo", default=True)
     is_active = models.BooleanField("ativa", default=True)
+    # Posto sem tela (decisão do dono, 26/09/2026): o posto de Lanches tem só
+    # uma impressora térmica de rede. Com um terminal aqui, cada ticket que cai
+    # no posto sai impresso nele — a "Via Cozinha" de
+    # ``services/order_documents.py``, composta por
+    # ``receipt_escpos.kitchen_ticket`` e enviada pelo relay
+    # (``services/kitchen_ticket_print.py``). Vazio = o posto lê a tela do KDS.
+    print_terminal = models.ForeignKey(
+        "cashman.Terminal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kds_print_stations",
+        verbose_name="impressora do posto",
+        help_text=(
+            "Posto sem tela: os pedidos deste posto saem impressos nesta impressora. "
+            "Deixe vazio quando o posto acompanha os pedidos pela tela do KDS."
+        ),
+    )
     config = models.JSONField(
         "configurações", default=dict, blank=True,
-        help_text="text_size, dark_mode, refresh_interval, etc.",
+        help_text="text_size, dark_mode, refresh_interval, on_print, etc.",
     )
 
     class Meta:

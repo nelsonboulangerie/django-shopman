@@ -595,6 +595,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("check_ifood_store"),
         call("check_card_machines_out"),
         call("sweep_danfe_print_jobs"),
+        call("sweep_kitchen_print_jobs"),
         # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
         # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
         # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio

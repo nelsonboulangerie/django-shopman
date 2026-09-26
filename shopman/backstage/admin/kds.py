@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
+from django.utils.html import format_html
 from shopman.utils import unfold_badge, unfold_link
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
@@ -19,6 +20,12 @@ class KDSInstanceAdmin(ModelAdmin):
     ordering = ["name"]
     prepopulated_fields = {"ref": ("name",)}
     filter_horizontal = ["collections"]
+    # ``print_terminal`` fica no select padrão do Unfold (lista fechada dos
+    # terminais cadastrados), e não em autocomplete: o autocomplete pede
+    # permissão de ver Terminais, que quem configura o KDS pode não ter. O
+    # gestor escolhe a impressora e nunca digita um endereço — quem sabe o IP é
+    # a fila do agente daquele terminal (CUPS ``socket://IP:9100``).
+    readonly_fields = ["print_destination_display"]
     compressed_fields = True
     warn_unsaved_form = True
     fieldsets = [
@@ -26,6 +33,13 @@ class KDSInstanceAdmin(ModelAdmin):
         ("Coleções", {
             "fields": ("collections",),
             "description": "Categorias de produto que esta estação processa. Vazio = processa todas as categorias.",
+        }),
+        ("Impressora do posto", {
+            "fields": ("print_terminal", "print_destination_display"),
+            "description": (
+                "Para o posto que não tem tela: cada pedido que cai aqui sai impresso na impressora "
+                "escolhida (Via Cozinha). O status do pedido no KDS não muda ao imprimir."
+            ),
         }),
         ("Configuração", {"fields": ("target_time_minutes", "sound_enabled", "is_active", "config")}),
     ]
@@ -40,6 +54,30 @@ class KDSInstanceAdmin(ModelAdmin):
         if obj.is_active:
             return unfold_badge("ativa", "green")
         return unfold_badge("inativa", "base")
+
+    @display(description="impressora agora")
+    def print_destination_display(self, obj):
+        """A saúde da impressora escolhida, com a MESMA régua do relay.
+
+        Escolher a impressora e só descobrir no primeiro pedido que o agente
+        dela não está pareado é o buraco de sempre: aqui o gestor lê o que o
+        servidor vai encontrar (``print_jobs._destination_health``).
+        """
+        terminal = getattr(obj, "print_terminal", None) if obj is not None else None
+        if terminal is None:
+            return unfold_badge("sem impressora — o posto usa a tela", "base")
+        if not terminal.is_active:
+            return format_html(
+                "{} {}",
+                unfold_badge("terminal desativado", "red"),
+                "Reative o terminal em Terminais do PDV ou escolha outra impressora.",
+            )
+        from shopman.backstage.services.print_jobs import _destination_health
+
+        health = _destination_health(terminal)
+        color = "green" if health.status_label == "Pronta" else ("yellow" if health.available else "red")
+        detail = health.problem or health.label
+        return format_html("{} {}", unfold_badge(health.status_label, color), detail)
 
     @display(description="operação")
     def open_display(self, obj):

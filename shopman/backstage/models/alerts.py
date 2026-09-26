@@ -169,6 +169,10 @@ class OperatorAlert(models.Model):
         # agente parado, recusa). Não é fiscal: a nota está autorizada. O que
         # falta é o papel na sacola, e o botão de imprimir está no card.
         ("danfe_print_failed", "DANFE da entrega não impressa"),
+        # A Via Cozinha do posto sem tela não saiu (agente sem par, terminal
+        # desativado, recusa, impressora que não buscou). O posto não tem tela
+        # para descobrir sozinho: sem papel, o lanche não é feito.
+        ("kitchen_print_failed", "Via Cozinha não impressa no posto"),
         # O desconto de pontos já entrou no total e a baixa no saldo não passou:
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
@@ -324,6 +328,7 @@ class OperatorAlert(models.Model):
         "ifood_store_sync_failed",
         "card_machine_overdue",
         "danfe_print_failed",
+        "kitchen_print_failed",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
