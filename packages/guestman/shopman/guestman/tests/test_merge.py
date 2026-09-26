@@ -950,10 +950,13 @@ class TestMergeUndo:
 
     def test_undo_rejects_already_reverted(self, source, target, evidence):
         result = MergeService.merge(source, target, evidence, actor="test")
-        MergeService.undo(result.audit_id, actor="test")
+        MergeService.undo(result.audit_id, actor="first-winner")
 
         with pytest.raises(CustomerError, match="already reverted"):
-            MergeService.undo(result.audit_id, actor="test")
+            MergeService.undo(result.audit_id, actor="late-retry")
+
+        audit = MergeAudit.objects.get(pk=result.audit_id)
+        assert audit.reverted_by == "first-winner"
 
     def test_undo_rejects_expired_window(self, source, target, evidence):
         result = MergeService.merge(source, target, evidence, actor="test")
@@ -1359,3 +1362,79 @@ class TestMergeFillsIdentityGaps:
 
         target.refresh_from_db()
         assert target.document == "52998224725"
+
+
+# ======================================================================
+# Preview — o que a unificação FARIA, sem fazer
+# ======================================================================
+
+
+class TestMergePreview:
+
+    def _populate(self, source, target):
+        CustomerIdentifier.objects.create(
+            customer=source,
+            identifier_type=IdentifierType.IFOOD,
+            identifier_value="0f8fad5b-d9cb-469f-a165-70867728950e",
+            is_primary=True,
+        )
+        CustomerAddress.objects.create(
+            customer=source,
+            label="home",
+            formatted_address="Rua A, 1",
+            is_default=True,
+        )
+        LoyaltyAccount.objects.create(customer=source, points_balance=120, lifetime_points=120)
+        Customer.objects.filter(pk=source.pk).update(document="11122233344")
+        source.refresh_from_db()
+
+    def test_preview_reports_what_merge_would_move(self, source, target, evidence):
+        self._populate(source, target)
+
+        preview = MergeService.preview(source, target, evidence)
+
+        assert preview.source_ref == "SRC-001"
+        assert preview.target_ref == "TGT-001"
+        assert preview.migrated_identifiers == 1
+        assert preview.migrated_addresses == 1
+        assert preview.loyalty_merged is True
+        assert preview.loyalty_points_absorbed == 120
+        assert preview.identity_filled == {"document": "11122233344"}
+
+    def test_preview_leaves_database_untouched(self, source, target, evidence):
+        self._populate(source, target)
+
+        MergeService.preview(source, target, evidence)
+
+        # O contrato inclui os objetos entregues pelo chamador, não só o banco:
+        # uma prévia seguida de renderização usa estas mesmas instâncias.
+        assert source.is_active is True
+        assert source.document == "11122233344"
+        assert target.document == ""
+        assert CustomerIdentifier.objects.get(identifier_type=IdentifierType.IFOOD).customer == source
+        assert CustomerAddress.objects.get().customer == source
+        assert LoyaltyAccount.objects.get(customer=source).is_active is True
+        assert not LoyaltyAccount.objects.filter(customer=target).exists()
+        assert not MergeAudit.objects.exists()
+        assert not TimelineEvent.objects.filter(customer=target).exists()
+
+    def test_preview_matches_the_merge_that_follows(self, source, target, evidence):
+        self._populate(source, target)
+
+        preview = MergeService.preview(source, target, evidence)
+        result = MergeService.merge(source, target, evidence, actor="test")
+
+        assert preview.migrated_identifiers == result.migrated_identifiers
+        assert preview.migrated_addresses == result.migrated_addresses
+        assert preview.migrated_contact_points == result.migrated_contact_points
+        assert preview.migrated_orders == result.migrated_orders
+
+    def test_preview_applies_the_same_gate(self, source, target):
+        with pytest.raises(GateError):
+            MergeService.preview(source, target, evidence={})
+
+    def test_preview_refuses_inactive_source(self, source, target, evidence):
+        Customer.objects.filter(pk=source.pk).update(is_active=False)
+        source.refresh_from_db()
+        with pytest.raises(CustomerError):
+            MergeService.preview(source, target, evidence)

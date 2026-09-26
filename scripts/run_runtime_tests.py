@@ -71,6 +71,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # Public Guestman child writers share the Customer-first privacy fence;
     # loyalty additionally proves it never takes LoyaltyAccount first.
     "packages/guestman/shopman/guestman/tests/test_privacy_mutation_fences_postgres.py",
+    # Undo de merge precisa serializar duas requisições concorrentes contra o
+    # mesmo audit; a garantia depende de SELECT FOR UPDATE no PostgreSQL.
+    "packages/guestman/shopman/guestman/tests/test_merge_undo_postgres.py",
     # Provas do concierge dependem de locks, conexões independentes e migrações
     # reais; skips do lote SQLite precisam executar neste gate estrito.
     "shopman/storefront/tests/test_concierge_authority.py",
