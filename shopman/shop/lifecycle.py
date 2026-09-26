@@ -528,9 +528,11 @@ def _on_paid(order, config: ChannelConfig) -> None:
         _create_alert(order, "payment_after_cancel")
         return
     if (order.data or {}).get("origin_channel") == "pos" and _payment_is_captured(order):
-        # A cobrança digital acabou de se liquidar. A nota também deve nascer
-        # quando a retirada/entrega estiver agendada para outro dia.
-        fiscal.emit(order)
+        # A cobrança digital do PDV acabou de se liquidar. Venda de balcão
+        # emite agora; encomenda (retirada/entrega pela frente) recebe só a Via
+        # Recibo e a nota espera a saída da mercadoria (decisão de 26/09/2026,
+        # ``fiscal.emission_waits_for_handoff``).
+        fiscal.emit_on_payment(order)
     if order.status == Order.Status.NEW:
         _create_alert(order, "payment_awaiting_confirmation")
         if config.confirmation.mode in ("auto_confirm", "auto_cancel"):
@@ -583,7 +585,13 @@ def _on_preparing(order, config: ChannelConfig) -> None:
 
 
 def _on_ready(order, config: ChannelConfig) -> None:
-    """Order ready: create fulfillment (if post_commit) + notify + courier dispatch."""
+    """Order ready: NFC-e of the delivery bag, fulfillment (if post_commit), notify, courier.
+
+    Na entrega da casa a nota nasce com a sacola pronta: a SEFAZ autoriza
+    enquanto o entregador não sai, e a DANFE imprime no despacho
+    (``backstage.services.order_danfe``). Ver ``fiscal.emit_for_delivery_handoff``.
+    """
+    fiscal.emit_for_delivery_handoff(order)
     if config.fulfillment.timing == "post_commit":
         fulfillment.create(order)
     notification.send(order, "order_ready")
@@ -596,17 +604,18 @@ def _on_ready(order, config: ChannelConfig) -> None:
 def _on_dispatched(order, config: ChannelConfig) -> None:
     """Order dispatched: the NFC-e leaves WITH the goods, then notify.
 
-    Cobrar na entrega não segura a nota: a NFC-e acompanha a mercadoria na
-    saída, e o pedido COD da loja só ganhava nota na conclusão — a sacola saía
-    sem documento e a expedição gritava (``fiscal_handoff_without_nfce``). O
-    PDV já emite no fechamento; aqui é a mesma regra para quem chegou pela
-    loja. ``fiscal.emit`` é idempotente (dedupe ``nfce:{ref}``), então o
-    pedido que já tem nota não emite duas vezes.
+    A NFC-e acompanha a mercadoria na saída. A entrega da casa já emitiu com a
+    sacola pronta (``_on_ready``); o despacho é a rede para o pedido que pulou
+    esse degrau. Cobrar na entrega não segura a nota — e é a única regra de
+    despacho que vale também para o iFood (COD com entrega da loja), cujo
+    momento de nota não muda aqui. ``fiscal.emit`` é idempotente (dedupe
+    ``nfce:{ref}``), então o pedido que já tem nota não emite duas vezes.
     """
     from shopman.shop.services.payment_gate import collects_on_delivery
 
     if collects_on_delivery(order):
         fiscal.emit(order)
+    fiscal.emit_for_delivery_handoff(order)
     notification.send(order, "order_dispatched")
 
 
@@ -617,7 +626,11 @@ def _on_delivered(order, config: ChannelConfig) -> None:
 
 
 def _on_completed(order, config: ChannelConfig) -> None:
-    """Order completed: loyalty points + fiscal emission."""
+    """Order completed: loyalty points + fiscal emission.
+
+    Na retirada, é AQUI que a nota da encomenda paga antes nasce — a saída da
+    mercadoria é a entrega ao cliente. Para todo o resto é a rede idempotente.
+    """
     loyalty.earn(order)
     fiscal.emit(order)
 

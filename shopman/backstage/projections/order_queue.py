@@ -1949,9 +1949,10 @@ def _format_time_of_day(dt) -> str:
 
 #: ``fiscal_state`` (serviço) → ``(fiscal_status, fiscal_status_label)`` da pill.
 #:
-#: A copy segue o PONTO em que a nota nasce, não o status do pedido: pix/link
-#: emitem na captura (``lifecycle._on_paid``), e "Fiscal na conclusão" mentia
-#: para eles. ``fiscal_status`` mantém as chaves que a tela do Gestor já lê
+#: A copy segue o PONTO em que a nota nasce, não o status do pedido: o Pix de
+#: balcão emite na captura (``lifecycle._on_paid``), a encomenda emite na saída
+#: da mercadoria (retirada ou entrega), e "Fiscal na conclusão" mentia para os
+#: dois. ``fiscal_status`` mantém as chaves que a tela do Gestor já lê
 #: (``failed`` liga o "Reprocessar NFC-e"); ``fiscal_state`` é o vocabulário
 #: canônico, o mesmo do PDV.
 _FISCAL_PILL = {
@@ -1959,6 +1960,8 @@ _FISCAL_PILL = {
     "failed": ("failed", "NFC-e não autorizada"),
     "queued": ("pending", "NFC-e em emissão"),
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
+    "awaiting_pickup": ("awaiting_pickup", "NFC-e sai na retirada"),
+    "awaiting_delivery": ("awaiting_delivery", "NFC-e sai na entrega"),
     # Escolha do Pablo, a mesma do PDV (`pos-nuxt/app/presentation/saleResult.ts`):
     # diz o fato sem alarme; não trocar num lado só.
     "not_expected": ("not_requested", "Emissão não estabelecida"),

@@ -91,7 +91,7 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { countUnits, pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptFiscalHandoffLine, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
@@ -1551,5 +1551,17 @@ describe("a frase da cozinha no checkout conta unidades", () => {
 
   it("carrinho vazio não fala", () => {
     expect(kitchenHandoffNote([])).toBe("");
+  });
+});
+
+describe("receiptFiscalHandoffLine — o recibo da encomenda diz quando a nota sai", () => {
+  it("fala a mesma frase do servidor (`receipt_escpos._fiscal_handoff_line`)", () => {
+    expect(receiptFiscalHandoffLine("awaiting_pickup")).toBe("A nota fiscal sai na retirada.");
+    expect(receiptFiscalHandoffLine("awaiting_delivery")).toBe("A nota fiscal sai na entrega.");
+  });
+  it("venda de balcão e nota já resolvida não ganham frase", () => {
+    for (const state of ["queued", "authorized", "not_expected", "awaiting_payment", "failed"] as const) {
+      expect(receiptFiscalHandoffLine(state)).toBe("");
+    }
   });
 });

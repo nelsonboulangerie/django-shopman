@@ -3,8 +3,7 @@
 Nenhum portão de expedição conferia ``nfce_access_key``: um pedido podia ser
 despachado pelo Gestor ou concluído pela Saída do KDS com a nota na fila
 (ou morta) e ninguém ficava sabendo. O aviso é alerta por pedido, sem barrar —
-barrar é decisão do dono, porque a nota do COD só nasce na conclusão por
-desenho.
+barrar é decisão do dono (expedição sem NFC-e só avisa).
 """
 
 from __future__ import annotations
@@ -71,13 +70,36 @@ def test_o_gestor_despacha_e_o_alerta_nasce_sem_barrar():
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
 def test_a_saida_do_kds_conclui_e_o_alerta_nasce_sem_barrar():
+    """A emissão MORTA grita na retirada — a porta do KDS também confere."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+
     order = _cod("HANDOFF-KDS", fulfillment_type="pickup")
+    order.data["payment"]["cod_settled_at"] = "2026-09-16T10:00:00Z"
+    order.save(update_fields=["data"])
+    Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref})
+
+    assert kds.expedition_action(order, action="complete", actor="operator:test") == Order.Status.COMPLETED
+
+    assert _alertas(order.ref).count() == 1
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
+def test_retirada_cuja_nota_espera_a_saida_conclui_em_silencio():
+    """Encomenda paga antes: a nota nasce NA retirada (decisão de 26/09/2026).
+
+    A conclusão é o ponto de emissão, não um atraso — gritar "saiu sem nota"
+    em toda retirada de encomenda seria ruído. A falha da emissão tem o alerta
+    dela (``fiscal_emit_failed``).
+    """
+    order = _cod("HANDOFF-KDS-ENCOMENDA", fulfillment_type="pickup")
     order.data["payment"]["cod_settled_at"] = "2026-09-16T10:00:00Z"
     order.save(update_fields=["data"])
 
     assert kds.expedition_action(order, action="complete", actor="operator:test") == Order.Status.COMPLETED
 
-    assert _alertas(order.ref).count() == 1
+    assert not _alertas(order.ref).exists()
 
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)

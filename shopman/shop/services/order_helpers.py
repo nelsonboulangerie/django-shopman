@@ -246,19 +246,15 @@ def get_commitment_date(source) -> date | None:
     return parse_commitment_date(data.get("delivery_date"))
 
 
-def customer_holds_the_goods(order) -> bool:
-    """Venda de balcão presencial: a mercadoria já está na mão do cliente?
+def is_counter_takeaway(order) -> bool:
+    """Venda de balcão por NATUREZA: o cliente leva a mercadoria agora?
 
-    É a pergunta que decide duas coisas, e por isso tem UMA resposta: se a
-    venda fecha no ato (``lifecycle`` — ``system:counter_handoff``) e se o pão
-    de prateleira vira ticket de separação (``kds`` — ``prep_only``). Enquanto
-    cada um respondia por conta própria, uma regra nova entrava num e faltava
-    no outro.
-
-    PDV, retirada, fora de Encomendas e sem data futura. Pix e cartão de
-    gateway só representam entrega após captura suficiente; o link continua
-    remoto mesmo depois de pago. Crédito/débito de maquininha e dinheiro
-    preservam o fluxo presencial atestado pelo operador.
+    PDV, retirada, fora de Encomendas, sem data futura e sem link de pagamento.
+    É o recorte de :func:`customer_holds_the_goods` sem a pergunta do dinheiro:
+    o Pix de balcão ainda não confirmado continua sendo venda de balcão — só
+    não entregou a mercadoria ainda. Quem não é balcão tem uma SAÍDA pela
+    frente (retirada ou entrega), e é a ela que a NFC-e se prende
+    (``fiscal.emission_waits_for_handoff``).
     """
     data = order.data or {}
     # O snapshot já contém o contexto da sessão ao nascer o pedido. O carimbo
@@ -276,13 +272,34 @@ def customer_holds_the_goods(order) -> bool:
     method = str(payment.get("method") or "").strip().lower()
     if method == "link":
         return False
+    commitment = get_commitment_date(order)
+    return not (commitment and commitment > timezone.localdate())
+
+
+def customer_holds_the_goods(order) -> bool:
+    """Venda de balcão presencial: a mercadoria já está na mão do cliente?
+
+    É a pergunta que decide duas coisas, e por isso tem UMA resposta: se a
+    venda fecha no ato (``lifecycle`` — ``system:counter_handoff``) e se o pão
+    de prateleira vira ticket de separação (``kds`` — ``prep_only``). Enquanto
+    cada um respondia por conta própria, uma regra nova entrava num e faltava
+    no outro.
+
+    Venda de balcão (:func:`is_counter_takeaway`) com o dinheiro assentado. Pix
+    e cartão de gateway só representam entrega após captura suficiente; o link
+    continua remoto mesmo depois de pago. Crédito/débito de maquininha e
+    dinheiro preservam o fluxo presencial atestado pelo operador.
+    """
+    if not is_counter_takeaway(order):
+        return False
+    payment = (order.data or {}).get("payment") or {}
+    method = str(payment.get("method") or "").strip().lower()
     if method in {"pix", "card"}:
         from shopman.shop.services.payment_gate import payment_is_captured
 
         if not payment_is_captured(order):
             return False
-    commitment = get_commitment_date(order)
-    return not (commitment and commitment > timezone.localdate())
+    return True
 
 
 def merge_order_data(order, values: dict, *, block: str | None = None, remove: tuple[str, ...] = ()) -> None:

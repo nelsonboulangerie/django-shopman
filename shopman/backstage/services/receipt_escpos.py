@@ -17,6 +17,10 @@ Nelson em 2026-08-15.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 ESC = 0x1B
 GS = 0x1D
 
@@ -353,6 +357,13 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
             out += _pair("Troco", f"R$ {format_money(change_q)}")
     out += _rule()
 
+    # Encomenda paga antes: este recibo é o papel do pagamento, e a NFC-e sai
+    # na saída da mercadoria (decisão de 26/09/2026). Sem a frase, o cliente
+    # sai do balcão esperando uma nota que ninguém entregou.
+    handoff_line = _fiscal_handoff_line(order)
+    if handoff_line:
+        out += _centered(handoff_line)
+
     if cod_pending:
         from shopman.shop.services.order_helpers import get_fulfillment_type
 
@@ -364,6 +375,27 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial
     return bytes(out)
+
+
+def _fiscal_handoff_line(order) -> str:
+    """"A nota fiscal sai na retirada." enquanto a NFC-e espera a saída; senão "".
+
+    Pergunta ao estado fiscal (``fiscal.fiscal_state``), não ao modo da venda:
+    a reimpressão depois da saída não repete uma promessa já cumprida. Nunca
+    derruba o recibo.
+    """
+    try:
+        from shopman.shop.services import fiscal as fiscal_service
+
+        state = fiscal_service.fiscal_state(order)
+    except Exception:
+        logger.warning("receipt_escpos.fiscal_state_failed order=%s", getattr(order, "ref", "?"), exc_info=True)
+        return ""
+    if state == fiscal_service.FISCAL_STATE_AWAITING_PICKUP:
+        return "A nota fiscal sai na retirada."
+    if state == fiscal_service.FISCAL_STATE_AWAITING_DELIVERY:
+        return "A nota fiscal sai na entrega."
+    return ""
 
 
 def _cod_pending(payment: dict, tenders: list[dict]) -> bool:

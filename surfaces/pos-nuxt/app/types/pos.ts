@@ -81,7 +81,16 @@ export interface POSFulfillmentOptionProjection {
  * durante TODA a espera. Opcional porque o backend pode chegar depois: sem ele a
  * tela deriva de `fiscal_expected` (`queued` / `not_expected`).
  */
-export type PosFiscalState = "not_expected" | "queued" | "awaiting_payment" | "authorized" | "failed";
+/** O vocabulário de `fiscal_service.FISCAL_STATES`. `awaiting_pickup`/`awaiting_delivery`:
+ *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026). */
+export type PosFiscalState =
+  | "not_expected"
+  | "queued"
+  | "awaiting_payment"
+  | "awaiting_pickup"
+  | "awaiting_delivery"
+  | "authorized"
+  | "failed";
 
 export interface POSPaymentCollectionProjection {
   ref: PosPaymentCollection;

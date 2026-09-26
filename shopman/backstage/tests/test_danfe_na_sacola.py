@@ -263,7 +263,7 @@ def test_retirada_e_entrega_fora_da_janela_nao_saem_sozinhas(balcao):
 
 
 def test_a_nota_que_autoriza_depois_do_despacho_dispara_pelo_servidor(balcao, django_capture_on_commit_callbacks):
-    """O caso normal: a nota nasce no despacho e a DANFE vai atrás dela."""
+    """A nota que autoriza DEPOIS do despacho: a DANFE vai atrás dela."""
     from shopman.shop.handlers.fiscal import NFCeEmitHandler
 
     order = _order("DLV-9", authorized=False)

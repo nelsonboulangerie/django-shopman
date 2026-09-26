@@ -227,6 +227,14 @@ describe("PosSaleResult — a DANFE obedece ao estado da nota", () => {
     expect(wrapper.find("[data-danfe-awaiting]").text()).toContain("NFC-e sai quando o pagamento confirmar");
   });
 
+  it("encomenda paga antes: sem DANFE, a frase diz que a nota sai na retirada", async () => {
+    const wrapper = await mountSuspended(PosSaleResult, {
+      props: props({ result: result({ fiscalExpected: true, fiscalState: "awaiting_pickup" }) }),
+    });
+    expect(danfeButton(wrapper).exists()).toBe(false);
+    expect(wrapper.find("[data-danfe-awaiting]").text()).toContain("NFC-e sai na retirada");
+  });
+
   it("failed: alerta apontando as Últimas vendas, sem botão", async () => {
     const wrapper = await mountSuspended(PosSaleResult, {
       props: props({ result: result({ fiscalExpected: true, fiscalState: "failed" }) }),

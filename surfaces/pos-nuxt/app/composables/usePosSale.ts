@@ -56,7 +56,7 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
-import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
@@ -2823,6 +2823,7 @@ export function usePosSale(deps: PosSaleDeps) {
           tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
           changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
           paymentPending: paidOnDelivery,
+          fiscalHandoffLine: receiptFiscalHandoffLine(resolveFiscalState(response)),
         };
         // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
         // operador confere de relance e repete ao cliente.

@@ -107,6 +107,8 @@ export function fiscalStateLabel(state: PosFiscalState): string {
     case "authorized": return "NFC-e autorizada";
     case "queued": return "NFC-e em emissão";
     case "awaiting_payment": return "NFC-e sai quando o pagamento confirmar";
+    case "awaiting_pickup": return "NFC-e sai na retirada";
+    case "awaiting_delivery": return "NFC-e sai na entrega";
     case "failed": return "NFC-e não autorizada";
     default: return "Emissão não estabelecida";
   }
@@ -116,6 +118,7 @@ export type DanfeOffer =
   | { kind: "print"; label: "Imprimir DANFE" }
   | { kind: "queued"; label: "NFC-e em emissão…" }
   | { kind: "awaiting_payment"; label: "NFC-e sai quando o pagamento confirmar" }
+  | { kind: "awaiting_handoff"; label: "NFC-e sai na retirada" | "NFC-e sai na entrega" }
   | { kind: "failed"; label: "NFC-e não autorizada. Em Últimas vendas, toque em Reprocessar NFC-e." }
   | null;
 
@@ -127,12 +130,16 @@ export type DanfeOffer =
  * lia um erro por uma nota que ainda não existia. Só `authorized` ganha o botão
  * vivo; `queued` mostra o botão desabilitado (a impressão automática promove
  * quando o 409 vira 200); `awaiting_payment` e `failed` dizem o próximo passo.
+ * Encomenda paga antes (`awaiting_pickup`/`awaiting_delivery`) não tem DANFE
+ * agora: o papel do pagamento é o recibo, e a frase diz QUANDO a nota sai.
  */
 export function danfeOffer(state: PosFiscalState): DanfeOffer {
   switch (state) {
     case "authorized": return { kind: "print", label: "Imprimir DANFE" };
     case "queued": return { kind: "queued", label: "NFC-e em emissão…" };
     case "awaiting_payment": return { kind: "awaiting_payment", label: "NFC-e sai quando o pagamento confirmar" };
+    case "awaiting_pickup": return { kind: "awaiting_handoff", label: "NFC-e sai na retirada" };
+    case "awaiting_delivery": return { kind: "awaiting_handoff", label: "NFC-e sai na entrega" };
     case "failed": return { kind: "failed", label: "NFC-e não autorizada. Em Últimas vendas, toque em Reprocessar NFC-e." };
     default: return null;
   }

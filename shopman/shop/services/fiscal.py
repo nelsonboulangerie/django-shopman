@@ -268,13 +268,18 @@ def issue_override_refusal(order, *, state: str | None = None) -> str:
         return "Pagamento simulado não emite NFC-e: nenhum dinheiro entrou."
     if not fiscal_pool.get_backend():
         return "A emissão de NFC-e não está configurada nesta loja."
-    if order.created_at:
-        # Dia de OPERAÇÃO, pelo relógio da loja (TIME_ZONE), não UTC nem 24 h
-        # corridas: a venda das 23h e a nota das 0h10 são dias diferentes.
-        days = late_emission_days()
-        sale_day = timezone.localtime(order.created_at).date()
-        if (timezone.localdate() - sale_day).days > days:
-            return late_emission_rule_text(days)
+    # Dia de OPERAÇÃO, pelo relógio da loja (TIME_ZONE), não UTC nem 24 h
+    # corridas: a venda das 23h e a nota das 0h10 são dias diferentes. E o dia
+    # é o da SAÍDA da mercadoria (:func:`fiscal_sale_day`): a encomenda paga
+    # na segunda e retirada na quarta é venda fiscal de quarta.
+    days = late_emission_days()
+    if (timezone.localdate() - fiscal_sale_day(order)).days > days:
+        return late_emission_rule_text(days)
+    if emission_waits_for_handoff(order):
+        # A regra da casa emite na SAÍDA; a exceção do gerente também. Antes
+        # dela, a nota avulsa seria justamente a nota do pagamento que a casa
+        # decidiu não emitir (26/09/2026).
+        return f"A nota desta encomenda sai {_handoff_phrase(order)}. A emissão avulsa fica para esse momento."
     if state is None:
         state = fiscal_state(order)
     if state != FISCAL_STATE_NOT_EXPECTED:
@@ -327,6 +332,125 @@ def emit(order) -> None:
     )
     if created is not None:
         logger.info("fiscal.emit: queued for order %s", order.ref)
+
+
+# ── Quando a nota nasce: uma regra, um dono ─────────────────────────────
+#
+# Decisão do dono (26/09/2026): "Via Recibo primeiro, Nota depois". A NFC-e
+# acompanha a SAÍDA da mercadoria, não o pagamento:
+#
+# - venda de balcão (leva agora) → no fechamento da venda, como sempre;
+# - retirada → quando o pedido é entregue ao cliente (``COMPLETED``);
+# - entrega → quando a sacola fica pronta (``READY``), com o despacho como rede
+#   (``DISPATCHED``): a DANFE vai dentro da sacola, e a nota precisa estar
+#   autorizada quando o entregador sai (``order_danfe`` imprime no despacho).
+#
+# Encomenda paga antes recebe no pagamento só a Via Recibo (não fiscal). O
+# porquê é o prazo: no PR a NFC-e só cancela em 30 min e com a mercadoria na
+# casa (:func:`cancellation_path`); emitida no pagamento de uma encomenda de
+# outro dia, "cancelar e refazer" virava quase sempre nota de estorno.
+#
+# Os pontos de PAGAMENTO (fechamento do PDV, captura do Pix/link) perguntam a
+# :func:`emit_on_payment`; os pontos de SAÍDA emitem direto (``fiscal.emit`` é
+# idempotente pelo dedupe ``nfce:{ref}``).
+
+
+def _is_ifood(order) -> bool:
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
+
+    return (getattr(order, "channel_ref", "") or "") == IFOOD_CHANNEL_REF
+
+
+def emission_waits_for_handoff(order) -> bool:
+    """A NFC-e deste pedido espera a saída da mercadoria?
+
+    Sim quando o pedido tem recebimento pela frente (retirada ou entrega, não a
+    venda de balcão — ``order_helpers.is_counter_takeaway``) e a mercadoria
+    ainda está na casa (:data:`GOODS_NOT_DISPATCHED`). O iFood fica de fora: tem
+    as regras próprias de nota (``lifecycle._on_dispatched``/``_on_completed``)
+    e nada aqui as muda.
+
+    TODO(2027-01-01): revisar com o contador. Com a Reforma Tributária, o
+    pagamento antecipado passa a ser fato gerador de IBS/CBS e pede documento
+    (nota de débito de antecipação) — LC 214/2025, art. 10, § 4º; NT RTC
+    2025.002. Hoje (Simples Nacional, 2026) só a saída emite.
+    """
+    from shopman.shop.services.order_helpers import is_counter_takeaway
+
+    if _is_ifood(order):
+        return False
+    if str(getattr(order, "status", "")) not in GOODS_NOT_DISPATCHED:
+        return False
+    return not is_counter_takeaway(order)
+
+
+def emit_on_payment(order) -> None:
+    """O pagamento assentou: emite agora, ou deixa a nota para a saída.
+
+    Porta única dos pontos de pagamento (``pos._resume_committed_sale``,
+    ``lifecycle._on_paid``). Venda de balcão emite; pedido com recebimento pela
+    frente espera a saída (:func:`emission_waits_for_handoff`).
+    """
+    if emission_waits_for_handoff(order):
+        logger.info("fiscal.emit_on_payment: order=%s — nota adiada para a saída da mercadoria", order.ref)
+        return
+    emit(order)
+
+
+def emit_for_delivery_handoff(order) -> None:
+    """Entrega da casa: a nota nasce antes de a sacola sair.
+
+    Chamada quando a sacola fica pronta (``_on_ready``) e, como rede, no
+    despacho (``_on_dispatched``). Emitir no ``READY`` dá tempo de a SEFAZ
+    autorizar antes do despacho, e ``order_danfe`` imprime a DANFE no instante
+    do despacho. Se a nota ainda não autorizou quando o entregador sai, a
+    expedição só AVISA (``fiscal_handoff_without_nfce``), nunca segura a
+    sacola, e a DANFE sai assim que autorizar.
+
+    iFood fica de fora (regra própria); cobrança digital antecipada ainda não
+    capturada também — o portão do pagamento segura a sacola, e a nota nasce
+    no próximo degrau.
+    """
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    if get_fulfillment_type(order) != "delivery" or _is_ifood(order):
+        return
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return
+    emit(order)
+
+
+def handoff_fiscal_state(order) -> str:
+    """``awaiting_delivery`` na entrega, ``awaiting_pickup`` na retirada."""
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    if get_fulfillment_type(order) == "delivery":
+        return FISCAL_STATE_AWAITING_DELIVERY
+    return FISCAL_STATE_AWAITING_PICKUP
+
+
+def _handoff_phrase(order) -> str:
+    return "na entrega" if handoff_fiscal_state(order) == FISCAL_STATE_AWAITING_DELIVERY else "na retirada"
+
+
+def fiscal_sale_day(order):
+    """O dia da venda FISCAL: o dia em que a mercadoria saiu.
+
+    Na venda de balcão é o dia do fechamento (a saída é o próprio ato). Na
+    encomenda paga dias antes, a nota nasce na saída, e é dela que a régua da
+    emissão tardia (:func:`late_emission_days`) conta. Mercadoria ainda na casa
+    = a venda fiscal ainda não aconteceu, e o dia é hoje.
+    """
+    from django.utils import timezone
+
+    left_at = getattr(order, "dispatched_at", None) or getattr(order, "completed_at", None)
+    if left_at:
+        return timezone.localtime(left_at).date()
+    if str(getattr(order, "status", "")) in GOODS_NOT_DISPATCHED:
+        return timezone.localdate()
+    created_at = getattr(order, "created_at", None)
+    return timezone.localtime(created_at).date() if created_at else timezone.localdate()
 
 
 def build_emission_payload(order) -> dict:
@@ -768,9 +892,9 @@ def emission_expected(order) -> bool:
     nota que ninguém pediu continua sendo nota que o cliente pode exigir
     impressa.
 
-    Nem pode perguntar à Directive: quando a venda fecha, o pedido ainda está em
-    ``new``. A emissão só acontece na conclusão, e a nota não existe no instante
-    da tela de confirmação. O que existe já no fechamento é a *regra* e os dados
+    Nem pode perguntar à Directive: no instante da tela de confirmação a nota
+    ainda não existe (ela é assíncrona, e na encomenda só nasce na saída da
+    mercadoria). O que existe já no fechamento é a *regra* e os dados
     que ela lê (forma de pagamento, CPF, pedido do operador) — então a pergunta
     honesta é "vai haver nota?", respondida pelo mesmo resolver que decide, sem
     cópia da regra no front.
@@ -780,22 +904,26 @@ def emission_expected(order) -> bool:
 
 # ── Estado da NFC-e de um pedido ─────────────────────────────────────────
 #
-# A nota nasce em TRÊS pontos, e nenhuma tela pode adivinhar qual deles vale:
-# no fechamento da venda para quem não exige captura (``pos.close_sale``), na
-# captura do pix/link (``lifecycle._on_paid``) e na conclusão como rede
-# (``lifecycle._on_completed``). "Fiscal na conclusão" era a tela chutando o
-# terceiro ponto para um pedido que emite no segundo. O estado sai daqui, com
-# um vocabulário só, para o PDV, as últimas vendas e a pill do Gestor.
+# A nota nasce no pagamento da venda de balcão (fechamento do PDV ou captura
+# do Pix — :func:`emit_on_payment`) e na SAÍDA da mercadoria de quem tem
+# recebimento pela frente (sacola pronta/despacho na entrega, conclusão na
+# retirada; a conclusão é também a rede de todos). Nenhuma tela pode adivinhar
+# qual ponto vale: o estado sai daqui, com um vocabulário só, para o PDV, as
+# últimas vendas e a pill do Gestor.
 
 FISCAL_STATE_NOT_EXPECTED = "not_expected"
 FISCAL_STATE_QUEUED = "queued"
 FISCAL_STATE_AWAITING_PAYMENT = "awaiting_payment"
+FISCAL_STATE_AWAITING_PICKUP = "awaiting_pickup"
+FISCAL_STATE_AWAITING_DELIVERY = "awaiting_delivery"
 FISCAL_STATE_AUTHORIZED = "authorized"
 FISCAL_STATE_FAILED = "failed"
 FISCAL_STATES = (
     FISCAL_STATE_NOT_EXPECTED,
     FISCAL_STATE_QUEUED,
     FISCAL_STATE_AWAITING_PAYMENT,
+    FISCAL_STATE_AWAITING_PICKUP,
+    FISCAL_STATE_AWAITING_DELIVERY,
     FISCAL_STATE_AUTHORIZED,
     FISCAL_STATE_FAILED,
 )
@@ -847,12 +975,14 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
     - ``failed``: a Directive de emissão mais recente morreu (``failed``) ou há
       alerta ``fiscal_emit_failed`` aberto para o pedido.
     - ``queued``: há Directive viva/concluída sem chave ainda — ou a emissão é
-      esperada, o dinheiro não segura, e a nota só está esperando a vez (no
-      fechamento, ou na conclusão para quem paga na porta).
+      esperada, o dinheiro não segura, e a nota só está esperando a vez.
     - ``not_expected``: :func:`emission_expected` disse não.
-    - ``awaiting_payment``: esperada, sem chave, e a cobrança é digital
-      antecipada ainda não capturada — a nota nasce na captura
-      (``lifecycle._on_paid``), não na conclusão.
+    - ``awaiting_pickup`` / ``awaiting_delivery``: esperada, e o pedido tem
+      recebimento pela frente com a mercadoria ainda na casa — a nota nasce na
+      saída (:func:`emission_waits_for_handoff`), não no pagamento.
+    - ``awaiting_payment``: venda de balcão esperada, sem chave, e a cobrança é
+      digital antecipada ainda não capturada — a nota nasce na captura
+      (``lifecycle._on_paid``).
 
     A evidência de tentativa (Directive/alerta) vem ANTES da regra: mudar o
     resolver ou tirar o backend da env não apaga uma nota que já tentou sair.
@@ -880,6 +1010,10 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
 
     if not emission_expected(order):
         return FISCAL_STATE_NOT_EXPECTED
+    if emission_waits_for_handoff(order):
+        # Vem antes do pagamento: mesmo capturado, a nota da encomenda espera a
+        # saída — e o portão do pagamento já segura a saída sem dinheiro.
+        return handoff_fiscal_state(order)
     if requires_captured_payment(order) and not payment_is_captured(order):
         return FISCAL_STATE_AWAITING_PAYMENT
     return FISCAL_STATE_QUEUED
@@ -925,8 +1059,14 @@ def alert_handoff_without_nfce(order, *, target_status: str) -> None:
 
     Nenhum portão de expedição conferia ``nfce_access_key`` — um pedido podia
     ser despachado ou concluído com a nota na fila ou com a emissão morta, e
-    ninguém ficava sabendo. Barrar a saída é decisão do dono (a nota do COD só
-    nasce na conclusão, por desenho); avisar não é. Um alerta por pedido.
+    ninguém ficava sabendo. Barrar a saída é decisão do dono (expedição sem
+    NFC-e só avisa); avisar não é. Um alerta por pedido.
+
+    A retirada cuja nota espera a saída (``awaiting_pickup``) não grita: a
+    própria conclusão emite, e a falha dessa emissão tem alerta próprio
+    (``fiscal_emit_failed``). A entrega que sai ainda sem nota
+    (``awaiting_delivery`` — a emissão da sacola pronta não aconteceu) grita
+    como a nota na fila: a saída emite, e a DANFE vai atrás do entregador.
 
     Nunca levanta: a transição já é a operação de verdade, e o aviso dela não
     pode derrubá-la.
@@ -939,6 +1079,8 @@ def alert_handoff_without_nfce(order, *, target_status: str) -> None:
     except Exception:
         logger.warning("fiscal.handoff_state_failed order=%s", getattr(order, "ref", "?"), exc_info=True)
         return
+    if state == FISCAL_STATE_AWAITING_DELIVERY:
+        state = FISCAL_STATE_QUEUED
     if state not in {FISCAL_STATE_QUEUED, FISCAL_STATE_FAILED}:
         return
 

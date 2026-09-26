@@ -236,10 +236,13 @@ capture. Gateway/webhook/Payman status remains authoritative.
 - `fiscal_expected` (bool, kept for compatibility): the emission rule says a
   NFC-e will exist for this sale.
 - `fiscal_state`: one of `not_expected` | `queued` | `awaiting_payment` |
-  `authorized` | `failed` (`shopman.shop.services.fiscal.fiscal_state`). The
-  note is born at three points — sale close for tenders that need no capture,
-  payment capture for `pix`/`link`, order completion as the safety net — so the
-  surface must read the state, never guess the point. The same field is
+  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed`
+  (`shopman.shop.services.fiscal.fiscal_state`). A counter sale (takes the
+  goods now) emits at sale close, or at capture for `pix`/card; an order with a
+  pickup/delivery ahead (encomenda) gets only the non-fiscal receipt at payment
+  and the note is born when the goods leave — at pickup (`awaiting_pickup`) or
+  with the delivery bag (`awaiting_delivery`); order completion is the safety
+  net. The surface must read the state, never guess the point. The same field is
   published per sale in `GET /api/v1/backstage/pos/recent-sales/` and as
   `fiscal_state` on every order card of the orders queue.
 

@@ -132,7 +132,7 @@ def test_review_avisa_troco_para_menor_que_o_total_sem_bloquear(counter):
     assert "change_for_below_total" not in [w["code"] for w in ok.warnings]
 
 
-def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch):
+def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch, django_capture_on_commit_callbacks):
     from unittest.mock import Mock
 
     from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -156,6 +156,16 @@ def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch):
     }], delivery_address_structured=address, payment_collection="terminal", tendered_q=1800))
     order = Order.objects.get(ref=result.order_ref)
     assert order.total_q == 1800
+    # Entrega paga no balcão: o fechamento dá só a Via Recibo; a nota nasce com
+    # a sacola pronta, antes de o entregador sair (decisão de 26/09/2026).
+    assert not Directive.objects.filter(topic="fiscal.emit_nfce", payload__order_ref=order.ref).exists()
+    for status in ("accepted", "preparing", "ready"):
+        order.refresh_from_db()
+        if order.status != status and order.can_transition_to(status):
+            with django_capture_on_commit_callbacks(execute=True):
+                order.transition_status(status, actor="test")
+    order.refresh_from_db()
+    assert order.status == "ready"
     message = Directive.objects.get(topic="fiscal.emit_nfce", payload__order_ref=order.ref)
     NFCeEmitHandler(backend).handle(message=message, ctx={})
     sent = backend.emit.call_args.kwargs
