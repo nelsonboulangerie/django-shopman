@@ -96,7 +96,10 @@ function sectionDomId (ref: string) {
 
 function menuScrollOffset () {
   if (!import.meta.client) return 140
-  const headerHeight = document.querySelector('header')?.getBoundingClientRect().height || 64
+  // O header mantém 100px no fluxo mesmo colapsado, mas só a navbar de 64px
+  // permanece visível durante a navegação entre seções. Medir o header inteiro
+  // deixava todo destino 36px abaixo do lugar e motivou reancoragens tardias.
+  const headerHeight = document.querySelector('.shop-navbar-bar')?.getBoundingClientRect().height || 64
   const filterHeight = document.querySelector('[data-menu-filterbar]')?.getBoundingClientRect().height || 56
   return headerHeight + filterHeight + 16
 }
@@ -136,11 +139,15 @@ function alignActiveSectionPill (ref: string, behavior?: ScrollBehavior) {
   if (didCenter) lastCenteredPillRef = ref
 }
 
-function scrollToSection (ref: string) {
-  if (!import.meta.client) return
-  const target = (ref === 'all' || ref === FILTERED_SECTION_VALUE)
+function sectionElement (ref: string) {
+  return (ref === 'all' || ref === FILTERED_SECTION_VALUE)
     ? document.querySelector<HTMLElement>('[data-menu-results]')
     : document.getElementById(sectionDomId(ref))
+}
+
+function scrollToSection (ref: string) {
+  if (!import.meta.client) return
+  const target = sectionElement(ref)
   if (!target) return
 
   shopScrollToElement(target, menuScrollOffset(), scrollBehavior())
@@ -156,23 +163,9 @@ function selectSection (value: string | number | undefined) {
   activeSection.value = ref
   void nextTick(() => {
     centerSectionPill(ref, scrollBehavior())
+    // Um gesto, uma rolagem. Repetir aos 180ms/900ms reiniciava o smooth scroll,
+    // fazia a pill chegar antes do conteúdo e deixava a tela se corrigindo sozinha.
     scrollToSection(ref)
-    window.setTimeout(() => {
-      if (programmaticScrollRef !== ref) return
-      activeSection.value = ref
-      centerSectionPill(ref, scrollBehavior())
-      scrollToSection(ref)
-    }, 180)
-    window.setTimeout(() => {
-      if (programmaticScrollRef !== ref) return
-      activeSection.value = ref
-      centerSectionPill(ref)
-      // Re-ancora depois do layout assentar (imagens/medidas tardias).
-      scrollToSection(ref)
-      programmaticScrollRef = ''
-      programmaticScrollUntil = 0
-      queueActiveSectionSync()
-    }, 900)
   })
 }
 
@@ -211,6 +204,7 @@ function clearAllMenuFilters () {
 function clearMenuFilters () {
   appliedFilterKeys.value = []
   activeSection.value = 'all'
+  holdActiveSection('all')
   void nextTick(() => {
     scrollToSection('all')
     queueActiveSectionSync()
@@ -222,17 +216,42 @@ let programmaticScrollRef = ''
 let programmaticScrollUntil = 0
 let lastCenteredPillRef = ''
 let pageScrollTarget: ShopScrollTarget | null = null
+const PROGRAMMATIC_SCROLL_TIMEOUT_MS = 1_800
 
 function holdActiveSection (ref: string) {
   programmaticScrollRef = ref
-  programmaticScrollUntil = Date.now() + 900
+  programmaticScrollUntil = Date.now() + PROGRAMMATIC_SCROLL_TIMEOUT_MS
+}
+
+function cancelProgrammaticScroll () {
+  programmaticScrollRef = ''
+  programmaticScrollUntil = 0
+}
+
+function programmaticScrollSettled (ref: string) {
+  const target = sectionElement(ref)
+  if (!target) return true
+
+  const scrollTarget = pageScrollTarget || shopScrollTarget()
+  const metrics = shopScrollMetrics(scrollTarget)
+  if (metrics.top + metrics.height >= metrics.scrollHeight - 8) return true
+
+  const viewportTop = scrollTarget === window
+    ? 0
+    : (scrollTarget as HTMLElement).getBoundingClientRect().top
+  const targetTop = target.getBoundingClientRect().top - viewportTop
+  return Math.abs(targetTop - menuScrollOffset()) <= 3
 }
 
 function syncActiveSectionFromScroll () {
   if (!import.meta.client) return
-  if (programmaticScrollRef && Date.now() < programmaticScrollUntil) {
-    activeSection.value = programmaticScrollRef
-    return
+  if (programmaticScrollRef) {
+    const selectedRef = programmaticScrollRef
+    if (Date.now() < programmaticScrollUntil && !programmaticScrollSettled(selectedRef)) {
+      activeSection.value = selectedRef
+      return
+    }
+    cancelProgrammaticScroll()
   }
 
   const sectionEls = Array.from(document.querySelectorAll<HTMLElement>('[data-menu-section-ref]'))
@@ -317,6 +336,8 @@ onMounted(() => {
   updatePillRailTailWidth()
   pageScrollTarget = shopScrollTarget()
   pageScrollTarget.addEventListener('scroll', queueActiveSectionSync, { passive: true })
+  pageScrollTarget.addEventListener('wheel', cancelProgrammaticScroll, { passive: true })
+  pageScrollTarget.addEventListener('touchstart', cancelProgrammaticScroll, { passive: true })
   window.addEventListener('resize', updatePillRailTailWidth, { passive: true })
   window.addEventListener('resize', queueActiveSectionSync, { passive: true })
   queueActiveSectionSync()
@@ -326,6 +347,8 @@ watch(() => route.query.secao, applyRouteSection)
 
 onBeforeUnmount(() => {
   pageScrollTarget?.removeEventListener('scroll', queueActiveSectionSync)
+  pageScrollTarget?.removeEventListener('wheel', cancelProgrammaticScroll)
+  pageScrollTarget?.removeEventListener('touchstart', cancelProgrammaticScroll)
   pageScrollTarget = null
   window.removeEventListener('resize', updatePillRailTailWidth)
   window.removeEventListener('resize', queueActiveSectionSync)
