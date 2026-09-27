@@ -11,6 +11,7 @@ Never imports from ``shopman.backstage.views.*``.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -103,14 +104,31 @@ def _stock_alerts() -> list[StockAlertRowProjection]:
     except ImportError:
         return []
 
-    alerts = StockAlert.objects.filter(is_active=True)
-    rows: list[StockAlertRowProjection] = []
-    for alert in alerts[:10]:
-        quant_qs = Quant.objects.filter(sku=alert.sku)
-        if alert.position_id:
-            quant_qs = quant_qs.filter(position=alert.position)
+    alerts = list(StockAlert.objects.filter(is_active=True).select_related("position")[:10])
+    if not alerts:
+        return []
 
-        total_qty = quant_qs.aggregate(total=Sum("_quantity"))["total"] or Decimal("0")
+    # Uma agregação para todos os alertas substitui a consulta por linha. O
+    # agrupamento por posição também permite reconstruir o total global do SKU
+    # sem uma segunda ida ao banco.
+    totals_by_position: dict[tuple[str, int | None], Decimal] = {}
+    totals_by_sku: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    quant_totals = (
+        Quant.objects.filter(sku__in={alert.sku for alert in alerts})
+        .values("sku", "position_id")
+        .annotate(total=Sum("_quantity"))
+    )
+    for item in quant_totals:
+        total = item["total"] or Decimal("0")
+        totals_by_position[(item["sku"], item["position_id"])] = total
+        totals_by_sku[item["sku"]] += total
+
+    rows: list[StockAlertRowProjection] = []
+    for alert in alerts:
+        if alert.position_id:
+            total_qty = totals_by_position.get((alert.sku, alert.position_id), Decimal("0"))
+        else:
+            total_qty = totals_by_sku[alert.sku]
 
         if total_qty < alert.min_quantity:
             rows.append(StockAlertRowProjection(

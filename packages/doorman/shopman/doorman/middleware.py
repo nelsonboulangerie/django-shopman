@@ -16,12 +16,24 @@ from django.utils.deprecation import MiddlewareMixin
 logger = logging.getLogger("shopman.doorman.middleware")
 
 _CACHE_ATTR = "_shopman_customer_info"
+_CUSTOMER_FREE_PATH_PREFIXES = ("/admin/", "/api/v1/backstage/")
 
 
 class AuthCustomerMiddleware(MiddlewareMixin):
     """Resolve customer from authenticated user, set request.customer."""
 
     def process_request(self, request):
+        # Admin e APIs operacionais autenticam a pessoa da equipe, não um
+        # cliente do storefront. Resolver CustomerUser aqui acrescentava pelo
+        # menos uma consulta a toda navegação backstage, sem consumidor.
+        path = request.path_info
+        if any(
+            path == prefix.rstrip("/") or path.startswith(prefix)
+            for prefix in _CUSTOMER_FREE_PATH_PREFIXES
+        ):
+            request.customer = None
+            return
+
         request.customer = self._resolve_customer(request)
 
     def _resolve_customer(self, request):
