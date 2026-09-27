@@ -27,6 +27,10 @@ describe('storefront performance guardrails', () => {
     expect(feedback).toContain("document.addEventListener('click', navigationIntent, true)")
     expect(feedback).toContain("nuxtApp.hook('page:finish', finish)")
     expect(feedback).toContain("aria-live=\"polite\"")
+    expect(feedback).toContain('data-navigation-origin-feedback')
+    expect(feedback).toContain('data-navigation-delayed-feedback')
+    expect(feedback).toContain('Ainda abrindo sua sacola…')
+    expect(feedback).not.toContain('fixed inset-x-0 top-0')
   })
 
   it('guards checkout against a second in-flight submit', () => {
