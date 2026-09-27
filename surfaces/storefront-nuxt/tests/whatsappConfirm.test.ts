@@ -198,6 +198,21 @@ describe('useWhatsappVerify', () => {
     expect(verify.status.value).toBe('ready')
     expect(verify.message.value).toBe('#menu NB-ABC123')
   })
+
+  it('distingue WhatsApp sem número configurado de uma falha genérica', async () => {
+    Object.assign(globalThis, {
+      $fetch: vi.fn(async () => {
+        throw { status: 503, data: { error_code: 'whatsapp_unavailable' } }
+      })
+    })
+    const { useWhatsappVerify } = await import('../app/composables/useWhatsappVerify')
+
+    const verify = useWhatsappVerify()
+    await verify.start('/finalizar')
+
+    expect(verify.status.value).toBe('unavailable')
+    expect(verify.deepLink.value).toBe('')
+  })
 })
 
 describe('o degrau aparece no checkout, e só nessa combinação', () => {

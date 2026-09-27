@@ -35,8 +35,8 @@ class WhatsAppVerifyStartView(APIView):
     """POST /api/v1/auth/whatsapp/start/ — start leve do login por WhatsApp.
 
     Guarda o contexto do site (sacola anônima + destino) sob um código NB-XxXx e
-    devolve o deep link pré-preenchido. Sem handshake/poll/SSE — o login acontece
-    pelo access link que o ManyChat devolve. Ver ACCESS-LINK-UNIFICATION-PLAN.md.
+    devolve o deep link pré-preenchido. A mensagem libera a aba de origem, consultada
+    pelo ``claim`` com backoff; o access link que o ManyChat devolve fica como reserva.
     """
 
     permission_classes = [AllowAny]
@@ -63,12 +63,25 @@ class WhatsAppVerifyStartView(APIView):
 
         from shopman.shop.services import access as access_service
 
-        result = wa.start_access_link(
-            cart_session_key=cart_key,
-            next_path=next_path,
-            origin=access_service.site_origin(request),
-            origin_label=access_service.site_origin_label(request),
-        )
+        try:
+            result = wa.start_access_link(
+                cart_session_key=cart_key,
+                next_path=next_path,
+                origin=access_service.site_origin(request),
+                origin_label=access_service.site_origin_label(request),
+            )
+        except wa.WhatsAppVerifyUnavailable:
+            return Response(
+                {
+                    "detail": (
+                        "O WhatsApp da loja está indisponível agora. "
+                        "Entre por SMS ou peça ajuda."
+                    ),
+                    "error_code": "whatsapp_unavailable",
+                    "recovery": {"primary": "sms", "help_url": "/faq"},
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         return Response(result)
 
 

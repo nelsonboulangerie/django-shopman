@@ -1,9 +1,9 @@
 """Start leve do login por WhatsApp (ACCESS-LINK-UNIFICATION).
 
 O ``/start/`` só guarda o contexto do site (sacola anônima + destino) sob um código
-``NB-XxXx`` de uso único e devolve o deep link ``wa.me`` já preenchido. Sem
-handshake/token/poll/SSE: a identidade é o número que envia a mensagem; o login
-acontece depois, pelo access link que o ManyChat devolve (ver ``AccessLinkCreateView``).
+``NB-XxXx`` de uso único e devolve o deep link ``wa.me`` já preenchido. A identidade é
+o número que envia a mensagem; ela libera a aba de origem pelo ``claim``, e o access
+link do ManyChat segue como reserva (ver ``AccessLinkCreateView``).
 As views legado do reverse-OTP (confirm/status/SSE) foram removidas em F4.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ from django.test import Client, override_settings
 from shopman.doorman.services.link_state import pop_state
 from shopman.guestman.models import Customer
 
+from shopman.shop.models import Shop
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -78,6 +79,20 @@ def test_start_returns_code_and_deep_link(client: Client):
     assert "Quero%20entrar%20no%20site" in body["deep_link"]
     # A mensagem inteira vai pré-preenchida; a frase roteia o flow e NB carrega contexto.
     assert body["code"] in body["deep_link"]
+
+
+@override_settings(SHOPMAN_WA_VERIFY={"number": ""})
+def test_start_without_store_whatsapp_fails_with_sms_recovery(client: Client):
+    Shop.objects.all().update(phone="")
+
+    resp = _post_json(client, "/api/v1/auth/whatsapp/start/", {})
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": "O WhatsApp da loja está indisponível agora. Entre por SMS ou peça ajuda.",
+        "error_code": "whatsapp_unavailable",
+        "recovery": {"primary": "sms", "help_url": "/faq"},
+    }
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -168,4 +183,3 @@ def test_a_frase_humana_ainda_carrega_o_codigo(client: Client):
     assert contains_code(body["message"])
     assert extract_code(body["message"]) == body["code"]
     assert "quero entrar no site" in body["message"].lower()  # a palavra-chave do flow
-
