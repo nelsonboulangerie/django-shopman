@@ -114,6 +114,27 @@ Princípio preservado:
 > Ser a fonte da verdade não obriga o servidor a recomputar toda a verdade sincronicamente em
 > cada clique.
 
+### 4.1 Em que o SSR-CS é superior à baseline
+
+A baseline é uma excelente otimização para o cardápio. O SSR-CS é uma arquitetura para qualquer
+projeção que combine dados com ritmos, criticidades e donos diferentes.
+
+| Dimensão | Baseline | SSR-CS | Benefício adicional |
+|---|---|---|---|
+| Unidade de projeto | catálogo + overlay | projeção composta por quadros semânticos | aplica-se fora do catálogo |
+| Atualização | invalidação/refetch específico | snapshot, patch, gap e repair no mesmo contrato | convergência determinística |
+| Ordenação | revisão recomendada | revisão, dependências e descarte regressivo obrigatórios | eventos atrasados não corrompem a UI |
+| Falha parcial | fallback por polling | estado formal de continuidade e reparação | uma parte lenta não congela as demais |
+| Escrita | revalidação no servidor | `commitment frame` correlacionado ao comando | reconciliação explícita e idempotente |
+| Cache | políticas por endpoint | política de frescor por quadro | menos invalidação ampla e menor risco de mistura |
+| UX | navegação com estado hidratado | regra “utilizável nunca volta a vazio” | elimina flicker e regressão durante refresh |
+| Portabilidade | desenho Shopman/Nuxt/Django | contrato independente de framework e transporte | pode virar padrão reutilizável |
+| Testabilidade | testes de endpoints e SSE | suíte de conformidade com perda, duplicação e reordenação | robustez demonstrável |
+
+Em resumo, a baseline reduz latência. O SSR-CS também **limita o raio de bloqueio**, formaliza
+como o sistema se recupera e separa a consistência necessária para ler da consistência necessária
+para comprometer uma ação.
+
 ---
 
 ## 5. O salto além da baseline: um protocolo de continuidade
@@ -185,6 +206,82 @@ Cada quadro tem um orçamento, não um temporizador de loading:
 
 **Gate de produto**: o limiar de exibição para respostas abaixo de 200 ms não está decidido.
 Qualquer proposta nessa faixa deve voltar para decisão conjunta antes de ser implementada.
+
+### 5.5 Núcleo portátil: protocolo Continuum
+
+O mecanismo não deve nascer como uma biblioteca de SSR. SSR é apenas uma forma de transportar o
+primeiro snapshot; SSE é apenas uma forma de transportar revisões. O núcleo portátil, com nome de
+trabalho **Continuum**, trata de **projeções convergentes**.
+
+Ele se divide em cinco camadas:
+
+1. **Modelo** — projection key, partição, snapshot, revisão, dependências, prazo de frescor e
+   payload.
+2. **Semântica** — aplicar, ignorar regressão, detectar lacuna, reparar e comprometer.
+3. **Transporte** — SSR payload, HTTP, SSE, WebSocket, fila, sincronização móvel ou arquivo.
+4. **Política** — o que pode envelhecer, o que pode ser público e o que exige confirmação forte.
+5. **Adaptadores** — Django/Nuxt primeiro; depois qualquer servidor e cliente.
+
+Vocabulário mínimo de mensagens:
+
+```text
+snapshot    estado íntegro de uma ou mais partes
+patch       mudança idempotente sobre uma revisão conhecida
+invalidate  aviso de que uma parte precisa ser buscada novamente
+repair      resposta que fecha uma lacuna de revisões
+commit      resultado autoritativo correlacionado a um comando
+heartbeat   saúde/transporte; não altera projeção
+```
+
+O contrato não conhece produto, SKU, carrinho, HTML, componente Vue, ORM ou banco. Domínios
+definem apenas as chaves, partes, políticas e payloads.
+
+Continuum deve ser um **perfil de padrões existentes**, não uma reinvenção deles:
+
+- envelope de eventos compatível com CloudEvents (`id`, `source`, `type`, versão e schema);
+- patch JSON expresso por RFC 6902 quando patch for mais econômico que substituir o quadro;
+- snapshot HTTP identificado por ETag e validado condicionalmente;
+- em SSE, `id`/`Last-Event-ID` auxilia retomada, mas não substitui detecção semântica de gap;
+- transporte pode mudar sem alterar as regras de revisão, frescor, repair e commit.
+
+### 5.6 Estado formal do consumidor
+
+Todo adaptador cliente implementa a mesma máquina de estados:
+
+```text
+empty → usable → converging
+           │          │
+           ├────→ repairing ────┐
+           ├────→ committing ───┤→ usable
+           └────→ unavailable ──┘
+```
+
+Invariantes do núcleo:
+
+- uma projeção `usable` não volta a `empty` durante atualização;
+- a mesma mensagem pode chegar mais de uma vez sem mudar o resultado;
+- mensagens antigas não fazem o estado regredir;
+- um gap conhecido não é tratado como convergência bem-sucedida;
+- `commit` é correlacionado por id do comando e nunca inferido de um evento visual;
+- falha de transporte não apaga o último snapshot ainda permitido pela política;
+- privacidade e autorização são externas ao transporte e obrigatórias antes da aplicação.
+
+### 5.7 Como transformar a ideia em padrão de verdade
+
+Não publicar uma biblioteca genérica antes de provar o contrato. A ordem proposta é:
+
+1. escrever uma spec `0.1` independente de linguagem, com JSON Schema e exemplos;
+2. produzir uma suíte de conformidade baseada em vetores de mensagens;
+3. implementar os adaptadores de referência Django e Nuxt no piloto do cardápio;
+4. provar uma segunda implementação no backstage, com domínio e ritmo diferentes;
+5. extrair o núcleo somente depois que duas superfícies não triviais convergirem;
+6. testar um terceiro adaptador pequeno fora de SSR/SSE, por exemplo WebSocket ou cliente móvel;
+7. então publicar spec, pacotes, guia de segurança e benchmark reproduzível.
+
+O padrão pode ser usado por qualquer aplicação que tenha projeções de leitura, atualizações
+incrementais e comandos autoritativos. Ele não pretende substituir CRDTs em edição colaborativa,
+protocolos de mídia em tempo real nem transações distribuídas; nesses casos pode ser somente a
+camada de apresentação.
 
 ---
 
@@ -305,10 +402,12 @@ piloto mostrar diferença visual relevante.
 
 - adicionar `Server-Timing` por estágio: BFF, projeção, disponibilidade, personalização e DB;
 - registrar queries, bytes, cache hit/miss, snapshot/revision e idade do quadro;
-- fechar schemas dos envelopes e invariantes;
+- fechar a spec Continuum `0.1`, schemas dos envelopes e invariantes;
+- criar vetores de conformidade para duplicação, regressão, gap, repair e commit;
 - medir p50/p75/p95 em produção, sem dados sensíveis.
 
-**Aceite**: antes/depois reproduzível e zero implementação baseada apenas em sensação.
+**Aceite**: antes/depois reproduzível, contrato sem dependência de Django/Nuxt e zero
+implementação baseada apenas em sensação.
 
 ### WP-CS-1 — Read model do cardápio
 
@@ -454,3 +553,7 @@ Esta WP só pode ser marcada como concluída quando:
 - Nuxt — [`NuxtLink` e smart prefetch](https://nuxt.com/docs/4.x/api/components/nuxt-link)
 - Nuxt — [`useAsyncData`](https://nuxt.com/docs/4.x/api/composables/use-async-data)
 - Django — [Asynchronous support](https://docs.djangoproject.com/en/6.0/topics/async/)
+- CNCF — [CloudEvents specification](https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md)
+- IETF RFC 6902 — [JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902)
+- WHATWG — [Server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+- IETF RFC 9110 — [HTTP Semantics](https://datatracker.ietf.org/doc/html/rfc9110)
