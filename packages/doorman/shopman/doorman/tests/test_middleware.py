@@ -63,6 +63,56 @@ class TestAuthCustomerMiddleware:
         assert request.customer.uuid == customer.uuid
         assert request.customer.name == "Ana"
 
+    @pytest.mark.parametrize(
+        "path",
+        (
+            "/admin/",
+            "/admin/shop/order/",
+            "/api/v1/backstage/",
+            "/api/v1/backstage/orders/",
+        ),
+    )
+    def test_backstage_paths_skip_customer_resolution(
+        self, path, rf, middleware, django_user, django_assert_num_queries
+    ):
+        """Equipe e APIs operacionais não pagam a resolução do cliente."""
+        from shopman.guestman.models import Customer
+
+        customer = Customer.objects.create(
+            ref=f"MW-SKIP-{path.count('/')}",
+            first_name="Equipe",
+            phone=f"55439999900{path.count('/')}",
+        )
+        CustomerUser.objects.create(user=django_user, customer_id=customer.uuid)
+        request = rf.get(path)
+        request.user = django_user
+
+        with django_assert_num_queries(0):
+            middleware.process_request(request)
+
+        assert request.customer is None
+        assert not hasattr(django_user, _CACHE_ATTR)
+
+    def test_storefront_path_keeps_customer_resolution(
+        self, rf, middleware, django_user
+    ):
+        """O atalho backstage não amplia a fronteira para o storefront."""
+        from shopman.guestman.models import Customer
+
+        customer = Customer.objects.create(
+            ref="MW-STOREFRONT",
+            first_name="Cliente",
+            phone="5543999990088",
+        )
+        CustomerUser.objects.create(user=django_user, customer_id=customer.uuid)
+        request = rf.get("/checkout/")
+        request.user = django_user
+
+        middleware.process_request(request)
+
+        assert request.customer is not None
+        assert request.customer.uuid == customer.uuid
+
     def test_cache_avoids_repeated_queries(self, rf, middleware, django_user):
         """Second call uses cached value on user, no extra query."""
         from shopman.guestman.models import Customer
