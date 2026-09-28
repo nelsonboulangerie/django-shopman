@@ -7,7 +7,11 @@ from django.db.migrations.executor import MigrationExecutor
 
 @pytest.mark.django_db(transaction=True)
 def test_migration_creates_missing_order_updated_template_and_preserves_curated_row():
-    from shopman.shop.notification_copy import CUSTOMER_COPY
+    import importlib
+
+    # O texto que ESTA migração grava é o histórico dela (a 0082 o troca pelo
+    # aprovado pelo dono): compara com a constante da própria migração.
+    migration = importlib.import_module("shopman.shop.migrations.0081_order_updated_notification_template")
 
     before = [("shop", "0080_order_rescheduled_notification_template")]
     after = [("shop", "0081_order_updated_notification_template")]
@@ -23,8 +27,8 @@ def test_migration_creates_missing_order_updated_template_and_preserves_curated_
     new_apps = executor.loader.project_state(after).apps
     created = new_apps.get_model("shop", "NotificationTemplate").objects.get(event="order_updated")
     # A migração grava a MESMA frase da fonte única.
-    assert created.subject == CUSTOMER_COPY["order_updated"]["subject"]
-    assert created.body == CUSTOMER_COPY["order_updated"]["body"]
+    assert created.subject == migration.SUBJECT
+    assert created.body == migration.BODY
     assert created.whatsapp_flow_ns == ""
 
     executor = MigrationExecutor(connection)

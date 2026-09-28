@@ -7,7 +7,11 @@ from django.db.migrations.executor import MigrationExecutor
 
 @pytest.mark.django_db(transaction=True)
 def test_migration_creates_missing_reschedule_template_and_preserves_curated_row():
-    from shopman.shop.notification_copy import CUSTOMER_COPY
+    import importlib
+
+    # O texto que ESTA migração grava é o histórico dela (a 0082 o troca pelo
+    # aprovado pelo dono): compara com a constante da própria migração.
+    migration = importlib.import_module("shopman.shop.migrations.0080_order_rescheduled_notification_template")
 
     before = [("shop", "0079_confirmado_com_todo_carinho")]
     after = [("shop", "0080_order_rescheduled_notification_template")]
@@ -23,8 +27,8 @@ def test_migration_creates_missing_reschedule_template_and_preserves_curated_row
     new_apps = executor.loader.project_state(after).apps
     MigratedTemplate = new_apps.get_model("shop", "NotificationTemplate")
     created = MigratedTemplate.objects.get(event="order_rescheduled")
-    assert created.subject == CUSTOMER_COPY["order_rescheduled"]["subject"]
-    assert created.body == CUSTOMER_COPY["order_rescheduled"]["body"]
+    assert created.subject == migration.SUBJECT
+    assert created.body == migration.BODY
     assert created.whatsapp_flow_ns == ""
 
     executor = MigrationExecutor(connection)

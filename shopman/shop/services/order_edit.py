@@ -978,8 +978,13 @@ def _refund_gateway(order_ref: str, *, amount_q: int, idempotency_key: str) -> N
 def customer_note(result: EditPlan) -> str:
     """O ``{status_note}`` do aviso ``order_updated``: o que mudou e o que acontece com o dinheiro.
 
-    SEM ponto final — o ponto é do texto (o template da Meta não termina em
-    variável). Nunca vazia.
+    Frases INTEIRAS, cada uma com o seu ponto final — é o padrão aprovado na Meta
+    para a informação que muda ("{{Motivo: item indisponível.}}"): o texto do
+    aviso não põe ponto depois da variável. Nunca vazia.
+
+    Montada por regra a partir da diferença da edição, nunca inventada. Edição
+    grande não vira parágrafo: acima de :data:`MAX_ITEM_CHANGES_DESCRIBED`
+    mudanças de itens, a frase resume ("Ajustamos 5 itens."); o dinheiro sai sempre.
     """
     sentences: list[str] = []
     products = _describe_for_customer(result.diff) if result.items_changed else ""
@@ -987,24 +992,28 @@ def customer_note(result: EditPlan) -> str:
         sentences.append(products)
     if result.fulfillment_changed:
         if result.fulfillment_after == "delivery":
-            fee = (
-                f"; taxa de entrega {_brl(result.delivery_fee_after_q)}"
-                if result.delivery_fee_after_q else "; sem taxa de entrega"
-            )
             where = f" em {result.delivery_address_after}" if result.delivery_address_after else ""
-            sentences.append(f"Agora é entrega{where}{fee}")
+            fee = (
+                f", com taxa de {_brl(result.delivery_fee_after_q)}"
+                if result.delivery_fee_after_q else ", sem taxa de entrega"
+            )
+            sentences.append(f"Agora é entrega{where}{fee}.")
         else:
-            sentences.append("Agora é retirada na loja")
+            sentences.append("Agora é retirada na loja.")
     if result.schedule_changed:
         phrase = _commitment_phrase(result.date_after, result.slot_after)
         if phrase:
-            sentences.append(f"Nova data: {phrase}")
+            sentences.append(f"Nova data: {phrase}.")
     if result.notes_changed:
-        sentences.append("Anotamos a sua observação" if result.notes_after else "Tiramos a observação do pedido")
+        sentences.append("Anotamos sua observação." if result.notes_after else "Tiramos a observação do pedido.")
     money = _money_for_customer(result)
     if money:
         sentences.append(money)
-    return ". ".join(sentences) or "Os detalhes estão no acompanhamento"
+    return " ".join(sentences) or "Os detalhes estão no acompanhamento."
+
+
+#: Acima disto, as mudanças de itens viram um resumo: um aviso não é extrato.
+MAX_ITEM_CHANGES_DESCRIBED = 3
 
 
 def _describe_for_customer(difference: dict) -> str:
@@ -1023,8 +1032,10 @@ def _describe_for_customer(difference: dict) -> str:
         parts.append(f"{entry['name']} passou de {entry['previous_qty']} para {entry['qty']}")
     if not parts:
         return ""
+    if len(parts) > MAX_ITEM_CHANGES_DESCRIBED:
+        return f"Ajustamos {len(parts)} itens."
     text = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " e " + parts[-1]
-    return text[:1].upper() + text[1:]
+    return text[:1].upper() + text[1:] + "."
 
 
 def _money_for_customer(result: EditPlan) -> str:
@@ -1034,20 +1045,20 @@ def _money_for_customer(result: EditPlan) -> str:
     if settlement.kind in REFUND_KINDS:
         amount = _brl(settlement.amount_q)
         if settlement.kind == SETTLE_REFUND_CASH:
-            how = f"devolvemos {amount} em dinheiro {where}"
+            how = f"Devolvemos {amount} em dinheiro {where}."
         elif settlement.method == "pix":
-            how = f"devolvemos {amount} pelo Pix"
+            how = f"Devolvemos {amount} pelo Pix."
         else:
-            how = f"devolvemos {amount} no seu cartão"
-        return f"Novo total {total}; {how}"
+            how = f"Devolvemos {amount} no seu cartão."
+        return f"O novo total é {total}. {how}"
     if result.total_q == result.previous_total_q:
-        return f"O total continua {total}" if result.items_changed else ""
+        return f"O total continua {total}." if result.items_changed else ""
     if settlement.kind == SETTLE_COLLECT:
         if result.balance_before_q == 0:
             moment = "a entrega" if result.fulfillment_after == "delivery" else "a retirada"
-            return f"Novo total {total}; a diferença de {_brl(settlement.amount_q)} fica para {moment}"
-        return f"Novo total {total}, a pagar {where}"
-    return f"Novo total {total}"
+            return f"O novo total é {total}. A diferença de {_brl(settlement.amount_q)} fica para {moment}."
+        return f"O novo total é {total}, a pagar {where}."
+    return f"O novo total é {total}."
 
 
 def _commitment_phrase(date_iso: str, slot: str) -> str:

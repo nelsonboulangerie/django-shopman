@@ -291,19 +291,19 @@ com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_fl
 - Corpo: `Olá, {{1}}! Lembrando que o seu pedido {{2}} está agendado para amanhã. Já estamos preparando tudo.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
-### `pedido_nova_data` — evento `order_rescheduled`
-> ⚠️ **Rascunho — aguardando revisão do dono (não submeter).** Ele valida a linguagem contra os demais templates; depois da aprovação, a submissão à Meta é feita via ManyChat.
-
-A data combinada mudou (`services/reschedule`); quase sempre a pedido do cliente, por isso o tom de confirmação.
-- Corpo: `Olá, {{1}}! Tudo certo: o seu pedido {{2}} agora está marcado para {{3}}. Qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`sábado, 04/10, a partir das 9h` (campo `status_note`, nunca vazio)
+### `pedido_nova_data` — evento `order_rescheduled` · ✅ texto aprovado pelo dono (28/09/2026)
+A data combinada mudou (`services/reschedule`). Voz conferida contra os templates já aprovados na Meta (doc "Copies dos templates: revisado × no ar"): "Oi, {{nome}}!", "seu pedido", fecho "Qualquer dúvida, estamos à disposição.", sem emoji de festa (evita reclassificação como Marketing).
+- Corpo: `Oi, {{1}}! Seu pedido {{2}} foi reagendado para {{3}}. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`sábado, 04/10, a partir das 9h` (`status_note`, nunca vazio, sem ponto final)
 - Botão URL: `Acompanhar pedido`
+- 12 palavras literais para 3 variáveis (a Meta recusa template com variável demais para o texto).
 
-### `pedido_atualizado` — evento `order_updated` · ⚠️ RASCUNHO — aguardando revisão do dono (NÃO SUBMETER)
-A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, data ou observação. Quase sempre a pedido do cliente, por isso o tom de confirmação. O dono vai revisar a frase para casar com a linguagem dos demais templates (28/09/2026); até lá, nada vai para a Meta nem para o ManyChat.
-- Corpo: `Olá, {{1}}! Tudo certo: atualizamos o seu pedido {{2}}. {{3}}. Qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`Saiu 1 Baguete e entrou 1 Croissant. Novo total R$ 42,00; devolvemos R$ 6,00 no seu cartão` (campo `status_note`, nunca vazio e sem ponto final)
+### `pedido_atualizado` — evento `order_updated` · ✅ texto aprovado pelo dono (28/09/2026)
+A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, data ou observação. A informação que muda vem INTEIRA na variável, com os próprios pontos finais — o mesmo padrão do `{{Motivo: item indisponível.}}` do cancelado. Montada por regra a partir da diferença da edição; acima de 3 mudanças de itens vira resumo ("Ajustamos 5 itens.").
+- Corpo: `Oi, {{1}}! Atualizamos seu pedido {{2}} conforme combinado. {{3}} Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Saiu 1 Baguete e entrou 1 Croissant. O novo total é R$ 42,00. Devolvemos R$ 6,00 no seu cartão.` (`status_note`, nunca vazio, termina com ponto)
 - Botão URL: `Acompanhar pedido`
+- 11 palavras literais para 3 variáveis.
 
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
@@ -453,7 +453,7 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 | `fiscal_note_ready` | `nota_fiscal_disponivel` | Utility |
 | `preorder_reminder` | `pedido_agendado_lembrete` | Utility |
 | `order_rescheduled` | `pedido_nova_data` | Utility |
-| `order_updated` | `pedido_atualizado` (rascunho — não submeter) | Utility |
+| `order_updated` | `pedido_atualizado` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
