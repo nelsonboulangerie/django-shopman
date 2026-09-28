@@ -210,11 +210,11 @@ onBeforeUnmount(() => {
       aria-hidden="true"
     >
       <div
-        class="w-full max-w-[19rem] rounded-3xl border border-border bg-card px-6 py-7 text-center text-card-foreground shadow-2xl"
+        class="w-full max-w-[19rem] rounded-3xl border border-border bg-card px-6 py-8 text-center text-card-foreground shadow-2xl"
         data-navigation-wait-card
       >
-        <div class="navigation-wait-spinner mx-auto mb-5 size-10" />
-        <p class="font-display text-2xl font-medium leading-tight tracking-tight">
+        <div class="navigation-wait-spinner mx-auto mb-4 size-10" />
+        <p class="shop-title">
           {{ waitCopy.title }}
         </p>
         <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
